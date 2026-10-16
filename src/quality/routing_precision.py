@@ -221,6 +221,14 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         'ultrawork',
     ),
     RoutingPrecisionCase(
+        'reference-after-a-plural-possessive',
+        'A plural possessive does not pair with the quote after it and expose its workflow syntax',
+        "Explain the users' '$ulw-work' snippet.",
+        'answer_directly',
+        'direct_answer',
+        'ultrawork',
+    ),
+    RoutingPrecisionCase(
         'reference-cjk-surroundings',
         'CJK clauses do not expose quoted workflow triggers',
         '请解释"$ulw-work"的意思。',
@@ -15280,6 +15288,17 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "export-to-a-quoted-companys-data-team-reaches-data-share-review",
         "Redacting an export before it goes to a data team named by a quoted company reaches the data share review",
         "redact the pii in the export and send it to the \"acme\" data team",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    # The masker read the `'` of a plural possessive as an opening quote that
+    # never closed, so the send and the place after it went unread.
+    RoutingInterventionCase(
+        "export-after-a-plural-possessive-reaches-data-share-review",
+        "Redacting the users' export before it goes to a company's team reaches the data share review",
+        "redact pii in the users' export and send it to the acme team",
         "dispatch",
         "data-share-review",
         "prepare_data_share_review",

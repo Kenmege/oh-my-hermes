@@ -101,8 +101,9 @@ def reference_regions(message: str) -> ReferenceRegions:
     block-quote lines, relay-header lines, and scheme URLs.
 
     Escapes consume the following character. Apostrophes between word characters
-    are not delimiters; adjacency is read on the original message, so a
-    possessive glued to a link (`pull/1's`) is still an apostrophe. Fences start
+    are not delimiters, and a `'` that ends a word opens no quote;
+    adjacency is read on the original message, so a possessive glued to a link
+    (`pull/1's`) is still an apostrophe. Fences start
     on an otherwise blank line and close on a line containing only the same
     delimiter, at least as long as the opener. Unclosed regions shield through
     EOF, leaving earlier executable text intact. One left-to-right pass decides
@@ -146,15 +147,18 @@ def reference_regions(message: str) -> ReferenceRegions:
                 continue
         if token.startswith("\\"):
             continue
+        # CJK clauses touch quotes without spaces; they are boundaries,
+        # unlike apostrophes within Latin words or contractions.
+        after_word = (
+            index > 0
+            and message[index - 1].isalnum()
+            and unicodedata.east_asian_width(message[index - 1]) not in {"W", "F"}
+        )
         apostrophe = (
             token in {"'", "\u2019"}
-            and index > 0
+            and after_word
             and end < len(message)
-            and message[index - 1].isalnum()
             and message[end].isalnum()
-            # CJK clauses touch quotes without spaces; they are boundaries,
-            # unlike apostrophes within Latin words or contractions.
-            and unicodedata.east_asian_width(message[index - 1]) not in {"W", "F"}
             and unicodedata.east_asian_width(message[end]) not in {"W", "F"}
         )
         if apostrophe:
@@ -178,7 +182,21 @@ def reference_regions(message: str) -> ReferenceRegions:
             if start < 0:
                 drop_through(end)
             continue
-        if token in _QUOTES:
+        # A `'` that ends a word (`customers' export`, `goin'.`) is a plural
+        # possessive or an elision: it closes an open quote but opens none,
+        # which would shield the rest of the message. Glued to more text
+        # (`f'$x'`, `API''`), it still opens one.
+        word_end = (
+            token == "'"
+            and after_word
+            and (
+                end == len(message)
+                or message[end].isspace()
+                or message[end] in ".,;:!?)]"
+                or unicodedata.east_asian_width(message[end]) in {"W", "F"}
+            )
+        )
+        if token in _QUOTES and not word_end:
             start, closer, fence = index, _QUOTES[token], False
         elif token[0] in {"`", "~"}:
             fence = len(token) >= 3 and not message[message.rfind("\n", 0, index) + 1:index].strip()

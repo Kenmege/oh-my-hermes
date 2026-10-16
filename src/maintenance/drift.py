@@ -663,7 +663,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # uploaded to the QA environment (3). Its round-4 review adds one:
             # a patient CSV shared with our QA team, where "patient" says
             # whose records the CSV holds (1).
-            expected=828,
+            # The plural-possessive masker fix adds one: a quoted workflow
+            # name after "the users'" stays a reference, where the `'` of the
+            # possessive used to pair with the quote's opener (1).
+            expected=829,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -956,7 +959,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # the review: a company that sees the export before the send, a
             # copy given to a company, and a company's data team named in
             # quotes (3).
-            expected=862,
+            # The plural-possessive masker fix adds one: the users' export
+            # sent to a company's team, where the `'` of the possessive used
+            # to mask the send and the place (1).
+            expected=863,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

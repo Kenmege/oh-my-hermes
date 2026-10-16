@@ -935,6 +935,29 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
                     runs[shielded] = SKILL in [item["skill"] for item in recommend_skills(query, limit=50)]
                 self.assertEqual(runs, {True: True, False: False})
 
+    def test_a_plural_possessive_hides_nothing_after_it(self) -> None:
+        # The masker read the `'` of "customers' export" as an opening quote
+        # that never closed, so neither surface read the send or the place.
+        for message in (
+            "Redact the PII in the customers' export and send it to Acme.",
+            "Pseudonymize the users' IDs in the dataset and share it with the third-party analytics vendor.",
+            "Redact the PII in the clients' file and share it with the vendor",
+            "Redact the PII in the users' 'draft' file and send it to the vendor.",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(self._named(message))
+                self.assertTrue(self._hinted(message))
+
+    def test_an_apostrophe_quotes_nothing_in_either_spelling(self) -> None:
+        # Smart punctuation types `’` for `'`. Between two letters it is an
+        # apostrophe, as `'` is, and keeps no place from being read inside.
+        for spelling in ("'", "’"):
+            message = f"고객 정보 마스킹해서 개발팀에 보내줘. It{spelling}s urgent."
+            with self.subTest(message=message):
+                self.assertFalse(_offered(message))
+        # A `’` that opens or closes a word still quotes.
+        self.assertTrue(_offered("고객 정보 마스킹해서 ’acme’ 개발팀에 보내줘"))
+
     def test_english_and_korean_agree(self) -> None:
         for english, korean, offered in (
             ("redact pii in the export before we send it to the dev team", "개인정보 지우고 개발팀에 보내줘", False),
