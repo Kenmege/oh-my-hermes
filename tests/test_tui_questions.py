@@ -162,8 +162,10 @@ class QuestionOutcomeTests(unittest.TestCase):
     def test_a_picked_choice_is_recorded_with_its_label(self) -> None:
         app, _client = opened(COLOUR)
         press(app, Key(ENTER))
-        self.assertEqual(outcome_rows(app), [("red (Recommended) · Which colour?", NOTICE_OK)])
-        self.assertIn("✓ red (Recommended) · Which colour?", drawn(app))
+        # The answer still goes as the choice reads (as Ink sends it); the record says what Hermes reads from it,
+        # its display tag stripped (clarify_tool.strip_recommended).
+        self.assertEqual(outcome_rows(app), [("red · Which colour?", NOTICE_OK)])
+        self.assertIn("✓ red · Which colour?", drawn(app))
 
     def test_a_typed_answer_is_recorded_as_typed(self) -> None:
         app, _client = opened(TEXT_QUESTIONS[2][0])
@@ -176,6 +178,14 @@ class QuestionOutcomeTests(unittest.TestCase):
             {"qid": "q0", "question": "Which toppings?", "choices": ["cheese", "ham"], "multi_select": True},
         ]}))
         press(app, Key(CHAR, "2"), Key(CHAR, "1"), Key(ENTER))
+        self.assertEqual(outcome_rows(app), [("ham, cheese · Which toppings?", NOTICE_OK)])
+
+    def test_a_ticked_choice_is_recorded_without_hermes_display_tag(self) -> None:
+        app, client = opened(ServerRequest("srq-6", "clarify", {"questions": [
+            {"qid": "q0", "question": "Which toppings?", "choices": ["cheese (recommended)", "ham"], "multi_select": True},
+        ]}))
+        press(app, Key(CHAR, "2"), Key(CHAR, "1"), Key(ENTER))
+        self.assertEqual(client.answers, [("srq-6", {"result": {"answers": {"q0": '["ham","cheese (recommended)"]'}}})])
         self.assertEqual(outcome_rows(app), [("ham, cheese · Which toppings?", NOTICE_OK)])
 
     def test_a_cancelled_question_is_a_red_cross_with_a_word(self) -> None:

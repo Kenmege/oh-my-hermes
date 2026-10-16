@@ -420,8 +420,10 @@ class PromptSlot:
         was asked.
 
         A clarify question answered says the label (the ticked labels, joined)
-        or the text the person typed, `skipped` for an empty answer, and one
-        cancelled says `cancelled`. A value prompt says only `answered` or
+        or the text the person typed, as Hermes reads it, without the
+        `(Recommended)` tag it adds to a choice (`_without_recommended`);
+        `skipped` for an empty answer, and one cancelled says `cancelled`. A
+        value prompt says only `answered` or
         `declined`, never the value. An approval's answer is the app's to say.
         """
         result = frame.get("result")
@@ -442,7 +444,8 @@ class PromptSlot:
                 rows.append((False, f"{OUTCOME_SKIPPED} · {asked}"))
                 continue
             multi = question.get("multi_select") is True and bool(_string_choices(question))  # as `_multi` reads it
-            rows.append((True, f"{', '.join(json.loads(value)) if multi else _one_line(value)} · {asked}"))
+            picked = [_without_recommended(item) for item in json.loads(value)] if multi else [_without_recommended(value)]
+            rows.append((True, f"{', '.join(_one_line(item) for item in picked)} · {asked}"))
         return rows
 
     def attention(self) -> str:
@@ -667,6 +670,19 @@ def _string_choices(question: dict[str, Any]) -> list[str]:
     """A clarify question's choices that are strings: the only ones the slot lists and answers with."""
     choices = question.get("choices")
     return [choice for choice in choices if isinstance(choice, str)] if isinstance(choices, list) else []
+
+
+# The tag Hermes adds to a clarify question's first choice for display; it strips it from the answer it reads.
+RECOMMENDED_TAG = "(Recommended)"
+
+
+def _without_recommended(text: object) -> str:
+    """`text` as Hermes reads an answer (6c61c3e27d `clarify_tool.strip_recommended`): stripped, and without
+    `RECOMMENDED_TAG` at its end, matched ignoring case."""
+    stripped = str(text).strip()
+    if stripped.casefold().endswith(RECOMMENDED_TAG.casefold()):
+        return stripped[: -len(RECOMMENDED_TAG)].strip()
+    return stripped
 
 
 def _one_line(value: object) -> str:

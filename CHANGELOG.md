@@ -80,7 +80,8 @@ All notable changes will be documented here.
   nowhere but in the model's reply; a sudo or secret prompt left nothing.
   Like an approval's `✓ allowed once` / `✗ denied`, the answer now goes
   above the call it was about: `✓ red · Which colour?` (ticked labels
-  joined, or what was typed), `✗ cancelled · <question>` or `✗ skipped`, and
+  joined, or what was typed, as Hermes reads the answer: without the
+  `(Recommended)` tag it shows on a choice), `✗ cancelled · <question>` or `✗ skipped`, and
   for sudo or a secret only `✓ answered` or `✗ declined`, never the value. A
   question Hermes withdrew reads `✗ timed out`, `✗ interrupted` or
   `✗ withdrawn (<reason>)` with what it asked, in place of the amber
