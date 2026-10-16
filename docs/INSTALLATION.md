@@ -311,7 +311,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   last 3,000 rows again under one row such as `⋯ 412 earlier messages ·
   /history shows all`; `/history` pages through the whole session. The OMH
   TUI holds a session's last 2,000 messages (a prompt, a reply, its
-  thinking, a group of tool calls, a notice, a command with its output, a
+  thinking, the tool calls between two replies, a notice, a command with its output, a
   steer and a turn's done line are one each); older ones are
   left to the terminal's scrollback until a full redraw clears it, and from
   then on that row says how many `/history` still shows.
@@ -348,7 +348,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   normal/accept all)`), and in any state but idle the effort sits at the
   row's right end as `ctrl+t effort (medium)`. While Hermes asks something
   it names that question's keys (`↑↓ pick · enter confirms · d or esc
-  denies`), and while a picker or the Ctrl+R search is open, its keys (`↑↓
+  denies and stops`), and while a picker or the Ctrl+R search is open, its keys (`↑↓
   move · enter switches · esc closes`). After a first Ctrl+C between turns it
   says `ctrl+c again to exit` for the 2 s a second one exits in, and writes
   nothing to the transcript. The working row and the mode row offer Esc for an interrupt only
@@ -417,7 +417,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   opens them as a list you pick from, as from a picker: the composer is hidden
   while it is open, the list stands where the composer was and scrolls when
   there are more agents than rows, and the mode row says its keys (`↑↓ select
-  · ⏎ log · x interrupt · s steer · esc back`). Esc, Left or `q` closes it and
+  · ⏎ log · x interrupt · s steer · esc back`). Esc, Left, `q` or Ctrl+C closes it and
   the composer comes back on its row as you left it; any other key does
   nothing while the list is open, so nothing typed there lands in the
   composer. Enter, or a click on its row,
@@ -536,7 +536,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   own indent and shows its first lines, and the line that names it wraps too.
   Whenever the slot cannot show the whole question (a long command, a long
   list, a short terminal) it says so, `… ctrl+o shows all` (under a command's
-  first lines, `… +14 more lines · ctrl+o shows all`), and Ctrl+O opens the
+  first lines, `… +14 more lines · ctrl+o shows all`; `… ctrl+o` where the row
+  is too narrow for more), and Ctrl+O opens the
   whole question in the pager: it answers nothing, and q or Esc comes back to
   the question as you left it. A terminal too short for every row keeps the
   highlighted choice and, from 6 rows, a command's first row; one under 6 rows
@@ -588,10 +589,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   on you; on exit the title you had comes back where the terminal keeps a
   title stack.
 - Motion and colour follow one rule set, so scrollback reads at a glance:
-  - What Hermes said opens with `⏺` in the text colour; what it did opens a
-    group of tool calls with `⏺` in the tool colour, and a lone call's row
-    with its state mark (below) in that state's colour and its name in the
-    tool colour.
+  - What Hermes said opens with `⏺` in the text colour; each call it made
+    opens its own row with its state mark (below) in that state's colour and
+    its name in the tool colour.
   - A tool call's mark says its state by glyph as well as colour: `⏺`
     running, pulsing between the accent and dim every 0.5 s from its own
     start (parallel calls pulse on their own), `✓` done in green, `✗` failed
@@ -726,7 +726,7 @@ Esc closes it):
 | Space | On a clarify question that takes several choices, ticks or unticks the highlighted one; Enter sends the ticked ones, or the highlighted one when none is ticked, and a digit ticks its choice |
 | Esc, Ctrl+C | On a question Hermes asked, decline it (an approval is denied and the running turn stops); Ctrl+C first clears an answer being typed |
 | ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions`, `/rewind` or `/model` list, move, take the highlighted row (switch to that session, put that prompt in the composer to send again, or switch this session to that model), or close it; typing filters the list |
-| ↑ / ↓, Enter, Esc, ←, q | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; any other key does nothing there |
+| ↑ / ↓, Enter, Esc, ←, q, Ctrl+C | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; any other key does nothing there |
 | x, s | In the agent list, on an agent: x twice interrupts it; s steers it with the next line you send (Esc cancels) |
 | Click | On a row of the agent list, opens that agent's log (on main, only leaves the list) |
 | ← / →, q or Esc | In an agent's log, show the agent before or after, or go back; the pager's keys scroll it |
@@ -779,8 +779,8 @@ context, queues it and sends it as the next prompt once compression is done.
 Hermes gives the same answer for both, so the transcript notes
 `↪ steer queued by Hermes` for either. Until Hermes answers, the steer shows
 as `↪ steer · <text>` under what is running, and its row is written into the
-transcript at the next boundary after the answer, never inside a running tool
-group or a streaming reply. If Hermes does not take the steer
+transcript at the next boundary after the answer, never between calls that
+are still running or inside a streaming reply. If Hermes does not take the steer
 while the turn still runs (an agent still starting, or one that takes no
 steer), the text joins the OMH TUI's own queue (`⧗`) and goes when the turn
 ends, whatever `display.busy_input_mode` says, so it never interrupts the

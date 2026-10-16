@@ -39,8 +39,10 @@ All notable changes will be documented here.
   labelled `↪ tell Hermes what to do instead · enter sends · esc cancels`.
   What you send goes into the running turn as a steer through the same path
   as Ctrl+Enter (a refused steer waits in the queue, an unanswered one comes
-  back after 120 s), or as an ordinary prompt once the turn has ended; Esc
-  sends nothing more and brings your draft back. Deny stays first and
+  back after 120 s), or as an ordinary prompt once the turn has ended, which
+  waits behind a prompt you queued and never steers it; the tell row of a
+  later approval keeps that composer open with what you typed. Esc sends
+  nothing more and brings your draft back. Deny stays first and
   highlighted, the highlight still stops at both ends, and no digit or
   letter but `d` and `n` answers.
 - **An OMH TUI approval offers Hermes' "always allow" when Hermes does.**
@@ -115,31 +117,44 @@ All notable changes will be documented here.
   label wrap, a tiny terminal keeps one row for a typed question's label, and
   Ctrl+O while a question is open pages it whole: it answers nothing, and q
   or Esc returns to the question with the same row highlighted.
-- **OMH TUI input, round 3: the keys behave as in Claude Code, no list leaves
-  the prompt box up, and a crashed gateway comes back.** Enter on an open `/`
-  or `@` menu takes the highlighted row (a command typed in full still runs
-  on the first Enter); Esc closes the `/` menu, and both menus stop at their
-  ends. The Ctrl+R search and the agent list now stand where the composer
-  was, as the pickers do: the composer is hidden, the search's caret is at
+- **Enter on an OMH TUI `/` or `@` menu takes the highlighted row, as in
+  Claude Code.** A command typed in full still runs on the first Enter. Esc
+  closes the `/` menu, and both menus stop at their ends.
+- **The OMH TUI's Ctrl+R search and agent list stand where the composer
+  was**, as the pickers do: the composer is hidden, the search's caret is at
   the end of its query, the agent list takes every key (only its own act, so
-  typing never turns into a steer), and the mode row says their keys. After
-  Esc or Ctrl+C the working row says `interrupting…` until Hermes stops, and
-  the queue does not start: queued prompts come back into the composer
-  unsent, a queued `!` line waits until your next prompt. The `/model`
-  picker marks and opens on the session's model (first, when no provider
-  lists it) and shows `Model (12/162)` once it scrolls. Bare `/sessions`,
+  typing never turns into a steer; Esc, Left, `q` or Ctrl+C leaves it), and
+  the mode row says their keys.
+- **An interrupted OMH TUI turn says so until Hermes stops, and the queue
+  waits.** After Esc or Ctrl+C the working row says `interrupting…` until the
+  turn ends, and the queue does not start: queued prompts come back into the
+  composer unsent, a queued `!` line waits until your next prompt.
+- **The OMH TUI's `/model` picker opens on the session's model.** It marks
+  that model (first, when no provider lists it) and shows `Model (12/162)`
+  once it scrolls.
+- **OMH TUI list commands leave no echo in scrollback.** Bare `/sessions`,
   `/rewind`, `/keys`, `/history`, `/logs` and `/redraw` leave no `› /name`
-  row in scrollback. New keys: Ctrl+X opens the session picker, Ctrl+_ and
-  Ctrl+Y undo and redo in the composer, Ctrl+Z suspends to the shell on
-  POSIX. Where Shift+Enter would send, the mode row names the newline keys
-  while a draft spans lines. `/omh-model` no longer stops the gateway: a
-  reply keeps streaming underneath and a question closes the picker, which
-  now stops at its ends and says `esc cancel`. When Hermes' `tui_gateway`
-  exits with a failure, the TUI starts it again from the launcher's
-  environment and resumes the session, at most three times a minute (an
+  row.
+- **New OMH TUI keys.** Ctrl+X opens the session picker, Ctrl+_ and Ctrl+Y
+  undo and redo in the composer, and Ctrl+Z suspends to the shell on POSIX
+  (Hermes' gateway stops with it; `fg` draws it again under what the shell
+  printed). Where Shift+Enter would send, the mode row names the
+  newline keys while a draft spans lines.
+- **`/omh-model` no longer stops the OMH TUI's gateway.** A reply keeps
+  streaming underneath and a question closes the picker with nothing saved;
+  the picker stops at its ends and says `esc cancel`.
+- **A crashed Hermes gateway comes back.** When Hermes' `tui_gateway` exits
+  with a failure, the OMH TUI starts it again from the launcher's
+  environment and resumes the session, saying so (`The Hermes gateway exited
+  (code 1): starting it again and resuming session <id> (1 of 3 in 60 s);
+  what you type waits until it is back.`), at most three times a minute.
+  Each attempt waits up to 15 s for the new gateway, and one that exits
+  before it resumed the session uses an attempt, as in Hermes' own TUI. An
   open question closes unanswered, a running turn is reported lost and not
-  sent again); AGENTS.md and CONTEXT.md now say the frontend spawns one
-  child at a time and respawns it so.
+  sent again, a steer the old gateway had not answered comes back to the
+  composer at once, and what you queued comes back as after an interrupt.
+  AGENTS.md and CONTEXT.md now say the frontend spawns one child at a time
+  and respawns it so.
 - **The OMH TUI's composer sits right under the output until the screen
   fills, then stays on the bottom rows.** A fresh session showed the banner,
   then 20 blank rows (110x34) to 36 (200x50), then the composer, and 6 to 12
@@ -200,7 +215,7 @@ All notable changes will be documented here.
   gateway already wrote these to the TUI; showing them sends nothing.
 - **The status line follows a light terminal.** It kept the palette's dark
   bar on a light screen (sky's `#0A2229` under white). On a background the
-  terminal reports light (or `/theme light`) the bar is now a light tint of
+  terminal reports light (or `COLORFGBG` names, or `/theme light`) the bar is now a light tint of
   the palette's own bar colour, its words still 4.5:1 and its `│` dividers
   3:1 against it; a dark terminal, and one that reports nothing, keep the
   palette's bar.

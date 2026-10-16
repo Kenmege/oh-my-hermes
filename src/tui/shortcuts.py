@@ -75,8 +75,8 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
                                              "row (switch to that session, put that prompt in the composer to send "
                                              "again, or switch this session to that model), or close it; typing "
                                              "filters the list"),
-    ("↑ / ↓, Enter, Esc, ←, q", "In the agent list, move, open the highlighted agent's log (on main, only leave), "
-                                "or go back; any other key does nothing there"),
+    ("↑ / ↓, Enter, Esc, ←, q, Ctrl+C", "In the agent list, move, open the highlighted agent's log (on main, "
+                                        "only leave), or go back; any other key does nothing there"),
     ("x, s", "In the agent list, on an agent: x twice interrupts it; s steers it with the next line you send "
              "(Esc cancels)"),
     ("Click", "On a row of the agent list, opens that agent's log (on main, only leaves the list)"),

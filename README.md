@@ -338,7 +338,8 @@ slash command's output in the transcript, runs a `!` line in Hermes' shell
 lets you interrupt (`x`) or steer (`s`) one subagent from the agent list,
 lists an approval's or a question's choices where the prompt was, and marks
 outcomes on green and red bands (the light colours and the bands
-need a terminal that reports its background, or `/theme light|dark`). Bare
+need a terminal that reports its background, a `COLORFGBG` that names it,
+or `/theme light|dark`). Bare
 `hermes` keeps opening Hermes' own terminal:
 
 ```sh
