@@ -20,12 +20,19 @@ from omh.tui.gateway import Event, GatewayExited, ServerRequest
 from omh.tui.transcript import AssistantBlock
 
 
+READS_BEFORE_A_KEY = 50  # a picker key never takes this many empty reads here: past it the reader is stuck
+
+
 def scripted(app, reads: list[bytes]) -> None:
     now = [100.0]
     app.clock = lambda: now[0]
+    count = [0]
 
     def read(timeout: float, wake: int | None = None) -> bytes:
         now[0] += READ_TIMEOUT_SECONDS
+        count[0] += 1
+        if count[0] > READS_BEFORE_A_KEY:
+            raise EOFError("the reader kept reading")  # the picker's reader turns this into its cancel key
         return reads.pop(0) if reads else b""
 
     app.terminal.read = read  # type: ignore[method-assign]
@@ -55,8 +62,10 @@ class DrainWhileOpenTests(unittest.TestCase):
 
         def pick(environ: object, theme: object, *, read_key, write, width: int) -> str:
             client.inbox.append(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
-            while not keys or keys[-1] != KEY_QUIT:
+            for _ in range(5):  # bounded: a reader that never cancels fails here instead of hanging the run
                 keys.append(read_key())
+                if keys[-1] == KEY_QUIT:
+                    break
             return "Cancelled; model-chains.json was not changed."
 
         app.pick_model_chains = pick
