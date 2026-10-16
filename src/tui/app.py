@@ -3755,7 +3755,7 @@ class App(ModesMixin, AgentViewMixin):
             else "",
         )
         frame = build()
-        if self._menu_goes_under(rows, len(stable), frame, pinned):
+        if self._menu_goes_under(rows, len(stable), frame):
             build = partial(build, slot=self._slot_lines(cols, rows), below=self.menu_under)
             frame = build()
         # The rows above the region once the flush below and this frame are drawn: transcript rows.
@@ -3767,22 +3767,24 @@ class App(ModesMixin, AgentViewMixin):
         self.region.render(frame.lines, frame.cursor, cols, flush=stable)
         self._take_clickable(frame.budget, self.listed)
 
-    def _menu_goes_under(self, rows: int, flushed: int, frame: Frame, pinned: bool) -> bool:
+    def _menu_goes_under(self, rows: int, flushed: int, frame: Frame) -> bool:
         """Whether a completion menu that opens with `frame` goes under the composer instead; True only then.
 
         It does where the region's place is certain and, with the menu at its
         tallest (`slot_cap`), the region would still end short of the
         screen's last row once `flushed` lines and the frame are drawn: there
         the composer and the caret stay where they are, as under Claude Code's
-        menu. On the bottom rows, close to them, or where the place is
-        unknown, it opens above the composer as before. Kept while the menu
-        stays open, so filtering it never moves it from one place to the other.
+        menu. On the bottom rows (where that end is the screen's last row
+        already), close to them, or where the place is unknown, it opens above
+        the composer as before. Kept while the menu stays open, so filtering it
+        or output pushing the region down never moves it from one place to the
+        other.
         """
         if self.menu_below is not None or not self._menu_rows():
             return False
         tallest = frame.height + slot_cap(rows, self.size[0]) - frame.budget.slot - frame.budget.below
         self.menu_below = (
-            not pinned and self.region.top_row(rows) is not None
+            self.region.top_row(rows) is not None
             and self.region.rows_above(rows, flushed, tallest) + tallest <= rows - 1
         )
         return self.menu_below

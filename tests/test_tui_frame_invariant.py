@@ -706,6 +706,38 @@ class AppBottomRowsTests(unittest.TestCase):
                 if row == 24:
                     self.assertEqual(self.where(opened), self.where(before))
 
+    def test_the_fit_is_judged_with_the_menu_at_its_tallest(self) -> None:
+        # Two `@` rows would fit under the composer here, eight (the cap at 24 rows) would not; the answer can grow.
+        from test_tui_modes import drawn, make_app, type_text
+
+        from omh.tui.app import path_items
+
+        app = make_app(rows=24, cols=80)[0]
+        app.terminal.screen.feed("".join(f"$ shell {n}\r\n" for n in range(14)))
+        app.adopt_cursor_row(15)
+        drawn(app)
+        type_text(app, "@")
+        app.path_items = path_items({"items": [{"text": "@file:alpha.py"}, {"text": "@file:beta.py"}]})
+        drawn(app)
+        self.assertFalse(app.menu_below)
+
+    def test_output_that_pushes_the_region_down_while_the_menu_is_open_leaves_it_where_it_opened(self) -> None:
+        from test_tui_modes import drawn, make_app, type_text
+
+        app = make_app(rows=24, cols=80)[0]
+        app.adopt_cursor_row(3)
+        drawn(app)
+        type_text(app, "/")
+        drawn(app)
+        self.assertTrue(app.menu_below)
+        app.transcript.add_notice("\n".join(f"line {n}" for n in range(30)))  # the region reaches the last row
+        screen = drawn(app)
+        self.assertEqual(app.region.last_row(24), 23)
+        self.assertTrue(app.menu_below)
+        rule = self.where(screen)[0]
+        self.assertEqual(screen[rule + 2], screen[rule])  # the bottom rule under the input row
+        self.assertTrue(screen[rule + 3].strip())  # and the menu under that
+
     def test_with_its_place_unknown_the_menu_opens_above_as_before(self) -> None:
         from test_tui_modes import drawn, make_app, type_text
 
