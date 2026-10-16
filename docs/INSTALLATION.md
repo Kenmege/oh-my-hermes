@@ -632,10 +632,12 @@ run and approval decision stays Hermes'; the screen is OMH's.
     the call it was about: allowed (`✓ allowed once · <command>`) on a light
     green band, denied (`✗ denied · <command>`) on a light red one. So is
     the answer you gave any other question: the label you picked or what you
-    typed (`✓ red · Which colour?`, ticked labels joined with commas), and
+    typed (`✓ red · Which colour?`, ticked labels joined with commas, empty
+    items of a multi-select answer left out, as Hermes leaves them out), and
     for a sudo password or a secret only `✓ answered · sudo password` or
     `✗ declined · sudo password`, never the value; a question you cancelled,
-    sent empty, or Hermes withdrew says so in red (`✗ cancelled · <question>`,
+    sent empty (a multi-select answer with no item left too), or Hermes
+    withdrew says so in red (`✗ cancelled · <question>`,
     `✗ skipped`, `✗ timed out`, `✗ interrupted`, or `✗ withdrawn (<Hermes'
     reason>)`), and the `clarify` call it was about is a red `✗` too, with
     `cancelled`, `timed out` or `not delivered` under it. A failed

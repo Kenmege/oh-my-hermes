@@ -81,7 +81,9 @@ All notable changes will be documented here.
   Like an approval's `✓ allowed once` / `✗ denied`, the answer now goes
   above the call it was about: `✓ red · Which colour?` (ticked labels
   joined, or what was typed, as Hermes reads the answer: without the
-  `(Recommended)` tag it shows on a choice), `✗ cancelled · <question>` or `✗ skipped`, and
+  `(Recommended)` tag it shows on a choice, and with empty items of a
+  multi-select answer left out), `✗ cancelled · <question>` or `✗ skipped`
+  (also a multi-select answer with no item left), and
   for sudo or a secret only `✓ answered` or `✗ declined`, never the value. A
   question Hermes withdrew reads `✗ timed out`, `✗ interrupted` or
   `✗ withdrawn (<reason>)` with what it asked, in place of the amber
@@ -164,8 +166,9 @@ All notable changes will be documented here.
   with the new gateway stopped, and one that exits before it resumed the
   session uses an attempt, as in Hermes' own TUI. An
   open question closes unanswered, a running turn is reported lost and not
-  sent again, a steer the old gateway had not answered comes back to the
-  composer at once, the subagents on the strip stay there (those still
+  sent again, a steer the old gateway had not answered, and what was typed
+  in an approval's tell field, come back to the composer at once, the
+  subagents on the strip stay there (those still
   running marked interrupted) rather than reappearing as look-alike rows in
   the HUD's `[Agents]` block, and what you queued comes back as after an
   interrupt.
