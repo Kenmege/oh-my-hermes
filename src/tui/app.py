@@ -389,6 +389,10 @@ STEER_REJECTED_REASON = "its turn had ended"  # Hermes' `rejected`: the agent wa
 STEER_UNANSWERED_OUTCOME = "back in the composer — Hermes did not answer the steer in {seconds:g} s"
 # One the gateway exited without answering is given back the same way, at once, as the respawn starts.
 STEER_LOST_OUTCOME = "back in the composer — the Hermes gateway exited before it answered"
+TELL_LOST_NOTICE = (
+    "The Hermes gateway exited while you were telling it what to do instead; "
+    "what you typed is back in the composer, not sent."
+)
 STEER_LOST_NOTICE = (
     "The Hermes gateway exited before it answered {count} steer{s}; the text is back in the composer, not sent again."
 )
@@ -1694,6 +1698,7 @@ class App(ModesMixin, AgentViewMixin):
         self.list_selected = None
         first_id = max(self.pending, default=0) + 1
         self._settle_lost_calls()
+        self._give_back_tell()
         old: GatewayClient | None = self.client
         while True:
             now = self.clock()
@@ -1756,6 +1761,17 @@ class App(ModesMixin, AgentViewMixin):
                 self.transcript.close_command(call.command)
         if steers:
             self.transcript.add_notice(STEER_LOST_NOTICE.format(count=steers, s="" if steers == 1 else "s"), NOTICE_WARN)
+
+    def _give_back_tell(self) -> None:
+        """An open tell field closes with the gateway its deny went to; what was typed in it goes back to the draft,
+        never sent, with a notice, as a lost steer's text does."""
+        if self.tell_draft is None:
+            return
+        typed = self.composer.expanded()
+        self._leave_tell()
+        if typed.strip():
+            self._give_back(typed)
+            self.transcript.add_notice(TELL_LOST_NOTICE, NOTICE_WARN)
 
     def _close_questions_unanswered(self) -> None:
         """Close the open question and drop the waiting ones without an answer: the gateway that asked is gone."""

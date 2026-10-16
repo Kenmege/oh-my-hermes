@@ -275,6 +275,29 @@ class LostCallTests(unittest.TestCase):
                     self.assertNotIn(method, said)
 
 
+class TellFieldAcrossARespawnTests(unittest.TestCase):
+    def test_what_the_open_tell_field_held_comes_back_to_the_draft_with_a_notice(self) -> None:
+        from test_tui_choice_ui import armed, press
+        from test_tui_questions import TELL_APPROVAL
+
+        from omh.tui.app import TELL_LOST_NOTICE
+        from omh.tui.keys import DOWN
+
+        for typed in ("half a tell", ""):
+            with self.subTest(typed=typed):
+                app, old, _spawner, _now = crashing(busy=True)
+                type_text(app, "my draft")
+                app._on_server_request(TELL_APPROVAL)
+                armed(app)
+                press(app, *[Key(DOWN)] * 3, Key(ENTER))
+                type_text(app, typed)
+                crash(app, old)
+                self.assertIsNone(app.tell_draft)
+                self.assertEqual(app.composer.text, f"my draft\n{typed}" if typed else "my draft")
+                self.assertEqual(TELL_LOST_NOTICE in notices(app), bool(typed))
+                self.assertEqual(app.client.named("session.steer"), [])  # type: ignore[attr-defined]  # never sent
+
+
 class AgentsAcrossARespawnTests(unittest.TestCase):
     """The subagents the strip held stay on it across a respawn: they never move to the HUD's [Agents] block."""
 

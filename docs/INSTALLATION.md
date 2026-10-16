@@ -884,8 +884,8 @@ TUI does; each attempt waits up to 15 s for the new gateway, the time Hermes'
 own TUI gives one before it reports a slow start (or what
 `HERMES_TUI_STARTUP_TIMEOUT_MS` sets, at least 5 s, as there). A question it had asked closes
 unanswered, a turn that was running is reported lost and is not sent again,
-a steer it had not answered comes back to the composer at once (never sent
-again), the subagents on the strip stay there (those still running marked
+a steer it had not answered, and what you were typing in an approval's tell
+field, come back to the composer at once (never sent), the subagents on the strip stay there (those still running marked
 interrupted, `▪`), and what you queued comes back to the composer as after an interrupt. It
 does this at most three times in a minute, and a new gateway that exits
 before it resumed the session counts as one of them; after that, or when the
