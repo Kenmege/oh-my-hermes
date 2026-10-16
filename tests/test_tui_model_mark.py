@@ -40,6 +40,12 @@ class CurrentModelTests(unittest.TestCase):
                 self.assertEqual([(row.model, row.provider) for row in rows if row.current], [("shared", "og")])
                 self.assertEqual(len(rows), 4)  # listed: no row of its own
 
+    def test_an_alias_alone_names_the_provider(self) -> None:
+        providers = [{"slug": "og", "name": "og", "aliases": ["custom:og", "og"], "models": ["shared"]},
+                     {"slug": "other", "name": "Other", "models": ["shared"]}]
+        rows = model_rows({"model": "shared", "provider": "custom:og", "providers": providers})
+        self.assertEqual([(row.model, row.provider) for row in rows if row.current], [("shared", "og")])
+
     def test_a_model_that_is_not_one_plain_word_gets_no_row_of_its_own(self) -> None:
         rows = model_rows({"model": "x --global", "provider": "og", "providers": OPTIONS["providers"]})
         self.assertFalse([row for row in rows if row.current])
