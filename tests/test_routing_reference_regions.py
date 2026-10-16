@@ -561,5 +561,49 @@ class QuotedRelayUrlMaskTests(unittest.TestCase):
                     self.assertEqual(payload['route_hint']['primary_workflow'], expected)
 
 
+class WordEndingQuoteMarkTests(unittest.TestCase):
+    def test_a_quote_mark_that_ends_a_word_opens_nothing(self) -> None:
+        # Read as an opening quote, the `'` of a plural possessive never
+        # closed, and the rest of the message was masked through EOF.
+        for message in (
+            "Redact the PII in the customers' export and send it to Acme.",
+            "Pseudonymize the users' IDs and share them with the vendor.",
+            "Send the export to the partners'",
+            "We were goin' to $ulw-work the build",
+            "Check the users', then the admins' (and the owners') rows.",
+            "Ask the users'. Then send the export to Acme.",
+            "users' 데이터를 Acme에 보내줘",
+            "請把users'資料寄給Acme",
+            # `’` opens no quote at all; a word ending in it reads the same.
+            "Redact the customers’ export and send it to Acme.",
+        ):
+            with self.subTest(message=message):
+                result = reference_regions(message)
+                self.assertEqual((result.executable_text, result.references), (message, ()))
+
+    def test_it_still_closes_a_quote_and_other_quotes_still_mask(self) -> None:
+        for before, reference, after in (
+            ("Redact the users' ", "'draft'", " file and send it to Acme."),
+            # It closes an open quote, so the rest stays executable.
+            ("Explain ", "'the users'", " data' to Acme"),
+            ("Explain ", "‘the users’", " data’ to Acme"),
+            ("Explain ", "'$ulw-work'", " to me"),
+            ("x = ", "'a'", ""),
+            # Glued to more text, it opens one. Before a second `'`, the two
+            # are one empty quote, not a quote that runs to the end.
+            ("print(f", "'$ulw-work fix it'", ")"),
+            ("Read API", "''", "_KEY= from the env"),
+            # After a CJK character, it opens one.
+            ("請解釋", "'工作流程'", "的意思"),
+            ("고객", "' list", ""),
+            ("Explain ", "'it's $ulw-work", ""),
+        ):
+            message = before + reference + after
+            with self.subTest(message=message):
+                result = reference_regions(message)
+                self.assertEqual(result.executable_text, before + blank(reference) + after)
+                self.assertEqual(result.references, (reference,))
+
+
 if __name__ == "__main__":
     unittest.main()

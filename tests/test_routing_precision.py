@@ -21,7 +21,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # and `expected=` in src/maintenance/drift.py. Every other count
         # assertion compares against this producer instead of a literal.
         # omh-docs contributes four measured negatives and five measured interventions.
-        self.assertEqual(payload["summary"]["case_count"], 828)
+        self.assertEqual(payload["summary"]["case_count"], 829)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -39,12 +39,14 @@ class RoutingPrecisionTests(unittest.TestCase):
         # that send a price alert and a rules document, each Hermes' /loop
         # answered directly (+2); its second review two more that subscribe
         # to an alert and reprice a price list (+2).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 215)
+        # The plural-possessive masker fix adds a quoted workflow name after
+        # "the users'", answered directly as a reference (+1).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 216)
         self.assertEqual(payload["summary"]["file_lookup_count"], 9)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
         self.assertEqual(payload["summary"]["catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["intervention_case_count"], 862)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 863)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

@@ -439,7 +439,9 @@ _SEND_ROUTE_WORDS = frozenset({"at", "by", "for", "from", "on", "through", "usin
 # place ("the staging server"), but only the whole phrase is an anchor.
 _ENGLISH_PHRASE_ANCHORS = tuple(entry for entry in DATA_SHARE_INTERNAL_DESTINATIONS if " " in entry)
 _ENGLISH_ANCHOR_PARTS = frozenset(word for entry in _ENGLISH_PHRASE_ANCHORS for word in entry.split())
-_QUOTES = re.compile(r"[\"“”‘’`]|(?<!\w)'|'(?!\w)")
+# Quote marks. A `'` or `’` between two word characters is an apostrophe
+# ("it's", "it’s"), not a quote: smart punctuation types the second.
+_QUOTES = re.compile(r"[\"“”‘`]|(?<!\w)['’]|['’](?!\w)")
 # Words that name another job: a legal question (`legal-compliance-review`),
 # Hermes (a setting of it, or Hermes doing the job), or a scan across storage.
 DATA_SHARE_WITHDRAWAL_TOKENS = frozenset(
