@@ -1223,9 +1223,10 @@ The shipped catalog is editorial policy, not benchmark output:
 
 Chain customization is a config edit, not a source edit — bare
 `omh model-chains` (or `omh model`) opens an arrow-key picker on a terminal:
-one row per category, up/down to move, left/right to step the head model
-through the aliases chains name today, `-`/`+` to step its effort, `d` to
-restore the shipped default, Enter to save and `q` to leave the file alone;
+one row per category, up/down to move (stopping at the first and the last
+row), left/right to step the head model through the aliases chains name
+today, `-`/`+` to step its effort, `d` to restore the shipped default, Enter
+to save and Esc (or `q`) to leave the file alone;
 inside the OMH TUI, `/omh-model` opens the same picker over the
 transcript (Hermes' own `/model` picks the session model and keeps its name;
 the two edit different things); `omh model-chains show` prints the current

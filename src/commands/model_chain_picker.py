@@ -1,12 +1,13 @@
 """The arrow-key chain picker behind bare `omh model-chains`.
 
-One row per mixture category. Up and down move the cursor; on the selected
-row, left and right step the head model through the aliases chains name
-today, `-` and `+` step its reasoning effort, and `d` restores the shipped
-default. Enter hands every edited category back to the command, which writes
-them through the same validated document `omh model-chains set` writes; q,
-Esc or Ctrl-C hands back nothing, so a cancelled picker cannot have touched
-the file by construction.
+One row per mixture category. Up and down move the cursor, stopping at the
+first and the last row as every OMH list does; on the selected row, left and
+right step the head model through the aliases chains name today, `-` and `+`
+step its reasoning effort, and `d` restores the shipped default. Enter hands
+every edited category back to the command, which writes them through the
+same validated document `omh model-chains set` writes; Esc, q or Ctrl-C
+hands back nothing, so a cancelled picker cannot have touched the file by
+construction.
 
 The chain rules — which aliases the ring holds, how an effort steps, how a
 save composes the document — live in the plugin bundle's
@@ -78,7 +79,7 @@ KEY_HINTS = (
     ("−/+", "effort"),
     ("d", "default"),
     ("⏎", "save"),
-    ("q", "cancel"),
+    ("esc", "cancel"),
 )
 
 _MARGIN = 3
@@ -289,7 +290,7 @@ def render_frame(
     if changed:
         lines.append(" " * _MARGIN + paint(f"{changed} unsaved change{'s' if changed != 1 else ''} · ⏎ writes the file", "ui_warn"))
     else:
-        lines.append(" " * _MARGIN + paint("no unsaved changes · ⏎ or q leaves the file as it is", "banner_dim"))
+        lines.append(" " * _MARGIN + paint("no unsaved changes · ⏎ or esc leaves the file as it is", "banner_dim"))
     head_model = chain[0][0]
     if not served.get(head_model, True):
         note = _clip(f"! {labels.get(head_model, head_model)} is not served by this machine's providers", inner)
@@ -341,9 +342,9 @@ def run_picker(
             return {name: chain for name, chain in chains.items() if chain != original[name]}
         name = rows[cursor]["category"]
         if key == KEY_UP:
-            cursor = (cursor - 1) % len(rows)
+            cursor = max(cursor - 1, 0)
         elif key == KEY_DOWN:
-            cursor = (cursor + 1) % len(rows)
+            cursor = min(cursor + 1, len(rows) - 1)
         elif key == KEY_LEFT:
             chains[name] = step_head_model(chains[name], aliases, -1)
         elif key == KEY_RIGHT:

@@ -243,6 +243,7 @@ REWIND_SAY = (
     "⏪ replaces #{ordinal}+ · esc",
 )
 REWIND_BUSY_NOTICE = "Rewind works between turns: let this one end, or interrupt it with Esc."
+CHAINS_CLOSED_NOTICE = "Hermes asked you something, so /omh-model closed:"
 # What the mode row says while the draft spans lines on a terminal that has sent no key report, where Shift+Enter
 # arrives as Enter and sends; longest first.
 NEWLINE_KEYS = ("⏎ sends · \\⏎, alt+⏎ or ctrl+j adds a line", "\\⏎ or alt+⏎ adds a line", "alt+⏎ adds a line")
@@ -942,6 +943,8 @@ class App(ModesMixin, AgentViewMixin):
         self.rewind_messages: list[dict[str, Any]] = []  # the history the picker was opened over
         self.rewind: Rewind | None = None  # a picked prompt waiting to be sent again
         self.model_picker: ModelPicker | None = None  # bare /model's list of what Hermes offers
+        self.chains_open = False  # /omh-model's picker has the terminal (`_omh_model`)
+        self.chains_closing = False  # a server request arrived while it was open: its next read cancels it
         self.export_said = False  # EXPORT_NOTE has been said: the next /export runs
         self.interrupt_armed: str | None = None  # the agent a first `x` in the list asked about
         self.agent_steer: str | None = None  # the agent `s` picked: the next line sent is its steer
@@ -1717,6 +1720,8 @@ class App(ModesMixin, AgentViewMixin):
             return
         if self.pager is not None:
             self._leave_pager()
+        if self.chains_open:
+            self.chains_closing = True  # the picker cancels at its next read; the question shows once it has closed
         opened = open_request(request.id, request.method, request.params)
         if isinstance(opened, ImmediateAnswer):
             self._respond(opened.answer)
@@ -3148,13 +3153,16 @@ class App(ModesMixin, AgentViewMixin):
 
         The main screen (scrollback and the live region) stays untouched underneath
         and comes back as it was, so the picker leaves no frame behind; only a resize
-        while it was open needs the full redraw. Gateway events wait while it is open: a
-        new approval shows once the picker closes, and Hermes may withdraw a request on its
-        own timeout meanwhile. Nothing is answered for the person either way.
+        while it was open needs the full redraw. The gateway is still read while it is
+        open (`_picker_reader`): a streaming reply goes on into the transcript underneath,
+        and a server request closes the picker, as it closes the pager, with nothing
+        saved; the question opens once the picker's screen is gone. Nothing is answered
+        for the person either way.
         """
         before = self.size
         self._set_mouse(False)  # the strip is not on the picker's screen; the next frame asks again
         self.terminal.write(ALT_SCREEN_ON + CURSOR_HOME + HIDE_CURSOR)
+        self.chains_open, self.chains_closing = True, False
         try:
             message = self.pick_model_chains(
                 self.environ,
@@ -3166,11 +3174,12 @@ class App(ModesMixin, AgentViewMixin):
             )
         finally:
             self.terminal.write(ALT_SCREEN_OFF + self._caret_visibility())
+            closed_for_question, self.chains_open, self.chains_closing = self.chains_closing, False, False
         self.size = self.terminal.size()
         if self.size != before:
             self._full_redraw()
         self.dirty = True
-        self.transcript.add_notice(message)
+        self.transcript.add_notice(f"{CHAINS_CLOSED_NOTICE} {message}" if closed_for_question else message)
 
     def _picker_reader(self) -> Callable[[], str]:
         """A picker's `read_key` over the TUI's terminal and key decoder; a hung-up terminal cancels.
@@ -3179,14 +3188,19 @@ class App(ModesMixin, AgentViewMixin):
         the picker's off still types nothing and its ESC does not cancel. As
         in the loop, an empty read settles held bytes only once input has been
         quiet for `FLUSH_SILENCE_SECONDS`: a resize signal ends a read early
-        with nothing read, and must not turn an arrow's ESC into Esc.
+        with nothing read, and must not turn an arrow's ESC into Esc. Between
+        reads it takes what the gateway sent, as the loop would, so nothing
+        waits on the picker; once a server request has come (or the gateway is
+        gone) the next key it hands the picker is the one that cancels.
         """
         pending: deque[Key | Paste | Mouse] = deque()
 
         def read_key() -> str:
             while not pending:
+                if self.chains_closing or self.exit_code is not None:
+                    return KEY_QUIT
                 try:
-                    data = self.terminal.read(READ_TIMEOUT_SECONDS)
+                    data = self.terminal.read(READ_TIMEOUT_SECONDS, self.wake)
                 except EOFError:
                     return KEY_QUIT
                 if data:
@@ -3194,6 +3208,7 @@ class App(ModesMixin, AgentViewMixin):
                     pending.extend(self.decoder.feed(data))
                 elif self.clock() - self.input_at >= FLUSH_SILENCE_SECONDS:
                     pending.extend(self.decoder.flush(self.terminal.mouse_reporting, self.mouse_off_at))
+                self._drain_gateway()
             return picker_key(pending.popleft())
 
         return read_key
