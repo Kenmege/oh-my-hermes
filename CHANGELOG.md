@@ -38,6 +38,9 @@ All notable changes will be documented here.
   HUD, which lags behind a switch. The status line no longer carries it; the
   composer's rules and mode row (the status line on a short terminal) say the
   mode, as Hermes confirmed it for the session, in the words the docs use.
+- **A first Ctrl+C between turns says `ctrl+c again to exit` on the mode row**
+  for the 2 s a second press exits in, as Esc's first press does, instead of
+  leaving a `Ctrl+C again to exit` notice in the scrollback every time.
 
 - **Korean spend and data-share requests reach their gates.** "내 카드로
   결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보

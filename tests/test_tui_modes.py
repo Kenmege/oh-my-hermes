@@ -859,6 +859,29 @@ class ModeCycleTests(unittest.TestCase):
         self.assertEqual({params["session_id"] for params in configs}, {SID, "live-2"})
 
 
+class ExitHintTests(unittest.TestCase):
+    def test_a_first_ctrl_c_says_so_on_the_mode_row_for_two_seconds_and_writes_nothing(self) -> None:
+        from omh.tui.app import EXIT_CONFIRM_SECONDS, EXIT_HINT
+
+        now = [100.0]
+        app, _client = make_app(clock=lambda: now[0])
+        resting = drawn(app)
+        app._on_input(Key(CHAR, "c", ctrl=True))
+        screen = drawn(app)
+        status = next(index for index, row in enumerate(screen) if row.startswith("⚚ OMH"))
+        self.assertIn(EXIT_HINT, screen[status - 1])  # the mode row, as the Esc-armed message is
+        self.assertEqual(notices(app), [])  # nothing left in the transcript or the scrollback
+        self.assertIsNone(app.exit_code)
+        now[0] += EXIT_CONFIRM_SECONDS + 0.1
+        app._expire_exit()
+        self.assertEqual(drawn(app), resting)
+        app._on_input(Key(CHAR, "c", ctrl=True))  # the window passed: this press arms again
+        self.assertIsNone(app.exit_code)
+        now[0] += EXIT_CONFIRM_SECONDS / 2
+        app._on_input(Key(CHAR, "c", ctrl=True))
+        self.assertEqual(app.exit_code, 0)
+
+
 class HermesOwnApprovalsTests(unittest.TestCase):
     """Approvals Hermes turned off on its own: accept stays shown, and Shift+Tab moves plan alone."""
 

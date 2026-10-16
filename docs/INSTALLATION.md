@@ -340,7 +340,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   the reasoning effort when Hermes reports one. While Hermes asks something
   it names that question's keys (`↑↓ pick · enter confirms · d or esc
   denies`), and while a picker is open, the picker's (`↑↓ move · enter
-  switches · esc closes`). The working row and the mode row offer Esc for an interrupt only
+  switches · esc closes`). After a first Ctrl+C between turns it says
+  `ctrl+c again to exit` for the 2 s a second one exits in, and writes nothing
+  to the transcript. The working row and the mode row offer Esc for an interrupt only
   while Esc would do that: not while a question, a picker, the history
   search, the agent list, a picked steer or rewind, the `@` menu or a draft in
   the composer takes Esc, so Esc means one thing on the screen. On a row too

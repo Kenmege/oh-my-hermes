@@ -376,7 +376,7 @@ TITLE_SET = "\x1b]2;{}" + STRING_TERMINATOR
 TITLE_DEFAULT = "Hermes"
 TITLE_CHARS = 80
 
-EXIT_HINT = "Ctrl+C again to exit"
+EXIT_HINT = "ctrl+c again to exit"  # on the mode row while a second Ctrl+C would exit
 INTERRUPT_HINT = "esc to interrupt"
 OSC52_COPY = "\x1b]52;c;{}\x07"
 # The completion menu's name column: at least this wide, wider for the longest name it lists (OMH skills are
@@ -1259,6 +1259,7 @@ class App(ModesMixin, AgentViewMixin):
         self._expire_calls()
         self._expire_notification()
         self._expire_escape()
+        self._expire_exit()
         self._track_path_token()
         self._ask_path_completion_when_due()
         self._ask_tail_when_due()
@@ -1307,6 +1308,8 @@ class App(ModesMixin, AgentViewMixin):
             due.append(self.notification.expires_at)
         if self.escape_armed is not None:
             due.append(self.escape_armed[1] + DOUBLE_ESCAPE_SECONDS)
+        if self.exit_armed_at is not None:
+            due.append(self.exit_armed_at + EXIT_CONFIRM_SECONDS)
         return max(min(due) - now, 0.0)
 
     def _expire_notification(self) -> None:
@@ -1962,6 +1965,12 @@ class App(ModesMixin, AgentViewMixin):
             self._rewind("")
         return True
 
+    def _expire_exit(self) -> None:
+        """Forget a first Ctrl+C once the second can no longer exit, so the mode row stops naming it."""
+        if self.exit_armed_at is not None and self.clock() - self.exit_armed_at > EXIT_CONFIRM_SECONDS:
+            self.exit_armed_at = None
+            self.dirty = True
+
     def _expire_escape(self) -> None:
         """Forget a first Esc once the second can no longer come, so the mode row stops naming it."""
         if self.escape_armed is not None and self.clock() - self.escape_armed[1] > DOUBLE_ESCAPE_SECONDS:
@@ -2147,8 +2156,8 @@ class App(ModesMixin, AgentViewMixin):
         if self.exit_armed_at is not None and now - self.exit_armed_at <= EXIT_CONFIRM_SECONDS:
             self.exit_code = 0
             return
-        self.exit_armed_at = now
-        self.transcript.add_notice(EXIT_HINT)
+        self.exit_armed_at = now  # the mode row says so until the second press can no longer come
+        self.dirty = True
 
     def _menu_entries(self) -> list[Completion]:
         """Completions while the composer holds a leading `/word` and nothing else."""
@@ -3281,7 +3290,7 @@ class App(ModesMixin, AgentViewMixin):
         return self.picker is not None or self.rewind_picker is not None or self.model_picker is not None
 
     def _mode_row_line(self, cols: int, strip: Line | None = None) -> Line:
-        """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's second press).
+        """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's or Ctrl+C's second press).
 
         A picked steer or rewind keeps room for its last form but one, the shortest that still names what it
         acts on, beside the effort: the strip collapses (`● 2 agents ↓`) before that would be cut. The mode's
@@ -3300,6 +3309,8 @@ class App(ModesMixin, AgentViewMixin):
             say, say_style = tuple(form.format(name=steered.name) for form in STEER_SAY), self.theme.accent
         elif self.rewind is not None:
             say, say_style = tuple(form.format(ordinal=self.rewind.ordinal) for form in REWIND_SAY), self.theme.warn
+        elif self.exit_armed_at is not None and self.clock() - self.exit_armed_at <= EXIT_CONFIRM_SECONDS:
+            say = EXIT_HINT
         elif armed is not None and self.clock() - armed[1] <= DOUBLE_ESCAPE_SECONDS:
             say = ESCAPE_AGAIN.format(armed[0])
         if isinstance(say, tuple):
