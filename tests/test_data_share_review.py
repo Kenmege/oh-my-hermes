@@ -850,6 +850,59 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
         self.assertFalse(data_share_request_admitted("redact pii in the export and send it to the data team"))
         self.assertTrue(data_share_request_admitted("고객 정보 마스킹해서 개발팀에 보내줘", shielded=True))
 
+    def test_a_party_word_describes_the_data_only_right_before_a_container(self) -> None:
+        # Right before a data container or a field name, not possessive and
+        # not after "for", "to" or "from", a party word says whose records
+        # the data holds: the place decides.
+        for message in (
+            "redact the pii in the customer export before we send it to the dev team",
+            "pseudonymize the patient csv and share it with our qa team",
+            "anonymize the user logs and upload them to the data team",
+            "redact the customers table and send it to the dev team",
+            "redact the customer emails export and send it to the dev team",
+            "redact the member records and share them with the data team",
+            *(
+                f"redact the {word} export and send it to the dev team"
+                for word in (
+                    "account", "accounts", "applicant", "applicants", "client", "clients", "customer", "customers",
+                    "donor", "donors", "employee", "employees", "member", "members", "patient", "patients", "staff",
+                    "student", "students", "subscriber", "subscribers", "user", "users",
+                )
+            ),
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(_offered(message))
+        # Anywhere else it may name a recipient, and a word off the list never
+        # describes the data.
+        for message in (
+            "redact the customer's export and send it to the dev team",
+            "redact the customers' export and send it to the dev team",
+            "redact the export for the customer and send it to the dev team",
+            "redact the pii for the customer export and send it to the dev team",
+            "redact the pii from the client file and send it to the dev team",
+            "redact the pii in the export to the client file and send it to the dev team",
+            "redact the customer export the regulator wants and send it to the dev team",
+            "redact the patient csv for the insurer and send it to the data team",
+            "anonymize the user logs acme will audit and upload them to staging",
+            "de-identify the client file headed to the auditors and send it to the security team",
+            "redact the customer export customers will see and send it to the dev team",
+            "redact the customer support logs and send them to the dev team",
+            "redact the acme export and send it to the dev team",
+            "redact the partner export and send it to the dev team",
+            "redact the bank records and send them to the dev team",
+            "redact the insurer file and send it to the dev team",
+            "redact the customer-facing export and send it to the dev team",
+            # The place still decides: a customer, the customer team.
+            "redact the customer export, then send it to the customer",
+            "redact the customer export and send it to the customer team",
+            # A copy given to someone outside, also beside the person.
+            "redact the pii in the customer export and send it to the dev team and give me and acme a copy",
+            "redact the pii in the customer export and send it to the dev team and give myself and acme a copy",
+            "redact the pii in the customer export and send it to the dev team and give acme back the file",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(_offered(message))
+
     def test_the_router_carries_the_maskers_report(self) -> None:
         from omh.routing.query import RoutingQuery
 
@@ -952,6 +1005,30 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
                 "table", "tables", "that", "the", "then", "these", "this", "those", "transcript", "transcripts",
                 "tsv", "us", "we", "xlsx", "you",
             },
+            "_DATA_CONTAINERS": {
+                "archive", "archives", "backup", "backups", "column", "columns", "copies", "copy", "corpus", "csv",
+                "csvs", "data", "database", "databases", "dataset", "datasets", "db", "document", "documents",
+                "dump", "dumps", "excerpt", "excerpts", "export", "exports", "extract", "extracts", "field",
+                "fields", "file", "files", "json", "list", "lists", "log", "logs", "records", "report", "reports",
+                "row", "rows", "sample", "samples", "sheet", "sheets", "spreadsheet", "spreadsheets", "table",
+                "tables", "transcript", "transcripts", "tsv", "xlsx",
+            },
+            "_DATA_FIELDS": {
+                "address", "addresses", "birth", "date", "dates", "details", "dob", "email", "emails", "id",
+                "identifier", "identifiers", "ids", "info", "information", "ip", "ips", "name", "names", "number",
+                "numbers", "personal", "phone", "phones", "pii", "sensitive", "ssn", "ssns",
+            },
+            "DATA_SHARE_PARTY_MODIFIERS": {
+                "account", "accounts", "applicant", "applicants", "client", "clients", "customer", "customers",
+                "donor", "donors", "employee", "employees", "member", "members", "patient", "patients", "staff",
+                "student", "students", "subscriber", "subscribers", "user", "users",
+            },
+            "_MODIFIER_BLOCKERS": {
+                "for", "from", "to",
+            },
+            "_SPAN_DETERMINERS": {
+                "a", "an", "my", "our", "that", "the", "these", "this", "those",
+            },
             "_HANDED_THINGS": {
                 "access", "copies", "copy", "corpus", "csv", "csvs", "dataset", "datasets", "dump", "dumps",
                 "excerpt", "excerpts", "export", "exports", "extract", "extracts", "file", "files", "link",
@@ -959,6 +1036,12 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             },
             "_FIRST_PERSON": {
                 "me", "myself", "ourselves", "us",
+            },
+            "_AFTER_THE_PERSON": {
+                "a", "access", "an", "copies", "copy", "corpus", "csv", "csvs", "dataset", "datasets", "dump",
+                "dumps", "excerpt", "excerpts", "export", "exports", "extract", "extracts", "file", "files",
+                "link", "links", "log", "logs", "records", "some", "spreadsheet", "spreadsheets", "that", "the",
+                "this", "version",
             },
             "_SEND_ROUTE_WORDS": {
                 "at", "by", "for", "from", "on", "through", "using", "via",
@@ -1001,6 +1084,7 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
         for name, expected in tables.items():
             with self.subTest(table=name):
                 self.assertEqual(set(getattr(data_share_cues, name)), expected)
+        self.assertEqual(data_share_cues._HANDED_BACK, (["it", "back"], ["them", "back"]))
 
     def test_outside_words_keep_the_review(self) -> None:
         # Words that name an outside party, beside a unit that would otherwise

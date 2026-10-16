@@ -660,8 +660,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # coworker, another department, the in-house data team and staging
             # (11, three of them without a file and already held on main); and
             # Korean ones shared with another department and a colleague and
-            # uploaded to the QA environment (3).
-            expected=827,
+            # uploaded to the QA environment (3). Its round-4 review adds one:
+            # a patient CSV shared with our QA team, where "patient" says
+            # whose records the CSV holds (1).
+            expected=828,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

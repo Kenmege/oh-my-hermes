@@ -28,7 +28,13 @@ All notable changes will be documented here.
   words -- where the data is, a determiner, the speaker, data containers and
   personal-data field names -- may stand from the lead verb to the first
   send, its object included ("the export Acme will get", "the CSV the bank
-  wants", "before Acme sees it" and "the customer export" keep the review);
+  wants" and "before Acme sees it" keep the review). A word that names whose
+  records the data holds (customer, user, patient, client, member, employee,
+  staff, student, donor, applicant, subscriber, account) may stand there only
+  right before a data container or a field name, not possessive and not
+  after "for", "to" or "from": "the customer export", "the patient CSV" and
+  "the user logs" describe the data, while "the customer's export" and "the
+  export for the customer" keep the review;
   every later send must name such a place after its "to" or "with", and so
   must every place it joins ("the data team and Acme", "cc the auditor");
   "give", "hand" and "pass" without "to" send nothing to the person and
@@ -47,12 +53,13 @@ All notable changes will be documented here.
   party lost the review on admission, the router or the hint, and the two
   surfaces never disagree with every cache cleared. Korean outside requests
   gained it (29 to 40 of 40, 32 to 34 of 35, 34 to 53 of 53, 10 to 31 of 31,
-  1 to 18 of 18). The fail-safe reading keeps the review on many inside
-  requests: 6 of 36, 14 of 35 and all 31 of the reviewer's English inside
-  requests still fire, mostly for a word before the first send that can name
-  a party ("the customer export", "the patient CSV", "the user logs"); Korean
-  inside requests fire on 2 of 36, 14 of 35 and 5 of 20. The three requests
-  the decision named without a file ("redact the pii and send it to the dev
+  1 to 18 of 18), and 47 adversarial rows written for the compound-modifier
+  rule ("the customer export the regulator wants", "the patient CSV for the
+  insurer", "the customer's export") lost nothing. Inside requests that still
+  fire, the safe direction: English 2 of 36, 12 of 35 and 14 of the
+  reviewer's 31 (each for where the data goes: a manager, HR, the intranet,
+  a bare "engineering", "in Seoul"); Korean 2 of 36, 14 of 35 and 5 of 20.
+  The three requests the decision named without a file ("redact the pii and send it to the dev
   team") were never admitted, since English admission needs a file-shaped
   carrier; they are pinned as negative controls. Every table is pinned by a
   literal snapshot, and a list of outside words must keep the review. Files

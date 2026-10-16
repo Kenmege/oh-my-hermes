@@ -43,7 +43,11 @@ not personal data at all, so all of these must hold:
   unless all of these hold (`_sends_stay_inside`): only closed words stand
   from the lead verb to the first send, its object included ("the pii in
   the export before we"; not "the export acme will get", "the csv the bank
-  wants", "before acme sees it", "the customer export"); every verb
+  wants", "before acme sees it"), and a word that names whose records the
+  data holds (customer, user, patient, client, member, ...) only right
+  before a data container or a field name, not possessive and not after
+  "for", "to" or "from" ("the customer export", "the patient csv"; not "the
+  customer's export", "the export for the customer"); every verb
   that sends it on -- send, share, upload, attach, post, forward, email, cc,
   transfer -- names after its "to" or "with" a place proven inside ("send it
   to the dev team", "share it with a colleague", "upload it to staging");
@@ -367,33 +371,56 @@ _ONWARD_SENDS = DATA_SHARE_SEND_TOKENS | {
     "transfer", "transferring",
 }
 _SENDS_ONLY_WITH_A_PLACE = frozenset({"give", "giving", "hand", "handing", "pass", "passing"})
-# "give", "hand" and "pass" with no "to" send nothing only to the person
-# ("give me a summary", "hand it back"); otherwise their first object is the
-# place ("give acme a copy", "hand the auditors the file") and the thing given
-# is not read as part of it.
+# "give", "hand" and "pass" with no "to" send nothing only to the person alone
+# ("give me a summary", "hand it back"): the person, then the thing given, a
+# determiner or nothing. Otherwise their first object is the place ("give acme
+# a copy", "give me and acme a copy", "give acme back the file") and the thing
+# given is not read as part of it.
 _FIRST_PERSON = frozenset({"me", "us", "myself", "ourselves"})
 _HANDED_THINGS = DATA_SHARE_CARRIER_TOKENS | {"access", "copies", "copy", "link", "links", "version"}
-# The only words that may stand between the lead verb and the first send, its
-# object included: where the data is, joining words, the speaker ("we", "us",
-# "i", "you", "it"), a determiner, data containers and the names of
-# personal-data fields, none of which can name a party ("the pii in the export
-# before we", "the email column from this csv before"). Any other word keeps
-# the review: "the export acme will get", "the csv the bank wants", "before
-# acme sees it", "for them", and also "the customer export" or "the crash
-# logs", the safe direction.
-_BEFORE_SEND_WORDS = DATA_SHARE_OBJECT_ENDS | DATA_SHARE_CARRIER_TOKENS | {
-    "a", "after", "an", "first", "i", "it", "my", "once", "our", "please", "that", "the", "then", "these", "this",
-    "those", "us", "we", "you",
-    # data containers
+_AFTER_THE_PERSON = _HANDED_THINGS | {"a", "an", "some", "the", "this", "that"}
+_HANDED_BACK = (["it", "back"], ["them", "back"])
+# Data containers and the names of personal-data fields. Neither can name a
+# party.
+_DATA_CONTAINERS = DATA_SHARE_CARRIER_TOKENS | {
     "archive", "archives", "backup", "backups", "column", "columns", "copies", "copy", "data", "database",
     "databases", "db", "document", "documents", "field", "fields", "json", "list", "lists", "report", "reports",
     "row", "rows", "sample", "samples", "sheet", "sheets", "table", "tables", "transcript", "transcripts", "tsv",
     "xlsx",
-    # personal-data fields
-    "address", "addresses", "birth", "date", "dates", "details", "dob", "email", "emails", "id", "identifier",
-    "identifiers", "ids", "info", "information", "ip", "ips", "name", "names", "number", "numbers", "personal",
-    "phone", "phones", "pii", "sensitive", "ssn", "ssns",
 }
+_DATA_FIELDS = frozenset(
+    {
+        "address", "addresses", "birth", "date", "dates", "details", "dob", "email", "emails", "id", "identifier",
+        "identifiers", "ids", "info", "information", "ip", "ips", "name", "names", "number", "numbers", "personal",
+        "phone", "phones", "pii", "sensitive", "ssn", "ssns",
+    }
+)
+# The only words that may stand between the lead verb and the first send, its
+# object included: where the data is, joining words, the speaker ("we", "us",
+# "i", "you", "it"), a determiner, data containers and field names ("the pii
+# in the export before we", "the email column from this csv before"). Any other
+# word keeps the review: "the export acme will get", "the csv the bank wants",
+# "before acme sees it", "for them".
+_BEFORE_SEND_WORDS = DATA_SHARE_OBJECT_ENDS | _DATA_CONTAINERS | _DATA_FIELDS | {
+    "a", "after", "an", "first", "i", "it", "my", "once", "our", "please", "that", "the", "then", "these", "this",
+    "those", "us", "we", "you",
+}
+# Whose records the data holds. One of these is allowed in that span only as a
+# compound modifier: right before a data container or a field name, not
+# possessive, and not after "for", "to" or "from" ("the customer export", "the
+# patient csv", "the user logs", "the customers table"). Anywhere else it may
+# name a recipient and keeps the review: "the customer's export", "the export
+# for the customer", "the export the customer wants". A word not on this list
+# never qualifies: "the acme export" keeps the review.
+DATA_SHARE_PARTY_MODIFIERS = frozenset(
+    {
+        "account", "accounts", "applicant", "applicants", "client", "clients", "customer", "customers", "donor",
+        "donors", "employee", "employees", "member", "members", "patient", "patients", "staff", "student",
+        "students", "subscriber", "subscribers", "user", "users",
+    }
+)
+_MODIFIER_BLOCKERS = frozenset({"for", "from", "to"})
+_SPAN_DETERMINERS = frozenset({"a", "an", "my", "our", "that", "the", "these", "this", "those"})
 # A send's place follows one of these ("send it to the dev team", "share it
 # with a colleague") and runs to the next send or the sentence's end.
 _DESTINATION_PREPOSITIONS = frozenset({"into", "onto", "to", "with"})
@@ -478,12 +505,32 @@ def _inside(place: list[str]) -> bool:
     return _proven_inside(kinds)
 
 
-def _sends_stay_inside(words: list[str]) -> bool:
+def _closed_before_send(span: list[str], raw_span: list[str]) -> bool:
+    """Whether every word from the lead verb to the first send is a closed word or a compound party modifier."""
+    for position, word in enumerate(span):
+        if word in _BEFORE_SEND_WORDS:
+            continue
+        following = span[position + 1] if position + 1 < len(span) else ""
+        earlier = next((before for before in reversed(span[:position]) if before not in _SPAN_DETERMINERS), "")
+        if (
+            word in DATA_SHARE_PARTY_MODIFIERS
+            and "'" not in raw_span[position]
+            and (following in _DATA_CONTAINERS or following in _DATA_FIELDS)
+            and earlier not in _MODIFIER_BLOCKERS
+        ):
+            continue
+        return False
+    return True
+
+
+def _sends_stay_inside(words: list[str], raw_words: list[str]) -> bool:
     """Whether every verb that sends the data on names a place proven inside the company.
 
     Sends are read after the lead verb's object, which is the data ("redact
     the email column" sends nothing). From the lead verb to the first send,
-    its object included, only closed words may stand (`_BEFORE_SEND_WORDS`). Each send's place runs from its "to" or
+    its object included, only closed words may stand (`_BEFORE_SEND_WORDS`),
+    and a party modifier right before a container or a field
+    (`_closed_before_send`). Each send's place runs from its "to" or
     "with" to the next send or the sentence's end, so a second place joined
     to the first is read too ("the data team and acme", "the data team or the
     auditor"). "give", "hand" and "pass" with no "to" take their first object
@@ -491,14 +538,15 @@ def _sends_stay_inside(words: list[str]) -> bool:
     """
     start = next((index for index, word in enumerate(words) if index and word in DATA_SHARE_OBJECT_ENDS), len(words))
     sends = [index for index in range(start, len(words)) if words[index] in _ONWARD_SENDS]
-    if sends and not set(words[1 : sends[0]]) <= _BEFORE_SEND_WORDS:
+    if sends and not _closed_before_send(words[1 : sends[0]], raw_words[1 : sends[0]]):
         return False
     inside = False
     for number, index in enumerate(sends):
         reach = words[index + 1 : sends[number + 1] if number + 1 < len(sends) else len(words)]
         preposition = next((position for position, word in enumerate(reach) if word in _DESTINATION_PREPOSITIONS), None)
         if preposition is None and words[index] in _SENDS_ONLY_WITH_A_PLACE:
-            if (reach[:1] and reach[0] in _FIRST_PERSON) or "back" in reach[:2]:
+            to_the_person = reach[:1] and reach[0] in _FIRST_PERSON and (reach[1:2] == [] or reach[1] in _AFTER_THE_PERSON)
+            if to_the_person or reach[:2] in _HANDED_BACK:
                 continue
             place = [word for word in reach if word not in _HANDED_THINGS]
         elif preposition is None:
@@ -514,6 +562,7 @@ def _sends_stay_inside(words: list[str]) -> bool:
 
 
 def _leaving(text: str, tokens: set[str], words: list[str], shielded: bool) -> bool:
+    raw_words = _WORD.findall(text)
     if not tokens & DATA_SHARE_CARRIER_TOKENS:
         return False
     if tokens & DATA_SHARE_RECIPIENT_TOKENS or contains_boundary_phrase(text, DATA_SHARE_RECIPIENT_PHRASES):
@@ -523,7 +572,7 @@ def _leaving(text: str, tokens: set[str], words: list[str], shielded: bool) -> b
         or contains_boundary_phrase(text, DATA_SHARE_HAND_PHRASES)
         or _gives_it_away(words)
     )
-    return sends and (shielded or bool(_QUOTES.search(text)) or not _sends_stay_inside(words))
+    return sends and (shielded or bool(_QUOTES.search(text)) or not _sends_stay_inside(words, raw_words))
 
 
 def data_share_request_admitted(text: str, *, shielded: bool = False) -> bool:

@@ -21,7 +21,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # and `expected=` in src/maintenance/drift.py. Every other count
         # assertion compares against this producer instead of a literal.
         # omh-docs contributes four measured negatives and five measured interventions.
-        self.assertEqual(payload["summary"]["case_count"], 827)
+        self.assertEqual(payload["summary"]["case_count"], 828)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])

@@ -6843,6 +6843,17 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "data-share-review",
     ),
+    # Round-4: a party word right before a data container says whose records
+    # the data holds, so the most common phrasing of an inside request names
+    # no review. Main led its clarify with the review.
+    RoutingPrecisionCase(
+        "patient-csv-shared-with-our-qa-team-is-not-a-data-share-review",
+        "Pseudonymizing a patient CSV before our QA team gets it keeps it inside the company",
+        "pseudonymize the patient csv and share it with our qa team",
+        "answer_clarification",
+        "",
+        "data-share-review",
+    ),
 )
 
 
