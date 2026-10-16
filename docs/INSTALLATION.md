@@ -879,7 +879,8 @@ mode, which then stays `queue`), reading the command list and the
 the gateway itself exits mid-session with a failure, the TUI starts it again
 the way Hermes' launcher set it up and resumes the same session, saying so
 (`The Hermes gateway exited (code 1): starting it again and resuming session
-<id> (1 of 3 in 60 s); what you type waits until it is back.`), as Hermes' own
+<id> (1 of 3 in 60 s); what you type waits until it is back, and ctrl+c
+leaves.`), as Hermes' own
 TUI does; each attempt waits up to 15 s for the new gateway, the time Hermes'
 own TUI gives one before it reports a slow start (or what
 `HERMES_TUI_STARTUP_TIMEOUT_MS` sets, at least 5 s, as there). A question it had asked closes
@@ -890,7 +891,8 @@ interrupted, `▪`), and what you queued comes back to the composer as after an 
 does this at most three times in a minute, and a new gateway that exits
 before it resumed the session counts as one of them; after that, or when the
 new gateway refuses the resume or does not answer it, it leaves with the command that reopens
-the session in `hermes --tui`. A gateway that exits normally, or after you
+the session in `hermes --tui`, and Ctrl+C or Ctrl+D while it waits leaves the
+same way, the new gateway stopped. A gateway that exits normally, or after you
 quit, is not started again. A
 turn that brings no event the TUI shows, only types it does not know (Hermes
 renamed its turn events), gets one notice pointing at `omh doctor`, which

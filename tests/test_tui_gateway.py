@@ -215,6 +215,42 @@ class GatewayStartupTests(ReplayTestCase):
         # start() already closed stdin and reaped the child; close() reports the same exit.
         self.assertEqual(client.close(grace=FAST_GRACE), 0)
 
+    def test_a_cancel_ends_the_wait_for_ready_and_the_child_is_reaped_with_short_waits(self) -> None:
+        # A respawn waits inside one loop step: the person's Ctrl+C must end it (`App._respawn_cancel`).
+        from omh.tui.gateway import UNREADY_CLOSE_GRACE_SECONDS, GatewayCancelled
+
+        client = self.make_client(Scenario("session"))  # silent until its stdin closes
+        asked = []
+        closes = []
+        close = client.close
+
+        def recorded(grace: float = 3.0, terminate_grace: float | None = None) -> int | None:
+            closes.append((grace, terminate_grace))
+            return close(grace, terminate_grace)
+
+        client.close = recorded  # type: ignore[method-assign]
+        started = time.monotonic()
+        with self.assertRaises(GatewayCancelled):
+            client.start(ready_timeout=30.0, cancel=lambda: asked.append(1) or len(asked) >= 3)
+        self.assertLess(time.monotonic() - started, 5.0)  # three polls, not the 30 s
+        self.assertEqual(closes[0], (UNREADY_CLOSE_GRACE_SECONDS, UNREADY_CLOSE_GRACE_SECONDS))
+        self.assertEqual(close(FAST_GRACE), 0)  # reaped already
+
+    def test_a_start_that_fails_closes_its_child_with_the_short_waits_too(self) -> None:
+        from omh.tui.gateway import UNREADY_CLOSE_GRACE_SECONDS
+
+        client = self.make_client(Scenario("session"))
+        closes = []
+        close = client.close
+        def recorded(grace: float = 3.0, terminate_grace: float | None = None) -> int | None:
+            closes.append((grace, terminate_grace))
+            return close(grace, terminate_grace)
+
+        client.close = recorded  # type: ignore[method-assign]
+        with self.assertRaises(GatewayUnavailable):
+            client.start(ready_timeout=0.3)
+        self.assertEqual(closes[0], (UNREADY_CLOSE_GRACE_SECONDS, UNREADY_CLOSE_GRACE_SECONDS))
+
     def test_stderr_is_drained_while_starting_and_kept_to_a_bounded_tail(self) -> None:
         # Far more than a pipe buffer: an undrained stderr would block the fake before ready.
         flood = tuple(f"warning {index}" for index in range(5000))

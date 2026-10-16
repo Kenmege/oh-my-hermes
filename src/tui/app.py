@@ -120,6 +120,7 @@ from .history import SEARCH_ACCEPT, SEARCH_CANCEL, SEARCH_HINTS, HistorySearch, 
 from .gateway import (
     Event,
     GatewayCallError,
+    GatewayCancelled,
     GatewayClient,
     GatewayExited,
     GatewayTimeout,
@@ -370,9 +371,11 @@ STARTUP_TIMEOUT_ENV = "HERMES_TUI_STARTUP_TIMEOUT_MS"
 STARTUP_TIMEOUT_MIN_SECONDS = 5.0
 RESPAWN_NOTICE = (
     "{reason}: starting it again and resuming session {session} ({attempt} of {limit} in {window:g} s); "
-    "what you type waits until it is back."
+    "what you type waits until it is back, and ctrl+c leaves."
 )
 RESPAWNED_NOTICE = "Resumed session {session} on a new Hermes gateway."
+RESPAWN_LEFT_REASON = "you left while the Hermes gateway was starting again"
+LEAVE_CHARS = ("c", "d")  # with Ctrl, read while a respawn waits: the person leaves (`App._respawn_cancel`)
 TURN_LOST_NOTICE = "The running turn was lost when the Hermes gateway exited; it was not sent again."
 QUESTION_LOST_NOTICE = "Hermes' {method} request closed unanswered: the gateway that asked has exited."
 # Between the interrupt key and the end of the turn, the working row says so in place of the spinner.
@@ -1119,7 +1122,9 @@ class App(ModesMixin, AgentViewMixin):
         # is that command's (`Transcript.command` says which), and its echo stays open until every such call is
         # answered (`_run_slash`).
         self.pending: dict[int, _Pending] = {}
-        self.typed_ahead = b""  # keys read while the cursor query after a stop waited (`_suspend`), not yet decoded
+        # Keys read while something else had the loop (a respawn's waits, the cursor query after fg), acted on by the
+        # next `_take_input` in the order they were typed.
+        self.held_input: list[Key | Paste | Mouse] = []
         self.menu_index = 0
         self.menu_closed: str | None = None  # the composer text Esc closed the `/` menu on; it stays closed over that text
         # Where the open completion menu is drawn: under the composer (True) or in the slot above it (False); None
@@ -1440,7 +1445,12 @@ class App(ModesMixin, AgentViewMixin):
         self._render_when_due()
 
     def _take_input(self, data: bytes) -> None:
-        """Decode `data` and act on each key; an empty read settles held bytes once input has been quiet long enough."""
+        """Decode `data` and act on each key; an empty read settles held bytes once input has been quiet long enough.
+
+        Keys a respawn read while it waited (`held_input`) come before the ones
+        read now; keys read while one of these waited (the cursor query after
+        fg) come after the keys before them.
+        """
         if data:
             self.input_at = self.clock()
             events = self.decoder.feed(data)
@@ -1449,14 +1459,14 @@ class App(ModesMixin, AgentViewMixin):
             events = self.decoder.flush(self.terminal.mouse_reporting, self.mouse_off_at)
         else:
             events = []
-        for event in events:
-            self.dirty = True
-            self._on_input(event)
-            if self.exit_code is not None:
-                return
-        if self.typed_ahead:  # typed after the keys above, so read after them
-            typed, self.typed_ahead = self.typed_ahead, b""
-            self._take_input(typed)
+        pending, self.held_input = [*self.held_input, *events], []
+        while pending:
+            for event in pending:
+                self.dirty = True
+                self._on_input(event)
+                if self.exit_code is not None:
+                    return
+            pending, self.held_input = self.held_input, []
 
     def _read_timeout(self) -> float:
         """How long the next read may wait: until the soonest thing the loop has to do without new input.
@@ -1690,7 +1700,10 @@ class App(ModesMixin, AgentViewMixin):
         spawned (it may still run, after a write it refused or an exit whose
         code never came), and each new client is the app's `client` from the
         moment it is made, so whatever ends the TUI while it starts or resumes
-        (SIGTERM, SIGHUP) leaves it to `_run`, which reaps it.
+        (SIGTERM, SIGHUP) leaves it to `_run`, which reaps it. While a new
+        gateway starts or resumes, Ctrl+C or Ctrl+D ends the TUI as an exhausted
+        respawn does (`_respawn_cancel`), the new child reaped; other keys read
+        meanwhile wait for the loop.
         """
         reason, self.respawn_reason = self.respawn_reason, ""
         stored = self.stored_id
@@ -1722,12 +1735,21 @@ class App(ModesMixin, AgentViewMixin):
                 old = None
             try:
                 self.client = self.make_client(gateway_spawn(self.environ), first_id=first_id)
-                self.client.start(ready_timeout=respawn_ready_seconds(self.environ))
+                self.client.start(ready_timeout=respawn_ready_seconds(self.environ), cancel=self._respawn_cancel)
+            except GatewayCancelled:  # `start` reaped its child
+                self._lose_gateway(RESPAWN_LEFT_REASON)
+                return
             except (GatewayUnavailable, GatewayCallError) as error:
                 reason = f"the new Hermes gateway did not start ({error})"
                 continue
             try:
-                result = self.client.call("session.resume", {"session_id": stored, "cols": self.size[0]})
+                result = self.client.call(
+                    "session.resume", {"session_id": stored, "cols": self.size[0]}, cancel=self._respawn_cancel
+                )
+            except GatewayCancelled:
+                self.client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
+                self._lose_gateway(RESPAWN_LEFT_REASON)
+                return
             except GatewayUnavailable as error:  # it exited too: the next attempt resumes the same session
                 self.client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
                 reason = f"the new Hermes gateway exited before it resumed session {stored} ({error})"
@@ -1765,6 +1787,23 @@ class App(ModesMixin, AgentViewMixin):
                 self.transcript.close_command(call.command)
         if steers:
             self.transcript.add_notice(STEER_LOST_NOTICE.format(count=steers, s="" if steers == 1 else "s"), NOTICE_WARN)
+
+    def _respawn_cancel(self) -> bool:
+        """Asked while a respawn waits on the new gateway: True once the person pressed Ctrl+C or Ctrl+D, or the
+        terminal hung up. Every other key read meanwhile is kept for the loop, in order (`held_input`)."""
+        try:
+            data = self.terminal.read(0.0)
+        except EOFError:
+            return True
+        if not data:
+            return False
+        self.input_at = self.clock()
+        for event in self.decoder.feed(data):
+            leaves = isinstance(event, Key) and event.name == CHAR and event.ctrl and not event.alt
+            if leaves and event.char in LEAVE_CHARS:
+                return True
+            self.held_input.append(event)
+        return False
 
     def _give_back_tell(self) -> None:
         """An open tell field closes with the gateway its deny went to; what was typed in it goes back to the draft,
@@ -2326,7 +2365,7 @@ class App(ModesMixin, AgentViewMixin):
         next frame). Continued, the TUI asks the terminal for the cursor row
         again, as at launch (`adopt_cursor_row`), so the region knows its place
         from its first frame; keys typed while that query waited are read after
-        the keys that came in the same read as the Ctrl+Z (`typed_ahead`).
+        the keys that came in the same read as the Ctrl+Z (`held_input`).
         """
         if getattr(signal, "SIGTSTP", None) is None:
             return
@@ -2341,7 +2380,9 @@ class App(ModesMixin, AgentViewMixin):
         self.region = LiveRegion(self.terminal.write)
         self.adopt_cursor_row(row)
         self.dirty = True
-        self.typed_ahead += typed
+        if typed:
+            self.input_at = self.clock()
+            self.held_input.extend(self.decoder.feed(typed))
 
     def _attachment_input(self, event: Key | Paste) -> bool:
         """Ctrl+V, Backspace on an empty composer with images queued, and a one-line paste (a drop); True when handled."""

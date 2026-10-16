@@ -437,10 +437,10 @@ class StartupRefusalTests(AppTestCase):
             client = build(spawn)
             call = client.call
 
-            def call_or_interrupt(method: str, params: dict, timeout: float = 30.0) -> dict:
+            def call_or_interrupt(method: str, params: dict, timeout: float = 30.0, cancel: object = None) -> dict:
                 if method == "session.create":
                     raise KeyboardInterrupt
-                return call(method, params, timeout)
+                return call(method, params, timeout, cancel)  # type: ignore[arg-type]
 
             client.call = call_or_interrupt  # type: ignore[method-assign]
             return client

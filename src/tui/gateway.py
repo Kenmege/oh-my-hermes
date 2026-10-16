@@ -46,6 +46,11 @@ EXIT_CODE_WAIT_SECONDS = 2.0
 # How long `close` waits after a kill, and for each reader thread to reach end of file.
 REAP_WAIT_SECONDS = 5.0
 READER_JOIN_SECONDS = 1.0
+# A child `start` gives up on (it never became ready, or refused the capabilities) has no session to save: its close
+# waits this long after stdin closes, and as long again after terminate, before the kill.
+UNREADY_CLOSE_GRACE_SECONDS = 0.5
+# How often a blocking wait given a `cancel` asks it.
+CANCEL_POLL_SECONDS = 0.1
 
 
 class GatewayUnavailable(RuntimeError):
@@ -69,6 +74,10 @@ class GatewayCallError(RuntimeError):
     def drift(self) -> bool:
         """Whether the error means this Hermes no longer speaks the contract the TUI was built for."""
         return contract.is_drift_error({"code": self.code})
+
+
+class GatewayCancelled(RuntimeError):
+    """A blocking wait (`start`, `call`) that its caller's `cancel` ended: the person left while it waited."""
 
 
 class GatewayTimeout(RuntimeError):
@@ -218,13 +227,17 @@ class GatewayClient:
         self._wake: tuple[int, int] | None = None  # (read end, write end) once `wake_fd` was asked for
         self.capabilities: dict[str, Any] = {}
 
-    def start(self, ready_timeout: float = 60.0) -> Event:
+    def start(self, ready_timeout: float = 60.0, cancel: Callable[[], bool] | None = None) -> Event:
         """Spawn the gateway, wait for `gateway.ready`, and declare `client.capabilities`.
 
         Any way the gateway fails to come up -- it cannot be spawned, exits, or
         stays silent past `ready_timeout` -- raises `GatewayUnavailable` with its
         stderr tail, after the child is reaped. A drift answer to
         `client.capabilities` raises `GatewayCallError`, also after reaping.
+        `cancel`, asked every `CANCEL_POLL_SECONDS` while it waits (under the
+        client's lock, so it must not call the client), ends the wait with
+        `GatewayCancelled` once it says True, after reaping as well. A child it
+        gives up on is closed with `UNREADY_CLOSE_GRACE_SECONDS`.
         """
         if self._process is not None:
             raise RuntimeError("the gateway client was already started")
@@ -243,15 +256,17 @@ class GatewayClient:
         self._start_thread("omh-tui-gateway-stderr", self._drain_stderr, self._process.stderr)
         deadline = self._clock() + ready_timeout
         try:
-            ready = self._take_ready(deadline, ready_timeout)
+            ready = self._take_ready(deadline, ready_timeout, cancel)
             remaining = max(deadline - self._clock(), 0.0)
-            self.capabilities = self.call("client.capabilities", {"server_requests": True}, timeout=remaining)
+            self.capabilities = self.call(
+                "client.capabilities", {"server_requests": True}, timeout=remaining, cancel=cancel
+            )
         except (GatewayUnavailable, GatewayTimeout) as error:
-            self.close()
+            self.close(grace=UNREADY_CLOSE_GRACE_SECONDS, terminate_grace=UNREADY_CLOSE_GRACE_SECONDS)
             # Read the tail after reaping: only then has the drain thread seen every line.
             raise GatewayUnavailable(str(error), tuple(self.stderr_tail())) from None
-        except GatewayCallError:
-            self.close()
+        except (GatewayCallError, GatewayCancelled):
+            self.close(grace=UNREADY_CLOSE_GRACE_SECONDS, terminate_grace=UNREADY_CLOSE_GRACE_SECONDS)
             raise
         return ready
 
@@ -264,8 +279,14 @@ class GatewayClient:
         with self._inbox_ready:
             self._polled.discard(request_id)
 
-    def call(self, method: str, params: dict[str, Any], timeout: float = 30.0) -> dict[str, Any]:
-        """Send a call and wait for its answer; every other inbound item stays queued for `poll`."""
+    def call(
+        self, method: str, params: dict[str, Any], timeout: float = 30.0, cancel: Callable[[], bool] | None = None
+    ) -> dict[str, Any]:
+        """Send a call and wait for its answer; every other inbound item stays queued for `poll`.
+
+        `cancel` is asked as `start` asks it, and ends the wait with
+        `GatewayCancelled`; an answer that still comes is then dropped.
+        """
         request_id = self._send_call(method, params, self._awaited)
         deadline = self._clock() + timeout
         response: Response | None = None
@@ -274,7 +295,10 @@ class GatewayClient:
                 remaining = deadline - self._clock()
                 if remaining <= 0:
                     break
-                self._inbox_ready.wait(remaining)
+                if cancel is not None and cancel():
+                    self._awaited.discard(request_id)
+                    raise GatewayCancelled(f"{method} was left waiting")
+                self._inbox_ready.wait(min(remaining, CANCEL_POLL_SECONDS) if cancel is not None else remaining)
             response = self._answers.pop(request_id, None)
             self._awaited.discard(request_id)
         if response is None and self._exited:
@@ -371,8 +395,9 @@ class GatewayClient:
         self._readers.append((thread, stream))
         thread.start()
 
-    def _take_ready(self, deadline: float, ready_timeout: float) -> Event:
-        """Take `gateway.ready` out of the queue; whatever arrived before it stays queued for `poll`."""
+    def _take_ready(self, deadline: float, ready_timeout: float, cancel: Callable[[], bool] | None = None) -> Event:
+        """Take `gateway.ready` out of the queue; whatever arrived before it stays queued for `poll`. `cancel` as
+        in `start`."""
         with self._inbox_ready:
             while True:
                 ready = next((item for item in self._inbox if _is_ready(item)), None)
@@ -385,7 +410,9 @@ class GatewayClient:
                 remaining = deadline - self._clock()
                 if remaining <= 0:
                     raise GatewayUnavailable(f"the gateway sent no {READY_EVENT} within {ready_timeout:g}s")
-                self._inbox_ready.wait(remaining)
+                if cancel is not None and cancel():
+                    raise GatewayCancelled(f"the wait for {READY_EVENT} was left")
+                self._inbox_ready.wait(min(remaining, CANCEL_POLL_SECONDS) if cancel is not None else remaining)
 
     def _send_call(self, method: str, params: dict[str, Any], waiting: set[int]) -> int:
         problem = contract.call_problem(method, params)

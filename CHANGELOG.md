@@ -157,9 +157,12 @@ All notable changes will be documented here.
   with a failure, the OMH TUI starts it again from the launcher's
   environment and resumes the session, saying so (`The Hermes gateway exited
   (code 1): starting it again and resuming session <id> (1 of 3 in 60 s);
-  what you type waits until it is back.`), at most three times a minute.
-  Each attempt waits up to 15 s for the new gateway, and one that exits
-  before it resumed the session uses an attempt, as in Hermes' own TUI. An
+  what you type waits until it is back, and ctrl+c leaves.`), at most three
+  times a minute.
+  Each attempt waits up to 15 s for the new gateway (`HERMES_TUI_STARTUP_TIMEOUT_MS`
+  when set, as in Hermes' own TUI), Ctrl+C or Ctrl+D while it waits leaves
+  with the new gateway stopped, and one that exits before it resumed the
+  session uses an attempt, as in Hermes' own TUI. An
   open question closes unanswered, a running turn is reported lost and not
   sent again, a steer the old gateway had not answered comes back to the
   composer at once, the subagents on the strip stay there (those still

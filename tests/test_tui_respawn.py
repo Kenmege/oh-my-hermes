@@ -70,13 +70,13 @@ class RespawnClient(RecordingClient):
         self.closed = 0
         self.ready_timeout: float | None = None
 
-    def start(self, ready_timeout: float = 60.0) -> Event:
+    def start(self, ready_timeout: float = 60.0, cancel: object = None) -> Event:
         self.ready_timeout = ready_timeout
         if self.start_error is not None:
             raise self.start_error
         return Event("gateway.ready", None, {})
 
-    def call(self, method: str, params: dict, timeout: float = 30.0) -> dict:
+    def call(self, method: str, params: dict, timeout: float = 30.0, cancel: object = None) -> dict:
         self.blocking.append((method, params))
         if isinstance(self.resume, Exception):
             raise self.resume
@@ -144,7 +144,7 @@ class RespawnTests(unittest.TestCase):
         self.assertIn(RESPAWN_NOTICE.format(reason="The Hermes gateway exited (code 1)", session=STORED, attempt=1,
                                             limit=RESPAWN_LIMIT, window=RESPAWN_WINDOW_SECONDS), said)
         self.assertIn(f"The Hermes gateway exited (code 1): starting it again and resuming session {STORED} (1 of 3 in 60 s); "
-                      "what you type waits until it is back.", said)
+                      "what you type waits until it is back, and ctrl+c leaves.", said)
         self.assertEqual(said[-1], RESPAWNED_NOTICE.format(session=STORED))
         # It reads the session's settings and command list again, as a session that opens does.
         self.assertEqual([method for method, _params in new.calls], ["config.get", "commands.catalog"])
@@ -517,15 +517,73 @@ class SignalledClient(RespawnClient):
         super().__init__()
         self.where = where
 
-    def start(self, ready_timeout: float = 60.0) -> Event:
+    def start(self, ready_timeout: float = 60.0, cancel: object = None) -> Event:
         if self.where == "start":
             raise SystemExit(143)
         return super().start(ready_timeout)
 
-    def call(self, method: str, params: dict, timeout: float = 30.0) -> dict:
+    def call(self, method: str, params: dict, timeout: float = 30.0, cancel: object = None) -> dict:
         if self.where == "resume":
             raise SystemExit(143)
         return super().call(method, params, timeout)
+
+
+class WaitingClient(RespawnClient):
+    """A respawned client whose start or resume waits, asking `cancel` each poll as `GatewayClient` does."""
+
+    def __init__(self, where: str, polls: int = 5) -> None:
+        super().__init__()
+        self.where, self.polls = where, polls
+
+    def start(self, ready_timeout: float = 60.0, cancel: object = None) -> Event:
+        self.ready_timeout = ready_timeout
+        if self.where == "start":
+            self.wait(cancel, reaps=True)
+        return Event("gateway.ready", None, {})
+
+    def call(self, method: str, params: dict, timeout: float = 30.0, cancel: object = None) -> dict:
+        if self.where == "resume":
+            self.wait(cancel, reaps=False)
+        return super().call(method, params, timeout)
+
+    def wait(self, cancel: object, reaps: bool) -> None:
+        from omh.tui.gateway import GatewayCancelled
+
+        for _ in range(self.polls):
+            if cancel():  # type: ignore[operator]
+                self.closed += int(reaps)  # GatewayClient.start reaps its own child before it raises
+                raise GatewayCancelled("the person left")
+
+
+class LeavingDuringARespawnTests(unittest.TestCase):
+    """A respawn waits inside one loop step; Ctrl+C or Ctrl+D read meanwhile ends the TUI, the new child reaped."""
+
+    def crashing_with(self, client: WaitingClient, reads: list[bytes]) -> tuple[App, RespawnClient, Spawner]:
+        spawner = Spawner(client)
+        app, old, _spawner, _now = crashing(spawner=spawner, busy=True)
+        app.terminal.read = lambda timeout, wake=None: reads.pop(0) if reads else b""  # type: ignore[method-assign]
+        return app, old, spawner
+
+    def test_ctrl_c_or_ctrl_d_while_it_waits_leaves_naming_hermes_tui(self) -> None:
+        for where in ("start", "resume"):
+            for key in (b"\x03", b"\x04"):
+                with self.subTest(during=where, key=key):
+                    new = WaitingClient(where)
+                    app, old, spawner = self.crashing_with(new, [b"", key])
+                    crash(app, old)
+                    self.assertEqual(app.exit_code, 1)
+                    self.assertIn("you left while the Hermes gateway was starting again", app.farewell)
+                    self.assertIn(f"hermes --tui --resume {STORED}", app.farewell)
+                    self.assertEqual(new.closed, 1)  # reaped, by its start or by the TUI
+                    self.assertEqual(len(spawner.made), 1)  # no attempt after it
+
+    def test_other_keys_read_while_it_waits_are_typed_once_it_is_back(self) -> None:
+        app, old, _spawner = self.crashing_with(WaitingClient("start", polls=3), [b"h", b"i"])
+        type_text(app, "draft ")
+        crash(app, old)
+        self.assertIsNone(app.exit_code)
+        app._take_input(b"")
+        self.assertEqual(app.composer.text, "draft hi")
 
 
 class FirstIdTests(unittest.TestCase):
