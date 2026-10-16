@@ -4,6 +4,14 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Two OMH TUI subagents whose goals start alike read differently on the
+  strip.** The strip names an agent by the first words of its goal, and two
+  goals that began the same were numbered with those words, so two shell
+  tasks read `1·Run the shell  2·Run the shell` and nothing said which was
+  which. Agents that share a name now drop the leading words all their goals
+  share and show the first words that differ, so goals that part at `alpha`
+  and `beta` read `…alpha in the` and `…beta in the`; the numbers stay only
+  for goals whose words still read the same.
 - **A fresh OMH TUI session no longer shows the last session's subagents.**
   Hermes writes a session's `state.db` row on its first prompt, so a new
   session's key mapped to nothing until then, and the HUD reader fell back to
@@ -12,7 +20,6 @@ All notable changes will be documented here.
   rows. The TUI's own key now owns no children until its row exists, and the
   panel stays empty. Other readers that name an unmapped reference (the
   desktop pane, the plugin tools) keep the documented global fallback.
-
 - **Denying an OMH TUI approval also stops the turn, as Esc does in Claude
   Code.** A deny went to Hermes and the turn went on, so the model often
   tried the next thing straight away. Every deny the person gives (Esc,

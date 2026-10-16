@@ -405,8 +405,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   (`▸ ◇ Reference 1/3 — <model>`, its text in Ctrl+O's details), and the
   working row adds `MoA: refs 2/3`, then `MoA: aggregating…`.
 - While a turn has delegated work, the mode row carries a strip of its
-  subagents, each named by the first words of its goal, numbered (`1·`, `2·`)
-  when two goals start alike
+  subagents, each named by the first words of its goal; when two goals start
+  alike, by the words where they part (`…alpha` and `…beta` for two goals
+  that end `in alpha` and `in beta`), and numbered (`1·`, `2·`) when even
+  those read the same
   (`● main  ⠹ find usages of  ○ read the diff  ↓ agents`, or
   `● 2 agents ↓` where the names do not fit), and the status line says
   `idle · 2 agents running` while agents outlive the turn. The strip and the

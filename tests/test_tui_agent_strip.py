@@ -363,7 +363,16 @@ class OneAgentSurfaceTests(unittest.TestCase):
         app.roster.clear()
         self.assertTrue([row for row in self.slot(app) if row.startswith("[Agents]")])
 
-    def test_agents_whose_names_match_are_numbered_on_the_strip(self) -> None:
+    def test_agents_whose_goals_start_alike_show_where_they_part_on_the_strip(self) -> None:
+        # Live smoke s27 read `1·Run the shell  2·Run the shell`: the words that told the two apart were lost.
+        app, _client = make_app(busy=True, clock=lambda: 0.0, cols=120)
+        agent_event(app, "start", FIRST, goal="Run the shell command `echo alpha` in the scratch directory")
+        agent_event(app, "start", SECOND, goal="Run the shell command `echo beta` in the scratch directory")
+        line, hits = app._agent_strip(120)
+        self.assertEqual(line_text(line), f"● main  {SPIN} …alpha` in the  {SPIN} …beta` in the  ↓ agents")
+        self.assertEqual(len(hits), 3)
+
+    def test_agents_whose_goals_match_are_numbered_on_the_strip(self) -> None:
         app, _client = make_app(busy=True, clock=lambda: 0.0, cols=120)
         goal = "Run exactly the command below and report"
         agent_event(app, "start", FIRST, goal=goal)

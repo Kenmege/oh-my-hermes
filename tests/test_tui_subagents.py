@@ -334,6 +334,68 @@ class NameTests(unittest.TestCase):
                 self.assertEqual(Agent(FIRST, "running", 0.0, goal=goal).name, name)
 
 
+def strip_names(*goals: str) -> list[str]:
+    roster = Roster()
+    for index, goal in enumerate(goals):
+        feed(roster, "start", 0.0, f"sa-{index}", goal=goal)
+    names = roster.strip_names()
+    return [names[f"sa-{index}"] for index in range(len(goals))]
+
+
+class StripNameTests(unittest.TestCase):
+    """Two goals that start alike are told apart on the strip by the words where they part (r3 smoke s27)."""
+
+    def test_goals_that_start_alike_are_named_by_the_words_where_they_part(self) -> None:
+        self.assertEqual(
+            strip_names("Run the shell command `echo alpha` and report", "Run the shell command `echo beta` and report"),
+            ["…alpha` and", "…beta` and"],  # the first word that differs leads, as the goal spells it
+        )
+        self.assertEqual(
+            strip_names("Summarize the module and list every exported function in alpha",
+                        "Summarize the module and list every exported function in beta"),
+            ["…alpha", "…beta"],
+        )
+
+    def test_three_alike_part_where_any_of_them_does(self) -> None:
+        self.assertEqual(
+            strip_names("find usages of old_api in src", "find usages of old_api in tests", "find usages of new_api"),
+            ["…old_api in src", "…old_api in", "…new_api"],
+        )
+
+    def test_a_name_of_its_own_stays_beside_a_pair(self) -> None:
+        self.assertEqual(
+            strip_names("read the diff for risks", "Run the shell command one", "Run the shell command two"),
+            ["read the diff", "…one", "…two"],
+        )
+
+    def test_the_same_goal_twice_is_numbered(self) -> None:
+        self.assertEqual(
+            strip_names("find usages of old_api", "find usages of old_api"), ["1·find usages of", "2·find usages of"]
+        )
+
+    def test_parts_that_still_read_the_same_fall_back_to_numbers(self) -> None:
+        # Past the shared word both goals go on with one long word, cut to the same cells.
+        self.assertEqual(
+            strip_names("Check thoroughlyverylongidentifier_alpha", "Check thoroughlyverylongidentifier_beta"),
+            ["1·Check", "2·Check"],
+        )
+        # One goal ends where the other goes on: the shorter has no words of its own to show.
+        self.assertEqual(strip_names("Run the tests", "Run the tests again"), ["1·Run the tests", "2·Run the tests"])
+
+    def test_first_words_cut_alike_are_numbered_without_a_cut_mark(self) -> None:
+        # The names match only because a long first word was cut: no leading word is shared, so nothing is skipped.
+        self.assertEqual(
+            strip_names("supercalifragilisticexpialidocious one", "supercalifragilisticexpialidocious_two"),
+            ["1·supercalifragil…", "2·supercalifragil…"],
+        )
+
+    def test_a_part_never_reads_as_another_agents_own_name(self) -> None:
+        self.assertEqual(
+            strip_names("…two", "Run the shell command one", "Run the shell command two"),
+            ["…two", "2·Run the shell", "3·Run the shell"],
+        )
+
+
 class OutOfOrderTests(unittest.TestCase):
     def test_a_tool_before_start_makes_the_agent_and_start_then_changes_nothing(self) -> None:
         roster = Roster()
