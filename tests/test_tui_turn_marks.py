@@ -584,7 +584,7 @@ class SettledTailTests(unittest.TestCase):
         app._render()
         return app, now
 
-    def test_the_done_line_sits_right_above_the_panel_however_tall_the_last_group_was(self) -> None:
+    def test_the_done_line_sits_one_spacer_row_above_the_panel_however_tall_the_last_group_was(self) -> None:
         for tools in (1, 4, 12):
             with self.subTest(tools=tools):
                 app, now = self.app_with_plan(40, 100, earlier=60)  # a screen already full of transcript
@@ -602,10 +602,11 @@ class SettledTailTests(unittest.TestCase):
                 app._render()
                 app._on_event(ev("message.complete", text="All read.", status="complete"))
                 app._render()
-                self.assertEqual(app.region.pad, 0, "a frame whose flush scrolled the screen left pad rows")
                 screen = app.terminal.screen.lines()
                 plan = next(index for index, line in enumerate(screen) if "[Plan]" in line)
-                self.assertTrue(screen[plan - 1].startswith("✻ "), "\n".join(screen[plan - 4 : plan + 1]))
+                # the spacer row every block opens with, then the panel
+                self.assertEqual(screen[plan - 1], "", "\n".join(screen[plan - 4 : plan + 1]))
+                self.assertTrue(screen[plan - 2].startswith("✻ "), "\n".join(screen[plan - 4 : plan + 1]))
 
     def test_the_prompt_and_its_sticky_echo_are_never_on_screen_together(self) -> None:
         # A reply streams line by line under the prompt: the prompt shows until it scrolls off, the echo after.

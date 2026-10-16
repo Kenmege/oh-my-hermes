@@ -304,8 +304,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
 
 - Finished replies, tool summaries and notices go to your terminal's own
   scrollback, so selecting, copying and scrolling back work as they do in any
-  shell. Only the bottom of the screen repaints, each repaint (and each page
-  of a pager) one synchronized update (DECSET 2026), so a terminal that
+  shell. Only the region under the last line printed repaints, each repaint
+  (and each page of a pager) one synchronized update (DECSET 2026), so a terminal that
   supports it shows it whole and nothing flickers. A full redraw (a resize,
   Ctrl+L, `/redraw`, switching or resuming a session) prints the session's
   last 3,000 rows again under one row such as `⋯ 412 earlier messages ·
@@ -315,7 +315,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   steer and a turn's done line are one each); older ones are
   left to the terminal's scrollback until a full redraw clears it, and from
   then on that row says how many `/history` still shows.
-- The bottom region holds, from the top: the prompt you just sent (while the
+- That region holds, from the top: the prompt you just sent (while the
   turn runs), the tail of the reply that is still streaming, one slot for the
   OMH plan and agents panel (or a question Hermes asked, or the slash-command
   menu), the prompts queued behind the running turn (`⧗`, up to three named
@@ -355,9 +355,15 @@ run and approval decision stays Hermes'; the screen is OMH's.
   (Hermes' `todo.updated` has the HUD read again at once, instead of at its
   next poll two to eight seconds later), and a subtask keeps its place under
   its parent.
-- The composer does not move when the panel grows or shrinks; only its own
-  lines move it, and the agent list for as long as it is open. Hidden while
-  you pick from a list, it comes back on the same row.
+- The region follows what is printed, as Claude Code's input box does: a
+  fresh session shows the composer right under the banner, and after a turn
+  it sits under the turn's last line with one blank row between, the spacer
+  every block opens with. When the panel, a question or a menu above the
+  composer grows, the composer moves down with it until the screen is full,
+  and then the transcript scrolls up instead; when they shrink or close, it
+  moves up with them, so on a full screen the rows they took stay blank under
+  the status line until more is printed. The agent list opens under the
+  composer.
 - A notice Hermes sends outside the transcript (the agent still starting, a
   credit warning, a provider that could not be reached) takes one row above
   the queued prompts, in its level's colour with a glyph. The next one

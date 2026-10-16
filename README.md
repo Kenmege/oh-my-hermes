@@ -328,8 +328,9 @@ through: `🧠 OMH — recalled 2 memories`.
 Bare `omh` opens the OMH TUI: OMH's own terminal over your Hermes install.
 Hermes still runs every model call, tool and approval; OMH owns the screen —
 finished replies go to your terminal's scrollback, the plan and agents panel
-sits right above the prompt, and the prompt does not move when that panel
-grows or shrinks. It reads on a light terminal as on a dark one, keeps a
+sits right above the prompt, and the prompt follows what is printed, as
+Claude Code's input box does, with no blank rows above it. It reads on a
+light terminal as on a dark one, keeps a
 slash command's output in the transcript, runs a `!` line in Hermes' shell
 (never sent to the model), shares your input history with `hermes --tui`
 (Ctrl+R searches it), rewinds to an earlier prompt (Esc Esc or `/rewind`),

@@ -1192,6 +1192,11 @@ class Transcript:
         self._version += 1
 
     @property
+    def taken_any(self) -> bool:
+        """Whether any line has been taken, so what is shown next under them opens with a spacer row."""
+        return self._taken_any
+
+    @property
     def left_out(self) -> int:
         """How many blocks the next take counts in its opening row instead of showing (`retake_tail`)."""
         return self._left_out

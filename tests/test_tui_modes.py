@@ -1717,20 +1717,24 @@ class QueueLinesTests(unittest.TestCase):
 
 
 class QueueTests(unittest.TestCase):
-    def test_queued_prompts_never_move_the_composer(self) -> None:
+    def test_queued_prompts_push_the_composer_down_by_their_rows_and_leave_no_blank_row(self) -> None:
         for rows, cols in ((7, 40), (9, 40), (10, 80), (12, 80), (24, 80), (40, 120)):
             for menu in (False, True):
                 with self.subTest(rows=rows, cols=cols, menu=menu):
                     app, _client = make_app(busy=True, rows=rows, cols=cols)
-                    empty = composer_index(drawn(app))
-                    seen = []
+                    working = composer_index(drawn(app)) - 1  # the working row, right above the top rule
                     for count in (1, 2, 3, 6):
                         app.queued.clear()
                         queue(app, *(f"prompt {number}" for number in range(count)))
                         if menu:
                             app.composer.replace(0, len(app.composer.text), "/")
-                        seen.append(composer_index(drawn(app)))
-                    self.assertEqual(seen, [empty] * 4)
+                        screen = drawn(app)
+                        top = composer_index(screen)
+                        between = screen[working : top - 1]  # the slot: the menu, the queued prompts under it
+                        self.assertTrue(all(between), screen)
+                        if not menu and rows >= 10:
+                            # three named and "+N more", within the slot's cap of a third of the rows
+                            self.assertEqual(len(between), min(count, 4, rows // 3), screen)
 
     def test_the_rows_sit_right_above_the_composers_top_rule(self) -> None:
         app, _client = make_app(busy=True)
@@ -2045,8 +2049,7 @@ class ModeReplayTests(AppTestCase):
             return terminal.status_row().rstrip().endswith("running")
 
         terminal.script(
-            Step(b"Write the numbers from 1 to 300, one per line, nothing else.\r", when=terminal.idle,
-                 capture="idle", label="idle"),
+            Step(b"Write the numbers from 1 to 300, one per line, nothing else.\r", when=terminal.idle, label="idle"),
             # The replay holds this turn open until it sees session.interrupt.
             Step(b"second prompt\rthird prompt\r", when=running, label="running"),
             Step(b"\x1b[A", when=terminal.shows("⧗ third prompt"), capture="queued", label="queued"),
@@ -2057,9 +2060,8 @@ class ModeReplayTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)  # a prompt.submit for either queued prompt would be a replay mismatch
         self.assertEqual(len(run.calls("prompt.submit")), 1)
-        idle, queued, recalled = (terminal.captures[name] for name in ("idle", "queued", "recalled"))
+        queued, recalled = (terminal.captures[name] for name in ("queued", "recalled"))
         top = composer_index(queued)
-        self.assertEqual(top, composer_index(idle))
         self.assertEqual(queued[top - 3].rstrip(), "⧗ second prompt")
         self.assertTrue(queued[top - 2].startswith("⧗ third prompt"))
         self.assertTrue(queued[top - 2].rstrip().endswith("↑ edit"))

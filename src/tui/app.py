@@ -982,12 +982,11 @@ class App(ModesMixin, AgentViewMixin):
         self.exit_armed_at: float | None = None
         self.exit_code: int | None = None
         self.farewell = ""
-        self.banner_facts: dict[str, str] | None = None  # the header, flushed above the next anchoring frame
+        self.banner_facts: dict[str, str] | None = None  # the header, flushed above the next frame
         self.banner_record: dict[str, str] | None = None  # kept, so a full redraw can print it again
         self.logo_due = False  # the block logo goes above the banner flushed next
         self.in_launch_session = True  # the logo is the start's: it is not repeated for /new or a switch
         self.redraw_at: float | None = None  # when a settled resize redraws everything
-        self.anchor = True  # the next frame re-anchors the region (first frame, resize, redraw)
         self.busy_since = 0.0  # when the running turn (or the prompt still waiting for it) started
         self.attachments: list[Attachment] = []  # images the gateway queued for the next prompt
         self.picker: SessionPicker | None = None
@@ -3149,7 +3148,6 @@ class App(ModesMixin, AgentViewMixin):
             self.banner_facts = dict(self.banner_record)
             # The logo comes back only on top of the whole session it opened, never above a cut.
             self.logo_due = self.in_launch_session and not self.transcript.left_out
-        self.anchor = True
         self.dirty = True
 
     def _take_hud(self) -> None:
@@ -3192,15 +3190,12 @@ class App(ModesMixin, AgentViewMixin):
             stable = head + stable
             prompt_row = None if prompt_row is None else prompt_row + len(head)
             self.banner_facts = None
-        anchoring = self.anchor
         # Counted from the prompt's own first row: not the blank row or the held rows above it, and after a full
         # redraw only the rows retaken from the prompt on.
         if prompt_row is not None:
             self.flushed_since_prompt = len(stable) - prompt_row
         else:
             self.flushed_since_prompt += len(stable)
-        previous = 0 if anchoring else self.region.height
-        self.anchor = False
         strip, _hits = self._agent_strip(cols)
         listed: tuple[str, ...] = ()
 
@@ -3215,7 +3210,6 @@ class App(ModesMixin, AgentViewMixin):
             rows=rows,
             composer=None if self._composer_hidden() else self.composer,
             status=self._status_line(cols),
-            previous_height=previous,
             tail=self._tail(cols),
             slot=self._slot_lines(cols, rows),
             slot_caret=self._slot_caret(),  # read after `_slot_lines` drew the picker it comes from
@@ -3229,15 +3223,13 @@ class App(ModesMixin, AgentViewMixin):
             agent_list=agent_list if self.list_selected is not None else None,
         )
         frame = build()
-        # The flush below fills this frame's pad rows first, so they are transcript rows by the time it shows.
-        if self._sticky_needed(rows - frame.height + min(len(stable), frame.pad)):
+        # The rows above the region once the flush below and this frame are drawn: transcript rows.
+        if self._sticky_needed(self.region.rows_above(rows, len(stable), frame.height)):
             frame = build(sticky=sticky_line(self.sticky, cols, self.theme))
-        # Flushed after the frame, the lines land in its pad rows: the rows a shrinking tail gave
-        # back (a settled tool group is those same rows, moved above the region), or the screen of
-        # pad rows an anchoring frame fills. Flushed before it, they would push the region down by
-        # their whole count, and the rows the tail gave back would stay as blank pad under them.
-        # Frame and flush are one write, so no screen between them shows.
-        self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad, flush=stable)
+        # Flushed before the frame, the lines cover the region's top rows, where the lines leaving
+        # the tail were drawn (a settled tool group is those same rows, moved above the region), and
+        # the frame is drawn under them. Flush and frame are one write, so no screen between them shows.
+        self.region.render(frame.lines, frame.cursor, cols, flush=stable)
         self._take_clickable(frame.budget, listed)
 
     def _display_mode(self) -> str:
@@ -3368,6 +3360,8 @@ class App(ModesMixin, AgentViewMixin):
         now = self.clock()
         # Never more than the screen; running tools' marks pulse unless motion is reduced.
         lines = self.transcript.live_lines(cols, self.theme, max_rows=self.size[1], now=now if self.motion else None)
+        if not lines and self.transcript.taken_any:
+            lines = [()]  # the spacer a block opens with, here between the transcript and the region under it
         if self._busy():
             text = self.transcript.activity or self.transcript.status or "working…"
             frame = self._spinner_frame()

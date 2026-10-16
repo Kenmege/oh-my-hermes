@@ -104,9 +104,9 @@ class HiddenComposerTests(unittest.TestCase):
         self.assertEqual(held(app), draft)
         self.assertTrue(composer_drawn(app, after))
         # The rows from the composer's top rule down are what they were; above them, the answer the person gave.
-        top = rule_rows(before)[0]
-        self.assertEqual(after[top:], before[top:])
-        self.assertIn("✓ allowed once · rm -rf ./build", after[:top])
+        top, top_after = rule_rows(before)[0], rule_rows(after)[0]
+        self.assertEqual(after[top_after : status_row(after) + 1], before[top : status_row(before) + 1])
+        self.assertIn("✓ allowed once · rm -rf ./build", after[:top_after])
         self.assertFalse([row for row in after if "allow this session" in row or "Hermes asks" in row], after)
 
     def test_no_key_types_into_the_hidden_composer_and_a_paste_is_not_kept_for_it(self) -> None:
@@ -420,7 +420,8 @@ class PickerTests(unittest.TestCase):
                 self.assertEqual(screen[status - 2], " › type to filter")  # right above the mode row
                 self.assertEqual(app.terminal.screen.cursor, (status - 2, 3))  # type: ignore[attr-defined]  # the caret on it
                 type_text(app, "s")
-                self.assertEqual(drawn(app)[status - 2], " › s")
+                screen = drawn(app)
+                self.assertEqual(screen[status_row(screen) - 2], " › s")  # the list shrank: the row moved with it
                 self.assertEqual(held(app), draft)  # the filter is the picker's, not the draft's
                 press(app, Key(ESCAPE))
                 self.assertTrue(composer_drawn(app, drawn(app)))
@@ -457,8 +458,8 @@ class PickerTests(unittest.TestCase):
                 self.assertTrue(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
                 self.assertEqual(app.terminal.screen.cursor, (row, 3))  # type: ignore[attr-defined]
                 type_text(app, "s")
-                drawn(app)
-                self.assertEqual(app.terminal.screen.cursor, (row, 4))  # type: ignore[attr-defined]
+                screen = drawn(app)
+                self.assertEqual(app.terminal.screen.cursor, (status_row(screen) - 2, 4))  # type: ignore[attr-defined]
                 press(app, Key(ESCAPE))
                 screen = drawn(app)
                 self.assertEqual(app.terminal.screen.cursor[0], next(i for i, line in enumerate(screen) if line.startswith("› a draft")))  # type: ignore[attr-defined]
@@ -479,14 +480,16 @@ class PickerTests(unittest.TestCase):
     def test_an_approval_over_a_picker_shows_no_caret_and_the_pickers_comes_back_after(self) -> None:
         app, client = make_app(busy=True)
         app._open_session_picker(SESSIONS)
-        filter_row = status_row(drawn(app)) - 2
+        drawn(app)
         app._on_server_request(APPROVAL)
         screen = drawn(app)
         self.assertFalse(app.terminal.screen.cursor_visible, screen)  # type: ignore[attr-defined]
         armed(app)
         press(app, Key(ESCAPE))
         self.assertEqual(answered(client, "srq-1"), [{"result": {"choice": "deny"}}])
-        drawn(app)
+        screen = drawn(app)
+        filter_row = status_row(screen) - 2  # the answer is printed above the region, which moves down under it
+        self.assertEqual(screen[filter_row], " › type to filter")
         self.assertEqual(app.terminal.screen.cursor, (filter_row, 3))  # type: ignore[attr-defined]
 
     def test_a_view_left_over_a_picker_without_a_filter_row_keeps_the_caret_hidden(self) -> None:

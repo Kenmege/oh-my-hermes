@@ -368,10 +368,11 @@ never an answer to a question Hermes asked); its other writes are metadata
 (the launcher's active-session file, what OMH's HUD reader and model-chain
 picker write under the OMH home, and an empty fallback marker at the path
 `omh` named, which `omh` removes). Finished
-transcript lines go to the terminal's own scrollback; only a bottom region
-(the streaming tail, one slot for the plan and agents panels or a prompt
-Hermes asked, the composer, and the status line) repaints, and the composer's
-row does not move when the slot grows or shrinks. When it cannot start
+transcript lines go to the terminal's own scrollback; only a region drawn
+right under them (the streaming tail, one slot for the plan and agents panels
+or a prompt Hermes asked, the composer, and the status line) repaints, and it
+is as tall as what it holds, so the composer follows the content and moves
+with the slot. When it cannot start
 (an OMH that cannot import itself, gateway unavailable, protocol drift at
 startup) it creates the sentinel file `omh` named for that launch and exits
 75; that exit, and a blocker found before anything starts, has `omh` say why

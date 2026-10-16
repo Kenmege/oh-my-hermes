@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The OMH TUI's composer follows what is printed, as Claude Code's input box
+  does.** A fresh session showed the banner, then 20 blank rows (110x34) to 36
+  (200x50), then the composer, and 6 to 12 blank rows stayed above it after a
+  short turn, during an approval and after a resize: the live region was
+  padded to the screen's height at the start and never got shorter. It is now
+  exactly as tall as what it holds and is drawn right under the last line
+  printed, one blank row under a turn, the spacer every block opens with. It
+  grows downward until the screen is full, and then the transcript scrolls;
+  when a panel, a question or a menu above the composer closes, the composer
+  moves up with it, so on a full screen the rows it took stay blank under the
+  status line until more is printed. The agent list opens under the composer.
+  Lines that leave the top of the streaming tail are written over the rows
+  they were drawn on, so the rows under them are not painted again.
+
 - **Korean spend and data-share requests reach their gates.** "내 카드로
   결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보
   마스킹해서 벤더한테 보내줘" dispatched gateway-intent-card, and "개인정보 지우고

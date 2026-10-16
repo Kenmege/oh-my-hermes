@@ -63,6 +63,7 @@ from omh.tui.gateway import GatewayClient, GatewayUnavailable, ServerRequest, ga
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
 from omh.tui.launch import FALLBACK_EXIT, FALLBACK_SENTINEL_ENV
 from omh.tui.prompts import open_request
+from omh.tui.screen import CLEAR_SCREEN_AND_SCROLLBACK
 from omh.tui.theme import DEFAULT_THEME, theme_named
 from omh.tui.width import line_width
 from omh.version import __version__
@@ -753,17 +754,19 @@ class SessionTests(AppTestCase):
     def test_a_resize_repaints_without_ghost_rows(self) -> None:
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
 
-        def settled(rows: int, cols: int) -> Callable[[], bool]:
+        def settled(rows: int, cols: int, redraws: int) -> Callable[[], bool]:
             def ready() -> bool:
                 screen = run.terminal.screen
-                return (screen.rows, screen.cols) == (rows, cols) and screen.lines()[rows - 2].startswith(STATUS_MARK)
+                cleared = sum(text.count(CLEAR_SCREEN_AND_SCROLLBACK) for text in run.terminal.writes)
+                shown = any(line.startswith(STATUS_MARK) for line in screen.lines())
+                return (screen.rows, screen.cols) == (rows, cols) and cleared >= redraws and shown
 
             return ready
 
         run.terminal.script(
             Step(resize=(16, 60), when=run.terminal.idle, label="idle"),
-            Step(resize=(30, 100), when=settled(16, 60), capture="narrow", label="the 16x60 frame"),
-            Step(b"\x04", when=settled(30, 100), capture="wide", label="the 30x100 frame"),
+            Step(resize=(30, 100), when=settled(16, 60, 1), capture="narrow", label="the 16x60 frame"),
+            Step(b"\x04", when=settled(30, 100, 2), capture="wide", label="the 30x100 frame"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
@@ -793,17 +796,19 @@ class SessionTests(AppTestCase):
             env={"HOME": "/fixture"},
         )
 
-        def settled(rows: int, cols: int) -> Callable[[], bool]:
+        def settled(rows: int, cols: int, redraws: int) -> Callable[[], bool]:
             def ready() -> bool:
                 screen = run.terminal.screen
-                return (screen.rows, screen.cols) == (rows, cols) and screen.lines()[rows - 2].startswith(STATUS_MARK)
+                cleared = sum(text.count(CLEAR_SCREEN_AND_SCROLLBACK) for text in run.terminal.writes)
+                shown = any(line.startswith(STATUS_MARK) for line in screen.lines())
+                return (screen.rows, screen.cols) == (rows, cols) and cleared >= redraws and shown
 
             return ready
 
         run.terminal.script(
             Step(resize=(20, 70), when=run.terminal.idle, label="idle"),
-            Step(resize=(20, 60), when=settled(20, 70), label="the 20x70 frame"),
-            Step(b"\x04", when=settled(20, 60), capture="final", label="the 20x60 frame"),
+            Step(resize=(20, 60), when=settled(20, 70, 1), label="the 20x70 frame"),
+            Step(b"\x04", when=settled(20, 60, 2), capture="final", label="the 20x60 frame"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
@@ -1391,7 +1396,7 @@ class OpeningTests(AppTestCase):
         self.assertEqual([row for row in history[LOGO_ROWS + 1 :] if row], [])
 
     def test_the_banner_is_on_screen_at_the_first_frame_not_pushed_into_scrollback(self) -> None:
-        # The first frame fills the screen with pad rows; the banner must land in them.
+        # The banner is flushed with the first frame, which is drawn right under it.
         run = self.prepare(
             Scenario("session", spans("session", "startup", "create"), answers=startup_answers()),
             cols=100,
@@ -1405,6 +1410,33 @@ class OpeningTests(AppTestCase):
         self.assertTrue(screen[LOGO_ROWS].startswith("⚚ OH-MY-HERMES"), screen[: LOGO_ROWS + 2])
         self.assertEqual(screen[LOGO_ROWS + 1], "")
         self.assertEqual(run.terminal.screen.scrollback, [])
+
+    def test_the_composer_follows_the_banner_and_then_the_turn_with_no_blank_rows_but_a_spacer(self) -> None:
+        # Claude Code's input box follows what was printed: no screen of blank rows over the composer at the start
+        # or after a turn, only the one spacer row every block opens with, and nothing under the status line.
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers()),
+            rows=34,
+            cols=110,
+            env={"HOME": "/fixture"},
+        )
+        run.terminal.script(
+            Step(b"Reply with exactly the word: ok\r", when=run.terminal.idle, capture="start", label="idle"),
+            Step(b"\x04", when=lambda: "later." in run.terminal.history() and run.terminal.idle(), capture="turn",
+                 label="the reply"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        for name, above in (("start", f"⚚ OH-MY-HERMES v{__version__} · ~/project"), ("turn", "✻ ")):
+            with self.subTest(capture=name):
+                screen = run.terminal.captures[name]
+                status = status_index(screen)
+                rule = status - 2 - UNDER_COMPOSER
+                self.assertIn(RULE_MARK, screen[rule], screen)
+                self.assertEqual(screen[rule - 1], "", screen)
+                self.assertTrue(screen[rule - 2].startswith(above), screen)
+                self.assertEqual(screen[status + 1 :], [""] * (33 - status), screen)
+                self.assertLess(status, 33)
 
     def test_the_banner_stays_one_row_and_keeps_the_end_of_a_long_path(self) -> None:
         from omh.tui.app import banner_lines
@@ -1887,8 +1919,8 @@ class AttachmentTests(AppTestCase):
         self.assertEqual(attach["params"], {"session_id": LIVE_ID, "path": "./shot.png"})
         before, chip = terminal.captures["before"], terminal.captures["chip"]
         status = status_index(chip)
-        # The chip row sits between the rule and the input; the input row did not move.
-        self.assertEqual(status, status_index(before))
+        # The chip row sits between the rule and the input, and the region grew by it.
+        self.assertEqual(status, status_index(before) + 3)  # the command's echo and the spacer under it, the chip
         composer = status - 1 - UNDER_COMPOSER
         self.assertTrue(chip[composer].startswith("›"), chip)
         self.assertEqual(chip[composer - 1], "📎 shot.png 1280×720  Backspace removes")
