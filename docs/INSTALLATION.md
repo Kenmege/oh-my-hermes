@@ -337,7 +337,14 @@ run and approval decision stays Hermes'; the screen is OMH's.
   background; `/new` and a switched session do not repeat it, and a full
   redraw shows it again only on top of the whole session.
 - The mode row names the input mode, or the keys that matter right now, and
-  the reasoning effort when Hermes reports one. While Hermes asks something
+  the reasoning effort when Hermes reports one. Between turns it reads
+  `? shortcuts · ⇧⇥ accept all/plan · ctrl+t effort (medium)`: what Shift+Tab
+  turns on, the next mode first, and the effort beside the key that steps it,
+  said once. In accept all it says what that means and where Shift+Tab goes
+  (`⏵⏵ accept all on · Hermes asks no approvals in this session (⇧⇥
+  plan/normal)`), in plan the same (`⏸ plan mode on · prompts go as /plan (⇧⇥
+  normal/accept all)`), and in any state but idle the effort sits at the
+  row's right end as `ctrl+t effort (medium)`. While Hermes asks something
   it names that question's keys (`↑↓ pick · enter confirms · d or esc
   denies`), and while a picker is open, the picker's (`↑↓ move · enter
   switches · esc closes`). After a first Ctrl+C between turns it says
@@ -345,10 +352,12 @@ run and approval decision stays Hermes'; the screen is OMH's.
   to the transcript. The working row and the mode row offer Esc for an interrupt only
   while Esc would do that: not while a question, a picker, the history
   search, the agent list, a picked steer or rewind, the `@` menu or a draft in
-  the composer takes Esc, so Esc means one thing on the screen. On a row too
-  narrow for what the next key does, the effort goes first, then the mode's
-  label shortens (`⏵⏵ accept`, then `⏵⏵`; `⏸ plan`, then `⏸`) before that is
-  cut. Both rules take the mode's
+  the composer takes Esc, so Esc means one thing on the screen. A narrower
+  row takes shorter words in the same style (`? shortcuts · ⇧⇥ accept all ·
+  ctrl+t effort (medium)`, `⏵⏵ accept all on · no approvals (⇧⇥ plan)`, then
+  `(⇧⇥ plan)` alone). On a row too narrow for what the next key does, the
+  effort goes first, then the mode's label shortens (`⏵⏵ accept`, then `⏵⏵`;
+  `⏸ plan`, then `⏸`) before that is cut. Both rules take the mode's
   glyph and colour, so the mode reads from the frame as well as the label.
   A short terminal drops the mode row first, then the lower rule; without the
   mode row the status line names the mode (`⏵⏵ accept`, `⏸ plan`) whenever it
@@ -616,8 +625,8 @@ Esc closes it):
 | `\` then Enter, Alt+Enter, Shift+Enter, Ctrl+J | Adds a line |
 | Ctrl+Enter | Steers a running turn with the composer's text, on a terminal that tells it from Enter (`/steer <text>` steers on any terminal); idle, sends it as Enter does |
 | Tab | Completes a slash command, or the `@` reference being typed |
-| Shift+Tab | Cycles the input mode: normal, accept all, plan; while Hermes itself has approvals off, turns plan on and off |
-| Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max |
+| Shift+Tab | Cycles the input mode: normal, accept all (Hermes asks no approvals in this session), plan (prompts go as /plan); while Hermes itself has approvals off, turns plan on and off |
+| Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max; the mode row shows it as ctrl+t effort (medium) |
 | `@` | Starts a file or folder reference; Hermes offers matches above the composer |
 | `!` | At the start of a line, makes it a shell command Hermes runs when you send it (30 s at most); it and its output are not sent to the model |
 | `?` | On an empty composer, shows this list; `/keys` does too |
@@ -684,8 +693,8 @@ question Hermes asked is sent as typed in every mode.
 
 Ctrl+T steps this session's reasoning effort, and `/effort <level>` sets any
 level Hermes takes (`none`, `minimal` and `ultra` as well). The mode row shows
-the level once Hermes confirms it; a level Hermes refuses leaves the row as it
-was and says so.
+the level once Hermes confirms it, as `ctrl+t effort (medium)`; a level Hermes
+refuses leaves the row as it was and says so.
 
 A steer adds what you typed to the turn that is running, without interrupting
 it: Hermes reads it after its next tool call, or, while it is compressing the

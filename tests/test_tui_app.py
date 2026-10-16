@@ -500,7 +500,7 @@ class SessionTests(AppTestCase):
         self.assertEqual(screen[composer], "› Ask Hermes anything", screen)
         self.assertIn(RULE_MARK, screen[composer - 1])
         self.assertIn(RULE_MARK, screen[composer + 1])
-        self.assertEqual(screen[status - 1], "? shortcuts · ⇧⇥ mode · ctrl+t effort", screen)
+        self.assertEqual(screen[status - 1], "? shortcuts · ⇧⇥ accept all/plan · ctrl+t effort", screen)
         self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
         self.assertEqual(run.calls("config.get")[0]["params"], {"key": "full"})
         self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": STORED_ID})
@@ -1182,7 +1182,9 @@ class ModeRowTests(unittest.TestCase):
         return line_text(mode_row_line(**{**defaults, **facts}, width=width, theme=DEFAULT_THEME))  # type: ignore[arg-type]
 
     def test_normal_mode_names_the_keys_that_matter_now(self) -> None:
-        self.assertEqual(self.row(), "? shortcuts · ⇧⇥ mode · ctrl+t effort")
+        # What Shift+Tab turns on, the next mode first, and Ctrl+T with the effort it steps, said once.
+        self.assertEqual(self.row(), "? shortcuts · ⇧⇥ accept all/plan · ctrl+t effort")
+        self.assertEqual(self.row(effort="medium"), "? shortcuts · ⇧⇥ accept all/plan · ctrl+t effort (medium)")
         self.assertEqual(self.row(busy=True), "esc interrupt · /steer <text> steers")
         self.assertEqual(self.row(busy=True, keyboard_protocol=True), "esc interrupt · ctrl+enter steer")
         self.assertEqual(self.row(busy=True, queued=2), "esc interrupt · /steer <text> steers · ↑ edit queued")
@@ -1195,31 +1197,42 @@ class ModeRowTests(unittest.TestCase):
     def test_accept_and_plan_say_so_in_their_own_colour(self) -> None:
         accept = mode_row_line(mode="accept", busy=False, queued=0, keyboard_protocol=False, effort="", width=80,
                                theme=DEFAULT_THEME)
-        self.assertEqual(line_text(accept), "⏵⏵ accept all on · approvals off for this session (⇧⇥ to cycle)")
+        self.assertEqual(line_text(accept), "⏵⏵ accept all on · Hermes asks no approvals in this session (⇧⇥ plan/normal)")
         self.assertEqual(accept[0].style, replace(DEFAULT_THEME.mode_accept, bold=True))
         plan = mode_row_line(mode="plan", busy=True, queued=1, keyboard_protocol=True, effort="", width=80,
                              theme=DEFAULT_THEME)
-        self.assertEqual(line_text(plan), "⏸ plan mode on (⇧⇥ to cycle)")
+        self.assertEqual(line_text(plan), "⏸ plan mode on · prompts go as /plan (⇧⇥ normal/accept all)")
+        hermes_own = mode_row_line(mode="accept", busy=False, queued=0, keyboard_protocol=False, effort="", width=80,
+                                   theme=DEFAULT_THEME, cycle="plan")
+        self.assertEqual(line_text(hermes_own), "⏵⏵ accept all on · Hermes asks no approvals in this session (⇧⇥ plan)")
         self.assertEqual(plan[0].style, replace(DEFAULT_THEME.mode_plan, bold=True))
 
-    def test_the_effort_sits_on_the_right_only_when_known(self) -> None:
-        self.assertNotIn("effort high", self.row())
-        row = self.row(effort="high")
-        self.assertTrue(row.endswith("effort high"), row)
-        self.assertEqual(len(row), 80)
-        self.assertTrue(row.startswith("? shortcuts"), row)
+    def test_the_effort_is_said_once_in_the_idle_hint_and_on_the_right_otherwise(self) -> None:
+        self.assertNotIn("(high)", self.row())
+        idle = self.row(effort="high")
+        self.assertEqual(idle, "? shortcuts · ⇧⇥ accept all/plan · ctrl+t effort (high)")  # no second display
+        self.assertEqual(idle.count("effort"), 1)
+        for facts in ({"busy": True}, {"mode": "plan"}, {"mode": "accept"}):
+            with self.subTest(**facts):
+                row = self.row(effort="high", **facts)
+                self.assertTrue(row.endswith("ctrl+t effort (high)"), row)
+                self.assertEqual((len(row), row.count("effort")), (80, 1))
 
     def test_the_hint_is_cut_from_its_end_and_the_label_survives(self) -> None:
-        for width in range(18, 70):
+        for width in range(18, 110):
             with self.subTest(width=width):
                 row = self.row(width, mode="accept", effort="xhigh")
                 self.assertTrue(row.startswith("⏵⏵ accept all on"), row)
                 self.assertLessEqual(len(row), width)
                 if "effort" in row:
-                    self.assertTrue(row.endswith("effort xhigh"), row)
-        self.assertEqual(self.row(40, effort="high"), "? shortcuts · ⇧⇥ mode · c…   effort high")
+                    self.assertTrue(row.endswith("ctrl+t effort (xhigh)"), row)
+        # A narrower row takes shorter words of the same kind before anything is cut.
+        self.assertEqual(self.row(45, effort="high"), "⇧⇥ accept all · ctrl+t effort (high)")
+        self.assertEqual(self.row(30, effort="high"), "? shortcuts · ⇧⇥ accept all")
+        self.assertEqual(self.row(60, mode="accept"), "⏵⏵ accept all on · no approvals (⇧⇥ plan)")
+        self.assertEqual(self.row(30, mode="plan"), "⏸ plan mode on (⇧⇥ normal)")
         # Too narrow for the label and the effort together: the effort goes, the label stays whole.
-        self.assertEqual(self.row(20, mode="accept", effort="xhigh"), "⏵⏵ accept all on · …")
+        self.assertEqual(self.row(20, mode="accept", effort="xhigh"), "⏵⏵ accept all on (⇧…")
 
 
 class LeaveSessionDeclineTests(unittest.TestCase):

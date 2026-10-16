@@ -574,7 +574,7 @@ class ModeCycleTests(unittest.TestCase):
                 screen = drawn(app)
                 status = next(index for index, row in enumerate(screen) if row.startswith("⚚ OMH"))
                 self.assertFalse([row for row in screen if "yolo" in row], screen)
-                self.assertEqual([row for row in screen if "approvals off" in row], [screen[status - 1]])  # the mode row
+                self.assertEqual([row for row in screen if "no approvals" in row], [screen[status - 1]])  # the mode row
 
     def test_a_yolo_answer_that_is_not_this_session_only_is_a_failure(self) -> None:
         refusals = {
@@ -952,7 +952,8 @@ class HermesOwnApprovalsTests(unittest.TestCase):
         session_info(app, yolo=True)
         app._on_input(SHIFT_TAB)
         screen = drawn(app)
-        self.assertTrue(any(line.startswith("⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ to cycle)") for line in screen))
+        # Hermes has approvals off on its own: Shift+Tab only turns plan back off, and the row says so.
+        self.assertTrue(any(line.startswith("⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ plan off)") for line in screen))
         rules = [line for line in screen if line and set(line) == {"━"}]
         self.assertEqual(len(rules), 2)  # approvals off is what the rules keep showing
         short, _client = make_app(rows=9)
@@ -2125,14 +2126,14 @@ class ModeReplayTests(AppTestCase):
         terminal = run.terminal
         terminal.script(
             Step(b"\x14", when=terminal.idle, capture="before", label="idle"),
-            Step(b"\x04", when=terminal.shows("effort low"), label="the effort"),
+            Step(b"\x04", when=terminal.shows("ctrl+t effort (low)"), label="the effort"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
         (call,) = run.calls("config.set")
         self.assertEqual(call["params"], {"key": "reasoning", "session_id": LIVE_ID, "value": "low"})
         # "ctrl+t effort" is the hint; the level itself is absent until Hermes names one.
-        self.assertNotIn("effort low", "\n".join(terminal.captures["before"]))
+        self.assertNotIn("(low)", "\n".join(terminal.captures["before"]))
 
     def test_shift_tab_walks_the_modes_and_the_frame_shows_each(self) -> None:
         answers = (*startup_answers(), ("config.set", {"result": YOLO_IS_ON}), ("config.set", {"result": YOLO_IS_OFF}))

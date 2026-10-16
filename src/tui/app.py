@@ -140,7 +140,7 @@ from .launch import request_fallback
 from .agent_view import AGENT_STEER_LEFT_UNANSWERED_NOTICE, STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
 from .layout import choice_cap, slot_cap, under_composer
 from .markdown import clean_text
-from .modes import MODE_ROW_GAP, NO_SESSION_NOTICE, STRIP_SEPARATOR, ModesMixin, mode_row_line
+from .modes import HERMES_OWN_CYCLE, MODE_ROW_GAP, NO_SESSION_NOTICE, STRIP_SEPARATOR, ModesMixin, effort_words, mode_row_line
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .model_picker import KEYS as MODEL_PICKER_KEYS
 from .model_picker import PICK as MODEL_PICK
@@ -3371,7 +3371,7 @@ class App(ModesMixin, AgentViewMixin):
         elif armed is not None and self.clock() - armed[1] <= DOUBLE_ESCAPE_SECONDS:
             say = ESCAPE_AGAIN.format(armed[0])
         if isinstance(say, tuple):
-            effort = cell_width(f"effort {self.effort}") + MODE_ROW_GAP if self.effort else 0
+            effort = cell_width(effort_words(self.effort)) + MODE_ROW_GAP if self.effort else 0
             strip = self._agent_strip(cols - effort - cell_width(STRIP_SEPARATOR + say[max(len(say) - 2, 0)]))[0]
         return mode_row_line(
             mode=self._display_mode(),
@@ -3385,6 +3385,8 @@ class App(ModesMixin, AgentViewMixin):
             say=say,
             say_style=say_style,
             esc_interrupts=self._esc_interrupts(),
+            # While Hermes has approvals off on its own, Shift+Tab turns plan on and off and nothing else.
+            cycle=HERMES_OWN_CYCLE.get(self._display_mode(), "") if self.approvals_off and not self.yolo_by_tui else "",
         )
 
     def _slot_caret(self) -> tuple[int, int] | None:

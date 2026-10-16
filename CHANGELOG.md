@@ -41,6 +41,14 @@ All notable changes will be documented here.
   HUD, which lags behind a switch. The status line no longer carries it; the
   composer's rules and mode row (the status line on a short terminal) say the
   mode, as Hermes confirmed it for the session, in the words the docs use.
+  The mode row also says what each mode means and what Shift+Tab turns on
+  next, Claude Code style: between turns `? shortcuts · ⇧⇥ accept all/plan ·
+  ctrl+t effort (medium)` (it said `⇧⇥ mode · ctrl+t effort` with a separate
+  `effort medium` on the right), in accept all `⏵⏵ accept all on · Hermes asks
+  no approvals in this session (⇧⇥ plan/normal)`, in plan `⏸ plan mode on ·
+  prompts go as /plan (⇧⇥ normal/accept all)`, with shorter forms of the same
+  words on a narrow row. The effort is said once, as `ctrl+t effort (medium)`,
+  and the keys list uses the same words for Shift+Tab and Ctrl+T.
 - **A first Ctrl+C between turns says `ctrl+c again to exit` on the mode row**
   for the 2 s a second press exits in, as Esc's first press does, instead of
   leaving a `Ctrl+C again to exit` notice in the scrollback every time.

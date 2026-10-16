@@ -22,9 +22,10 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+Enter", "Steers a running turn with the composer's text, on a terminal that tells it from Enter "
                    "(/steer <text> steers on any terminal); idle, sends it as Enter does"),
     ("Tab", "Completes a slash command, or the @ reference being typed"),
-    ("Shift+Tab", "Cycles the input mode: normal, accept all, plan; while Hermes itself has approvals off, "
-                  "turns plan on and off"),
-    ("Ctrl+T", "Steps the reasoning effort: low, medium, high, xhigh, max"),
+    ("Shift+Tab", "Cycles the input mode: normal, accept all (Hermes asks no approvals in this session), plan "
+                  "(prompts go as /plan); while Hermes itself has approvals off, turns plan on and off"),
+    ("Ctrl+T", "Steps the reasoning effort: low, medium, high, xhigh, max; the mode row shows it as ctrl+t effort "
+               "(medium)"),
     ("@", "Starts a file or folder reference; Hermes offers matches above the composer"),
     ("!", "At the start of a line, makes it a shell command Hermes runs when you send it (30 s at most); "
           "it and its output are not sent to the model"),
