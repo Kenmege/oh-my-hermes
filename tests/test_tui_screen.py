@@ -417,6 +417,26 @@ class InsertedRowsTests(unittest.TestCase):
         self.assertNotIn("› composer", printable(written))
         self.assertEqual(harness.screen.lines()[3:12], ["tail 1", "tail 2", "tail 3", *under, ""])
 
+    def test_an_insert_among_repeated_rows_compares_each_row_with_the_one_that_moved_there(self) -> None:
+        # Real frames repeat rows (the composer's two rules, blank rows). After the insert a row must be compared
+        # with what IL moved onto it, never with what was there before: here a stale rule would stay on row 3.
+        rule = "─" * 12
+        harness = Harness(rows=24, cols=40, history=3)
+        harness.region = LiveRegion(harness._write, start_row=3)
+        harness.render(plain("", "", rule, "", rule), cursor=None, screen_rows=24)
+        harness.render(plain("", rule, "", "", "", rule), cursor=None, screen_rows=24)
+        self.assertIn("\x1b[1L", "".join(harness.writes))
+        self.assertEqual(harness.screen.lines()[3:10], ["", rule, "", "", "", rule, ""])
+
+    def test_rows_that_match_wherever_they_go_grow_at_the_end_with_no_insert(self) -> None:
+        # Every point keeps as many rows unchanged: the tie goes to the end, the ordinary growth, which writes no IL.
+        harness = Harness(rows=24, cols=40, history=3)
+        harness.region = LiveRegion(harness._write, start_row=3)
+        harness.render(plain("", "", ""), cursor=None, screen_rows=24)
+        harness.writes.clear()
+        harness.render(plain("", "", "", ""), cursor=None, screen_rows=24)
+        self.assertNotIn("L", "".join(final for _params, final in _CSI.findall("".join(harness.writes))))
+
     def test_without_room_under_it_or_a_certain_place_it_grows_as_before(self) -> None:
         cases = {
             "the last row": (self.started(history=18), 24),  # six rows from row 18 end on the screen's last row
