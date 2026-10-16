@@ -53,11 +53,11 @@ class AppSuspendTests(unittest.TestCase):
         terminal.typed_after_stop = b"x"  # type: ignore[attr-defined]  # a key typed while the query waited
         type_text(app, "a draft")
         drawn(app)
-        app._on_input(CTRL_Z)
+        app._take_input(b"\x1ab")  # Ctrl+Z and a key typed right behind it, in one read
         self.assertEqual(terminal.cursor_queries, 1)  # type: ignore[attr-defined]
         drawn(app)
         self.assertEqual(app.region.last_row(24), 23)  # certain from the first frame after: pinned
-        self.assertEqual(app.composer.text, "a draftx")  # read as typed, after the query
+        self.assertEqual(app.composer.text, "a draftbx")  # in the order typed: the read's key, then the query's
 
     def test_the_shells_title_is_back_while_the_job_is_stopped_and_ours_after(self) -> None:
         app, _client = make_app()

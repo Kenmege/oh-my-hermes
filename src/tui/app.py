@@ -1119,6 +1119,7 @@ class App(ModesMixin, AgentViewMixin):
         # is that command's (`Transcript.command` says which), and its echo stays open until every such call is
         # answered (`_run_slash`).
         self.pending: dict[int, _Pending] = {}
+        self.typed_ahead = b""  # keys read while the cursor query after a stop waited (`_suspend`), not yet decoded
         self.menu_index = 0
         self.menu_closed: str | None = None  # the composer text Esc closed the `/` menu on; it stays closed over that text
         # Where the open completion menu is drawn: under the composer (True) or in the slot above it (False); None
@@ -1453,6 +1454,9 @@ class App(ModesMixin, AgentViewMixin):
             self._on_input(event)
             if self.exit_code is not None:
                 return
+        if self.typed_ahead:  # typed after the keys above, so read after them
+            typed, self.typed_ahead = self.typed_ahead, b""
+            self._take_input(typed)
 
     def _read_timeout(self) -> float:
         """How long the next read may wait: until the soonest thing the loop has to do without new input.
@@ -2321,7 +2325,8 @@ class App(ModesMixin, AgentViewMixin):
         title is back while the job is stopped (popped, and pushed again by the
         next frame). Continued, the TUI asks the terminal for the cursor row
         again, as at launch (`adopt_cursor_row`), so the region knows its place
-        from its first frame; keys typed while that query waited are read then.
+        from its first frame; keys typed while that query waited are read after
+        the keys that came in the same read as the Ctrl+Z (`typed_ahead`).
         """
         if getattr(signal, "SIGTSTP", None) is None:
             return
@@ -2336,8 +2341,7 @@ class App(ModesMixin, AgentViewMixin):
         self.region = LiveRegion(self.terminal.write)
         self.adopt_cursor_row(row)
         self.dirty = True
-        if typed:
-            self._take_input(typed)
+        self.typed_ahead += typed
 
     def _attachment_input(self, event: Key | Paste) -> bool:
         """Ctrl+V, Backspace on an empty composer with images queued, and a one-line paste (a drop); True when handled."""
