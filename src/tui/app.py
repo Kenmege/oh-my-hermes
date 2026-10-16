@@ -1801,7 +1801,7 @@ class App(ModesMixin, AgentViewMixin):
             return
         if self.slot is None and (self._attachment_input(event) or self._escape(event)):
             return
-        if self.slot is None and isinstance(event, Key) and self._menu_moves(event):
+        if self.slot is None and isinstance(event, Key) and (self._menu_moves(event) or self._menu_enter(event)):
             return
         if self.slot is None and self._recall_queue(event):
             return
@@ -2172,6 +2172,31 @@ class App(ModesMixin, AgentViewMixin):
         if not rows:
             return False
         self.menu_index = (self.menu_index + (-1 if key.name == UP else 1)) % len(rows)
+        return True
+
+    def _menu_enter(self, key: Key) -> bool:
+        """Enter on an open completion menu takes the highlighted row, as Tab does, when that changes what is typed.
+
+        Ink's rule (`completionToApplyOnSubmit`): the line is sent instead when
+        the row would only add the space after a command typed in full, and
+        when the typed word is a command's whole name (an alias included)
+        while the highlight is still on the first row. Alt+Enter and
+        Shift+Enter add a line, menu or not.
+        """
+        if key.name != ENTER or key.alt or key.shift or not self._menu_rows():
+            return False
+        entries = self._menu_entries()
+        if entries:
+            typed, invocation = self.composer.text[1:], parse_slash(self.composer.text)
+            name = entries[min(self.menu_index, len(entries) - 1)].name
+            whole = typed in {entry.name for entry in entries} or (invocation is not None and invocation.command is not None)
+            if name == typed or (whole and self.menu_index == 0):
+                return False
+        else:
+            word = at_token(self.composer.text, self.composer.caret)[1]
+            if not word or self.path_items[min(self.menu_index, len(self.path_items) - 1)].text == word:
+                return False
+        self._accept_completion()
         return True
 
     def _accept_completion(self) -> None:
