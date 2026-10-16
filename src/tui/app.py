@@ -49,6 +49,13 @@ interrupt or redirect the turn it was meant to steer. A steer answered after
 its session was left goes back to the composer instead: the session now live
 never receives it.
 
+When the gateway child exits on its own with a failure, the loop spawns it
+again from the environment the launcher handed the TUI (`gateway_spawn`) and
+resumes the session that was open, at most `RESPAWN_LIMIT` times in
+`RESPAWN_WINDOW_SECONDS` (`App._respawn_gateway`); a normal exit, the
+person's quit, an attach hand-off, or a crash past the limit ends the TUI as
+described above.
+
 The input modes and the reasoning effort are `modes.ModesMixin`'s, and the
 subagent strip, list and log are `agent_view.AgentViewMixin`'s; each
 module's docstring holds their rules. `App` mixes both in.
@@ -318,13 +325,27 @@ STATE_WAITING = "waiting on you"
 QUEUE_GLYPH = "⧗ "
 QUEUE_ROWS = 3
 QUEUE_EDIT_HINT = "↑ edit"
-QUEUE_HELD_HINT = "held after the interrupt · ↑ edit"
+QUEUE_HELD_HINT = "held · ↑ edit"
 QUEUE_HINT_GAP = 2
 # After the person interrupts a turn the queue does not go on by itself: what Up would take back goes back into the
 # composer, and what it would not (a queued `!` line and what follows it) stays queued, held, until the next prompt
 # the person sends starts a turn, or Up takes it back.
-QUEUE_BACK_NOTICE = "Interrupted: what you queued is back in the composer, not sent."
-QUEUE_HELD_NOTICE = "Interrupted: what you queued waits, not sent, until your next prompt; ↑ takes it back."
+QUEUE_BACK_NOTICE = "{why}: what you queued is back in the composer, not sent."
+QUEUE_HELD_NOTICE = "{why}: what you queued waits, not sent, until your next prompt; ↑ takes it back."
+INTERRUPTED_WHY = "Interrupted"
+RESPAWNED_WHY = "The Hermes gateway was restarted"
+# Gateway crash recovery, bounded as Hermes' own TUI bounds it (ui-tui `app/gatewayRecovery.ts`): at most
+# RESPAWN_LIMIT respawns in a sliding RESPAWN_WINDOW_SECONDS, each resuming the session that was open. Past that,
+# or with no stored session to resume, the TUI leaves as it would without recovery.
+RESPAWN_LIMIT = 3
+RESPAWN_WINDOW_SECONDS = 60.0
+RESPAWN_NOTICE = (
+    "The Hermes gateway exited ({reason}); starting it again and resuming session {session} "
+    "({attempt} of {limit} in {window:g} s)."
+)
+RESPAWNED_NOTICE = "Resumed session {session} on a new Hermes gateway."
+TURN_LOST_NOTICE = "The running turn was lost when the Hermes gateway exited; it was not sent again."
+QUESTION_LOST_NOTICE = "Hermes' {method} request closed unanswered: the gateway that asked has exited."
 # Between the interrupt key and the end of the turn, the working row says so in place of the spinner.
 INTERRUPTING = "interrupting…"
 
@@ -920,9 +941,14 @@ class App(ModesMixin, AgentViewMixin):
         clock: Callable[[], float] = time.monotonic,
         wall_clock: Callable[[], float] = time.time,
         pick_model_chains: Callable[..., str] = run_model_chain_picker,
+        make_client: Callable[..., GatewayClient] | None = None,
     ) -> None:
         self.terminal = terminal
         self.client = client
+        # What spawns a gateway again after a crash (`_respawn_gateway`); None: a crash ends the TUI.
+        self.make_client = make_client
+        self.respawned_at: list[float] = []  # when each respawn in the window began, on `clock`
+        self.respawn_reason = ""  # the gateway is gone, for this reason, and a respawn is due after this step
         self.environ = environ
         self.motion = not reduced_motion(environ)
         self.poller = poller
@@ -1242,7 +1268,7 @@ class App(ModesMixin, AgentViewMixin):
         return reported
 
     def run(self, typed: bytes = b"") -> int:
-        """Run until the person quits or the gateway is gone; the exit code.
+        """Run until the person quits or the gateway is gone for good (`_respawn_gateway`); the exit code.
 
         `typed` is input that arrived before the loop started (while the
         background query waited); it is read before the first frame. The live
@@ -1250,7 +1276,7 @@ class App(ModesMixin, AgentViewMixin):
         caller's, after it has handed the terminal back.
         """
         self.wake = self.client.wake_fd()
-        self.poller.start(self.client.wake)  # a new HUD snapshot wakes the loop as gateway news does
+        self.poller.start(self._wake_loop)  # a new HUD snapshot wakes the loop as gateway news does
         try:
             if typed:
                 self._take_input(typed)
@@ -1277,6 +1303,8 @@ class App(ModesMixin, AgentViewMixin):
         if self.exit_code is not None:
             return
         self._drain_gateway()
+        if self.respawn_reason:
+            self._respawn_gateway()
         if self.exit_code is not None:
             return
         self._expire_calls()
@@ -1426,6 +1454,10 @@ class App(ModesMixin, AgentViewMixin):
     def _busy(self) -> bool:
         return self.transcript.running or self.turn_pending
 
+    def _wake_loop(self) -> None:
+        """Make the live gateway client's descriptor readable, from any thread: the HUD poller's wake-up."""
+        self.client.wake()
+
     # ── gateway ──
 
     def _request(
@@ -1439,7 +1471,7 @@ class App(ModesMixin, AgentViewMixin):
         try:
             request_id = self.client.request(method, params)
         except GatewayUnavailable as error:
-            self._lose_gateway(str(error))
+            self._gateway_gone(str(error))
             return
         except ValueError as error:  # the gateway contract refused the call (`contract.call_problem`): nothing went out
             self.transcript.add_notice(f"The OMH TUI did not send {method}: {error}.", NOTICE_ERROR)
@@ -1491,7 +1523,87 @@ class App(ModesMixin, AgentViewMixin):
         try:
             self.client.respond(answer.request_id, answer.frame)
         except GatewayUnavailable as error:
-            self._lose_gateway(str(error))
+            self._gateway_gone(str(error))
+
+    def _gateway_gone(self, reason: str, code: int | None = None) -> None:
+        """The gateway child is gone: a respawn is due once this step ends, where one is allowed, else the TUI leaves.
+
+        Never after a normal exit (code 0), once the person is leaving, without
+        a way to spawn one, or when the launcher handed over a gateway another
+        runtime owns (`HERMES_TUI_GATEWAY_URL`, refused before any spawn).
+        """
+        if self.exit_code is not None or self.respawn_reason:
+            return
+        if self.make_client is None or code == 0 or attach_refused(self.environ):
+            self._lose_gateway(reason)
+            return
+        self.respawn_reason = reason
+
+    def _respawn_gateway(self) -> None:
+        """Spawn the gateway again, as the launcher's environment says, and resume the session that was open.
+
+        The open question and the ones waiting behind it close unanswered,
+        since the gateway that asked is gone; a running turn is reported lost
+        and never sent again; the queue is held as after an interrupt
+        (`_hold_queue`). At most `RESPAWN_LIMIT` respawns in
+        `RESPAWN_WINDOW_SECONDS`, each saying so; a gateway that does not start
+        again uses one and the next is tried. Past the limit, without a stored
+        session, or when the new gateway does not resume it, the TUI leaves as
+        it would without recovery (`_lose_gateway`). Calls the old gateway had
+        not answered stay in `pending` and expire as unanswered calls do: the
+        new client's request ids start past theirs.
+        """
+        reason, self.respawn_reason = self.respawn_reason, ""
+        stored = self.stored_id
+        self._close_questions_unanswered()
+        if self._busy():
+            self.transcript.fail_turn(TURN_LOST_NOTICE)
+        self.turn_pending = self.interrupting = False
+        self._clear_roster()
+        self.list_selected = None
+        while True:
+            now = self.clock()
+            self.respawned_at = [at for at in self.respawned_at if now - at < RESPAWN_WINDOW_SECONDS]
+            if not stored or len(self.respawned_at) >= RESPAWN_LIMIT:
+                self._lose_gateway(reason)
+                return
+            self.respawned_at.append(now)
+            self.transcript.add_notice(RESPAWN_NOTICE.format(
+                reason=reason, session=stored, attempt=len(self.respawned_at), limit=RESPAWN_LIMIT,
+                window=RESPAWN_WINDOW_SECONDS,
+            ), NOTICE_WARN)
+            self.dirty = True
+            self._render_when_due()  # the notice shows while the new gateway starts
+            try:
+                client = self.make_client(gateway_spawn(self.environ), first_id=max(self.pending, default=0) + 1)
+                client.start()
+            except (GatewayUnavailable, GatewayCallError) as error:
+                reason = f"it did not start again: {error}"
+                continue
+            try:
+                result = client.call("session.resume", {"session_id": stored, "cols": self.size[0]})
+            except (GatewayCallError, GatewayTimeout, GatewayUnavailable) as error:
+                client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
+                self._lose_gateway(f"the new Hermes gateway did not resume session {stored} ({error})")
+                return
+            break
+        old, self.client = self.client, client
+        old.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
+        self.wake = client.wake_fd()
+        self._adopt_session(result, fallback_stored=stored)
+        self.transcript.add_notice(RESPAWNED_NOTICE.format(session=self.stored_id), NOTICE_OK)
+        self._hold_queue(RESPAWNED_WHY)
+        self._request("config.get", {"key": "full"}, self._take_busy_mode, self._on_settings_refused)
+        self._refresh_catalog()
+        self._redeliver(result.get("open_requests"))
+
+    def _close_questions_unanswered(self) -> None:
+        """Close the open question and drop the waiting ones without an answer: the gateway that asked is gone."""
+        self.waiting_requests.clear()
+        slot = self.slot
+        if slot is not None:
+            self._close_slot()
+            self.transcript.add_notice(QUESTION_LOST_NOTICE.format(method=slot.method), NOTICE_WARN)
 
     def _lose_gateway(self, reason: str) -> None:
         if self.exit_code is not None:
@@ -1510,8 +1622,8 @@ class App(ModesMixin, AgentViewMixin):
             elif isinstance(item, Response):
                 self._on_response(item)
             elif isinstance(item, GatewayExited):
-                self._lose_gateway(f"the Hermes gateway exited (code {item.returncode})")
-            if self.exit_code is not None:
+                self._gateway_gone(f"the Hermes gateway exited (code {item.returncode})", item.returncode)
+            if self.exit_code is not None or self.respawn_reason:
                 return
 
     def _on_response(self, response: Response) -> None:
@@ -2411,12 +2523,13 @@ class App(ModesMixin, AgentViewMixin):
         """The turn is over: the next queued line goes, unless the person interrupted it (`_hold_queue`)."""
         if self.interrupting:
             self.interrupting = False
-            self._hold_queue()
+            self._hold_queue(INTERRUPTED_WHY)
         else:
             self._drain_queue()
 
-    def _hold_queue(self) -> None:
-        """A turn ended that the person stopped: the queue does not go on by itself, as Claude Code's does not.
+    def _hold_queue(self, why: str) -> None:
+        """A turn ended that the person stopped (or that a gateway restart lost): the queue does not go on by itself,
+        as Claude Code's does not after an interrupt. `why` opens the notice.
 
         With an empty draft, what Up would take back goes back into it, in
         order (`_take_back_queue`); what is left, a queued `!` line and what
@@ -2430,10 +2543,10 @@ class App(ModesMixin, AgentViewMixin):
         draft = self._draft()
         if not draft.text:
             self._take_back_queue(draft)
-            self.transcript.add_notice(QUEUE_BACK_NOTICE)
+            self.transcript.add_notice(QUEUE_BACK_NOTICE.format(why=why))
         if self.queued:
             self.queue_held = True
-            self.transcript.add_notice(QUEUE_HELD_NOTICE)
+            self.transcript.add_notice(QUEUE_HELD_NOTICE.format(why=why))
 
     def _drain_queue(self) -> None:
         """Send the next queued line: a prompt starts the next turn; a `!` line runs, and the one after waits for it.
@@ -3197,7 +3310,7 @@ class App(ModesMixin, AgentViewMixin):
 
         def read_key() -> str:
             while not pending:
-                if self.chains_closing or self.exit_code is not None:
+                if self.chains_closing or self.exit_code is not None or self.respawn_reason:
                     return KEY_QUIT
                 try:
                     data = self.terminal.read(READ_TIMEOUT_SECONDS, self.wake)
@@ -3727,8 +3840,12 @@ def _run(
     stderr: TextIO,
     open_terminal: Callable[[], TerminalLike],
     make_poller: Callable[[str | None, str | None], PollerLike],
+    make_client: Callable[..., GatewayClient] | None = None,
 ) -> int:
-    """Start the gateway, open the session, then run the loop on the raw terminal; the exit code."""
+    """Start the gateway, open the session, then run the loop on the raw terminal; the exit code.
+
+    `make_client` spawns a gateway again after a crash (`App._respawn_gateway`).
+    """
     ready = _start_gateway(client, stderr)
     if ready is None:
         return request_fallback(environ)
@@ -3739,16 +3856,21 @@ def _run(
         environ,
         poller=make_poller(environ.get("OMH_HOME") or None, environ.get("HERMES_HOME") or None),
         theme=initial_theme(ready.payload, environ.get("OMH_HOME") or None),
+        make_client=make_client,
     )
     try:
         app.startup()
     except (GatewayCallError, GatewayTimeout, GatewayUnavailable) as error:
         _say(stderr, f"omh: the OMH TUI could not open a Hermes session: {error}")
         return request_fallback(environ)
-    with terminal:
-        background, typed = terminal.query_background()
-        app.adopt_background(background, environ)
-        code = app.run(typed)
+    try:
+        with terminal:
+            background, typed = terminal.query_background()
+            app.adopt_background(background, environ)
+            code = app.run(typed)
+    finally:
+        if app.client is not client:  # a gateway spawned after a crash; the caller reaps the first one
+            app.client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
     if app.farewell:
         _say(stderr, app.farewell)
     return code
@@ -3782,7 +3904,9 @@ def main(
     previous_handlers = _install_exit_signals()
     try:
         # The terminal picks its key reports from the environment the TUI was given (TERM_PROGRAM and kin).
-        return _run(client, environ, stderr, open_terminal or (lambda: Terminal(environ=environ)), make_poller)
+        return _run(
+            client, environ, stderr, open_terminal or (lambda: Terminal(environ=environ)), make_poller, make_client
+        )
     except KeyboardInterrupt:
         # Ctrl+C is a signal, not a key, until the terminal goes raw: while the gateway starts
         # and the session opens. The child is reaped below either way.

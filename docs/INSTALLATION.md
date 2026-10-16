@@ -492,7 +492,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   has stopped the turn. What you queued behind that turn is not sent then:
   it comes back into the composer, as Claude Code does it, joined in order;
   a queued `!` line, which is never joined to a prompt, and what follows it
-  stay queued (`held after the interrupt · ↑ edit`) until you send your next
+  stay queued (`held · ↑ edit`) until you send your next
   prompt or take them back with Up, and so does the whole queue if you typed
   something while the turn was stopping. Each turn ends with a line
   `✻ 34s · 3 tools · ↓1.2k` on a thin rule. The terminal's title names the session (Hermes
@@ -759,7 +759,17 @@ own ends the launch like any other exit code. If the gateway stops accepting a m
 TUI leaves with the command that reopens the same session in `hermes`; on the
 three calls a session does without, reading Hermes' settings (for the busy
 mode, which then stays `queue`), reading the command list and the
-`/reload-skills` rescan, it says so instead and the session goes on. A
+`/reload-skills` rescan, it says so instead and the session goes on. If
+the gateway itself exits mid-session with a failure, the TUI starts it again
+the way Hermes' launcher set it up and resumes the same session, saying so
+(`The Hermes gateway exited (…); starting it again and resuming session <id>
+(1 of 3 in 60 s).`), as Hermes' own TUI does: a question it had asked closes
+unanswered, a turn that was running is reported lost and is not sent again,
+and what you queued comes back to the composer as after an interrupt. It
+does this at most three times in a minute; after that, or when the new
+gateway cannot resume the session, it leaves with the command that reopens
+the session in `hermes --tui`. A gateway that exits normally, or after you
+quit, is not started again. A
 turn that brings no event the TUI shows, only types it does not know (Hermes
 renamed its turn events), gets one notice pointing at `omh doctor`, which
 prints the installed Hermes commit next to the one the TUI was declared

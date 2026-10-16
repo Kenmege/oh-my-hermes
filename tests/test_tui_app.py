@@ -303,8 +303,8 @@ class AppTestCase(unittest.TestCase):
         return Run(root, environ, ScriptedTerminal(rows, cols))
 
     def make_client(self, run: Run) -> Callable[..., GatewayClient]:
-        def build(spawn: object) -> GatewayClient:
-            client = GatewayClient(spawn)  # type: ignore[arg-type]
+        def build(spawn: object, **options: object) -> GatewayClient:
+            client = GatewayClient(spawn, **options)  # type: ignore[arg-type]
             run.clients.append(client)
             self.addCleanup(client.close, FAST_GRACE)
             return client
@@ -512,7 +512,8 @@ class SessionTests(AppTestCase):
         self.assertEqual(stat.S_IMODE(os.stat(run.active_session_file).st_mode), 0o600)
         self.assertEqual(run.poller.sessions, [STORED_ID])
         self.assertTrue(run.poller.started and run.poller.stopped)
-        self.assertEqual(run.poller.wake, run.clients[0].wake)  # a new HUD snapshot wakes the loop as gateway news does
+        # A new HUD snapshot wakes the loop as gateway news does: through the app, whichever client is live.
+        self.assertEqual(getattr(run.poller.wake, "__func__", None), App._wake_loop)
         self.assertEqual((run.terminal.entered, run.terminal.exited), (1, 1))
         # The region is gone after exit; nothing of it is left on the screen.
         self.assertNotIn(STATUS_MARK, run.terminal.history())
