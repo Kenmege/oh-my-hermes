@@ -739,22 +739,50 @@ class AppBottomRowsTests(unittest.TestCase):
         drawn(app)
         self.assertFalse(app.menu_below)
 
-    def test_output_that_pushes_the_region_down_while_the_menu_is_open_leaves_it_where_it_opened(self) -> None:
+    def test_output_that_brings_the_region_to_the_last_row_takes_the_menu_above_and_closing_moves_nothing(self) -> None:
+        # The re-review's repro: `/` typed mid-screen while a reply streams; the reply pins the region with the menu
+        # under the composer. The menu goes above in that same frame, so Esc or Backspace then moves nothing.
+        from test_tui_modes import drawn, make_app, type_text
+
+        for close in (Key(ESCAPE), Key(BACKSPACE)):
+            with self.subTest(close=close.name):
+                app = make_app(rows=24, cols=80)[0]
+                app.adopt_cursor_row(3)
+                drawn(app)
+                type_text(app, "/")
+                drawn(app)
+                self.assertTrue(app.menu_below)
+                app.transcript.add_notice("\n".join(f"line {n}" for n in range(30)))  # the region reaches the last row
+                pushed = drawn(app)
+                self.assertFalse(app.menu_below)
+                rule, status = self.where(pushed)
+                self.assertEqual(status, 23)
+                self.assertEqual(pushed[rule + 2], pushed[rule])  # nothing under the composer now
+                self.assertTrue(pushed[rule - 1].strip())  # the menu above it
+                caret = app.terminal.screen.cursor
+                app._on_input(close)
+                closed = drawn(app)
+                self.assertEqual(self.where(closed), (rule, status))
+                self.assertEqual(app.terminal.screen.cursor[0], caret[0])
+
+    def test_output_that_moves_the_region_short_of_the_last_row_leaves_the_menu_under_the_composer(self) -> None:
+        # Filtered to two rows, the menu would no longer fit at its tallest after the push, but it is not re-decided:
+        # only reaching the last row takes it above.
         from test_tui_modes import drawn, make_app, type_text
 
         app = make_app(rows=24, cols=80)[0]
-        app.adopt_cursor_row(3)
+        app.adopt_cursor_row(10)
         drawn(app)
         type_text(app, "/")
         drawn(app)
         self.assertTrue(app.menu_below)
-        app.transcript.add_notice("\n".join(f"line {n}" for n in range(30)))  # the region reaches the last row
-        screen = drawn(app)
-        self.assertEqual(app.region.last_row(24), 23)
+        type_text(app, "mo")
+        before = self.where(drawn(app))[0]
+        app.transcript.add_notice("one\ntwo\nthree")  # its spacer and three rows
+        after = drawn(app)
         self.assertTrue(app.menu_below)
-        rule = self.where(screen)[0]
-        self.assertEqual(screen[rule + 2], screen[rule])  # the bottom rule under the input row
-        self.assertTrue(screen[rule + 3].strip())  # and the menu under that
+        self.assertEqual(self.where(after)[0], before + 4)  # moved with the output only
+        self.assertLess(self.where(after)[1], 23)
 
     def test_with_its_place_unknown_the_menu_opens_above_as_before(self) -> None:
         from test_tui_modes import drawn, make_app, type_text

@@ -383,7 +383,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   instead wherever they fit there short of the bottom rows, as in Claude
   Code, so the composer and the caret do not move; on the bottom rows, close
   to them, or before the TUI knows its place on the screen, they open above
-  it. Once the composer has reached the bottom
+  it. Output that brings the composer to the bottom rows while a menu is open
+  under it takes the menu above it with that output, so closing the menu
+  there moves nothing. Once the composer has reached the bottom
   rows it stays there: what grows above it scrolls the transcript up, and a
   list or question closing there does not pull it up, its rows staying blank
   above the composer until more is printed into them. A resize or a redraw
