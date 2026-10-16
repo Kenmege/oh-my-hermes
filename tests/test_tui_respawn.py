@@ -582,8 +582,8 @@ class LeavingDuringARespawnTests(unittest.TestCase):
         type_text(app, "draft ")
         crash(app, old)
         self.assertIsNone(app.exit_code)
-        app._take_input(b"")
-        self.assertEqual(app.composer.text, "draft hi")
+        app._take_input(b"!")  # the next read: what came while it waited goes first
+        self.assertEqual(app.composer.text, "draft hi!")
 
 
 class FirstIdTests(unittest.TestCase):
