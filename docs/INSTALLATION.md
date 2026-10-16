@@ -881,7 +881,8 @@ the way Hermes' launcher set it up and resumes the same session, saying so
 (`The Hermes gateway exited (code 1): starting it again and resuming session
 <id> (1 of 3 in 60 s); what you type waits until it is back.`), as Hermes' own
 TUI does; each attempt waits up to 15 s for the new gateway, the time Hermes'
-own TUI gives one before it reports a slow start. A question it had asked closes
+own TUI gives one before it reports a slow start (or what
+`HERMES_TUI_STARTUP_TIMEOUT_MS` sets, at least 5 s, as there). A question it had asked closes
 unanswered, a turn that was running is reported lost and is not sent again,
 a steer it had not answered comes back to the composer at once (never sent
 again), the subagents on the strip stay there (those still running marked

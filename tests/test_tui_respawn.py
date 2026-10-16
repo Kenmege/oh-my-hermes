@@ -365,6 +365,28 @@ class CapTests(unittest.TestCase):
                 self.assertEqual(sum("starting it again" in text for text in notices(app)), 2)
                 self.assertIn(error, notices(app)[1])  # the second attempt's notice names why the first failed
 
+    def test_the_wait_honours_the_startup_timeout_hermes_own_tui_reads(self) -> None:
+        # ui-tui gatewayClient.ts: Math.max(5000, parseInt(HERMES_TUI_STARTUP_TIMEOUT_MS ?? '15000') || 15000) ms.
+        for value, seconds in (("20000", 20.0), ("1000", 5.0), ("0", 15.0), ("soon", 15.0), (None, 15.0)):
+            with self.subTest(value=value):
+                environ = {**ENVIRON, **({"HERMES_TUI_STARTUP_TIMEOUT_MS": value} if value is not None else {})}
+                app, old, spawner, _now = crashing(environ=environ)
+                crash(app, old)
+                self.assertEqual(spawner.made[0].ready_timeout, seconds)
+
+    def test_the_first_notice_is_on_screen_before_the_old_gateway_is_waited_on(self) -> None:
+        # Closing a child that hangs takes seconds (stdin, terminate, kill): the screen says why first.
+        app, old, _spawner, _now = crashing()
+        screens: list[str] = []
+
+        def close(grace: float = 3.0, terminate_grace: float | None = None) -> int | None:
+            screens.append("\n".join(app.terminal.screen.lines()))  # type: ignore[attr-defined]
+            return 1
+
+        old.close = close  # type: ignore[method-assign]
+        crash(app, old)
+        self.assertIn("starting it again", screens[0])
+
     def test_a_respawn_waits_seconds_not_a_minute_for_the_new_gateway(self) -> None:
         # Hermes' own TUI reports a gateway with no `gateway.ready` after 15 s (ui-tui `STARTUP_TIMEOUT_MS`); the keys
         # wait meanwhile, so three hung attempts hold them for 45 s rather than 3 minutes.

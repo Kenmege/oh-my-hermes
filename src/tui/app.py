@@ -362,8 +362,12 @@ RESPAWN_LIMIT = 3
 RESPAWN_WINDOW_SECONDS = 60.0
 # A respawn runs inside one loop step, so keys wait while the new gateway starts. Hermes' own TUI reports a gateway
 # that sent no `gateway.ready` after 15 s (ui-tui `gatewayClient.ts` STARTUP_TIMEOUT_MS), and a gateway started again
-# moments after the first one is warm, so an attempt gives up after that long, not the first start's minute.
+# moments after the first one is warm, so an attempt gives up after that long, not the first start's minute. Hermes'
+# TUI takes the time from STARTUP_TIMEOUT_ENV when it is set (milliseconds, at least 5 s, unset or 0 the default), and
+# so does a respawn here (`respawn_ready_seconds`).
 RESPAWN_READY_SECONDS = 15.0
+STARTUP_TIMEOUT_ENV = "HERMES_TUI_STARTUP_TIMEOUT_MS"
+STARTUP_TIMEOUT_MIN_SECONDS = 5.0
 RESPAWN_NOTICE = (
     "{reason}: starting it again and resuming session {session} ({attempt} of {limit} in {window:g} s); "
     "what you type waits until it is back."
@@ -607,6 +611,16 @@ def notification_from(payload: Mapping[str, Any], now: float) -> Notification | 
         expires_at = now + ttl / 1000
     level = level if level in contract.NOTIFICATION_LEVELS else "info"
     return Notification(text, level, as_text(payload.get(contract.NOTIFICATION_KEY)), expires_at)
+
+
+def respawn_ready_seconds(environ: Mapping[str, str]) -> float:
+    """How long a respawned gateway may take to send `gateway.ready`: `STARTUP_TIMEOUT_ENV` read as Hermes' TUI reads
+    it (`Math.max(5000, parseInt(value) || 15000)` ms), a whole number of milliseconds; anything else is the default."""
+    try:
+        milliseconds = int(environ.get(STARTUP_TIMEOUT_ENV, "").strip())
+    except ValueError:
+        milliseconds = 0
+    return max(STARTUP_TIMEOUT_MIN_SECONDS, milliseconds / 1000 if milliseconds else RESPAWN_READY_SECONDS)
 
 
 def goal_line(goal: Mapping[str, Any] | None, width: int, theme: Theme) -> Line | None:
@@ -1680,7 +1694,7 @@ class App(ModesMixin, AgentViewMixin):
         self.list_selected = None
         first_id = max(self.pending, default=0) + 1
         self._settle_lost_calls()
-        self.client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
+        old: GatewayClient | None = self.client
         while True:
             now = self.clock()
             self.respawned_at = [at for at in self.respawned_at if now - at < RESPAWN_WINDOW_SECONDS]
@@ -1693,10 +1707,13 @@ class App(ModesMixin, AgentViewMixin):
                 limit=RESPAWN_LIMIT, window=RESPAWN_WINDOW_SECONDS,
             ), NOTICE_WARN)
             self.dirty = True
-            self._render_when_due()  # the notice shows while the new gateway starts
+            self._render_when_due()  # the notice shows while the old gateway is reaped and the new one starts
+            if old is not None:  # reaped before a new one is spawned, once the screen says why the TUI waits
+                old.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
+                old = None
             try:
                 self.client = self.make_client(gateway_spawn(self.environ), first_id=first_id)
-                self.client.start(ready_timeout=RESPAWN_READY_SECONDS)
+                self.client.start(ready_timeout=respawn_ready_seconds(self.environ))
             except (GatewayUnavailable, GatewayCallError) as error:
                 reason = f"the new Hermes gateway did not start ({error})"
                 continue
