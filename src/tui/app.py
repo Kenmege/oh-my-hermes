@@ -202,7 +202,7 @@ from .transcript import (
     block_rows,
     compact_count,
 )
-from .width import cell_width, clusters, line_width, truncate_left, truncate_line
+from .width import cell_width, clusters, line_width, truncate, truncate_left, truncate_line
 from ..version import __version__
 
 # While the key decoder holds bytes (a lone ESC, half a sequence, an open paste), the loop reads with this
@@ -359,8 +359,9 @@ CALL_EXPIRED_NOTICE = "Hermes has not answered {method} in {seconds:g} s; the OM
 CURSOR_REPORT_START = b"\x1b["
 CURSOR_REPORT_FINAL = b"R"
 
-# One BEL when an approval opens, so a terminal in the background can flag the tab or bounce.
+# One BEL when a question opens, so a terminal in the background can flag the tab or bounce.
 BELL = "\a"
+QUESTION_ALERT_CHARS = 80  # the most of what Hermes asks that a question's notification says
 BELL_ENV = "OMH_TUI_BELL"
 BELL_OFF = "0"
 # A turn that ran this long ends with the terminal's attention signal (`attention_sequence`).
@@ -1577,6 +1578,15 @@ class App(ModesMixin, AgentViewMixin):
                 self._alert_turn_end(seconds)
                 self._drain_queue()
 
+    def _alert_question(self, slot: PromptSlot) -> None:
+        """Once per question, as its slot opens (the wait is on the person): the bell an approval always rang, and
+        where the terminal shows the turn end's notification (OSC 9 or 777) that too, saying what Hermes asks; none
+        with OMH_TUI_BELL=0."""
+        if self.environ.get(BELL_ENV) == BELL_OFF:
+            return
+        signal = attention_sequence(self.environ, truncate(slot.attention(), QUESTION_ALERT_CHARS))
+        self.terminal.write(BELL if signal == BELL else BELL + signal)
+
     def _alert_turn_end(self, seconds: float) -> None:
         """A turn of `TURN_ALERT_SECONDS` or more ends with the terminal's attention signal, unless OMH_TUI_BELL=0."""
         if seconds < TURN_ALERT_SECONDS or self.environ.get(BELL_ENV) == BELL_OFF:
@@ -1714,8 +1724,7 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.set_waiting(True)
         self.slot_arm_seconds = REPORTING_SLOT_ARM_SECONDS if self._reports_may_arrive() else SLOT_ARM_SECONDS
         self._settle_list()  # a question has the keys now: the agent list gives them up
-        if opened.method == "approval" and self.environ.get(BELL_ENV) != BELL_OFF:
-            self.terminal.write(BELL)  # once per approval, as its slot opens; the wait is on the person
+        self._alert_question(opened)
         if opened.wants_text:
             # An answer to Hermes is typed into a composer of its own, which records no history.
             self.slot_draft, self.composer = self.composer, Composer(masked=opened.masked, records_history=False)

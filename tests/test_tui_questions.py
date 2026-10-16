@@ -20,6 +20,7 @@ from omh.tui import prompts
 from omh.tui.gateway import Event, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, Key
 from omh.tui.layout import MIN_COLS, allocate
+from omh.tui.app import BELL
 from omh.tui.pager import ALT_SCREEN_OFF, HistoryPager
 from omh.tui.transcript import NOTICE_ERROR, NOTICE_OK, TURN_WAITED, NoticeBlock, ToolGroup, TurnSummaryBlock
 
@@ -331,6 +332,44 @@ class WaitingTimeTests(unittest.TestCase):
         now[0] = 130.0
         app._on_event(Event("message.complete", SID, {"text": "done"}))
         self.assertTrue([row for row in drawn(app) if row.startswith("✻ 40s ") and "waiting" not in row])
+
+
+class QuestionAttentionTests(unittest.TestCase):
+    QUESTIONS = (
+        (ServerRequest("srq-1", "approval", {"command": "rm -rf ./x", "description": "recursive delete"}),
+         "Hermes asks to run recursive delete"),
+        (COLOUR, "Hermes asks: Which colour?"),
+        (TEXT_QUESTIONS[0][0], "Hermes needs your sudo password"),
+        (TEXT_QUESTIONS[1][0], "Hermes needs API_KEY"),
+    )
+
+    def written(self, environ: dict, request: ServerRequest) -> str:
+        app, _client = make_app(busy=True, environ=environ)
+        app._on_server_request(request)
+        return "".join(app.terminal.writes)  # type: ignore[attr-defined]
+
+    def test_every_question_fires_the_turn_ends_channel_with_the_bell_it_always_had(self) -> None:
+        for request, said in self.QUESTIONS:
+            with self.subTest(method=request.method):
+                iterm = self.written({"TERM_PROGRAM": "iTerm.app"}, request)
+                self.assertEqual(iterm.count(BELL), 1)
+                self.assertIn(f"\x1b]9;{said}\x1b\\", iterm)
+                foot = self.written({"TERM": "foot"}, request)
+                self.assertIn(f"\x1b]777;notify;OMH;{said}\x1b\\", foot)
+                elsewhere = self.written({"TERM_PROGRAM": "Apple_Terminal"}, request)
+                self.assertEqual(elsewhere.count(BELL), 1)
+                self.assertNotIn("\x1b]9;", elsewhere)
+                self.assertNotIn("\x1b]777;", elsewhere)
+                quiet = self.written({"TERM_PROGRAM": "iTerm.app", "OMH_TUI_BELL": "0"}, request)
+                self.assertNotIn(BELL, quiet)
+                self.assertNotIn("\x1b]9;", quiet)
+
+    def test_the_notification_never_says_a_value_and_stays_short(self) -> None:
+        long = ServerRequest("srq-2", "clarify", {"questions": [{"qid": "q", "question": "Why " * 60}]})
+        written = self.written({"TERM_PROGRAM": "iTerm.app"}, long)
+        said = written[written.index("\x1b]9;") + 4 : written.index("\x1b\\", written.index("\x1b]9;"))]
+        self.assertLessEqual(len(said), app_module.QUESTION_ALERT_CHARS)
+        self.assertTrue(said.startswith("Hermes asks: Why Why"))
 
 
 class DocumentedQuestionViewTests(unittest.TestCase):

@@ -20,7 +20,7 @@ import unittest
 
 from _tui_lines import line_text
 from test_tui_modes import RecordingClient, make_app, type_text
-from omh.tui.app import App
+from omh.tui.app import BELL, App
 from omh.tui.gateway import ServerRequest
 from omh.tui.keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, LEFT, UP, Key, Paste
 
@@ -150,8 +150,9 @@ class HiddenComposerTests(unittest.TestCase):
         armed(app)
         written = len(app.terminal.writes)  # type: ignore[attr-defined]
         press(app, Key(CHAR, "d"))
-        # Answering the approval opened the clarify before any frame was drawn: no frame shows the composer.
-        self.assertEqual(app.terminal.writes[written:], [])  # type: ignore[attr-defined]
+        # Answering the approval opened the clarify before any frame was drawn: no frame shows the composer,
+        # and all that was written is the clarify's bell.
+        self.assertEqual(app.terminal.writes[written:], [BELL])  # type: ignore[attr-defined]
         self.assertEqual(app.slot.method, "clarify")  # type: ignore[union-attr]
         screen = drawn(app)
         self.assertFalse(composer_drawn(app, screen), screen)

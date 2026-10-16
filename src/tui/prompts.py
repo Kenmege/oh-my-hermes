@@ -391,6 +391,14 @@ class PromptSlot:
             rows.append((True, f"{', '.join(json.loads(value)) if multi else _one_line(value)} · {asked}"))
         return rows
 
+    def attention(self) -> str:
+        """What the notification for this question says as it opens: what Hermes asks, in a line, never a value."""
+        if self.method == "approval":
+            return f"Hermes asks to run {_one_line(self.params.get('description')) or 'a command'}"
+        if self.method == "clarify":
+            return f"Hermes asks: {self.subject()}"
+        return f"Hermes needs your {self.subject()}" if self.method == "sudo" else f"Hermes needs {self.subject()}"
+
     def withdrawn_outcome(self, reason: str) -> str:
         """How the question reads in the transcript once Hermes withdrew it, for `reason` (`request.cancel`'s)."""
         word = WITHDRAWN_WORDS.get(reason) or WITHDRAWN.format(reason=reason or "no reason given")

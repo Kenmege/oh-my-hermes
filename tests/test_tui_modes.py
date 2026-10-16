@@ -1972,20 +1972,20 @@ class BellTests(unittest.TestCase):
                 self.assertEqual(bells(app), expected)
                 self.assertIsNotNone(app.slot)  # quiet or not, the approval is shown
 
-    def test_other_questions_and_requests_the_tui_cannot_show_do_not_ring(self) -> None:
+    def test_every_question_rings_once_and_a_request_the_tui_cannot_show_does_not(self) -> None:
         requests = (
-            ("clarify", {"questions": [{"qid": "q0", "question": "Which?", "choices": ["red", "blue"]}]}),
-            ("sudo", {"command": "apt install x"}),
-            ("secret", {"env_var": "TOKEN_X"}),
-            ("vault.code", {}),
-            ("vault.unlock_prompt", {}),
-            ("terminal.read", {}),
+            ("clarify", {"questions": [{"qid": "q0", "question": "Which?", "choices": ["red", "blue"]}]}, 1),
+            ("sudo", {"command": "apt install x"}, 1),
+            ("secret", {"env_var": "TOKEN_X"}, 1),
+            ("vault.code", {}, 1),
+            ("vault.unlock_prompt", {}, 0),
+            ("terminal.read", {}, 0),
         )
-        for method, params in requests:
+        for method, params, expected in requests:
             with self.subTest(method=method):
                 app, _client = make_app(busy=True)
                 app._on_server_request(ServerRequest("srq-1", method, params))
-                self.assertEqual(bells(app), 0)
+                self.assertEqual(bells(app), expected)
 
     def test_an_approval_waiting_behind_another_rings_when_its_own_slot_opens(self) -> None:
         now = [100.0]

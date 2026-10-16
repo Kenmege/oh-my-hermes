@@ -482,11 +482,14 @@ run and approval decision stays Hermes'; the screen is OMH's.
   are those right after each next question of a batch, so typing that was
   meant for the composer, or for the question before, cannot answer it.
   Approving a command permanently stays a choice for `hermes --tui`. The
-  terminal bell rings once as an approval opens, so a terminal in the
-  background can flag it, and a turn that ran 10 s or more ends with the
+  terminal bell rings once as any question opens (an approval, a clarify
+  question, a sudo password, a secret), so a terminal in the background can
+  flag it, and a terminal that shows notifications gets one too, saying what
+  Hermes asks (Hermes drops a clarify question nobody answers after its
+  timeout, 300 s by default), and a turn that ran 10 s or more ends with the
   terminal's own notification: OSC 9 in iTerm2, WezTerm and Ghostty, OSC 777
   in foot and rxvt, the bell elsewhere (tmux among them, which flags the
-  window); `OMH_TUI_BELL=0` keeps both quiet.
+  window); `OMH_TUI_BELL=0` keeps all of it quiet.
 - Each tool call's row shows the first three lines of what the tool printed
   under its name (`⎿`) and counts the rest; a failed call (`✗`) shows its
   error's first line in the error colour, or, when it failed by its exit

@@ -4,6 +4,14 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Every OMH TUI question asks for your attention, not only an approval.**
+  An approval rang the bell; a clarify question, a sudo password or a secret
+  signalled nothing, and Hermes drops a clarify question nobody answers after
+  300 s by default. Each question now rings the bell once as it opens and,
+  on a terminal that shows them, sends the notification a long turn's end
+  sends (OSC 9 in iTerm2, WezTerm and Ghostty, OSC 777 in foot and rxvt),
+  saying what Hermes asks (`Hermes asks: Which colour?`, never a value).
+  `OMH_TUI_BELL=0` keeps all of it quiet.
 - **The OMH TUI stops billing your answer time to Hermes.** While an
   approval or a clarify question was open the working row kept spinning,
   `⠼ working… (16s · ↓262 tokens)`, beside the status line's `waiting on
