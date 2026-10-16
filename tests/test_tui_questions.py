@@ -562,6 +562,32 @@ class DocumentedQuestionViewTests(unittest.TestCase):
         self.assertIn("`✗ " + prompts.WITHDRAWN.format(reason="<Hermes' reason>") + "`", installation)
 
 
+class DocumentedBoundaryTests(unittest.TestCase):
+    """The AGENTS.md "OMH TUI" bullet and CONTEXT.md's entry name the always and tell rows the code draws."""
+
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def prose(self, name: str) -> str:
+        return " ".join((self.ROOT / name).read_text(encoding="utf-8").split())
+
+    def test_the_boundary_names_both_rows_and_the_third_steer_path(self) -> None:
+        agents = self.prose("AGENTS.md")
+        tell = prompts.open_request("srq-1", "approval", {}).approval_label(prompts.APPROVAL_TELL)  # type: ignore[union-attr]
+        self.assertIn(f'An approval\'s last row, "{tell}", sends the explicit deny at once', agents)
+        self.assertIn("Hermes' `always` choice is offered only when the request lists it and is sent, like any allow, "
+                      "only on the person's arrows and then Enter", agents)
+        self.assertIn("A steer (Ctrl+Enter, `/steer`, or what the person sends from the composer the tell row opened) "
+                      "sends into the running turn only text the person typed and sent that way", agents)
+        self.assertIn("the TUI never steers on its own, and a queued prompt is never turned into a steer", agents)
+
+    def test_the_glossary_says_what_the_two_rows_send(self) -> None:
+        context = self.prose("CONTEXT.md")
+        entry = context[context.index("**OMH TUI**:") : context.index("**Hermes gateway protocol**:")]
+        self.assertIn("An approval's `always` row, there only when Hermes offers it, sends Hermes' own permanent allow, "
+                      "which Hermes saves; its last row denies and sends what the person then types into the running "
+                      "turn as a steer.", entry)
+
+
 class TinyTerminalQuestionTests(unittest.TestCase):
     def test_a_question_answered_with_text_keeps_its_label_on_a_tiny_terminal(self) -> None:
         for rows, cols in ((4, 80), (5, 80), (24, MIN_COLS - 1)):

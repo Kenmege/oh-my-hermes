@@ -188,6 +188,13 @@ PR without the chat history.
   Ctrl+C declines, an approval decline is an explicit deny, allowing a
   command takes the arrows and then Enter, and a request the gateway
   withdraws (its own timeout, an interrupt) closes without an answer.
+  Hermes' `always` choice is offered only when the request lists it and is
+  sent, like any allow, only on the person's arrows and then Enter; saving
+  it as a permanent allow (`command_allowlist`) is Hermes' doing, and like
+  allow this session for one session it stops Hermes asking about commands
+  that match. An approval's last row, "no, and tell Hermes what to do
+  instead", sends the explicit deny at once and then opens the composer for
+  what the person tells Hermes instead; Esc there sends nothing more.
   Leaving a session (`/new`, a switch) declines that session's open requests
   and says so in the new transcript. Shift+Tab is the one key that changes
   what Hermes asks. It may turn on Hermes' per-session yolo, the switch
@@ -221,8 +228,10 @@ PR without the chat history.
   Hermes as `/plan <text>`. While Hermes has approvals off on its own (an off
   it confirmed did not end them, or they were off without the TUI turning
   them on), Shift+Tab sends nothing and turns only plan mode on and off. A
-  steer (Ctrl+Enter, `/steer`) sends into the running turn only text the
-  person typed and sent that way; the TUI never steers on its own, and a
+  steer (Ctrl+Enter, `/steer`, or what the person sends from the composer
+  the tell row opened) sends into the running turn only text the person
+  typed and sent that way, and the tell row's text goes as an ordinary
+  prompt once the turn has ended; the TUI never steers on its own, and a
   queued prompt is never turned into a steer. A steer Hermes does
   not take waits in the TUI's own queue for the running turn to
   end, whatever the busy mode, so it never interrupts that turn.
