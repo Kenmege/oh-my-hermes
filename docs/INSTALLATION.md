@@ -479,13 +479,15 @@ run and approval decision stays Hermes'; the screen is OMH's.
   terminal's own notification: OSC 9 in iTerm2, WezTerm and Ghostty, OSC 777
   in foot and rxvt, the bell elsewhere (tmux among them, which flags the
   window); `OMH_TUI_BELL=0` keeps both quiet.
-- Each tool call's row shows the first three lines of what the tool printed
-  under its name (`⎿`) and counts the rest; a failed call (`✗`) shows its
-  error's first line in the error colour, or, when it failed by its exit
-  code alone (a test run, say), the last three lines it printed, under the
-  count of the lines above them. Ctrl+O opens the whole transcript
-  with every detail (thinking, tool output, whole diffs) in the pager, at its
-  end.
+- Each tool call is a row of its own: its mark, its name and what it ran on
+  (a path, a command, a query), with no header over a turn's calls. Under its
+  name (`⎿`) it shows the first three lines of what the tool printed and
+  counts the rest (`… +5 lines · ctrl+o shows all`); a failed call (`✗`)
+  shows its error's first line in the error colour, or, when it failed by its
+  exit code alone (a test run, say), the last three lines it printed, under
+  the count of the lines above them. A long diff counts its rest the same
+  way. Ctrl+O opens the whole transcript with every detail (thinking, tool
+  output, whole diffs) in the pager, at its end.
 - While a turn runs, the working row reads
   `⠋ <what Hermes is doing> (12s · ↓1.2k tokens · esc to interrupt)`, the
   tokens being what the turn has written so far; each turn ends with a line
@@ -700,7 +702,7 @@ steer is, so a command never cuts off a running tool call or splits a reply; one
 answering when the turn ends is written above that turn's done line with what it printed so far, and
 what it prints later goes under a repeat of its echo. In the transcript, a long output shows its
 first 12 rows and a count of the rest
-(`… +K rows · /history shows all`, rows at that width), and `/history` shows all of it. Nothing a
+(`… +K rows · ctrl+o shows all`, rows at that width), and Ctrl+O or `/history` shows all of it. Nothing a
 command prints opens a pager; a pager opens only when you ask for one
 (`/history`, `/keys`, `/logs`, an agent's log), and output that arrives while
 one is open is in the transcript when you leave it.

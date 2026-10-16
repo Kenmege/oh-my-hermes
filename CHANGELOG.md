@@ -17,6 +17,14 @@ All notable changes will be documented here.
   status line until more is printed. The agent list opens under the composer.
   Lines that leave the top of the streaming tail are written over the rows
   they were drawn on, so the rows under them are not painted again.
+- **Each tool call is its own row, and a cut output names the key that shows
+  the rest.** A turn's calls were folded under one `⏺ Tool calls (2)` header;
+  each call is now a row of its own (its mark, name and what it ran on) with
+  what it printed under it, as in Claude Code, and the `parallel ×K` badge
+  that header carried is gone with it. A tool's output, a diff and a
+  command's output cut short end `… +N lines · ctrl+o shows all` (rows for a
+  command), where they named `/history` or nothing: Ctrl+O opens the details
+  view at its end.
 
 - **Korean spend and data-share requests reach their gates.** "내 카드로
   결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보
@@ -188,7 +196,7 @@ All notable changes will be documented here.
   and 24 rows or more shows the OH-MY-HERMES block logo above the banner, from
   the shipped skin and in its gradient, lifted to read on a light background.
   Motion follows one rule set: a reply opens with `⏺` in the text colour and
-  a tool group in the tool colour; a running tool's `⏺` pulses (each call on
+  a tool call's name in the tool colour; a running tool's `⏺` pulses (each call on
   its own clock) and settles to `✓` or `✗` before it reaches scrollback; a
   highlight sweeps across the working row's verb; `OMH_TUI_REDUCED_MOTION=1`
   or `NO_COLOR` holds everything still and repaints once a second. Your

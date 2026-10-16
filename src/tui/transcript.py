@@ -31,7 +31,7 @@ is its output (`command` names the command speaking). Typed while a block
 is live (a running tool, a streaming reply), the echo is held under that
 block, as a steer is, and written at the next boundary once the command is
 over. A long output shows its first `OUTPUT_PREVIEW_ROWS` rows and a count
-of the rest, which `/history` shows.
+of the rest, which names Ctrl+O (`/history` shows it too).
 
 Flush policy: a user or notice block flushes at once; assistant text flushes
 per completed source line (a trailing blank line waits for the text after it,
@@ -39,8 +39,8 @@ so a reply that ends there leaves nothing to take back) and fully at
 `message.complete`; the markdown state (an open fence) carries across the
 flush boundary; thinking flushes as ONE collapsed row ("▸ thought for 4.2s");
 a tool group flushes when the next block arrives (message text, thinking) or
-at `message.complete`, as "⏺ Tool calls (N)" (plus "parallel ×K" when K tools
-ran at once) and one line per tool; a group of one call is that one line. A
+at `message.complete`, as one row per call (its mark, name and argument
+summary) with what it printed under it, no header over them. A
 `tool.generating` row (`◌`) is a draft: a `tool.start` takes over the first
 unclaimed draft of its name, or else the first unclaimed draft of the
 `tool_call` bridge (`gateway_contract.TOOL_CALL_BRIDGE`), whose call starts
@@ -48,8 +48,8 @@ under the name of the tool it reached. A draft no start took is dropped when
 its group closes, so it is never written or counted, and a group left with no
 calls shows nothing. An edit tool whose `tool.complete` carries
 an `inline_diff` shows that diff under its row (`diff_view.py`): the first
-`PREVIEW_LINES` diff lines and a count of the rest, which `/history` (and
-`history_lines` with details) shows in full. Lines rendered at one width stay as they were taken; a
+`PREVIEW_LINES` diff lines and a count of the rest, which Ctrl+O's details
+view (and `history_lines` with details) shows in full. Lines rendered at one width stay as they were taken; a
 resize changes only what has not been taken yet.
 
 Two events do not mean what their names suggest, measured against Hermes
@@ -122,12 +122,13 @@ COMMAND_MARK = "› "  # a command the person ran, echoed in the hint colour abo
 OUTPUT_MARK = "⎿ "
 OUTPUT_INDENT = "  "
 # The rows a command's output shows under its echo; past them one row counts the rest (rows at that width, so the
-# count changes with it), which /history shows.
+# count changes with it), which Ctrl+O's details view shows.
 OUTPUT_PREVIEW_ROWS = 12
-OUTPUT_MORE = "… +{count} {noun} · /history shows all"
+OUTPUT_MORE = "… +{count} {noun} · ctrl+o shows all"
+# What a tool's output or a diff cut short says after its count: the key whose view shows the rest.
+SHOWS_ALL = " · ctrl+o shows all"
 COLLAPSED_MARK = "▸"
 EXPANDED_MARK = "▾"
-TOOL_GROUP_MARK = "⏺ "
 ASSISTANT_MARK = "⏺ "
 ASSISTANT_INDENT = "  "
 TOOL_SUMMARY_MARK = "⎿ "
@@ -250,7 +251,6 @@ class ToolRow:
 class ToolGroup:
     tools: list[ToolRow] = field(default_factory=list)
     done: bool = False
-    parallel: int = 1  # most tools running at the same moment
 
 
 Block = UserBlock | AssistantBlock | ThinkingBlock | ToolGroup | NoticeBlock | CommandBlock | TurnSummaryBlock | SteerBlock
@@ -669,19 +669,14 @@ def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> lis
     first: Line = (Span(TOOL_ROW_INDENT * 2), Span(TOOL_SUMMARY_MARK, theme.dim))
     rest: Line = (Span(TOOL_ROW_INDENT * 2 + " " * len(TOOL_SUMMARY_MARK)),)
     texts = [Span(line, style) for line in shown]
-    more = [Span(f"… +{hidden} line{'' if hidden == 1 else 's'}", theme.muted)] if hidden else []
+    more = [Span(f"… +{hidden} line{'' if hidden == 1 else 's'}{SHOWS_ALL}", theme.muted)] if hidden else []
     ordered = [*more, *texts] if failed else [*texts, *more]
     return [truncate_line((*(rest if index else first), span), width) for index, span in enumerate(ordered)]
 
 
 def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: float | None = None) -> list[Line]:
-    if not group.tools:
-        return []  # every row it had was a draft no call took (`_close_live`)
-    header = [Span(TOOL_GROUP_MARK, theme.tool), Span(f"Tool calls ({len(group.tools)})", theme.label)]
-    if group.parallel > 1:
-        header.append(Span(f"{COLUMN_GAP}parallel ×{group.parallel}", theme.accent))
-    # One call needs no header: its own row already says what ran.
-    rows = [truncate_line(tuple(header), width)] if len(group.tools) != 1 else []
+    """Each call's own row (what ran, on what) and what it printed under it; a group with no call shows nothing."""
+    rows: list[Line] = []
     summary_rest: Line = (Span(" " * (len(TOOL_ROW_INDENT) * 2 + len(TOOL_SUMMARY_MARK))),)
     band = theme.error_band if theme.error_band.bg is not None else None
     for tool in group.tools:
@@ -1095,8 +1090,6 @@ class Transcript:
         row.status = TOOL_RUNNING
         row.started_at = self._clock()
         row.args_summary = self._display_args(_args_summary(payload))
-        running = sum(1 for tool in group.tools if tool.status == TOOL_RUNNING)
-        group.parallel = max(group.parallel, running)
 
     def _on_tool_complete(self, payload: dict[str, Any]) -> None:
         tool_id = as_text(payload.get("tool_id"))

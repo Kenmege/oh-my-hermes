@@ -57,12 +57,12 @@ def mark(line: tuple) -> object:
 
 
 class SaidAndDoneTests(unittest.TestCase):
-    def test_a_reply_opens_in_the_text_colour_and_a_tool_group_in_the_tool_colour(self) -> None:
+    def test_a_reply_opens_in_the_text_colour_and_each_call_is_named_in_the_tool_colour(self) -> None:
         reply = block_rows(AssistantBlock("hello", done=True), 40, THEME)[0]
         self.assertEqual((reply[0].text, reply[0].style), ("⏺ ", THEME.text))
         group = ToolGroup([ToolRow("a", "read_file", status=TOOL_OK), ToolRow("b", "terminal", status=TOOL_OK)], done=True)
-        header = block_rows(group, 40, THEME)[0]
-        self.assertEqual((header[0].text, header[0].style), ("⏺ ", THEME.tool))
+        rows = block_rows(group, 40, THEME)
+        self.assertEqual([(row[3].text, row[3].style) for row in rows], [("read_file", THEME.tool), ("terminal", THEME.tool)])
         self.assertNotEqual(THEME.text, THEME.tool)
 
     def test_every_tool_state_is_told_apart_without_colour(self) -> None:
@@ -98,7 +98,7 @@ class PulseTests(unittest.TestCase):
         transcript, clock = self.started()
         clock.now += PULSE_SECONDS / 2
         transcript.apply(ev("tool.start", tool_id="t2", name="read_file", context="a.py"))
-        _header, first, second = transcript.live_lines(80, THEME, now=100.0 + PULSE_SECONDS + 0.1)
+        first, second = transcript.live_lines(80, THEME, now=100.0 + PULSE_SECONDS + 0.1)
         self.assertEqual((mark(first).style, mark(second).style), (THEME.dim, THEME.accent))
 
     def test_the_tail_renders_again_only_when_a_mark_turns(self) -> None:

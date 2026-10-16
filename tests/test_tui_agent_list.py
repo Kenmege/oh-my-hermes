@@ -559,7 +559,7 @@ class OutputWhileAViewIsOpenTests(unittest.TestCase):
         drawn(app)
         history = app.terminal.screen.history() + app.terminal.screen.lines()  # type: ignore[attr-defined]
         self.assertIn("  ⎿ usage row 0", history)  # in the transcript, under its echo, once the view is left
-        self.assertIn("    … +28 rows · /history shows all", history)
+        self.assertIn("    … +28 rows · ctrl+o shows all", history)
 
     def test_behind_the_key_list(self) -> None:
         app, client = agent_app()

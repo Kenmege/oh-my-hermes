@@ -3,7 +3,7 @@
 The pager opens only when the person asks for one (`/history`, `/keys`,
 `/logs`, Ctrl+O); a command's output, however long, is the transcript's: the
 echo `› /name arg`, its output under `⎿`, the first rows of a long one and a
-count of the rest, which `/history` shows in full. Driven through the
+count of the rest naming Ctrl+O, whose details view shows it in full. Driven through the
 recording client of `test_tui_modes`, answering each call by hand.
 """
 
@@ -51,7 +51,7 @@ class CommandEchoTests(unittest.TestCase):
         screen = drawn(app)
         self.assertIn(f"    context row {OUTPUT_PREVIEW_ROWS - 1}", screen)
         self.assertNotIn(f"    context row {OUTPUT_PREVIEW_ROWS}", screen)
-        self.assertIn(f"    … +{40 - OUTPUT_PREVIEW_ROWS} rows · /history shows all", screen)
+        self.assertIn(f"    … +{40 - OUTPUT_PREVIEW_ROWS} rows · ctrl+o shows all", screen)
 
     def test_a_command_dispatch_owns_answers_under_the_same_echo_and_closes_it_only_then(self) -> None:
         app, client = make_app()
@@ -165,6 +165,32 @@ class DetailsViewTests(unittest.TestCase):
         self.assertIn("· notice 29", screen)  # the last page, not the first
         self.assertNotIn("· notice 0", screen)
         self.assertEqual(client.calls, [])
+
+    def test_the_key_a_cut_output_names_is_the_one_that_shows_what_it_cut(self) -> None:
+        from omh.tui.gateway import Event
+        from omh.tui.keys import CHAR
+
+        for kind in ("tool", "command"):
+            with self.subTest(output=kind):
+                app, client = make_app(rows=40, cols=80)
+                if kind == "tool":
+                    printed = "\n".join(f"out {number}" for number in range(1, 7))
+                    app._on_event(Event("message.start", SID, {}))
+                    app._on_event(Event("tool.start", SID, {"tool_id": "t", "name": "terminal", "context": "seq 6"}))
+                    app._on_event(Event("tool.complete", SID, {"tool_id": "t", "name": "terminal",
+                                                               "result": {"output": printed}}))
+                    hidden, cut = "out 6", "… +3 lines · "
+                else:
+                    send(app, "/context")
+                    answer(app, client, {"output": "\n".join(f"context row {number}" for number in range(40))})
+                    hidden, cut = "context row 39", f"… +{40 - OUTPUT_PREVIEW_ROWS} rows · "
+                screen = drawn(app)
+                row = next(row for row in screen if cut in row)
+                self.assertNotIn(hidden, screen)
+                key = row.split(cut)[1].split(" ")[0]
+                self.assertEqual(key, "ctrl+o")
+                app._on_input(Key(CHAR, key.removeprefix("ctrl+"), ctrl=True))
+                self.assertIn(hidden, "\n".join(drawn(app)))  # the details view, at its end
 
     def test_ctrl_o_leaves_an_open_question_on_screen(self) -> None:
         from omh.tui.gateway import ServerRequest
