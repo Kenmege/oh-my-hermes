@@ -1669,7 +1669,7 @@ class EffortTests(unittest.TestCase):
         return app, client
 
     def test_before_the_first_prompt_the_configured_effort_is_shown_and_ctrl_t_steps_from_it(self) -> None:
-        # The re-review: Hermes builds the agent at the first prompt, so no session.info names the effort before it.
+        # The re-review: no session.info names the effort before Hermes has built the session's agent.
         def hint(app: App) -> str:
             return line_text(app._mode_row_line(100))
 
@@ -1696,6 +1696,48 @@ class EffortTests(unittest.TestCase):
         session_info(late, reasoning_effort="low")
         late._take_settings({"config": {"agent": {"reasoning_effort": "high"}}})  # an answer after the session spoke
         self.assertEqual(late.effort, "low")
+
+    def test_a_new_session_or_a_cold_switch_shows_the_configured_effort_again_and_ctrl_t_steps_from_it(self) -> None:
+        # The round-4 verification: /new and a switch adopt the new session's lazy info, which names no effort, and
+        # no config.get goes out for them; the level the config set is still the one the new session starts with.
+        def hint(app: App) -> str:
+            return line_text(app._mode_row_line(100))
+
+        lazy = {"session_id": "live-2", "stored_session_id": "stored-2", "info": {"model": "m", "lazy": True}}
+        for leave in ("new", "switch"):
+            with self.subTest(leave=leave):
+                app, client = self.started_with({"agent": {"reasoning_effort": "high"}})
+                app._on_input(CTRL_T)
+                answer(app, client, effort_set("xhigh"))  # this session's own level, not the config's
+                self.assertIn("ctrl+t effort (xhigh)", hint(app))
+                sent = len(client.calls)
+                if leave == "new":
+                    app._on_new_session(lazy)
+                else:
+                    app._on_session_resumed("stored-2", {**lazy, "messages": []})
+                self.assertIn("ctrl+t effort (high)", hint(app))
+                self.assertNotIn("config.get", [method for method, _params in client.calls[sent:]])
+                app._on_input(CTRL_T)
+                self.assertEqual(client.calls[-1], effort_call("xhigh", sid="live-2"))
+
+    def test_after_a_session_change_its_own_word_still_wins_and_overrides_still_claim_nothing(self) -> None:
+        app, _client = self.started_with({"agent": {"reasoning_effort": "high"}})
+        for said, shown in (("low", "low"), ("", modes_module.EFFORT_DEFAULT)):
+            with self.subTest(said=said):
+                app._on_session_resumed(
+                    "stored-2", {"session_id": f"live-{said}", "stored_session_id": f"stored-{said}",
+                                 "info": {"reasoning_effort": said}, "messages": []})
+                self.assertEqual(app.effort, shown)
+        app, _client = self.started_with({"agent": {"reasoning_effort": "high", "reasoning_overrides": {"m": "low"}}})
+        app._on_new_session({"session_id": "live-2", "stored_session_id": "stored-2", "info": {"lazy": True}})
+        self.assertEqual(app.effort, "")
+        # A respawn adopts the resumed session, then asks config.get again: a level the config changed to replaces
+        # the one carried over, which was the config's too.
+        app, _client = self.started_with({"agent": {"reasoning_effort": "high"}})
+        app._adopt_session({"session_id": "live-2", "stored_session_id": "stored-1", "info": {"lazy": True}})
+        self.assertEqual(app.effort, "high")
+        app._take_settings({"config": {"agent": {"reasoning_effort": "low"}}})
+        self.assertEqual(app.effort, "low")
 
     def test_the_hint_names_the_sessions_effort_from_the_start_and_ctrl_t_steps_from_it(self) -> None:
         # Hermes 6c61c3e27d sends the session's effort in the session.info that follows the agent's build, before

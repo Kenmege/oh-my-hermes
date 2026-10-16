@@ -785,12 +785,15 @@ question Hermes asked is sent as typed in every mode.
 
 Ctrl+T steps this session's reasoning effort, and `/effort <level>` sets any
 level Hermes takes (`none`, `minimal` and `ultra` as well). The mode row shows
-the level Hermes' config sets (`agent.reasoning_effort`, read from the
-settings the TUI reads as a session opens) and, once the session reports its
-own level at its first prompt, that one, as `ctrl+t effort (medium)`; Ctrl+T
-steps on from the level shown. Where none is configured, so the provider's
-own default applies, it says `ctrl+t effort (default)` and the first Ctrl+T
-sets `low`; where per-model overrides (`agent.reasoning_overrides`) may apply,
+the session's level, as `ctrl+t effort (medium)`, and Ctrl+T steps on from
+the level shown. Hermes names it once it has built the session's agent, which
+it starts right after the session opens; until then the row shows the level
+Hermes' config sets (`agent.reasoning_effort`, read from the settings the TUI
+reads at launch and after a gateway restart, and shown again in each session
+`/new` or a switch opens), which a resumed session that ran with a level of
+its own replaces once Hermes names that one. Where none is configured, so
+the provider's own default applies, it says `ctrl+t effort (default)` and the
+first Ctrl+T sets `low`; where per-model overrides (`agent.reasoning_overrides`) may apply,
 it names no level until the session reports one. A level you set
 shows once Hermes confirms it; a level Hermes refuses leaves the row as it
 was and says so.
