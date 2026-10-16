@@ -644,7 +644,9 @@ terminals Hermes' own TUI asks, recognised as Hermes recognises them, from
 `TERM_PROGRAM`, `TERM`, `TMUX`, `KITTY_WINDOW_ID` or `WT_SESSION`. Both are
 switched off on exit, a crash, SIGTERM and SIGHUP included. Elsewhere,
 Terminal.app among them, both keys send what Enter sends, so there
-`/steer <text>` steers and `\` then Enter, Alt+Enter or Ctrl+J adds a line.
+`/steer <text>` steers and `\` then Enter, Alt+Enter or Ctrl+J adds a line;
+while a draft spans lines there (typed, or pasted), the mode row says so
+(`⏎ sends · \⏎, alt+⏎ or ctrl+j adds a line`).
 A terminal on the list can ignore the request too (tmux with
 `extended-keys off`), so the mode row names `/steer <text>` until a key has
 arrived in one of those reports, and `ctrl+enter steer` from then on.

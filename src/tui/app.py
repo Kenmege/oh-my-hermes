@@ -108,7 +108,7 @@ from ..skin_pack import (
 )
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
-from .frame import MODE_ACCEPT, MODE_PLAN, MODE_SHELL, STATUS_SEPARATOR, build_frame, sticky_line
+from .frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN, MODE_SHELL, STATUS_SEPARATOR, build_frame, sticky_line
 from .history import SEARCH_ACCEPT, SEARCH_CANCEL, SEARCH_HINTS, HistorySearch, append_entry, history_path, load_history
 from .gateway import (
     Event,
@@ -243,6 +243,9 @@ REWIND_SAY = (
     "⏪ replaces #{ordinal}+ · esc",
 )
 REWIND_BUSY_NOTICE = "Rewind works between turns: let this one end, or interrupt it with Esc."
+# What the mode row says while the draft spans lines on a terminal that has sent no key report, where Shift+Enter
+# arrives as Enter and sends; longest first.
+NEWLINE_KEYS = ("⏎ sends · \\⏎, alt+⏎ or ctrl+j adds a line", "\\⏎ or alt+⏎ adds a line", "alt+⏎ adds a line")
 # A composer line that starts with this is the person's own shell command (`shell.exec`), never a prompt.
 SHELL_PREFIX = "!"
 SHELL_USAGE = "Usage: !<command> runs it in Hermes' shell (30 s at most); its output is not sent to the model."
@@ -3407,6 +3410,8 @@ class App(ModesMixin, AgentViewMixin):
             say, say_style = tuple(form.format(ordinal=self.rewind.ordinal) for form in REWIND_SAY), self.theme.warn
         elif armed is not None and self.clock() - armed[1] <= DOUBLE_ESCAPE_SECONDS:
             say = ESCAPE_AGAIN.format(armed[0])
+        elif self._newline_keys_due():
+            say = NEWLINE_KEYS
         if isinstance(say, tuple):
             effort = cell_width(f"effort {self.effort}") + MODE_ROW_GAP if self.effort else 0
             strip = self._agent_strip(cols - effort - cell_width(STRIP_SEPARATOR + say[max(len(say) - 2, 0)]))[0]
@@ -3424,6 +3429,14 @@ class App(ModesMixin, AgentViewMixin):
             say=say,
             say_style=say_style,
             esc_interrupts=self._esc_interrupts(),
+        )
+
+    def _newline_keys_due(self) -> bool:
+        """Whether the mode row names the keys that add a line: the draft spans lines (typed, or a pasted chip of them)
+        on a terminal that has sent no key report, where Shift+Enter would send it; idle, in normal mode."""
+        return (
+            not self.keyboard_protocol and self._composer_open() and not self._busy()
+            and self._display_mode() == MODE_NORMAL and "\n" in self.composer.expanded()
         )
 
     def _slot_caret(self) -> tuple[int, int] | None:
