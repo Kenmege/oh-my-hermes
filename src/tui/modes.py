@@ -133,6 +133,27 @@ def strip_column(mode: str, theme: Theme) -> int:
     return line_width(label) + cell_width(STRIP_SEPARATOR) if label else 0
 
 
+def configured_effort(config_result: Mapping[str, Any]) -> str:
+    """The effort `agent.reasoning_effort` sets, from a `config.get {key: "full"}` answer, read as Hermes 6c61c3e27d
+    reads it (`hermes_constants.parse_reasoning_effort`): a level, `none` when thinking is off (`false`, `none`, an
+    `{enabled: false}` form), `EFFORT_DEFAULT` when unset or not a level Hermes knows. "" where the answer cannot say:
+    no config, or per-model overrides (`agent.reasoning_overrides`), which Hermes matches against the model itself.
+    """
+    config = config_result.get("config")
+    agent = config.get(contract.CONFIG_AGENT, {}) if isinstance(config, Mapping) else None
+    if not isinstance(agent, Mapping) or agent.get(contract.CONFIG_REASONING_OVERRIDES):
+        return ""
+    raw = agent.get(contract.CONFIG_REASONING_EFFORT)
+    if isinstance(raw, Mapping):
+        raw = False if raw.get("enabled") is False else raw.get("effort")
+    if raw is False:
+        return "none"
+    word = str(raw).strip().lower() if isinstance(raw, str) else ""
+    if word in ("none", "false", "disabled"):
+        return "none"
+    return word if word in contract.REASONING_LEVELS else EFFORT_DEFAULT
+
+
 def effort_words(effort: str) -> str:
     """`ctrl+t effort (medium)`, or `ctrl+t effort` while Hermes has reported none: the effort's one display."""
     return f"{EFFORT_KEY} ({effort})" if effort else EFFORT_KEY

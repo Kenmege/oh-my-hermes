@@ -205,6 +205,12 @@ MOA_PHASE_AGGREGATOR = "aggregator"
 # `yolo` (bool) is this session's approvals off, `reasoning_effort` (str, "" when unset) its effort.
 SESSION_INFO_YOLO = "yolo"
 SESSION_INFO_REASONING_EFFORT = "reasoning_effort"
+# `config.get {key: "full"}` answers `{"config": _load_cfg()}` (`methods_config.py` `_CONFIG_GETTERS`): the user's
+# config.yaml as Hermes reads it. The effort lives at `agent.reasoning_effort` (str, `false`, or an `{enabled,
+# effort}` mapping), and `agent.reasoning_overrides` maps model names to their own (`resolve_reasoning_config`).
+CONFIG_AGENT = "agent"
+CONFIG_REASONING_EFFORT = "reasoning_effort"
+CONFIG_REASONING_OVERRIDES = "reasoning_overrides"
 
 # `notification.show` (`contracts/events.py` NotificationShowPayload, built by `agent_callbacks._agent_notice_update`
 # and the slow agent-build notice in `server._await_agent_ready`): `text` carries its own glyph, `level` is one of

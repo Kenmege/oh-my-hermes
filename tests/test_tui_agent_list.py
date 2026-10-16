@@ -1228,7 +1228,9 @@ class AgentReplayTests(AppTestCase):
         status = status_index(rows)
         self.assertEqual(rows[status - 4], "  ● main")
         self.assertTrue(rows[status - 3].startswith("▸ ") and "find usages of old_api" in rows[status - 3], rows)
-        self.assertEqual(rows[status - 1], AGENT_LIST_HINT)
+        # The list's keys, and on the right the effort the replayed config leaves unset (`default`).
+        self.assertEqual(rows[status - 1].split("  ")[0], AGENT_LIST_HINT)
+        self.assertTrue(rows[status - 1].endswith("ctrl+t effort (default)"), rows[status - 1])
         # The list stands where the composer was: no composer rule anywhere on the screen.
         self.assertFalse([row for row in rows if row.strip() and set(row.strip()) <= set("─━┄")], rows)
         self.assertEqual(captures["log"][0], "find usages of old_api in src/ and list every call site")

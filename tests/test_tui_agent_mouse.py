@@ -1233,7 +1233,7 @@ class MouseReplayTests(AppTestCase):
         rows, y = captures["listed"], aimed[0]
         self.assertEqual(status_index(rows), y + 1)  # the status line under the hint row
         self.assertIn("read the diff for risks", rows[y - 1])
-        self.assertEqual(rows[y], AGENT_LIST_HINT)  # the hint row under it
+        self.assertEqual(rows[y].split("  ")[0], AGENT_LIST_HINT)  # the hint row under it (the effort on its right)
         # Wheel, motion, a right press, a release and two near misses (the hint row, the status line): still the
         # list, on the first agent, and nothing typed.
         ignored = captures["ignored"]

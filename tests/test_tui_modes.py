@@ -1654,6 +1654,49 @@ class EffortTests(unittest.TestCase):
         session_info(app, reasoning_effort="")  # Hermes' word for the provider's default
         self.assertEqual(app.effort, modes_module.EFFORT_DEFAULT)
 
+    def started_with(self, config: dict) -> tuple[App, RecordingClient]:
+        """A launched app whose `session.create` answered Hermes' lazy info (no effort), then `config.get` `config`."""
+
+        class Lazy(RecordingClient):
+            def call(self, method: str, params: dict, timeout: float = 30.0) -> dict:
+                return {"session_id": SID, "stored_session_id": "stored-1", "info": {"model": "m", "lazy": True}}
+
+        client = Lazy()
+        app = App(ScriptedTerminal(), client, {}, poller=FakePoller())  # type: ignore[arg-type]
+        app.startup()
+        self.assertEqual(app.effort, "")
+        app._on_response(Response(1, {"config": config}, None))  # the config.get the launch already asks
+        return app, client
+
+    def test_before_the_first_prompt_the_configured_effort_is_shown_and_ctrl_t_steps_from_it(self) -> None:
+        # The re-review: Hermes builds the agent at the first prompt, so no session.info names the effort before it.
+        def hint(app: App) -> str:
+            return line_text(app._mode_row_line(100))
+
+        app, client = self.started_with({"agent": {"reasoning_effort": "high"}})
+        self.assertIn("ctrl+t effort (high)", hint(app))
+        app._on_input(CTRL_T)
+        self.assertEqual(client.calls[-1], effort_call("xhigh"))
+        for config, shown in (({}, "default"), ({"agent": {"reasoning_effort": ""}}, "default"),
+                              ({"agent": {"reasoning_effort": False}}, "none"), ({"agent": {"reasoning_effort": "HIGH "}}, "high"),
+                              ({"agent": {"reasoning_effort": {"enabled": False}}}, "none"),
+                              ({"agent": {"reasoning_effort": {"effort": "max"}}}, "max"),
+                              ({"agent": {"reasoning_effort": "hgih"}}, "default")):  # Hermes falls back as for unset
+            with self.subTest(config=config):
+                app, _client = self.started_with(config)
+                self.assertIn(f"ctrl+t effort ({shown})", hint(app))
+
+    def test_a_per_model_override_or_the_sessions_own_word_wins_over_the_global_setting(self) -> None:
+        app, _client = self.started_with({"agent": {"reasoning_effort": "high", "reasoning_overrides": {"m": "low"}}})
+        self.assertEqual(app.effort, "")  # which entry matches the model is Hermes' to decide: no level is claimed
+        app, _client = self.started_with({"agent": {"reasoning_effort": "high"}})
+        session_info(app, reasoning_effort="medium")
+        self.assertEqual(app.effort, "medium")
+        late, _client = make_app()
+        session_info(late, reasoning_effort="low")
+        late._take_settings({"config": {"agent": {"reasoning_effort": "high"}}})  # an answer after the session spoke
+        self.assertEqual(late.effort, "low")
+
     def test_the_hint_names_the_sessions_effort_from_the_start_and_ctrl_t_steps_from_it(self) -> None:
         # Hermes 6c61c3e27d sends the session's effort in the session.info that follows the agent's build, before
         # any turn: a configured level, or "" where none is configured and the route's own default applies.

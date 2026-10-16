@@ -149,7 +149,16 @@ from .launch import request_fallback
 from .agent_view import AGENT_STEER_LEFT_UNANSWERED_NOTICE, STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
 from .layout import choice_cap, slot_cap, under_composer
 from .markdown import clean_text
-from .modes import HERMES_OWN_CYCLE, MODE_ROW_GAP, NO_SESSION_NOTICE, STRIP_SEPARATOR, ModesMixin, effort_words, mode_row_line
+from .modes import (
+    HERMES_OWN_CYCLE,
+    MODE_ROW_GAP,
+    NO_SESSION_NOTICE,
+    STRIP_SEPARATOR,
+    ModesMixin,
+    configured_effort,
+    effort_words,
+    mode_row_line,
+)
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .model_picker import KEYS as MODEL_PICKER_KEYS
 from .model_picker import PICK as MODEL_PICK
@@ -1170,7 +1179,7 @@ class App(ModesMixin, AgentViewMixin):
         else:
             result = self.client.call("session.create", self._create_params())
         self._adopt_session(result, fallback_stored=resume)
-        self._request("config.get", {"key": "full"}, self._take_busy_mode, self._on_settings_refused)
+        self._request("config.get", {"key": "full"}, self._take_settings, self._on_settings_refused)
         self._refresh_catalog()
         if not resume:
             self._ask_last_session()
@@ -1233,9 +1242,12 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice("\n".join(tools))
         self.transcript.retake_tail(self.size[0], self.theme, REDRAW_TAIL_ROWS)
 
-    def _take_busy_mode(self, result: dict[str, Any]) -> None:
-        """`config.get`'s answer: the busy mode Hermes is set to."""
+    def _take_settings(self, result: dict[str, Any]) -> None:
+        """`config.get`'s answer: the busy mode Hermes is set to, and the effort its config sets, shown until the
+        session says its own (Hermes builds the agent, and sends the effort, only at the first prompt)."""
         self.busy_mode = busy_mode(result)
+        if not self.effort:
+            self.effort = configured_effort(result)
 
     def _on_settings_refused(self, error: dict[str, Any]) -> bool:
         """A refused `config.get`, drift included (`contract.OPTIONAL_METHODS`): `BUSY_QUEUE` stays, and a notice says so."""
@@ -1703,7 +1715,7 @@ class App(ModesMixin, AgentViewMixin):
         self._adopt_session(result, fallback_stored=stored)
         self.transcript.add_notice(RESPAWNED_NOTICE.format(session=self.stored_id), NOTICE_OK)
         self._hold_queue(RESPAWNED_WHY)
-        self._request("config.get", {"key": "full"}, self._take_busy_mode, self._on_settings_refused)
+        self._request("config.get", {"key": "full"}, self._take_settings, self._on_settings_refused)
         self._refresh_catalog()
         self._redeliver(result.get("open_requests"))
 
