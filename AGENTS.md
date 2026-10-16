@@ -169,9 +169,16 @@ PR without the chat history.
   `hermes --tui` with `HERMES_TUI_DIR` pointing at OMH's packaged frontend, so
   Hermes' launcher still resolves the profile, resume target, working
   directory and session ownership, then starts OMH's frontend in place of its
-  own. That frontend spawns exactly one child, Hermes' `tui_gateway`, with the
-  interpreter and import path the launcher handed it, and speaks the
-  gateway's stdio JSON-RPC. It relays only what the person types; on its
+  own. That frontend spawns one child at a time, Hermes' `tui_gateway`, with
+  the interpreter, import path and environment the launcher handed it, and
+  speaks the gateway's stdio JSON-RPC. When that child exits on its own with
+  a failure (never after a normal exit, after the person quits, or for a
+  gateway another runtime owns), it spawns it again the same way and resumes
+  the session that was open (`session.resume`), at most 3 times in 60 s, as
+  Hermes' own TUI does: the open question and those waiting behind it close
+  unanswered, a turn that was running is reported lost and never sent again,
+  and past that limit it exits as it would without recovery, naming
+  `hermes --tui`. It relays only what the person types; on its
   own it reads Hermes' settings and command catalog as a session opens
   and, at a fresh start, `session.list` to name the last session under
   the banner, and, beyond opening and closing sessions

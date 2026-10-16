@@ -355,8 +355,12 @@ resolves the profile, the resume target, the working directory and session
 ownership, then starts the shim in place of its Ink app. The shim hands the
 terminal to `omh.tui.app.main` on OMH's interpreter, started `-E -P` so the
 launcher's `PYTHONPATH` and the working directory stay off its import path;
-the TUI spawns Hermes' `tui_gateway` with the interpreter and import path the
-launcher provided and speaks its stdio JSON-RPC. Layout, input, rendering and
+the TUI spawns Hermes' `tui_gateway`, one at a time, with the interpreter and
+import path the launcher provided and speaks its stdio JSON-RPC; when that
+child exits on its own with a failure, it spawns it again the same way and
+resumes the open session, at most 3 times in 60 s (an open question closes
+unanswered, a running turn is reported lost and never re-sent), and past that
+it exits as before. Layout, input, rendering and
 the OMH panels are OMH's; every model call, tool run and approval decision is
 the gateway's. Shift+Tab may turn on Hermes' per-session yolo, so Hermes stops
 asking for approvals in that one session (a `config.set` naming the session,
