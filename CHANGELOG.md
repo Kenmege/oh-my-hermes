@@ -49,6 +49,12 @@ All notable changes will be documented here.
   each reference model's answer as a collapsed `◇ Reference 1/3 — <model>`
   row, and `MoA: refs 2/3` then `MoA: aggregating…` on the working row). The
   gateway already wrote these to the TUI; showing them sends nothing.
+- **The status line follows a light terminal.** It kept the palette's dark
+  bar on a light screen (sky's `#0A2229` under white). On a background the
+  terminal reports light (or `/theme light`) the bar is now a light tint of
+  the palette's own bar colour, its words still 4.5:1 and its `│` dividers
+  3:1 against it; a dark terminal, and one that reports nothing, keep the
+  palette's bar.
 
 - **Korean spend and data-share requests reach their gates.** "내 카드로
   결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보

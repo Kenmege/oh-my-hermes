@@ -791,9 +791,9 @@ dark through `COLORFGBG`: a light background by its colour, a dark one, colour
 0 to 6 or 8, as the dark stand-in `/theme dark` uses) and measures the theme
 against it: your prompts and the replies are in the terminal's own text colour,
 every other colour a word is drawn in reaches 4.5:1 contrast on that background
-and every rule or mark 3:1 (on the status line, which keeps the theme's own bar
-colour, against that bar), and on a light background the diff bands are light
-tints. With no answer and no `COLORFGBG` that names one, the background is
+and every rule or mark 3:1 (on the status line, against its bar: the theme's
+own bar colour on a dark background, a light tint of it on a light one), and
+on a light background the diff bands are light tints. With no answer and no `COLORFGBG` that names one, the background is
 taken as dark, and nothing that would depend on knowing it is painted: your prompt gets no band, and a diff band names its own text colour
 rather than leave your terminal's on it. `/theme light` and `/theme dark` measure against a
 light or a dark background whatever the terminal said, `/theme auto` follows
