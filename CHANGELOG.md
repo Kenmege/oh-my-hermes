@@ -8,10 +8,11 @@ All notable changes will be documented here.
   strip.** The strip names an agent by the first words of its goal, and two
   goals that began the same were numbered with those words, so two shell
   tasks read `1·Run the shell  2·Run the shell` and nothing said which was
-  which. Agents that share a name now drop the leading words all their goals
-  share and show the first words that differ, so goals that part at `alpha`
-  and `beta` read `…alpha in the` and `…beta in the`; the numbers stay only
-  for goals whose words still read the same.
+  which. Agents that share a name now show the word where each goal parts
+  from the one nearest it, out of any quotes or backticks around it (with the
+  next word when it is one like `in`), so goals that part at `` `echo alpha` ``
+  and `` `echo beta` `` read `…alpha` and `…beta`; the numbers stay only for
+  goals whose words still read the same.
 - **A fresh OMH TUI session no longer shows the last session's subagents.**
   Hermes writes a session's `state.db` row on its first prompt, so a new
   session's key mapped to nothing until then, and the HUD reader fell back to

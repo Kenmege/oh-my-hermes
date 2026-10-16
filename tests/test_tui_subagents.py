@@ -345,22 +345,45 @@ def strip_names(*goals: str) -> list[str]:
 class StripNameTests(unittest.TestCase):
     """Two goals that start alike are told apart on the strip by the words where they part (r3 smoke s27)."""
 
-    def test_goals_that_start_alike_are_named_by_the_words_where_they_part(self) -> None:
+    def test_goals_that_start_alike_are_named_by_the_word_where_they_part(self) -> None:
         self.assertEqual(
             strip_names("Run the shell command `echo alpha` and report", "Run the shell command `echo beta` and report"),
-            ["…alpha` and", "…beta` and"],  # the first word that differs leads, as the goal spells it
+            ["…alpha", "…beta"],  # the parting word alone, out of its backticks: no stray mark, no dangling word
         )
         self.assertEqual(
             strip_names("Summarize the module and list every exported function in alpha",
-                        "Summarize the module and list every exported function in beta"),
+                        "Summarize the module and list every exported function in beta."),
             ["…alpha", "…beta"],
         )
 
-    def test_three_alike_part_where_any_of_them_does(self) -> None:
+    def test_quotes_backticks_and_escapes_around_the_parting_word_are_not_shown(self) -> None:
+        # Live review B: `…./tmp-d1' with` and `…beta\` in the` read as broken text.
+        self.assertEqual(
+            strip_names("Run the shell command 'rm -rf ./tmp-d1' with the terminal tool",
+                        "Run the shell command 'rm -rf ./tmp-d2' with the terminal tool"),
+            ["…./tmp-d1", "…./tmp-d2"],
+        )
+        self.assertEqual(
+            strip_names("Run the shell command `echo alpha\\` in the scratch directory",
+                        "Run the shell command (echo \"beta\") in the scratch directory"),
+            ["…alpha", "…beta"],
+        )
+
+    def test_a_parting_word_that_would_leave_the_name_hanging_takes_the_next_word(self) -> None:
+        self.assertEqual(
+            strip_names("Run the shell tests in src now", "Run the shell tests on src now"), ["…in src", "…on src"]
+        )
+
+    def test_three_alike_each_part_where_it_leaves_its_nearest_one(self) -> None:
         self.assertEqual(
             strip_names("find usages of old_api in src", "find usages of old_api in tests", "find usages of new_api"),
-            ["…old_api in src", "…old_api in", "…new_api"],
+            ["…src", "…tests", "…new_api"],
         )
+
+    def test_parting_words_that_read_the_same_fall_back_to_numbers(self) -> None:
+        goals = ("Run the shell command a x end", "Run the shell command b x end",
+                 "Run the shell command a y end", "Run the shell command b y end")
+        self.assertEqual(strip_names(*goals), [f"{n}·Run the shell" for n in range(1, 5)])
 
     def test_a_name_of_its_own_stays_beside_a_pair(self) -> None:
         self.assertEqual(

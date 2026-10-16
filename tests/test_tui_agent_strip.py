@@ -369,7 +369,7 @@ class OneAgentSurfaceTests(unittest.TestCase):
         agent_event(app, "start", FIRST, goal="Run the shell command `echo alpha` in the scratch directory")
         agent_event(app, "start", SECOND, goal="Run the shell command `echo beta` in the scratch directory")
         line, hits = app._agent_strip(120)
-        self.assertEqual(line_text(line), f"● main  {SPIN} …alpha` in the  {SPIN} …beta` in the  ↓ agents")
+        self.assertEqual(line_text(line), f"● main  {SPIN} …alpha  {SPIN} …beta  ↓ agents")
         self.assertEqual(len(hits), 3)
 
     def test_agents_whose_goals_match_are_numbered_on_the_strip(self) -> None:
