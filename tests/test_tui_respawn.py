@@ -14,6 +14,7 @@ clock is the test's.
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from test_tui_app import FakePoller, ScriptedTerminal, Step
 from test_tui_modes import SID, RecordingClient, make_app, notices, type_text
@@ -29,7 +30,15 @@ from omh.tui.app import (
     QueuedLine,
     _run,
 )
-from omh.tui.gateway import Event, GatewayCallError, GatewayExited, GatewayUnavailable, ServerRequest, gateway_spawn
+from omh.tui.gateway import (
+    Event,
+    GatewayCallError,
+    GatewayClient,
+    GatewayExited,
+    GatewayUnavailable,
+    ServerRequest,
+    gateway_spawn,
+)
 from omh.tui.keys import ENTER, Key
 
 STORED = "20261016_101010_abcdef"
@@ -280,6 +289,14 @@ class LoopTests(unittest.TestCase):
         (new,) = spawner.made
         self.assertEqual(new.closed, 1)  # reaped by `_run`; the first one is the caller's to close
         self.assertEqual(new.blocking, [("session.resume", {"session_id": STORED, "cols": 80})])
+
+
+class FirstIdTests(unittest.TestCase):
+    def test_a_client_made_to_replace_another_starts_its_ids_where_it_is_told(self) -> None:
+        client = GatewayClient(gateway_spawn(ENVIRON), first_id=7)
+        with patch.object(client, "_write"):  # nothing spawned: the request is only recorded as waited for
+            self.assertEqual([client.request("session.list", {}), client.request("session.list", {})], [7, 8])
+        self.assertEqual(GatewayClient(gateway_spawn(ENVIRON))._next_id, 1)  # a first client starts at 1
 
 
 class _Sink:
