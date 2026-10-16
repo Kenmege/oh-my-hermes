@@ -110,6 +110,11 @@ All notable changes will be documented here.
   choice (an approval's too) now wraps under its number, the slot counts
   rows rather than choices, and a terminal too short for every choice keeps
   the highlighted one whole, or its first rows, with `… ctrl+o shows all`.
+  Choices it cannot list are marked beside the list on the side they are cut
+  (`… +3 more choices, 1 ticked · ctrl+o shows all`; an approval's
+  `… more choices`, which numbers nothing), so a cut tell row or a ticked
+  choice scrolled away is never silent, and the marker no longer ends the
+  question's text.
 - **An OMH TUI question you cannot see whole says so, and Ctrl+O shows it.**
   A long approval command showed its first 6 of 20 lines at 24 rows, and
   Ctrl+O did nothing while the approval was open; below 10 rows a cut had no

@@ -544,7 +544,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   Whenever the slot cannot show the whole question (a long command, a long
   list, a short terminal) it says so, `… ctrl+o shows all` (under a command's
   first lines, `… +14 more lines · ctrl+o shows all`; `… ctrl+o` where the row
-  is too narrow for more), and Ctrl+O opens the
+  is too narrow for more; beside a list cut short, on the side it is cut,
+  `… +3 more choices, 1 ticked · ctrl+o shows all`, or an approval's
+  `… more choices · ctrl+o shows all`), and Ctrl+O opens the
   whole question in the pager: it answers nothing, and q or Esc comes back to
   the question as you left it. A terminal too short for every row keeps the
   highlighted choice and, from 6 rows, a command's first row; one under 6 rows

@@ -330,11 +330,10 @@ class CutMarkerTests(unittest.TestCase):
             ["⚠ Hermes asks to run recursive delete", "  echo line 1 … ctrl+o shows all", "❯ deny", "  allow once"],
         )
 
-    def test_the_marker_row_keeps_the_keys_name_on_a_narrow_slot(self) -> None:
-        text = lines_text(slot("approval", {**APPROVAL, "command": LONG_COMMAND}).lines(24, DEFAULT_THEME, 10))
-        marker = [unbarred(row) for row in text if "ctrl+o" in row]
-        self.assertEqual(len(marker), 1, text)
-        self.assertRegex(marker[0], r"^  … \+\d+ · ctrl\+o$")
+    def test_the_markers_keep_the_keys_name_on_a_narrow_slot(self) -> None:
+        text = [unbarred(row) for row in lines_text(slot("approval", {**APPROVAL, "command": LONG_COMMAND}).lines(24, DEFAULT_THEME, 10))]
+        self.assertEqual([row for row in text if "ctrl+o" in row], ["  echo line 1 … ctrl+o", "  … more · ctrl+o"], text)
+        self.assertEqual(text[-1], "  … more · ctrl+o")  # the tell row is cut below the list, and says so
 
     def test_the_header_wraps_instead_of_being_cut(self) -> None:
         approval = slot("approval", {**APPROVAL, "description": "recursive delete of the whole build tree"})
@@ -600,7 +599,8 @@ class ClarifyTests(unittest.TestCase):
         for _ in range(6):
             clarify.handle_key(Key(DOWN))
         text = [unbarred(row) for row in lines_text(clarify.lines(60, DEFAULT_THEME, 4))]
-        self.assertEqual(text, ["? Pick one … ctrl+o shows all", "  5. choice 5", "  6. choice 6", "❯ 7. choice 7"])
+        # The question is whole, so the cut is marked beside the choices, counting what it left out.
+        self.assertEqual(text, ["? Pick one", "  6. choice 6", "❯ 7. choice 7", "  … +7 more choices · ctrl+o shows all"])
         self.assertEqual(lines_text(clarify.lines(60, DEFAULT_THEME, 1)), ["▌ ❯ 7. choice 7 … ctrl+o shows all"])
 
     def test_a_question_without_choices_keeps_its_typed_answer_hint(self) -> None:
@@ -650,14 +650,14 @@ class WrappedChoiceTests(unittest.TestCase):
     def test_a_highlighted_choice_taller_than_the_room_shows_its_first_rows_with_the_marker(self) -> None:
         clarify = slot("clarify", LONG_CHOICES)
         text = [unbarred(row) for row in lines_text(clarify.lines(30, DEFAULT_THEME, 3))]
-        self.assertEqual(text[0], "? Which rollout? … ctrl+o")
-        self.assertEqual(text[1:], ["❯ 1. Blue/green with a full", "     traffic switch after"])
+        self.assertEqual(text[:2], ["? Which rollout?", "❯ 1. Blue/green with a full"])  # the question is whole
+        self.assertTrue(text[2].startswith("     traffic") and text[2].endswith(" … ctrl+o"), text)
 
     def test_an_approval_choice_wraps_at_a_narrow_width_instead_of_being_cut(self) -> None:
         approval = slot("approval", {**APPROVAL, "command": "ls"})
         approval.selected = 2
         text = [unbarred(row) for row in lines_text(approval.lines(16, DEFAULT_THEME, 12))]
-        self.assertEqual(text[-2:], ["❯ allow this", "  session"])
+        self.assertEqual(text[-3:], ["❯ allow this", "  session", "  … ctrl+o"])  # always and tell are cut below
 
 
 # Hermes 6c61c3e27d's wire shape for a multi-select question (`server._clarify_block`).
@@ -761,6 +761,49 @@ class MultiSelectTests(unittest.TestCase):
                 self.assertEqual(question.handle_key(SPACE), prompts.TypeIt(SPACE))  # Space types, as any character
                 self.assertNotIn("space", slot("clarify", params).keys[0])
         self.assertEqual(slot("clarify", CLARIFY).handle_key(Key(CHAR, "2")).frame, {"result": {"answers": {"q0": "blue"}}})
+
+
+class ShortSlotTests(unittest.TestCase):
+    """A 40x15 terminal (review B NIT 5): what the slot cuts is marked where it is cut, and ticks are not lost."""
+
+    FRUIT = {"questions": [{
+        "qid": "q0", "multi_select": True,
+        "question": "Which fruits should go in the salad? Pick every one you want, there is no limit at all on how many",
+        "choices": ["apple, sliced thin and kept in lemon water so it does not brown before serving (Recommended)",
+                    "banana", "cherry"],
+    }]}
+
+    def test_an_approval_whose_last_rows_are_cut_says_more_choices_under_them(self) -> None:
+        command = "\n".join(f"rm -rf ./tmp-r{n:02}" for n in range(10))
+        approval = slot("approval", {**APPROVAL, "command": command, "choices": ["once", "session", "always", "deny"]})
+        text = [unbarred(row) for row in lines_text(approval.lines(40, DEFAULT_THEME, 8))]
+        self.assertEqual(len(text), 8)
+        self.assertEqual(text[-1], "  … more choices · ctrl+o shows all")
+        self.assertFalse([row for row in text if "tell Hermes" in row])
+        self.assertFalse(any(char.isdigit() for row in text[3:] for char in row), text)  # no digit picks an approval
+
+    def test_a_multi_select_question_keeps_its_cut_marker_off_the_question_text(self) -> None:
+        clarify = slot("clarify", self.FRUIT)
+        text = [unbarred(row) for row in lines_text(clarify.lines(40, DEFAULT_THEME, 8))]
+        question = text[: next(index for index, row in enumerate(text) if row.startswith("❯"))]
+        self.assertEqual(question[-1], "or more)")  # the question whole, its note's end on its own last row
+        self.assertFalse([row for row in question if "ctrl+o" in row], text)
+        self.assertTrue(text[-1].endswith("ctrl+o"), text)  # the cut is marked with the choices
+
+    def test_a_ticked_choice_scrolled_out_of_the_list_is_still_counted(self) -> None:
+        clarify = slot("clarify", self.FRUIT)
+        clarify.handle_key(SPACE)  # ticks apple
+        clarify.handle_key(Key(DOWN))
+        text = [unbarred(row) for row in lines_text(clarify.lines(40, DEFAULT_THEME, 8))]
+        self.assertFalse([row for row in text if "apple" in row], text)
+        marker = next(row for row in text if "ctrl+o" in row)
+        self.assertIn("1 ticked", marker)
+        self.assertLess(text.index(marker), text.index(next(row for row in text if row.startswith("❯"))))  # above
+
+    def test_nothing_cut_means_no_marker_and_no_count(self) -> None:
+        clarify = slot("clarify", self.FRUIT)
+        clarify.handle_key(SPACE)
+        self.assertFalse([row for row in lines_text(clarify.lines(80, DEFAULT_THEME, 12)) if "ctrl+o" in row])
 
 
 class OutcomeTests(unittest.TestCase):

@@ -113,6 +113,11 @@ VALUE_KEYS = ("type it · enter sends · esc declines",)
 MORE_ROWS = ("  … +{count} more line{s} · ctrl+o shows all", "  … +{count} · ctrl+o", "  … ctrl+o")
 MORE_ANY_ROWS = ("  … ctrl+o shows all", "  … ctrl+o")
 MORE_FORMS = (" … ctrl+o shows all", " … ctrl+o")
+# Choices the slot cannot list (a short terminal): a row of their own beside the ones listed, on the side they are
+# cut from, counting them and the ticked ones among them (`{ticked}` is ", 2 ticked" or ""). An approval's rows carry
+# no number anywhere (no digit picks one), so its marker counts nothing.
+MORE_CHOICES = ("  … +{count} more choice{s}{ticked} · ctrl+o shows all", "  … +{count}{ticked} · ctrl+o", "  … ctrl+o")
+MORE_APPROVAL_CHOICES = ("  … more choices · ctrl+o shows all", "  … more choices · ctrl+o", "  … more · ctrl+o", "  … ctrl+o")
 # After the open question's first words, while others wait behind it (`App.waiting_requests`).
 WAITING = " · {count} more question{s} waiting"
 # What a question that closed reads as in the transcript (`outcomes`, `withdrawn_outcome`), after `✓` or `✗` and
@@ -501,23 +506,51 @@ class PromptSlot:
             rows.append(wrap_prefixed((Span(label, style),), first, rest, width))
         return rows
 
-    def _window(self, choices: list[list[Line]], room: int) -> list[Line]:
-        """The rows of the choices that fit in `room`: the highlighted one, then whole choices before it, then after.
-
-        A highlighted choice taller than `room` alone shows its first rows.
-        """
-        current = choices[self.selected]
-        if len(current) >= room:
-            return current[:room]
+    def _span(self, choices: list[list[Line]], room: int) -> tuple[int, int]:
+        """The first and last choice that fit in `room`: the highlighted one, then whole choices before it, then after."""
         first = last = self.selected
-        used = len(current)
+        used = len(choices[self.selected])
         while first > 0 and used + len(choices[first - 1]) <= room:
             first -= 1
             used += len(choices[first])
         while last + 1 < len(choices) and used + len(choices[last + 1]) <= room:
             last += 1
             used += len(choices[last])
-        return [row for choice in choices[first : last + 1] for row in choice]
+        return first, last
+
+    def _window(self, choices: list[list[Line]], room: int, width: int, theme: Theme) -> tuple[list[Line], bool]:
+        """The rows of the choices that fit in `room` (`_span`), and where some do not, a marker saying so; and
+        whether choices were cut with no marker row, for `_fit` to mark at the end of the last row listed.
+
+        The marker (`MORE_CHOICES`, an approval's `MORE_APPROVAL_CHOICES`)
+        counts the choices left out and the ticked ones among them, on a row of
+        its own under the list when any are cut below the highlighted one, else
+        above it, wherever that still leaves a row for another choice. A
+        highlighted choice taller than `room` alone shows its first rows.
+        """
+        current = choices[self.selected]
+        first, last = self._span(choices, room)
+        if first == 0 and last == len(choices) - 1 and len(current) <= room:
+            return [row for choice in choices for row in choice], False
+        own_row = room - len(current) >= 2
+        if own_row:
+            first, last = self._span(choices, room - 1)
+        rows = current[:room] if len(current) >= room else [row for choice in choices[first : last + 1] for row in choice]
+        if not own_row:
+            return rows, True
+        hidden = [index for index in range(len(choices)) if not first <= index <= last]
+        ticked = sum(1 for index in hidden if self._is_ticked(index))
+        said = {"count": len(hidden), "s": "s" if len(hidden) != 1 else "", "ticked": f", {ticked} ticked" if ticked else ""}
+        forms = list(MORE_APPROVAL_CHOICES) if self.method == "approval" else [form.format(**said) for form in MORE_CHOICES]
+        if ticked:
+            forms[-1] = f"  … {ticked} ticked · ctrl+o"
+        marker: Line = (Span(next((form for form in forms if cell_width(form) <= width), forms[-1]), theme.muted),)
+        return ([*rows, marker] if last < len(choices) - 1 else [marker, *rows]), False
+
+    def _is_ticked(self, index: int) -> bool:
+        """Whether the choice at `index` of a multi-select question is ticked (the last row, Other, never is)."""
+        choices = self._current_choices() if self.method == "clarify" and self._multi() else []
+        return index < len(choices) and choices[index] in self.ticked
 
     def _fit(
         self, head: list[Line], body: list[Line], choices: list[list[Line]], keys: list[Line], max_rows: int,
@@ -531,10 +564,14 @@ class PromptSlot:
         first row comes before it. The rows left go to the body's first row,
         the rest of the head, the other choices (`_window`), a keys row while
         two rows are still left beside a body, and as much of the body as
-        fits, in that order. The cut is marked: on a row of its own when one
-        is left over (counting the body's rows left out), else at the end of
-        the last row above the choices, or of the highlighted choice when it
-        is the only row.
+        fits, in that order. Each cut is marked where it is: choices left out
+        beside the choices (`_window`); the head or the body cut on a row of
+        its own when one is left over (counting the body's rows left out),
+        else at the end of the last row above the choices. Choices cut with no
+        row for their marker are marked at the end of the last one listed,
+        unless the head or the body is marked already: one `ctrl+o shows all`
+        then stands for the whole question. The highlighted choice's first row
+        carries the marker when it is the only row.
         """
         listed = sum(len(choice) for choice in choices)
         if len(head) + len(body) + listed <= max_rows:
@@ -545,13 +582,16 @@ class PromptSlot:
         left = max_rows - 1 - min(len(choices[self.selected]), max_rows - 1)  # beside the head's first row and it
         reserved = min(1, left) if body else 0  # the command's first row says what it does
         rest = head[1 : 1 + left - reserved]
-        shown = self._window(choices, max_rows - 1 - len(rest) - reserved)
+        shown, unmarked = self._window(choices, max_rows - 1 - len(rest) - reserved, width, theme)
         spare = max_rows - 1 - len(rest) - len(shown)
         keys_row = keys[:1] if body and spare >= 2 else []
         spare -= len(keys_row)
         kept = body[: spare - 1] if len(body) > spare >= 2 else body[:spare]
         above = [head[0], *rest, *kept]
-        if spare > len(kept):
+        if len(rest) == len(head) - 1 and len(kept) == len(body):
+            if unmarked:  # only choices were cut, with no row for their marker: it ends the last one listed
+                shown[-1] = _ends_with_more(shown[-1], width, theme)
+        elif spare > len(kept):
             hidden = len(body) - len(kept)
             forms = MORE_ANY_ROWS
             if hidden:
