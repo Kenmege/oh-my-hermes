@@ -187,6 +187,29 @@ class QuestionOutcomeTests(unittest.TestCase):
                 self.assertEqual(outcome_rows(app), [("cancelled · Which colour?", NOTICE_ERROR)])
                 self.assertIn("✗ cancelled · Which colour?", drawn(app))
 
+    def test_a_question_that_went_unanswered_leaves_its_tool_row_a_red_cross_too(self) -> None:
+        # Hermes' clarify result says how the wait ended (`outcome`); only `submitted` was an answer.
+        def complete(app, outcome: str) -> list[str]:
+            app._on_event(Event("tool.start", SID, {"tool_id": "c1", "name": "clarify", "context": "Which colour?"}))
+            responses = [{"question": "Which colour?", "choices_offered": ["red", "blue"], "status": "unanswered",
+                          "user_response": None}]
+            app._on_event(Event("tool.complete", SID, {"tool_id": "c1", "name": "clarify", "duration_s": 3.0,
+                                                       "result": {"responses": responses, "outcome": outcome}}))
+            return drawn(app)
+
+        for outcome, words in (("cancelled", "cancelled"), ("timed_out", "timed out"), ("undelivered", "not delivered")):
+            with self.subTest(outcome=outcome):
+                app, _client = opened(COLOUR)
+                press(app, Key(ESCAPE))
+                screen = complete(app, outcome)
+                (row,) = [line for line in screen if "clarify" in line and "Which colour?" in line and "·" not in line]
+                self.assertTrue(row.lstrip().startswith("✗ clarify"), row)
+                self.assertIn(f"⎿ {words}", "\n".join(screen))
+        app, _client = opened(COLOUR)
+        press(app, Key(ENTER))
+        (row,) = [line for line in complete(app, "submitted") if "clarify" in line and "·" not in line]
+        self.assertTrue(row.lstrip().startswith("✓ clarify"), row)
+
     def test_each_question_of_a_batch_gets_its_row_and_an_empty_answer_is_skipped(self) -> None:
         app, _client = opened(ServerRequest("srq-8", "clarify", {"questions": [
             {"qid": "a", "question": "Why?"}, {"qid": "b", "question": "Which?", "choices": ["x", "y"]},

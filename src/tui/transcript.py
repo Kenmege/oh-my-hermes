@@ -329,11 +329,15 @@ def tool_result_status(result: object) -> str:
 
     An approval the user denied comes back from the terminal tool as `status: "blocked"`
     (recorded: exit_code -1, `user_summary` "You denied this command — it did not run.");
-    the approval gates' own dicts say `approved: false` / `user_consent: false`.
+    the approval gates' own dicts say `approved: false` / `user_consent: false`. A clarify
+    question that went unanswered says how its wait ended in `outcome` (`UNANSWERED_OUTCOMES`).
     """
     if not isinstance(result, dict):
         return TOOL_OK
-    if result.get("status") == "blocked" or result.get("approved") is False or result.get("user_consent") is False:
+    if (
+        result.get("status") == "blocked" or result.get("approved") is False or result.get("user_consent") is False
+        or result.get("outcome") in UNANSWERED_OUTCOMES
+    ):
         return TOOL_DENIED
     if result.get("error") or result.get("success") is False or result.get("status") == "error":
         return TOOL_ERROR
@@ -399,6 +403,8 @@ _ERROR_KEYS = ("error", "stderr", "user_summary", "output")
 # A denied call says so in the person's words first; `error` there is what Hermes told the model.
 _DENIED_KEYS = ("user_summary", "error", "output")
 DENIED_LINE = "denied"  # a denied call whose result says nothing more
+# Hermes' clarify `outcome` for a question that went unanswered (beside `submitted`), worded for the row under its ✗.
+UNANSWERED_OUTCOMES = {"cancelled": "cancelled", "timed_out": "timed out", "undelivered": "not delivered"}
 TOOL_OUTPUT_ROWS = 3  # shown under a tool row; the details view shows up to TOOL_OUTPUT_KEEP
 TOOL_OUTPUT_KEEP = 40
 
@@ -416,6 +422,9 @@ def _tool_output(result: object, status: str) -> tuple[tuple[str, ...], int]:
     elif isinstance(result, dict):
         keys = _ERROR_KEYS if status == TOOL_ERROR else _DENIED_KEYS if status == TOOL_DENIED else _OUTPUT_KEYS
         found = [(key, as_text(result.get(key))) for key in keys]
+        if status == TOOL_DENIED:  # a clarify question's: why its wait ended, else how
+            outcome = UNANSWERED_OUTCOMES.get(as_text(result.get("outcome")), "")
+            found.append(("notice", as_text(result.get("notice")) or outcome))
     else:
         return (), 0
     key, text = next(((key, candidate) for key, candidate in found if candidate.strip()), ("", ""))

@@ -83,7 +83,9 @@ All notable changes will be documented here.
   for sudo or a secret only `✓ answered` or `✗ declined`, never the value. A
   question Hermes withdrew reads `✗ timed out`, `✗ interrupted` or
   `✗ withdrawn (<reason>)` with what it asked, in place of the amber
-  `Hermes withdrew its <method> request (<reason>).`
+  `Hermes withdrew its <method> request (<reason>).` A clarify call that got
+  no answer is a red `✗ clarify` row with `cancelled`, `timed out` or `not
+  delivered` under it, not a `✓`.
 - **OMH TUI clarify questions that take several choices are answered with
   several.** Hermes' `multi_select` was never read: the question looked like
   any other and went back as one label, and an answer typed as `1,3` reached
