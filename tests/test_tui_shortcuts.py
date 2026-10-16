@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import signal
 import string
 import unittest
 
@@ -60,6 +61,7 @@ def observed(app: App, client: RecordingClient) -> tuple[object, ...]:
         app.pager is not None,
         app.search is not None,
         len(terminal.writes),
+        terminal.suspended,
     )
 
 
@@ -76,6 +78,18 @@ class TableTests(unittest.TestCase):
                 self.assertNotIn("|", "".join(row))  # a pipe would split the doc table's cell
                 self.assertNotIn("`", "".join(row))
 
+    def test_the_list_row_names_every_picker_that_takes_its_keys(self) -> None:
+        # The session, rewind and bare /model pickers each say these keys on the mode row; the list names all three.
+        from omh.tui.model_picker import KEYS as MODEL_KEYS
+        from omh.tui.rewind_picker import KEYS as REWIND_KEYS
+        from omh.tui.session_picker import KEYS as SESSION_KEYS
+
+        (row,) = [does for keys, does in SHORTCUTS if keys == "↑ / ↓, PageUp / PageDown, Enter, Esc"]
+        for command, said in (("/sessions", SESSION_KEYS), ("/rewind", REWIND_KEYS), ("/model", MODEL_KEYS)):
+            with self.subTest(picker=command):
+                self.assertIn(command, row)
+                self.assertTrue(said[0].startswith("↑↓ move · enter ") and said[0].endswith(" · esc closes"), said)
+
     def test_the_steer_row_names_the_key_and_the_command_that_works_everywhere(self) -> None:
         # The mode row names /steer until the terminal has sent a CSI u or modifyOtherKeys key; the list names both.
         (steer,) = [does for keys, does in SHORTCUTS if keys.startswith("Ctrl+Enter")]
@@ -83,18 +97,21 @@ class TableTests(unittest.TestCase):
 
     def test_the_ctrl_letters_named_are_the_ones_that_do_something(self) -> None:
         named = ctrl_letters_named()
-        self.assertEqual(named, set("acdejklrtouvw"))
+        self.assertEqual(named, set("acdejklrtouvwxyz"))
         for letter in string.ascii_lowercase:
             changed = False
-            for draft in ("", "one two"):
+            for draft, undone in (("", False), ("one two", False), ("one two", True)):  # Ctrl+Y redoes the undone draft
                 app, client = make_app()
                 type_text(app, draft)
                 app._on_input(Key(LEFT))
+                if undone:
+                    app._on_input(Key(CHAR, "_", ctrl=True))
                 before = observed(app, client)
                 app._on_input(Key(CHAR, letter, ctrl=True))
                 changed = changed or observed(app, client) != before
             with self.subTest(letter=letter):
-                self.assertEqual(changed, letter in named)
+                # Ctrl+Z suspends only where there is job control (no SIGTSTP on Windows).
+                self.assertEqual(changed, letter in named and (letter != "z" or hasattr(signal, "SIGTSTP")))
 
 
 class OverlayLinesTests(unittest.TestCase):

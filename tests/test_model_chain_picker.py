@@ -324,7 +324,7 @@ class PickerNavigationTests(unittest.TestCase):
         self.assertIn("● edited", frames[-1])
         self.assertIn("1 unsaved change ·", frames[-1])
 
-    def test_left_and_minus_step_the_other_way_and_wrap_the_cursor(self) -> None:
+    def test_left_and_minus_step_the_other_way_and_the_cursor_stops_at_the_ends(self) -> None:
         payload = _payload(self.root)
         original = _chains(payload)
         ring = tuple(row["alias"] for row in payload["models"])
@@ -336,7 +336,10 @@ class PickerNavigationTests(unittest.TestCase):
         self.assertNotEqual(result, {})
         result, frames = _drive(payload, ["up", KEY_ENTER])
         self.assertEqual(result, {})
-        self.assertIn(f" {CURSOR_MARK} {last} ", frames[-1])
+        self.assertIn(f" {CURSOR_MARK} {first} ", frames[-1])  # up on the first row stays there
+        rows = len(payload["categories"])
+        _result, frames = _drive(payload, [KEY_DOWN] * (rows + 2) + [KEY_ENTER])
+        self.assertIn(f" {CURSOR_MARK} {last} ", frames[-1])  # down past the last row stays on it
 
     def test_default_key_on_an_override_row_is_a_change_that_clears_it(self) -> None:
         _write_overrides(self.root, {"quick": OVERRIDE_QUICK})
@@ -413,7 +416,7 @@ class PickerNavigationTests(unittest.TestCase):
         self.assertTrue(lines[0].startswith(" ⚚ OMH · Model chains"))
         self.assertEqual(lines[1], "   providers  none linked to Hermes yet · every model counts as served")
         self.assertIn("CATEGORY", lines[3])
-        self.assertIn("↑↓ category   ←→ head model   −/+ effort   d default   ⏎ save   q cancel", lines[-1])
+        self.assertIn("↑↓ category   ←→ head model   −/+ effort   d default   ⏎ save   esc cancel", lines[-1])
         self.assertEqual(effort_bar("low"), "■□□□")
         self.assertEqual(effort_bar("xhigh"), "■■■■")
         self.assertEqual(effort_bar("max"), "■■■■")

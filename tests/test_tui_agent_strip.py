@@ -33,7 +33,7 @@ SPIN = SPINNER_FRAMES[0]  # a clock at 0 draws the spinner's first frame
 STRIP = f"● main  {SPIN} find usages of  {SPIN} read the diff  ↓ agents"
 DONE_STRIP = "● main  ○ find usages of  ✗ read the diff  ↓ agents"
 BUSY_HINT = "esc interrupt · /steer <text> steers"
-IDLE_HINT = "? shortcuts · ⇧⇥ mode · ctrl+t effort"
+IDLE_HINT = "? shortcuts · ⇧⇥ accept all/plan · ctrl+t effort"
 
 
 def relay(app: App, frames: list[tuple[str, dict[str, object]]] = FRAMES, session_id: str = SID) -> None:
@@ -223,8 +223,8 @@ class StripTests(unittest.TestCase):
     def test_the_mode_label_comes_first_then_the_strip_then_the_hints(self) -> None:
         expected = {
             MODE_NORMAL: f"{STRIP} · {BUSY_HINT}",
-            MODE_ACCEPT: f"⏵⏵ accept all on · {STRIP} · approvals off for this session (⇧⇥ to cycle)",
-            MODE_PLAN: f"⏸ plan mode on · {STRIP} · (⇧⇥ to cycle)",
+            MODE_ACCEPT: f"⏵⏵ accept all on · {STRIP} · no approvals (⇧⇥ plan)",
+            MODE_PLAN: f"⏸ plan mode on · {STRIP} · prompts go as /plan (⇧⇥ normal/accept all)",
         }
         for mode, row in expected.items():
             with self.subTest(mode=mode):
@@ -233,12 +233,12 @@ class StripTests(unittest.TestCase):
                 self.assertEqual(mode_row(app), row)
 
     def test_the_effort_stays_on_the_right_while_the_strip_leaves_it_room(self) -> None:
-        app, _client = agent_app(cols=110)
+        app, _client = agent_app(cols=120)
         app.effort = "high"
         row = mode_row(app)
         self.assertTrue(row.startswith(f"{STRIP} · {BUSY_HINT}"), row)
-        self.assertTrue(row.endswith("effort high"), row)
-        self.assertEqual(len(row), 110)
+        self.assertTrue(row.endswith("ctrl+t effort (high)"), row)
+        self.assertEqual(len(row), 120)
 
     def test_cut_short_the_hint_goes_first_then_the_effort_then_the_strip_and_never_the_label(self) -> None:
         roster = Roster()
@@ -246,7 +246,7 @@ class StripTests(unittest.TestCase):
             roster.apply(event_type, frame, 0.0)
         label = "⏵⏵ accept all on"
         seen = set()
-        for width in range(10, 140):
+        for width in range(10, 170):
             start = strip_column(MODE_ACCEPT, DEFAULT_THEME)
             strip = roster.strip_line(width - start, DEFAULT_THEME, 0)[0]
             row = line_text(
@@ -262,10 +262,10 @@ class StripTests(unittest.TestCase):
                     seen.add("strip")
                 if "effort" in row:
                     self.assertTrue(row.startswith(whole) or "agents ↓" in row, row)
-                    self.assertTrue(row.endswith("effort xhigh"), row)
+                    self.assertTrue(row.endswith("ctrl+t effort (xhigh)"), row)
                     seen.add("effort")
-                if "approvals off for this session (⇧⇥ to cycle)" in row:
-                    self.assertTrue(row.endswith("effort xhigh"), row)  # the whole hint only beside the effort
+                if "Hermes asks no approvals in this session (⇧⇥ plan/normal)" in row:
+                    self.assertTrue(row.endswith("ctrl+t effort (xhigh)"), row)  # the whole hint only beside the effort
                     seen.add("hint")
                 if "2 agents ↓" in row:
                     seen.add("collapsed")
@@ -280,8 +280,8 @@ class StripTests(unittest.TestCase):
                 mode_row_line(mode=MODE_ACCEPT, busy=True, queued=0, keyboard_protocol=False, effort="xhigh",
                               width=width, theme=DEFAULT_THEME, strip=strip)
             )
-        self.assertEqual(rows[75], f"{label} · {STRIP} · a…")
-        self.assertEqual(rows[62], f"{label} · ● 2 agents ↓ · approvals of…   effort xhigh")
+        self.assertEqual(rows[75], f"{label} · {STRIP} · (…")
+        self.assertEqual(rows[62], f"{label} · ● 2 agents ↓ · (⇧⇥…   ctrl+t effort (xhigh)")
 
     def test_the_strip_starts_right_after_the_label_and_at_the_edge_without_one(self) -> None:
         self.assertEqual(strip_column(MODE_NORMAL, DEFAULT_THEME), 0)
@@ -363,7 +363,16 @@ class OneAgentSurfaceTests(unittest.TestCase):
         app.roster.clear()
         self.assertTrue([row for row in self.slot(app) if row.startswith("[Agents]")])
 
-    def test_agents_whose_names_match_are_numbered_on_the_strip(self) -> None:
+    def test_agents_whose_goals_start_alike_show_where_they_part_on_the_strip(self) -> None:
+        # Live smoke s27 read `1·Run the shell  2·Run the shell`: the words that told the two apart were lost.
+        app, _client = make_app(busy=True, clock=lambda: 0.0, cols=120)
+        agent_event(app, "start", FIRST, goal="Run the shell command `echo alpha` in the scratch directory")
+        agent_event(app, "start", SECOND, goal="Run the shell command `echo beta` in the scratch directory")
+        line, hits = app._agent_strip(120)
+        self.assertEqual(line_text(line), f"● main  {SPIN} …alpha  {SPIN} …beta  ↓ agents")
+        self.assertEqual(len(hits), 3)
+
+    def test_agents_whose_goals_match_are_numbered_on_the_strip(self) -> None:
         app, _client = make_app(busy=True, clock=lambda: 0.0, cols=120)
         goal = "Run exactly the command below and report"
         agent_event(app, "start", FIRST, goal=goal)

@@ -3,7 +3,10 @@
 `model.options {session_id}` answers with the providers Hermes can reach,
 each with the models it lists, and the session's current model and provider.
 The picker shows one row per provider and model, the current one marked and
-highlighted, and returns the one picked; its last row is the filter
+highlighted (a model Hermes runs but no provider lists, such as a route the
+provider's own list leaves out, comes first, so the session's model is always
+a row), the position of the highlight once the list scrolls (`Model
+(12/162)`), and returns the one picked; its last row is the filter
 (`session_picker.filter_line`), where the composer is drawn while no picker is
 open. It holds no IO: the app sends the
 pick as Hermes' own `/model <name> --provider <slug> --session` through
@@ -37,6 +40,7 @@ CLOSE = "close"
 # Its keys, longest first: on the mode row while it is open, in its header where there is no mode row.
 KEYS = ("↑↓ move · enter switches this session · esc closes", "↑↓ enter switches · esc closes", "esc closes")
 TITLE = " Model ({count})"
+TITLE_AT = " Model ({at}/{count})"  # once the list has more rows than it shows
 CURRENT_MARK = "●"
 
 
@@ -75,20 +79,35 @@ def _name(value: object, fallback: str) -> str:
 
 
 def model_rows(result: Mapping[str, object]) -> list[ModelRow]:
-    """Every provider's models in a `model.options` answer, in Hermes' order; a malformed or unsafe one is skipped."""
-    current = (result.get("model"), result.get("provider"))
+    """Every provider's models in a `model.options` answer, in Hermes' order; a malformed or unsafe one is skipped.
+
+    A row is current when its model is the session's and its provider is the
+    session's, by slug, by one of the provider's `aliases`, or as the one
+    Hermes marks `is_current`. When no row is, the session's model and
+    provider come first as a row of their own, if both are plain words.
+    """
+    model, provider = result.get("model"), result.get("provider")
     providers = result.get("providers")
     rows: list[ModelRow] = []
-    for provider in providers if isinstance(providers, list) else []:
-        if not isinstance(provider, dict):
+    for entry in providers if isinstance(providers, list) else []:
+        if not isinstance(entry, dict):
             continue
-        slug, models = _word(provider.get("slug")), provider.get("models")
+        slug, models = _word(entry.get("slug")), entry.get("models")
         if not slug or not isinstance(models, list):
             continue
-        name = _name(provider.get("name"), slug)
-        for model in map(_word, models):
-            if model:
-                rows.append(ModelRow(model, slug, name, (model, slug) == current))
+        name = _name(entry.get("name"), slug)
+        aliases = entry.get("aliases")
+        current_provider = (
+            slug == provider or entry.get("is_current") is True
+            or (isinstance(aliases, list) and isinstance(provider, str) and provider in aliases)
+        )
+        for listed in map(_word, models):
+            if listed:
+                rows.append(ModelRow(listed, slug, name, current_provider and listed == model))
+    running, running_provider = _word(model), _word(provider)
+    if running and running_provider and not any(row.current for row in rows):
+        name = next((row.provider_name for row in rows if row.provider == running_provider), running_provider)
+        rows.insert(0, ModelRow(running, running_provider, name, True))
     return rows
 
 
@@ -135,12 +154,14 @@ class ModelPicker:
         self.index = 0
 
     def lines(self, width: int, theme: Theme, max_rows: int, keys: bool = True) -> list[Line]:
-        """A header row naming the current model (its keys after it when `keys`), the filtered rows scrolled so the
-        highlighted one shows, the filter row."""
+        """A header row naming the current model, and the highlight's place once the rows scroll (its keys after it
+        when `keys`), the filtered rows scrolled so the highlighted one shows, the filter row."""
         shown = self.visible()
         self.index = min(self.index, max(len(shown) - 1, 0))
+        scrolls = max_rows > 2 and len(shown) > max_rows - 2  # the header and the filter row take two
+        title = TITLE_AT.format(at=self.index + 1, count=len(shown)) if scrolls else TITLE.format(count=len(self.rows))
         head = (
-            Span(TITLE.format(count=len(self.rows)), theme.heading),
+            Span(title, theme.heading),
             Span(f"  now {self.current}" if self.current else "", theme.text),
         )
         frame = picker_frame(

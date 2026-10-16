@@ -22,6 +22,7 @@ from unittest.mock import patch
 from _tui_gateway_replay import Scenario, spans
 from _tui_lines import line_text, lines_text
 from test_tui_app import (
+    INTERRUPTED,
     LIVE_ID,
     NO_TERMIOS,
     AppTestCase,
@@ -413,7 +414,7 @@ class SteerTests(unittest.TestCase):
         for event in app.decoder.feed(b"x\r"):  # a terminal that ignored the request: Ctrl+Enter comes as Enter
             app._on_input(event)
         self.assertEqual(hint(), "esc interrupt · /steer <text> steers · ↑ edit queued")
-        for event in app.decoder.feed(b"\x1b[27u"):  # Esc, as kitty reports it
+        for event in app.decoder.feed(b"\x1b[108;5u"):  # Ctrl+L, as kitty reports it (Esc would interrupt the turn)
             app._on_input(event)
         self.assertEqual(hint(), "esc interrupt · ctrl+enter steer · ↑ edit queued")
 
@@ -553,6 +554,28 @@ class ModeCycleTests(unittest.TestCase):
         self.assertEqual(app.mode, MODE_NORMAL)
         self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])  # plan is the TUI's flag: no call
         self.assertEqual(notices(app), [])
+
+    def test_the_screen_states_the_approval_mode_once_in_the_composers_words_whatever_the_hud_read(self) -> None:
+        # The audit's case (D4): the mode row said approvals off while the status line, reading Hermes' saved state
+        # through the HUD, still said `yolo mode: off`.
+        from test_tui_panels import hud_payload
+
+        from omh.tui.panels import HudSnapshot
+
+        app, client = make_app()
+        app.stored_id = "stored"
+        for enabled in (False, True):
+            with self.subTest(hud_says_yolo=enabled):
+                payload = hud_payload()
+                payload["yolo"] = {"status": "observed", "enabled": enabled}
+                app.hud = HudSnapshot("stored", payload, 100.0)
+                if app.mode != MODE_ACCEPT:
+                    app._on_input(SHIFT_TAB)
+                    answer(app, client, YOLO_IS_ON)
+                screen = drawn(app)
+                status = next(index for index, row in enumerate(screen) if row.startswith("⚚ OMH"))
+                self.assertFalse([row for row in screen if "yolo" in row], screen)
+                self.assertEqual([row for row in screen if "no approvals" in row], [screen[status - 1]])  # the mode row
 
     def test_a_yolo_answer_that_is_not_this_session_only_is_a_failure(self) -> None:
         refusals = {
@@ -837,6 +860,33 @@ class ModeCycleTests(unittest.TestCase):
         self.assertEqual({params["session_id"] for params in configs}, {SID, "live-2"})
 
 
+class ExitHintTests(unittest.TestCase):
+    def test_a_first_ctrl_c_says_so_on_the_mode_row_for_two_seconds_and_writes_nothing(self) -> None:
+        from omh.tui.app import EXIT_CONFIRM_SECONDS, EXIT_HINT
+
+        now = [100.0]
+        app, _client = make_app(clock=lambda: now[0])
+        resting = drawn(app)
+        app._on_input(Key(CHAR, "c", ctrl=True))
+        screen = drawn(app)
+        status = next(index for index, row in enumerate(screen) if row.startswith("⚚ OMH"))
+        self.assertIn(EXIT_HINT, screen[status - 1])  # the mode row, as the Esc-armed message is
+        self.assertEqual(notices(app), [])  # nothing left in the transcript or the scrollback
+        self.assertIsNone(app.exit_code)
+        now[0] += EXIT_CONFIRM_SECONDS - 0.5
+        self.assertAlmostEqual(app._read_timeout(), 0.5)  # the loop wakes when the window ends, not a second later
+        now[0] += 0.6
+        app.dirty = False
+        app._expire_exit()
+        self.assertEqual((app.dirty, app.exit_armed_at), (True, None))  # so that wake repaints the row without it
+        self.assertEqual(drawn(app), resting)
+        app._on_input(Key(CHAR, "c", ctrl=True))  # the window passed: this press arms again
+        self.assertIsNone(app.exit_code)
+        now[0] += EXIT_CONFIRM_SECONDS / 2
+        app._on_input(Key(CHAR, "c", ctrl=True))
+        self.assertEqual(app.exit_code, 0)
+
+
 class HermesOwnApprovalsTests(unittest.TestCase):
     """Approvals Hermes turned off on its own: accept stays shown, and Shift+Tab moves plan alone."""
 
@@ -903,7 +953,8 @@ class HermesOwnApprovalsTests(unittest.TestCase):
         session_info(app, yolo=True)
         app._on_input(SHIFT_TAB)
         screen = drawn(app)
-        self.assertTrue(any(line.startswith("⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ to cycle)") for line in screen))
+        # Hermes has approvals off on its own: Shift+Tab only turns plan back off, and the row says so.
+        self.assertTrue(any(line.startswith("⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ plan off)") for line in screen))
         rules = [line for line in screen if line and set(line) == {"━"}]
         self.assertEqual(len(rules), 2)  # approvals off is what the rules keep showing
         short, _client = make_app(rows=9)
@@ -1601,7 +1652,136 @@ class EffortTests(unittest.TestCase):
             session_info(app, **payload)
             self.assertEqual(app.effort, "none")
         session_info(app, reasoning_effort="")  # Hermes' word for the provider's default
+        self.assertEqual(app.effort, modes_module.EFFORT_DEFAULT)
+
+    def started_with(self, config: dict) -> tuple[App, RecordingClient]:
+        """A launched app whose `session.create` answered Hermes' lazy info (no effort), then `config.get` `config`."""
+
+        class Lazy(RecordingClient):
+            def call(self, method: str, params: dict, timeout: float = 30.0) -> dict:
+                return {"session_id": SID, "stored_session_id": "stored-1", "info": {"model": "m", "lazy": True}}
+
+        client = Lazy()
+        app = App(ScriptedTerminal(), client, {}, poller=FakePoller())  # type: ignore[arg-type]
+        app.startup()
         self.assertEqual(app.effort, "")
+        app._on_response(Response(1, {"config": config}, None))  # the config.get the launch already asks
+        return app, client
+
+    def test_before_the_first_prompt_the_configured_effort_is_shown_and_ctrl_t_steps_from_it(self) -> None:
+        # The re-review: no session.info names the effort before Hermes has built the session's agent.
+        def hint(app: App) -> str:
+            return line_text(app._mode_row_line(100))
+
+        app, client = self.started_with({"agent": {"reasoning_effort": "high"}})
+        self.assertIn("ctrl+t effort (high)", hint(app))
+        app._on_input(CTRL_T)
+        self.assertEqual(client.calls[-1], effort_call("xhigh"))
+        for config, shown in (({}, "default"), ({"agent": {"reasoning_effort": ""}}, "default"),
+                              ({"agent": {"reasoning_effort": False}}, "none"), ({"agent": {"reasoning_effort": "HIGH "}}, "high"),
+                              ({"agent": {"reasoning_effort": {"enabled": False}}}, "none"),
+                              ({"agent": {"reasoning_effort": {"effort": "max"}}}, "max"),
+                              ({"agent": {"reasoning_effort": "hgih"}}, "default")):  # Hermes falls back as for unset
+            with self.subTest(config=config):
+                app, _client = self.started_with(config)
+                self.assertIn(f"ctrl+t effort ({shown})", hint(app))
+
+    def test_a_per_model_override_or_the_sessions_own_word_wins_over_the_global_setting(self) -> None:
+        app, _client = self.started_with({"agent": {"reasoning_effort": "high", "reasoning_overrides": {"m": "low"}}})
+        self.assertEqual(app.effort, "")  # which entry matches the model is Hermes' to decide: no level is claimed
+        app, _client = self.started_with({"agent": {"reasoning_effort": "high"}})
+        session_info(app, reasoning_effort="medium")
+        self.assertEqual(app.effort, "medium")
+        late, _client = make_app()
+        session_info(late, reasoning_effort="low")
+        late._take_settings({"config": {"agent": {"reasoning_effort": "high"}}})  # an answer after the session spoke
+        self.assertEqual(late.effort, "low")
+
+    def test_a_new_session_or_a_cold_switch_shows_the_configured_effort_again_and_ctrl_t_steps_from_it(self) -> None:
+        # The round-4 verification: /new and a switch adopt the new session's lazy info, which names no effort, and
+        # no config.get goes out for them; the level the config set is still the one the new session starts with.
+        def hint(app: App) -> str:
+            return line_text(app._mode_row_line(100))
+
+        lazy = {"session_id": "live-2", "stored_session_id": "stored-2", "info": {"model": "m", "lazy": True}}
+        for leave in ("new", "switch"):
+            with self.subTest(leave=leave):
+                app, client = self.started_with({"agent": {"reasoning_effort": "high"}})
+                app._on_input(CTRL_T)
+                answer(app, client, effort_set("xhigh"))  # this session's own level, not the config's
+                self.assertIn("ctrl+t effort (xhigh)", hint(app))
+                sent = len(client.calls)
+                if leave == "new":
+                    app._on_new_session(lazy)
+                else:
+                    app._on_session_resumed("stored-2", {**lazy, "messages": []})
+                self.assertIn("ctrl+t effort (high)", hint(app))
+                self.assertNotIn("config.get", [method for method, _params in client.calls[sent:]])
+                app._on_input(CTRL_T)
+                self.assertEqual(client.calls[-1], effort_call("xhigh", sid="live-2"))
+
+    def test_after_a_session_change_its_own_word_still_wins_and_overrides_still_claim_nothing(self) -> None:
+        app, _client = self.started_with({"agent": {"reasoning_effort": "high"}})
+        for said, shown in (("low", "low"), ("", modes_module.EFFORT_DEFAULT)):
+            with self.subTest(said=said):
+                app._on_session_resumed(
+                    "stored-2", {"session_id": f"live-{said}", "stored_session_id": f"stored-{said}",
+                                 "info": {"reasoning_effort": said}, "messages": []})
+                self.assertEqual(app.effort, shown)
+        app, _client = self.started_with({"agent": {"reasoning_effort": "high", "reasoning_overrides": {"m": "low"}}})
+        app._on_new_session({"session_id": "live-2", "stored_session_id": "stored-2", "info": {"lazy": True}})
+        self.assertEqual(app.effort, "")
+        # A respawn adopts the resumed session, then asks config.get again: a level the config changed to replaces
+        # the one carried over, which was the config's too.
+        app, _client = self.started_with({"agent": {"reasoning_effort": "high"}})
+        app._adopt_session({"session_id": "live-2", "stored_session_id": "stored-1", "info": {"lazy": True}})
+        self.assertEqual(app.effort, "high")
+        app._take_settings({"config": {"agent": {"reasoning_effort": "low"}}})
+        self.assertEqual(app.effort, "low")
+
+    def test_a_level_the_session_said_stays_over_a_later_config_read_even_when_it_matched_the_old_config(self) -> None:
+        # The round-5 verification: told apart by value, a session's `high` equal to the config's `high` read as the
+        # config's, and the next config read (a respawn's) replaced it.
+        for respawned in (False, True):
+            for said in ("session.info", "ctrl+t"):
+                with self.subTest(respawned=respawned, said=said):
+                    app, client = self.started_with({"agent": {"reasoning_effort": "high"}})
+                    if respawned:  # the resumed session, adopted before the fresh config.get is answered
+                        app._adopt_session({"session_id": SID, "stored_session_id": "stored-1", "info": {"lazy": True}})
+                    if said == "session.info":
+                        session_info(app, reasoning_effort="high")
+                    else:  # a level the person set for this session and Hermes confirmed
+                        app._set_effort("high")
+                        answer(app, client, effort_set("high"))
+                    app._take_settings({"config": {"agent": {"reasoning_effort": "low"}}})
+                    self.assertEqual(app.effort, "high")
+        # The other way round: a session adopted after the old one said its level starts from the config's, which the
+        # fresh config read then replaces.
+        app, _client = self.started_with({"agent": {"reasoning_effort": "high"}})
+        session_info(app, reasoning_effort="max")
+        app._adopt_session({"session_id": SID, "stored_session_id": "stored-1", "info": {"lazy": True}})
+        self.assertEqual(app.effort, "high")
+        app._take_settings({"config": {"agent": {"reasoning_effort": "low"}}})
+        self.assertEqual(app.effort, "low")
+
+    def test_the_hint_names_the_sessions_effort_from_the_start_and_ctrl_t_steps_from_it(self) -> None:
+        # Hermes 6c61c3e27d sends the session's effort in the session.info that follows the agent's build, before
+        # any turn: a configured level, or "" where none is configured and the route's own default applies.
+        def hint(app: App) -> str:
+            return line_text(app._mode_row_line(100))
+
+        app, client = make_app()
+        self.assertIn("ctrl+t effort", hint(app))  # no word from Hermes yet (the lazy info carries none)
+        self.assertNotIn("ctrl+t effort (", hint(app))
+        session_info(app, reasoning_effort="high")
+        self.assertIn("ctrl+t effort (high)", hint(app))
+        app._on_input(CTRL_T)
+        self.assertEqual(client.calls[-1], effort_call("xhigh"))  # one step up from the level shown
+        app, client = make_app()
+        session_info(app, reasoning_effort="")
+        self.assertIn("ctrl+t effort (default)", hint(app))  # never a level Hermes did not name
+        app._on_input(CTRL_T)
+        self.assertEqual(client.calls[-1], effort_call("low"))  # the default is no step of the cycle
 
     def test_a_new_session_shows_its_own_effort(self) -> None:
         app, client = make_app()
@@ -1645,6 +1825,12 @@ class EffortTests(unittest.TestCase):
         self.assertEqual(client.calls, [])
         (notice,) = notices(app)
         self.assertIn("Reasoning effort high.", notice)
+        app, _client = make_app()
+        session_info(app, reasoning_effort="")
+        type_text(app, "/effort")
+        app._on_input(Key(ENTER))
+        (notice,) = notices(app)
+        self.assertIn("Hermes sets no reasoning effort for this session, so the provider's default applies.", notice)
 
 
 def drawn(app: App) -> list[str]:
@@ -1717,20 +1903,24 @@ class QueueLinesTests(unittest.TestCase):
 
 
 class QueueTests(unittest.TestCase):
-    def test_queued_prompts_never_move_the_composer(self) -> None:
+    def test_queued_prompts_push_the_composer_down_by_their_rows_and_leave_no_blank_row(self) -> None:
         for rows, cols in ((7, 40), (9, 40), (10, 80), (12, 80), (24, 80), (40, 120)):
             for menu in (False, True):
                 with self.subTest(rows=rows, cols=cols, menu=menu):
                     app, _client = make_app(busy=True, rows=rows, cols=cols)
-                    empty = composer_index(drawn(app))
-                    seen = []
+                    working = composer_index(drawn(app)) - 1  # the working row, right above the top rule
                     for count in (1, 2, 3, 6):
                         app.queued.clear()
                         queue(app, *(f"prompt {number}" for number in range(count)))
                         if menu:
                             app.composer.replace(0, len(app.composer.text), "/")
-                        seen.append(composer_index(drawn(app)))
-                    self.assertEqual(seen, [empty] * 4)
+                        screen = drawn(app)
+                        top = composer_index(screen)
+                        between = screen[working : top - 1]  # the slot: the menu, the queued prompts under it
+                        self.assertTrue(all(between), screen)
+                        if not menu and rows >= 10:
+                            # three named and "+N more", within the slot's cap of a third of the rows
+                            self.assertEqual(len(between), min(count, 4, rows // 3), screen)
 
     def test_the_rows_sit_right_above_the_composers_top_rule(self) -> None:
         app, _client = make_app(busy=True)
@@ -1972,20 +2162,20 @@ class BellTests(unittest.TestCase):
                 self.assertEqual(bells(app), expected)
                 self.assertIsNotNone(app.slot)  # quiet or not, the approval is shown
 
-    def test_other_questions_and_requests_the_tui_cannot_show_do_not_ring(self) -> None:
+    def test_every_question_rings_once_and_a_request_the_tui_cannot_show_does_not(self) -> None:
         requests = (
-            ("clarify", {"questions": [{"qid": "q0", "question": "Which?", "choices": ["red", "blue"]}]}),
-            ("sudo", {"command": "apt install x"}),
-            ("secret", {"env_var": "TOKEN_X"}),
-            ("vault.code", {}),
-            ("vault.unlock_prompt", {}),
-            ("terminal.read", {}),
+            ("clarify", {"questions": [{"qid": "q0", "question": "Which?", "choices": ["red", "blue"]}]}, 1),
+            ("sudo", {"command": "apt install x"}, 1),
+            ("secret", {"env_var": "TOKEN_X"}, 1),
+            ("vault.code", {}, 1),
+            ("vault.unlock_prompt", {}, 0),
+            ("terminal.read", {}, 0),
         )
-        for method, params in requests:
+        for method, params, expected in requests:
             with self.subTest(method=method):
                 app, _client = make_app(busy=True)
                 app._on_server_request(ServerRequest("srq-1", method, params))
-                self.assertEqual(bells(app), 0)
+                self.assertEqual(bells(app), expected)
 
     def test_an_approval_waiting_behind_another_rings_when_its_own_slot_opens(self) -> None:
         now = [100.0]
@@ -2012,7 +2202,8 @@ class BellReplayTests(AppTestCase):
         for env, expected in (({}, 1), ({"OMH_TUI_BELL": "0"}, 0)):
             with self.subTest(env=env):
                 run = self.prepare(
-                    Scenario("approval", spans("approval", "startup", "create", "approval_turn"), answers=startup_answers()),
+                    Scenario("approval", spans("approval", "startup", "create", "approval_turn"),
+                             answers=(*startup_answers(), INTERRUPTED)),
                     env=env,
                 )
                 terminal = run.terminal
@@ -2045,8 +2236,7 @@ class ModeReplayTests(AppTestCase):
             return terminal.status_row().rstrip().endswith("running")
 
         terminal.script(
-            Step(b"Write the numbers from 1 to 300, one per line, nothing else.\r", when=terminal.idle,
-                 capture="idle", label="idle"),
+            Step(b"Write the numbers from 1 to 300, one per line, nothing else.\r", when=terminal.idle, label="idle"),
             # The replay holds this turn open until it sees session.interrupt.
             Step(b"second prompt\rthird prompt\r", when=running, label="running"),
             Step(b"\x1b[A", when=terminal.shows("⧗ third prompt"), capture="queued", label="queued"),
@@ -2057,9 +2247,8 @@ class ModeReplayTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)  # a prompt.submit for either queued prompt would be a replay mismatch
         self.assertEqual(len(run.calls("prompt.submit")), 1)
-        idle, queued, recalled = (terminal.captures[name] for name in ("idle", "queued", "recalled"))
+        queued, recalled = (terminal.captures[name] for name in ("queued", "recalled"))
         top = composer_index(queued)
-        self.assertEqual(top, composer_index(idle))
         self.assertEqual(queued[top - 3].rstrip(), "⧗ second prompt")
         self.assertTrue(queued[top - 2].startswith("⧗ third prompt"))
         self.assertTrue(queued[top - 2].rstrip().endswith("↑ edit"))
@@ -2074,14 +2263,14 @@ class ModeReplayTests(AppTestCase):
         terminal = run.terminal
         terminal.script(
             Step(b"\x14", when=terminal.idle, capture="before", label="idle"),
-            Step(b"\x04", when=terminal.shows("effort low"), label="the effort"),
+            Step(b"\x04", when=terminal.shows("ctrl+t effort (low)"), label="the effort"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
         (call,) = run.calls("config.set")
         self.assertEqual(call["params"], {"key": "reasoning", "session_id": LIVE_ID, "value": "low"})
         # "ctrl+t effort" is the hint; the level itself is absent until Hermes names one.
-        self.assertNotIn("effort low", "\n".join(terminal.captures["before"]))
+        self.assertNotIn("(low)", "\n".join(terminal.captures["before"]))
 
     def test_shift_tab_walks_the_modes_and_the_frame_shows_each(self) -> None:
         answers = (*startup_answers(), ("config.set", {"result": YOLO_IS_ON}), ("config.set", {"result": YOLO_IS_OFF}))

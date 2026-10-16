@@ -38,7 +38,9 @@ memory unless Hermes' config explicitly asks for `interrupt` or `steer`.
 The queue is the TUI's own (the gateway has no call that withdraws a prompt):
 its prompts are listed above the composer's top rule, and Up on an empty
 composer takes them back into the composer (a `!` line on its own, never
-joined to a prompt: `_recall_queue`).
+joined to a prompt: `_recall_queue`). A turn the person interrupts does not
+start the next queued prompt: the queue comes back into the composer the
+same way, and what stays queued waits for the person (`_hold_queue`).
 Ctrl+Enter and `/steer <text>` send what the person typed into the running
 turn (`session.steer`); the TUI steers nothing on its own. Text Hermes does
 not take as a steer joins the TUI's queue while the turn runs, whatever the
@@ -46,6 +48,13 @@ busy mode, and goes as a prompt once it ends; sent at once, it would
 interrupt or redirect the turn it was meant to steer. A steer answered after
 its session was left goes back to the composer instead: the session now live
 never receives it.
+
+When the gateway child exits on its own with a failure, the loop spawns it
+again from the environment the launcher handed the TUI (`gateway_spawn`) and
+resumes the session that was open, at most `RESPAWN_LIMIT` times in
+`RESPAWN_WINDOW_SECONDS` (`App._respawn_gateway`); a normal exit, the
+person's quit, an attach hand-off, or a crash past the limit ends the TUI as
+described above.
 
 The input modes and the reasoning effort are `modes.ModesMixin`'s, and the
 subagent strip, list and log are `agent_view.AgentViewMixin`'s; each
@@ -106,11 +115,12 @@ from ..skin_pack import (
 )
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
-from .frame import MODE_ACCEPT, MODE_PLAN, MODE_SHELL, STATUS_SEPARATOR, build_frame, sticky_line
-from .history import SEARCH_ACCEPT, SEARCH_CANCEL, HistorySearch, append_entry, history_path, load_history
+from .frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN, MODE_SHELL, STATUS_SEPARATOR, Frame, build_frame, sticky_line
+from .history import SEARCH_ACCEPT, SEARCH_CANCEL, SEARCH_HINTS, HistorySearch, append_entry, history_path, load_history
 from .gateway import (
     Event,
     GatewayCallError,
+    GatewayCancelled,
     GatewayClient,
     GatewayExited,
     GatewayTimeout,
@@ -140,12 +150,21 @@ from .launch import request_fallback
 from .agent_view import AGENT_STEER_LEFT_UNANSWERED_NOTICE, STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
 from .layout import choice_cap, slot_cap, under_composer
 from .markdown import clean_text
-from .modes import MODE_ROW_GAP, NO_SESSION_NOTICE, STRIP_SEPARATOR, ModesMixin, mode_row_line
+from .modes import (
+    HERMES_OWN_CYCLE,
+    MODE_ROW_GAP,
+    NO_SESSION_NOTICE,
+    STRIP_SEPARATOR,
+    ModesMixin,
+    configured_effort,
+    effort_words,
+    mode_row_line,
+)
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .model_picker import KEYS as MODEL_PICKER_KEYS
 from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows
-from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, plan_text, status_segments
+from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, plan_state, plan_text, status_segments
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
 from .screen import CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
 from .session_picker import KEYS as SESSION_PICKER_KEYS
@@ -202,7 +221,7 @@ from .transcript import (
     block_rows,
     compact_count,
 )
-from .width import cell_width, clusters, line_width, truncate_left, truncate_line
+from .width import cell_width, clusters, line_width, truncate, truncate_left, truncate_line
 from ..version import __version__
 
 # While the key decoder holds bytes (a lone ESC, half a sequence, an open paste), the loop reads with this
@@ -241,6 +260,10 @@ REWIND_SAY = (
     "⏪ replaces #{ordinal}+ · esc",
 )
 REWIND_BUSY_NOTICE = "Rewind works between turns: let this one end, or interrupt it with Esc."
+CHAINS_CLOSED_NOTICE = "Hermes asked you something, so /omh-model closed:"
+# What the mode row says while the draft spans lines on a terminal that has sent no key report, where Shift+Enter
+# arrives as Enter and sends; longest first.
+NEWLINE_KEYS = ("⏎ sends · \\⏎, alt+⏎ or ctrl+j adds a line", "\\⏎ or alt+⏎ adds a line", "alt+⏎ adds a line")
 # A composer line that starts with this is the person's own shell command (`shell.exec`), never a prompt.
 SHELL_PREFIX = "!"
 SHELL_USAGE = "Usage: !<command> runs it in Hermes' shell (30 s at most); its output is not sent to the model."
@@ -252,6 +275,7 @@ REWIND_KEPT_NOTICE = "Hermes did not rewind: {reason}. The screen is back to how
 REWIND_UNREAD_NOTICE = "Hermes did not send the session's history ({reason}), so the screen stays as it was before you sent."
 MODEL_BUSY_NOTICE = "Hermes switches the model between turns: let this one end, or interrupt it with Esc."
 TODOS_NONE_NOTICE = "No plan in this session yet: Hermes' todo tool writes one."
+QUESTION_VIEW_TITLE = "the open question (q goes back to it)"  # Ctrl+O's pager while Hermes asks something
 # Claude Code's /export saves the conversation; Hermes' writes a profile archive. Said once, then it runs.
 EXPORT_NOTE = (
     "Hermes' /export writes a profile archive (config, skills, theme), not this transcript; /export again runs it. "
@@ -286,6 +310,14 @@ LOGO_MIN_ROWS = 24
 LAST_SESSION_LIMIT = 3
 LAST_SESSION_NOTICE = "last session: {label} · /resume {id} reopens it"
 PLACEHOLDER = "Ask Hermes anything"
+# The composer after an approval's tell row: what is sent goes into the running turn as a steer (`App._tell`).
+TELL_PLACEHOLDER = "tell Hermes what to do instead"
+TELL_SAY = (
+    "↪ tell Hermes what to do instead · enter sends · esc cancels",
+    "↪ tell Hermes what to do instead · esc cancels",
+    "↪ tell Hermes · esc cancels",
+    "↪ tell · esc",
+)
 BARE_HERMES_NOTE = "Bare `hermes` opens Hermes' own terminal."
 
 # The mode on the status line, where the terminal is too short for the mode row.
@@ -307,12 +339,47 @@ BUSY_MODES = frozenset({"queue", "steer", "interrupt"})
 STATE_IDLE = "idle"
 STATE_RUNNING = "running"
 STATE_WAITING = "waiting on you"
+WAITING_GLYPH = "? "  # in place of the spinner while a question waits on the person
 
 # The prompts waiting for the running turn, listed above the composer's top rule.
 QUEUE_GLYPH = "⧗ "
 QUEUE_ROWS = 3
 QUEUE_EDIT_HINT = "↑ edit"
+QUEUE_HELD_HINT = "held · ↑ edit"
 QUEUE_HINT_GAP = 2
+# After the person interrupts a turn the queue does not go on by itself: what Up would take back goes back into the
+# composer, and what it would not (a queued `!` line and what follows it) stays queued, held, until the next prompt
+# the person sends starts a turn, or Up takes it back.
+QUEUE_BACK_NOTICE = "{why}: what you queued is back in the composer, not sent."
+# The same while the draft is set aside behind a field (the tell row's, a question's answer): that is where it went.
+QUEUE_BACK_HIDDEN_NOTICE = "{why}: what you queued is in your draft, which comes back when this field closes; not sent."
+QUEUE_HELD_NOTICE = "{why}: what you queued waits, not sent, until your next prompt; ↑ takes it back."
+INTERRUPTED_WHY = "Interrupted"
+RESPAWNED_WHY = "The Hermes gateway was restarted"
+# Gateway crash recovery, bounded as Hermes' own TUI bounds it (ui-tui `app/gatewayRecovery.ts`): at most
+# RESPAWN_LIMIT respawns in a sliding RESPAWN_WINDOW_SECONDS, each resuming the session that was open. Past that,
+# or with no stored session to resume, the TUI leaves as it would without recovery.
+RESPAWN_LIMIT = 3
+RESPAWN_WINDOW_SECONDS = 60.0
+# A respawn runs inside one loop step, so keys wait while the new gateway starts. Hermes' own TUI reports a gateway
+# that sent no `gateway.ready` after 15 s (ui-tui `gatewayClient.ts` STARTUP_TIMEOUT_MS), and a gateway started again
+# moments after the first one is warm, so an attempt gives up after that long, not the first start's minute. Hermes'
+# TUI takes the time from STARTUP_TIMEOUT_ENV when it is set (milliseconds, at least 5 s, unset or 0 the default), and
+# so does a respawn here (`respawn_ready_seconds`).
+RESPAWN_READY_SECONDS = 15.0
+STARTUP_TIMEOUT_ENV = "HERMES_TUI_STARTUP_TIMEOUT_MS"
+STARTUP_TIMEOUT_MIN_SECONDS = 5.0
+RESPAWN_NOTICE = (
+    "{reason}: starting it again and resuming session {session} ({attempt} of {limit} in {window:g} s); "
+    "what you type waits until it is back, and ctrl+c leaves."
+)
+RESPAWNED_NOTICE = "Resumed session {session} on a new Hermes gateway."
+RESPAWN_LEFT_REASON = "you left while the Hermes gateway was starting again"
+LEAVE_CHARS = ("c", "d")  # with Ctrl, read while a respawn waits: the person leaves (`App._respawn_cancel`)
+TURN_LOST_NOTICE = "The running turn was lost when the Hermes gateway exited; it was not sent again."
+QUESTION_LOST_NOTICE = "Hermes' {method} request closed unanswered: the gateway that asked has exited."
+# Between the interrupt key and the end of the turn, the working row says so in place of the spinner.
+INTERRUPTING = "interrupting…"
 
 # Hermes answers `queued` both when the running turn takes the steer (at its next tool call) and when it
 # queues the text as the next prompt because it is compressing the context; the transcript's
@@ -323,10 +390,20 @@ STEER_FALLBACK_SENT = "sent as a prompt"
 STEER_REJECTED_REASON = "its turn had ended"  # Hermes' `rejected`: the agent was idle
 # A steer with no answer is no refusal: Hermes may have taken it, so its text is never sent again but given back.
 STEER_UNANSWERED_OUTCOME = "back in the composer — Hermes did not answer the steer in {seconds:g} s"
+# One the gateway exited without answering is given back the same way, at once, as the respawn starts.
+STEER_LOST_OUTCOME = "back in the composer — the Hermes gateway exited before it answered"
+TELL_LOST_NOTICE = (
+    "The Hermes gateway exited while you were telling it what to do instead; "
+    "what you typed is back in the composer, not sent."
+)
+STEER_LOST_NOTICE = (
+    "The Hermes gateway exited before it answered {count} steer{s}; the text is back in the composer, not sent again."
+)
 # What an approval's answer reads as in the transcript, and its colour: allowed in green, denied in red.
 APPROVAL_OUTCOMES = {
     "once": ("allowed once", NOTICE_OK),
     "session": ("allowed for this session", NOTICE_OK),
+    "always": ("always allow sent (Hermes saves it)", NOTICE_OK),  # the TUI sees the choice go, not the save
     "deny": ("denied", NOTICE_ERROR),
 }
 STEER_USAGE = "Usage: /steer <text to add to the running turn>"
@@ -357,8 +434,9 @@ CALL_EXPIRED_NOTICE = "Hermes has not answered {method} in {seconds:g} s; the OM
 CURSOR_REPORT_START = b"\x1b["
 CURSOR_REPORT_FINAL = b"R"
 
-# One BEL when an approval opens, so a terminal in the background can flag the tab or bounce.
+# One BEL when a question opens, so a terminal in the background can flag the tab or bounce.
 BELL = "\a"
+QUESTION_ALERT_CHARS = 80  # the most of what Hermes asks that a question's notification says
 BELL_ENV = "OMH_TUI_BELL"
 BELL_OFF = "0"
 # A turn that ran this long ends with the terminal's attention signal (`attention_sequence`).
@@ -376,7 +454,7 @@ TITLE_SET = "\x1b]2;{}" + STRING_TERMINATOR
 TITLE_DEFAULT = "Hermes"
 TITLE_CHARS = 80
 
-EXIT_HINT = "Ctrl+C again to exit"
+EXIT_HINT = "ctrl+c again to exit"  # on the mode row while a second Ctrl+C would exit
 INTERRUPT_HINT = "esc to interrupt"
 OSC52_COPY = "\x1b]52;c;{}\x07"
 # The completion menu's name column: at least this wide, wider for the longest name it lists (OMH skills are
@@ -449,11 +527,13 @@ class TerminalLike(Protocol):
     def __enter__(self) -> Any: ...
     def __exit__(self, *exc: object) -> Any: ...
     def size(self) -> tuple[int, int]: ...
-    def query_background(self) -> tuple[str | None, bytes]: ...
+    def query_background(self) -> tuple[str | None, bytes, int | None]: ...
+    def query_cursor_row(self) -> tuple[bytes, int | None]: ...
     def resized(self) -> bool: ...
     def read(self, timeout: float, wake: int | None = None) -> bytes: ...
     def write(self, text: str) -> None: ...
     def set_mouse(self, enabled: bool) -> None: ...
+    def suspend(self) -> bool: ...
 
 
 class PollerLike(Protocol):
@@ -479,6 +559,7 @@ class _Pending:
     # says lands under that command's echo, which stays open until every call made for it is answered.
     command: CommandBlock | None = None
     on_expiry: Callable[[], None] | None = None  # what an answer that never came settles; None: a notice says so
+    steer: SteerBlock | None = None  # the steer row it settles, given back at once if the gateway exits first
 
 
 class QueuedLine(NamedTuple):
@@ -537,6 +618,59 @@ def notification_from(payload: Mapping[str, Any], now: float) -> Notification | 
         expires_at = now + ttl / 1000
     level = level if level in contract.NOTIFICATION_LEVELS else "info"
     return Notification(text, level, as_text(payload.get(contract.NOTIFICATION_KEY)), expires_at)
+
+
+def respawn_ready_seconds(environ: Mapping[str, str]) -> float:
+    """How long a respawned gateway may take to send `gateway.ready`: `STARTUP_TIMEOUT_ENV` read as Hermes' TUI reads
+    it (`Math.max(5000, parseInt(value) || 15000)` ms), a whole number of milliseconds; anything else is the default."""
+    try:
+        milliseconds = int(environ.get(STARTUP_TIMEOUT_ENV, "").strip())
+    except ValueError:
+        milliseconds = 0
+    return max(STARTUP_TIMEOUT_MIN_SECONDS, milliseconds / 1000 if milliseconds else RESPAWN_READY_SECONDS)
+
+
+def goal_line(goal: Mapping[str, Any] | None, width: int, theme: Theme) -> Line | None:
+    """Hermes' standing /goal on one row, worded as its Ink goal bar words it; None once it is done or cleared.
+
+    `⊙ goal · 3/20 turns · <title>` while active; `⏳ goal parked · until 14:05
+    · <reason> · 3/20 turns · <title>` (the time local, or `on session <id>`)
+    while it waits on a barrier; `⏸ goal paused · <reason> · 3/20 turns ·
+    <title>` while paused.
+    """
+    if not isinstance(goal, Mapping) or goal.get(contract.GOAL_STATUS) not in contract.GOAL_SHOWN_STATUSES:
+        return None
+
+    def whole(key: str) -> int:
+        value = goal.get(key)
+        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+    def words(value: object) -> str:
+        return " ".join(clean_text(as_text(value)).split())
+
+    turns = f"{whole(contract.GOAL_TURNS_USED)}/{whole(contract.GOAL_MAX_TURNS)} turns"
+    barrier = goal.get(contract.GOAL_WAIT_BARRIER) if goal.get(contract.GOAL_STATUS) == contract.GOAL_ACTIVE else None
+    if isinstance(barrier, Mapping):
+        until_at = barrier.get(contract.BARRIER_UNTIL_AT)
+        if barrier.get(contract.BARRIER_TYPE) == contract.BARRIER_UNTIL and isinstance(until_at, int | float):
+            wait = f"until {time.strftime('%H:%M', time.localtime(until_at))}"
+        else:
+            target = barrier.get(contract.BARRIER_TARGET)
+            target_words = words(str(target)) if isinstance(target, str | int) else ""
+            wait = f"on {words(barrier.get(contract.BARRIER_TYPE))} {target_words}"
+        reason = words(barrier.get(contract.BARRIER_REASON))
+        glyph, label, detail = "⏳", "goal parked", f"{wait}{f' · {reason}' if reason else ''} · {turns}"
+    elif goal.get(contract.GOAL_STATUS) == contract.GOAL_PAUSED:
+        reason = words(goal.get(contract.GOAL_PAUSED_REASON))
+        glyph, label, detail = "⏸", "goal paused", f"{f'{reason} · ' if reason else ''}{turns}"
+    else:
+        glyph, label, detail = "⊙", "goal", turns
+    line = (
+        Span(f"{glyph} {label}", theme.accent if glyph == "⊙" else theme.warn),
+        Span(f" · {detail} · ", theme.muted),
+        Span(words(goal.get(contract.GOAL_TITLE)), theme.text),
+    )
+    return truncate_line(line, width)
 
 
 def attention_sequence(environ: Mapping[str, str], message: str) -> str:
@@ -621,11 +755,13 @@ def first_line(text: str) -> str:
     return text.strip().split("\n", 1)[0]
 
 
-def queue_lines(prompts: Sequence[str], width: int, max_rows: int, theme: Theme) -> list[Line]:
+def queue_lines(
+    prompts: Sequence[str], width: int, max_rows: int, theme: Theme, hint: str = QUEUE_EDIT_HINT
+) -> list[Line]:
     """The queued prompts, next to be sent first: `⧗ <first line>` each, never more than `max_rows` rows.
 
     At most `QUEUE_ROWS` prompts are named and `+N more` counts the rest;
-    `↑ edit`, the key that takes them back into the composer, ends the last row.
+    `hint` (`↑ edit`, the key that takes them back into the composer) ends the last row.
     """
     if not prompts or max_rows <= 0:
         return []
@@ -637,9 +773,9 @@ def queue_lines(prompts: Sequence[str], width: int, max_rows: int, theme: Theme)
     ]
     if named < len(prompts):
         rows.append((Span(f"+{len(prompts) - named} more", theme.muted),))
-    hint: Line = (Span(QUEUE_EDIT_HINT, theme.hint),)
-    last = truncate_line(rows[-1], max(width - line_width(hint) - QUEUE_HINT_GAP, 0))
-    rows[-1] = (*last, Span(" " * (width - line_width(last) - line_width(hint))), *hint)
+    said: Line = (Span(hint, theme.hint),)
+    last = truncate_line(rows[-1], max(width - line_width(said) - QUEUE_HINT_GAP, 0))
+    rows[-1] = (*last, Span(" " * (width - line_width(last) - line_width(said))), *said)
     return [truncate_line(row, width) for row in rows]
 
 
@@ -903,9 +1039,14 @@ class App(ModesMixin, AgentViewMixin):
         clock: Callable[[], float] = time.monotonic,
         wall_clock: Callable[[], float] = time.time,
         pick_model_chains: Callable[..., str] = run_model_chain_picker,
+        make_client: Callable[..., GatewayClient] | None = None,
     ) -> None:
         self.terminal = terminal
         self.client = client
+        # What spawns a gateway again after a crash (`_respawn_gateway`); None: a crash ends the TUI.
+        self.make_client = make_client
+        self.respawned_at: list[float] = []  # when each respawn in the window began, on `clock`
+        self.respawn_reason = ""  # the gateway is gone, for this reason, and a respawn is due after this step
         self.environ = environ
         self.motion = not reduced_motion(environ)
         self.poller = poller
@@ -926,6 +1067,8 @@ class App(ModesMixin, AgentViewMixin):
         self.rewind_messages: list[dict[str, Any]] = []  # the history the picker was opened over
         self.rewind: Rewind | None = None  # a picked prompt waiting to be sent again
         self.model_picker: ModelPicker | None = None  # bare /model's list of what Hermes offers
+        self.chains_open = False  # /omh-model's picker has the terminal (`_omh_model`)
+        self.chains_closing = False  # a server request arrived while it was open: its next read cancels it
         self.export_said = False  # EXPORT_NOTE has been said: the next /export runs
         self.interrupt_armed: str | None = None  # the agent a first `x` in the list asked about
         self.agent_steer: str | None = None  # the agent `s` picked: the next line sent is its steer
@@ -943,6 +1086,10 @@ class App(ModesMixin, AgentViewMixin):
         self.yolo_by_tui = False  # the approvals off shown are the TUI's own confirmed `on`, not Hermes' own
         self.hermes_approvals_said = False  # HERMES_APPROVALS_NOTICE was shown in this session
         self.effort = ""  # the reasoning effort the mode row shows; "" shows none
+        # The effort Hermes' config sets (`configured_effort`), from the last `config.get`: what a session that has
+        # not said its own starts with, the launch session and each one opened later (`_adopt_session`).
+        self.effort_configured = ""
+        self.effort_said = False  # the shown effort is the session's own (its info, or a level set and confirmed)
         self.mode_request_open = False  # a yolo call is out: Shift+Tab waits for its answer
         self.yolo_reported: bool | None = None  # `session.info`'s yolo since the last yolo call went out
         self.yolo_confirmed_at: float | None = None  # when Hermes confirmed the TUI's on; None once one session.info was held
@@ -959,8 +1106,13 @@ class App(ModesMixin, AgentViewMixin):
         # The person's draft, set aside whole (text, caret, paste chips) while a slot answered with text has a
         # composer of its own; it is the composer again when that slot closes.
         self.slot_draft: Composer | None = None
+        # The person's draft, set aside while the composer takes what to tell Hermes after an approval's tell row.
+        self.tell_draft: Composer | None = None
+        self.tell_turn_runs = False  # the turn whose approval the open tell field denied has not ended (`_tell`)
         self.waiting_requests: deque[ServerRequest] = deque()
         self.queued: deque[QueuedLine] = deque()
+        self.queue_held = False  # the queue waits for the person after an interrupt (`_hold_queue`)
+        self.interrupting = False  # the person interrupted the running turn and Hermes has not ended it yet
         self.sticky = ""
         self.flushed_since_prompt = 0  # rows printed above the region from the last prompt's first row on
         self.turn_pending = False  # a prompt went out and its turn has not started (or ended) yet
@@ -974,21 +1126,34 @@ class App(ModesMixin, AgentViewMixin):
         # is that command's (`Transcript.command` says which), and its echo stays open until every such call is
         # answered (`_run_slash`).
         self.pending: dict[int, _Pending] = {}
+        # Keys read while something else had the loop (a respawn's waits, the cursor query after fg), acted on by the
+        # next `_take_input` in the order they were typed.
+        self.held_input: list[Key | Paste | Mouse] = []
         self.menu_index = 0
+        self.menu_closed: str | None = None  # the composer text Esc closed the `/` menu on; it stays closed over that text
+        # Where the open completion menu is drawn: under the composer (True) or in the slot above it (False); None
+        # while no menu is open. Decided as it opens and kept while it stays open (`_place_menu`).
+        self.menu_below: bool | None = None
+        self.menu_under: list[Line] = []  # the menu's rows as `_slot_lines` last made them, while it is drawn under
         self.pager: Pager | None = None
+        self.question_view: Pager | None = None  # the pager Ctrl+O opened over the open question, while it is open
         self.resized_while_paging = False
         self.hud: HudSnapshot | None = None
+        self.goal: Mapping[str, Any] | None = None  # Hermes' standing /goal, as its last `session.control.update` said
+        self.retired_plan = ""  # the text of a finished plan the panel no longer draws (`_retire_finished_plan`)
+        self.plan_seen_open = False  # the panel has had a plan with an item left since the last one retired
         self.notification: Notification | None = None  # Hermes' out-of-band notice, shown above the composer
         self.exit_armed_at: float | None = None
         self.exit_code: int | None = None
         self.farewell = ""
-        self.banner_facts: dict[str, str] | None = None  # the header, flushed above the next anchoring frame
+        self.banner_facts: dict[str, str] | None = None  # the header, flushed above the next frame
         self.banner_record: dict[str, str] | None = None  # kept, so a full redraw can print it again
         self.logo_due = False  # the block logo goes above the banner flushed next
         self.in_launch_session = True  # the logo is the start's: it is not repeated for /new or a switch
         self.redraw_at: float | None = None  # when a settled resize redraws everything
-        self.anchor = True  # the next frame re-anchors the region (first frame, resize, redraw)
         self.busy_since = 0.0  # when the running turn (or the prompt still waiting for it) started
+        self.turn_waited = 0.0  # the part of that turn questions waited on the person, the waits that ended
+        self.waiting_since: float | None = None  # when the open question (or the first of those back to back) opened
         self.attachments: list[Attachment] = []  # images the gateway queued for the next prompt
         self.picker: SessionPicker | None = None
         self.path_word = ""  # the `@` token `complete.path` was last scheduled for
@@ -998,6 +1163,7 @@ class App(ModesMixin, AgentViewMixin):
         self.connection_ops: set[str] = set()  # `connection.request` operations already named in a notice
         self.roster = Roster()  # the running turn's subagents
         self.list_selected: str | None = None  # the agent list's highlighted row while the list has the keys
+        self.listed: tuple[str, ...] = ()  # the agent id of each list row as the slot last drew them, top to bottom
         self.log_agent = ""  # the agent whose log the pager shows; "" for every other pager
         self.tail_asked_at: float | None = None  # when the last `subagent.tail` went out
         self.tail_open = False  # that call has no answer yet
@@ -1041,7 +1207,7 @@ class App(ModesMixin, AgentViewMixin):
         else:
             result = self.client.call("session.create", self._create_params())
         self._adopt_session(result, fallback_stored=resume)
-        self._request("config.get", {"key": "full"}, self._take_busy_mode, self._on_settings_refused)
+        self._request("config.get", {"key": "full"}, self._take_settings, self._on_settings_refused)
         self._refresh_catalog()
         if not resume:
             self._ask_last_session()
@@ -1104,9 +1270,15 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice("\n".join(tools))
         self.transcript.retake_tail(self.size[0], self.theme, REDRAW_TAIL_ROWS)
 
-    def _take_busy_mode(self, result: dict[str, Any]) -> None:
-        """`config.get`'s answer: the busy mode Hermes is set to."""
+    def _take_settings(self, result: dict[str, Any]) -> None:
+        """`config.get`'s answer: the busy mode Hermes is set to, and the effort its config sets, shown until the
+        session says its own (Hermes sends it once it has built the session's agent, which it starts as the session
+        opens) and kept for the sessions opened later. A level the session said stays (`effort_said`), even one equal
+        to the config's; one the config set before is replaced."""
         self.busy_mode = busy_mode(result)
+        self.effort_configured = configured_effort(result)
+        if not self.effort_said:
+            self.effort = self.effort_configured
 
     def _on_settings_refused(self, error: dict[str, Any]) -> bool:
         """A refused `config.get`, drift included (`contract.OPTIONAL_METHODS`): `BUSY_QUEUE` stays, and a notice says so."""
@@ -1170,8 +1342,10 @@ class App(ModesMixin, AgentViewMixin):
         cwd = as_text(info.get("cwd")) if isinstance(info, dict) else ""
         self.transcript.cwd = cwd or str(self._create_params().get("cwd", ""))
         self.turn_pending = bool(result.get("running"))
+        self.interrupting = self.queue_held = False  # both were about the session being left
         self.turn_unknown = None  # the drift watch was for a turn of the session being left
         self.busy_since = self.clock()
+        self.turn_waited = 0.0
         # Accept belongs to the session being left; this one says its own, here or in its first session.info.
         # Plan is the TUI's flag and stays as it was.
         self.mode_request_open = False
@@ -1179,9 +1353,11 @@ class App(ModesMixin, AgentViewMixin):
         self.notification = None  # Hermes' notices are the session's
         self.session_title = ""
         self.rewind = self.rewind_picker = None  # a rewind names a row of the session being left
+        self._leave_tell()  # what to tell Hermes was for a turn of the session being left
         self.approvals_off = self.yolo_by_tui = self.hermes_approvals_said = False
         self.effort_asked = ""
-        self.effort = ""
+        self.effort = self.effort_configured  # until this session says its own (Hermes' lazy info names none)
+        self.effort_said = False
         self._take_session_state(info if isinstance(info, dict) else {})
         self._adopt_stored(as_text(result.get("stored_session_id")) or fallback_stored)
 
@@ -1202,6 +1378,15 @@ class App(ModesMixin, AgentViewMixin):
         self.background_named_dark = self.background is None and colorfgbg_names_dark(named)
         self.theme = build_theme(self._skin(), self._surface())
 
+    def adopt_cursor_row(self, row: int | None) -> None:
+        """The 1-based row the terminal reported its cursor on at launch: the region knows its place from the first frame.
+
+        None (no report) or a row outside the screen leaves the place unknown,
+        as without the report, until output has pushed it to certainty.
+        """
+        if row is not None and 1 <= row <= self.size[1] and not self.region.height:
+            self.region = LiveRegion(self.terminal.write, start_row=row - 1)
+
     def _skin(self) -> SkinTheme:
         return theme_for_name(self.theme.name) or default_theme()
 
@@ -1218,7 +1403,7 @@ class App(ModesMixin, AgentViewMixin):
         return reported
 
     def run(self, typed: bytes = b"") -> int:
-        """Run until the person quits or the gateway is gone; the exit code.
+        """Run until the person quits or the gateway is gone for good (`_respawn_gateway`); the exit code.
 
         `typed` is input that arrived before the loop started (while the
         background query waited); it is read before the first frame. The live
@@ -1226,7 +1411,7 @@ class App(ModesMixin, AgentViewMixin):
         caller's, after it has handed the terminal back.
         """
         self.wake = self.client.wake_fd()
-        self.poller.start(self.client.wake)  # a new HUD snapshot wakes the loop as gateway news does
+        self.poller.start(self._wake_loop)  # a new HUD snapshot wakes the loop as gateway news does
         try:
             if typed:
                 self._take_input(typed)
@@ -1253,11 +1438,14 @@ class App(ModesMixin, AgentViewMixin):
         if self.exit_code is not None:
             return
         self._drain_gateway()
+        if self.respawn_reason:
+            self._respawn_gateway()
         if self.exit_code is not None:
             return
         self._expire_calls()
         self._expire_notification()
         self._expire_escape()
+        self._expire_exit()
         self._track_path_token()
         self._ask_path_completion_when_due()
         self._ask_tail_when_due()
@@ -1265,7 +1453,12 @@ class App(ModesMixin, AgentViewMixin):
         self._render_when_due()
 
     def _take_input(self, data: bytes) -> None:
-        """Decode `data` and act on each key; an empty read settles held bytes once input has been quiet long enough."""
+        """Decode `data` and act on each key; an empty read settles held bytes once input has been quiet long enough.
+
+        Keys a respawn read while it waited (`held_input`) come before the ones
+        read now; keys read while one of these waited (the cursor query after
+        fg) come after the keys before them.
+        """
         if data:
             self.input_at = self.clock()
             events = self.decoder.feed(data)
@@ -1274,11 +1467,14 @@ class App(ModesMixin, AgentViewMixin):
             events = self.decoder.flush(self.terminal.mouse_reporting, self.mouse_off_at)
         else:
             events = []
-        for event in events:
-            self.dirty = True
-            self._on_input(event)
-            if self.exit_code is not None:
-                return
+        pending, self.held_input = [*self.held_input, *events], []
+        while pending:
+            for event in pending:
+                self.dirty = True
+                self._on_input(event)
+                if self.exit_code is not None:
+                    return
+            pending, self.held_input = self.held_input, []
 
     def _read_timeout(self) -> float:
         """How long the next read may wait: until the soonest thing the loop has to do without new input.
@@ -1306,6 +1502,8 @@ class App(ModesMixin, AgentViewMixin):
             due.append(self.notification.expires_at)
         if self.escape_armed is not None:
             due.append(self.escape_armed[1] + DOUBLE_ESCAPE_SECONDS)
+        if self.exit_armed_at is not None:
+            due.append(self.exit_armed_at + EXIT_CONFIRM_SECONDS)
         return max(min(due) - now, 0.0)
 
     def _expire_notification(self) -> None:
@@ -1402,6 +1600,10 @@ class App(ModesMixin, AgentViewMixin):
     def _busy(self) -> bool:
         return self.transcript.running or self.turn_pending
 
+    def _wake_loop(self) -> None:
+        """Make the live gateway client's descriptor readable, from any thread: the HUD poller's wake-up."""
+        self.client.wake()
+
     # ── gateway ──
 
     def _request(
@@ -1411,17 +1613,20 @@ class App(ModesMixin, AgentViewMixin):
         on_result: Callable[[dict[str, Any]], None],
         on_error: Callable[[dict[str, Any]], bool] | None = None,
         on_expiry: Callable[[], None] | None = None,
+        steer: SteerBlock | None = None,
     ) -> None:
         try:
             request_id = self.client.request(method, params)
         except GatewayUnavailable as error:
-            self._lose_gateway(str(error))
+            self._gateway_gone(str(error))
             return
         except ValueError as error:  # the gateway contract refused the call (`contract.call_problem`): nothing went out
             self.transcript.add_notice(f"The OMH TUI did not send {method}: {error}.", NOTICE_ERROR)
             return
         expires_at = self.clock() + CALL_ANSWER_SECONDS_BY_METHOD.get(method, CALL_ANSWER_SECONDS)
-        self.pending[request_id] = _Pending(method, on_result, on_error, expires_at, self.transcript.command, on_expiry)
+        self.pending[request_id] = _Pending(
+            method, on_result, on_error, expires_at, self.transcript.command, on_expiry, steer
+        )
 
     def _expire_calls(self) -> None:
         """Forget every call unanswered past its `expires_at`, here and in the client, saying so for most.
@@ -1467,7 +1672,165 @@ class App(ModesMixin, AgentViewMixin):
         try:
             self.client.respond(answer.request_id, answer.frame)
         except GatewayUnavailable as error:
-            self._lose_gateway(str(error))
+            self._gateway_gone(str(error))
+
+    def _gateway_gone(self, reason: str, code: int | None = None) -> None:
+        """The gateway child is gone: a respawn is due once this step ends, where one is allowed, else the TUI leaves.
+
+        Never after a normal exit (code 0), once the person is leaving, without
+        a way to spawn one, or when the launcher handed over a gateway another
+        runtime owns (`HERMES_TUI_GATEWAY_URL`, refused before any spawn).
+        """
+        if self.exit_code is not None or self.respawn_reason:
+            return
+        if self.make_client is None or code == 0 or attach_refused(self.environ):
+            self._lose_gateway(reason)
+            return
+        self.respawn_reason = reason
+
+    def _respawn_gateway(self) -> None:
+        """Spawn the gateway again, as the launcher's environment says, and resume the session that was open.
+
+        The open question and the ones waiting behind it close unanswered,
+        since the gateway that asked is gone; a running turn is reported lost
+        and never sent again; the queue is held as after an interrupt
+        (`_hold_queue`). At most `RESPAWN_LIMIT` respawns in
+        `RESPAWN_WINDOW_SECONDS`, each saying so; a gateway that does not start
+        again, or exits before it resumed the session, uses one and the next is
+        tried, as Hermes' own TUI keeps its recovery target (ui-tui
+        `gatewayRecovery.ts`). Past the limit, without a stored session, or
+        when the new gateway refuses the resume or does not answer it, the TUI
+        leaves as it would without recovery (`_lose_gateway`). Calls the old gateway had
+        not answered are settled at once (`_settle_lost_calls`), and the new
+        client's request ids start past theirs.
+
+        One child at a time: the old gateway is reaped before a new one is
+        spawned (it may still run, after a write it refused or an exit whose
+        code never came), and each new client is the app's `client` from the
+        moment it is made, so whatever ends the TUI while it starts or resumes
+        (SIGTERM, SIGHUP) leaves it to `_run`, which reaps it. While a new
+        gateway starts or resumes, Ctrl+C or Ctrl+D ends the TUI as an exhausted
+        respawn does (`_respawn_cancel`), the new child reaped; other keys read
+        meanwhile wait for the loop.
+        """
+        reason, self.respawn_reason = self.respawn_reason, ""
+        stored = self.stored_id
+        self._close_questions_unanswered()
+        if self._busy():
+            self.transcript.fail_turn(TURN_LOST_NOTICE)
+        self.turn_pending = self.interrupting = False
+        self._lose_roster()  # they stay on the strip, so the HUD's [Agents] block does not take them up instead
+        self.list_selected = None
+        first_id = max(self.pending, default=0) + 1
+        self._settle_lost_calls()
+        self._give_back_tell()
+        old: GatewayClient | None = self.client
+        while True:
+            now = self.clock()
+            self.respawned_at = [at for at in self.respawned_at if now - at < RESPAWN_WINDOW_SECONDS]
+            if not stored or len(self.respawned_at) >= RESPAWN_LIMIT:
+                self._lose_gateway(reason)
+                return
+            self.respawned_at.append(now)
+            self.transcript.add_notice(RESPAWN_NOTICE.format(
+                reason=reason[:1].upper() + reason[1:], session=stored, attempt=len(self.respawned_at),
+                limit=RESPAWN_LIMIT, window=RESPAWN_WINDOW_SECONDS,
+            ), NOTICE_WARN)
+            self.dirty = True
+            self._render_when_due()  # the notice shows while the old gateway is reaped and the new one starts
+            if old is not None:  # reaped before a new one is spawned, once the screen says why the TUI waits
+                old.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
+                old = None
+            try:
+                self.client = self.make_client(gateway_spawn(self.environ), first_id=first_id)
+                self.client.start(ready_timeout=respawn_ready_seconds(self.environ), cancel=self._respawn_cancel)
+            except GatewayCancelled:  # `start` reaped its child
+                self._lose_gateway(RESPAWN_LEFT_REASON)
+                return
+            except (GatewayUnavailable, GatewayCallError) as error:
+                reason = f"the new Hermes gateway did not start ({error})"
+                continue
+            try:
+                result = self.client.call(
+                    "session.resume", {"session_id": stored, "cols": self.size[0]}, cancel=self._respawn_cancel
+                )
+            except GatewayCancelled:
+                self.client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
+                self._lose_gateway(RESPAWN_LEFT_REASON)
+                return
+            except GatewayUnavailable as error:  # it exited too: the next attempt resumes the same session
+                self.client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
+                reason = f"the new Hermes gateway exited before it resumed session {stored} ({error})"
+                continue
+            except (GatewayCallError, GatewayTimeout) as error:
+                self.client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
+                self._lose_gateway(f"the new Hermes gateway did not resume session {stored} ({error})")
+                return
+            break
+        self.wake = self.client.wake_fd()
+        self._adopt_session(result, fallback_stored=stored)
+        self.transcript.add_notice(RESPAWNED_NOTICE.format(session=self.stored_id), NOTICE_OK)
+        self._hold_queue(RESPAWNED_WHY)
+        self._request("config.get", {"key": "full"}, self._take_settings, self._on_settings_refused)
+        self._refresh_catalog()
+        self._redeliver(result.get("open_requests"))
+
+    def _settle_lost_calls(self) -> None:
+        """The calls the exited gateway never answered, settled now rather than when their wait runs out.
+
+        A steer's row closes and its text comes back to the draft, never sent
+        again (Hermes may have taken it), with one notice for them all; every
+        other call is forgotten without one, and the echo of a command it was
+        made for closes.
+        """
+        calls = list(self.pending.values())
+        self.pending.clear()
+        steers = 0
+        for call in calls:
+            if call.steer is not None:
+                self.transcript.steer_answered(call.steer, STEER_REFUSED, STEER_LOST_OUTCOME)
+                self._give_back(call.steer.text)
+                steers += 1
+            if call.command is not None:
+                self.transcript.close_command(call.command)
+        if steers:
+            self.transcript.add_notice(STEER_LOST_NOTICE.format(count=steers, s="" if steers == 1 else "s"), NOTICE_WARN)
+
+    def _respawn_cancel(self) -> bool:
+        """Asked while a respawn waits on the new gateway: True once the person pressed Ctrl+C or Ctrl+D, or the
+        terminal hung up. Every other key read meanwhile is kept for the loop, in order (`held_input`)."""
+        try:
+            data = self.terminal.read(0.0)
+        except EOFError:
+            return True
+        if not data:
+            return False
+        self.input_at = self.clock()
+        for event in self.decoder.feed(data):
+            leaves = isinstance(event, Key) and event.name == CHAR and event.ctrl and not event.alt
+            if leaves and event.char in LEAVE_CHARS:
+                return True
+            self.held_input.append(event)
+        return False
+
+    def _give_back_tell(self) -> None:
+        """An open tell field closes with the gateway its deny went to; what was typed in it goes back to the draft,
+        never sent, with a notice, as a lost steer's text does."""
+        if self.tell_draft is None:
+            return
+        typed = self.composer.expanded()
+        self._leave_tell()
+        if typed.strip():
+            self._give_back(typed)
+            self.transcript.add_notice(TELL_LOST_NOTICE, NOTICE_WARN)
+
+    def _close_questions_unanswered(self) -> None:
+        """Close the open question and drop the waiting ones without an answer: the gateway that asked is gone."""
+        self.waiting_requests.clear()
+        slot = self.slot
+        if slot is not None:
+            self._close_slot()
+            self.transcript.add_notice(QUESTION_LOST_NOTICE.format(method=slot.method), NOTICE_WARN)
 
     def _lose_gateway(self, reason: str) -> None:
         if self.exit_code is not None:
@@ -1486,8 +1849,8 @@ class App(ModesMixin, AgentViewMixin):
             elif isinstance(item, Response):
                 self._on_response(item)
             elif isinstance(item, GatewayExited):
-                self._lose_gateway(f"the Hermes gateway exited (code {item.returncode})")
-            if self.exit_code is not None:
+                self._gateway_gone(f"the Hermes gateway exited (code {item.returncode})", item.returncode)
+            if self.exit_code is not None or self.respawn_reason:
                 return
 
     def _on_response(self, response: Response) -> None:
@@ -1541,6 +1904,14 @@ class App(ModesMixin, AgentViewMixin):
             self._on_error_event(as_text(payload.get("message")) or "The gateway reported an error.")
         elif event.type == "notification.show":
             self.notification = notification_from(payload, self.clock()) or self.notification
+        elif event.type == "review.summary":
+            text = clean_text(as_text(payload.get(contract.REVIEW_SUMMARY_TEXT))).strip()
+            if text:
+                self.transcript.add_aside(NoticeBlock(text))  # it can come during the next turn: it closes nothing
+        elif event.type == "session.control.update":
+            control = payload.get(contract.SESSION_CONTROL)
+            goal = control.get(contract.CONTROL_GOAL) if isinstance(control, Mapping) else None
+            self.goal = goal if isinstance(goal, Mapping) else None
         elif event.type == "todo.updated":
             # Hermes' plan changed: the OMH plugin projected it into the session's record as the tool finished
             # (post_tool_call runs before Hermes emits this), so the HUD is read now instead of at its next poll.
@@ -1560,15 +1931,26 @@ class App(ModesMixin, AgentViewMixin):
             if event.type == "message.start":
                 if not self.turn_pending:  # a turn this TUI did not start (a resumed one, a server queue)
                     self.busy_since = self.clock()
+                    self.turn_waited = 0.0
                     self.turn_output_base = self.usage_output
                 self.turn_pending = False
             elif event.type == "message.complete":
                 self.turn_pending = False
                 self._take_usage(payload.get("usage"))
+                self._retire_finished_plan()  # above the done line: the turn that finished the plan ends here
                 seconds = self.clock() - self.busy_since
-                self.transcript.add_turn_summary(seconds, self._turn_tokens())
+                self.transcript.add_turn_summary(seconds, self._turn_tokens(), self._turn_wait())
                 self._alert_turn_end(seconds)
-                self._drain_queue()
+                self._turn_ended()
+
+    def _alert_question(self, slot: PromptSlot) -> None:
+        """Once per request, as its slot opens (the wait is on the person), however many questions a clarify carries:
+        the bell an approval always rang, and where the terminal shows the turn end's notification (OSC 9 or 777)
+        that too, saying what Hermes asks; none with OMH_TUI_BELL=0."""
+        if self.environ.get(BELL_ENV) == BELL_OFF:
+            return
+        signal = attention_sequence(self.environ, truncate(slot.attention(), QUESTION_ALERT_CHARS))
+        self.terminal.write(BELL if signal == BELL else BELL + signal)
 
     def _alert_turn_end(self, seconds: float) -> None:
         """A turn of `TURN_ALERT_SECONDS` or more ends with the terminal's attention signal, unless OMH_TUI_BELL=0."""
@@ -1626,14 +2008,15 @@ class App(ModesMixin, AgentViewMixin):
 
         Hermes sends no `message.complete` after it refuses a turn (another
         process owns the session) or cancels one before the agent was ready, so
-        the turn closes here and the queue moves on, as Ink's `recordError` does.
+        the turn closes here and the queue moves on, as Ink's `recordError` does
+        (unless the person interrupted the turn: `_turn_ended`).
         """
         if not self._busy():
             self.transcript.add_notice(message, NOTICE_ERROR)
             return
         self.transcript.fail_turn(message)
         self.turn_pending = False
-        self._drain_queue()
+        self._turn_ended()
 
     def _on_connection_request(self, payload: Mapping[str, Any]) -> None:
         """Hermes waits on an app connection the TUI cannot complete; say so once per operation."""
@@ -1684,36 +2067,52 @@ class App(ModesMixin, AgentViewMixin):
         slot = self.slot
         if slot is not None and _matches(slot.request_id, slot.params, ids):
             self._close_slot()
-            reason = as_text(payload.get("reason")) or "withdrawn"
-            self.transcript.add_notice(f"Hermes withdrew its {slot.method} request ({reason}).", NOTICE_WARN)
+            self.transcript.add_answer(slot.withdrawn_outcome(as_text(payload.get("reason"))), NOTICE_ERROR)
 
     # ── server requests and the prompt slot ──
 
     def _on_server_request(self, request: ServerRequest) -> None:
-        if self.slot is not None:
-            self.waiting_requests.append(request)
-            return
-        if self.pager is not None:
-            self._leave_pager()
+        """Open `request` in the slot, or queue it behind the open one; one the TUI cannot show is declined at once."""
         opened = open_request(request.id, request.method, request.params)
         if isinstance(opened, ImmediateAnswer):
             self._respond(opened.answer)
             self.transcript.add_notice(opened.notice, NOTICE_WARN)
             return
+        if self.slot is not None:
+            self.waiting_requests.append(request)
+            return
+        if self.pager is not None:
+            self._leave_pager()
+        if self.chains_open:
+            self.chains_closing = True  # the picker cancels at its next read; the question shows once it has closed
         self.slot = opened
         self.slot_opened_at = self.clock()
+        if self.waiting_since is None:
+            self.waiting_since = self.slot_opened_at
+            self.transcript.set_waiting(True)
         self.slot_arm_seconds = REPORTING_SLOT_ARM_SECONDS if self._reports_may_arrive() else SLOT_ARM_SECONDS
         self._settle_list()  # a question has the keys now: the agent list gives them up
-        if opened.method == "approval" and self.environ.get(BELL_ENV) != BELL_OFF:
-            self.terminal.write(BELL)  # once per approval, as its slot opens; the wait is on the person
+        self._alert_question(opened)
         if opened.wants_text:
             # An answer to Hermes is typed into a composer of its own, which records no history.
             self.slot_draft, self.composer = self.composer, Composer(masked=opened.masked, records_history=False)
 
     def _answer(self, answer: Answer) -> None:
         self._respond(answer)
+        if answer.stops and self._busy():
+            self._interrupt()  # after the deny, so the tool Hermes holds wakes up denied before the turn stops
         self._note_approval(answer)
+        self._note_question(answer)
+        if answer.tell:
+            self._open_tell()  # before the slot closes: a question waiting behind it then sets this composer aside
         self._close_slot()
+
+    def _note_question(self, answer: Answer) -> None:
+        """What the person answered a clarify, sudo or secret question, ahead of the call it was about: in green
+        what they gave, in red a cancel, a decline or a skip (`PromptSlot.outcomes`; never a value typed masked)."""
+        if self.slot is not None:
+            for answered, words in self.slot.outcomes(answer.frame):
+                self.transcript.add_answer(words, NOTICE_OK if answered else NOTICE_ERROR)
 
     def _note_approval(self, answer: Answer) -> None:
         """An approval's answer, in green or red, ahead of the tool call it was about: what the person decided."""
@@ -1732,16 +2131,62 @@ class App(ModesMixin, AgentViewMixin):
         composer opens with it still hidden.
         """
         slot, self.slot = self.slot, None
+        if self.pager is not None and self.pager is self.question_view:
+            self._leave_pager()  # it paged the question that just closed
+        self.question_view = None
         if slot is not None and self.slot_draft is not None:
             self.composer, self.slot_draft = self.slot_draft, None
         while self.slot is None and self.waiting_requests:
             self._on_server_request(self.waiting_requests.popleft())
+        if self.slot is None and self.waiting_since is not None:  # nothing waits on the person any more
+            self.turn_waited += self.clock() - self.waiting_since
+            self.waiting_since = None
+            self.transcript.set_waiting(False)
+
+    def _open_tell(self) -> None:
+        """After an approval's tell row sent the deny: the draft is set aside and the composer, labelled on the mode
+        row, takes what the person tells Hermes instead (`_tell`). It shares the draft's history.
+
+        Picked while the field is already open (the turn went on and asked
+        again), it keeps that field and what is typed in it: the composer
+        there is the field, not the draft.
+        """
+        if self.tell_draft is not None:
+            return
+        self.tell_turn_runs = self._busy()
+        draft = self.composer
+        self.tell_draft = draft
+        self.composer = Composer(history=draft.history, on_record=draft.on_record)
+
+    def _leave_tell(self) -> None:
+        """The draft comes back; what was typed to tell Hermes and not sent stays in this session's history (Up)."""
+        if self.tell_draft is None:
+            return
+        typed = self.composer.expanded()
+        self.composer, self.tell_draft = self.tell_draft, None
+        self.composer.record(typed, sent=False)
+
+    def _tell(self, text: str, shown: str = "", chips: tuple[tuple[str, str], ...] = ()) -> None:
+        """What the person sent after the tell row: the draft comes back and the text goes into the turn whose
+        approval was denied as a steer, the way Ctrl+Enter sends it (`_steer_or_submit`). Once that turn has ended
+        it is an ordinary prompt, held behind any turn that started since (a queued prompt's) whatever the busy
+        mode, so it never steers another turn. An empty send leaves the composer waiting for the text."""
+        if not text.strip():
+            return
+        self._leave_tell()
+        if self.tell_turn_runs:
+            self._steer_or_submit(text, shown, chips)
+        else:
+            self._submit(text, shown, chips, hold=True)
+
+    def _turn_wait(self) -> float:
+        """Seconds questions have waited on the person in the running (or just ended) turn, the open wait included."""
+        return self.turn_waited + (self.clock() - self.waiting_since if self.waiting_since is not None else 0.0)
 
     def _decline_all_requests(self) -> int:
         """Answer every open and waiting request with its decline frame (the session is going away); how many."""
         declined = 0
-        # The waiting ones first: closing the open slot would pull the next one in, and one the
-        # TUI cannot show would then be declined into the transcript being dropped, uncounted.
+        # The waiting ones first: closing the open slot would open the next one.
         while self.waiting_requests:
             request = self.waiting_requests.popleft()
             opened = open_request(request.id, request.method, request.params)
@@ -1797,11 +2242,12 @@ class App(ModesMixin, AgentViewMixin):
             return
         if self.slot is None and (
             self._mode_key(event) or self._effort_key(event) or self._guide_key(event) or self._search_open_key(event)
+            or self._sessions_key(event)
         ):
             return
         if self.slot is None and (self._attachment_input(event) or self._escape(event)):
             return
-        if self.slot is None and isinstance(event, Key) and self._menu_moves(event):
+        if self.slot is None and isinstance(event, Key) and (self._menu_moves(event) or self._menu_enter(event)):
             return
         if self.slot is None and self._recall_queue(event):
             return
@@ -1809,6 +2255,7 @@ class App(ModesMixin, AgentViewMixin):
         action = self.composer.handle(event)
         if self.composer.text != before:
             self.menu_index = 0
+            self.menu_closed = None
             self.escape_armed = None  # an edit takes back what a second Esc would have done
         self._on_composer(action, event, steer=isinstance(event, Key) and event.name == ENTER and event.ctrl)
 
@@ -1822,6 +2269,13 @@ class App(ModesMixin, AgentViewMixin):
         if not isinstance(event, Key) or event != Key(CHAR, "r", ctrl=True):
             return False
         self.search = HistorySearch(list(self.composer.history), self.composer.text)
+        return True
+
+    def _sessions_key(self, event: Key | Paste) -> bool:
+        """Ctrl+X opens the session picker, the key Hermes' own TUI gives it; `/sessions` does the same."""
+        if not isinstance(event, Key) or event != Key(CHAR, "x", ctrl=True):
+            return False
+        self._sessions("")
         return True
 
     def _search_key(self, event: Key | Paste | Mouse) -> None:
@@ -1874,6 +2328,8 @@ class App(ModesMixin, AgentViewMixin):
                     self._answer(answer)
                 else:
                     self._next_question(question)
+            elif self.tell_draft is not None and self.agent_steer is None and self.rewind is None:
+                self._tell(action.text, action.shown, action.chips)
             elif steer:
                 self._steer_or_submit(action.text, action.shown, action.chips)
             else:
@@ -1886,20 +2342,55 @@ class App(ModesMixin, AgentViewMixin):
             self._accept_completion()
 
     def _display_key(self, event: Key | Paste) -> bool:
-        """Ctrl+O (the details view) and Ctrl+L (redraw) work whatever has the keys; True when it was one.
+        """Ctrl+O (the details view), Ctrl+L (redraw) and Ctrl+Z (suspend) work whatever has the keys; True when it
+        was one.
 
-        Ctrl+O while Hermes asks something leaves the question on screen.
+        Ctrl+O while Hermes asks something pages that question whole instead
+        and answers nothing (`_question_view`).
         """
         if not isinstance(event, Key) or event.name != CHAR or not event.ctrl or event.alt:
             return False
         if event.char == "o":
             if self.slot is None:
                 self._details_view()
+            else:
+                self._question_view()
         elif event.char == "l":
             self._redraw("")
+        elif event.char == "z":
+            self._suspend()
         else:
             return False
         return True
+
+    def _suspend(self) -> None:
+        """Ctrl+Z: the live region is erased and the job stopped (`Terminal.suspend`); once the shell continues it,
+        the region is drawn anew under whatever the shell printed meanwhile. Nothing happens without SIGTSTP.
+
+        Scrollback is left as it is (no full redraw), so what the person did in
+        the shell stays readable above the session's rows. The shell's window
+        title is back while the job is stopped (popped, and pushed again by the
+        next frame). Continued, the TUI asks the terminal for the cursor row
+        again, as at launch (`adopt_cursor_row`), so the region knows its place
+        from its first frame; keys typed while that query waited are read after
+        the keys that came in the same read as the Ctrl+Z (`held_input`).
+        """
+        if getattr(signal, "SIGTSTP", None) is None:
+            return
+        self._set_mouse(False)
+        self.region.clear()
+        if self.title_pushed:
+            self.terminal.write(TITLE_POP)
+            self.title_pushed, self.shown_title, self.title_words = False, None, ""
+        self.terminal.suspend()
+        self.size = self.terminal.size()
+        typed, row = self.terminal.query_cursor_row()
+        self.region = LiveRegion(self.terminal.write)
+        self.adopt_cursor_row(row)
+        self.dirty = True
+        if typed:
+            self.input_at = self.clock()
+            self.held_input.extend(self.decoder.feed(typed))
 
     def _attachment_input(self, event: Key | Paste) -> bool:
         """Ctrl+V, Backspace on an empty composer with images queued, and a one-line paste (a drop); True when handled."""
@@ -1924,7 +2415,7 @@ class App(ModesMixin, AgentViewMixin):
         return False
 
     def _escape(self, event: Key | Paste) -> bool:
-        """Esc: closes the `@` path menu, cancels a picked agent steer (what was typed stays, a draft like any other),
+        """Esc: closes the `/` or the `@` menu, cancels a picked agent steer (what was typed stays, a draft like any other),
         cancels a rewind, interrupts a running turn on an empty composer.
 
         Otherwise it arms a second press within `DOUBLE_ESCAPE_SECONDS`: with
@@ -1937,12 +2428,18 @@ class App(ModesMixin, AgentViewMixin):
         if self.path_items:
             self.path_items = []
             return True
+        if self._menu_entries():
+            self.menu_closed = self.composer.text
+            return True
         if self.agent_steer is not None:
             self.agent_steer = None
             return True
         if self.rewind is not None:
             self.rewind = None
             self._set_composer("")
+            return True
+        if self.tell_draft is not None:
+            self._leave_tell()  # the deny went as the row was picked; nothing more is sent
             return True
         if not self.composer.text and self._busy():
             self._interrupt()
@@ -1960,6 +2457,12 @@ class App(ModesMixin, AgentViewMixin):
             self._rewind("")
         return True
 
+    def _expire_exit(self) -> None:
+        """Forget a first Ctrl+C once the second can no longer exit, so the mode row stops naming it."""
+        if self.exit_armed_at is not None and self.clock() - self.exit_armed_at > EXIT_CONFIRM_SECONDS:
+            self.exit_armed_at = None
+            self.dirty = True
+
     def _expire_escape(self) -> None:
         """Forget a first Esc once the second can no longer come, so the mode row stops naming it."""
         if self.escape_armed is not None and self.clock() - self.escape_armed[1] > DOUBLE_ESCAPE_SECONDS:
@@ -1969,9 +2472,12 @@ class App(ModesMixin, AgentViewMixin):
     # ── rewind ──
 
     def _rewind(self, arg: str) -> None:
-        """`/rewind` (and Esc Esc): between turns, list this session's prompts to go back to."""
+        """`/rewind` (and Esc Esc): between turns, list this session's prompts to go back to.
+
+        It has no echo, so what it says during a turn waits under what runs rather than close it.
+        """
         if self._busy():
-            self.transcript.add_notice(REWIND_BUSY_NOTICE, NOTICE_WARN)
+            self.transcript.add_aside(NoticeBlock(REWIND_BUSY_NOTICE, NOTICE_WARN))
         elif not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
         else:
@@ -2133,8 +2639,15 @@ class App(ModesMixin, AgentViewMixin):
             self._drain_queue()
 
     def _interrupt(self) -> None:
+        """Ask Hermes to stop the running turn; the working row says `interrupting…` until the turn ends."""
         if self.sid:
-            self._request("session.interrupt", {"session_id": self.sid}, lambda result: None)
+            self.interrupting = True
+            self._request("session.interrupt", {"session_id": self.sid}, lambda result: None, self._on_interrupt_refused)
+
+    def _on_interrupt_refused(self, error: dict[str, Any]) -> bool:
+        """Hermes did not stop the turn: the spinner comes back, and the refusal is said as any refused call is."""
+        self.interrupting = False
+        return False
 
     def _interrupt_or_exit(self) -> None:
         """Ctrl+C on empty input: interrupt a running turn, else exit on a second press within 2 s."""
@@ -2145,13 +2658,13 @@ class App(ModesMixin, AgentViewMixin):
         if self.exit_armed_at is not None and now - self.exit_armed_at <= EXIT_CONFIRM_SECONDS:
             self.exit_code = 0
             return
-        self.exit_armed_at = now
-        self.transcript.add_notice(EXIT_HINT)
+        self.exit_armed_at = now  # the mode row says so until the second press can no longer come
+        self.dirty = True
 
     def _menu_entries(self) -> list[Completion]:
-        """Completions while the composer holds a leading `/word` and nothing else."""
+        """Completions while the composer holds a leading `/word` and nothing else, unless Esc closed them over it."""
         text = self.composer.text
-        if self.slot is not None or not text.startswith("/") or any(ch.isspace() for ch in text):
+        if self.slot is not None or not text.startswith("/") or any(ch.isspace() for ch in text) or text == self.menu_closed:
             return []
         prefix = text[1:]
         if "/" in prefix:
@@ -2166,12 +2679,38 @@ class App(ModesMixin, AgentViewMixin):
         return [(item.display or item.text, item.meta) for item in self.path_items]
 
     def _menu_moves(self, key: Key) -> bool:
+        """Up and Down move the open completion menu's highlight, stopping at either end as every list does."""
         if key.name not in (UP, DOWN):
             return False
         rows = self._menu_rows()
         if not rows:
             return False
-        self.menu_index = (self.menu_index + (-1 if key.name == UP else 1)) % len(rows)
+        self.menu_index = min(max(self.menu_index + (-1 if key.name == UP else 1), 0), len(rows) - 1)
+        return True
+
+    def _menu_enter(self, key: Key) -> bool:
+        """Enter on an open completion menu takes the highlighted row, as Tab does, when that changes what is typed.
+
+        Ink's rule (`completionToApplyOnSubmit`): the line is sent instead when
+        the row would only add the space after a command typed in full, and
+        when the typed word is a command's whole name (an alias included)
+        while the highlight is still on the first row. Alt+Enter and
+        Shift+Enter add a line, menu or not.
+        """
+        if key.name != ENTER or key.alt or key.shift or not self._menu_rows():
+            return False
+        entries = self._menu_entries()
+        if entries:
+            typed, invocation = self.composer.text[1:], parse_slash(self.composer.text)
+            name = entries[min(self.menu_index, len(entries) - 1)].name
+            whole = typed in {entry.name for entry in entries} or (invocation is not None and invocation.command is not None)
+            if name == typed or (whole and self.menu_index == 0):
+                return False
+        else:
+            word = at_token(self.composer.text, self.composer.caret)[1]
+            if not word or self.path_items[min(self.menu_index, len(self.path_items) - 1)].text == word:
+                return False
+        self._accept_completion()
         return True
 
     def _accept_completion(self) -> None:
@@ -2221,10 +2760,13 @@ class App(ModesMixin, AgentViewMixin):
 
     # ── prompts ──
 
-    def _submit(self, text: str, shown: str = "", chips: tuple[tuple[str, str], ...] = ()) -> None:
+    def _submit(
+        self, text: str, shown: str = "", chips: tuple[tuple[str, str], ...] = (), hold: bool = False
+    ) -> None:
         """Send what the composer submitted; `shown` is its compact form (paste chips), which the transcript shows.
 
-        `chips` are the chips in `shown` (label, text): a prompt queued behind the turn keeps them for Up.
+        `chips` are the chips in `shown` (label, text): a prompt queued behind the turn keeps them for Up. `hold`
+        keeps a prompt behind a running turn whatever the busy mode (`_send_prompt`).
 
         Whether the line is a `!` shell line or a slash command is read from
         what the composer showed, never from a chip's text: a paste that
@@ -2249,7 +2791,7 @@ class App(ModesMixin, AgentViewMixin):
         elif self.rewind is not None:
             self._send_rewind(text, shown)
         else:
-            self._send_typed(text, shown=shown, chips=chips)
+            self._send_typed(text, hold=hold, shown=shown, chips=chips)
 
     def _send_typed(self, text: str, hold: bool = False, shown: str = "", chips: tuple[tuple[str, str], ...] = ()) -> None:
         """A prompt the person typed and sent: in plan mode as `/plan <text>`, the way a typed `/plan` goes.
@@ -2286,12 +2828,15 @@ class App(ModesMixin, AgentViewMixin):
         `before_cut` the transcript from before that cut, which a refusal puts back.
         """
         self.transcript.add_user(shown or text, from_queue=queued)
+        if not queued:
+            self.queue_held = False  # the person started a turn: the queue goes on behind it
         self.sticky = shown or text
         self.flushed_since_prompt = 0
         self._clear_roster()  # the agents shown were the last turn's
         self.turn_pending = True
         self.turn_unknown, self.turn_unknown_count = [], 0
         self.busy_since = self.clock()
+        self.turn_waited = 0.0
         self.turn_output_base = self.usage_output
         self.attachments.clear()  # the gateway sends its queued images with this turn
         params: dict[str, Any] = {"session_id": self.sid, "text": text}
@@ -2307,15 +2852,47 @@ class App(ModesMixin, AgentViewMixin):
     def _on_submit_error(self, error: dict[str, Any]) -> bool:
         """A refused prompt.submit: no turn will start, so the next queued prompt goes now, in order."""
         self.turn_pending = False
-        self._drain_queue()
+        self._turn_ended()
         return False
+
+    def _turn_ended(self) -> None:
+        """The turn is over: the next queued line goes, unless the person interrupted it (`_hold_queue`)."""
+        self.tell_turn_runs = False  # an open tell field now says what to do after this turn, not in it
+        if self.interrupting:
+            self.interrupting = False
+            self._hold_queue(INTERRUPTED_WHY)
+        else:
+            self._drain_queue()
+
+    def _hold_queue(self, why: str) -> None:
+        """A turn ended that the person stopped (or that a gateway restart lost): the queue does not go on by itself,
+        as Claude Code's does not after an interrupt. `why` opens the notice.
+
+        With an empty draft (`_draft`, which may be set aside behind a field),
+        what Up would take back goes back into it, in order
+        (`_take_back_queue`); what is left, a queued `!` line and what
+        follows it, or the whole queue when the person typed a draft
+        meanwhile, stays queued and held until the next prompt they send
+        starts a turn (`_submit_prompt`) or Up takes it back. A notice says
+        which.
+        """
+        if not self.queued:
+            return
+        draft = self._draft()
+        if not draft.text:
+            self._take_back_queue(draft)
+            notice = QUEUE_BACK_NOTICE if draft is self.composer else QUEUE_BACK_HIDDEN_NOTICE
+            self.transcript.add_notice(notice.format(why=why))
+        if self.queued:
+            self.queue_held = True
+            self.transcript.add_notice(QUEUE_HELD_NOTICE.format(why=why))
 
     def _drain_queue(self) -> None:
         """Send the next queued line: a prompt starts the next turn; a `!` line runs, and the one after waits for it.
 
-        Which it is comes from the entry's `shell`, never from its text.
+        Which it is comes from the entry's `shell`, never from its text. A held queue waits (`_hold_queue`).
         """
-        if self.queued and self.sid:
+        if self.queued and self.sid and not self.queue_held:
             line = self.queued.popleft()
             if line.shell:
                 self._run_shell(line.text[len(SHELL_PREFIX) :].strip(), drain_after=True, echo=line.shown)
@@ -2409,6 +2986,11 @@ class App(ModesMixin, AgentViewMixin):
         """
         if not isinstance(event, Key) or event.name != UP or self.composer.text or not self.queued:
             return False
+        self._take_back_queue(self.composer)
+        return True
+
+    def _take_back_queue(self, composer: Composer) -> None:
+        """Put the queue's next lines into the empty `composer`, as `_recall_queue` says; the hold ends with the queue."""
         taken = [self.queued.popleft()]
         while self.queued and not taken[0].shell and not self.queued[0].shell:
             taken.append(self.queued.popleft())
@@ -2416,14 +2998,15 @@ class App(ModesMixin, AgentViewMixin):
         if not first.shell and not first.typed and first.shown and first.text.startswith(SHELL_PREFIX):
             # Its chips again, never a `!` line the composer would run; without them, one chip holding its text.
             if first.chips:
-                self.composer.restore(first.shown, first.chips)
+                composer.restore(first.shown, first.chips)
             else:
-                self.composer.handle(Paste(first.text))
+                composer.handle(Paste(first.text))
             for line in taken[1:]:
-                self.composer.replace(self.composer.caret, self.composer.caret, "\n" + (line.typed or line.text))
+                composer.replace(composer.caret, composer.caret, "\n" + (line.typed or line.text))
         else:
-            self._set_composer("\n".join(line.typed or line.text for line in taken))
-        return True
+            composer.replace(0, len(composer.text), "\n".join(line.typed or line.text for line in taken))
+        if not self.queued:
+            self.queue_held = False
 
     # ── steering ──
 
@@ -2460,6 +3043,7 @@ class App(ModesMixin, AgentViewMixin):
             lambda result: self._on_steered(sid, block, result),
             lambda error: self._on_steer_refused(sid, block, error),
             lambda: self._on_steer_unanswered(sid, block),
+            steer=block,
         )
 
     def _on_steered(self, sid: str, block: SteerBlock, result: dict[str, Any]) -> None:
@@ -2524,6 +3108,8 @@ class App(ModesMixin, AgentViewMixin):
         image's remainder, a command's prefill) goes here, never into an
         answer to Hermes.
         """
+        if self.tell_draft is not None:
+            return self.tell_draft
         return self.slot_draft if self.slot_draft is not None else self.composer
 
     def _give_back(self, text: str) -> None:
@@ -2532,7 +3118,7 @@ class App(ModesMixin, AgentViewMixin):
         draft = self._draft()
         caret, end = draft.caret, len(draft.text)
         draft.replace(end, end, f"\n{text}" if draft.text else text)
-        if draft is self.slot_draft or self._composer_hidden():
+        if draft is self.slot_draft or draft is self.tell_draft or self._composer_hidden():
             draft.caret = caret  # a hidden draft comes back as the person left it, the text after its end
 
     # ── slash commands ──
@@ -2766,12 +3352,14 @@ class App(ModesMixin, AgentViewMixin):
         if old and old != as_text(result.get("session_id")):
             self._turn_off_yolo_set_here(old)
             self._request("session.close", {"session_id": old}, lambda result: None, lambda error: True)
-        self.transcript = Transcript(self.clock)
+        self.transcript = Transcript(self.clock, under_output=self.transcript.taken_any)
         self.queued.clear()
         self.sticky = ""
         self.flushed_since_prompt = 0  # rows printed above the region from the last prompt's first row on
         self.attachments.clear()  # the gateway queued them for the session being left
         self.hud = None
+        self.goal = None
+        self.retired_plan, self.plan_seen_open = "", False
         self._clear_roster()
         self._adopt_session(result, fallback_stored)
         return declined
@@ -2796,8 +3384,8 @@ class App(ModesMixin, AgentViewMixin):
         if rows:
             self.picker = SessionPicker(rows, current=self.stored_id)
             self._settle_list()
-        else:
-            self.transcript.add_notice("Hermes has no stored sessions to switch to.")
+        else:  # bare /sessions has no echo: during a turn this waits under what runs
+            self.transcript.add_aside(NoticeBlock("Hermes has no stored sessions to switch to."))
 
     def _picker_key(self, event: Key | Paste) -> None:
         if self.picker is None:
@@ -2950,6 +3538,14 @@ class App(ModesMixin, AgentViewMixin):
         if isinstance(self.pager, HistoryPager):
             self.pager.handle_key(Key(END), self.size[1])
 
+    def _question_view(self) -> None:
+        """The open question in the pager, every row of it (a long command whole); q or Esc goes back to it as it
+        was, with nothing answered, and the pager closes with the question (`_close_slot`)."""
+        if self.slot is not None:
+            lines = self.slot.whole_lines(self.size[0], self.theme, len(self.waiting_requests))
+            self._show_pager(Pager(QUESTION_VIEW_TITLE, lines))
+            self.question_view = self.pager
+
     def _details(self, arg: str) -> None:
         # No notice: its echo is held under a live block (`Transcript.add_command`), the only block the toggle changes.
         self.transcript.toggle_details()
@@ -2966,8 +3562,8 @@ class App(ModesMixin, AgentViewMixin):
         tail = self.client.stderr_tail()
         if tail:
             self._open_pager("gateway stderr (memory only)", [(Span(line),) for line in tail])
-        else:
-            self.transcript.add_notice("The gateway has written nothing to stderr.")
+        else:  # /logs has no echo: during a turn this waits under what runs
+            self.transcript.add_aside(NoticeBlock("The gateway has written nothing to stderr."))
 
     def _copy(self, arg: str) -> None:
         last = next((block for block in reversed(self.transcript.blocks) if isinstance(block, AssistantBlock)), None)
@@ -3022,13 +3618,16 @@ class App(ModesMixin, AgentViewMixin):
 
         The main screen (scrollback and the live region) stays untouched underneath
         and comes back as it was, so the picker leaves no frame behind; only a resize
-        while it was open needs the full redraw. Gateway events wait while it is open: a
-        new approval shows once the picker closes, and Hermes may withdraw a request on its
-        own timeout meanwhile. Nothing is answered for the person either way.
+        while it was open needs the full redraw. The gateway is still read while it is
+        open (`_picker_reader`): a streaming reply goes on into the transcript underneath,
+        and a server request closes the picker, as it closes the pager, with nothing
+        saved; the question opens once the picker's screen is gone. Nothing is answered
+        for the person either way.
         """
         before = self.size
         self._set_mouse(False)  # the strip is not on the picker's screen; the next frame asks again
         self.terminal.write(ALT_SCREEN_ON + CURSOR_HOME + HIDE_CURSOR)
+        self.chains_open, self.chains_closing = True, False
         try:
             message = self.pick_model_chains(
                 self.environ,
@@ -3040,11 +3639,12 @@ class App(ModesMixin, AgentViewMixin):
             )
         finally:
             self.terminal.write(ALT_SCREEN_OFF + self._caret_visibility())
+            closed_for_question, self.chains_open, self.chains_closing = self.chains_closing, False, False
         self.size = self.terminal.size()
         if self.size != before:
             self._full_redraw()
         self.dirty = True
-        self.transcript.add_notice(message)
+        self.transcript.add_notice(f"{CHAINS_CLOSED_NOTICE} {message}" if closed_for_question else message)
 
     def _picker_reader(self) -> Callable[[], str]:
         """A picker's `read_key` over the TUI's terminal and key decoder; a hung-up terminal cancels.
@@ -3053,14 +3653,19 @@ class App(ModesMixin, AgentViewMixin):
         the picker's off still types nothing and its ESC does not cancel. As
         in the loop, an empty read settles held bytes only once input has been
         quiet for `FLUSH_SILENCE_SECONDS`: a resize signal ends a read early
-        with nothing read, and must not turn an arrow's ESC into Esc.
+        with nothing read, and must not turn an arrow's ESC into Esc. Between
+        reads it takes what the gateway sent, as the loop would, so nothing
+        waits on the picker; once a server request has come (or the gateway is
+        gone) the next key it hands the picker is the one that cancels.
         """
         pending: deque[Key | Paste | Mouse] = deque()
 
         def read_key() -> str:
             while not pending:
+                if self.chains_closing or self.exit_code is not None or self.respawn_reason:
+                    return KEY_QUIT
                 try:
-                    data = self.terminal.read(READ_TIMEOUT_SECONDS)
+                    data = self.terminal.read(READ_TIMEOUT_SECONDS, self.wake)
                 except EOFError:
                     return KEY_QUIT
                 if data:
@@ -3068,6 +3673,7 @@ class App(ModesMixin, AgentViewMixin):
                     pending.extend(self.decoder.feed(data))
                 elif self.clock() - self.input_at >= FLUSH_SILENCE_SECONDS:
                     pending.extend(self.decoder.flush(self.terminal.mouse_reporting, self.mouse_off_at))
+                self._drain_gateway()
             return picker_key(pending.popleft())
 
         return read_key
@@ -3149,7 +3755,6 @@ class App(ModesMixin, AgentViewMixin):
             self.banner_facts = dict(self.banner_record)
             # The logo comes back only on top of the whole session it opened, never above a cut.
             self.logo_due = self.in_launch_session and not self.transcript.left_out
-        self.anchor = True
         self.dirty = True
 
     def _take_hud(self) -> None:
@@ -3157,6 +3762,26 @@ class App(ModesMixin, AgentViewMixin):
         if snapshot is not None and snapshot.session_id == self.stored_id:
             self.hud = snapshot
             self.dirty = True
+            self._retire_finished_plan()
+
+    def _retire_finished_plan(self) -> None:
+        """Stop drawing a plan whose every item is done, once no turn runs, as Claude Code's list goes once done.
+
+        A plan the panel showed with an item left also leaves its final state
+        in the transcript; one that was already finished when the session
+        opened only goes. A plan with another text (a new one) is drawn again.
+        """
+        payload = self.hud.payload if self.hud is not None else None
+        state = plan_state(payload)
+        if state == "open":
+            self.plan_seen_open = True
+        elif state == "done" and not self._busy():
+            text = plan_text(payload)
+            if text != self.retired_plan:
+                self.retired_plan = text
+                if self.plan_seen_open:
+                    self.transcript.add_notice(text)
+                self.plan_seen_open = False
 
     def _panel_live(self) -> bool:
         payload = self.hud.payload if self.hud is not None else None
@@ -3192,32 +3817,30 @@ class App(ModesMixin, AgentViewMixin):
             stable = head + stable
             prompt_row = None if prompt_row is None else prompt_row + len(head)
             self.banner_facts = None
-        anchoring = self.anchor
         # Counted from the prompt's own first row: not the blank row or the held rows above it, and after a full
         # redraw only the rows retaken from the prompt on.
         if prompt_row is not None:
             self.flushed_since_prompt = len(stable) - prompt_row
         else:
             self.flushed_since_prompt += len(stable)
-        previous = 0 if anchoring else self.region.height
-        self.anchor = False
         strip, _hits = self._agent_strip(cols)
-        listed: tuple[str, ...] = ()
-
-        def agent_list(room: int) -> list[Line]:
-            nonlocal listed
-            lines, listed = self._agent_list(cols, room)
-            return lines
-
+        if not self._menu_rows():
+            self.menu_below = None
+        # On the screen's last row the region keeps its height (what the flush below covers aside), so what shrinks
+        # becomes pad rows at its top and the composer stays on the bottom rows; above it, the region follows the
+        # content. Where the region's place is not certain it counts as above.
+        pinned = self.region.last_row(rows) == rows - 1
         build = partial(
             build_frame,
             cols=cols,
             rows=rows,
+            min_height=max(self.region.height - len(stable), 0) if pinned else 0,
             composer=None if self._composer_hidden() else self.composer,
             status=self._status_line(cols),
-            previous_height=previous,
             tail=self._tail(cols),
             slot=self._slot_lines(cols, rows),
+            below=self.menu_under,  # read after `_slot_lines` made it
+            text_question=self.slot is not None and not self.slot.picking,
             slot_caret=self._slot_caret(),  # read after `_slot_lines` drew the picker it comes from
             theme=self.theme,
             attachments=attachment_line(self.attachments, cols, self.theme)
@@ -3225,20 +3848,51 @@ class App(ModesMixin, AgentViewMixin):
             else None,
             mode=self._display_mode(),
             mode_row=self._mode_row_line(cols, strip),
-            placeholder=PLACEHOLDER if self._composer_open() else "",
-            agent_list=agent_list if self.list_selected is not None else None,
+            placeholder=(TELL_PLACEHOLDER if self.tell_draft is not None else PLACEHOLDER)
+            if self._composer_open()
+            else "",
         )
         frame = build()
-        # The flush below fills this frame's pad rows first, so they are transcript rows by the time it shows.
-        if self._sticky_needed(rows - frame.height + min(len(stable), frame.pad)):
+        if self._place_menu(rows, len(stable), frame):
+            build = partial(build, slot=self._slot_lines(cols, rows), below=self.menu_under)
+            frame = build()
+        # The rows above the region once the flush below and this frame are drawn: transcript rows.
+        if self._sticky_needed(self.region.rows_above(rows, len(stable), frame.height)):
             frame = build(sticky=sticky_line(self.sticky, cols, self.theme))
-        # Flushed after the frame, the lines land in its pad rows: the rows a shrinking tail gave
-        # back (a settled tool group is those same rows, moved above the region), or the screen of
-        # pad rows an anchoring frame fills. Flushed before it, they would push the region down by
-        # their whole count, and the rows the tail gave back would stay as blank pad under them.
-        # Frame and flush are one write, so no screen between them shows.
-        self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad, flush=stable)
-        self._take_clickable(frame.budget, listed)
+        # Flushed before the frame, the lines cover the region's top rows, where the lines leaving
+        # the tail were drawn (a settled tool group is those same rows, moved above the region), and
+        # the frame is drawn under them. Flush and frame are one write, so no screen between them shows.
+        self.region.render(frame.lines, frame.cursor, cols, flush=stable, screen_rows=rows)
+        self._take_clickable(frame.budget, self.listed)
+
+    def _place_menu(self, rows: int, flushed: int, frame: Frame) -> bool:
+        """Where the open completion menu goes with `frame`; True when that changed, so the frame is built again.
+
+        A menu that opens goes under the composer where the region's place is
+        certain and, with the menu at its tallest (`slot_cap`), the region
+        would still end short of the screen's last row once `flushed` lines
+        and the frame are drawn: there the composer and the caret stay where
+        they are, as under Claude Code's menu. On the bottom rows (where that
+        end is the screen's last row already), close to them, or where the
+        place is unknown, it opens above the composer as before. Filtering it
+        never moves it. Output that brings a region holding it under the
+        composer to the screen's last row takes it above in the same frame, so
+        the composer reaches the bottom rows with that output and closing the
+        menu there moves nothing (the region keeps its height).
+        """
+        if not self._menu_rows():
+            return False
+        if self.menu_below is None:
+            tallest = frame.height + slot_cap(rows, self.size[0]) - frame.budget.slot - frame.budget.below
+            self.menu_below = (
+                self.region.top_row(rows) is not None
+                and self.region.rows_above(rows, flushed, tallest) + tallest <= rows - 1
+            )
+            return self.menu_below
+        if self.menu_below and self.region.rows_above(rows, flushed, frame.height) + frame.height > rows - 1:
+            self.menu_below = False
+            return True
+        return False
 
     def _display_mode(self) -> str:
         """What the composer's frame shows: the shell while it holds a `!` line for Hermes' shell, else the input mode."""
@@ -3247,25 +3901,29 @@ class App(ModesMixin, AgentViewMixin):
         return self.mode
 
     def _composer_open(self) -> bool:
-        """Whether the composer takes the keys for a prompt: no question, picker or search has them."""
+        """Whether the composer takes the keys for a prompt: no question, picker, search or agent list has them."""
         return (
             self.slot is None and self.picker is None and self.search is None and self.rewind_picker is None
-            and self.model_picker is None
+            and self.model_picker is None and self.list_selected is None
         )
 
     def _composer_hidden(self) -> bool:
         """Whether the frame draws no composer: the person picks from a list, so nothing is typed into it.
 
-        A question answered by picking (`PromptSlot.picking`) and the session,
-        rewind and model pickers, whose filter is a row of their own. The
-        history search, the completion menus and the agent list keep it.
+        A question answered by picking (`PromptSlot.picking`), the session,
+        rewind and model pickers, whose filter is a row of their own, the
+        history search, whose query row is, and the agent list. The
+        completion menus keep it.
         """
         if self.slot is not None:
             return self.slot.picking
-        return self.picker is not None or self.rewind_picker is not None or self.model_picker is not None
+        return (
+            self.picker is not None or self.rewind_picker is not None or self.model_picker is not None
+            or self.search is not None or self.list_selected is not None
+        )
 
     def _mode_row_line(self, cols: int, strip: Line | None = None) -> Line:
-        """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's second press).
+        """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's or Ctrl+C's second press).
 
         A picked steer or rewind keeps room for its last form but one, the shortest that still names what it
         acts on, beside the effort: the strip collapses (`● 2 agents ↓`) before that would be cut. The mode's
@@ -3277,18 +3935,28 @@ class App(ModesMixin, AgentViewMixin):
         steered = self.roster.agents.get(self.agent_steer or "")
         picker_keys = self._picker_keys()
         if self.slot is not None:
-            say = self.slot.keys
+            say = self.slot.keys_while(self._busy())
         elif picker_keys:
             say = picker_keys
+        elif self.list_selected is not None:
+            say, say_style = self._agent_list_say()
         elif steered is not None:
             say, say_style = tuple(form.format(name=steered.name) for form in STEER_SAY), self.theme.accent
         elif self.rewind is not None:
             say, say_style = tuple(form.format(ordinal=self.rewind.ordinal) for form in REWIND_SAY), self.theme.warn
+        elif self.tell_draft is not None:
+            say, say_style = TELL_SAY, self.theme.accent
+        elif self.exit_armed_at is not None and self.clock() - self.exit_armed_at <= EXIT_CONFIRM_SECONDS:
+            say = EXIT_HINT
         elif armed is not None and self.clock() - armed[1] <= DOUBLE_ESCAPE_SECONDS:
             say = ESCAPE_AGAIN.format(armed[0])
+        elif self._newline_keys_due():
+            say = NEWLINE_KEYS
         if isinstance(say, tuple):
-            effort = cell_width(f"effort {self.effort}") + MODE_ROW_GAP if self.effort else 0
+            effort = cell_width(effort_words(self.effort)) + MODE_ROW_GAP if self.effort else 0
             strip = self._agent_strip(cols - effort - cell_width(STRIP_SEPARATOR + say[max(len(say) - 2, 0)]))[0]
+        if self.list_selected is not None and self.slot is None:
+            strip = ()  # the open list shows the agents itself
         return mode_row_line(
             mode=self._display_mode(),
             busy=self._busy(),
@@ -3301,35 +3969,50 @@ class App(ModesMixin, AgentViewMixin):
             say=say,
             say_style=say_style,
             esc_interrupts=self._esc_interrupts(),
+            # While Hermes has approvals off on its own, Shift+Tab turns plan on and off and nothing else.
+            cycle=HERMES_OWN_CYCLE.get(self._display_mode(), "") if self.approvals_off and not self.yolo_by_tui else "",
+        )
+
+    def _newline_keys_due(self) -> bool:
+        """Whether the mode row names the keys that add a line: the draft spans lines (typed, or a pasted chip of them)
+        on a terminal that has sent no key report, where Shift+Enter would send it; idle, in normal mode."""
+        return (
+            not self.keyboard_protocol and self._composer_open() and not self._busy()
+            and self._display_mode() == MODE_NORMAL and "\n" in self.composer.expanded()
         )
 
     def _slot_caret(self) -> tuple[int, int] | None:
-        """The open picker's caret, at the end of its filter row (its last render's); None with no picker open.
+        """The open picker's caret, at the end of its filter row (its last render's), or the history search's, at
+        the end of its query; None with neither open.
 
         A question answered by picking has none: no key types anywhere there.
         """
         if self.slot is not None:
             return None
-        picker = self.picker or self.rewind_picker or self.model_picker
+        picker = self.picker or self.rewind_picker or self.model_picker or self.search
         return picker.caret if picker is not None else None
 
     def _picker_keys(self) -> tuple[str, ...]:
-        """The open picker's keys, said on the mode row in place of the composer's; () with no picker open."""
+        """The open picker's or search's keys, said on the mode row in place of the composer's; () with neither open."""
         if self.picker is not None:
             return SESSION_PICKER_KEYS
+        if self.search is not None:
+            return SEARCH_HINTS
         if self.rewind_picker is not None:
             return REWIND_PICKER_KEYS
         return MODEL_PICKER_KEYS if self.model_picker is not None else ()
 
     def _esc_interrupts(self) -> bool:
-        """Whether Esc interrupts the running turn now: nothing else takes it (`_escape`, and what has the keys).
+        """Whether the rows offer Esc for the interrupt: Esc interrupts the running turn now, nothing else taking it
+        (`_escape`, and what has the keys), and no interrupt is on its way yet.
 
-        The rows offer Esc for the interrupt only then, so the screen gives Esc one meaning: a question, a
-        picker, the search, the agent list, a picked steer or rewind, the `@` menu and a draft each take it.
+        So the screen gives Esc one meaning: a question, a picker, the search, the agent list, a picked steer or
+        rewind, the `@` menu and a draft each take it. While `interrupting…` shows, Esc still asks again.
         """
         return (
             self._busy() and self._composer_open() and self.list_selected is None and not self.path_items
-            and self.agent_steer is None and self.rewind is None and not self.composer.text
+            and self.agent_steer is None and self.rewind is None and self.tell_draft is None
+            and not self.composer.text and not self.interrupting
         )
 
     # ── subagents ──
@@ -3368,8 +4051,23 @@ class App(ModesMixin, AgentViewMixin):
         now = self.clock()
         # Never more than the screen; running tools' marks pulse unless motion is reduced.
         lines = self.transcript.live_lines(cols, self.theme, max_rows=self.size[1], now=now if self.motion else None)
-        if self._busy():
+        if not lines and self.transcript.taken_any:
+            lines = [()]  # the spacer a block opens with, here between the transcript and the region under it
+        if self._busy() and self.waiting_since is not None:
+            # The turn waits on the person: no spinner, and one clock, the wait's.
+            waited = elapsed_text(now - self.waiting_since)
+            row = (Span(WAITING_GLYPH, self.theme.accent), Span(STATE_WAITING, self.theme.text),
+                   Span(f" ({waited})", self.theme.muted))
+            lines.append(truncate_line(row, cols))
+        elif self._busy() and self.interrupting:
+            elapsed = elapsed_text(now - (self.busy_since or now))
+            tokens = self._turn_tokens()
+            written = f" · ↓{compact_count(tokens)} tokens" if tokens else ""
+            lines.append(truncate_line((Span(INTERRUPTING, self.theme.warn), Span(f" ({elapsed}{written})", self.theme.muted)), cols))
+        elif self._busy():
             text = self.transcript.activity or self.transcript.status or "working…"
+            if self.transcript.moa:
+                text = f"{text} · {self.transcript.moa}"
             frame = self._spinner_frame()
             spinner = SPINNER_FRAMES[frame % len(SPINNER_FRAMES)]
             elapsed = elapsed_text(now - (self.busy_since or now))
@@ -3385,26 +4083,43 @@ class App(ModesMixin, AgentViewMixin):
     def _slot_lines(self, cols: int, rows: int) -> list[Line]:
         """The slot's rows; with the composer hidden it has the composer frame's rows too (`layout.choice_cap`)."""
         cap = choice_cap(rows, cols) if self._composer_hidden() else slot_cap(rows, cols)
+        self.listed = ()
+        self.menu_under = []
+        if self.slot is not None:
+            cap = max(cap, 1)  # on a tiny terminal a question answered with text keeps a row for its label (`allocate`)
         if cap <= 0:
             return []
         if self.slot is not None:
             # Where the terminal has no mode row, the question's keys take a row of the slot's own.
-            return self.slot.lines(cols, self.theme, cap, keys_row=not under_composer(rows, cols)[1])
+            keys = not under_composer(rows, cols)[1]
+            return self.slot.lines(
+                cols, self.theme, cap, keys_row=keys, waiting=len(self.waiting_requests), turn_runs=self._busy()
+            )
         keys = not under_composer(rows, cols)[1]  # a picker's keys go in its header where no mode row says them
         if self.picker is not None:
             return self.picker.lines(cols, self.theme, cap, self.wall_clock(), keys=keys)
         if self.search is not None:
-            return self.search.lines(cols, self.theme, cap)
+            return self.search.lines(cols, self.theme, cap, keys=keys)
         if self.rewind_picker is not None:
             return self.rewind_picker.lines(cols, self.theme, cap, self.wall_clock(), keys=keys)
         if self.model_picker is not None:
             return self.model_picker.lines(cols, self.theme, cap, keys=keys)
+        if self.list_selected is not None:
+            lines, self.listed = self._agent_list(cols, cap)
+            return lines
         # Nothing has the keys: the queued prompts take the slot's last rows, right above the composer's
-        # top rule, Hermes' notification the row above them, and the menu or the panel gets the rows left. A
-        # question or the picker hides them, since Up then does not edit the queue.
-        queue = queue_lines([line.shown or line.text for line in self.queued], cols, cap, self.theme)
+        # top rule, Hermes' notification the row above them, Hermes' standing goal the row above that, and the
+        # menu or the panel gets the rows left. A question or the picker hides them, since Up then does not edit
+        # the queue.
+        hint = QUEUE_HELD_HINT if self.queue_held else QUEUE_EDIT_HINT
+        queue = queue_lines([line.shown or line.text for line in self.queued], cols, cap, self.theme, hint)
         notice = [self.notification.line(cols, self.theme)] if self.notification and cap > len(queue) else []
-        return self._menu_or_panel_lines(cols, cap - len(queue) - len(notice)) + notice + queue
+        shown = goal_line(self.goal, cols, self.theme)
+        goal = [shown] if shown is not None and cap > len(queue) + len(notice) else []
+        menu = self._menu_or_panel_lines(cols, cap - len(queue) - len(notice) - len(goal))
+        if self.menu_below:  # the menu goes under the composer, and the panel stays away as it does for the menu
+            self.menu_under, menu = menu, []
+        return menu + goal + notice + queue
 
     def _menu_or_panel_lines(self, cols: int, cap: int) -> list[Line]:
         if cap <= 0:
@@ -3418,6 +4133,7 @@ class App(ModesMixin, AgentViewMixin):
         return panel_lines(
             payload, cols, cap, self.theme, self.wall_clock(), received_at=self.hud.received_at,
             show_agents=not self.roster.agents,  # the strip and the list show them while the roster holds any
+            show_plan=not self.retired_plan or plan_text(payload) != self.retired_plan,
             motion=self.motion,
         )
 
@@ -3478,7 +4194,9 @@ class App(ModesMixin, AgentViewMixin):
         payload = self.hud.payload if self.hud is not None else None
         head: Line = tuple(
             Span(span.text, replace(span.style, bg=bar.bg))
-            for span in status_segments(payload, on_status_bar(self.theme))
+            for span in status_segments(
+                payload, on_status_bar(self.theme), turn_runs=self._busy(), question_waits=self.slot is not None
+            )
         )
         model, context, state = (self.model, bar), (self.context, self._context_style()), (self._state_text(), bar)
         chips = self._mode_chips()
@@ -3562,8 +4280,12 @@ def _run(
     stderr: TextIO,
     open_terminal: Callable[[], TerminalLike],
     make_poller: Callable[[str | None, str | None], PollerLike],
+    make_client: Callable[..., GatewayClient] | None = None,
 ) -> int:
-    """Start the gateway, open the session, then run the loop on the raw terminal; the exit code."""
+    """Start the gateway, open the session, then run the loop on the raw terminal; the exit code.
+
+    `make_client` spawns a gateway again after a crash (`App._respawn_gateway`).
+    """
     ready = _start_gateway(client, stderr)
     if ready is None:
         return request_fallback(environ)
@@ -3574,16 +4296,22 @@ def _run(
         environ,
         poller=make_poller(environ.get("OMH_HOME") or None, environ.get("HERMES_HOME") or None),
         theme=initial_theme(ready.payload, environ.get("OMH_HOME") or None),
+        make_client=make_client,
     )
     try:
         app.startup()
     except (GatewayCallError, GatewayTimeout, GatewayUnavailable) as error:
         _say(stderr, f"omh: the OMH TUI could not open a Hermes session: {error}")
         return request_fallback(environ)
-    with terminal:
-        background, typed = terminal.query_background()
-        app.adopt_background(background, environ)
-        code = app.run(typed)
+    try:
+        with terminal:
+            background, typed, row = terminal.query_background()
+            app.adopt_background(background, environ)
+            app.adopt_cursor_row(row)
+            code = app.run(typed)
+    finally:
+        if app.client is not client:  # a gateway spawned after a crash; the caller reaps the first one
+            app.client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
     if app.farewell:
         _say(stderr, app.farewell)
     return code
@@ -3617,7 +4345,9 @@ def main(
     previous_handlers = _install_exit_signals()
     try:
         # The terminal picks its key reports from the environment the TUI was given (TERM_PROGRAM and kin).
-        return _run(client, environ, stderr, open_terminal or (lambda: Terminal(environ=environ)), make_poller)
+        return _run(
+            client, environ, stderr, open_terminal or (lambda: Terminal(environ=environ)), make_poller, make_client
+        )
     except KeyboardInterrupt:
         # Ctrl+C is a signal, not a key, until the terminal goes raw: while the gateway starts
         # and the session opens. The child is reaped below either way.

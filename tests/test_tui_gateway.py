@@ -215,6 +215,42 @@ class GatewayStartupTests(ReplayTestCase):
         # start() already closed stdin and reaped the child; close() reports the same exit.
         self.assertEqual(client.close(grace=FAST_GRACE), 0)
 
+    def test_a_cancel_ends_the_wait_for_ready_and_the_child_is_reaped_with_short_waits(self) -> None:
+        # A respawn waits inside one loop step: the person's Ctrl+C must end it (`App._respawn_cancel`).
+        from omh.tui.gateway import UNREADY_CLOSE_GRACE_SECONDS, GatewayCancelled
+
+        client = self.make_client(Scenario("session"))  # silent until its stdin closes
+        asked = []
+        closes = []
+        close = client.close
+
+        def recorded(grace: float = 3.0, terminate_grace: float | None = None) -> int | None:
+            closes.append((grace, terminate_grace))
+            return close(grace, terminate_grace)
+
+        client.close = recorded  # type: ignore[method-assign]
+        started = time.monotonic()
+        with self.assertRaises(GatewayCancelled):
+            client.start(ready_timeout=30.0, cancel=lambda: asked.append(1) or len(asked) >= 3)
+        self.assertLess(time.monotonic() - started, 5.0)  # three polls, not the 30 s
+        self.assertEqual(closes[0], (UNREADY_CLOSE_GRACE_SECONDS, UNREADY_CLOSE_GRACE_SECONDS))
+        self.assertEqual(close(FAST_GRACE), 0)  # reaped already
+
+    def test_a_start_that_fails_closes_its_child_with_the_short_waits_too(self) -> None:
+        from omh.tui.gateway import UNREADY_CLOSE_GRACE_SECONDS
+
+        client = self.make_client(Scenario("session"))
+        closes = []
+        close = client.close
+        def recorded(grace: float = 3.0, terminate_grace: float | None = None) -> int | None:
+            closes.append((grace, terminate_grace))
+            return close(grace, terminate_grace)
+
+        client.close = recorded  # type: ignore[method-assign]
+        with self.assertRaises(GatewayUnavailable):
+            client.start(ready_timeout=0.3)
+        self.assertEqual(closes[0], (UNREADY_CLOSE_GRACE_SECONDS, UNREADY_CLOSE_GRACE_SECONDS))
+
     def test_stderr_is_drained_while_starting_and_kept_to_a_bounded_tail(self) -> None:
         # Far more than a pipe buffer: an undrained stderr would block the fake before ready.
         flood = tuple(f"warning {index}" for index in range(5000))
@@ -391,6 +427,34 @@ class GatewayErrorTests(ReplayTestCase):
         client = self.started(scenario)
         with self.assertRaises(GatewayTimeout):
             client.call("session.list", {}, timeout=0.3)
+        self.assertEqual(client.poll(), [])
+        self.assertEqual(client.close(grace=5.0), 0)
+
+    def test_a_cancel_ends_a_call_left_unanswered_and_a_later_call_still_times_out(self) -> None:
+        # A respawn's resume waits this way (`App._respawn_cancel`): a real child that reads each call and answers none.
+        from omh.tui.gateway import GatewayCancelled
+
+        (startup,) = spans("session", "startup")
+        (listing_start, _stop), = spans("session", "session_list")
+        unanswered = (listing_start, listing_start + 1)  # the recorded session.list call: read, never answered
+        client = self.started(Scenario("session", (startup, unanswered, unanswered, unanswered)))
+        asked = []
+        started = time.monotonic()
+        with self.assertRaises(GatewayCancelled):
+            client.call("session.list", {}, timeout=5.0, cancel=lambda: asked.append(1) or len(asked) >= 3)
+        self.assertLess(time.monotonic() - started, 2.0)  # three polls, not the 5 s
+        self.assertEqual(len(asked), 3)
+        self.assertEqual(client._awaited, set())  # its answer, should it come, is dropped
+
+        def broken() -> bool:
+            raise OSError("the terminal read failed")
+
+        with self.assertRaises(OSError):  # a cancel that fails ends the wait with its own error, nothing left behind
+            client.call("session.list", {}, timeout=5.0, cancel=broken)
+        self.assertEqual(client._awaited, set())
+        with self.assertRaises(GatewayTimeout):
+            client.call("session.list", {}, timeout=0.3)
+        self.assertEqual(client._awaited, set())
         self.assertEqual(client.poll(), [])
         self.assertEqual(client.close(grace=5.0), 0)
 

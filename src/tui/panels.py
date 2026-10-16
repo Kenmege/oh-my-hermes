@@ -14,8 +14,8 @@ it was deleted: the same glyphs, labels, colour roles, column grid and shed
 priorities, ported to `Line`s, and `tests/test_tui_panels.py` holds the rows
 to the ones the widget drew (`tests/fixtures/tui_panel_rows.json`). The widget's
 `⚚ [OMH] vX` brand (as `⚚ OMH`; the version stays in the banner) and its
-session-wide chips (repeat guard, in-flight tool calls, yolo) move to the
-status line through `status_segments`; the agents
+session-wide chips (repeat guard, in-flight tool calls) move to the
+status line through `status_segments`, but not its yolo chip (see there); the agents
 block opens with `[Agents]` the way the plan block opens with `[Plan]`.
 
 The panel never draws more than the rows it is given. Under pressure it sheds
@@ -66,8 +66,8 @@ VOLATILE_KEYS = frozenset(
 )
 
 SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-# The host's shimmer clock ticks every 90 ms; spinner, plan pulse and the
-# active item's colour wave all read their frame from it.
+# The host's shimmer clock ticks every 90 ms; the spinner and the active
+# item's colour wave read their frame from it.
 FRAME_MILLISECONDS = 90
 SEPARATOR = " │ "
 ROW_SEPARATOR = "  ·  "
@@ -414,7 +414,7 @@ def _repeat_chip(repeat: Mapping[str, Any]) -> tuple[str, str]:
     return f"repeat x{count}{f' cycle-of-{period}' if period > 1 else ''}{suffix}", stage
 
 
-def status_segments(payload: Any, theme: Theme) -> Line:
+def status_segments(payload: Any, theme: Theme, turn_runs: bool = True, question_waits: bool = False) -> Line:
     """The OMH part of the status line: `⚚ OMH`, then the session-wide chips.
 
     The version is the banner's; the status line keeps its cells for the
@@ -422,9 +422,15 @@ def status_segments(payload: Any, theme: Theme) -> Line:
 
     The chips are the widget header's facts about the whole session rather
     than its agents: a repeating call (muted while watched, warn once refused,
-    error once escalated to a person), the exact in-flight tool calls (only
-    where this install has seen `post_tool_call` fire), and the yolo state.
-    Order is priority: a narrow status line cuts from the right.
+    error once escalated to a person) and the exact in-flight tool calls (only
+    where this install has seen `post_tool_call` fire, and only while
+    `turn_runs`: the snapshot lags the turn's end by a poll or more). While
+    `question_waits` the calls are counted without the oldest one's seconds,
+    since the working row's clock is that wait's. Order is priority: a
+    narrow status line cuts from the right. The widget's `yolo mode: on|off`
+    chip is not drawn: the composer states the approval mode (accept all) as
+    Hermes confirmed it for this session, and the HUD's reading of Hermes'
+    saved state lags behind a switch, so the two said opposite things.
     """
     valid = _valid(payload)
     data = payload if valid else {}
@@ -436,17 +442,10 @@ def status_segments(payload: Any, theme: Theme) -> Line:
         tone = theme.error if stage == "approval" else theme.warn if stage == "blocking" else theme.muted
         spans += [Span(" · ", theme.dim), Span(chip, replace(tone, bold=stage != "watching"))]
     activity = _mapping(data.get("activity"))
-    if activity.get("live") and activity.get("post_tool_call_observed"):
+    if turn_runs and activity.get("live") and activity.get("post_tool_call_observed"):
         count = _plural(_count(activity.get("open_call_count")), "tool")
         oldest = _elapsed(activity.get("oldest_open_elapsed_seconds")) or "0s"
-        spans += [Span(" • ", theme.dim), Span(f"{count} · {oldest}", theme.warn)]
-    yolo = _mapping(data.get("yolo"))
-    if yolo.get("status") == "observed":
-        enabled = bool(yolo.get("enabled"))
-        spans += [
-            Span(" • yolo mode: ", theme.muted),
-            Span("on" if enabled else "off", _bold(theme.warn if enabled else theme.label)),
-        ]
+        spans += [Span(" • ", theme.dim), Span(count if question_waits else f"{count} · {oldest}", theme.warn)]
     return _line(*spans)
 
 
@@ -561,7 +560,7 @@ def _skipped_clause(counts: Mapping[str, Any]) -> str:
     return f" ({skipped} skipped)" if skipped > 0 else ""
 
 
-def _plan_header(plan: _Plan, now: float, theme: Theme, motion: bool = True) -> Line:
+def _plan_header(plan: _Plan, now: float, theme: Theme) -> Line:
     counts = plan.counts
     title = Span(f" {plan.title}", theme.muted) if plan.title else None
     badge = _shot_badge(plan.shot, now, theme)
@@ -577,8 +576,6 @@ def _plan_header(plan: _Plan, now: float, theme: Theme, motion: bool = True) -> 
             badge,
         )
     phases = _count(counts.get("phases"))
-    has_active = any(item.get("state") == "active" for item in plan.items)
-    pulse = f" {'.' * (1 + (_frame(now) // 3) % 3)}" if has_active and plan.live and motion else ""
     return _line(
         Span("[Plan]", theme.heading),
         title,
@@ -587,7 +584,6 @@ def _plan_header(plan: _Plan, now: float, theme: Theme, motion: bool = True) -> 
         Span(_skipped_clause(counts), theme.muted),
         Span(f" · {phases} phases", theme.muted) if phases > 1 else None,
         badge,
-        Span(pulse, theme.dim),
     )
 
 
@@ -633,14 +629,28 @@ def _fold(count: int, side: str, theme: Theme) -> Line:
     return _line(Span(f"... ({count} {side} task{'' if count == 1 else 's'})", theme.muted))
 
 
+def plan_state(payload: Any) -> str:
+    """`open` while the payload's plan has an item left, `done` once every item is, "" without a plan."""
+    plan = _plan_view(payload) if _valid(payload) else None
+    if plan is None:
+        return ""
+    return "done" if plan.status == "all_done" else "open"
+
+
 def plan_text(payload: Any) -> str:
-    """The whole plan as text, for `/todos`: its header, then every item under its phase; "" without a plan."""
+    """The whole plan as text, for `/todos` and a retired plan: its header worded as the panel's, then every item
+    under its phase; "" without a plan."""
     plan = _plan_view(payload) if _valid(payload) else None
     if plan is None:
         return ""
     counts = plan.counts
     title = f" {plan.title}" if plan.title else ""
-    rows = [f"[Plan]{title} · {_count(counts.get('done'))}/{_count(counts.get('total'))}{_skipped_clause(counts)}"]
+    total = _count(counts.get("total"))
+    if plan.status == "all_done":  # the count as the panel's header says it (`_plan_header`)
+        count = f"✓ {max(0, _count(counts.get('done')) - _count(counts.get('skipped')))}/{total}"
+    else:
+        count = f"{_count(counts.get('done'))}/{total}"
+    rows = [f"[Plan]{title}{SEPARATOR}{count}{_skipped_clause(counts)}"]
     for phase, items in _groups(plan.items):
         if phase:
             rows.append(phase)
@@ -656,7 +666,7 @@ def plan_text(payload: Any) -> str:
 def _plan_lines(
     plan: _Plan, start: int, end: int, collapsed: bool, columns: int, now: float, theme: Theme, motion: bool = True
 ) -> list[Line]:
-    lines = [_plan_header(plan, now, theme, motion)]
+    lines = [_plan_header(plan, now, theme)]
     if plan.status == "all_done" or collapsed:
         return lines
     frame = _frame(now)
@@ -1098,17 +1108,20 @@ def panel_lines(
     *,
     received_at: float | None = None,
     show_agents: bool = True,
+    show_plan: bool = True,
     motion: bool = True,
 ) -> list[Line]:
     """The panel rows for one HUD payload: never more than `max_rows`, none wider than `width` cells.
 
-    `now` is wall-clock seconds; it drives the spinner, the plan pulse and
+    `now` is wall-clock seconds; it drives the spinner, the active item's
     colour wave, and the age of a finished parallel shot. `received_at` (the
     snapshot's) lets a running agent's elapsed figure tick between polls.
     Without `show_agents` the agents block (and its graph) is left out: the
     app passes that while its own roster shows the agents, so they are drawn
-    once, from one source. Without `motion` (reduced motion) the spinner
-    holds its first frame and the plan neither pulses nor waves.
+    once, from one source. Without `show_plan` the plan block is left out:
+    the app passes that for a finished plan it has retired. Without `motion`
+    (reduced motion) the spinner holds its first frame and the plan does not
+    wave.
     """
     if max_rows <= 0 or width <= 0 or not isinstance(payload, Mapping):
         return []
@@ -1117,7 +1130,7 @@ def panel_lines(
     if payload.get("privacy") != "metadata_only":
         return []
     columns = max(20, width)
-    plan = _plan_view(payload)
+    plan = _plan_view(payload) if show_plan else None
     agents = _agents_view(payload) if show_agents else None
     start, end = _initial_window(plan) if plan is not None and plan.status == "established" else (0, 0)
     layout = _Layout(

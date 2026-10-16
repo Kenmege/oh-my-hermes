@@ -20,7 +20,7 @@ import unittest
 
 from _tui_lines import line_text
 from test_tui_modes import RecordingClient, make_app, type_text
-from omh.tui.app import App
+from omh.tui.app import BELL, App
 from omh.tui.gateway import ServerRequest
 from omh.tui.keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, LEFT, UP, Key, Paste
 
@@ -94,8 +94,9 @@ class HiddenComposerTests(unittest.TestCase):
         self.assertFalse(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
         self.assertFalse([row for row in during if row.startswith("› ")], during)
         mode_row = status_row(during) - 1
-        self.assertEqual(during[mode_row - 3 : mode_row], ["▌ ❯ deny", "▌   allow once", "▌   allow this session"])
-        self.assertIn("↑↓ pick · enter confirms · d or esc denies", during[mode_row])
+        self.assertEqual(during[mode_row - 4 : mode_row],
+                         ["▌ ❯ deny", "▌   allow once", "▌   allow this session", "▌   no, and tell Hermes what to do instead"])
+        self.assertIn("↑↓ pick · enter confirms · d or esc denies and stops", during[mode_row])
         armed(app)
         press(app, Key(DOWN), Key(ENTER))
         self.assertEqual(answered(client, "srq-1"), [{"result": {"choice": "once"}}])
@@ -104,9 +105,9 @@ class HiddenComposerTests(unittest.TestCase):
         self.assertEqual(held(app), draft)
         self.assertTrue(composer_drawn(app, after))
         # The rows from the composer's top rule down are what they were; above them, the answer the person gave.
-        top = rule_rows(before)[0]
-        self.assertEqual(after[top:], before[top:])
-        self.assertIn("✓ allowed once · rm -rf ./build", after[:top])
+        top, top_after = rule_rows(before)[0], rule_rows(after)[0]
+        self.assertEqual(after[top_after : status_row(after) + 1], before[top : status_row(before) + 1])
+        self.assertIn("✓ allowed once · rm -rf ./build", after[:top_after])
         self.assertFalse([row for row in after if "allow this session" in row or "Hermes asks" in row], after)
 
     def test_no_key_types_into_the_hidden_composer_and_a_paste_is_not_kept_for_it(self) -> None:
@@ -150,8 +151,9 @@ class HiddenComposerTests(unittest.TestCase):
         armed(app)
         written = len(app.terminal.writes)  # type: ignore[attr-defined]
         press(app, Key(CHAR, "d"))
-        # Answering the approval opened the clarify before any frame was drawn: no frame shows the composer.
-        self.assertEqual(app.terminal.writes[written:], [])  # type: ignore[attr-defined]
+        # Answering the approval opened the clarify before any frame was drawn: no frame shows the composer,
+        # and all that was written is the clarify's bell.
+        self.assertEqual(app.terminal.writes[written:], [BELL])  # type: ignore[attr-defined]
         self.assertEqual(app.slot.method, "clarify")  # type: ignore[union-attr]
         screen = drawn(app)
         self.assertFalse(composer_drawn(app, screen), screen)
@@ -420,7 +422,8 @@ class PickerTests(unittest.TestCase):
                 self.assertEqual(screen[status - 2], " › type to filter")  # right above the mode row
                 self.assertEqual(app.terminal.screen.cursor, (status - 2, 3))  # type: ignore[attr-defined]  # the caret on it
                 type_text(app, "s")
-                self.assertEqual(drawn(app)[status - 2], " › s")
+                screen = drawn(app)
+                self.assertEqual(screen[status_row(screen) - 2], " › s")  # the list shrank: the row moved with it
                 self.assertEqual(held(app), draft)  # the filter is the picker's, not the draft's
                 press(app, Key(ESCAPE))
                 self.assertTrue(composer_drawn(app, drawn(app)))
@@ -457,8 +460,8 @@ class PickerTests(unittest.TestCase):
                 self.assertTrue(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
                 self.assertEqual(app.terminal.screen.cursor, (row, 3))  # type: ignore[attr-defined]
                 type_text(app, "s")
-                drawn(app)
-                self.assertEqual(app.terminal.screen.cursor, (row, 4))  # type: ignore[attr-defined]
+                screen = drawn(app)
+                self.assertEqual(app.terminal.screen.cursor, (status_row(screen) - 2, 4))  # type: ignore[attr-defined]
                 press(app, Key(ESCAPE))
                 screen = drawn(app)
                 self.assertEqual(app.terminal.screen.cursor[0], next(i for i, line in enumerate(screen) if line.startswith("› a draft")))  # type: ignore[attr-defined]
@@ -479,14 +482,16 @@ class PickerTests(unittest.TestCase):
     def test_an_approval_over_a_picker_shows_no_caret_and_the_pickers_comes_back_after(self) -> None:
         app, client = make_app(busy=True)
         app._open_session_picker(SESSIONS)
-        filter_row = status_row(drawn(app)) - 2
+        drawn(app)
         app._on_server_request(APPROVAL)
         screen = drawn(app)
         self.assertFalse(app.terminal.screen.cursor_visible, screen)  # type: ignore[attr-defined]
         armed(app)
         press(app, Key(ESCAPE))
         self.assertEqual(answered(client, "srq-1"), [{"result": {"choice": "deny"}}])
-        drawn(app)
+        screen = drawn(app)
+        filter_row = status_row(screen) - 2  # the answer is printed above the region, which moves down under it
+        self.assertEqual(screen[filter_row], " › type to filter")
         self.assertEqual(app.terminal.screen.cursor, (filter_row, 3))  # type: ignore[attr-defined]
 
     def test_a_view_left_over_a_picker_without_a_filter_row_keeps_the_caret_hidden(self) -> None:
@@ -521,12 +526,13 @@ class PickerTests(unittest.TestCase):
         header = next(row for row in drawn(narrow) if row.startswith(" Sessions (2)"))
         self.assertTrue(header.rstrip().endswith("esc closes"), header)
 
-    def test_the_history_search_and_the_completion_menu_keep_the_composer(self) -> None:
+    def test_the_history_search_hides_the_composer_and_the_completion_menu_keeps_it(self) -> None:
         app, _client = make_app()
         app.composer.history = ["an older prompt"]
         press(app, Key(CHAR, "r", ctrl=True))
-        self.assertTrue(composer_drawn(app, drawn(app)))
+        self.assertFalse(composer_drawn(app, drawn(app)))  # its query row stands where the composer was
         press(app, Key(ESCAPE))
+        self.assertTrue(composer_drawn(app, drawn(app)))
         type_text(app, "/")
         self.assertTrue(composer_drawn(app, drawn(app)))
 
@@ -672,16 +678,17 @@ class ResizeAndShortTerminalTests(unittest.TestCase):
                 self.assertTrue(any(row.startswith("▌ ❯ deny") for row in screen), screen)
                 self.assertTrue(all(len(row) <= cols for row in screen))
                 self.assertEqual(rule_rows(screen), [], screen)
-                if rows >= 9:  # below that a spare row shows the command's head rather than the keys
-                    self.assertTrue(any("esc denies" in row for row in screen), screen)  # the mode row, or a row of its own
+                if rows >= 10:  # the mode row; below it a spare row shows the command's head rather than the keys
+                    self.assertTrue(any("esc denies" in row for row in screen), screen)
 
     def test_below_ten_rows_the_keys_take_a_slot_row_and_not_a_composer_row(self) -> None:
         app, _client = make_app(busy=True, rows=9, cols=80)
-        app._on_server_request(APPROVAL)
+        app._on_server_request(ServerRequest("srq-1", "approval", {**APPROVAL.params, "choices": ["once", "deny"]}))
         screen = drawn(app)
         status = status_row(screen)
-        self.assertEqual(screen[status - 1], "▌   ↑↓ pick · enter confirms · d or esc denies")
-        self.assertEqual(screen[status - 4 : status - 1], ["▌ ❯ deny", "▌   allow once", "▌   allow this session"])
+        self.assertEqual(screen[status - 1], "▌   ↑↓ pick · enter confirms · d or esc denies and stops")
+        self.assertEqual(screen[status - 4 : status - 1],
+                         ["▌ ❯ deny", "▌   allow once", "▌   no, and tell Hermes what to do instead"])
 
 
 if __name__ == "__main__":

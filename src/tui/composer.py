@@ -41,7 +41,16 @@ the start/end of the line (at the edge, the newline itself); Ctrl+W,
 Alt+Backspace and Ctrl+Backspace delete the word before the caret; a paste
 inserts as is, newlines kept; Tab completes; Esc cancels and keeps the text;
 Ctrl+C clears the text and cancels, or reports an interrupt when there is no
-text; Ctrl+D exits on empty input and deletes forward otherwise.
+text; Ctrl+D exits on empty input and deletes forward otherwise; Ctrl+_ (what
+Ctrl+-, Ctrl+/ and Ctrl+7 send on most terminals, or Ctrl+- reported as
+itself) undoes the last edit and Ctrl+Y redoes it.
+
+Undo steps back through the edits since the last submit, at most
+`UNDO_CAP`: each key or paste that changed the text is one step, a run of
+characters typed one after another at the caret is one step, and so is an
+edit the app makes (`replace`, `restore`). A step puts back the text, its
+paste chips and the caret. A new edit drops what redo held; a submit drops
+both; masked input keeps none.
 
 A paste of more than `PASTE_CHIP_LINES` lines or `PASTE_CHIP_CHARS`
 characters (Claude Code's thresholds) goes in as one chip,
@@ -102,6 +111,9 @@ PASTE_CHIP_LINES = 3
 PASTE_CHIP_CHARS = 800
 PASTE_CHIP = "[Pasted text #{number} +{lines} lines]"
 PASTE_CHIP_ONE_LINE = "[Pasted text #{number} · {chars:,} chars]"
+UNDO_CAP = 100
+UNDO_CHARS = frozenset("_-")  # with Ctrl
+REDO_CHAR = "y"  # with Ctrl
 
 NONE = "none"
 SUBMIT = "submit"
@@ -275,6 +287,10 @@ class Composer:
     # The text measured, and its rows at one width: a caret move or a redraw reuses them until the text changes.
     _shaped: _Shape | None = field(default=None, init=False, repr=False, compare=False)
     _laid: tuple[_Shape, int, list[_Row]] | None = field(default=None, init=False, repr=False, compare=False)
+    # Undo and redo: (text, caret, paste chips) before each step, newest last.
+    _undo: list[tuple[str, int, dict[str, str]]] = field(default_factory=list, init=False, repr=False, compare=False)
+    _redo: list[tuple[str, int, dict[str, str]]] = field(default_factory=list, init=False, repr=False, compare=False)
+    _typing_at: int | None = field(default=None, init=False, repr=False, compare=False)  # where the typed run's caret is
 
     def __post_init__(self) -> None:
         self._set(self.text, min(max(self.caret, 0), len(self.text)))
@@ -376,13 +392,44 @@ class Composer:
             self._replace(self.caret, self.caret, cleaned)
 
     def replace(self, start: int, end: int, text: str) -> None:
-        """Put `text` (cleaned as a paste is) in place of `self.text[start:end]`; the caret lands after it."""
+        """Put `text` (cleaned as a paste is) in place of `self.text[start:end]`; the caret lands after it. One undo step."""
+        before = self._state()
         self._replace(start, end, _clean(text, self.masked))
+        self._step(before, typed=False)
 
     def restore(self, shown: str, chips: Sequence[tuple[str, str]]) -> None:
         """Put back, at the caret, a text a submit showed as `shown`: its `chips` (label, text) are chips again."""
+        before = self._state()
         self.pastes.update(chips)
         self._replace(self.caret, self.caret, _clean(shown, self.masked))
+        self._step(before, typed=False)
+
+    def _state(self) -> tuple[str, int, dict[str, str]]:
+        return self.text, self.caret, dict(self.pastes)
+
+    def _step(self, before: tuple[str, int, dict[str, str]], typed: bool) -> None:
+        """Keep `before` as an undo step when the text changed since, unless it continues a typed run."""
+        if before[0] == self.text:
+            if before[1] != self.caret:
+                self._typing_at = None  # a caret move ends the run
+            return
+        if not self.masked and not (typed and self._typing_at == before[1]):
+            self._undo.append(before)
+            del self._undo[:-UNDO_CAP]
+        self._redo.clear()
+        self._typing_at = self.caret if typed else None
+
+    def _take_step(self, source: list[tuple[str, int, dict[str, str]]], target: list[tuple[str, int, dict[str, str]]]) -> None:
+        """Undo (from `_undo`) or redo (from `_redo`) one step; the state left goes on the other list."""
+        if not source:
+            return
+        target.append(self._state())
+        text, caret, pastes = source.pop()
+        self.pastes = dict(pastes)
+        self._set(text, caret)
+        self._typing_at = None
+        self.history_index = None  # the text is no history entry any more
+        self._draft = ""
 
     def _units(self) -> tuple[list[str], list[int], int]:
         """Clusters, their boundaries, and the caret's cluster index."""
@@ -403,6 +450,25 @@ class Composer:
     # -- key handling ---------------------------------------------------------
 
     def handle(self, event: Key | Paste) -> ComposerAction:
+        if isinstance(event, Key) and event.name == CHAR and event.ctrl and not event.alt:
+            if event.char in UNDO_CHARS:
+                self._take_step(self._undo, self._redo)
+                return NOTHING
+            if event.char == REDO_CHAR:
+                self._take_step(self._redo, self._undo)
+                return NOTHING
+        before = self._state()
+        action = self._handle(event)
+        if action.kind == SUBMIT:
+            self._undo.clear()
+            self._redo.clear()
+            self._typing_at = None
+        else:
+            typed = isinstance(event, Key) and event.name == CHAR and not event.ctrl and not event.alt
+            self._step(before, typed)
+        return action
+
+    def _handle(self, event: Key | Paste) -> ComposerAction:
         if isinstance(event, Paste):
             self._insert_paste(event.text)
             return NOTHING

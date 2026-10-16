@@ -35,7 +35,7 @@ def mode_row(app: App) -> str:
 class QuestionKeyTests(unittest.TestCase):
     def test_an_open_question_puts_its_keys_on_the_mode_row_and_esc_means_one_thing(self) -> None:
         cases = [
-            (APPROVAL, "↑↓ pick · enter confirms · d or esc denies"),
+            (APPROVAL, "↑↓ pick · enter confirms · d or esc denies and stops"),
             (CLARIFY, "↑↓ or 1-9 · enter picks · type to answer · esc cancels"),
             (SECRET, "type it · enter sends · esc declines"),
         ]
@@ -46,6 +46,15 @@ class QuestionKeyTests(unittest.TestCase):
                 self.assertIn(keys, mode_row(app))
                 self.assertNotIn("esc interrupt", mode_row(app))
                 self.assertNotIn("esc to interrupt", line_text(app._tail(100)[-1]))  # the working row too
+
+    def test_an_approval_with_no_turn_running_says_deny_not_stop(self) -> None:
+        # A subagent that outlived the turn can still ask; nothing would be interrupted then.
+        app, client = make_app(busy=False)
+        app._on_server_request(APPROVAL)
+        self.assertIn("↑↓ pick · enter confirms · d or esc denies", mode_row(app))
+        self.assertNotIn("stops", mode_row(app))
+        app.turn_pending = True
+        self.assertIn("d or esc denies and stops", mode_row(app))
 
     def test_without_a_question_the_working_row_still_offers_the_interrupt(self) -> None:
         app, _client = make_app(busy=True)
@@ -145,7 +154,9 @@ class NarrowSayTests(unittest.TestCase):
                 self.assertTrue(steer.rstrip().endswith("↪ steer · esc cancels"), steer)
                 self.assertIn("plan mode on", steer)  # the label always stays
         # With room for both, the effort stays beside the short form.
-        self.assertTrue(self.rewind_row(60, agents=False, mode=MODE_PLAN, effort="high").rstrip().endswith("effort high"))
+        self.assertTrue(
+            self.rewind_row(64, agents=False, mode=MODE_PLAN, effort="high").rstrip().endswith("ctrl+t effort (high)")
+        )
 
     def test_at_forty_columns_with_accept_and_plan_the_labels_shorten_before_the_say_form_is_cut(self) -> None:
         from omh.tui.frame import MODE_ACCEPT_PLAN
@@ -184,7 +195,7 @@ class NarrowSayTests(unittest.TestCase):
         row = self.steer_row(100, effort="high")
         self.assertIn("steering find usages of", row)
         self.assertIn("2 agents", row)  # the strip, collapsed
-        self.assertTrue(row.rstrip().endswith("effort high"), row)
+        self.assertTrue(row.rstrip().endswith("ctrl+t effort (high)"), row)
 
     def test_a_rewind_keeps_what_it_replaces_and_how_to_cancel_at_every_width(self) -> None:
         for cols in (100, 60, 40):
@@ -235,7 +246,7 @@ class NarrowApprovalTests(unittest.TestCase):
 
     def test_a_wrapped_command_keeps_its_indent(self) -> None:
         rows = self.rows(50)
-        command_rows = rows[1:-3]
+        command_rows = rows[1 : rows.index("▌ ❯ deny")]
         self.assertGreater(len(command_rows), 1)
         for row in command_rows:
             self.assertTrue(row.startswith("▌   "), rows)

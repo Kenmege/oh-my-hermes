@@ -140,7 +140,10 @@ OMH is not:
   digest-bound Hermes evaluation cells without adding a third process bridge)
 - a claim that Hermes executed work that only a handoff prepared
 - a replacement for Hermes' gateway, agent loop, or approval policy (the OMH
-  TUI relays what the person types and answers no request on their behalf)
+  TUI relays what the person types and answers no request on their behalf; a
+  deny the person gives an approval also interrupts the running turn, as
+  Claude Code's Esc does, except the deny from the row that tells Hermes what
+  to do instead)
 
 ## Routing Language Policy
 

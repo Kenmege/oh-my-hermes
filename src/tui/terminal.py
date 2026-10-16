@@ -27,11 +27,13 @@ is on).
 
 `query_background` asks the terminal for its background colour once, before
 the first frame, so the theme can be measured against the background the
-person really has (`theme.build_theme`): OSC 11, with a device-attributes
-request behind it that every terminal answers, in order, so that answer ends
-the wait whether or not the background was answered, and
-`BACKGROUND_QUERY_SECONDS` bounds it when nothing comes. Keys typed while it
-waits are handed back to the caller. A terminal that does not answer OSC 11
+person really has (`theme.build_theme`), and in the same write for the row
+its cursor is on, so the live region knows its place on the screen from its
+first frame (`screen.LiveRegion(start_row=...)`): OSC 11, then the cursor
+position request (CSI 6n), with a device-attributes request behind them that
+every terminal answers, in order, so that answer ends the wait whether or not
+the others were answered, and `BACKGROUND_QUERY_SECONDS` bounds it when
+nothing comes. Keys typed while it waits are handed back to the caller. A terminal that does not answer OSC 11
 can still say light or dark through `COLORFGBG`: a light background as its
 colour (`background_from_colorfgbg`), a dark one only as dark
 (`colorfgbg_names_dark`), for which the caller stands in a dark colour.
@@ -39,6 +41,15 @@ colour (`background_from_colorfgbg`), a dark one only as dark
 `read` waits on the input and, when the caller names one, a wake descriptor
 (the gateway client's), and a resize signal ends its wait too, so the loop can
 sleep until there is input, news from the gateway, or a new size.
+
+`suspend` is Ctrl+Z for a raw terminal, where ISIG is off and the key is a
+byte: it puts the terminal back as the shell had it, stops the whole job
+with SIGTSTP (the shell's job, the gateway in it included, as a Ctrl+Z the
+terminal turned into a signal would), and enters raw mode again once the
+shell continues it. Where there is no SIGTSTP (no job control) it does
+nothing. A process group with no shell to continue it (orphaned, as a
+program started straight in a tmux pane) is not stopped by the kernel, so
+the terminal is entered again at once.
 
 Windows has no termios; `terminal_supported` reports that, and the caller
 takes the fallback path instead of entering a `Terminal`.
@@ -101,14 +112,18 @@ KEYBOARD_OPT_OUT = "legacy"
 READ_CHUNK_BYTES = 4096
 FALLBACK_SIZE = (80, 24)
 
-# The startup background query: OSC 11 asks for the background colour, and the device-attributes request (DA1)
-# behind it is answered by every terminal, after the OSC 11 answer if there is one, so its answer ends the wait.
+# The startup background query: OSC 11 asks for the background colour, the cursor position request (CPR) for the
+# cursor's row, and the device-attributes request (DA1) behind them is answered by every terminal, after the other
+# answers if there are any, so its answer ends the wait.
 BACKGROUND_QUERY = "\x1b]11;?\x07"
+CURSOR_POSITION_QUERY = f"{CSI}6n"
 DEVICE_ATTRIBUTES_QUERY = f"{CSI}c"
 BACKGROUND_QUERY_SECONDS = 0.1
 # `ESC ] 11 ; rgb:R/G/B` ended by BEL or ST, each channel one to four hex digits (xterm's `XParseColor` forms).
 _BACKGROUND_REPLY = re.compile(rb"\x1b\]11;rgb:([0-9A-Fa-f]{1,4})/([0-9A-Fa-f]{1,4})/([0-9A-Fa-f]{1,4})(?:\x07|\x1b\\)")
 _DEVICE_ATTRIBUTES_REPLY = re.compile(rb"\x1b\[\?[0-9;]*c")
+# `ESC [ row ; col R`, both 1-based: the cursor position report.
+_CURSOR_POSITION_REPLY = re.compile(rb"\x1b\[([0-9]{1,5});([0-9]{1,5})R")
 # `COLORFGBG`'s background field names a colour of the basic sixteen: 7 and 15 are the light ones (xterm's values),
 # 0 to 6 and 8 the dark ones.
 COLORFGBG_LIGHT = {"7": "#E5E5E5", "15": "#FFFFFF"}
@@ -205,6 +220,25 @@ def split_background_replies(data: bytes) -> tuple[str | None, bytes, bool]:
     if answered is not None:
         data = data[: answered.start()] + data[answered.end() :]
     return colour, data, answered is not None
+
+
+def split_cursor_reply(data: bytes) -> tuple[int | None, bytes]:
+    """(the cursor's 1-based row from the position report, `data` without that report).
+
+    The report counts only when the device-attributes answer arrived after it:
+    a terminal answers in the order it was asked, so the report is the last
+    `ESC [ row ; col R` before that answer, and a key of the same shape typed
+    earlier stays in `data`. With no attributes answer, or no report before
+    it, the row is None and `data` is unchanged.
+    """
+    answered = _DEVICE_ATTRIBUTES_REPLY.search(data)
+    if answered is None:
+        return None, data
+    reports = list(_CURSOR_POSITION_REPLY.finditer(data, 0, answered.start()))
+    if not reports:
+        return None, data
+    report = reports[-1]
+    return int(report.group(1)), data[: report.start()] + data[report.end() :]
 
 
 def _colorfgbg_background(environ: Mapping[str, str]) -> str:
@@ -307,6 +341,19 @@ class Terminal:
             finally:
                 self._uninstall_winch()
 
+    def suspend(self) -> bool:
+        """Ctrl+Z: restore the terminal, stop the job, and enter raw mode again once it continues; False, and nothing
+        done, where there is no SIGTSTP or the terminal is not entered."""
+        stop = getattr(signal, "SIGTSTP", None)
+        if stop is None or self._saved is None:
+            return False
+        self._restore()
+        try:
+            os.kill(0, stop)  # the caller's process group; the process stops here until SIGCONT
+        finally:
+            self.__enter__()
+        return True
+
     def set_mouse(self, enabled: bool) -> None:
         """Turn mouse reports on or off; writes nothing when they already are.
 
@@ -318,15 +365,37 @@ class Terminal:
         self.write(MOUSE_REPORTING_ON if enabled else MOUSE_REPORTING_OFF)
         self.mouse_reporting = enabled
 
-    def query_background(self, timeout: float = BACKGROUND_QUERY_SECONDS) -> tuple[str | None, bytes]:
-        """The terminal's background colour (`#RRGGBB`, or None), and the input that arrived meanwhile.
+    def query_background(self, timeout: float = BACKGROUND_QUERY_SECONDS) -> tuple[str | None, bytes, int | None]:
+        """The background colour (`#RRGGBB`, or None), the input that arrived meanwhile, and the cursor's 1-based row.
 
-        Writes the background query and the attributes request behind it, then
-        reads until the attributes answer arrives or `timeout` passes. Only
-        inside the `with` block, where input is raw. An answer that comes after
-        the wait is no key either: the decoder drops an OSC string whole.
+        Writes the background query, the cursor position request and the
+        attributes request behind them, then reads until the attributes answer
+        arrives or `timeout` passes. Only inside the `with` block, where input
+        is raw. The row is None unless its report came before the attributes
+        answer (`split_cursor_reply`). An answer that comes after the wait is
+        no key either: the decoder drops an OSC string whole, and reads a late
+        position report as an unknown key, which types nothing.
         """
-        self.write(BACKGROUND_QUERY + DEVICE_ATTRIBUTES_QUERY)
+        self.write(BACKGROUND_QUERY + CURSOR_POSITION_QUERY + DEVICE_ATTRIBUTES_QUERY)
+        row, data = split_cursor_reply(self._read_answers(timeout))
+        colour, typed, _answered = split_background_replies(data)
+        return colour, typed, row
+
+    def query_cursor_row(self, timeout: float = BACKGROUND_QUERY_SECONDS) -> tuple[bytes, int | None]:
+        """The input that arrived meanwhile and the cursor's 1-based row, asked as `query_background` asks it.
+
+        For a job continued after a stop, where the shell moved the cursor:
+        writes the cursor position request and the attributes request behind
+        it, and reads until the attributes answer or `timeout`. Only inside
+        the `with` block.
+        """
+        self.write(CURSOR_POSITION_QUERY + DEVICE_ATTRIBUTES_QUERY)
+        row, data = split_cursor_reply(self._read_answers(timeout))
+        _colour, typed, _answered = split_background_replies(data)
+        return typed, row
+
+    def _read_answers(self, timeout: float) -> bytes:
+        """Input until the attributes answer arrives (the last a query asks for) or `timeout` passes."""
         deadline = time.monotonic() + timeout
         data = b""
         while (left := deadline - time.monotonic()) > 0:
@@ -342,8 +411,7 @@ class Terminal:
             data += chunk
             if split_background_replies(data)[2]:
                 break
-        colour, typed, _answered = split_background_replies(data)
-        return colour, typed
+        return data
 
     def _on_winch(self, signum: int, frame: FrameType | None) -> None:
         self._resized = True

@@ -328,15 +328,18 @@ through: `🧠 OMH — recalled 2 memories`.
 Bare `omh` opens the OMH TUI: OMH's own terminal over your Hermes install.
 Hermes still runs every model call, tool and approval; OMH owns the screen —
 finished replies go to your terminal's scrollback, the plan and agents panel
-sits right above the prompt, and the prompt does not move when that panel
-grows or shrinks. It reads on a light terminal as on a dark one, keeps a
+sits right above the prompt, and the prompt sits right under the output
+until the screen fills, then stays on the bottom rows: a list or question
+closing there does not pull it up. It reads on a light terminal as on a
+dark one, keeps a
 slash command's output in the transcript, runs a `!` line in Hermes' shell
 (never sent to the model), shares your input history with `hermes --tui`
 (Ctrl+R searches it), rewinds to an earlier prompt (Esc Esc or `/rewind`),
 lets you interrupt (`x`) or steer (`s`) one subagent from the agent list,
 lists an approval's or a question's choices where the prompt was, and marks
 outcomes on green and red bands (the light colours and the bands
-need a terminal that reports its background, or `/theme light|dark`). Bare
+need a terminal that reports its background, a `COLORFGBG` that names it,
+or `/theme light|dark`). Bare
 `hermes` keeps opening Hermes' own terminal:
 
 ```sh
@@ -346,21 +349,21 @@ omh
 <table align="center">
   <tr>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-turn.png" alt="The OMH TUI: an edit with its diff, highlighted code, and the plan panel above the composer"><br>
-      <sub><b>An edit, its diff, and the plan above the prompt.</b></sub>
+      <img src="assets/omh-tui-turn.png" alt="The OMH TUI after a turn: one row per tool call naming what it ran on and how long it took, the new file and the patch as green and red diff bands, the command's output cut to three lines and a '… +2 lines · ctrl+o shows all' row, and the live plan panel above the prompt"><br>
+      <sub><b>One row per call, its diff, and the plan above the prompt.</b></sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete: the choices sit where the prompt was, deny highlighted, under a denied command on a red band and an allowed one on a green band"><br>
+      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete: five rows where the prompt was (deny, highlighted; allow once; allow this session; always allow; no, and tell Hermes what to do instead) under a waiting-on-you timer, with an earlier command denied on a red band and one allowed once on a green band, and each done line naming the seconds spent waiting on you"><br>
       <sub><b>Hermes asks; you pick. Deny is the default.</b></sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-clarify.png" alt="The OMH TUI at start, with its logo, while Hermes asks a question with numbered choices and a row to type your own answer"><br>
-      <sub><b>A question's choices replace the prompt; type to answer instead.</b></sub>
+      <img src="assets/omh-tui-clarify.png" alt="The OMH TUI at start, with its logo: right under the prompt, Hermes asks a choose-one-or-more question with check boxes, two of them ticked, and a numbered row to type your own answer; the mode row names space or 1-9 to tick"><br>
+      <sub><b>A question opens under your prompt; tick several, or type your own.</b></sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-light.png" alt="The same approval on a light terminal, with light red and green bands"><br>
+      <img src="assets/omh-tui-light.png" alt="The same five-row approval on a light terminal, with light red and green bands and a tinted status bar"><br>
       <sub><b>On a light terminal, light bands.</b></sub>
     </td>
   </tr>

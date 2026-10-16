@@ -21,10 +21,12 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("\\ then Enter, Alt+Enter, Shift+Enter, Ctrl+J", "Adds a line"),
     ("Ctrl+Enter", "Steers a running turn with the composer's text, on a terminal that tells it from Enter "
                    "(/steer <text> steers on any terminal); idle, sends it as Enter does"),
-    ("Tab", "Completes a slash command, or the @ reference being typed"),
-    ("Shift+Tab", "Cycles the input mode: normal, accept all, plan; while Hermes itself has approvals off, "
-                  "turns plan on and off"),
-    ("Ctrl+T", "Steps the reasoning effort: low, medium, high, xhigh, max"),
+    ("Tab", "Completes a slash command, or the @ reference being typed; on an open menu, Enter takes the "
+             "highlighted row too, and sends a command already typed in full"),
+    ("Shift+Tab", "Cycles the input mode: normal, accept all (Hermes asks no approvals in this session), plan "
+                  "(prompts go as /plan); while Hermes itself has approvals off, turns plan on and off"),
+    ("Ctrl+T", "Steps the reasoning effort: low, medium, high, xhigh, max; the mode row shows it as ctrl+t effort "
+               "(medium)"),
     ("@", "Starts a file or folder reference; Hermes offers matches above the composer"),
     ("!", "At the start of a line, makes it a shell command Hermes runs when you send it (30 s at most); "
           "it and its output are not sent to the model"),
@@ -33,37 +35,48 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
               "(earlier sessions' too, shared with hermes --tui), or move through an open completion menu"),
     ("Ctrl+R", "Searches the input history; Ctrl+R again finds an older match, Enter puts it in the composer, "
                "Esc leaves the composer as it was"),
+    ("Ctrl+X", "Opens the /sessions picker"),
     ("↑", "On an empty composer with prompts queued, takes them back into the composer to edit; a queued shell line comes back on its own"),
-    ("↓", "On an empty composer while the mode row shows subagents, opens the agent list under the composer"),
+    ("↓", "On an empty composer while the mode row shows subagents, opens the agent list in the composer's place"),
     ("← / →", "Move by a character; with Ctrl or Alt, by a word (Alt+B and Alt+F too)"),
     ("Home / End, Ctrl+A / Ctrl+E", "Go to the start or the end of the line"),
     ("Backspace / Delete", "Delete a character, or a paste chip whole; Backspace on an empty composer removes "
                            "the last attached image"),
     ("Ctrl+W, Alt+Backspace, Ctrl+Backspace", "Deletes the word before the caret (Ctrl+Backspace where the terminal reports it apart from Backspace)"),
     ("Ctrl+U / Ctrl+K", "Delete to the start or the end of the line"),
-    ("Esc", "Closes the @ menu; on an empty composer, interrupts a running turn "
-            "(the activity row shows how long it has run); cancels a rewind you picked; "
-            "cancels an agent steer you picked and keeps what you typed"),
+    ("Ctrl+_ / Ctrl+Y", "Undo or redo an edit in the composer (Ctrl+_ is what Ctrl+- and Ctrl+/ send on most terminals); "
+                        "a run of typed characters is one edit"),
+    ("Esc", "Closes the / or @ menu; on an empty composer, interrupts a running turn "
+            "(the activity row shows how long it has run, then interrupting…, and what you queued comes back to the "
+            "composer unsent); cancels a rewind you picked; "
+            "cancels an agent steer you picked and keeps what you typed; after an approval's tell row, "
+            "sends nothing more and brings your draft back"),
     ("Esc Esc", "With text, clears it and keeps it in this session's history; on an empty composer between turns, "
                 "lists your prompts to rewind to (/rewind does too)"),
     ("Ctrl+V", "Attaches the clipboard image"),
-    ("Ctrl+O", "Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end; "
-               "q leaves it"),
+    ("Ctrl+O", "Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end, or, "
+               "while Hermes asks something, the whole question (it answers nothing); q leaves it"),
     ("Ctrl+L", "Redraws the screen"),
+    ("Ctrl+Z", "Suspends the OMH TUI to the shell, as Ctrl+Z does in any terminal program (Hermes stops with it); "
+               "fg brings it back"),
     ("Ctrl+C", "Clears the composer, interrupts a running turn, or (twice when idle) exits"),
     ("Ctrl+D", "On an empty composer, exits; with text, deletes the character ahead"),
-    ("↑ / ↓ or ← / → then Enter", "On an approval, highlight allow once or allow this session and allow it; "
-                                  "Enter alone denies"),
-    ("d, n", "On an approval, deny"),
+    ("↑ / ↓ or ← / → then Enter", "On an approval, highlight allow once, allow this session or (when Hermes "
+                                  "offers it) always allow, and allow it, or the last row to deny and tell Hermes "
+                                  "what to do instead; Enter alone denies and stops the running turn"),
+    ("d, n", "On an approval, deny and stop the running turn"),
     ("1 to 9", "On a clarify question's list, pick that choice, or the last number opens the field for your own "
                "answer; ↑ / ↓ then Enter picks too, and any other character starts your own answer"),
-    ("Esc, Ctrl+C", "On a question Hermes asked, decline it (an approval is denied); "
+    ("Space", "On a clarify question that takes several choices, ticks or unticks the highlighted one; Enter sends "
+              "the ticked ones, or the highlighted one when none is ticked, and a digit ticks its choice"),
+    ("Esc, Ctrl+C", "On a question Hermes asked, decline it (an approval is denied and the running turn stops); "
                     "Ctrl+C first clears an answer being typed"),
-    ("↑ / ↓, PageUp / PageDown, Enter, Esc", "In the /sessions or /rewind list, move, take the highlighted row "
-                                             "(switch to that session, or put that prompt in the composer to send "
-                                             "again), or close it; typing filters the list"),
-    ("↑ / ↓, Enter, Esc", "In the agent list, move, open the highlighted agent's log (on main, only leave), "
-                          "or go back; other typing leaves it too"),
+    ("↑ / ↓, PageUp / PageDown, Enter, Esc", "In the /sessions, /rewind or /model list, move, take the highlighted "
+                                             "row (switch to that session, put that prompt in the composer to send "
+                                             "again, or switch this session to that model), or close it; typing "
+                                             "filters the list"),
+    ("↑ / ↓, Enter, Esc, ←, q, Ctrl+C", "In the agent list, move, open the highlighted agent's log (on main, "
+                                        "only leave), or go back; any other key does nothing there"),
     ("x, s", "In the agent list, on an agent: x twice interrupts it; s steers it with the next line you send "
              "(Esc cancels)"),
     ("Click", "On a row of the agent list, opens that agent's log (on main, only leaves the list)"),

@@ -220,16 +220,16 @@ class SearchTests(unittest.TestCase):
         search.handle_key(Paste("flaky\nignored"))
         self.assertEqual(search.query, "flaky")
 
-    def test_the_slot_shows_the_query_the_match_and_the_keys(self) -> None:
+    def test_the_slot_shows_the_match_then_the_query_and_the_keys(self) -> None:
         search = self.search()
         self.typed(search, "git")
         rows = lines_text(search.lines(80, DEFAULT_THEME, 4))
-        self.assertTrue(rows[0].startswith("⌕ search history: git"), rows)
-        self.assertIn("ctrl+r older", rows[0])
-        self.assertEqual(rows[1].rstrip(), "› git push  1/2")
+        self.assertEqual(rows[0].rstrip(), "› git push  1/2")
+        self.assertTrue(rows[1].startswith("⌕ search history: git"), rows)
+        self.assertIn("ctrl+r older", rows[1])
         empty = HistorySearch(self.ENTRIES, "")
         self.typed(empty, "nothing like it")
-        self.assertEqual(lines_text(empty.lines(80, DEFAULT_THEME, 4))[1], "  no earlier prompt holds it")
+        self.assertEqual(lines_text(empty.lines(80, DEFAULT_THEME, 4))[0], "  no earlier prompt holds it")
 
     def test_a_narrow_slot_keeps_the_way_out(self) -> None:
         search = self.search()
@@ -237,7 +237,7 @@ class SearchTests(unittest.TestCase):
         for width, keys in ((80, "ctrl+r older · enter takes it · esc cancels"), (60, "ctrl+r older · esc cancels"),
                             (40, "esc cancels")):
             with self.subTest(width=width):
-                self.assertEqual(lines_text(search.lines(width, DEFAULT_THEME, 4))[0].rstrip(),
+                self.assertEqual(lines_text(search.lines(width, DEFAULT_THEME, 4))[-1].rstrip(),
                                  f"⌕ search history: git  {keys}")
 
 
@@ -291,6 +291,26 @@ class AppHistoryTests(unittest.TestCase):
         self.assertEqual(self.app.composer.history[-1], "a draft never sent")  # Up still has it
         self.assertEqual(file_text(self.path), INK_FILE)
 
+    def test_what_the_tell_row_field_held_reaches_the_file_only_when_sent(self) -> None:
+        from test_tui_choice_ui import armed, press
+        from test_tui_modes import type_text
+        from test_tui_questions import TELL_APPROVAL
+        from omh.tui.keys import DOWN
+
+        def tell(text: str, key: Key) -> None:
+            self.app._on_server_request(TELL_APPROVAL)
+            armed(self.app)
+            press(self.app, *[Key(DOWN)] * 3, Key(ENTER))
+            type_text(self.app, text)
+            self.app._on_input(key)
+
+        tell("half a thought", Key(ESCAPE))  # left unsent: this session's history only
+        self.assertEqual(self.app.composer.history[-1], "half a thought")
+        self.assertEqual(file_text(self.path), INK_FILE)
+        tell("use ./tmp instead", Key(ENTER))  # sent from the composer, like any line
+        self.assertEqual(load_history(self.path)[-1], "use ./tmp instead")
+        self.assertNotIn("half a thought", file_text(self.path))
+
     def test_ctrl_r_searches_and_enter_takes_the_match_into_the_composer(self) -> None:
         from test_tui_modes import type_text
 
@@ -299,7 +319,7 @@ class AppHistoryTests(unittest.TestCase):
         self.assertIsNotNone(self.app.search)
         type_text(self.app, "ls")
         rows = lines_text(self.app._slot_lines(80, 24))
-        self.assertTrue(rows[0].startswith("⌕ search history: ls"), rows)
+        self.assertEqual(rows[-1].rstrip(), "⌕ search history: ls", rows)  # its keys are on the mode row here
         self.assertEqual(self.app.composer.text, "half")  # untouched while searching
         self.app._on_input(Key(ENTER))
         self.assertIsNone(self.app.search)

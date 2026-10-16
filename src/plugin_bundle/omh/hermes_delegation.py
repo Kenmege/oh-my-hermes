@@ -2128,13 +2128,17 @@ def _attach_opening_goals(connection: sqlite3.Connection, children: list[dict[st
         child["opening_goal"] = opened.get(child["session_id"], "")
 
 
-def _query_state_db(state_db: Path, *, now: float, session_ref: str | None = None) -> dict[str, Any]:
+def _query_state_db(
+    state_db: Path, *, now: float, session_ref: str | None = None, owned_only: bool = False
+) -> dict[str, Any]:
     """Read child sessions, usage tallies, and delegation states, read-only.
 
     `owners` is the conversation the rows were selected for, and is empty in
     global scope. It is reported rather than kept private because ownership
     of a child and ownership of the route prepared for it are the same
-    question, answered once here.
+    question, answered once here. With `owned_only`, a `session_ref` that
+    maps to no conversation selects no children, in session scope, instead
+    of the global fallback.
     """
     result: dict[str, Any] = {
         "children": [],
@@ -2167,6 +2171,9 @@ def _query_state_db(state_db: Path, *, now: float, session_ref: str | None = Non
         parameters: list[Any] = [now - _SESSION_WINDOW_SECONDS]
         if session_ref is not None:
             owners = _conversation_session_ids(connection, session_ref)
+            if not owners and owned_only:
+                result["scope"] = "session"
+                return result
             if owners:
                 result["scope"] = "session"
                 result["owners"] = frozenset(owners)
@@ -2329,8 +2336,13 @@ def read_hermes_native_subagents(
     limit: int = _ROW_LIMIT,
     omh_home: str | Path | None = None,
     session_ref: str | None = None,
+    owned_only: bool = False,
 ) -> dict[str, Any]:
-    """Project owned native children, or explicitly global fallback activity."""
+    """Project owned native children, or explicitly global fallback activity.
+
+    `owned_only` drops the fallback: a reference that maps to no conversation
+    owns no children (see `_query_state_db`).
+    """
     current = float(now) if now is not None else time.time()
     home = Path(hermes_home).expanduser() if hermes_home else runtime_paths.default_hermes_home()
     # Category labels honor the user's ~/.omh/routing/model-chains.json
@@ -2347,7 +2359,7 @@ def read_hermes_native_subagents(
         "blocked": 0,
         "completed": 0,
     }
-    state = _query_state_db(home / "state.db", now=current, session_ref=session_ref)
+    state = _query_state_db(home / "state.db", now=current, session_ref=session_ref, owned_only=owned_only)
     payload["scope"] = state["scope"]
     payload["read_status"] = state["read_status"]
     payload["selection_capped"] = state["selection_capped"]

@@ -176,6 +176,29 @@ class StatusBarContrastTests(unittest.TestCase):
                             self.assertGreaterEqual(contrast(span.style.fg, bar), minimum)
 
 
+class StatusBarTintTests(unittest.TestCase):
+    """The audit's G8: on a light terminal the status line was the palette's dark bar, a band across a light screen."""
+
+    def test_a_light_terminal_gets_a_light_bar_of_the_palettes_own_and_a_dark_or_unknown_one_keeps_it(self) -> None:
+        tints = set()
+        for skin in SKIN_THEMES:
+            own = build_theme(skin, None).status.bg  # no background reported: the palette's bar
+            assert own is not None
+            self.assertFalse(is_light(own), skin.short_name)
+            for background in DARK_BACKGROUNDS:
+                with self.subTest(theme=skin.short_name, background=background):
+                    self.assertEqual(build_theme(skin, background).status.bg, own)
+            for background in LIGHT_BACKGROUNDS:
+                with self.subTest(theme=skin.short_name, background=background):
+                    bar = build_theme(skin, background).status.bg
+                    assert bar is not None
+                    self.assertTrue(is_light(bar), bar)
+                    self.assertNotEqual(bar.upper(), background.upper())  # still a bar, not the background
+                    if background == "#FFFFFF":
+                        tints.add(bar)
+        self.assertGreater(len(tints), 1)  # each palette tints its own bar, not one grey for all
+
+
 class DimCarriesNoWordsTests(unittest.TestCase):
     """`dim` reaches only the 3:1 a glyph needs, so no span the TUI draws in it may hold words."""
 

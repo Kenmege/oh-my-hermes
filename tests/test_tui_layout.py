@@ -5,13 +5,11 @@ sizes, so a rule that holds at 24 rows but breaks at 7 or 80 shows up. The
 hard ones: the region is never taller than `rows - 1`, composer and status
 fit before anything else, the rows under the composer follow the terminal's
 height alone (the mode row goes before the bottom rule), the caps hold, and
-`min_height` is honoured with pad rows. `compose` is checked for row order,
-the tail keeping its last rows, and the exact row count. The focused agent
-list is the one content size that changes the rows under the composer; it is
-checked over the same sizes for the bounds that matter: the region is exactly
-as tall as it would be without the list, and nothing above the composer is
-lost that the list did not need. A hidden composer (a question answered by
-picking) is checked over the same grid: no rules or input rows, the mode row
+`min_height` is honoured with pad rows (the app passes it once the region sits
+on the screen's last row), and nothing is cut while the region has room.
+`compose` is checked for row order, the tail keeping its last rows, and the
+exact row count. A hidden composer (a question answered by picking, a picker,
+the agent list) is checked over the same grid: no rules or input rows, the mode row
 and the status line exactly where the composer leaves them, and the slot given
 its `choice_cap`, at least one row wherever the composer had one.
 """
@@ -32,8 +30,6 @@ from omh.tui.layout import (
     MIN_ROWS,
     MODE_ROW_MIN_ROWS,
     Budget,
-    agent_list_cap,
-    agent_list_room,
     allocate,
     caret_row,
     choice_cap,
@@ -61,20 +57,18 @@ class AllocateGridTests(unittest.TestCase):
         for rows, cols, tail_rows, slot_rows, composer_rows, sticky in itertools.product(
             ROWS, COLS, TAIL_ROWS, SLOT_ROWS, COMPOSER_ROWS, (False, True)
         ):
-            for min_height in (0, rows // 2, rows - 1, rows + 3):
-                budget = allocate(
-                    rows,
-                    cols,
-                    sticky=sticky,
-                    tail_rows=tail_rows,
-                    slot_rows=slot_rows,
-                    composer_rows=composer_rows,
-                    min_height=min_height,
-                )
-                where = (rows, cols, tail_rows, slot_rows, composer_rows, sticky, min_height, budget)
-                self.check_budget(budget, rows, cols, tail_rows, slot_rows, composer_rows, sticky, min_height, where)
-                checked += 1
-        self.assertGreater(checked, 100_000)
+            budget = allocate(
+                rows,
+                cols,
+                sticky=sticky,
+                tail_rows=tail_rows,
+                slot_rows=slot_rows,
+                composer_rows=composer_rows,
+            )
+            where = (rows, cols, tail_rows, slot_rows, composer_rows, sticky, budget)
+            self.check_budget(budget, rows, cols, tail_rows, slot_rows, composer_rows, sticky, where)
+            checked += 1
+        self.assertGreater(checked, 25_000)
 
     def check_budget(
         self,
@@ -85,13 +79,11 @@ class AllocateGridTests(unittest.TestCase):
         slot_rows: int,
         composer_rows: int,
         sticky: bool,
-        min_height: int,
         where: tuple[object, ...],
     ) -> None:
         room = max(rows - 1, 0)
-        content = budget.total - budget.pad
+        content = budget.total
         parts = (
-            budget.pad,
             budget.sticky,
             budget.tail,
             budget.slot,
@@ -138,21 +130,17 @@ class AllocateGridTests(unittest.TestCase):
             # the sticky row is never taken while the slot is short of its cap
             if budget.sticky:
                 self.assertEqual(budget.slot, min(slot_rows, rows // 3), where)
-        # no-shrink: pad rows bring the region up to min_height, never past the room, never needlessly
-        self.assertEqual(budget.total, max(content, min(min_height, room)), where)
-        if min_height <= content:
-            self.assertEqual(budget.pad, 0, where)
 
 
 def budget(**rows: int) -> Budget:
     """A `Budget` with every part not named at 0."""
-    parts = ("pad", "sticky", "tail", "slot", "rule", "composer", "bottom_rule", "mode", "status")
+    parts = ("sticky", "tail", "slot", "rule", "composer", "bottom_rule", "mode", "status")
     return Budget(**{part: rows.get(part, 0) for part in parts})
 
 
 class AllocateExampleTests(unittest.TestCase):
     def test_an_everyday_terminal(self) -> None:
-        got = allocate(24, 80, sticky=True, tail_rows=3, slot_rows=4, composer_rows=1, min_height=0)
+        got = allocate(24, 80, sticky=True, tail_rows=3, slot_rows=4, composer_rows=1)
         self.assertEqual(got, budget(sticky=1, tail=3, slot=4, rule=1, composer=1, bottom_rule=1, mode=1, status=1))
         self.assertEqual(got.total, 13)
         self.assertEqual(got.composer_top, 9)
@@ -160,30 +148,26 @@ class AllocateExampleTests(unittest.TestCase):
         self.assertEqual(got.total - got.composer_top, got.composer + 3)
 
     def test_the_tail_takes_the_rest_and_the_slot_is_capped(self) -> None:
-        got = allocate(24, 80, sticky=True, tail_rows=100, slot_rows=100, composer_rows=100, min_height=0)
+        got = allocate(24, 80, sticky=True, tail_rows=100, slot_rows=100, composer_rows=100)
         self.assertEqual(got, budget(sticky=1, tail=4, slot=8, rule=1, composer=6, bottom_rule=1, mode=1, status=1))
         self.assertEqual(got.total, 23)
 
-    def test_pad_rows_hold_the_previous_height(self) -> None:
-        got = allocate(24, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1, min_height=15)
-        self.assertEqual(got, budget(pad=10, rule=1, composer=1, bottom_rule=1, mode=1, status=1))
-
-    def test_pad_never_pushes_past_the_room(self) -> None:
-        got = allocate(10, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1, min_height=50)
-        self.assertEqual(got.total, 9)
-        self.assertEqual(got.pad, 4)
+    def test_an_idle_region_is_its_composer_frame_and_status_line_alone(self) -> None:
+        got = allocate(24, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1)
+        self.assertEqual(got, budget(rule=1, composer=1, bottom_rule=1, mode=1, status=1))
+        self.assertEqual(got.total, 5)
 
     def test_a_tiny_terminal_draws_composer_and_status_only(self) -> None:
         for rows, cols in ((5, 80), (24, MIN_COLS - 1)):
             with self.subTest(rows=rows, cols=cols):
-                got = allocate(rows, cols, sticky=True, tail_rows=9, slot_rows=9, composer_rows=1, min_height=0)
+                got = allocate(rows, cols, sticky=True, tail_rows=9, slot_rows=9, composer_rows=1)
                 self.assertEqual(got, budget(composer=1, status=1))
 
     def test_a_short_terminal_drops_the_mode_row_then_the_bottom_rule(self) -> None:
         shapes = {
             rows: (got.bottom_rule, got.mode)
             for rows in range(MIN_ROWS, 13)
-            for got in [allocate(rows, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1, min_height=0)]
+            for got in [allocate(rows, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1)]
         }
         self.assertEqual(
             shapes, {6: (0, 0), 7: (1, 0), 8: (1, 0), 9: (1, 0), 10: (1, 1), 11: (1, 1), 12: (1, 1)}
@@ -194,13 +178,13 @@ class AllocateExampleTests(unittest.TestCase):
         # still gets every row it may take: neither ever costs the slot a row.
         for rows in range(MIN_ROWS, 86):
             with self.subTest(rows=rows):
-                got = allocate(rows, 80, sticky=False, tail_rows=0, slot_rows=999, composer_rows=999, min_height=0)
+                got = allocate(rows, 80, sticky=False, tail_rows=0, slot_rows=999, composer_rows=999)
                 self.assertEqual(got.slot, slot_cap(rows, 80))
 
     def test_the_smallest_terminals(self) -> None:
-        two = allocate(2, 80, sticky=True, tail_rows=9, slot_rows=9, composer_rows=3, min_height=9)
+        two = allocate(2, 80, sticky=True, tail_rows=9, slot_rows=9, composer_rows=3)
         self.assertEqual(two, budget(composer=1))
-        one = allocate(1, 80, sticky=True, tail_rows=9, slot_rows=9, composer_rows=3, min_height=9)
+        one = allocate(1, 80, sticky=True, tail_rows=9, slot_rows=9, composer_rows=3)
         self.assertEqual(one.total, 0)
 
     def test_the_caps(self) -> None:
@@ -217,24 +201,21 @@ class HiddenComposerBudgetTests(unittest.TestCase):
         for rows, cols, tail_rows, slot_rows, composer_rows, sticky in itertools.product(
             ROWS, COLS, TAIL_ROWS, SLOT_ROWS, COMPOSER_ROWS, (False, True)
         ):
-            for min_height in (0, rows // 2, rows - 1, rows + 3):
-                parts = dict(sticky=sticky, tail_rows=tail_rows, slot_rows=slot_rows, min_height=min_height)
-                shown = allocate(rows, cols, composer_rows=composer_rows, **parts)  # type: ignore[arg-type]
-                got = allocate(rows, cols, composer_rows=composer_rows, composer_hidden=True, **parts)  # type: ignore[arg-type]
-                where = (rows, cols, tail_rows, slot_rows, composer_rows, sticky, min_height, got)
-                self.assertEqual((got.rule, got.composer, got.bottom_rule), (0, 0, 0), where)
-                self.assertEqual((got.mode, got.status), (shown.mode, shown.status), where)
-                self.assertLessEqual(got.total, max(rows - 1, 0), where)
-                self.assertTrue(all(part >= 0 for part in (got.pad, got.sticky, got.tail, got.slot)), where)
-                self.assertEqual(got.slot, min(slot_rows, choice_cap(rows, cols)), where)
-                if slot_rows and shown.composer:
-                    self.assertGreaterEqual(got.slot, 1, where)  # the highlighted row, at least
-                if rows < MIN_ROWS or cols < MIN_COLS:
-                    self.assertEqual((got.sticky, got.tail), (0, 0), where)
-                content = got.total - got.pad
-                self.assertEqual(got.total, max(content, min(min_height, max(rows - 1, 0))), where)
-                checked += 1
-        self.assertGreater(checked, 100_000)
+            parts = dict(sticky=sticky, tail_rows=tail_rows, slot_rows=slot_rows)
+            shown = allocate(rows, cols, composer_rows=composer_rows, **parts)  # type: ignore[arg-type]
+            got = allocate(rows, cols, composer_rows=composer_rows, composer_hidden=True, **parts)  # type: ignore[arg-type]
+            where = (rows, cols, tail_rows, slot_rows, composer_rows, sticky, got)
+            self.assertEqual((got.rule, got.composer, got.bottom_rule), (0, 0, 0), where)
+            self.assertEqual((got.mode, got.status), (shown.mode, shown.status), where)
+            self.assertLessEqual(got.total, max(rows - 1, 0), where)
+            self.assertTrue(all(part >= 0 for part in (got.sticky, got.tail, got.slot)), where)
+            self.assertEqual(got.slot, min(slot_rows, choice_cap(rows, cols)), where)
+            if slot_rows and shown.composer:
+                self.assertGreaterEqual(got.slot, 1, where)  # the highlighted row, at least
+            if rows < MIN_ROWS or cols < MIN_COLS:
+                self.assertEqual((got.sticky, got.tail), (0, 0), where)
+            checked += 1
+        self.assertGreater(checked, 25_000)
 
     def test_the_cap_is_the_slots_and_a_one_row_composer_frames(self) -> None:
         sizes = (1, 2, 5, 6, 7, 9, 10, 24, 80)
@@ -242,13 +223,13 @@ class HiddenComposerBudgetTests(unittest.TestCase):
         self.assertEqual(choice_cap(24, MIN_COLS - 1), 1)  # too narrow for a slot: the composer's own row
         for rows in sizes:
             with self.subTest(rows=rows):
-                frame = allocate(rows, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1, min_height=0)
+                frame = allocate(rows, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1)
                 self.assertEqual(choice_cap(rows, 80), slot_cap(rows, 80) + frame.rule + frame.composer + frame.bottom_rule)
 
     def test_an_everyday_terminal(self) -> None:
-        got = allocate(24, 80, sticky=True, tail_rows=3, slot_rows=5, composer_rows=2, min_height=0, composer_hidden=True)
+        got = allocate(24, 80, sticky=True, tail_rows=3, slot_rows=5, composer_rows=2, composer_hidden=True)
         self.assertEqual(got, budget(sticky=1, tail=3, slot=5, mode=1, status=1))
-        got = allocate(24, 80, sticky=True, tail_rows=100, slot_rows=100, composer_rows=1, min_height=23, composer_hidden=True)
+        got = allocate(24, 80, sticky=True, tail_rows=100, slot_rows=100, composer_rows=1, composer_hidden=True)
         self.assertEqual(got, budget(sticky=1, tail=9, slot=11, mode=1, status=1))
 
 
@@ -257,124 +238,16 @@ class SlotCaretTests(unittest.TestCase):
 
     def test_the_caret_lands_on_its_slot_row_and_none_when_that_row_is_cut(self) -> None:
         slot = plain("header", "row 1", "row 2", " › re")
-        frame = build_frame(cols=80, rows=24, composer=None, status=plain("status")[0], previous_height=0, slot=slot,
+        frame = build_frame(cols=80, rows=24, composer=None, status=plain("status")[0], slot=slot,
                             slot_caret=(3, 5))
         row, col = frame.cursor  # type: ignore[misc]
         self.assertEqual(lines_text([frame.lines[row]]), [" › re"])
         self.assertEqual(col, 5)
-        cut = build_frame(cols=80, rows=24, composer=None, status=plain("status")[0], previous_height=0,
+        cut = build_frame(cols=80, rows=24, composer=None, status=plain("status")[0],
                           slot=slot + plain(*[f"more {n}" for n in range(20)]), slot_caret=(23, 5))
         self.assertIsNone(cut.cursor)  # its row is past the slot's cap
-        self.assertIsNone(build_frame(cols=80, rows=24, composer=None, status=plain("status")[0], previous_height=0,
+        self.assertIsNone(build_frame(cols=80, rows=24, composer=None, status=plain("status")[0],
                                       slot=slot).cursor)
-
-
-class AgentListBudgetTests(unittest.TestCase):
-    def test_the_list_takes_the_mode_rows_place_and_its_own_height(self) -> None:
-        plain_row = allocate(24, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1, min_height=23)
-        listed = allocate(
-            24, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1, min_height=23, agent_list_rows=5
-        )
-        self.assertEqual((plain_row.mode, listed.mode), (1, 5))
-        self.assertEqual((plain_row.total, listed.total), (23, 23))  # the pad gave the four rows
-        self.assertEqual(plain_row.composer_top - listed.composer_top, 4)
-
-    def test_the_cap_is_what_the_frame_and_a_full_composer_leave(self) -> None:
-        self.assertEqual([agent_list_cap(rows, 80) for rows in (6, 9, 10, 11, 12, 13, 16, 24, 80)], [0, 0, 4, 5, 5, 6, 8, 14, 56])
-        self.assertEqual(agent_list_cap(24, MIN_COLS - 1), 0)
-        for rows in range(MODE_ROW_MIN_ROWS, 86):
-            with self.subTest(rows=rows):
-                self.assertGreaterEqual(agent_list_cap(rows, 80), 4)  # three agents and the hint, at least
-
-    def test_no_list_of_any_length_breaks_the_budget_at_any_size(self) -> None:
-        for rows, cols, composer_rows, asked in itertools.product(ROWS, COLS, COMPOSER_ROWS, (1, 2, 4, 8, 30, 500)):
-            got = allocate(
-                rows, cols, sticky=True, tail_rows=40, slot_rows=9, composer_rows=composer_rows, min_height=rows + 3,
-                agent_list_rows=asked,
-            )
-            without = allocate(
-                rows, cols, sticky=True, tail_rows=40, slot_rows=9, composer_rows=composer_rows, min_height=rows + 3
-            )
-            where = f"{rows}x{cols} composer {composer_rows} list {asked}"
-            self.assertLessEqual(got.total, max(rows - 1, 0), where)
-            self.assertEqual(got.total, without.total, where)
-            self.assertEqual(got.mode, min(asked, agent_list_cap(rows, cols)), where)
-            # the composer, its two rules and the status line are what they were without the list
-            self.assertEqual(
-                (got.rule, got.composer, got.bottom_rule, got.status),
-                (without.rule, without.composer, without.bottom_rule, without.status),
-                where,
-            )
-            if not without.mode:
-                self.assertEqual(got, without, where)  # no mode row to replace: the list is not drawn
-
-    def test_the_list_never_makes_the_region_taller_and_takes_the_pad_before_the_rows_above_the_rule(self) -> None:
-        sizes = itertools.product(ROWS, COLS, COMPOSER_ROWS, (0, 1, 3, 9), (0, 2, 40), (0, 2, 7, 40), (1, 2, 4, 8, 30))
-        for rows, cols, composer_rows, slot_rows, tail_rows, min_height, asked in sizes:
-            parts = dict(sticky=True, tail_rows=tail_rows, slot_rows=slot_rows, composer_rows=composer_rows, min_height=min_height)
-            without = allocate(rows, cols, **parts)  # type: ignore[arg-type]
-            got = allocate(rows, cols, **parts, agent_list_rows=asked)  # type: ignore[arg-type]
-            room = agent_list_room(rows, cols, **parts)  # type: ignore[arg-type]
-            where = f"{rows}x{cols} composer {composer_rows} slot {slot_rows} tail {tail_rows} min {min_height} list {asked}"
-            self.assertEqual(got.total, without.total, where)
-            if not without.mode:
-                self.assertEqual((got, room), (without, 0), where)
-                continue
-            # The room is all of the region but the top rule, the composer, the bottom rule and the status line.
-            self.assertEqual(room, min(agent_list_cap(rows, cols), without.total - without.composer - 3), where)
-            self.assertEqual(got.mode, min(asked, room), where)
-            # Its extra rows come out of the pad first; what the pad cannot give, the slot, sticky and tail give.
-            taken_above = (without.slot + without.sticky + without.tail) - (got.slot + got.sticky + got.tail)
-            self.assertEqual(without.pad - got.pad, min(got.mode - 1, without.pad), where)
-            self.assertEqual(taken_above, got.mode - 1 - min(got.mode - 1, without.pad), where)
-            self.assertEqual((got.rule, got.composer, got.bottom_rule, got.status), (1, without.composer, 1, 1), where)
-
-    def test_the_lists_room_by_example(self) -> None:
-        rest = dict(sticky=False, tail_rows=0, slot_rows=0, composer_rows=1)
-        self.assertEqual(agent_list_room(24, 80, **rest, min_height=23), 14)  # type: ignore[arg-type]  # the cap
-        self.assertEqual(agent_list_room(24, 80, **rest, min_height=7), 3)  # type: ignore[arg-type]  # two pad rows
-        self.assertEqual(agent_list_room(24, 80, **rest, min_height=0), 1)  # type: ignore[arg-type]  # the mode row alone
-        self.assertEqual(agent_list_room(24, 80, sticky=True, tail_rows=4, slot_rows=0, composer_rows=1, min_height=0), 6)
-        self.assertEqual(agent_list_room(9, 80, **rest, min_height=8), 0)  # type: ignore[arg-type]  # no mode row
-
-    def test_compose_draws_the_list_where_the_mode_row_was_and_keeps_its_first_rows(self) -> None:
-        parts = budget(rule=1, composer=1, bottom_rule=1, mode=3, status=1)
-        region = compose(
-            parts,
-            sticky=None,
-            tail=[],
-            slot=[],
-            rule=(Span("──"),),
-            composer=plain("› a"),
-            bottom_rule=(Span("__"),),
-            mode=(Span("mode"),),
-            status=(Span("status"),),
-            agent_list=plain("main", "agent 1", "agent 2", "hint"),
-        )
-        self.assertEqual(lines_text(region), ["──", "› a", "__", "main", "agent 1", "agent 2", "status"])
-        self.assertEqual(len(region), parts.total)
-
-    def test_a_frame_with_the_list_puts_it_over_the_status_line_and_the_caret_on_the_composer(self) -> None:
-        composer = Composer(text="hi", caret=2)
-        status = (Span("status"),)
-        resting = build_frame(cols=40, rows=24, composer=composer, status=status, previous_height=23, mode_row=(Span("mode"),))
-        offered: list[int] = []
-
-        def agent_list(room: int) -> list[Line]:
-            offered.append(room)
-            return plain("main", "agent 1", "x" * 60)
-
-        listed = build_frame(
-            cols=40, rows=24, composer=composer, status=status, previous_height=23, mode_row=(Span("mode"),),
-            agent_list=agent_list,
-        )
-        self.assertEqual(offered, [14])
-        self.assertEqual(lines_text(list(resting.lines))[-4:], ["› hi", "─" * 40, "mode", "status"])
-        self.assertEqual(
-            lines_text(list(listed.lines))[-6:], ["› hi", "─" * 40, "main", "agent 1", "x" * 39 + "…", "status"]
-        )
-        self.assertEqual((listed.height, resting.height), (23, 23))
-        self.assertEqual(listed.cursor, (resting.cursor[0] - 2, resting.cursor[1]))
 
 
 class ComposeTests(unittest.TestCase):
@@ -385,7 +258,7 @@ class ComposeTests(unittest.TestCase):
         self.status = (Span("status"),)
 
     def test_rows_stack_in_order_and_the_tail_keeps_its_last_rows(self) -> None:
-        parts = budget(pad=2, sticky=1, tail=2, slot=2, rule=1, composer=2, bottom_rule=1, mode=1, status=1)
+        parts = budget(sticky=1, tail=2, slot=2, rule=1, composer=2, bottom_rule=1, mode=1, status=1)
         region = compose(
             parts,
             sticky=(Span("↳ you: hi"),),
@@ -399,7 +272,7 @@ class ComposeTests(unittest.TestCase):
         )
         self.assertEqual(
             lines_text(region),
-            ["", "", "↳ you: hi", "t3", "t4", "s1", "s2", "──", "› a", "  b", "__", "mode", "status"],
+            ["↳ you: hi", "t3", "t4", "s1", "s2", "──", "› a", "  b", "__", "mode", "status"],
         )
         self.assertEqual(len(region), parts.total)
 
@@ -434,53 +307,65 @@ class ComposeTests(unittest.TestCase):
         self.assertEqual(lines_text(region), ["› a", "status"])
 
     def test_caret_row_counts_everything_above_the_composer(self) -> None:
-        parts = budget(pad=2, sticky=1, tail=2, slot=2, rule=1, composer=3, bottom_rule=1, mode=1, status=1)
-        self.assertEqual([caret_row(parts, row) for row in (-1, 0, 1, 2, 7)], [8, 8, 9, 10, 10])
+        parts = budget(sticky=1, tail=2, slot=2, rule=1, composer=3, bottom_rule=1, mode=1, status=1)
+        self.assertEqual([caret_row(parts, row) for row in (-1, 0, 1, 2, 7)], [6, 6, 7, 8, 8])
 
 
 class FrameTests(unittest.TestCase):
     def setUp(self) -> None:
         self.status = (Span("status"),)
 
-    def test_the_first_frame_fills_the_screen_but_one_row(self) -> None:
+    def test_a_frame_is_exactly_as_tall_as_what_it_holds(self) -> None:
         composer = Composer(text="hi", caret=2)
-        frame = build_frame(
-            cols=40, rows=10, composer=composer, status=self.status, previous_height=0, mode_row=(Span("mode"),)
-        )
-        self.assertEqual((frame.height, frame.pad), (9, 4))
-        self.assertEqual(lines_text(list(frame.lines))[-5:], ["─" * 40, "› hi", "─" * 40, "mode", "status"])
-        self.assertEqual(frame.cursor, (5, 4))
+        frame = build_frame(cols=40, rows=10, composer=composer, status=self.status, mode_row=(Span("mode"),))
+        self.assertEqual(frame.height, 5)
+        self.assertEqual(lines_text(list(frame.lines)), ["─" * 40, "› hi", "─" * 40, "mode", "status"])
+        self.assertEqual(frame.cursor, (1, 4))
 
-    def test_later_frames_keep_the_previous_height_and_grow_past_it(self) -> None:
+    def test_a_menu_below_sits_between_the_bottom_rule_and_the_mode_row_and_shares_the_slots_cap(self) -> None:
+        composer = Composer(text="/", caret=1)
+        frame = build_frame(cols=40, rows=24, composer=composer, status=self.status, mode_row=(Span("mode"),),
+                            slot=plain("⧗ queued"), below=plain("/help", "/model"))
+        self.assertEqual(lines_text(list(frame.lines)),
+                         ["⧗ queued", "─" * 40, "› /", "─" * 40, "/help", "/model", "mode", "status"])
+        self.assertEqual(frame.cursor, (2, 3))  # the caret's row is counted from the top, as without the menu
+        self.assertEqual((frame.budget.slot, frame.budget.below), (1, 2))
+        full = build_frame(cols=40, rows=24, composer=composer, status=self.status, slot=plain(*"abc"),
+                           below=plain(*"0123456789"))
+        self.assertEqual(full.budget.below, slot_cap(24, 40))
+        self.assertEqual(full.budget.slot + full.budget.below, slot_cap(24, 40))
+        hidden = build_frame(cols=40, rows=24, composer=None, status=self.status, below=plain("/help"))
+        self.assertEqual(hidden.budget.below, 0)  # no composer, nothing under it
+
+    def test_a_frame_grows_and_shrinks_with_its_content(self) -> None:
         composer = Composer()
-        kept = build_frame(cols=40, rows=24, composer=composer, status=self.status, previous_height=7)
-        self.assertEqual((kept.height, kept.pad), (7, 2))
-        grown = build_frame(
-            cols=40, rows=24, composer=composer, status=self.status, previous_height=7, tail=plain("a", "b", "c")
-        )
-        self.assertEqual((grown.height, grown.pad), (8, 0))
+        grown = build_frame(cols=40, rows=24, composer=composer, status=self.status, tail=plain("a", "b", "c"))
+        self.assertEqual(grown.height, 8)
         self.assertEqual(lines_text(list(grown.lines))[:3], ["a", "b", "c"])
+        shrunk = build_frame(cols=40, rows=24, composer=composer, status=self.status, tail=plain("c"))
+        self.assertEqual((shrunk.height, lines_text(list(shrunk.lines))[0]), (6, "c"))
 
     def test_the_composer_is_rendered_within_its_cap(self) -> None:
         composer = Composer(text="1\n2\n3\n4\n5", caret=9)
-        frame = build_frame(cols=40, rows=12, composer=composer, status=self.status, previous_height=11)
+        frame = build_frame(cols=40, rows=12, composer=composer, status=self.status)
         self.assertEqual(frame.budget.composer, 3)
         self.assertEqual(lines_text(list(frame.lines))[-6:], ["  3", "  4", "  5", "─" * 40, "", "status"])
-        self.assertEqual(frame.cursor, (7, 3))
+        self.assertEqual(frame.cursor, (3, 3))
 
-    def test_the_attachment_row_tops_the_composer_and_the_input_row_stays_put(self) -> None:
+    def test_the_attachment_row_tops_the_composer_within_its_cap(self) -> None:
         chips = (Span("📎 shot.png 1280×720"),)
-        for text in ("", "1\n2\n3\n4\n5"):
+        for text, grows in (("", 1), ("1\n2\n3\n4\n5", 0)):
             with self.subTest(text=text):
                 composer = Composer(text=text, caret=len(text))
-                plain_frame = build_frame(cols=40, rows=12, composer=composer, status=self.status, previous_height=11)
+                plain_frame = build_frame(cols=40, rows=12, composer=composer, status=self.status)
                 with_chips = build_frame(
-                    cols=40, rows=12, composer=composer, status=self.status, previous_height=11, attachments=chips
+                    cols=40, rows=12, composer=composer, status=self.status, attachments=chips
                 )
-                self.assertEqual(with_chips.height, plain_frame.height)
-                self.assertEqual(with_chips.cursor, plain_frame.cursor)
+                self.assertEqual(with_chips.height, plain_frame.height + grows)  # a composer at its cap stays there
+                self.assertEqual(with_chips.cursor, (plain_frame.cursor[0] + grows, plain_frame.cursor[1]))
                 last_input = with_chips.budget.composer_top + with_chips.budget.composer - 1
-                self.assertEqual(lines_text([with_chips.lines[last_input]]), lines_text([plain_frame.lines[last_input]]))
+                plain_last = plain_frame.budget.composer_top + plain_frame.budget.composer - 1
+                self.assertEqual(lines_text([with_chips.lines[last_input]]), lines_text([plain_frame.lines[plain_last]]))
                 self.assertLessEqual(with_chips.budget.composer, composer_cap(12))
                 top = with_chips.budget.composer_top
                 self.assertEqual(lines_text([with_chips.lines[top]]), ["📎 shot.png 1280×720"])
@@ -488,13 +373,13 @@ class FrameTests(unittest.TestCase):
 
     def test_a_terminal_too_short_for_two_composer_rows_drops_the_attachment_row(self) -> None:
         frame = build_frame(
-            cols=40, rows=7, composer=Composer(), status=self.status, previous_height=6, attachments=(Span("📎 x"),)
+            cols=40, rows=7, composer=Composer(), status=self.status, attachments=(Span("📎 x"),)
         )
         self.assertNotIn("📎 x", lines_text(list(frame.lines)))
 
     def test_a_tiny_terminal_frame_is_composer_and_status(self) -> None:
         frame = build_frame(
-            cols=12, rows=4, composer=Composer(), status=self.status, previous_height=2, slot=plain("menu")
+            cols=12, rows=4, composer=Composer(), status=self.status, slot=plain("menu")
         )
         self.assertEqual(lines_text(list(frame.lines)), ["› ", "status"])
         self.assertEqual(frame.cursor, (0, 2))
@@ -513,7 +398,7 @@ class FrameTests(unittest.TestCase):
         for mode, (glyph, style) in expected.items():
             with self.subTest(mode=mode):
                 frame = build_frame(
-                    cols=30, rows=24, composer=Composer(), status=self.status, previous_height=0, mode=mode
+                    cols=30, rows=24, composer=Composer(), status=self.status, mode=mode
                 )
                 top, bottom = frame.budget.composer_top - 1, frame.budget.composer_top + frame.budget.composer
                 for row in (top, bottom):
@@ -522,7 +407,7 @@ class FrameTests(unittest.TestCase):
     def test_the_placeholder_is_drawn_after_the_prompt_and_never_typed(self) -> None:
         composer = Composer()
         frame = build_frame(
-            cols=40, rows=24, composer=composer, status=self.status, previous_height=0, placeholder="Ask Hermes anything"
+            cols=40, rows=24, composer=composer, status=self.status, placeholder="Ask Hermes anything"
         )
         row = frame.lines[frame.budget.composer_top]
         self.assertEqual(lines_text([row]), ["› Ask Hermes anything"])
@@ -534,7 +419,6 @@ class FrameTests(unittest.TestCase):
             rows=24,
             composer=Composer(text="x", caret=1),
             status=self.status,
-            previous_height=0,
             placeholder="Ask Hermes anything",
         )
         self.assertEqual(lines_text([typed.lines[typed.budget.composer_top]]), ["› x"])
@@ -543,6 +427,17 @@ class FrameTests(unittest.TestCase):
         line = sticky_line("  fix the 한글 bug\nand more", 40, DEFAULT_THEME)
         self.assertEqual(lines_text([line]), ["↳ you: fix the 한글 bug"])
         self.assertEqual(lines_text([sticky_line("abcdefghij", 12, DEFAULT_THEME)]), ["↳ you: abcd…"])
+
+    def test_the_sticky_line_is_banded_as_the_status_line_so_it_never_reads_as_a_transcript_row(self) -> None:
+        # Review B NIT 9: right under the turn's last row (`▸ thought for …`), it read as one more of them.
+        from omh.tui.style import is_fill
+        from omh.tui.theme import theme_named
+
+        for theme in (DEFAULT_THEME, theme_named("sky", "#FFFFFF")):
+            with self.subTest(theme=theme.name):
+                line = sticky_line("fix the bug", 40, theme)
+                self.assertEqual({span.style.bg for span in line}, {theme.status.bg})
+                self.assertTrue(is_fill(line[-1]))  # to the right edge, as the status line's band
 
 
 if __name__ == "__main__":

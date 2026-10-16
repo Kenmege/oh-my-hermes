@@ -102,7 +102,16 @@ QUEUED_MARK = "◌"
 INTERRUPTED_MARK = "▪"
 OPEN_MARK = "↓ agents"  # what Down opens, at the end of the strip
 COLLAPSED_OPEN_MARK = "↓"  # after `2 agents`, which already says it
-NUMBER_MARK = "·"  # between the number and the name of agents whose names match on the strip
+NUMBER_MARK = "·"  # between the number and the name of agents the strip cannot tell apart by their goals' words
+# A goal word's quotes, backticks, escapes and brackets, and the punctuation after it, which a strip name that shows
+# the word alone leaves out (`'rm -rf ./tmp-d1'` parts at `./tmp-d1`).
+WORD_EDGES = "'\"`‘’“”\\()[]{}<>"
+WORD_ENDS = ",;:.!?"
+# Words that leave a strip name hanging: a goal that parts at one of them is named by it and the word after it.
+DANGLING_WORDS = frozenset({
+    "a", "an", "the", "and", "or", "but", "of", "in", "on", "at", "to", "for", "with", "by", "from", "into", "onto",
+    "as", "via", "about", "than", "that", "which", "is", "are",
+})
 SELECTED_MARK = "▸ "
 UNSELECTED_MARK = "  "
 STRIP_GAP = "  "
@@ -158,15 +167,7 @@ class Agent:
     @property
     def name(self) -> str:
         """The first words of the goal that fit `NAME_CELLS`; a first word longer than that is cut."""
-        words = self.goal.split()
-        if not words:
-            return UNNAMED
-        name = words[0]
-        for word in words[1:]:
-            if cell_width(f"{name} {word}") > NAME_CELLS:
-                break
-            name = f"{name} {word}"
-        return truncate(name, NAME_CELLS)
+        return _first_words(self.goal.split(), NAME_CELLS) or UNNAMED
 
     def elapsed(self, now: float) -> float:
         """Seconds it ran: Hermes' own figure once it finished with one, else measured from `started_at`."""
@@ -177,6 +178,32 @@ class Agent:
 
 
 # ── reading a payload ─────────────────────────────────────────────────────
+
+
+def _first_words(words: list[str], cells: int) -> str:
+    """The first of `words` that fit `cells`; a first word longer than that is cut. Empty with no words."""
+    if not words:
+        return ""
+    name = words[0]
+    for word in words[1:]:
+        if cell_width(f"{name} {word}") > cells:
+            break
+        name = f"{name} {word}"
+    return truncate(name, cells)
+
+
+def _goal_words(goal: str) -> list[str]:
+    """`goal`'s words without the quotes, backticks, escapes and brackets around them or the punctuation after them."""
+    words = (word.lstrip(WORD_EDGES).rstrip(WORD_EDGES + WORD_ENDS) for word in goal.split())
+    return [word for word in words if word]
+
+
+def _shared_words(first: list[str], second: list[str]) -> int:
+    """How many leading words `first` and `second` have in common."""
+    shared = 0
+    while shared < min(len(first), len(second)) and first[shared] == second[shared]:
+        shared += 1
+    return shared
 
 
 def _text(value: object) -> str:
@@ -311,6 +338,12 @@ class Roster:
             self._frames += 1
             agent.seen = self._frames
 
+    def lose_unfinished(self, now: float) -> None:
+        """Mark every agent that has not finished interrupted at `now`: the gateway that ran it is gone (a respawn)."""
+        for agent in self.agents.values():
+            if agent.status not in FINISHED_STATUSES:
+                agent.status, agent.finished_at = INTERRUPTED, now
+
     def clear(self) -> None:
         """Drop every agent: the app calls this when a new turn starts and when it leaves a session."""
         self.agents.clear()
@@ -409,19 +442,42 @@ class Roster:
         return sum(1 for agent in self.agents.values() if agent.status == RUNNING)
 
     def strip_names(self) -> dict[str, str]:
-        """Each agent's name on the strip: its own, or, where two or more share it, `n·` and the name (n from 1, roster order)."""
+        """Each agent's name on the strip: its own, or, where two or more share it, the word where its goal parts.
+
+        Each agent sharing a name drops the leading words its goal has in
+        common with the goal nearest it and shows the next word behind
+        `CUT_MARK` (`…alpha`), with the word after it when that one would leave
+        the name hanging (`…in src`), in `NAME_CELLS`. The words are read
+        without the quotes, backticks and brackets around them
+        (`_goal_words`). Where that still leaves one with no word, two alike,
+        or one reading as another agent's own name, each of them is `n·` and
+        the name instead (n from 1, roster order).
+        """
         names = {subagent_id: agent.name for subagent_id, agent in self.agents.items()}
-        shared = {name for name in names.values() if list(names.values()).count(name) > 1}
-        return {
-            subagent_id: f"{number}{NUMBER_MARK}{name}" if name in shared else name
-            for number, (subagent_id, name) in enumerate(names.items(), start=1)
-        }
+        numbers = {subagent_id: number for number, subagent_id in enumerate(names, start=1)}
+        shown = dict(names)
+        for name in {name for name in names.values() if list(names.values()).count(name) > 1}:
+            group = [subagent_id for subagent_id, own in names.items() if own == name]
+            goals = [_goal_words(self.agents[subagent_id].goal) for subagent_id in group]
+            parts = []
+            for index, words in enumerate(goals):
+                shared = max(_shared_words(words, other) for at, other in enumerate(goals) if at != index)
+                rest = words[shared:]
+                taken = 2 if rest and rest[0].lower() in DANGLING_WORDS else 1
+                parts.append(CUT_MARK + truncate(" ".join(rest[:taken]), NAME_CELLS - cell_width(CUT_MARK)))
+            told_apart = (
+                all(part != CUT_MARK for part in parts) and len(set(parts)) == len(parts)
+                and not set(parts) & set(names.values())
+            )
+            for subagent_id, part in zip(group, parts, strict=True):
+                shown[subagent_id] = part if told_apart else f"{numbers[subagent_id]}{NUMBER_MARK}{name}"
+        return shown
 
     def strip_line(self, width: int, theme: Theme, spinner_frame: int) -> tuple[Line, tuple[Hit, ...]]:
         """`● main  ⠹ explore  ○ review  ↓ agents`, and the cells each entry covers on it.
 
         A running agent shows frame `spinner_frame` of the spinner, a finished
-        one `○`, a failed one `✗`. Agents whose names match are numbered
+        one `○`, a failed one `✗`. Agents whose names match are told apart
         (`strip_names`), so no two entries read the same. When that row is wider than `width` it
         becomes `● 2 agents ↓` (cut to `width`), which names no agent and so
         has no hits; `64+ agents` when the cap pushed some out. With no agent

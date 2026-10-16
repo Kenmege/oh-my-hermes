@@ -259,6 +259,19 @@ class VTScreen:
             self._erase_in_line(first)
         elif final == "J":
             self._erase_in_display(first)
+        elif final == "L":
+            self._insert_lines(count)
+
+    def _insert_lines(self, count: int) -> None:
+        """IL with no scroll margins set: blank rows at the cursor row, the rows from it down moving down, those
+        pushed past the screen's last row lost (not scrolled into scrollback); the cursor goes to column 0."""
+        count = min(count, self.rows - self._row)
+        for _ in range(count):
+            self._text.insert(self._row, self._blank_row())
+            self._attrs.insert(self._row, [() for _ in range(self.cols)])
+        del self._text[self.rows :]
+        del self._attrs[self.rows :]
+        self._col = 0
 
     def _erase_in_line(self, mode: int) -> None:
         if mode == 0:

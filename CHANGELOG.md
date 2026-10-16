@@ -4,6 +4,259 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Two OMH TUI subagents whose goals start alike read differently on the
+  strip.** The strip names an agent by the first words of its goal, and two
+  goals that began the same were numbered with those words, so two shell
+  tasks read `1·Run the shell  2·Run the shell` and nothing said which was
+  which. Agents that share a name now show the word where each goal parts
+  from the one nearest it, out of any quotes or backticks around it (with the
+  next word when it is one like `in`), so goals that part at `` `echo alpha` ``
+  and `` `echo beta` `` read `…alpha` and `…beta`; the numbers stay only for
+  goals whose words still read the same.
+- **A fresh OMH TUI session no longer shows the last session's subagents.**
+  Hermes writes a session's `state.db` row on its first prompt, so a new
+  session's key mapped to nothing until then, and the HUD reader fell back to
+  every conversation's recent delegate children: a session nobody had typed
+  in yet opened with `[Agents] │ [global] 2 done` and the previous session's
+  rows. The TUI's own key now owns no children until its row exists, and the
+  panel stays empty. Other readers that name an unmapped reference (the
+  desktop pane, the plugin tools) keep the documented global fallback.
+- **Denying an OMH TUI approval also stops the turn, as Esc does in Claude
+  Code.** A deny went to Hermes and the turn went on, so the model often
+  tried the next thing straight away. Every deny the person gives (Esc,
+  Ctrl+C, `d`, `n`, Enter on deny, and Up then Enter typed ahead) now sends
+  the explicit deny first, so the waiting tool ends denied, and then
+  interrupts the running turn (`session.interrupt`, the call Esc makes on an
+  empty composer); with no turn running only the deny goes, and the mode row
+  then says `d or esc denies`. An approval a
+  subagent asked for stops the session's whole turn. The tell row is the one
+  deny that does not stop: it redirects the running turn instead. The mode
+  row says so in plain words, `↑↓ pick · enter confirms · d or esc denies and
+  stops`, down to `esc denies and stops` on a narrow row.
+- **An OMH TUI approval can be denied with what to do instead.** Telling
+  Hermes what to do after a deny took a deny, then a separate Ctrl+Enter
+  steer. The approval's last row, `no, and tell Hermes what to do instead`
+  (last, as Claude Code puts its "No, and tell Claude" row), sends the
+  explicit deny at once, so the turn is not held, and opens the composer
+  labelled `↪ tell Hermes what to do instead · enter sends · esc cancels`.
+  What you send goes into the running turn as a steer through the same path
+  as Ctrl+Enter (a refused steer waits in the queue, an unanswered one comes
+  back after 120 s), or as an ordinary prompt once the turn has ended, which
+  waits behind a prompt you queued and never steers it; the tell row of a
+  later approval keeps that composer open with what you typed. Esc sends
+  nothing more and brings your draft back. Deny stays first and
+  highlighted, the highlight still stops at both ends, and no digit or
+  letter but `d` and `n` answers.
+- **An OMH TUI approval offers Hermes' "always allow" when Hermes does.**
+  The OMH TUI left Hermes' `always` choice to `hermes --tui`. When Hermes
+  lists it (it leaves it out where a permanent allow is refused, such as a
+  command its smart approval flagged), the approval now has a fourth row
+  under allow this session, labelled with what it allows, `always allow
+  recursive delete (Hermes saves it)`: Hermes saves that kind of command in
+  its config (`command_allowlist`), so later ones run without asking. Like
+  every allow it takes the arrows and Enter; the transcript records
+  `✓ always allow sent (Hermes saves it) · <command>`.
+- **Every OMH TUI question asks for your attention, not only an approval.**
+  An approval rang the bell; a clarify question, a sudo password or a secret
+  signalled nothing, and Hermes drops a clarify question nobody answers after
+  300 s by default. Each request now rings the bell once as it opens and,
+  on a terminal that shows them, sends the notification a long turn's end
+  sends (OSC 9 in iTerm2, WezTerm and Ghostty, OSC 777 in foot and rxvt),
+  saying what Hermes asks (`Hermes asks: Which colour?`, never a value).
+  `OMH_TUI_BELL=0` keeps all of it quiet.
+- **The OMH TUI stops billing your answer time to Hermes.** While an
+  approval or a clarify question was open the working row kept spinning,
+  `⠼ working… (16s · ↓262 tokens)`, beside the status line's `waiting on
+  you`; a command you took 20 s to allow then read `✗ terminal  rm -rf
+  ./tmp-a  21.8s`, as if it were slow. The working row now reads `? waiting
+  on you (11s)` with no spinner and one clock, that wait's (the status bar's
+  OMH tool count shows no seconds of its own meanwhile, and leaves with the
+  turn instead of lingering into idle); a tool's row
+  leaves the wait out of its time; and the done line keeps the turn's wall
+  clock with the wait beside it, `✻ 30s (27s waiting on you) · 1 tool`.
+- **The OMH TUI's transcript records how each question ended.** A clarify
+  question left only Hermes' tool row (`✓ clarify  Which colour should I
+  use?  2.5s`), a `✓` even when it was cancelled, and the answer appeared
+  nowhere but in the model's reply; a sudo or secret prompt left nothing.
+  Like an approval's `✓ allowed once` / `✗ denied`, the answer now goes
+  above the call it was about: `✓ red · Which colour?` (ticked labels
+  joined, or what was typed, as Hermes reads the answer: without the
+  `(Recommended)` tag it shows on a choice, and with empty items of a
+  multi-select answer left out), `✗ cancelled · <question>` or `✗ skipped`
+  (also a multi-select answer with no item left), and
+  for sudo or a secret only `✓ answered` or `✗ declined`, never the value. A
+  question Hermes withdrew reads `✗ timed out`, `✗ interrupted` or
+  `✗ withdrawn (<reason>)` with what it asked, in place of the amber
+  `Hermes withdrew its <method> request (<reason>).` A clarify call that got
+  no answer is a red `✗ clarify` row with `cancelled`, `timed out` or `not
+  delivered` under it, not a `✓`.
+- **OMH TUI clarify questions that take several choices are answered with
+  several.** Hermes' `multi_select` was never read: the question looked like
+  any other and went back as one label, and an answer typed as `1,3` reached
+  the model as one string. Such a question now says `(choose one or more)`
+  and boxes each choice; Space or the choice's digit ticks it, Enter sends
+  the ticked ones (the highlighted one alone when none is ticked), and an
+  answer of your own joins them. The answer is the JSON list Hermes' Ink TUI
+  sends (`["ham","cheese"]`, in the order ticked), in the same `answers`
+  frame as before; a single-select question is unchanged.
+- **An OMH TUI question says when others wait behind it.** A second request
+  that arrived while one was open queued with nothing on screen to say so;
+  the open question now ends its first words with `· 1 more question
+  waiting` (or the count). A request the TUI cannot show (a terminal read, a
+  vault prompt) that arrived behind an open question waited for it to close
+  before its decline was sent; it is declined at once, with its notice, as it
+  is when nothing is open.
+- **OMH TUI clarify choices wrap instead of being cut to one row.** At 80
+  columns `❯ 1. Blue/green with a full traffic switch after smoke tests pass
+  on the gree…` lost the `(Recommended)` tag Hermes puts at the end of the
+  first choice, and the rest of a choice up to Hermes' 8000 characters. Each
+  choice (an approval's too) now wraps under its number, the slot counts
+  rows rather than choices, and a terminal too short for every choice keeps
+  the highlighted one whole, or its first rows, with `… ctrl+o shows all`.
+  Choices it cannot list are marked beside the list on the side they are cut
+  (`… +3 more choices, 1 ticked · ctrl+o shows all`; an approval's
+  `… more choices`, which numbers nothing), so a cut tell row or a ticked
+  choice scrolled away is never silent, and the marker no longer ends the
+  question's text.
+- **An OMH TUI question you cannot see whole says so, and Ctrl+O shows it.**
+  A long approval command showed its first 6 of 20 lines at 24 rows, and
+  Ctrl+O did nothing while the approval was open; below 10 rows a cut had no
+  marker, at 6 rows no command row was drawn at all, a narrow terminal cut the
+  approval's header, and under 6 rows or 20 columns a sudo, secret or typed
+  clarify question showed no label. Every cut now ends with `… ctrl+o shows
+  all` (`… +14 more lines · ctrl+o shows all` under a command's first lines),
+  from 6 rows a command's first row is drawn, the header and a value prompt's
+  label wrap, a tiny terminal keeps one row for a typed question's label, and
+  Ctrl+O while a question is open pages it whole: it answers nothing, and q
+  or Esc returns to the question with the same row highlighted.
+- **Enter on an OMH TUI `/` or `@` menu takes the highlighted row, as in
+  Claude Code.** A command typed in full still runs on the first Enter. Esc
+  closes the `/` menu, and both menus stop at their ends.
+- **The OMH TUI's Ctrl+R search and agent list stand where the composer
+  was**, as the pickers do: the composer is hidden, the search's caret is at
+  the end of its query, the agent list takes every key (only its own act, so
+  typing never turns into a steer; Esc, Left, `q` or Ctrl+C leaves it), and
+  the mode row says their keys.
+- **An interrupted OMH TUI turn says so until Hermes stops, and the queue
+  waits.** After Esc or Ctrl+C the working row says `interrupting…` until the
+  turn ends, and the queue does not start: queued prompts come back into the
+  composer unsent, a queued `!` line waits until your next prompt.
+- **The OMH TUI's `/model` picker opens on the session's model.** It marks
+  that model (first, when no provider lists it) and shows `Model (12/162)`
+  once it scrolls.
+- **OMH TUI list commands leave no echo in scrollback.** Bare `/sessions`,
+  `/rewind`, `/keys`, `/history`, `/logs` and `/redraw` leave no `› /name`
+  row.
+- **New OMH TUI keys.** Ctrl+X opens the session picker, Ctrl+_ and Ctrl+Y
+  undo and redo in the composer, and Ctrl+Z suspends to the shell on POSIX
+  (Hermes' gateway stops with it; `fg` draws it again under what the shell
+  printed). Where Shift+Enter would send, the mode row names the
+  newline keys while a draft spans lines.
+- **`/omh-model` no longer stops the OMH TUI's gateway.** A reply keeps
+  streaming underneath and a question closes the picker with nothing saved;
+  the picker stops at its ends and says `esc cancel`.
+- **A crashed Hermes gateway comes back.** When Hermes' `tui_gateway` exits
+  with a failure, the OMH TUI starts it again from the launcher's
+  environment and resumes the session, saying so (`The Hermes gateway exited
+  (code 1): starting it again and resuming session <id> (1 of 3 in 60 s);
+  what you type waits until it is back, and ctrl+c leaves.`), at most three
+  times a minute.
+  Each attempt waits up to 15 s for the new gateway (`HERMES_TUI_STARTUP_TIMEOUT_MS`
+  when set, as in Hermes' own TUI), Ctrl+C or Ctrl+D while it waits leaves
+  with the new gateway stopped, and one that exits before it resumed the
+  session uses an attempt, as in Hermes' own TUI. An
+  open question closes unanswered, a running turn is reported lost and not
+  sent again, a steer the old gateway had not answered, and what was typed
+  in an approval's tell field, come back to the composer at once, the
+  subagents on the strip stay there (those still
+  running marked interrupted) rather than reappearing as look-alike rows in
+  the HUD's `[Agents]` block, and what you queued comes back as after an
+  interrupt.
+  AGENTS.md and CONTEXT.md now say the frontend spawns one child at a time
+  and respawns it so.
+- **The OMH TUI's composer sits right under the output until the screen
+  fills, then stays on the bottom rows.** A fresh session showed the banner,
+  then 20 blank rows (110x34) to 36 (200x50), then the composer, and 6 to 12
+  blank rows stayed above it after a short turn, during an approval and after
+  a resize: the live region was padded to the screen's height at every start
+  and redraw and never got shorter. It is now drawn right under the last line
+  printed (one blank row under a turn, the spacer every block opens with) and
+  follows the content until its last row is the screen's last row; from then
+  on it keeps its height, so a list or question closing above the composer
+  leaves blank rows above it, filled by the next output, and does not pull it
+  up. A resize or a redraw starts again under the output. Short of the bottom
+  rows the `/` and `@` menus open under the composer where they fit, as in
+  Claude Code, so typing `/` no longer moves the composer down by the menu's
+  height and Esc back up; on the bottom rows they open above it, and output
+  that brings the composer there while one is open takes it above with that
+  output, so closing it moves nothing. The startup query
+  that asks for the background colour also asks for the cursor's row (CSI
+  6n, inside the same 0.1 s wait), so a start from the last row of a
+  terminal already holding output is on the bottom rows from its first frame;
+  only a terminal that does not answer that cursor-position query follows the
+  content until the TUI's own output has filled the screen once.
+  Lines that leave the top of the streaming tail are written over the rows
+  they were drawn on, so the rows under them are not painted again, and while
+  the screen is not yet full a new tail line is inserted where it goes (IL),
+  so the composer and the rows under it move down without being painted again
+  (a reply streaming onto an empty 40-row screen writes 232 bytes a frame,
+  where following the content had doubled it to 605).
+- **Each tool call is its own row, and a cut output names the key that shows
+  the rest.** A turn's calls were folded under one `⏺ Tool calls (2)` header;
+  each call is now a row of its own (its mark, name and what it ran on) with
+  what it printed under it, as in Claude Code, and the `parallel ×K` badge
+  that header carried is gone with it. A tool's output, a diff and a
+  command's output cut short end `… +N lines · ctrl+o shows all` (rows for a
+  command), where they named `/history` or nothing: Ctrl+O opens the details
+  view at its end.
+- **A finished plan leaves the OMH TUI's panel.** The plan stayed above the
+  composer into later, unrelated turns. Once every item is done it now shows
+  `✓ 3/3` until the turn ends and then goes, as Claude Code's list does, with
+  its final list written to the transcript above the done line under the
+  header the panel showed (`[Plan] │ ✓ 3/3`, as `/todos` now heads it too); one already
+  finished when the session opens is not drawn, and a new plan is. The
+  `[Plan] │ 2/6 .` dot was the header's walking ellipsis, caught at one dot;
+  it is gone, and the active item's colour wave still shows work moving.
+- **The OMH TUI states the approval mode once.** After Shift+Tab the mode row
+  said `⏵⏵ accept all on · approvals off for this session` while the status
+  line said `yolo mode: off`: that chip read Hermes' saved state through the
+  HUD, which lags behind a switch. The status line no longer carries it; the
+  composer's rules and mode row (the status line on a short terminal) say the
+  mode, as Hermes confirmed it for the session, in the words the docs use.
+  The mode row also says what each mode means and what Shift+Tab turns on
+  next, Claude Code style: between turns `? shortcuts · ⇧⇥ accept all/plan ·
+  ctrl+t effort (medium)` (it said `⇧⇥ mode · ctrl+t effort` with a separate
+  `effort medium` on the right), in accept all `⏵⏵ accept all on · Hermes asks
+  no approvals in this session (⇧⇥ plan/normal)`, in plan `⏸ plan mode on ·
+  prompts go as /plan (⇧⇥ normal/accept all)`, with shorter forms of the same
+  words on a narrow row. The effort is said once, as `ctrl+t effort (medium)`,
+  and the keys list uses the same words for Shift+Tab and Ctrl+T. It names the
+  level Hermes' config sets from the start of each session, `/new` and
+  switches included (read from the settings the TUI already reads), until
+  Hermes names the session's own once it has built the session's agent, and
+  where none is configured it says `ctrl+t effort (default)` (the
+  provider's own default applies) instead of no level at all; Ctrl+T steps
+  from the level shown.
+- **A first Ctrl+C between turns says `ctrl+c again to exit` on the mode row**
+  for the 2 s a second press exits in, as Esc's first press does, instead of
+  leaving a `Ctrl+C again to exit` notice in the scrollback every time.
+- **The OMH TUI shows three things Hermes sends it and it dropped:** what the
+  background review saved to memory or skills (`review.summary`, a transcript
+  line), a standing `/goal` (`session.control.update`, one row above the
+  composer worded as Hermes' Ink goal bar: `⊙ goal · 3/20 turns · <title>`,
+  parked or paused with its reason), and a mixture-of-agents turn (`moa.*`:
+  each reference model's answer as a collapsed `◇ Reference 1/3 — <model>`
+  row, and `MoA: refs 2/3` then `MoA: aggregating…` on the working row). The
+  gateway already wrote these to the TUI; showing them sends nothing.
+- **The status line follows a light terminal.** It kept the palette's dark
+  bar on a light screen (sky's `#0A2229` under white). On a background the
+  terminal reports light (or `COLORFGBG` names, or `/theme light`) the bar is now a light tint of
+  the palette's own bar colour, its words still 4.5:1 and its `│` dividers
+  3:1 against it; a dark terminal, and one that reports nothing, keep the
+  palette's bar.
+- **The keys list names the `/model` picker** beside the `/sessions` and
+  `/rewind` lists, which take the same keys (`?`, `/keys`, and INSTALLATION's
+  table).
 - **A team inside the company is internal for data-share-review, in English
   as in Korean, and only when it is proven inside.** Owner decision
   (2026-10-16): sending personal data to a team in the same company is
@@ -235,7 +488,7 @@ All notable changes will be documented here.
   and 24 rows or more shows the OH-MY-HERMES block logo above the banner, from
   the shipped skin and in its gradient, lifted to read on a light background.
   Motion follows one rule set: a reply opens with `⏺` in the text colour and
-  a tool group in the tool colour; a running tool's `⏺` pulses (each call on
+  a tool call's name in the tool colour; a running tool's `⏺` pulses (each call on
   its own clock) and settles to `✓` or `✗` before it reaches scrollback; a
   highlight sweeps across the working row's verb; `OMH_TUI_REDUCED_MOTION=1`
   or `NO_COLOR` holds everything still and repaints once a second. Your
@@ -851,8 +1104,9 @@ All notable changes will be documented here.
   so Hermes' launcher still resolves the profile, the resume target and
   session ownership, and every model call, tool run and approval decision
   stays Hermes'. Finished lines go to the terminal's own scrollback and only
-  a bottom region repaints; the composer does not move when the plan and
-  agents panel, or a question Hermes asked, grows or shrinks. Nothing is
+  the region under them repaints; once the composer has reached the bottom
+  rows it does not move when the plan and agents panel, or a question Hermes
+  asked, grows or shrinks. Nothing is
   answered for the person: Esc, Ctrl+C, `d` or `n` declines, and allowing a
   command takes the arrows and then Enter. When the TUI cannot start
   (Windows, no `termios`, no Node, an OMH that cannot import itself, gateway

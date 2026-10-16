@@ -922,7 +922,10 @@ def read_omh_hud(
     """The HUD payload for one reading session.
 
     A mapped durable reference scopes native activity to its conversation.
-    Missing/invalid/unmapped identities retain explicitly global native activity.
+    Missing/invalid/unmapped identities retain explicitly global native activity,
+    except a durable `session_ref` named with `tui_identity_expected` (the OMH
+    TUI's own key): Hermes writes that key's state.db row on the session's
+    first prompt, so until then it maps to nothing and owns no children.
     OMH activity remains global; the existing todo ownership policy is unchanged.
     """
     safe_preset = preset if preset in HUD_PRESETS else "focused"
@@ -1031,7 +1034,12 @@ def read_omh_hud(
     payload["subagents"]["rows"] = ordered[:ACTIVITY_ROW_LIMIT]
     # Hermes-native delegate_task children are work the HUD must show even
     # though they never touch the OMH runtime store; see hermes_delegation.
-    native = read_hermes_native_subagents(hermes, omh_home=home, session_ref=reference if scoped else None)
+    native = read_hermes_native_subagents(
+        hermes,
+        omh_home=home,
+        session_ref=reference if scoped else None,
+        owned_only=tui_identity_expected and bool(session_ref),
+    )
     payload["subagents"]["scope"] = (
         "mixed" if omh_activity and native["scope"] == "session" else native["scope"]
     )
