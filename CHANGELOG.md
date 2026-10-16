@@ -4,6 +4,32 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **OMH TUI input, round 3: the keys behave as in Claude Code, no list leaves
+  the prompt box up, and a crashed gateway comes back.** Enter on an open `/`
+  or `@` menu takes the highlighted row (a command typed in full still runs
+  on the first Enter); Esc closes the `/` menu, and both menus stop at their
+  ends. The Ctrl+R search and the agent list now stand where the composer
+  was, as the pickers do: the composer is hidden, the search's caret is at
+  the end of its query, the agent list takes every key (only its own act, so
+  typing never turns into a steer), and the mode row says their keys. After
+  Esc or Ctrl+C the working row says `interrupting…` until Hermes stops, and
+  the queue does not start: queued prompts come back into the composer
+  unsent, a queued `!` line waits until your next prompt. The `/model`
+  picker marks and opens on the session's model (first, when no provider
+  lists it) and shows `Model (12/162)` once it scrolls. Bare `/sessions`,
+  `/rewind`, `/keys`, `/history`, `/logs` and `/redraw` leave no `› /name`
+  row in scrollback. New keys: Ctrl+X opens the session picker, Ctrl+_ and
+  Ctrl+Y undo and redo in the composer, Ctrl+Z suspends to the shell on
+  POSIX. Where Shift+Enter would send, the mode row names the newline keys
+  while a draft spans lines. `/omh-model` no longer stops the gateway: a
+  reply keeps streaming underneath and a question closes the picker, which
+  now stops at its ends and says `esc cancel`. When Hermes' `tui_gateway`
+  exits with a failure, the TUI starts it again from the launcher's
+  environment and resumes the session, at most three times a minute (an
+  open question closes unanswered, a running turn is reported lost and not
+  sent again); AGENTS.md and CONTEXT.md now say the frontend spawns one
+  child at a time and respawns it so.
+
 - **Korean spend and data-share requests reach their gates.** "내 카드로
   결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보
   마스킹해서 벤더한테 보내줘" dispatched gateway-intent-card, and "개인정보 지우고
