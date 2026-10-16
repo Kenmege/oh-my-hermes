@@ -1625,6 +1625,12 @@ class App(ModesMixin, AgentViewMixin):
         it would without recovery (`_lose_gateway`). Calls the old gateway had
         not answered stay in `pending` and expire as unanswered calls do: the
         new client's request ids start past theirs.
+
+        One child at a time: the old gateway is reaped before a new one is
+        spawned (it may still run, after a write it refused or an exit whose
+        code never came), and each new client is the app's `client` from the
+        moment it is made, so whatever ends the TUI while it starts or resumes
+        (SIGTERM, SIGHUP) leaves it to `_run`, which reaps it.
         """
         reason, self.respawn_reason = self.respawn_reason, ""
         stored = self.stored_id
@@ -1634,6 +1640,8 @@ class App(ModesMixin, AgentViewMixin):
         self.turn_pending = self.interrupting = False
         self._clear_roster()
         self.list_selected = None
+        first_id = max(self.pending, default=0) + 1
+        self.client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
         while True:
             now = self.clock()
             self.respawned_at = [at for at in self.respawned_at if now - at < RESPAWN_WINDOW_SECONDS]
@@ -1648,21 +1656,19 @@ class App(ModesMixin, AgentViewMixin):
             self.dirty = True
             self._render_when_due()  # the notice shows while the new gateway starts
             try:
-                client = self.make_client(gateway_spawn(self.environ), first_id=max(self.pending, default=0) + 1)
-                client.start()
+                self.client = self.make_client(gateway_spawn(self.environ), first_id=first_id)
+                self.client.start()
             except (GatewayUnavailable, GatewayCallError) as error:
                 reason = f"the new Hermes gateway did not start ({error})"
                 continue
             try:
-                result = client.call("session.resume", {"session_id": stored, "cols": self.size[0]})
+                result = self.client.call("session.resume", {"session_id": stored, "cols": self.size[0]})
             except (GatewayCallError, GatewayTimeout, GatewayUnavailable) as error:
-                client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
+                self.client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
                 self._lose_gateway(f"the new Hermes gateway did not resume session {stored} ({error})")
                 return
             break
-        old, self.client = self.client, client
-        old.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
-        self.wake = client.wake_fd()
+        self.wake = self.client.wake_fd()
         self._adopt_session(result, fallback_stored=stored)
         self.transcript.add_notice(RESPAWNED_NOTICE.format(session=self.stored_id), NOTICE_OK)
         self._hold_queue(RESPAWNED_WHY)

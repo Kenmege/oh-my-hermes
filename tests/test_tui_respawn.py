@@ -188,6 +188,23 @@ class RespawnTests(unittest.TestCase):
         app._respawn_gateway()
         self.assertIs(app.client, spawner.made[0])
         self.assertIn(TURN_LOST_NOTICE, notices(app))  # the prompt never went out: it is lost, not sent again
+        self.assertEqual(old.closed, 1)
+
+    def test_the_old_gateway_is_reaped_before_the_new_one_is_spawned(self) -> None:
+        # One child at a time, also where the old one may still run: an exit whose code never arrived.
+        for code in (1, None):
+            with self.subTest(code=code):
+                app, old, spawner, _now = crashing()
+                closed_when_spawned: list[int] = []
+
+                def make(spawn: object, first_id: int = 1) -> RespawnClient:
+                    closed_when_spawned.append(old.closed)
+                    return spawner(spawn, first_id=first_id)
+
+                app.make_client = make  # type: ignore[assignment]
+                crash(app, old, code=code)
+                self.assertEqual(closed_when_spawned, [1])
+                self.assertEqual(old.closed, 1)
 
 
 class NoRespawnTests(unittest.TestCase):
@@ -291,6 +308,51 @@ class LoopTests(unittest.TestCase):
         (new,) = spawner.made
         self.assertEqual(new.closed, 1)  # reaped by `_run`; the first one is the caller's to close
         self.assertEqual(new.blocking, [("session.resume", {"session_id": STORED, "cols": 80})])
+
+
+class SignalDuringRespawnTests(unittest.TestCase):
+    """SIGTERM or SIGHUP (`_exit_on_signal`'s SystemExit) while a respawned gateway starts or resumes: it is reaped."""
+
+    def run_until_signalled(self, new: RespawnClient) -> RespawnClient:
+        first = RespawnClient()
+        first.inbox.append(GatewayExited(1))
+        first.resume = {"session_id": SID, "stored_session_id": STORED, "info": {}}
+        terminal = ScriptedTerminal(24, 80)
+
+        def poller(omh_home: object, hermes_home: object) -> FakePoller:
+            return FakePoller()
+
+        environ = {**ENVIRON, "HERMES_TUI_RESUME": STORED}
+        with self.assertRaises(SystemExit):
+            _run(first, environ, _Sink(), lambda: terminal, poller, Spawner(new))  # type: ignore[arg-type]
+        self.assertEqual(terminal.exited, 1)  # the terminal was handed back first
+        return first
+
+    def test_a_signal_while_it_starts_or_resumes_leaves_no_gateway_behind(self) -> None:
+        for where in ("start", "resume"):
+            with self.subTest(during=where):
+                new = SignalledClient(where)
+                first = self.run_until_signalled(new)
+                self.assertEqual(new.closed, 1)
+                self.assertEqual(first.closed, 1)  # reaped before the new one was spawned
+
+
+class SignalledClient(RespawnClient):
+    """A respawned client during whose `start` or blocking `session.resume` SIGTERM's handler raises."""
+
+    def __init__(self, where: str) -> None:
+        super().__init__()
+        self.where = where
+
+    def start(self, ready_timeout: float = 60.0) -> Event:
+        if self.where == "start":
+            raise SystemExit(143)
+        return super().start(ready_timeout)
+
+    def call(self, method: str, params: dict, timeout: float = 30.0) -> dict:
+        if self.where == "resume":
+            raise SystemExit(143)
+        return super().call(method, params, timeout)
 
 
 class FirstIdTests(unittest.TestCase):
