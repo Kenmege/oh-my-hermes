@@ -831,5 +831,26 @@ class ApprovalOutcomeTests(unittest.TestCase):
                          ["Deleting it now, or not: you said no."])  # one reply, not split by the answer
 
 
+
+class NewSessionSpacerTests(unittest.TestCase):
+    def test_the_new_sessions_first_line_is_set_off_from_the_last_session_by_a_spacer(self) -> None:
+        # Review B NIT 8: `· New session <id>.` sat right under the previous session's done line.
+        from test_tui_modes import drawn, make_app
+
+        app, _client = make_app(rows=24, cols=80)
+        app._on_input(Key(CHAR, "l", ctrl=True))
+        app._submit_prompt("hello")
+        app._on_event(ev("message.start"))
+        app._on_event(ev("message.complete", text="Hi.", status="complete"))
+        drawn(app)
+        app._on_new_session({"session_id": "live-2", "stored_session_id": "stored-2"})
+        screen = drawn(app)
+        row = next(index for index, line in enumerate(screen) if "New session stored-2." in line)
+        self.assertEqual(screen[row - 1], "")
+        self.assertTrue(screen[row - 2].startswith("✻"), screen)  # the done line, one blank row above
+        app._full_redraw()  # a redraw starts the new session's transcript at the top: no spacer over it
+        self.assertTrue(drawn(app)[0].strip())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -759,7 +759,9 @@ def block_rows(
 class Transcript:
     """Blocks in order, the turn's transient state, and how far the terminal has been handed lines."""
 
-    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(self, clock: Callable[[], float] = time.monotonic, under_output: bool = False) -> None:
+        """`under_output`: its first lines go under lines already printed (another session's), so they open with
+        the spacer every block opens with."""
         self.cwd = ""  # the session's working directory; paths inside it are shown relative to it
         self.blocks: list[Block] = []
         self.activity = ""  # spinner / wait text from thinking.delta; "" when none
@@ -774,7 +776,7 @@ class Transcript:
         self._cursor = 0  # first block not fully taken
         self._cursor_lines = 0  # source lines of blocks[_cursor] already taken (assistant text)
         self._cursor_state = MarkdownState()  # markdown state after those lines
-        self._taken_any = False  # whether any line has been taken (a spacer goes above the next block)
+        self._taken_any = under_output  # whether any line has been taken (a spacer goes above the next block)
         self._left_out = 0  # blocks `retake_tail` left out: the next take opens with LEFT_OUT_NOTICE
         self.dropped = 0  # blocks BLOCK_CAP dropped from the front
         # Where the last take's lines hold the first row of the newest prompt in them (not the blank row above it);

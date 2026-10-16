@@ -3254,7 +3254,7 @@ class App(ModesMixin, AgentViewMixin):
         if old and old != as_text(result.get("session_id")):
             self._turn_off_yolo_set_here(old)
             self._request("session.close", {"session_id": old}, lambda result: None, lambda error: True)
-        self.transcript = Transcript(self.clock)
+        self.transcript = Transcript(self.clock, under_output=self.transcript.taken_any)
         self.queued.clear()
         self.sticky = ""
         self.flushed_since_prompt = 0  # rows printed above the region from the last prompt's first row on
