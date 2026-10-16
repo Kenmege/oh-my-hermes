@@ -52,22 +52,24 @@ class SlashCommand:
     # Whether the transcript echoes it as `› /name arg`. A command whose own row says what it did (the steer, or
     # the prompt it sends) is not echoed: the echo would say it twice.
     echo: bool = True
-    # Whether it is echoed when typed bare: bare /model opens a picker, and what is picked is echoed as the command
-    # it runs, so an echo of the bare name would stand empty above it (or alone, once the picker is closed).
+    # Whether it is echoed when typed bare. A bare command that only opens a picker or a pager, or only repaints,
+    # prints nothing to attribute, so its echo would stand alone in scrollback as if it were a prompt; bare /model's
+    # pick is echoed as the command it runs.
     echo_bare: bool = True
 
 
 COMMANDS: tuple[SlashCommand, ...] = (
     # The terminal's own commands.
     SlashCommand("help", LOCAL, "Show commands"),
-    SlashCommand("keys", LOCAL, "List every key (also ? on an empty composer)"),
+    SlashCommand("keys", LOCAL, "List every key (also ? on an empty composer)", echo_bare=False),
     SlashCommand("quit", LOCAL, "Leave the OMH TUI", ("exit",)),
     SlashCommand("new", LOCAL, "Start a new session", ("clear", "reset")),
     SlashCommand("sessions", LOCAL, "Switch to a stored session (a picker, or /sessions <id or title>)",
-                 ("switch", "session", "resume")),
-    SlashCommand("redraw", LOCAL, "Repaint the screen"),
-    SlashCommand("history", LOCAL, "Page through this session's transcript"),
-    SlashCommand("rewind", LOCAL, "Go back to an earlier prompt, edit it, and send it again (also Esc Esc)"),
+                 ("switch", "session", "resume"), echo_bare=False),
+    SlashCommand("redraw", LOCAL, "Repaint the screen", echo_bare=False),
+    SlashCommand("history", LOCAL, "Page through this session's transcript", echo_bare=False),
+    SlashCommand("rewind", LOCAL, "Go back to an earlier prompt, edit it, and send it again (also Esc Esc)",
+                 echo_bare=False),
     SlashCommand("todos", LOCAL, "Show this session's whole plan"),
     SlashCommand("model", LOCAL, "Switch this session's model (a picker, or /model <name> [--provider <slug>])",
                  echo_bare=False),
@@ -77,7 +79,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("steer", LOCAL, "Add a message to the running turn (/steer <text>; Ctrl+Enter where it is a key)",
                  ("s",), echo=False),
     SlashCommand("effort", LOCAL, "Set this session's reasoning effort (/effort <level>; Ctrl+T steps through it)"),
-    SlashCommand("logs", LOCAL, "Show the gateway's recent stderr (kept in memory only)"),
+    SlashCommand("logs", LOCAL, "Show the gateway's recent stderr (kept in memory only)", echo_bare=False),
     SlashCommand("copy", LOCAL, "Copy the last reply to the clipboard"),
     SlashCommand("image", LOCAL, "Attach an image file to the next message (/image <path>)"),
     SlashCommand("paste", LOCAL, "Attach the clipboard image to the next message (also Ctrl+V)"),

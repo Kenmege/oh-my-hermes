@@ -1991,9 +1991,12 @@ class App(ModesMixin, AgentViewMixin):
     # ── rewind ──
 
     def _rewind(self, arg: str) -> None:
-        """`/rewind` (and Esc Esc): between turns, list this session's prompts to go back to."""
+        """`/rewind` (and Esc Esc): between turns, list this session's prompts to go back to.
+
+        It has no echo, so what it says during a turn waits under what runs rather than close it.
+        """
         if self._busy():
-            self.transcript.add_notice(REWIND_BUSY_NOTICE, NOTICE_WARN)
+            self.transcript.add_aside(NoticeBlock(REWIND_BUSY_NOTICE, NOTICE_WARN))
         elif not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
         else:
@@ -2887,8 +2890,8 @@ class App(ModesMixin, AgentViewMixin):
         if rows:
             self.picker = SessionPicker(rows, current=self.stored_id)
             self._settle_list()
-        else:
-            self.transcript.add_notice("Hermes has no stored sessions to switch to.")
+        else:  # bare /sessions has no echo: during a turn this waits under what runs
+            self.transcript.add_aside(NoticeBlock("Hermes has no stored sessions to switch to."))
 
     def _picker_key(self, event: Key | Paste) -> None:
         if self.picker is None:
@@ -3057,8 +3060,8 @@ class App(ModesMixin, AgentViewMixin):
         tail = self.client.stderr_tail()
         if tail:
             self._open_pager("gateway stderr (memory only)", [(Span(line),) for line in tail])
-        else:
-            self.transcript.add_notice("The gateway has written nothing to stderr.")
+        else:  # /logs has no echo: during a turn this waits under what runs
+            self.transcript.add_aside(NoticeBlock("The gateway has written nothing to stderr."))
 
     def _copy(self, arg: str) -> None:
         last = next((block for block in reversed(self.transcript.blocks) if isinstance(block, AssistantBlock)), None)
