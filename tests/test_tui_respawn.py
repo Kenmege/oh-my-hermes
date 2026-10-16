@@ -24,6 +24,7 @@ from omh.tui.app import (
     CALL_ANSWER_SECONDS,
     RESPAWN_LIMIT,
     RESPAWN_NOTICE,
+    RESPAWN_READY_SECONDS,
     RESPAWN_WINDOW_SECONDS,
     RESPAWNED_NOTICE,
     RESPAWNED_WHY,
@@ -66,8 +67,10 @@ class RespawnClient(RecordingClient):
         self.start_error, self.resume = start_error, resume
         self.blocking: list[tuple[str, dict]] = []
         self.closed = 0
+        self.ready_timeout: float | None = None
 
     def start(self, ready_timeout: float = 60.0) -> Event:
+        self.ready_timeout = ready_timeout
         if self.start_error is not None:
             raise self.start_error
         return Event("gateway.ready", None, {})
@@ -139,8 +142,8 @@ class RespawnTests(unittest.TestCase):
         said = notices(app)
         self.assertIn(RESPAWN_NOTICE.format(reason="The Hermes gateway exited (code 1)", session=STORED, attempt=1,
                                             limit=RESPAWN_LIMIT, window=RESPAWN_WINDOW_SECONDS), said)
-        self.assertIn(f"The Hermes gateway exited (code 1): starting it again and resuming session {STORED} (1 of 3 in 60 s).",
-                      said)
+        self.assertIn(f"The Hermes gateway exited (code 1): starting it again and resuming session {STORED} (1 of 3 in 60 s); "
+                      "what you type waits until it is back.", said)
         self.assertEqual(said[-1], RESPAWNED_NOTICE.format(session=STORED))
         # It reads the session's settings and command list again, as a session that opens does.
         self.assertEqual([method for method, _params in new.calls], ["config.get", "commands.catalog"])
@@ -322,14 +325,25 @@ class CapTests(unittest.TestCase):
         self.assertEqual(len(spawner.made), RESPAWN_LIMIT + 1)
 
     def test_a_gateway_that_does_not_start_again_uses_an_attempt_and_the_next_is_tried(self) -> None:
-        failing = RespawnClient(start_error=GatewayUnavailable("the gateway exited with code 1 before gateway.ready"))
-        spawner = Spawner(failing, RespawnClient())
-        app, old, _spawner, _now = crashing(spawner=spawner)
+        for error in ("the gateway exited with code 1 before gateway.ready",
+                      f"the gateway sent no gateway.ready within {RESPAWN_READY_SECONDS:g}s"):
+            with self.subTest(error=error):
+                spawner = Spawner(RespawnClient(start_error=GatewayUnavailable(error)), RespawnClient())
+                app, old, _spawner, _now = crashing(spawner=spawner)
+                crash(app, old)
+                self.assertIsNone(app.exit_code)
+                self.assertEqual(len(spawner.made), 2)
+                self.assertIs(app.client, spawner.made[1])
+                self.assertEqual(sum("starting it again" in text for text in notices(app)), 2)
+                self.assertIn(error, notices(app)[1])  # the second attempt's notice names why the first failed
+
+    def test_a_respawn_waits_seconds_not_a_minute_for_the_new_gateway(self) -> None:
+        # Hermes' own TUI reports a gateway with no `gateway.ready` after 15 s (ui-tui `STARTUP_TIMEOUT_MS`); the keys
+        # wait meanwhile, so three hung attempts hold them for 45 s rather than 3 minutes.
+        app, old, spawner, _now = crashing()
         crash(app, old)
-        self.assertIsNone(app.exit_code)
-        self.assertEqual(len(spawner.made), 2)
-        self.assertIs(app.client, spawner.made[1])
-        self.assertEqual(sum("starting it again" in text for text in notices(app)), 2)
+        self.assertEqual(spawner.made[0].ready_timeout, RESPAWN_READY_SECONDS)
+        self.assertLessEqual(RESPAWN_READY_SECONDS, 15.0)
 
     def test_none_starting_ends_it_after_the_cap(self) -> None:
         spawner = Spawner(*[RespawnClient(start_error=GatewayCallError("client.capabilities", 4000, "no")) for _ in range(5)])

@@ -349,7 +349,14 @@ RESPAWNED_WHY = "The Hermes gateway was restarted"
 # or with no stored session to resume, the TUI leaves as it would without recovery.
 RESPAWN_LIMIT = 3
 RESPAWN_WINDOW_SECONDS = 60.0
-RESPAWN_NOTICE = "{reason}: starting it again and resuming session {session} ({attempt} of {limit} in {window:g} s)."
+# A respawn runs inside one loop step, so keys wait while the new gateway starts. Hermes' own TUI reports a gateway
+# that sent no `gateway.ready` after 15 s (ui-tui `gatewayClient.ts` STARTUP_TIMEOUT_MS), and a gateway started again
+# moments after the first one is warm, so an attempt gives up after that long, not the first start's minute.
+RESPAWN_READY_SECONDS = 15.0
+RESPAWN_NOTICE = (
+    "{reason}: starting it again and resuming session {session} ({attempt} of {limit} in {window:g} s); "
+    "what you type waits until it is back."
+)
 RESPAWNED_NOTICE = "Resumed session {session} on a new Hermes gateway."
 TURN_LOST_NOTICE = "The running turn was lost when the Hermes gateway exited; it was not sent again."
 QUESTION_LOST_NOTICE = "Hermes' {method} request closed unanswered: the gateway that asked has exited."
@@ -1667,7 +1674,7 @@ class App(ModesMixin, AgentViewMixin):
             self._render_when_due()  # the notice shows while the new gateway starts
             try:
                 self.client = self.make_client(gateway_spawn(self.environ), first_id=first_id)
-                self.client.start()
+                self.client.start(ready_timeout=RESPAWN_READY_SECONDS)
             except (GatewayUnavailable, GatewayCallError) as error:
                 reason = f"the new Hermes gateway did not start ({error})"
                 continue
