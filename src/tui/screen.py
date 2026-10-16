@@ -54,8 +54,8 @@ Precondition: the region is never taller than the terminal. Cursor-up stops
 at the top of the screen, so a taller region would lose its relative
 bookkeeping; the layout's height budget guarantees this.
 
-Where the region is on the screen (`top_row`, `last_row`) is worked out,
-never asked of the terminal, and only where it is certain. Every write moves
+Where the region is on the screen (`top_row`, `last_row`) is worked out from
+the writes and a starting row, and said only where it is certain. Every write moves
 the top row in one of two ways: a flush of n lines moves it n rows down, but
 never below the screen's last row, and a frame of h rows keeps it, but never
 below the screen's last row minus h - 1, since growing past the screen's end
@@ -63,7 +63,9 @@ scrolls the region up. A frame that shrinks does not move it. Each is
 `row -> min(row + shift, screen_rows - floor)`, and so is any sequence of
 them, so the region keeps one `shift` and one `floor` and can say where its
 top row is for any starting row. The starting row is the screen's top row
-when the caller says so (`at_top`: it homed the cursor first); otherwise it
+when the caller says so (`at_top`: it homed the cursor first), or the row the
+caller learned from the terminal (`start_row`: the cursor position report at
+launch), and then the top row is certain from the first write. Otherwise it
 is unknown, and the top row is certain once every possible start gives the
 same row, that is once the flushes have pushed it as far down as the screen
 allows.
@@ -140,7 +142,7 @@ def paint_line(line: Line, width: int) -> str:
 
 
 class LiveRegion:
-    def __init__(self, write: Callable[[str], None], at_top: bool = False) -> None:
+    def __init__(self, write: Callable[[str], None], at_top: bool = False, start_row: int | None = None) -> None:
         self._write = write
         self._rows: list[str] = []  # painted bytes of each row the region holds
         self._row = 0  # hardware cursor row, relative to the region's top
@@ -149,9 +151,9 @@ class LiveRegion:
         self._lines: tuple[Line, ...] = ()
         self._cursor: tuple[int, int] | None = (0, 0)
         self._hidden = False  # the last frame left the hardware cursor hidden (it had no caret)
-        # Where the top row is, from the row the region started on (the screen's top row when `at_top`):
-        # min(start + shift, screen rows - floor), floor None until a write first had a floor.
-        self._at_top = at_top
+        # Where the top row is, from the row the region started on (`_start`: 0 when `at_top`, `start_row` when the
+        # caller knows it, None when unknown): min(start + shift, screen rows - floor), floor None until a write had one.
+        self._start = 0 if at_top else start_row
         self._shift = 0
         self._floor: int | None = None
 
@@ -168,8 +170,10 @@ class LiveRegion:
     def _top_rows(self, screen_rows: int, shift: int, floor: int | None) -> tuple[int, int]:
         """(highest, lowest) screen row the top row can be on after writes summed as `shift` and `floor`."""
         bottom = screen_rows - 1 if floor is None else screen_rows - floor
-        highest = min(shift, bottom)
-        return highest, highest if self._at_top else min(screen_rows - 1 + shift, bottom)
+        if self._start is not None:
+            known = min(self._start + shift, bottom)
+            return known, known
+        return min(shift, bottom), min(screen_rows - 1 + shift, bottom)
 
     def top_row(self, screen_rows: int) -> int | None:
         """The 0-based screen row the region's top row is on, or None where that is not certain.
@@ -329,6 +333,6 @@ class LiveRegion:
         self._width = None
         self._lines = ()
         self._cursor = (0, 0)
-        self._at_top = False  # the next first frame starts wherever this region's top row was
+        self._start = None  # the next first frame starts wherever this region's top row was
         self._shift = 0
         self._floor = None

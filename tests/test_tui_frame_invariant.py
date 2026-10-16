@@ -739,6 +739,44 @@ class AppBottomRowsTests(unittest.TestCase):
         drawn(app)
         self.assertEqual(app.region.last_row(24), 23)  # its own output filled the screen: certain, and pinned
 
+    def test_a_cursor_row_the_terminal_reported_makes_the_place_certain_from_the_first_frame(self) -> None:
+        # The startup query's cursor position report (CSI 6n): launched on the last row of a terminal already
+        # holding output, the region knows it is on the bottom rows at once, so a closing menu leaves it there.
+        from test_tui_modes import drawn, make_app, type_text
+
+        app = make_app(rows=24, cols=80)[0]
+        app.terminal.screen.feed("".join(f"$ shell {n}\r\n" for n in range(30)))  # the cursor on the last row
+        app.adopt_cursor_row(24)  # 1-based, as the report says it
+        before = drawn(app)
+        self.assertEqual((self.where(before)[1], app.region.last_row(24)), (23, 23))
+        type_text(app, "/")
+        drawn(app)
+        app._on_input(Key(BACKSPACE))
+        after = drawn(app)
+        self.assertEqual(self.where(after), self.where(before))  # 0 rows: not the uncertain launch's 11
+        self.assertGreater(self.gap(after), self.gap(before))
+
+    def test_a_reported_row_mid_screen_is_where_the_first_frame_starts(self) -> None:
+        from test_tui_modes import drawn, make_app
+
+        app = make_app(rows=24, cols=80)[0]
+        app.terminal.screen.feed("".join(f"$ shell {n}\r\n" for n in range(8)))
+        app.adopt_cursor_row(9)
+        screen = drawn(app)
+        self.assertEqual(app.region.last_row(24), self.where(screen)[1])
+        self.assertEqual(screen[7], "$ shell 7")
+
+    def test_no_report_or_one_outside_the_screen_leaves_the_place_unknown(self) -> None:
+        from test_tui_modes import drawn, make_app
+
+        for row in (None, 0, 25, 999):
+            with self.subTest(row=row):
+                app = make_app(rows=24, cols=80)[0]
+                app.terminal.screen.feed("".join(f"$ shell {n}\r\n" for n in range(30)))
+                app.adopt_cursor_row(row)
+                drawn(app)
+                self.assertIsNone(app.region.last_row(24))  # today's uncertain path, never a guess
+
     def test_short_of_the_bottom_rows_a_closing_picker_takes_the_composer_up(self) -> None:
         from test_tui_choice_ui import SESSIONS
         from test_tui_modes import drawn, make_app

@@ -132,6 +132,7 @@ class ScriptedTerminal:
         self.mouse_reporting = False
         self.mouse_calls: list[bool] = []  # every `set_mouse` that changed the state, in order
         self.background: str | None = None  # what the background query answers
+        self.cursor_row: int | None = None  # the 1-based cursor row the same query reports
         self.typed_during_query = b""  # input the query read while it waited
         self.background_queries = 0
         self._resized = False
@@ -153,9 +154,9 @@ class ScriptedTerminal:
     def size(self) -> tuple[int, int]:
         return (self.screen.cols, self.screen.rows)
 
-    def query_background(self) -> tuple[str | None, bytes]:
+    def query_background(self) -> tuple[str | None, bytes, int | None]:
         self.background_queries += 1
-        return self.background, self.typed_during_query
+        return self.background, self.typed_during_query, self.cursor_row
 
     def resized(self) -> bool:
         resized, self._resized = self._resized, False
@@ -1450,6 +1451,34 @@ class OpeningTests(AppTestCase):
                 self.assertTrue(screen[rule - 2].startswith(above), screen)
                 self.assertEqual(screen[status + 1 :], [""] * (33 - status), screen)
                 self.assertLess(status, 33)
+
+    def test_launched_on_the_last_row_with_the_cursor_reported_a_closing_menu_leaves_the_composer_there(self) -> None:
+        # The startup query's cursor position report reaches the region: on the last row of a terminal already
+        # holding output, the composer is on the bottom rows from the first frame and the slash menu closing there
+        # does not pull it up (without the report the place is unknown and it moved 11 rows at 34x110).
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), rows=34, cols=110
+        )
+        run.terminal.screen.feed("".join(f"$ shell {n}\r\n" for n in range(40)))
+        run.terminal.cursor_row = 34
+        rows: dict[str, int] = {}
+
+        def composer_row(name: str) -> Callable[[], bool]:
+            def note() -> bool:
+                screen = run.terminal.screen.lines()
+                rows[name] = next(index for index, row in enumerate(screen) if row.startswith("› Ask Hermes"))
+                return True
+            return note
+
+        run.terminal.script(
+            Step(b"/", when=lambda: run.terminal.idle() and composer_row("before")(), label="idle"),
+            Step(b"\x7f", when=run.terminal.shows("/help"), label="the menu"),
+            Step(b"\x04", when=lambda: not run.terminal.shows("/help")() and composer_row("after")(), label="closed"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual(rows["after"], rows["before"])
+        self.assertEqual(rows["before"], 30)  # the bottom rows: rule, input, rule, mode row, status line
 
     def test_the_banner_stays_one_row_and_keeps_the_end_of_a_long_path(self) -> None:
         from omh.tui.app import banner_lines

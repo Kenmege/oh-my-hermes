@@ -34,6 +34,7 @@ from omh.tui.terminal import (
     MOUSE_REPORTING_ON,
     BACKGROUND_QUERY,
     BACKGROUND_QUERY_SECONDS,
+    CURSOR_POSITION_QUERY,
     DEVICE_ATTRIBUTES_QUERY,
     RESTORE_SEQUENCE,
     Terminal,
@@ -41,6 +42,7 @@ from omh.tui.terminal import (
     colorfgbg_names_dark,
     keyboard_protocol_request,
     split_background_replies,
+    split_cursor_reply,
     terminal_blocker,
     terminal_supported,
 )
@@ -228,6 +230,31 @@ class BackgroundReplyTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertFalse(colorfgbg_names_dark({"COLORFGBG": value}))
         self.assertFalse(colorfgbg_names_dark({}))
+
+
+class CursorReplyTests(unittest.TestCase):
+    """The cursor position report the startup query asks for: its row counts only in the answers DA1 closes."""
+
+    DA1 = b"\x1b[?62;22c"
+
+    def test_the_report_before_the_attributes_answer_gives_the_row_and_leaves_the_keys(self) -> None:
+        data = b"a\x1b]11;rgb:0000/0000/0000\x07b\x1b[34;1R" + self.DA1 + b"c"
+        row, rest = split_cursor_reply(data)
+        self.assertEqual(row, 34)
+        self.assertEqual(split_background_replies(rest), ("#000000", b"abc", True))
+
+    def test_with_no_report_garbage_or_no_attributes_answer_there_is_no_row_and_nothing_is_taken(self) -> None:
+        for data in (self.DA1, b"\x1b[34;R" + self.DA1, b"\x1b[;1R" + self.DA1, b"\x1b[34;1R", b"x\x1b[x"):
+            with self.subTest(data=data):
+                self.assertEqual(split_cursor_reply(data), (None, data))
+
+    def test_a_key_of_the_same_shape_typed_before_the_report_stays_a_key(self) -> None:
+        # Shift+F3 in xterm's encoding is `CSI 1;2R`; the terminal's own report is the last one before DA1.
+        row, rest = split_cursor_reply(b"\x1b[1;2R\x1b[20;1R" + self.DA1)
+        self.assertEqual((row, rest), (20, b"\x1b[1;2R" + self.DA1))
+
+    def test_the_query_asks_for_the_position_between_the_background_and_the_attributes(self) -> None:
+        self.assertEqual(CURSOR_POSITION_QUERY, "\x1b[6n")
 
 
 class MouseReportingSequenceTests(unittest.TestCase):
@@ -422,22 +449,23 @@ class TerminalPtyTests(unittest.TestCase):
     def test_the_background_query_reads_the_answer_and_hands_keys_typed_meanwhile_back(self) -> None:
         with Terminal(self.slave, self.slave) as term:
             self.master_output()
-            os.write(self.master, b"ab\x1b]11;rgb:ffff/ffff/ffff\x07\x1b[?62;22cz")
-            colour, typed = term.query_background()
-            self.assertEqual((colour, typed), ("#FFFFFF", b"abz"))
-            self.assertEqual(self.master_output(), (BACKGROUND_QUERY + DEVICE_ATTRIBUTES_QUERY).encode())
+            os.write(self.master, b"ab\x1b]11;rgb:ffff/ffff/ffff\x07\x1b[7;1R\x1b[?62;22cz")
+            colour, typed, row = term.query_background()
+            self.assertEqual((colour, typed, row), ("#FFFFFF", b"abz", 7))
+            written = (BACKGROUND_QUERY + CURSOR_POSITION_QUERY + DEVICE_ATTRIBUTES_QUERY).encode()
+            self.assertEqual(self.master_output(), written)  # DA1 last: its answer still ends the wait
 
     def test_the_attributes_answer_ends_the_wait_without_a_background(self) -> None:
         with Terminal(self.slave, self.slave) as term:
             os.write(self.master, b"\x1b[?62;22c")
             started = time.monotonic()
-            self.assertEqual(term.query_background(timeout=5.0), (None, b""))
+            self.assertEqual(term.query_background(timeout=5.0), (None, b"", None))  # no background, no position
             self.assertLess(time.monotonic() - started, 1.0)
 
     def test_a_terminal_that_answers_nothing_costs_the_timeout_and_no_more(self) -> None:
         with Terminal(self.slave, self.slave) as term:
             started = time.monotonic()
-            self.assertEqual(term.query_background(), (None, b""))
+            self.assertEqual(term.query_background(), (None, b"", None))
             elapsed = time.monotonic() - started
         self.assertGreaterEqual(elapsed, BACKGROUND_QUERY_SECONDS * 0.9)
         self.assertLess(elapsed, BACKGROUND_QUERY_SECONDS + 0.5)

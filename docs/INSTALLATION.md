@@ -380,10 +380,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   list or question closing there does not pull it up, its rows staying blank
   above the composer until more is printed into them. A resize or a redraw
   starts again under the output. The agent list opens under the composer.
-  Started on the last row of a terminal that already holds output, the TUI
-  cannot yet tell that row from one higher up (it does not ask the
-  terminal), so until its own output has filled the screen once it moves as
-  it does short of the bottom.
+  The TUI asks the terminal which row its cursor is on as it starts, so a
+  start from the last row of a terminal already holding output is on the
+  bottom rows at once. On a terminal that does not answer that
+  cursor-position query, it moves as it does short of the bottom until its
+  own output has filled the screen once.
 - A notice Hermes sends outside the transcript (the agent still starting, a
   credit warning, a provider that could not be reached) takes one row above
   the queued prompts, in its level's colour with a glyph. The next one
@@ -800,7 +801,8 @@ fallback marker at the path `omh` named, which `omh` removes.
 The OMH TUI opens with the theme `omh theme use` saved under the OMH home
 (see [TUI Themes](#tui-themes)); `/theme <name>` switches the open session only.
 Before its first frame it asks the terminal for its background colour (OSC 11,
-waiting at most 0.1 s; a terminal that does not answer can still say light or
+in the same wait as the cursor-position query, at most 0.1 s; a terminal that
+does not answer can still say light or
 dark through `COLORFGBG`: a light background by its colour, a dark one, colour
 0 to 6 or 8, as the dark stand-in `/theme dark` uses) and measures the theme
 against it: your prompts and the replies are in the terminal's own text colour,

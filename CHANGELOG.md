@@ -14,10 +14,13 @@ All notable changes will be documented here.
   follows the content until its last row is the screen's last row; from then
   on it keeps its height, so a list or question closing above the composer
   leaves blank rows above it, filled by the next output, and does not pull it
-  up. A resize or a redraw starts again under the output. Started on the last
-  row of a terminal that already holds output, the TUI follows the content
-  until its own output has filled the screen once, since it does not ask the
-  terminal where its cursor is. The agent list opens under the composer.
+  up. A resize or a redraw starts again under the output. The startup query
+  that asks for the background colour also asks for the cursor's row (CSI
+  6n, inside the same 0.1 s wait), so a start from the last row of a
+  terminal already holding output is on the bottom rows from its first frame;
+  only a terminal that does not answer that cursor-position query follows the
+  content until the TUI's own output has filled the screen once. The agent
+  list opens under the composer.
   Lines that leave the top of the streaming tail are written over the rows
   they were drawn on, so the rows under them are not painted again.
 - **Each tool call is its own row, and a cut output names the key that shows

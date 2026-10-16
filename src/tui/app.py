@@ -449,7 +449,7 @@ class TerminalLike(Protocol):
     def __enter__(self) -> Any: ...
     def __exit__(self, *exc: object) -> Any: ...
     def size(self) -> tuple[int, int]: ...
-    def query_background(self) -> tuple[str | None, bytes]: ...
+    def query_background(self) -> tuple[str | None, bytes, int | None]: ...
     def resized(self) -> bool: ...
     def read(self, timeout: float, wake: int | None = None) -> bytes: ...
     def write(self, text: str) -> None: ...
@@ -1245,6 +1245,15 @@ class App(ModesMixin, AgentViewMixin):
         self.background = answered or background_from_colorfgbg(named)
         self.background_named_dark = self.background is None and colorfgbg_names_dark(named)
         self.theme = build_theme(self._skin(), self._surface())
+
+    def adopt_cursor_row(self, row: int | None) -> None:
+        """The 1-based row the terminal reported its cursor on at launch: the region knows its place from the first frame.
+
+        None (no report) or a row outside the screen leaves the place unknown,
+        as without the report, until output has pushed it to certainty.
+        """
+        if row is not None and 1 <= row <= self.size[1] and not self.region.height:
+            self.region = LiveRegion(self.terminal.write, start_row=row - 1)
 
     def _skin(self) -> SkinTheme:
         return theme_for_name(self.theme.name) or default_theme()
@@ -3675,8 +3684,9 @@ def _run(
         _say(stderr, f"omh: the OMH TUI could not open a Hermes session: {error}")
         return request_fallback(environ)
     with terminal:
-        background, typed = terminal.query_background()
+        background, typed, row = terminal.query_background()
         app.adopt_background(background, environ)
+        app.adopt_cursor_row(row)
         code = app.run(typed)
     if app.farewell:
         _say(stderr, app.farewell)
