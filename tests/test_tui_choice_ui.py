@@ -521,12 +521,13 @@ class PickerTests(unittest.TestCase):
         header = next(row for row in drawn(narrow) if row.startswith(" Sessions (2)"))
         self.assertTrue(header.rstrip().endswith("esc closes"), header)
 
-    def test_the_history_search_and_the_completion_menu_keep_the_composer(self) -> None:
+    def test_the_history_search_hides_the_composer_and_the_completion_menu_keeps_it(self) -> None:
         app, _client = make_app()
         app.composer.history = ["an older prompt"]
         press(app, Key(CHAR, "r", ctrl=True))
-        self.assertTrue(composer_drawn(app, drawn(app)))
+        self.assertFalse(composer_drawn(app, drawn(app)))  # its query row stands where the composer was
         press(app, Key(ESCAPE))
+        self.assertTrue(composer_drawn(app, drawn(app)))
         type_text(app, "/")
         self.assertTrue(composer_drawn(app, drawn(app)))
 

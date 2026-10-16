@@ -107,7 +107,7 @@ from ..skin_pack import (
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
 from .frame import MODE_ACCEPT, MODE_PLAN, MODE_SHELL, STATUS_SEPARATOR, build_frame, sticky_line
-from .history import SEARCH_ACCEPT, SEARCH_CANCEL, HistorySearch, append_entry, history_path, load_history
+from .history import SEARCH_ACCEPT, SEARCH_CANCEL, SEARCH_HINTS, HistorySearch, append_entry, history_path, load_history
 from .gateway import (
     Event,
     GatewayCallError,
@@ -3287,13 +3287,17 @@ class App(ModesMixin, AgentViewMixin):
     def _composer_hidden(self) -> bool:
         """Whether the frame draws no composer: the person picks from a list, so nothing is typed into it.
 
-        A question answered by picking (`PromptSlot.picking`) and the session,
-        rewind and model pickers, whose filter is a row of their own. The
-        history search, the completion menus and the agent list keep it.
+        A question answered by picking (`PromptSlot.picking`), the session,
+        rewind and model pickers, whose filter is a row of their own, and the
+        history search, whose query row is. The completion menus and the agent
+        list keep it.
         """
         if self.slot is not None:
             return self.slot.picking
-        return self.picker is not None or self.rewind_picker is not None or self.model_picker is not None
+        return (
+            self.picker is not None or self.rewind_picker is not None or self.model_picker is not None
+            or self.search is not None
+        )
 
     def _mode_row_line(self, cols: int, strip: Line | None = None) -> Line:
         """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's second press).
@@ -3335,19 +3339,22 @@ class App(ModesMixin, AgentViewMixin):
         )
 
     def _slot_caret(self) -> tuple[int, int] | None:
-        """The open picker's caret, at the end of its filter row (its last render's); None with no picker open.
+        """The open picker's caret, at the end of its filter row (its last render's), or the history search's, at
+        the end of its query; None with neither open.
 
         A question answered by picking has none: no key types anywhere there.
         """
         if self.slot is not None:
             return None
-        picker = self.picker or self.rewind_picker or self.model_picker
+        picker = self.picker or self.rewind_picker or self.model_picker or self.search
         return picker.caret if picker is not None else None
 
     def _picker_keys(self) -> tuple[str, ...]:
-        """The open picker's keys, said on the mode row in place of the composer's; () with no picker open."""
+        """The open picker's or search's keys, said on the mode row in place of the composer's; () with neither open."""
         if self.picker is not None:
             return SESSION_PICKER_KEYS
+        if self.search is not None:
+            return SEARCH_HINTS
         if self.rewind_picker is not None:
             return REWIND_PICKER_KEYS
         return MODEL_PICKER_KEYS if self.model_picker is not None else ()
@@ -3425,7 +3432,7 @@ class App(ModesMixin, AgentViewMixin):
         if self.picker is not None:
             return self.picker.lines(cols, self.theme, cap, self.wall_clock(), keys=keys)
         if self.search is not None:
-            return self.search.lines(cols, self.theme, cap)
+            return self.search.lines(cols, self.theme, cap, keys=keys)
         if self.rewind_picker is not None:
             return self.rewind_picker.lines(cols, self.theme, cap, self.wall_clock(), keys=keys)
         if self.model_picker is not None:

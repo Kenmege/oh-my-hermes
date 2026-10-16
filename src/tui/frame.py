@@ -47,7 +47,7 @@ the caret stays right after the glyph and the composer's text stays empty.
 While the person picks from a list (`composer` is None) the frame draws no
 composer at all: no rules, no input rows, and no caret (`Frame.cursor` is None,
 and `LiveRegion` hides the cursor) unless `slot_caret` puts one in the slot (a
-picker's filter row, where its typing goes). The slot stands in the
+picker's filter row or the history search's query row, where typing goes). The slot stands in the
 composer's place, right above the mode row, with the rows `layout.choice_cap`
 gives it. The rows under the composer are the same either way, so the
 composer comes back on its row.

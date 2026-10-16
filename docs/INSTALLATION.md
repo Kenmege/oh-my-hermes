@@ -339,8 +339,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - The mode row names the input mode, or the keys that matter right now, and
   the reasoning effort when Hermes reports one. While Hermes asks something
   it names that question's keys (`↑↓ pick · enter confirms · d or esc
-  denies`), and while a picker is open, the picker's (`↑↓ move · enter
-  switches · esc closes`). The working row and the mode row offer Esc for an interrupt only
+  denies`), and while a picker or the Ctrl+R search is open, its keys (`↑↓
+  move · enter switches · esc closes`). The working row and the mode row offer Esc for an interrupt only
   while Esc would do that: not while a question, a picker, the history
   search, the agent list, a picked steer or rewind, the `@` menu or a draft in
   the composer takes Esc, so Esc means one thing on the screen. On a row too
@@ -357,7 +357,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   its parent.
 - The composer does not move when the panel grows or shrinks; only its own
   lines move it, and the agent list for as long as it is open. Hidden while
-  you pick from a list, it comes back on the same row.
+  you pick from a list or search the history with Ctrl+R (the search's row
+  stands where the composer was, the caret at the end of what you typed), it
+  comes back on the same row, as you left it.
 - A notice Hermes sends outside the transcript (the agent still starting, a
   credit warning, a provider that could not be reached) takes one row above
   the queued prompts, in its level's colour with a glyph. The next one
