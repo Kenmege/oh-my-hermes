@@ -955,8 +955,16 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             message = f"고객 정보 마스킹해서 개발팀에 보내줘. It{spelling}s urgent."
             with self.subTest(message=message):
                 self.assertFalse(_offered(message))
-        # A `’` that opens or closes a word still quotes.
-        self.assertTrue(_offered("고객 정보 마스킹해서 ’acme’ 개발팀에 보내줘"))
+        # At the edge of a word either spelling quotes, and so does `‘` on its
+        # own, so a place proven inside unquoted is no longer proven inside.
+        self.assertFalse(data_share_request_admitted("redact pii in the export and send it to the dev team"))
+        for message in (
+            "redact pii in the export and send it to the 'dev team'",
+            "redact pii in the export and send it to the ’dev team’",
+            "redact pii in the export and send it to the ‘dev team",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(data_share_request_admitted(message))
 
     def test_english_and_korean_agree(self) -> None:
         for english, korean, offered in (

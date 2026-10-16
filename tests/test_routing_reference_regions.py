@@ -571,6 +571,7 @@ class WordEndingQuoteMarkTests(unittest.TestCase):
             "Send the export to the partners'",
             "We were goin' to $ulw-work the build",
             "Check the users', then the admins' (and the owners') rows.",
+            "Ask the users'. Then send the export to Acme.",
             "users' 데이터를 Acme에 보내줘",
             "請把users'資料寄給Acme",
             # `’` opens no quote at all; a word ending in it reads the same.
@@ -588,10 +589,13 @@ class WordEndingQuoteMarkTests(unittest.TestCase):
             ("Explain ", "‘the users’", " data’ to Acme"),
             ("Explain ", "'$ulw-work'", " to me"),
             ("x = ", "'a'", ""),
-            # Glued to more text, it opens one.
+            # Glued to more text, it opens one. Before a second `'`, the two
+            # are one empty quote, not a quote that runs to the end.
             ("print(f", "'$ulw-work fix it'", ")"),
+            ("Read API", "''", "_KEY= from the env"),
             # After a CJK character, it opens one.
             ("請解釋", "'工作流程'", "的意思"),
+            ("고객", "' list", ""),
             ("Explain ", "'it's $ulw-work", ""),
         ):
             message = before + reference + after

@@ -10,10 +10,13 @@ All notable changes will be documented here.
   read the verb or the place: "Redact the PII in the customers' export and
   send it to Acme." got no data share review from the router or the hint, and
   in "explain the users' '$ulw-work' snippet" the possessive paired with the
-  next quote and left `$ulw-work` to dispatch. A `'` that ends a word (before
-  a space, sentence punctuation, a closing bracket, a CJK character or the
-  end of the message) now opens no quote. It still closes one that is open,
-  and a `'` after a space or glued to more text (`f'$x'`) still opens one.
+  next quote and left `$ulw-work` to dispatch. A `'` that ends a word now
+  opens no quote: one right after a letter or digit that is not East-Asian
+  wide (CJK, kana, Hangul or fullwidth), and right before whitespace, one of
+  `.,;:!?)]`, an East-Asian wide character or the end of the message. It
+  still closes one that is open. A `'` after a space or an East-Asian wide
+  character (`고객' list`), or glued to more text (`f'$x'`, `API''`), still
+  opens one.
   The data share review also reads `’` between two letters ("it’s", as Mac
   and iOS type it) as an apostrophe, as it reads `'`, not as a quote.
 - **Two OMH TUI subagents whose goals start alike read differently on the
