@@ -307,6 +307,25 @@ class WaitingTimeTests(unittest.TestCase):
         self.assertEqual((summary.seconds, summary.waited), (40.0, 27.0))
         self.assertTrue([row for row in drawn(app) if row.startswith("✻ 40s (27s waiting on you)")])
 
+    def test_the_next_turn_starts_with_no_wait_whoever_started_it(self) -> None:
+        for start in ("prompt", "message.start"):
+            with self.subTest(start=start):
+                app, _client, now = self.clocked()
+                app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+                now[0] = 120.0
+                armed(app)
+                press(app, Key(ESCAPE))
+                app._on_event(Event("message.complete", SID, {"text": "done"}))
+                if start == "prompt":
+                    type_text(app, "next")
+                    press(app, Key(ENTER))
+                else:  # a turn the TUI did not start
+                    app._on_event(Event("message.start", SID, {}))
+                now[0] = 125.0
+                app._on_event(Event("message.complete", SID, {"text": "done"}))
+                summaries = [block for block in app.transcript.blocks if isinstance(block, TurnSummaryBlock)]
+                self.assertEqual([summary.waited for summary in summaries], [20.0, 0.0])
+
     def test_a_turn_without_a_question_says_no_wait(self) -> None:
         app, _client, now = self.clocked()
         now[0] = 130.0
