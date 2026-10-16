@@ -615,6 +615,18 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "redact pii from the records before sending them to a coworker in finance",
             "redact pii in the export, give me a summary, and send it to the dev team",
             "redact pii in the export and send it to the data team and the qa team",
+            # The lead verb's object is the data, not a send ("email").
+            "redact the email addresses in the export before we send it to the dev team",
+            "redact the logs before uploading them into staging",
+            "redact the logs before uploading them onto the test server",
+            # Every later verb that sends it on names an inside place too.
+            *(
+                f"redact pii in the export, send it to the dev team and {verb} it to the qa team"
+                for verb in (
+                    "cc", "email", "emailing", "forward", "forwarding", "give", "giving", "hand", "handing", "pass",
+                    "passing", "transfer", "transferring",
+                )
+            ),
             "개인정보 지우고 동료한테 보내줘",
             "고객 정보 가명 처리해서 QA에 보내줘",
             "개인정보 가명 처리해서 다른 부서에 공유해줘",
@@ -622,6 +634,10 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "개인정보 지우고 부서원들한테 공유해줘",
             "이메일 주소를 익명화해서 사내 슬랙 채널에 공유해줘",
             "개인정보 지우고 개발팀에 이메일로 보내줘",
+            # The data as an object ends the place's words; 로 that names no
+            # destination ("업체별로") is no place.
+            "개인정보 지운 명단을 개발팀에 보내줘",
+            "업체별로 정리한 고객 정보 마스킹해서 개발팀에 보내줘",
         ):
             with self.subTest(message=message):
                 self.assertFalse(_offered(message))
@@ -713,14 +729,25 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "redact pii in the export, send it to the dev team and email it to acme",
             "redact pii in the export, send it to the dev team and transfer it to acme",
             "개인정보 익명화해서 QA팀에 보내고 캐글에 올려줘",
-            "고객 정보 마스킹해서 데이터팀에 보내고 acme에도 보내줘",
+            # A route or a party between the send and its place.
+            *(
+                f"redact pii in the export and send it {word} acme to the dev team"
+                for word in ("at", "by", "for", "from", "on", "through", "using", "via")
+            ),
+            # A second Korean place with 도 ("also").
+            *(
+                f"고객 정보 마스킹해서 데이터팀에 보내고 acme{particle} 보내줘"
+                for particle in ("에게도", "한테도", "께도", "으로도", "로도", "에도")
+            ),
         ):
             with self.subTest(message=message):
                 self.assertTrue(_offered(message))
 
     def test_quoted_text_never_proves_a_place_inside(self) -> None:
-        # Both surfaces read the request with its quoted text removed; what
-        # is left ("the team", nothing) is not proven inside either.
+        # The rule itself reads no place as inside in a request with
+        # quotation marks. Both surfaces remove quoted text before they call
+        # it; what is left here ("the team", "the team called", nothing) is
+        # not proven inside either.
         for message in (
             'redact pii in the export and send it to the "partner" team',
             'redact pii in the export and send it to the team called "acme support"',

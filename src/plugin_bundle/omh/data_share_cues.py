@@ -41,7 +41,9 @@ not personal data at all, so all of these must hold:
   colleague", "upload it to staging"; `_sends_stay_inside`). A send that
   names no place is leaving, and so is one whose place holds any other word
   ("the data team and Acme", "the data team at Acme", "a colleague who now
-  works at Acme"). A request with quotation marks has no inside place;
+  works at Acme"). A request with quotation marks has no inside place
+  here; both surfaces remove quoted text before they call this, and what is
+  left is read by the same rule;
 - no word after the openers names a legal question, Hermes (a setting of it,
   or Hermes doing the job: "before hermes uploads it to the vendor"), or a
   storage-wide scan. "hermes," as the address before the request is an
