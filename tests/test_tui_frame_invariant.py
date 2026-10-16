@@ -1,12 +1,18 @@
-"""The region follows the content: `build_frame` + `LiveRegion` driven into a VT screen model.
+"""The region follows the content until the screen is full, then stays on the bottom rows.
 
-The region (sticky prompt, streaming tail, slot, composer, mode row, status
-line) is drawn right under the output and is exactly as tall as its frame, the
-way Claude Code's input box follows what was printed: no blank rows between
-the transcript and the composer at the start, after a turn or around a
-question. This file is the regression proof. It runs the frame helper and the
-live region the way the app loop does (`App._render`: build a frame, then
-render it with the stable lines flushed above it in the same write) through
+`build_frame` + `LiveRegion` driven into a VT screen model. The region (sticky
+prompt, streaming tail, slot, composer, mode row, status line) is drawn right
+under the output and is as tall as its content, the way Claude Code's input
+box follows what was printed: no blank rows between the transcript and the
+composer at the start, after a turn or around a question. Once its last row is
+the screen's last row (and the region knows it), the frame keeps the region's
+height, so what shrinks above the composer becomes blank pad rows at the
+region's top and the composer stays on the bottom rows (the owner's complaint
+about Hermes' Ink TUI: a closing list must not pull the prompt up). This file
+is the regression proof. It runs the frame helper and the live region the way
+the app loop does (`App._render`: build a frame, with the region's height as
+`min_height` once it is on the screen's last row, then render it with the
+stable lines flushed above it in the same write) through
 event sequences: a streaming tail that grows past the screen while stable
 lines flush, a panel slot that grows and shrinks, a server-request prompt
 slot, a completion menu, a composer that grows to its maximum and back, a
@@ -16,8 +22,9 @@ agent list taking the keys, growing past its cap and giving them back. After
 every frame it reads the VT screen back and asserts:
 
 (a) the shell history and every line flushed so far are exactly what lies
-    above the region, complete and in order, so no blank row stands between
-    the last line printed and the region's first row;
+    above the region, complete and in order, so the only blank rows between
+    the last line printed and the composer are the region's own (pad rows on
+    the bottom rows, the spacer a block opens with);
 (b) the hardware cursor sits on the composer caret;
 (c) the status line is the region's last row, the region's rows are exactly
     the frame's rows above it, and every row under the status line is blank;
@@ -31,7 +38,10 @@ every frame it reads the VT screen back and asserts:
     row, as many as it has up to the cap;
 (f) whenever the live region says which screen row it ends on
     (`LiveRegion.last_row`), that is the row the status line is on, and by
-    the end of every scenario it does say.
+    the end of every scenario it does say;
+(g) a frame built with the region on the screen's last row leaves it there,
+    and moves the composer's first row only by its own row count and the rows
+    the agent list adds or gives back.
 
 A question answered by picking hides the composer (`composer=None`): those
 frames have no rule and no caret, the slot's rows stand right above the mode
@@ -130,9 +140,18 @@ class Session:
         self.modes_seen: set[str] = set()
         self.scrolled = 0  # rows the screen has scrolled since the region was made
         self.heights: list[int] = []  # the region's height at every check
+        self.pinned = False  # the frame being checked was built with the region's last row on the screen's last row
+        self.pinned_frames = 0  # how many frames so far were
+        self.last_under = rows_under_composer(rows)  # rows between the composer and the status line, as last drawn
         self.label = ""
 
     # -- the app loop ---------------------------------------------------------
+
+    def min_height(self, flush: Sequence[str]) -> int:
+        """What the app passes: the region's height, less the lines flushed over it, once its last row is the screen's."""
+        self.pinned = self.region.last_row(self.rows) == self.rows - 1
+        self.pinned_frames += self.pinned
+        return max(self.region.height - len(flush), 0) if self.pinned else 0
 
     def render(self, frame_lines: Sequence[Line], cursor: tuple[int, int] | None, flush: Sequence[str]) -> int:
         """Render as the app does, the flush first in the same write; the rows the screen scrolled for it."""
@@ -156,6 +175,7 @@ class Session:
             slot=self.slot,
             mode=self.mode,
             mode_row=self.mode_row(),
+            min_height=self.min_height(flush),
         )
         self.case.assertIsNone(frame.cursor)
         scrolled = self.render(frame.lines, frame.cursor, flush)
@@ -199,6 +219,7 @@ class Session:
             mode=self.mode,
             mode_row=mode_row,
             agent_list=(lambda room: self.agent_list) if self.agent_list else None,
+            min_height=self.min_height(flush),
         )
         scrolled = self.render(frame.lines, frame.cursor, flush)
         self.lines = frame.lines
@@ -249,6 +270,9 @@ class Session:
         # (d) the screen scrolled only because the region reached its end
         if scrolled:
             t.assertEqual(status_row, self.rows - 1, f"{where}: scrolled {scrolled} rows short of the screen's end")
+        # (g) once the region sits on the screen's last row, it stays there whatever shrinks
+        if self.pinned:
+            t.assertEqual(status_row, self.rows - 1, f"{where}: the region left the screen's last row")
         # (f) where the region says its last row is, the status line is
         known = self.region.last_row(self.rows)
         self.known_rows.append(known)
@@ -286,7 +310,12 @@ class Session:
         if under == 2 and not listed:
             t.assertEqual(screen[status_row - 1], text_of(expected[-2]), f"{where}: the mode row")
             t.assertTrue(screen[status_row - 1], f"{where}: the mode row is empty")
+        # (g) pinned, the composer's first row moves only with its own row count and the rows the agent list adds
+        if self.pinned and self.last is not None:
+            moved = (self.last[2] - len(lines)) + (self.last_under - under)
+            t.assertEqual(composer_top - self.last[1], moved, f"{where}: the composer row moved on the bottom rows")
         self.last = (status_row, composer_top, len(lines))
+        self.last_under = under
         # (b) the hardware cursor is on the caret
         t.assertEqual(self.screen.cursor, (composer_top + caret_row, caret_col), where)
         t.assertTrue(self.screen.cursor_visible, where)
@@ -339,18 +368,23 @@ def run_scenario(session: Session) -> None:
     # the composer, it adds its extra rows to the region (the tail gives them where the region is at its tallest),
     # and once it leaves the region is as tall as before and the composer as far under the output as before
     resting, resting_height, scrolled = session.last, session.region.height, session.scrolled
+    pinned_at_rest = session.region.last_row(rows) == rows - 1
     for size in (3, 2, 8, rows + 4, 5):
         session.agent_list = [plain(f"agent row {n}") for n in range(size - 1)] + [plain("↑↓ select")]
         session.paint("the agent list is focused")
         lifted = max(len(session.drawn_list) - 1, 0)
-        expected = min(resting_height + lifted, rows - 1)
-        session.case.assertEqual(session.region.height, expected, f"{rows} rows, list of {size}")
+        if not pinned_at_rest:  # pinned, its rows come out of the pad first (and (g) holds the composer)
+            expected = min(resting_height + lifted, rows - 1)
+            session.case.assertEqual(session.region.height, expected, f"{rows} rows, list of {size}")
     session.agent_list = []
     session.paint("the agent list gives the keys back")
     assert session.last is not None and resting is not None
-    session.case.assertEqual(session.region.height, resting_height, f"{rows} rows: rows left behind by the list")
-    lifted_by_scrolling = session.scrolled - scrolled
-    session.case.assertEqual(session.last[1:], (resting[1] - lifted_by_scrolling, resting[2]), f"{rows} rows")
+    if pinned_at_rest:
+        session.case.assertEqual(session.last, resting, f"{rows} rows: the composer is not back on its bottom row")
+    elif session.region.last_row(rows) != rows - 1:
+        session.case.assertEqual(session.region.height, resting_height, f"{rows} rows: rows left behind by the list")
+        lifted_by_scrolling = session.scrolled - scrolled
+        session.case.assertEqual(session.last[1:], (resting[1] - lifted_by_scrolling, resting[2]), f"{rows} rows")
 
     # a completion menu under a slash
     session.keys("slash typed", typed("/"))
@@ -461,11 +495,64 @@ class RegionFollowsContentTests(unittest.TestCase):
         self.assertEqual(session.last[1], opened[1] - 6)
         self.assertFalse([row for row in session.screen.lines() if row.startswith("panel row")])
 
-    def test_with_a_full_screen_a_closing_panel_leaves_the_composer_higher_and_blank_rows_under_it(self) -> None:
-        # The screen scrolled to make room for the panel; what scrolled off does not come back, so the region
-        # ends higher once the panel is gone, with blank rows under it, as Claude Code's input box does.
+    def at_the_bottom(self, rows: int = 24, cols: int = 80) -> Session:
+        """A session whose region has reached the screen's last row and knows it: what a redraw and output give."""
+        session = Session(self, rows, cols, history=0, at_top=True)
+        session.paint("first frame")
+        session.paint("output fills the screen", flush=[f"line {n}" for n in range(rows + 4)])
+        self.assertEqual(session.region.last_row(rows), rows - 1)
+        return session
+
+    def blank_rows_above_the_composer(self, session: Session) -> int:
+        """Blank rows between the last line printed and the region's first drawn row (the rule, or the slot)."""
+        screen = session.screen.lines()
+        top = session.rows - session.region.height
+        return next(index for index, row in enumerate(screen[top:]) if row)
+
+    def test_on_the_bottom_rows_whatever_closes_above_the_composer_leaves_it_there_with_the_rows_above_it(self) -> None:
+        # The owner's choice for G1: below the screen's last row the composer follows the output; once it is
+        # there it stays, and a list or question closing does not pull it up (the old "goes too far up").
+        closings = {
+            "a panel": lambda session: setattr(session, "slot", [plain(f"panel row {n}") for n in range(6)]),
+            "a completion menu": lambda session: setattr(session, "slot", [plain(f"/command-{n}") for n in range(6)]),
+        }
+        for name, opens in closings.items():
+            with self.subTest(closing=name):
+                session = self.at_the_bottom()
+                resting = session.last
+                opens(session)
+                session.paint(f"{name} opens")
+                session.slot = []
+                session.paint(f"{name} closes")
+                self.assertEqual(session.last, resting)  # the composer and the status line did not move up
+                self.assertEqual(self.blank_rows_above_the_composer(session), 6)  # the freed rows, above it
+                session.paint("two lines printed", flush=["a notice", "another"])
+                self.assertEqual(session.last, resting)
+                self.assertEqual(self.blank_rows_above_the_composer(session), 4)  # the lines filled two of them
+                self.assertEqual(session.screen.lines()[23 - 4 - 4 - 2 : 23 - 4 - 4], ["a notice", "another"])
+
+    def test_on_the_bottom_rows_a_question_and_the_agent_list_closing_leave_the_composer_there(self) -> None:
+        session = self.at_the_bottom()
+        resting = session.last
+        session.slot = [plain(f"option {n}") for n in range(choice_cap(24, 80))]
+        session.paint_hidden("a question opens")
+        session.slot = []
+        session.paint("the question closes")
+        self.assertEqual(session.last, resting)
+        session.agent_list = [plain(f"agent row {n}") for n in range(7)] + [plain("↑↓ select")]
+        session.paint("the agent list is focused")
+        session.agent_list = []
+        session.paint("the agent list gives the keys back")
+        self.assertEqual(session.last, resting)
+        self.assertGreater(self.blank_rows_above_the_composer(session), 0)
+
+    def test_before_its_place_is_certain_a_full_screen_region_still_follows_the_content(self) -> None:
+        # Launched from the screen's last row, the region cannot yet tell that row from one higher up (it never
+        # asks the terminal), so until output pushes its place to certainty it follows the content: a panel
+        # closing takes the composer up and leaves its rows under the status line.
         session = Session(self, 24, 80, history=27)
         session.paint("first frame")
+        self.assertIsNone(session.region.last_row(24))
         assert session.last is not None
         resting, scrolled = session.last, session.scrolled
         session.slot = [plain(f"panel row {n}") for n in range(6)]
@@ -475,8 +562,8 @@ class RegionFollowsContentTests(unittest.TestCase):
         session.paint("the panel closes")
         self.assertEqual(session.last, (resting[0] - 6, resting[1] - 6, 1))
         self.assertEqual(session.screen.lines()[-6:], [""] * 6)
-        session.paint("the next line printed", flush=["a notice"])
-        self.assertEqual(session.last[0], resting[0] - 5)  # the region moves down under it again
+        session.paint("output makes its place certain", flush=[f"line {n}" for n in range(24)])
+        self.assertEqual(session.region.last_row(24), 23)  # pinned from here on
 
     def test_a_question_answered_by_picking_hides_the_composer_and_then_draws_it_under_the_output(self) -> None:
         for rows in HEIGHTS:
@@ -545,6 +632,127 @@ class RegionFollowsContentTests(unittest.TestCase):
         session.agent_list = []
         session.paint("the agent list gives the keys back")
         self.assertEqual(session.screen.lines(), before)
+
+
+class AppBottomRowsTests(unittest.TestCase):
+    """The app on the bottom rows: what closes above the composer there leaves it in place, a redraw starts over."""
+
+    def at_the_bottom(self, app_maker: object = None) -> tuple[object, list[str]]:
+        from test_tui_modes import drawn, make_app
+
+        app = app_maker() if callable(app_maker) else make_app(rows=24, cols=80)[0]
+        app._on_input(Key(CHAR, "l", ctrl=True))  # a full redraw homes the cursor: the region knows its place
+        drawn(app)
+        app.transcript.add_notice("\n".join(f"line {n}" for n in range(40)))
+        screen = drawn(app)
+        self.assertEqual(app.region.last_row(24), 23)
+        return app, screen
+
+    def gap(self, screen: list[str]) -> int:
+        """Blank rows right above the composer's top rule (the region's pad rows, and the one spacer row)."""
+        rule = next(index for index, row in enumerate(screen) if row.startswith("─"))
+        return next(count for count in range(rule + 1) if screen[rule - count - 1])
+
+    def where(self, screen: list[str]) -> tuple[int, int]:
+        """(the composer's top rule, the status line): screen rows."""
+        rule = next(index for index, row in enumerate(screen) if row.startswith("─"))
+        return rule, next(index for index, row in enumerate(screen) if row.startswith(STATUS_PREFIX))
+
+    def test_a_picker_a_menu_a_question_and_the_agent_list_closing_leave_the_composer_on_the_bottom_rows(self) -> None:
+        from test_tui_agent_strip import agent_app
+        from test_tui_choice_ui import SESSIONS
+        from test_tui_modes import drawn, type_text
+
+        from omh.tui.gateway import Event, ServerRequest
+        from omh.tui.keys import DOWN
+
+        def picker(app: object) -> None:
+            app._open_session_picker(SESSIONS)
+            drawn(app)
+            app._on_input(Key(ESCAPE))
+
+        def menu(app: object) -> None:
+            type_text(app, "/")
+            self.assertTrue([row for row in drawn(app) if row.startswith(" /") or row.startswith("/")])
+            app._on_input(Key(BACKSPACE))
+
+        def question(app: object) -> None:
+            app._on_server_request(ServerRequest("srq-9", "approval", {"command": "rm -rf ./x", "description": "delete"}))
+            drawn(app)
+            app._on_event(Event("request.cancel", app.sid, {"id": "srq-9"}))  # Hermes withdraws it
+
+        def agent_list(app: object) -> None:
+            app._on_input(Key(DOWN))
+            drawn(app)
+            app._on_input(Key(ESCAPE))
+
+        cases = {"a picker": (picker, None), "a completion menu": (menu, None), "an approval": (question, None),
+                 "the agent list": (agent_list, lambda: agent_app()[0])}
+        for name, (opens_and_closes, maker) in cases.items():
+            with self.subTest(closing=name):
+                app, before = self.at_the_bottom(maker)
+                opens_and_closes(app)
+                after = drawn(app)
+                self.assertEqual(self.where(after), self.where(before))  # the composer and the status line stayed
+                self.assertEqual(self.where(after)[1], 23)
+                # The freed rows stay above the composer; the approval's withdrawal notice is printed into them, and
+                # the agent list's rows came out of the turn's tail, so neither leaves more blank rows than before.
+                self.assertGreaterEqual(self.gap(after), self.gap(before))
+                if name in ("a picker", "a completion menu"):
+                    self.assertGreater(self.gap(after), self.gap(before))
+
+    def test_the_next_output_fills_the_freed_rows_and_a_redraw_starts_under_the_output_again(self) -> None:
+        from test_tui_modes import drawn, type_text
+
+        app, before = self.at_the_bottom()
+        type_text(app, "/")  # the completion menu: a slot as tall as its cap
+        drawn(app)
+        app._on_input(Key(BACKSPACE))
+        freed = self.gap(drawn(app))
+        self.assertGreater(freed, self.gap(before) + 2)
+        app.transcript.add_notice("a notice")  # its spacer and its row
+        filled = drawn(app)
+        self.assertEqual(self.gap(filled), freed - 2)
+        self.assertEqual(self.where(filled), self.where(before))
+        app._full_redraw()  # a resize, Ctrl+L, a switch: the region starts again right under the output
+        redrawn = drawn(app)
+        self.assertEqual(self.gap(redrawn), self.gap(before))
+        self.assertEqual(self.where(redrawn)[1], 23)
+
+    def test_launched_on_the_last_row_it_follows_the_content_until_its_place_is_certain(self) -> None:
+        # The owner's rule for an unknown place: count it as short of the bottom. The TUI does not ask the terminal
+        # where its cursor is, so after a launch from a terminal already holding output, the first screen of
+        # output is followed, a closing menu taking the composer up, and the bottom rows hold from then on.
+        from test_tui_modes import drawn, make_app, type_text
+
+        app = make_app(rows=24, cols=80)[0]
+        app.terminal.screen.feed("".join(f"$ shell {n}\r\n" for n in range(30)))  # the cursor on the last row
+        app.transcript.add_notice("a short first output")
+        before = drawn(app)
+        self.assertEqual((self.where(before)[1], app.region.last_row(24)), (23, None))
+        type_text(app, "/")
+        drawn(app)
+        app._on_input(Key(BACKSPACE))
+        after = drawn(app)
+        self.assertLess(self.where(after)[1], 23)  # the menu's rows went with it: blank under the status line
+        app.transcript.add_notice("\n".join(f"line {n}" for n in range(30)))
+        drawn(app)
+        self.assertEqual(app.region.last_row(24), 23)  # its own output filled the screen: certain, and pinned
+
+    def test_short_of_the_bottom_rows_a_closing_picker_takes_the_composer_up(self) -> None:
+        from test_tui_choice_ui import SESSIONS
+        from test_tui_modes import drawn, make_app
+
+        app = make_app(rows=24, cols=80)[0]
+        app._on_input(Key(CHAR, "l", ctrl=True))
+        before = drawn(app)
+        app._open_session_picker(SESSIONS)
+        drawn(app)
+        app._on_input(Key(ESCAPE))
+        after = drawn(app)
+        self.assertEqual(self.where(after), self.where(before))  # back right under the output, no rows held
+        self.assertLess(self.where(after)[1], 23)
+        self.assertEqual(after, before)
 
 
 if __name__ == "__main__":

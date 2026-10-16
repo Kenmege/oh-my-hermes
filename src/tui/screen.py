@@ -6,7 +6,9 @@ native behaviour. Right below the last of them sits one live region: sticky
 prompt, streaming tail, panels, composer, status line. The region starts
 where the output ends and is as tall as its frame, so it follows the content:
 it grows downward until its last row is the screen's last row, and from then
-on growing scrolls the screen up as printed output would.
+on growing scrolls the screen up as printed output would. From then on the
+app also keeps its frames from getting shorter (`layout`'s pad rows, blank
+rows at the frame's top), so the region's last row stays there.
 
 The region never learns its absolute row. Every move is relative to the
 region's own top (CR, cursor up/down, erase line, erase below, "\\r\\n"), so it
@@ -35,9 +37,10 @@ Flushing: `flush_above` writes its lines from the region's top row down,
 over the region's own rows, and the region continues on the row under the
 last of them. The region's rows that no flushed line covered have not moved,
 so a following frame repaints only those whose bytes differ there: lines
-that leave the top of the streaming tail for the transcript repaint nothing
-under them. Lines beyond the region's last row move into the blank rows
-under it or scroll the screen, as printed output does.
+that leave the top of the streaming tail for the transcript, or that fill a
+frame's pad rows, repaint nothing under them. Lines beyond the region's last
+row move into the blank rows under it or scroll the screen, as printed output
+does.
 
 Synchronized output: every frame that paints rows is one synchronized
 update (DECSET 2026, `SYNC_BEGIN` ... `SYNC_END`), so a terminal that

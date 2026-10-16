@@ -370,9 +370,9 @@ picker write under the OMH home, and an empty fallback marker at the path
 `omh` named, which `omh` removes). Finished
 transcript lines go to the terminal's own scrollback; only a region drawn
 right under them (the streaming tail, one slot for the plan and agents panels
-or a prompt Hermes asked, the composer, and the status line) repaints, and it
-is as tall as what it holds, so the composer follows the content and moves
-with the slot. When it cannot start
+or a prompt Hermes asked, the composer, and the status line) repaints; the
+composer sits right under the output until the screen fills, then stays on
+the bottom rows, and a slot closing there does not move it. When it cannot start
 (an OMH that cannot import itself, gateway unavailable, protocol drift at
 startup) it creates the sentinel file `omh` named for that launch and exits
 75; that exit, and a blocker found before anything starts, has `omh` say why

@@ -15,15 +15,19 @@ rules: approvals off is what the frame must never hide, and the mode row
 names both. The mode row under the bottom rule is a line the app builds; the
 frame only places it.
 
-The composer follows the content. A frame is exactly as tall as what it
-holds (`layout.allocate`), and `LiveRegion` draws it right under the output,
-so the composer sits under the last row printed, the panel, prompt slot,
-completion menu, tail and sticky prompt above it, and the rows under it
-(bottom rule, mode row, status line, a function of the terminal size alone,
+The composer follows the content until the screen is full, then stays on the
+bottom rows. With `min_height` 0 a frame is exactly as tall as what it holds
+(`layout.allocate`), and `LiveRegion` draws it right under the output, so the
+composer sits under the last row printed, the panel, prompt slot, completion
+menu, tail and sticky prompt above it, and the rows under it (bottom rule,
+mode row, status line, a function of the terminal size alone,
 `layout.under_composer`) under it. When something above the composer grows,
 the composer moves down with it until the region's last row is the screen's
 last row, and from then on the screen scrolls instead; when something above
-it shrinks, the composer moves up by as many rows.
+it shrinks, the composer moves up by as many rows. Once the region's last row
+is the screen's last row, the app passes the region's height as
+`min_height`, so what shrinks there becomes pad rows at the top of the frame
+and the composer does not move up.
 
 While the agent list is focused (`agent_list` is given) it is drawn where the
 mode row was and is as tall as it needs to be within `layout.agent_list_cap`,
@@ -92,8 +96,9 @@ def build_frame(
     placeholder: str = "",
     agent_list: Callable[[int], Sequence[Line]] | None = None,
     slot_caret: tuple[int, int] | None = None,
+    min_height: int = 0,
 ) -> Frame:
-    """The region for one repaint.
+    """The region for one repaint; `min_height` rows at least, pad rows at the top making up the rest.
 
     `attachments` is drawn as the composer's first row when the composer may
     have two rows; a terminal too short for that shows the input alone.
@@ -129,6 +134,7 @@ def build_frame(
         composer_rows=len(composer_lines),
         agent_list_rows=len(listed),
         composer_hidden=composer is None,
+        min_height=min_height,
     )
     rule = rule_line(cols, theme, mode)
     lines = compose(
@@ -146,7 +152,7 @@ def build_frame(
     if composer is not None:
         cursor: tuple[int, int] | None = (caret_row(budget, caret_line), caret_col)
     elif slot_caret is not None and 0 <= slot_caret[0] < budget.slot:
-        cursor = (budget.sticky + budget.tail + slot_caret[0], slot_caret[1])
+        cursor = (budget.pad + budget.sticky + budget.tail + slot_caret[0], slot_caret[1])
     else:
         cursor = None
     return Frame(

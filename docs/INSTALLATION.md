@@ -361,15 +361,20 @@ run and approval decision stays Hermes'; the screen is OMH's.
   turn's done line; a plan finished between turns leaves the same way, and
   one already finished when the session opens is not drawn. A plan with an
   item left stays. The active item's colour wave is the plan's only motion.
-- The region follows what is printed, as Claude Code's input box does: a
-  fresh session shows the composer right under the banner, and after a turn
-  it sits under the turn's last line with one blank row between, the spacer
-  every block opens with. When the panel, a question or a menu above the
-  composer grows, the composer moves down with it until the screen is full,
-  and then the transcript scrolls up instead; when they shrink or close, it
-  moves up with them, so on a full screen the rows they took stay blank under
-  the status line until more is printed. The agent list opens under the
-  composer.
+- The composer sits right under the output until the screen fills, then
+  stays on the bottom rows. A fresh session shows it right under the banner,
+  and after a turn it sits under the turn's last line with one blank row
+  between, the spacer every block opens with. Until the screen is full, the
+  panel, a question or a menu above the composer moves it down as it grows
+  and up as it shrinks or closes. Once the composer has reached the bottom
+  rows it stays there: what grows above it scrolls the transcript up, and a
+  list or question closing there does not pull it up, its rows staying blank
+  above the composer until more is printed into them. A resize or a redraw
+  starts again under the output. The agent list opens under the composer.
+  Started on the last row of a terminal that already holds output, the TUI
+  cannot yet tell that row from one higher up (it does not ask the
+  terminal), so until its own output has filled the screen once it moves as
+  it does short of the bottom.
 - A notice Hermes sends outside the transcript (the agent still starting, a
   credit warning, a provider that could not be reached) takes one row above
   the queued prompts, in its level's colour with a glyph. The next one

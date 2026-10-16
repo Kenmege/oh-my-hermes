@@ -243,14 +243,15 @@ class ListFocusTests(unittest.TestCase):
         app._on_input(Key(ESCAPE))
         self.assertEqual(drawn(app), before)
 
-    def test_with_a_full_screen_the_list_scrolls_it_and_its_rows_are_left_blank_when_it_closes(self) -> None:
-        # The screen's end leaves no room under the region, so the list scrolls the transcript up to stand
-        # under the composer, and what scrolled off does not come back: Claude Code's input box does the same.
+    def test_on_the_bottom_rows_the_list_scrolls_the_screen_and_the_composer_comes_back_when_it_closes(self) -> None:
+        # The screen's end leaves no room under the region, so the list scrolls the transcript up to stand under
+        # the composer; on the bottom rows the region then keeps its height, so the composer goes back down to its
+        # row and the list's rows stay blank above it until more is printed.
         app, _client = agent_app(busy=False)  # idle: nothing is drawn above the composer
         app.transcript.add_notice("\n".join(f"line {number}" for number in range(40)))
         before = drawn(app)
         resting, status = composer_index(before), status_index(before)
-        self.assertEqual(status, 23)
+        self.assertEqual((status, app.region.last_row(24)), (23, 23))
         app._on_input(Key(DOWN))
         rows = under_the_frame(app)
         self.assertEqual(len(rows), 4)  # main, the two agents and the hint
@@ -259,8 +260,8 @@ class ListFocusTests(unittest.TestCase):
         self.assertEqual((composer_index(during), status_index(during)), (resting - 3, 23))
         app._on_input(Key(ESCAPE))
         after = drawn(app)
-        self.assertEqual((composer_index(after), status_index(after)), (resting - 3, 20))
-        self.assertEqual(after[21:], ["", "", ""])
+        self.assertEqual((composer_index(after), status_index(after)), (resting, 23))
+        self.assertEqual(after[resting - 5 : resting - 2], ["", "", ""])  # the list's three extra rows, above the rule
 
 
     def test_the_caret_stays_on_the_composer_while_the_list_has_the_keys(self) -> None:

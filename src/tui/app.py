@@ -3289,10 +3289,15 @@ class App(ModesMixin, AgentViewMixin):
             lines, listed = self._agent_list(cols, room)
             return lines
 
+        # On the screen's last row the region keeps its height (what the flush below covers aside), so what shrinks
+        # becomes pad rows at its top and the composer stays on the bottom rows; above it, the region follows the
+        # content. Where the region's place is not certain it counts as above.
+        pinned = self.region.last_row(rows) == rows - 1
         build = partial(
             build_frame,
             cols=cols,
             rows=rows,
+            min_height=max(self.region.height - len(stable), 0) if pinned else 0,
             composer=None if self._composer_hidden() else self.composer,
             status=self._status_line(cols),
             tail=self._tail(cols),

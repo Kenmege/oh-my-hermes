@@ -4,17 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
-- **The OMH TUI's composer follows what is printed, as Claude Code's input box
-  does.** A fresh session showed the banner, then 20 blank rows (110x34) to 36
-  (200x50), then the composer, and 6 to 12 blank rows stayed above it after a
-  short turn, during an approval and after a resize: the live region was
-  padded to the screen's height at the start and never got shorter. It is now
-  exactly as tall as what it holds and is drawn right under the last line
-  printed, one blank row under a turn, the spacer every block opens with. It
-  grows downward until the screen is full, and then the transcript scrolls;
-  when a panel, a question or a menu above the composer closes, the composer
-  moves up with it, so on a full screen the rows it took stay blank under the
-  status line until more is printed. The agent list opens under the composer.
+- **The OMH TUI's composer sits right under the output until the screen
+  fills, then stays on the bottom rows.** A fresh session showed the banner,
+  then 20 blank rows (110x34) to 36 (200x50), then the composer, and 6 to 12
+  blank rows stayed above it after a short turn, during an approval and after
+  a resize: the live region was padded to the screen's height at every start
+  and redraw and never got shorter. It is now drawn right under the last line
+  printed (one blank row under a turn, the spacer every block opens with) and
+  follows the content until its last row is the screen's last row; from then
+  on it keeps its height, so a list or question closing above the composer
+  leaves blank rows above it, filled by the next output, and does not pull it
+  up. A resize or a redraw starts again under the output. Started on the last
+  row of a terminal that already holds output, the TUI follows the content
+  until its own output has filled the screen once, since it does not ask the
+  terminal where its cursor is. The agent list opens under the composer.
   Lines that leave the top of the streaming tail are written over the rows
   they were drawn on, so the rows under them are not painted again.
 - **Each tool call is its own row, and a cut output names the key that shows
