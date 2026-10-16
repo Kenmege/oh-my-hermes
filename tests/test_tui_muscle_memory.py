@@ -86,7 +86,7 @@ class TodosTests(unittest.TestCase):
         self.assertEqual(
             block.parts[0][0].split("\n"),
             [
-                "[Plan] Router split · 1/4",
+                "[Plan] Router split │ 1/4",  # the panel's own header
                 "Survey",
                 "  [✓] Read the router",
                 "Change",

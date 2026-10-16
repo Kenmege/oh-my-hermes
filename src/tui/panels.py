@@ -638,13 +638,19 @@ def plan_state(payload: Any) -> str:
 
 
 def plan_text(payload: Any) -> str:
-    """The whole plan as text, for `/todos`: its header, then every item under its phase; "" without a plan."""
+    """The whole plan as text, for `/todos` and a retired plan: its header worded as the panel's, then every item
+    under its phase; "" without a plan."""
     plan = _plan_view(payload) if _valid(payload) else None
     if plan is None:
         return ""
     counts = plan.counts
     title = f" {plan.title}" if plan.title else ""
-    rows = [f"[Plan]{title} · {_count(counts.get('done'))}/{_count(counts.get('total'))}{_skipped_clause(counts)}"]
+    total = _count(counts.get("total"))
+    if plan.status == "all_done":  # the count as the panel's header says it (`_plan_header`)
+        count = f"✓ {max(0, _count(counts.get('done')) - _count(counts.get('skipped')))}/{total}"
+    else:
+        count = f"{_count(counts.get('done'))}/{total}"
+    rows = [f"[Plan]{title}{SEPARATOR}{count}{_skipped_clause(counts)}"]
     for phase, items in _groups(plan.items):
         if phase:
             rows.append(phase)

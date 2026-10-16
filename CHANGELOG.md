@@ -204,7 +204,8 @@ All notable changes will be documented here.
 - **A finished plan leaves the OMH TUI's panel.** The plan stayed above the
   composer into later, unrelated turns. Once every item is done it now shows
   `✓ 3/3` until the turn ends and then goes, as Claude Code's list does, with
-  its final list written to the transcript above the done line; one already
+  its final list written to the transcript above the done line under the
+  header the panel showed (`[Plan] │ ✓ 3/3`, as `/todos` now heads it too); one already
   finished when the session opens is not drawn, and a new plan is. The
   `[Plan] │ 2/6 .` dot was the header's walking ellipsis, caught at one dot;
   it is gone, and the active item's colour wave still shows work moving.

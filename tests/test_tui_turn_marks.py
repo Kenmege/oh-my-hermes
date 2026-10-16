@@ -605,7 +605,8 @@ class FinishedPlanTests(unittest.TestCase):
         self.assertEqual(self.headers(), ["[Plan] Plan │ ✓ 3/3"])  # still the turn's: it shows done until the turn ends
         self.app._on_event(ev("message.complete", text="Done.", status="complete"))
         self.assertEqual(self.headers(), [])
-        self.assertEqual(self.notices(), ["\n".join(["[Plan] Plan · 3/3", "Phase 0", "  [✓] Task number 0",
+        # The retired header reads as the live one did a moment before (review B NIT 3).
+        self.assertEqual(self.notices(), ["\n".join(["[Plan] Plan │ ✓ 3/3", "Phase 0", "  [✓] Task number 0",
                                                      "  [✓] Task number 1", "  [✓] Task number 2"])])
         kinds = [type(block).__name__ for block in self.app.transcript.blocks]
         self.assertLess(kinds.index("NoticeBlock"), kinds.index("TurnSummaryBlock"))  # above the done line
