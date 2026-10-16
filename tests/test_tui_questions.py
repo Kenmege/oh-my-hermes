@@ -210,6 +210,13 @@ class QuestionOutcomeTests(unittest.TestCase):
         (row,) = [line for line in complete(app, "submitted") if "clarify" in line and "·" not in line]
         self.assertTrue(row.lstrip().startswith("✓ clarify"), row)
 
+    def test_hermes_notice_says_why_under_the_cross_when_it_gives_one(self) -> None:
+        app, _client = make_app(busy=True)
+        app._on_event(Event("tool.start", SID, {"tool_id": "c1", "name": "clarify", "context": "Which colour?"}))
+        result = {"responses": [], "outcome": "timed_out", "notice": "No answer within 300 s."}
+        app._on_event(Event("tool.complete", SID, {"tool_id": "c1", "name": "clarify", "result": result}))
+        self.assertIn("⎿ No answer within 300 s.", "\n".join(drawn(app)))
+
     def test_each_question_of_a_batch_gets_its_row_and_an_empty_answer_is_skipped(self) -> None:
         app, _client = opened(ServerRequest("srq-8", "clarify", {"questions": [
             {"qid": "a", "question": "Why?"}, {"qid": "b", "question": "Which?", "choices": ["x", "y"]},
