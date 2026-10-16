@@ -201,6 +201,15 @@ class WrapTests(unittest.TestCase):
         self.assertEqual(wrap("abcdefghij", 4), ["abcd", "efgh", "ij"])
         self.assertEqual(wrap("go abcdefghij", 6), ["go", "abcdef", "ghij"])
 
+    def test_a_long_path_breaks_after_a_slash_rather_than_mid_word(self) -> None:
+        # Review B NIT 7: the /omh-model notice wrapped its store path as `…/routing/mo` / `del-chains.json`.
+        path = "/Users/me/.omh/routing/model-chains.json"
+        self.assertEqual(wrap(path, 30), ["/Users/me/.omh/routing/", "model-chains.json"])
+        self.assertEqual(wrap(f"Cancelled; {path} was not changed.", 30),
+                         ["Cancelled;", "/Users/me/.omh/routing/", "model-chains.json was not", "changed."])
+        self.assertEqual(wrap("/abcdefghij", 4), ["/abc", "defg", "hij"])  # a slash first is no break
+        self.assertFits(wrap("a/" + "b" * 20 + "/c", 6), 6)
+
     def test_wide_glyphs_are_never_split(self) -> None:
         self.assertEqual(wrap("한글한글한", 3), ["한", "글", "한", "글", "한"])
         self.assertEqual(wrap("한글한글한", 5), ["한글", "한글", "한"])

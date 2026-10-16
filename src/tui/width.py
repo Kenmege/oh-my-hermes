@@ -14,8 +14,10 @@ includes every emoji with default emoji presentation), a symbol made emoji by
 VS16 2, a ZWJ sequence one 2-cell glyph, East Asian Ambiguous 1.
 
 `wrap` breaks on "\\n" and on spaces; a word longer than the width is hard
-broken at cluster boundaries, and a cluster wider than the width (a 2-cell
-glyph in 1 cell) gets a line of its own because there is no smaller unit.
+broken after the last `/` that fits (a path or a URL breaks between its
+parts) or else at cluster boundaries, and a cluster wider than the width (a
+2-cell glyph in 1 cell) gets a line of its own because there is no smaller
+unit.
 """
 
 from __future__ import annotations
@@ -269,13 +271,24 @@ def _wrap_paragraph(items: list[_Item], cells: int) -> list[list[_Item]]:
         pending = []
         for item in token:  # fits on a fresh line in one go, or is hard broken
             if line and width + item[1] > cells:
-                lines.append(line)
-                line, width = [], 0
+                cut = _path_break(line)
+                lines.append(line[:cut])
+                line = line[cut:]
+                width = _items_width(line)
             line.append(item)
             width += item[1]
     trailing, _ = _fit(pending, cells - width)
     lines.append(line + trailing)
     return lines
+
+
+def _path_break(line: list[_Item]) -> int:
+    """Where a word hard broken at the end of `line` breaks: after the last `/` in it that has text before it (a
+    path or a URL breaks between its parts), else at the end of the line."""
+    for index in range(len(line) - 1, 0, -1):
+        if line[index][0] == "/":
+            return index + 1
+    return len(line)
 
 
 def _wrap_items(items: list[_Item], cells: int) -> list[list[_Item]]:
