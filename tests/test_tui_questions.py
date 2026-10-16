@@ -488,6 +488,48 @@ class TellRowTests(unittest.TestCase):
         press(app, Key(ENTER))
         self.assertEqual(client.named("session.steer"), [{"session_id": SID, "text": "use ./tmp"}])
 
+    def test_a_text_question_waiting_behind_the_approval_gets_its_own_field_and_gives_the_tell_field_back(self) -> None:
+        app, client = make_app(busy=True)
+        type_text(app, "my draft")
+        app._on_server_request(TELL_APPROVAL)
+        app._on_server_request(TEXT_QUESTIONS[0][0])  # a sudo prompt waits behind it
+        armed(app)
+        press(app, *[Key(DOWN)] * 3, Key(ENTER))
+        self.assertEqual(app.slot.method, "sudo")  # type: ignore[union-attr]
+        self.assertTrue(app.composer.masked)  # the sudo prompt's own field, not the tell field
+        armed(app)
+        type_text(app, "hunter2")
+        press(app, Key(ENTER))
+        self.assertEqual(client.answers[-1], ("srq-3", {"result": {"value": "hunter2"}}))
+        self.assertFalse(app.composer.masked)
+        self.assertEqual(app.composer.text, "")
+        self.assertEqual(app.tell_draft.text, "my draft")  # type: ignore[union-attr]
+        self.assertIn(app_module.TELL_SAY[0], mode_row(app))
+
+    def test_the_working_row_offers_no_interrupt_while_the_field_is_open(self) -> None:
+        app, _client = make_app(busy=True)  # no draft: an empty composer during a turn offers Esc for the interrupt
+        app._on_server_request(TELL_APPROVAL)
+        armed(app)
+        press(app, *[Key(DOWN)] * 3, Key(ENTER))
+        self.assertFalse([row for row in drawn(app) if "esc to interrupt" in row])
+        press(app, Key(ESCAPE))
+        self.assertTrue([row for row in drawn(app) if "esc to interrupt" in row])
+
+    def test_a_steer_given_back_meanwhile_lands_in_the_draft_not_in_the_field(self) -> None:
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        type_text(app, "an earlier steer")
+        press(app, Key(ENTER, ctrl=True))  # Hermes will never answer it
+        type_text(app, "my draft")
+        app._on_server_request(TELL_APPROVAL)
+        armed(app)
+        press(app, *[Key(DOWN)] * 3, Key(ENTER))
+        type_text(app, "use ./tmp")
+        now[0] += app_module.CALL_ANSWER_SECONDS
+        app._expire_calls()
+        self.assertEqual(app.composer.text, "use ./tmp")
+        self.assertEqual(app.tell_draft.text, "my draft\nan earlier steer")  # type: ignore[union-attr]
+
     def test_leaving_the_session_leaves_the_field_with_nothing_sent(self) -> None:
         app, client = self.told()
         type_text(app, "use ./tmp")
