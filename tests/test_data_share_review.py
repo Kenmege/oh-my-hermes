@@ -877,6 +877,9 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
         for message in (
             "redact the customer's export and send it to the dev team",
             "redact the customers' export and send it to the dev team",
+            # Not right before a container or a field: it is the party.
+            "redact the export of the customer and send it to the dev team",
+            "redact the export of the users and send it to the dev team",
             "redact the export for the customer and send it to the dev team",
             "redact the pii for the customer export and send it to the dev team",
             "redact the pii from the client file and send it to the dev team",
