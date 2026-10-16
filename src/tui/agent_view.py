@@ -237,6 +237,7 @@ class AgentViewMixin:
             lambda result: self._on_agent_steered(sid, session, block, result),
             lambda error: self._on_agent_steered(sid, session, block, {}, as_text(error.get("message")).strip().rstrip(".")),
             lambda: self._on_agent_steer_unanswered(sid, session, block),  # its text comes back, never sent again
+            steer=block,
         )
 
     def _on_agent_steered(

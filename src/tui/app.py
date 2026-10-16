@@ -365,6 +365,11 @@ STEER_FALLBACK_SENT = "sent as a prompt"
 STEER_REJECTED_REASON = "its turn had ended"  # Hermes' `rejected`: the agent was idle
 # A steer with no answer is no refusal: Hermes may have taken it, so its text is never sent again but given back.
 STEER_UNANSWERED_OUTCOME = "back in the composer — Hermes did not answer the steer in {seconds:g} s"
+# One the gateway exited without answering is given back the same way, at once, as the respawn starts.
+STEER_LOST_OUTCOME = "back in the composer — the Hermes gateway exited before it answered"
+STEER_LOST_NOTICE = (
+    "The Hermes gateway exited before it answered {count} steer{s}; the text is back in the composer, not sent again."
+)
 # What an approval's answer reads as in the transcript, and its colour: allowed in green, denied in red.
 APPROVAL_OUTCOMES = {
     "once": ("allowed once", NOTICE_OK),
@@ -524,6 +529,7 @@ class _Pending:
     # says lands under that command's echo, which stays open until every call made for it is answered.
     command: CommandBlock | None = None
     on_expiry: Callable[[], None] | None = None  # what an answer that never came settles; None: a notice says so
+    steer: SteerBlock | None = None  # the steer row it settles, given back at once if the gateway exits first
 
 
 class QueuedLine(NamedTuple):
@@ -1540,6 +1546,7 @@ class App(ModesMixin, AgentViewMixin):
         on_result: Callable[[dict[str, Any]], None],
         on_error: Callable[[dict[str, Any]], bool] | None = None,
         on_expiry: Callable[[], None] | None = None,
+        steer: SteerBlock | None = None,
     ) -> None:
         try:
             request_id = self.client.request(method, params)
@@ -1550,7 +1557,9 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice(f"The OMH TUI did not send {method}: {error}.", NOTICE_ERROR)
             return
         expires_at = self.clock() + CALL_ANSWER_SECONDS_BY_METHOD.get(method, CALL_ANSWER_SECONDS)
-        self.pending[request_id] = _Pending(method, on_result, on_error, expires_at, self.transcript.command, on_expiry)
+        self.pending[request_id] = _Pending(
+            method, on_result, on_error, expires_at, self.transcript.command, on_expiry, steer
+        )
 
     def _expire_calls(self) -> None:
         """Forget every call unanswered past its `expires_at`, here and in the client, saying so for most.
@@ -1623,8 +1632,8 @@ class App(ModesMixin, AgentViewMixin):
         again uses one and the next is tried. Past the limit, without a stored
         session, or when the new gateway does not resume it, the TUI leaves as
         it would without recovery (`_lose_gateway`). Calls the old gateway had
-        not answered stay in `pending` and expire as unanswered calls do: the
-        new client's request ids start past theirs.
+        not answered are settled at once (`_settle_lost_calls`), and the new
+        client's request ids start past theirs.
 
         One child at a time: the old gateway is reaped before a new one is
         spawned (it may still run, after a write it refused or an exit whose
@@ -1641,6 +1650,7 @@ class App(ModesMixin, AgentViewMixin):
         self._clear_roster()
         self.list_selected = None
         first_id = max(self.pending, default=0) + 1
+        self._settle_lost_calls()
         self.client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
         while True:
             now = self.clock()
@@ -1675,6 +1685,27 @@ class App(ModesMixin, AgentViewMixin):
         self._request("config.get", {"key": "full"}, self._take_busy_mode, self._on_settings_refused)
         self._refresh_catalog()
         self._redeliver(result.get("open_requests"))
+
+    def _settle_lost_calls(self) -> None:
+        """The calls the exited gateway never answered, settled now rather than when their wait runs out.
+
+        A steer's row closes and its text comes back to the draft, never sent
+        again (Hermes may have taken it), with one notice for them all; every
+        other call is forgotten without one, and the echo of a command it was
+        made for closes.
+        """
+        calls = list(self.pending.values())
+        self.pending.clear()
+        steers = 0
+        for call in calls:
+            if call.steer is not None:
+                self.transcript.steer_answered(call.steer, STEER_REFUSED, STEER_LOST_OUTCOME)
+                self._give_back(call.steer.text)
+                steers += 1
+            if call.command is not None:
+                self.transcript.close_command(call.command)
+        if steers:
+            self.transcript.add_notice(STEER_LOST_NOTICE.format(count=steers, s="" if steers == 1 else "s"), NOTICE_WARN)
 
     def _close_questions_unanswered(self) -> None:
         """Close the open question and drop the waiting ones without an answer: the gateway that asked is gone."""
@@ -2880,6 +2911,7 @@ class App(ModesMixin, AgentViewMixin):
             lambda result: self._on_steered(sid, block, result),
             lambda error: self._on_steer_refused(sid, block, error),
             lambda: self._on_steer_unanswered(sid, block),
+            steer=block,
         )
 
     def _on_steered(self, sid: str, block: SteerBlock, result: dict[str, Any]) -> None:

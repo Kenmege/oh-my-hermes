@@ -17,14 +17,18 @@ import unittest
 from unittest.mock import patch
 
 from test_tui_app import FakePoller, ScriptedTerminal, Step
+from test_tui_choice_ui import drawn
 from test_tui_modes import SID, RecordingClient, make_app, notices, type_text
 from omh.tui import gateway_contract as contract
 from omh.tui.app import (
+    CALL_ANSWER_SECONDS,
     RESPAWN_LIMIT,
     RESPAWN_NOTICE,
     RESPAWN_WINDOW_SECONDS,
     RESPAWNED_NOTICE,
     RESPAWNED_WHY,
+    STEER_LOST_NOTICE,
+    STEER_LOST_OUTCOME,
     TURN_LOST_NOTICE,
     App,
     QueuedLine,
@@ -39,7 +43,8 @@ from omh.tui.gateway import (
     ServerRequest,
     gateway_spawn,
 )
-from omh.tui.keys import ENTER, Key
+from omh.tui.keys import CHAR, ENTER, Key
+from omh.tui.transcript import CommandBlock
 
 STORED = "20261016_101010_abcdef"
 ENVIRON = {
@@ -166,14 +171,14 @@ class RespawnTests(unittest.TestCase):
         self.assertIn(f"{RESPAWNED_WHY}: what you queued is back in the composer, not sent.", notices(app))
         self.assertEqual(spawner.made[0].named("prompt.submit"), [])
 
-    def test_calls_still_waiting_keep_their_ids_and_the_new_client_starts_past_them(self) -> None:
+    def test_calls_still_waiting_are_forgotten_and_the_new_client_starts_past_their_ids(self) -> None:
         app, old, spawner, _now = crashing()
         type_text(app, "/usage")
         app._on_input(Key(ENTER))
         waiting = max(app.pending)
         crash(app, old)
         self.assertEqual(spawner.made[0].first_id, waiting + 1)
-        self.assertIn(waiting, app.pending)  # it expires as an unanswered call does
+        self.assertNotIn(waiting, app.pending)  # the gateway that would answer it is gone
 
     def test_a_write_the_dead_gateway_refuses_respawns_too(self) -> None:
         app, old, spawner, _now = crashing()
@@ -205,6 +210,59 @@ class RespawnTests(unittest.TestCase):
                 crash(app, old, code=code)
                 self.assertEqual(closed_when_spawned, [1])
                 self.assertEqual(old.closed, 1)
+
+
+class LostCallTests(unittest.TestCase):
+    """What the exited gateway never answered is settled as the respawn starts, not when its 120 s run out."""
+
+    def test_a_steer_comes_back_at_once_and_its_row_says_the_gateway_exited(self) -> None:
+        app, old, _spawner, now = crashing(busy=True, cols=120)
+        type_text(app, "steer me")
+        app._on_input(Key(ENTER, ctrl=True))
+        self.assertEqual(app.client.named("session.steer"), [{"session_id": SID, "text": "steer me"}])  # type: ignore[attr-defined]
+        crash(app, old)
+        self.assertEqual(app.composer.text, "steer me")  # never sent again: Hermes may have taken it
+        self.assertEqual([call.method for call in app.pending.values()], ["config.get", "commands.catalog"])
+        self.assertIn(f"⧗ {STEER_LOST_OUTCOME} · steer me", drawn(app))
+        said = notices(app)
+        self.assertIn(STEER_LOST_NOTICE.format(count=1, s=""), said)
+        self.assertFalse([text for text in said if "you had left" in text])
+        now[0] += CALL_ANSWER_SECONDS + 1
+        app._expire_calls()  # only the new gateway's own calls are left to expire
+        self.assertFalse([text for text in notices(app)[len(said):] if "steer" in text])
+        self.assertEqual(app.composer.text, "steer me")
+
+    def test_an_agent_steer_comes_back_too(self) -> None:
+        from test_tui_agent_list import focused
+
+        spawner = Spawner()
+        app, _recording = focused(environ=dict(ENVIRON), make_client=spawner)
+        old = RespawnClient()
+        app.client = old  # type: ignore[assignment]
+        app.stored_id = STORED
+        app._on_input(Key(CHAR, "s"))
+        type_text(app, "skip the tests folder")
+        app._on_input(Key(ENTER))
+        self.assertEqual([method for method, _params in old.calls], ["subagent.steer"])
+        crash(app, old)
+        self.assertEqual(app.composer.text, "skip the tests folder")
+        self.assertIn(STEER_LOST_NOTICE.format(count=1, s=""), notices(app))
+
+    def test_other_calls_are_forgotten_without_a_word_and_their_echoes_close(self) -> None:
+        app, old, _spawner, now = crashing()
+        type_text(app, "/usage")
+        app._on_input(Key(ENTER))
+        (echo,) = [block for block in app.transcript.blocks if isinstance(block, CommandBlock)]
+        self.assertFalse(echo.done)  # open while its call is out
+        app._request("model.options", {"session_id": SID}, lambda result: None)  # one whose expiry says so
+        before = notices(app)
+        crash(app, old)
+        self.assertTrue(echo.done)
+        now[0] += CALL_ANSWER_SECONDS + 1
+        app._expire_calls()
+        said = " ".join(notices(app)[len(before):])
+        for method in ("slash.exec", "model.options"):  # only the new gateway's own calls are left to expire
+            self.assertNotIn(method, said)
 
 
 class NoRespawnTests(unittest.TestCase):
