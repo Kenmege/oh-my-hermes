@@ -249,20 +249,26 @@ class LostCallTests(unittest.TestCase):
         self.assertIn(STEER_LOST_NOTICE.format(count=1, s=""), notices(app))
 
     def test_other_calls_are_forgotten_without_a_word_and_their_echoes_close(self) -> None:
-        app, old, _spawner, now = crashing()
-        type_text(app, "/usage")
-        app._on_input(Key(ENTER))
-        (echo,) = [block for block in app.transcript.blocks if isinstance(block, CommandBlock)]
-        self.assertFalse(echo.done)  # open while its call is out
-        app._request("model.options", {"session_id": SID}, lambda result: None)  # one whose expiry says so
-        before = notices(app)
-        crash(app, old)
-        self.assertTrue(echo.done)
-        now[0] += CALL_ANSWER_SECONDS + 1
-        app._expire_calls()
-        said = " ".join(notices(app)[len(before):])
-        for method in ("slash.exec", "model.options"):  # only the new gateway's own calls are left to expire
-            self.assertNotIn(method, said)
+        for streaming in (False, True):  # typed during a reply, the echo is held under it, out of the blocks
+            with self.subTest(streaming=streaming):
+                app, old, _spawner, now = crashing(busy=streaming)
+                if streaming:
+                    app._on_event(Event("message.start", SID, {}))
+                    app._on_event(Event("message.delta", SID, {"text": "still streaming"}))
+                type_text(app, "/usage")
+                app._on_input(Key(ENTER))
+                transcript = app.transcript
+                (echo,) = [block for block in transcript.blocks + transcript._held if isinstance(block, CommandBlock)]
+                self.assertFalse(echo.done)  # open while its call is out
+                app._request("model.options", {"session_id": SID}, lambda result: None)  # one whose expiry says so
+                before = notices(app)
+                crash(app, old)
+                self.assertTrue(echo.done)
+                now[0] += CALL_ANSWER_SECONDS + 1
+                app._expire_calls()
+                said = " ".join(notices(app)[len(before):])
+                for method in ("slash.exec", "model.options"):  # only the new gateway's own calls are left to expire
+                    self.assertNotIn(method, said)
 
 
 class NoRespawnTests(unittest.TestCase):
