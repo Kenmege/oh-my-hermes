@@ -47,9 +47,15 @@ class RoutingQuery:
     # on `executable`: `normalized` joins every whitespace run, which erases
     # the block ends a messaging gateway's own prefixes close with.
     loop_timer: str = LOOP_TIMER_NONE
+    # Whether the masker removed quoted, code, link or relayed text from the
+    # message: here (`executable` differs from `raw`), or before, when the
+    # caller masked the text it passes as `raw` and says so. What the removed
+    # text named is unread, so a predicate that reads where data goes must
+    # not prove a place inside (`recommend._SHIELDED_OFFERS_ITSELF`).
+    shielded: bool = False
 
     @classmethod
-    def from_message(cls, text: str) -> RoutingQuery:
+    def from_message(cls, text: str, *, shielded: bool = False) -> RoutingQuery:
         # `recommend.py` imports this module, so its helpers load late.
         from .recommend import _strip_path_like_fragments, _tokens
 
@@ -65,6 +71,7 @@ class RoutingQuery:
             normalized=normalized,
             tokens=frozenset(_tokens(normalized)),
             loop_timer=loop_timer_verdict(executable),
+            shielded=shielded or executable != text,
         )
 
     @classmethod
@@ -81,7 +88,7 @@ class RoutingQuery:
         """
         from .recommend import _offers_itself_predicate
 
-        offers_itself = _offers_itself_predicate(skill, self.scrubbed)
+        offers_itself = _offers_itself_predicate(skill, shielded=self.shielded)
         if offers_itself is None:
             return False
         return not offers_itself(self.normalized, set(self.tokens))

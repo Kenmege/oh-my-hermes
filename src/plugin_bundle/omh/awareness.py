@@ -6251,7 +6251,7 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
                 continue
             if _rule_suppressed_by_reference_intent(rule, intent):
                 continue
-            if _rule_suppressed_by_context(rule, routing_normalized):
+            if _rule_suppressed_by_context(rule, routing_normalized, shielded=matching_message != message):
                 continue
             if rule["id"] == "loopability_goal" and timed_native_loop:
                 continue
@@ -8369,14 +8369,14 @@ def _long_document_page_count_signal(text: str) -> bool:
     )
 
 
-def _rule_suppressed_by_context(rule: dict[str, object], text: str) -> bool:
+def _rule_suppressed_by_context(rule: dict[str, object], text: str, *, shielded: bool = False) -> bool:
     rule_id = str(rule.get("id", ""))
     if rule_id == "data_share_review":
-        # Masking keeps positions, so a quoted, code or link region masked out
-        # of `text` is a run of spaces; what it named is unread, and no place
-        # is then proven inside. The router reads the same run
-        # (`recommend._offers_itself_predicate`).
-        return not data_share_request_admitted(text, shielded="  " in text)
+        # `shielded`: the masker removed quoted, code, link or relayed text
+        # from the message before `text` was made; what it named is unread,
+        # and no place is then proven inside. The router takes the same
+        # report from its own masking (`RoutingQuery.shielded`).
+        return not data_share_request_admitted(text, shielded=shielded)
     visual_markers = (
         "image card",
         "summary card",

@@ -1784,7 +1784,9 @@ def _enriched_route(
         )
     # An undecidable route carries only domain-relevant candidates forward for
     # model selection instead of naming a scorer collision.
-    candidate_handoff = build_candidate_handoff(route, matching_message, relevance=relevance)
+    candidate_handoff = build_candidate_handoff(
+        route, matching_message, relevance=relevance, shielded=matching_message != request
+    )
     if candidate_handoff:
         route["candidate_handoff"] = candidate_handoff
         # Shortlist first: on a lexical shortlist the route's candidate is the
@@ -2156,7 +2158,7 @@ def _route_chat_message_cached(
         ).to_dict()
     # Built once: the fast paths and the scorer below read its stages instead
     # of each re-deriving the prep chain from `routing_message`.
-    query = RoutingQuery.from_message(routing_message)
+    query = RoutingQuery.from_message(routing_message, shielded=executable_message != message)
     trivial_decision = _trivial_message_fast_path_decision(
         routing_message,
         query=query,

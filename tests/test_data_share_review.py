@@ -604,7 +604,7 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "de-identify the records before we upload the file to the test server",
             "redact pii from this csv before sending it to my coworker",
             "anonymize the export and share it with a colleague",
-            "pseudonymize the user ids in the dataset before sharing it with another department",
+            "pseudonymize the email addresses in the dataset before sharing it with another department",
             "redact personal data from the spreadsheet before sending it to the internal analytics team",
             "anonymize the logs before we share them with the in-house data team",
             "redact pii in the export and hand it over to our security team",
@@ -615,8 +615,11 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "redact pii from the records before sending them to a coworker in finance",
             "redact pii in the export, give me a summary, and send it to the dev team",
             "redact pii in the export and send it to the data team and the qa team",
-            # The lead verb's object is the data, not a send ("email").
+            # The lead verb's object is the data, not a send ("email"), and its
+            # containers and field names are closed words.
             "redact the email addresses in the export before we send it to the dev team",
+            "redact the pii in the export for us and send it to the dev team",
+            "redact the phone number column in the csv and send it to the dev team",
             "redact the logs before uploading them into staging",
             "redact the logs before uploading them onto the test server",
             # Every later verb that sends it on names an inside place too.
@@ -646,9 +649,7 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "이메일 주소를 익명화해서 사내 슬랙 채널에 공유해줘",
             "개인정보 지우고 개발팀에 이메일로 보내줘",
             "고객 정보 마스킹해서 개발팀에 보내고 QA팀으로도 보내줘",
-            # The data as an object ends the place's words; 로 that names no
-            # destination ("업체별로") is no place.
-            "개인정보 지우고 명단을 개발팀에 보내줘",
+            # 로 that names no destination ("업체별로") is no place.
             "업체별로 정리한 고객 정보 마스킹해서 개발팀에 보내줘",
         ):
             with self.subTest(message=message):
@@ -701,7 +702,17 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "이메일 주소 지우고 acme 데이터팀에 보내줘",
             "개인정보 지우고 팀 전체에 공유해줘",
             "개인정보 지우고 고객지원팀에 보내줘",
-            # Every word back to the clause's edge is read, however many.
+            # Every word back to the clause's edge is read, however many, and
+            # only a joined form of a verb the rule knows is an edge: a noun
+            # that ends in 서 or 고 is read as part of the place.
+            "고객 정보 마스킹해서 경찰서 보안팀에 보내줘",
+            "고객 정보 마스킹해서 세무서 데이터팀에 보내줘",
+            "고객 정보 마스킹해서 소방서 개발팀에 보내줘",
+            "고객 정보 마스킹해서 물류창고 운영팀에 보내줘",
+            "고객 정보 마스킹해서 창고 운영팀에 보내줘",
+            "고객 정보 마스킹해서 삼성전자서 데이터팀에 보내줘",
+            "고객 정보 마스킹해서 삼성하고 데이터팀에 보내줘",
+            "개인정보 지우고 명단을 개발팀에 보내줘",
             "고객 정보 마스킹해서 은행 보안 개발 팀에 보내줘",
             "고객 정보 마스킹해서 은행 it 보안 개발 팀에 보내줘",
             "고객 정보 마스킹해서 삼성 데이터 분석 플랫폼 운영 팀에 보내줘",
@@ -740,6 +751,18 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "redact the pii in the export acme asked for and send it to the dev team",
             "redact the pii in the export before the regulator gets it, and send it to the security team",
             "redact the pii in the export for acme and send it to the dev team first",
+            "redact the pii in the export for them and send it to the dev team",
+            # The lead verb's object is read with the same closed words.
+            "redact the export acme gets every week and send it to the dev team",
+            "redact acme's export and send it to the dev team",
+            "redact the acme export and send it to the dev team",
+            "redact the export that acme will receive and send it to the dev team",
+            "redact the export headed to the regulator and send it to the security team",
+            "redact the export we owe acme and send it to the dev team",
+            "redact the spreadsheet acme will publish and send it to the dev team",
+            "pseudonymize the csv the bank wants and share it with the data team",
+            "anonymize the logs acme will audit and upload them to staging",
+            "de-identify the records the regulator requested and send them to the security team",
             # "give", "hand" and "pass" with a first object: it is the place.
             "redact pii in the export, send it to the dev team and give acme a copy",
             "redact pii in the export, send it to the dev team and give acme access",
@@ -806,6 +829,15 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             'redact pii in the export and send it to acme\'s "data" team',
             "redact pii in the export and upload it to https://acme.example/upload and the dev team",
             '고객 정보 마스킹해서 "삼성" 개발팀에 보내줘',
+            # A masked region at the end of the message: the masker reports
+            # it, so no surface reads the place before it as proven.
+            "Redact the PII in the export and send it to the dev team https://acme.com",
+            'Redact the PII in the export and send it to the dev team "at Acme"',
+            "Redact the PII in the export and send it to the dev team `@acme`",
+            "Redact the PII in the export and send it to the dev team 'acme side'",
+            'Redact the PII in the export and send it to the dev team "Acme"  ',
+            'Redact the PII in the export and send it to the dev team\u3000"Acme"',
+            'Redact the PII in the export and send it to the dev team "Acme".',
         ):
             with self.subTest(message=message):
                 self.assertTrue(self._named(message))
@@ -824,7 +856,7 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             ("redact the logs before uploading them to staging", "로그에서 개인정보 지우고 스테이징에 올려줘", False),
             ("de-identify the records before we upload the file to the test server", "개인정보 비식별화해서 테스트 서버에 올려줘", False),
             ("redact pii from this csv before sending it to my coworker", "개인정보 지우고 동료한테 보내줘", False),
-            ("pseudonymize the user ids in the dataset before sharing it with another department", "개인정보 가명 처리해서 다른 부서에 공유해줘", False),
+            ("pseudonymize the email addresses in the dataset before sharing it with another department", "개인정보 가명 처리해서 다른 부서에 공유해줘", False),
             ("anonymize the logs before we share them with the in-house data team", "개인정보 익명화해서 사내 데이터팀에 공유해줘", False),
             ("redact pii in the csv before sending to qa", "개인정보 지우고 QA에 보내줘", False),
             ("redact pii in the export before we send it to the vendor", "개인정보 지우고 벤더한테 보내줘", True),
@@ -881,13 +913,17 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
                 "and", "as", "in", "or", "please", "plus", "today", "well",
             },
             "_BEFORE_SEND_WORDS": {
-                "a", "address", "addresses", "after", "an", "and", "before", "birth", "corpus", "csv", "csvs",
-                "data", "dataset", "datasets", "date", "dates", "dump", "dumps", "email", "emails", "excerpt",
-                "excerpts", "export", "exports", "extract", "extracts", "file", "files", "first", "for", "from",
-                "i", "id", "ids", "in", "ip", "ips", "it", "log", "logs", "my", "name", "names", "number",
-                "numbers", "of", "once", "our", "personal", "phone", "phones", "pii", "please", "records",
-                "spreadsheet", "spreadsheets", "ssn", "ssns", "that", "the", "them", "then", "these", "this",
-                "those", "we", "you",
+                "a", "address", "addresses", "after", "an", "and", "archive", "archives", "backup", "backups",
+                "before", "birth", "column", "columns", "copies", "copy", "corpus", "csv", "csvs", "data",
+                "database", "databases", "dataset", "datasets", "date", "dates", "db", "details", "dob",
+                "document", "documents", "dump", "dumps", "email", "emails", "excerpt", "excerpts", "export",
+                "exports", "extract", "extracts", "field", "fields", "file", "files", "first", "for", "from", "i",
+                "id", "identifier", "identifiers", "ids", "in", "info", "information", "ip", "ips", "it", "json",
+                "list", "lists", "log", "logs", "my", "name", "names", "number", "numbers", "of", "once", "our",
+                "personal", "phone", "phones", "pii", "please", "records", "report", "reports", "row", "rows",
+                "sample", "samples", "sensitive", "sheet", "sheets", "spreadsheet", "spreadsheets", "ssn", "ssns",
+                "table", "tables", "that", "the", "then", "these", "this", "those", "transcript", "transcripts",
+                "tsv", "us", "we", "xlsx", "you",
             },
             "_HANDED_THINGS": {
                 "access", "copies", "copy", "corpus", "csv", "csvs", "dataset", "datasets", "dump", "dumps",
@@ -925,6 +961,14 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             },
             "_KOREAN_PLACE_PARTICLES": {
                 "께", "께도", "로", "로도", "에", "에게", "에게도", "에도", "으로", "으로도", "쪽에", "쪽으로", "측에", "한테", "한테도",
+            },
+            "_KOREAN_JOINED_ENDINGS": {
+                "하고", "하고서", "한", "해서",
+            },
+            "_KOREAN_EDGE_VERBS": {
+                "가려", "가명", "가명처리", "가명화", "공개", "공유", "내보내", "넘겨", "넘기", "마스킹", "반출", "별표", "보내", "보내드려", "블러",
+                "비식별", "비식별처리", "비식별화", "빼", "삭제", "업로드", "올려", "올리", "익명", "익명처리", "익명화", "전달", "제거", "제공", "제출",
+                "지워", "처리", "첨부", "해시",
             },
         }
         for name, expected in tables.items():

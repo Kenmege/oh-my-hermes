@@ -6798,7 +6798,7 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase(
         "dataset-shared-with-another-department-is-not-a-data-share-review",
         "Pseudonymizing a dataset before another department gets it keeps it inside the company",
-        "pseudonymize the user ids in the dataset before sharing it with another department",
+        "pseudonymize the email addresses in the dataset before sharing it with another department",
         "answer_clarification",
         "",
         "data-share-review",

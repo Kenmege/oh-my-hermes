@@ -24,40 +24,39 @@ All notable changes will be documented here.
   "은행 담당 부서에", "다른 회사 동료에게"), a relative clause ("a former
   colleague who now works at Acme"), a place after "at", "of" or "for" ("the
   data team at Acme", "the dev team for review"), a team with no owner ("the
-  team", "팀 전체에"), and Hangul in an English place. In English, only
-  closed words may stand between the lead verb's object and the first send
-  ("before we"; not "before Acme sees it", "the export Acme will get"); every
-  later send -- send, share, upload, attach, post, forward, email, cc,
-  transfer -- must name such a place after its "to" or "with", and so must
-  every place it joins ("the data team and Acme", "the data team, cc the
-  auditor"); "give", "hand" and "pass" without "to" send nothing to the
-  person ("give me a summary") and otherwise take their first object as the
-  place ("give Acme a copy" keeps the review). A Korean place is read back to
-  its clause's edge with no window ("은행 IT 보안 개발 팀에" keeps the review),
-  every place in the sentence must be inside, and an English recipient word
-  ("vendor team에") keeps the review. Both surfaces remove quoted, code and
-  link text before they call the rule; masking keeps positions, so each
-  passes the rule that a region was removed, and no place is then proven
-  inside ('the "Acme" data team'). Measured against main on 160 requests
-  written for this change (76 English-Korean pairs and 8 without a file), 140
-  written blind by a separate agent,
-  and the reviewer's sets written before reading the code (241 in
-  `mine2.tsv`, 191 in `adv.tsv`, 34, 29 and 7 in `adv2`-`adv4`): on these
-  sets no request to an outside party lost the review on admission, the
-  router or the hint, and Korean outside requests gained it (29 to 40 of 40,
-  32 to 34 of 35, 34 to 53 of 53, 10 to 31 of 31). English inside requests
-  stopped firing on 34 of 36, 6 of 15 and 9 of 31 that fired on main; Korean
-  inside requests fired on 7 to 2 of 36, 7 to 14 of 35 on the blind set, and
-  5 to 5 of 20. 54 distinct inside requests in these sets still fire, the
-  safe direction: a person by role ("my manager", "김 과장님께"), a bare
-  function ("HR"), the intranet or a portal, an unlisted modifier ("the
-  customer export", "the people ops team", "우리 회사 보안팀에"), and a
-  trailing purpose or place ("for debugging", "in Seoul"). Every table is
-  pinned by a literal snapshot, and a list of outside words must keep the
-  review. The three requests the decision named without a file ("redact the
-  pii and send it to the dev team") were never admitted, since English
-  admission needs a file-shaped carrier; they are pinned as negative
-  controls. Files and folders stay inside only in Korean ("엑셀로 내보내줘").
+  team", "팀 전체에"), and Hangul in an English place. In English, only closed
+  words -- where the data is, a determiner, the speaker, data containers and
+  personal-data field names -- may stand from the lead verb to the first
+  send, its object included ("the export Acme will get", "the CSV the bank
+  wants", "before Acme sees it" and "the customer export" keep the review);
+  every later send must name such a place after its "to" or "with", and so
+  must every place it joins ("the data team and Acme", "cc the auditor");
+  "give", "hand" and "pass" without "to" send nothing to the person and
+  otherwise take their first object as the place ("give Acme a copy" keeps
+  the review). A Korean place is read back, however many words, to a step or
+  a joined form of a verb the rule knows, so a noun ending in 서 or 고 is read
+  on ("경찰서 보안팀에" keeps the review); every place in the sentence must be
+  inside, and an English recipient word ("vendor team에") keeps the review.
+  Both surfaces mask quoted, code, link and relayed text before they call the
+  rule, and each passes the masker's own report that it removed something, so
+  no place is then proven inside ('the "Acme" data team', "the dev team
+  https://acme.com"). Measured against main on 160 requests written for this
+  change, 140 written blind by a separate agent, and the reviewer's sets
+  written before reading the code (`mine2.tsv` and its NFD copy, `adv.tsv`
+  to `adv4.tsv`, `r3.tsv`, `r3b.tsv`): on these sets no request to an outside
+  party lost the review on admission, the router or the hint, and the two
+  surfaces never disagree with every cache cleared. Korean outside requests
+  gained it (29 to 40 of 40, 32 to 34 of 35, 34 to 53 of 53, 10 to 31 of 31,
+  1 to 18 of 18). The fail-safe reading keeps the review on many inside
+  requests: 6 of 36, 14 of 35 and all 31 of the reviewer's English inside
+  requests still fire, mostly for a word before the first send that can name
+  a party ("the customer export", "the patient CSV", "the user logs"); Korean
+  inside requests fire on 2 of 36, 14 of 35 and 5 of 20. The three requests
+  the decision named without a file ("redact the pii and send it to the dev
+  team") were never admitted, since English admission needs a file-shaped
+  carrier; they are pinned as negative controls. Every table is pinned by a
+  literal snapshot, and a list of outside words must keep the review. Files
+  and folders stay inside only in Korean ("엑셀로 내보내줘").
 
 - **Korean spend and data-share requests reach their gates.** "내 카드로
   결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보

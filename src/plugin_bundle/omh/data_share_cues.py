@@ -13,9 +13,10 @@ internal function such as data, dev, marketing, finance:
 `DATA_SHARE_INTERNAL_MODIFIERS`) -- and it must say an anchor or an owned
 unit. Any other word -- a company, a client, a hospital, a regulator, a name
 -- keeps the place outside, so "the vendor's team", "the Acme team", "the
-data team at Acme" and "외부 연구팀에" keep the review. A caller that masked
-quoted, code or link text out of the request says so (`shielded`); what the
-masked text named is unread, so no place is then proven inside.
+data team at Acme" and "외부 연구팀에" keep the review. A caller whose masker
+removed quoted, code, link or relayed text from the request says so
+(`shielded`); what the removed text named is unread, so no place is then
+proven inside.
 
 `data-share-review` takes nothing another skill holds: it has no boost and
 stands down no guard. This narrow gate decides only whether the skill may be
@@ -40,8 +41,9 @@ not personal data at all, so all of these must hold:
   recipient outside the company (a vendor, contractor, agency, researcher,
   the public, a provider, a training set), or beside a verb that sends it
   unless all of these hold (`_sends_stay_inside`): only closed words stand
-  between the lead verb's object and the first send ("in the export before
-  we"; not "before acme sees it", "the export acme will get"); every verb
+  from the lead verb to the first send, its object included ("the pii in
+  the export before we"; not "the export acme will get", "the csv the bank
+  wants", "before acme sees it", "the customer export"); every verb
   that sends it on -- send, share, upload, attach, post, forward, email, cc,
   transfer -- names after its "to" or "with" a place proven inside ("send it
   to the dev team", "share it with a colleague", "upload it to staging");
@@ -77,11 +79,13 @@ A Korean request puts its verb last, so its half of the rule
   "보낼 파일") unless a place proven inside the company or a file or folder
   of the person's own is named ("스테이징에", "개발팀에", "동료한테",
   "엑셀로") and every place the sentence names is one
-  (`_korean_stays_inside`). A place's words are read back to the clause's
-  edge, however many: any other word keeps it outside ("외부 팀에", "은행 담당
-  부서에", "은행 IT 보안 개발 팀에", "다른 회사 동료에게", "acme qa에"), as does
-  an English recipient anywhere in the sentence ("vendor team에") and a
-  `shielded` request;
+  (`_korean_stays_inside`). A place's words are read back, however many,
+  to a step or a joined form of a verb the rule knows ("마스킹해서",
+  "지우고"); a noun that merely ends in 서 or 고 is read on ("경찰서 보안팀에").
+  Any other word keeps it outside ("외부 팀에", "은행 담당 부서에", "은행 IT
+  보안 개발 팀에", "다른 회사 동료에게", "acme qa에"), as does an English
+  recipient anywhere in the sentence ("vendor team에") and a `shielded`
+  request;
 - no word names a legal question, a Hermes setting, a storage-wide scan, or
   something other than data (코드, 함수, 기능, 버그, ...): "개인정보 마스킹
   기능 만들어서 벤더한테 보내줘" ships a feature;
@@ -369,19 +373,26 @@ _SENDS_ONLY_WITH_A_PLACE = frozenset({"give", "giving", "hand", "handing", "pass
 # is not read as part of it.
 _FIRST_PERSON = frozenset({"me", "us", "myself", "ourselves"})
 _HANDED_THINGS = DATA_SHARE_CARRIER_TOKENS | {"access", "copies", "copy", "link", "links", "version"}
-# The only words that may stand between the lead verb's object and the first
-# send: where the data is, joining words, a pronoun, a determiner, the data
-# itself, and the names of personal-data fields, none of which can name a party
-# ("in the export before we", "from this csv before", "and phone numbers in
-# this dataset before"). Any other word keeps the review: "before acme sees
-# it", "so acme can use it", "the export acme will get", "for the bank's
-# auditors", and also "the customer export" or "the crash logs", the safe
-# direction.
+# The only words that may stand between the lead verb and the first send, its
+# object included: where the data is, joining words, the speaker ("we", "us",
+# "i", "you", "it"), a determiner, data containers and the names of
+# personal-data fields, none of which can name a party ("the pii in the export
+# before we", "the email column from this csv before"). Any other word keeps
+# the review: "the export acme will get", "the csv the bank wants", "before
+# acme sees it", "for them", and also "the customer export" or "the crash
+# logs", the safe direction.
 _BEFORE_SEND_WORDS = DATA_SHARE_OBJECT_ENDS | DATA_SHARE_CARRIER_TOKENS | {
-    "a", "after", "an", "data", "first", "i", "it", "my", "once", "our", "personal", "pii", "please", "that", "the",
-    "them", "then", "these", "this", "those", "we", "you",
-    "address", "addresses", "birth", "date", "dates", "email", "emails", "id", "ids", "ip", "ips", "name", "names",
-    "number", "numbers", "phone", "phones", "ssn", "ssns",
+    "a", "after", "an", "first", "i", "it", "my", "once", "our", "please", "that", "the", "then", "these", "this",
+    "those", "us", "we", "you",
+    # data containers
+    "archive", "archives", "backup", "backups", "column", "columns", "copies", "copy", "data", "database",
+    "databases", "db", "document", "documents", "field", "fields", "json", "list", "lists", "report", "reports",
+    "row", "rows", "sample", "samples", "sheet", "sheets", "table", "tables", "transcript", "transcripts", "tsv",
+    "xlsx",
+    # personal-data fields
+    "address", "addresses", "birth", "date", "dates", "details", "dob", "email", "emails", "id", "identifier",
+    "identifiers", "ids", "info", "information", "ip", "ips", "name", "names", "number", "numbers", "personal",
+    "phone", "phones", "pii", "sensitive", "ssn", "ssns",
 }
 # A send's place follows one of these ("send it to the dev team", "share it
 # with a colleague") and runs to the next send or the sentence's end.
@@ -470,9 +481,9 @@ def _inside(place: list[str]) -> bool:
 def _sends_stay_inside(words: list[str]) -> bool:
     """Whether every verb that sends the data on names a place proven inside the company.
 
-    The words after the lead verb's object are read; the object itself is the
-    data ("redact the email column"). Up to the first send only closed words
-    may stand (`_BEFORE_SEND_WORDS`). Each send's place runs from its "to" or
+    Sends are read after the lead verb's object, which is the data ("redact
+    the email column" sends nothing). From the lead verb to the first send,
+    its object included, only closed words may stand (`_BEFORE_SEND_WORDS`). Each send's place runs from its "to" or
     "with" to the next send or the sentence's end, so a second place joined
     to the first is read too ("the data team and acme", "the data team or the
     auditor"). "give", "hand" and "pass" with no "to" take their first object
@@ -480,7 +491,7 @@ def _sends_stay_inside(words: list[str]) -> bool:
     """
     start = next((index for index, word in enumerate(words) if index and word in DATA_SHARE_OBJECT_ENDS), len(words))
     sends = [index for index in range(start, len(words)) if words[index] in _ONWARD_SENDS]
-    if sends and not set(words[start : sends[0]]) <= _BEFORE_SEND_WORDS:
+    if sends and not set(words[1 : sends[0]]) <= _BEFORE_SEND_WORDS:
         return False
     inside = False
     for number, index in enumerate(sends):
@@ -618,6 +629,12 @@ _LATIN_RUN = re.compile(r"[a-z][a-z-]*")
 # ("지우고", "마스킹해서"), a step ("지운 다음"), or the data as an object
 # ("파일을"). Any other word before a place is read as part of it.
 _KOREAN_PLACE_EDGES = frozenset({"다음", "다음에", "후", "후에", "뒤", "뒤에"})
+# A joined 하다 verb ends the clause only when the rule knows the verb: one
+# that protects, removes or sends, or 처리 ("가명 처리해서").
+_KOREAN_JOINED_ENDINGS = ("하고서", "하고", "해서", "한")
+_KOREAN_EDGE_VERBS = frozenset(
+    {*DATA_SHARE_KOREAN_PROTECTIVE_VERBS, *DATA_SHARE_KOREAN_REMOVAL_VERBS, *DATA_SHARE_KOREAN_OUTBOUND_VERBS, "처리"}
+)
 # The parts a unit's compound prefix may be built from: owners and anchors
 # ("데이터사이언스팀", "QA팀"), never the English determiners, which would split
 # a name ("ana" as "an" + "a").
@@ -655,14 +672,21 @@ def _korean_place_word(word: str) -> str:
 
 
 def _korean_edge(word: str) -> bool:
-    return (
+    """Whether `word` ends the clause before a place: a step, or a joined form of a verb this rule knows.
+
+    Only a verb it knows: "마스킹해서", "처리하고", "지우고", "삭제한 (다음)".
+    A word that merely ends in 서 or 고 ("경찰서", "물류창고", "삼성하고") is
+    read as part of the place, and an unknown one keeps it outside.
+    """
+    if (
         word in _KOREAN_PLACE_EDGES
         or word in DATA_SHARE_KOREAN_REMOVAL_JOINED
         or word in DATA_SHARE_KOREAN_OUTBOUND_JOINED
         or word in DATA_SHARE_KOREAN_REMOVAL_BEFORE_AFTER
-        or word.endswith(("을", "를"))
-        or (len(word) > 2 and word.endswith(("서", "고")))
-    )
+    ):
+        return True
+    ending = next((ending for ending in _KOREAN_JOINED_ENDINGS if word.endswith(ending) and word != ending), "")
+    return bool(ending) and word[: -len(ending)] in _KOREAN_EDGE_VERBS
 
 
 def _korean_place_inside(words: tuple[str, ...], index: int, stem: str) -> bool:
