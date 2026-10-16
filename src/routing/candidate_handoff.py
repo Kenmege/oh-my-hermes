@@ -198,7 +198,7 @@ def _relevant_candidates(
 
 
 def _lexical_shortlist(
-    recommendations: list[dict[str, object]], message: str, *, declined_dispatch: bool = False
+    recommendations: list[dict[str, object]], message: str, *, declined_dispatch: bool = False, shielded: bool = False
 ) -> list[dict[str, object]]:
     """The declined winner, scored candidates with evidence of their own, then lexical ranks.
 
@@ -237,7 +237,7 @@ def _lexical_shortlist(
         # A skill whose only shared words are an everyday-English phrase of
         # its own is not offered back by word overlap either; see
         # `EVERYDAY_SENSE_PHRASES` in `policy.py`.
-        query = query or RoutingQuery.from_message(message)
+        query = query or RoutingQuery.from_message(message, shielded=shielded)
         if query.everyday_sense_withheld(skill):
             continue
         # After a declined dispatch the ranking is admitted as it stands --
@@ -342,6 +342,7 @@ def build_candidate_handoff(
     message: str = "",
     *,
     relevance: ClarificationRelevance | None = None,
+    shielded: bool = False,
 ) -> dict[str, object] | None:
     """Build the model-selection handoff, or None when the route is decidable."""
     if relevance is None:
@@ -363,7 +364,9 @@ def build_candidate_handoff(
     # frozen trigger tables and to model selection, not to English word overlap.
     lexical = str(route.get("action") or "") == "clarify" and message.isascii()
     candidates = (
-        _lexical_shortlist(recommendations, message, declined_dispatch=WEAK_DISPATCH_EVIDENCE in reasons)
+        _lexical_shortlist(
+            recommendations, message, declined_dispatch=WEAK_DISPATCH_EVIDENCE in reasons, shielded=shielded
+        )
         if lexical
         else scored
     )

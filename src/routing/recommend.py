@@ -2514,17 +2514,20 @@ class _RawMessageKey:
     and a miss reuses the caller's prepared query when it handed one in.
     """
 
-    __slots__ = ("raw", "query")
+    __slots__ = ("raw", "query", "shielded")
 
     def __init__(self, raw: str, query: RoutingQuery | None = None) -> None:
         self.raw = raw
         self.query = query
+        # A caller that masked the text before passing it says so on its
+        # query; the same masked text unmasked by nobody is another entry.
+        self.shielded = bool(query is not None and query.shielded)
 
     def __hash__(self) -> int:
         return hash(self.raw)
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, _RawMessageKey) and other.raw == self.raw
+        return isinstance(other, _RawMessageKey) and other.raw == self.raw and other.shielded == self.shielded
 
 
 def held_back_trigger_tokens(skill: str) -> frozenset[str]:
@@ -2617,6 +2620,7 @@ def _recommend_skills_cached(key: _RawMessageKey, apply_guardrails: bool) -> tup
         explicit_skill=explicit_skill,
         apply_guardrails=apply_guardrails,
         loop_timer=q.loop_timer,
+        shielded=q.shielded,
     )
 
 
@@ -2655,6 +2659,7 @@ def scored_field_winner_without_explicit_invocation(query: str | RoutingQuery, c
         apply_guardrails=True,
         name_credited_skill=candidate or None,
         loop_timer=q.loop_timer,
+        shielded=q.shielded,
     )
     return field[0].skill if field else ""
 
@@ -2680,6 +2685,7 @@ def confident_scored_field_winner(query: str | RoutingQuery) -> str:
         explicit_skill=None,
         apply_guardrails=True,
         loop_timer=q.loop_timer,
+        shielded=q.shielded,
     )
     return field[0].skill if field and field[0].confidence == "high" else ""
 
@@ -2697,6 +2703,7 @@ def _scored_field(
     apply_guardrails: bool,
     name_credited_skill: str | None = None,
     loop_timer: str = LOOP_TIMER_NONE,
+    shielded: bool = False,
 ) -> tuple[Recommendation, ...]:
     ecosystem_identity_connector_match = _ecosystem_identity_connector_explicit_match(normalized_query)
     domain_signal = specialist_domain_route_signal(routing_text.scoring_text)
@@ -2717,6 +2724,7 @@ def _scored_field(
             domain_signal=None if domain_operator_override is not None else domain_signal,
             domain_operator_override=domain_operator_override,
             name_credited_skill=name_credited_skill,
+            shielded=shielded,
         )
         if recommendation is not None:
             scored.append(replace(recommendation, suggested_prompt=_suggested_prompt(recommendation.skill, query)))
@@ -4317,6 +4325,7 @@ def _score_definition(
     domain_signal: DomainRouteSignal | None,
     domain_operator_override: DomainOperatorOverride | None,
     name_credited_skill: str | None = None,
+    shielded: bool = False,
 ) -> Recommendation | None:
     definition = prepared.definition
     policy = prepared.policy
@@ -4333,7 +4342,7 @@ def _score_definition(
     # eighth meant editing the function every skill is scored by. The rules
     # live in `_SKILL_OFFERS_ITSELF` at the foot of this module now: same
     # predicates, same evaluation order, one row per skill.
-    offers_itself = _SKILL_OFFERS_ITSELF.get(definition.name)
+    offers_itself = _offers_itself_predicate(definition.name, shielded=shielded)
     if (
         offers_itself is not None
         and (
@@ -5865,3 +5874,17 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     # (`SPENDING_LOOP_REASON` in `chat.py`), unmarked imperative or not.
     "spend-gate": lambda normalized_query, query_tokens: bool(_spend_gate_clause(normalized_query)),
 }
+# A skill whose admission reads where the data goes reads a stricter predicate
+# when the masker removed quoted, code, link or relayed text from the message
+# (`RoutingQuery.shielded`): what that text named is unread ('send it to the
+# "acme" data team' reaches the predicate as "send it to the data team"). The
+# hint takes the same report from its own masking
+# (`awareness._rule_suppressed_by_context`).
+_SHIELDED_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
+    "data-share-review": lambda normalized_query, query_tokens: data_share_request_admitted(normalized_query, shielded=True),
+}
+
+
+def _offers_itself_predicate(skill: str, *, shielded: bool) -> Callable[[str, set[str]], bool] | None:
+    """The offers-itself predicate for `skill`, the stricter one when the masker removed text from the message."""
+    return (shielded and _SHIELDED_OFFERS_ITSELF.get(skill)) or _SKILL_OFFERS_ITSELF.get(skill)

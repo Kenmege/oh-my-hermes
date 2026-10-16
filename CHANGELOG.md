@@ -4,6 +4,67 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A team inside the company is internal for data-share-review, in English
+  as in Korean, and only when it is proven inside.** Owner decision
+  (2026-10-16): sending personal data to a team in the same company is
+  internal, so the review does not fire; it fires only when the data leaves
+  for an outside party (a vendor, provider, partner, contractor, third party,
+  or an external service). English admission read any verb that sends a file
+  as the file leaving, wherever it went: "redact pii in the export before we
+  send it to the dev team" dispatched the review. The gate fails safe: a place
+  is inside only when every word of it is an inside word, in closed tables
+  both languages read -- an anchor (a teammate, a colleague or coworker,
+  internal, in-house, QA, staging, a test or dev server; 사내, 내부, 동료,
+  스테이징), a team or department with an owner (our, my, another, or an
+  internal function such as data, dev, marketing, finance, hr; 우리, 다른, 개발,
+  재무, 인사), a determiner, or a system beside an anchor (the internal wiki,
+  the staging server; 사내 위키). Any other word keeps the review: a company
+  ("the Acme team", "Acme's data team"), a client or customer ("the customer
+  success team", "고객지원팀"), an organisation ("the Department of Health",
+  "은행 담당 부서에", "다른 회사 동료에게"), a relative clause ("a former
+  colleague who now works at Acme"), a place after "at", "of" or "for" ("the
+  data team at Acme", "the dev team for review"), a team with no owner ("the
+  team", "팀 전체에"), and Hangul in an English place. In English, only closed
+  words -- where the data is, a determiner, the speaker, data containers and
+  personal-data field names -- may stand from the lead verb to the first
+  send, its object included ("the export Acme will get", "the CSV the bank
+  wants" and "before Acme sees it" keep the review). A word that names whose
+  records the data holds (customer, user, patient, client, member, employee,
+  staff, student, donor, applicant, subscriber, account) may stand there only
+  right before a data container or a field name, not possessive and not
+  after "for", "to" or "from": "the customer export", "the patient CSV" and
+  "the user logs" describe the data, while "the customer's export" and "the
+  export for the customer" keep the review;
+  every later send must name such a place after its "to" or "with", and so
+  must every place it joins ("the data team and Acme", "cc the auditor");
+  "give", "hand" and "pass" without "to" send nothing to the person and
+  otherwise take their first object as the place ("give Acme a copy" keeps
+  the review). A Korean place is read back, however many words, to a step or
+  a joined form of a verb the rule knows, so a noun ending in 서 or 고 is read
+  on ("경찰서 보안팀에" keeps the review); every place in the sentence must be
+  inside, and an English recipient word ("vendor team에") keeps the review.
+  Both surfaces mask quoted, code, link and relayed text before they call the
+  rule, and each passes the masker's own report that it removed something, so
+  no place is then proven inside ('the "Acme" data team', "the dev team
+  https://acme.com"). Measured against main on 160 requests written for this
+  change, 140 written blind by a separate agent, and the reviewer's sets
+  written before reading the code (`mine2.tsv` and its NFD copy, `adv.tsv`
+  to `adv4.tsv`, `r3.tsv`, `r3b.tsv`): on these sets no request to an outside
+  party lost the review on admission, the router or the hint, and the two
+  surfaces never disagree with every cache cleared. Korean outside requests
+  gained it (29 to 40 of 40, 32 to 34 of 35, 34 to 53 of 53, 10 to 31 of 31,
+  1 to 18 of 18), and 47 adversarial rows written for the compound-modifier
+  rule ("the customer export the regulator wants", "the patient CSV for the
+  insurer", "the customer's export") lost nothing. Inside requests that still
+  fire, the safe direction: English 2 of 36, 12 of 35 and 14 of the
+  reviewer's 31 (each for where the data goes: a manager, HR, the intranet,
+  a bare "engineering", "in Seoul"); Korean 2 of 36, 14 of 35 and 5 of 20.
+  The three requests the decision named without a file ("redact the pii and send it to the dev
+  team") were never admitted, since English admission needs a file-shaped
+  carrier; they are pinned as negative controls. Every table is pinned by a
+  literal snapshot, and a list of outside words must keep the review. Files
+  and folders stay inside only in Korean ("엑셀로 내보내줘").
+
 - **Korean spend and data-share requests reach their gates.** "내 카드로
   결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보
   마스킹해서 벤더한테 보내줘" dispatched gateway-intent-card, and "개인정보 지우고
