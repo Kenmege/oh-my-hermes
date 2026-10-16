@@ -635,9 +635,9 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             ),
             "redact pii in the export, send it to the dev team and give us the summary",
             "redact pii in the export, send it to the dev team and give it back",
-            "redact pii in the export and give the dev team a copy",
-            "redact pii in the export and hand the qa team the export",
-            "redact pii in the export and give the dev team access",
+            "redact pii in the export, send it to the qa team and give the dev team a copy",
+            "redact pii in the export, send it to the qa team and hand the dev team the export",
+            "redact pii in the export, send it to the qa team and give the dev team access",
             "개인정보 지우고 동료한테 보내줘",
             "고객 정보 가명 처리해서 QA에 보내줘",
             "개인정보 가명 처리해서 다른 부서에 공유해줘",
@@ -755,6 +755,9 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "redact pii in the export, pass the checks, and send it to the dev team",
             "redact pii in the export before we send it",
             "redact pii in the export and hand it over",
+            # Handed back to the person, it names no place, and no other send
+            # names one either.
+            "redact pii in the export and hand it back",
             "redact pii in the export, share it with the dev team and post it publicly",
             "anonymize the dataset, send it to the qa team and upload it to kaggle",
             "redact pii in the export and send it to the dev team a copy",
@@ -807,8 +810,10 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertTrue(self._named(message))
                 self.assertTrue(self._hinted(message))
-        # The rule alone reads no place as inside when it sees the quotes.
+        # The rule alone reads no place as inside when it sees the quotes, as
+        # the awareness marker reads the unmasked message.
         self.assertTrue(data_share_request_admitted('고객 정보 마스킹해서 "acme" 개발팀에 보내줘'))
+        self.assertTrue(data_share_request_admitted('redact pii in the export and send it to "our team"'))
         self.assertTrue(data_share_request_admitted("redact pii in the export and send it to the data team", shielded=True))
         self.assertFalse(data_share_request_admitted("redact pii in the export and send it to the data team"))
         self.assertTrue(data_share_request_admitted("고객 정보 마스킹해서 개발팀에 보내줘", shielded=True))
