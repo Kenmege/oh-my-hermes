@@ -401,6 +401,7 @@ class InsertedRowsTests(unittest.TestCase):
         harness.render(plain("tail 1", "tail 2", *self.UNDER), cursor=(3, 2), screen_rows=24)
         written = "".join(harness.writes)
         self.assertIn("\x1b[1L", written)
+        self.assertEqual(printable(written), "tail 2")  # the new row only: the one above stays, those under move
         for row in self.UNDER:
             self.assertNotIn(row, printable(written))
         self.assertEqual(harness.screen.lines()[3:11], ["tail 1", "tail 2", *self.UNDER, ""])
