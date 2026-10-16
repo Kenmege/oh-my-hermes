@@ -356,8 +356,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   next poll two to eight seconds later), and a subtask keeps its place under
   its parent.
 - The composer does not move when the panel grows or shrinks; only its own
-  lines move it, and the agent list for as long as it is open. Hidden while
-  you pick from a list or search the history with Ctrl+R (the search's row
+  lines move it. Hidden while you pick from a list or search the history with Ctrl+R (the search's row
   stands where the composer was, the caret at the end of what you typed), it
   comes back on the same row, as you left it.
 - A notice Hermes sends outside the transcript (the agent still starting, a
@@ -375,15 +374,17 @@ run and approval decision stays Hermes'; the screen is OMH's.
   `idle · 2 agents running` while agents outlive the turn. The strip and the
   list are the one place agents show while they hold any: the HUD panel's
   `[Agents]` block steps aside for them and the plan keeps its rows. Down on an empty composer
-  opens them as a list under the composer, which sits higher while the list is
-  open and returns to its row when it closes. The list never pushes the screen
-  up: it takes the blank rows above the composer first, then rows of what is
-  drawn above it (the streaming reply, the prompt being answered, the panel),
-  and with fewer rows than agents it scrolls. Enter, or a click on its row,
+  opens them as a list you pick from, as from a picker: the composer is hidden
+  while it is open, the list stands where the composer was and scrolls when
+  there are more agents than rows, and the mode row says its keys (`↑↓ select
+  · ⏎ log · x interrupt · s steer · esc back`). Esc, Left or `q` closes it and
+  the composer comes back on its row as you left it; any other key does
+  nothing while the list is open, so nothing typed there lands in the
+  composer. Enter, or a click on its row,
   opens that agent's log on the alternate screen (its thinking lines, tool
   calls and reply, read-only, refreshed while it runs); Left and Right move
   between agents and q or Esc goes back. Two keys in the list act on the
-  highlighted agent and nothing else does: `x` asks
+  highlighted agent and nothing else does: `x` asks on the mode row
   (`x again interrupts <agent> · any other key cancels`) and a second `x`
   interrupts it (`subagent.interrupt`); `s` makes the next line you send that
   agent's steer (`subagent.steer`), which Hermes hands it at its next tool
@@ -599,7 +600,7 @@ Esc closes it):
 | ↑ / ↓ | Move between the composer's rows, walk the input history at its first and last row (earlier sessions' too, shared with `hermes --tui`), or move through an open completion menu |
 | Ctrl+R | Searches the input history; Ctrl+R again finds an older match, Enter puts it in the composer, Esc leaves the composer as it was |
 | ↑ | On an empty composer with prompts queued, takes them back into the composer to edit; a queued shell line comes back on its own |
-| ↓ | On an empty composer while the mode row shows subagents, opens the agent list under the composer |
+| ↓ | On an empty composer while the mode row shows subagents, opens the agent list in the composer's place |
 | ← / → | Move by a character; with Ctrl or Alt, by a word (Alt+B and Alt+F too) |
 | Home / End, Ctrl+A / Ctrl+E | Go to the start or the end of the line |
 | Backspace / Delete | Delete a character, or a paste chip whole; Backspace on an empty composer removes the last attached image |
@@ -617,7 +618,7 @@ Esc closes it):
 | 1 to 9 | On a clarify question's list, pick that choice, or the last number opens the field for your own answer; ↑ / ↓ then Enter picks too, and any other character starts your own answer |
 | Esc, Ctrl+C | On a question Hermes asked, decline it (an approval is denied); Ctrl+C first clears an answer being typed |
 | ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions` or `/rewind` list, move, take the highlighted row (switch to that session, or put that prompt in the composer to send again), or close it; typing filters the list |
-| ↑ / ↓, Enter, Esc | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; other typing leaves it too |
+| ↑ / ↓, Enter, Esc, ←, q | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; any other key does nothing there |
 | x, s | In the agent list, on an agent: x twice interrupts it; s steers it with the next line you send (Esc cancels) |
 | Click | On a row of the agent list, opens that agent's log (on main, only leaves the list) |
 | ← / →, q or Esc | In an agent's log, show the agent before or after, or go back; the pager's keys scroll it |

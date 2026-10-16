@@ -999,6 +999,7 @@ class App(ModesMixin, AgentViewMixin):
         self.connection_ops: set[str] = set()  # `connection.request` operations already named in a notice
         self.roster = Roster()  # the running turn's subagents
         self.list_selected: str | None = None  # the agent list's highlighted row while the list has the keys
+        self.listed: tuple[str, ...] = ()  # the agent id of each list row as the slot last drew them, top to bottom
         self.log_agent = ""  # the agent whose log the pager shows; "" for every other pager
         self.tail_asked_at: float | None = None  # when the last `subagent.tail` went out
         self.tail_open = False  # that call has no answer yet
@@ -3233,13 +3234,6 @@ class App(ModesMixin, AgentViewMixin):
         previous = 0 if anchoring else self.region.height
         self.anchor = False
         strip, _hits = self._agent_strip(cols)
-        listed: tuple[str, ...] = ()
-
-        def agent_list(room: int) -> list[Line]:
-            nonlocal listed
-            lines, listed = self._agent_list(cols, room)
-            return lines
-
         build = partial(
             build_frame,
             cols=cols,
@@ -3257,7 +3251,6 @@ class App(ModesMixin, AgentViewMixin):
             mode=self._display_mode(),
             mode_row=self._mode_row_line(cols, strip),
             placeholder=PLACEHOLDER if self._composer_open() else "",
-            agent_list=agent_list if self.list_selected is not None else None,
         )
         frame = build()
         # The flush below fills this frame's pad rows first, so they are transcript rows by the time it shows.
@@ -3269,7 +3262,7 @@ class App(ModesMixin, AgentViewMixin):
         # their whole count, and the rows the tail gave back would stay as blank pad under them.
         # Frame and flush are one write, so no screen between them shows.
         self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad, flush=stable)
-        self._take_clickable(frame.budget, listed)
+        self._take_clickable(frame.budget, self.listed)
 
     def _display_mode(self) -> str:
         """What the composer's frame shows: the shell while it holds a `!` line for Hermes' shell, else the input mode."""
@@ -3278,25 +3271,25 @@ class App(ModesMixin, AgentViewMixin):
         return self.mode
 
     def _composer_open(self) -> bool:
-        """Whether the composer takes the keys for a prompt: no question, picker or search has them."""
+        """Whether the composer takes the keys for a prompt: no question, picker, search or agent list has them."""
         return (
             self.slot is None and self.picker is None and self.search is None and self.rewind_picker is None
-            and self.model_picker is None
+            and self.model_picker is None and self.list_selected is None
         )
 
     def _composer_hidden(self) -> bool:
         """Whether the frame draws no composer: the person picks from a list, so nothing is typed into it.
 
         A question answered by picking (`PromptSlot.picking`), the session,
-        rewind and model pickers, whose filter is a row of their own, and the
-        history search, whose query row is. The completion menus and the agent
-        list keep it.
+        rewind and model pickers, whose filter is a row of their own, the
+        history search, whose query row is, and the agent list. The
+        completion menus keep it.
         """
         if self.slot is not None:
             return self.slot.picking
         return (
             self.picker is not None or self.rewind_picker is not None or self.model_picker is not None
-            or self.search is not None
+            or self.search is not None or self.list_selected is not None
         )
 
     def _mode_row_line(self, cols: int, strip: Line | None = None) -> Line:
@@ -3315,6 +3308,8 @@ class App(ModesMixin, AgentViewMixin):
             say = self.slot.keys
         elif picker_keys:
             say = picker_keys
+        elif self.list_selected is not None:
+            say, say_style = self._agent_list_say()
         elif steered is not None:
             say, say_style = tuple(form.format(name=steered.name) for form in STEER_SAY), self.theme.accent
         elif self.rewind is not None:
@@ -3324,6 +3319,8 @@ class App(ModesMixin, AgentViewMixin):
         if isinstance(say, tuple):
             effort = cell_width(f"effort {self.effort}") + MODE_ROW_GAP if self.effort else 0
             strip = self._agent_strip(cols - effort - cell_width(STRIP_SEPARATOR + say[max(len(say) - 2, 0)]))[0]
+        if self.list_selected is not None and self.slot is None:
+            strip = ()  # the open list shows the agents itself
         return mode_row_line(
             mode=self._display_mode(),
             busy=self._busy(),
@@ -3423,6 +3420,7 @@ class App(ModesMixin, AgentViewMixin):
     def _slot_lines(self, cols: int, rows: int) -> list[Line]:
         """The slot's rows; with the composer hidden it has the composer frame's rows too (`layout.choice_cap`)."""
         cap = choice_cap(rows, cols) if self._composer_hidden() else slot_cap(rows, cols)
+        self.listed = ()
         if cap <= 0:
             return []
         if self.slot is not None:
@@ -3437,6 +3435,9 @@ class App(ModesMixin, AgentViewMixin):
             return self.rewind_picker.lines(cols, self.theme, cap, self.wall_clock(), keys=keys)
         if self.model_picker is not None:
             return self.model_picker.lines(cols, self.theme, cap, keys=keys)
+        if self.list_selected is not None:
+            lines, self.listed = self._agent_list(cols, cap)
+            return lines
         # Nothing has the keys: the queued prompts take the slot's last rows, right above the composer's
         # top rule, Hermes' notification the row above them, and the menu or the panel gets the rows left. A
         # question or the picker hides them, since Up then does not edit the queue.

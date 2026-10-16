@@ -35,7 +35,7 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+R", "Searches the input history; Ctrl+R again finds an older match, Enter puts it in the composer, "
                "Esc leaves the composer as it was"),
     ("↑", "On an empty composer with prompts queued, takes them back into the composer to edit; a queued shell line comes back on its own"),
-    ("↓", "On an empty composer while the mode row shows subagents, opens the agent list under the composer"),
+    ("↓", "On an empty composer while the mode row shows subagents, opens the agent list in the composer's place"),
     ("← / →", "Move by a character; with Ctrl or Alt, by a word (Alt+B and Alt+F too)"),
     ("Home / End, Ctrl+A / Ctrl+E", "Go to the start or the end of the line"),
     ("Backspace / Delete", "Delete a character, or a paste chip whole; Backspace on an empty composer removes "
@@ -63,8 +63,8 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("↑ / ↓, PageUp / PageDown, Enter, Esc", "In the /sessions or /rewind list, move, take the highlighted row "
                                              "(switch to that session, or put that prompt in the composer to send "
                                              "again), or close it; typing filters the list"),
-    ("↑ / ↓, Enter, Esc", "In the agent list, move, open the highlighted agent's log (on main, only leave), "
-                          "or go back; other typing leaves it too"),
+    ("↑ / ↓, Enter, Esc, ←, q", "In the agent list, move, open the highlighted agent's log (on main, only leave), "
+                                "or go back; any other key does nothing there"),
     ("x, s", "In the agent list, on an agent: x twice interrupts it; s steers it with the next line you send "
              "(Esc cancels)"),
     ("Click", "On a row of the agent list, opens that agent's log (on main, only leaves the list)"),
