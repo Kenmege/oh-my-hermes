@@ -508,6 +508,7 @@ class TerminalLike(Protocol):
     def __exit__(self, *exc: object) -> Any: ...
     def size(self) -> tuple[int, int]: ...
     def query_background(self) -> tuple[str | None, bytes, int | None]: ...
+    def query_cursor_row(self) -> tuple[bytes, int | None]: ...
     def resized(self) -> bool: ...
     def read(self, timeout: float, wake: int | None = None) -> bytes: ...
     def write(self, text: str) -> None: ...
@@ -2266,16 +2267,27 @@ class App(ModesMixin, AgentViewMixin):
         the region is drawn anew under whatever the shell printed meanwhile. Nothing happens without SIGTSTP.
 
         Scrollback is left as it is (no full redraw), so what the person did in
-        the shell stays readable above the session's rows.
+        the shell stays readable above the session's rows. The shell's window
+        title is back while the job is stopped (popped, and pushed again by the
+        next frame). Continued, the TUI asks the terminal for the cursor row
+        again, as at launch (`adopt_cursor_row`), so the region knows its place
+        from its first frame; keys typed while that query waited are read then.
         """
         if getattr(signal, "SIGTSTP", None) is None:
             return
         self._set_mouse(False)
         self.region.clear()
+        if self.title_pushed:
+            self.terminal.write(TITLE_POP)
+            self.title_pushed, self.shown_title, self.title_words = False, None, ""
         self.terminal.suspend()
         self.size = self.terminal.size()
+        typed, row = self.terminal.query_cursor_row()
         self.region = LiveRegion(self.terminal.write)
+        self.adopt_cursor_row(row)
         self.dirty = True
+        if typed:
+            self._take_input(typed)
 
     def _attachment_input(self, event: Key | Paste) -> bool:
         """Ctrl+V, Backspace on an empty composer with images queued, and a one-line paste (a drop); True when handled."""

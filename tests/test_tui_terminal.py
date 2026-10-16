@@ -464,6 +464,15 @@ class TerminalPtyTests(unittest.TestCase):
             written = (BACKGROUND_QUERY + CURSOR_POSITION_QUERY + DEVICE_ATTRIBUTES_QUERY).encode()
             self.assertEqual(self.master_output(), written)  # DA1 last: its answer still ends the wait
 
+    def test_the_cursor_query_after_a_stop_asks_only_for_the_position(self) -> None:
+        with Terminal(self.slave, self.slave) as term:
+            self.master_output()
+            os.write(self.master, b"q\x1b[12;1R\x1b[?62;22cw")
+            self.assertEqual(term.query_cursor_row(), (b"qw", 12))
+            self.assertEqual(self.master_output(), (CURSOR_POSITION_QUERY + DEVICE_ATTRIBUTES_QUERY).encode())
+            os.write(self.master, b"\x1b[?62;22c")
+            self.assertEqual(term.query_cursor_row(timeout=5.0), (b"", None))  # no report: no row
+
     def test_the_attributes_answer_ends_the_wait_without_a_background(self) -> None:
         with Terminal(self.slave, self.slave) as term:
             os.write(self.master, b"\x1b[?62;22c")

@@ -377,6 +377,25 @@ class Terminal:
         position report as an unknown key, which types nothing.
         """
         self.write(BACKGROUND_QUERY + CURSOR_POSITION_QUERY + DEVICE_ATTRIBUTES_QUERY)
+        row, data = split_cursor_reply(self._read_answers(timeout))
+        colour, typed, _answered = split_background_replies(data)
+        return colour, typed, row
+
+    def query_cursor_row(self, timeout: float = BACKGROUND_QUERY_SECONDS) -> tuple[bytes, int | None]:
+        """The input that arrived meanwhile and the cursor's 1-based row, asked as `query_background` asks it.
+
+        For a job continued after a stop, where the shell moved the cursor:
+        writes the cursor position request and the attributes request behind
+        it, and reads until the attributes answer or `timeout`. Only inside
+        the `with` block.
+        """
+        self.write(CURSOR_POSITION_QUERY + DEVICE_ATTRIBUTES_QUERY)
+        row, data = split_cursor_reply(self._read_answers(timeout))
+        _colour, typed, _answered = split_background_replies(data)
+        return typed, row
+
+    def _read_answers(self, timeout: float) -> bytes:
+        """Input until the attributes answer arrives (the last a query asks for) or `timeout` passes."""
         deadline = time.monotonic() + timeout
         data = b""
         while (left := deadline - time.monotonic()) > 0:
@@ -392,9 +411,7 @@ class Terminal:
             data += chunk
             if split_background_replies(data)[2]:
                 break
-        row, data = split_cursor_reply(data)
-        colour, typed, _answered = split_background_replies(data)
-        return colour, typed, row
+        return data
 
     def _on_winch(self, signum: int, frame: FrameType | None) -> None:
         self._resized = True

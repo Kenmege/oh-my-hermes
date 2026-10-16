@@ -45,6 +45,42 @@ class AppSuspendTests(unittest.TestCase):
         self.assertIn("› a draft", drawn(app))  # and drawn again once continued, the draft as it was
         self.assertEqual(app.composer.text, "a draft")
 
+    def test_continued_it_asks_where_the_cursor_is_so_the_composer_stays_on_the_bottom_rows(self) -> None:
+        app, _client = make_app(rows=24, cols=80)
+        terminal = app.terminal
+        terminal.screen.feed("".join(f"$ shell {n}\r\n" for n in range(30)))  # type: ignore[attr-defined]
+        terminal.cursor_row = 24  # type: ignore[attr-defined]  # fg left the cursor on the last row
+        terminal.typed_after_stop = b"x"  # type: ignore[attr-defined]  # a key typed while the query waited
+        type_text(app, "a draft")
+        drawn(app)
+        app._on_input(CTRL_Z)
+        self.assertEqual(terminal.cursor_queries, 1)  # type: ignore[attr-defined]
+        drawn(app)
+        self.assertEqual(app.region.last_row(24), 23)  # certain from the first frame after: pinned
+        self.assertEqual(app.composer.text, "a draftx")  # read as typed, after the query
+
+    def test_the_shells_title_is_back_while_the_job_is_stopped_and_ours_after(self) -> None:
+        app, _client = make_app()
+        terminal = app.terminal
+        drawn(app)
+        written = len(terminal.writes)  # type: ignore[attr-defined]
+        self.assertTrue(app.title_pushed)
+        stopped_with: list[str] = []
+        real = terminal.suspend
+
+        def suspend() -> bool:
+            stopped_with.append("".join(terminal.writes[written:]))  # type: ignore[attr-defined]
+            return real()
+
+        terminal.suspend = suspend  # type: ignore[method-assign]
+        app._on_input(CTRL_Z)
+        self.assertIn(app_module.TITLE_POP, stopped_with[0])
+        written = len(terminal.writes)  # type: ignore[attr-defined]
+        drawn(app)
+        after = "".join(terminal.writes[written:])  # type: ignore[attr-defined]
+        self.assertIn(app_module.TITLE_PUSH, after)
+        self.assertIn(app_module.TITLE_SET.format(f"{app_module.TITLE_DEFAULT} · idle"), after)
+
     def test_mouse_reports_go_off_before_the_shell_gets_the_terminal(self) -> None:
         from test_tui_agent_strip import agent_app
 

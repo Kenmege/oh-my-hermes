@@ -140,6 +140,8 @@ class ScriptedTerminal:
         self.typed_during_query = b""  # input the query read while it waited
         self.background_queries = 0
         self.suspended = 0  # `suspend` calls: a job stopped and continued at once
+        self.cursor_queries = 0  # `query_cursor_row` calls, which answer `cursor_row`
+        self.typed_after_stop = b""  # input that query read while it waited
         self._resized = False
         self._quiet = False
 
@@ -162,6 +164,10 @@ class ScriptedTerminal:
     def query_background(self) -> tuple[str | None, bytes, int | None]:
         self.background_queries += 1
         return self.background, self.typed_during_query, self.cursor_row
+
+    def query_cursor_row(self) -> tuple[bytes, int | None]:
+        self.cursor_queries += 1
+        return self.typed_after_stop, self.cursor_row
 
     def resized(self) -> bool:
         resized, self._resized = self._resized, False
