@@ -1844,9 +1844,9 @@ class App(ModesMixin, AgentViewMixin):
                 self._turn_ended()
 
     def _alert_question(self, slot: PromptSlot) -> None:
-        """Once per question, as its slot opens (the wait is on the person): the bell an approval always rang, and
-        where the terminal shows the turn end's notification (OSC 9 or 777) that too, saying what Hermes asks; none
-        with OMH_TUI_BELL=0."""
+        """Once per request, as its slot opens (the wait is on the person), however many questions a clarify carries:
+        the bell an approval always rang, and where the terminal shows the turn end's notification (OSC 9 or 777)
+        that too, saying what Hermes asks; none with OMH_TUI_BELL=0."""
         if self.environ.get(BELL_ENV) == BELL_OFF:
             return
         signal = attention_sequence(self.environ, truncate(slot.attention(), QUESTION_ALERT_CHARS))

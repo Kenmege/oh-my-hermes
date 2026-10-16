@@ -420,6 +420,23 @@ class QuestionAttentionTests(unittest.TestCase):
                 self.assertNotIn(BELL, quiet)
                 self.assertNotIn("\x1b]9;", quiet)
 
+    def test_a_request_alerts_once_as_it_opens_however_many_questions_it_carries(self) -> None:
+        three = ServerRequest("srq-2", "clarify", {"questions": [{"qid": q, "question": f"{q}?"} for q in ("a", "b", "c")]})
+        app, client = make_app(busy=True, environ={"TERM_PROGRAM": "Apple_Terminal"})
+        app._on_server_request(three)
+        app._on_server_request(TEXT_QUESTIONS[0][0])  # a sudo prompt waits behind it
+        for answer in ("one", "two"):
+            armed(app)
+            type_text(app, answer)
+            press(app, Key(ENTER))
+        self.assertEqual(app.slot.question_index, 2)  # type: ignore[union-attr]  # on its third question
+        self.assertEqual("".join(app.terminal.writes).count(BELL), 1)  # type: ignore[attr-defined]
+        armed(app)
+        type_text(app, "three")
+        press(app, Key(ENTER))  # the last answer sends it; the sudo prompt opens, a request of its own
+        self.assertEqual([request for request, _frame in client.answers], ["srq-2"])
+        self.assertEqual("".join(app.terminal.writes).count(BELL), 2)  # type: ignore[attr-defined]
+
     def test_the_notification_never_says_a_value_and_stays_short(self) -> None:
         long = ServerRequest("srq-2", "clarify", {"questions": [{"qid": "q", "question": "Why " * 60}]})
         written = self.written({"TERM_PROGRAM": "iTerm.app"}, long)

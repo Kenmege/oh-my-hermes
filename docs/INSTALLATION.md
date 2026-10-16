@@ -548,7 +548,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   are those right after each next question of a batch, so typing that was
   meant for the composer, or for the question before, cannot answer it.
   The terminal bell rings once as any question opens (an approval, a clarify
-  question, a sudo password, a secret), so a terminal in the background can
+  request however many questions it asks, a sudo password, a secret), so a terminal in the background can
   flag it, and a terminal that shows notifications gets one too, saying what
   Hermes asks (Hermes drops a clarify question nobody answers after its
   timeout, 300 s by default), and a turn that ran 10 s or more ends with the
