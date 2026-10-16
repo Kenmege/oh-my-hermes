@@ -56,6 +56,7 @@ scenario at 10 and 24 rows.
 from __future__ import annotations
 
 from collections.abc import Sequence
+import re
 import unittest
 
 from _tui_lines import line_text
@@ -143,7 +144,7 @@ class Session:
     def render(self, frame_lines: Sequence[Line], cursor: tuple[int, int] | None, flush: Sequence[str]) -> int:
         """Render as the app does, the flush first in the same write; the rows the screen scrolled for it."""
         before = len(self.screen.scrollback)
-        self.region.render(frame_lines, cursor, self.cols, flush=[plain(line) for line in flush])
+        self.region.render(frame_lines, cursor, self.cols, flush=[plain(line) for line in flush], screen_rows=self.rows)
         self.flushed.extend(flush)
         scrolled = len(self.screen.scrollback) - before
         self.scrolled += scrolled
@@ -414,6 +415,23 @@ class RegionFollowsContentTests(unittest.TestCase):
                 session = self.run_one(rows, 80, history=0, at_top=True)
                 self.assertNotIn(None, session.known_rows)
                 self.assertEqual(session.known_rows[0], session.heights[0] - 1)
+
+    def test_every_invariant_holds_where_rows_added_inside_the_region_are_inserted(self) -> None:
+        # A region whose place is certain inserts the rows a growing tail or slot adds (IL) while it has room
+        # under it; the scenario checks (a) to (g) over those frames too.
+        for rows in (10, 24, 40):
+            for cols in (40, 80):
+                with self.subTest(rows=rows, cols=cols):
+                    session = Session(self, rows, cols, history=0, at_top=True)
+                    feed, inserts = session.region._write, []
+
+                    def spy(text: str, feed=feed, inserts=inserts) -> None:
+                        inserts.extend(re.findall(r"\x1b\[\d+L", text))
+                        feed(text)
+
+                    session.region._write = spy
+                    run_scenario(session)
+                    self.assertTrue(inserts)
 
     def test_a_region_launched_lower_down_learns_its_last_row_once_the_output_has_pushed_it_to_the_end(self) -> None:
         session = Session(self, 24, 80, history=5)

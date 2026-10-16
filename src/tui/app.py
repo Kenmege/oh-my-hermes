@@ -3764,7 +3764,7 @@ class App(ModesMixin, AgentViewMixin):
         # Flushed before the frame, the lines cover the region's top rows, where the lines leaving
         # the tail were drawn (a settled tool group is those same rows, moved above the region), and
         # the frame is drawn under them. Flush and frame are one write, so no screen between them shows.
-        self.region.render(frame.lines, frame.cursor, cols, flush=stable)
+        self.region.render(frame.lines, frame.cursor, cols, flush=stable, screen_rows=rows)
         self._take_clickable(frame.budget, self.listed)
 
     def _menu_goes_under(self, rows: int, flushed: int, frame: Frame) -> bool:

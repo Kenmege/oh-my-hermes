@@ -48,8 +48,11 @@ class Harness:
         self.writes.append(text)
         self.screen.feed(text)
 
-    def render(self, lines: list[Line], cursor: tuple[int, int] | None = (0, 0), width: int | None = None) -> None:
-        self.region.render(lines, cursor, self.cols if width is None else width)
+    def render(
+        self, lines: list[Line], cursor: tuple[int, int] | None = (0, 0), width: int | None = None,
+        screen_rows: int | None = None,
+    ) -> None:
+        self.region.render(lines, cursor, self.cols if width is None else width, screen_rows=screen_rows)
 
     def flush(self, lines: list[Line], width: int | None = None) -> None:
         self.region.flush_above(lines, self.cols if width is None else width)
@@ -381,6 +384,57 @@ class FlushOverRegionTests(unittest.TestCase):
 END = "END"
 
 
+class InsertedRowsTests(unittest.TestCase):
+    """Rows added inside a region that still has room under it: inserted (IL), the rows under them not repainted."""
+
+    UNDER = ["── rule", "› composer", "── rule", "mode", "status"]
+
+    def started(self, history: int, rows: int = 24) -> Harness:
+        harness = Harness(rows=rows, cols=40, history=history)
+        harness.region = LiveRegion(harness._write, start_row=history)
+        harness.render(plain("tail 1", *self.UNDER), cursor=(2, 2), screen_rows=rows)
+        harness.writes.clear()
+        return harness
+
+    def test_a_tail_row_is_inserted_and_what_is_under_it_is_not_painted_again(self) -> None:
+        harness = self.started(history=3)
+        harness.render(plain("tail 1", "tail 2", *self.UNDER), cursor=(3, 2), screen_rows=24)
+        written = "".join(harness.writes)
+        self.assertIn("\x1b[1L", written)
+        for row in self.UNDER:
+            self.assertNotIn(row, printable(written))
+        self.assertEqual(harness.screen.lines()[3:11], ["tail 1", "tail 2", *self.UNDER, ""])
+        self.assertEqual(harness.screen.cursor, (6, 2))
+        self.assertEqual(harness.region.last_row(24), 9)
+
+    def test_a_changed_row_under_the_insert_is_still_painted(self) -> None:
+        harness = self.started(history=3)
+        under = [*self.UNDER[:-1], "status · running"]
+        harness.render(plain("tail 1", "tail 2", "tail 3", *under), cursor=(4, 2), screen_rows=24)
+        written = "".join(harness.writes)
+        self.assertIn("\x1b[2L", written)
+        self.assertNotIn("› composer", printable(written))
+        self.assertEqual(harness.screen.lines()[3:12], ["tail 1", "tail 2", "tail 3", *under, ""])
+
+    def test_without_room_under_it_or_a_certain_place_it_grows_as_before(self) -> None:
+        cases = {
+            "the last row": (self.started(history=18), 24),  # six rows from row 18 end on the screen's last row
+            "no screen size": (self.started(history=3), None),
+        }
+        unknown = Harness(rows=24, cols=40, history=3)
+        unknown.render(plain("tail 1", *self.UNDER), cursor=(2, 2), screen_rows=24)
+        unknown.writes.clear()
+        cases["place unknown"] = (unknown, 24)
+        for name, (harness, rows) in cases.items():
+            with self.subTest(case=name):
+                harness.render(plain("tail 1", "tail 2", *self.UNDER), cursor=(3, 2), screen_rows=rows)
+                written = "".join(harness.writes)
+                self.assertNotIn("L", "".join(final for _params, final in _CSI.findall(written)))
+                screen = harness.screen.lines()
+                start = screen.index("tail 1")
+                self.assertEqual(screen[start : start + 7], ["tail 1", "tail 2", *self.UNDER])
+
+
 def ending(rows: int) -> list[Line]:
     """A frame of `rows` rows whose last row reads END."""
     return plain(*[f"row {n}" for n in range(rows - 1)], END)
@@ -570,6 +624,12 @@ class ClearTests(unittest.TestCase):
 
 
 class VTScreenModelTests(unittest.TestCase):
+    def test_insert_lines_moves_the_rows_down_and_drops_the_last_ones(self) -> None:
+        screen = VTScreen(rows=4, cols=5)
+        screen.feed("a\r\nb\r\nc\r\nd\x1b[2A\x1b[2C\x1b[2L")
+        self.assertEqual(screen.lines(), ["a", "", "", "b"])
+        self.assertEqual((screen.cursor, screen.scrollback), ((1, 0), []))
+
     def test_line_feed_at_the_bottom_scrolls_into_scrollback(self) -> None:
         screen = VTScreen(rows=2, cols=5)
         screen.feed("a\r\nb\r\nc")

@@ -15,8 +15,11 @@ region's own top (CR, cursor up/down, erase line, erase below, "\\r\\n"), so it
 works wherever the shell left the cursor and inside any scrollback state.
 Growing emits newlines from the region's last row, which moves into the
 blank rows under it or, on the screen's last row, scrolls the screen up from
-the bottom exactly as printed output would; shrinking erases the rows freed
-at the region's end. The first frame also erases everything under it. Only rows
+the bottom exactly as printed output would; where the region's last row is
+certain and the screen has room under it, rows added inside the region (a
+streaming tail's new line) are inserted with IL at their place instead, so
+the rows under them move down without being painted again. Shrinking erases
+the rows freed at the region's end. The first frame also erases everything under it. Only rows
 whose bytes changed since the last frame are repainted, which keeps a
 selection on a static row alive. After every frame the hardware
 cursor is parked where the caller asked (the composer caret), so an IME
@@ -101,6 +104,31 @@ def cursor_up(rows: int) -> str:
 
 def cursor_down(rows: int) -> str:
     return f"{CSI}{rows}B" if rows > 0 else ""
+
+
+def insert_lines(rows: int) -> str:
+    """IL: `rows` blank rows at the cursor's row, the rows from it down moving down (no scroll margins are set)."""
+    return f"{CSI}{rows}L" if rows > 0 else ""
+
+
+def _insert_point(old: Sequence[Line], new: Sequence[Line]) -> int:
+    """Where rows inserted into `old` make the most of its rows match `new`'s, which is that many rows longer.
+
+    `len(old)` (growth at the end) unless an earlier point keeps more rows
+    unchanged: the rows above it in place, the rows from it down moved down.
+    """
+    count = len(new) - len(old)
+    above = [0]
+    for index, line in enumerate(old):
+        above.append(above[-1] + (line == new[index]))
+    below = [0] * (len(old) + 1)
+    for index in range(len(old) - 1, -1, -1):
+        below[index] = below[index + 1] + (old[index] == new[index + count])
+    best = len(old)
+    for index in range(len(old) - 1, -1, -1):
+        if above[index] + below[index] > above[best] + below[best]:
+            best = index
+    return best
 
 
 def cursor_forward(cols: int) -> str:
@@ -220,15 +248,44 @@ class LiveRegion:
         ops.append(CARRIAGE_RETURN)
         self._row = row
 
-    def _compose(self, lines: Sequence[Line], cursor: tuple[int, int] | None, width: int, ops: list[str]) -> tuple[str, bool]:
+    def _insert_rows(self, lines: Sequence[Line], screen_rows: int | None, ops: list[str]) -> None:
+        """Rows the frame adds inside the region, where they fit under it on the screen: inserted with IL.
+
+        Only where the region's last row is certain and the screen has a row
+        under it for every row added, so nothing scrolls and nothing under the
+        region is lost; the region's rows under the insert move down with it
+        and keep their bytes, so the comparison that follows paints only the
+        new rows and the rows that changed. Otherwise the frame grows at its
+        end as before.
+        """
+        count = len(lines) - len(self._lines)
+        last = self.last_row(screen_rows) if screen_rows is not None and self._rows and count > 0 else None
+        if last is None or last + count > screen_rows - 1:
+            return
+        at = _insert_point(self._lines, lines)
+        if at == len(self._lines):
+            return
+        self._move_to(at, ops)
+        ops.append(insert_lines(count))
+        self._rows = self._rows[:at] + [""] * count + self._rows[at:]
+        self._lines = self._lines[:at] + ((),) * count + self._lines[at:]
+
+    def _compose(
+        self, lines: Sequence[Line], cursor: tuple[int, int] | None, width: int, ops: list[str],
+        screen_rows: int | None = None,
+    ) -> tuple[str, bool]:
         """The frame's bytes, after `ops` already queued ("" when nothing changed), and whether they paint rows.
 
         A row whose line and width are the ones the last frame painted keeps
-        that frame's bytes instead of being painted again. `cursor` None hides
-        the hardware cursor and parks it at the start of the last row.
+        that frame's bytes instead of being painted again; rows added inside
+        the region are inserted first where `screen_rows` says there is room
+        (`_insert_rows`). `cursor` None hides the hardware cursor and parks it
+        at the start of the last row.
         """
         width = max(width, 1)
         repaint_all = width != self._width
+        if not repaint_all:
+            self._insert_rows(lines, screen_rows, ops)
         last_rows, last_lines = self._rows, self._lines
         kept = 0 if repaint_all else min(len(last_rows), len(last_lines))
         rows = [
@@ -278,15 +335,20 @@ class LiveRegion:
         if written:
             self._write(f"{SYNC_BEGIN}{written}{SYNC_END}" if painted else written)
 
-    def render(self, lines: Sequence[Line], cursor: tuple[int, int] | None, width: int, flush: Sequence[Line] = ()) -> None:
+    def render(
+        self, lines: Sequence[Line], cursor: tuple[int, int] | None, width: int, flush: Sequence[Line] = (),
+        screen_rows: int | None = None,
+    ) -> None:
         """Show `lines` as the region and park the cursor at `cursor` = (row, col) within it; None hides it.
 
         `flush` is flushed above the region first, in the same write: its lines
         cover the top rows of the region on screen, and `lines` are drawn from
-        the row under the last of them.
+        the row under the last of them. `screen_rows`, the terminal's height,
+        lets rows added inside the region be inserted rather than paint every
+        row under them again (`_insert_rows`).
         """
         ops = self._flush(flush, width) if flush else []
-        self._send(*self._compose(lines, cursor, width, ops))
+        self._send(*self._compose(lines, cursor, width, ops, screen_rows))
 
     def flush_above(self, lines: Sequence[Line], width: int) -> None:
         """Print `lines` permanently above the region, then draw the region again beneath them.

@@ -178,7 +178,11 @@ All notable changes will be documented here.
   only a terminal that does not answer that cursor-position query follows the
   content until the TUI's own output has filled the screen once.
   Lines that leave the top of the streaming tail are written over the rows
-  they were drawn on, so the rows under them are not painted again.
+  they were drawn on, so the rows under them are not painted again, and while
+  the screen is not yet full a new tail line is inserted where it goes (IL),
+  so the composer and the rows under it move down without being painted again
+  (a reply streaming onto an empty 40-row screen writes 232 bytes a frame,
+  where following the content had doubled it to 605).
 - **Each tool call is its own row, and a cut output names the key that shows
   the rest.** A turn's calls were folded under one `⏺ Tool calls (2)` header;
   each call is now a row of its own (its mark, name and what it ran on) with
