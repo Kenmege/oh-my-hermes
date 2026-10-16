@@ -316,7 +316,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   left to the terminal's scrollback until a full redraw clears it, and from
   then on that row says how many `/history` still shows.
 - That region holds, from the top: the prompt you just sent (while the
-  turn runs), the tail of the reply that is still streaming, one slot for the
+  turn runs, once the prompt itself has scrolled off, as `↳ you: …` on the
+  status line's band), the tail of the reply that is still streaming, one slot for the
   OMH plan and agents panel (or a question Hermes asked, or the slash-command
   menu when it does not open under the composer), the prompts queued behind
   the running turn (`⧗`, up to three named and the rest counted), the

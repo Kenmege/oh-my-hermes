@@ -47,12 +47,12 @@ first row while there is one: it counts against the composer's cap.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .composer import PROMPT, Composer
 from .layout import Budget, allocate, caret_row, compose, composer_cap
-from .style import Line, Span
-from .theme import DEFAULT_THEME, Theme
+from .style import Line, Span, fill
+from .theme import DEFAULT_THEME, Theme, on_status_bar
 from .width import truncate_line
 
 RULE_GLYPH = "─"
@@ -168,7 +168,13 @@ def rule_line(width: int, theme: Theme = DEFAULT_THEME, mode: str = MODE_NORMAL)
 
 
 def sticky_line(prompt_text: str, width: int, theme: Theme = DEFAULT_THEME) -> Line:
-    """`↳ you: <first line of the prompt>` cut to `width`, shown while a turn runs."""
+    """`↳ you: <first line of the prompt>` cut to `width`, shown while a turn runs.
+
+    It is drawn on the status line's band, filled to the right edge, in roles
+    measured against that band: the region's own reminder, which the band
+    tells apart from the transcript rows right above it.
+    """
     first = prompt_text.strip().split("\n", 1)[0]
-    line = (Span(STICKY_PREFIX, theme.muted), Span(first, theme.user))
-    return truncate_line(line, width)
+    bar, roles = theme.status, on_status_bar(theme)
+    line = (Span(STICKY_PREFIX, replace(roles.muted, bg=bar.bg)), Span(first, replace(roles.user, bg=bar.bg)))
+    return (*truncate_line(line, width), fill(bar))

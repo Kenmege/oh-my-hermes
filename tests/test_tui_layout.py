@@ -428,6 +428,17 @@ class FrameTests(unittest.TestCase):
         self.assertEqual(lines_text([line]), ["↳ you: fix the 한글 bug"])
         self.assertEqual(lines_text([sticky_line("abcdefghij", 12, DEFAULT_THEME)]), ["↳ you: abcd…"])
 
+    def test_the_sticky_line_is_banded_as_the_status_line_so_it_never_reads_as_a_transcript_row(self) -> None:
+        # Review B NIT 9: right under the turn's last row (`▸ thought for …`), it read as one more of them.
+        from omh.tui.style import is_fill
+        from omh.tui.theme import theme_named
+
+        for theme in (DEFAULT_THEME, theme_named("sky", "#FFFFFF")):
+            with self.subTest(theme=theme.name):
+                line = sticky_line("fix the bug", 40, theme)
+                self.assertEqual({span.style.bg for span in line}, {theme.status.bg})
+                self.assertTrue(is_fill(line[-1]))  # to the right edge, as the status line's band
+
 
 if __name__ == "__main__":
     unittest.main()
