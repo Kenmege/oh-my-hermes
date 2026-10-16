@@ -115,7 +115,7 @@ from ..skin_pack import (
 )
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
-from .frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN, MODE_SHELL, STATUS_SEPARATOR, build_frame, sticky_line
+from .frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN, MODE_SHELL, STATUS_SEPARATOR, Frame, build_frame, sticky_line
 from .history import SEARCH_ACCEPT, SEARCH_CANCEL, SEARCH_HINTS, HistorySearch, append_entry, history_path, load_history
 from .gateway import (
     Event,
@@ -1094,6 +1094,10 @@ class App(ModesMixin, AgentViewMixin):
         self.pending: dict[int, _Pending] = {}
         self.menu_index = 0
         self.menu_closed: str | None = None  # the composer text Esc closed the `/` menu on; it stays closed over that text
+        # Where the open completion menu is drawn: under the composer (True) or in the slot above it (False); None
+        # while no menu is open. Decided as it opens and kept while it stays open (`_menu_goes_under`).
+        self.menu_below: bool | None = None
+        self.menu_under: list[Line] = []  # the menu's rows as `_slot_lines` last made them, while it is drawn under
         self.pager: Pager | None = None
         self.question_view: Pager | None = None  # the pager Ctrl+O opened over the open question, while it is open
         self.resized_while_paging = False
@@ -3722,6 +3726,8 @@ class App(ModesMixin, AgentViewMixin):
         else:
             self.flushed_since_prompt += len(stable)
         strip, _hits = self._agent_strip(cols)
+        if not self._menu_rows():
+            self.menu_below = None
         # On the screen's last row the region keeps its height (what the flush below covers aside), so what shrinks
         # becomes pad rows at its top and the composer stays on the bottom rows; above it, the region follows the
         # content. Where the region's place is not certain it counts as above.
@@ -3735,6 +3741,7 @@ class App(ModesMixin, AgentViewMixin):
             status=self._status_line(cols),
             tail=self._tail(cols),
             slot=self._slot_lines(cols, rows),
+            below=self.menu_under,  # read after `_slot_lines` made it
             text_question=self.slot is not None and not self.slot.picking,
             slot_caret=self._slot_caret(),  # read after `_slot_lines` drew the picker it comes from
             theme=self.theme,
@@ -3748,6 +3755,9 @@ class App(ModesMixin, AgentViewMixin):
             else "",
         )
         frame = build()
+        if self._menu_goes_under(rows, len(stable), frame, pinned):
+            build = partial(build, slot=self._slot_lines(cols, rows), below=self.menu_under)
+            frame = build()
         # The rows above the region once the flush below and this frame are drawn: transcript rows.
         if self._sticky_needed(self.region.rows_above(rows, len(stable), frame.height)):
             frame = build(sticky=sticky_line(self.sticky, cols, self.theme))
@@ -3756,6 +3766,26 @@ class App(ModesMixin, AgentViewMixin):
         # the frame is drawn under them. Flush and frame are one write, so no screen between them shows.
         self.region.render(frame.lines, frame.cursor, cols, flush=stable)
         self._take_clickable(frame.budget, self.listed)
+
+    def _menu_goes_under(self, rows: int, flushed: int, frame: Frame, pinned: bool) -> bool:
+        """Whether a completion menu that opens with `frame` goes under the composer instead; True only then.
+
+        It does where the region's place is certain and, with the menu at its
+        tallest (`slot_cap`), the region would still end short of the
+        screen's last row once `flushed` lines and the frame are drawn: there
+        the composer and the caret stay where they are, as under Claude Code's
+        menu. On the bottom rows, close to them, or where the place is
+        unknown, it opens above the composer as before. Kept while the menu
+        stays open, so filtering it never moves it from one place to the other.
+        """
+        if self.menu_below is not None or not self._menu_rows():
+            return False
+        tallest = frame.height + slot_cap(rows, self.size[0]) - frame.budget.slot - frame.budget.below
+        self.menu_below = (
+            not pinned and self.region.top_row(rows) is not None
+            and self.region.rows_above(rows, flushed, tallest) + tallest <= rows - 1
+        )
+        return self.menu_below
 
     def _display_mode(self) -> str:
         """What the composer's frame shows: the shell while it holds a `!` line for Hermes' shell, else the input mode."""
@@ -3947,6 +3977,7 @@ class App(ModesMixin, AgentViewMixin):
         """The slot's rows; with the composer hidden it has the composer frame's rows too (`layout.choice_cap`)."""
         cap = choice_cap(rows, cols) if self._composer_hidden() else slot_cap(rows, cols)
         self.listed = ()
+        self.menu_under = []
         if self.slot is not None:
             cap = max(cap, 1)  # on a tiny terminal a question answered with text keeps a row for its label (`allocate`)
         if cap <= 0:
@@ -3976,7 +4007,10 @@ class App(ModesMixin, AgentViewMixin):
         notice = [self.notification.line(cols, self.theme)] if self.notification and cap > len(queue) else []
         shown = goal_line(self.goal, cols, self.theme)
         goal = [shown] if shown is not None and cap > len(queue) + len(notice) else []
-        return self._menu_or_panel_lines(cols, cap - len(queue) - len(notice) - len(goal)) + goal + notice + queue
+        menu = self._menu_or_panel_lines(cols, cap - len(queue) - len(notice) - len(goal))
+        if self.menu_below:  # the menu goes under the composer, and the panel stays away as it does for the menu
+            self.menu_under, menu = menu, []
+        return menu + goal + notice + queue
 
     def _menu_or_panel_lines(self, cols: int, cap: int) -> list[Line]:
         if cap <= 0:

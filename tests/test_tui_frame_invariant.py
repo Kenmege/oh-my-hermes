@@ -644,6 +644,77 @@ class AppBottomRowsTests(unittest.TestCase):
         self.assertEqual(self.where(after), self.where(before))  # 0 rows: not the uncertain launch's 11
         self.assertGreater(self.gap(after), self.gap(before))
 
+    def test_short_of_the_bottom_a_completion_menu_opens_under_the_composer_and_nothing_above_moves(self) -> None:
+        # Live review B: on a screen not yet full, `/` moved the composer and the caret down 11 rows and Esc moved
+        # them back. Claude Code draws its menu under the input; so does the OMH TUI wherever it fits there.
+        from test_tui_modes import drawn, make_app, type_text
+
+        from omh.tui.app import path_items
+
+        for start in ("/", "@"):
+            with self.subTest(menu=start):
+                app = make_app(rows=24, cols=80)[0]
+                app.terminal.screen.feed("".join(f"$ shell {n}\r\n" for n in range(4)))
+                app.adopt_cursor_row(5)
+                before = drawn(app)
+                caret = app.terminal.screen.cursor
+                type_text(app, start)
+                if start == "@":  # as Hermes' `complete.path` answer sets them
+                    app.path_items = path_items({"items": [{"text": "@file:alpha.py"}, {"text": "@file:beta.py"}]})
+                opened = drawn(app)
+                rule = self.where(before)[0]
+                self.assertEqual(self.where(opened)[0], rule)  # the composer's row did not move
+                self.assertEqual(app.terminal.screen.cursor, (caret[0], caret[1] + 1))
+                bottom = opened.index(opened[rule], rule + 1)  # the bottom rule, right under the input row
+                self.assertTrue(opened[bottom + 1].strip(), opened)  # the menu's first row under it
+                self.assertTrue(app.menu_below)
+                app._on_input(Key(ESCAPE))
+                closed = drawn(app)
+                self.assertEqual(self.where(closed), self.where(before))
+                self.assertIsNone(app.menu_below)
+
+    def test_a_menu_that_opened_under_the_composer_stays_there_while_it_is_open(self) -> None:
+        from test_tui_modes import drawn, make_app, type_text
+
+        app = make_app(rows=24, cols=80)[0]
+        app.adopt_cursor_row(1)
+        drawn(app)
+        rule = self.where(drawn(app))[0]
+        for keys in ("/", "m", "o"):
+            type_text(app, keys)
+            self.assertEqual(self.where(drawn(app))[0], rule, keys)
+        app._on_input(Key(BACKSPACE))
+        app._on_input(Key(BACKSPACE))
+        self.assertEqual(self.where(drawn(app))[0], rule)
+        self.assertTrue(app.menu_below)
+
+    def test_where_it_would_not_fit_under_the_composer_the_menu_opens_above_as_before(self) -> None:
+        from test_tui_modes import drawn, make_app, type_text
+
+        for row, reason in ((24, "on the bottom rows"), (17, "too close to them")):
+            with self.subTest(reason=reason):
+                app = make_app(rows=24, cols=80)[0]
+                app.terminal.screen.feed("".join(f"$ shell {n}\r\n" for n in range(30)))
+                app.adopt_cursor_row(row)
+                before = drawn(app)
+                type_text(app, "/")
+                opened = drawn(app)
+                self.assertFalse(app.menu_below)
+                rule, status = self.where(opened)
+                self.assertEqual(opened[rule + 2], opened[rule])  # rule, input row, rule: nothing under the composer
+                self.assertEqual(status, 23)
+                if row == 24:
+                    self.assertEqual(self.where(opened), self.where(before))
+
+    def test_with_its_place_unknown_the_menu_opens_above_as_before(self) -> None:
+        from test_tui_modes import drawn, make_app, type_text
+
+        app = make_app(rows=24, cols=80)[0]
+        drawn(app)
+        type_text(app, "/")
+        drawn(app)
+        self.assertFalse(app.menu_below)
+
     def test_a_reported_row_mid_screen_is_where_the_first_frame_starts(self) -> None:
         from test_tui_modes import drawn, make_app
 

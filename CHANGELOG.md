@@ -168,7 +168,10 @@ All notable changes will be documented here.
   follows the content until its last row is the screen's last row; from then
   on it keeps its height, so a list or question closing above the composer
   leaves blank rows above it, filled by the next output, and does not pull it
-  up. A resize or a redraw starts again under the output. The startup query
+  up. A resize or a redraw starts again under the output. Short of the bottom
+  rows the `/` and `@` menus open under the composer where they fit, as in
+  Claude Code, so typing `/` no longer moves the composer down by the menu's
+  height and Esc back up; on the bottom rows they open above it. The startup query
   that asks for the background colour also asks for the cursor's row (CSI
   6n, inside the same 0.1 s wait), so a start from the last row of a
   terminal already holding output is on the bottom rows from its first frame;

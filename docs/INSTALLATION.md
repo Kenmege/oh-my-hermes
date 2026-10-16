@@ -318,8 +318,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - That region holds, from the top: the prompt you just sent (while the
   turn runs), the tail of the reply that is still streaming, one slot for the
   OMH plan and agents panel (or a question Hermes asked, or the slash-command
-  menu), the prompts queued behind the running turn (`⧗`, up to three named
-  and the rest counted), the composer framed by a rule above and below it, a
+  menu when it does not open under the composer), the prompts queued behind
+  the running turn (`⧗`, up to three named and the rest counted), the
+  composer framed by a rule above and below it, a
   mode row, and a status line with the model, context use (warn from 80 %
   full, bad from 95 %) and what the session is doing. While you pick from a
   list (a question answered by picking, the `/sessions`, `/rewind` or bare
@@ -376,8 +377,12 @@ run and approval decision stays Hermes'; the screen is OMH's.
   stays on the bottom rows. A fresh session shows it right under the banner,
   and after a turn it sits under the turn's last line with one blank row
   between, the spacer every block opens with. Until the screen is full, the
-  panel, a question or a menu above the composer moves it down as it grows
-  and up as it shrinks or closes. Once the composer has reached the bottom
+  panel or a question above the composer moves it down as it grows and up as
+  it shrinks or closes. The `/` and `@` menus open under the composer
+  instead wherever they fit there short of the bottom rows, as in Claude
+  Code, so the composer and the caret do not move; on the bottom rows, close
+  to them, or before the TUI knows its place on the screen, they open above
+  it. Once the composer has reached the bottom
   rows it stays there: what grows above it scrolls the transcript up, and a
   list or question closing there does not pull it up, its rows staying blank
   above the composer until more is printed into them. A resize or a redraw

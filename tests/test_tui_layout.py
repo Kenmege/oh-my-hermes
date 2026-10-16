@@ -322,6 +322,21 @@ class FrameTests(unittest.TestCase):
         self.assertEqual(lines_text(list(frame.lines)), ["─" * 40, "› hi", "─" * 40, "mode", "status"])
         self.assertEqual(frame.cursor, (1, 4))
 
+    def test_a_menu_below_sits_between_the_bottom_rule_and_the_mode_row_and_shares_the_slots_cap(self) -> None:
+        composer = Composer(text="/", caret=1)
+        frame = build_frame(cols=40, rows=24, composer=composer, status=self.status, mode_row=(Span("mode"),),
+                            slot=plain("⧗ queued"), below=plain("/help", "/model"))
+        self.assertEqual(lines_text(list(frame.lines)),
+                         ["⧗ queued", "─" * 40, "› /", "─" * 40, "/help", "/model", "mode", "status"])
+        self.assertEqual(frame.cursor, (2, 3))  # the caret's row is counted from the top, as without the menu
+        self.assertEqual((frame.budget.slot, frame.budget.below), (1, 2))
+        full = build_frame(cols=40, rows=24, composer=composer, status=self.status, slot=plain(*"abc"),
+                           below=plain(*"0123456789"))
+        self.assertEqual(full.budget.below, slot_cap(24, 40))
+        self.assertEqual(full.budget.slot + full.budget.below, slot_cap(24, 40))
+        hidden = build_frame(cols=40, rows=24, composer=None, status=self.status, below=plain("/help"))
+        self.assertEqual(hidden.budget.below, 0)  # no composer, nothing under it
+
     def test_a_frame_grows_and_shrinks_with_its_content(self) -> None:
         composer = Composer()
         grown = build_frame(cols=40, rows=24, composer=composer, status=self.status, tail=plain("a", "b", "c"))

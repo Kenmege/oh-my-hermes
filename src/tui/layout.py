@@ -10,6 +10,7 @@ Top to bottom the region holds:
     top rule        the composer frame's upper edge
     composer        1..composer_cap(rows) input rows, the caret parked here
     bottom rule     the composer frame's lower edge
+    menu below      the completion menu, where the app draws it under the composer instead of in the slot
     mode row        the input mode, or a hint for the keys that matter now
     status line
 
@@ -33,7 +34,8 @@ and the next flushed lines cover the pad rows.
   bottom rule from `BOTTOM_RULE_MIN_ROWS` rows, the mode row from
   `MODE_ROW_MIN_ROWS`. A short terminal loses the mode row first and the
   bottom rule next, so a slot still gets its full cap there.
-- Then the top rule, then the slot (at most `rows // 3`), then the sticky
+- Then the top rule, then the menu below (at most `rows // 3`), then the
+  slot (at most `rows // 3` less the menu below's rows), then the sticky
   prompt (only when asked and a row is left), and the tail takes whatever
   remains, keeping its last rows.
 - Below `MIN_ROWS` rows or `MIN_COLS` columns only composer and status are
@@ -76,6 +78,7 @@ class Budget:
     mode: int
     status: int
     pad: int = 0
+    below: int = 0  # the menu below: between the bottom rule and the mode row
 
     @property
     def total(self) -> int:
@@ -87,6 +90,7 @@ class Budget:
             + self.rule
             + self.composer
             + self.bottom_rule
+            + self.below
             + self.mode
             + self.status
         )
@@ -152,6 +156,7 @@ def allocate(
     min_height: int = 0,
     composer_hidden: bool = False,
     text_question: bool = False,
+    below_rows: int = 0,
 ) -> Budget:
     """Rows for each part of the region (see the module docstring for the rules)."""
     room = max_height(rows)
@@ -161,7 +166,7 @@ def allocate(
     if composer_hidden:
         composer = bottom_rule = 0  # their rows, and the top rule's, go to the slot (`choice_cap`)
     left = room - composer - status - bottom_rule - mode
-    rule = slot = sticky_rows = tail = 0
+    rule = slot = sticky_rows = tail = below = 0
     if composer_hidden:
         slot = min(max(slot_rows, 0), choice_cap(rows, cols), left)
         left -= slot
@@ -172,12 +177,14 @@ def allocate(
         if not composer_hidden:
             rule = min(1, left)
             left -= rule
-            slot = min(max(slot_rows, 0), slot_cap(rows, cols), left)
+            below = min(max(below_rows, 0), slot_cap(rows, cols), left)
+            left -= below
+            slot = min(max(slot_rows, 0), slot_cap(rows, cols) - below, left)
             left -= slot
         sticky_rows = 1 if sticky and left > 0 else 0
         left -= sticky_rows
         tail = min(max(tail_rows, 0), left)
-    content = sticky_rows + tail + slot + rule + composer + bottom_rule + mode + status
+    content = sticky_rows + tail + slot + rule + composer + bottom_rule + below + mode + status
     return Budget(
         pad=min(max(min_height - content, 0), room - content),
         sticky=sticky_rows,
@@ -188,6 +195,7 @@ def allocate(
         bottom_rule=bottom_rule,
         mode=mode,
         status=status,
+        below=below,
     )
 
 
@@ -214,6 +222,7 @@ def compose(
     bottom_rule: Line,
     mode: Line,
     status: Line,
+    below: Sequence[Line] = (),
 ) -> list[Line]:
     """The region's rows, exactly `budget.total` of them, top to bottom.
 
@@ -231,6 +240,7 @@ def compose(
     region.extend(composer_rows + [BLANK] * (budget.composer - len(composer_rows)))
     if budget.bottom_rule:
         region.append(bottom_rule)
+    region.extend(list(below)[: budget.below])
     region.extend(_first([mode], budget.mode))
     if budget.status:
         region.append(status)

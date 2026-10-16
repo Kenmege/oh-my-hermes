@@ -93,6 +93,7 @@ def build_frame(
     slot_caret: tuple[int, int] | None = None,
     text_question: bool = False,
     min_height: int = 0,
+    below: Sequence[Line] = (),
 ) -> Frame:
     """The region for one repaint; `min_height` rows at least, pad rows at the top making up the rest.
 
@@ -104,7 +105,9 @@ def build_frame(
     is `slot_caret`, a (row, col) within `slot`, or none where that is None or
     its row is cut.
     `text_question` says the slot holds a question answered with text, whose
-    label keeps a row on a tiny terminal (`layout.allocate`).
+    label keeps a row on a tiny terminal (`layout.allocate`). `below` is drawn
+    under the bottom rule, above the mode row: the completion menu where the
+    app puts it under the composer.
     """
     cap = composer_cap(rows)
     composer_lines: list[Line] = []
@@ -126,6 +129,7 @@ def build_frame(
         min_height=min_height,
         composer_hidden=composer is None,
         text_question=text_question,
+        below_rows=len(below),
     )
     rule = rule_line(cols, theme, mode)
     lines = compose(
@@ -138,6 +142,7 @@ def build_frame(
         bottom_rule=rule,
         mode=truncate_line(mode_row, cols),
         status=status,
+        below=below,
     )
     if composer is not None:
         cursor: tuple[int, int] | None = (caret_row(budget, caret_line), caret_col)
