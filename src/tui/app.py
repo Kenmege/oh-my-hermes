@@ -38,7 +38,9 @@ memory unless Hermes' config explicitly asks for `interrupt` or `steer`.
 The queue is the TUI's own (the gateway has no call that withdraws a prompt):
 its prompts are listed above the composer's top rule, and Up on an empty
 composer takes them back into the composer (a `!` line on its own, never
-joined to a prompt: `_recall_queue`).
+joined to a prompt: `_recall_queue`). A turn the person interrupts does not
+start the next queued prompt: the queue comes back into the composer the
+same way, and what stays queued waits for the person (`_hold_queue`).
 Ctrl+Enter and `/steer <text>` send what the person typed into the running
 turn (`session.steer`); the TUI steers nothing on its own. Text Hermes does
 not take as a steer joins the TUI's queue while the turn runs, whatever the
@@ -312,7 +314,15 @@ STATE_WAITING = "waiting on you"
 QUEUE_GLYPH = "⧗ "
 QUEUE_ROWS = 3
 QUEUE_EDIT_HINT = "↑ edit"
+QUEUE_HELD_HINT = "held after the interrupt · ↑ edit"
 QUEUE_HINT_GAP = 2
+# After the person interrupts a turn the queue does not go on by itself: what Up would take back goes back into the
+# composer, and what it would not (a queued `!` line and what follows it) stays queued, held, until the next prompt
+# the person sends starts a turn, or Up takes it back.
+QUEUE_BACK_NOTICE = "Interrupted: what you queued is back in the composer, not sent."
+QUEUE_HELD_NOTICE = "Interrupted: what you queued waits, not sent, until your next prompt; ↑ takes it back."
+# Between the interrupt key and the end of the turn, the working row says so in place of the spinner.
+INTERRUPTING = "interrupting…"
 
 # Hermes answers `queued` both when the running turn takes the steer (at its next tool call) and when it
 # queues the text as the next prompt because it is compressing the context; the transcript's
@@ -621,11 +631,13 @@ def first_line(text: str) -> str:
     return text.strip().split("\n", 1)[0]
 
 
-def queue_lines(prompts: Sequence[str], width: int, max_rows: int, theme: Theme) -> list[Line]:
+def queue_lines(
+    prompts: Sequence[str], width: int, max_rows: int, theme: Theme, hint: str = QUEUE_EDIT_HINT
+) -> list[Line]:
     """The queued prompts, next to be sent first: `⧗ <first line>` each, never more than `max_rows` rows.
 
     At most `QUEUE_ROWS` prompts are named and `+N more` counts the rest;
-    `↑ edit`, the key that takes them back into the composer, ends the last row.
+    `hint` (`↑ edit`, the key that takes them back into the composer) ends the last row.
     """
     if not prompts or max_rows <= 0:
         return []
@@ -637,9 +649,9 @@ def queue_lines(prompts: Sequence[str], width: int, max_rows: int, theme: Theme)
     ]
     if named < len(prompts):
         rows.append((Span(f"+{len(prompts) - named} more", theme.muted),))
-    hint: Line = (Span(QUEUE_EDIT_HINT, theme.hint),)
-    last = truncate_line(rows[-1], max(width - line_width(hint) - QUEUE_HINT_GAP, 0))
-    rows[-1] = (*last, Span(" " * (width - line_width(last) - line_width(hint))), *hint)
+    said: Line = (Span(hint, theme.hint),)
+    last = truncate_line(rows[-1], max(width - line_width(said) - QUEUE_HINT_GAP, 0))
+    rows[-1] = (*last, Span(" " * (width - line_width(last) - line_width(said))), *said)
     return [truncate_line(row, width) for row in rows]
 
 
@@ -961,6 +973,8 @@ class App(ModesMixin, AgentViewMixin):
         self.slot_draft: Composer | None = None
         self.waiting_requests: deque[ServerRequest] = deque()
         self.queued: deque[QueuedLine] = deque()
+        self.queue_held = False  # the queue waits for the person after an interrupt (`_hold_queue`)
+        self.interrupting = False  # the person interrupted the running turn and Hermes has not ended it yet
         self.sticky = ""
         self.flushed_since_prompt = 0  # rows printed above the region from the last prompt's first row on
         self.turn_pending = False  # a prompt went out and its turn has not started (or ended) yet
@@ -1172,6 +1186,7 @@ class App(ModesMixin, AgentViewMixin):
         cwd = as_text(info.get("cwd")) if isinstance(info, dict) else ""
         self.transcript.cwd = cwd or str(self._create_params().get("cwd", ""))
         self.turn_pending = bool(result.get("running"))
+        self.interrupting = self.queue_held = False  # both were about the session being left
         self.turn_unknown = None  # the drift watch was for a turn of the session being left
         self.busy_since = self.clock()
         # Accept belongs to the session being left; this one says its own, here or in its first session.info.
@@ -1570,7 +1585,7 @@ class App(ModesMixin, AgentViewMixin):
                 seconds = self.clock() - self.busy_since
                 self.transcript.add_turn_summary(seconds, self._turn_tokens())
                 self._alert_turn_end(seconds)
-                self._drain_queue()
+                self._turn_ended()
 
     def _alert_turn_end(self, seconds: float) -> None:
         """A turn of `TURN_ALERT_SECONDS` or more ends with the terminal's attention signal, unless OMH_TUI_BELL=0."""
@@ -1628,14 +1643,15 @@ class App(ModesMixin, AgentViewMixin):
 
         Hermes sends no `message.complete` after it refuses a turn (another
         process owns the session) or cancels one before the agent was ready, so
-        the turn closes here and the queue moves on, as Ink's `recordError` does.
+        the turn closes here and the queue moves on, as Ink's `recordError` does
+        (unless the person interrupted the turn: `_turn_ended`).
         """
         if not self._busy():
             self.transcript.add_notice(message, NOTICE_ERROR)
             return
         self.transcript.fail_turn(message)
         self.turn_pending = False
-        self._drain_queue()
+        self._turn_ended()
 
     def _on_connection_request(self, payload: Mapping[str, Any]) -> None:
         """Hermes waits on an app connection the TUI cannot complete; say so once per operation."""
@@ -2139,8 +2155,15 @@ class App(ModesMixin, AgentViewMixin):
             self._drain_queue()
 
     def _interrupt(self) -> None:
+        """Ask Hermes to stop the running turn; the working row says `interrupting…` until the turn ends."""
         if self.sid:
-            self._request("session.interrupt", {"session_id": self.sid}, lambda result: None)
+            self.interrupting = True
+            self._request("session.interrupt", {"session_id": self.sid}, lambda result: None, self._on_interrupt_refused)
+
+    def _on_interrupt_refused(self, error: dict[str, Any]) -> bool:
+        """Hermes did not stop the turn: the spinner comes back, and the refusal is said as any refused call is."""
+        self.interrupting = False
+        return False
 
     def _interrupt_or_exit(self) -> None:
         """Ctrl+C on empty input: interrupt a running turn, else exit on a second press within 2 s."""
@@ -2318,6 +2341,8 @@ class App(ModesMixin, AgentViewMixin):
         `before_cut` the transcript from before that cut, which a refusal puts back.
         """
         self.transcript.add_user(shown or text, from_queue=queued)
+        if not queued:
+            self.queue_held = False  # the person started a turn: the queue goes on behind it
         self.sticky = shown or text
         self.flushed_since_prompt = 0
         self._clear_roster()  # the agents shown were the last turn's
@@ -2339,15 +2364,43 @@ class App(ModesMixin, AgentViewMixin):
     def _on_submit_error(self, error: dict[str, Any]) -> bool:
         """A refused prompt.submit: no turn will start, so the next queued prompt goes now, in order."""
         self.turn_pending = False
-        self._drain_queue()
+        self._turn_ended()
         return False
+
+    def _turn_ended(self) -> None:
+        """The turn is over: the next queued line goes, unless the person interrupted it (`_hold_queue`)."""
+        if self.interrupting:
+            self.interrupting = False
+            self._hold_queue()
+        else:
+            self._drain_queue()
+
+    def _hold_queue(self) -> None:
+        """A turn ended that the person stopped: the queue does not go on by itself, as Claude Code's does not.
+
+        With an empty draft, what Up would take back goes back into it, in
+        order (`_take_back_queue`); what is left, a queued `!` line and what
+        follows it, or the whole queue when the person typed a draft
+        meanwhile, stays queued and held until the next prompt they send
+        starts a turn (`_submit_prompt`) or Up takes it back. A notice says
+        which.
+        """
+        if not self.queued:
+            return
+        draft = self._draft()
+        if not draft.text:
+            self._take_back_queue(draft)
+            self.transcript.add_notice(QUEUE_BACK_NOTICE)
+        if self.queued:
+            self.queue_held = True
+            self.transcript.add_notice(QUEUE_HELD_NOTICE)
 
     def _drain_queue(self) -> None:
         """Send the next queued line: a prompt starts the next turn; a `!` line runs, and the one after waits for it.
 
-        Which it is comes from the entry's `shell`, never from its text.
+        Which it is comes from the entry's `shell`, never from its text. A held queue waits (`_hold_queue`).
         """
-        if self.queued and self.sid:
+        if self.queued and self.sid and not self.queue_held:
             line = self.queued.popleft()
             if line.shell:
                 self._run_shell(line.text[len(SHELL_PREFIX) :].strip(), drain_after=True, echo=line.shown)
@@ -2441,6 +2494,11 @@ class App(ModesMixin, AgentViewMixin):
         """
         if not isinstance(event, Key) or event.name != UP or self.composer.text or not self.queued:
             return False
+        self._take_back_queue(self.composer)
+        return True
+
+    def _take_back_queue(self, composer: Composer) -> None:
+        """Put the queue's next lines into the empty `composer`, as `_recall_queue` says; the hold ends with the queue."""
         taken = [self.queued.popleft()]
         while self.queued and not taken[0].shell and not self.queued[0].shell:
             taken.append(self.queued.popleft())
@@ -2448,14 +2506,15 @@ class App(ModesMixin, AgentViewMixin):
         if not first.shell and not first.typed and first.shown and first.text.startswith(SHELL_PREFIX):
             # Its chips again, never a `!` line the composer would run; without them, one chip holding its text.
             if first.chips:
-                self.composer.restore(first.shown, first.chips)
+                composer.restore(first.shown, first.chips)
             else:
-                self.composer.handle(Paste(first.text))
+                composer.handle(Paste(first.text))
             for line in taken[1:]:
-                self.composer.replace(self.composer.caret, self.composer.caret, "\n" + (line.typed or line.text))
+                composer.replace(composer.caret, composer.caret, "\n" + (line.typed or line.text))
         else:
-            self._set_composer("\n".join(line.typed or line.text for line in taken))
-        return True
+            composer.replace(0, len(composer.text), "\n".join(line.typed or line.text for line in taken))
+        if not self.queued:
+            self.queue_held = False
 
     # ── steering ──
 
@@ -3357,14 +3416,15 @@ class App(ModesMixin, AgentViewMixin):
         return MODEL_PICKER_KEYS if self.model_picker is not None else ()
 
     def _esc_interrupts(self) -> bool:
-        """Whether Esc interrupts the running turn now: nothing else takes it (`_escape`, and what has the keys).
+        """Whether the rows offer Esc for the interrupt: Esc interrupts the running turn now, nothing else taking it
+        (`_escape`, and what has the keys), and no interrupt is on its way yet.
 
-        The rows offer Esc for the interrupt only then, so the screen gives Esc one meaning: a question, a
-        picker, the search, the agent list, a picked steer or rewind, the `@` menu and a draft each take it.
+        So the screen gives Esc one meaning: a question, a picker, the search, the agent list, a picked steer or
+        rewind, the `@` menu and a draft each take it. While `interrupting…` shows, Esc still asks again.
         """
         return (
             self._busy() and self._composer_open() and self.list_selected is None and not self.path_items
-            and self.agent_steer is None and self.rewind is None and not self.composer.text
+            and self.agent_steer is None and self.rewind is None and not self.composer.text and not self.interrupting
         )
 
     # ── subagents ──
@@ -3403,7 +3463,12 @@ class App(ModesMixin, AgentViewMixin):
         now = self.clock()
         # Never more than the screen; running tools' marks pulse unless motion is reduced.
         lines = self.transcript.live_lines(cols, self.theme, max_rows=self.size[1], now=now if self.motion else None)
-        if self._busy():
+        if self._busy() and self.interrupting:
+            elapsed = elapsed_text(now - (self.busy_since or now))
+            tokens = self._turn_tokens()
+            written = f" · ↓{compact_count(tokens)} tokens" if tokens else ""
+            lines.append(truncate_line((Span(INTERRUPTING, self.theme.warn), Span(f" ({elapsed}{written})", self.theme.muted)), cols))
+        elif self._busy():
             text = self.transcript.activity or self.transcript.status or "working…"
             frame = self._spinner_frame()
             spinner = SPINNER_FRAMES[frame % len(SPINNER_FRAMES)]
@@ -3441,7 +3506,8 @@ class App(ModesMixin, AgentViewMixin):
         # Nothing has the keys: the queued prompts take the slot's last rows, right above the composer's
         # top rule, Hermes' notification the row above them, and the menu or the panel gets the rows left. A
         # question or the picker hides them, since Up then does not edit the queue.
-        queue = queue_lines([line.shown or line.text for line in self.queued], cols, cap, self.theme)
+        hint = QUEUE_HELD_HINT if self.queue_held else QUEUE_EDIT_HINT
+        queue = queue_lines([line.shown or line.text for line in self.queued], cols, cap, self.theme, hint)
         notice = [self.notification.line(cols, self.theme)] if self.notification and cap > len(queue) else []
         return self._menu_or_panel_lines(cols, cap - len(queue) - len(notice)) + notice + queue
 

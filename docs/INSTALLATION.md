@@ -487,7 +487,14 @@ run and approval decision stays Hermes'; the screen is OMH's.
   end.
 - While a turn runs, the working row reads
   `⠋ <what Hermes is doing> (12s · ↓1.2k tokens · esc to interrupt)`, the
-  tokens being what the turn has written so far; each turn ends with a line
+  tokens being what the turn has written so far. Once you interrupt it (Esc
+  or Ctrl+C on an empty composer) it reads `interrupting… (12s)` until Hermes
+  has stopped the turn. What you queued behind that turn is not sent then:
+  it comes back into the composer, as Claude Code does it, joined in order;
+  a queued `!` line, which is never joined to a prompt, and what follows it
+  stay queued (`held after the interrupt · ↑ edit`) until you send your next
+  prompt or take them back with Up, and so does the whole queue if you typed
+  something while the turn was stopping. Each turn ends with a line
   `✻ 34s · 3 tools · ↓1.2k` on a thin rule. The terminal's title names the session (Hermes
   titles it after its first turn) and whether it is idle, running or waiting
   on you; on exit the title you had comes back where the terminal keeps a
@@ -608,7 +615,7 @@ Esc closes it):
 | Backspace / Delete | Delete a character, or a paste chip whole; Backspace on an empty composer removes the last attached image |
 | Ctrl+W, Alt+Backspace, Ctrl+Backspace | Deletes the word before the caret (Ctrl+Backspace where the terminal reports it apart from Backspace) |
 | Ctrl+U / Ctrl+K | Delete to the start or the end of the line |
-| Esc | Closes the `/` or `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run); cancels a rewind you picked; cancels an agent steer you picked and keeps what you typed |
+| Esc | Closes the `/` or `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run, then `interrupting…`, and what you queued comes back to the composer unsent); cancels a rewind you picked; cancels an agent steer you picked and keeps what you typed |
 | Esc Esc | With text, clears it and keeps it in this session's history; on an empty composer between turns, lists your prompts to rewind to (`/rewind` does too) |
 | Ctrl+V | Attaches the clipboard image |
 | Ctrl+O | Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end; q leaves it |

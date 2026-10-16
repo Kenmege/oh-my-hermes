@@ -413,7 +413,7 @@ class SteerTests(unittest.TestCase):
         for event in app.decoder.feed(b"x\r"):  # a terminal that ignored the request: Ctrl+Enter comes as Enter
             app._on_input(event)
         self.assertEqual(hint(), "esc interrupt · /steer <text> steers · ↑ edit queued")
-        for event in app.decoder.feed(b"\x1b[27u"):  # Esc, as kitty reports it
+        for event in app.decoder.feed(b"\x1b[108;5u"):  # Ctrl+L, as kitty reports it (Esc would interrupt the turn)
             app._on_input(event)
         self.assertEqual(hint(), "esc interrupt · ctrl+enter steer · ↑ edit queued")
 
