@@ -47,6 +47,15 @@ class QuestionKeyTests(unittest.TestCase):
                 self.assertNotIn("esc interrupt", mode_row(app))
                 self.assertNotIn("esc to interrupt", line_text(app._tail(100)[-1]))  # the working row too
 
+    def test_an_approval_with_no_turn_running_says_deny_not_stop(self) -> None:
+        # A subagent that outlived the turn can still ask; nothing would be interrupted then.
+        app, client = make_app(busy=False)
+        app._on_server_request(APPROVAL)
+        self.assertIn("↑↓ pick · enter confirms · d or esc denies", mode_row(app))
+        self.assertNotIn("stops", mode_row(app))
+        app.turn_pending = True
+        self.assertIn("d or esc denies and stops", mode_row(app))
+
     def test_without_a_question_the_working_row_still_offers_the_interrupt(self) -> None:
         app, _client = make_app(busy=True)
         self.assertIn("esc to interrupt", line_text(app._tail(100)[-1]))

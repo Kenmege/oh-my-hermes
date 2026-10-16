@@ -90,6 +90,8 @@ APPROVAL_KEYS = (
     "↑↓ · esc denies and stops",  # short enough that the agent strip beside it stays whole at 80 columns
     "esc denies and stops",
 )
+# The same with no turn running (a subagent that outlived the turn asks): a deny then interrupts nothing.
+APPROVAL_IDLE_KEYS = tuple(form.removesuffix(" and stops") for form in APPROVAL_KEYS)
 CLARIFY_CHOICE_KEYS = (
     "↑↓ or 1-9 · enter picks · type to answer · esc cancels", "↑↓ enter picks · esc cancels", "esc cancels"
 )
@@ -209,6 +211,10 @@ class PromptSlot:
                 return CLARIFY_FIELD_KEYS
             return CLARIFY_MULTI_KEYS if self._multi() else CLARIFY_CHOICE_KEYS
         return VALUE_KEYS
+
+    def keys_while(self, turn_runs: bool) -> tuple[str, ...]:
+        """`keys`, for whether a turn runs: an approval's deny stops only a turn that runs (`APPROVAL_IDLE_KEYS`)."""
+        return APPROVAL_IDLE_KEYS if self.method == "approval" and not turn_runs else self.keys
 
     def decline(self) -> Answer:
         return _decline(self.request_id, self.method)
@@ -449,8 +455,11 @@ class PromptSlot:
 
     # -- rendering --------------------------------------------------------------------------
 
-    def lines(self, width: int, theme: Theme, max_rows: int, keys_row: bool = False, waiting: int = 0) -> list[Line]:
-        """The slot's rows, at most `max_rows`; `keys_row` adds the question's keys (where no mode row says them).
+    def lines(
+        self, width: int, theme: Theme, max_rows: int, keys_row: bool = False, waiting: int = 0, turn_runs: bool = True
+    ) -> list[Line]:
+        """The slot's rows, at most `max_rows`; `keys_row` adds the question's keys (where no mode row says them),
+        as they are while a turn runs or not (`keys_while`).
 
         A list keeps the highlighted row whatever the budget (`_fit`). A
         question with no list keeps its first row and its last ones. Whatever
@@ -462,7 +471,8 @@ class PromptSlot:
         inner = max(width - len(SLOT_BAR), 1)
         keys: list[Line] = []
         if keys_row:
-            said = next((form for form in self.keys if cell_width(f"  {form}") <= inner), self.keys[-1])
+            forms = self.keys_while(turn_runs)
+            said = next((form for form in forms if cell_width(f"  {form}") <= inner), forms[-1])
             keys = [(Span(f"  {said}", theme.hint),)]
         queued: Line = (Span(WAITING.format(count=waiting, s="s" if waiting != 1 else ""), theme.muted),) if waiting else ()
         if self.method == "approval":

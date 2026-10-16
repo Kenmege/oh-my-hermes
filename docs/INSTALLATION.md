@@ -525,7 +525,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   denies. Every deny (Esc, Ctrl+C, `d`, `n`, Enter on deny) also stops the
   running turn, as Esc does in Claude Code, which is what the mode row's
   `esc denies and stops` says: the deny goes first, so the waiting tool ends
-  denied, then the interrupt, and with no turn running only the deny goes.
+  denied, then the interrupt, and with no turn running only the deny goes,
+  and the mode row says `d or esc denies`.
   When the approval came from a subagent, that stops the session's whole
   running turn, not only the subagent. The tell row is the one deny that
   does not stop the turn; it redirects it. A clarify question numbers its choices: a digit, or Up and Down then

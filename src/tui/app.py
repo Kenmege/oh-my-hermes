@@ -3830,7 +3830,7 @@ class App(ModesMixin, AgentViewMixin):
         steered = self.roster.agents.get(self.agent_steer or "")
         picker_keys = self._picker_keys()
         if self.slot is not None:
-            say = self.slot.keys
+            say = self.slot.keys_while(self._busy())
         elif picker_keys:
             say = picker_keys
         elif self.list_selected is not None:
@@ -3987,7 +3987,9 @@ class App(ModesMixin, AgentViewMixin):
         if self.slot is not None:
             # Where the terminal has no mode row, the question's keys take a row of the slot's own.
             keys = not under_composer(rows, cols)[1]
-            return self.slot.lines(cols, self.theme, cap, keys_row=keys, waiting=len(self.waiting_requests))
+            return self.slot.lines(
+                cols, self.theme, cap, keys_row=keys, waiting=len(self.waiting_requests), turn_runs=self._busy()
+            )
         keys = not under_composer(rows, cols)[1]  # a picker's keys go in its header where no mode row says them
         if self.picker is not None:
             return self.picker.lines(cols, self.theme, cap, self.wall_clock(), keys=keys)

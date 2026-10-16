@@ -192,6 +192,16 @@ class ApprovalTests(unittest.TestCase):
         self.assertTrue(all("esc denies and stops" in form for form in keys), keys)
         self.assertEqual(keys, tuple(sorted(keys, key=len, reverse=True)))
 
+    def test_with_no_turn_running_the_keys_say_deny_and_nothing_about_stopping(self) -> None:
+        approval = slot("approval", APPROVAL)
+        idle = approval.keys_while(False)
+        self.assertEqual(idle[0], "↑↓ pick · enter confirms · d or esc denies")
+        self.assertTrue(all(form.endswith("esc denies") for form in idle), idle)
+        self.assertEqual(approval.keys_while(True), approval.keys)
+        self.assertEqual(slot("clarify", CLARIFY).keys_while(False), slot("clarify", CLARIFY).keys)
+        text = lines_text(approval.lines(60, DEFAULT_THEME, 8, keys_row=True, turn_runs=False))
+        self.assertEqual(unbarred(text[-1]), "  ↑↓ pick · enter confirms · d or esc denies")
+
     def test_a_keys_row_is_added_only_when_asked_and_only_beside_the_command(self) -> None:
         approval = slot("approval", {**APPROVAL, "command": "one\ntwo", "choices": ["once", "deny"]})
         self.assertFalse([row for row in lines_text(approval.lines(60, DEFAULT_THEME, 8)) if "esc denies" in row])

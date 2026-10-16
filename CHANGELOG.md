@@ -27,7 +27,8 @@ All notable changes will be documented here.
   Ctrl+C, `d`, `n`, Enter on deny, and Up then Enter typed ahead) now sends
   the explicit deny first, so the waiting tool ends denied, and then
   interrupts the running turn (`session.interrupt`, the call Esc makes on an
-  empty composer); with no turn running only the deny goes. An approval a
+  empty composer); with no turn running only the deny goes, and the mode row
+  then says `d or esc denies`. An approval a
   subagent asked for stops the session's whole turn. The tell row is the one
   deny that does not stop: it redirects the running turn instead. The mode
   row says so in plain words, `↑↓ pick · enter confirms · d or esc denies and
