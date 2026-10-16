@@ -1,4 +1,12 @@
-"""When a sentence asks to redact or pseudonymize a file that is leaving the team.
+"""When a sentence asks to redact or pseudonymize a file that is leaving the company.
+
+The owner decided (2026-10-16) that personal data sent to a team inside the
+same company stays internal: the review is for data leaving for an outside
+party (a vendor, provider, partner, contractor, third party, or an external
+service). A team qualified by an outside word is outside ("the vendor's team",
+"an external team", "외부 연구팀에"). Both languages read one table of
+places inside the company (`DATA_SHARE_INTERNAL_DESTINATIONS`) and one of the
+words that put a place outside (`DATA_SHARE_OUTSIDE_QUALIFIERS`).
 
 `data-share-review` takes nothing another skill holds: it has no boost and
 stands down no guard. This narrow gate decides only whether the skill may be
@@ -19,9 +27,12 @@ not personal data at all, so all of these must hold:
 - that verb's object does not end in a word for something other than data (a
   label, a flag, a script, a pull request, slides, a header row, ...);
 - a file-shaped carrier is leaving: an export, dataset, csv, file, logs,
-  records, extract, transcript excerpt, corpus, dump or spreadsheet, beside an
-  outbound cue (a vendor, contractor, agency, researcher, the public, a
-  provider, a training set, or a verb that sends it);
+  records, extract, transcript excerpt, corpus, dump or spreadsheet, beside a
+  recipient outside the company (a vendor, contractor, agency, researcher,
+  the public, a provider, a training set), or beside a verb that sends it
+  unless every such verb names a place inside the company as where it goes
+  ("send it to the dev team", "share it with a colleague", "upload it to
+  staging"; `_sends_stay_inside`). A send that names no place is leaving;
 - no word after the openers names a legal question, Hermes (a setting of it,
   or Hermes doing the job: "before hermes uploads it to the vendor"), or a
   storage-wide scan. "hermes," as the address before the request is an
@@ -41,11 +52,12 @@ A Korean request puts its verb last, so its half of the rule
   블러, 지우-, 가리-, 빼-) with personal data among the three words before
   it ("개인정보 지우고", "고객 정보 마스킹해서"), as the last predicate or in a
   clause joined to it; "사진 배경 마스킹해서 보내줘" removes a background;
-- it leaves: a recipient outside the team named as where it goes ("벤더한테",
-  "외부에", "협력업체에"; not "업체 목록에서", "외부 로그" or "업체별로"), or a
-  verb that sends it (a predicate, a "-기 전에" clause, "보낼 파일") to no
-  team, file or folder of the person's own ("스테이징에", "개발팀에",
-  "엑셀로");
+- it leaves: a recipient outside the company named as where it goes
+  ("벤더한테", "외부에", "협력업체에"; not "업체 목록에서", "외부 로그" or
+  "업체별로"), or a verb that sends it (a predicate, a "-기 전에" clause,
+  "보낼 파일") to no place inside the company and no file or folder of the
+  person's own ("스테이징에", "개발팀에", "동료한테", "엑셀로"), unless an
+  outside word qualifies that place ("외부 팀에", "벤더 테스트 서버에");
 - no word names a legal question, a Hermes setting, a storage-wide scan, or
   something other than data (코드, 함수, 기능, 버그, ...): "개인정보 마스킹
   기능 만들어서 벤더한테 보내줘" ships a feature;
@@ -138,17 +150,35 @@ DATA_SHARE_KOREAN_RECIPIENTS = (
 )
 _DESTINATION_PARTICLES = ("에게", "한테", "께", "쪽에", "측에", "쪽으로", "으로", "에", "로")
 _MEANS_PARTICLES = frozenset({"쪽으로", "으로", "로"})
-# Destinations inside the team, and a file or folder the data is exported to.
-# A verb that sends counts as the data leaving unless one of these is where it
-# goes and no outside recipient is named: "테스트 데이터에서 고객 정보 지우고
-# 스테이징에 올려줘" moves it to staging, and "개인정보 지운 다음 엑셀로
-# 내보내줘" writes a spreadsheet. A team ("개발팀에", "QA팀한테") is inside
-# unless an outside word comes just before it ("외부 연구팀에", "벤더 지원팀에").
-DATA_SHARE_KOREAN_INTERNAL_DESTINATIONS = (
-    "팀", "사내", "내부", "스테이징", "staging", "개발서버", "테스트", "로컬",
-    "엑셀", "csv", "pdf", "json", "xlsx", "txt", "텍스트", "파일", "폴더", "백업",
+# Places inside the company, in both languages: a team of the person's own, a
+# teammate or a colleague, another department, the company's internal or
+# in-house systems, QA, staging, and a test or dev server. A verb that sends
+# counts as the data leaving unless one of these is where it goes and no
+# outside recipient is named: "테스트 데이터에서 고객 정보 지우고 스테이징에
+# 올려줘" and "redact pii in the export before we send it to the dev team" keep
+# it inside. A Korean reader takes an entry as a word's start ("개발서버",
+# "팀원들한테") and a team or department as a word's end ("QA팀한테", "인사부서에");
+# an English reader takes an entry as whole words ("the test server").
+DATA_SHARE_INTERNAL_DESTINATIONS = (
+    "팀", "사내", "내부", "스테이징", "개발서버", "테스트", "로컬", "동료", "부서",
+    "staging", "qa", "team", "teams", "teammate", "teammates", "colleague", "colleagues", "coworker", "coworkers",
+    "co-worker", "co-workers", "department", "departments", "internal", "in-house", "test server", "test environment",
+    "dev server",
 )
-_KOREAN_OUTSIDE_MARKERS = ("외부", "대학", "타사", "고객사")
+# Korean only: a file or folder the data is exported to ("개인정보 지운 다음
+# 엑셀로 내보내줘" writes a spreadsheet). English reads no file or folder as
+# inside the company.
+_KOREAN_EXPORT_DESTINATIONS = ("엑셀", "csv", "pdf", "json", "xlsx", "txt", "텍스트", "파일", "폴더", "백업")
+# Words that put a place outside the company when they qualify it, in both
+# languages, beside each language's recipients: "외부 팀에", "벤더 테스트
+# 서버에", "the vendor's team", "an external team", "the partner team at acme",
+# "the client's team". Outside wins over inside. A Korean reader takes them as
+# a word's start, an English reader as whole words.
+DATA_SHARE_OUTSIDE_QUALIFIERS = (
+    "외부", "대학", "타사", "고객사",
+    "outside", "partner", "partners", "client", "clients", "customer", "customers", "university", "universities",
+    "supplier", "suppliers", "consultant", "consultants", "outsourced", "freelance", "freelancer", "freelancers",
+)
 # Words that name another job, as a word's start: a legal question, a Hermes
 # setting, a storage-wide scan, or something other than data. Hermes named
 # alone is no withdrawal: "헤르메스," before a request is its address
@@ -241,29 +271,41 @@ DATA_SHARE_CARRIER_TOKENS = frozenset(
         "exports", "extract", "extracts", "file", "files", "log", "logs", "records", "spreadsheet", "spreadsheets",
     }
 )
-# The outbound cue: who receives it, or a verb that sends it. "hand" counts only
-# as handing something over, and "give" only with a recipient (`_gives_it_away`).
-DATA_SHARE_OUTBOUND_TOKENS = frozenset(
+# The outbound cue: who receives it outside the company, or a verb that sends
+# it. "hand" counts only as handing something over, and "give" only with a
+# recipient (`_gives_it_away`).
+DATA_SHARE_RECIPIENT_TOKENS = frozenset(
     {
-        "agency", "attach", "attaching", "contractor", "contractors", "external", "post", "posting", "provider",
-        "public", "researcher", "researchers", "send", "sending", "share", "sharing", "third-party", "upload",
-        "uploading", "vendor", "vendors",
+        "agency", "contractor", "contractors", "external", "provider", "public", "researcher", "researchers",
+        "third-party", "vendor", "vendors",
     }
 )
-DATA_SHARE_OUTBOUND_PHRASES = (
+DATA_SHARE_RECIPIENT_PHRASES = (
     "third party",
     "fine-tune corpus",
     "fine-tune set",
     "fine-tuning set",
     "training corpus",
     "training set",
-    "hand over",
-    "hand it",
-    "hand them",
-    "handing it",
-    "handing them",
-    "handing over",
 )
+DATA_SHARE_SEND_TOKENS = frozenset(
+    {"attach", "attaching", "post", "posting", "send", "sending", "share", "sharing", "upload", "uploading"}
+)
+DATA_SHARE_HAND_PHRASES = ("hand over", "hand it", "hand them", "handing it", "handing them", "handing over")
+# A send's place follows one of these within the send's clause ("send it to
+# the dev team", "share it with a colleague").
+_DESTINATION_PREPOSITIONS = frozenset({"into", "onto", "to", "with"})
+_CLAUSE_ENDS = frozenset(
+    {"after", "and", "because", "before", "but", "if", "once", "or", "so", "that", "then", "when", "which", "while", "who"}
+)
+# The place is the noun phrase after it, up to the clause's end or the next
+# preposition: "send it to acme for the dev team" sends it to acme.
+_PLACE_ENDS = _CLAUSE_ENDS | {
+    "about", "as", "at", "by", "for", "from", "in", "into", "of", "on", "onto", "over", "to", "via", "with",
+}
+# A place followed by one of these names another organization: "the data team
+# at acme", "a team from acme".
+_ORGANIZATION_PREPOSITIONS = frozenset({"at", "from"})
 # Words that name another job: a legal question (`legal-compliance-review`),
 # Hermes (a setting of it, or Hermes doing the job), or a scan across storage.
 DATA_SHARE_WITHDRAWAL_TOKENS = frozenset(
@@ -313,14 +355,64 @@ def _gives_it_away(words: list[str]) -> bool:
     return False
 
 
+def _place(words: list[str], index: int) -> tuple[list[str], str]:
+    """Where the send at `index` says the data goes, and the word that ends the place: (["the", "dev", "team"], "before")."""
+    for position in range(index + 1, len(words)):
+        if words[position] in _CLAUSE_ENDS or words[position] in DATA_SHARE_SEND_TOKENS:
+            break
+        if words[position] in _DESTINATION_PREPOSITIONS:
+            place: list[str] = []
+            for word in words[position + 1 :]:
+                if word in _PLACE_ENDS or word in DATA_SHARE_SEND_TOKENS:
+                    return place, word
+                place.append(word)
+            return place, ""
+    return [], ""
+
+
+def _inside(place: list[str], after: str) -> bool:
+    """A place inside the company that no outside word qualifies: "the dev team", not "the partner team at acme".
+
+    A recipient ("the vendor's team") never reaches here: it makes the file
+    leave first (`_leaving`).
+    """
+    return (
+        contains_boundary_phrase(" ".join(place), DATA_SHARE_INTERNAL_DESTINATIONS)
+        and not set(place) & set(DATA_SHARE_OUTSIDE_QUALIFIERS)
+        and after not in _ORGANIZATION_PREPOSITIONS
+    )
+
+
+def _sends_stay_inside(words: list[str]) -> bool:
+    """Whether every verb that sends the data names a place inside the company as where it goes.
+
+    A send that names no place ("before we send it") is leaving. "give" and
+    "hand" without a place send nothing ("give me a summary").
+    """
+    inside = False
+    for index, word in enumerate(words):
+        if word not in DATA_SHARE_SEND_TOKENS and word not in {"give", "giving", "hand", "handing"}:
+            continue
+        place, after = _place(words, index)
+        if not place and word not in DATA_SHARE_SEND_TOKENS:
+            continue
+        if not _inside(place, after):
+            return False
+        inside = True
+    return inside
+
+
 def _leaving(text: str, tokens: set[str], words: list[str]) -> bool:
     if not tokens & DATA_SHARE_CARRIER_TOKENS:
         return False
-    return (
-        bool(tokens & DATA_SHARE_OUTBOUND_TOKENS)
-        or contains_boundary_phrase(text, DATA_SHARE_OUTBOUND_PHRASES)
+    if tokens & DATA_SHARE_RECIPIENT_TOKENS or contains_boundary_phrase(text, DATA_SHARE_RECIPIENT_PHRASES):
+        return True
+    sends = (
+        bool(tokens & DATA_SHARE_SEND_TOKENS)
+        or contains_boundary_phrase(text, DATA_SHARE_HAND_PHRASES)
         or _gives_it_away(words)
     )
+    return sends and not _sends_stay_inside(words)
 
 
 def data_share_request_admitted(text: str) -> bool:
@@ -406,19 +498,26 @@ def _korean_recipient(words: tuple[str, ...]) -> bool:
 
 
 def _korean_internal_destination(words: tuple[str, ...]) -> bool:
-    """Whether a destination inside the team, or a file or folder, is named ("팀에", "스테이징에", "엑셀로", "백업 폴더로")."""
+    """Whether a place inside the company, or a file or folder, is named ("팀에", "스테이징에", "엑셀로", "백업 폴더로").
+
+    Not when an outside word starts the place or one of the two words before
+    it, or a recipient ends one of those words: "외부팀에", "외부 팀에", "벤더
+    테스트 서버에", "협력업체 보안팀에".
+    """
     for index, word in enumerate(words):
         particle = next((particle for particle in _DESTINATION_PARTICLES if word.endswith(particle)), "")
         if not (particle or (index + 1 < len(words) and words[index + 1].endswith(_DESTINATION_PARTICLES))):
             continue
         stem = word[: -len(particle)] if particle else word
-        if stem.startswith(DATA_SHARE_KOREAN_INTERNAL_DESTINATIONS):
-            return True
-        outside_before = any(
-            earlier.startswith((*DATA_SHARE_KOREAN_RECIPIENTS, *_KOREAN_OUTSIDE_MARKERS))
-            for earlier in words[max(0, index - 2) : index]
+        inside = stem.startswith((*DATA_SHARE_INTERNAL_DESTINATIONS, *_KOREAN_EXPORT_DESTINATIONS)) or stem.endswith(
+            ("팀", "부서")
         )
-        if stem.endswith("팀") and not outside_before:
+        outside = any(
+            qualifier.startswith((*DATA_SHARE_KOREAN_RECIPIENTS, *DATA_SHARE_OUTSIDE_QUALIFIERS))
+            or qualifier.endswith(DATA_SHARE_KOREAN_RECIPIENTS)
+            for qualifier in (*words[max(0, index - 2) : index], stem)
+        )
+        if inside and not outside:
             return True
     return False
 

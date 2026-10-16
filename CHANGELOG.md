@@ -4,6 +4,44 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A team inside the company is internal for data-share-review, in English
+  as in Korean.** Owner decision (2026-10-16): sending personal data to a team
+  in the same company is internal, so the review does not fire; it fires only
+  when the data leaves for an outside party (a vendor, provider, partner,
+  contractor, third party, or an external service). English admission read
+  any verb that sends a file as the file leaving, wherever it went: "redact
+  pii in the export before we send it to the dev team" and "anonymize the
+  dataset before sharing it with the marketing team" dispatched the review.
+  Now an English send counts as the data leaving unless every verb that sends
+  it names a place inside the company: the noun phrase after its "to" or
+  "with", up to the next preposition, says a team, a teammate, a colleague or
+  coworker, another department, QA, staging, the test or dev server, or
+  anything internal or in-house. A send that names no place still leaves, and
+  so does one place outside beside an inside one ("share it with the dev team
+  and post it publicly", "upload it to github for the dev team"). Outside
+  wins: a vendor or another recipient anywhere, a qualifier in the place
+  (external, outside, partner, client, customer, university, supplier,
+  consultant, outsourced, freelance), or an "at" or "from" right after it
+  ("the vendor's team", "an external team", "the partner team at acme", "the
+  client's team", "the data team at acme") keeps the review. Korean reads the
+  same two tables, so 동료, 다른 부서, 인사 부서 and bare QA are now inside too,
+  and an outside word, or a word that ends in a recipient, now puts every
+  inside place outside, not only a team compound: "외부 팀에", "외부팀에", "벤더
+  팀에", "벤더 테스트 서버에" and "협력업체 보안팀에" had read as inside and lost
+  the review. Measured on 36 English and 36 Korean inside requests and 40 of
+  each outside, written for this change: no inside request is admitted in
+  either language, no English outside request lost the gate on either
+  surface, and 9 Korean outside requests gained it; English and Korean
+  disagree on 2 pairs, both outside requests Korean did not admit on main
+  either (a company name before a team, and a second destination after an
+  inside one). On 140 sentences written blind by a separate agent, admitted
+  inside requests fell from 15 to 2 of 35 in English and from 7 to 4 of 35 in
+  Korean, and no outside request lost the gate. The three requests the
+  decision named without a file ("redact the pii and send it to the dev
+  team") were never admitted, since English admission needs a file-shaped
+  carrier; they are pinned as negative controls. Files and folders stay
+  inside only in Korean ("엑셀로 내보내줘").
+
 - **Korean spend and data-share requests reach their gates.** "내 카드로
   결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보
   마스킹해서 벤더한테 보내줘" dispatched gateway-intent-card, and "개인정보 지우고

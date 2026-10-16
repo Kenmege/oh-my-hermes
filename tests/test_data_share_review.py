@@ -578,6 +578,103 @@ class DataShareReviewKoreanTests(unittest.TestCase):
                 self.assertGreaterEqual(score, 6)
 
 
+class DataShareReviewInternalDestinationTests(unittest.TestCase):
+    """Owner decision 2026-10-16: data sent to a team inside the same company is internal, in English as in Korean."""
+
+    def _hinted(self, message: str) -> bool:
+        return any(hint.get("workflow") == SKILL for hint in awareness_route_hint(message).get("hints", []))
+
+    def test_a_send_to_a_place_inside_the_company_names_no_review(self) -> None:
+        for message in (
+            "redact pii in the export before we send it to the dev team",
+            "anonymize the dataset before sharing it with the marketing team",
+            "redact pii in the csv before sending it to qa",
+            "redact the logs before uploading them to staging",
+            "de-identify the records before we upload the file to the test server",
+            "redact pii from this csv before sending it to my coworker",
+            "anonymize the export and share it with a colleague",
+            "pseudonymize the user ids in the dataset before sharing it with another department",
+            "redact personal data from the spreadsheet before sending it to the internal analytics team",
+            "anonymize the logs before we share them with the in-house data team",
+            "redact pii in the export and hand it over to our security team",
+            "de-identify this csv before I give it to the qa team",
+            "redact the pii in the export before sharing it with my teammates",
+            # Internal or in-house says the place is the company's own.
+            "de-identify the export before posting it to the internal wiki",
+            "redact pii in the export and upload it to the in-house analytics tool",
+            "개인정보 지우고 동료한테 보내줘",
+            "고객 정보 가명 처리해서 QA에 보내줘",
+            "개인정보 가명 처리해서 다른 부서에 공유해줘",
+            "개인정보 지우고 인사 부서에 보내줘",
+            "개인정보 지우고 부서원들한테 공유해줘",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(_offered(message))
+                self.assertFalse(self._hinted(message))
+                self.assertFalse(_data_share_awareness_marked(message.casefold()))
+
+    def test_an_outside_word_puts_the_team_outside(self) -> None:
+        for message in (
+            "redact the pii in the export and send it to the vendor's team",
+            "anonymize the dataset before sharing it with an external team",
+            "pseudonymize the customer ids in the csv before sending it to the partner team at acme",
+            "redact the pii in the files and share them with the client team",
+            "redact the pii in the export before sharing it with the customer's team",
+            "anonymize the dataset before sharing it with the partner's staging server",
+            # Another organization named after the team.
+            "redact pii in the export before we send it to the data team at acme",
+            "고객 정보 익명화해서 외부 팀에 공유해줘",
+            "개인정보 마스킹해서 벤더 팀에 보내줘",
+            "개인정보 지우고 외부팀에 보내줘",
+            "개인정보 비식별화해서 벤더 테스트 서버에 올려줘",
+            "개인정보 마스킹해서 외부 연구팀에 보내줘",
+            # The outside word may come two words before the team.
+            "개인정보 지우고 벤더 쪽 팀에 보내줘",
+            # A word that ends in a recipient ("협력업체") qualifies the team too.
+            "전화번호 지우고 협력업체 보안팀에 전달해줘",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(_offered(message))
+                self.assertTrue(self._hinted(message))
+
+    def test_every_english_send_must_name_a_place_inside(self) -> None:
+        for message, offered in (
+            # A send that names no place, or a second send outside, leaves;
+            # the place ends with its clause.
+            ("redact pii in the export before we send it", True),
+            ("redact pii in the export before we send it to acme so the team can check it", True),
+            # The place is the noun phrase after "to": acme, not the dev team.
+            ("redact pii in the export and upload it to github for the dev team", True),
+            ("redact pii in the export and send it to the dev team for review", False),
+            ("redact pii from the records before sending them to a coworker in finance", False),
+            ("redact pii in the export, share it with the dev team and post it publicly", True),
+            ("anonymize the dataset, send it to the qa team and upload it to kaggle", True),
+            ("redact pii in the export and send the dev team a copy", True),
+            # "give" and "hand" without a place send nothing.
+            ("redact pii in the export, give me a summary, and send it to the dev team", False),
+        ):
+            with self.subTest(message=message):
+                self.assertIs(_offered(message), offered)
+
+    def test_english_and_korean_agree(self) -> None:
+        for english, korean in (
+            ("redact pii in the export before we send it to the dev team", "개인정보 지우고 개발팀에 보내줘"),
+            ("redact the logs before uploading them to staging", "로그에서 개인정보 지우고 스테이징에 올려줘"),
+            ("de-identify the records before we upload the file to the test server", "개인정보 비식별화해서 테스트 서버에 올려줘"),
+            ("redact pii from this csv before sending it to my coworker", "개인정보 지우고 동료한테 보내줘"),
+            ("pseudonymize the user ids in the dataset before sharing it with another department", "개인정보 가명 처리해서 다른 부서에 공유해줘"),
+            ("anonymize the logs before we share them with the in-house data team", "개인정보 익명화해서 사내 데이터팀에 공유해줘"),
+            ("redact pii in the csv before sending to qa", "개인정보 지우고 QA에 보내줘"),
+            ("redact pii in the export before we send it to the vendor", "개인정보 지우고 벤더한테 보내줘"),
+            ("redact the pii in the export and send it to the vendor's team", "개인정보 마스킹해서 벤더 팀에 보내줘"),
+            ("anonymize the dataset before sharing it with an external team", "고객 정보 익명화해서 외부 팀에 공유해줘"),
+            ("anonymize the export and share it with the client's team", "고객 정보 익명화해서 고객사 팀에 공유해줘"),
+            ("anonymize the csv before sending it to the university research team", "개인정보 익명화해서 대학 연구팀에 보내줘"),
+        ):
+            with self.subTest(english=english):
+                self.assertEqual(_offered(english), _offered(korean))
+
+
 OWNERS = (
     ("attach the crash log to the github issue", "github-event-ops"),
     ("summarize this customer support transcript", "media-input-operator"),

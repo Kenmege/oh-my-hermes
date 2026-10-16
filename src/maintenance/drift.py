@@ -654,7 +654,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # starts with a recipient -- per vendor, per client, a foreign key,
             # a vendor-name sort (4); and exports to a spreadsheet, a CSV and a
             # backup folder (3).
-            expected=813,
+            # The owner decision that a team inside the same company is
+            # internal (2026-10-16) adds fourteen: English requests that send
+            # to the dev team, the marketing team, QA, the test server, a
+            # coworker, another department, the in-house data team and staging
+            # (11, three of them without a file and already held on main); and
+            # Korean ones shared with another department and a colleague and
+            # uploaded to the QA environment (3).
+            expected=827,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -929,7 +936,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # vendor addressed to Hermes, which reach their gates (2); and a
             # receipt that states an amount and a quote sent instead of paying,
             # which stay on gateway-intent-card (2).
-            expected=839,
+            # The owner decision that a team inside the same company is
+            # internal (2026-10-16) adds eight where an outside word qualifies
+            # the team or place, so the data share review still dispatches: an
+            # external team, the customer's team, the client team and a
+            # partner's staging server in English (4, each dispatched on main
+            # too); and an external team spaced and written as one word, a
+            # vendor's team, and a vendor's test server in Korean (4).
+            expected=847,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
