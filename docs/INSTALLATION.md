@@ -322,11 +322,13 @@ run and approval decision stays Hermes'; the screen is OMH's.
   and the rest counted), the composer framed by a rule above and below it, a
   mode row, and a status line with the model, context use (warn from 80 %
   full, bad from 95 %) and what the session is doing. While you pick from a
-  list (a question answered by picking, or the `/sessions`, `/rewind` or bare
-  `/model` picker) the composer and its rules are not drawn and the list
-  stands in their place, right above the mode row. A question shows no caret;
-  a picker shows it at the end of its filter row, where what you type (an
-  input method's composition too) appears. The banner above the
+  list (a question answered by picking, the `/sessions`, `/rewind` or bare
+  `/model` picker, or the agent list) or search the history with Ctrl+R, the
+  composer and its rules are not drawn and the list or the search stands in
+  their place, right above the mode row. A question and the agent list show
+  no caret; a picker shows it at the end of its filter row and the search at
+  the end of its query, where what you type (an input method's composition
+  too) appears. The banner above the
   session is one row: the brand, the version, the session it resumed and the
   working directory. A fresh session says under it where the last one is
   (`last session: <title> · /resume <id> reopens it`), unless you have
