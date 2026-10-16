@@ -1815,6 +1815,7 @@ class App(ModesMixin, AgentViewMixin):
             return
         if self.slot is None and (
             self._mode_key(event) or self._effort_key(event) or self._guide_key(event) or self._search_open_key(event)
+            or self._sessions_key(event)
         ):
             return
         if self.slot is None and (self._attachment_input(event) or self._escape(event)):
@@ -1841,6 +1842,13 @@ class App(ModesMixin, AgentViewMixin):
         if not isinstance(event, Key) or event != Key(CHAR, "r", ctrl=True):
             return False
         self.search = HistorySearch(list(self.composer.history), self.composer.text)
+        return True
+
+    def _sessions_key(self, event: Key | Paste) -> bool:
+        """Ctrl+X opens the session picker, the key Hermes' own TUI gives it; `/sessions` does the same."""
+        if not isinstance(event, Key) or event != Key(CHAR, "x", ctrl=True):
+            return False
+        self._sessions("")
         return True
 
     def _search_key(self, event: Key | Paste | Mouse) -> None:

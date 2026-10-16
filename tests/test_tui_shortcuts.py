@@ -83,13 +83,15 @@ class TableTests(unittest.TestCase):
 
     def test_the_ctrl_letters_named_are_the_ones_that_do_something(self) -> None:
         named = ctrl_letters_named()
-        self.assertEqual(named, set("acdejklrtouvw"))
+        self.assertEqual(named, set("acdejklrtouvwxy"))
         for letter in string.ascii_lowercase:
             changed = False
-            for draft in ("", "one two"):
+            for draft, undone in (("", False), ("one two", False), ("one two", True)):  # Ctrl+Y redoes the undone draft
                 app, client = make_app()
                 type_text(app, draft)
                 app._on_input(Key(LEFT))
+                if undone:
+                    app._on_input(Key(CHAR, "_", ctrl=True))
                 before = observed(app, client)
                 app._on_input(Key(CHAR, letter, ctrl=True))
                 changed = changed or observed(app, client) != before

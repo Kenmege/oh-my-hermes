@@ -608,6 +608,7 @@ Esc closes it):
 | `?` | On an empty composer, shows this list; `/keys` does too |
 | ↑ / ↓ | Move between the composer's rows, walk the input history at its first and last row (earlier sessions' too, shared with `hermes --tui`), or move through an open completion menu |
 | Ctrl+R | Searches the input history; Ctrl+R again finds an older match, Enter puts it in the composer, Esc leaves the composer as it was |
+| Ctrl+X | Opens the `/sessions` picker |
 | ↑ | On an empty composer with prompts queued, takes them back into the composer to edit; a queued shell line comes back on its own |
 | ↓ | On an empty composer while the mode row shows subagents, opens the agent list in the composer's place |
 | ← / → | Move by a character; with Ctrl or Alt, by a word (Alt+B and Alt+F too) |
@@ -615,6 +616,7 @@ Esc closes it):
 | Backspace / Delete | Delete a character, or a paste chip whole; Backspace on an empty composer removes the last attached image |
 | Ctrl+W, Alt+Backspace, Ctrl+Backspace | Deletes the word before the caret (Ctrl+Backspace where the terminal reports it apart from Backspace) |
 | Ctrl+U / Ctrl+K | Delete to the start or the end of the line |
+| Ctrl+_ / Ctrl+Y | Undo or redo an edit in the composer (Ctrl+_ is what Ctrl+- and Ctrl+/ send on most terminals); a run of typed characters is one edit |
 | Esc | Closes the `/` or `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run, then `interrupting…`, and what you queued comes back to the composer unsent); cancels a rewind you picked; cancels an agent steer you picked and keeps what you typed |
 | Esc Esc | With text, clears it and keeps it in this session's history; on an empty composer between turns, lists your prompts to rewind to (`/rewind` does too) |
 | Ctrl+V | Attaches the clipboard image |
