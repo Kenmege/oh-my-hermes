@@ -942,8 +942,16 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # external team, the customer's team, the client team and a
             # partner's staging server in English (4, each dispatched on main
             # too); and an external team spaced and written as one word, a
-            # vendor's team, and a vendor's test server in Korean (4).
-            expected=847,
+            # vendor's team, and a vendor's test server in Korean (4). Its
+            # review makes an inside place one proven inside, and adds twelve
+            # that keep the review: a team named by a company, a company's
+            # data team, a hospital team, the Department of Health, a former
+            # colleague now at another company, a company's staging server, a
+            # data team at another company's office, the data team and a
+            # company, an auditor copied, a forward on to a company, and the
+            # customer success team (11); and a Korean send to the QA team
+            # then to a public site (1).
+            expected=859,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

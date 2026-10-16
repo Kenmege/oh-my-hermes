@@ -5,39 +5,43 @@ All notable changes will be documented here.
 ## Unreleased
 
 - **A team inside the company is internal for data-share-review, in English
-  as in Korean.** Owner decision (2026-10-16): sending personal data to a team
-  in the same company is internal, so the review does not fire; it fires only
-  when the data leaves for an outside party (a vendor, provider, partner,
-  contractor, third party, or an external service). English admission read
-  any verb that sends a file as the file leaving, wherever it went: "redact
-  pii in the export before we send it to the dev team" and "anonymize the
-  dataset before sharing it with the marketing team" dispatched the review.
-  Now an English send counts as the data leaving unless every verb that sends
-  it names a place inside the company: the noun phrase after its "to" or
-  "with", up to the next preposition, says a team, a teammate, a colleague or
-  coworker, another department, QA, staging, the test or dev server, or
-  anything internal or in-house. A send that names no place still leaves, and
-  so does one place outside beside an inside one ("share it with the dev team
-  and post it publicly", "upload it to github for the dev team"). Outside
-  wins: a vendor or another recipient anywhere, a qualifier in the place
-  (external, outside, partner, client, customer, university, supplier,
-  consultant, outsourced, freelance), or an "at" or "from" right after it
-  ("the vendor's team", "an external team", "the partner team at acme", "the
-  client's team", "the data team at acme") keeps the review. Korean reads the
-  same two tables, so 동료, 다른 부서, 인사 부서 and bare QA are now inside too,
-  and an outside word, or a word that ends in a recipient, now puts every
-  inside place outside, not only a team compound: "외부 팀에", "외부팀에", "벤더
-  팀에", "벤더 테스트 서버에" and "협력업체 보안팀에" had read as inside and lost
-  the review. Measured on 36 English and 36 Korean inside requests and 40 of
-  each outside, written for this change: no inside request is admitted in
-  either language, no English outside request lost the gate on either
-  surface, and 9 Korean outside requests gained it; English and Korean
-  disagree on 2 pairs, both outside requests Korean did not admit on main
-  either (a company name before a team, and a second destination after an
-  inside one). On 140 sentences written blind by a separate agent, admitted
-  inside requests fell from 15 to 2 of 35 in English and from 7 to 4 of 35 in
-  Korean, and no outside request lost the gate. The three requests the
-  decision named without a file ("redact the pii and send it to the dev
+  as in Korean, and only when it is proven inside.** Owner decision
+  (2026-10-16): sending personal data to a team in the same company is
+  internal, so the review does not fire; it fires only when the data leaves
+  for an outside party (a vendor, provider, partner, contractor, third party,
+  or an external service). English admission read any verb that sends a file
+  as the file leaving, wherever it went: "redact pii in the export before we
+  send it to the dev team" dispatched the review. The gate fails safe: a place
+  is inside only when every word of it is an inside word, in one table for
+  both languages -- an anchor (a teammate, a colleague or coworker, internal,
+  in-house, QA, staging, a test or dev server; 사내, 내부, 동료, 스테이징), a
+  team or department with an owner (our, my, another, or an internal function
+  such as data, dev, marketing, finance, hr; 우리, 다른, 개발, 재무, 인사), a
+  determiner, or a system beside an anchor (the internal wiki, the staging
+  server; 사내 위키). Any other word keeps the review: a company ("the Acme
+  team", "Acme's data team"), a client or customer ("the customer success
+  team", "고객지원팀"), an organisation ("the Department of Health", "은행 담당
+  부서에", "다른 회사 동료에게"), a relative clause ("a former colleague who now
+  works at Acme"), a place after "at", "of" or "for" ("the data team at
+  Acme", "the dev team for review"), a team with no owner ("the team", "팀
+  전체에"), quoted text, and Hangul in an English place. Every verb that sends
+  the data on must name such a place -- send, share, upload, attach, post,
+  forward, email, cc, transfer, pass, give, hand -- and so must every place it
+  joins ("the data team and Acme", "the data team, cc the auditor", "... so
+  they can forward it to Acme"); a Korean sentence with any place outside, or
+  an English recipient word ("vendor team에"), keeps it too. Measured against
+  main on 140 paired requests written for this change, 140 written blind by a
+  separate agent, and the 241 the reviewer wrote before reading the code: no
+  request to an outside party lost the review on the router or the hint;
+  Korean outside requests gained it (29 to 40, 32 to 34, and 34 to 53 of 53);
+  English inside requests stopped firing on 34 of 36, 7 of 15 and 17 of 31
+  that fired on main; Korean inside requests fired on 7 to 2 of 36, 7 to 14
+  of 35 on the blind set, and 5 to 5 of 20. 45 distinct inside requests
+  still fire, the safe direction: a person by role ("my manager", "김 과장님께"), a bare function
+  ("HR", "engineering"), the intranet or a portal, an unlisted modifier ("the
+  people ops team", "우리 회사 보안팀에", "본사 팀에"), and a trailing purpose
+  or place ("for debugging", "down the hall", "in Seoul"). The three requests
+  the decision named without a file ("redact the pii and send it to the dev
   team") were never admitted, since English admission needs a file-shaped
   carrier; they are pinned as negative controls. Files and folders stay
   inside only in Korean ("엑셀로 내보내줘").

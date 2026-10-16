@@ -3,10 +3,15 @@
 The owner decided (2026-10-16) that personal data sent to a team inside the
 same company stays internal: the review is for data leaving for an outside
 party (a vendor, provider, partner, contractor, third party, or an external
-service). A team qualified by an outside word is outside ("the vendor's team",
-"an external team", "외부 연구팀에"). Both languages read one table of
-places inside the company (`DATA_SHARE_INTERNAL_DESTINATIONS`) and one of the
-words that put a place outside (`DATA_SHARE_OUTSIDE_QUALIFIERS`).
+service). The gate fails safe: a place is inside only when it is proven
+inside. Every word of it must be an inside anchor (a team, a colleague,
+another department, staging, QA, internal, ...: `DATA_SHARE_INTERNAL_DESTINATIONS`)
+or a word allowed beside one (our, my, the, another; an internal function
+such as data, dev, marketing, finance; a server or a wiki:
+`DATA_SHARE_INTERNAL_MODIFIERS`). Any other word -- a company, a client, a
+hospital, a regulator, a name -- keeps the place outside, so "the vendor's
+team", "the Acme team", "the data team at Acme" and "외부 연구팀에" keep the
+review. Both languages read these two tables.
 
 `data-share-review` takes nothing another skill holds: it has no boost and
 stands down no guard. This narrow gate decides only whether the skill may be
@@ -30,9 +35,13 @@ not personal data at all, so all of these must hold:
   records, extract, transcript excerpt, corpus, dump or spreadsheet, beside a
   recipient outside the company (a vendor, contractor, agency, researcher,
   the public, a provider, a training set), or beside a verb that sends it
-  unless every such verb names a place inside the company as where it goes
-  ("send it to the dev team", "share it with a colleague", "upload it to
-  staging"; `_sends_stay_inside`). A send that names no place is leaving;
+  unless every verb that sends it on -- send, share, upload, attach, post,
+  forward, email, cc, transfer, pass, give, hand -- names a place proven
+  inside the company ("send it to the dev team", "share it with a
+  colleague", "upload it to staging"; `_sends_stay_inside`). A send that
+  names no place is leaving, and so is one whose place holds any other word
+  ("the data team and Acme", "the data team at Acme", "a colleague who now
+  works at Acme"). A request with quotation marks has no inside place;
 - no word after the openers names a legal question, Hermes (a setting of it,
   or Hermes doing the job: "before hermes uploads it to the vendor"), or a
   storage-wide scan. "hermes," as the address before the request is an
@@ -55,9 +64,12 @@ A Korean request puts its verb last, so its half of the rule
 - it leaves: a recipient outside the company named as where it goes
   ("벤더한테", "외부에", "협력업체에"; not "업체 목록에서", "외부 로그" or
   "업체별로"), or a verb that sends it (a predicate, a "-기 전에" clause,
-  "보낼 파일") to no place inside the company and no file or folder of the
-  person's own ("스테이징에", "개발팀에", "동료한테", "엑셀로"), unless an
-  outside word qualifies that place ("외부 팀에", "벤더 테스트 서버에");
+  "보낼 파일") unless a place proven inside the company or a file or folder
+  of the person's own is named ("스테이징에", "개발팀에", "동료한테",
+  "엑셀로") and every place right before a verb that sends is one
+  (`_korean_stays_inside`). Any other word in the place keeps it outside
+  ("외부 팀에", "은행 담당 부서에", "다른 회사 동료에게", "acme qa에"), as does
+  an English recipient anywhere in the sentence ("vendor team에");
 - no word names a legal question, a Hermes setting, a storage-wide scan, or
   something other than data (코드, 함수, 기능, 버그, ...): "개인정보 마스킹
   기능 만들어서 벤더한테 보내줘" ships a feature;
@@ -150,35 +162,73 @@ DATA_SHARE_KOREAN_RECIPIENTS = (
 )
 _DESTINATION_PARTICLES = ("에게", "한테", "께", "쪽에", "측에", "쪽으로", "으로", "에", "로")
 _MEANS_PARTICLES = frozenset({"쪽으로", "으로", "로"})
-# Places inside the company, in both languages: a team of the person's own, a
-# teammate or a colleague, another department, the company's internal or
-# in-house systems, QA, staging, and a test or dev server. A verb that sends
-# counts as the data leaving unless one of these is where it goes and no
-# outside recipient is named: "테스트 데이터에서 고객 정보 지우고 스테이징에
-# 올려줘" and "redact pii in the export before we send it to the dev team" keep
-# it inside. A Korean reader takes an entry as a word's start ("개발서버",
-# "팀원들한테") and a team or department as a word's end ("QA팀한테", "인사부서에");
-# an English reader takes an entry as whole words ("the test server").
+# A place inside the company is proven, never assumed: every word in it must
+# come from the four tables below, in both languages, and it must say an
+# anchor, or a unit with an owner. Any other word -- the vendor's, an external,
+# a partner, a client, a customer, Acme, a hospital, the Department of Health,
+# a name -- keeps the place outside and the review firing, which is the safe
+# direction: "the customer success team" and "고객지원팀" keep it too. "테스트
+# 데이터에서 고객 정보 지우고 스테이징에 올려줘" and "redact pii in the export
+# before we send it to the dev team" keep the data inside.
+#
+# Anchors: places inside by themselves -- a teammate, a colleague or coworker,
+# the company's internal or in-house systems, QA, staging, a test or dev
+# server. A Korean reader takes a Korean anchor as a word's start ("개발서버",
+# "동료들한테"); an English reader takes an entry as whole words.
 DATA_SHARE_INTERNAL_DESTINATIONS = (
-    "팀", "사내", "내부", "스테이징", "개발서버", "테스트", "로컬", "동료", "부서",
-    "staging", "qa", "team", "teams", "teammate", "teammates", "colleague", "colleagues", "coworker", "coworkers",
-    "co-worker", "co-workers", "department", "departments", "internal", "in-house", "test server", "test environment",
-    "dev server",
+    "사내", "내부", "스테이징", "개발서버", "테스트", "로컬", "동료",
+    "staging", "qa", "teammate", "teammates", "colleague", "colleagues", "coworker", "coworkers", "co-worker",
+    "co-workers", "internal", "in-house", "test server", "test environment", "dev server",
+)
+# Units: a team or a department, inside only with an owner ("our team", "the
+# data team", "another department", "우리 팀에", "인사 부서에"), or as a
+# compound whose every part is an owner or an anchor ("개발팀", "QA팀"); bare,
+# it may be anyone's ("the team", "팀 전체에"). A Korean word that starts with
+# a unit and goes on is a member of it ("팀원들한테", "부서원들한테").
+DATA_SHARE_INTERNAL_UNITS = ("팀", "부서", "team", "teams", "department", "departments")
+# Owners: whose unit it is -- ours, mine, another of ours -- or an internal
+# function.
+DATA_SHARE_INTERNAL_OWNERS = (
+    "우리", "내", "제", "저희", "다른", "타",
+    "our", "my", "another",
+    "개발", "데이터", "사이언스", "분석", "마케팅", "영업", "재무", "인사", "보안", "플랫폼", "지원", "운영", "제품",
+    "기획", "디자인", "연구", "백엔드", "프론트엔드", "인프라", "엔지니어링", "품질",
+    "data", "dev", "development", "engineering", "test", "testing", "marketing", "sales", "finance", "hr", "security",
+    "platform", "analytics", "support", "ops", "operations", "product", "design", "research", "science", "ml", "ai",
+    "bi", "backend", "frontend", "infra", "infrastructure", "it", "mobile", "web", "growth",
+)
+# Modifiers: words that may stand beside an anchor or an owned unit and prove
+# nothing alone -- a determiner ("the data team", "우리 팀 전체에", "같은 팀
+# 동료한테"), and a system of the company's (the internal wiki, the staging
+# server; 사내 위키, 테스트 서버).
+DATA_SHARE_INTERNAL_MODIFIERS = (
+    "같은", "전체", "모든",
+    "the", "a", "an", "both",
+    "서버", "환경", "위키", "대시보드", "툴", "채널", "슬랙", "메신저",
+    "server", "servers", "environment", "wiki", "dashboard", "tool", "channel", "workspace", "slack",
 )
 # Korean only: a file or folder the data is exported to ("개인정보 지운 다음
 # 엑셀로 내보내줘" writes a spreadsheet). English reads no file or folder as
 # inside the company.
 _KOREAN_EXPORT_DESTINATIONS = ("엑셀", "csv", "pdf", "json", "xlsx", "txt", "텍스트", "파일", "폴더", "백업")
-# Words that put a place outside the company when they qualify it, in both
-# languages, beside each language's recipients: "외부 팀에", "벤더 테스트
-# 서버에", "the vendor's team", "an external team", "the partner team at acme",
-# "the client's team". Outside wins over inside. A Korean reader takes them as
-# a word's start, an English reader as whole words.
-DATA_SHARE_OUTSIDE_QUALIFIERS = (
-    "외부", "대학", "타사", "고객사",
-    "outside", "partner", "partners", "client", "clients", "customer", "customers", "university", "universities",
-    "supplier", "suppliers", "consultant", "consultants", "outsourced", "freelance", "freelancer", "freelancers",
-)
+
+
+def _place_kind(word: str) -> str:
+    """What one whole word of a place is: "anchor", "unit", "owner", "modifier", or "" for anything else."""
+    if word in DATA_SHARE_INTERNAL_DESTINATIONS:
+        return "anchor"
+    if word in DATA_SHARE_INTERNAL_UNITS:
+        return "unit"
+    if word in DATA_SHARE_INTERNAL_OWNERS:
+        return "owner"
+    return "modifier" if word in DATA_SHARE_INTERNAL_MODIFIERS else ""
+
+
+def _proven_inside(kinds: list[str]) -> bool:
+    """Every word is an inside word, and an anchor, or a unit with its owner, is said."""
+    return bool(kinds) and all(kinds) and ("anchor" in kinds or ("unit" in kinds and "owner" in kinds))
+
+
 # Words that name another job, as a word's start: a legal question, a Hermes
 # setting, a storage-wide scan, or something other than data. Hermes named
 # alone is no withdrawal: "헤르메스," before a request is its address
@@ -292,20 +342,34 @@ DATA_SHARE_SEND_TOKENS = frozenset(
     {"attach", "attaching", "post", "posting", "send", "sending", "share", "sharing", "upload", "uploading"}
 )
 DATA_SHARE_HAND_PHRASES = ("hand over", "hand it", "hand them", "handing it", "handing them", "handing over")
-# A send's place follows one of these within the send's clause ("send it to
-# the dev team", "share it with a colleague").
-_DESTINATION_PREPOSITIONS = frozenset({"into", "onto", "to", "with"})
-_CLAUSE_ENDS = frozenset(
-    {"after", "and", "because", "before", "but", "if", "once", "or", "so", "that", "then", "when", "which", "while", "who"}
-)
-# The place is the noun phrase after it, up to the clause's end or the next
-# preposition: "send it to acme for the dev team" sends it to acme.
-_PLACE_ENDS = _CLAUSE_ENDS | {
-    "about", "as", "at", "by", "for", "from", "in", "into", "of", "on", "onto", "over", "to", "via", "with",
+# Every verb that sends the data on, for reading where it goes. Only the first
+# set admits a request (`_leaving`); the rest are read so that a later send
+# outside is seen ("... so they can forward it to acme", "cc the auditor").
+# "give", "hand" and "pass" with no place send nothing ("give me a summary").
+_ONWARD_SENDS = DATA_SHARE_SEND_TOKENS | {
+    "cc", "email", "emailing", "forward", "forwarding", "give", "giving", "hand", "handing", "pass", "passing",
+    "transfer", "transferring",
 }
-# A place followed by one of these names another organization: "the data team
-# at acme", "a team from acme".
-_ORGANIZATION_PREPOSITIONS = frozenset({"at", "from"})
+_SENDS_ONLY_WITH_A_PLACE = frozenset({"give", "giving", "hand", "handing", "pass", "passing"})
+# A send's place follows one of these ("send it to the dev team", "share it
+# with a colleague") and runs to the next send or the sentence's end.
+_DESTINATION_PREPOSITIONS = frozenset({"into", "onto", "to", "with"})
+# English words that may join the words of an inside place: "the data team and
+# the qa team", "the data team as well as the qa team", "a coworker in
+# finance", "the dev team today, please". Each word they join must still be an
+# inside word: "the data team and acme" and "our team in seoul" are outside,
+# and so is any other joiner ("the data team at acme", "the dev team for
+# review").
+_PLACE_JOINERS = frozenset({"and", "as", "in", "or", "please", "plus", "today", "well"})
+# A route or a party named between a send and its place ("upload it via
+# acme's portal to the data team", "send it for acme to the dev team") keeps
+# the data leaving.
+_SEND_ROUTE_WORDS = frozenset({"at", "by", "for", "from", "on", "through", "using", "via"})
+# The multi-word English anchors ("test server"): their words are allowed in a
+# place, but only the whole phrase is an anchor.
+_ENGLISH_PHRASE_ANCHORS = tuple(entry for entry in DATA_SHARE_INTERNAL_DESTINATIONS if " " in entry)
+_ENGLISH_ANCHOR_PARTS = frozenset(word for entry in _ENGLISH_PHRASE_ANCHORS for word in entry.split())
+_QUOTES = re.compile(r"[\"“”‘’`]|(?<!\w)'|'(?!\w)")
 # Words that name another job: a legal question (`legal-compliance-review`),
 # Hermes (a setting of it, or Hermes doing the job), or a scan across storage.
 DATA_SHARE_WITHDRAWAL_TOKENS = frozenset(
@@ -355,48 +419,42 @@ def _gives_it_away(words: list[str]) -> bool:
     return False
 
 
-def _place(words: list[str], index: int) -> tuple[list[str], str]:
-    """Where the send at `index` says the data goes, and the word that ends the place: (["the", "dev", "team"], "before")."""
-    for position in range(index + 1, len(words)):
-        if words[position] in _CLAUSE_ENDS or words[position] in DATA_SHARE_SEND_TOKENS:
-            break
-        if words[position] in _DESTINATION_PREPOSITIONS:
-            place: list[str] = []
-            for word in words[position + 1 :]:
-                if word in _PLACE_ENDS or word in DATA_SHARE_SEND_TOKENS:
-                    return place, word
-                place.append(word)
-            return place, ""
-    return [], ""
+def _inside(place: list[str]) -> bool:
+    """A place proven inside the company: "the dev team", "a coworker in finance", "the test server"; not "the team".
 
-
-def _inside(place: list[str], after: str) -> bool:
-    """A place inside the company that no outside word qualifies: "the dev team", not "the partner team at acme".
-
-    A recipient ("the vendor's team") never reaches here: it makes the file
-    leave first (`_leaving`).
+    Hangul in an English place is no inside word, on either surface's fold.
     """
-    return (
-        contains_boundary_phrase(" ".join(place), DATA_SHARE_INTERNAL_DESTINATIONS)
-        and not set(place) & set(DATA_SHARE_OUTSIDE_QUALIFIERS)
-        and after not in _ORGANIZATION_PREPOSITIONS
-    )
+    if not all(word.isascii() for word in place):
+        return False
+    kinds = [
+        _place_kind(word) or ("modifier" if word in _PLACE_JOINERS or word in _ENGLISH_ANCHOR_PARTS else "")
+        for word in place
+    ]
+    if contains_boundary_phrase(" ".join(place), _ENGLISH_PHRASE_ANCHORS):
+        kinds.append("anchor")
+    return _proven_inside(kinds)
 
 
 def _sends_stay_inside(words: list[str]) -> bool:
-    """Whether every verb that sends the data names a place inside the company as where it goes.
+    """Whether every verb that sends the data on names a place proven inside the company.
 
-    A send that names no place ("before we send it") is leaving. "give" and
-    "hand" without a place send nothing ("give me a summary").
+    The words after the lead verb's object are read; the object itself is the
+    data ("redact the email column"). Each send's place runs from its "to" or
+    "with" to the next send or the sentence's end, so a second place joined to
+    the first is read too ("the data team and acme", "the data team or the
+    auditor").
     """
+    start = next((index for index, word in enumerate(words) if index and word in DATA_SHARE_OBJECT_ENDS), len(words))
+    sends = [index for index in range(start, len(words)) if words[index] in _ONWARD_SENDS]
     inside = False
-    for index, word in enumerate(words):
-        if word not in DATA_SHARE_SEND_TOKENS and word not in {"give", "giving", "hand", "handing"}:
-            continue
-        place, after = _place(words, index)
-        if not place and word not in DATA_SHARE_SEND_TOKENS:
-            continue
-        if not _inside(place, after):
+    for number, index in enumerate(sends):
+        reach = words[index + 1 : sends[number + 1] if number + 1 < len(sends) else len(words)]
+        preposition = next((position for position, word in enumerate(reach) if word in _DESTINATION_PREPOSITIONS), None)
+        if preposition is None:
+            if words[index] in _SENDS_ONLY_WITH_A_PLACE:
+                continue
+            return False
+        if set(reach[:preposition]) & _SEND_ROUTE_WORDS or not _inside(reach[preposition + 1 :]):
             return False
         inside = True
     return inside
@@ -412,7 +470,7 @@ def _leaving(text: str, tokens: set[str], words: list[str]) -> bool:
         or contains_boundary_phrase(text, DATA_SHARE_HAND_PHRASES)
         or _gives_it_away(words)
     )
-    return sends and not _sends_stay_inside(words)
+    return sends and not (_sends_stay_inside(words) and not _QUOTES.search(text))
 
 
 def data_share_request_admitted(text: str) -> bool:
@@ -497,29 +555,102 @@ def _korean_recipient(words: tuple[str, ...]) -> bool:
     return False
 
 
-def _korean_internal_destination(words: tuple[str, ...]) -> bool:
-    """Whether a place inside the company, or a file or folder, is named ("팀에", "스테이징에", "엑셀로", "백업 폴더로").
+# Particles that make a Korean word a place, with 도 ("also") too: "벤더에도
+# 보내줘" is a second destination.
+_KOREAN_PLACE_PARTICLES = ("에게도", "한테도", "께도", "으로도", "로도", "에도", *_DESTINATION_PARTICLES)
+_KOREAN_MEANS_PARTICLES = _MEANS_PARTICLES | {"으로도", "로도"}
+# Not places: a step before 에 ("지운 다음에") and a channel before 로
+# ("이메일로 보내줘").
+_KOREAN_TIMES = frozenset({"다음", "후", "뒤"})
+_KOREAN_CHANNELS = frozenset({"이메일", "메일", "슬랙", "메신저"})
+# Where the words of a place stop, read back from it: a joined verb
+# ("지우고", "마스킹해서"), a step ("지운 다음"), or the data as an object
+# ("파일을"). Any other word before a place is read as part of it.
+_KOREAN_PLACE_EDGES = frozenset({"다음", "다음에", "후", "후에", "뒤", "뒤에"})
+# The parts a unit's compound prefix may be built from: owners and anchors
+# ("데이터사이언스팀", "QA팀"), never the English determiners, which would split
+# a name ("ana" as "an" + "a").
+_KOREAN_COMPOUND_PARTS = tuple(
+    sorted(
+        {*DATA_SHARE_INTERNAL_OWNERS, *DATA_SHARE_INTERNAL_DESTINATIONS} - {"my", "our", "another"},
+        key=len,
+        reverse=True,
+    )
+)
+_KOREAN_ANCHORS = tuple(entry for entry in DATA_SHARE_INTERNAL_DESTINATIONS if not entry.isascii())
+_KOREAN_UNITS = tuple(entry for entry in DATA_SHARE_INTERNAL_UNITS if not entry.isascii())
 
-    Not when an outside word starts the place or one of the two words before
-    it, or a recipient ends one of those words: "외부팀에", "외부 팀에", "벤더
-    테스트 서버에", "협력업체 보안팀에".
+
+def _korean_compound_inside(prefix: str) -> bool:
+    """Whether a unit's compound prefix is all owners and anchors ("데이터사이언스", not "외부", "고객지원", "acme")."""
+    while prefix:
+        part = next((word for word in _KOREAN_COMPOUND_PARTS if prefix.startswith(word)), "")
+        if not part:
+            return False
+        prefix = prefix[len(part) :]
+    return True
+
+
+def _korean_place_word(word: str) -> str:
+    """A Korean place word's kind, as `_place_kind` gives it, reading Korean anchors and units inside compounds."""
+    if word.startswith(_KOREAN_ANCHORS) or word.startswith(_KOREAN_EXPORT_DESTINATIONS):
+        return "anchor"
+    unit = next((unit for unit in _KOREAN_UNITS if word.endswith(unit)), "")
+    if unit and word != unit and _korean_compound_inside(word[: -len(unit)]):
+        return "anchor"
+    if word.startswith(_KOREAN_UNITS) and word not in _KOREAN_UNITS:
+        return "anchor"
+    return _place_kind(word)
+
+
+def _korean_edge(word: str) -> bool:
+    return (
+        word in _KOREAN_PLACE_EDGES
+        or word in DATA_SHARE_KOREAN_REMOVAL_JOINED
+        or word in DATA_SHARE_KOREAN_OUTBOUND_JOINED
+        or word in DATA_SHARE_KOREAN_REMOVAL_BEFORE_AFTER
+        or word.endswith(("을", "를"))
+        or (len(word) > 2 and word.endswith(("서", "고")))
+    )
+
+
+def _korean_place_inside(words: tuple[str, ...], index: int, stem: str) -> bool:
+    """Whether the place ending at `index` is proven inside: its stem and the words before it in its phrase are all inside words, one an anchor."""
+    kinds = [_korean_place_word(stem)]
+    for earlier in reversed(words[max(0, index - 3) : index]):
+        kind = _korean_place_word(earlier)
+        if not kind and _korean_edge(earlier):
+            break
+        kinds.append(kind)
+    return _proven_inside(kinds)
+
+
+def _korean_stays_inside(words: tuple[str, ...], latin_tokens: set[str], text: str) -> bool:
+    """Whether every place the data goes is proven inside the company ("개발팀에", "사내 위키에", "엑셀로").
+
+    Fails safe: any place with another word ("외부 팀에", "은행 담당 부서에",
+    "다른 회사 동료에게", "acme qa에") or a second place outside ("QA팀에
+    보내고 캐글에 올려줘") keeps the data leaving, and so does an English
+    recipient anywhere ("vendor team에") or quoted text.
     """
+    if latin_tokens & DATA_SHARE_RECIPIENT_TOKENS or _QUOTES.search(text):
+        return False
+    inside = False
     for index, word in enumerate(words):
-        particle = next((particle for particle in _DESTINATION_PARTICLES if word.endswith(particle)), "")
-        if not (particle or (index + 1 < len(words) and words[index + 1].endswith(_DESTINATION_PARTICLES))):
+        particle = next((particle for particle in _KOREAN_PLACE_PARTICLES if word.endswith(particle) and word != particle), "")
+        if not particle:
             continue
-        stem = word[: -len(particle)] if particle else word
-        inside = stem.startswith((*DATA_SHARE_INTERNAL_DESTINATIONS, *_KOREAN_EXPORT_DESTINATIONS)) or stem.endswith(
-            ("팀", "부서")
-        )
-        outside = any(
-            qualifier.startswith((*DATA_SHARE_KOREAN_RECIPIENTS, *DATA_SHARE_OUTSIDE_QUALIFIERS))
-            or qualifier.endswith(DATA_SHARE_KOREAN_RECIPIENTS)
-            for qualifier in (*words[max(0, index - 2) : index], stem)
-        )
-        if inside and not outside:
-            return True
-    return False
+        stem = word[: -len(particle)]
+        if stem in _KOREAN_TIMES:
+            continue
+        if particle in _KOREAN_MEANS_PARTICLES:
+            sends_next = index + 1 < len(words) and words[index + 1].startswith(tuple(DATA_SHARE_KOREAN_OUTBOUND_VERBS))
+            if not sends_next or stem in _KOREAN_CHANNELS:
+                continue
+        if not _korean_place_inside(words, index, stem):
+            return False
+        inside = True
+    return inside
 
 
 def _korean_admitted(text: str, latin_tokens: set[str]) -> bool:
@@ -551,7 +682,7 @@ def _korean_admitted(text: str, latin_tokens: set[str]) -> bool:
         or any(verb in DATA_SHARE_KOREAN_OUTBOUND_VERBS for verb in request.before)
         or any(_korean_sends(word) for word in words)
     )
-    outbound = recipient or (sends and not _korean_internal_destination(words))
+    outbound = recipient or (sends and not _korean_stays_inside(words, latin_tokens, text))
     said = recipient or _korean_says(words, DATA_SHARE_KOREAN_PERSONAL_DATA + _KOREAN_PROTECTIVE_PHRASES)
     asks_for_it = final in DATA_SHARE_KOREAN_OUTBOUND_VERBS or _korean_protective(final, request.predicate_index, words)
     return asks_for_it and protective and outbound and said
