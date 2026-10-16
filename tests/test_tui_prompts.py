@@ -764,6 +764,15 @@ class OutcomeTests(unittest.TestCase):
     def test_a_question_the_answers_do_not_name_gets_no_row(self) -> None:
         self.assertEqual(slot("clarify", CLARIFY).outcomes({"result": {"answers": {}}}), [])
 
+    def test_a_multi_select_question_without_a_string_choice_is_answered_and_read_as_text(self) -> None:
+        # The slot asks for text where no choice is a string (`_multi`); its outcome reads the answer the same way,
+        # rather than parse the typed words as a JSON list after the answer went out.
+        question = slot("clarify", {"questions": [{"qid": "q0", "question": "How many?", "choices": [1, 2],
+                                                   "multi_select": True}]})
+        answer = question.submit_text("three, please")
+        self.assertEqual(answer.frame, {"result": {"answers": {"q0": "three, please"}}})  # type: ignore[union-attr]
+        self.assertEqual(question.outcomes(answer.frame), [(True, "three, please · How many?")])  # type: ignore[union-attr]
+
 
 class ValuePromptTests(unittest.TestCase):
     def test_sudo_and_secret_are_masked_and_answer_with_the_submitted_value(self) -> None:

@@ -239,8 +239,7 @@ class PromptSlot:
 
     def _current_choices(self) -> list[str]:
         question = self._current_question()
-        choices = question.get("choices") if question else None
-        return [c for c in choices if isinstance(c, str)] if isinstance(choices, list) else []
+        return _string_choices(question) if question else []
 
     def _multi(self) -> bool:
         """Whether the current question takes several choices (Hermes' `multi_select`, on a question with choices)."""
@@ -431,7 +430,7 @@ class PromptSlot:
             if not isinstance(value, str) or not value:
                 rows.append((False, f"{OUTCOME_SKIPPED} · {asked}"))
                 continue
-            multi = question.get("multi_select") is True and bool(question.get("choices"))
+            multi = question.get("multi_select") is True and bool(_string_choices(question))  # as `_multi` reads it
             rows.append((True, f"{', '.join(json.loads(value)) if multi else _one_line(value)} · {asked}"))
         return rows
 
@@ -612,6 +611,12 @@ class PromptSlot:
             rows.extend(wrap_line((Span("  " + str(prompt), theme.muted),), width))
         rows.append((Span("  type it in the composer and press enter · esc declines", theme.hint),))
         return rows
+
+
+def _string_choices(question: dict[str, Any]) -> list[str]:
+    """A clarify question's choices that are strings: the only ones the slot lists and answers with."""
+    choices = question.get("choices")
+    return [choice for choice in choices if isinstance(choice, str)] if isinstance(choices, list) else []
 
 
 def _one_line(value: object) -> str:
