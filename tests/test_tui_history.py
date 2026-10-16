@@ -291,6 +291,26 @@ class AppHistoryTests(unittest.TestCase):
         self.assertEqual(self.app.composer.history[-1], "a draft never sent")  # Up still has it
         self.assertEqual(file_text(self.path), INK_FILE)
 
+    def test_what_the_tell_row_field_held_reaches_the_file_only_when_sent(self) -> None:
+        from test_tui_choice_ui import armed, press
+        from test_tui_modes import type_text
+        from test_tui_questions import TELL_APPROVAL
+        from omh.tui.keys import DOWN
+
+        def tell(text: str, key: Key) -> None:
+            self.app._on_server_request(TELL_APPROVAL)
+            armed(self.app)
+            press(self.app, *[Key(DOWN)] * 3, Key(ENTER))
+            type_text(self.app, text)
+            self.app._on_input(key)
+
+        tell("half a thought", Key(ESCAPE))  # left unsent: this session's history only
+        self.assertEqual(self.app.composer.history[-1], "half a thought")
+        self.assertEqual(file_text(self.path), INK_FILE)
+        tell("use ./tmp instead", Key(ENTER))  # sent from the composer, like any line
+        self.assertEqual(load_history(self.path)[-1], "use ./tmp instead")
+        self.assertNotIn("half a thought", file_text(self.path))
+
     def test_ctrl_r_searches_and_enter_takes_the_match_into_the_composer(self) -> None:
         from test_tui_modes import type_text
 

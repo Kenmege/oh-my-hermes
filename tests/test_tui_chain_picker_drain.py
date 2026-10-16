@@ -23,7 +23,13 @@ from omh.tui.transcript import AssistantBlock
 READS_BEFORE_A_KEY = 50  # a picker key never takes this many empty reads here: past it the reader is stuck
 
 
-def scripted(app, reads: list[bytes]) -> None:
+def scripted(app, reads: list[bytes]) -> list[int]:
+    """Script the terminal's reads; the returned list holds how many reads were made so far.
+
+    Past `READS_BEFORE_A_KEY` a read fails the test. It never raises
+    EOFError there: the picker's reader turns that into the cancel key, and a
+    reader that missed its cue would pass as one that cancelled.
+    """
     now = [100.0]
     app.clock = lambda: now[0]
     count = [0]
@@ -32,10 +38,11 @@ def scripted(app, reads: list[bytes]) -> None:
         now[0] += READ_TIMEOUT_SECONDS
         count[0] += 1
         if count[0] > READS_BEFORE_A_KEY:
-            raise EOFError("the reader kept reading")  # the picker's reader turns this into its cancel key
+            raise AssertionError("the picker's reader kept reading")
         return reads.pop(0) if reads else b""
 
     app.terminal.read = read  # type: ignore[method-assign]
+    return count
 
 
 class DrainWhileOpenTests(unittest.TestCase):
@@ -62,16 +69,17 @@ class DrainWhileOpenTests(unittest.TestCase):
 
         def pick(environ: object, theme: object, *, read_key, write, width: int) -> str:
             client.inbox.append(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
-            for _ in range(5):  # bounded: a reader that never cancels fails here instead of hanging the run
+            for _ in range(5):  # bounded: a reader that hands back other keys stops here instead of looping
                 keys.append(read_key())
                 if keys[-1] == KEY_QUIT:
                     break
             return "Cancelled; model-chains.json was not changed."
 
         app.pick_model_chains = pick
-        scripted(app, [])
+        reads = scripted(app, [])
         app._omh_model("")
         self.assertEqual(keys, [KEY_QUIT])
+        self.assertEqual(reads, [1])  # the read that took the request in; the cancel came next, not a read later
         self.assertIsNotNone(app.slot)
         self.assertEqual(client.answers, [])  # closing the picker answers nothing
         self.assertEqual(notices(app)[-1], f"{CHAINS_CLOSED_NOTICE} Cancelled; model-chains.json was not changed.")

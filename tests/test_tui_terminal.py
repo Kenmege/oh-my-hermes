@@ -253,6 +253,15 @@ class CursorReplyTests(unittest.TestCase):
         row, rest = split_cursor_reply(b"\x1b[1;2R\x1b[20;1R" + self.DA1)
         self.assertEqual((row, rest), (20, b"\x1b[1;2R" + self.DA1))
 
+    def test_a_key_of_the_same_shape_typed_after_the_attributes_answer_stays_a_key(self) -> None:
+        # The terminal answered in order, so nothing after DA1 is its report: Shift+F3 typed then is a key.
+        for data, expected in (
+            (self.DA1 + b"\x1b[5;1R", (None, self.DA1 + b"\x1b[5;1R")),
+            (b"\x1b[20;1R" + self.DA1 + b"\x1b[5;1R", (20, self.DA1 + b"\x1b[5;1R")),
+        ):
+            with self.subTest(data=data):
+                self.assertEqual(split_cursor_reply(data), expected)
+
     def test_the_query_asks_for_the_position_between_the_background_and_the_attributes(self) -> None:
         self.assertEqual(CURSOR_POSITION_QUERY, "\x1b[6n")
 
