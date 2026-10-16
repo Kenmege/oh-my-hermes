@@ -470,7 +470,13 @@ run and approval decision stays Hermes'; the screen is OMH's.
   what you typed stays in this session's history. The
   highlight stops at either end, so Up then Enter still denies, no number
   picks a choice, `d` or `n` denies, and Enter on an untouched approval
-  denies. A clarify question numbers its choices: a digit, or Up and Down then
+  denies. Every deny (Esc, Ctrl+C, `d`, `n`, Enter on deny) also stops the
+  running turn, as Esc does in Claude Code, which is what the mode row's
+  `esc denies and stops` says: the deny goes first, so the waiting tool ends
+  denied, then the interrupt, and with no turn running only the deny goes.
+  When the approval came from a subagent, that stops the session's whole
+  running turn, not only the subagent. The tell row is the one deny that
+  does not stop the turn; it redirects it. A clarify question numbers its choices: a digit, or Up and Down then
   Enter, picks one. One that takes several says `(choose one or more)` and
   puts a box before each choice: Space or its digit ticks the choice (`[x]`)
   or unticks it, Enter sends the ticked ones (the highlighted one alone when
@@ -653,11 +659,11 @@ Esc closes it):
 | Ctrl+L | Redraws the screen |
 | Ctrl+C | Clears the composer, interrupts a running turn, or (twice when idle) exits |
 | Ctrl+D | On an empty composer, exits; with text, deletes the character ahead |
-| ↑ / ↓ or ← / → then Enter | On an approval, highlight allow once, allow this session or (when Hermes offers it) always allow, and allow it, or the last row to deny and tell Hermes what to do instead; Enter alone denies |
-| `d`, `n` | On an approval, deny |
+| ↑ / ↓ or ← / → then Enter | On an approval, highlight allow once, allow this session or (when Hermes offers it) always allow, and allow it, or the last row to deny and tell Hermes what to do instead; Enter alone denies and stops the running turn |
+| `d`, `n` | On an approval, deny and stop the running turn |
 | 1 to 9 | On a clarify question's list, pick that choice, or the last number opens the field for your own answer; ↑ / ↓ then Enter picks too, and any other character starts your own answer |
 | Space | On a clarify question that takes several choices, ticks or unticks the highlighted one; Enter sends the ticked ones, or the highlighted one when none is ticked, and a digit ticks its choice |
-| Esc, Ctrl+C | On a question Hermes asked, decline it (an approval is denied); Ctrl+C first clears an answer being typed |
+| Esc, Ctrl+C | On a question Hermes asked, decline it (an approval is denied and the running turn stops); Ctrl+C first clears an answer being typed |
 | ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions` or `/rewind` list, move, take the highlighted row (switch to that session, or put that prompt in the composer to send again), or close it; typing filters the list |
 | ↑ / ↓, Enter, Esc | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; other typing leaves it too |
 | x, s | In the agent list, on an agent: x twice interrupts it; s steers it with the next line you send (Esc cancels) |

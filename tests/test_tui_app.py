@@ -86,6 +86,10 @@ LOGO_ROWS = len(LOGO)
 TURN_CANCELLED = "Turn cancelled before the agent was ready"
 
 
+# Hermes 6c61c3e27d's answer to `session.interrupt` (`methods_session_interrupt.py`), which every approval deny now sends.
+INTERRUPTED = ("session.interrupt", {"result": {"status": "interrupted"}})
+
+
 def startup_answers() -> tuple[tuple[str, dict], ...]:
     return (
         ("config.get", {"result": {"config": {}}}),
@@ -829,13 +833,18 @@ class SessionTests(AppTestCase):
 class PromptSlotTests(AppTestCase):
     def approval_run(self) -> Run:
         return self.prepare(
-            Scenario("approval", spans("approval", "startup", "create", "approval_turn"), answers=startup_answers())
+            Scenario("approval", spans("approval", "startup", "create", "approval_turn"),
+                     answers=(*startup_answers(), INTERRUPTED))
         )
 
     def assert_denied(self, run: Run) -> None:
+        """The recorded deny went, then the interrupt that stops the turn (the replay plays the recorded rest anyway)."""
         self.assert_clean_run(run)
-        answers = [frame for frame in run.frames if frame.get("id") == "srq-52e9720342b6"]
+        frames = run.frames
+        answers = [frame for frame in frames if frame.get("id") == "srq-52e9720342b6"]
         self.assertEqual(answers, [{"jsonrpc": "2.0", "id": "srq-52e9720342b6", "result": {"choice": "deny"}}])
+        (interrupt,) = run.calls("session.interrupt")
+        self.assertLess(frames.index(answers[0]), frames.index(interrupt))
         self.assertIn("It was blocked", run.terminal.history())
 
     def armed(self, run: Run, label: str) -> Callable[[], bool]:
@@ -921,7 +930,7 @@ class PromptSlotTests(AppTestCase):
         }
         startup = spans("approval", "startup")
         run = self.prepare(
-            Scenario("approval", (*startup, (21, 47)), answers=(*startup_answers(), ("session.resume", resumed))),
+            Scenario("approval", (*startup, (21, 47)), answers=(*startup_answers(), ("session.resume", resumed), INTERRUPTED)),
             env={"HERMES_TUI_RESUME": APPROVAL_STORED_ID},
         )
         run.terminal.script(

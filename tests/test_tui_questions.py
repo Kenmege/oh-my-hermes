@@ -10,18 +10,20 @@ only records, and read the VT screen it painted.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import unittest
 
 from _tui_lines import line_text
 from test_tui_choice_ui import armed, drawn, press
-from test_tui_modes import make_app, type_text
+from test_tui_app import FakePoller, ScriptedTerminal
+from test_tui_modes import RecordingClient, make_app, type_text
 from omh.tui import app as app_module
 from omh.tui import prompts
 from omh.tui.gateway import Event, Response, ServerRequest
-from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, Key
+from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, UP, Key
 from omh.tui.layout import MIN_COLS, allocate
-from omh.tui.app import BELL
+from omh.tui.app import BELL, App
 from omh.tui.pager import ALT_SCREEN_OFF, HistoryPager
 from omh.tui.transcript import NOTICE_ERROR, NOTICE_OK, TURN_WAITED, NoticeBlock, ToolGroup, TurnSummaryBlock
 
@@ -539,6 +541,82 @@ class TellRowTests(unittest.TestCase):
         self.assertEqual(client.named("session.steer"), [])
 
 
+class WireClient(RecordingClient):
+    """A recording client that also keeps answers and calls in the order they would reach the gateway."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.wire: list[tuple[str, ...]] = []
+
+    def request(self, method: str, params: dict) -> int:
+        number = super().request(method, params)
+        self.wire.append(("call", method))
+        return number
+
+    def respond(self, request_id: str, frame: dict) -> None:
+        super().respond(request_id, frame)
+        self.wire.append(("answer", request_id, json.dumps(frame, sort_keys=True)))
+
+
+DENY = ("answer", "srq-1", json.dumps({"result": {"choice": "deny"}}))
+STOP = ("call", "session.interrupt")
+
+
+class DenyStopsTests(unittest.TestCase):
+    """Owner decision 11: every deny the person gives an approval sends the deny, then stops the running turn."""
+
+    def wired(self, request: ServerRequest = TELL_APPROVAL, busy: bool = True) -> tuple[App, WireClient]:
+        client = WireClient()
+        app = App(ScriptedTerminal(24, 80), client, {}, poller=FakePoller())  # type: ignore[arg-type]
+        app.sid = SID
+        app.turn_pending = busy
+        app._on_server_request(request)
+        armed(app)
+        return app, client
+
+    def test_every_deny_key_sends_the_deny_then_the_interrupt(self) -> None:
+        keys = {
+            "esc": [Key(ESCAPE)], "ctrl+c": [Key(CHAR, "c", ctrl=True)], "d": [Key(CHAR, "d")], "n": [Key(CHAR, "n")],
+            "D": [Key(CHAR, "D")], "enter on deny": [Key(ENTER)], "up then enter typed ahead": [Key(UP), Key(ENTER)],
+            "down, up, enter": [Key(DOWN), Key(UP), Key(ENTER)],
+        }
+        for name, presses in keys.items():
+            with self.subTest(keys=name):
+                app, client = self.wired()
+                press(app, *presses)
+                self.assertEqual(client.wire, [DENY, STOP])
+                self.assertEqual(client.named("session.interrupt"), [{"session_id": SID}])
+                self.assertIsNone(app.slot)
+
+    def test_with_no_turn_running_the_deny_goes_alone(self) -> None:
+        for presses in ([Key(ESCAPE)], [Key(CHAR, "d")], [Key(ENTER)]):
+            with self.subTest(presses=presses):
+                app, client = self.wired(busy=False)
+                press(app, *presses)
+                self.assertEqual(client.wire, [DENY])
+
+    def test_the_tell_row_denies_and_steers_but_never_stops_the_turn(self) -> None:
+        app, client = self.wired()
+        press(app, *[Key(DOWN)] * 3, Key(ENTER))
+        self.assertEqual(client.wire, [DENY])
+        type_text(app, "use ./tmp")
+        press(app, Key(ENTER))
+        self.assertEqual(client.wire, [DENY, ("call", "session.steer")])
+
+    def test_allowing_stops_nothing(self) -> None:
+        app, client = self.wired()
+        press(app, Key(DOWN), Key(ENTER))
+        self.assertEqual(client.wire, [("answer", "srq-1", json.dumps({"result": {"choice": "once"}}))])
+
+    def test_the_tuis_own_declines_stop_nothing(self) -> None:
+        app, client = self.wired()
+        app._decline_all_requests()  # a session being left: the TUI's decline, not the person's deny
+        self.assertEqual(client.wire, [DENY])
+        app, client = self.wired(request=COLOUR)
+        press(app, Key(ESCAPE))  # a clarify cancel is no approval deny
+        self.assertEqual(client.wire, [("answer", "srq-7", json.dumps({"result": {}}))])
+
+
 class DocumentedQuestionViewTests(unittest.TestCase):
     def test_installation_shows_the_markers_the_slot_draws(self) -> None:
         installation = " ".join((Path(__file__).resolve().parents[1] / "docs" / "INSTALLATION.md").read_text(
@@ -554,6 +632,8 @@ class DocumentedQuestionViewTests(unittest.TestCase):
         self.assertIn(f"(`{always.approval_label('always')}`)", installation)  # type: ignore[union-attr]
         self.assertNotIn("Approving a command permanently stays a choice for `hermes --tui`", installation)
         self.assertIn(f"labelled `{app_module.TELL_SAY[0]}` on the mode row", installation)
+        self.assertIn(f"which is what the mode row's `{prompts.APPROVAL_KEYS[-1]}` says", installation)
+        self.assertIn("When the approval came from a subagent, that stops the session's whole running turn", installation)
         tell = prompts.open_request("srq-1", "approval", {})
         self.assertIn(f"last {tell.approval_label(prompts.APPROVAL_TELL)}, one per row", installation)  # type: ignore[union-attr]
         self.assertIn(f"`{app_module.WAITING_GLYPH}{app_module.STATE_WAITING} (11s)`", installation)

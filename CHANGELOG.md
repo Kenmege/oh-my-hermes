@@ -4,6 +4,17 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Denying an OMH TUI approval also stops the turn, as Esc does in Claude
+  Code.** A deny went to Hermes and the turn went on, so the model often
+  tried the next thing straight away. Every deny the person gives (Esc,
+  Ctrl+C, `d`, `n`, Enter on deny, and Up then Enter typed ahead) now sends
+  the explicit deny first, so the waiting tool ends denied, and then
+  interrupts the running turn (`session.interrupt`, the call Esc makes on an
+  empty composer); with no turn running only the deny goes. An approval a
+  subagent asked for stops the session's whole turn. The tell row is the one
+  deny that does not stop: it redirects the running turn instead. The mode
+  row says so in plain words, `↑↓ pick · enter confirms · d or esc denies and
+  stops`, down to `esc denies and stops` on a narrow row.
 - **An OMH TUI approval can be denied with what to do instead.** Telling
   Hermes what to do after a deny took a deny, then a separate Ctrl+Enter
   steer. The approval's last row, `no, and tell Hermes what to do instead`

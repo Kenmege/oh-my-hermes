@@ -55,13 +55,13 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+D", "On an empty composer, exits; with text, deletes the character ahead"),
     ("↑ / ↓ or ← / → then Enter", "On an approval, highlight allow once, allow this session or (when Hermes "
                                   "offers it) always allow, and allow it, or the last row to deny and tell Hermes "
-                                  "what to do instead; Enter alone denies"),
-    ("d, n", "On an approval, deny"),
+                                  "what to do instead; Enter alone denies and stops the running turn"),
+    ("d, n", "On an approval, deny and stop the running turn"),
     ("1 to 9", "On a clarify question's list, pick that choice, or the last number opens the field for your own "
                "answer; ↑ / ↓ then Enter picks too, and any other character starts your own answer"),
     ("Space", "On a clarify question that takes several choices, ticks or unticks the highlighted one; Enter sends "
               "the ticked ones, or the highlighted one when none is ticked, and a digit ticks its choice"),
-    ("Esc, Ctrl+C", "On a question Hermes asked, decline it (an approval is denied); "
+    ("Esc, Ctrl+C", "On a question Hermes asked, decline it (an approval is denied and the running turn stops); "
                     "Ctrl+C first clears an answer being typed"),
     ("↑ / ↓, PageUp / PageDown, Enter, Esc", "In the /sessions or /rewind list, move, take the highlighted row "
                                              "(switch to that session, or put that prompt in the composer to send "

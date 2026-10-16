@@ -188,16 +188,17 @@ class ApprovalTests(unittest.TestCase):
 
     def test_the_keys_say_the_arrows_enter_and_deny(self) -> None:
         keys = slot("approval", APPROVAL).keys
-        self.assertEqual(keys[0], "↑↓ pick · enter confirms · d or esc denies")
-        self.assertTrue(all("esc denies" in form for form in keys), keys)
+        self.assertEqual(keys[0], "↑↓ pick · enter confirms · d or esc denies and stops")
+        self.assertTrue(all("esc denies and stops" in form for form in keys), keys)
         self.assertEqual(keys, tuple(sorted(keys, key=len, reverse=True)))
 
     def test_a_keys_row_is_added_only_when_asked_and_only_beside_the_command(self) -> None:
         approval = slot("approval", {**APPROVAL, "command": "one\ntwo", "choices": ["once", "deny"]})
         self.assertFalse([row for row in lines_text(approval.lines(60, DEFAULT_THEME, 8)) if "esc denies" in row])
         text = lines_text(approval.lines(60, DEFAULT_THEME, 8, keys_row=True))
-        self.assertEqual(unbarred(text[-1]), "  ↑↓ pick · enter confirms · d or esc denies")
-        self.assertEqual(unbarred(lines_text(approval.lines(24, DEFAULT_THEME, 12, keys_row=True))[-1]), "  esc denies")
+        self.assertEqual(unbarred(text[-1]), "  ↑↓ pick · enter confirms · d or esc denies and stops")
+        self.assertEqual(unbarred(lines_text(approval.lines(24, DEFAULT_THEME, 12, keys_row=True))[-1]),
+                         "  esc denies and stops")
         tight = lines_text(approval.lines(60, DEFAULT_THEME, 5, keys_row=True))
         self.assertEqual(
             [unbarred(row) for row in tight[1:]],
@@ -408,14 +409,30 @@ class ApprovalLayoutTests(unittest.TestCase):
                     self.assertIsNone(approval.handle_key(Key(CHAR, char)))
                     self.assertEqual(approval.selected, start)
 
-    def test_esc_d_and_ctrl_c_deny_from_any_row_and_never_open_the_tell_composer(self) -> None:
+    def test_esc_d_and_ctrl_c_deny_and_stop_from_any_row_and_never_open_the_tell_composer(self) -> None:
         for start in range(5):
             for key in (Key(ESCAPE), Key(CHAR, "d"), Key(CHAR, "n"), CTRL_C):
                 with self.subTest(start=start, key=key):
                     approval = slot("approval", APPROVAL)
                     approval.selected = start
                     answer = approval.handle_key(key)
-                    self.assertEqual((answer.frame, answer.tell), ({"result": {"choice": "deny"}}, False))
+                    self.assertEqual((answer.frame, answer.tell, answer.stops), ({"result": {"choice": "deny"}}, False, True))
+
+    def test_enter_on_deny_stops_too_and_only_a_deny_the_person_gave_does(self) -> None:
+        approval = slot("approval", APPROVAL)
+        self.assertTrue(approval.handle_key(Key(ENTER)).stops)
+        approval = slot("approval", APPROVAL)
+        approval.handle_key(Key(UP))
+        self.assertTrue(approval.handle_key(Key(ENTER)).stops)  # Up then Enter typed ahead: denies, and stops
+        for downs in (1, 2, 3, 4):  # allow once, this session, always, and the tell row: none stops
+            with self.subTest(downs=downs):
+                approval = slot("approval", APPROVAL)
+                for _ in range(downs):
+                    approval.handle_key(Key(DOWN))
+                self.assertFalse(approval.handle_key(Key(ENTER)).stops)
+        self.assertFalse(slot("approval", APPROVAL).decline().stops)  # the TUI's own decline (a session left)
+        self.assertFalse(slot("clarify", CLARIFY).handle_key(Key(ESCAPE)).stops)
+        self.assertFalse(slot("sudo", {}).handle_key(Key(ESCAPE)).stops)
 
     def test_the_tell_row_denies_and_asks_for_the_composer(self) -> None:
         approval = slot("approval", APPROVAL)

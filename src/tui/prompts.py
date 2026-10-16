@@ -6,12 +6,14 @@ or withdrawn by the gateway. Three rules shape this module:
 
 - Nothing is answered on the person's behalf. Every answer comes from a key
   they pressed or text they submitted; Esc or Ctrl+C sends the contract's
-  decline frame (an explicit deny for approvals). Allowing a command takes
+  decline frame (an explicit deny for approvals). Every deny the person gives
+  an approval (Esc, Ctrl+C, `d`, `n`, Enter on deny) also asks the app to stop
+  the running turn (`Answer.stops`). Allowing a command takes
   the arrows and then Enter: deny is the first row and selected, the
   narrowest allow sits under it, the selection does not wrap, no digit picks
   a choice, and a letter can only deny. An approval's last row denies too,
-  and asks the app to give the composer to what the person tells Hermes
-  instead (`Answer.tell`). The app ignores every key for a
+  but stops nothing: it asks the app to give the composer to what the person
+  tells Hermes instead (`Answer.tell`). The app ignores every key for a
   moment after any slot opens, or its next question appears. A request the gateway
   withdraws itself (its own timeout, an interrupt) arrives as
   `request.cancel`, and the app closes the slot without answering.
@@ -82,7 +84,12 @@ MULTI_NOTE = " (choose one or more)"
 SLOT_BAR = "▌ "
 CHOICE_MARK = "❯ "
 # Each question's keys, longest first, for the mode row while it is open: Esc then has one meaning on the screen.
-APPROVAL_KEYS = ("↑↓ pick · enter confirms · d or esc denies", "↑↓ enter · d or esc denies", "esc denies")
+APPROVAL_KEYS = (
+    "↑↓ pick · enter confirms · d or esc denies and stops",
+    "↑↓ pick · enter confirms · esc denies and stops",
+    "↑↓ · esc denies and stops",  # short enough that the agent strip beside it stays whole at 80 columns
+    "esc denies and stops",
+)
 CLARIFY_CHOICE_KEYS = (
     "↑↓ or 1-9 · enter picks · type to answer · esc cancels", "↑↓ enter picks · esc cancels", "esc cancels"
 )
@@ -123,11 +130,17 @@ _DECLINE_NOTICES = {
 
 @dataclass(frozen=True)
 class Answer:
-    """The frame to send back for one request; `tell` when it is an approval's deny from its tell row."""
+    """The frame to send back for one request.
+
+    `stops`: an approval's deny the person gave, after which the app stops the
+    running turn. `tell`: an approval's deny from its tell row, after which the
+    app gives the composer to what the person tells Hermes instead.
+    """
 
     request_id: str
     frame: dict[str, Any]
     tell: bool = False
+    stops: bool = False
 
 
 @dataclass(frozen=True)
@@ -278,7 +291,7 @@ class PromptSlot:
         for the app to type into it.
         """
         if isinstance(key, Key) and (key.name == ESCAPE or (key.name == CHAR and key.ctrl and key.char == "c")):
-            return self.decline()
+            return self._denied() if self.method == "approval" else self.decline()
         if self.method == "approval":
             return self._approval_key(key) if isinstance(key, Key) else None
         if self.method == "clarify":
@@ -291,7 +304,8 @@ class PromptSlot:
         Deny is the first row and selected as the slot opens, so Up then Enter,
         the composer's recall-and-resend typed as the slot opened, still
         denies: Up moves nothing off the first row. No digit picks a choice,
-        and the only letters that answer deny.
+        and the only letters that answer deny. Every deny stops the turn
+        (`_denied`) but the tell row's.
         """
         choices = self.approval_choices()
         if key.name in (UP, LEFT):
@@ -300,11 +314,17 @@ class PromptSlot:
             self.selected = min(self.selected + 1, len(choices) - 1)
         elif key.name == ENTER and choices[self.selected] == APPROVAL_TELL:
             return replace(self.decline(), tell=True)
+        elif key.name == ENTER and choices[self.selected] == "deny":
+            return self._denied()
         elif key.name == ENTER:
             return Answer(self.request_id, {"result": {"choice": choices[self.selected]}})
         elif key.name == CHAR and not key.ctrl and not key.alt and key.char.lower() in _DENY_KEYS:
-            return self.decline()
+            return self._denied()
         return None
+
+    def _denied(self) -> Answer:
+        """The explicit deny the person gave an approval, which also stops the running turn."""
+        return replace(self.decline(), stops=True)
 
     def _clarify_key(self, key: Key | Paste) -> Answer | TypeIt | None:
         """The choices' keys, and the keys that open the text field.

@@ -353,7 +353,7 @@ class ListLeaveTests(unittest.TestCase):
         app._on_input(Key(ENTER))  # a deliberate Enter on deny: the explicit deny
         self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "deny"}})])
         self.assertIsNone(app.list_selected)  # and answering it does not bring the list back
-        self.assertEqual(client.calls, [])
+        self.assertEqual(client.calls, [("session.interrupt", {"session_id": SID})])  # the deny stops the turn; no log
 
     def test_a_question_answered_with_text_closes_the_list_too(self) -> None:
         now = [100.0]

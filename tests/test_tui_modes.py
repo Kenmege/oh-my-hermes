@@ -22,6 +22,7 @@ from unittest.mock import patch
 from _tui_gateway_replay import Scenario, spans
 from _tui_lines import line_text, lines_text
 from test_tui_app import (
+    INTERRUPTED,
     LIVE_ID,
     NO_TERMIOS,
     AppTestCase,
@@ -2012,7 +2013,8 @@ class BellReplayTests(AppTestCase):
         for env, expected in (({}, 1), ({"OMH_TUI_BELL": "0"}, 0)):
             with self.subTest(env=env):
                 run = self.prepare(
-                    Scenario("approval", spans("approval", "startup", "create", "approval_turn"), answers=startup_answers()),
+                    Scenario("approval", spans("approval", "startup", "create", "approval_turn"),
+                             answers=(*startup_answers(), INTERRUPTED)),
                     env=env,
                 )
                 terminal = run.terminal

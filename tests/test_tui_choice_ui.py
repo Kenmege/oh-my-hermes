@@ -96,7 +96,7 @@ class HiddenComposerTests(unittest.TestCase):
         mode_row = status_row(during) - 1
         self.assertEqual(during[mode_row - 4 : mode_row],
                          ["▌ ❯ deny", "▌   allow once", "▌   allow this session", "▌   no, and tell Hermes what to do instead"])
-        self.assertIn("↑↓ pick · enter confirms · d or esc denies", during[mode_row])
+        self.assertIn("↑↓ pick · enter confirms · d or esc denies and stops", during[mode_row])
         armed(app)
         press(app, Key(DOWN), Key(ENTER))
         self.assertEqual(answered(client, "srq-1"), [{"result": {"choice": "once"}}])
@@ -682,7 +682,7 @@ class ResizeAndShortTerminalTests(unittest.TestCase):
         app._on_server_request(ServerRequest("srq-1", "approval", {**APPROVAL.params, "choices": ["once", "deny"]}))
         screen = drawn(app)
         status = status_row(screen)
-        self.assertEqual(screen[status - 1], "▌   ↑↓ pick · enter confirms · d or esc denies")
+        self.assertEqual(screen[status - 1], "▌   ↑↓ pick · enter confirms · d or esc denies and stops")
         self.assertEqual(screen[status - 4 : status - 1],
                          ["▌ ❯ deny", "▌   allow once", "▌   no, and tell Hermes what to do instead"])
 

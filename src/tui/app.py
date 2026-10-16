@@ -1743,6 +1743,8 @@ class App(ModesMixin, AgentViewMixin):
 
     def _answer(self, answer: Answer) -> None:
         self._respond(answer)
+        if answer.stops and self._busy():
+            self._interrupt()  # after the deny, so the tool Hermes holds wakes up denied before the turn stops
         self._note_approval(answer)
         self._note_question(answer)
         if answer.tell:
