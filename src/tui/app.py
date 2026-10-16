@@ -341,6 +341,8 @@ QUEUE_HINT_GAP = 2
 # composer, and what it would not (a queued `!` line and what follows it) stays queued, held, until the next prompt
 # the person sends starts a turn, or Up takes it back.
 QUEUE_BACK_NOTICE = "{why}: what you queued is back in the composer, not sent."
+# The same while the draft is set aside behind a field (the tell row's, a question's answer): that is where it went.
+QUEUE_BACK_HIDDEN_NOTICE = "{why}: what you queued is in your draft, which comes back when this field closes; not sent."
 QUEUE_HELD_NOTICE = "{why}: what you queued waits, not sent, until your next prompt; ↑ takes it back."
 INTERRUPTED_WHY = "Interrupted"
 RESPAWNED_WHY = "The Hermes gateway was restarted"
@@ -2751,8 +2753,9 @@ class App(ModesMixin, AgentViewMixin):
         """A turn ended that the person stopped (or that a gateway restart lost): the queue does not go on by itself,
         as Claude Code's does not after an interrupt. `why` opens the notice.
 
-        With an empty draft, what Up would take back goes back into it, in
-        order (`_take_back_queue`); what is left, a queued `!` line and what
+        With an empty draft (`_draft`, which may be set aside behind a field),
+        what Up would take back goes back into it, in order
+        (`_take_back_queue`); what is left, a queued `!` line and what
         follows it, or the whole queue when the person typed a draft
         meanwhile, stays queued and held until the next prompt they send
         starts a turn (`_submit_prompt`) or Up takes it back. A notice says
@@ -2763,7 +2766,8 @@ class App(ModesMixin, AgentViewMixin):
         draft = self._draft()
         if not draft.text:
             self._take_back_queue(draft)
-            self.transcript.add_notice(QUEUE_BACK_NOTICE.format(why=why))
+            notice = QUEUE_BACK_NOTICE if draft is self.composer else QUEUE_BACK_HIDDEN_NOTICE
+            self.transcript.add_notice(notice.format(why=why))
         if self.queued:
             self.queue_held = True
             self.transcript.add_notice(QUEUE_HELD_NOTICE.format(why=why))

@@ -481,6 +481,25 @@ class TellRowTests(unittest.TestCase):
                 self.assertEqual(client.named("prompt.submit")[-1],
                                  {"session_id": SID, "text": "use ./tmp instead", "queued": True})
 
+    def test_a_queue_taken_back_after_a_stopping_deny_goes_into_the_draft_behind_the_field(self) -> None:
+        app, client = make_app(busy=True)
+        app.queued.append(app_module.QueuedLine("queued P"))
+        app._on_server_request(TELL_APPROVAL)
+        armed(app)
+        press(app, *[Key(DOWN)] * 3, Key(ENTER))  # the field opens over an empty draft
+        type_text(app, "use ./tmp")
+        app._on_server_request(ServerRequest("srq-2", "approval", dict(TELL_APPROVAL.params)))
+        armed(app)
+        press(app, Key(ESCAPE))  # this deny stops the turn
+        self.assertEqual(client.named("session.interrupt"), [{"session_id": SID}])
+        app._on_event(Event("message.complete", SID, {"text": ""}))
+        self.assertEqual(app.composer.text, "use ./tmp")  # the field is left as it was
+        self.assertEqual(app.tell_draft.text, "queued P")  # type: ignore[union-attr]
+        self.assertEqual(client.named("prompt.submit"), [])
+        said = [block.text for block in app.transcript.blocks if isinstance(block, NoticeBlock)]
+        self.assertIn(app_module.QUEUE_BACK_HIDDEN_NOTICE.format(why=app_module.INTERRUPTED_WHY), said)
+        self.assertNotIn(app_module.QUEUE_BACK_NOTICE.format(why=app_module.INTERRUPTED_WHY), said)
+
     def test_esc_sends_nothing_more_and_keeps_what_was_typed_in_this_sessions_history(self) -> None:
         app, client = self.told()
         type_text(app, "half a thought")
