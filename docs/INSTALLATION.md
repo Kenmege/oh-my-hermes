@@ -443,8 +443,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   password), the question takes the slot until you answer. Nothing is answered
   for you: Esc or Ctrl+C declines. A question you answer by picking (an
   approval, a clarify question with choices) hides the composer while it is
-  open, as Claude Code does: its choices stand one per row where the composer
-  was, the highlighted one marked `❯`. Nothing you type while it is open goes
+  open, as Claude Code does: its choices stand where the composer was, each
+  from a row of its own and wrapped under its number when long (so Hermes'
+  `(Recommended)` at the end of the first one shows), the highlighted one
+  marked `❯`. Nothing you type while it is open goes
   into your draft, and the draft comes back as you left it (its text, caret
   and paste chips) when the question closes, or when the last of several
   questions Hermes asked one after another does. An approval offers deny,

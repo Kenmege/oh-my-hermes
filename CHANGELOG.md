@@ -4,6 +4,13 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **OMH TUI clarify choices wrap instead of being cut to one row.** At 80
+  columns `❯ 1. Blue/green with a full traffic switch after smoke tests pass
+  on the gree…` lost the `(Recommended)` tag Hermes puts at the end of the
+  first choice, and the rest of a choice up to Hermes' 8000 characters. Each
+  choice (an approval's too) now wraps under its number, the slot counts
+  rows rather than choices, and a terminal too short for every choice keeps
+  the highlighted one whole, or its first rows, with `… ctrl+o shows all`.
 - **An OMH TUI question you cannot see whole says so, and Ctrl+O shows it.**
   A long approval command showed its first 6 of 20 lines at 24 rows, and
   Ctrl+O did nothing while the approval was open; below 10 rows a cut had no

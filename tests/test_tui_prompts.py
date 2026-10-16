@@ -475,6 +475,58 @@ class ClarifyTests(unittest.TestCase):
         self.assertEqual([unbarred(row) for row in text], ["? Why?", "  type an answer and press enter · esc cancels"])
 
 
+LONG_CHOICES = {
+    "questions": [{
+        "qid": "q0",
+        "question": "Which rollout?",
+        "choices": [
+            "Blue/green with a full traffic switch after smoke tests pass on the green fleet (Recommended)",
+            "Canary at 5% then 25% then 100% with automatic rollback on error budget burn",
+            "Rolling update, one node at a time",
+        ],
+    }],
+}
+
+
+class WrappedChoiceTests(unittest.TestCase):
+    def test_a_long_choice_wraps_under_its_number_and_keeps_its_recommended_tag(self) -> None:
+        text = [unbarred(row) for row in lines_text(slot("clarify", LONG_CHOICES).lines(80, DEFAULT_THEME, 12))]
+        self.assertEqual(text, [
+            "? Which rollout?",
+            "❯ 1. Blue/green with a full traffic switch after smoke tests pass on the green",
+            "     fleet (Recommended)",
+            "  2. Canary at 5% then 25% then 100% with automatic rollback on error budget",
+            "     burn",
+            "  3. Rolling update, one node at a time",
+            "  4. Other (type your answer)",
+        ])
+
+    def test_rows_are_counted_not_choices(self) -> None:
+        # Seven rows hold every choice whole; six cut one and say so, keeping the highlighted one whole.
+        clarify = slot("clarify", LONG_CHOICES)
+        self.assertFalse([row for row in lines_text(clarify.lines(80, DEFAULT_THEME, 7)) if "ctrl+o" in row])
+        for selected, label in ((0, "fleet (Recommended)"), (1, "burn")):
+            with self.subTest(selected=selected):
+                clarify.selected = selected
+                text = [unbarred(row) for row in lines_text(clarify.lines(80, DEFAULT_THEME, 6))]
+                self.assertLessEqual(len(text), 6)
+                self.assertTrue([row for row in text if "ctrl+o" in row], text)
+                marked = text.index(next(row for row in text if row.startswith("❯")))
+                self.assertEqual(text[marked + 1].strip(), label)  # its second row too
+
+    def test_a_highlighted_choice_taller_than_the_room_shows_its_first_rows_with_the_marker(self) -> None:
+        clarify = slot("clarify", LONG_CHOICES)
+        text = [unbarred(row) for row in lines_text(clarify.lines(30, DEFAULT_THEME, 3))]
+        self.assertEqual(text[0], "? Which rollout? … ctrl+o")
+        self.assertEqual(text[1:], ["❯ 1. Blue/green with a full", "     traffic switch after"])
+
+    def test_an_approval_choice_wraps_at_a_narrow_width_instead_of_being_cut(self) -> None:
+        approval = slot("approval", {**APPROVAL, "command": "ls"})
+        approval.selected = 2
+        text = [unbarred(row) for row in lines_text(approval.lines(16, DEFAULT_THEME, 12))]
+        self.assertEqual(text[-2:], ["❯ allow this", "  session"])
+
+
 class ValuePromptTests(unittest.TestCase):
     def test_sudo_and_secret_are_masked_and_answer_with_the_submitted_value(self) -> None:
         for method in ("sudo", "secret"):

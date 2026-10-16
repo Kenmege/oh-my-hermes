@@ -20,8 +20,9 @@ or withdrawn by the gateway. Three rules shape this module:
   value after it builds the answer frame.
 
 A question answered by picking (`PromptSlot.picking`: an approval, or a
-clarify question with choices) lists its choices one per row, the highlighted
-one marked `❯`, and the app hides the composer while it is open. A clarify
+clarify question with choices) lists its choices, each from a row of its own
+and wrapped when long, the highlighted one marked `❯`, and the app hides the
+composer while it is open. A clarify
 question's last row opens a text field for an answer of the person's own
 (Hermes' wording, "Other (type your answer)"); while that field is open the
 composer is the field. Every slot row hangs off a `▌` bar, in the warn colour
@@ -321,13 +322,16 @@ class PromptSlot:
         """Every row of the question, nothing cut: what Ctrl+O pages while it is open (the pager has its own keys)."""
         return self.lines(width, theme, sys.maxsize)
 
-    def _choice_rows(self, labels: list[str], theme: Theme, mark_style: Style) -> list[list[Line]]:
-        """Each label as the list of its rows (one each), the highlighted one marked `❯` and highlighted."""
+    def _choice_rows(self, labels: list[tuple[str, str]], width: int, theme: Theme, mark_style: Style) -> list[list[Line]]:
+        """Each `(lead, label)` as its rows: the label wrapped under its lead (a number), whole, so a tag at its end
+        (Hermes' `(Recommended)`) shows; the highlighted one marked `❯` and highlighted."""
         rows: list[list[Line]] = []
-        for index, label in enumerate(labels):
+        for index, (lead, label) in enumerate(labels):
             current = index == self.selected
-            mark = Span(CHOICE_MARK if current else " " * len(CHOICE_MARK), mark_style)
-            rows.append([(mark, Span(label, theme.menu_current if current else theme.text))])
+            style = theme.menu_current if current else theme.text
+            first: Line = (Span(CHOICE_MARK if current else " " * len(CHOICE_MARK), mark_style), Span(lead, style))
+            rest: Line = (Span(" " * (len(CHOICE_MARK) + cell_width(lead))),)
+            rows.append(wrap_prefixed((Span(label, style),), first, rest, width))
         return rows
 
     def _window(self, choices: list[list[Line]], room: int) -> list[Line]:
@@ -354,15 +358,16 @@ class PromptSlot:
     ) -> list[Line]:
         """`head`, `body`, the `choices` (each one's rows) and `keys`, in that order, within `max_rows`.
 
-        Everything is drawn when it fits, the keys only on a row nothing else
-        needs. Otherwise the highlighted choice always shows; with two rows or
-        more the head's first row comes before it, and with three or more the
-        body's first row too. The other choices come next (`_window`), then
-        the rest of the head, a keys row while two rows are still left beside
-        a body, and as much of the body as fits. The cut is marked: on a row
-        of its own when one is left over (counting the body's rows left out),
-        else at the end of the last row above the choices, or of the
-        highlighted choice when it is the only row.
+        Rows are counted, not choices. Everything is drawn when it fits, the
+        keys only on a row nothing else needs. Otherwise the highlighted choice
+        always shows, whole when it can, and with two rows or more the head's
+        first row comes before it. The rows left go to the body's first row,
+        the rest of the head, the other choices (`_window`), a keys row while
+        two rows are still left beside a body, and as much of the body as
+        fits, in that order. The cut is marked: on a row of its own when one
+        is left over (counting the body's rows left out), else at the end of
+        the last row above the choices, or of the highlighted choice when it
+        is the only row.
         """
         listed = sum(len(choice) for choice in choices)
         if len(head) + len(body) + listed <= max_rows:
@@ -370,11 +375,11 @@ class PromptSlot:
             return [*head, *body, *(row for choice in choices for row in choice), *keys[:left]]
         if max_rows == 1:
             return [_ends_with_more(choices[self.selected][0], width, theme)]
-        reserved = 1 if body and max_rows >= 3 else 0  # the command's first row says what it does
-        shown = self._window(choices, max_rows - 1 - reserved)
-        spare = max_rows - 1 - len(shown)
-        rest = head[1 : 1 + max(spare - reserved, 0)]
-        spare -= len(rest)
+        left = max_rows - 1 - min(len(choices[self.selected]), max_rows - 1)  # beside the head's first row and it
+        reserved = min(1, left) if body else 0  # the command's first row says what it does
+        rest = head[1 : 1 + left - reserved]
+        shown = self._window(choices, max_rows - 1 - len(rest) - reserved)
+        spare = max_rows - 1 - len(rest) - len(shown)
         keys_row = keys[:1] if body and spare >= 2 else []
         spare -= len(keys_row)
         kept = body[: spare - 1] if len(body) > spare >= 2 else body[:spare]
@@ -390,7 +395,7 @@ class PromptSlot:
         return [*above, *shown, *keys_row]
 
     def _approval_lines(self, width: int, theme: Theme, max_rows: int, keys: list[Line]) -> list[Line]:
-        """The header (wrapped), the command's rows from its first, then the choices one per row (`_fit`).
+        """The header (wrapped), the command's rows from its first, then the choices (`_fit`).
 
         The beginning of a command is what says what it does, so a long one is
         cut from the end.
@@ -400,8 +405,8 @@ class PromptSlot:
         header = wrap_prefixed(
             (Span(f"Hermes asks to run {description}", theme.warn),), (Span("⚠ ", theme.warn),), (Span("  "),), width
         )
-        labels = [_APPROVAL_LABELS[choice] for choice in self.approval_choices()]
-        choices = self._choice_rows(labels, theme, theme.warn)
+        labels = [("", _APPROVAL_LABELS[choice]) for choice in self.approval_choices()]
+        choices = self._choice_rows(labels, width, theme, theme.warn)
         indent: Line = (Span("  ", theme.code),)  # every row of the command under one indent
         command_rows = wrap_prefixed((Span(command, theme.code),), indent, indent, width) if command else []
         return self._fit(header, command_rows, choices, keys, max_rows, width, theme)
@@ -423,8 +428,8 @@ class PromptSlot:
         if not choices:
             return _keep_ends([*head, (Span("  type an answer and press enter · esc cancels", theme.hint),)], max_rows,
                               width, theme)
-        labels = [f"{number}. {choice}" for number, choice in enumerate([*choices, CLARIFY_OTHER], start=1)]
-        return self._fit(head, [], self._choice_rows(labels, theme, theme.accent), keys, max_rows, width, theme)
+        labels = [(f"{number}. ", choice) for number, choice in enumerate([*choices, CLARIFY_OTHER], start=1)]
+        return self._fit(head, [], self._choice_rows(labels, width, theme, theme.accent), keys, max_rows, width, theme)
 
     def _value_lines(self, width: int, theme: Theme) -> list[Line]:
         label = {
