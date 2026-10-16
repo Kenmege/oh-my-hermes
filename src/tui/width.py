@@ -271,7 +271,7 @@ def _wrap_paragraph(items: list[_Item], cells: int) -> list[list[_Item]]:
         pending = []
         for item in token:  # fits on a fresh line in one go, or is hard broken
             if line and width + item[1] > cells:
-                cut = _path_break(line)
+                cut = _path_break(line, item)
                 lines.append(line[:cut])
                 line = line[cut:]
                 width = _items_width(line)
@@ -282,11 +282,13 @@ def _wrap_paragraph(items: list[_Item], cells: int) -> list[list[_Item]]:
     return lines
 
 
-def _path_break(line: list[_Item]) -> int:
-    """Where a word hard broken at the end of `line` breaks: after the last `/` in it that has text before it (a
-    path or a URL breaks between its parts), else at the end of the line."""
+def _path_break(line: list[_Item], following: _Item) -> int:
+    """Where a word hard broken at the end of `line`, before `following`, breaks: after the last `/` in it that has
+    text before it (a path or a URL breaks between its parts), else at the end of the line. A `/` of a `//` (a URL's
+    scheme) is not one, so `https://` never stands alone."""
     for index in range(len(line) - 1, 0, -1):
-        if line[index][0] == "/":
+        after = line[index + 1] if index + 1 < len(line) else following
+        if line[index][0] == "/" and line[index - 1][0] != "/" and after[0] != "/":
             return index + 1
     return len(line)
 

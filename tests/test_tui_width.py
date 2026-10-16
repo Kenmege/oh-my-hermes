@@ -208,6 +208,12 @@ class WrapTests(unittest.TestCase):
         self.assertEqual(wrap(f"Cancelled; {path} was not changed.", 30),
                          ["Cancelled;", "/Users/me/.omh/routing/", "model-chains.json was not", "changed."])
         self.assertEqual(wrap("/abcdefghij", 4), ["/abc", "defg", "hij"])  # a slash first is no break
+
+    def test_a_urls_scheme_is_never_left_alone_on_a_row(self) -> None:
+        # The re-review: `https://` alone on a row. The `//` after a scheme is no place to break.
+        self.assertEqual(wrap("https://exampleexample.org", 20), ["https://exampleexamp", "le.org"])
+        self.assertEqual(wrap("https://ab.org/averylongsegment", 20), ["https://ab.org/", "averylongsegment"])
+        self.assertEqual(wrap("ab/cd:/" + "/efghij", 7), ["ab/", "cd://ef", "ghij"])  # its first `/` ends the row
         self.assertFits(wrap("a/" + "b" * 20 + "/c", 6), 6)
 
     def test_wide_glyphs_are_never_split(self) -> None:
