@@ -1,4 +1,4 @@
-"""The completion menus' keys: Enter on an open `/` or `@` menu.
+"""The completion menus' keys: Enter on an open `/` or `@` menu, Esc on the `/` menu, the ends of both lists.
 
 Every case drives an `App` over the recording client from `test_tui_modes`.
 Enter follows Ink's rule (`completionToApplyOnSubmit` in ui-tui
@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import unittest
 
-from test_tui_catalog import catalog_app
+from test_tui_catalog import CATALOG, catalog_app
 from test_tui_modes import SID, make_app, notices, type_text
 from omh.tui.app import App, PathItem
-from omh.tui.keys import DOWN, ENTER, Key
+from omh.tui.keys import DOWN, ENTER, ESCAPE, UP, Key
 
 PATHS = [PathItem("@src/foo.py", "foo.py", ""), PathItem("@src/fold/", "fold/", "dir")]
 
@@ -119,6 +119,54 @@ class EnterOnThePathMenuTests(unittest.TestCase):
         app = path_app("fix @src/foo.py")
         app._on_input(Key(ENTER))
         self.assertEqual(app.client.named("prompt.submit"), [{"session_id": SID, "text": "fix @src/foo.py"}])  # type: ignore[attr-defined]
+
+
+class EscOnTheSlashMenuTests(unittest.TestCase):
+    def test_esc_closes_the_slash_menu_without_arming_a_clear(self) -> None:
+        app, _client = catalog_app()
+        type_text(app, "/mo")
+        app._on_input(Key(ESCAPE))
+        self.assertEqual(app._menu_rows(), [])
+        self.assertEqual(app.composer.text, "/mo")
+        self.assertIsNone(app.escape_armed)
+        app._on_input(Key(ENTER))  # the menu is closed: Enter sends what is typed
+        self.assertEqual(app.client.calls, [("slash.exec", {"command": "mo", "session_id": SID})])  # type: ignore[attr-defined]
+
+    def test_a_second_esc_after_closing_arms_the_clear_as_ever(self) -> None:
+        app, _client = catalog_app()
+        type_text(app, "/mo")
+        app._on_input(Key(ESCAPE))
+        app._on_input(Key(ESCAPE))
+        self.assertIsNotNone(app.escape_armed)
+        app._on_input(Key(ESCAPE))
+        self.assertEqual(app.composer.text, "")
+
+    def test_typing_opens_it_again(self) -> None:
+        app, _client = catalog_app()
+        type_text(app, "/mo")
+        app._on_input(Key(ESCAPE))
+        type_text(app, "d")
+        self.assertEqual(app._menu_rows()[0][0], "/model")
+
+    def test_the_path_menu_still_closes_on_esc(self) -> None:
+        app = path_app()
+        app._on_input(Key(ESCAPE))
+        self.assertEqual(app._menu_rows(), [])
+        self.assertIsNone(app.escape_armed)
+
+
+class MenuEndsTests(unittest.TestCase):
+    def test_both_menus_stop_at_either_end(self) -> None:
+        slash, _client = catalog_app({**CATALOG})
+        type_text(slash, "/t")
+        for app in (slash, path_app()):
+            with self.subTest(app=app.composer.text):
+                last = len(app._menu_rows()) - 1
+                app._on_input(Key(UP))
+                self.assertEqual(app.menu_index, 0)
+                for _ in range(last + 3):
+                    app._on_input(Key(DOWN))
+                self.assertEqual(app.menu_index, last)
 
 
 if __name__ == "__main__":

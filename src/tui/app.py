@@ -975,6 +975,7 @@ class App(ModesMixin, AgentViewMixin):
         # answered (`_run_slash`).
         self.pending: dict[int, _Pending] = {}
         self.menu_index = 0
+        self.menu_closed: str | None = None  # the composer text Esc closed the `/` menu on; it stays closed over that text
         self.pager: Pager | None = None
         self.resized_while_paging = False
         self.hud: HudSnapshot | None = None
@@ -1809,6 +1810,7 @@ class App(ModesMixin, AgentViewMixin):
         action = self.composer.handle(event)
         if self.composer.text != before:
             self.menu_index = 0
+            self.menu_closed = None
             self.escape_armed = None  # an edit takes back what a second Esc would have done
         self._on_composer(action, event, steer=isinstance(event, Key) and event.name == ENTER and event.ctrl)
 
@@ -1924,7 +1926,7 @@ class App(ModesMixin, AgentViewMixin):
         return False
 
     def _escape(self, event: Key | Paste) -> bool:
-        """Esc: closes the `@` path menu, cancels a picked agent steer (what was typed stays, a draft like any other),
+        """Esc: closes the `/` or the `@` menu, cancels a picked agent steer (what was typed stays, a draft like any other),
         cancels a rewind, interrupts a running turn on an empty composer.
 
         Otherwise it arms a second press within `DOUBLE_ESCAPE_SECONDS`: with
@@ -1936,6 +1938,9 @@ class App(ModesMixin, AgentViewMixin):
             return False
         if self.path_items:
             self.path_items = []
+            return True
+        if self._menu_entries():
+            self.menu_closed = self.composer.text
             return True
         if self.agent_steer is not None:
             self.agent_steer = None
@@ -2149,9 +2154,9 @@ class App(ModesMixin, AgentViewMixin):
         self.transcript.add_notice(EXIT_HINT)
 
     def _menu_entries(self) -> list[Completion]:
-        """Completions while the composer holds a leading `/word` and nothing else."""
+        """Completions while the composer holds a leading `/word` and nothing else, unless Esc closed them over it."""
         text = self.composer.text
-        if self.slot is not None or not text.startswith("/") or any(ch.isspace() for ch in text):
+        if self.slot is not None or not text.startswith("/") or any(ch.isspace() for ch in text) or text == self.menu_closed:
             return []
         prefix = text[1:]
         if "/" in prefix:
@@ -2166,12 +2171,13 @@ class App(ModesMixin, AgentViewMixin):
         return [(item.display or item.text, item.meta) for item in self.path_items]
 
     def _menu_moves(self, key: Key) -> bool:
+        """Up and Down move the open completion menu's highlight, stopping at either end as every list does."""
         if key.name not in (UP, DOWN):
             return False
         rows = self._menu_rows()
         if not rows:
             return False
-        self.menu_index = (self.menu_index + (-1 if key.name == UP else 1)) % len(rows)
+        self.menu_index = min(max(self.menu_index + (-1 if key.name == UP else 1), 0), len(rows) - 1)
         return True
 
     def _menu_enter(self, key: Key) -> bool:

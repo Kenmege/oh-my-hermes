@@ -603,7 +603,7 @@ Esc closes it):
 | Backspace / Delete | Delete a character, or a paste chip whole; Backspace on an empty composer removes the last attached image |
 | Ctrl+W, Alt+Backspace, Ctrl+Backspace | Deletes the word before the caret (Ctrl+Backspace where the terminal reports it apart from Backspace) |
 | Ctrl+U / Ctrl+K | Delete to the start or the end of the line |
-| Esc | Closes the `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run); cancels a rewind you picked; cancels an agent steer you picked and keeps what you typed |
+| Esc | Closes the `/` or `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run); cancels a rewind you picked; cancels an agent steer you picked and keeps what you typed |
 | Esc Esc | With text, clears it and keeps it in this session's history; on an empty composer between turns, lists your prompts to rewind to (`/rewind` does too) |
 | Ctrl+V | Attaches the clipboard image |
 | Ctrl+O | Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end; q leaves it |

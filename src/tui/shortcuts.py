@@ -42,7 +42,7 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
                            "the last attached image"),
     ("Ctrl+W, Alt+Backspace, Ctrl+Backspace", "Deletes the word before the caret (Ctrl+Backspace where the terminal reports it apart from Backspace)"),
     ("Ctrl+U / Ctrl+K", "Delete to the start or the end of the line"),
-    ("Esc", "Closes the @ menu; on an empty composer, interrupts a running turn "
+    ("Esc", "Closes the / or @ menu; on an empty composer, interrupts a running turn "
             "(the activity row shows how long it has run); cancels a rewind you picked; "
             "cancels an agent steer you picked and keeps what you typed"),
     ("Esc Esc", "With text, clears it and keeps it in this session's history; on an empty composer between turns, "
