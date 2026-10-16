@@ -872,8 +872,12 @@ class ExitHintTests(unittest.TestCase):
         self.assertIn(EXIT_HINT, screen[status - 1])  # the mode row, as the Esc-armed message is
         self.assertEqual(notices(app), [])  # nothing left in the transcript or the scrollback
         self.assertIsNone(app.exit_code)
-        now[0] += EXIT_CONFIRM_SECONDS + 0.1
+        now[0] += EXIT_CONFIRM_SECONDS - 0.5
+        self.assertAlmostEqual(app._read_timeout(), 0.5)  # the loop wakes when the window ends, not a second later
+        now[0] += 0.6
+        app.dirty = False
         app._expire_exit()
+        self.assertEqual((app.dirty, app.exit_armed_at), (True, None))  # so that wake repaints the row without it
         self.assertEqual(drawn(app), resting)
         app._on_input(Key(CHAR, "c", ctrl=True))  # the window passed: this press arms again
         self.assertIsNone(app.exit_code)
