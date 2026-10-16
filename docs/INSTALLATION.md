@@ -2390,6 +2390,10 @@ valid durable identity selects native `state.db` children before row limits
 and totals, following only unambiguous compression continuations, never
 branches or delegated children. Missing, invalid or unmapped identities retain
 the previous global native fallback, including best-effort manifest context.
+The OMH TUI is the one exception: it names the durable key the gateway handed
+it, and Hermes writes that key's `state.db` row on the session's first prompt,
+so until then a fresh session owns no children and its panel lists none rather
+than another conversation's.
 The header line marks `[global]` whenever rows from outside this conversation
 are in the list, so no surface attributes those totals to this chat.
 It is one marker for one fact, not a description of the list: an entirely

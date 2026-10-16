@@ -72,6 +72,36 @@ class HudConversationScopeTests(unittest.TestCase):
         self.assertEqual(result['active'], 0)
         self.assertEqual(result['scope'], 'session')
 
+    def test_the_tuis_own_key_before_its_first_prompt_owns_no_children(self):
+        # The OMH TUI names the durable key the gateway handed it; Hermes writes
+        # that key's state.db row only on the session's first prompt, so a fresh
+        # session's key maps to nothing yet. It owns no children, and the panel
+        # must not list another conversation's under `[global]` (r3 smoke s34).
+        self.build()
+        tui = {'session_ref': 'fresh-session', 'session_scoped': True, 'tui_identity_expected': True}
+        payload = self.hud(**tui)
+        self.assertEqual(payload['subagents']['rows'], [])
+        self.assertEqual(payload['subagents']['scope'], 'session')
+        self.assertEqual(payload['subagents']['active'], 0)
+        self.assertFalse(payload['active'])
+        self.assertFalse([line for line in self._panel(payload, 100) if line.startswith('[Agents]')])
+        # Once the first prompt writes the row, the key owns what it delegates.
+        with closing(sqlite3.connect(self.hermes / 'state.db')) as db, db:
+            db.execute('INSERT INTO sessions VALUES (?, ?, ?, ?)', ('fresh-session', '', '{}', NOW))
+            db.execute('UPDATE sessions SET model_config=? WHERE id=?', (json.dumps({'_delegate_from': 'fresh-session'}), 'child_own'))
+        self.assertEqual([row['task_id'] for row in self.hud(**tui)['subagents']['rows']], ['own'])
+
+    def test_other_unmapped_references_keep_the_global_fallback(self):
+        # A transport id a widget or the desktop pane produced, or a durable key
+        # named without the TUI's identity flag, still falls back, as documented.
+        self.build()
+        for kwargs in ({'tui_session_ref': 'fresh-session', 'tui_identity_expected': True, 'session_scoped': True},
+                       {'session_ref': 'fresh-session', 'session_scoped': True}):
+            with self.subTest(**kwargs):
+                result = self.hud(**kwargs)['subagents']
+                self.assertEqual(len(result['rows']), 2)
+                self.assertEqual(result['scope'], 'global')
+
     def test_global_fallback_preserves_manifest_context(self):
         self.build()
         _write_manifest(self.hermes, 'global-dispatch', ['Global work'], started=NOW - 32, log_mtime=NOW)

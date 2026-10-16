@@ -4,6 +4,15 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A fresh OMH TUI session no longer shows the last session's subagents.**
+  Hermes writes a session's `state.db` row on its first prompt, so a new
+  session's key mapped to nothing until then, and the HUD reader fell back to
+  every conversation's recent delegate children: a session nobody had typed
+  in yet opened with `[Agents] │ [global] 2 done` and the previous session's
+  rows. The TUI's own key now owns no children until its row exists, and the
+  panel stays empty. Other readers that name an unmapped reference (the
+  desktop pane, the plugin tools) keep the documented global fallback.
+
 - **Denying an OMH TUI approval also stops the turn, as Esc does in Claude
   Code.** A deny went to Hermes and the turn went on, so the model often
   tried the next thing straight away. Every deny the person gives (Esc,
