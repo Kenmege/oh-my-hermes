@@ -1739,6 +1739,23 @@ class EffortTests(unittest.TestCase):
         app._take_settings({"config": {"agent": {"reasoning_effort": "low"}}})
         self.assertEqual(app.effort, "low")
 
+    def test_a_level_the_session_said_stays_over_a_later_config_read_even_when_it_matched_the_old_config(self) -> None:
+        # The round-5 verification: told apart by value, a session's `high` equal to the config's `high` read as the
+        # config's, and the next config read (a respawn's) replaced it.
+        for respawned in (False, True):
+            for said in ("session.info", "ctrl+t"):
+                with self.subTest(respawned=respawned, said=said):
+                    app, client = self.started_with({"agent": {"reasoning_effort": "high"}})
+                    if respawned:  # the resumed session, adopted before the fresh config.get is answered
+                        app._adopt_session({"session_id": SID, "stored_session_id": "stored-1", "info": {"lazy": True}})
+                    if said == "session.info":
+                        session_info(app, reasoning_effort="high")
+                    else:  # a level the person set for this session and Hermes confirmed
+                        app._set_effort("high")
+                        answer(app, client, effort_set("high"))
+                    app._take_settings({"config": {"agent": {"reasoning_effort": "low"}}})
+                    self.assertEqual(app.effort, "high")
+
     def test_the_hint_names_the_sessions_effort_from_the_start_and_ctrl_t_steps_from_it(self) -> None:
         # Hermes 6c61c3e27d sends the session's effort in the session.info that follows the agent's build, before
         # any turn: a configured level, or "" where none is configured and the route's own default applies.

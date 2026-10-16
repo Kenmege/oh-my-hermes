@@ -1089,6 +1089,7 @@ class App(ModesMixin, AgentViewMixin):
         # The effort Hermes' config sets (`configured_effort`), from the last `config.get`: what a session that has
         # not said its own starts with, the launch session and each one opened later (`_adopt_session`).
         self.effort_configured = ""
+        self.effort_said = False  # the shown effort is the session's own (its info, or a level set and confirmed)
         self.mode_request_open = False  # a yolo call is out: Shift+Tab waits for its answer
         self.yolo_reported: bool | None = None  # `session.info`'s yolo since the last yolo call went out
         self.yolo_confirmed_at: float | None = None  # when Hermes confirmed the TUI's on; None once one session.info was held
@@ -1272,12 +1273,11 @@ class App(ModesMixin, AgentViewMixin):
     def _take_settings(self, result: dict[str, Any]) -> None:
         """`config.get`'s answer: the busy mode Hermes is set to, and the effort its config sets, shown until the
         session says its own (Hermes sends it once it has built the session's agent, which it starts as the session
-        opens) and kept for the sessions opened later. A level the session said stays; one the config set before is
-        replaced."""
+        opens) and kept for the sessions opened later. A level the session said stays (`effort_said`), even one equal
+        to the config's; one the config set before is replaced."""
         self.busy_mode = busy_mode(result)
-        shown_configured = self.effort == self.effort_configured  # not a level the session said
         self.effort_configured = configured_effort(result)
-        if shown_configured:
+        if not self.effort_said:
             self.effort = self.effort_configured
 
     def _on_settings_refused(self, error: dict[str, Any]) -> bool:
@@ -1357,6 +1357,7 @@ class App(ModesMixin, AgentViewMixin):
         self.approvals_off = self.yolo_by_tui = self.hermes_approvals_said = False
         self.effort_asked = ""
         self.effort = self.effort_configured  # until this session says its own (Hermes' lazy info names none)
+        self.effort_said = False
         self._take_session_state(info if isinstance(info, dict) else {})
         self._adopt_stored(as_text(result.get("stored_session_id")) or fallback_stored)
 

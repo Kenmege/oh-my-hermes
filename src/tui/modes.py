@@ -305,6 +305,7 @@ class ModesMixin:
         effort = info.get(contract.SESSION_INFO_REASONING_EFFORT)
         if isinstance(effort, str):
             self.effort = effort or EFFORT_DEFAULT
+            self.effort_said = True
         yolo = info.get(contract.SESSION_INFO_YOLO)
         if not isinstance(yolo, bool):
             return
@@ -480,7 +481,7 @@ class ModesMixin:
         if refusal:
             self.transcript.add_notice(EFFORT_REFUSED_NOTICE.format(level, refusal), NOTICE_WARN)
         else:
-            self.effort = level
+            self.effort, self.effort_said = level, True
         return True
 
     def _turn_off_yolo_set_here(self, sid: str) -> None:
