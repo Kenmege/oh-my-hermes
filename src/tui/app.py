@@ -339,10 +339,7 @@ RESPAWNED_WHY = "The Hermes gateway was restarted"
 # or with no stored session to resume, the TUI leaves as it would without recovery.
 RESPAWN_LIMIT = 3
 RESPAWN_WINDOW_SECONDS = 60.0
-RESPAWN_NOTICE = (
-    "The Hermes gateway exited ({reason}); starting it again and resuming session {session} "
-    "({attempt} of {limit} in {window:g} s)."
-)
+RESPAWN_NOTICE = "{reason}: starting it again and resuming session {session} ({attempt} of {limit} in {window:g} s)."
 RESPAWNED_NOTICE = "Resumed session {session} on a new Hermes gateway."
 TURN_LOST_NOTICE = "The running turn was lost when the Hermes gateway exited; it was not sent again."
 QUESTION_LOST_NOTICE = "Hermes' {method} request closed unanswered: the gateway that asked has exited."
@@ -1569,8 +1566,8 @@ class App(ModesMixin, AgentViewMixin):
                 return
             self.respawned_at.append(now)
             self.transcript.add_notice(RESPAWN_NOTICE.format(
-                reason=reason, session=stored, attempt=len(self.respawned_at), limit=RESPAWN_LIMIT,
-                window=RESPAWN_WINDOW_SECONDS,
+                reason=reason[:1].upper() + reason[1:], session=stored, attempt=len(self.respawned_at),
+                limit=RESPAWN_LIMIT, window=RESPAWN_WINDOW_SECONDS,
             ), NOTICE_WARN)
             self.dirty = True
             self._render_when_due()  # the notice shows while the new gateway starts
@@ -1578,7 +1575,7 @@ class App(ModesMixin, AgentViewMixin):
                 client = self.make_client(gateway_spawn(self.environ), first_id=max(self.pending, default=0) + 1)
                 client.start()
             except (GatewayUnavailable, GatewayCallError) as error:
-                reason = f"it did not start again: {error}"
+                reason = f"the new Hermes gateway did not start ({error})"
                 continue
             try:
                 result = client.call("session.resume", {"session_id": stored, "cols": self.size[0]})

@@ -132,8 +132,10 @@ class RespawnTests(unittest.TestCase):
         self.assertEqual((app.sid, app.stored_id), ("live-2", STORED))
         self.assertEqual(old.closed, 1)
         said = notices(app)
-        self.assertIn(RESPAWN_NOTICE.format(reason="the Hermes gateway exited (code 1)", session=STORED, attempt=1,
+        self.assertIn(RESPAWN_NOTICE.format(reason="The Hermes gateway exited (code 1)", session=STORED, attempt=1,
                                             limit=RESPAWN_LIMIT, window=RESPAWN_WINDOW_SECONDS), said)
+        self.assertIn(f"The Hermes gateway exited (code 1): starting it again and resuming session {STORED} (1 of 3 in 60 s).",
+                      said)
         self.assertEqual(said[-1], RESPAWNED_NOTICE.format(session=STORED))
         # It reads the session's settings and command list again, as a session that opens does.
         self.assertEqual([method for method, _params in new.calls], ["config.get", "commands.catalog"])
@@ -254,7 +256,7 @@ class CapTests(unittest.TestCase):
         crash(app, old)
         self.assertEqual(app.exit_code, 1)
         self.assertEqual(len(spawner.made), RESPAWN_LIMIT)
-        self.assertIn("did not start again", app.farewell)
+        self.assertIn("the new Hermes gateway did not start", app.farewell)
 
     def test_a_resume_the_new_gateway_refuses_ends_it(self) -> None:
         refused = RespawnClient(resume=GatewayCallError("session.resume", 4007, "session is owned by another process"))
