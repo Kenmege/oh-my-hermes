@@ -554,6 +554,28 @@ class ModeCycleTests(unittest.TestCase):
         self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])  # plan is the TUI's flag: no call
         self.assertEqual(notices(app), [])
 
+    def test_the_screen_states_the_approval_mode_once_in_the_composers_words_whatever_the_hud_read(self) -> None:
+        # The audit's case (D4): the mode row said approvals off while the status line, reading Hermes' saved state
+        # through the HUD, still said `yolo mode: off`.
+        from test_tui_panels import hud_payload
+
+        from omh.tui.panels import HudSnapshot
+
+        app, client = make_app()
+        app.stored_id = "stored"
+        for enabled in (False, True):
+            with self.subTest(hud_says_yolo=enabled):
+                payload = hud_payload()
+                payload["yolo"] = {"status": "observed", "enabled": enabled}
+                app.hud = HudSnapshot("stored", payload, 100.0)
+                if app.mode != MODE_ACCEPT:
+                    app._on_input(SHIFT_TAB)
+                    answer(app, client, YOLO_IS_ON)
+                screen = drawn(app)
+                status = next(index for index, row in enumerate(screen) if row.startswith("⚚ OMH"))
+                self.assertFalse([row for row in screen if "yolo" in row], screen)
+                self.assertEqual([row for row in screen if "approvals off" in row], [screen[status - 1]])  # the mode row
+
     def test_a_yolo_answer_that_is_not_this_session_only_is_a_failure(self) -> None:
         refusals = {
             "scope global": {"key": "yolo", "value": "1", "scope": "global"},

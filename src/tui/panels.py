@@ -14,8 +14,8 @@ it was deleted: the same glyphs, labels, colour roles, column grid and shed
 priorities, ported to `Line`s, and `tests/test_tui_panels.py` holds the rows
 to the ones the widget drew (`tests/fixtures/tui_panel_rows.json`). The widget's
 `⚚ [OMH] vX` brand (as `⚚ OMH`; the version stays in the banner) and its
-session-wide chips (repeat guard, in-flight tool calls, yolo) move to the
-status line through `status_segments`; the agents
+session-wide chips (repeat guard, in-flight tool calls) move to the
+status line through `status_segments`, but not its yolo chip (see there); the agents
 block opens with `[Agents]` the way the plan block opens with `[Plan]`.
 
 The panel never draws more than the rows it is given. Under pressure it sheds
@@ -422,9 +422,12 @@ def status_segments(payload: Any, theme: Theme) -> Line:
 
     The chips are the widget header's facts about the whole session rather
     than its agents: a repeating call (muted while watched, warn once refused,
-    error once escalated to a person), the exact in-flight tool calls (only
-    where this install has seen `post_tool_call` fire), and the yolo state.
-    Order is priority: a narrow status line cuts from the right.
+    error once escalated to a person) and the exact in-flight tool calls (only
+    where this install has seen `post_tool_call` fire). Order is priority: a
+    narrow status line cuts from the right. The widget's `yolo mode: on|off`
+    chip is not drawn: the composer states the approval mode (accept all) as
+    Hermes confirmed it for this session, and the HUD's reading of Hermes'
+    saved state lags behind a switch, so the two said opposite things.
     """
     valid = _valid(payload)
     data = payload if valid else {}
@@ -440,13 +443,6 @@ def status_segments(payload: Any, theme: Theme) -> Line:
         count = _plural(_count(activity.get("open_call_count")), "tool")
         oldest = _elapsed(activity.get("oldest_open_elapsed_seconds")) or "0s"
         spans += [Span(" • ", theme.dim), Span(f"{count} · {oldest}", theme.warn)]
-    yolo = _mapping(data.get("yolo"))
-    if yolo.get("status") == "observed":
-        enabled = bool(yolo.get("enabled"))
-        spans += [
-            Span(" • yolo mode: ", theme.muted),
-            Span("on" if enabled else "off", _bold(theme.warn if enabled else theme.label)),
-        ]
     return _line(*spans)
 
 

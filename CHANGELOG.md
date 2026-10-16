@@ -32,6 +32,12 @@ All notable changes will be documented here.
   finished when the session opens is not drawn, and a new plan is. The
   `[Plan] │ 2/6 .` dot was the header's walking ellipsis, caught at one dot;
   it is gone, and the active item's colour wave still shows work moving.
+- **The OMH TUI states the approval mode once.** After Shift+Tab the mode row
+  said `⏵⏵ accept all on · approvals off for this session` while the status
+  line said `yolo mode: off`: that chip read Hermes' saved state through the
+  HUD, which lags behind a switch. The status line no longer carries it; the
+  composer's rules and mode row (the status line on a short terminal) say the
+  mode, as Hermes confirmed it for the session, in the words the docs use.
 
 - **Korean spend and data-share requests reach their gates.** "내 카드로
   결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보

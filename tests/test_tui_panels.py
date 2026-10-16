@@ -425,7 +425,7 @@ class StatusSegmentsTests(unittest.TestCase):
         )
         payload["yolo"] = {"status": "observed", "enabled": True}
         line = status_segments(payload, THEME)
-        self.assertEqual(line_text(line), "⚚ OMH · repeat x4 cycle-of-2 blocked • 2 tools · 12s • yolo mode: on")
+        self.assertEqual(line_text(line), "⚚ OMH · repeat x4 cycle-of-2 blocked • 2 tools · 12s")  # no yolo chip
         chip = next(span for span in line if span.text.startswith("repeat"))
         self.assertEqual(chip.style.fg, THEME.warn.fg)
 
