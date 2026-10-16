@@ -417,7 +417,7 @@ class Roster:
 
         The agents sharing a name drop the leading words all their goals have
         in common and show the first of what follows behind `CUT_MARK`
-        (`…echo alpha`), in `NAME_CELLS`. Where that still leaves one with no
+        (`…alpha in the`), in `NAME_CELLS`. Where that still leaves one with no
         words, two alike, or one reading as another agent's own name, each of
         them is `n·` and the name instead (n from 1, roster order).
         """
@@ -430,10 +430,11 @@ class Roster:
             common = 0
             while all(len(words) > common for words in goals) and len({words[common] for words in goals}) == 1:
                 common += 1
-            lead = CUT_MARK if common else ""
-            parts = [lead + _first_words(words[common:], NAME_CELLS - cell_width(lead)) for words in goals]
+            # With no word in common the names matched because both were cut or a goal had no words; the parts
+            # then match too, or one is empty, so numbers follow.
+            parts = [CUT_MARK + _first_words(words[common:], NAME_CELLS - cell_width(CUT_MARK)) for words in goals]
             told_apart = (
-                all(part != lead for part in parts) and len(set(parts)) == len(parts)
+                all(part != CUT_MARK for part in parts) and len(set(parts)) == len(parts)
                 and not set(parts) & set(names.values())
             )
             for subagent_id, part in zip(group, parts, strict=True):

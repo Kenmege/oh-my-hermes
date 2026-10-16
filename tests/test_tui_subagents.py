@@ -382,7 +382,7 @@ class StripNameTests(unittest.TestCase):
         # One goal ends where the other goes on: the shorter has no words of its own to show.
         self.assertEqual(strip_names("Run the tests", "Run the tests again"), ["1·Run the tests", "2·Run the tests"])
 
-    def test_first_words_cut_alike_are_numbered_without_a_cut_mark(self) -> None:
+    def test_first_words_cut_alike_are_numbered(self) -> None:
         # The names match only because a long first word was cut: no leading word is shared, so nothing is skipped.
         self.assertEqual(
             strip_names("supercalifragilisticexpialidocious one", "supercalifragilisticexpialidocious_two"),
