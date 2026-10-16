@@ -377,6 +377,14 @@ run and approval decision stays Hermes'; the screen is OMH's.
   and switching sessions drops it. A call Hermes refuses is said in words:
   under a command's echo, Hermes' own reason (`/undo` on an empty session:
   `No user messages to undo.`); otherwise what did not happen and why.
+- What Hermes' background review saved to memory or skills after a turn
+  (`💾 Self-improvement review: …`) is a line in the transcript. While a
+  `/goal` stands, the row above that notice says so as Hermes' own terminal
+  does (`⊙ goal · 3/20 turns · <title>`, `⏳ goal parked · until 14:05 · …`,
+  `⏸ goal paused · …`), until the goal is done or cleared. A mixture-of-agents
+  turn keeps each reference model's answer as a collapsed row
+  (`▸ ◇ Reference 1/3 — <model>`, its text in Ctrl+O's details), and the
+  working row adds `MoA: refs 2/3`, then `MoA: aggregating…`.
 - While a turn has delegated work, the mode row carries a strip of its
   subagents, each named by the first words of its goal, numbered (`1·`, `2·`)
   when two goals start alike

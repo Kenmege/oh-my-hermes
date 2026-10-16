@@ -62,6 +62,13 @@ Two events do not mean what their names suggest, measured against Hermes
   (`agent/turn_response_intake.py::_relay_thinking`); in every recorded turn it
   repeats the answer. It is ignored. Real reasoning arrives as `reasoning.delta`.
 
+A MoA turn (`moa.*`) asks reference models before the aggregator answers.
+Each `moa.reference` is a block of its own, a thinking row labelled
+`◇ Reference 1/3 — <model>` whose text the details view shows, as Hermes' Ink
+TUI keeps it; `moa.progress` and an aggregator `moa.phase` set `moa`, the
+words the working row adds (`MoA: refs 2/3`, `MoA: aggregating…`), until the
+turn ends.
+
 Nothing here is written to disk.
 """
 
@@ -75,6 +82,7 @@ from typing import Any
 from ..plugin_bundle.omh.hud_text import elapsed_text
 from .diff_view import DIFF_FILE, FILE_ARROW, DiffLine, diff_rows, parse_inline_diff
 from .gateway import Event
+from . import gateway_contract as contract
 from .gateway_contract import TOOL_CALL_BRIDGE
 from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
 from .style import Line, Span, Style, fill
@@ -205,6 +213,7 @@ class ThinkingBlock:
     done: bool = False
     started_at: float | None = None
     ended_at: float | None = None
+    label: str = ""  # a MoA reference's header, shown in place of "thought for"; "" for the model's own reasoning
 
 
 @dataclass
@@ -595,11 +604,13 @@ def _thinking_rows(
     block: ThinkingBlock, width: int, theme: Theme, expanded: bool, max_rows: int | None = None
 ) -> list[Line]:
     mark = EXPANDED_MARK if expanded else COLLAPSED_MARK
-    if block.done:
+    if block.label:
+        head: Line = (Span(f"{mark} {block.label}", theme.thinking),)
+    elif block.done:
         header = f"{mark} thought"
         if block.started_at is not None and block.ended_at is not None:
             header += f" for {_seconds(max(0.0, block.ended_at - block.started_at))}"
-        head: Line = (Span(header, theme.thinking),)
+        head = (Span(header, theme.thinking),)
     elif expanded:
         head = (Span(f"{mark} thinking…", theme.thinking),)
     else:
@@ -733,6 +744,7 @@ class Transcript:
         self.blocks: list[Block] = []
         self.activity = ""  # spinner / wait text from thinking.delta; "" when none
         self.status = ""  # the last status.update text of the running turn; "" when none
+        self.moa = ""  # a MoA turn's progress (`MoA: refs 2/3`), added to the working row; "" when none
         self.running = False
         self.details_expanded = False
         self._clock = clock
@@ -768,6 +780,9 @@ class Transcript:
             "tool.start": self._on_tool_start,
             "tool.complete": self._on_tool_complete,
             "status.update": self._on_status_update,
+            "moa.reference": self._on_moa_reference,
+            "moa.progress": self._on_moa_progress,
+            "moa.phase": self._on_moa_phase,
         }
 
     # ── input ──
@@ -896,6 +911,7 @@ class Transcript:
         self.running = False
         self.activity = ""
         self.status = ""
+        self.moa = ""
 
     def toggle_details(self) -> bool:
         """Expand or collapse the live block's details; blocks already taken never repaint."""
@@ -1055,6 +1071,7 @@ class Transcript:
         self.running = False
         self.activity = ""
         self.status = ""
+        self.moa = ""
 
     def _on_thinking_delta(self, payload: dict[str, Any]) -> None:
         self.activity = _first_line(as_text(payload.get("text")))
@@ -1068,6 +1085,22 @@ class Transcript:
             block = ThinkingBlock(started_at=self._clock())
             self._append(block)
         block.text += text
+
+    def _on_moa_reference(self, payload: dict[str, Any]) -> None:
+        label = _first_line(as_text(payload.get(contract.MOA_LABEL))) or "reference"
+        index, count = payload.get(contract.MOA_INDEX), payload.get(contract.MOA_COUNT)
+        known = all(isinstance(value, int) and not isinstance(value, bool) and value > 0 for value in (index, count))
+        header = f"◇ Reference {index}/{count} — {label}" if known else f"◇ Reference — {label}"
+        self._append(ThinkingBlock(text=as_text(payload.get(contract.MOA_TEXT)).strip(), done=True, label=header))
+
+    def _on_moa_progress(self, payload: dict[str, Any]) -> None:
+        done, total = payload.get(contract.MOA_REFS_DONE), payload.get(contract.MOA_REFS_TOTAL)
+        if all(isinstance(value, int) and not isinstance(value, bool) for value in (done, total)):
+            self.moa = f"MoA: refs {done}/{total}"
+
+    def _on_moa_phase(self, payload: dict[str, Any]) -> None:
+        if payload.get(contract.MOA_PHASE) == contract.MOA_PHASE_AGGREGATOR:
+            self.moa = "MoA: aggregating…"
 
     def _on_reasoning_available(self, payload: dict[str, Any]) -> None:
         """Ignored: it relays the assistant's own content, so it would repeat the answer as thought."""

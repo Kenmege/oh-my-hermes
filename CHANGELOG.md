@@ -41,6 +41,14 @@ All notable changes will be documented here.
 - **A first Ctrl+C between turns says `ctrl+c again to exit` on the mode row**
   for the 2 s a second press exits in, as Esc's first press does, instead of
   leaving a `Ctrl+C again to exit` notice in the scrollback every time.
+- **The OMH TUI shows three things Hermes sends it and it dropped:** what the
+  background review saved to memory or skills (`review.summary`, a transcript
+  line), a standing `/goal` (`session.control.update`, one row above the
+  composer worded as Hermes' Ink goal bar: `⊙ goal · 3/20 turns · <title>`,
+  parked or paused with its reason), and a mixture-of-agents turn (`moa.*`:
+  each reference model's answer as a collapsed `◇ Reference 1/3 — <model>`
+  row, and `MoA: refs 2/3` then `MoA: aggregating…` on the working row). The
+  gateway already wrote these to the TUI; showing them sends nothing.
 
 - **Korean spend and data-share requests reach their gates.** "내 카드로
   결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보

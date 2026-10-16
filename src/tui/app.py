@@ -539,6 +539,48 @@ def notification_from(payload: Mapping[str, Any], now: float) -> Notification | 
     return Notification(text, level, as_text(payload.get(contract.NOTIFICATION_KEY)), expires_at)
 
 
+def goal_line(goal: Mapping[str, Any] | None, width: int, theme: Theme) -> Line | None:
+    """Hermes' standing /goal on one row, worded as its Ink goal bar words it; None once it is done or cleared.
+
+    `⊙ goal · 3/20 turns · <title>` while active; `⏳ goal parked · until 14:05
+    · <reason> · 3/20 turns · <title>` (the time local, or `on session <id>`)
+    while it waits on a barrier; `⏸ goal paused · <reason> · 3/20 turns ·
+    <title>` while paused.
+    """
+    if not isinstance(goal, Mapping) or goal.get(contract.GOAL_STATUS) not in contract.GOAL_SHOWN_STATUSES:
+        return None
+
+    def whole(key: str) -> int:
+        value = goal.get(key)
+        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+    def words(value: object) -> str:
+        return " ".join(clean_text(as_text(value)).split())
+
+    turns = f"{whole(contract.GOAL_TURNS_USED)}/{whole(contract.GOAL_MAX_TURNS)} turns"
+    barrier = goal.get(contract.GOAL_WAIT_BARRIER) if goal.get(contract.GOAL_STATUS) == contract.GOAL_ACTIVE else None
+    if isinstance(barrier, Mapping):
+        until_at = barrier.get(contract.BARRIER_UNTIL_AT)
+        if barrier.get(contract.BARRIER_TYPE) == contract.BARRIER_UNTIL and isinstance(until_at, int | float):
+            wait = f"until {time.strftime('%H:%M', time.localtime(until_at))}"
+        else:
+            target = barrier.get(contract.BARRIER_TARGET)
+            wait = f"on {as_text(barrier.get(contract.BARRIER_TYPE))} {target if isinstance(target, str | int) else ''}"
+        reason = words(barrier.get(contract.BARRIER_REASON))
+        glyph, label, detail = "⏳", "goal parked", f"{wait}{f' · {reason}' if reason else ''} · {turns}"
+    elif goal.get(contract.GOAL_STATUS) == contract.GOAL_PAUSED:
+        reason = words(goal.get(contract.GOAL_PAUSED_REASON))
+        glyph, label, detail = "⏸", "goal paused", f"{f'{reason} · ' if reason else ''}{turns}"
+    else:
+        glyph, label, detail = "⊙", "goal", turns
+    line = (
+        Span(f"{glyph} {label}", theme.accent if glyph == "⊙" else theme.warn),
+        Span(f" · {detail} · ", theme.muted),
+        Span(words(goal.get(contract.GOAL_TITLE)), theme.text),
+    )
+    return truncate_line(line, width)
+
+
 def attention_sequence(environ: Mapping[str, str], message: str) -> str:
     """What asks for the person's attention on this terminal: OSC 9, OSC 777, or the bell, by its name."""
     text = clean_text(message)
@@ -978,6 +1020,7 @@ class App(ModesMixin, AgentViewMixin):
         self.pager: Pager | None = None
         self.resized_while_paging = False
         self.hud: HudSnapshot | None = None
+        self.goal: Mapping[str, Any] | None = None  # Hermes' standing /goal, as its last `session.control.update` said
         self.retired_plan = ""  # the text of a finished plan the panel no longer draws (`_retire_finished_plan`)
         self.plan_seen_open = False  # the panel has had a plan with an item left since the last one retired
         self.notification: Notification | None = None  # Hermes' out-of-band notice, shown above the composer
@@ -1545,6 +1588,14 @@ class App(ModesMixin, AgentViewMixin):
             self._on_error_event(as_text(payload.get("message")) or "The gateway reported an error.")
         elif event.type == "notification.show":
             self.notification = notification_from(payload, self.clock()) or self.notification
+        elif event.type == "review.summary":
+            text = clean_text(as_text(payload.get(contract.REVIEW_SUMMARY_TEXT))).strip()
+            if text:
+                self.transcript.add_notice(text)
+        elif event.type == "session.control.update":
+            control = payload.get(contract.SESSION_CONTROL)
+            goal = control.get(contract.CONTROL_GOAL) if isinstance(control, Mapping) else None
+            self.goal = goal if isinstance(goal, Mapping) else None
         elif event.type == "todo.updated":
             # Hermes' plan changed: the OMH plugin projected it into the session's record as the tool finished
             # (post_tool_call runs before Hermes emits this), so the HUD is read now instead of at its next poll.
@@ -2783,6 +2834,7 @@ class App(ModesMixin, AgentViewMixin):
         self.flushed_since_prompt = 0  # rows printed above the region from the last prompt's first row on
         self.attachments.clear()  # the gateway queued them for the session being left
         self.hud = None
+        self.goal = None
         self.retired_plan, self.plan_seen_open = "", False
         self._clear_roster()
         self._adopt_session(result, fallback_stored)
@@ -3399,6 +3451,8 @@ class App(ModesMixin, AgentViewMixin):
             lines = [()]  # the spacer a block opens with, here between the transcript and the region under it
         if self._busy():
             text = self.transcript.activity or self.transcript.status or "working…"
+            if self.transcript.moa:
+                text = f"{text} · {self.transcript.moa}"
             frame = self._spinner_frame()
             spinner = SPINNER_FRAMES[frame % len(SPINNER_FRAMES)]
             elapsed = elapsed_text(now - (self.busy_since or now))
@@ -3429,11 +3483,14 @@ class App(ModesMixin, AgentViewMixin):
         if self.model_picker is not None:
             return self.model_picker.lines(cols, self.theme, cap, keys=keys)
         # Nothing has the keys: the queued prompts take the slot's last rows, right above the composer's
-        # top rule, Hermes' notification the row above them, and the menu or the panel gets the rows left. A
-        # question or the picker hides them, since Up then does not edit the queue.
+        # top rule, Hermes' notification the row above them, Hermes' standing goal the row above that, and the
+        # menu or the panel gets the rows left. A question or the picker hides them, since Up then does not edit
+        # the queue.
         queue = queue_lines([line.shown or line.text for line in self.queued], cols, cap, self.theme)
         notice = [self.notification.line(cols, self.theme)] if self.notification and cap > len(queue) else []
-        return self._menu_or_panel_lines(cols, cap - len(queue) - len(notice)) + notice + queue
+        shown = goal_line(self.goal, cols, self.theme)
+        goal = [shown] if shown is not None and cap > len(queue) + len(notice) else []
+        return self._menu_or_panel_lines(cols, cap - len(queue) - len(notice) - len(goal)) + goal + notice + queue
 
     def _menu_or_panel_lines(self, cols: int, cap: int) -> list[Line]:
         if cap <= 0:
