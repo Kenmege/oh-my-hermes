@@ -648,6 +648,18 @@ class MultiSelectTests(unittest.TestCase):
         self.assertEqual(slot("clarify", CLARIFY).handle_key(Key(CHAR, "2")).frame, {"result": {"answers": {"q0": "blue"}}})
 
 
+class OutcomeTests(unittest.TestCase):
+    def test_an_empty_or_missing_answer_reads_skipped_as_hermes_counts_it(self) -> None:
+        # clarify_tool._response_status: None and "" are both "skipped" when the qid is present.
+        for value in ("", None):
+            with self.subTest(value=value):
+                rows = slot("clarify", CLARIFY).outcomes({"result": {"answers": {"q0": value}}})
+                self.assertEqual(rows, [(False, "skipped · Which color do you prefer?")])
+
+    def test_a_question_the_answers_do_not_name_gets_no_row(self) -> None:
+        self.assertEqual(slot("clarify", CLARIFY).outcomes({"result": {"answers": {}}}), [])
+
+
 class ValuePromptTests(unittest.TestCase):
     def test_sudo_and_secret_are_masked_and_answer_with_the_submitted_value(self) -> None:
         for method in ("sudo", "secret"):
