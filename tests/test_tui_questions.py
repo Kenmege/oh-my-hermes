@@ -306,6 +306,36 @@ class WaitingTimeTests(unittest.TestCase):
                 (row,) = [tool for block in app.transcript.blocks if isinstance(block, ToolGroup) for tool in block.tools]
                 self.assertAlmostEqual(row.duration_s, 2.0)
 
+    def test_a_tool_running_beside_the_one_that_asked_keeps_its_own_duration(self) -> None:
+        # Hermes runs some calls as one parallel batch (a read_file beside a write_file that asks), and a request
+        # does not say which call asked. Only a wait a tool ran through from start to end can be the one it was
+        # blocked on; one that began or ended while the tool ran is left in its duration.
+        def event(kind: str, tool_id: str, **payload) -> None:
+            app._on_event(Event(f"tool.{kind}", SID, {"tool_id": tool_id, "name": "read_file", **payload}))
+
+        for hermes in (True, False):  # Hermes' own figure, or the TUI's from the start
+            with self.subTest(duration_s=hermes):
+                app, _client, now = self.clocked()
+                event("start", "asker", context="AGENTS.md")
+                event("start", "beside", context="a.py")
+                now[0] = 101.0
+                app._on_server_request(ServerRequest("srq-1", "approval", {"command": "write AGENTS.md"}))
+                now[0] = 105.0
+                event("complete", "beside", result="ok", **({"duration_s": 5.0} if hermes else {}))
+                event("start", "later", context="b.py")
+                now[0] = 110.0
+                event("complete", "later", result="ok", **({"duration_s": 5.0} if hermes else {}))
+                now[0] = 121.0
+                armed(app)
+                press(app, Key(DOWN), Key(ENTER))
+                now[0] = 122.0
+                event("complete", "asker", result="ok", **({"duration_s": 22.0} if hermes else {}))
+                rows = {tool.tool_id: tool.duration_s for block in app.transcript.blocks if isinstance(block, ToolGroup)
+                        for tool in block.tools}
+                self.assertAlmostEqual(rows["asker"], 2.0)  # the wait it was blocked on is left out
+                self.assertAlmostEqual(rows["beside"], 5.0)  # finished while the question waited
+                self.assertAlmostEqual(rows["later"], 5.0)  # started while it waited
+
     def test_a_tool_that_ran_before_the_wait_keeps_its_whole_duration(self) -> None:
         app, _client, now = self.clocked()
         app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))

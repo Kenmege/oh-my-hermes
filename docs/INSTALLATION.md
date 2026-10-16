@@ -577,7 +577,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   `✻ 34s · 3 tools · ↓1.2k` on a thin rule. While a question Hermes asked
   waits on you, the working row reads `? waiting on you (11s)` instead, its
   one clock counting that wait, and a tool's time on its row leaves the wait
-  out, so a command you took 20 s to allow shows the 2 s it ran. The done
+  out, so a command you took 20 s to allow shows the 2 s it ran (a call Hermes
+  ran beside it, which the question did not hold up, keeps its whole time). The done
   line keeps the turn's whole time and names the wait beside it,
   `✻ 30s (27s waiting on you) · 1 tool`, so it still matches the clock you
   sat through. The terminal's title names the session (Hermes

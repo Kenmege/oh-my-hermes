@@ -225,7 +225,6 @@ class ToolRow:
     status: str = TOOL_GENERATING
     started_at: float | None = None
     duration_s: float | None = None
-    waited_at_start: float = 0.0  # the transcript's waited total (`Transcript.waited`) when the tool started
     summary: str = ""
     # An edit's `inline_diff` as Hermes sent it, UTF-8 encoded, parsed when drawn (`diff_lines`). Encoded, because
     # a str holding one character past Latin-1 (every Hermes diff has `┊` and `→`) takes two bytes for each of
@@ -373,7 +372,7 @@ def _args_summary(payload: dict[str, Any]) -> str:
 
 def _duration(payload: dict[str, Any], row: ToolRow, now: float, waited: float = 0.0) -> float | None:
     """How long the tool ran: Hermes' `duration_s`, else since its start, less the `waited` seconds a question
-    waited on the person meanwhile (both clocks count that wait)."""
+    it was blocked on waited on the person (both clocks count that wait; `Transcript.waited_within`)."""
     value = payload.get("duration_s")
     if isinstance(value, int | float) and not isinstance(value, bool) and value >= 0:
         return max(0.0, float(value) - waited)
@@ -760,7 +759,7 @@ class Transcript:
         self.running = False
         self.details_expanded = False
         self._clock = clock
-        self._waited = 0.0  # seconds questions waited on the person, waits that ended (`set_waiting`)
+        self._waits: list[tuple[float, float]] = []  # questions' waits on the person that ended: (began, ended)
         self._waiting_since: float | None = None  # when the wait open now began
         self._turn_start = 0
         self._cursor = 0  # first block not fully taken
@@ -909,12 +908,18 @@ class Transcript:
         if waiting and self._waiting_since is None:
             self._waiting_since = now
         elif not waiting and self._waiting_since is not None:
-            self._waited += now - self._waiting_since
+            self._waits.append((self._waiting_since, now))
             self._waiting_since = None
 
-    def waited(self, now: float) -> float:
-        """Seconds questions have waited on the person in this transcript up to `now`, the open wait included."""
-        return self._waited + (now - self._waiting_since if self._waiting_since is not None else 0.0)
+    def waited_within(self, start: float, end: float) -> float:
+        """Seconds of the waits on the person that began at or after `start` and ended by `end`.
+
+        A request does not say which tool asked, and Hermes runs some calls
+        side by side: only a wait a tool ran through whole can be one it was
+        blocked on. One that began before it started, or ended after it
+        finished, was another call's.
+        """
+        return sum(ended - began for began, ended in self._waits if began >= start and ended <= end)
 
     def close_command(self, block: CommandBlock | None = None) -> None:
         """A command is over (`block`, or the open `command`): its echo and output leave the live region at the next take."""
@@ -1151,7 +1156,6 @@ class Transcript:
         row.name = name
         row.status = TOOL_RUNNING
         row.started_at = self._clock()
-        row.waited_at_start = self.waited(row.started_at)
         row.args_summary = self._display_args(_args_summary(payload))
 
     def _on_tool_complete(self, payload: dict[str, Any]) -> None:
@@ -1164,7 +1168,7 @@ class Transcript:
             group.tools.append(row)
         row.status = tool_result_status(payload.get("result"))
         now = self._clock()
-        waited = self.waited(now) - row.waited_at_start if row.started_at is not None else 0.0
+        waited = self.waited_within(row.started_at, now) if row.started_at is not None else 0.0
         row.duration_s = _duration(payload, row, now, waited)
         row.summary = _result_summary(payload)
         row.output, row.output_more = _tool_output(payload.get("result"), row.status)
