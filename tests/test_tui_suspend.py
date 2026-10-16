@@ -41,7 +41,7 @@ class AppSuspendTests(unittest.TestCase):
         terminal = app.terminal
         self.assertEqual(terminal.suspended, 1)  # type: ignore[attr-defined]
         self.assertNotIn("› a draft", terminal.screen.lines())  # type: ignore[attr-defined]  # erased before stopping
-        self.assertTrue(app.anchor)
+        self.assertEqual(app.region.height, 0)  # a new region, drawn from wherever the shell left the cursor
         self.assertIn("› a draft", drawn(app))  # and drawn again once continued, the draft as it was
         self.assertEqual(app.composer.text, "a draft")
 

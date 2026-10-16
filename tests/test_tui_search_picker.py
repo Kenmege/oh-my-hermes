@@ -60,8 +60,11 @@ class SearchStandsWhereTheComposerWasTests(unittest.TestCase):
         app.composer.history = ["ls -la"]
         app._on_input(CTRL_R)
         during = screen(app)
-        # The block the composer and its rules took: the query row is its last row, above the mode row.
-        self.assertTrue(during[composer_row + 1].startswith(SEARCH_LABEL.rstrip()), during)
+        # The query row is the search's last row, right above the mode row: where the bottom rule was on the bottom
+        # rows, and the composer's own row here, where the region follows the content and is one row shorter.
+        status = next(index for index, row in enumerate(during) if row.startswith("⚚ OMH"))
+        self.assertTrue(during[status - 2].startswith(SEARCH_LABEL.rstrip()), during)
+        self.assertEqual(status - 2, composer_row)
         app._on_input(Key(ESCAPE))
         after = screen(app)
         self.assertTrue(after[composer_row].startswith("› half typed"), after)

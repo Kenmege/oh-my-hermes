@@ -33,6 +33,7 @@ from omh.tui.panels import (
     HudPoller,
     HudSnapshot,
     panel_lines,
+    plan_state,
     status_segments,
 )
 from omh.tui.theme import DEFAULT_THEME
@@ -253,6 +254,27 @@ class PlanBlockTests(unittest.TestCase):
         self.assertTrue(line_text(row).endswith("(unchanged 20m 0s)"), line_text(row))
         self.assertNotIn(" .", line_text(lines[0]), "no walking ellipsis on a plan that is not moving")
 
+    def test_a_moving_plan_header_ends_with_its_count_at_every_frame(self) -> None:
+        # The widget walked an ellipsis after it (` .`, ` ..`, ` ...`); a single dot read as a stray period (D7).
+        payload = hud_payload(phased_plan(3, phases=1, active=1))
+        for now in (0.0, 0.09, 0.3, 0.6, 0.9, 1.2):
+            with self.subTest(now=now):
+                header = line_text(panel_lines(payload, 120, 10, THEME, now)[0])
+                self.assertEqual(header, "[Plan] Plan │ 1/3")
+
+    def test_the_plan_state_says_open_done_or_nothing(self) -> None:
+        self.assertEqual(plan_state(hud_payload(phased_plan(3, phases=1, active=1))), "open")
+        self.assertEqual(plan_state(hud_payload([{"text": "a", "state": "done"}])), "done")
+        self.assertEqual([plan_state(hud_payload([])), plan_state(None), plan_state({"error": "x"})], ["", "", ""])
+
+    def test_without_show_plan_the_plan_block_is_left_out_and_the_agents_stay(self) -> None:
+        payload = with_agents(hud_payload(phased_plan(3, phases=1, active=1)), [agent_row(0)])
+        shown = lines_text(panel_lines(payload, 120, 20, THEME, 0.0))
+        left = lines_text(panel_lines(payload, 120, 20, THEME, 0.0, show_plan=False))
+        self.assertTrue(any(row.startswith("[Plan]") for row in shown))
+        self.assertFalse([row for row in left if row.startswith("[Plan]") or "Task number" in row])
+        self.assertEqual(left, shown[: len(left)])  # the agents block, as it was
+
     def test_hangul_titles_and_items_cut_on_whole_syllables(self) -> None:
         title = "패널 계획을 한국어로 길게 적은 제목입니다"
         items = [
@@ -403,7 +425,7 @@ class StatusSegmentsTests(unittest.TestCase):
         )
         payload["yolo"] = {"status": "observed", "enabled": True}
         line = status_segments(payload, THEME)
-        self.assertEqual(line_text(line), "⚚ OMH · repeat x4 cycle-of-2 blocked • 2 tools · 12s • yolo mode: on")
+        self.assertEqual(line_text(line), "⚚ OMH · repeat x4 cycle-of-2 blocked • 2 tools · 12s")  # no yolo chip
         chip = next(span for span in line if span.text.startswith("repeat"))
         self.assertEqual(chip.style.fg, THEME.warn.fg)
 
@@ -651,8 +673,12 @@ class PanelRowsTests(unittest.TestCase):
                 # The widget's dock-top ended with the composer rule, and its
                 # dock-bottom opened with a rule and the branded header, which
                 # the TUI's status line and `[Agents]` header replace; the
-                # recording leaves those out.
-                self.assertEqual(mine[plan_at:], rows["plan_rows"])
+                # recording leaves those out. The widget also ended a moving
+                # plan's header with a walking ellipsis (` .` at this frame),
+                # which read as a stray dot (audit D7); the TUI draws none, so it
+                # comes off the recorded header and nothing else.
+                header, *items = rows["plan_rows"]
+                self.assertEqual(mine[plan_at:], [header.removesuffix(" ."), *items])
                 self.assertEqual(mine[1:plan_at], rows["agent_rows"])
                 self.assertGreater(len(mine[1:plan_at]), 1)
 

@@ -650,12 +650,12 @@ class ReasoningAndToolTests(LoopTestCase):
         self.assertEqual(lines_text(self.taken), ["▸ thought for 1.0s"])
         self.assertEqual(self.live(), ["", "⏺ Answer."])
 
-    def test_overlapping_tools_get_a_parallel_badge(self) -> None:
+    def test_each_call_is_its_own_row_with_what_it_printed_under_it_and_no_group_header(self) -> None:
         self.step(ev("message.start"))
         self.step(ev("tool.generating", name="read_file"))
         self.step(ev("tool.generating", name="search_files"))
         self.step(ev("tool.start", tool_id="a", name="read_file", context="src/a.py"), at=1.0)
-        self.assertEqual(self.live(), ["⏺ Tool calls (2)", "  ⏺ read_file  src/a.py", "  ◌ search_files"])
+        self.assertEqual(self.live(), ["  ⏺ read_file  src/a.py", "  ◌ search_files"])
         self.step(ev("tool.start", tool_id="b", name="search_files", args={"pattern": "needle"}), at=1.1)
         self.step(ev("tool.complete", tool_id="a", name="read_file", duration_s=0.5, result={"content": "x"}))
         self.step(ev("tool.complete", tool_id="b", name="search_files", duration_s=0.7, result={"error": "rg failed"}))
@@ -665,7 +665,6 @@ class ReasoningAndToolTests(LoopTestCase):
         self.assertEqual(
             flushed,
             [
-                "⏺ Tool calls (3)  parallel ×2",
                 "  ✓ read_file  src/a.py  0.5s",
                 "    ⎿ x",
                 "  ✗ search_files  needle  0.7s",
@@ -674,22 +673,21 @@ class ReasoningAndToolTests(LoopTestCase):
                 "    ⎿ 1 failed",
             ],
         )
-        self.assertEqual(self.taken[0][-1].style, THEME.accent)
-        self.assertEqual(self.taken[1][1].style, THEME.ok)
-        self.assertEqual(self.taken[4][-1].style, THEME.error)  # a failure's first line
-        self.assertEqual(self.taken[3][1].style, THEME.error)  # the ✗ of search_files, under read_file's output
+        self.assertEqual(self.taken[0][1].style, THEME.ok)
+        self.assertEqual(self.taken[3][-1].style, THEME.error)  # a failure's first line
+        self.assertEqual(self.taken[2][1].style, THEME.error)  # the ✗ of search_files, under read_file's output
         self.step(ev("message.complete", text="Done.", status="complete"))
         self.assertIn("    ⎿ rg failed", self.history())
         self.assertIn("    ⎿ 1 failed", self.history())
 
-    def test_tools_that_ran_one_after_another_have_no_badge(self) -> None:
+    def test_tools_that_ran_one_after_another_are_a_row_each(self) -> None:
         self.step(ev("message.start"))
         self.step(ev("tool.start", tool_id="a", name="read_file", context="a.py"))
         self.step(ev("tool.complete", tool_id="a", name="read_file", duration_s=0.1, result={"content": ""}))
         self.step(ev("tool.start", tool_id="b", name="read_file", context="b.py"))
         self.step(ev("tool.complete", tool_id="b", name="read_file", duration_s=0.1, result={"content": ""}))
         flushed = self.step(ev("message.complete", text="", status="complete"))
-        self.assertEqual(flushed, ["⏺ Tool calls (2)", "  ✓ read_file  a.py  0.1s", "  ✓ read_file  b.py  0.1s"])
+        self.assertEqual(flushed, ["  ✓ read_file  a.py  0.1s", "  ✓ read_file  b.py  0.1s"])
 
     def test_a_denied_approval_shows_as_denied(self) -> None:
         self.user("Use your terminal tool to run exactly this shell command: rm -rf ./omh-m0-probe-dir")
@@ -801,11 +799,9 @@ class ToolDraftTests(LoopTestCase):
         self.step(ev("tool.generating", name="tool_call"))
         self.step(ev("tool.generating", name="read_file"))
         self.step(ev("tool.start", tool_id="a", name="read_file", context="a.py"))
-        self.assertEqual(self.live(), ["⏺ Tool calls (2)", "  ◌ tool_call", "  ⏺ read_file  a.py"])
+        self.assertEqual(self.live(), ["  ◌ tool_call", "  ⏺ read_file  a.py"])
         self.step(ev("tool.start", tool_id="b", name="todo_list", context="planning 1 task(s)"))
-        self.assertEqual(
-            self.live(), ["⏺ Tool calls (2)  parallel ×2", "  ⏺ todo_list  planning 1 task(s)", "  ⏺ read_file  a.py"]
-        )
+        self.assertEqual(self.live(), ["  ⏺ todo_list  planning 1 task(s)", "  ⏺ read_file  a.py"])
 
     def test_two_bridge_drafts_become_their_calls_in_the_order_they_started(self) -> None:
         # Each start claims the first unclaimed bridge draft, so the rows keep the order the calls began in.
@@ -813,12 +809,9 @@ class ToolDraftTests(LoopTestCase):
         self.step(ev("tool.generating", name="tool_call"))
         self.step(ev("tool.generating", name="tool_call"))
         self.step(ev("tool.start", tool_id="a", name="todo_list", context="planning 1 task(s)"))
-        self.assertEqual(self.live(), ["⏺ Tool calls (2)", "  ⏺ todo_list  planning 1 task(s)", "  ◌ tool_call"])
+        self.assertEqual(self.live(), ["  ⏺ todo_list  planning 1 task(s)", "  ◌ tool_call"])
         self.step(ev("tool.start", tool_id="b", name="web_search", context="hermes agent"))
-        self.assertEqual(
-            self.live(),
-            ["⏺ Tool calls (2)  parallel ×2", "  ⏺ todo_list  planning 1 task(s)", "  ⏺ web_search  hermes agent"],
-        )
+        self.assertEqual(self.live(), ["  ⏺ todo_list  planning 1 task(s)", "  ⏺ web_search  hermes agent"])
 
     def test_a_streamed_attempt_hermes_discards_leaves_no_row_and_no_count(self) -> None:
         self.step(ev("message.start"))
@@ -887,7 +880,7 @@ class TurnEndTests(LoopTestCase):
         )
         flushed = self.step(ev("message.delta", text="\n\n1\n2\n"))
         self.assertEqual(
-            flushed, ["", "  ✓ terminal  seq 1 300  0.1s", "    ⎿ 1", "      2", "      3", "      … +3 lines", "", "⏺ 1", "  2"]
+            flushed, ["", "  ✓ terminal  seq 1 300  0.1s", "    ⎿ 1", "      2", "      3", "      … +3 lines · ctrl+o shows all", "", "⏺ 1", "  2"]
         )
         flushed = self.step(ev("message.complete", text="1\n2", status="interrupted", partial=True))
         self.assertEqual(flushed, ["", "⚠ Interrupted."])
@@ -1081,23 +1074,23 @@ class InlineDiffTests(LoopTestCase):
         # the tool row, then the first 24 diff lines less the hunk header that became the gutter, then the count
         self.assertEqual(len(flushed), 1 + 23 + 1)
         self.assertEqual(flushed[-2].rstrip(), " 22 +row 22")
-        self.assertEqual(flushed[-1], "    … +18 lines (/history shows all)")
+        self.assertEqual(flushed[-1], "    … +18 lines · ctrl+o shows all")
         self.assertEqual(self.taken[-1][-1].style, THEME.muted)
         full = self.history(details=True)
         self.assertEqual(len(full), 1 + 41)
         self.assertEqual(full[-1].rstrip(), " 40 +row 40")
-        self.assertNotIn("    … +18 lines (/history shows all)", full)
+        self.assertNotIn("    … +18 lines · ctrl+o shows all", full)
 
     def test_toggled_details_show_the_whole_live_diff_and_never_reach_a_taken_one(self) -> None:
         self.step(ev("message.start"))
         self.edit(big_inline_diff(30), {"success": True})
-        self.assertEqual(self.live()[-1], "    … +8 lines (/history shows all)")
+        self.assertEqual(self.live()[-1], "    … +8 lines · ctrl+o shows all")
         self.transcript.toggle_details()
         self.assertEqual(self.live()[-1].rstrip(), " 30 +row 30")
         self.transcript.toggle_details()
         self.step(ev("message.complete", text="", status="complete"))
         self.transcript.toggle_details()
-        self.assertEqual(lines_text(self.taken)[-1], "    … +8 lines (/history shows all)")
+        self.assertEqual(lines_text(self.taken)[-1], "    … +8 lines · ctrl+o shows all")
         self.assertEqual(self.live(), [])
 
     def test_a_denied_edit_without_a_diff_shows_nothing_extra_and_a_failed_one_its_error(self) -> None:
@@ -1109,7 +1102,6 @@ class InlineDiffTests(LoopTestCase):
         self.assertEqual(
             flushed,
             [
-                "⏺ Tool calls (3)",
                 "  ✗ patch  src/app.py  0.3s",
                 "    ⎿ denied",
                 "  ✗ patch  src/app.py  0.3s",
@@ -1184,7 +1176,7 @@ class CommandOutputTests(LoopTestCase):
         self.assertEqual(len(flushed), 1 + OUTPUT_PREVIEW_ROWS + 1)
         self.assertEqual(flushed[1], "  ⎿ row 0")
         self.assertEqual(flushed[OUTPUT_PREVIEW_ROWS], f"    row {OUTPUT_PREVIEW_ROWS - 1}")
-        self.assertEqual(flushed[-1], f"    … +{30 - OUTPUT_PREVIEW_ROWS} rows · /history shows all")
+        self.assertEqual(flushed[-1], f"    … +{30 - OUTPUT_PREVIEW_ROWS} rows · ctrl+o shows all")
         self.assertEqual(self.history()[-1], "    row 29")
 
     def test_the_count_names_rows_since_it_counts_them_at_this_width(self) -> None:
@@ -1195,7 +1187,7 @@ class CommandOutputTests(LoopTestCase):
         (block,) = self.transcript.blocks
         for width in (100, 40):
             rows = lines_text(block_rows(block, width, THEME))
-            self.assertRegex(rows[-1], r"… \+\d+ rows · /history shows all")
+            self.assertRegex(rows[-1], r"… \+\d+ rows · ctrl\+o shows all")
 
     def test_whole_output_is_never_cut(self) -> None:
         self.transcript.add_command("/help")
@@ -1225,7 +1217,7 @@ class ToolOutputTests(LoopTestCase):
         # Recorded from Hermes 6c61c3e27d (session fixture, the interrupted turn's `seq 1 300`).
         flushed = self.run_tool({"output": "1\n2\n3\n4\n5\n[trimmed: 295 more lines]", "exit_code": 0, "error": None})
         self.assertEqual(flushed[0].split("  ")[1], "✓ terminal")
-        self.assertEqual(flushed[1:], ["    ⎿ 1", "      2", "      3", "      … +3 lines"])  # under the tool's name
+        self.assertEqual(flushed[1:], ["    ⎿ 1", "      2", "      3", "      … +3 lines · ctrl+o shows all"])  # under the tool's name
         self.assertEqual(self.taken[-1][-1].style, THEME.muted)
 
     def test_a_failed_tool_shows_its_errors_first_line_in_the_error_colour(self) -> None:
@@ -1241,7 +1233,7 @@ class ToolOutputTests(LoopTestCase):
                              "FAILED test_x.py::test_b - assert 1 == 2", "==== 1 failed, 2 passed in 0.10s ===="])
         flushed = self.run_tool({"output": output, "exit_code": 1, "error": None})
         self.assertIn("✗ terminal", flushed[0])
-        self.assertEqual(flushed[1:], ["    ⎿ … +2 lines", "      test_x.py .F.",
+        self.assertEqual(flushed[1:], ["    ⎿ … +2 lines · ctrl+o shows all", "      test_x.py .F.",
                                        "      FAILED test_x.py::test_b - assert 1 == 2",
                                        "      ==== 1 failed, 2 passed in 0.10s ===="])
         self.assertEqual(self.taken[-1][-1].style, THEME.error)

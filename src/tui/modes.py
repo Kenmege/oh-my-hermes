@@ -42,16 +42,32 @@ from .width import cell_width, line_width, truncate_line
 # says it too, and `app` imports this module.
 NO_SESSION_NOTICE = "No session is open yet; try again in a moment."
 
-# The mode row under the composer frame. In normal mode it carries the keys that matter now.
-IDLE_KEYS_HINT = "? shortcuts · ⇧⇥ mode · ctrl+t effort"
+# The mode row under the composer frame. In normal mode it carries the keys that matter now: what Shift+Tab turns on,
+# the next mode first, and Ctrl+T beside the effort Hermes confirmed. Each list is longest first: a row takes the
+# first that fits. `{cycle}` is every mode Shift+Tab reaches from here in order, `{next}` the first of them,
+# `{effort}` " (medium)" once Hermes reported one.
+IDLE_KEYS_HINTS = (
+    "? shortcuts · ⇧⇥ {cycle} · ctrl+t effort{effort}",
+    "? shortcuts · ⇧⇥ {next} · ctrl+t effort{effort}",
+    "⇧⇥ {next} · ctrl+t effort{effort}",
+    "? shortcuts · ⇧⇥ {next}",
+    "? shortcuts",
+)
+# Accept all: Hermes asks for no approval in this session. Plan: each prompt goes to Hermes as `/plan <text>`.
+ACCEPT_HINTS = (" · Hermes asks no approvals in this session (⇧⇥ {cycle})", " · no approvals (⇧⇥ {next})", " (⇧⇥ {next})")
+PLAN_HINTS = (" · prompts go as /plan (⇧⇥ {cycle})", " · prompts go as /plan (⇧⇥ {next})", " (⇧⇥ {next})")
+BOTH_HINTS = (" (⇧⇥ {cycle})",)
+# What Shift+Tab reaches from each mode, in order (`ModesMixin._cycle_mode`). While Hermes has approvals off on its
+# own, the key turns plan on and off and nothing else (`HERMES_OWN_CYCLE`).
+MODE_CYCLE = {MODE_NORMAL: "accept all/plan", MODE_ACCEPT: "plan/normal", MODE_PLAN: "normal/accept all"}
+HERMES_OWN_CYCLE = {MODE_ACCEPT: "plan", MODE_ACCEPT_PLAN: "plan off"}
+EFFORT_KEY = "ctrl+t effort"  # the effort's one display: in the idle hint, or on the row's right in any other state
 INTERRUPT_KEY_HINT = "esc interrupt"
 STEER_KEY_HINT = "ctrl+enter steer"  # only once the terminal has sent a key in a CSI u or modifyOtherKeys report
 STEER_COMMAND_HINT = "/steer <text> steers"
 QUEUED_KEY_HINT = "↑ edit queued"
 ACCEPT_LABEL = "⏵⏵ accept all on"
-ACCEPT_HINT = " · approvals off for this session (⇧⇥ to cycle)"
 PLAN_LABEL = "⏸ plan mode on"
-PLAN_HINT = " (⇧⇥ to cycle)"
 SHELL_LABEL = "! shell (not sent to the model)"
 # Each label's shorter forms, for a row where what the next key does would not fit beside the full words.
 ACCEPT_LABELS = (ACCEPT_LABEL, "⏵⏵ accept", "⏵⏵")
@@ -114,6 +130,28 @@ def strip_column(mode: str, theme: Theme) -> int:
     return line_width(label) + cell_width(STRIP_SEPARATOR) if label else 0
 
 
+def effort_words(effort: str) -> str:
+    """`ctrl+t effort (medium)`, or `ctrl+t effort` while Hermes has reported none: the effort's one display."""
+    return f"{EFFORT_KEY} ({effort})" if effort else EFFORT_KEY
+
+
+def default_hints(mode: str, busy: bool, cycle: str, effort: str) -> tuple[str, ...]:
+    """The mode row's own words when nothing else is said: the mode's meaning and Shift+Tab, or the idle keys."""
+    cycle = cycle or MODE_CYCLE.get(mode, "")
+    words = {"cycle": cycle, "next": cycle.split("/", 1)[0], "effort": f" ({effort})" if effort else ""}
+    if mode == MODE_ACCEPT:
+        forms = ACCEPT_HINTS
+    elif mode == MODE_PLAN:
+        forms = PLAN_HINTS
+    elif mode == MODE_ACCEPT_PLAN:
+        forms = BOTH_HINTS
+    elif not busy:
+        forms = IDLE_KEYS_HINTS
+    else:
+        return ()
+    return tuple(form.format(**words) for form in forms)
+
+
 def mode_row_line(
     *,
     mode: str,
@@ -127,6 +165,7 @@ def mode_row_line(
     say: str | tuple[str, ...] = "",
     say_style: Style | None = None,
     esc_interrupts: bool = True,
+    cycle: str = "",
 ) -> Line:
     """The row under the composer frame: the mode's label (accept, plan), the agent strip, the keys that matter now, the effort.
 
@@ -140,14 +179,19 @@ def mode_row_line(
     words, then its glyph alone, before the last form is cut. During a turn
     the hint offers Esc for the interrupt only while `esc_interrupts` says Esc
     does that now. The label always survives, in some form, and the strip
-    after it: the hint is cut from its end first, and the effort on the right
-    goes only when even the label and the strip beside it do not fit.
+    after it: the hint (its longest form that fits, `default_hints`) is cut
+    from its end first, and the effort on the right goes only when even the
+    label and the strip beside it do not fit. Accept and plan say what they
+    mean and where Shift+Tab goes next (`cycle`, every mode it reaches from
+    here; `MODE_CYCLE` when not given). Idle, the effort is said in the hint
+    beside Ctrl+T (`effort_words`) and not again on the right.
     """
     forms = (say,) if isinstance(say, str) else say
+    idle = not any(forms) and mode == MODE_NORMAL and not busy
     for form in range(len(ACCEPT_LABELS)):
         mode_part = mode_label(mode, theme, form)
         label = (*mode_part, Span(STRIP_SEPARATOR, theme.hint), *strip) if strip and mode_part else strip or mode_part
-        right: Line = (Span(f"effort {effort}", theme.muted),) if effort else ()
+        right: Line = (Span(effort_words(effort), theme.muted),) if effort and not idle else ()
         room = width - line_width(label) - (line_width(right) + MODE_ROW_GAP if right else 0)
         if room < 0:
             right, room = (), width - line_width(label)
@@ -164,15 +208,13 @@ def mode_row_line(
         hint = fits[0] if fits else said[-1]
     elif mode == MODE_SHELL:
         hint = SHELL_HINT
-    elif mode == MODE_ACCEPT:
-        hint = ACCEPT_HINT
-    elif mode in (MODE_PLAN, MODE_ACCEPT_PLAN):
-        hint = PLAN_HINT
-    elif busy:
+    elif mode == MODE_NORMAL and busy:
         keys = [*([INTERRUPT_KEY_HINT] if esc_interrupts else []), STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
         hint = " · ".join(keys + ([QUEUED_KEY_HINT] if queued else []))
     else:
-        hint = IDLE_KEYS_HINT
+        own = default_hints(mode, busy, cycle, effort)
+        placed = [text if not strip else STRIP_SEPARATOR + text.removeprefix(STRIP_SEPARATOR).strip() for text in own]
+        hint = next((text for text in placed if cell_width(text) <= max(room, 0)), placed[-1] if placed else "")
     if strip:
         hint = hint if hint.startswith(STRIP_SEPARATOR) else STRIP_SEPARATOR + hint.strip()
     left = truncate_line(label, width) + truncate_line((Span(hint, say_style or theme.hint),), max(room, 0))

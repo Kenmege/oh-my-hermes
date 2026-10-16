@@ -145,7 +145,9 @@ class NarrowSayTests(unittest.TestCase):
                 self.assertTrue(steer.rstrip().endswith("↪ steer · esc cancels"), steer)
                 self.assertIn("plan mode on", steer)  # the label always stays
         # With room for both, the effort stays beside the short form.
-        self.assertTrue(self.rewind_row(60, agents=False, mode=MODE_PLAN, effort="high").rstrip().endswith("effort high"))
+        self.assertTrue(
+            self.rewind_row(64, agents=False, mode=MODE_PLAN, effort="high").rstrip().endswith("ctrl+t effort (high)")
+        )
 
     def test_at_forty_columns_with_accept_and_plan_the_labels_shorten_before_the_say_form_is_cut(self) -> None:
         from omh.tui.frame import MODE_ACCEPT_PLAN
@@ -184,7 +186,7 @@ class NarrowSayTests(unittest.TestCase):
         row = self.steer_row(100, effort="high")
         self.assertIn("steering find usages of", row)
         self.assertIn("2 agents", row)  # the strip, collapsed
-        self.assertTrue(row.rstrip().endswith("effort high"), row)
+        self.assertTrue(row.rstrip().endswith("ctrl+t effort (high)"), row)
 
     def test_a_rewind_keeps_what_it_replaces_and_how_to_cancel_at_every_width(self) -> None:
         for cols in (100, 60, 40):

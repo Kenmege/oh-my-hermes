@@ -232,12 +232,15 @@ class ListFocusTests(unittest.TestCase):
 
     def test_the_list_stands_where_the_composer_was(self) -> None:
         app, _client = agent_app()
+        app.transcript.add_notice("printed above the region")
         before = drawn(app)
         bottom_rule = status_index(before) - 2
         app._on_input(Key(DOWN))
         during = drawn(app)
         self.assertTrue(during[bottom_rule].startswith("  ⠋ read the diff"), during)  # the list's last row, on the rule's
-        self.assertEqual(during[: 24 - app.region.height], before[: 24 - app.region.height])  # nothing above it moved
+        top = status_index(during) + 1 - app.region.height
+        self.assertIn("· printed above the region", during[:top])
+        self.assertEqual(during[:top], before[:top])  # nothing above it moved
 
     def test_no_caret_is_shown_while_the_list_has_the_keys(self) -> None:
         app, _client = focused()
@@ -551,7 +554,7 @@ class OutputWhileAViewIsOpenTests(unittest.TestCase):
         drawn(app)
         history = app.terminal.screen.history() + app.terminal.screen.lines()  # type: ignore[attr-defined]
         self.assertIn("  ⎿ usage row 0", history)  # in the transcript, under its echo, once the view is left
-        self.assertIn("    … +28 rows · /history shows all", history)
+        self.assertIn("    … +28 rows · ctrl+o shows all", history)
 
     def test_behind_the_key_list(self) -> None:
         app, client = agent_app()

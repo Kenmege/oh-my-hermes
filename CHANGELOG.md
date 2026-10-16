@@ -122,6 +122,73 @@ All notable changes will be documented here.
   open question closes unanswered, a running turn is reported lost and not
   sent again); AGENTS.md and CONTEXT.md now say the frontend spawns one
   child at a time and respawns it so.
+- **The OMH TUI's composer sits right under the output until the screen
+  fills, then stays on the bottom rows.** A fresh session showed the banner,
+  then 20 blank rows (110x34) to 36 (200x50), then the composer, and 6 to 12
+  blank rows stayed above it after a short turn, during an approval and after
+  a resize: the live region was padded to the screen's height at every start
+  and redraw and never got shorter. It is now drawn right under the last line
+  printed (one blank row under a turn, the spacer every block opens with) and
+  follows the content until its last row is the screen's last row; from then
+  on it keeps its height, so a list or question closing above the composer
+  leaves blank rows above it, filled by the next output, and does not pull it
+  up. A resize or a redraw starts again under the output. The startup query
+  that asks for the background colour also asks for the cursor's row (CSI
+  6n, inside the same 0.1 s wait), so a start from the last row of a
+  terminal already holding output is on the bottom rows from its first frame;
+  only a terminal that does not answer that cursor-position query follows the
+  content until the TUI's own output has filled the screen once.
+  Lines that leave the top of the streaming tail are written over the rows
+  they were drawn on, so the rows under them are not painted again.
+- **Each tool call is its own row, and a cut output names the key that shows
+  the rest.** A turn's calls were folded under one `⏺ Tool calls (2)` header;
+  each call is now a row of its own (its mark, name and what it ran on) with
+  what it printed under it, as in Claude Code, and the `parallel ×K` badge
+  that header carried is gone with it. A tool's output, a diff and a
+  command's output cut short end `… +N lines · ctrl+o shows all` (rows for a
+  command), where they named `/history` or nothing: Ctrl+O opens the details
+  view at its end.
+- **A finished plan leaves the OMH TUI's panel.** The plan stayed above the
+  composer into later, unrelated turns. Once every item is done it now shows
+  `✓ 3/3` until the turn ends and then goes, as Claude Code's list does, with
+  its final list written to the transcript above the done line; one already
+  finished when the session opens is not drawn, and a new plan is. The
+  `[Plan] │ 2/6 .` dot was the header's walking ellipsis, caught at one dot;
+  it is gone, and the active item's colour wave still shows work moving.
+- **The OMH TUI states the approval mode once.** After Shift+Tab the mode row
+  said `⏵⏵ accept all on · approvals off for this session` while the status
+  line said `yolo mode: off`: that chip read Hermes' saved state through the
+  HUD, which lags behind a switch. The status line no longer carries it; the
+  composer's rules and mode row (the status line on a short terminal) say the
+  mode, as Hermes confirmed it for the session, in the words the docs use.
+  The mode row also says what each mode means and what Shift+Tab turns on
+  next, Claude Code style: between turns `? shortcuts · ⇧⇥ accept all/plan ·
+  ctrl+t effort (medium)` (it said `⇧⇥ mode · ctrl+t effort` with a separate
+  `effort medium` on the right), in accept all `⏵⏵ accept all on · Hermes asks
+  no approvals in this session (⇧⇥ plan/normal)`, in plan `⏸ plan mode on ·
+  prompts go as /plan (⇧⇥ normal/accept all)`, with shorter forms of the same
+  words on a narrow row. The effort is said once, as `ctrl+t effort (medium)`,
+  and the keys list uses the same words for Shift+Tab and Ctrl+T.
+- **A first Ctrl+C between turns says `ctrl+c again to exit` on the mode row**
+  for the 2 s a second press exits in, as Esc's first press does, instead of
+  leaving a `Ctrl+C again to exit` notice in the scrollback every time.
+- **The OMH TUI shows three things Hermes sends it and it dropped:** what the
+  background review saved to memory or skills (`review.summary`, a transcript
+  line), a standing `/goal` (`session.control.update`, one row above the
+  composer worded as Hermes' Ink goal bar: `⊙ goal · 3/20 turns · <title>`,
+  parked or paused with its reason), and a mixture-of-agents turn (`moa.*`:
+  each reference model's answer as a collapsed `◇ Reference 1/3 — <model>`
+  row, and `MoA: refs 2/3` then `MoA: aggregating…` on the working row). The
+  gateway already wrote these to the TUI; showing them sends nothing.
+- **The status line follows a light terminal.** It kept the palette's dark
+  bar on a light screen (sky's `#0A2229` under white). On a background the
+  terminal reports light (or `/theme light`) the bar is now a light tint of
+  the palette's own bar colour, its words still 4.5:1 and its `│` dividers
+  3:1 against it; a dark terminal, and one that reports nothing, keep the
+  palette's bar.
+- **The keys list names the `/model` picker** beside the `/sessions` and
+  `/rewind` lists, which take the same keys (`?`, `/keys`, and INSTALLATION's
+  table).
 
 - **Korean spend and data-share requests reach their gates.** "내 카드로
   결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보
@@ -293,7 +360,7 @@ All notable changes will be documented here.
   and 24 rows or more shows the OH-MY-HERMES block logo above the banner, from
   the shipped skin and in its gradient, lifted to read on a light background.
   Motion follows one rule set: a reply opens with `⏺` in the text colour and
-  a tool group in the tool colour; a running tool's `⏺` pulses (each call on
+  a tool call's name in the tool colour; a running tool's `⏺` pulses (each call on
   its own clock) and settles to `✓` or `✗` before it reaches scrollback; a
   highlight sweeps across the working row's verb; `OMH_TUI_REDUCED_MOTION=1`
   or `NO_COLOR` holds everything still and repaints once a second. Your
@@ -909,8 +976,9 @@ All notable changes will be documented here.
   so Hermes' launcher still resolves the profile, the resume target and
   session ownership, and every model call, tool run and approval decision
   stays Hermes'. Finished lines go to the terminal's own scrollback and only
-  a bottom region repaints; the composer does not move when the plan and
-  agents panel, or a question Hermes asked, grows or shrinks. Nothing is
+  the region under them repaints; once the composer has reached the bottom
+  rows it does not move when the plan and agents panel, or a question Hermes
+  asked, grows or shrinks. Nothing is
   answered for the person: Esc, Ctrl+C, `d` or `n` declines, and allowing a
   command takes the arrows and then Enter. When the TUI cannot start
   (Windows, no `termios`, no Node, an OMH that cannot import itself, gateway

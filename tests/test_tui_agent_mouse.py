@@ -643,27 +643,28 @@ class UnknownRowTests(unittest.TestCase):
         click(app, 10, y)
         self.assertEqual(app.log_agent, SECOND)
 
-    def test_after_a_redraw_the_region_ends_one_row_above_the_screens_last_and_clicks_follow_it(self) -> None:
+    def test_after_a_redraw_the_region_sits_under_the_output_and_clicks_follow_it(self) -> None:
         app, client = listing()
-        self.assertEqual(app.region.last_row(24), 22)
         screen = drawn(app)
-        self.assertEqual(status_index(screen), 22)
-        self.assertEqual(screen[23], "")  # the boundary case: the screen's last row is empty
+        status = status_index(screen)
+        self.assertEqual(app.region.last_row(24), status)
+        self.assertLess(status, 23)
+        self.assertEqual(screen[status + 1 :], [""] * (23 - status))  # nothing under the region
         y = row_of(app, SECOND_ROW)
-        self.assertEqual(y, 21)
+        self.assertEqual(y, status - 1)  # right above the hint row
         before = state(app, client)
-        click(app, 10, y + 1)  # where the row would be if the region ended on the last row: the hint row
+        click(app, 10, y + 1)  # the hint row
         self.assertEqual(state(app, client), before)
         click(app, 10, y)
         self.assertEqual(app.log_agent, SECOND)
 
-    def test_when_the_region_then_reaches_the_last_row_the_same_click_is_one_row_lower(self) -> None:
+    def test_when_output_pushes_the_region_down_the_click_follows_it(self) -> None:
         app, _client = listing()
-        self.assertEqual(row_of(app, SECOND_ROW), 21)
+        self.assertLess(row_of(app, SECOND_ROW), 21)
         app.transcript.add_notice("\n".join(f"line {number}" for number in range(40)))
         self.assertEqual(row_of(app, SECOND_ROW), 22)
         self.assertEqual(app.region.last_row(24), 23)
-        click(app, 10, 21)  # the second agent's old row holds the first agent now
+        click(app, 10, 21)  # the row above the second agent's holds the first agent
         self.assertEqual(app.log_agent, FIRST)
         app._on_input(Key(CHAR, "q"))
         click(app, 10, 22)
@@ -1199,18 +1200,27 @@ class MouseReplayTests(AppTestCase):
     def test_in_the_real_loop_reports_wait_for_the_list_and_a_click_on_its_row_opens_that_agent(self) -> None:
         run = self.prepare(self.scenario())
         terminal = run.terminal
-        x, y = 10, 21  # the second agent's row of a list drawn in a region redrawn from the top row
-        ignored = b"".join(f"\x1b[<{code};{x};{y}M".encode("ascii") for code in (64, 65, 35, 2)) + (
-            f"\x1b[<0;{x};{y}m\x1b[<0;{x};{y + 1}M\x1b[<0;{x};{y + 2}M".encode("ascii")
-        )
+        x, aimed = 10, [0]
         on = lambda: terminal.mouse_reporting  # noqa: E731
         listed = terminal.shows(AGENT_LIST_HINT)
+        near_misses = Step(when=lambda: on() and listed() and aim(), capture="listed", label="the list, reports on")
+        hit = Step(when=listed, capture="ignored", label="ignored")
+
+        def aim() -> bool:
+            """Aim at the second agent's row where the screen shows it (a report counts rows from 1)."""
+            y = aimed[0] = next(index for index, row in enumerate(terminal.screen.lines()) if SECOND_ROW in row) + 1
+            near_misses.data = b"".join(f"\x1b[<{code};{x};{y}M".encode("ascii") for code in (64, 65, 35, 2)) + (
+                f"\x1b[<0;{x};{y}m\x1b[<0;{x};{y + 1}M\x1b[<0;{x};{y + 2}M".encode("ascii")
+            )
+            hit.data = f"\x1b[<0;{x};{y}M".encode("ascii")
+            return True
+
         terminal.script(
             self.submit(run, INTERRUPTED_PROMPT),
             Step(b"\x0c", when=terminal.shows("● main  "), capture="launched", label="the strip"),
             Step(b"\x1b[B", when=lambda: terminal.shows("● main  ")() and not on(), capture="redrawn", label="no reports"),
-            Step(ignored, when=lambda: on() and listed(), capture="listed", label="the list, reports on"),
-            Step(f"\x1b[<0;{x};{y}M".encode("ascii"), when=listed, capture="ignored", label="ignored"),
+            near_misses,
+            hit,
             Step(b"q", when=terminal.shows("read the diff · ←/→ agents"), capture="log", label="the second agent's log"),
             Step(b"\x1b", when=lambda: on() and listed(), capture="back", label="the list again"),
             Step(b"\x1b", when=lambda: not listed() and not on(), label="the strip again"),
@@ -1220,8 +1230,8 @@ class MouseReplayTests(AppTestCase):
         self.assert_clean_run(run)
         captures = terminal.captures
         # The coordinates above are where the screen showed the thing clicked.
-        rows = captures["listed"]
-        self.assertEqual(status_index(rows), 22)
+        rows, y = captures["listed"], aimed[0]
+        self.assertEqual(status_index(rows), y + 1)  # the status line under the hint row
         self.assertIn("read the diff for risks", rows[y - 1])
         self.assertEqual(rows[y], AGENT_LIST_HINT)  # the hint row under it
         # Wheel, motion, a right press, a release and two near misses (the hint row, the status line): still the

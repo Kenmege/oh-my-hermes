@@ -555,6 +555,28 @@ class ModeCycleTests(unittest.TestCase):
         self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])  # plan is the TUI's flag: no call
         self.assertEqual(notices(app), [])
 
+    def test_the_screen_states_the_approval_mode_once_in_the_composers_words_whatever_the_hud_read(self) -> None:
+        # The audit's case (D4): the mode row said approvals off while the status line, reading Hermes' saved state
+        # through the HUD, still said `yolo mode: off`.
+        from test_tui_panels import hud_payload
+
+        from omh.tui.panels import HudSnapshot
+
+        app, client = make_app()
+        app.stored_id = "stored"
+        for enabled in (False, True):
+            with self.subTest(hud_says_yolo=enabled):
+                payload = hud_payload()
+                payload["yolo"] = {"status": "observed", "enabled": enabled}
+                app.hud = HudSnapshot("stored", payload, 100.0)
+                if app.mode != MODE_ACCEPT:
+                    app._on_input(SHIFT_TAB)
+                    answer(app, client, YOLO_IS_ON)
+                screen = drawn(app)
+                status = next(index for index, row in enumerate(screen) if row.startswith("⚚ OMH"))
+                self.assertFalse([row for row in screen if "yolo" in row], screen)
+                self.assertEqual([row for row in screen if "no approvals" in row], [screen[status - 1]])  # the mode row
+
     def test_a_yolo_answer_that_is_not_this_session_only_is_a_failure(self) -> None:
         refusals = {
             "scope global": {"key": "yolo", "value": "1", "scope": "global"},
@@ -838,6 +860,33 @@ class ModeCycleTests(unittest.TestCase):
         self.assertEqual({params["session_id"] for params in configs}, {SID, "live-2"})
 
 
+class ExitHintTests(unittest.TestCase):
+    def test_a_first_ctrl_c_says_so_on_the_mode_row_for_two_seconds_and_writes_nothing(self) -> None:
+        from omh.tui.app import EXIT_CONFIRM_SECONDS, EXIT_HINT
+
+        now = [100.0]
+        app, _client = make_app(clock=lambda: now[0])
+        resting = drawn(app)
+        app._on_input(Key(CHAR, "c", ctrl=True))
+        screen = drawn(app)
+        status = next(index for index, row in enumerate(screen) if row.startswith("⚚ OMH"))
+        self.assertIn(EXIT_HINT, screen[status - 1])  # the mode row, as the Esc-armed message is
+        self.assertEqual(notices(app), [])  # nothing left in the transcript or the scrollback
+        self.assertIsNone(app.exit_code)
+        now[0] += EXIT_CONFIRM_SECONDS - 0.5
+        self.assertAlmostEqual(app._read_timeout(), 0.5)  # the loop wakes when the window ends, not a second later
+        now[0] += 0.6
+        app.dirty = False
+        app._expire_exit()
+        self.assertEqual((app.dirty, app.exit_armed_at), (True, None))  # so that wake repaints the row without it
+        self.assertEqual(drawn(app), resting)
+        app._on_input(Key(CHAR, "c", ctrl=True))  # the window passed: this press arms again
+        self.assertIsNone(app.exit_code)
+        now[0] += EXIT_CONFIRM_SECONDS / 2
+        app._on_input(Key(CHAR, "c", ctrl=True))
+        self.assertEqual(app.exit_code, 0)
+
+
 class HermesOwnApprovalsTests(unittest.TestCase):
     """Approvals Hermes turned off on its own: accept stays shown, and Shift+Tab moves plan alone."""
 
@@ -904,7 +953,8 @@ class HermesOwnApprovalsTests(unittest.TestCase):
         session_info(app, yolo=True)
         app._on_input(SHIFT_TAB)
         screen = drawn(app)
-        self.assertTrue(any(line.startswith("⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ to cycle)") for line in screen))
+        # Hermes has approvals off on its own: Shift+Tab only turns plan back off, and the row says so.
+        self.assertTrue(any(line.startswith("⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ plan off)") for line in screen))
         rules = [line for line in screen if line and set(line) == {"━"}]
         self.assertEqual(len(rules), 2)  # approvals off is what the rules keep showing
         short, _client = make_app(rows=9)
@@ -1718,20 +1768,24 @@ class QueueLinesTests(unittest.TestCase):
 
 
 class QueueTests(unittest.TestCase):
-    def test_queued_prompts_never_move_the_composer(self) -> None:
+    def test_queued_prompts_push_the_composer_down_by_their_rows_and_leave_no_blank_row(self) -> None:
         for rows, cols in ((7, 40), (9, 40), (10, 80), (12, 80), (24, 80), (40, 120)):
             for menu in (False, True):
                 with self.subTest(rows=rows, cols=cols, menu=menu):
                     app, _client = make_app(busy=True, rows=rows, cols=cols)
-                    empty = composer_index(drawn(app))
-                    seen = []
+                    working = composer_index(drawn(app)) - 1  # the working row, right above the top rule
                     for count in (1, 2, 3, 6):
                         app.queued.clear()
                         queue(app, *(f"prompt {number}" for number in range(count)))
                         if menu:
                             app.composer.replace(0, len(app.composer.text), "/")
-                        seen.append(composer_index(drawn(app)))
-                    self.assertEqual(seen, [empty] * 4)
+                        screen = drawn(app)
+                        top = composer_index(screen)
+                        between = screen[working : top - 1]  # the slot: the menu, the queued prompts under it
+                        self.assertTrue(all(between), screen)
+                        if not menu and rows >= 10:
+                            # three named and "+N more", within the slot's cap of a third of the rows
+                            self.assertEqual(len(between), min(count, 4, rows // 3), screen)
 
     def test_the_rows_sit_right_above_the_composers_top_rule(self) -> None:
         app, _client = make_app(busy=True)
@@ -2047,8 +2101,7 @@ class ModeReplayTests(AppTestCase):
             return terminal.status_row().rstrip().endswith("running")
 
         terminal.script(
-            Step(b"Write the numbers from 1 to 300, one per line, nothing else.\r", when=terminal.idle,
-                 capture="idle", label="idle"),
+            Step(b"Write the numbers from 1 to 300, one per line, nothing else.\r", when=terminal.idle, label="idle"),
             # The replay holds this turn open until it sees session.interrupt.
             Step(b"second prompt\rthird prompt\r", when=running, label="running"),
             Step(b"\x1b[A", when=terminal.shows("⧗ third prompt"), capture="queued", label="queued"),
@@ -2059,9 +2112,8 @@ class ModeReplayTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)  # a prompt.submit for either queued prompt would be a replay mismatch
         self.assertEqual(len(run.calls("prompt.submit")), 1)
-        idle, queued, recalled = (terminal.captures[name] for name in ("idle", "queued", "recalled"))
+        queued, recalled = (terminal.captures[name] for name in ("queued", "recalled"))
         top = composer_index(queued)
-        self.assertEqual(top, composer_index(idle))
         self.assertEqual(queued[top - 3].rstrip(), "⧗ second prompt")
         self.assertTrue(queued[top - 2].startswith("⧗ third prompt"))
         self.assertTrue(queued[top - 2].rstrip().endswith("↑ edit"))
@@ -2076,14 +2128,14 @@ class ModeReplayTests(AppTestCase):
         terminal = run.terminal
         terminal.script(
             Step(b"\x14", when=terminal.idle, capture="before", label="idle"),
-            Step(b"\x04", when=terminal.shows("effort low"), label="the effort"),
+            Step(b"\x04", when=terminal.shows("ctrl+t effort (low)"), label="the effort"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
         (call,) = run.calls("config.set")
         self.assertEqual(call["params"], {"key": "reasoning", "session_id": LIVE_ID, "value": "low"})
         # "ctrl+t effort" is the hint; the level itself is absent until Hermes names one.
-        self.assertNotIn("effort low", "\n".join(terminal.captures["before"]))
+        self.assertNotIn("(low)", "\n".join(terminal.captures["before"]))
 
     def test_shift_tab_walks_the_modes_and_the_frame_shows_each(self) -> None:
         answers = (*startup_answers(), ("config.set", {"result": YOLO_IS_ON}), ("config.set", {"result": YOLO_IS_OFF}))

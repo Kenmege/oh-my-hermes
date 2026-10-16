@@ -168,11 +168,11 @@ class RowTests(unittest.TestCase):
         # the file row, the 22 added lines the preview reaches (its hunk header is the gutter), the count
         self.assertEqual(len(rows), 1 + 22 + 1)
         self.assertEqual(lines_text(rows)[22].rstrip(), " 22 +line 22")
-        self.assertEqual(rows[-1], (Span("    "), Span("… +6 lines (/history shows all)", THEME.muted)))
+        self.assertEqual(rows[-1], (Span("    "), Span("… +6 lines · ctrl+o shows all", THEME.muted)))
         full = diff_rows(lines, 60, THEME, full=True)
         self.assertEqual(len(full), 1 + 28)
         self.assertEqual(lines_text(full)[-1].rstrip(), " 28 +line 28")
-        self.assertEqual(lines_text(diff_rows(parse_inline_diff(long_diff(23)), 60, THEME))[-1], "    … +1 line (/history shows all)")
+        self.assertEqual(lines_text(diff_rows(parse_inline_diff(long_diff(23)), 60, THEME))[-1], "    … +1 line · ctrl+o shows all")
         self.assertEqual(len(diff_rows(parse_inline_diff(long_diff(22)), 60, THEME)), 1 + 22)
 
     def test_random_payloads_never_raise_or_paint_a_control_character(self) -> None:

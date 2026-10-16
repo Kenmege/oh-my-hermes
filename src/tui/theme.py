@@ -34,10 +34,13 @@ none when no background was reported. What is drawn on a band takes
 `on_band(theme, band)`, the roles measured against that band, so its words
 reach 4.5:1 and its marks 3:1 on it.
 
-The status line keeps the palette's own status-bar background whatever the
-terminal's, so its words are measured against that bar instead: the
-`status*` roles here, and `on_status_bar(theme)` for the roles the status
-line borrows (OMH's chips, the mode).
+The status line sits on a bar of its own: the palette's status-bar
+background on a dark terminal or one that reported none, and on a light one
+a light tint of that colour (`LIGHT_STATUS_SHARE`), so the bar belongs to a
+light screen instead of being a dark band across it. Its words are measured
+against that bar instead of the terminal's background: the `status*` roles
+here, and `on_status_bar(theme)` for the roles the status line borrows (OMH's
+chips, the mode).
 """
 
 from __future__ import annotations
@@ -70,6 +73,8 @@ LIGHT_BAND_SHARE = 0.82
 LIGHT_WORD_BAND_SHARE = 0.62
 # Your prompt's band: the background moved this far toward the ink, a tint the default foreground still reads on.
 USER_BAND_SHARE = 0.08
+# A light background's status bar: the palette's status-bar colour moved this far toward the background.
+LIGHT_STATUS_SHARE = 0.85
 # The roles a person reads as text: each reaches TEXT_CONTRAST against the background. `text` and `user` are not
 # here because they are the terminal's own foreground.
 TEXT_ROLES = (
@@ -178,11 +183,11 @@ def lifted_colour(colour: str, surface: str, minimum: float, ink: str) -> str:
 def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
     """Map one shipped palette onto the TUI's roles, measured against `background` (see the module docstring)."""
     c = _palette(skin)
-    status_bg = c["status_bar_bg"]
     surface = surface_for(skin, background)
     reported = surface == background  # the terminal said what its background is
     light = is_light(surface)
     ink = BLACK if light else c["banner_text"]
+    status_bg = _mix(c["status_bar_bg"], surface, LIGHT_STATUS_SHARE) if reported and light else c["status_bar_bg"]
 
     def read(key: str) -> str:
         return _lifted(c[key], ink, surface, TEXT_CONTRAST)

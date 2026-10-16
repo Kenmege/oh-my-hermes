@@ -48,10 +48,8 @@ class Harness:
         self.writes.append(text)
         self.screen.feed(text)
 
-    def render(
-        self, lines: list[Line], cursor: tuple[int, int] | None = (0, 0), width: int | None = None, pad: int = 0
-    ) -> None:
-        self.region.render(lines, cursor, self.cols if width is None else width, pad=pad)
+    def render(self, lines: list[Line], cursor: tuple[int, int] | None = (0, 0), width: int | None = None) -> None:
+        self.region.render(lines, cursor, self.cols if width is None else width)
 
     def flush(self, lines: list[Line], width: int | None = None) -> None:
         self.region.flush_above(lines, self.cols if width is None else width)
@@ -77,22 +75,20 @@ class SynchronizedOutputTests(unittest.TestCase):
         self.assertEqual(SYNC_BEGIN, "\x1b[?2026h")
         self.assertEqual(SYNC_END, "\x1b[?2026l")
 
-    def test_a_frame_and_its_flush_are_one_write_with_the_screen_of_the_two_writes(self) -> None:
+    def test_a_flush_and_the_frame_under_it_are_one_write(self) -> None:
         from omh.tui.screen import SYNC_BEGIN, SYNC_END
 
-        apart, together = Harness(history=9), Harness(history=9)
-        for harness in (apart, together):
-            harness.render(plain("", "", "one", "two"), cursor=(3, 0), pad=2)
-        apart.render(plain("", "", "one", "TWO"), cursor=(3, 0), pad=2)
-        apart.flush(plain("f1", "f2", "f3"))
-        written = len(together.writes)
-        together.region.render(plain("", "", "one", "TWO"), (3, 0), together.cols, pad=2, flush=plain("f1", "f2", "f3"))
-        (frame,) = together.writes[written:]
+        harness = Harness(history=9)
+        harness.render(plain("f1", "f2", "one", "two"), cursor=(3, 0))
+        written = len(harness.writes)
+        harness.region.render(plain("one", "TWO"), (1, 0), harness.cols, flush=plain("f1", "f2", "f3"))
+        (frame,) = harness.writes[written:]
         self.assertTrue(frame.startswith(SYNC_BEGIN) and frame.endswith(SYNC_END), repr(frame))
         self.assertEqual((frame.count(SYNC_BEGIN), frame.count(SYNC_END)), (1, 1))
-        self.assertEqual(together.screen.history(), apart.screen.history())
-        self.assertEqual(together.screen.cursor, apart.screen.cursor)
-        self.assertEqual((together.region.height, together.region.pad), (apart.region.height, apart.region.pad))
+        history = [f"history {index}" for index in range(9)]
+        self.assertEqual(harness.screen.history(), history + ["f1", "f2", "f3", "one", "TWO"])
+        self.assertEqual(harness.screen.cursor, (9, 0))
+        self.assertEqual(harness.region.height, 2)
 
     def test_a_pager_frame_is_wrapped_too(self) -> None:
         from omh.tui.pager import Pager
@@ -208,10 +204,10 @@ class HiddenCaretTests(unittest.TestCase):
         self.assertTrue(self.harness.screen.cursor_visible)
 
     def test_a_flush_keeps_the_caret_hidden_and_the_next_caret_shows_it(self) -> None:
-        self.harness.render(plain("", "alpha", "beta"), cursor=None, pad=1)
+        self.harness.render(plain("alpha", "beta"), cursor=None)
         self.harness.flush(plain("done one", "done two"))
         self.assertFalse(self.harness.screen.cursor_visible)
-        self.assertEqual(self.harness.screen.lines()[-3:], ["done two", "alpha", "beta"])
+        self.assertEqual(self.harness.screen.lines()[-4:], ["done one", "done two", "alpha", "beta"])
         self.harness.render(plain("alpha", "beta"), cursor=(1, 2))
         self.assertTrue(self.harness.screen.cursor_visible)
         self.assertEqual(self.harness.screen.cursor, (9, 2))
@@ -238,7 +234,21 @@ class PaintReuseTests(unittest.TestCase):
             self.assertEqual(painted[2:], plain("alpha", "BETA", "gamma", "delta"))
         self.assertEqual(harness.screen.lines()[-4:], ["alpha", "BETA", "gamma", "delta"])
 
-    def test_after_a_flush_past_the_pad_every_row_is_painted_again(self) -> None:
+    def test_after_a_flush_the_rows_its_lines_did_not_cover_are_kept_not_painted_again(self) -> None:
+        harness = Harness(rows=10, history=9)
+        harness.render(plain("tail 1", "tail 2", "alpha", "beta"), cursor=(3, 0))
+        painted: list[Line] = []
+
+        def counting(line: Line, width: int) -> str:
+            painted.append(line)
+            return paint_line(line, width)
+
+        with patch("omh.tui.screen.paint_line", counting):
+            harness.region.render(plain("alpha", "beta", "gamma"), (2, 0), harness.cols, flush=plain("tail 1", "tail 2"))
+        self.assertEqual(painted, plain("tail 1", "tail 2", "gamma"))  # the flushed lines and the new row
+        self.assertEqual(harness.screen.lines()[-5:], ["tail 1", "tail 2", "alpha", "beta", "gamma"])
+
+    def test_after_a_flush_longer_than_the_region_every_row_is_painted_again(self) -> None:
         harness = Harness(rows=10, history=9)
         harness.render(plain("alpha", "beta"), cursor=(1, 0))
         harness.flush(plain("done one", "done two", "done three"))
@@ -318,58 +328,62 @@ class FlushAboveTests(unittest.TestCase):
         self.assertEqual(harness.screen.lines()[:3], ["a much l", "한글한글", "x"])
 
 
-class PadRowTests(unittest.TestCase):
-    """Pad rows: `flush_above` writes into them first and the region's bottom stays put."""
+class FlushOverRegionTests(unittest.TestCase):
+    """Flushed lines are written over the region's top rows; the region's rows under them stay where they are."""
 
     def setUp(self) -> None:
         self.harness = Harness(rows=10, history=9)  # the region's bottom is the screen's last row
-        self.frame = plain("", "", "", "a", "b")
-        self.harness.render(self.frame, cursor=(4, 1), pad=3)
+        self.frame = plain("t1", "t2", "t3", "a", "b")
+        self.harness.render(self.frame, cursor=(4, 1))
         self.history = [f"history {index}" for index in range(9)]
 
-    def test_a_flush_into_pad_rows_moves_and_repaints_nothing_else(self) -> None:
-        self.harness.flush(plain("f1", "f2"))
-        self.assertEqual(printable(self.harness.writes[-1]), "f1f2")
-        self.assertEqual(self.harness.screen.lines()[-5:], ["f1", "f2", "", "a", "b"])
-        self.assertEqual(self.harness.screen.history(), self.history + ["f1", "f2", "", "a", "b"])
+    def test_lines_leaving_the_top_of_the_region_repaint_nothing_under_them(self) -> None:
+        # What a streaming tail does: its first lines settle into the transcript, the rows under them stay.
+        self.harness.region.render(self.frame[2:], (2, 1), self.harness.cols, flush=plain("t1", "t2"))
+        self.assertEqual(printable(self.harness.writes[-1]), "t1t2")
+        self.assertEqual(self.harness.screen.lines()[-5:], ["t1", "t2", "t3", "a", "b"])
+        self.assertEqual(self.harness.screen.history(), self.history + ["t1", "t2", "t3", "a", "b"])
         self.assertEqual(self.harness.screen.cursor, (9, 1))
-        self.assertEqual((self.harness.region.height, self.harness.region.pad), (3, 1))
+        self.assertEqual(self.harness.region.height, 3)
 
     def test_the_next_frame_sees_the_shorter_region(self) -> None:
-        self.harness.flush(plain("f1", "f2"))
+        self.harness.region.render(self.frame[2:], (2, 1), self.harness.cols, flush=plain("t1", "t2"))
         before = len(self.harness.writes)
-        self.harness.render(self.frame[2:], cursor=(2, 1), pad=1)
+        self.harness.render(self.frame[2:], cursor=(2, 1))
         self.assertEqual(len(self.harness.writes), before)  # the same rows: nothing to write
 
-    def test_a_flush_longer_than_the_pad_fills_it_then_pushes(self) -> None:
-        flushed = ["f1", "f2", "f3", "f4", "f5"]
-        self.harness.flush(plain(*flushed))
+    def test_flush_above_draws_the_whole_region_again_under_the_lines(self) -> None:
+        self.harness.flush(plain("f1", "f2"))
+        self.assertEqual(self.harness.screen.history(), self.history + ["f1", "f2", "t1", "t2", "t3", "a", "b"])
+        self.assertEqual(self.harness.screen.cursor, (9, 1))
+        self.assertEqual(self.harness.region.height, 5)
+
+    def test_a_flush_longer_than_the_region_pushes_it_down(self) -> None:
+        flushed = ["f1", "f2", "f3", "f4", "f5", "f6", "f7"]
+        self.harness.region.render(plain("a", "b"), (1, 1), self.harness.cols, flush=plain(*flushed))
         self.assertEqual(self.harness.screen.history(), self.history + flushed + ["a", "b"])
         self.assertEqual(self.harness.screen.lines()[-2:], ["a", "b"])
         self.assertEqual(self.harness.screen.cursor, (9, 1))
-        self.assertEqual((self.harness.region.height, self.harness.region.pad), (2, 0))
 
-    def test_a_region_of_pad_only_takes_the_flush_whole(self) -> None:
-        harness = Harness(rows=10, history=3)
-        harness.render(plain("", ""), cursor=(1, 0), pad=2)
-        harness.flush(plain("f1", "f2"))
-        self.assertEqual(harness.screen.lines()[:6], ["history 0", "history 1", "history 2", "f1", "f2", ""])
-        self.assertEqual(harness.region.height, 0)
+    def test_a_shorter_frame_under_the_lines_erases_what_it_no_longer_holds(self) -> None:
+        harness = Harness(rows=10, history=2)
+        harness.render(plain("t1", "a", "b", "c"), cursor=(3, 0))
+        harness.region.render(plain("x"), (0, 0), harness.cols, flush=plain("t1"))
+        self.assertEqual(harness.screen.lines()[:6], ["history 0", "history 1", "t1", "x", "", ""])
 
-    def test_pad_is_clamped_to_the_frame_and_reset_by_clear(self) -> None:
-        harness = Harness(rows=10)
-        harness.render(plain("", "x"), cursor=(1, 0), pad=5)
-        self.assertEqual((harness.region.height, harness.region.pad), (2, 2))
-        harness.region.clear()
-        self.assertEqual((harness.region.height, harness.region.pad), (0, 0))
+    def test_a_first_frame_erases_what_was_under_its_rows(self) -> None:
+        harness = Harness(rows=10, history=2)
+        harness.screen.feed("\r\n\r\nleft over\x1b[2A\r")  # text two rows under the cursor
+        harness.render(plain("one"))
+        self.assertEqual(harness.screen.lines()[:5], ["history 0", "history 1", "one", "", ""])
 
 
 END = "END"
 
 
-def ending(rows: int, pad: int = 0) -> list[Line]:
-    """A frame of `rows` rows whose last row reads END, the first `pad` of them blank."""
-    return plain(*[""] * pad, *[f"row {n}" for n in range(rows - pad - 1)], END)
+def ending(rows: int) -> list[Line]:
+    """A frame of `rows` rows whose last row reads END."""
+    return plain(*[f"row {n}" for n in range(rows - 1)], END)
 
 
 class LastRowTests(unittest.TestCase):
@@ -400,13 +414,12 @@ class LastRowTests(unittest.TestCase):
             ends.add(self.shown(harness))
         self.assertEqual(ends, {8, 9})
 
-    def test_one_row_of_growth_after_a_full_first_frame_settles_it_from_any_start(self) -> None:
+    def test_a_flush_under_a_frame_that_fills_the_screen_settles_it_from_any_start(self) -> None:
         for history in range(10):
             harness = Harness(rows=10, history=history)
-            harness.render(ending(9, pad=3), pad=3)
-            harness.flush(plain("a", "b"))  # into the pad: the region is seven rows and ends where it did
+            harness.render(ending(9))
             self.assertIsNone(harness.region.last_row(10), history)
-            harness.render(ending(8))
+            harness.region.render(ending(9), (0, 0), harness.cols, flush=plain("a"))
             self.assertEqual((harness.region.last_row(10), self.shown(harness)), (9, 9), history)
 
     def test_growth_pushes_the_row_down_one_per_row_and_stops_at_the_screens_last(self) -> None:
@@ -418,38 +431,55 @@ class LastRowTests(unittest.TestCase):
             self.assertEqual(seen[-1], self.shown(harness))
         self.assertEqual(seen, [1, 1, 4, 5, 8, 9])
 
-    def test_a_flush_into_the_pad_leaves_the_row_and_one_past_the_pad_pushes_it(self) -> None:
+    def test_a_flush_pushes_the_row_down_one_per_line_and_stops_at_the_screens_last(self) -> None:
         harness = Harness(rows=12, at_top=True)
-        harness.render(ending(6, pad=3), pad=3)
+        harness.render(ending(6))
         harness.flush(plain("a", "b"))
-        self.assertEqual((harness.region.last_row(12), self.shown(harness)), (5, 5))
-        harness.flush(plain("c", "d", "e"))  # one pad row left: two lines push
         self.assertEqual((harness.region.last_row(12), self.shown(harness)), (7, 7))
+        harness.flush(plain("c", "d", "e"))
+        self.assertEqual((harness.region.last_row(12), self.shown(harness)), (10, 10))
         harness.flush(plain(*"fghijklm"))  # far past the screen's end
         self.assertEqual((harness.region.last_row(12), self.shown(harness)), (11, 11))
 
-    def test_a_frame_that_takes_rows_off_the_end_loses_the_row_for_good(self) -> None:
+    def test_a_frame_that_takes_rows_off_the_end_moves_the_row_up_by_as_many(self) -> None:
         harness = Harness(rows=10, at_top=True)
         harness.render(ending(6))
         harness.render(ending(4))
-        self.assertIsNone(harness.region.last_row(10))
-        harness.render(ending(8))  # END is on row 7: growth after a shrink is not the push it would have been
-        self.assertIsNone(harness.region.last_row(10))
-        self.assertEqual(self.shown(harness), 7)
+        self.assertEqual((harness.region.last_row(10), self.shown(harness)), (3, 3))
+        harness.render(ending(8))
+        self.assertEqual((harness.region.last_row(10), self.shown(harness)), (7, 7))
 
-    def test_a_flush_before_the_first_frame_means_the_frame_did_not_start_on_the_top_row(self) -> None:
+    def test_a_shrink_at_the_screens_end_moves_the_row_up_from_any_start(self) -> None:
+        for history in range(10):
+            harness = Harness(rows=10, history=history)
+            harness.region.render(ending(9), (0, 0), harness.cols, flush=plain(*"abcdefghij"))
+            harness.render(ending(3))
+            self.assertEqual((harness.region.last_row(10), self.shown(harness)), (3, 3), history)
+
+    def test_a_flush_before_the_first_frame_moves_where_the_frame_starts(self) -> None:
         harness = Harness(rows=10, at_top=True)
         harness.flush(plain("banner"))
         harness.render(ending(4))
-        self.assertIsNone(harness.region.last_row(10))
-        self.assertEqual(self.shown(harness), 4)
+        self.assertEqual((harness.region.last_row(10), self.shown(harness)), (4, 4))
 
-    def test_a_flush_that_leaves_no_row_of_the_region_loses_the_row(self) -> None:
+    def test_a_flush_longer_than_the_region_keeps_the_row(self) -> None:
         harness = Harness(rows=10, at_top=True)
-        harness.render(plain("", ""), pad=2)
+        harness.render(ending(2))
         harness.flush(plain("a", "b", "c"))
-        harness.render(ending(3))
-        self.assertIsNone(harness.region.last_row(10))
+        self.assertEqual((harness.region.last_row(10), self.shown(harness)), (4, 4))
+        harness.region.render(ending(3), (0, 0), harness.cols, flush=plain("d", "e", "f", "g"))
+        self.assertEqual((harness.region.last_row(10), self.shown(harness)), (9, 9))
+
+    def test_the_top_row_and_the_rows_above_follow_the_same_writes(self) -> None:
+        harness = Harness(rows=10, history=4)
+        self.assertEqual(harness.region.rows_above(10, flushed=2, height=3), 2)  # as if it had started on row 0
+        harness.region.render(ending(3), (0, 0), harness.cols, flush=plain("a", "b"))
+        self.assertIsNone(harness.region.top_row(10))  # started on row 4 or anywhere else: not certain
+        self.assertEqual(harness.region.rows_above(10), 2)
+        self.assertEqual(harness.region.rows_above(10, flushed=20, height=3), 7)  # the screen's end decides
+        harness.flush(plain(*[f"line {n}" for n in range(20)]))
+        self.assertEqual((harness.region.top_row(10), harness.region.rows_above(10)), (7, 7))
+        self.assertEqual(harness.screen.lines()[7], "row 0")
 
     def test_clear_forgets_the_row_and_the_top_row_start(self) -> None:
         harness = Harness(rows=10, at_top=True)
@@ -468,14 +498,13 @@ class LastRowTests(unittest.TestCase):
             harness = Harness(rows=rows, cols=20, history=0 if at_top else rng.randrange(rows), at_top=at_top)
             height = 0
             for step in range(30):
+                flushed = plain(*[f"flushed {case}.{step}.{n}" for n in range(rng.randrange(rows + 3))])
                 if rng.random() < 0.6:
-                    # mostly growth, as the frame builder draws; now and then rows come off the end
-                    low = height if rng.random() < 0.9 else 1
-                    height = rng.randint(max(low, 1), rows - 1)
-                    pad = rng.randrange(height)
-                    harness.render(ending(height, pad), pad=pad)
+                    # frames of any height up to the screen's but one, now and then under flushed lines
+                    height = rng.randint(1, rows - 1)
+                    harness.region.render(ending(height), (0, 0), 20, flush=flushed if rng.random() < 0.4 else ())
                 elif height:
-                    harness.flush(plain(*[f"flushed {case}.{step}.{n}" for n in range(rng.randrange(rows + 3))]))
+                    harness.flush(flushed)
                     height = harness.region.height
                 said = harness.region.last_row(rows)
                 if said is None or not height:
@@ -484,7 +513,7 @@ class LastRowTests(unittest.TestCase):
                 answered += 1
                 self.assertEqual(said, self.shown(harness), (case, step, rows, at_top))
         self.assertGreater(answered, 2000)
-        self.assertGreater(unknown, 500)
+        self.assertGreater(unknown, 400)
 
 
 class ClippingAndStyleTests(unittest.TestCase):

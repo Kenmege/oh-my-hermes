@@ -304,8 +304,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
 
 - Finished replies, tool summaries and notices go to your terminal's own
   scrollback, so selecting, copying and scrolling back work as they do in any
-  shell. Only the bottom of the screen repaints, each repaint (and each page
-  of a pager) one synchronized update (DECSET 2026), so a terminal that
+  shell. Only the region under the last line printed repaints, each repaint
+  (and each page of a pager) one synchronized update (DECSET 2026), so a terminal that
   supports it shows it whole and nothing flickers. A full redraw (a resize,
   Ctrl+L, `/redraw`, switching or resuming a session) prints the session's
   last 3,000 rows again under one row such as `⋯ 412 earlier messages ·
@@ -315,7 +315,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   steer and a turn's done line are one each); older ones are
   left to the terminal's scrollback until a full redraw clears it, and from
   then on that row says how many `/history` still shows.
-- The bottom region holds, from the top: the prompt you just sent (while the
+- That region holds, from the top: the prompt you just sent (while the
   turn runs), the tail of the reply that is still streaming, one slot for the
   OMH plan and agents panel (or a question Hermes asked, or the slash-command
   menu), the prompts queued behind the running turn (`⧗`, up to three named
@@ -339,16 +339,27 @@ run and approval decision stays Hermes'; the screen is OMH's.
   background; `/new` and a switched session do not repeat it, and a full
   redraw shows it again only on top of the whole session.
 - The mode row names the input mode, or the keys that matter right now, and
-  the reasoning effort when Hermes reports one. While Hermes asks something
+  the reasoning effort when Hermes reports one. Between turns it reads
+  `? shortcuts · ⇧⇥ accept all/plan · ctrl+t effort (medium)`: what Shift+Tab
+  turns on, the next mode first, and the effort beside the key that steps it,
+  said once. In accept all it says what that means and where Shift+Tab goes
+  (`⏵⏵ accept all on · Hermes asks no approvals in this session (⇧⇥
+  plan/normal)`), in plan the same (`⏸ plan mode on · prompts go as /plan (⇧⇥
+  normal/accept all)`), and in any state but idle the effort sits at the
+  row's right end as `ctrl+t effort (medium)`. While Hermes asks something
   it names that question's keys (`↑↓ pick · enter confirms · d or esc
   denies`), and while a picker or the Ctrl+R search is open, its keys (`↑↓
-  move · enter switches · esc closes`). The working row and the mode row offer Esc for an interrupt only
+  move · enter switches · esc closes`). After a first Ctrl+C between turns it
+  says `ctrl+c again to exit` for the 2 s a second one exits in, and writes
+  nothing to the transcript. The working row and the mode row offer Esc for an interrupt only
   while Esc would do that: not while a question, a picker, the history
   search, the agent list, a picked steer or rewind, the `@` menu or a draft in
-  the composer takes Esc, so Esc means one thing on the screen. On a row too
-  narrow for what the next key does, the effort goes first, then the mode's
-  label shortens (`⏵⏵ accept`, then `⏵⏵`; `⏸ plan`, then `⏸`) before that is
-  cut. Both rules take the mode's
+  the composer takes Esc, so Esc means one thing on the screen. A narrower
+  row takes shorter words in the same style (`? shortcuts · ⇧⇥ accept all ·
+  ctrl+t effort (medium)`, `⏵⏵ accept all on · no approvals (⇧⇥ plan)`, then
+  `(⇧⇥ plan)` alone). On a row too narrow for what the next key does, the
+  effort goes first, then the mode's label shortens (`⏵⏵ accept`, then `⏵⏵`;
+  `⏸ plan`, then `⏸`) before that is cut. Both rules take the mode's
   glyph and colour, so the mode reads from the frame as well as the label.
   A short terminal drops the mode row first, then the lower rule; without the
   mode row the status line names the mode (`⏵⏵ accept`, `⏸ plan`) whenever it
@@ -356,11 +367,28 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - The plan in that panel changes the moment Hermes' todo tool changes it
   (Hermes' `todo.updated` has the HUD read again at once, instead of at its
   next poll two to eight seconds later), and a subtask keeps its place under
-  its parent.
-- The composer does not move when the panel grows or shrinks; only its own
-  lines move it. Hidden while you pick from a list or search the history with Ctrl+R (the search's row
-  stands where the composer was, the caret at the end of what you typed), it
-  comes back on the same row, as you left it.
+  its parent. Once every item is done it shows `✓ 3/3` until the turn ends,
+  then leaves the panel, its final list written to the transcript above the
+  turn's done line; a plan finished between turns leaves the same way, and
+  one already finished when the session opens is not drawn. A plan with an
+  item left stays. The active item's colour wave is the plan's only motion.
+- The composer sits right under the output until the screen fills, then
+  stays on the bottom rows. A fresh session shows it right under the banner,
+  and after a turn it sits under the turn's last line with one blank row
+  between, the spacer every block opens with. Until the screen is full, the
+  panel, a question or a menu above the composer moves it down as it grows
+  and up as it shrinks or closes. Once the composer has reached the bottom
+  rows it stays there: what grows above it scrolls the transcript up, and a
+  list or question closing there does not pull it up, its rows staying blank
+  above the composer until more is printed into them. A resize or a redraw
+  starts again under the output. Hidden while you pick from a list or search
+  the history with Ctrl+R (the search's row stands where the composer was,
+  the caret at the end of what you typed), it comes back as you left it.
+  The TUI asks the terminal which row its cursor is on as it starts, so a
+  start from the last row of a terminal already holding output is on the
+  bottom rows at once. On a terminal that does not answer that
+  cursor-position query, it moves as it does short of the bottom until its
+  own output has filled the screen once.
 - A notice Hermes sends outside the transcript (the agent still starting, a
   credit warning, a provider that could not be reached) takes one row above
   the queued prompts, in its level's colour with a glyph. The next one
@@ -368,6 +396,14 @@ run and approval decision stays Hermes'; the screen is OMH's.
   and switching sessions drops it. A call Hermes refuses is said in words:
   under a command's echo, Hermes' own reason (`/undo` on an empty session:
   `No user messages to undo.`); otherwise what did not happen and why.
+- What Hermes' background review saved to memory or skills after a turn
+  (`💾 Self-improvement review: …`) is a line in the transcript. While a
+  `/goal` stands, the row above that notice says so as Hermes' own terminal
+  does (`⊙ goal · 3/20 turns · <title>`, `⏳ goal parked · until 14:05 · …`,
+  `⏸ goal paused · …`), until the goal is done or cleared. A mixture-of-agents
+  turn keeps each reference model's answer as a collapsed row
+  (`▸ ◇ Reference 1/3 — <model>`, its text in Ctrl+O's details), and the
+  working row adds `MoA: refs 2/3`, then `MoA: aggregating…`.
 - While a turn has delegated work, the mode row carries a strip of its
   subagents, each named by the first words of its goal, numbered (`1·`, `2·`)
   when two goals start alike
@@ -514,13 +550,15 @@ run and approval decision stays Hermes'; the screen is OMH's.
   terminal's own notification: OSC 9 in iTerm2, WezTerm and Ghostty, OSC 777
   in foot and rxvt, the bell elsewhere (tmux among them, which flags the
   window); `OMH_TUI_BELL=0` keeps all of it quiet.
-- Each tool call's row shows the first three lines of what the tool printed
-  under its name (`⎿`) and counts the rest; a failed call (`✗`) shows its
-  error's first line in the error colour, or, when it failed by its exit
-  code alone (a test run, say), the last three lines it printed, under the
-  count of the lines above them. Ctrl+O opens the whole transcript
-  with every detail (thinking, tool output, whole diffs) in the pager, at its
-  end.
+- Each tool call is a row of its own: its mark, its name and what it ran on
+  (a path, a command, a query), with no header over a turn's calls. Under its
+  name (`⎿`) it shows the first three lines of what the tool printed and
+  counts the rest (`… +5 lines · ctrl+o shows all`); a failed call (`✗`)
+  shows its error's first line in the error colour, or, when it failed by its
+  exit code alone (a test run, say), the last three lines it printed, under
+  the count of the lines above them. A long diff counts its rest the same
+  way. Ctrl+O opens the whole transcript with every detail (thinking, tool
+  output, whole diffs) in the pager, at its end.
 - While a turn runs, the working row reads
   `⠋ <what Hermes is doing> (12s · ↓1.2k tokens · esc to interrupt)`, the
   tokens being what the turn has written so far. Once you interrupt it (Esc
@@ -650,8 +688,8 @@ Esc closes it):
 | `\` then Enter, Alt+Enter, Shift+Enter, Ctrl+J | Adds a line |
 | Ctrl+Enter | Steers a running turn with the composer's text, on a terminal that tells it from Enter (`/steer <text>` steers on any terminal); idle, sends it as Enter does |
 | Tab | Completes a slash command, or the `@` reference being typed; on an open menu, Enter takes the highlighted row too, and sends a command already typed in full |
-| Shift+Tab | Cycles the input mode: normal, accept all, plan; while Hermes itself has approvals off, turns plan on and off |
-| Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max |
+| Shift+Tab | Cycles the input mode: normal, accept all (Hermes asks no approvals in this session), plan (prompts go as /plan); while Hermes itself has approvals off, turns plan on and off |
+| Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max; the mode row shows it as ctrl+t effort (medium) |
 | `@` | Starts a file or folder reference; Hermes offers matches above the composer |
 | `!` | At the start of a line, makes it a shell command Hermes runs when you send it (30 s at most); it and its output are not sent to the model |
 | `?` | On an empty composer, shows this list; `/keys` does too |
@@ -679,7 +717,7 @@ Esc closes it):
 | 1 to 9 | On a clarify question's list, pick that choice, or the last number opens the field for your own answer; ↑ / ↓ then Enter picks too, and any other character starts your own answer |
 | Space | On a clarify question that takes several choices, ticks or unticks the highlighted one; Enter sends the ticked ones, or the highlighted one when none is ticked, and a digit ticks its choice |
 | Esc, Ctrl+C | On a question Hermes asked, decline it (an approval is denied and the running turn stops); Ctrl+C first clears an answer being typed |
-| ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions` or `/rewind` list, move, take the highlighted row (switch to that session, or put that prompt in the composer to send again), or close it; typing filters the list |
+| ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions`, `/rewind` or `/model` list, move, take the highlighted row (switch to that session, put that prompt in the composer to send again, or switch this session to that model), or close it; typing filters the list |
 | ↑ / ↓, Enter, Esc, ←, q | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; any other key does nothing there |
 | x, s | In the agent list, on an agent: x twice interrupts it; s steers it with the next line you send (Esc cancels) |
 | Click | On a row of the agent list, opens that agent's log (on main, only leaves the list) |
@@ -724,8 +762,8 @@ question Hermes asked is sent as typed in every mode.
 
 Ctrl+T steps this session's reasoning effort, and `/effort <level>` sets any
 level Hermes takes (`none`, `minimal` and `ultra` as well). The mode row shows
-the level once Hermes confirms it; a level Hermes refuses leaves the row as it
-was and says so.
+the level once Hermes confirms it, as `ctrl+t effort (medium)`; a level Hermes
+refuses leaves the row as it was and says so.
 
 A steer adds what you typed to the turn that is running, without interrupting
 it: Hermes reads it after its next tool call, or, while it is compressing the
@@ -763,7 +801,7 @@ steer is, so a command never cuts off a running tool call or splits a reply; one
 answering when the turn ends is written above that turn's done line with what it printed so far, and
 what it prints later goes under a repeat of its echo. In the transcript, a long output shows its
 first 12 rows and a count of the rest
-(`… +K rows · /history shows all`, rows at that width), and `/history` shows all of it. Nothing a
+(`… +K rows · ctrl+o shows all`, rows at that width), and Ctrl+O or `/history` shows all of it. Nothing a
 command prints opens a pager; a pager opens only when you ask for one
 (`/history`, `/keys`, `/logs`, an agent's log), and output that arrives while
 one is open is in the transcript when you leave it.
@@ -845,14 +883,15 @@ fallback marker at the path `omh` named, which `omh` removes.
 The OMH TUI opens with the theme `omh theme use` saved under the OMH home
 (see [TUI Themes](#tui-themes)); `/theme <name>` switches the open session only.
 Before its first frame it asks the terminal for its background colour (OSC 11,
-waiting at most 0.1 s; a terminal that does not answer can still say light or
+in the same wait as the cursor-position query, at most 0.1 s; a terminal that
+does not answer can still say light or
 dark through `COLORFGBG`: a light background by its colour, a dark one, colour
 0 to 6 or 8, as the dark stand-in `/theme dark` uses) and measures the theme
 against it: your prompts and the replies are in the terminal's own text colour,
 every other colour a word is drawn in reaches 4.5:1 contrast on that background
-and every rule or mark 3:1 (on the status line, which keeps the theme's own bar
-colour, against that bar), and on a light background the diff bands are light
-tints. With no answer and no `COLORFGBG` that names one, the background is
+and every rule or mark 3:1 (on the status line, against its bar: the theme's
+own bar colour on a dark background, a light tint of it on a light one), and
+on a light background the diff bands are light tints. With no answer and no `COLORFGBG` that names one, the background is
 taken as dark, and nothing that would depend on knowing it is painted: your prompt gets no band, and a diff band names its own text colour
 rather than leave your terminal's on it. `/theme light` and `/theme dark` measure against a
 light or a dark background whatever the terminal said, `/theme auto` follows

@@ -31,7 +31,7 @@ is its output (`command` names the command speaking). Typed while a block
 is live (a running tool, a streaming reply), the echo is held under that
 block, as a steer is, and written at the next boundary once the command is
 over. A long output shows its first `OUTPUT_PREVIEW_ROWS` rows and a count
-of the rest, which `/history` shows.
+of the rest, which names Ctrl+O (`/history` shows it too).
 
 Flush policy: a user or notice block flushes at once; assistant text flushes
 per completed source line (a trailing blank line waits for the text after it,
@@ -39,8 +39,8 @@ so a reply that ends there leaves nothing to take back) and fully at
 `message.complete`; the markdown state (an open fence) carries across the
 flush boundary; thinking flushes as ONE collapsed row ("▸ thought for 4.2s");
 a tool group flushes when the next block arrives (message text, thinking) or
-at `message.complete`, as "⏺ Tool calls (N)" (plus "parallel ×K" when K tools
-ran at once) and one line per tool; a group of one call is that one line. A
+at `message.complete`, as one row per call (its mark, name and argument
+summary) with what it printed under it, no header over them. A
 `tool.generating` row (`◌`) is a draft: a `tool.start` takes over the first
 unclaimed draft of its name, or else the first unclaimed draft of the
 `tool_call` bridge (`gateway_contract.TOOL_CALL_BRIDGE`), whose call starts
@@ -48,8 +48,8 @@ under the name of the tool it reached. A draft no start took is dropped when
 its group closes, so it is never written or counted, and a group left with no
 calls shows nothing. An edit tool whose `tool.complete` carries
 an `inline_diff` shows that diff under its row (`diff_view.py`): the first
-`PREVIEW_LINES` diff lines and a count of the rest, which `/history` (and
-`history_lines` with details) shows in full. Lines rendered at one width stay as they were taken; a
+`PREVIEW_LINES` diff lines and a count of the rest, which Ctrl+O's details
+view (and `history_lines` with details) shows in full. Lines rendered at one width stay as they were taken; a
 resize changes only what has not been taken yet.
 
 Two events do not mean what their names suggest, measured against Hermes
@@ -61,6 +61,13 @@ Two events do not mean what their names suggest, measured against Hermes
 - `reasoning.available` relays the assistant's own content, cut to 500 chars
   (`agent/turn_response_intake.py::_relay_thinking`); in every recorded turn it
   repeats the answer. It is ignored. Real reasoning arrives as `reasoning.delta`.
+
+A MoA turn (`moa.*`) asks reference models before the aggregator answers.
+Each `moa.reference` is a block of its own, a thinking row labelled
+`◇ Reference 1/3 — <model>` whose text the details view shows, as Hermes' Ink
+TUI keeps it; `moa.progress` and an aggregator `moa.phase` set `moa`, the
+words the working row adds (`MoA: refs 2/3`, `MoA: aggregating…`), until the
+turn ends.
 
 Nothing here is written to disk.
 """
@@ -75,6 +82,7 @@ from typing import Any
 from ..plugin_bundle.omh.hud_text import elapsed_text
 from .diff_view import DIFF_FILE, FILE_ARROW, DiffLine, diff_rows, parse_inline_diff
 from .gateway import Event
+from . import gateway_contract as contract
 from .gateway_contract import TOOL_CALL_BRIDGE
 from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
 from .style import Line, Span, Style, fill
@@ -122,12 +130,13 @@ COMMAND_MARK = "› "  # a command the person ran, echoed in the hint colour abo
 OUTPUT_MARK = "⎿ "
 OUTPUT_INDENT = "  "
 # The rows a command's output shows under its echo; past them one row counts the rest (rows at that width, so the
-# count changes with it), which /history shows.
+# count changes with it), which Ctrl+O's details view shows.
 OUTPUT_PREVIEW_ROWS = 12
-OUTPUT_MORE = "… +{count} {noun} · /history shows all"
+OUTPUT_MORE = "… +{count} {noun} · ctrl+o shows all"
+# What a tool's output or a diff cut short says after its count: the key whose view shows the rest.
+SHOWS_ALL = " · ctrl+o shows all"
 COLLAPSED_MARK = "▸"
 EXPANDED_MARK = "▾"
-TOOL_GROUP_MARK = "⏺ "
 ASSISTANT_MARK = "⏺ "
 ASSISTANT_INDENT = "  "
 TOOL_SUMMARY_MARK = "⎿ "
@@ -205,6 +214,7 @@ class ThinkingBlock:
     done: bool = False
     started_at: float | None = None
     ended_at: float | None = None
+    label: str = ""  # a MoA reference's header, shown in place of "thought for"; "" for the model's own reasoning
 
 
 @dataclass
@@ -252,7 +262,6 @@ class ToolRow:
 class ToolGroup:
     tools: list[ToolRow] = field(default_factory=list)
     done: bool = False
-    parallel: int = 1  # most tools running at the same moment
 
 
 Block = UserBlock | AssistantBlock | ThinkingBlock | ToolGroup | NoticeBlock | CommandBlock | TurnSummaryBlock | SteerBlock
@@ -607,11 +616,13 @@ def _thinking_rows(
     block: ThinkingBlock, width: int, theme: Theme, expanded: bool, max_rows: int | None = None
 ) -> list[Line]:
     mark = EXPANDED_MARK if expanded else COLLAPSED_MARK
-    if block.done:
+    if block.label:
+        head: Line = (Span(f"{mark} {block.label}", theme.thinking),)
+    elif block.done:
         header = f"{mark} thought"
         if block.started_at is not None and block.ended_at is not None:
             header += f" for {_seconds(max(0.0, block.ended_at - block.started_at))}"
-        head: Line = (Span(header, theme.thinking),)
+        head = (Span(header, theme.thinking),)
     elif expanded:
         head = (Span(f"{mark} thinking…", theme.thinking),)
     else:
@@ -681,19 +692,14 @@ def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> lis
     first: Line = (Span(TOOL_ROW_INDENT * 2), Span(TOOL_SUMMARY_MARK, theme.dim))
     rest: Line = (Span(TOOL_ROW_INDENT * 2 + " " * len(TOOL_SUMMARY_MARK)),)
     texts = [Span(line, style) for line in shown]
-    more = [Span(f"… +{hidden} line{'' if hidden == 1 else 's'}", theme.muted)] if hidden else []
+    more = [Span(f"… +{hidden} line{'' if hidden == 1 else 's'}{SHOWS_ALL}", theme.muted)] if hidden else []
     ordered = [*more, *texts] if failed else [*texts, *more]
     return [truncate_line((*(rest if index else first), span), width) for index, span in enumerate(ordered)]
 
 
 def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: float | None = None) -> list[Line]:
-    if not group.tools:
-        return []  # every row it had was a draft no call took (`_close_live`)
-    header = [Span(TOOL_GROUP_MARK, theme.tool), Span(f"Tool calls ({len(group.tools)})", theme.label)]
-    if group.parallel > 1:
-        header.append(Span(f"{COLUMN_GAP}parallel ×{group.parallel}", theme.accent))
-    # One call needs no header: its own row already says what ran.
-    rows = [truncate_line(tuple(header), width)] if len(group.tools) != 1 else []
+    """Each call's own row (what ran, on what) and what it printed under it; a group with no call shows nothing."""
+    rows: list[Line] = []
     summary_rest: Line = (Span(" " * (len(TOOL_ROW_INDENT) * 2 + len(TOOL_SUMMARY_MARK))),)
     band = theme.error_band if theme.error_band.bg is not None else None
     for tool in group.tools:
@@ -750,6 +756,7 @@ class Transcript:
         self.blocks: list[Block] = []
         self.activity = ""  # spinner / wait text from thinking.delta; "" when none
         self.status = ""  # the last status.update text of the running turn; "" when none
+        self.moa = ""  # a MoA turn's progress (`MoA: refs 2/3`), added to the working row; "" when none
         self.running = False
         self.details_expanded = False
         self._clock = clock
@@ -787,6 +794,9 @@ class Transcript:
             "tool.start": self._on_tool_start,
             "tool.complete": self._on_tool_complete,
             "status.update": self._on_status_update,
+            "moa.reference": self._on_moa_reference,
+            "moa.progress": self._on_moa_progress,
+            "moa.phase": self._on_moa_phase,
         }
 
     # ── input ──
@@ -930,6 +940,7 @@ class Transcript:
         self.running = False
         self.activity = ""
         self.status = ""
+        self.moa = ""
 
     def toggle_details(self) -> bool:
         """Expand or collapse the live block's details; blocks already taken never repaint."""
@@ -1089,6 +1100,7 @@ class Transcript:
         self.running = False
         self.activity = ""
         self.status = ""
+        self.moa = ""
 
     def _on_thinking_delta(self, payload: dict[str, Any]) -> None:
         self.activity = _first_line(as_text(payload.get("text")))
@@ -1102,6 +1114,22 @@ class Transcript:
             block = ThinkingBlock(started_at=self._clock())
             self._append(block)
         block.text += text
+
+    def _on_moa_reference(self, payload: dict[str, Any]) -> None:
+        label = _first_line(as_text(payload.get(contract.MOA_LABEL))) or "reference"
+        index, count = payload.get(contract.MOA_INDEX), payload.get(contract.MOA_COUNT)
+        known = all(isinstance(value, int) and not isinstance(value, bool) and value > 0 for value in (index, count))
+        header = f"◇ Reference {index}/{count} — {label}" if known else f"◇ Reference — {label}"
+        self._append(ThinkingBlock(text=as_text(payload.get(contract.MOA_TEXT)).strip(), done=True, label=header))
+
+    def _on_moa_progress(self, payload: dict[str, Any]) -> None:
+        done, total = payload.get(contract.MOA_REFS_DONE), payload.get(contract.MOA_REFS_TOTAL)
+        if all(isinstance(value, int) and not isinstance(value, bool) for value in (done, total)):
+            self.moa = f"MoA: refs {done}/{total}"
+
+    def _on_moa_phase(self, payload: dict[str, Any]) -> None:
+        if payload.get(contract.MOA_PHASE) == contract.MOA_PHASE_AGGREGATOR:
+            self.moa = "MoA: aggregating…"
 
     def _on_reasoning_available(self, payload: dict[str, Any]) -> None:
         """Ignored: it relays the assistant's own content, so it would repeat the answer as thought."""
@@ -1125,8 +1153,6 @@ class Transcript:
         row.started_at = self._clock()
         row.waited_at_start = self.waited(row.started_at)
         row.args_summary = self._display_args(_args_summary(payload))
-        running = sum(1 for tool in group.tools if tool.status == TOOL_RUNNING)
-        group.parallel = max(group.parallel, running)
 
     def _on_tool_complete(self, payload: dict[str, Any]) -> None:
         tool_id = as_text(payload.get("tool_id"))
@@ -1222,6 +1248,11 @@ class Transcript:
         self._taken_any = False
         self._left_out = 0
         self._version += 1
+
+    @property
+    def taken_any(self) -> bool:
+        """Whether any line has been taken, so what is shown next under them opens with a spacer row."""
+        return self._taken_any
 
     @property
     def left_out(self) -> int:

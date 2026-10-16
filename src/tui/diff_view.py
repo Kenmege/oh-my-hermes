@@ -202,7 +202,7 @@ def _line_rows(line: DiffLine, number: int | None, width: int, gutter: int, them
 
 def _hidden_note(hidden: int) -> str:
     noun = "line" if hidden == 1 else "lines"
-    return f"… +{hidden} {noun} (/history shows all)"
+    return f"… +{hidden} {noun} · ctrl+o shows all"
 
 
 def diff_rows(lines: Sequence[DiffLine], width: int, theme: Theme, full: bool = False) -> list[Line]:

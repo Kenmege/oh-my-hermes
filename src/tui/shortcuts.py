@@ -23,9 +23,10 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
                    "(/steer <text> steers on any terminal); idle, sends it as Enter does"),
     ("Tab", "Completes a slash command, or the @ reference being typed; on an open menu, Enter takes the "
              "highlighted row too, and sends a command already typed in full"),
-    ("Shift+Tab", "Cycles the input mode: normal, accept all, plan; while Hermes itself has approvals off, "
-                  "turns plan on and off"),
-    ("Ctrl+T", "Steps the reasoning effort: low, medium, high, xhigh, max"),
+    ("Shift+Tab", "Cycles the input mode: normal, accept all (Hermes asks no approvals in this session), plan "
+                  "(prompts go as /plan); while Hermes itself has approvals off, turns plan on and off"),
+    ("Ctrl+T", "Steps the reasoning effort: low, medium, high, xhigh, max; the mode row shows it as ctrl+t effort "
+               "(medium)"),
     ("@", "Starts a file or folder reference; Hermes offers matches above the composer"),
     ("!", "At the start of a line, makes it a shell command Hermes runs when you send it (30 s at most); "
           "it and its output are not sent to the model"),
@@ -70,9 +71,10 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
               "the ticked ones, or the highlighted one when none is ticked, and a digit ticks its choice"),
     ("Esc, Ctrl+C", "On a question Hermes asked, decline it (an approval is denied and the running turn stops); "
                     "Ctrl+C first clears an answer being typed"),
-    ("↑ / ↓, PageUp / PageDown, Enter, Esc", "In the /sessions or /rewind list, move, take the highlighted row "
-                                             "(switch to that session, or put that prompt in the composer to send "
-                                             "again), or close it; typing filters the list"),
+    ("↑ / ↓, PageUp / PageDown, Enter, Esc", "In the /sessions, /rewind or /model list, move, take the highlighted "
+                                             "row (switch to that session, put that prompt in the composer to send "
+                                             "again, or switch this session to that model), or close it; typing "
+                                             "filters the list"),
     ("↑ / ↓, Enter, Esc, ←, q", "In the agent list, move, open the highlighted agent's log (on main, only leave), "
                                 "or go back; any other key does nothing there"),
     ("x, s", "In the agent list, on an agent: x twice interrupts it; s steers it with the next line you send "

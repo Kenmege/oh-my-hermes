@@ -14,7 +14,6 @@ import unittest
 from test_tui_modes import make_app, type_text
 from omh.tui.app import NEWLINE_KEYS
 from omh.tui.keys import CHAR, Key, Paste
-from omh.tui.modes import IDLE_KEYS_HINT
 
 
 def mode_row(app) -> str:
@@ -42,14 +41,18 @@ class NewlineHintTests(unittest.TestCase):
 
     def test_one_line_keeps_the_usual_hint(self) -> None:
         app, _client = make_app()
+        usual = mode_row(app)
         type_text(app, "one line")
-        self.assertEqual(mode_row(app), IDLE_KEYS_HINT)
+        self.assertEqual(mode_row(app), usual)
+        self.assertTrue(usual.startswith("? shortcuts"), usual)
 
     def test_a_terminal_that_reported_keys_keeps_the_usual_hint(self) -> None:
         app, _client = make_app()
         app.decoder.protocol_reported = True  # Shift+Enter is a key of its own there
+        usual = mode_row(app)
         two_lines(app)
-        self.assertEqual(mode_row(app), IDLE_KEYS_HINT)
+        self.assertEqual(mode_row(app), usual)
+        self.assertTrue(usual.startswith("? shortcuts"), usual)
 
     def test_a_turn_running_or_another_mode_keeps_its_own_hint(self) -> None:
         app, _client = make_app(busy=True)

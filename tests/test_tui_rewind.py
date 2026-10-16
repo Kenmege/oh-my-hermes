@@ -195,7 +195,8 @@ class RewindTests(unittest.TestCase):
         self.assertEqual(users, [TODO_PROMPT, "Reply with exactly the word: rewound"])
         self.assertTrue([block for block in app.transcript.blocks if isinstance(block, AssistantBlock)])
         self.assertIsNone(app.rewind)
-        self.assertTrue(app.anchor)  # the full redraw re-anchors the next frame
+        # the full redraw cleared the screen: the next frame starts on its top row
+        self.assertEqual((app.region.height, app.region.top_row(app.size[1])), (0, 0))
 
     def test_rewinding_to_the_first_prompt_leaves_nothing_above_the_new_one(self) -> None:
         app, client = self.picked(row=1)

@@ -2,16 +2,23 @@
 
 Everything finished goes to the terminal's own scrollback as plain lines
 (`flush_above`), so scrolling, selecting and copying stay the terminal's
-native behaviour. Below that sits one live region pinned to the bottom of
-the output: sticky prompt, streaming tail, panels, composer, status line.
+native behaviour. Right below the last of them sits one live region: sticky
+prompt, streaming tail, panels, composer, status line. The region starts
+where the output ends and is as tall as its frame, so it follows the content:
+it grows downward until its last row is the screen's last row, and from then
+on growing scrolls the screen up as printed output would. From then on the
+app also keeps its frames from getting shorter (`layout`'s pad rows, blank
+rows at the frame's top), so the region's last row stays there.
 
 The region never learns its absolute row. Every move is relative to the
 region's own top (CR, cursor up/down, erase line, erase below, "\\r\\n"), so it
 works wherever the shell left the cursor and inside any scrollback state.
-Growing emits newlines from the region's last row, which scrolls the screen
-up from the bottom exactly as printed output would; shrinking erases the
-freed rows. Only rows whose bytes changed since the last frame are repainted,
-which keeps a selection on a static row alive. After every frame the hardware
+Growing emits newlines from the region's last row, which moves into the
+blank rows under it or, on the screen's last row, scrolls the screen up from
+the bottom exactly as printed output would; shrinking erases the rows freed
+at the region's end. The first frame also erases everything under it. Only rows
+whose bytes changed since the last frame are repainted, which keeps a
+selection on a static row alive. After every frame the hardware
 cursor is parked where the caller asked (the composer caret), so an IME
 pre-edit appears in place. A frame with no caret (a question answered by
 picking: neither the composer nor a picker's filter is drawn) leaves the cursor hidden, parked on the region's last row; the next frame with
@@ -26,37 +33,42 @@ switched off while a frame paints: if the terminal measures a glyph wider
 than the width table does, the row is cut at the edge instead of wrapping
 into the next row and shifting the whole region by one.
 
-Pad rows: a frame may declare its first `pad` rows padding, blank rows the
-layout adds so the region keeps its height (and so its bottom row) when the
-content shrinks. `flush_above` writes into pad rows first: the flushed lines
-land in those rows, which stop being part of the region, so the region gets
-shorter by that many rows from the top and nothing below them moves or is
-repainted. Only the lines beyond the pad push the region down the old way,
-scrolling the screen by exactly as many rows as they add. Either way a region
-whose bottom sits on the screen's last row keeps it there.
+Flushing: `flush_above` writes its lines from the region's top row down,
+over the region's own rows, and the region continues on the row under the
+last of them. The region's rows that no flushed line covered have not moved,
+so a following frame repaints only those whose bytes differ there: lines
+that leave the top of the streaming tail for the transcript, or that fill a
+frame's pad rows, repaint nothing under them. Lines beyond the region's last
+row move into the blank rows under it or scroll the screen, as printed output
+does.
 
 Synchronized output: every frame that paints rows is one synchronized
 update (DECSET 2026, `SYNC_BEGIN` ... `SYNC_END`), so a terminal that
 supports it shows the frame whole instead of row by row, and a blinking or
 animated row never flickers; a terminal that does not ignores the mode. A
 frame that only parks the cursor is not wrapped. `render(..., flush=lines)`
-writes a frame and the lines flushed after it as one write and one update,
-so no screen between the two shows.
+writes the flushed lines and then the frame under them as one write and one
+update, so no screen between the two shows.
 
 Precondition: the region is never taller than the terminal. Cursor-up stops
 at the top of the screen, so a taller region would lose its relative
 bookkeeping; the layout's height budget guarantees this.
 
-Where the region is on the screen (`last_row`) is worked out, never asked of
-the terminal, and only where it is certain. Growing pushes the last row down
-one screen row per row added, and so does every flushed line beyond the pad,
-until the last row is the screen's last row, where it stays. So the row is
-known once those pushes would have reached the screen's last row from any
-start, and from the first frame on when the caller says that frame starts on
-the screen's top row (`at_top`: it homed the cursor first). A frame that
-takes rows off the region's end moves the last row back up. The app never
-draws one (its frames are never shorter than the region), so nothing here
-follows it: the row is unknown from then on.
+Where the region is on the screen (`top_row`, `last_row`) is worked out from
+the writes and a starting row, and said only where it is certain. Every write moves
+the top row in one of two ways: a flush of n lines moves it n rows down, but
+never below the screen's last row, and a frame of h rows keeps it, but never
+below the screen's last row minus h - 1, since growing past the screen's end
+scrolls the region up. A frame that shrinks does not move it. Each is
+`row -> min(row + shift, screen_rows - floor)`, and so is any sequence of
+them, so the region keeps one `shift` and one `floor` and can say where its
+top row is for any starting row. The starting row is the screen's top row
+when the caller says so (`at_top`: it homed the cursor first), or the row the
+caller learned from the terminal (`start_row`: the cursor position report at
+launch), and then the top row is certain from the first write. Otherwise it
+is unknown, and the top row is certain once every possible start gives the
+same row, that is once the flushes have pushed it as far down as the screen
+allows.
 """
 
 from __future__ import annotations
@@ -130,7 +142,7 @@ def paint_line(line: Line, width: int) -> str:
 
 
 class LiveRegion:
-    def __init__(self, write: Callable[[str], None], at_top: bool = False) -> None:
+    def __init__(self, write: Callable[[str], None], at_top: bool = False, start_row: int | None = None) -> None:
         self._write = write
         self._rows: list[str] = []  # painted bytes of each row the region holds
         self._row = 0  # hardware cursor row, relative to the region's top
@@ -139,13 +151,11 @@ class LiveRegion:
         self._lines: tuple[Line, ...] = ()
         self._cursor: tuple[int, int] | None = (0, 0)
         self._hidden = False  # the last frame left the hardware cursor hidden (it had no caret)
-        self._pad = 0  # how many of the top rows are padding `flush_above` may write into
-        # What `last_row` stands on: whether the first frame starts on the screen's top row, that
-        # frame's height (0 until it is drawn), and the rows the last row was pushed down since
-        # (None once a frame took rows off the region's end).
-        self._at_top = at_top
-        self._first_height = 0
-        self._pushed: int | None = 0
+        # Where the top row is, from the row the region started on (`_start`: 0 when `at_top`, `start_row` when the
+        # caller knows it, None when unknown): min(start + shift, screen rows - floor), floor None until a write had one.
+        self._start = 0 if at_top else start_row
+        self._shift = 0
+        self._floor: int | None = None
 
     @property
     def height(self) -> int:
@@ -153,31 +163,53 @@ class LiveRegion:
         return len(self._rows)
 
     @property
-    def pad(self) -> int:
-        """How many of the region's top rows are padding."""
-        return self._pad
-
-    @property
     def caret_hidden(self) -> bool:
         """Whether the last frame had no caret, so the hardware cursor is hidden."""
         return self._hidden
 
-    def last_row(self, screen_rows: int) -> int | None:
-        """The 0-based screen row the region's last row is on, or None where that is not certain.
+    def _top_rows(self, screen_rows: int, shift: int, floor: int | None) -> tuple[int, int]:
+        """(highest, lowest) screen row the top row can be on after writes summed as `shift` and `floor`."""
+        bottom = screen_rows - 1 if floor is None else screen_rows - floor
+        if self._start is not None:
+            known = min(self._start + shift, bottom)
+            return known, known
+        return min(shift, bottom), min(screen_rows - 1 + shift, bottom)
 
-        `screen_rows` is the terminal's height, the same since the first frame.
+    def top_row(self, screen_rows: int) -> int | None:
+        """The 0-based screen row the region's top row is on, or None where that is not certain.
+
+        `screen_rows` is the terminal's height, the same since the region was made.
         """
-        if not self._rows or self._pushed is None:
-            return None
-        from_top = self._first_height - 1 + self._pushed  # where a first frame on the top row would be now
-        if from_top >= screen_rows - 1:
-            return screen_rows - 1  # a start further down reached the last row sooner
-        return from_top if self._at_top else None
+        highest, lowest = self._top_rows(screen_rows, self._shift, self._floor)
+        return highest if highest == lowest else None
 
-    def _shift_last_row(self, rows: int) -> None:
-        """The last row went `rows` rows down the screen (fewer where the screen ended); a negative count loses it."""
-        if self._pushed is not None:
-            self._pushed = self._pushed + rows if rows >= 0 else None
+    def last_row(self, screen_rows: int) -> int | None:
+        """The 0-based screen row the region's last row is on, or None where that is not certain or it holds none."""
+        top = self.top_row(screen_rows)
+        return None if top is None or not self._rows else top + len(self._rows) - 1
+
+    def rows_above(self, screen_rows: int, flushed: int = 0, height: int = 0) -> int:
+        """The fewest screen rows that can lie above the region once `flushed` lines and a `height`-row frame are drawn.
+
+        Exactly the rows above it wherever its top row is certain; otherwise
+        the count for a region that started on the screen's top row.
+        """
+        shift, floor = self._shift, self._floor
+        if flushed:
+            shift, floor = self._flushed(shift, floor, flushed)
+        if height:
+            floor = self._framed(floor, height)
+        return self._top_rows(screen_rows, shift, floor)[0]
+
+    @staticmethod
+    def _flushed(shift: int, floor: int | None, lines: int) -> tuple[int, int]:
+        """`shift` and `floor` after `lines` flushed lines: n rows down, never below the screen's last row."""
+        return shift + lines, 1 if floor is None else max(floor - lines, 1)
+
+    @staticmethod
+    def _framed(floor: int | None, height: int) -> int:
+        """`floor` after a `height`-row frame: never below the screen's last row minus height - 1."""
+        return height if floor is None else max(floor, height)
 
     def _move_to(self, row: int, ops: list[str]) -> None:
         """Cursor to column 0 of region row `row`, which must already exist on screen."""
@@ -204,10 +236,11 @@ class LiveRegion:
             for index, line in enumerate(lines)
         ]
         held = max(len(self._rows), 1)  # the row the cursor is on is the region's first row
-        if not self._first_height:
-            self._first_height = len(rows)
-        elif self._rows:  # empty after a flush past the pad, which counted its own push
-            self._shift_last_row(len(rows) - len(self._rows))
+        if rows:
+            self._floor = self._framed(self._floor, len(rows))
+            if not self._rows:  # nothing of the region on screen yet: clear what is under its first row
+                self._move_to(0, ops)
+                ops.append(ERASE_BELOW)
         if len(rows) > held:
             self._move_to(held - 1, ops)
             ops.append(NEWLINE * (len(rows) - held))
@@ -245,35 +278,35 @@ class LiveRegion:
         if written:
             self._write(f"{SYNC_BEGIN}{written}{SYNC_END}" if painted else written)
 
-    def render(
-        self, lines: Sequence[Line], cursor: tuple[int, int] | None, width: int, pad: int = 0, flush: Sequence[Line] = ()
-    ) -> None:
+    def render(self, lines: Sequence[Line], cursor: tuple[int, int] | None, width: int, flush: Sequence[Line] = ()) -> None:
         """Show `lines` as the region and park the cursor at `cursor` = (row, col) within it; None hides it.
 
-        The first `pad` lines are padding (blank rows) that `flush_above` may write into. `flush` is flushed
-        above the region right after, in the same write.
+        `flush` is flushed above the region first, in the same write: its lines
+        cover the top rows of the region on screen, and `lines` are drawn from
+        the row under the last of them.
         """
-        written, painted = self._compose(lines, cursor, width, [])
-        self._pad = min(max(pad, 0), len(self._rows))
-        if flush:
-            more, also = self._flush(flush, width)
-            written, painted = written + more, painted or also
-        self._send(written, painted)
+        ops = self._flush(flush, width) if flush else []
+        self._send(*self._compose(lines, cursor, width, ops))
 
     def flush_above(self, lines: Sequence[Line], width: int) -> None:
-        """Print `lines` permanently above the region, then repaint the region beneath them.
+        """Print `lines` permanently above the region, then draw the region again beneath them.
 
-        The first lines fill the region's pad rows, which then leave the region:
-        it gets shorter from the top and its bottom stays put. Lines beyond the
-        pad are written over the region's top rows and push it down; once they
-        scroll off the screen they are ordinary scrollback.
+        The lines are written over the region's top rows; the region moves
+        down by as many rows, scrolling the screen where it reaches the end,
+        and once they scroll off the screen they are ordinary scrollback.
         """
-        self._send(*self._flush(lines, width))
+        frame = self._lines
+        ops = self._flush(lines, width)
+        self._send(*self._compose(frame, self._cursor, width, ops))
 
-    def _flush(self, lines: Sequence[Line], width: int) -> tuple[str, bool]:
-        """`flush_above`'s bytes and whether they paint rows, unwritten."""
+    def _flush(self, lines: Sequence[Line], width: int) -> list[str]:
+        """The bytes that write `lines` from the region's top row down, unwritten; the region then starts under them.
+
+        The region's rows past the ones the lines covered stay where they
+        were, so they are now its first rows, kept for the next frame to
+        compare against.
+        """
         width = max(width, 1)
-        consumed = min(len(lines), self._pad)
         ops: list[str] = []
         self._move_to(0, ops)
         for line in lines:
@@ -282,22 +315,10 @@ class LiveRegion:
         # The cursor now sits on the row below the last flushed line: the new top.
         self._row = 0
         self._parked = None
-        if not self._first_height:
-            self._at_top = self._at_top and not lines  # the first frame now starts below these lines
-        if len(lines) <= self._pad:
-            self._rows = self._rows[consumed:]  # the rows below the pad did not move
-        else:
-            ops.append(ERASE_BELOW)
-            self._rows = []
-            self._width = None
-            if self._first_height:
-                # The rows left restart below the flushed lines; with none left, nothing says where.
-                self._shift_last_row(len(lines) - consumed if len(self._lines) > consumed else -1)
-        self._pad -= consumed
-        self._lines = self._lines[consumed:]
-        if self._cursor is not None:
-            self._cursor = (self._cursor[0] - consumed, self._cursor[1])
-        return self._compose(self._lines, self._cursor, width, ops)
+        self._shift, self._floor = self._flushed(self._shift, self._floor, len(lines))
+        self._rows = self._rows[len(lines) :]
+        self._lines = self._lines[len(lines) :]
+        return ops
 
     def clear(self) -> None:
         """Erase the region and leave the cursor at column 0 of its top row (resize, exit)."""
@@ -312,7 +333,6 @@ class LiveRegion:
         self._width = None
         self._lines = ()
         self._cursor = (0, 0)
-        self._pad = 0
-        self._at_top = False  # the next first frame starts wherever this region's top row was
-        self._first_height = 0
-        self._pushed = 0
+        self._start = None  # the next first frame starts wherever this region's top row was
+        self._shift = 0
+        self._floor = None

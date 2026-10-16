@@ -2,8 +2,8 @@
 
 The app loop calls `build_frame` once per repaint with the terminal size, the
 parts it holds (sticky prompt, streaming tail, slot, composer, mode row,
-status line), the input mode and the region's current height, then hands the
-result to `LiveRegion.render(frame.lines, frame.cursor, cols, pad=frame.pad)`.
+status line) and the input mode, then hands the result to
+`LiveRegion.render(frame.lines, frame.cursor, cols, flush=lines)`.
 
 The composer is framed: a rule above it and a rule below it, both drawn in
 the input mode's glyph and colour (normal `─` in the rule colour, accept `━`
@@ -15,20 +15,19 @@ rules: approvals off is what the frame must never hide, and the mode row
 names both. The mode row under the bottom rule is a line the app builds; the
 frame only places it.
 
-The composer stays put. The first frame at a terminal size
-(previous height 0: nothing drawn yet, or the region was just cleared for a
-resize) is padded to the full budget, `rows - 1`, so the region's bottom
-lands on the screen's last row. Every later frame passes the region's
-current height, so content that shrinks becomes pad rows instead of a
-shorter region, content that grows scrolls the screen up from that same
-bottom, and `flush_above` turns pad rows into transcript without moving it.
-The rows under the composer (bottom rule, mode row, status line) are a
-function of the terminal size alone (`layout.under_composer`), so the
-composer's first row is the bottom row minus those rows minus its own row
-count: `composer_rows + 3` rows up from the region's end on any terminal of
-`MODE_ROW_MIN_ROWS` rows or more, whatever the panel, prompt slot, completion
-menu, tail or mode do. A shorter terminal drops the mode row, then the bottom
-rule, by its height alone, so the offset is still fixed for each size.
+The composer follows the content until the screen is full, then stays on the
+bottom rows. With `min_height` 0 a frame is exactly as tall as what it holds
+(`layout.allocate`), and `LiveRegion` draws it right under the output, so the
+composer sits under the last row printed, the panel, prompt slot, completion
+menu, tail and sticky prompt above it, and the rows under it (bottom rule,
+mode row, status line, a function of the terminal size alone,
+`layout.under_composer`) under it. When something above the composer grows,
+the composer moves down with it until the region's last row is the screen's
+last row, and from then on the screen scrolls instead; when something above
+it shrinks, the composer moves up by as many rows. Once the region's last row
+is the screen's last row, the app passes the region's height as
+`min_height`, so what shrinks there becomes pad rows at the top of the frame
+and the composer does not move up.
 
 An empty composer shows `placeholder` after the prompt glyph in the hint
 colour while the app asks for it (no slot open). It is drawn, never typed:
@@ -39,17 +38,10 @@ composer at all: no rules, no input rows, and no caret (`Frame.cursor` is None,
 and `LiveRegion` hides the cursor) unless `slot_caret` puts one in the slot (a
 picker's filter row or the history search's query row, where typing goes). The slot stands in the
 composer's place, right above the mode row, with the rows `layout.choice_cap`
-gives it. The rows under the composer are the same either way, so the
-composer comes back on its row.
+gives it. The rows under the composer are the same either way.
 
 The attachment row (the images queued for the next message) is the composer's
-first row while there is one: it counts against the composer's cap, so the
-input rows keep their place and only the block's top moves.
-
-Boundary: when the region starts on the screen's top row (the launch cursor
-on row 0), the first frame's bottom is one row above the screen's last row.
-The first time the region grows after that it reaches the last row, so the
-composer moves down once, by one row, and never moves up.
+first row while there is one: it counts against the composer's cap.
 """
 
 from __future__ import annotations
@@ -58,7 +50,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from .composer import PROMPT, Composer
-from .layout import Budget, allocate, caret_row, compose, composer_cap, max_height
+from .layout import Budget, allocate, caret_row, compose, composer_cap
 from .style import Line, Span
 from .theme import DEFAULT_THEME, Theme
 from .width import truncate_line
@@ -80,7 +72,6 @@ class Frame:
     lines: tuple[Line, ...]
     cursor: tuple[int, int] | None  # (row, col) of the composer caret within the region; None with no composer
     height: int
-    pad: int
     budget: Budget
 
 
@@ -90,7 +81,6 @@ def build_frame(
     rows: int,
     composer: Composer | None,
     status: Line,
-    previous_height: int,
     sticky: Line | None = None,
     tail: Sequence[Line] = (),
     slot: Sequence[Line] = (),
@@ -102,8 +92,9 @@ def build_frame(
     placeholder: str = "",
     slot_caret: tuple[int, int] | None = None,
     text_question: bool = False,
+    min_height: int = 0,
 ) -> Frame:
-    """The region for one repaint; `previous_height` is `LiveRegion.height` right now.
+    """The region for one repaint; `min_height` rows at least, pad rows at the top making up the rest.
 
     `attachments` is drawn as the composer's first row when the composer may
     have two rows; a terminal too short for that shows the input alone.
@@ -125,7 +116,6 @@ def build_frame(
             input_lines[0] = truncate_line((*input_lines[0], Span(placeholder, theme.hint)), cols)
         composer_lines = chips + input_lines
         caret_line += len(chips)
-    min_height = previous_height if previous_height > 0 else max_height(rows)
     budget = allocate(
         rows,
         cols,
@@ -159,7 +149,6 @@ def build_frame(
         lines=tuple(lines),
         cursor=cursor,
         height=budget.total,
-        pad=budget.pad,
         budget=budget,
     )
 

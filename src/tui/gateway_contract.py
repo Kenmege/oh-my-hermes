@@ -128,11 +128,13 @@ SUBAGENT_EVENTS = (
 # and the roster SUBAGENT_EVENTS; `test_tui_gateway_contract` holds each of the three to these names.
 APP_EVENTS = (
     "request.cancel", "approval.cancelled", "session.info", "session.usage", "connection.request", "error",
-    "notification.show", "notification.clear", "session.title", "todo.updated",
+    "notification.show", "notification.clear", "session.title", "todo.updated", "review.summary",
+    "session.control.update",
 )
 TRANSCRIPT_EVENTS = (
     "message.start", "message.delta", "message.interim", "message.complete", "thinking.delta", "reasoning.delta",
-    "reasoning.available", "tool.generating", "tool.start", "tool.complete", "status.update",
+    "reasoning.available", "tool.generating", "tool.start", "tool.complete", "status.update", "moa.reference",
+    "moa.progress", "moa.phase",
 )
 HANDLED_EVENTS = frozenset((*APP_EVENTS, *TRANSCRIPT_EVENTS, *SUBAGENT_EVENTS))
 # The rest of the 77 event types Hermes 6c61c3e27d registers (`tui_gateway.contracts.registry.EVENTS`). The event
@@ -142,10 +144,10 @@ UNREAD_EVENTS = frozenset({
     "browser.controller.cancel", "browser.controller.command", "browser.progress", "btw.complete",
     "connection.update", "cron.changed", "display.install.done", "display.install.log", "display.lease",
     "display.status", "free_tier.challenge", "gateway.ready", "layout.apply", "message.reaction",
-    "moa.aggregating", "moa.phase", "moa.progress", "moa.reference", "notice",
+    "moa.aggregating", "notice",
     "pairing.changed", "pane.reveal", "pet.changed", "pet.generate.progress",
     "pet.hatch.progress", "platforms.changed", "preview.close", "preview.open", "preview.restart.complete",
-    "preview.restart.progress", "projects.changed", "reaction", "review.summary", "session.control.update",
+    "preview.restart.progress", "projects.changed", "reaction",
     "session.reclaimed", "session.resume_progress", "sessions.changed", "setup.ready",
     "skin.changed", "terminal.close", "tip.show", "tool.output_risk", "voice.interrupted",
     "voice.partial", "voice.status", "voice.transcript", "wake.detected",
@@ -159,6 +161,45 @@ UNREAD_EVENTS = frozenset({
 # bridge, the executor unwraps it (`agent/tool_executor.py::_unwrap_tool_search_call`), and `tool.start` and
 # `tool.complete` name the tool it reached, under the bridge call's own id.
 TOOL_CALL_BRIDGE = "tool_call"
+
+# Three kinds of output the gateway already writes to this client (`server._emit`), shown as Hermes' Ink TUI shows
+# them (`ui-tui/src/app/createGatewayEventHandler.ts`); showing them sends nothing back.
+# `review.summary` (`contracts/events.py` ReviewSummaryPayload, `server.py` background_review_callback): `text`, what
+# the background review of the last turn saved to memory or skills, already worded by Hermes; a transcript line.
+REVIEW_SUMMARY_TEXT = "text"
+# `session.control.update` (SessionControlUpdatePayload, `methods_session_control._publish_session_control_snapshot`):
+# `control` holds `goal`, `contracts/config_free_tier_control.py` GoalSnapshot or None. A goal row shows while its
+# `status` is one of GOAL_SHOWN_STATUSES (`ui-tui/src/app/goalStatus.ts::goalLine`), from `title`, `turns_used`,
+# `max_turns`, `paused_reason` and `wait_barrier` (`type` "until" with `until_at` epoch seconds, or "session" / "pid"
+# with `target`; both with `reason`).
+SESSION_CONTROL = "control"
+CONTROL_GOAL = "goal"
+GOAL_TITLE = "title"
+GOAL_STATUS = "status"
+GOAL_TURNS_USED = "turns_used"
+GOAL_MAX_TURNS = "max_turns"
+GOAL_PAUSED_REASON = "paused_reason"
+GOAL_WAIT_BARRIER = "wait_barrier"
+GOAL_ACTIVE = "active"
+GOAL_PAUSED = "paused"
+GOAL_SHOWN_STATUSES = frozenset({GOAL_ACTIVE, GOAL_PAUSED})
+BARRIER_TYPE = "type"
+BARRIER_UNTIL = "until"
+BARRIER_UNTIL_AT = "until_at"
+BARRIER_TARGET = "target"
+BARRIER_REASON = "reason"
+# MoA (`tool_progress._progress_moa_*`, `contracts/events.py` Moa*Payload): `moa.reference` carries one reference
+# model's `label` and `text` (with `index` and `count` when known), kept in the transcript as a collapsed row;
+# `moa.progress` `refs_done` of `refs_total` and `moa.phase` with `phase` MOA_PHASE_AGGREGATOR are the working row's
+# words for the turn. `moa.aggregating` only starts the aggregator, whose answer streams as the reply: unread.
+MOA_LABEL = "label"
+MOA_TEXT = "text"
+MOA_INDEX = "index"
+MOA_COUNT = "count"
+MOA_REFS_DONE = "refs_done"
+MOA_REFS_TOTAL = "refs_total"
+MOA_PHASE = "phase"
+MOA_PHASE_AGGREGATOR = "aggregator"
 
 # `session.info` (and a create or resume answer's `info`), `contracts/common.py` `SessionLiveInfo`:
 # `yolo` (bool) is this session's approvals off, `reasoning_effort` (str, "" when unset) its effort.

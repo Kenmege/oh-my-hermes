@@ -149,12 +149,12 @@ from .launch import request_fallback
 from .agent_view import AGENT_STEER_LEFT_UNANSWERED_NOTICE, STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
 from .layout import choice_cap, slot_cap, under_composer
 from .markdown import clean_text
-from .modes import MODE_ROW_GAP, NO_SESSION_NOTICE, STRIP_SEPARATOR, ModesMixin, mode_row_line
+from .modes import HERMES_OWN_CYCLE, MODE_ROW_GAP, NO_SESSION_NOTICE, STRIP_SEPARATOR, ModesMixin, effort_words, mode_row_line
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .model_picker import KEYS as MODEL_PICKER_KEYS
 from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows
-from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, plan_text, status_segments
+from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, plan_state, plan_text, status_segments
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
 from .screen import CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
 from .session_picker import KEYS as SESSION_PICKER_KEYS
@@ -420,7 +420,7 @@ TITLE_SET = "\x1b]2;{}" + STRING_TERMINATOR
 TITLE_DEFAULT = "Hermes"
 TITLE_CHARS = 80
 
-EXIT_HINT = "Ctrl+C again to exit"
+EXIT_HINT = "ctrl+c again to exit"  # on the mode row while a second Ctrl+C would exit
 INTERRUPT_HINT = "esc to interrupt"
 OSC52_COPY = "\x1b]52;c;{}\x07"
 # The completion menu's name column: at least this wide, wider for the longest name it lists (OMH skills are
@@ -493,7 +493,7 @@ class TerminalLike(Protocol):
     def __enter__(self) -> Any: ...
     def __exit__(self, *exc: object) -> Any: ...
     def size(self) -> tuple[int, int]: ...
-    def query_background(self) -> tuple[str | None, bytes]: ...
+    def query_background(self) -> tuple[str | None, bytes, int | None]: ...
     def resized(self) -> bool: ...
     def read(self, timeout: float, wake: int | None = None) -> bytes: ...
     def write(self, text: str) -> None: ...
@@ -582,6 +582,48 @@ def notification_from(payload: Mapping[str, Any], now: float) -> Notification | 
         expires_at = now + ttl / 1000
     level = level if level in contract.NOTIFICATION_LEVELS else "info"
     return Notification(text, level, as_text(payload.get(contract.NOTIFICATION_KEY)), expires_at)
+
+
+def goal_line(goal: Mapping[str, Any] | None, width: int, theme: Theme) -> Line | None:
+    """Hermes' standing /goal on one row, worded as its Ink goal bar words it; None once it is done or cleared.
+
+    `⊙ goal · 3/20 turns · <title>` while active; `⏳ goal parked · until 14:05
+    · <reason> · 3/20 turns · <title>` (the time local, or `on session <id>`)
+    while it waits on a barrier; `⏸ goal paused · <reason> · 3/20 turns ·
+    <title>` while paused.
+    """
+    if not isinstance(goal, Mapping) or goal.get(contract.GOAL_STATUS) not in contract.GOAL_SHOWN_STATUSES:
+        return None
+
+    def whole(key: str) -> int:
+        value = goal.get(key)
+        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+    def words(value: object) -> str:
+        return " ".join(clean_text(as_text(value)).split())
+
+    turns = f"{whole(contract.GOAL_TURNS_USED)}/{whole(contract.GOAL_MAX_TURNS)} turns"
+    barrier = goal.get(contract.GOAL_WAIT_BARRIER) if goal.get(contract.GOAL_STATUS) == contract.GOAL_ACTIVE else None
+    if isinstance(barrier, Mapping):
+        until_at = barrier.get(contract.BARRIER_UNTIL_AT)
+        if barrier.get(contract.BARRIER_TYPE) == contract.BARRIER_UNTIL and isinstance(until_at, int | float):
+            wait = f"until {time.strftime('%H:%M', time.localtime(until_at))}"
+        else:
+            target = barrier.get(contract.BARRIER_TARGET)
+            wait = f"on {as_text(barrier.get(contract.BARRIER_TYPE))} {target if isinstance(target, str | int) else ''}"
+        reason = words(barrier.get(contract.BARRIER_REASON))
+        glyph, label, detail = "⏳", "goal parked", f"{wait}{f' · {reason}' if reason else ''} · {turns}"
+    elif goal.get(contract.GOAL_STATUS) == contract.GOAL_PAUSED:
+        reason = words(goal.get(contract.GOAL_PAUSED_REASON))
+        glyph, label, detail = "⏸", "goal paused", f"{f'{reason} · ' if reason else ''}{turns}"
+    else:
+        glyph, label, detail = "⊙", "goal", turns
+    line = (
+        Span(f"{glyph} {label}", theme.accent if glyph == "⊙" else theme.warn),
+        Span(f" · {detail} · ", theme.muted),
+        Span(words(goal.get(contract.GOAL_TITLE)), theme.text),
+    )
+    return truncate_line(line, width)
 
 
 def attention_sequence(environ: Mapping[str, str], message: str) -> str:
@@ -1038,16 +1080,18 @@ class App(ModesMixin, AgentViewMixin):
         self.question_view: Pager | None = None  # the pager Ctrl+O opened over the open question, while it is open
         self.resized_while_paging = False
         self.hud: HudSnapshot | None = None
+        self.goal: Mapping[str, Any] | None = None  # Hermes' standing /goal, as its last `session.control.update` said
+        self.retired_plan = ""  # the text of a finished plan the panel no longer draws (`_retire_finished_plan`)
+        self.plan_seen_open = False  # the panel has had a plan with an item left since the last one retired
         self.notification: Notification | None = None  # Hermes' out-of-band notice, shown above the composer
         self.exit_armed_at: float | None = None
         self.exit_code: int | None = None
         self.farewell = ""
-        self.banner_facts: dict[str, str] | None = None  # the header, flushed above the next anchoring frame
+        self.banner_facts: dict[str, str] | None = None  # the header, flushed above the next frame
         self.banner_record: dict[str, str] | None = None  # kept, so a full redraw can print it again
         self.logo_due = False  # the block logo goes above the banner flushed next
         self.in_launch_session = True  # the logo is the start's: it is not repeated for /new or a switch
         self.redraw_at: float | None = None  # when a settled resize redraws everything
-        self.anchor = True  # the next frame re-anchors the region (first frame, resize, redraw)
         self.busy_since = 0.0  # when the running turn (or the prompt still waiting for it) started
         self.turn_waited = 0.0  # the part of that turn questions waited on the person, the waits that ended
         self.waiting_since: float | None = None  # when the open question (or the first of those back to back) opened
@@ -1268,6 +1312,15 @@ class App(ModesMixin, AgentViewMixin):
         self.background_named_dark = self.background is None and colorfgbg_names_dark(named)
         self.theme = build_theme(self._skin(), self._surface())
 
+    def adopt_cursor_row(self, row: int | None) -> None:
+        """The 1-based row the terminal reported its cursor on at launch: the region knows its place from the first frame.
+
+        None (no report) or a row outside the screen leaves the place unknown,
+        as without the report, until output has pushed it to certainty.
+        """
+        if row is not None and 1 <= row <= self.size[1] and not self.region.height:
+            self.region = LiveRegion(self.terminal.write, start_row=row - 1)
+
     def _skin(self) -> SkinTheme:
         return theme_for_name(self.theme.name) or default_theme()
 
@@ -1326,6 +1379,7 @@ class App(ModesMixin, AgentViewMixin):
         self._expire_calls()
         self._expire_notification()
         self._expire_escape()
+        self._expire_exit()
         self._track_path_token()
         self._ask_path_completion_when_due()
         self._ask_tail_when_due()
@@ -1374,6 +1428,8 @@ class App(ModesMixin, AgentViewMixin):
             due.append(self.notification.expires_at)
         if self.escape_armed is not None:
             due.append(self.escape_armed[1] + DOUBLE_ESCAPE_SECONDS)
+        if self.exit_armed_at is not None:
+            due.append(self.exit_armed_at + EXIT_CONFIRM_SECONDS)
         return max(min(due) - now, 0.0)
 
     def _expire_notification(self) -> None:
@@ -1693,6 +1749,14 @@ class App(ModesMixin, AgentViewMixin):
             self._on_error_event(as_text(payload.get("message")) or "The gateway reported an error.")
         elif event.type == "notification.show":
             self.notification = notification_from(payload, self.clock()) or self.notification
+        elif event.type == "review.summary":
+            text = clean_text(as_text(payload.get(contract.REVIEW_SUMMARY_TEXT))).strip()
+            if text:
+                self.transcript.add_notice(text)
+        elif event.type == "session.control.update":
+            control = payload.get(contract.SESSION_CONTROL)
+            goal = control.get(contract.CONTROL_GOAL) if isinstance(control, Mapping) else None
+            self.goal = goal if isinstance(goal, Mapping) else None
         elif event.type == "todo.updated":
             # Hermes' plan changed: the OMH plugin projected it into the session's record as the tool finished
             # (post_tool_call runs before Hermes emits this), so the HUD is read now instead of at its next poll.
@@ -1718,6 +1782,7 @@ class App(ModesMixin, AgentViewMixin):
             elif event.type == "message.complete":
                 self.turn_pending = False
                 self._take_usage(payload.get("usage"))
+                self._retire_finished_plan()  # above the done line: the turn that finished the plan ends here
                 seconds = self.clock() - self.busy_since
                 self.transcript.add_turn_summary(seconds, self._turn_tokens(), self._turn_wait())
                 self._alert_turn_end(seconds)
@@ -2145,7 +2210,6 @@ class App(ModesMixin, AgentViewMixin):
         self.terminal.suspend()
         self.size = self.terminal.size()
         self.region = LiveRegion(self.terminal.write)
-        self.anchor = True
         self.dirty = True
 
     def _attachment_input(self, event: Key | Paste) -> bool:
@@ -2212,6 +2276,12 @@ class App(ModesMixin, AgentViewMixin):
         else:
             self._rewind("")
         return True
+
+    def _expire_exit(self) -> None:
+        """Forget a first Ctrl+C once the second can no longer exit, so the mode row stops naming it."""
+        if self.exit_armed_at is not None and self.clock() - self.exit_armed_at > EXIT_CONFIRM_SECONDS:
+            self.exit_armed_at = None
+            self.dirty = True
 
     def _expire_escape(self) -> None:
         """Forget a first Esc once the second can no longer come, so the mode row stops naming it."""
@@ -2408,8 +2478,8 @@ class App(ModesMixin, AgentViewMixin):
         if self.exit_armed_at is not None and now - self.exit_armed_at <= EXIT_CONFIRM_SECONDS:
             self.exit_code = 0
             return
-        self.exit_armed_at = now
-        self.transcript.add_notice(EXIT_HINT)
+        self.exit_armed_at = now  # the mode row says so until the second press can no longer come
+        self.dirty = True
 
     def _menu_entries(self) -> list[Completion]:
         """Completions while the composer holds a leading `/word` and nothing else, unless Esc closed them over it."""
@@ -3101,6 +3171,8 @@ class App(ModesMixin, AgentViewMixin):
         self.flushed_since_prompt = 0  # rows printed above the region from the last prompt's first row on
         self.attachments.clear()  # the gateway queued them for the session being left
         self.hud = None
+        self.goal = None
+        self.retired_plan, self.plan_seen_open = "", False
         self._clear_roster()
         self._adopt_session(result, fallback_stored)
         return declined
@@ -3496,7 +3568,6 @@ class App(ModesMixin, AgentViewMixin):
             self.banner_facts = dict(self.banner_record)
             # The logo comes back only on top of the whole session it opened, never above a cut.
             self.logo_due = self.in_launch_session and not self.transcript.left_out
-        self.anchor = True
         self.dirty = True
 
     def _take_hud(self) -> None:
@@ -3504,6 +3575,26 @@ class App(ModesMixin, AgentViewMixin):
         if snapshot is not None and snapshot.session_id == self.stored_id:
             self.hud = snapshot
             self.dirty = True
+            self._retire_finished_plan()
+
+    def _retire_finished_plan(self) -> None:
+        """Stop drawing a plan whose every item is done, once no turn runs, as Claude Code's list goes once done.
+
+        A plan the panel showed with an item left also leaves its final state
+        in the transcript; one that was already finished when the session
+        opened only goes. A plan with another text (a new one) is drawn again.
+        """
+        payload = self.hud.payload if self.hud is not None else None
+        state = plan_state(payload)
+        if state == "open":
+            self.plan_seen_open = True
+        elif state == "done" and not self._busy():
+            text = plan_text(payload)
+            if text != self.retired_plan:
+                self.retired_plan = text
+                if self.plan_seen_open:
+                    self.transcript.add_notice(text)
+                self.plan_seen_open = False
 
     def _panel_live(self) -> bool:
         payload = self.hud.payload if self.hud is not None else None
@@ -3539,23 +3630,24 @@ class App(ModesMixin, AgentViewMixin):
             stable = head + stable
             prompt_row = None if prompt_row is None else prompt_row + len(head)
             self.banner_facts = None
-        anchoring = self.anchor
         # Counted from the prompt's own first row: not the blank row or the held rows above it, and after a full
         # redraw only the rows retaken from the prompt on.
         if prompt_row is not None:
             self.flushed_since_prompt = len(stable) - prompt_row
         else:
             self.flushed_since_prompt += len(stable)
-        previous = 0 if anchoring else self.region.height
-        self.anchor = False
         strip, _hits = self._agent_strip(cols)
+        # On the screen's last row the region keeps its height (what the flush below covers aside), so what shrinks
+        # becomes pad rows at its top and the composer stays on the bottom rows; above it, the region follows the
+        # content. Where the region's place is not certain it counts as above.
+        pinned = self.region.last_row(rows) == rows - 1
         build = partial(
             build_frame,
             cols=cols,
             rows=rows,
+            min_height=max(self.region.height - len(stable), 0) if pinned else 0,
             composer=None if self._composer_hidden() else self.composer,
             status=self._status_line(cols),
-            previous_height=previous,
             tail=self._tail(cols),
             slot=self._slot_lines(cols, rows),
             text_question=self.slot is not None and not self.slot.picking,
@@ -3571,15 +3663,13 @@ class App(ModesMixin, AgentViewMixin):
             else "",
         )
         frame = build()
-        # The flush below fills this frame's pad rows first, so they are transcript rows by the time it shows.
-        if self._sticky_needed(rows - frame.height + min(len(stable), frame.pad)):
+        # The rows above the region once the flush below and this frame are drawn: transcript rows.
+        if self._sticky_needed(self.region.rows_above(rows, len(stable), frame.height)):
             frame = build(sticky=sticky_line(self.sticky, cols, self.theme))
-        # Flushed after the frame, the lines land in its pad rows: the rows a shrinking tail gave
-        # back (a settled tool group is those same rows, moved above the region), or the screen of
-        # pad rows an anchoring frame fills. Flushed before it, they would push the region down by
-        # their whole count, and the rows the tail gave back would stay as blank pad under them.
-        # Frame and flush are one write, so no screen between them shows.
-        self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad, flush=stable)
+        # Flushed before the frame, the lines cover the region's top rows, where the lines leaving
+        # the tail were drawn (a settled tool group is those same rows, moved above the region), and
+        # the frame is drawn under them. Flush and frame are one write, so no screen between them shows.
+        self.region.render(frame.lines, frame.cursor, cols, flush=stable)
         self._take_clickable(frame.budget, self.listed)
 
     def _display_mode(self) -> str:
@@ -3611,7 +3701,7 @@ class App(ModesMixin, AgentViewMixin):
         )
 
     def _mode_row_line(self, cols: int, strip: Line | None = None) -> Line:
-        """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's second press).
+        """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's or Ctrl+C's second press).
 
         A picked steer or rewind keeps room for its last form but one, the shortest that still names what it
         acts on, beside the effort: the strip collapses (`● 2 agents ↓`) before that would be cut. The mode's
@@ -3634,12 +3724,14 @@ class App(ModesMixin, AgentViewMixin):
             say, say_style = tuple(form.format(ordinal=self.rewind.ordinal) for form in REWIND_SAY), self.theme.warn
         elif self.tell_draft is not None:
             say, say_style = TELL_SAY, self.theme.accent
+        elif self.exit_armed_at is not None and self.clock() - self.exit_armed_at <= EXIT_CONFIRM_SECONDS:
+            say = EXIT_HINT
         elif armed is not None and self.clock() - armed[1] <= DOUBLE_ESCAPE_SECONDS:
             say = ESCAPE_AGAIN.format(armed[0])
         elif self._newline_keys_due():
             say = NEWLINE_KEYS
         if isinstance(say, tuple):
-            effort = cell_width(f"effort {self.effort}") + MODE_ROW_GAP if self.effort else 0
+            effort = cell_width(effort_words(self.effort)) + MODE_ROW_GAP if self.effort else 0
             strip = self._agent_strip(cols - effort - cell_width(STRIP_SEPARATOR + say[max(len(say) - 2, 0)]))[0]
         if self.list_selected is not None and self.slot is None:
             strip = ()  # the open list shows the agents itself
@@ -3655,6 +3747,8 @@ class App(ModesMixin, AgentViewMixin):
             say=say,
             say_style=say_style,
             esc_interrupts=self._esc_interrupts(),
+            # While Hermes has approvals off on its own, Shift+Tab turns plan on and off and nothing else.
+            cycle=HERMES_OWN_CYCLE.get(self._display_mode(), "") if self.approvals_off and not self.yolo_by_tui else "",
         )
 
     def _newline_keys_due(self) -> bool:
@@ -3735,6 +3829,8 @@ class App(ModesMixin, AgentViewMixin):
         now = self.clock()
         # Never more than the screen; running tools' marks pulse unless motion is reduced.
         lines = self.transcript.live_lines(cols, self.theme, max_rows=self.size[1], now=now if self.motion else None)
+        if not lines and self.transcript.taken_any:
+            lines = [()]  # the spacer a block opens with, here between the transcript and the region under it
         if self._busy() and self.waiting_since is not None:
             # The turn waits on the person: no spinner, and one clock, the wait's.
             waited = elapsed_text(now - self.waiting_since)
@@ -3748,6 +3844,8 @@ class App(ModesMixin, AgentViewMixin):
             lines.append(truncate_line((Span(INTERRUPTING, self.theme.warn), Span(f" ({elapsed}{written})", self.theme.muted)), cols))
         elif self._busy():
             text = self.transcript.activity or self.transcript.status or "working…"
+            if self.transcript.moa:
+                text = f"{text} · {self.transcript.moa}"
             frame = self._spinner_frame()
             spinner = SPINNER_FRAMES[frame % len(SPINNER_FRAMES)]
             elapsed = elapsed_text(now - (self.busy_since or now))
@@ -3785,12 +3883,15 @@ class App(ModesMixin, AgentViewMixin):
             lines, self.listed = self._agent_list(cols, cap)
             return lines
         # Nothing has the keys: the queued prompts take the slot's last rows, right above the composer's
-        # top rule, Hermes' notification the row above them, and the menu or the panel gets the rows left. A
-        # question or the picker hides them, since Up then does not edit the queue.
+        # top rule, Hermes' notification the row above them, Hermes' standing goal the row above that, and the
+        # menu or the panel gets the rows left. A question or the picker hides them, since Up then does not edit
+        # the queue.
         hint = QUEUE_HELD_HINT if self.queue_held else QUEUE_EDIT_HINT
         queue = queue_lines([line.shown or line.text for line in self.queued], cols, cap, self.theme, hint)
         notice = [self.notification.line(cols, self.theme)] if self.notification and cap > len(queue) else []
-        return self._menu_or_panel_lines(cols, cap - len(queue) - len(notice)) + notice + queue
+        shown = goal_line(self.goal, cols, self.theme)
+        goal = [shown] if shown is not None and cap > len(queue) + len(notice) else []
+        return self._menu_or_panel_lines(cols, cap - len(queue) - len(notice) - len(goal)) + goal + notice + queue
 
     def _menu_or_panel_lines(self, cols: int, cap: int) -> list[Line]:
         if cap <= 0:
@@ -3804,6 +3905,7 @@ class App(ModesMixin, AgentViewMixin):
         return panel_lines(
             payload, cols, cap, self.theme, self.wall_clock(), received_at=self.hud.received_at,
             show_agents=not self.roster.agents,  # the strip and the list show them while the roster holds any
+            show_plan=not self.retired_plan or plan_text(payload) != self.retired_plan,
             motion=self.motion,
         )
 
@@ -3973,8 +4075,9 @@ def _run(
         return request_fallback(environ)
     try:
         with terminal:
-            background, typed = terminal.query_background()
+            background, typed, row = terminal.query_background()
             app.adopt_background(background, environ)
+            app.adopt_cursor_row(row)
             code = app.run(typed)
     finally:
         if app.client is not client:  # a gateway spawned after a crash; the caller reaps the first one

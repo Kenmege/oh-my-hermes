@@ -2,7 +2,7 @@
 
 Top to bottom the region holds:
 
-    pad rows        blank rows that keep the region's bottom fixed when content shrinks
+    pad rows        blank rows that keep a region on the screen's last row from shrinking
     sticky prompt   "↳ you: …" while a turn runs
     streaming tail  the last rows of the live transcript block
     slot            panel, completion menu or server-request prompt (one at a time); under a
@@ -13,7 +13,14 @@ Top to bottom the region holds:
     mode row        the input mode, or a hint for the keys that matter now
     status line
 
-The budget is a pure function of the terminal size and the content sizes:
+The budget is a pure function of the terminal size, the content sizes and
+`min_height`. With `min_height` 0 the region is exactly as tall as its
+content, so the region (drawn right under the output, `screen.LiveRegion`)
+follows the content and the composer moves with what is above it. The app
+passes the region's height as `min_height` once the region's last row is the
+screen's last row: content that shrinks there becomes pad rows at the top of
+the region, so the composer and the rows under it stay on the bottom rows,
+and the next flushed lines cover the pad rows.
 
 - The region is never taller than `rows - 1`. `LiveRegion` moves only
   relative to its own top and cursor-up stops at the top of the screen, so a
@@ -32,18 +39,14 @@ The budget is a pure function of the terminal size and the content sizes:
 - Below `MIN_ROWS` rows or `MIN_COLS` columns only composer and status are
   drawn, and, while a question answered with text is open (`text_question`),
   one slot row above them for its label when a row is left.
-- No-shrink: `min_height` is the region's current height. When content needs
-  fewer rows, pad rows fill the top so the region keeps its height, and with
-  it its bottom row. The rows under the composer depend only on the terminal
-  size, so the composer's distance from the bottom depends only on the
-  composer's own row count, which is the invariant the composer row stands on.
+- Pad rows fill the region up to `min_height`, never past `rows - 1`, and
+  only where the content needs fewer rows.
 - With the composer hidden (`composer_hidden`: the person picks from a list,
   so nothing is typed) the region draws no top rule, no input rows and no
   bottom rule, and the slot stands right above the mode row (above the status
   line where there is none), taking up to `choice_cap` rows: its own cap and
   the rows a one-row composer frame takes at that size. The mode row and the
-  status line keep their rows, so once the composer is drawn again it is on
-  the row it was on before, the region's height held by pad rows as always.
+  status line keep their rows.
 """
 
 from __future__ import annotations
@@ -64,7 +67,6 @@ BLANK: Line = ()
 
 @dataclass(frozen=True)
 class Budget:
-    pad: int
     sticky: int
     tail: int
     slot: int
@@ -73,6 +75,7 @@ class Budget:
     bottom_rule: int
     mode: int
     status: int
+    pad: int = 0
 
     @property
     def total(self) -> int:
@@ -146,7 +149,7 @@ def allocate(
     tail_rows: int,
     slot_rows: int,
     composer_rows: int,
-    min_height: int,
+    min_height: int = 0,
     composer_hidden: bool = False,
     text_question: bool = False,
 ) -> Budget:
@@ -175,9 +178,8 @@ def allocate(
         left -= sticky_rows
         tail = min(max(tail_rows, 0), left)
     content = sticky_rows + tail + slot + rule + composer + bottom_rule + mode + status
-    pad = min(max(min_height - content, 0), room - content)
     return Budget(
-        pad=pad,
+        pad=min(max(min_height - content, 0), room - content),
         sticky=sticky_rows,
         tail=tail,
         slot=slot,
