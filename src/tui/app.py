@@ -287,6 +287,14 @@ LOGO_MIN_ROWS = 24
 LAST_SESSION_LIMIT = 3
 LAST_SESSION_NOTICE = "last session: {label} · /resume {id} reopens it"
 PLACEHOLDER = "Ask Hermes anything"
+# The composer after an approval's tell row: what is sent goes into the running turn as a steer (`App._tell`).
+TELL_PLACEHOLDER = "tell Hermes what to do instead"
+TELL_SAY = (
+    "↪ tell Hermes what to do instead · enter sends · esc cancels",
+    "↪ tell Hermes what to do instead · esc cancels",
+    "↪ tell Hermes · esc cancels",
+    "↪ tell · esc",
+)
 BARE_HERMES_NOTE = "Bare `hermes` opens Hermes' own terminal."
 
 # The mode on the status line, where the terminal is too short for the mode row.
@@ -963,6 +971,8 @@ class App(ModesMixin, AgentViewMixin):
         # The person's draft, set aside whole (text, caret, paste chips) while a slot answered with text has a
         # composer of its own; it is the composer again when that slot closes.
         self.slot_draft: Composer | None = None
+        # The person's draft, set aside while the composer takes what to tell Hermes after an approval's tell row.
+        self.tell_draft: Composer | None = None
         self.waiting_requests: deque[ServerRequest] = deque()
         self.queued: deque[QueuedLine] = deque()
         self.sticky = ""
@@ -1187,6 +1197,7 @@ class App(ModesMixin, AgentViewMixin):
         self.notification = None  # Hermes' notices are the session's
         self.session_title = ""
         self.rewind = self.rewind_picker = None  # a rewind names a row of the session being left
+        self._leave_tell()  # what to tell Hermes was for a turn of the session being left
         self.approvals_off = self.yolo_by_tui = self.hermes_approvals_said = False
         self.effort_asked = ""
         self.effort = ""
@@ -1734,6 +1745,8 @@ class App(ModesMixin, AgentViewMixin):
         self._respond(answer)
         self._note_approval(answer)
         self._note_question(answer)
+        if answer.tell:
+            self._open_tell()  # before the slot closes: a question waiting behind it then sets this composer aside
         self._close_slot()
 
     def _note_question(self, answer: Answer) -> None:
@@ -1771,6 +1784,30 @@ class App(ModesMixin, AgentViewMixin):
             self.turn_waited += self.clock() - self.waiting_since
             self.waiting_since = None
             self.transcript.set_waiting(False)
+
+    def _open_tell(self) -> None:
+        """After an approval's tell row sent the deny: the draft is set aside and the composer, labelled on the mode
+        row, takes what the person tells Hermes instead (`_tell`). It shares the draft's history."""
+        draft = self.composer
+        self.tell_draft = draft
+        self.composer = Composer(history=draft.history, on_record=draft.on_record)
+
+    def _leave_tell(self) -> None:
+        """The draft comes back; what was typed to tell Hermes and not sent stays in this session's history (Up)."""
+        if self.tell_draft is None:
+            return
+        typed = self.composer.expanded()
+        self.composer, self.tell_draft = self.tell_draft, None
+        self.composer.record(typed, sent=False)
+
+    def _tell(self, text: str, shown: str = "", chips: tuple[tuple[str, str], ...] = ()) -> None:
+        """What the person sent after the tell row: the draft comes back and the text goes into the running turn as
+        a steer, or as a prompt once the turn has ended, the way Ctrl+Enter sends it (`_steer_or_submit`). An empty
+        send leaves the composer waiting for the text."""
+        if not text.strip():
+            return
+        self._leave_tell()
+        self._steer_or_submit(text, shown, chips)
 
     def _turn_wait(self) -> float:
         """Seconds questions have waited on the person in the running (or just ended) turn, the open wait included."""
@@ -1912,6 +1949,8 @@ class App(ModesMixin, AgentViewMixin):
                     self._answer(answer)
                 else:
                     self._next_question(question)
+            elif self.tell_draft is not None and self.agent_steer is None and self.rewind is None:
+                self._tell(action.text, action.shown, action.chips)
             elif steer:
                 self._steer_or_submit(action.text, action.shown, action.chips)
             else:
@@ -1984,6 +2023,9 @@ class App(ModesMixin, AgentViewMixin):
         if self.rewind is not None:
             self.rewind = None
             self._set_composer("")
+            return True
+        if self.tell_draft is not None:
+            self._leave_tell()  # the deny went as the row was picked; nothing more is sent
             return True
         if not self.composer.text and self._busy():
             self._interrupt()
@@ -2566,6 +2608,8 @@ class App(ModesMixin, AgentViewMixin):
         image's remainder, a command's prefill) goes here, never into an
         answer to Hermes.
         """
+        if self.tell_draft is not None:
+            return self.tell_draft
         return self.slot_draft if self.slot_draft is not None else self.composer
 
     def _give_back(self, text: str) -> None:
@@ -2574,7 +2618,7 @@ class App(ModesMixin, AgentViewMixin):
         draft = self._draft()
         caret, end = draft.caret, len(draft.text)
         draft.replace(end, end, f"\n{text}" if draft.text else text)
-        if draft is self.slot_draft or self._composer_hidden():
+        if draft is self.slot_draft or draft is self.tell_draft or self._composer_hidden():
             draft.caret = caret  # a hidden draft comes back as the person left it, the text after its end
 
     # ── slash commands ──
@@ -3276,7 +3320,9 @@ class App(ModesMixin, AgentViewMixin):
             else None,
             mode=self._display_mode(),
             mode_row=self._mode_row_line(cols, strip),
-            placeholder=PLACEHOLDER if self._composer_open() else "",
+            placeholder=(TELL_PLACEHOLDER if self.tell_draft is not None else PLACEHOLDER)
+            if self._composer_open()
+            else "",
             agent_list=agent_list if self.list_selected is not None else None,
         )
         frame = build()
@@ -3335,6 +3381,8 @@ class App(ModesMixin, AgentViewMixin):
             say, say_style = tuple(form.format(name=steered.name) for form in STEER_SAY), self.theme.accent
         elif self.rewind is not None:
             say, say_style = tuple(form.format(ordinal=self.rewind.ordinal) for form in REWIND_SAY), self.theme.warn
+        elif self.tell_draft is not None:
+            say, say_style = TELL_SAY, self.theme.accent
         elif armed is not None and self.clock() - armed[1] <= DOUBLE_ESCAPE_SECONDS:
             say = ESCAPE_AGAIN.format(armed[0])
         if isinstance(say, tuple):
@@ -3380,7 +3428,8 @@ class App(ModesMixin, AgentViewMixin):
         """
         return (
             self._busy() and self._composer_open() and self.list_selected is None and not self.path_items
-            and self.agent_steer is None and self.rewind is None and not self.composer.text
+            and self.agent_steer is None and self.rewind is None and self.tell_draft is None
+            and not self.composer.text
         )
 
     # ── subagents ──

@@ -9,7 +9,9 @@ or withdrawn by the gateway. Three rules shape this module:
   decline frame (an explicit deny for approvals). Allowing a command takes
   the arrows and then Enter: deny is the first row and selected, the
   narrowest allow sits under it, the selection does not wrap, no digit picks
-  a choice, and a letter can only deny. The app ignores every key for a
+  a choice, and a letter can only deny. An approval's last row denies too,
+  and asks the app to give the composer to what the person tells Hermes
+  instead (`Answer.tell`). The app ignores every key for a
   moment after any slot opens, or its next question appears. A request the gateway
   withdraws itself (its own timeout, an interrupt) arrives as
   `request.cancel`, and the app closes the slot without answering.
@@ -34,7 +36,7 @@ highlighted.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 import sys
 from typing import Any
@@ -56,11 +58,15 @@ from .width import cell_width, line_width, truncate_line, wrap_line
 # this session.
 APPROVAL_ORDER = ("deny", "once", "session", "always")
 APPROVAL_CHOICES = ("deny", "once", "session")
+# Last on every approval, as Claude Code puts its "No, and tell Claude" row last: it sends the explicit deny, and the
+# app then gives the composer to what the person tells Hermes instead (`App._open_tell`).
+APPROVAL_TELL = "tell"
 _APPROVAL_LABELS = {
     "once": "allow once",
     "session": "allow this session",
     "always": "always allow {what} (Hermes saves it)",
     "deny": "deny",
+    APPROVAL_TELL: "no, and tell Hermes what to do instead",
 }
 ALWAYS_WHAT = "commands like this"  # `always`'s label for a request with no description
 # A letter can only deny. Allowing takes the arrows and Enter, so a key typed
@@ -117,10 +123,11 @@ _DECLINE_NOTICES = {
 
 @dataclass(frozen=True)
 class Answer:
-    """The frame to send back for one request."""
+    """The frame to send back for one request; `tell` when it is an approval's deny from its tell row."""
 
     request_id: str
     frame: dict[str, Any]
+    tell: bool = False
 
 
 @dataclass(frozen=True)
@@ -198,8 +205,8 @@ class PromptSlot:
     def approval_choices(self) -> tuple[str, ...]:
         offered = self.params.get("choices")
         if not isinstance(offered, list) or not offered:
-            return APPROVAL_CHOICES
-        return tuple(choice for choice in APPROVAL_ORDER if choice in offered or choice == "deny")
+            return (*APPROVAL_CHOICES, APPROVAL_TELL)
+        return (*(choice for choice in APPROVAL_ORDER if choice in offered or choice == "deny"), APPROVAL_TELL)
 
     def approval_label(self, choice: str) -> str:
         """A choice's row: what it does, `always` naming what Hermes flagged (the description), which it saves."""
@@ -291,6 +298,8 @@ class PromptSlot:
             self.selected = max(self.selected - 1, 0)
         elif key.name in (DOWN, RIGHT):
             self.selected = min(self.selected + 1, len(choices) - 1)
+        elif key.name == ENTER and choices[self.selected] == APPROVAL_TELL:
+            return replace(self.decline(), tell=True)
         elif key.name == ENTER:
             return Answer(self.request_id, {"result": {"choice": choices[self.selected]}})
         elif key.name == CHAR and not key.ctrl and not key.alt and key.char.lower() in _DENY_KEYS:

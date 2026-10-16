@@ -235,7 +235,7 @@ class NarrowApprovalTests(unittest.TestCase):
 
     def test_a_wrapped_command_keeps_its_indent(self) -> None:
         rows = self.rows(50)
-        command_rows = rows[1:-3]
+        command_rows = rows[1 : rows.index("▌ ❯ deny")]
         self.assertGreater(len(command_rows), 1)
         for row in command_rows:
             self.assertTrue(row.startswith("▌   "), rows)

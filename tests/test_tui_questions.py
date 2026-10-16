@@ -13,11 +13,12 @@ from __future__ import annotations
 from pathlib import Path
 import unittest
 
+from _tui_lines import line_text
 from test_tui_choice_ui import armed, drawn, press
 from test_tui_modes import make_app, type_text
 from omh.tui import app as app_module
 from omh.tui import prompts
-from omh.tui.gateway import Event, ServerRequest
+from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, Key
 from omh.tui.layout import MIN_COLS, allocate
 from omh.tui.app import BELL
@@ -389,6 +390,113 @@ class QuestionAttentionTests(unittest.TestCase):
         self.assertTrue(said.startswith("Hermes asks: Why Why"))
 
 
+TELL_APPROVAL = ServerRequest("srq-1", "approval", {
+    "command": "rm -rf ./x", "description": "recursive delete", "choices": ["once", "session", "deny"],
+})
+
+
+def mode_row(app) -> str:
+    return line_text(app._mode_row_line(100))
+
+
+class TellRowTests(unittest.TestCase):
+    def told(self, busy: bool = True, clock=None):
+        """An approval answered from its tell row, over a draft; the app, its client and the draft's text."""
+        app, client = make_app(busy=busy, **({"clock": clock} if clock else {}))
+        type_text(app, "my draft")
+        app._on_server_request(TELL_APPROVAL)
+        armed(app)
+        press(app, *[Key(DOWN)] * 3, Key(ENTER))
+        return app, client
+
+    def test_the_tell_row_denies_at_once_and_opens_a_labelled_composer(self) -> None:
+        app, client = self.told()
+        self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "deny"}})])  # the turn is not held
+        self.assertEqual(outcome_rows(app), [("denied · rm -rf ./x", NOTICE_ERROR)])
+        self.assertIsNone(app.slot)
+        self.assertEqual(app.composer.text, "")  # a field of its own; the draft is set aside
+        self.assertEqual(app.tell_draft.text, "my draft")  # type: ignore[union-attr]
+        self.assertIn(app_module.TELL_SAY[0], mode_row(app))
+        self.assertNotIn("esc to interrupt", mode_row(app))  # Esc leaves the field, it interrupts nothing
+        self.assertIn(f"› {app_module.TELL_PLACEHOLDER}", drawn(app))
+        self.assertEqual(client.named("session.steer"), [])  # nothing is sent until the person sends it
+
+    def test_what_is_sent_goes_into_the_running_turn_as_a_steer_and_the_draft_comes_back(self) -> None:
+        for key in (Key(ENTER), Key(ENTER, ctrl=True)):
+            with self.subTest(key=key):
+                app, client = self.told()
+                type_text(app, "use ./tmp instead")
+                press(app, key)
+                self.assertEqual(client.named("session.steer"), [{"session_id": SID, "text": "use ./tmp instead"}])
+                self.assertEqual(client.named("prompt.submit"), [])
+                self.assertIsNone(app.tell_draft)
+                self.assertEqual(app.composer.text, "my draft")
+                self.assertNotIn(app_module.TELL_SAY[0], mode_row(app))
+
+    def test_a_steer_hermes_refuses_waits_in_the_queue_like_any_steer(self) -> None:
+        app, client = self.told()
+        type_text(app, "use ./tmp instead")
+        press(app, Key(ENTER))
+        app._on_response(Response(len(client.calls), {"status": "rejected", "text": "use ./tmp instead"}, None))
+        self.assertEqual([line.text for line in app.queued], ["use ./tmp instead"])
+        self.assertEqual(client.named("prompt.submit"), [])
+
+    def test_a_steer_hermes_never_answers_comes_back_after_the_usual_wait(self) -> None:
+        now = [100.0]
+        app, client = self.told(clock=lambda: now[0])
+        type_text(app, "use ./tmp instead")
+        press(app, Key(ENTER))
+        now[0] += app_module.CALL_ANSWER_SECONDS
+        app._expire_calls()
+        self.assertEqual(app.composer.text, "my draft\nuse ./tmp instead")  # given back, never sent again
+        self.assertEqual(len(client.named("session.steer")), 1)
+
+    def test_once_the_turn_has_ended_it_goes_as_an_ordinary_prompt(self) -> None:
+        app, client = self.told()
+        app.turn_pending = False
+        type_text(app, "use ./tmp instead")
+        press(app, Key(ENTER))
+        self.assertEqual(client.named("session.steer"), [])
+        self.assertEqual(client.named("prompt.submit"), [{"session_id": SID, "text": "use ./tmp instead"}])
+
+    def test_esc_sends_nothing_more_and_keeps_what_was_typed_in_this_sessions_history(self) -> None:
+        app, client = self.told()
+        type_text(app, "half a thought")
+        calls = list(client.calls)
+        press(app, Key(ESCAPE))
+        self.assertEqual(client.calls, calls)
+        self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "deny"}})])  # the one deny, nothing after
+        self.assertIsNone(app.tell_draft)
+        self.assertEqual(app.composer.text, "my draft")
+        self.assertEqual(app.composer.history[-1], "half a thought")
+
+    def test_an_empty_send_keeps_the_field_waiting(self) -> None:
+        app, client = self.told()
+        press(app, Key(ENTER))
+        self.assertIsNotNone(app.tell_draft)
+        self.assertEqual(client.named("session.steer"), [])
+
+    def test_a_question_that_arrives_meanwhile_takes_the_keys_and_gives_the_field_back(self) -> None:
+        app, client = self.told()
+        type_text(app, "use ./tmp")
+        app._on_server_request(ServerRequest("srq-2", "approval", {"command": "ls"}))
+        self.assertTrue(app._composer_hidden())
+        armed(app)
+        press(app, Key(ESCAPE))  # denies the second approval; the field stays as it was
+        self.assertEqual(app.composer.text, "use ./tmp")
+        self.assertIn(app_module.TELL_SAY[0], mode_row(app))
+        press(app, Key(ENTER))
+        self.assertEqual(client.named("session.steer"), [{"session_id": SID, "text": "use ./tmp"}])
+
+    def test_leaving_the_session_leaves_the_field_with_nothing_sent(self) -> None:
+        app, client = self.told()
+        type_text(app, "use ./tmp")
+        app._enter_session({"session_id": "other", "info": {}})
+        self.assertIsNone(app.tell_draft)
+        self.assertEqual(app.composer.text, "my draft")
+        self.assertEqual(client.named("session.steer"), [])
+
+
 class DocumentedQuestionViewTests(unittest.TestCase):
     def test_installation_shows_the_markers_the_slot_draws(self) -> None:
         installation = " ".join((Path(__file__).resolve().parents[1] / "docs" / "INSTALLATION.md").read_text(
@@ -403,6 +511,9 @@ class DocumentedQuestionViewTests(unittest.TestCase):
         always = prompts.open_request("srq-1", "approval", {"description": "recursive delete", "choices": ["always"]})
         self.assertIn(f"(`{always.approval_label('always')}`)", installation)  # type: ignore[union-attr]
         self.assertNotIn("Approving a command permanently stays a choice for `hermes --tui`", installation)
+        self.assertIn(f"labelled `{app_module.TELL_SAY[0]}` on the mode row", installation)
+        tell = prompts.open_request("srq-1", "approval", {})
+        self.assertIn(f"last {tell.approval_label(prompts.APPROVAL_TELL)}, one per row", installation)  # type: ignore[union-attr]
         self.assertIn(f"`{app_module.WAITING_GLYPH}{app_module.STATE_WAITING} (11s)`", installation)
         self.assertIn("`✻ 30s" + TURN_WAITED.format(elapsed="27s") + " · 1 tool`", installation)
         self.assertIn("`✗ declined · sudo password`", installation)

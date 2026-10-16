@@ -344,7 +344,7 @@ class ListLeaveTests(unittest.TestCase):
         screen = drawn(app)
         status = status_index(screen)
         # The approval stands where the composer was, and the one row under it is the mode row, with its keys.
-        self.assertEqual(screen[status - 2], "▌   allow this session")
+        self.assertEqual(screen[status - 2], "▌   no, and tell Hermes what to do instead")  # the approval's last row
         self.assertIn("esc denies", screen[status - 1])
         now[0] += SLOT_ARM_SECONDS
         for key in (Key(DOWN), Key(UP)):

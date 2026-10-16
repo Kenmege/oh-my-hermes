@@ -94,7 +94,8 @@ class HiddenComposerTests(unittest.TestCase):
         self.assertFalse(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
         self.assertFalse([row for row in during if row.startswith("› ")], during)
         mode_row = status_row(during) - 1
-        self.assertEqual(during[mode_row - 3 : mode_row], ["▌ ❯ deny", "▌   allow once", "▌   allow this session"])
+        self.assertEqual(during[mode_row - 4 : mode_row],
+                         ["▌ ❯ deny", "▌   allow once", "▌   allow this session", "▌   no, and tell Hermes what to do instead"])
         self.assertIn("↑↓ pick · enter confirms · d or esc denies", during[mode_row])
         armed(app)
         press(app, Key(DOWN), Key(ENTER))
@@ -673,16 +674,17 @@ class ResizeAndShortTerminalTests(unittest.TestCase):
                 self.assertTrue(any(row.startswith("▌ ❯ deny") for row in screen), screen)
                 self.assertTrue(all(len(row) <= cols for row in screen))
                 self.assertEqual(rule_rows(screen), [], screen)
-                if rows >= 9:  # below that a spare row shows the command's head rather than the keys
-                    self.assertTrue(any("esc denies" in row for row in screen), screen)  # the mode row, or a row of its own
+                if rows >= 10:  # the mode row; below it a spare row shows the command's head rather than the keys
+                    self.assertTrue(any("esc denies" in row for row in screen), screen)
 
     def test_below_ten_rows_the_keys_take_a_slot_row_and_not_a_composer_row(self) -> None:
         app, _client = make_app(busy=True, rows=9, cols=80)
-        app._on_server_request(APPROVAL)
+        app._on_server_request(ServerRequest("srq-1", "approval", {**APPROVAL.params, "choices": ["once", "deny"]}))
         screen = drawn(app)
         status = status_row(screen)
         self.assertEqual(screen[status - 1], "▌   ↑↓ pick · enter confirms · d or esc denies")
-        self.assertEqual(screen[status - 4 : status - 1], ["▌ ❯ deny", "▌   allow once", "▌   allow this session"])
+        self.assertEqual(screen[status - 4 : status - 1],
+                         ["▌ ❯ deny", "▌   allow once", "▌   no, and tell Hermes what to do instead"])
 
 
 if __name__ == "__main__":

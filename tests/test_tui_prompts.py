@@ -62,17 +62,17 @@ def slot(method: str, params: dict) -> prompts.PromptSlot:
 
 class ApprovalTests(unittest.TestCase):
     def test_hermes_always_is_offered_only_when_listed_below_the_session_and_deny_comes_first(self) -> None:
-        self.assertEqual(slot("approval", APPROVAL).approval_choices(), ("deny", "once", "session", "always"))
+        self.assertEqual(slot("approval", APPROVAL).approval_choices(), ("deny", "once", "session", "always", "tell"))
         cases = (
-            (["once", "session", "deny"], ("deny", "once", "session")),  # allow_permanent false
-            (["once", "deny"], ("deny", "once")),  # smart-denied: one operation only
-            ([], ("deny", "once", "session")),  # no list: never the permanent allow
+            (["once", "session", "deny"], ("deny", "once", "session", "tell")),  # allow_permanent false
+            (["once", "deny"], ("deny", "once", "tell")),  # smart-denied: one operation only
+            ([], ("deny", "once", "session", "tell")),  # no list: never the permanent allow
         )
         for offered, shown in cases:
             with self.subTest(offered=offered):
                 self.assertEqual(slot("approval", {**APPROVAL, "choices": offered}).approval_choices(), shown)
         self.assertEqual(slot("approval", {k: v for k, v in APPROVAL.items() if k != "choices"}).approval_choices(),
-                         ("deny", "once", "session"))
+                         ("deny", "once", "session", "tell"))
 
     def test_always_says_what_it_allows_and_that_hermes_saves_it(self) -> None:
         self.assertEqual(slot("approval", APPROVAL).approval_label("always"),
@@ -119,7 +119,9 @@ class ApprovalTests(unittest.TestCase):
         approval = slot("approval", APPROVAL)
         for _ in range(9):
             approval.handle_key(Key(DOWN))
-        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "always"}})
+        self.assertEqual(approval.selected, len(approval.approval_choices()) - 1)  # the tell row, last
+        last = approval.handle_key(Key(ENTER))
+        self.assertEqual((last.frame, last.tell), ({"result": {"choice": "deny"}}, True))
         approval = slot("approval", APPROVAL)
         approval.handle_key(Key(DOWN))
         for _ in range(3):
@@ -159,9 +161,9 @@ class ApprovalTests(unittest.TestCase):
 
     def test_a_session_choice_hermes_did_not_offer_is_not_shown(self) -> None:
         approval = slot("approval", {**APPROVAL, "choices": ["once", "deny"]})
-        self.assertEqual(approval.approval_choices(), ("deny", "once"))
+        self.assertEqual(approval.approval_choices(), ("deny", "once", "tell"))
         text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=6))
-        self.assertEqual([unbarred(row) for row in text[-2:]], ["❯ deny", "  allow once"])
+        self.assertEqual([unbarred(row) for row in text[-3:]], ["❯ deny", "  allow once", "  no, and tell Hermes what to do instead"])
 
     def test_submitted_text_does_not_answer_an_approval(self) -> None:
         approval = slot("approval", APPROVAL)
@@ -191,14 +193,15 @@ class ApprovalTests(unittest.TestCase):
         self.assertEqual(keys, tuple(sorted(keys, key=len, reverse=True)))
 
     def test_a_keys_row_is_added_only_when_asked_and_only_beside_the_command(self) -> None:
-        approval = slot("approval", {**APPROVAL, "command": "one\ntwo"})
+        approval = slot("approval", {**APPROVAL, "command": "one\ntwo", "choices": ["once", "deny"]})
         self.assertFalse([row for row in lines_text(approval.lines(60, DEFAULT_THEME, 8)) if "esc denies" in row])
         text = lines_text(approval.lines(60, DEFAULT_THEME, 8, keys_row=True))
         self.assertEqual(unbarred(text[-1]), "  ↑↓ pick · enter confirms · d or esc denies")
-        self.assertEqual(unbarred(lines_text(approval.lines(24, DEFAULT_THEME, 8, keys_row=True))[-1]), "  esc denies")
+        self.assertEqual(unbarred(lines_text(approval.lines(24, DEFAULT_THEME, 12, keys_row=True))[-1]), "  esc denies")
         tight = lines_text(approval.lines(60, DEFAULT_THEME, 5, keys_row=True))
         self.assertEqual(
-            [unbarred(row) for row in tight[1:]], ["  one … ctrl+o shows all", "❯ deny", "  allow once", "  allow this session"]
+            [unbarred(row) for row in tight[1:]],
+            ["  one … ctrl+o shows all", "❯ deny", "  allow once", "  no, and tell Hermes what to do instead"],
         )
 
     def test_lines_show_command_and_choices_within_budget(self) -> None:
@@ -364,6 +367,62 @@ class WaitingCountTests(unittest.TestCase):
                                  f"{head} · 1 more question waiting")
                 self.assertEqual(unbarred(lines_text(question.lines(120, DEFAULT_THEME, 8, waiting=3))[0]),
                                  f"{head} · 3 more questions waiting")
+
+
+class ApprovalLayoutTests(unittest.TestCase):
+    """The approval's rows after the always and tell rows joined them (owner decisions 8 and 9)."""
+
+    LABELS = ["deny", "allow once", "allow this session", "always allow recursive delete (Hermes saves it)",
+              "no, and tell Hermes what to do instead"]
+
+    def test_the_rows_go_deny_once_session_always_then_tell(self) -> None:
+        text = [unbarred(row) for row in lines_text(slot("approval", APPROVAL).lines(80, DEFAULT_THEME, 12))]
+        self.assertEqual(text[2:], ["❯ " + self.LABELS[0], *("  " + label for label in self.LABELS[1:])])
+        without = [unbarred(row) for row in lines_text(
+            slot("approval", {**APPROVAL, "choices": ["once", "session", "deny"]}).lines(80, DEFAULT_THEME, 12))]
+        self.assertEqual(without[2:], ["❯ deny", "  allow once", "  allow this session", "  " + self.LABELS[-1]])
+
+    def test_deny_stays_first_and_highlighted(self) -> None:
+        for offered in (APPROVAL["choices"], ["once", "session", "deny"], ["once", "deny"], []):
+            with self.subTest(offered=offered):
+                approval = slot("approval", {**APPROVAL, "choices": offered})
+                self.assertEqual((approval.selected, approval.approval_choices()[0]), (0, "deny"))
+                self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "deny"}})
+
+    def test_the_arrows_stop_at_both_ends_so_up_then_enter_still_denies(self) -> None:
+        approval = slot("approval", APPROVAL)
+        for _ in range(12):
+            approval.handle_key(Key(DOWN))
+        self.assertEqual(approval.selected, 4)
+        for _ in range(12):
+            approval.handle_key(Key(UP))
+        self.assertEqual(approval.selected, 0)
+        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "deny"}})
+
+    def test_no_digit_and_no_letter_but_d_or_n_picks_a_row_wherever_the_highlight_is(self) -> None:
+        for start in range(5):
+            for char in "0123456789atTyYs":
+                with self.subTest(start=start, char=char):
+                    approval = slot("approval", APPROVAL)
+                    approval.selected = start
+                    self.assertIsNone(approval.handle_key(Key(CHAR, char)))
+                    self.assertEqual(approval.selected, start)
+
+    def test_esc_d_and_ctrl_c_deny_from_any_row_and_never_open_the_tell_composer(self) -> None:
+        for start in range(5):
+            for key in (Key(ESCAPE), Key(CHAR, "d"), Key(CHAR, "n"), CTRL_C):
+                with self.subTest(start=start, key=key):
+                    approval = slot("approval", APPROVAL)
+                    approval.selected = start
+                    answer = approval.handle_key(key)
+                    self.assertEqual((answer.frame, answer.tell), ({"result": {"choice": "deny"}}, False))
+
+    def test_the_tell_row_denies_and_asks_for_the_composer(self) -> None:
+        approval = slot("approval", APPROVAL)
+        for _ in range(4):
+            approval.handle_key(Key(DOWN))
+        answer = approval.handle_key(Key(ENTER))
+        self.assertEqual(answer, prompts.Answer("srq-1", {"result": {"choice": "deny"}}, tell=True))
 
 
 class SlotBarTests(unittest.TestCase):

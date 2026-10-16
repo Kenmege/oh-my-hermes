@@ -452,13 +452,22 @@ run and approval decision stays Hermes'; the screen is OMH's.
   questions Hermes asked one after another does. While another question waits
   behind the open one, the open one says so after its first words
   (`· 1 more question waiting`). An approval offers deny,
-  allow once, allow this session and, when Hermes offers it, always allow,
-  one per row in that order, with deny highlighted; allowing takes the arrows
-  (Down or Right) and then Enter. Always allow is Hermes' own permanent
+  allow once, allow this session, always allow when Hermes offers it, and
+  last no, and tell Hermes what to do instead, one per row in that order,
+  with deny highlighted; allowing takes the arrows (Down or Right) and then
+  Enter. Always allow is Hermes' own permanent
   allow, labelled with what it allows (`always allow recursive delete (Hermes
   saves it)`): Hermes saves that kind of command in its config
   (`command_allowlist`), so later ones run without asking, and Hermes does
-  not offer it for a command its smart approval flagged. The
+  not offer it for a command its smart approval flagged. The last row
+  denies at once, so the turn goes on, and opens the composer for what Hermes
+  should do instead, labelled `↪ tell Hermes what to do instead · enter sends
+  · esc cancels` on the mode row: what you send goes into the running turn
+  as a steer, the way Ctrl+Enter sends one (a steer Hermes does not take
+  waits in the queue, and one it never answers comes back to the composer
+  after 120 s), or as an ordinary prompt once the turn has ended. Esc there
+  sends nothing more, since the deny already went: your draft comes back, and
+  what you typed stays in this session's history. The
   highlight stops at either end, so Up then Enter still denies, no number
   picks a choice, `d` or `n` denies, and Enter on an untouched approval
   denies. A clarify question numbers its choices: a digit, or Up and Down then
@@ -637,14 +646,14 @@ Esc closes it):
 | Backspace / Delete | Delete a character, or a paste chip whole; Backspace on an empty composer removes the last attached image |
 | Ctrl+W, Alt+Backspace, Ctrl+Backspace | Deletes the word before the caret (Ctrl+Backspace where the terminal reports it apart from Backspace) |
 | Ctrl+U / Ctrl+K | Delete to the start or the end of the line |
-| Esc | Closes the `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run); cancels a rewind you picked; cancels an agent steer you picked and keeps what you typed |
+| Esc | Closes the `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run); cancels a rewind you picked; cancels an agent steer you picked and keeps what you typed; after an approval's tell row, sends nothing more and brings your draft back |
 | Esc Esc | With text, clears it and keeps it in this session's history; on an empty composer between turns, lists your prompts to rewind to (`/rewind` does too) |
 | Ctrl+V | Attaches the clipboard image |
 | Ctrl+O | Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end, or, while Hermes asks something, the whole question (it answers nothing); q leaves it |
 | Ctrl+L | Redraws the screen |
 | Ctrl+C | Clears the composer, interrupts a running turn, or (twice when idle) exits |
 | Ctrl+D | On an empty composer, exits; with text, deletes the character ahead |
-| ↑ / ↓ or ← / → then Enter | On an approval, highlight allow once, allow this session or (when Hermes offers it) always allow, and allow it; Enter alone denies |
+| ↑ / ↓ or ← / → then Enter | On an approval, highlight allow once, allow this session or (when Hermes offers it) always allow, and allow it, or the last row to deny and tell Hermes what to do instead; Enter alone denies |
 | `d`, `n` | On an approval, deny |
 | 1 to 9 | On a clarify question's list, pick that choice, or the last number opens the field for your own answer; ↑ / ↓ then Enter picks too, and any other character starts your own answer |
 | Space | On a clarify question that takes several choices, ticks or unticks the highlighted one; Enter sends the ticked ones, or the highlighted one when none is ticked, and a digit ticks its choice |

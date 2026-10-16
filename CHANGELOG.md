@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **An OMH TUI approval can be denied with what to do instead.** Telling
+  Hermes what to do after a deny took a deny, then a separate Ctrl+Enter
+  steer. The approval's last row, `no, and tell Hermes what to do instead`
+  (last, as Claude Code puts its "No, and tell Claude" row), sends the
+  explicit deny at once, so the turn is not held, and opens the composer
+  labelled `↪ tell Hermes what to do instead · enter sends · esc cancels`.
+  What you send goes into the running turn as a steer through the same path
+  as Ctrl+Enter (a refused steer waits in the queue, an unanswered one comes
+  back after 120 s), or as an ordinary prompt once the turn has ended; Esc
+  sends nothing more and brings your draft back. Deny stays first and
+  highlighted, the highlight still stops at both ends, and no digit or
+  letter but `d` and `n` answers.
 - **An OMH TUI approval offers Hermes' "always allow" when Hermes does.**
   The OMH TUI left Hermes' `always` choice to `hermes --tui`. When Hermes
   lists it (it leaves it out where a permanent allow is refused, such as a

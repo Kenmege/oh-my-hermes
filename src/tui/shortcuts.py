@@ -43,7 +43,8 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+U / Ctrl+K", "Delete to the start or the end of the line"),
     ("Esc", "Closes the @ menu; on an empty composer, interrupts a running turn "
             "(the activity row shows how long it has run); cancels a rewind you picked; "
-            "cancels an agent steer you picked and keeps what you typed"),
+            "cancels an agent steer you picked and keeps what you typed; after an approval's tell row, "
+            "sends nothing more and brings your draft back"),
     ("Esc Esc", "With text, clears it and keeps it in this session's history; on an empty composer between turns, "
                 "lists your prompts to rewind to (/rewind does too)"),
     ("Ctrl+V", "Attaches the clipboard image"),
@@ -53,7 +54,8 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+C", "Clears the composer, interrupts a running turn, or (twice when idle) exits"),
     ("Ctrl+D", "On an empty composer, exits; with text, deletes the character ahead"),
     ("↑ / ↓ or ← / → then Enter", "On an approval, highlight allow once, allow this session or (when Hermes "
-                                  "offers it) always allow, and allow it; Enter alone denies"),
+                                  "offers it) always allow, and allow it, or the last row to deny and tell Hermes "
+                                  "what to do instead; Enter alone denies"),
     ("d, n", "On an approval, deny"),
     ("1 to 9", "On a clarify question's list, pick that choice, or the last number opens the field for your own "
                "answer; ↑ / ↓ then Enter picks too, and any other character starts your own answer"),
