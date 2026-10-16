@@ -20,6 +20,7 @@ from omh.tui.gateway import ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, Key
 from omh.tui.layout import MIN_COLS, allocate
 from omh.tui.pager import ALT_SCREEN_OFF, HistoryPager
+from omh.tui.transcript import NOTICE_ERROR, NOTICE_OK, NoticeBlock
 
 LONG_COMMAND = "\n".join(f"echo line {n}" for n in range(1, 21))
 LONG_APPROVAL = ServerRequest(
@@ -135,6 +136,97 @@ class MultiSelectAppTests(unittest.TestCase):
         self.assertEqual(app.composer.text, "my draft")
 
 
+COLOUR = ServerRequest("srq-7", "clarify", {"questions": [
+    {"qid": "q0", "question": "Which colour?", "choices": ["red (Recommended)", "blue"], "multi_select": False},
+]})
+
+
+def outcome_rows(app) -> list[tuple[str, str]]:
+    """The answers the transcript recorded: each row's text and level."""
+    return [(block.text, block.level) for block in app.transcript.blocks if isinstance(block, NoticeBlock)]
+
+
+def opened(request: ServerRequest):
+    app, client = make_app(busy=True)
+    app._on_server_request(request)
+    armed(app)
+    return app, client
+
+
+class QuestionOutcomeTests(unittest.TestCase):
+    def test_a_picked_choice_is_recorded_with_its_label(self) -> None:
+        app, _client = opened(COLOUR)
+        press(app, Key(ENTER))
+        self.assertEqual(outcome_rows(app), [("red (Recommended) · Which colour?", NOTICE_OK)])
+        self.assertIn("✓ red (Recommended) · Which colour?", drawn(app))
+
+    def test_a_typed_answer_is_recorded_as_typed(self) -> None:
+        app, _client = opened(TEXT_QUESTIONS[2][0])
+        type_text(app, "seven")
+        press(app, Key(ENTER))
+        self.assertEqual(outcome_rows(app), [("seven · Which number?", NOTICE_OK)])
+
+    def test_ticked_choices_are_recorded_joined(self) -> None:
+        app, _client = opened(ServerRequest("srq-6", "clarify", {"questions": [
+            {"qid": "q0", "question": "Which toppings?", "choices": ["cheese", "ham"], "multi_select": True},
+        ]}))
+        press(app, Key(CHAR, "2"), Key(CHAR, "1"), Key(ENTER))
+        self.assertEqual(outcome_rows(app), [("ham, cheese · Which toppings?", NOTICE_OK)])
+
+    def test_a_cancelled_question_is_a_red_cross_with_a_word(self) -> None:
+        for key in (Key(ESCAPE), Key(CHAR, "c", ctrl=True)):
+            with self.subTest(key=key):
+                app, client = opened(COLOUR)
+                press(app, key)
+                self.assertEqual(client.answers, [("srq-7", {"result": {}})])
+                self.assertEqual(outcome_rows(app), [("cancelled · Which colour?", NOTICE_ERROR)])
+                self.assertIn("✗ cancelled · Which colour?", drawn(app))
+
+    def test_each_question_of_a_batch_gets_its_row_and_an_empty_answer_is_skipped(self) -> None:
+        app, _client = opened(ServerRequest("srq-8", "clarify", {"questions": [
+            {"qid": "a", "question": "Why?"}, {"qid": "b", "question": "Which?", "choices": ["x", "y"]},
+        ]}))
+        press(app, Key(ENTER))  # nothing typed for the first
+        armed(app)
+        press(app, Key(DOWN), Key(ENTER))
+        self.assertEqual(outcome_rows(app), [("skipped · Why?", NOTICE_ERROR), ("y · Which?", NOTICE_OK)])
+
+    def test_a_value_prompt_says_answered_or_declined_and_never_the_value(self) -> None:
+        for request, subject in ((TEXT_QUESTIONS[0][0], "sudo password"), (TEXT_QUESTIONS[1][0], "API_KEY")):
+            with self.subTest(method=request.method):
+                app, client = opened(request)
+                type_text(app, "hunter2")
+                press(app, Key(ENTER))
+                self.assertEqual(client.answers, [(request.id, {"result": {"value": "hunter2"}})])
+                self.assertEqual(outcome_rows(app), [(f"answered · {subject}", NOTICE_OK)])
+                self.assertNotIn("hunter2", repr(app.transcript.blocks))
+                self.assertFalse([row for row in drawn(app) if "hunter2" in row])
+                app, _client = opened(request)
+                press(app, Key(ESCAPE))
+                self.assertEqual(outcome_rows(app), [(f"declined · {subject}", NOTICE_ERROR)])
+
+    def test_a_withdrawn_question_says_why_with_a_red_cross(self) -> None:
+        cases = (
+            (COLOUR, "timeout", "timed out · Which colour?"),
+            (COLOUR, "interrupted", "interrupted · Which colour?"),
+            (TEXT_QUESTIONS[0][0], "", "withdrawn (no reason given) · sudo password"),
+            (ServerRequest("srq-1", "approval", {"command": "rm -rf ./x\nmore"}), "session_closed",
+             "withdrawn (session_closed) · rm -rf ./x"),
+        )
+        for request, reason, row in cases:
+            with self.subTest(reason=reason, method=request.method):
+                app, client = opened(request)
+                app._on_withdrawn({"id": request.id, "reason": reason})
+                self.assertIsNone(app.slot)
+                self.assertEqual(client.answers, [])
+                self.assertEqual(outcome_rows(app), [(row, NOTICE_ERROR)])
+
+    def test_an_approvals_answer_is_still_recorded_once(self) -> None:
+        app, _client = opened(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+        press(app, Key(ESCAPE))
+        self.assertEqual(outcome_rows(app), [("denied · rm -rf ./x", NOTICE_ERROR)])
+
+
 class DocumentedQuestionViewTests(unittest.TestCase):
     def test_installation_shows_the_markers_the_slot_draws(self) -> None:
         installation = " ".join((Path(__file__).resolve().parents[1] / "docs" / "INSTALLATION.md").read_text(
@@ -143,6 +235,11 @@ class DocumentedQuestionViewTests(unittest.TestCase):
         self.assertIn(f"`{prompts.MORE_ROWS[0].strip().format(count=14, s='s')}`", installation)
         self.assertIn("Ctrl+O opens the whole question in the pager: it answers nothing", installation)
         self.assertIn(f"(`{prompts.WAITING.strip().format(count=1, s='')}`)", installation)
+        for word in (prompts.OUTCOME_CANCELLED, prompts.OUTCOME_SKIPPED, *prompts.WITHDRAWN_WORDS.values()):
+            self.assertIn(f"`✗ {word}", installation)
+        self.assertIn("`✓ answered · sudo password`", installation)
+        self.assertIn("`✗ declined · sudo password`", installation)
+        self.assertIn("`✗ " + prompts.WITHDRAWN.format(reason="<Hermes' reason>") + "`", installation)
 
 
 class TinyTerminalQuestionTests(unittest.TestCase):

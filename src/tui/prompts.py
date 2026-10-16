@@ -89,6 +89,14 @@ MORE_ANY_ROWS = ("  … ctrl+o shows all", "  … ctrl+o")
 MORE_FORMS = (" … ctrl+o shows all", " … ctrl+o")
 # After the open question's first words, while others wait behind it (`App.waiting_requests`).
 WAITING = " · {count} more question{s} waiting"
+# What a question that closed reads as in the transcript (`outcomes`, `withdrawn_outcome`), after `✓` or `✗` and
+# before ` · <what it asked>`. Hermes' `request.cancel` reasons with a word of their own; any other is named.
+OUTCOME_SKIPPED = "skipped"
+OUTCOME_CANCELLED = "cancelled"
+OUTCOME_ANSWERED = "answered"
+OUTCOME_DECLINED = "declined"
+WITHDRAWN_WORDS = {"timeout": "timed out", "interrupted": "interrupted"}
+WITHDRAWN = "withdrawn ({reason})"
 
 _DECLINE_NOTICES = {
     "vault.unlock_prompt": "Hermes asked to unlock a password vault. Vault prompts run in `hermes --tui`; declined.",
@@ -339,6 +347,55 @@ class PromptSlot:
             return self._record_answer(text.strip() or None)
         return Answer(self.request_id, {"result": {"value": text}})
 
+    # -- outcome ----------------------------------------------------------------------------
+
+    def subject(self) -> str:
+        """What the question asks about, in one line: an approval command's first line (else its description), the
+        clarify question open now (else the last), the value asked for."""
+        if self.method == "approval":
+            command = str(self.params.get("command") or "").strip().split("\n", 1)[0]
+            return _one_line(command) or _one_line(self.params.get("description"))
+        if self.method == "clarify":
+            question = self._current_question() or (self._questions() or [{}])[-1]
+            return _one_line(question.get("question"))
+        return {"sudo": "sudo password", "secret": str(self.params.get("env_var") or "a secret"),
+                "vault.code": "verification code"}.get(self.method, self.method)
+
+    def outcomes(self, frame: dict[str, Any]) -> list[tuple[bool, str]]:
+        """How the answer `frame` reads in the transcript: one `(answered, words)` per row, the words ending in what
+        was asked.
+
+        A clarify question answered says the label (the ticked labels, joined)
+        or the text the person typed, `skipped` for an empty answer, and one
+        cancelled says `cancelled`. A value prompt says only `answered` or
+        `declined`, never the value. An approval's answer is the app's to say.
+        """
+        result = frame.get("result")
+        if self.method == "approval" or not isinstance(result, dict):
+            return []
+        if self.method != "clarify":
+            word = OUTCOME_ANSWERED if result.get("value") else OUTCOME_DECLINED
+            return [(word == OUTCOME_ANSWERED, f"{word} · {self.subject()}")]
+        answers = result.get("answers")
+        if not isinstance(answers, dict):
+            return [(False, f"{OUTCOME_CANCELLED} · {self.subject()}")]
+        rows: list[tuple[bool, str]] = []
+        for question in self._questions():
+            if question["qid"] not in answers:
+                continue
+            value, asked = answers[question["qid"]], _one_line(question.get("question"))
+            if not isinstance(value, str) or not value:
+                rows.append((False, f"{OUTCOME_SKIPPED} · {asked}"))
+                continue
+            multi = question.get("multi_select") is True and bool(question.get("choices"))
+            rows.append((True, f"{', '.join(json.loads(value)) if multi else _one_line(value)} · {asked}"))
+        return rows
+
+    def withdrawn_outcome(self, reason: str) -> str:
+        """How the question reads in the transcript once Hermes withdrew it, for `reason` (`request.cancel`'s)."""
+        word = WITHDRAWN_WORDS.get(reason) or WITHDRAWN.format(reason=reason or "no reason given")
+        return f"{word} · {self.subject()}"
+
     # -- rendering --------------------------------------------------------------------------
 
     def lines(self, width: int, theme: Theme, max_rows: int, keys_row: bool = False, waiting: int = 0) -> list[Line]:
@@ -503,6 +560,11 @@ class PromptSlot:
             rows.extend(wrap_line((Span("  " + str(prompt), theme.muted),), width))
         rows.append((Span("  type it in the composer and press enter · esc declines", theme.hint),))
         return rows
+
+
+def _one_line(value: object) -> str:
+    """`value` as one line of text: its whitespace, line breaks included, collapsed to single spaces."""
+    return " ".join(str(value or "").split())
 
 
 def _ticked_answer(choices: list[str]) -> str:

@@ -946,7 +946,7 @@ class PromptSlotTests(AppTestCase):
         )
         run.terminal.script(
             self.submit(run, "Run rm -rf ./omh-m0-probe-dir"),
-            Step(b"\x04", when=run.terminal.shows("withdrew its approval request"), label="the withdrawal notice"),
+            Step(b"\x04", when=run.terminal.shows("· rm -rf ./omh-m0-probe-dir"), label="the withdrawal row"),
         )
         self.run_main(run)
         self.assert_clean_run(run)

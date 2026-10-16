@@ -1686,8 +1686,7 @@ class App(ModesMixin, AgentViewMixin):
         slot = self.slot
         if slot is not None and _matches(slot.request_id, slot.params, ids):
             self._close_slot()
-            reason = as_text(payload.get("reason")) or "withdrawn"
-            self.transcript.add_notice(f"Hermes withdrew its {slot.method} request ({reason}).", NOTICE_WARN)
+            self.transcript.add_answer(slot.withdrawn_outcome(as_text(payload.get("reason"))), NOTICE_ERROR)
 
     # ── server requests and the prompt slot ──
 
@@ -1716,7 +1715,15 @@ class App(ModesMixin, AgentViewMixin):
     def _answer(self, answer: Answer) -> None:
         self._respond(answer)
         self._note_approval(answer)
+        self._note_question(answer)
         self._close_slot()
+
+    def _note_question(self, answer: Answer) -> None:
+        """What the person answered a clarify, sudo or secret question, ahead of the call it was about: in green
+        what they gave, in red a cancel, a decline or a skip (`PromptSlot.outcomes`; never a value typed masked)."""
+        if self.slot is not None:
+            for answered, words in self.slot.outcomes(answer.frame):
+                self.transcript.add_answer(words, NOTICE_OK if answered else NOTICE_ERROR)
 
     def _note_approval(self, answer: Answer) -> None:
         """An approval's answer, in green or red, ahead of the tool call it was about: what the person decided."""

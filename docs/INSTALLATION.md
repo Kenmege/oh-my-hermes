@@ -532,7 +532,14 @@ run and approval decision stays Hermes'; the screen is OMH's.
     (each row's background is erased to the right edge, so a copy carries
     no trailing spaces). The answer you gave an approval is written above
     the call it was about: allowed (`✓ allowed once · <command>`) on a light
-    green band, denied (`✗ denied · <command>`) on a light red one. A failed
+    green band, denied (`✗ denied · <command>`) on a light red one. So is
+    the answer you gave any other question: the label you picked or what you
+    typed (`✓ red · Which colour?`, ticked labels joined with commas), and
+    for a sudo password or a secret only `✓ answered · sudo password` or
+    `✗ declined · sudo password`, never the value; a question you cancelled,
+    sent empty, or Hermes withdrew says so in red (`✗ cancelled · <question>`,
+    `✗ skipped`, `✗ timed out`, `✗ interrupted`, or `✗ withdrawn (<Hermes'
+    reason>)`). A failed
     or denied tool row with the lines under it, an error notice, and a
     command's error line (for a failed `!` command, with what it printed
     above it) are on the light red band too. A denial shows one

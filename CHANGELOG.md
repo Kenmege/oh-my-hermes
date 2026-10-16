@@ -4,6 +4,17 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The OMH TUI's transcript records how each question ended.** A clarify
+  question left only Hermes' tool row (`✓ clarify  Which colour should I
+  use?  2.5s`), a `✓` even when it was cancelled, and the answer appeared
+  nowhere but in the model's reply; a sudo or secret prompt left nothing.
+  Like an approval's `✓ allowed once` / `✗ denied`, the answer now goes
+  above the call it was about: `✓ red · Which colour?` (ticked labels
+  joined, or what was typed), `✗ cancelled · <question>` or `✗ skipped`, and
+  for sudo or a secret only `✓ answered` or `✗ declined`, never the value. A
+  question Hermes withdrew reads `✗ timed out`, `✗ interrupted` or
+  `✗ withdrawn (<reason>)` with what it asked, in place of the amber
+  `Hermes withdrew its <method> request (<reason>).`
 - **OMH TUI clarify questions that take several choices are answered with
   several.** Hermes' `multi_select` was never read: the question looked like
   any other and went back as one label, and an answer typed as `1,3` reached
