@@ -850,6 +850,33 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
         self.assertFalse(data_share_request_admitted("redact pii in the export and send it to the data team"))
         self.assertTrue(data_share_request_admitted("고객 정보 마스킹해서 개발팀에 보내줘", shielded=True))
 
+    def test_the_router_carries_the_maskers_report(self) -> None:
+        from omh.routing.query import RoutingQuery
+
+        quoted = 'redact pii in the export and send it to the "acme" data team'
+        masked = "redact pii in the export and send it to the        data team"
+        # A query that masks its own text reports it; one handed masked text
+        # reports it only when its caller says so.
+        self.assertTrue(RoutingQuery.from_message(quoted).shielded)
+        self.assertFalse(RoutingQuery.from_message(masked).shielded)
+        self.assertTrue(RoutingQuery.from_message(masked, shielded=True).shielded)
+        self.assertIn(SKILL, [item["skill"] for item in recommend_skills(quoted, limit=50)])
+        # The shortlist's reader and the scorer read the same flag.
+        self.assertTrue(RoutingQuery.from_message(masked).offers_itself_withheld(SKILL))
+        self.assertFalse(RoutingQuery.from_message(masked, shielded=True).offers_itself_withheld(SKILL))
+        # The cache keeps a masked text apart from the same text unmasked by
+        # nobody, in either order.
+        for first, second in ((False, True), (True, False)):
+            with self.subTest(first=first):
+                from omh.routing import recommend
+
+                recommend._recommend_skills_cached.cache_clear()
+                runs = {}
+                for shielded in (first, second):
+                    query = RoutingQuery.from_message(masked, shielded=shielded)
+                    runs[shielded] = SKILL in [item["skill"] for item in recommend_skills(query, limit=50)]
+                self.assertEqual(runs, {True: True, False: False})
+
     def test_english_and_korean_agree(self) -> None:
         for english, korean, offered in (
             ("redact pii in the export before we send it to the dev team", "개인정보 지우고 개발팀에 보내줘", False),
