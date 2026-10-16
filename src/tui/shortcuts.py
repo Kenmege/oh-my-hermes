@@ -55,6 +55,8 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+O", "Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end; "
                "q leaves it"),
     ("Ctrl+L", "Redraws the screen"),
+    ("Ctrl+Z", "Suspends the OMH TUI to the shell, as Ctrl+Z does in any terminal program (Hermes stops with it); "
+               "fg brings it back"),
     ("Ctrl+C", "Clears the composer, interrupts a running turn, or (twice when idle) exits"),
     ("Ctrl+D", "On an empty composer, exits; with text, deletes the character ahead"),
     ("↑ / ↓ or ← / → then Enter", "On an approval, highlight allow once or allow this session and allow it; "

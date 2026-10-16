@@ -133,6 +133,7 @@ class ScriptedTerminal:
         self.background: str | None = None  # what the background query answers
         self.typed_during_query = b""  # input the query read while it waited
         self.background_queries = 0
+        self.suspended = 0  # `suspend` calls: a job stopped and continued at once
         self._resized = False
         self._quiet = False
 
@@ -163,6 +164,11 @@ class ScriptedTerminal:
     def write(self, text: str) -> None:
         self.writes.append(text)
         self.screen.feed(text)
+
+    def suspend(self) -> bool:
+        """As `Terminal.suspend` for a job the shell continues at once: counted, nothing written."""
+        self.suspended += 1
+        return True
 
     def set_mouse(self, enabled: bool) -> None:
         """As `Terminal.set_mouse`: the mode switch is written only when the state changes."""

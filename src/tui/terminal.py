@@ -40,6 +40,15 @@ colour (`background_from_colorfgbg`), a dark one only as dark
 (the gateway client's), and a resize signal ends its wait too, so the loop can
 sleep until there is input, news from the gateway, or a new size.
 
+`suspend` is Ctrl+Z for a raw terminal, where ISIG is off and the key is a
+byte: it puts the terminal back as the shell had it, stops the whole job
+with SIGTSTP (the shell's job, the gateway in it included, as a Ctrl+Z the
+terminal turned into a signal would), and enters raw mode again once the
+shell continues it. Where there is no SIGTSTP (no job control) it does
+nothing. A process group with no shell to continue it (orphaned, as a
+program started straight in a tmux pane) is not stopped by the kernel, so
+the terminal is entered again at once.
+
 Windows has no termios; `terminal_supported` reports that, and the caller
 takes the fallback path instead of entering a `Terminal`.
 """
@@ -306,6 +315,19 @@ class Terminal:
                     termios.tcsetattr(self._input, termios.TCSANOW, saved)
             finally:
                 self._uninstall_winch()
+
+    def suspend(self) -> bool:
+        """Ctrl+Z: restore the terminal, stop the job, and enter raw mode again once it continues; False, and nothing
+        done, where there is no SIGTSTP or the terminal is not entered."""
+        stop = getattr(signal, "SIGTSTP", None)
+        if stop is None or self._saved is None:
+            return False
+        self._restore()
+        try:
+            os.kill(0, stop)  # the caller's process group; the process stops here until SIGCONT
+        finally:
+            self.__enter__()
+        return True
 
     def set_mouse(self, enabled: bool) -> None:
         """Turn mouse reports on or off; writes nothing when they already are.

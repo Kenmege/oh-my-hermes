@@ -464,6 +464,7 @@ class TerminalLike(Protocol):
     def read(self, timeout: float, wake: int | None = None) -> bytes: ...
     def write(self, text: str) -> None: ...
     def set_mouse(self, enabled: bool) -> None: ...
+    def suspend(self) -> bool: ...
 
 
 class PollerLike(Protocol):
@@ -1913,7 +1914,8 @@ class App(ModesMixin, AgentViewMixin):
             self._accept_completion()
 
     def _display_key(self, event: Key | Paste) -> bool:
-        """Ctrl+O (the details view) and Ctrl+L (redraw) work whatever has the keys; True when it was one.
+        """Ctrl+O (the details view), Ctrl+L (redraw) and Ctrl+Z (suspend) work whatever has the keys; True when it
+        was one.
 
         Ctrl+O while Hermes asks something leaves the question on screen.
         """
@@ -1924,9 +1926,28 @@ class App(ModesMixin, AgentViewMixin):
                 self._details_view()
         elif event.char == "l":
             self._redraw("")
+        elif event.char == "z":
+            self._suspend()
         else:
             return False
         return True
+
+    def _suspend(self) -> None:
+        """Ctrl+Z: the live region is erased and the job stopped (`Terminal.suspend`); once the shell continues it,
+        the region is drawn anew under whatever the shell printed meanwhile. Nothing happens without SIGTSTP.
+
+        Scrollback is left as it is (no full redraw), so what the person did in
+        the shell stays readable above the session's rows.
+        """
+        if getattr(signal, "SIGTSTP", None) is None:
+            return
+        self._set_mouse(False)
+        self.region.clear()
+        self.terminal.suspend()
+        self.size = self.terminal.size()
+        self.region = LiveRegion(self.terminal.write)
+        self.anchor = True
+        self.dirty = True
 
     def _attachment_input(self, event: Key | Paste) -> bool:
         """Ctrl+V, Backspace on an empty composer with images queued, and a one-line paste (a drop); True when handled."""
