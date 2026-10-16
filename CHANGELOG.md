@@ -55,6 +55,9 @@ All notable changes will be documented here.
   the palette's own bar colour, its words still 4.5:1 and its `│` dividers
   3:1 against it; a dark terminal, and one that reports nothing, keep the
   palette's bar.
+- **The keys list names the `/model` picker** beside the `/sessions` and
+  `/rewind` lists, which take the same keys (`?`, `/keys`, and INSTALLATION's
+  table).
 
 - **Korean spend and data-share requests reach their gates.** "내 카드로
   결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보
