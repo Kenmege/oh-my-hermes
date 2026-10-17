@@ -833,6 +833,56 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
                     data_share_request_admitted(unicodedata.normalize("NFD", message)),
                     data_share_request_admitted(message),
                 )
+        # A mark before a Latin letter closes no quote, so the request and its
+        # recipient are read.
+        for fold in ("NFC", "NFD"):
+            with self.subTest(fold=fold):
+                self.assertTrue(
+                    data_share_request_admitted(unicodedata.normalize(fold, "'고객 정보 마스킹해서 벤더에 보내줘. it's urgent"))
+                )
+
+    def test_the_data_sent_may_be_described_between_a_send_and_its_to(self) -> None:
+        # Between a send and its "to" stand only closed words, read as the
+        # span before the first send is: the data, also as protected, counted
+        # or the version the redaction made, a party word right before a
+        # container, the verb's particle, how it goes, and remarks.
+        for message in (
+            "Anonymize the dataset and share the anonymized copy with the data team.",
+            "Pseudonymize the user IDs and share the pseudonymized dataset with the analytics team.",
+            "Redact the logs and upload the redacted logs to staging.",
+            "De-identify the records and send the de-identified records to my colleague.",
+            "Redact the PII in the export and send the clean export to the dev team.",
+            "Redact the PII in the export and send the cleaned file to the dev team.",
+            "Redact the PII in the logs and upload the sanitized logs to staging.",
+            "Redact the PII in the export and send the masked export to the dev team.",
+            "Redact the PII in the export and send the whole export to the dev team.",
+            "Redact the PII in the export and send both files to the dev team.",
+            "Redact the PII in the export and send all of it to the dev team.",
+            "Redact the PII in the export and send the result to the dev team.",
+            "Redact the PII in the export and send the output to the dev team.",
+            "Redact the PII in the export and send the updated file to the dev team.",
+            "Redact the PII in the export and send the final CSV to the dev team.",
+            "Redact the PII in the export and send the new version to the dev team.",
+            "Redact the PII in the export and send the user export to the dev team.",
+            "Redact the PII in the export and send the customer export to the dev team.",
+            "Redact the PII in the export and send it straight to the dev team.",
+            "Redact the PII in the export and send it directly to the dev team.",
+            "Redact the PII in the export and send it back to the dev team.",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(_offered(message))
+                self.assertFalse(self._hinted(message))
+        # Any other word there may name who receives it.
+        for message in (
+            "Redact the PII in the export and send the Acme copy to the dev team.",
+            "Redact the PII in the export and send the customer's export to the dev team.",
+            "Redact the PII in the export and send the export Acme wants to the dev team.",
+            "Redact the PII in the export and send the new Acme version to the dev team.",
+            "Redact the PII in the export and send the customer export for Acme to the dev team.",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(_offered(message))
+                self.assertTrue(self._hinted(message))
 
     def test_an_english_place_ends_with_its_sentence(self) -> None:
         # A place stops at ".", "!", "?" or ";" before a space. What follows,
@@ -1321,7 +1371,19 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
                 self.assertEqual(set(getattr(data_share_cues, name)), expected)
         self.assertEqual(data_share_cues._HANDED_BACK, (["it", "back"], ["them", "back"]))
         self.assertEqual(data_share_cues._REMARKS, data_share_cues._BEFORE_SEND_WORDS | data_share_cues._REMARK_WORDS)
-        self.assertEqual(data_share_cues._SENT_THING_WORDS - data_share_cues._REMARKS, {"back", "over", "them"})
+        self.assertEqual(
+            set(data_share_cues._SENT_DATA_WORDS),
+            {
+                "all", "anonymised", "anonymized", "both", "clean", "cleaned", "de-identified", "deidentified",
+                "directly", "final", "masked", "new", "output", "outputs", "pseudonymised", "pseudonymized",
+                "redacted", "result", "results", "sanitised", "sanitized", "straight", "updated", "version",
+                "versions", "whole",
+            },
+        )
+        self.assertEqual(
+            data_share_cues._SENT_THING_WORDS,
+            data_share_cues._REMARKS | data_share_cues._SENT_DATA_WORDS | {"back", "over", "them"},
+        )
         self.assertEqual(data_share_cues._SENTENCE_BREAK.pattern, r"[.!?;]\S*\s")
 
     def test_outside_words_keep_the_review(self) -> None:

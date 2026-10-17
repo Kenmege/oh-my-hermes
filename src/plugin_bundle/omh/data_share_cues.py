@@ -476,12 +476,32 @@ _PLACE_JOINERS = frozenset({"and", "as", "in", "or", "please", "plus", "today", 
 # acme's portal to the data team", "send it for acme to the dev team") keeps
 # the data leaving.
 _SEND_ROUTE_WORDS = frozenset({"at", "by", "for", "from", "on", "through", "using", "via"})
-# The only words between a send and its "to" or "with": the data sent and
-# the verb's particle ("send it to", "upload them to", "hand it over to",
-# "share the csv with") and remarks ("send it asap to"). Any other word keeps
-# the review: "send it where acme wants it, to the dev team", "send it, as
-# acme asked, to the dev team".
-_SENT_THING_WORDS = _REMARKS | {"back", "over", "them"}
+# The only words between a send and its "to" or "with", read as the span
+# before the first send is (`_closed_before_send`, so "send the customer
+# export to" passes): the data sent, also described as protected ("the
+# anonymized copy", "the redacted logs", "the clean export"), counted ("the
+# whole export", "both files", "all of it") or as the version the redaction
+# made ("the updated file", "the final csv", "the new version", "the result",
+# "the output"); the verb's particle ("upload them to", "hand it over to",
+# "send it back to"); how it goes ("send it straight to", "directly"); and
+# remarks ("send it asap to"). Each of these says what is sent or how, never
+# who receives it. Any other word keeps the review: "send it where acme wants
+# it, to the dev team", "send it, as acme asked, to the dev team", "send the
+# acme copy to the dev team".
+_SENT_DATA_WORDS = frozenset(
+    {
+        # protected
+        "anonymised", "anonymized", "clean", "cleaned", "de-identified", "deidentified", "masked", "pseudonymised",
+        "pseudonymized", "redacted", "sanitised", "sanitized",
+        # counted
+        "all", "both", "whole",
+        # the version the redaction made
+        "final", "new", "output", "outputs", "result", "results", "updated", "version", "versions",
+        # how it goes
+        "directly", "straight",
+    }
+)
+_SENT_THING_WORDS = _REMARKS | _SENT_DATA_WORDS | {"back", "over", "them"}
 # The multi-word English anchors ("test server"): their words are allowed in a
 # place ("the staging server"), but only the whole phrase is an anchor.
 _ENGLISH_PHRASE_ANCHORS = tuple(entry for entry in DATA_SHARE_INTERNAL_DESTINATIONS if " " in entry)
@@ -554,10 +574,14 @@ def _inside(place: list[str]) -> bool:
     return _proven_inside(kinds)
 
 
-def _closed_before_send(span: list[str], raw_span: list[str]) -> bool:
-    """Whether every word from the lead verb to the first send is a closed word or a compound party modifier."""
+def _closed_before_send(span: list[str], raw_span: list[str], allowed: frozenset[str] = _BEFORE_SEND_WORDS) -> bool:
+    """Whether every word of a span is a closed word (`allowed`, read composed) or a compound party modifier.
+
+    The span from the lead verb to the first send reads `_BEFORE_SEND_WORDS`;
+    the span between a later send and its "to" reads `_SENT_THING_WORDS`.
+    """
     for position, word in enumerate(span):
-        if word in _BEFORE_SEND_WORDS:
+        if composed(word) in allowed:
             continue
         following = span[position + 1] if position + 1 < len(span) else ""
         earlier = next((before for before in reversed(span[:position]) if before not in _SPAN_DETERMINERS), "")
@@ -620,7 +644,9 @@ def _sends_stay_inside(words: list[str], raw_words: list[str], sentence_starts: 
             place = [word for word in reach if word not in _HANDED_THINGS]
         elif preposition is None:
             return False
-        elif set(reach[:preposition]) & _SEND_ROUTE_WORDS or not {composed(word) for word in reach[:preposition]} <= _SENT_THING_WORDS:
+        elif set(reach[:preposition]) & _SEND_ROUTE_WORDS or not _closed_before_send(
+            reach[:preposition], raw_words[index + 1 : index + 1 + preposition], _SENT_THING_WORDS
+        ):
             return False
         else:
             place = reach[preposition + 1 :]
