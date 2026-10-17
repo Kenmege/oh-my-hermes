@@ -90,23 +90,24 @@ Two things to get right in the phrases themselves:
   and to `ROUTING_INTERVENTION_CASES` proving the lanes you claim are reached.
   Both corpora assert exact counts; update them in the same commit.
 
-A pack in a Latin-script language adds whole phrases and nothing else. A
-Hangul, Kana or Han phrase never shares a word with an English message, but a
-Latin-script phrase does: Indonesian borrows `bug`, `crash`, `error` and
-`file`. So a shipped pack phrase written entirely in ASCII scores only as a
-whole phrase. Its words do not join the skill's trigger tokens, and the
-lexical shortlist's English index leaves the phrase out of the skill's
-document and anchors, as it already leaves out every non-ASCII trigger. The
-pack does not have to list those words, and must not: an ASCII
-`whole_phrase_only_tokens` entry that none of the pack's own non-ASCII phrases
-for the skill carries can only remove the skill's English words. A phrase with
-any non-ASCII character scores as before. ASCII pack phrases also merge after
-every pack phrase that has a non-ASCII character, so where a surface shows
-only a skill's first triggers (the `SKILL.md` description, the capability
-row), a Latin-script pack takes none of the places the Hangul, Kana or Han
-phrases had. This covers shipped packs only: a user pack's phrases also score
-word by word, so hold a word back with `whole_phrase_only_tokens` where it
-should count only inside its phrase.
+A shipped pack phrase written entirely in ASCII is phrase-only. A Hangul,
+Kana or Han phrase never shares a word with an English message, but a
+Latin-script phrase can: Indonesian borrows `bug`, `crash`, `error` and
+`file`. So an ASCII pack phrase scores only as a whole phrase. Its words do
+not join the skill's trigger tokens, and the lexical shortlist's English index
+leaves the phrase out of the skill's document and anchors, as it already
+leaves out every non-ASCII trigger. The pack does not have to list those
+words, and must not: an ASCII `whole_phrase_only_tokens` entry that none of the
+pack's own non-ASCII phrases for the skill carries can only remove the skill's
+English words. A phrase with any non-ASCII character scores as before, word by
+word too, and that includes a Latin-script phrase with a diacritic:
+`revisión de código` folds to the tokens `revision` and `codigo`, which score
+on their own. ASCII pack phrases also merge after every pack phrase that has a
+non-ASCII character, so where a surface shows only a skill's first triggers
+(the `SKILL.md` description, the capability row), an ASCII pack phrase takes
+none of the places the Hangul, Kana or Han phrases had. This covers shipped
+packs only: a user pack's phrases also score word by word, so hold a word back
+with `whole_phrase_only_tokens` where it should count only inside its phrase.
 
 Two gates hold the mechanism together. `tests/test_trigger_language_packs.py`
 proves every shipped phrase is live in its skill's scored surface, that every
