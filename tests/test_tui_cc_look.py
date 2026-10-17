@@ -178,7 +178,8 @@ class WorkingVerbTests(unittest.TestCase):
         # and verbs from THINKING_VERBS or a locale's display.thinking_verbs, some of them two words.
         for text, verb in (("(⌐■_■) analyzing...", "Analyzing"), ("( •_•)>⌐■-■ brainstorming...", "Brainstorming"),
                            ("( ͡° ͜ʖ ͡°) pondering...", "Pondering"), ("٩(๑❛ᴗ❛๑)۶ kafa yoruyor...", "Kafa yoruyor"),
-                           ("(°ロ°) 思案中...", "思案中"), ("ಠ_ಠ synthesizing...", "Synthesizing")):
+                           ("(°ロ°) 思案中...", "思案中"), ("ಠ_ಠ synthesizing...", "Synthesizing"),
+                           ("(⊙_⊙) يتأمّل...", "يتأمّل")):  # locales/ar.yaml: a shadda, a combining mark, in the verb
             with self.subTest(text=text):
                 self.assertEqual(working_verb(text), verb)
 
