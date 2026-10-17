@@ -9,8 +9,9 @@ after the verb's noun. "결제 시스템 설계해줘" ends on 설계 (design); 
 first sentence's last predicate, read only when a request ending closes it.
 
 `korean_request(text)` returns that predicate, the 하다 verbs of the clauses
-joined before it ("마스킹해서 ... 보내줘", "삭제하고 ... 공유해줘"), and the
-clause's words, or None when the sentence does not end on a request: a
+joined before it ("마스킹해서 ... 보내줘", "삭제하고 ... 공유해줘"), the
+clause's words, and the sentences after it (`later`, for a gate that reads the
+whole message), or None when the sentence does not end on a request: a
 statement ("결제했어"), a prohibition ("결제하지 마"), a past tense ("송금해
 줬어"), or a question that is not itself a request ("결제해줘?"; the asking
 forms "-해줄래?" and "-해 줄 수 있어?" are requests). Which predicates admit a
@@ -110,9 +111,14 @@ _AUXILIARY = re.compile(
     + r")$"
 )
 # Quoted text, which names words rather than asking for them. A single-quoted
-# span counts only when it holds Hangul, so an English apostrophe opens none.
+# span counts only when it holds Hangul and its marks are no English
+# apostrophes: a `'` after a Latin letter or digit opens none ("acme's",
+# "it's"), and one before a Latin letter closes none, while a Korean particle
+# may follow the closing mark ("'고객 정보'를").
+# It is matched on the composed text, so the router's decomposed fold reads
+# the same spans as the hint.
 _QUOTED = re.compile(
-    r"\"[^\"\n]*\"|“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」|『[^』\n]*』|'[^'\n]*[가-힣][^'\n]*'"
+    r"\"[^\"\n]*\"|“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」|『[^』\n]*』|(?<![A-Za-z0-9])'[^'\n]*[가-힣][^'\n]*'(?![A-Za-z])"
 )
 # A sentence ends at ".", "!", "?" or ":" followed by a space or the end;
 # "0.1개", "v2.3" and "10:30" do not end one.
@@ -143,6 +149,9 @@ class KoreanRequest:
     # The verbs of "-기 전에" clauses: "보내" from "보내기 전에", "업로드" from
     # "업로드하기 전에".
     before: tuple[str, ...]
+    # The sentences after the request's, quoted text removed: what a gate
+    # that reads the whole message reads next ("... 보내줘. 급해요.").
+    later: tuple[str, ...] = ()
 
 
 def composed(text: str) -> str:
@@ -162,9 +171,9 @@ def _words(text: str) -> list[str]:
     return _TRAILING.sub("", _SEPARATORS.sub(" ", composed(text))).split()
 
 
-def _request_sentence(text: str) -> tuple[list[str], bool]:
-    """The words of the first sentence that is more than openers, and whether a question mark ends it."""
-    text = _QUOTED.sub(" ", text.strip())
+def _request_sentence(text: str) -> tuple[list[str], bool, tuple[str, ...]]:
+    """The words of the first sentence that is more than openers, whether a question mark ends it, and the sentences after it."""
+    text = _QUOTED.sub(" ", unicodedata.normalize("NFC", text.strip()))
     start = 0
     while True:
         end = _SENTENCE_END.search(text, start)
@@ -172,7 +181,8 @@ def _request_sentence(text: str) -> tuple[list[str], bool]:
         while words and words[0] in OPENERS:
             words = words[1:]
         if words or end is None:
-            return words, bool(end) and ("?" in end.group() or "？" in end.group())
+            later = tuple(part.strip() for part in _SENTENCE_END.split(text[end.end() :] if end else "") if part.strip())
+            return words, bool(end) and ("?" in end.group() or "？" in end.group()), later
         start = end.end()
 
 
@@ -252,7 +262,7 @@ def korean_request(text: str, *, require_ending: bool = True) -> KoreanRequest |
     as an instruction) a clause that ends on a bare 하다 verb's noun or on
     "-해" is read too, as English waives the request marker there.
     """
-    words, question = _request_sentence(text)
+    words, question, later = _request_sentence(text)
     words = _after_negation(words)
     if not words:
         return None
@@ -274,4 +284,5 @@ def korean_request(text: str, *, require_ending: bool = True) -> KoreanRequest |
         light_verbs=lights,
         joined=joined,
         before=before,
+        later=later,
     )
