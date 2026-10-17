@@ -589,7 +589,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   to interrupt)`: a glyph that turns, what Hermes says it is doing as a verb
   (its kaomoji and dots left out, `Working…` while it says nothing), the
   time, the tokens the turn has written so far, and the reasoning effort when
-  the session reports one. On a terminal 16 rows tall or more a tip sits
+  the session reports one (a row too narrow for all of it leaves the effort
+  out first). On a terminal 16 rows tall or more a tip sits
   under it, one a turn, each naming a key (`⎿  Tip: ctrl+o shows the whole
   transcript`). Once you interrupt it (Esc or Ctrl+C on an empty composer)
   it reads `✻ interrupting… (12s)` until Hermes has stopped the turn. What you queued behind that turn is not sent then:

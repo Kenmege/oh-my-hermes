@@ -4122,12 +4122,15 @@ class App(ModesMixin, AgentViewMixin):
             tokens = self._turn_tokens()
             if tokens:
                 facts.append(f"↓{compact_count(tokens)} tokens")
+            effort = ""
             if self.effort in contract.REASONING_LEVELS and self.effort != "none":  # `none` is thinking off
-                facts.append(THINKING_EFFORT.format(self.effort))
-            if self._esc_interrupts():  # else Esc means something else now
-                facts.append(INTERRUPT_HINT)
-            row = (Span(WORKING_GLYPHS[frame % len(WORKING_GLYPHS)], self.theme.accent), Span(" "),
-                   *working_spans(text, frame, self.theme), Span(f" ({' · '.join(facts)})", self.theme.muted))
+                effort = THINKING_EFFORT.format(self.effort)
+            interrupt = [INTERRUPT_HINT] if self._esc_interrupts() else []  # else Esc means something else now
+            lead = (Span(WORKING_GLYPHS[frame % len(WORKING_GLYPHS)], self.theme.accent), Span(" "),
+                    *working_spans(text, frame, self.theme))
+            row = (*lead, Span(f" ({' · '.join([*facts, *([effort] if effort else []), *interrupt])})", self.theme.muted))
+            if effort and line_width(row) > cols:  # the effort goes first: the mode row shows it too, where drawn
+                row = (*lead, Span(f" ({' · '.join([*facts, *interrupt])})", self.theme.muted))
             lines.append(truncate_line(row, cols))
             tip = self._tip_line(cols)
             if tip is not None:
