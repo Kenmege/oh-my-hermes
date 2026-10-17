@@ -370,7 +370,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   and the HUD's counts last. Only then does the left side take shorter
   words: on a line too narrow for what the next key does, the mode's label
   shortens (`⏵⏵ accept`, then `⏵⏵`; `⏸ plan`, then `⏸`) before that is cut,
-  and the right side takes whatever room the shorter left side leaves. The
+  and on one too narrow for the label's own words it shortens the same way
+  (`⏵⏵ accept · ⏸ plan` with both on); the right side takes whatever room
+  the shorter left side leaves. The
   info line is on every terminal of 3 rows or more, so the mode is never
   hidden.
 - The plan in that panel changes the moment Hermes' todo tool changes it

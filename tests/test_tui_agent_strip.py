@@ -267,7 +267,8 @@ class StripTests(unittest.TestCase):
             row = row_at(width)
             with self.subTest(width=width):
                 self.assertLessEqual(len(row), width)
-                self.assertTrue(row.startswith(label[: width - 1]), row)  # the label, whole wherever it fits
+                # The label, whole wherever it fits, else its short words.
+                self.assertTrue(row.startswith(label if width >= len(label) else "⏵⏵ accept"), row)
                 whole = f"{label} · {STRIP}"
                 if len(whole) <= width:
                     self.assertTrue(row.startswith(whole), row)  # the strip is whole before a cell goes to the rest

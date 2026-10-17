@@ -1356,7 +1356,17 @@ class InfoLineLeftTests(unittest.TestCase):
         # Too narrow for where Shift+Tab goes: the label stays whole, and alone.
         self.assertEqual(self.row(20, mode="accept"), "⏵⏵ accept all on")
         self.assertEqual(self.row(20, mode="plan"), "⏸ plan mode on")
-        self.assertEqual(self.row(10, mode="accept"), "⏵⏵ accept…")
+
+    def test_a_label_too_wide_for_the_line_takes_its_short_words_then_its_glyph(self) -> None:
+        # With nothing said, the label itself is what shortens before anything is cut.
+        self.assertEqual(self.row(34, mode="accept+plan", cycle="plan off"), "⏵⏵ accept all on · ⏸ plan mode on")
+        for width in (30, 24, 18):
+            with self.subTest(width=width):
+                self.assertEqual(self.row(width, mode="accept+plan", cycle="plan off"), "⏵⏵ accept · ⏸ plan")
+        self.assertEqual(self.row(10, mode="accept+plan"), "⏵⏵ · ⏸")
+        self.assertEqual(self.row(10, mode="accept"), "⏵⏵ accept")
+        self.assertEqual(self.row(4, mode="plan"), "⏸")
+        self.assertEqual(self.row(3, mode="accept+plan"), "⏵⏵…")  # under the glyphs it is cut
 
 
 class LeaveSessionDeclineTests(unittest.TestCase):

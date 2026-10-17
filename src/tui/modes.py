@@ -205,7 +205,8 @@ def info_line(
     the long one, and when none fits beside the label's words the label takes
     its short words, then its glyph alone, before the last form is cut; any
     other hint takes its longest form that fits, else its last, cut at the
-    edge. The right side then takes the longest of `right` that fits in what
+    edge, after a label that takes its short words, then its glyph alone,
+    when its own words do not fit. The right side then takes the longest of `right` that fits in what
     the shortened left side leaves. During a turn the hint offers Esc for the interrupt only
     while `esc_interrupts` says Esc does that now. The label always survives,
     in some form, and the strip after it. Accept and plan say where Shift+Tab
@@ -248,6 +249,8 @@ def info_line(
                 break  # what the next key does outranks the label's words, which shorten while nothing fits
         hint = fits[0] if fits else said[-1]
     elif hints:
+        label = next((label_of(form) for form in range(len(ACCEPT_LABELS)) if line_width(label_of(form)) <= room),
+                     label_of(len(ACCEPT_LABELS) - 1))
         said = placed(hints, label)
         hint = next((text for text in said if cell_width(text) <= max(room - line_width(label), 0)), said[-1])
     left = truncate_line(label, room) + truncate_line((Span(hint, say_style or theme.hint),), max(room - line_width(label), 0))
