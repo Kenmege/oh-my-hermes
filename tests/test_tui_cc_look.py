@@ -524,6 +524,14 @@ class ResumedHistoryTests(unittest.TestCase):
         self.assertEqual({row[0] for row in calls}, {Span("⏺", THEME.dim)})
         self.assertNotIn("·", "".join(texts[first : after + 2]))  # no old-style `· name  args` row
 
+    def test_a_record_whose_result_metadata_is_not_a_mapping_draws_its_row_alone(self) -> None:
+        for junk in ("inline_diff", ["inline_diff"], 7):
+            with self.subTest(junk=junk):
+                app, _client = make_app(rows=40, cols=100)
+                app._draw_history([{"role": "tool", "name": "patch", "context": "calc.py", "tool_call_id": "c1",
+                                    "display_metadata": {"tool_result_metadata": junk}}])
+                self.assertEqual(lines_text(app.transcript.take_stable_lines(100, THEME)), ["⏺ patch(calc.py)"])
+
     def test_the_edit_shows_the_diff_a_live_call_shows(self) -> None:
         texts = lines_text(self.history())
         start = texts.index("⏺ patch(calc.py)") + 1

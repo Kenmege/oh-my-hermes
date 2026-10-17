@@ -851,6 +851,27 @@ class ApprovalOutcomeTests(unittest.TestCase):
         self.assertEqual([tool.answers for tool in group.tools],
                          [[], [("red · Which colour?", NOTICE_OK)], [(f"denied · {self.COMMAND}", NOTICE_ERROR)]])
 
+    def test_with_every_call_of_the_live_group_finished_the_answer_is_a_row_of_its_own(self) -> None:
+        # A subagent's approval can arrive after the turn's own calls finished: none of them asked it.
+        app, _client, _clock = self.asked_after_a_read()
+        app._on_event(ev("tool.complete", tool_id="t1", name="terminal", duration_s=0.1, result={"output": ""}))
+        app._on_input(Key(RIGHT))
+        app._on_input(Key(ENTER))
+        notice, group = app.transcript.blocks
+        self.assertEqual((notice.text, notice.level), (f"allowed once · {self.COMMAND}", NOTICE_OK))
+        self.assertEqual([tool.answers for tool in group.tools], [[], []])
+
+    def test_a_clarify_hermes_withdraws_is_answered_under_the_clarify_not_the_call_beside_it(self) -> None:
+        app, _client = make_app(busy=True, clock=Clock())
+        app._on_event(ev("message.start"))
+        app._on_event(ev("tool.start", tool_id="t1", name="clarify", context="Which colour?"))
+        app._on_event(ev("tool.start", tool_id="t2", name="terminal", context="sleep 30"))
+        question = {"questions": [{"qid": "q0", "question": "Which colour?", "choices": ["red", "blue"]}]}
+        app._on_server_request(ServerRequest("srq-2", "clarify", question))
+        app._on_withdrawn({"id": "srq-2", "reason": "timeout"})
+        (group,) = app.transcript.blocks
+        self.assertEqual([tool.answers for tool in group.tools], [[("timed out · Which colour?", NOTICE_ERROR)], []])
+
     def test_over_a_streaming_reply_the_answer_waits_for_the_boundary(self) -> None:
         clock = Clock()
         app, _client = make_app(busy=True, clock=clock)
