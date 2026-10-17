@@ -625,7 +625,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   stay queued (`held · ↑ edit`) until you send your next
   prompt or take them back with Up, and so does the whole queue if you typed
   something while the turn was stopping. Each turn ends with a dim line,
-  `✻ 34s · 3 tools · ↓1.2k`, under the reply's words. While a question Hermes asked
+  `✻ 34s · 3 tools · ↓1.2k`, under the reply's words (a line too narrow for
+  it drops the tokens, then the tools, then the wait, each whole, and keeps
+  the time). While a question Hermes asked
   waits on you, the working row reads `? waiting on you (11s)` instead, its
   one clock counting that wait (the info line's OMH count of running tool
   calls, `1 tool · 9s`, drops its seconds meanwhile and leaves once the

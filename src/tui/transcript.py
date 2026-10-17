@@ -616,16 +616,21 @@ def _summary_rows(block: TurnSummaryBlock, width: int, theme: Theme) -> list[Lin
     """`  ✻ 34s · 3 tools · ↓1.2k`: the turn's facts in one dim line under the reply's words (no tool count for none).
 
     The time is the turn's wall clock, with the wait on the person beside it
-    (`✻ 30s (27s waiting on you)`) when that is a second or more.
+    (`✻ 30s (27s waiting on you)`) when that is a second or more. A line too
+    narrow for all of it drops whole facts, the tokens first, then the tools,
+    then the wait; the time stays, and is cut at the edge only where it does
+    not fit alone.
     """
-    facts = [elapsed_text(block.seconds)]
-    if int(block.waited) >= 1:
-        facts[0] += TURN_WAITED.format(elapsed=elapsed_text(block.waited))
-    if block.tools:
-        facts.append(f"{block.tools} tool{'' if block.tools == 1 else 's'}")
-    if block.output_tokens:
-        facts.append(f"↓{compact_count(block.output_tokens)}")
-    done: Line = (Span(ASSISTANT_INDENT), Span(TURN_DONE_MARK, theme.dim), Span(" · ".join(facts), theme.muted))
+    elapsed = elapsed_text(block.seconds)
+    waited = TURN_WAITED.format(elapsed=elapsed_text(block.waited)) if int(block.waited) >= 1 else ""
+    tools = f"{block.tools} tool{'' if block.tools == 1 else 's'}" if block.tools else ""
+    written = f"↓{compact_count(block.output_tokens)}" if block.output_tokens else ""
+    lead: Line = (Span(ASSISTANT_INDENT), Span(TURN_DONE_MARK, theme.dim))
+    done: Line = ()
+    for facts in ((elapsed + waited, tools, written), (elapsed + waited, tools), (elapsed + waited,), (elapsed,)):
+        done = (*lead, Span(" · ".join(fact for fact in facts if fact), theme.muted))
+        if line_width(done) <= width:
+            break
     return [truncate_line(done, width)]
 
 

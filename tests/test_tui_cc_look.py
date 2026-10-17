@@ -416,11 +416,22 @@ class DoneLineTests(unittest.TestCase):
         (row,) = block_rows(TurnSummaryBlock(30.0, 1, None, waited=27.0), 80, THEME)
         self.assertEqual(line_text(row), "  ✻ 30s (27s waiting on you) · 1 tool")
 
-    def test_a_narrow_terminal_cuts_it_and_a_wide_one_adds_nothing(self) -> None:
+    def test_a_narrow_terminal_keeps_the_time_and_a_wide_one_adds_nothing(self) -> None:
         (narrow,) = block_rows(TurnSummaryBlock(5.0, 3, 1300), 12, THEME)
-        self.assertEqual(line_width(narrow), 12)
+        self.assertEqual(line_text(narrow), "  ✻ 5s")
         (wide,) = block_rows(TurnSummaryBlock(5.0, 3, 1300), 200, THEME)
         self.assertEqual(line_text(wide), "  ✻ 5s · 3 tools · ↓1.3k")
+
+    def test_a_narrow_line_drops_whole_facts_tokens_then_tools_then_the_wait(self) -> None:
+        # Review B at 40 columns: `  ✻ 9s (2s waiting on you) · 1 tool · ↓…`.
+        block = TurnSummaryBlock(9.0, 1, 1200, waited=2.0)
+        for width, said in ((43, "  ✻ 9s (2s waiting on you) · 1 tool · ↓1.2k"), (40, "  ✻ 9s (2s waiting on you) · 1 tool"),
+                            (30, "  ✻ 9s (2s waiting on you)"), (20, "  ✻ 9s")):
+            with self.subTest(width=width):
+                (row,) = block_rows(block, width, THEME)
+                self.assertEqual(line_text(row), said)
+        (tiny,) = block_rows(block, 5, THEME)  # under the time alone, the row is cut at the edge
+        self.assertEqual(line_width(tiny), 5)
 
 
 class InfoLineInsetTests(unittest.TestCase):
