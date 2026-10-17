@@ -355,22 +355,28 @@ omh
 <table align="center">
   <tr>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-turn.png" alt="The OMH TUI after a turn: each tool call one row, a green ⏺ then its name, what it ran on in parentheses and how long it took; under ⎿ the new file and the patch as green and red diff bands and the command's output cut to three lines with a '… +2 lines · ctrl+o shows all' row; the turn's dim done line; and the live plan panel above the rounded prompt box"><br>
-      <sub><b>One row per call, its diff, and the plan above the prompt.</b></sub>
+      <img src="assets/omh-tui-turn.png" alt="The OMH TUI after a turn: your prompt as a dim '&gt;' line with no band; each tool call one row, a green ⏺ then its name, what it ran on in parentheses and how long it took; under ⎿ the new file and the patch as green and red diff bands, the command's output cut to three lines with a '… +2 lines · ctrl+o shows all' row, and the read as 'Read 7 lines'; the reply; the turn's dim done line with no rule; the live plan panel; the rounded prompt box; and one info line under it, '? for shortcuts' on the left and the model, context and 'effort medium' on the right"><br>
+      <sub><b>One row per call, its diff, and the plan above the prompt box.</b></sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete: five rows where the prompt box was (deny, highlighted; allow once; allow this session; always allow; no, and tell Hermes what to do instead) under a '? waiting on you' timer, with the keys on the dim info line under them, an earlier command denied on a red band and one allowed once on a green band, and each done line naming the seconds spent waiting on you"><br>
+      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete: five rows where the prompt box was (deny, highlighted; allow once; allow this session; always allow; no, and tell Hermes what to do instead) under a '? waiting on you' timer, with the keys on the info line under them; above it, an earlier terminal call with a red ⏺ and its '⎿ ✗ denied' answer on a red band, which stopped that turn, and one with a green ⏺ and its '⎿ ✓ allowed once' answer on a green band; each done line names the seconds spent waiting on you"><br>
       <sub><b>Hermes asks; you pick. Deny is the default.</b></sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-clarify.png" alt="The OMH TUI at start, with its logo: right under your prompt, Hermes asks a choose-one-or-more question with check boxes, two of them ticked, and a numbered row to type your own answer; the dim info line under it names space or 1-9 to tick"><br>
+      <img src="assets/omh-tui-clarify.png" alt="The OMH TUI at start, with its logo: right under your prompt and the clarify call's row, Hermes asks a choose-one-or-more question with check boxes, two of them ticked, and a numbered row to type your own answer; the prompt box is hidden, and the info line under the list names the keys (space or 1-9 ticks, enter sends, type to answer, esc cancels)"><br>
       <sub><b>A question opens under your prompt; tick several, or type your own.</b></sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-light.png" alt="The same five-row approval on a light terminal, with light red and green bands and the dim info line under it"><br>
+      <img src="assets/omh-tui-light.png" alt="The same five-row approval on a light terminal: the denied call on a light red band, the one allowed once on a light green band, and the info line under the choices"><br>
       <sub><b>On a light terminal, light bands.</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="assets/omh-tui-working.png" width="50%" alt="The OMH TUI during a turn: the terminal call's ⏺ row while it runs, then the working row 'Working… (5s · ↓59 tokens · thinking with medium effort · esc to interrupt)' with a '⎿ Tip:' line under it, the prompt box still open, and the info line with '/steer &lt;text&gt; steers' on the left and the running tool's time beside the model on the right"><br>
+      <sub><b>While Hermes works: what it is doing, for how long, and a tip.</b></sub>
     </td>
   </tr>
 </table>
