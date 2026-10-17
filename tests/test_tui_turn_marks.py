@@ -831,18 +831,25 @@ class ApprovalOutcomeTests(unittest.TestCase):
         clock.now += SLOT_ARM_SECONDS + 0.1
         return app, client, clock
 
-    def test_a_clarify_answer_goes_under_the_running_clarify_call(self) -> None:
+    def test_each_answer_goes_under_the_last_running_call_of_its_kind(self) -> None:
+        # A request names no call: a clarify answer goes under the last running `clarify`, any other answer under
+        # the last running other call.
         clock = Clock()
         app, _client = make_app(busy=True, clock=clock)
         app._on_event(ev("message.start"))
         app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="sleep 30"))
         app._on_event(ev("tool.start", tool_id="t2", name="clarify", context="Which colour?"))
+        app._on_event(ev("tool.start", tool_id="t3", name="terminal", context=self.COMMAND))
         question = {"questions": [{"qid": "q0", "question": "Which colour?", "choices": ["red", "blue"]}]}
         app._on_server_request(ServerRequest("srq-2", "clarify", question))
         clock.now += SLOT_ARM_SECONDS + 0.1
         app._on_input(Key(ENTER))
+        app._on_server_request(ServerRequest("srq-3", "approval", {"command": self.COMMAND, "description": "delete"}))
+        clock.now += SLOT_ARM_SECONDS + 0.1
+        app._on_input(Key(CHAR, "d"))
         (group,) = app.transcript.blocks
-        self.assertEqual([tool.answers for tool in group.tools], [[], [("red · Which colour?", NOTICE_OK)]])
+        self.assertEqual([tool.answers for tool in group.tools],
+                         [[], [("red · Which colour?", NOTICE_OK)], [(f"denied · {self.COMMAND}", NOTICE_ERROR)]])
 
     def test_over_a_streaming_reply_the_answer_waits_for_the_boundary(self) -> None:
         clock = Clock()
