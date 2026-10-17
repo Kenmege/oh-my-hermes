@@ -4204,17 +4204,17 @@ class App(ModesMixin, AgentViewMixin):
             cap = max(cap, 1)  # on a tiny terminal a question answered with text keeps a row for its label (`allocate`)
         if cap <= 0:
             return []
-        # The info line says a question's or a picker's keys at every height, so neither repeats them in its rows.
+        # The info line says a question's or a picker's keys at every height; their rows do not.
         if self.slot is not None:
-            return self.slot.lines(cols, self.theme, cap, waiting=len(self.waiting_requests), turn_runs=self._busy())
+            return self.slot.lines(cols, self.theme, cap, waiting=len(self.waiting_requests))
         if self.picker is not None:
-            return self.picker.lines(cols, self.theme, cap, self.wall_clock(), keys=False)
+            return self.picker.lines(cols, self.theme, cap, self.wall_clock())
         if self.search is not None:
-            return self.search.lines(cols, self.theme, cap, keys=False)
+            return self.search.lines(cols, self.theme, cap)
         if self.rewind_picker is not None:
-            return self.rewind_picker.lines(cols, self.theme, cap, self.wall_clock(), keys=False)
+            return self.rewind_picker.lines(cols, self.theme, cap, self.wall_clock())
         if self.model_picker is not None:
-            return self.model_picker.lines(cols, self.theme, cap, keys=False)
+            return self.model_picker.lines(cols, self.theme, cap)
         if self.list_selected is not None:
             lines, self.listed = self._agent_list(cols, cap)
             return lines

@@ -220,25 +220,15 @@ class SearchTests(unittest.TestCase):
         search.handle_key(Paste("flaky\nignored"))
         self.assertEqual(search.query, "flaky")
 
-    def test_the_slot_shows_the_match_then_the_query_and_the_keys(self) -> None:
+    def test_the_slot_shows_the_match_then_the_query(self) -> None:
         search = self.search()
         self.typed(search, "git")
         rows = lines_text(search.lines(80, DEFAULT_THEME, 4))
         self.assertEqual(rows[0].rstrip(), "› git push  1/2")
-        self.assertTrue(rows[1].startswith("⌕ search history: git"), rows)
-        self.assertIn("ctrl+r older", rows[1])
+        self.assertEqual(rows[1].rstrip(), "⌕ search history: git")  # its keys are the info line's
         empty = HistorySearch(self.ENTRIES, "")
         self.typed(empty, "nothing like it")
         self.assertEqual(lines_text(empty.lines(80, DEFAULT_THEME, 4))[0], "  no earlier prompt holds it")
-
-    def test_a_narrow_slot_keeps_the_way_out(self) -> None:
-        search = self.search()
-        self.typed(search, "git")
-        for width, keys in ((80, "ctrl+r older · enter takes it · esc cancels"), (60, "ctrl+r older · esc cancels"),
-                            (40, "esc cancels")):
-            with self.subTest(width=width):
-                self.assertEqual(lines_text(search.lines(width, DEFAULT_THEME, 4))[-1].rstrip(),
-                                 f"⌕ search history: git  {keys}")
 
 
 class AppHistoryTests(unittest.TestCase):

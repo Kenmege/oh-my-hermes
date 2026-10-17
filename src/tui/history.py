@@ -61,7 +61,7 @@ SEARCH_ACCEPT = "accept"
 SEARCH_CANCEL = "cancel"
 SEARCH_LABEL = "⌕ search history: "
 SEARCH_HINT = "ctrl+r older · enter takes it · esc cancels"
-# Shorter forms for a narrow row, longest first: the last keeps only the way out.
+# Shorter forms for a narrow info line, longest first: the last keeps only the way out.
 SEARCH_HINTS = (SEARCH_HINT, "ctrl+r older · esc cancels", "esc cancels")
 SEARCH_NONE = "no earlier prompt holds it"
 _CANCEL_CHARS = frozenset("cg")  # with Ctrl
@@ -194,17 +194,13 @@ class HistorySearch:
         self.query = query
         self.skip = 0
 
-    def lines(self, width: int, theme: Theme, max_rows: int, keys: bool = True) -> list[Line]:
-        """The match's first line and where it is among the matches, then the query row: the query, and its keys
-        after it when `keys` (the app says them on the info line and asks for none here). One row is the query row."""
+    def lines(self, width: int, theme: Theme, max_rows: int) -> list[Line]:
+        """The match's first line and where it is among the matches, then the query row (its keys are on the info
+        line, `SEARCH_HINTS`). One row is the query row."""
         self.caret = None
         if max_rows <= 0:
             return []
-        said = ""
-        if keys:
-            room = width - cell_width(SEARCH_LABEL + self.query + "  ")
-            said = "  " + next((form for form in SEARCH_HINTS if cell_width(form) <= room), SEARCH_HINTS[-1])
-        query = truncate_line((Span(SEARCH_LABEL, theme.accent), Span(self.query), Span(said, theme.hint)), width)
+        query = truncate_line((Span(SEARCH_LABEL, theme.accent), Span(self.query)), width)
         found = self.matches()
         match = self.current()
         if match is None:

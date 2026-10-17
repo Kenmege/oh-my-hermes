@@ -199,21 +199,13 @@ class ApprovalTests(unittest.TestCase):
         self.assertTrue(all(form.endswith("esc denies") for form in idle), idle)
         self.assertEqual(approval.keys_while(True), approval.keys)
         self.assertEqual(slot("clarify", CLARIFY).keys_while(False), slot("clarify", CLARIFY).keys)
-        text = lines_text(approval.lines(60, DEFAULT_THEME, 8, keys_row=True, turn_runs=False))
-        self.assertEqual(unbarred(text[-1]), "  ↑↓ pick · enter confirms · d or esc denies")
 
-    def test_a_keys_row_is_added_only_when_asked_and_only_beside_the_command(self) -> None:
+    def test_the_slots_rows_never_say_its_keys(self) -> None:
+        # The info line says them (`keys_while`), at every height.
         approval = slot("approval", {**APPROVAL, "command": "one\ntwo", "choices": ["once", "deny"]})
-        self.assertFalse([row for row in lines_text(approval.lines(60, DEFAULT_THEME, 8)) if "esc denies" in row])
-        text = lines_text(approval.lines(60, DEFAULT_THEME, 8, keys_row=True))
-        self.assertEqual(unbarred(text[-1]), "  ↑↓ pick · enter confirms · d or esc denies and stops")
-        self.assertEqual(unbarred(lines_text(approval.lines(24, DEFAULT_THEME, 12, keys_row=True))[-1]),
-                         "  esc denies and stops")
-        tight = lines_text(approval.lines(60, DEFAULT_THEME, 5, keys_row=True))
-        self.assertEqual(
-            [unbarred(row) for row in tight[1:]],
-            ["  one … ctrl+o shows all", "❯ deny", "  allow once", "  no, and tell Hermes what to do instead"],
-        )
+        for width, rows in ((60, 8), (24, 12)):
+            with self.subTest(width=width):
+                self.assertFalse([row for row in lines_text(approval.lines(width, DEFAULT_THEME, rows)) if "esc" in row])
 
     def test_lines_show_command_and_choices_within_budget(self) -> None:
         rows = slot("approval", APPROVAL).lines(60, DEFAULT_THEME, max_rows=6)

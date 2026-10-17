@@ -123,14 +123,10 @@ class LinesTests(unittest.TestCase):
 class FrameTests(unittest.TestCase):
     """The keys ladder in the header, the highlighted row on a tiny budget, and the caret at the end of the filter."""
 
-    def test_the_headers_keys_take_the_longest_form_that_fits(self) -> None:
-        for width, said in ((100, "↑↓ move · enter switches · esc closes"), (48, "↑↓ enter switches · esc closes"),
-                            (40, "esc closes")):
-            with self.subTest(width=width):
-                header = line_text(picker().lines(width, DEFAULT_THEME, 6, NOW)[0])
-                self.assertTrue(header.rstrip().endswith(said), header)
-                self.assertLessEqual(line_width(picker().lines(width, DEFAULT_THEME, 6, NOW)[0]), width)
-        self.assertEqual(line_text(picker().lines(100, DEFAULT_THEME, 6, NOW, keys=False)[0]).rstrip(), " Sessions (3)")
+    def test_the_header_is_the_title_alone(self) -> None:
+        # The keys are the info line's.
+        self.assertEqual(line_text(picker().lines(100, DEFAULT_THEME, 6, NOW)[0]).rstrip(), " Sessions (3)")
+        self.assertEqual(line_width(picker().lines(8, DEFAULT_THEME, 6, NOW)[0]), 8)
 
     def test_two_rows_or_fewer_keep_the_highlighted_row_and_drop_the_header(self) -> None:
         chooser = picker(index=1)

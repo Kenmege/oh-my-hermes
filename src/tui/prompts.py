@@ -467,11 +467,8 @@ class PromptSlot:
 
     # -- rendering --------------------------------------------------------------------------
 
-    def lines(
-        self, width: int, theme: Theme, max_rows: int, keys_row: bool = False, waiting: int = 0, turn_runs: bool = True
-    ) -> list[Line]:
-        """The slot's rows, at most `max_rows`; `keys_row` adds the question's keys as a row of the slot's own,
-        as they are while a turn runs or not (`keys_while`).
+    def lines(self, width: int, theme: Theme, max_rows: int, waiting: int = 0) -> list[Line]:
+        """The slot's rows, at most `max_rows`; the question's keys are the info line's (`keys_while`).
 
         A list keeps the highlighted row whatever the budget (`_fit`). A
         question with no list keeps its first row and its last ones. Whatever
@@ -481,16 +478,11 @@ class PromptSlot:
         if max_rows <= 0:
             return []
         inner = max(width - len(SLOT_BAR), 1)
-        keys: list[Line] = []
-        if keys_row:
-            forms = self.keys_while(turn_runs)
-            said = next((form for form in forms if cell_width(f"  {form}") <= inner), forms[-1])
-            keys = [(Span(f"  {said}", theme.hint),)]
         queued: Line = (Span(WAITING.format(count=waiting, s="s" if waiting != 1 else ""), theme.muted),) if waiting else ()
         if self.method == "approval":
-            rows = self._approval_lines(inner, theme, max_rows, keys, queued)
+            rows = self._approval_lines(inner, theme, max_rows, queued)
         elif self.method == "clarify":
-            rows = self._clarify_lines(inner, theme, max_rows, keys, queued)
+            rows = self._clarify_lines(inner, theme, max_rows, queued)
         else:
             # The header and the hint matter most; the body is what gets cut.
             rows = _keep_ends(self._value_lines(inner, theme, queued), max_rows, inner, theme)
@@ -560,18 +552,16 @@ class PromptSlot:
         return index < len(choices) and choices[index] in self.ticked
 
     def _fit(
-        self, head: list[Line], body: list[Line], choices: list[list[Line]], keys: list[Line], max_rows: int,
-        width: int, theme: Theme,
+        self, head: list[Line], body: list[Line], choices: list[list[Line]], max_rows: int, width: int, theme: Theme,
     ) -> list[Line]:
-        """`head`, `body`, the `choices` (each one's rows) and `keys`, in that order, within `max_rows`.
+        """`head`, `body` and the `choices` (each one's rows), in that order, within `max_rows`.
 
-        Rows are counted, not choices. Everything is drawn when it fits, the
-        keys only on a row nothing else needs. Otherwise the highlighted choice
-        always shows, whole when it can, and with two rows or more the head's
-        first row comes before it. The rows left go to the body's first row,
-        the rest of the head, the other choices (`_window`), a keys row while
-        two rows are still left beside a body, and as much of the body as
-        fits, in that order. Each cut is marked where it is: choices left out
+        Rows are counted, not choices. Everything is drawn when it fits.
+        Otherwise the highlighted choice always shows, whole when it can, and
+        with two rows or more the head's first row comes before it. The rows
+        left go to the body's first row, the rest of the head, the other
+        choices (`_window`), and as much of the body as fits, in that order.
+        Each cut is marked where it is: choices left out
         beside the choices (`_window`); the head or the body cut on a row of
         its own when one is left over (counting the body's rows left out),
         else at the end of the last row above the choices. Choices cut with no
@@ -582,8 +572,7 @@ class PromptSlot:
         """
         listed = sum(len(choice) for choice in choices)
         if len(head) + len(body) + listed <= max_rows:
-            left = max_rows - len(head) - len(body) - listed
-            return [*head, *body, *(row for choice in choices for row in choice), *keys[:left]]
+            return [*head, *body, *(row for choice in choices for row in choice)]
         if max_rows == 1:
             return [_ends_with_more(choices[self.selected][0], width, theme)]
         left = max_rows - 1 - min(len(choices[self.selected]), max_rows - 1)  # beside the head's first row and it
@@ -591,8 +580,6 @@ class PromptSlot:
         rest = head[1 : 1 + left - reserved]
         shown, unmarked = self._window(choices, max_rows - 1 - len(rest) - reserved, width, theme)
         spare = max_rows - 1 - len(rest) - len(shown)
-        keys_row = keys[:1] if body and spare >= 2 else []
-        spare -= len(keys_row)
         kept = body[: spare - 1] if len(body) > spare >= 2 else body[:spare]
         above = [head[0], *rest, *kept]
         if len(rest) == len(head) - 1 and len(kept) == len(body):
@@ -606,9 +593,9 @@ class PromptSlot:
             above.append((Span(next((form for form in forms if cell_width(form) <= width), forms[-1]), theme.muted),))
         else:
             above[-1] = _ends_with_more(above[-1], width, theme)
-        return [*above, *shown, *keys_row]
+        return [*above, *shown]
 
-    def _approval_lines(self, width: int, theme: Theme, max_rows: int, keys: list[Line], queued: Line) -> list[Line]:
+    def _approval_lines(self, width: int, theme: Theme, max_rows: int, queued: Line) -> list[Line]:
         """The header (wrapped), the command's rows from its first, then the choices (`_fit`).
 
         The beginning of a command is what says what it does, so a long one is
@@ -624,9 +611,9 @@ class PromptSlot:
         choices = self._choice_rows(labels, width, theme, theme.warn)
         indent: Line = (Span("  ", theme.code),)  # every row of the command under one indent
         command_rows = wrap_prefixed((Span(command, theme.code),), indent, indent, width) if command else []
-        return self._fit(header, command_rows, choices, keys, max_rows, width, theme)
+        return self._fit(header, command_rows, choices, max_rows, width, theme)
 
-    def _clarify_lines(self, width: int, theme: Theme, max_rows: int, keys: list[Line], queued: Line) -> list[Line]:
+    def _clarify_lines(self, width: int, theme: Theme, max_rows: int, queued: Line) -> list[Line]:
         """The question (its counter when there are several), then its choices and the text field's row.
 
         A question with no choices says how to answer under it instead.
@@ -651,7 +638,7 @@ class PromptSlot:
         if self._multi():
             boxes = [TICKED if choice in self.ticked else UNTICKED for choice in choices] + [" " * len(UNTICKED)]
             labels = [(box + lead, label) for box, (lead, label) in zip(boxes, labels)]
-        return self._fit(head, [], self._choice_rows(labels, width, theme, theme.accent), keys, max_rows, width, theme)
+        return self._fit(head, [], self._choice_rows(labels, width, theme, theme.accent), max_rows, width, theme)
 
     def _value_lines(self, width: int, theme: Theme, queued: Line) -> list[Line]:
         label = {

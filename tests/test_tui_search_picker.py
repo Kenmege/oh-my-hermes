@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import unittest
 
-from _tui_lines import lines_text
+from _tui_lines import line_text, lines_text
 from test_tui_modes import make_app, type_text
 from omh.tui.history import SEARCH_HINT, SEARCH_LABEL, HistorySearch
 from omh.tui.keys import CHAR, ENTER, ESCAPE, LEFT, Key, Paste
@@ -73,6 +73,12 @@ class SearchStandsWhereTheComposerWasTests(unittest.TestCase):
         app, _client = searching()
         self.assertIn(SEARCH_HINT, "\n".join(screen(app)))
 
+    def test_a_narrow_info_line_keeps_the_way_out(self) -> None:
+        app, _client = searching()
+        for width, keys in ((50, SEARCH_HINT), (40, "ctrl+r older · esc cancels"), (20, "esc cancels")):
+            with self.subTest(width=width):
+                self.assertEqual(line_text(app._info_line(width)).rstrip(), keys)
+
     def test_esc_gives_back_the_draft_with_its_caret_and_chips(self) -> None:
         app, _client = make_app()
         app.composer.handle(Paste("one\ntwo\nthree\nfour\nfive"))  # a chip
@@ -100,13 +106,13 @@ class SearchRowsTests(unittest.TestCase):
         search = HistorySearch(["ls -la"], "")
         search.handle_key(Key(CHAR, "l"))
         rows = lines_text(search.lines(80, DEFAULT_THEME, 1))
-        self.assertEqual(rows, [SEARCH_LABEL + "l  " + SEARCH_HINT])
+        self.assertEqual([row.rstrip() for row in rows], [SEARCH_LABEL + "l"])
         self.assertEqual(search.caret, (0, cell_width(SEARCH_LABEL + "l")))
 
-    def test_without_keys_the_query_row_holds_only_the_query(self) -> None:
+    def test_the_query_row_holds_only_the_query(self) -> None:
         search = HistorySearch(["ls -la"], "")
         search.handle_key(Key(CHAR, "l"))
-        rows = lines_text(search.lines(80, DEFAULT_THEME, 4, keys=False))
+        rows = lines_text(search.lines(80, DEFAULT_THEME, 4))
         self.assertEqual([row.rstrip() for row in rows], ["› ls -la  1/1", SEARCH_LABEL + "l"])
         self.assertEqual(search.caret, (1, cell_width(SEARCH_LABEL + "l")))
 
