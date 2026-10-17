@@ -26,7 +26,17 @@ from unittest import mock
 from _tui_lines import line_text, lines_text
 from test_tui_modes import drawn, make_app, type_text
 from omh.skin_pack import SKIN_THEMES
-from omh.tui.app import INTERRUPTING, TICK_SECONDS, TIP_MIN_ROWS, TIPS, WORKING_GLYPHS, queue_lines, working_verb
+from omh.tui.app import (
+    CYCLE_TIP,
+    HERMES_OWN_CYCLE_TIP,
+    INTERRUPTING,
+    TICK_SECONDS,
+    TIP_MIN_ROWS,
+    TIPS,
+    WORKING_GLYPHS,
+    queue_lines,
+    working_verb,
+)
 from omh.tui.frame import sticky_line
 from omh.tui.diff_view import DIFF_ADDED, DIFF_FILE, DIFF_HUNK, DIFF_INDENT, DiffLine, diff_rows
 from omh.tui.gateway import Event
@@ -314,6 +324,14 @@ class WorkingRowTests(unittest.TestCase):
             app.busy_since = clock.now  # the next turn
         self.assertEqual(tips[:-1], [f"  ⎿  Tip: {text}" for text in TIPS])
         self.assertEqual(tips[-1], tips[0])
+
+    def test_the_shift_tab_tip_says_what_the_key_does_while_hermes_has_approvals_off(self) -> None:
+        app, _clock = self.busy()
+        app.tip_index = TIPS.index(CYCLE_TIP) - 1  # this turn's tip is Shift+Tab's
+        app.approvals_off, app.yolo_by_tui = True, False  # Hermes turned them off on its own
+        self.assertEqual(working_rows(app)[1], f"  ⎿  Tip: {HERMES_OWN_CYCLE_TIP}")
+        app.yolo_by_tui = True  # the TUI's own accept all: Shift+Tab goes on to plan mode
+        self.assertEqual(working_rows(app)[1], f"  ⎿  Tip: {CYCLE_TIP}")
 
     def test_no_tip_on_a_short_terminal_or_without_the_working_row(self) -> None:
         short, _clock = self.busy(rows=TIP_MIN_ROWS - 1)

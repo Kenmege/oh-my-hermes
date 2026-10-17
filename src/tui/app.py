@@ -244,10 +244,13 @@ WORKING_VERB = "Working"  # the verb while Hermes says nothing it is doing
 # The end of Hermes' own spinner text, `f"{face} {verb}..."` (6c61c3e27d `agent/turn_iteration_prep.py`).
 SPINNER_DOTS = "..."
 THINKING_EFFORT = "thinking with {} effort"
+CYCLE_TIP = "⇧⇥ turns on accept all, then plan mode"  # one of TIPS
+# CYCLE_TIP's words while Hermes has approvals off on its own: Shift+Tab then turns plan mode on and off, nothing else.
+HERMES_OWN_CYCLE_TIP = "⇧⇥ turns plan mode on and off"
 # One under the working row a turn, in turn, from the keys table; on a terminal of TIP_MIN_ROWS rows or more.
 TIPS = (
     "ctrl+o shows the whole transcript",
-    "⇧⇥ turns on accept all, then plan mode",
+    CYCLE_TIP,
     "ctrl+t steps the reasoning effort",
     "esc esc between turns rewinds to an earlier prompt",
     "start a line with ! to run it in the shell",
@@ -4170,7 +4173,7 @@ class App(ModesMixin, AgentViewMixin):
 
     def _tip_line(self, cols: int) -> Line | None:
         """The working row's tip, `  ⎿  Tip: …`, the same all turn and the next one in TIPS the turn after; None on a
-        terminal under TIP_MIN_ROWS rows.
+        terminal under TIP_MIN_ROWS rows. CYCLE_TIP reads HERMES_OWN_CYCLE_TIP while Hermes has approvals off on its own.
 
         It is the tail's last row, and the region gives the slot (a question, a
         picker, the agent list, a menu, the panel) its rows before the tail's,
@@ -4182,6 +4185,8 @@ class App(ModesMixin, AgentViewMixin):
         if self.tip_turn != self.busy_since:
             self.tip_turn, self.tip_index = self.busy_since, self.tip_index + 1
         tip = TIPS[self.tip_index % len(TIPS)]
+        if tip == CYCLE_TIP and self.approvals_off and not self.yolo_by_tui:
+            tip = HERMES_OWN_CYCLE_TIP
         return truncate_line(
             (Span(OUTPUT_INDENT), Span(OUTPUT_MARK, self.theme.dim), Span(f"Tip: {tip}", self.theme.hint)), cols
         )
