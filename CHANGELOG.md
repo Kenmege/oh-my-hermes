@@ -4,6 +4,33 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The OMH TUI's composer is a rounded box over one dim info line, as in
+  Claude Code.** The composer's two rules, the mode row and the dark status
+  band are gone. The composer sits in a box (`╭─╮`, `│ > … │`, `╰─╯`) that
+  keeps its colour in every mode, and the line under it says the mode or the
+  keys that matter now on the left (`? for shortcuts`, `⏵⏵ accept all on (⇧⇥
+  to cycle)` in accept's colour, `⏸ plan mode on (⇧⇥ to cycle)` in plan's, a
+  question's or a picker's keys) and the model, `ctx 5%` and `effort medium`
+  on the right, with the OMH HUD's repeat and in-flight tool counts first
+  when there are any. The `⚚ OMH` brand and the `idle` / `running` words
+  are gone: the working row, the strip and the queue rows already say them.
+  On a narrow terminal the right side gives way first, the model shortening
+  to `deepseek-v4.1-flash` and then `v4.1-flash` before it goes. The line is
+  on every terminal of 3 rows or more, so the mode is never hidden, and the
+  agent list now opens from 6 rows (and 20 columns) instead of 10. A `!` shell line keeps its `! shell`
+  label, and its `>` mark turns the accent colour.
+- **The OMH TUI opens on a clean screen.** As it starts, what your terminal
+  showed above the cursor (your shell, the warnings `hermes` printed) scrolls
+  up into the terminal's own scrollback, and the TUI starts on the top row.
+  Nothing is erased: scroll up to read it. A launch that falls back to
+  Hermes' own terminal leaves the screen as it was.
+- **Hermes' note about a skill named like a built-in command is no longer an
+  OMH TUI notice at every start.** Hermes' own bundled `plan` skill shares
+  its name with `/plan`, so every start said `Hermes' command catalog: slash
+  command /plan unavailable — name taken by built-in; use /skill plan`.
+  `/help` now lists those notes, in Hermes' words, under the skill count; a
+  real discovery failure (skills, quick commands, plugins) is still a notice.
+
 - **A plural possessive no longer hides the rest of a message from routing.**
   The routing masker read the `'` of "the customers' export" as an opening
   quote. Nothing closed it, so everything after it was masked and no matcher

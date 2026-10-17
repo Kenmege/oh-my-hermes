@@ -808,8 +808,8 @@ class DocumentedQuestionViewTests(unittest.TestCase):
         always = prompts.open_request("srq-1", "approval", {"description": "recursive delete", "choices": ["always"]})
         self.assertIn(f"(`{always.approval_label('always')}`)", installation)  # type: ignore[union-attr]
         self.assertNotIn("Approving a command permanently stays a choice for `hermes --tui`", installation)
-        self.assertIn(f"labelled `{app_module.TELL_SAY[0]}` on the mode row", installation)
-        self.assertIn(f"which is what the mode row's `{prompts.APPROVAL_KEYS[-1]}` says", installation)
+        self.assertIn(f"labelled `{app_module.TELL_SAY[0]}` on the info line", installation)
+        self.assertIn(f"which is what the info line's `{prompts.APPROVAL_KEYS[-1]}` says", installation)
         self.assertIn("When the approval came from a subagent, that stops the session's whole running turn", installation)
         tell = prompts.open_request("srq-1", "approval", {})
         self.assertIn(f"last {tell.approval_label(prompts.APPROVAL_TELL)}, one per row", installation)  # type: ignore[union-attr]
