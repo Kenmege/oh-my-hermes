@@ -26,7 +26,7 @@ from .width import cell_width, line_width, truncate, truncate_line
 PICK = "pick"
 CLOSE = "close"
 CURRENT_MARK = "●"
-# Its keys, longest first: on the mode row while it is open, in its header where there is no mode row.
+# Its keys, longest first: on the info line while it is open; in its header only when `lines` is asked for them.
 KEYS = ("↑↓ move · enter switches · esc closes", "↑↓ enter switches · esc closes", "esc closes")
 FILTER_PROMPT = " › "
 FILTER_PLACEHOLDER = "type to filter"

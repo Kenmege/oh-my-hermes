@@ -16,6 +16,7 @@ import types
 import unittest
 from unittest.mock import patch
 
+from _tui_lines import box_inner
 from test_tui_modes import drawn, make_app, type_text
 from omh.tui import app as app_module
 from omh.tui import terminal as terminal_module
@@ -36,13 +37,13 @@ class AppSuspendTests(unittest.TestCase):
         app, _client = make_app()
         type_text(app, "a draft")
         before = drawn(app)
-        self.assertIn("› a draft", before)
+        self.assertIn("> a draft", [box_inner(line) for line in before])
         app._on_input(CTRL_Z)
         terminal = app.terminal
         self.assertEqual(terminal.suspended, 1)  # type: ignore[attr-defined]
-        self.assertNotIn("› a draft", terminal.screen.lines())  # type: ignore[attr-defined]  # erased before stopping
+        self.assertNotIn("> a draft", [box_inner(line) for line in terminal.screen.lines()])  # type: ignore[attr-defined]  # erased before stopping
         self.assertEqual(app.region.height, 0)  # a new region, drawn from wherever the shell left the cursor
-        self.assertIn("› a draft", drawn(app))  # and drawn again once continued, the draft as it was
+        self.assertIn("> a draft", [box_inner(line) for line in drawn(app)])  # and drawn again once continued, the draft as it was
         self.assertEqual(app.composer.text, "a draft")
 
     def test_continued_it_asks_where_the_cursor_is_so_the_composer_stays_on_the_bottom_rows(self) -> None:

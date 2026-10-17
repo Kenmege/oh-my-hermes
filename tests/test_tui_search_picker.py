@@ -2,7 +2,7 @@
 
 The composer is not drawn while the search has the keys, the caret is at
 the end of the query on the search's own row (so an IME pre-edit shows
-where the text goes), the mode row says the search's keys, and Esc gives
+where the text goes), the info line says the search's keys, and Esc gives
 back the draft exactly as it was: its text, its caret and its paste chips.
 """
 
@@ -35,11 +35,11 @@ def screen(app) -> list[str]:
 
 
 class SearchStandsWhereTheComposerWasTests(unittest.TestCase):
-    def test_the_composer_and_its_rules_are_not_drawn_while_searching(self) -> None:
+    def test_the_composer_and_its_box_are_not_drawn_while_searching(self) -> None:
         app, _client = searching()
         rows = screen(app)
-        self.assertFalse(any(row.startswith("› half typed") for row in rows), rows)
-        self.assertFalse(any(row.startswith("────") for row in rows), rows)
+        self.assertFalse(any(row.startswith("│ > half typed") for row in rows), rows)
+        self.assertFalse(any(row.startswith(("╭", "╰")) for row in rows), rows)
         self.assertTrue(any(row.startswith(SEARCH_LABEL.rstrip()) for row in rows), rows)
 
     def test_the_caret_is_at_the_end_of_the_query_on_the_search_row(self) -> None:
@@ -56,20 +56,20 @@ class SearchStandsWhereTheComposerWasTests(unittest.TestCase):
         app, _client = make_app()
         type_text(app, "half typed")
         before = screen(app)
-        composer_row = next(index for index, row in enumerate(before) if row.startswith("› half typed"))
+        composer_row = next(index for index, row in enumerate(before) if row.startswith("│ > half typed"))
         app.composer.history = ["ls -la"]
         app._on_input(CTRL_R)
         during = screen(app)
-        # The query row is the search's last row, right above the mode row: where the bottom rule was on the bottom
+        # The query row is the search's last row, right above the info line: where the bottom edge was on the bottom
         # rows, and the composer's own row here, where the region follows the content and is one row shorter.
-        status = next(index for index, row in enumerate(during) if row.startswith("⚚ OMH"))
-        self.assertTrue(during[status - 2].startswith(SEARCH_LABEL.rstrip()), during)
-        self.assertEqual(status - 2, composer_row)
+        info = max(index for index, row in enumerate(during) if row)
+        self.assertTrue(during[info - 1].startswith(SEARCH_LABEL.rstrip()), during)
+        self.assertEqual(info - 1, composer_row)
         app._on_input(Key(ESCAPE))
         after = screen(app)
-        self.assertTrue(after[composer_row].startswith("› half typed"), after)
+        self.assertTrue(after[composer_row].startswith("│ > half typed"), after)
 
-    def test_the_mode_row_says_the_search_keys(self) -> None:
+    def test_the_info_line_says_the_search_keys(self) -> None:
         app, _client = searching()
         self.assertIn(SEARCH_HINT, "\n".join(screen(app)))
 

@@ -47,7 +47,7 @@ def esc(app: App) -> None:
 
 
 def mode_row(app: App, cols: int) -> str:
-    return line_text(app._mode_row_line(cols))
+    return line_text(app._info_line(cols))
 
 
 class PickerTests(unittest.TestCase):

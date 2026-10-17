@@ -1,14 +1,15 @@
-"""Where Shift+Enter sends, the mode row names the keys that add a line while the draft spans lines (walk G7).
+"""Where Shift+Enter sends, the info line names the keys that add a line while the draft spans lines (walk G7).
 
 A terminal that has sent no CSI u or modifyOtherKeys report gives Shift+Enter
 as Enter, which sends the draft. `\\` then Enter, Alt+Enter and Ctrl+J still
-add a line there; the `?` list says so, and the mode row says it where a
+add a line there; the `?` list says so, and the info line says it where a
 person composing more than one line looks: under the draft, while it spans
 lines (typed, or a paste), idle and in normal mode.
 """
 
 from __future__ import annotations
 
+import re
 import unittest
 
 from test_tui_modes import make_app, type_text
@@ -17,7 +18,8 @@ from omh.tui.keys import CHAR, Key, Paste
 
 
 def mode_row(app) -> str:
-    return "".join(span.text for span in app._mode_row_line(100)).strip()
+    """The info line's left side: its right one stands 3 cells or more away."""
+    return re.split(r" {3,}", "".join(span.text for span in app._info_line(100)).strip())[0]
 
 
 def two_lines(app) -> None:
@@ -44,7 +46,7 @@ class NewlineHintTests(unittest.TestCase):
         usual = mode_row(app)
         type_text(app, "one line")
         self.assertEqual(mode_row(app), usual)
-        self.assertTrue(usual.startswith("? shortcuts"), usual)
+        self.assertTrue(usual.startswith("? for shortcuts"), usual)
 
     def test_a_terminal_that_reported_keys_keeps_the_usual_hint(self) -> None:
         app, _client = make_app()
@@ -52,7 +54,7 @@ class NewlineHintTests(unittest.TestCase):
         usual = mode_row(app)
         two_lines(app)
         self.assertEqual(mode_row(app), usual)
-        self.assertTrue(usual.startswith("? shortcuts"), usual)
+        self.assertTrue(usual.startswith("? for shortcuts"), usual)
 
     def test_a_turn_running_or_another_mode_keeps_its_own_hint(self) -> None:
         app, _client = make_app(busy=True)
@@ -66,7 +68,7 @@ class NewlineHintTests(unittest.TestCase):
     def test_a_narrow_row_keeps_the_point(self) -> None:
         app, _client = make_app()
         two_lines(app)
-        row = "".join(span.text for span in app._mode_row_line(20)).strip()
+        row = re.split(r" {3,}", "".join(span.text for span in app._info_line(20)).strip())[0]
         self.assertEqual(row, NEWLINE_KEYS[-1])
 
 

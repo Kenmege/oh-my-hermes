@@ -3,7 +3,7 @@
 Everything finished goes to the terminal's own scrollback as plain lines
 (`flush_above`), so scrolling, selecting and copying stay the terminal's
 native behaviour. Right below the last of them sits one live region: sticky
-prompt, streaming tail, panels, composer, status line. The region starts
+prompt, streaming tail, panels, composer, info line. The region starts
 where the output ends and is as tall as its frame, so it follows the content:
 it grows downward until its last row is the screen's last row, and from then
 on growing scrolls the screen up as printed output would. From then on the

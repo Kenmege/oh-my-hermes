@@ -13,10 +13,11 @@ The information design is that widget's, which this module took over when
 it was deleted: the same glyphs, labels, colour roles, column grid and shed
 priorities, ported to `Line`s, and `tests/test_tui_panels.py` holds the rows
 to the ones the widget drew (`tests/fixtures/tui_panel_rows.json`). The widget's
-`⚚ [OMH] vX` brand (as `⚚ OMH`; the version stays in the banner) and its
-session-wide chips (repeat guard, in-flight tool calls) move to the
-status line through `status_segments`, but not its yolo chip (see there); the agents
-block opens with `[Agents]` the way the plan block opens with `[Plan]`.
+`⚚ [OMH] vX` brand is not drawn (the version stays in the banner); its
+session-wide chips (repeat guard, in-flight tool calls) move to the right of
+the info line under the composer through `hud_chips`, but not its yolo chip
+(see there); the agents block opens with `[Agents]` the way the plan block
+opens with `[Plan]`.
 
 The panel never draws more than the rows it is given. Under pressure it sheds
 the subagent graph first, then activity rows (always disclosed on a `+N more`
@@ -396,7 +397,7 @@ def _line(*spans: Span | None) -> Line:
     return tuple(span for span in spans if span is not None and span.text)
 
 
-# ── status line ────────────────────────────────────────────────────────────
+# ── info line chips ────────────────────────────────────────────────────────
 
 
 def _valid(payload: Any) -> bool:
@@ -414,11 +415,8 @@ def _repeat_chip(repeat: Mapping[str, Any]) -> tuple[str, str]:
     return f"repeat x{count}{f' cycle-of-{period}' if period > 1 else ''}{suffix}", stage
 
 
-def status_segments(payload: Any, theme: Theme, turn_runs: bool = True, question_waits: bool = False) -> Line:
-    """The OMH part of the status line: `⚚ OMH`, then the session-wide chips.
-
-    The version is the banner's; the status line keeps its cells for the
-    model, the context and the state.
+def hud_chips(payload: Any, theme: Theme, turn_runs: bool = True, question_waits: bool = False) -> tuple[Line, ...]:
+    """The HUD's session-wide chips for the info line's right side, each its own line; none without a valid payload.
 
     The chips are the widget header's facts about the whole session rather
     than its agents: a repeating call (muted while watched, warn once refused,
@@ -426,27 +424,24 @@ def status_segments(payload: Any, theme: Theme, turn_runs: bool = True, question
     where this install has seen `post_tool_call` fire, and only while
     `turn_runs`: the snapshot lags the turn's end by a poll or more). While
     `question_waits` the calls are counted without the oldest one's seconds,
-    since the working row's clock is that wait's. Order is priority: a
-    narrow status line cuts from the right. The widget's `yolo mode: on|off`
-    chip is not drawn: the composer states the approval mode (accept all) as
-    Hermes confirmed it for this session, and the HUD's reading of Hermes'
-    saved state lags behind a switch, so the two said opposite things.
+    since the working row's clock is that wait's. The widget's `yolo mode:
+    on|off` chip is not drawn: the info line states the approval mode (accept
+    all) as Hermes confirmed it for this session, and the HUD's reading of
+    Hermes' saved state lags behind a switch, so the two said opposite things.
     """
-    valid = _valid(payload)
-    data = payload if valid else {}
-    spans: list[Span] = [Span("⚚ OMH", theme.heading)]
-    if not valid:
-        return _line(*spans)
-    chip, stage = _repeat_chip(_mapping(data.get("repeat")))
+    if not _valid(payload):
+        return ()
+    chips: list[Line] = []
+    chip, stage = _repeat_chip(_mapping(payload.get("repeat")))
     if chip:
         tone = theme.error if stage == "approval" else theme.warn if stage == "blocking" else theme.muted
-        spans += [Span(" · ", theme.dim), Span(chip, replace(tone, bold=stage != "watching"))]
-    activity = _mapping(data.get("activity"))
+        chips.append((Span(chip, replace(tone, bold=stage != "watching")),))
+    activity = _mapping(payload.get("activity"))
     if turn_runs and activity.get("live") and activity.get("post_tool_call_observed"):
         count = _plural(_count(activity.get("open_call_count")), "tool")
         oldest = _elapsed(activity.get("oldest_open_elapsed_seconds")) or "0s"
-        spans += [Span(" • ", theme.dim), Span(count if question_waits else f"{count} · {oldest}", theme.warn)]
-    return _line(*spans)
+        chips.append((Span(count if question_waits else f"{count} · {oldest}", theme.warn),))
+    return tuple(chips)
 
 
 # ── plan block ─────────────────────────────────────────────────────────────
