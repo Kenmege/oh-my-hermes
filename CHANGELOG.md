@@ -231,7 +231,7 @@ All notable changes will be documented here.
   that model (first, when no provider lists it) and shows `Model (12/162)`
   once it scrolls.
 - **OMH TUI list commands leave no echo in scrollback.** Bare `/sessions`,
-  `/rewind`, `/keys`, `/history`, `/logs` and `/redraw` leave no `› /name`
+  `/rewind`, `/keys`, `/history`, `/logs` and `/redraw` leave no `> /name`
   row.
 - **New OMH TUI keys.** Ctrl+X opens the session picker, Ctrl+_ and Ctrl+Y
   undo and redo in the composer, and Ctrl+Z suspends to the shell on POSIX
@@ -519,7 +519,7 @@ All notable changes will be documented here.
   background (the status line's against its own bar), words that sat on the 3:1 decoration colour moved to colours that
   read, and a light background gets light diff bands (on white the body text
   measured 1.08 to 1.13:1 before); `/theme auto|light|dark` picks the background
-  for the open session. A slash command is echoed as `› /name arg` and what it
+  for the open session. A slash command is echoed as `> /name arg` and what it
   prints stays in the transcript under it, a long output as its first 12 rows
   and a count of the rest for `/history`; nothing a command prints opens the
   pager any more, so typed-ahead keys are no longer swallowed and the output is
@@ -544,7 +544,7 @@ All notable changes will be documented here.
   edit, and sending it truncates the session before it (`prompt.submit` with
   `truncate_before_row_id` and `confirm_truncate`) and redraws from the cut.
   A line that starts with `!` runs in Hermes' shell (`shell.exec`, 30 s at
-  most, dangerous commands refused) and shows `› !cmd` with its output and
+  most, dangerous commands refused) and shows `> !cmd` with its output and
   exit code; it never reaches the model, and during a turn it waits in the
   queue. A paste of more than 3 lines or 800 characters is one atomic chip,
   `[Pasted text #1 +60 lines]`, sent whole and shown compact in the

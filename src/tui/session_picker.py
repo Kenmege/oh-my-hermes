@@ -28,7 +28,7 @@ CLOSE = "close"
 CURRENT_MARK = "●"
 # Its keys, longest first: on the info line while it is open.
 KEYS = ("↑↓ move · enter switches · esc closes", "↑↓ enter switches · esc closes", "esc closes")
-FILTER_PROMPT = " › "
+FILTER_PROMPT = " > "  # the composer's mark, on the row that stands where the composer was
 FILTER_PLACEHOLDER = "type to filter"
 
 

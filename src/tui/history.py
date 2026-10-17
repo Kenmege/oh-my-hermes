@@ -45,7 +45,7 @@ import os
 from pathlib import Path
 import stat
 
-from .composer import HISTORY_CAP
+from .composer import HISTORY_CAP, PROMPT
 from .keys import BACKSPACE, CHAR, ENTER, ESCAPE, Key, Paste
 from .style import Line, Span
 from .theme import Theme
@@ -207,7 +207,7 @@ class HistorySearch:
             shown = truncate_line((Span(f"  {SEARCH_NONE}", theme.muted),), width)
         else:
             count = f"  {min(self.skip, len(found) - 1) + 1}/{len(found)}"
-            shown = truncate_line((Span("› ", theme.prompt), Span(match.split("\n", 1)[0]), Span(count, theme.muted)), width)
+            shown = truncate_line((Span(PROMPT, theme.prompt), Span(match.split("\n", 1)[0]), Span(count, theme.muted)), width)
         rows = [query] if max_rows == 1 else [shown, query]
         self.caret = (len(rows) - 1, min(cell_width(SEARCH_LABEL + self.query), max(width - 1, 0)))
         return rows

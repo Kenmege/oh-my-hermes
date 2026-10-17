@@ -113,7 +113,7 @@ class SearchRowsTests(unittest.TestCase):
         search = HistorySearch(["ls -la"], "")
         search.handle_key(Key(CHAR, "l"))
         rows = lines_text(search.lines(80, DEFAULT_THEME, 4))
-        self.assertEqual([row.rstrip() for row in rows], ["› ls -la  1/1", SEARCH_LABEL + "l"])
+        self.assertEqual([row.rstrip() for row in rows], ["> ls -la  1/1", SEARCH_LABEL + "l"])
         self.assertEqual(search.caret, (1, cell_width(SEARCH_LABEL + "l")))
 
 

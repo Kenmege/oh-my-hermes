@@ -415,11 +415,11 @@ class PickerTests(unittest.TestCase):
                 screen = drawn(app)
                 self.assertEqual(rule_rows(screen), [], screen)
                 info = info_row(screen)
-                self.assertEqual(screen[info - 1], " › type to filter")  # right above the info line
+                self.assertEqual(screen[info - 1], " > type to filter")  # right above the info line
                 self.assertEqual(app.terminal.screen.cursor, (info - 1, 3))  # type: ignore[attr-defined]  # the caret on it
                 type_text(app, "s")
                 screen = drawn(app)
-                self.assertEqual(screen[info_row(screen) - 1], " › s")  # the list shrank: the row moved with it
+                self.assertEqual(screen[info_row(screen) - 1], " > s")  # the list shrank: the row moved with it
                 self.assertEqual(held(app), draft)  # the filter is the picker's, not the draft's
                 press(app, Key(ESCAPE))
                 self.assertTrue(composer_drawn(app, drawn(app)))
@@ -452,7 +452,7 @@ class PickerTests(unittest.TestCase):
                 opener(app)  # type: ignore[operator]
                 screen = drawn(app)
                 row = info_row(screen) - 1
-                self.assertEqual(screen[row], " › type to filter")
+                self.assertEqual(screen[row], " > type to filter")
                 self.assertTrue(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
                 self.assertEqual(app.terminal.screen.cursor, (row, 3))  # type: ignore[attr-defined]
                 type_text(app, "s")
@@ -472,7 +472,7 @@ class PickerTests(unittest.TestCase):
         self.assertTrue(any(line.startswith("↳ you: run the tools") for line in screen), screen)
         self.assertTrue(any("Working…" in line for line in screen), screen)
         row = info_row(screen) - 1
-        self.assertEqual(screen[row], " › re")
+        self.assertEqual(screen[row], " > re")
         self.assertEqual(app.terminal.screen.cursor, (row, 5))  # type: ignore[attr-defined]
 
     def test_an_approval_over_a_picker_shows_no_caret_and_the_pickers_comes_back_after(self) -> None:
@@ -487,7 +487,7 @@ class PickerTests(unittest.TestCase):
         self.assertEqual(answered(client, "srq-1"), [{"result": {"choice": "deny"}}])
         screen = drawn(app)
         filter_row = info_row(screen) - 1  # the answer is printed above the region, which moves down under it
-        self.assertEqual(screen[filter_row], " › type to filter")
+        self.assertEqual(screen[filter_row], " > type to filter")
         self.assertEqual(app.terminal.screen.cursor, (filter_row, 3))  # type: ignore[attr-defined]
 
     def test_a_view_left_over_a_picker_without_a_filter_row_keeps_the_caret_hidden(self) -> None:

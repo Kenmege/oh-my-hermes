@@ -41,7 +41,10 @@ from omh.tui.app import (
 from omh.tui.frame import MODE_ACCEPT, MODE_PLAN, sticky_line
 from omh.tui.diff_view import DIFF_ADDED, DIFF_FILE, DIFF_HUNK, DIFF_INDENT, DiffLine, diff_rows
 from omh.tui.gateway import Event
-from omh.tui.keys import BACKSPACE, Key
+from omh.tui.composer import PROMPT
+from omh.tui.history import HistorySearch
+from omh.tui.keys import BACKSPACE, CHAR, Key
+from omh.tui.session_picker import FILTER_PROMPT
 from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.theme import build_theme, contrast_ratio
@@ -56,6 +59,7 @@ from omh.tui.transcript import (
     ToolGroup,
     ToolRow,
     Transcript,
+    USER_MARK,
     TurnSummaryBlock,
     UserBlock,
     block_rows,
@@ -465,6 +469,19 @@ class ShortcutsHintTests(unittest.TestCase):
                 app.yolo_by_tui = app.approvals_off  # accept as the TUI turns it on: Shift+Tab walks every mode
                 type_text(app, "hello")
                 self.assertTrue(line_text(app._info_line(100)).startswith(f"  {said}"))
+
+
+class PromptMarkTests(unittest.TestCase):
+    """One mark for what you type (review B, NIT-3): the composer's `>`, the echo's, a picker's filter row's, and the
+    history search's match row's."""
+
+    def test_the_filter_row_and_the_search_match_use_the_composers_mark(self) -> None:
+        self.assertEqual(FILTER_PROMPT.strip(), PROMPT.strip())
+        self.assertEqual(USER_MARK, PROMPT)
+        search = HistorySearch(["git push"], "")
+        search.handle_key(Key(CHAR, "g"))
+        (match, _query) = search.lines(60, THEME, 4)
+        self.assertEqual(match[0], Span(PROMPT, THEME.prompt))
 
 
 # A real resume's `messages` (tests/fixtures/tui_gateway/resume_history.json): one turn of five calls, an edit among them.
