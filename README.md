@@ -355,21 +355,21 @@ omh
 <table align="center">
   <tr>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-turn.png" alt="The OMH TUI after a turn: one row per tool call naming what it ran on and how long it took, the new file and the patch as green and red diff bands, the command's output cut to three lines and a '… +2 lines · ctrl+o shows all' row, and the live plan panel above the prompt"><br>
+      <img src="assets/omh-tui-turn.png" alt="The OMH TUI after a turn: each tool call one row, a green ⏺ then its name, what it ran on in parentheses and how long it took; under ⎿ the new file and the patch as green and red diff bands and the command's output cut to three lines with a '… +2 lines · ctrl+o shows all' row; the turn's dim done line; and the live plan panel above the rounded prompt box"><br>
       <sub><b>One row per call, its diff, and the plan above the prompt.</b></sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete: five rows where the prompt was (deny, highlighted; allow once; allow this session; always allow; no, and tell Hermes what to do instead) under a waiting-on-you timer, with an earlier command denied on a red band and one allowed once on a green band, and each done line naming the seconds spent waiting on you"><br>
+      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete: five rows where the prompt box was (deny, highlighted; allow once; allow this session; always allow; no, and tell Hermes what to do instead) under a '? waiting on you' timer, with the keys on the dim info line under them, an earlier command denied on a red band and one allowed once on a green band, and each done line naming the seconds spent waiting on you"><br>
       <sub><b>Hermes asks; you pick. Deny is the default.</b></sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-clarify.png" alt="The OMH TUI at start, with its logo: right under the prompt, Hermes asks a choose-one-or-more question with check boxes, two of them ticked, and a numbered row to type your own answer; the mode row names space or 1-9 to tick"><br>
+      <img src="assets/omh-tui-clarify.png" alt="The OMH TUI at start, with its logo: right under your prompt, Hermes asks a choose-one-or-more question with check boxes, two of them ticked, and a numbered row to type your own answer; the dim info line under it names space or 1-9 to tick"><br>
       <sub><b>A question opens under your prompt; tick several, or type your own.</b></sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-light.png" alt="The same five-row approval on a light terminal, with light red and green bands and a tinted status bar"><br>
+      <img src="assets/omh-tui-light.png" alt="The same five-row approval on a light terminal, with light red and green bands and the dim info line under it"><br>
       <sub><b>On a light terminal, light bands.</b></sub>
     </td>
   </tr>
