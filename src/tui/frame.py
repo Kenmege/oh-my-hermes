@@ -53,8 +53,8 @@ from dataclasses import dataclass, replace
 
 from .composer import PROMPT, Composer
 from .layout import Budget, allocate, caret_row, compose, composer_cap, is_tiny
-from .style import Line, Span, fill
-from .theme import DEFAULT_THEME, Theme, on_status_bar
+from .style import Line, Span
+from .theme import DEFAULT_THEME, Theme
 from .width import line_width, truncate_line
 
 # The composer's box: its corners, its edges and its sides.
@@ -64,6 +64,7 @@ BOX_BOTTOM = ("╰", "╯")
 BOX_SIDE = "│"
 BOX_INSET = 2  # cells the box takes on each side of a composer row: the side and a space
 STICKY_PREFIX = "↳ you: "
+STICKY_CUT = "…"  # where the reminder's prompt is cut
 
 MODE_NORMAL = "normal"
 MODE_ACCEPT = "accept"
@@ -183,11 +184,15 @@ def box_row(line: Line, inner: int, theme: Theme = DEFAULT_THEME) -> Line:
 def sticky_line(prompt_text: str, width: int, theme: Theme = DEFAULT_THEME) -> Line:
     """`↳ you: <first line of the prompt>` cut to `width`, shown while a turn runs.
 
-    It is drawn on the palette's status-bar band (`theme.status`), filled to
-    the right edge, in roles measured against that band: the region's own
-    reminder, which the band tells apart from the transcript rows right above it.
+    It has no band, as the prompt's echo in the transcript has none: `↳ you:`
+    in the accent, which no transcript row starts with, the prompt in the
+    muted text colour, and a dim `…` where it is cut. So it reads apart from
+    the transcript rows right above it by its words and colours.
     """
+    if width <= 0:
+        return ()
     first = prompt_text.strip().split("\n", 1)[0]
-    bar, roles = theme.status, on_status_bar(theme)
-    line = (Span(STICKY_PREFIX, replace(roles.muted, bg=bar.bg)), Span(first, replace(roles.user, bg=bar.bg)))
-    return (*truncate_line(line, width), fill(bar))
+    line = (Span(STICKY_PREFIX, theme.accent), Span(first, theme.muted))
+    if line_width(line) <= width:
+        return line
+    return (*truncate_line(line, width - len(STICKY_CUT), ellipsis=""), Span(STICKY_CUT, theme.dim))

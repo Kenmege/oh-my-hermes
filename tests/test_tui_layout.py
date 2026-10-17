@@ -434,16 +434,22 @@ class FrameTests(unittest.TestCase):
         self.assertEqual(lines_text([line]), ["↳ you: fix the 한글 bug"])
         self.assertEqual(lines_text([sticky_line("abcdefghij", 12, DEFAULT_THEME)]), ["↳ you: abcd…"])
 
-    def test_the_sticky_line_is_banded_as_the_status_line_so_it_never_reads_as_a_transcript_row(self) -> None:
-        # Review B NIT 9: right under the turn's last row (`▸ thought for …`), it read as one more of them.
+    def test_the_sticky_line_has_no_band_and_reads_apart_from_a_transcript_row_by_its_colours(self) -> None:
+        # Round 3, review B NIT 9: right under the turn's last row (`▸ thought for …`), it read as one more of them.
+        # Round 4: no band behind the person's own text, as the prompt's echo has none; `↳ you:` in the accent,
+        # which no transcript row starts with, and the prompt in the muted text colour.
         from omh.tui.style import is_fill
         from omh.tui.theme import theme_named
 
-        for theme in (DEFAULT_THEME, theme_named("sky", "#FFFFFF")):
+        for theme in (DEFAULT_THEME, theme_named("sky", "#FFFFFF"), theme_named("sky", "#1E1E1E")):
             with self.subTest(theme=theme.name):
                 line = sticky_line("fix the bug", 40, theme)
-                self.assertEqual({span.style.bg for span in line}, {theme.status.bg})
-                self.assertTrue(is_fill(line[-1]))  # to the right edge, as the status bar's band
+                self.assertEqual({span.style.bg for span in line}, {None})
+                self.assertFalse(any(is_fill(span) for span in line))
+                self.assertEqual([(span.text, span.style) for span in line],
+                                 [("↳ you: ", theme.accent), ("fix the bug", theme.muted)])
+                (cut,) = [sticky_line("abcdefghij", 12, theme)]
+                self.assertEqual((cut[-1].text, cut[-1].style), ("…", theme.dim))  # a dim mark where it is cut
 
 
 if __name__ == "__main__":

@@ -41,7 +41,9 @@ All notable changes will be documented here.
   is sent. `interrupting…` lines up under the same glyph column.
 - **Your prompt and a turn's end read as in Claude Code.** A prompt in the
   OMH TUI transcript is a dim `>` and dim text, with no tinted band behind
-  it, and a command's echo takes the same `>` (`> /model`). A turn's done
+  it, and a command's echo takes the same `>` (`> /model`). The `↳ you: …`
+  reminder over a running turn loses its band too: `↳ you:` in the accent,
+  your words dim. A turn's done
   line is one dim line under the reply, `✻ 5s · 3 tools · ↓1.3k`, without
   the rule that ran to the right edge.
 - **The OMH TUI's composer is a rounded box over one dim info line, as in
