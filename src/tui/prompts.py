@@ -87,7 +87,7 @@ CHOICE_MARK = "❯ "
 APPROVAL_KEYS = (
     "↑↓ pick · enter confirms · d or esc denies and stops",
     "↑↓ pick · enter confirms · esc denies and stops",
-    "↑↓ · esc denies and stops",  # short enough that a strip of two agents stays whole beside it from 82 columns
+    "↑↓ · esc denies and stops",  # short enough that a strip of two agents stays whole beside it from 81 columns
     "esc denies and stops",
 )
 # The same with no turn running (a subagent that outlived the turn asks): a deny then interrupts nothing.

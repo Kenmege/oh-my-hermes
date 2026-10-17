@@ -354,7 +354,7 @@ class StripTests(unittest.TestCase):
         from omh.tui.gateway import ServerRequest
 
         # 80 columns less the inset are one cell short of the strip whole beside the keys' short form.
-        for cols, said in ((82, f"{STRIP} · ↑↓ · esc denies and stops"),
+        for cols, said in ((81, f"{STRIP} · ↑↓ · esc denies and stops"),
                            (80, "● 2 agents ↓ · ↑↓ pick · enter confirms · d or esc denies and stops")):
             with self.subTest(cols=cols):
                 app, _client = agent_app(cols=cols)
