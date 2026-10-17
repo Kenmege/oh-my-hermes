@@ -111,12 +111,14 @@ _AUXILIARY = re.compile(
     + r")$"
 )
 # Quoted text, which names words rather than asking for them. A single-quoted
-# span counts only when it holds Hangul and its marks are no apostrophes: a
-# `'` between two word characters ("acme's", "it's") opens and closes none.
+# span counts only when it holds Hangul and its marks are no English
+# apostrophes: a `'` after a Latin letter or digit opens none ("acme's",
+# "it's"), and one before a Latin letter closes none, while a Korean particle
+# may follow the closing mark ("'고객 정보'를").
 # It is matched on the composed text, so the router's decomposed fold reads
 # the same spans as the hint.
 _QUOTED = re.compile(
-    r"\"[^\"\n]*\"|“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」|『[^』\n]*』|(?<!\w)'[^'\n]*[가-힣][^'\n]*'(?!\w)"
+    r"\"[^\"\n]*\"|“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」|『[^』\n]*』|(?<![A-Za-z0-9])'[^'\n]*[가-힣][^'\n]*'(?![A-Za-z])"
 )
 # A sentence ends at ".", "!", "?" or ":" followed by a space or the end;
 # "0.1개", "v2.3" and "10:30" do not end one.

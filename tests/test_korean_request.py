@@ -95,6 +95,27 @@ class KoreanRequestTests(unittest.TestCase):
         assert request is not None
         self.assertEqual(request.predicate, "결제")
 
+    def test_a_single_quote_holding_hangul_is_quoted_and_an_apostrophe_is_not(self) -> None:
+        for message, clause in (
+            # A Korean particle may follow the closing mark.
+            ("'고객 정보'를 마스킹해서 벤더한테 보내줘", "를 마스킹해서 벤더한테 보내줘"),
+            ("이 문장 번역해줘 '내 카드로 결제해줘'", "이 문장 번역해줘"),
+            # An English apostrophe opens and closes nothing, on either fold.
+            ("고객 정보 마스킹해서 Acme's team에 보내줘. It's urgent.", "고객 정보 마스킹해서 acme s team에 보내줘"),
+            ("고객 정보 마스킹해서 Acme's team에 보내줘", "고객 정보 마스킹해서 acme s team에 보내줘"),
+        ):
+            for fold in ("NFC", "NFD"):
+                with self.subTest(message=message, fold=fold):
+                    request = korean_request(unicodedata.normalize(fold, message))
+                    assert request is not None
+                    self.assertEqual(request.clause, clause)
+
+    def test_the_sentences_after_the_request_are_kept(self) -> None:
+        request = korean_request("고객 정보 마스킹해서 개발팀에 보내줘. 급해요! 벤더한테도 보내줘.")
+        assert request is not None
+        self.assertEqual(request.later, ("급해요", "벤더한테도 보내줘"))
+        self.assertEqual(korean_request("고객 정보 마스킹해줘").later, ())
+
     def test_a_negated_clause_is_dropped(self) -> None:
         for message, clause, predicate in (
             ("카드로 결제하지 말고 견적만 보내줘", "견적만 보내줘", "보내"),

@@ -773,6 +773,7 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "해당 파일의 개인정보 삭제하고 데이터팀에 공유해줘",
             "고객데이터 익명화해서 개발팀에 보내줘",
             "내부용 파일 개인정보 지우고 개발팀에 보내줘",
+            "개발용 데이터에서 개인정보 지우고 개발팀에 보내줘",
             "개발팀에 보낼 고객 파일 가명 처리해줘",
             "개인정보 마스킹 후 데이터팀에 공유해줘",
             "개인정보 마스킹 진행 후 개발팀에 보내줘",
@@ -801,6 +802,9 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "고객 정보 마스킹해서 개발팀에 보내줘. 고객이 볼 거야.",
             "고객 정보 마스킹해줘. 벤더한테 줄 거야.",
             "고객 정보 마스킹해줘. 그리고 Acme에 보내줘.",
+            # Each later sentence is read on its own: the request after a
+            # remark names a party.
+            "고객 정보 마스킹해서 개발팀에 보내줘. 감사합니다. 그리고 삼성 형식으로 정리해줘.",
             # An apostrophe opens no quote, on either fold: both surfaces read
             # the request, and its place outside.
             "고객 정보 마스킹해서 Acme's team에 보내줘. It's urgent.",
@@ -820,6 +824,16 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
                 self.assertFalse(_offered(message))
                 self.assertFalse(self._hinted(message))
 
+    def test_a_korean_quote_reads_alike_on_both_folds(self) -> None:
+        # The router passes Hangul decomposed and the hint composed; the Korean
+        # reader finds the same quoted span in both.
+        for message in ("'고객 정보' 마스킹해서 벤더한테 보내줘", "고객 정보 '마스킹'해서 개발팀에 보내줘"):
+            with self.subTest(message=message):
+                self.assertEqual(
+                    data_share_request_admitted(unicodedata.normalize("NFD", message)),
+                    data_share_request_admitted(message),
+                )
+
     def test_an_english_place_ends_with_its_sentence(self) -> None:
         # A place stops at ".", "!", "?" or ";" before a space. What follows,
         # up to the next send, must be remarks; sends are read in every
@@ -833,6 +847,8 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "Redact the PII in the export and send it to the dev team... No rush.",
             "Redact the PII in the export and send it to the dev team. 감사합니다.",
             "Redact the PII in the export and send it to the dev team. Then share it with the QA team.",
+            # Read composed on both folds, a Korean remark is a remark anywhere.
+            "Redact the PII in the export and send it 빨리 to the dev team.",
         ):
             with self.subTest(message=message):
                 self.assertFalse(_offered(message))

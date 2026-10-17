@@ -778,9 +778,9 @@ _KOREAN_UNITS = tuple(entry for entry in DATA_SHARE_INTERNAL_UNITS if not entry.
 # "규제기관이 요청한", "보험사를 위한") -- keeps the review.
 _KOREAN_DATA_CONTAINERS = frozenset(
     {
-        "기록", "내역", "데이터", "데이터셋", "덤프", "레코드", "로그", "리스트", "리포트", "명단", "목록", "문서", "백업",
-        "보고서", "사본", "샘플", "스프레드시트", "시트", "엑셀", "열", "원본", "자료", "추출본", "컬럼", "테이블", "파일",
-        "폴더", "표", "필드", "행", *_KOREAN_EXPORT_DESTINATIONS,
+        "기록", "내역", "데이터", "데이터셋", "덤프", "레코드", "로그", "리스트", "리포트", "명단", "목록", "문서", "보고서",
+        "사본", "샘플", "스프레드시트", "시트", "열", "원본", "자료", "추출본", "컬럼", "테이블", "표", "필드", "행",
+        *_KOREAN_EXPORT_DESTINATIONS,
     }
 )
 _KOREAN_DATA_FIELDS = frozenset(
@@ -955,12 +955,12 @@ def _korean_acts(word: str) -> bool:
 def _korean_stays_inside(request: KoreanRequest, text: str, shielded: bool) -> bool:
     """Whether every place the data goes, in every sentence, is proven inside the company ("개발팀에", "사내 위키에", "엑셀로").
 
-    The request's sentence, and each one after it that is more than remarks
-    ("급해요.", "감사합니다."): a later request is read like the first
-    (`_korean_read_inside`: "... 개발팀에 보내줘. 협력사에도 공유해줘." leaves),
-    and a later sentence that asks nothing keeps the review when it names a
-    place outside or a party acting ("... 개발팀에 보내줘. 보험사가 볼 거야.").
-    So do an English recipient anywhere ("vendor team에") and quoted text.
+    The request's sentence, and each one after it: a later request is read
+    like the first (`_korean_read_inside`: "... 개발팀에 보내줘. 협력사에도
+    공유해줘." leaves), and a later sentence that asks nothing keeps the review
+    when it names a place outside or a party acting ("... 개발팀에 보내줘.
+    보험사가 볼 거야."); a remark ("급해요.", "감사합니다.") names neither. So do
+    an English recipient anywhere ("vendor team에") and quoted text.
     """
     if shielded or set(_LATIN_RUN.findall(text)) & DATA_SHARE_RECIPIENT_TOKENS or _QUOTES.search(text):
         return False
@@ -970,8 +970,6 @@ def _korean_stays_inside(request: KoreanRequest, text: str, shielded: bool) -> b
     named = bool(places)
     for sentence in request.later:
         words = tuple(_words(composed(sentence)))
-        if set(words) <= _REMARKS:
-            continue
         later = korean_request(sentence)
         later_places = _korean_read_inside(later) if later is not None else _korean_places(words)
         if later_places is None or (later is None and any(_korean_acts(word) for word in words)):
