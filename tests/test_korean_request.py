@@ -103,6 +103,8 @@ class KoreanRequestTests(unittest.TestCase):
             # An English apostrophe opens and closes nothing, on either fold.
             ("고객 정보 마스킹해서 Acme's team에 보내줘. It's urgent.", "고객 정보 마스킹해서 acme s team에 보내줘"),
             ("고객 정보 마스킹해서 Acme's team에 보내줘", "고객 정보 마스킹해서 acme s team에 보내줘"),
+            # Nor one after a digit ("2024's"): the quote is the one around 급함.
+            ("고객 정보 마스킹해서 2024's 리포트 팀에 보내줘. '급함'", "고객 정보 마스킹해서 2024 s 리포트 팀에 보내줘"),
         ):
             for fold in ("NFC", "NFD"):
                 with self.subTest(message=message, fold=fold):
