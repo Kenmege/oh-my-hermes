@@ -338,7 +338,9 @@ slash command's output in the transcript, runs a `!` line in Hermes' shell
 lets you interrupt (`x`) or steer (`s`) one subagent from the agent list,
 lists an approval's or a question's choices where the prompt was, shows
 each tool call as one Claude Code style `⏺ name(args)` row with what it
-printed under `⎿` (a read as one line, `Read 715 lines`), and marks
+printed under `⎿` (a read as one line, `Read 715 lines`), says what Hermes
+is doing as Claude Code does (`✶ Analyzing… (12s · ↓1.2k tokens)` with a key
+tip under it), and marks
 outcomes on green and red bands (the light colours and the bands
 need a terminal that reports its background, a `COLORFGBG` that names it,
 or `/theme light|dark`). Bare

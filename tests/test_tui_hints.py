@@ -58,7 +58,7 @@ class QuestionKeyTests(unittest.TestCase):
 
     def test_without_a_question_the_working_row_still_offers_the_interrupt(self) -> None:
         app, _client = make_app(busy=True)
-        self.assertIn("esc to interrupt", line_text(app._tail(100)[-1]))
+        self.assertIn("esc to interrupt", line_text(app._tail(100)[-2]))  # the working row, its tip under it
         self.assertIn("esc interrupt", mode_row(app))
 
 

@@ -16,9 +16,17 @@ from unittest import mock
 from _tui_lines import line_text
 from test_tui_modes import SID, make_app
 from test_tui_panels import hud_payload
-from omh.tui.app import REDUCED_TICK_SECONDS, SWEEP_CLUSTERS, TICK_SECONDS, App, reduced_motion, working_spans
+from omh.tui.app import (
+    REDUCED_TICK_SECONDS,
+    SWEEP_CLUSTERS,
+    TICK_SECONDS,
+    WORKING_GLYPHS,
+    App,
+    reduced_motion,
+    working_spans,
+)
 from omh.tui.gateway import Event
-from omh.tui.panels import SPINNER_FRAMES, HudSnapshot, panel_lines, status_segments
+from omh.tui.panels import HudSnapshot, panel_lines, status_segments
 from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.theme import theme_named
@@ -117,7 +125,7 @@ class PulseTests(unittest.TestCase):
         app._on_event(ev("message.start"))
         app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="ls"))
         clock.now += PULSE_SECONDS + 0.1
-        *_rest, tool, _working = app._tail(80)
+        *_rest, tool, _working, _tip = app._tail(80)
         self.assertEqual(mark(tool).style, THEME.dim)
 
     def test_without_a_clock_the_mark_holds_the_accent(self) -> None:
@@ -191,7 +199,7 @@ class SweepTests(unittest.TestCase):
         rows = []
         for _ in range(2):
             clock.now += TICK_SECONDS
-            rows.append(app._tail(80)[-1])
+            rows.append(app._tail(80)[-2])  # the working row, its tip under it
         self.assertEqual(line_text(rows[0])[2:], line_text(rows[1])[2:])  # past the spinner, the same words
         self.assertNotEqual(rows[0][2:], rows[1][2:])  # in a different light
         self.assertEqual(rows[0][0].style, THEME.accent)
@@ -218,12 +226,12 @@ class ReducedMotionTests(unittest.TestCase):
         seen = set()
         for _ in range(12):
             clock.now += PULSE_SECONDS / 2
-            *_rest, tool, working = app._tail(80)
+            *_rest, tool, working, _tip = app._tail(80)
             seen.add((mark(tool).style, tuple(working)))
         self.assertEqual(len(seen), 1)  # the same rows at every moment (this turn has no start time to count from)
         ((style, working),) = seen
         self.assertEqual(style, THEME.accent)
-        self.assertTrue(line_text(working).startswith(f"{SPINNER_FRAMES[0]} Reading the router (0s"))
+        self.assertTrue(line_text(working).startswith(f"{WORKING_GLYPHS[0]} Reading the router… (0s"))
         self.assertFalse([span for span in working if span.style.bold])
 
     def test_the_screen_repaints_once_a_second_instead_of_ten_times(self) -> None:

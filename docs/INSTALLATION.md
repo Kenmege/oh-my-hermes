@@ -584,11 +584,15 @@ run and approval decision stays Hermes'; the screen is OMH's.
   above them. An edit's diff hangs under the same `⎿`, and a long diff counts
   its rest the same way. Ctrl+O opens the whole transcript with every detail
   (thinking, tool output, whole diffs) in the pager, at its end.
-- While a turn runs, the working row reads
-  `⠋ <what Hermes is doing> (12s · ↓1.2k tokens · esc to interrupt)`, the
-  tokens being what the turn has written so far. Once you interrupt it (Esc
-  or Ctrl+C on an empty composer) it reads `interrupting… (12s)` until Hermes
-  has stopped the turn. What you queued behind that turn is not sent then:
+- While a turn runs, the working row reads as Claude Code's does,
+  `✶ Synthesizing… (1m 24s · ↓4.2k tokens · thinking with high effort · esc
+  to interrupt)`: a glyph that turns, what Hermes says it is doing as a verb
+  (its kaomoji and dots left out, `Working…` while it says nothing), the
+  time, the tokens the turn has written so far, and the reasoning effort when
+  the session reports one. On a terminal 16 rows tall or more a tip sits
+  under it, one a turn, each naming a key (`⎿  Tip: ctrl+o shows the whole
+  transcript`). Once you interrupt it (Esc or Ctrl+C on an empty composer)
+  it reads `✻ interrupting… (12s)` until Hermes has stopped the turn. What you queued behind that turn is not sent then:
   it comes back into the composer, as Claude Code does it, joined in order;
   a queued `!` line, which is never joined to a prompt, and what follows it
   stay queued (`held · ↑ edit`) until you send your next
@@ -622,8 +626,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
     turn's done line). Only the live region at the bottom
     moves; what reaches scrollback is the settled mark, never a frame of a
     pulse.
-  - The working row's spinner turns and a highlight sweeps across what
-    Hermes is doing, beside the elapsed time and the tokens written.
+  - The working row's glyph turns (`· ✢ ✳ ✶ ✻ ✽`) and a highlight sweeps
+    across its verb, beside the elapsed time and the tokens written.
   - Your prompt sits on a tinted band behind `›` that reaches the right edge
     (painted by the terminal's erase, so a copy picks up no trailing
     spaces), when the terminal reported its background; a prompt the queue

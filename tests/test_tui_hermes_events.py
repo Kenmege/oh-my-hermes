@@ -133,10 +133,10 @@ class MoaTests(unittest.TestCase):
         app, client = make_app(busy=True)
         app._on_event(Event("message.start", SID, {}))
         app._on_event(Event("moa.progress", SID, {"label": "gpt-6.1-sol", "refs_done": 2, "refs_total": 3}))
-        self.assertTrue([row for row in drawn(app) if "working… · MoA: refs 2/3" in row])
+        self.assertTrue([row for row in drawn(app) if "Working… · MoA: refs 2/3" in row])
         app._on_event(Event("moa.aggregating", SID, {"aggregator": "opus"}))  # read by nothing: the reply follows
         app._on_event(Event("moa.phase", SID, {"phase": "aggregator", "refs_done": 3, "refs_total": 3}))
-        self.assertTrue([row for row in drawn(app) if "working… · MoA: aggregating…" in row])
+        self.assertTrue([row for row in drawn(app) if "Working… · MoA: aggregating…" in row])
         app._on_event(Event("message.complete", SID, {"text": "Done.", "status": "complete"}))
         self.assertEqual(app.transcript.moa, "")
         self.assertEqual(client.calls, [])

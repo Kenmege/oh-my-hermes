@@ -1931,7 +1931,8 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(screen[top - 3].rstrip(), "⧗ fix the failing test")
         self.assertTrue(screen[top - 2].startswith("⧗ then update the changelog"))
         self.assertTrue(screen[top - 2].rstrip().endswith("↑ edit"))
-        self.assertIn("esc to interrupt", screen[top - 4])  # the turn's activity row stays above them
+        self.assertTrue(screen[top - 4].startswith("  ⎿  Tip: "), screen)
+        self.assertIn("esc to interrupt", screen[top - 5])  # the turn's activity row and its tip stay above them
 
     def test_a_completion_menu_keeps_the_rows_left_and_stays_above_the_queue(self) -> None:
         app, _client = make_app(busy=True, rows=24)

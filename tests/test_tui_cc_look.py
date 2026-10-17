@@ -1,4 +1,4 @@
-"""Round 4, the Claude Code look in the transcript: per-call `⏺` rows, results under `⎿`, summarised reads.
+"""Round 4, the Claude Code look in the transcript: per-call `⏺` rows, results under `⎿`, the working row.
 
 Each tool call is one row: a `⏺` in its state's colour (the accent while it
 runs, green once done, red when it failed or was denied), the tool's name and
@@ -6,15 +6,23 @@ what it ran on in parentheses, its duration at the end. What it printed goes
 under `  ⎿  `; a read or a load says in one line what it read instead of
 echoing its first lines. Result shapes are Hermes 6c61c3e27d's
 (`tools/file_tools.py`, `tools/skills_tool.py`, `tools/file_operations_common.py`).
+
+While a turn runs the working row reads `✶ Synthesizing… (1m 24s · ↓4.2k
+tokens · thinking with high effort · esc to interrupt)`: a glyph that turns,
+Hermes' activity as a verb with its kaomoji and dots taken off, and under it
+one tip a turn (`  ⎿  Tip: …`) where the rows allow.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 import unittest
+from unittest import mock
 
 from _tui_lines import line_text, lines_text
+from test_tui_modes import drawn, make_app, type_text
 from omh.skin_pack import SKIN_THEMES
+from omh.tui.app import INTERRUPTING, TICK_SECONDS, TIP_MIN_ROWS, TIPS, WORKING_GLYPHS, working_verb
 from omh.tui.diff_view import DIFF_ADDED, DIFF_FILE, DIFF_HUNK, DIFF_INDENT, DiffLine, diff_rows
 from omh.tui.gateway import Event
 from omh.tui.style import Span
@@ -164,6 +172,122 @@ class SummarisedReadTests(unittest.TestCase):
         self.assertEqual(completed("terminal", {"output": "hello\nworld", "exit_code": 0})[1:], ["  ⎿  hello", "     world"])
 
 
+class WorkingVerbTests(unittest.TestCase):
+    def test_hermes_spinner_text_loses_its_face_and_its_dots(self) -> None:
+        # Hermes 6c61c3e27d writes f"{face} {verb}..." (agent/turn_iteration_prep.py), faces from KAWAII_THINKING
+        # and verbs from THINKING_VERBS or a locale's display.thinking_verbs, some of them two words.
+        for text, verb in (("(⌐■_■) analyzing...", "Analyzing"), ("( •_•)>⌐■-■ brainstorming...", "Brainstorming"),
+                           ("( ͡° ͜ʖ ͡°) pondering...", "Pondering"), ("٩(๑❛ᴗ❛๑)۶ kafa yoruyor...", "Kafa yoruyor"),
+                           ("(°ロ°) 思案中...", "思案中"), ("ಠ_ಠ synthesizing...", "Synthesizing")):
+            with self.subTest(text=text):
+                self.assertEqual(working_verb(text), verb)
+
+    def test_other_text_loses_only_a_glyph_before_its_words(self) -> None:
+        wait = "⏳ waiting on deepseek/deepseek-v4 — no response for 30s"  # agent/chat_completion_wait_notice.py
+        self.assertEqual(working_verb(wait), "Waiting on deepseek/deepseek-v4 — no response for 30s")
+        self.assertEqual(working_verb("compressing context…"), "Compressing context")
+        self.assertEqual(working_verb("Reading the router"), "Reading the router")
+
+    def test_a_face_alone_or_nothing_leaves_no_verb(self) -> None:
+        for text in ("(◔_◔)...", "", "   ", "..."):
+            with self.subTest(text=text):
+                self.assertEqual(working_verb(text), "")
+
+
+def working_rows(app, cols: int = 100) -> list[str]:
+    """The rows under the live transcript while a turn runs: the working row, then any tip."""
+    return [line for line in lines_text(app._tail(cols)) if line][-2:]
+
+
+class WorkingRowTests(unittest.TestCase):
+    def busy(self, rows: int = 24, **options: object):
+        clock = Clock()
+        app, _client = make_app(busy=True, rows=rows, clock=clock, **options)
+        app.busy_since = clock.now
+        return app, clock
+
+    def test_the_row_reads_glyph_verb_and_its_facts(self) -> None:
+        app, clock = self.busy()
+        app.transcript.activity = "(⌐■_■) synthesizing..."
+        app.effort = "xhigh"
+        app.usage_output, app.turn_output_base = 4200, 0
+        clock.now += 84
+        working = working_rows(app)[0]
+        self.assertEqual(working[2:], "Synthesizing… (1m 24s · ↓4.2k tokens · thinking with xhigh effort · esc to interrupt)")
+        self.assertIn(working[0], WORKING_GLYPHS)
+
+    def test_without_words_from_hermes_it_is_working_and_an_unknown_effort_is_left_out(self) -> None:
+        for effort in ("", "default", "none"):  # none: thinking is off
+            with self.subTest(effort=effort):
+                app, _clock = self.busy()
+                app.effort = effort
+                self.assertEqual(working_rows(app)[0][2:], "Working… (0s · esc to interrupt)")
+        app, _clock = self.busy()
+        app.transcript.activity, app.transcript.status = "(◔_◔)...", "compressing context"
+        self.assertTrue(working_rows(app)[0][2:].startswith("Compressing context… (0s"))
+
+    def test_the_glyph_turns_through_claude_codes_set_and_holds_under_reduced_motion(self) -> None:
+        app, clock = self.busy()
+        seen = []
+        for _ in range(len(WORKING_GLYPHS)):
+            clock.now += TICK_SECONDS
+            seen.append(app._tail(100)[-2][0])
+        self.assertEqual({span.text for span in seen}, set("·✢✳✶✻✽"))
+        self.assertEqual({span.style for span in seen}, {THEME.accent})
+        still, clock = self.busy(environ={"OMH_TUI_REDUCED_MOTION": "1"})
+        held = set()
+        for _ in range(len(WORKING_GLYPHS)):
+            clock.now += TICK_SECONDS
+            held.add(still._tail(100)[-2][0].text)
+        self.assertEqual(held, {WORKING_GLYPHS[0]})
+
+    def test_the_interrupting_row_lines_up_with_the_working_row(self) -> None:
+        app, _clock = self.busy()
+        app.interrupting = True
+        (row,) = [line for line in app._tail(100) if INTERRUPTING in line_text(line)]
+        self.assertEqual(line_text(row), f"{WORKING_GLYPHS[0]} {INTERRUPTING} (0s)")
+        self.assertEqual((row[0].style, row[2].style), (THEME.warn, THEME.warn))
+
+    def test_one_tip_a_turn_under_the_working_row_in_turn(self) -> None:
+        app, clock = self.busy()
+        tips = []
+        for _ in range(len(TIPS) + 1):
+            working, tip = working_rows(app)
+            self.assertTrue(working[2:].startswith("Working…"), working)
+            self.assertEqual(working_rows(app)[1], tip)  # the same tip all turn
+            tips.append(tip)
+            clock.now += 30
+            app.busy_since = clock.now  # the next turn
+        self.assertEqual(tips[:-1], [f"  ⎿  Tip: {text}" for text in TIPS])
+        self.assertEqual(tips[-1], tips[0])
+
+    def test_no_tip_on_a_short_terminal_or_without_the_working_row(self) -> None:
+        short, _clock = self.busy(rows=TIP_MIN_ROWS - 1)
+        self.assertFalse([line for line in lines_text(short._tail(100)) if "Tip:" in line])
+        tall, _clock = self.busy(rows=TIP_MIN_ROWS)
+        self.assertTrue([line for line in lines_text(tall._tail(100)) if "Tip:" in line])
+        waiting, clock = self.busy()  # a question: the waiting row stands in its place
+        waiting.waiting_since = clock.now
+        self.assertFalse([line for line in lines_text(waiting._tail(100)) if "Tip:" in line])
+        stopping, _clock = self.busy()
+        stopping.interrupting = True
+        self.assertFalse([line for line in lines_text(stopping._tail(100)) if "Tip:" in line])
+
+    def test_the_tip_stays_as_a_menu_or_the_agent_list_opens_and_takes_no_row_of_theirs(self) -> None:
+        app, _clock = self.busy(rows=TIP_MIN_ROWS)
+        type_text(app, "/")
+        screen = drawn(app)
+        self.assertTrue([line for line in screen if "Tip:" in line], screen)  # nothing above the composer moved
+        menu = [line for line in screen if line.startswith(" /")]
+        self.assertEqual(len(menu), 5, screen)
+        alone, _clock = self.busy(rows=TIP_MIN_ROWS)
+        type_text(alone, "/")
+        with mock.patch("omh.tui.app.TIP_MIN_ROWS", TIP_MIN_ROWS + 1):  # the same frame with no tip
+            self.assertEqual([line for line in drawn(alone) if line.startswith(" /")], menu)
+        listing, _clock = self.busy()
+        listing.list_selected = 0  # the agent list has the keys
+        self.assertTrue([line for line in lines_text(listing._tail(100)) if "Tip:" in line])
+
 def installation() -> str:
     return " ".join((Path(__file__).resolve().parents[1] / "docs" / "INSTALLATION.md").read_text(encoding="utf-8").split())
 
@@ -186,6 +310,24 @@ class DocumentedLookTests(unittest.TestCase):
         for line in said:
             with self.subTest(line=line):
                 self.assertTrue(f"`{line.removeprefix('  ⎿  ')}`" in prose, line)
+
+    def test_installation_shows_the_working_row_the_code_draws(self) -> None:
+        prose = installation()
+        clock = Clock()
+        app, _client = make_app(busy=True, clock=clock)
+        app.busy_since = clock.now
+        app.transcript.activity, app.effort = "(⌐■_■) synthesizing...", "high"
+        app.usage_output, app.turn_output_base = 4200, 0
+        clock.now += 84
+        working, tip = working_rows(app)
+        self.assertTrue(f"`✶ {working[2:]}`" in prose, working)
+        self.assertTrue(f"(`{' '.join(tip.split())}`)" in prose, tip)
+        self.assertTrue("(`· ✢ ✳ ✶ ✻ ✽`)" in prose)
+        self.assertEqual(set(WORKING_GLYPHS), set("·✢✳✶✻✽"))
+        self.assertTrue(f"On a terminal {TIP_MIN_ROWS} rows tall or more a tip sits under it" in prose)
+        app.interrupting, app.usage_output = True, None  # the example has written nothing yet
+        (row,) = [line for line in lines_text(app._tail(100)) if INTERRUPTING in line]
+        self.assertTrue(f"`{row.replace('1m 24s', '12s')}`" in prose, row)
 
 
 if __name__ == "__main__":

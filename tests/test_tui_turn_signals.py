@@ -1,6 +1,6 @@
 """Turn signals: the working row's tokens, the done line that closes a turn, the end-of-turn alert, the title.
 
-The working row reads `⠋ verb (12s · ↓1.2k tokens · esc to interrupt)`,
+The working row reads `✻ Verb… (12s · ↓1.2k tokens · esc to interrupt)`,
 where the tokens are what the turn has written so far (the `output` counter
 of Hermes' `session.usage`, from where it stood when the turn began). A turn
 closes with a done line, `✻ 34s · 3 tools · ↓1.2k`. A turn that ran 10 s or
@@ -61,10 +61,10 @@ class WorkingRowTests(unittest.TestCase):
         app._send_prompt("go")
         app._on_event(Event("message.start", SID, {}))
         clock.now += 12
-        row = line_text(app._tail(80)[-1])
+        row = line_text(app._tail(80)[-2])  # the working row, its tip under it
         self.assertIn("(12s · esc to interrupt)", row)  # nothing written yet
         app._on_event(Event("session.usage", SID, usage(1700)))
-        self.assertIn("(12s · ↓1.2k tokens · esc to interrupt)", line_text(app._tail(80)[-1]))
+        self.assertIn("(12s · ↓1.2k tokens · esc to interrupt)", line_text(app._tail(80)[-2]))
 
 
     def test_the_first_turn_of_a_fresh_session_counts_its_tokens_in_hermes_recorded_order(self) -> None:
@@ -78,7 +78,7 @@ class WorkingRowTests(unittest.TestCase):
         for params in rows:
             app._on_event(Event(params["type"], SID, params.get("payload", {})))
             if params["type"] == "session.usage":
-                working.append(line_text(app._tail(80)[-1]))
+                working.append(line_text(app._tail(80)[-2]))
         self.assertIn("↓63 tokens", working[0])
         summary = [block for block in app.transcript.blocks if isinstance(block, TurnSummaryBlock)]
         self.assertEqual([block.output_tokens for block in summary], [238])
@@ -90,7 +90,7 @@ class WorkingRowTests(unittest.TestCase):
         app._send_prompt("go")
         for out in (0, 63):
             app._on_event(Event("session.usage", "live-2", usage(out)))
-        self.assertIn("↓63 tokens", line_text(app._tail(80)[-1]))
+        self.assertIn("↓63 tokens", line_text(app._tail(80)[-2]))
 
 
 class DoneLineTests(unittest.TestCase):

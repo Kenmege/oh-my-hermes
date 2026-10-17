@@ -12,6 +12,15 @@ All notable changes will be documented here.
   does. A read or a load no longer echoes the first lines it read: it says
   `Read 715 lines` (`read_file`), `loaded skill omh-docs` (`skill_view`) or
   `12 matches` (`search_files`).
+- **The OMH TUI's working row reads as Claude Code's.** It was a braille
+  spinner and Hermes' kaomoji text (`⠋ (⌐■_■) analyzing... (12s)`). It is now
+  `✶ Analyzing… (12s · ↓1.2k tokens · thinking with high effort · esc to
+  interrupt)`: a glyph turning through `· ✢ ✳ ✶ ✻ ✽` (still under reduced
+  motion), Hermes' verb without its face or dots (`Working…` when it gives
+  none), and the effort when the session reports one. A tip naming a key sits
+  under it, one a turn, on a terminal 16 rows tall or more
+  (`⎿  Tip: ctrl+o shows the whole transcript`); it is local text and nothing
+  is sent. `interrupting…` lines up under the same glyph column.
 - **A plural possessive no longer hides the rest of a message from routing.**
   The routing masker read the `'` of "the customers' export" as an opening
   quote. Nothing closed it, so everything after it was masked and no matcher

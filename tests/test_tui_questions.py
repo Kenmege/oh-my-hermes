@@ -312,7 +312,7 @@ class WaitingTimeTests(unittest.TestCase):
 
     def test_the_working_row_says_it_waits_on_you_with_one_clock(self) -> None:
         app, _client, now = self.clocked()
-        self.assertTrue([row for row in drawn(app) if "working… (10s" in row])
+        self.assertTrue([row for row in drawn(app) if "Working… (10s" in row])
         app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
         now[0] = 111.0
         screen = drawn(app)

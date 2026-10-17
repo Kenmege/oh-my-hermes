@@ -164,7 +164,7 @@ from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .model_picker import KEYS as MODEL_PICKER_KEYS
 from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows
-from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, plan_state, plan_text, status_segments
+from .panels import HudPoller, HudSnapshot, panel_lines, plan_state, plan_text, status_segments
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
 from .screen import CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
 from .session_picker import KEYS as SESSION_PICKER_KEYS
@@ -210,6 +210,8 @@ from .transcript import (
     NOTICE_OK,
     NOTICE_WARN,
     OUTPUT_FAILED,
+    OUTPUT_INDENT,
+    OUTPUT_MARK,
     STEER_QUEUED,
     STEER_REFUSED,
     AssistantBlock,
@@ -234,6 +236,23 @@ TICK_SECONDS = 0.1
 REDUCED_TICK_SECONDS = 1.0
 # The highlight that sweeps across what Hermes is doing on the working row, in clusters, one cluster a tick.
 SWEEP_CLUSTERS = 3
+# The working row's glyph, one a tick: Claude Code's `· ✢ ✳ ✶ ✻ ✽` up and back down, starting at the `✻` that
+# reduced motion holds (frame 0).
+WORKING_GLYPHS = "✻✽✻✶✳✢·✢✳✶"
+WORKING_VERB = "Working"  # the verb while Hermes says nothing it is doing
+# The end of Hermes' own spinner text, `f"{face} {verb}..."` (6c61c3e27d `agent/turn_iteration_prep.py`).
+SPINNER_DOTS = "..."
+THINKING_EFFORT = "thinking with {} effort"
+# One under the working row a turn, in turn, from the keys table; on a terminal of TIP_MIN_ROWS rows or more.
+TIPS = (
+    "ctrl+o shows the whole transcript",
+    "⇧⇥ turns on accept all, then plan mode",
+    "ctrl+t steps the reasoning effort",
+    "esc esc between turns rewinds to an earlier prompt",
+    "start a line with ! to run it in the shell",
+    "ctrl+r searches your input history",
+)
+TIP_MIN_ROWS = 16
 # Nothing due, nothing held: the loop still wakes this often. Gateway news and a new HUD snapshot wake it sooner.
 IDLE_READ_SECONDS = 1.0
 # For this long after a frame the loop does not wake for the gateway: what arrives meanwhile shares the next
@@ -837,6 +856,31 @@ def reduced_motion(environ: Mapping[str, str]) -> bool:
     return environ.get("OMH_TUI_REDUCED_MOTION", "") not in ("", "0") or bool(environ.get("NO_COLOR"))
 
 
+def working_verb(text: str) -> str:
+    """Hermes' activity text as the working row's verb, its first letter capitalised; "" when no words are left.
+
+    Hermes' own spinner text is `"{face} {verb}..."`, a kaomoji and one or
+    more words: of that shape only the words at its end made of letters alone
+    are kept. Other text (a wait notice, `⏳ waiting on <model> — …`, a
+    status) loses only the words before its first letter or digit. Trailing
+    dots and ellipses go either way.
+    """
+    stripped = text.strip()
+    words = stripped.rstrip(".…").split()
+    if stripped.endswith(SPINNER_DOTS):
+        kept: list[str] = []
+        for word in reversed(words):
+            if not all(unicodedata.category(char)[0] in "LM" for char in word):
+                break
+            kept.insert(0, word)
+        words = kept
+    else:
+        while words and not any(char.isalnum() for char in words[0]):
+            words.pop(0)
+    verb = " ".join(words)
+    return verb[:1].upper() + verb[1:]
+
+
 def working_spans(text: str, frame: int, theme: Theme) -> list[Span]:
     """What Hermes is doing, muted, with a bright highlight `SWEEP_CLUSTERS` wide at `frame`'s place; it sweeps
     across and starts over after a pause as long as itself. Frame 0 falls in that pause, so the first frame,
@@ -1152,6 +1196,8 @@ class App(ModesMixin, AgentViewMixin):
         self.in_launch_session = True  # the logo is the start's: it is not repeated for /new or a switch
         self.redraw_at: float | None = None  # when a settled resize redraws everything
         self.busy_since = 0.0  # when the running turn (or the prompt still waiting for it) started
+        self.tip_turn: float | None = None  # the turn (its `busy_since`) whose working row shows TIPS[tip_index]
+        self.tip_index = -1  # moves on as the next turn's working row first shows a tip
         self.turn_waited = 0.0  # the part of that turn questions waited on the person, the waits that ended
         self.waiting_since: float | None = None  # when the open question (or the first of those back to back) opened
         self.attachments: list[Attachment] = []  # images the gateway queued for the next prompt
@@ -4063,22 +4109,48 @@ class App(ModesMixin, AgentViewMixin):
             elapsed = elapsed_text(now - (self.busy_since or now))
             tokens = self._turn_tokens()
             written = f" · ↓{compact_count(tokens)} tokens" if tokens else ""
-            lines.append(truncate_line((Span(INTERRUPTING, self.theme.warn), Span(f" ({elapsed}{written})", self.theme.muted)), cols))
+            row = (Span(WORKING_GLYPHS[0], self.theme.warn), Span(" "), Span(INTERRUPTING, self.theme.warn),
+                   Span(f" ({elapsed}{written})", self.theme.muted))
+            lines.append(truncate_line(row, cols))
         elif self._busy():
-            text = self.transcript.activity or self.transcript.status or "working…"
+            verb = working_verb(self.transcript.activity) or working_verb(self.transcript.status) or WORKING_VERB
+            text = f"{verb}…"
             if self.transcript.moa:
                 text = f"{text} · {self.transcript.moa}"
             frame = self._spinner_frame()
-            spinner = SPINNER_FRAMES[frame % len(SPINNER_FRAMES)]
-            elapsed = elapsed_text(now - (self.busy_since or now))
+            facts = [elapsed_text(now - (self.busy_since or now))]
             tokens = self._turn_tokens()
-            written = f" · ↓{compact_count(tokens)} tokens" if tokens else ""
-            interrupt = f" · {INTERRUPT_HINT}" if self._esc_interrupts() else ""  # else Esc means something else now
-            doing = working_spans(text, frame, self.theme)
-            row = (Span(spinner, self.theme.accent), Span(" "), *doing,
-                   Span(f" ({elapsed}{written}{interrupt})", self.theme.muted))
+            if tokens:
+                facts.append(f"↓{compact_count(tokens)} tokens")
+            if self.effort in contract.REASONING_LEVELS and self.effort != "none":  # `none` is thinking off
+                facts.append(THINKING_EFFORT.format(self.effort))
+            if self._esc_interrupts():  # else Esc means something else now
+                facts.append(INTERRUPT_HINT)
+            row = (Span(WORKING_GLYPHS[frame % len(WORKING_GLYPHS)], self.theme.accent), Span(" "),
+                   *working_spans(text, frame, self.theme), Span(f" ({' · '.join(facts)})", self.theme.muted))
             lines.append(truncate_line(row, cols))
+            tip = self._tip_line(cols)
+            if tip is not None:
+                lines.append(tip)
         return lines
+
+    def _tip_line(self, cols: int) -> Line | None:
+        """The working row's tip, `  ⎿  Tip: …`, the same all turn and the next one in TIPS the turn after; None on a
+        terminal under TIP_MIN_ROWS rows.
+
+        It is the tail's last row, and the region gives the slot (a question, a
+        picker, the agent list, a menu, the panel) its rows before the tail's,
+        so the tip takes a row from the transcript above it, never from them;
+        and it stays while they open, so the rows under it do not move.
+        """
+        if self.size[1] < TIP_MIN_ROWS:
+            return None
+        if self.tip_turn != self.busy_since:
+            self.tip_turn, self.tip_index = self.busy_since, self.tip_index + 1
+        tip = TIPS[self.tip_index % len(TIPS)]
+        return truncate_line(
+            (Span(OUTPUT_INDENT), Span(OUTPUT_MARK, self.theme.dim), Span(f"Tip: {tip}", self.theme.hint)), cols
+        )
 
     def _slot_lines(self, cols: int, rows: int) -> list[Line]:
         """The slot's rows; with the composer hidden it has the composer frame's rows too (`layout.choice_cap`)."""

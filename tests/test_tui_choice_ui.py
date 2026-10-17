@@ -474,7 +474,7 @@ class PickerTests(unittest.TestCase):
         type_text(app, "re")
         screen = drawn(app)
         self.assertTrue(any(line.startswith("↳ you: run the tools") for line in screen), screen)
-        self.assertTrue(any("working" in line for line in screen), screen)
+        self.assertTrue(any("Working…" in line for line in screen), screen)
         row = status_row(screen) - 2
         self.assertEqual(screen[row], " › re")
         self.assertEqual(app.terminal.screen.cursor, (row, 5))  # type: ignore[attr-defined]
