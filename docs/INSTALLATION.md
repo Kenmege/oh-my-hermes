@@ -661,10 +661,14 @@ run and approval decision stays Hermes'; the screen is OMH's.
     (`✻ 34s · 3 tools · ↓1.2k`), so the start of the next one is easy to
     find when you scroll back.
   - Green and red mark outcomes as full-row bands (each row's background is
-    erased to the right edge, so a copy carries no trailing spaces). The answer you gave an approval is written above
-    the call it was about: allowed (`✓ allowed once · <command>`) on a light
-    green band, denied (`✗ denied · <command>`) on a light red one. So is
-    the answer you gave any other question: the label you picked or what you
+    erased to the right edge, so a copy carries no trailing spaces). The answer you gave an approval is written
+    under the call it was about, as the first row under its `⏺`: allowed
+    (`⎿  ✓ allowed once · <command>`) on a light green band, denied
+    (`⎿  ✗ denied · <command>`) on a light red one. A question names no call,
+    so the answer goes under the last call still running (for a clarify
+    question, the last running `clarify`); with none running, such as a
+    subagent's question after its turn ended, it is a row of its own. The
+    answer you gave any other question goes the same way: the label you picked or what you
     typed (`✓ red · Which colour?`, ticked labels joined with commas, empty
     items of a multi-select answer left out, as Hermes leaves them out), and
     for a sudo password or a secret only `✓ answered · sudo password` or

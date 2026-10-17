@@ -15,6 +15,14 @@ All notable changes will be documented here.
   same way, with a dim `⏺` (Hermes' record keeps no outcome) and an edit's
   diff under it, in place of the `· read_file  README.md` rows with a blank
   row between each.
+- **An answer you gave Hermes reads under the call it was about.** The
+  record of an approval or a question (`✓ allowed once · <command>`,
+  `✓ blue · Which colour?`) was written above the turn's live tool calls, so
+  with one row per call it stood over the first read of the turn. It is now
+  the first row under the call that asked, `⎿  ✓ allowed once · <command>`,
+  on the same green or red band; a denial reads `⏺ terminal(…)`, then
+  `⎿  ✗ denied · …`, then Hermes' denial line. With no call running (a
+  subagent's question after its turn), it is still a row of its own.
 - **An OMH TUI diff no longer doubles each changed line.** Hermes pads every
   added and removed line of an edit's diff with spaces, to 143 columns in a
   live patch, so on any narrower terminal each green or red band wrapped into

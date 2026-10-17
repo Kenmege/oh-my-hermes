@@ -96,8 +96,14 @@ class OutcomeBandTests(unittest.TestCase):
         command = CommandBlock("!false", [("partial output", OUTPUT_FAILED), ("exit 1", NOTICE_ERROR)], done=True)
         summarized = ToolGroup([ToolRow("t3", "read_file", "/nope.txt", TOOL_ERROR, duration_s=0.1,
                                         summary="read_file could not open the path", output=("File not found",))], done=True)
+        allowed = ToolGroup([ToolRow("t4", "terminal", "ls", TOOL_OK, duration_s=0.1, output=("a.txt",),
+                                     answers=[("allowed once · ls", NOTICE_OK)])], done=True)
+        refused = ToolGroup([ToolRow("t5", "terminal", "rm -rf ./dist", TOOL_DENIED, duration_s=0.1, output=(self.DENIAL,),
+                                     answers=[("denied · rm -rf ./dist", NOTICE_ERROR)])], done=True)
         return [
             ("ok_band", block_rows(NoticeBlock("allowed once · ls", NOTICE_OK), 60, theme)),  # type: ignore[arg-type]
+            ("ok_band", block_rows(allowed, 60, theme)[1:2]),  # type: ignore[arg-type]  # the answer under its call
+            ("error_band", block_rows(refused, 60, theme)),  # type: ignore[arg-type]  # the call, its answer, its denial
             ("error_band", block_rows(NoticeBlock("denied · rm -rf ./build", NOTICE_ERROR), 60, theme)),  # type: ignore[arg-type]
             ("error_band", block_rows(NoticeBlock("The turn ended with an error.", NOTICE_ERROR), 60, theme)),  # type: ignore[arg-type]
             ("error_band", block_rows(failed, 60, theme)),  # type: ignore[arg-type]
@@ -771,17 +777,17 @@ class ApprovalOutcomeTests(unittest.TestCase):
         return app, client, clock
 
     def outcome(self, app: object) -> tuple[str, object]:
-        (block,) = [block for block in app.transcript.blocks if isinstance(block, NoticeBlock)]  # type: ignore[attr-defined]
-        (row,) = block_rows(block, 80, THEME)
-        return line_text(row), row[0].style
+        """The first row under the call's row, and its mark's style: where the answer is written."""
+        (group,) = app.transcript.blocks  # type: ignore[attr-defined]
+        row = block_rows(group, 80, THEME)[1]
+        return line_text(row), row[2].style
 
-    def test_a_denial_reads_in_red_ahead_of_the_call_and_leaves_it_running(self) -> None:
+    def test_a_denial_reads_in_red_under_the_call_and_leaves_it_running(self) -> None:
         app, client, _clock = self.asked()
         app._on_input(Key(CHAR, "d"))
         self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "deny"}})])
-        self.assertEqual(self.outcome(app), (f"✗ denied · {self.COMMAND}", THEME.error))
-        notice, group = app.transcript.blocks
-        self.assertIsInstance(group, ToolGroup)
+        self.assertEqual(self.outcome(app), (f"  ⎿  ✗ denied · {self.COMMAND}", THEME.error))
+        (group,) = app.transcript.blocks
         self.assertEqual(group.tools[0].status, TOOL_RUNNING)  # Hermes reports what the call did next
 
     def test_allowing_reads_in_green(self) -> None:
@@ -790,7 +796,53 @@ class ApprovalOutcomeTests(unittest.TestCase):
                 app, _client, _clock = self.asked()
                 for key in (*keys, Key(ENTER)):
                     app._on_input(key)
-                self.assertEqual(self.outcome(app), (f"✓ {words} · {self.COMMAND}", THEME.ok))
+                self.assertEqual(self.outcome(app), (f"  ⎿  ✓ {words} · {self.COMMAND}", THEME.ok))
+
+    def test_the_denied_path_reads_in_order_under_its_call(self) -> None:
+        app, _client, _clock = self.asked()
+        app._on_input(Key(CHAR, "d"))
+        blocked = {"output": "", "exit_code": -1, "status": "blocked", "error": None,
+                   "user_summary": "You denied this command — it did not run."}
+        app._on_event(ev("tool.complete", tool_id="t1", name="terminal", duration_s=0.1, result=blocked))
+        app._on_event(ev("message.complete", text="", status="interrupted"))
+        rows = [row for row in lines_text(app.transcript.take_stable_lines(80, REPORTED)) if row]
+        self.assertTrue(rows[0].startswith(f"⏺ terminal({self.COMMAND})"), rows)
+        self.assertEqual(rows[1:4], [f"  ⎿  ✗ denied · {self.COMMAND}", "  ⎿  You denied this command — it did not run.",
+                                     "⚠ Interrupted."])
+
+    def test_the_answer_goes_under_the_call_that_asked_not_the_first_of_the_turn(self) -> None:
+        # Review B: `✓ allowed once · …` stood above `⏺ read_file(README.md)`, the turn's first call.
+        app, _client, clock = self.asked_after_a_read()
+        app._on_input(Key(RIGHT))
+        app._on_input(Key(ENTER))
+        (group,) = app.transcript.blocks
+        rows = lines_text(block_rows(group, 80, THEME))
+        self.assertEqual(rows, ["⏺ read_file(README.md)  0.1s", "  ⎿  Read 1 line", f"⏺ terminal({self.COMMAND})",
+                                f"  ⎿  ✓ allowed once · {self.COMMAND}"])
+
+    def asked_after_a_read(self) -> tuple[object, object, Clock]:
+        clock = Clock()
+        app, client = make_app(busy=True, clock=clock)
+        app._on_event(ev("message.start"))
+        app._on_event(ev("tool.start", tool_id="t0", name="read_file", context="README.md"))
+        app._on_event(ev("tool.complete", tool_id="t0", name="read_file", duration_s=0.1, result={"content": "hello"}))
+        app._on_event(ev("tool.start", tool_id="t1", name="terminal", context=self.COMMAND))
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": self.COMMAND, "description": "delete"}))
+        clock.now += SLOT_ARM_SECONDS + 0.1
+        return app, client, clock
+
+    def test_a_clarify_answer_goes_under_the_running_clarify_call(self) -> None:
+        clock = Clock()
+        app, _client = make_app(busy=True, clock=clock)
+        app._on_event(ev("message.start"))
+        app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="sleep 30"))
+        app._on_event(ev("tool.start", tool_id="t2", name="clarify", context="Which colour?"))
+        question = {"questions": [{"qid": "q0", "question": "Which colour?", "choices": ["red", "blue"]}]}
+        app._on_server_request(ServerRequest("srq-2", "clarify", question))
+        clock.now += SLOT_ARM_SECONDS + 0.1
+        app._on_input(Key(ENTER))
+        (group,) = app.transcript.blocks
+        self.assertEqual([tool.answers for tool in group.tools], [[], [("red · Which colour?", NOTICE_OK)]])
 
     def test_over_a_streaming_reply_the_answer_waits_for_the_boundary(self) -> None:
         clock = Clock()

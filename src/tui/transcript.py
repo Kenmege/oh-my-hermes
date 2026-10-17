@@ -241,6 +241,8 @@ class ToolRow:
     # failed tool, its error's first line.
     output: tuple[str, ...] = ()
     output_more: int = 0
+    # What the person answered a question this call asked, as (words, notice level), drawn under its row.
+    answers: list[tuple[str, str]] = field(default_factory=list)
 
     def diff_lines(self, hold: bool = False) -> tuple[DiffLine, ...]:
         """The diff colour-stripped and classified, its file names relative to `diff_root`.
@@ -414,6 +416,7 @@ _ERROR_KEYS = ("error", "stderr", "user_summary", "output")
 # A denied call says so in the person's words first; `error` there is what Hermes told the model.
 _DENIED_KEYS = ("user_summary", "error", "output")
 DENIED_LINE = "denied"  # a denied call whose result says nothing more
+CLARIFY_TOOL = "clarify"  # the Hermes tool a clarify question comes from
 # Hermes' clarify `outcome` for a question that went unanswered (beside `submitted`), worded for the row under its ✗.
 UNANSWERED_OUTCOMES = {"cancelled": "cancelled", "timed_out": "timed out", "undelivered": "not delivered"}
 TOOL_OUTPUT_ROWS = 3  # shown under a tool row; the details view shows up to TOOL_OUTPUT_KEEP
@@ -759,8 +762,19 @@ def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> lis
     return [truncate_line((*(rest if index else first), span), width) for index, span in enumerate(ordered)]
 
 
+def _answer_rows(text: str, level: str, width: int, theme: Theme) -> list[Line]:
+    """`  ⎿  ✓ allowed once · <command>`: what the person answered, under the call that asked, on its outcome's band."""
+    band = _outcome_band(level, theme)
+    roles = on_band(theme, band) if band is not None else theme
+    mark, style = _notice_style(level, roles)
+    first, rest = _output_leads(roles)
+    rows = _text_rows(text, style, (*first, Span(mark, style)), (*rest, Span(" " * len(mark))), width)
+    return _banded(rows, band) if band is not None else rows
+
+
 def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: float | None = None) -> list[Line]:
-    """Each call's own row (what ran, on what) and what it printed under it; a group with no call shows nothing."""
+    """Each call's own row (what ran, on what), what the person answered it right under that, and what it printed
+    under them; a group with no call shows nothing."""
     rows: list[Line] = []
     band = theme.error_band if theme.error_band.bg is not None else None
     for tool in group.tools:
@@ -773,7 +787,9 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: 
         lines = tool.diff_lines(hold=not group.done) if tool.inline_diff else ()
         if not lines:
             own.extend(_output_rows(tool, width, roles, expanded))
-        rows.extend(_banded(own, band) if failed and band is not None else own)
+        shown = _banded(own, band) if failed and band is not None else own
+        answers = [row for text, level in tool.answers for row in _answer_rows(text, level, width, theme)]
+        rows.extend([shown[0], *answers, *shown[1:]])
         if lines:  # a diff keeps its own bands
             rows.extend(diff_rows(lines, width, theme, full=expanded, lead=_output_leads(theme)[0]))
     return rows
@@ -891,13 +907,24 @@ class Transcript:
         self._version += 1
         return block
 
-    def add_answer(self, text: str, level: str) -> None:
-        """What the person answered Hermes (`✓ allowed once · <command>`), ahead of the tool call it was about.
+    def add_answer(self, text: str, level: str, clarify: bool = False) -> None:
+        """What the person answered Hermes (`✓ allowed once · <command>`), under the tool call it was about.
 
-        A tool group still live has printed nothing yet, so the answer goes in
-        above it; above any other live block it waits for the next boundary,
-        as a steer does, rather than closing it.
+        A request does not name the call that asked, so the answer goes under
+        the live group's last running call: its last running `clarify` for a
+        clarify question's answer (`clarify`), its last running other call for
+        the rest. With no such call it is a row of its own: a tool group still
+        live has printed nothing yet, so it goes in above it; above any other
+        live block it waits for the next boundary, as a steer does, rather than
+        closing it.
         """
+        group = self._live(ToolGroup)
+        tools = group.tools if group is not None else []
+        asked = [row for row in tools if row.status == TOOL_RUNNING and (row.name == CLARIFY_TOOL) == clarify]
+        if asked:
+            asked[-1].answers.append((text, level))
+            self._version += 1
+            return
         block = NoticeBlock(text, level)
         last = self.blocks[-1] if self.blocks else None
         if isinstance(last, ToolGroup) and not last.done and len(self.blocks) - 1 >= self._cursor:
