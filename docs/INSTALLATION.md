@@ -592,7 +592,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - While a turn runs, the working row reads as Claude Code's does,
   `✶ Synthesizing… (1m 24s · ↓4.2k tokens · thinking with high effort · esc
   to interrupt)`: a glyph that turns, what Hermes says it is doing as a verb
-  (its kaomoji and dots left out, `Working…` while it says nothing), the
+  (its kaomoji and dots left out, `Working…` while it says nothing; a notice
+  such as `No response from provider in 120s — reconnecting…` or `Retrying
+  in 5.0s (attempt 1/3)…` keeps its words, cut at the edge), the
   time, the tokens the turn has written so far, and the reasoning effort when
   the session reports one (a row too narrow for all of it leaves the effort
   out first). On a terminal 16 rows tall or more a tip sits

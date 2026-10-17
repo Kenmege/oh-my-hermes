@@ -22,7 +22,9 @@ All notable changes will be documented here.
   `✶ Analyzing… (12s · ↓1.2k tokens · thinking with high effort · esc to
   interrupt)`: a glyph turning through `· ✢ ✳ ✶ ✻ ✽` (still under reduced
   motion), Hermes' verb without its face or dots (`Working…` when it gives
-  none), and the effort when the session reports one. A tip naming a key sits
+  none; a stall or retry notice, `No response from provider in 120s —
+  reconnecting…`, keeps its words), and the effort when the session reports
+  one. A tip naming a key sits
   under it, one a turn, on a terminal 16 rows tall or more
   (`⎿  Tip: ctrl+o shows the whole transcript`); it is local text and nothing
   is sent. `interrupting…` lines up under the same glyph column.

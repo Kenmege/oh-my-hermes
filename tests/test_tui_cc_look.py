@@ -192,6 +192,29 @@ class WorkingVerbTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(working_verb(text), verb)
 
+    def test_every_face_hermes_and_its_skins_ship_is_taken_off(self) -> None:
+        # 6c61c3e27d: KawaiiSpinner.KAWAII_THINKING (agent/display.py) and the skins' thinking_faces
+        # (hermes_cli/skin_engine.py); none has an ASCII letter or digit.
+        faces = ("(｡•́︿•̀｡)", "(◔_◔)", "(¬‿¬)", "( •_•)>⌐■-■", "(⌐■_■)", "(´･_･`)", "◉_◉", "(°ロ°)", "( ˘⌣˘)♡",
+                 "ヽ(>∀<☆)☆", "٩(๑❛ᴗ❛๑)۶", "(⊙_⊙)", "(¬_¬)", "( ͡° ͜ʖ ͡°)", "ಠ_ಠ", "(⚔)", "(⛨)", "(▲)", "(⌁)", "(<>)",
+                 "(Ψ)", "(∿)", "(≈)", "(◌)", "(◉)", "(◬)", "(○)", "(●)", "(✦)", "(◇)", "(🔥)")
+        for face in faces:
+            with self.subTest(face=face):
+                self.assertEqual(working_verb(f"{face} pondering..."), "Pondering")
+
+    def test_hermes_diagnostics_that_end_in_dots_keep_their_words(self) -> None:
+        # 6c61c3e27d: the stall notices (agent/chat_completion_nonstream.py, agent/chat_completion_helpers.py), the
+        # retry status (agent/turn_recovery.py) and the compaction status (agent/conversation_compression.py).
+        for text, verb in (
+            ("⚠ no response from provider in 120s — reconnecting...", "No response from provider in 120s — reconnecting"),
+            ("⚠ no output from provider for 45s — reconnecting...", "No output from provider for 45s — reconnecting"),
+            ("⏳ Retrying in 5.0s (attempt 1/3)...", "Retrying in 5.0s (attempt 1/3)"),
+            ("🗜️ Compacting context — summarizing earlier conversation so I can continue...",
+             "Compacting context — summarizing earlier conversation so I can continue"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(working_verb(text), verb)
+
     def test_other_text_loses_only_a_glyph_before_its_words(self) -> None:
         wait = "⏳ waiting on deepseek/deepseek-v4 — no response for 30s"  # agent/chat_completion_wait_notice.py
         self.assertEqual(working_verb(wait), "Waiting on deepseek/deepseek-v4 — no response for 30s")
@@ -235,6 +258,13 @@ class WorkingRowTests(unittest.TestCase):
         app, _clock = self.busy()
         app.transcript.activity, app.transcript.status = "(◔_◔)...", "compressing context"
         self.assertTrue(working_rows(app)[0][2:].startswith("Compressing context… (0s"))
+
+    def test_a_stall_notice_keeps_its_cause_and_how_long_on_the_row(self) -> None:
+        app, _clock = self.busy()
+        app.effort = ""
+        app.transcript.activity = "⚠ no response from provider in 120s — reconnecting..."
+        self.assertEqual(working_rows(app)[0][2:], "No response from provider in 120s — reconnecting… (0s · esc to interrupt)")
+        self.assertEqual(line_width(app._tail(30)[-2]), 30)  # a narrow row is cut at the edge
 
     def test_a_narrow_row_drops_the_effort_before_the_interrupt(self) -> None:
         app, clock = self.busy()

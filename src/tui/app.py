@@ -872,19 +872,20 @@ def working_verb(text: str) -> str:
 
     Hermes' own spinner text is `"{face} {verb}..."`, a kaomoji and one or
     more words: of that shape only the words at its end made of letters alone
-    are kept. Other text (a wait notice, `⏳ waiting on <model> — …`, a
-    status) loses only the words before its first letter or digit. Trailing
-    dots and ellipses go either way.
+    are kept. It is that shape only when the words before them have no ASCII
+    letter or digit, as no face Hermes or its skins ship has. Other text (a
+    wait notice, `⏳ waiting on <model> — …`, a stall notice or a retry
+    status that ends in dots too, a status) loses only the words before its
+    first letter or digit. Trailing dots and ellipses go either way.
     """
     stripped = text.strip()
     words = stripped.rstrip(".…").split()
-    if stripped.endswith(SPINNER_DOTS):
-        kept: list[str] = []
-        for word in reversed(words):
-            if not all(unicodedata.category(char)[0] in "LM" for char in word):
-                break
-            kept.insert(0, word)
-        words = kept
+    start = len(words)  # where the words at the end made of letters alone begin
+    while start and all(unicodedata.category(char)[0] in "LM" for char in words[start - 1]):
+        start -= 1
+    face = "".join(words[:start])
+    if stripped.endswith(SPINNER_DOTS) and not any(char.isascii() and char.isalnum() for char in face):
+        words = words[start:]
     else:
         while words and not any(char.isalnum() for char in words[0]):
             words.pop(0)
