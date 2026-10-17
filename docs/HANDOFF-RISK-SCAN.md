@@ -85,11 +85,23 @@ report says only that these declared rules found no signal. Detached HEAD has
 no inferred current branch; nested repositories/submodules are not traversed.
 
 Repository collection is bounded to 10000 entries and 1 MiB of retained
-metadata, with a five-second timeout per Git subprocess. It uses `rev-parse`,
-`symbolic-ref`, index `ls-files --stage --debug -z`, untracked `ls-files`, and
-`ls-tree -r -z` (tree metadata, never blob contents). It compares index/tree
-entries and `lstat` values; a stat-only change can therefore be advisory even
-when file bytes are unchanged. It intentionally does **not** use `git status`
+metadata, with a five-second timeout per Git subprocess. Retained metadata is
+the HEAD and branch output, each committed path with its mode and object id,
+each index path the commit lacks, and the untracked listing as Git printed it.
+A path in both the commit and the index is kept and counted once; index stat
+values are compared, not kept. The tree and index listings are each read up to
+10495728 bytes, which Git's listing of a repository within those bounds does
+not exceed, because an index Git wrote holds at most three merge-stage records
+per path; every other Git output is read up to 1 MiB. Output is read in 64 KiB
+pieces, so memory grows with the actual output, not with the cap. A longer
+output kills the Git process and ends the scan with `metadata_oversized`.
+Output the scanner failed to read is a scan error, never an empty listing:
+`repository_unreadable`, or `repository_timeout` when Git is left blocked on
+the unread pipe. It uses `rev-parse`, `symbolic-ref`, index
+`ls-files --stage --debug -z`, untracked `ls-files`, and `ls-tree -r -z` (tree
+metadata, never blob contents). It compares index/tree entries and `lstat`
+values; a stat-only change can therefore be advisory even when file bytes are
+unchanged. It intentionally does **not** use `git status`
 or worktree diff: their index refresh can read secret contents and execute
 clean filters. Untracked discovery follows Git ignore metadata. User/system
 Git configuration, inherited Git environment, hooks, optional locks and
