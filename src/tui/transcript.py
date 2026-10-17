@@ -454,38 +454,41 @@ def _tool_output(result: object, status: str) -> tuple[tuple[str, ...], int]:
 SKILL_FILE = "SKILL.md"
 
 
-def _read_summary(name: str, result: object) -> str:
-    """One line for what a read or a load returned, shown in place of its first lines; "" for any other call.
+def _read_summary(name: str, result: object) -> tuple[str, ...]:
+    """One line for what a read or a load returned, shown in place of its first lines; () for any other call.
 
     `read_file` counts the lines of its `content` (a binary or image read has
     none to count); `skill_view` names the skill, and the file in it when it
     read one; `search_files` gives its `total_count`, with `+` when that is a
-    lower bound, as files when it listed only files.
+    lower bound, as files when it listed only files, and the first line of
+    Hermes' `warning` under it when it gave one.
     """
     if not isinstance(result, dict):
-        return ""
+        return ()
     if name == "read_file":
         content = result.get("content")
         if not isinstance(content, str) or result.get("is_binary") or result.get("is_image"):
-            return ""
+            return ()
         lines = content.split("\n")
         if lines[-1] == "":
             lines.pop()
-        return f"Read {len(lines)} line{'' if len(lines) == 1 else 's'}"
+        return (f"Read {len(lines)} line{'' if len(lines) == 1 else 's'}",)
     if name == "skill_view":
         skill = _first_line(as_text(result.get("name")))
         file = _first_line(as_text(result.get("file")))
         if not skill:
-            return ""
-        return f"loaded {file} from skill {skill}" if file and file != SKILL_FILE else f"loaded skill {skill}"
+            return ()
+        return (f"loaded {file} from skill {skill}" if file and file != SKILL_FILE else f"loaded skill {skill}",)
     if name == "search_files":
         total = result.get("total_count")
         if not isinstance(total, int) or isinstance(total, bool):
-            return ""
+            return ()
         files = "files" in result and "matches" not in result and "matches_text" not in result
         noun = ("file" if total == 1 else "files") if files else ("match" if total == 1 else "matches")
-        return f"{total}{'+' if result.get('total_count_is_lower_bound') else ''} {noun}"
-    return ""
+        count = f"{total}{'+' if result.get('total_count_is_lower_bound') else ''} {noun}"
+        warning = _first_line(as_text(result.get("warning")))
+        return (count, warning) if warning else (count,)
+    return ()
 
 
 def _relative(root: str, path: str) -> str:
@@ -1228,8 +1231,8 @@ class Transcript:
         waited = self.waited_within(row.started_at, now) if row.started_at is not None else 0.0
         row.duration_s = _duration(payload, row, now, waited)
         row.summary = _result_summary(payload)
-        read = _read_summary(row.name, payload.get("result")) if row.status == TOOL_OK else ""
-        row.output, row.output_more = ((read,), 0) if read else _tool_output(payload.get("result"), row.status)
+        read = _read_summary(row.name, payload.get("result")) if row.status == TOOL_OK else ()
+        row.output, row.output_more = (read, 0) if read else _tool_output(payload.get("result"), row.status)
         row.inline_diff, row.diff_root = as_text(payload.get("inline_diff")).encode("utf-8", "surrogatepass"), self.cwd
         row.held_lines = None
 

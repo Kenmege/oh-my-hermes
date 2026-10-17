@@ -171,6 +171,12 @@ class SummarisedReadTests(unittest.TestCase):
         self.assertEqual(completed("search_files", capped)[1:], ["  ⎿  50+ matches"])
         self.assertEqual(completed("search_files", {"total_count": 0})[1:], ["  ⎿  0 matches"])
 
+    def test_a_search_keeps_hermes_warning_under_its_count(self) -> None:
+        # 6c61c3e27d tools/file_operations_search.py: a zero-match probe's hint, the line-oriented note.
+        warned = {"total_count": 0, "warning": "0 results found. Note: search is line-oriented.\nUse context=N."}
+        self.assertEqual(completed("search_files", warned)[1:],
+                         ["  ⎿  0 matches", "     0 results found. Note: search is line-oriented."])
+
     def test_the_details_view_shows_the_same_one_line(self) -> None:
         transcript = Transcript(clock=Clock())
         transcript.apply(Event("tool.start", SID, {"tool_id": "t", "name": "read_file", "context": "a.py"}))

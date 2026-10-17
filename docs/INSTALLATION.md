@@ -586,7 +586,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   `read_file`, `loaded skill omh-docs` for `skill_view` (`loaded
   references/api.md from skill omh-docs` for a file in it), `12 matches` for
   `search_files` (`3 files` when it listed files, `50+ matches` when Hermes
-  stopped counting). A failed call (a red `⏺`) shows its error's first line
+  stopped counting, and Hermes' warning on the line under it when it gave
+  one, such as why nothing matched). A failed call (a red `⏺`) shows its error's first line
   in the error colour, or, when it failed by its exit code alone (a test
   run, say), the last three lines it printed, under the count of the lines
   above them. An edit's diff hangs under the same `⎿`, and a long diff counts
