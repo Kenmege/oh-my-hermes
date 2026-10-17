@@ -91,9 +91,13 @@ each index path the commit lacks, and the untracked listing as Git printed it.
 A path in both the commit and the index is kept and counted once; index stat
 values are compared, not kept. The tree and index listings are each read up to
 10495728 bytes, which Git's listing of a repository within those bounds does
-not exceed (at most three merge-stage records per path); every other Git
-output is read up to 1 MiB. A longer output kills the Git process and ends the
-scan with `metadata_oversized`. It uses `rev-parse`, `symbolic-ref`, index
+not exceed, because an index Git wrote holds at most three merge-stage records
+per path; every other Git output is read up to 1 MiB. Output is read in 64 KiB
+pieces, so memory grows with the actual output, not with the cap. A longer
+output kills the Git process and ends the scan with `metadata_oversized`.
+Output the scanner failed to read is a scan error, never an empty listing:
+`repository_unreadable`, or `repository_timeout` when Git is left blocked on
+the unread pipe. It uses `rev-parse`, `symbolic-ref`, index
 `ls-files --stage --debug -z`, untracked `ls-files`, and `ls-tree -r -z` (tree
 metadata, never blob contents). It compares index/tree entries and `lstat`
 values; a stat-only change can therefore be advisory even when file bytes are

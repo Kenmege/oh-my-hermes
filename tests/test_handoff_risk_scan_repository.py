@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from itertools import product
 import os
 from pathlib import Path
+from typing import Any
 import tempfile
 import subprocess
 import sys
@@ -115,26 +118,28 @@ class HandoffRiskRepositoryTests(unittest.TestCase):
 
     def test_S5_boundary_when_retained_metadata_fills_budget_exactly(self):
         with tempfile.TemporaryDirectory() as root:
-            # Given: the fixture's real tree listing plus supplied tree-only entries that
-            # fill the documented charge to the byte: HEAD and branch output, then each
-            # tree path with its mode and object id. "tracked.txt" is in both the tree and
-            # the index, so it is charged once.
+            # Given: supplied tree-only entries that fill the documented charge to the byte:
+            # HEAD and branch output, then each tree path with its mode and object id. On
+            # the tree side the listing also carries the real "tracked.txt", which is in
+            # the index too and so charged once, in the tree. On the index side the tree
+            # lacks it, so its path is the last byte charged, in the index loop.
             repo = repository(Path(root))
             real_git = metadata._git
             listing = ("ls-tree", "-r", "-z", "HEAD")
             committed = git(repo, *listing)
             header, path = committed[:-1].split(b"\t")
             mode, _, oid = header.split(b" ")
-            room = (metadata.MAX_METADATA_BYTES - len(git(repo, "rev-parse", "--verify", "HEAD"))
-                    - len(git(repo, "symbolic-ref", "--quiet", "--short", "HEAD"))
-                    - (len(path) + len(mode) + 1 + len(oid)))
+            fixed = (len(git(repo, "rev-parse", "--verify", "HEAD"))
+                     + len(git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")))
+            sides = {"tree": (committed, len(path) + len(mode) + 1 + len(oid)), "index": (b"", len(path))}
             charge = 100 + len(mode) + 1 + len(oid)
-            count, spare = divmod(room, charge)
-            for extra, (status, category) in ((0, ("completed", None)), (1, ("scan_error", "metadata_oversized"))):
-                with self.subTest(extra=extra):
+            outcomes = ((0, ("completed", None)), (1, ("scan_error", "metadata_oversized")))
+            for (side, (head_entries, last_charge)), (extra, (status, category)) in product(sides.items(), outcomes):
+                with self.subTest(side=side, extra=extra):
+                    count, spare = divmod(metadata.MAX_METADATA_BYTES - fixed - last_charge, charge)
                     paths = [b"%06d" % number + b"q" * 94 for number in range(count - 1)]
                     paths.append(b"last" + b"q" * (96 + spare + extra))
-                    payload = committed + b"".join(mode + b" blob " + oid + b"\t" + item + b"\0" for item in paths)
+                    payload = head_entries + b"".join(mode + b" blob " + oid + b"\t" + item + b"\0" for item in paths)
 
                     def supplied(path: Path, args: tuple[str, ...]) -> tuple[int, bytes]:
                         return (0, payload) if args == listing else real_git(path, args)
@@ -157,11 +162,15 @@ class HandoffRiskRepositoryTests(unittest.TestCase):
             tree = ("ls-tree", "-r", "-z", "HEAD")
             index = ("ls-files", "--stage", "--debug", "-z")
             others = ("ls-files", "--others", "--exclude-standard", "-z")
-            # Each case names the last Git command the scan may still run.
+            # Each case names the last Git command the scan may still run. The unmerged case
+            # lists each path at stages 2 and 3 (added on both sides), absent from the tree.
             cases = {
                 "tree_bytes": (tree, tree, b"".join(b"100644 blob " + oid + b"\t" + path + b"\0" for path in long_paths)),
                 "index_bytes": (index, others, b"".join(b"100644 " + oid + b" 0\t" + path + b"\0" + stat for path in long_paths)),
+                "index_unmerged_bytes": (index, others, b"".join(b"100644 " + oid + b" %d\t" % stage + path + b"\0" + stat
+                                                                 for path in long_paths for stage in (2, 3))),
                 "index_entries": (index, others, b"".join(b"100644 " + oid + b" 0\tp%05d\0" % number + stat for number in range(10001))),
+                "untracked_bytes": (others, others, b"".join(path + b"\0" for path in long_paths)),
             }
             for name, (listing, last, payload) in cases.items():
                 with self.subTest(name):
@@ -179,23 +188,26 @@ class HandoffRiskRepositoryTests(unittest.TestCase):
                     self.assertIsNone(report["verdict"])
                     self.assertEqual(calls[-1], last)
 
-    def test_S5_error_when_index_listing_overflows_read_cap_and_child_reaped(self):
+    def test_S5_error_when_git_listing_overflows_read_cap_and_child_reaped(self):
         with tempfile.TemporaryDirectory() as root:
-            # Given: a real repository; only the index listing comes from a real child. At
-            # the cap it writes and exits; one byte past it, it then waits for input nobody
-            # sends, so only a kill ends it.
+            # Given: a real repository; only one listing comes from a real child. At the cap
+            # it writes and exits; one byte past it, it then waits for input nobody sends,
+            # so only a kill ends it. The index listing's cap is _LISTING_BYTES; the
+            # untracked listing keeps 1 MiB.
             repo = repository(Path(root))
             launch_git = subprocess.Popen
-            cases = ((metadata._LISTING_BYTES, "", "repository_invalid"),
-                     (metadata._LISTING_BYTES + 1, "; sys.stdin.buffer.read()", "metadata_oversized"))
-            for size, then, category in cases:
-                with self.subTest(size=size):
+            wait = "; sys.stdin.buffer.read()"
+            cases = (("--stage", metadata._LISTING_BYTES, "", "repository_invalid"),
+                     ("--stage", metadata._LISTING_BYTES + 1, wait, "metadata_oversized"),
+                     ("--others", metadata.MAX_METADATA_BYTES + 1, wait, "metadata_oversized"))
+            for listing, size, then, category in cases:
+                with self.subTest(listing=listing, size=size):
                     script = "import sys; sys.stdout.buffer.write(b'x' * %d); sys.stdout.flush()%s" % (size, then)
                     with subprocess.Popen([sys.executable, "-c", script], stdin=subprocess.PIPE,
                                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as child:
                         def launch(argv: list[str], **options: object) -> object:
                             # The scanner's own `with` reaps the child and every forwarded Git.
-                            return child if "--stage" in argv else launch_git(argv, **options)
+                            return child if listing in argv else launch_git(argv, **options)
                         # When
                         with patch("omh.quality.handoff_risk_repository.subprocess.Popen", side_effect=launch):
                             code, report = invoke(["--repo", str(repo)])
@@ -206,11 +218,57 @@ class HandoffRiskRepositoryTests(unittest.TestCase):
                         self.assertEqual(report["error_category"], category)
                         self.assertIsNotNone(child.returncode)
 
+    def test_S5_scan_error_never_clear_when_git_reader_fails(self):
+        with tempfile.TemporaryDirectory() as root:
+            # Given: a high-risk repository (a tracked .env and a modified tracked file),
+            # and Git output whose reads raise inside the scanner's reader thread.
+            repo = repository(Path(root))
+            _ = (repo / ".env").write_bytes(b"SYNTHETIC=1\n")
+            git(repo, "add", ".env")
+            git(repo, "commit", "-q", "-m", "secret-path")
+            _ = (repo / "tracked.txt").write_bytes(b"changed")
+            launch_git = subprocess.Popen
+            listings = ("ls-tree", "--stage")
+
+            class Failing:
+                def __init__(self, stream: Any, fails: Callable[[int], bool]) -> None:
+                    self.stream, self.fails = stream, fails
+
+                def read(self, size: int = -1) -> bytes:
+                    if self.fails(size):
+                        raise MemoryError("simulated reader fault")
+                    return self.stream.read(size)
+
+                def close(self) -> None:
+                    self.stream.close()
+
+            # First, reads larger than the 1 MiB stream cap fail, as a large allocation can;
+            # the scanner reads in pieces and never asks for one. Then every read of both
+            # listings fails.
+            cases = (
+                ("large_reads", lambda argv, size: size > metadata.MAX_METADATA_BYTES + 1,
+                 ("completed", "high_risk", None)),
+                ("listings", lambda argv, size: any(word in argv for word in listings),
+                 ("scan_error", None, "repository_unreadable")),
+            )
+            for name, fails, expected in cases:
+                with self.subTest(name):
+                    def launch(argv: list[str], **options: Any) -> Any:
+                        # The scanner's own `with` reaps every launched Git.
+                        process = launch_git(argv, **options)
+                        process.stdout = Failing(process.stdout, lambda size: fails(argv, size))
+                        return process
+                    # When
+                    with patch("omh.quality.handoff_risk_repository.subprocess.Popen", side_effect=launch):
+                        _, report = invoke(["--repo", str(repo)])
+                    # Then: output nobody read is never an empty, clear listing.
+                    self.assertEqual((report["status"], report["verdict"], report["error_category"]), expected)
+
     def test_S5_docs_state_the_listing_read_cap(self):
-        # Given: the operator reference that states the read bounds.
-        docs = (Path(__file__).resolve().parents[1] / "docs" / "HANDOFF-RISK-SCAN.md").read_text(encoding="utf-8")
+        # Given: the operator reference that states the read bounds, whitespace-normalized.
+        docs = " ".join((Path(__file__).resolve().parents[1] / "docs" / "HANDOFF-RISK-SCAN.md").read_text(encoding="utf-8").split())
         # Then: the number it gives is the cap the code enforces.
-        self.assertIn(f"read up to\n{metadata._LISTING_BYTES} bytes", docs)
+        self.assertIn(f"read up to {metadata._LISTING_BYTES} bytes", docs)
 
     def test_S4_environment_isolation_when_git_environment_poisoned(self):
         with tempfile.TemporaryDirectory() as root:

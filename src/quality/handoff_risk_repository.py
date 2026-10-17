@@ -31,6 +31,7 @@ _RECORD_OVERHEAD: Final = 245
 # per path. So the tree or index listing of a repository within both bounds fits.
 _LISTING_BYTES: Final = 3 * (MAX_ENTRIES * _RECORD_OVERHEAD + MAX_METADATA_BYTES)
 _LISTINGS: Final = frozenset({("ls-tree", "-r", "-z", "HEAD"), ("ls-files", "--stage", "--debug", "-z")})
+_READ_PIECE: Final = 65536
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +57,7 @@ def _git(repo: Path, args: tuple[str, ...]) -> tuple[int, bytes]:
     # the two rev-parse probes print one line each and keep the same cap.
     limit = _LISTING_BYTES if args in _LISTINGS else MAX_METADATA_BYTES
     chunks: list[bytes] = []
+    finished = False
     try:
         with subprocess.Popen(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=False) as process:
             # PIPE guarantees stdout; retaining the reference proves ownership to typing.
@@ -64,10 +66,18 @@ def _git(repo: Path, args: tuple[str, ...]) -> tuple[int, bytes]:
             read_bytes: Callable[[int], bytes] = stream.read
 
             def collect() -> None:
-                data = read_bytes(limit + 1)
-                chunks.append(data)
-                if len(data) > limit:
+                nonlocal finished
+                # Bounded pieces, so no read asks for the whole cap up front.
+                size = 0
+                while size <= limit:
+                    data = read_bytes(min(_READ_PIECE, limit + 1 - size))
+                    if not data:
+                        break
+                    chunks.append(data)
+                    size += len(data)
+                if size > limit:
                     process.kill()
+                finished = True
 
             reader = Thread(target=collect, name="omh-risk-git-reader")
             reader.start()
@@ -81,6 +91,9 @@ def _git(repo: Path, args: tuple[str, ...]) -> tuple[int, bytes]:
                 reader.join()
     except OSError as exc:
         raise ScanError("repository_unreadable") from exc
+    if not finished:
+        # The reader raised: output nobody read is not an empty listing.
+        raise ScanError("repository_unreadable")
     data = b"".join(chunks)
     if len(data) > limit:
         raise ScanError("metadata_oversized")
@@ -128,8 +141,8 @@ def observe_repository(repo: Path) -> RepositoryObservation:
     kept: dict[bytes, bytes] = {}
     metadata_bytes = len(head) + len(branch_data)
     if head_code == 0:
-        tree_data = _required(root, ("ls-tree", "-r", "-z", "HEAD"))
-        for entry in _paths(tree_data):
+        # Unnamed, so the raw listing is freed once split, before the index is read.
+        for entry in _paths(_required(root, ("ls-tree", "-r", "-z", "HEAD"))):
             header, path = entry.split(b"\t", 1)
             mode, _, oid = header.split(b" ")
             path = kept.setdefault(path, path)

@@ -7,16 +7,17 @@ All notable changes will be documented here.
 - **`omh handoff-risk-scan --repo` completes on ordinary repositories.**
   The scan charged the raw bytes of every Git listing to its 1 MiB metadata
   budget, and the index listing with its stat lines alone prints about 190
-  bytes per short-path entry, so a clean repository of 4,500 short-path files, or 6,538 files with
-  59-byte paths, ended in `scan_error / metadata_oversized`, far under the
-  documented 10000 entries (#2157, reported by @jhlee0409). The budget now
-  charges what the scan keeps: the HEAD and branch output, each committed path
-  with its mode and object id, each index path the commit lacks, and the
-  untracked listing; a path in both the commit and the index is kept and
-  counted once. The 10000-entry and 1 MiB limits are unchanged. The tree and
-  index listings are read up to a fixed cap derived from them, and a longer
-  listing still kills the Git process and ends the scan with
-  `metadata_oversized`.
+  bytes per short-path entry, so a clean repository of 4,500 short-path
+  files, or 6,538 files with 59-byte paths, ended in
+  `scan_error / metadata_oversized`, far under the documented 10000 entries
+  (#2157, reported by @jhlee0409). The budget now charges what the scan keeps:
+  the HEAD and branch output, each committed path with its mode and object id,
+  each index path the commit lacks, and the untracked listing; a path in both
+  the commit and the index is kept and counted once. The 10000-entry and
+  1 MiB limits are unchanged. The tree and index listings are read in 64 KiB
+  pieces up to a fixed cap derived from them, and a longer listing still kills
+  the Git process and ends the scan with `metadata_oversized`. Git output the
+  scanner failed to read is a scan error, never an empty listing.
 - **A plural possessive no longer hides the rest of a message from routing.**
   The routing masker read the `'` of "the customers' export" as an opening
   quote. Nothing closed it, so everything after it was masked and no matcher
