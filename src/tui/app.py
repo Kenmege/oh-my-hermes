@@ -86,6 +86,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import signal
 import sys
 import time
@@ -492,6 +493,11 @@ YOLO_NOTE = (
 # The keys themselves are `shortcuts.SHORTCUTS`, drawn by `?` and /keys; /help only points there.
 HELP_KEYS = "Keys: ? on an empty composer, or /keys, lists every key."
 SKILL_COMMANDS_NOTE = "{count} skill commands available: type / and part of a skill's name to find one."
+# Hermes 6c61c3e27d's note for a skill whose name a built-in command takes (`agent/skill_commands.py`,
+# `skill_command_collision_note`): the skill has no `/<name>` and runs as `/skill <name>`. `commands.catalog` joins
+# the notes with "; " into its `warning`, and only when no discovery failed. `/help` lists them; no notice says them.
+COLLISION_NOTE = re.compile(r"slash command /[^\s;]+ unavailable — name taken by built-in; use /skill [^;]+?(?=; slash command /|$)")
+COLLISION_NOTES_HEADING = "Skills a built-in command's name takes:"
 RELOAD_REFUSED_NOTICE = (
     "Hermes did not rescan its skills ({code}: {message}); a skill installed since the OMH TUI started runs as "
     "/<name> once it is restarted."
@@ -775,6 +781,13 @@ def queue_lines(
     last = truncate_line(rows[-1], max(width - line_width(said) - QUEUE_HINT_GAP, 0))
     rows[-1] = (*last, Span(" " * (width - line_width(last) - line_width(said))), *said)
     return [truncate_line(row, width) for row in rows]
+
+
+def collision_notes(warning: str) -> tuple[str, ...]:
+    """Hermes' built-in-name notes in a catalog `warning`, each as Hermes wrote it; () unless the warning is nothing
+    but them (a discovery failure, or anything else, is not one)."""
+    notes = tuple(match.group(0) for match in COLLISION_NOTE.finditer(warning))
+    return notes if notes and "; ".join(notes) == warning else ()
 
 
 def initial_theme(ready_payload: Mapping[str, Any], omh_home: str | None = None) -> Theme:
@@ -1097,6 +1110,7 @@ class App(ModesMixin, AgentViewMixin):
         self.catalog_categories: list[tuple[str, list[str]]] = []
         self.skill_count = 0
         self.catalog_warning = ""  # the last warning shown, so a re-read repeats none
+        self.catalog_collisions: tuple[str, ...] = ()  # Hermes' built-in-name notes, which /help lists
         self.slot: PromptSlot | None = None
         self.slot_opened_at = 0.0
         self.slot_arm_seconds = SLOT_ARM_SECONDS  # the open slot's arm delay, fixed as it opened
@@ -1290,13 +1304,18 @@ class App(ModesMixin, AgentViewMixin):
         """Keep what completion and `/help` read from a `commands.catalog` result; a new warning is a notice.
 
         Hermes' warning says skill, quick-command or plugin discovery failed,
-        or names skills that share a built-in command's name and run only as
-        `/skill <name>`.
+        or, when nothing failed, names the skills that share a built-in
+        command's name and run only as `/skill <name>` (`collision_notes`).
+        Only a failure is a notice: those notes come with every catalog Hermes'
+        own bundled skills collide in, so they are kept for `/help` instead.
         """
         self.catalog = catalog_pairs(result)
         self.catalog_categories = catalog_categories(result)
         self.skill_count = catalog_skill_count(result)
         warning = as_text(result.get("warning")).strip()
+        self.catalog_collisions = collision_notes(warning)
+        if self.catalog_collisions:
+            warning = ""
         if warning and warning != self.catalog_warning:
             self.transcript.add_notice(f"Hermes' command catalog: {warning}", NOTICE_WARN)
         self.catalog_warning = warning
@@ -3275,7 +3294,8 @@ class App(ModesMixin, AgentViewMixin):
         }
 
     def _help(self, arg: str) -> None:
-        """The TUI's commands, Hermes' by category, and how many skill commands there are; paged when long."""
+        """The TUI's commands, Hermes' by category, how many skill commands there are and, in Hermes' words, which
+        skills a built-in command's name takes; paged when long."""
         local = [command for command in COMMANDS if command.route == LOCAL]
         width = max(len(command.name) for command in local)
         rows = ["OMH TUI commands:"]
@@ -3287,6 +3307,9 @@ class App(ModesMixin, AgentViewMixin):
             rows.append("Hermes commands: none listed.")
         if self.skill_count:
             rows.append(SKILL_COMMANDS_NOTE.format(count=self.skill_count))
+        if self.catalog_collisions:
+            rows.append(COLLISION_NOTES_HEADING)
+            rows += [f"  {note}" for note in self.catalog_collisions]
         rows.append(YOLO_NOTE)
         rows.append(HELP_KEYS)
         rows.append(BARE_HERMES_NOTE)
