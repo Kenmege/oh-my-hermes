@@ -1585,7 +1585,7 @@ class OpeningTests(AppTestCase):
                 self.run_main(run)
                 self.assert_clean_run(run)
                 first = run.terminal.captures["first"]
-                self.assertEqual(run.terminal.screen.scrollback[: len(printed)], printed)  # in order, one scroll up
+                self.assertEqual(run.terminal.screen.scrollback, printed)  # in order, one scroll up, and nothing else
                 self.assertFalse([line for line in first if line.startswith("$ shell")], first)
                 self.assertEqual(first[: LOGO_ROWS - 1], LOGO[:-1])  # the logo opens the top row
                 self.assertEqual(rows["after"], rows["before"])
