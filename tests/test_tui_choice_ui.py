@@ -16,7 +16,9 @@ check the frames a terminal would show at every step.
 
 from __future__ import annotations
 
+import time
 import unittest
+from unittest import mock
 
 from _tui_lines import INFO_INSET, box_inner, line_text
 from test_tui_modes import RecordingClient, make_app, type_text
@@ -640,6 +642,25 @@ class ClarifyBatchTests(unittest.TestCase):
 
 
 class ResizeAndShortTerminalTests(unittest.TestCase):
+    def test_a_resize_that_lands_after_the_read_draws_no_frame_at_the_old_width(self) -> None:
+        # Review A's open question: a SIGWINCH during the step's work (after the post-read check) painted one frame
+        # at the old width before the settled redraw.
+        app, _client = make_app(rows=24, cols=80)
+        app.terminal.deadline = time.monotonic() + 10  # type: ignore[attr-defined]  # its read returns b"", no EOF
+        drawn(app)
+        app.dirty = True
+        written = len(app.terminal.writes)  # type: ignore[attr-defined]
+
+        def resized_mid_step() -> None:
+            app.terminal.screen.resize(24, 60)  # type: ignore[attr-defined]
+            app.terminal._resized = True  # type: ignore[attr-defined]
+
+        with mock.patch.object(app, "_drain_gateway", resized_mid_step):
+            app._step()
+        self.assertEqual(app.size, (60, 24))
+        self.assertIsNotNone(app.redraw_at)  # the settled redraw paints the new width
+        self.assertEqual("".join(app.terminal.writes[written:]).count("╭"), 0)  # type: ignore[attr-defined]
+
     def test_a_resize_while_a_question_is_open_redraws_it_without_the_composer(self) -> None:
         app, client = make_app(busy=True)
         draft = a_draft(app)

@@ -3869,6 +3869,8 @@ class App(ModesMixin, AgentViewMixin):
         return isinstance(payload, Mapping) and bool(payload.get("active"))
 
     def _render_when_due(self) -> None:
+        if self.terminal.resized():  # one that came during this step's work: no frame is drawn at the old size
+            self._on_resize()
         self._redraw_when_settled()
         if self.redraw_at is not None:
             return  # the screen is mid-reflow; the settled redraw paints it
