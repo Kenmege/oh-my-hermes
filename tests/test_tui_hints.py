@@ -1,12 +1,12 @@
 """Hints that say one thing at a time, and layouts that keep them on narrow terminals.
 
-While Hermes asks something, the mode row names that question's keys and
+While Hermes asks something, the info line names that question's keys and
 the working row stops offering Esc for an interrupt, so the screen gives Esc
 one meaning. The strip's last mark says what Down opens (`↓ agents`). An
-approval keeps a short key hint on the mode row at 60 and 40 columns, and a
+approval keeps a short key hint on the info line at 60 and 40 columns, and a
 long command wraps under its own indent. The banner is one row (brand, version, resumed
-session, working directory; the model is on the status line and the keys on
-the mode row), and a fresh session is told where the last one is.
+session, working directory; the model and the keys are on the info line), and
+a fresh session is told where the last one is.
 """
 
 from __future__ import annotations
@@ -29,11 +29,11 @@ SECRET = ServerRequest("srq-3", "secret", {"env_var": "TOKEN"})
 
 
 def mode_row(app: App) -> str:
-    return line_text(app._mode_row_line(100))
+    return line_text(app._info_line(100))
 
 
 class QuestionKeyTests(unittest.TestCase):
-    def test_an_open_question_puts_its_keys_on_the_mode_row_and_esc_means_one_thing(self) -> None:
+    def test_an_open_question_puts_its_keys_on_the_info_line_and_esc_means_one_thing(self) -> None:
         cases = [
             (APPROVAL, "↑↓ pick · enter confirms · d or esc denies and stops"),
             (CLARIFY, "↑↓ or 1-9 · enter picks · type to answer · esc cancels"),
@@ -114,7 +114,7 @@ class EscMeaningTests(unittest.TestCase):
 
 
 class NarrowSayTests(unittest.TestCase):
-    """What the next key does keeps its point on a narrow mode row: a shorter form, never a cut-off long one."""
+    """What the next key does keeps its point on a narrow info line: a shorter form, never a cut-off long one."""
 
     def rewind_row(self, cols: int, agents: bool, mode: str = "normal", effort: str = "") -> str:
         from test_tui_agent_strip import STARTS, relay
@@ -127,7 +127,7 @@ class NarrowSayTests(unittest.TestCase):
         show_mode(app, mode)
         app.effort = effort
         app.rewind = Rewind(row_id=7, ordinal=2, before=())
-        return line_text(app._mode_row_line(cols))
+        return line_text(app._info_line(cols))
 
     def steer_row(self, cols: int, mode: str = "normal", effort: str = "") -> str:
         from test_tui_agent_strip import STARTS, relay
@@ -140,23 +140,23 @@ class NarrowSayTests(unittest.TestCase):
         app.effort = effort
         app._on_input(Key(DOWN))
         app._on_input(Key(CHAR, "s"))
-        return line_text(app._mode_row_line(cols))
+        return line_text(app._info_line(cols))
 
-    def test_a_mode_label_and_the_effort_give_way_before_the_rewind_or_steer_is_cut(self) -> None:
+    def test_the_right_side_and_a_mode_label_give_way_before_the_rewind_or_steer_is_cut(self) -> None:
         from omh.tui.frame import MODE_ACCEPT_PLAN, MODE_PLAN
 
         for cols, mode, effort in ((40, MODE_PLAN, "high"), (60, MODE_ACCEPT_PLAN, "xhigh")):
             with self.subTest(cols=cols, mode=mode, effort=effort):
                 rewind = self.rewind_row(cols, agents=False, mode=mode, effort=effort)
                 self.assertTrue(rewind.rstrip().endswith("⏪ replaces #2+ · esc"), rewind)
-                self.assertNotIn("effort", rewind)  # the effort went first
+                self.assertNotIn("effort", rewind)  # the right side went first
                 steer = self.steer_row(cols, mode=mode, effort=effort)
                 self.assertTrue(steer.rstrip().endswith("↪ steer · esc cancels"), steer)
                 self.assertIn("plan mode on", steer)  # the label always stays
-        # With room for both, the effort stays beside the short form.
-        self.assertTrue(
-            self.rewind_row(64, agents=False, mode=MODE_PLAN, effort="high").rstrip().endswith("ctrl+t effort (high)")
-        )
+        # Once the say form has shortened, the right side takes the room it left over.
+        row = self.rewind_row(69, agents=False, mode=MODE_PLAN, effort="high")
+        self.assertTrue(row.endswith("⏪ replaces #2 and later · esc cancels   effort high"), row)
+        self.assertNotIn("effort", self.rewind_row(68, agents=False, mode=MODE_PLAN, effort="high"))
 
     def test_at_forty_columns_with_accept_and_plan_the_labels_shorten_before_the_say_form_is_cut(self) -> None:
         from omh.tui.frame import MODE_ACCEPT_PLAN
@@ -187,15 +187,18 @@ class NarrowSayTests(unittest.TestCase):
         app, _client = make_app(busy=True, cols=40)
         show_mode(app, MODE_ACCEPT_PLAN)
         app._on_server_request(CLARIFY)
-        row = line_text(app._mode_row_line(40))
+        row = line_text(app._info_line(40))
         self.assertTrue(row.rstrip().endswith("esc cancels"), row)
         self.assertTrue(row.startswith("⏵⏵") and "⏸" in row, row)
 
-    def test_with_the_effort_shown_the_strip_collapses_before_the_steered_agents_name_goes(self) -> None:
+    def test_the_right_side_gives_way_before_the_strip_or_the_steered_agents_name(self) -> None:
         row = self.steer_row(100, effort="high")
         self.assertIn("steering find usages of", row)
-        self.assertIn("2 agents", row)  # the strip, collapsed
-        self.assertTrue(row.rstrip().endswith("ctrl+t effort (high)"), row)
+        self.assertIn("read the diff", row)  # the strip, whole
+        self.assertNotIn("effort", row)
+        wide = self.steer_row(140, effort="high")
+        self.assertIn("steering find usages of: enter sends it to that agent · esc cancels", wide)
+        self.assertTrue(wide.endswith("effort high"), wide)
 
     def test_a_rewind_keeps_what_it_replaces_and_how_to_cancel_at_every_width(self) -> None:
         for cols in (100, 60, 40):
@@ -233,13 +236,13 @@ class NarrowApprovalTests(unittest.TestCase):
         slot = open_request("srq", "approval", {"command": self.COMMAND, "description": "delete in root path"})
         return lines_text(slot.lines(width, DEFAULT_THEME, 8))
 
-    def test_the_mode_row_keeps_a_way_to_deny_at_sixty_and_forty_columns(self) -> None:
+    def test_the_info_line_keeps_a_way_to_deny_at_sixty_and_forty_columns(self) -> None:
         for width in (60, 40):
             with self.subTest(width=width):
                 app, _client = make_app(busy=True, cols=width)
                 app.effort = "high"
                 app._on_server_request(ServerRequest("srq-1", "approval", {"command": self.COMMAND}))
-                row = line_text(app._mode_row_line(width))
+                row = line_text(app._info_line(width))
                 self.assertIn("esc denies", row)
                 self.assertLessEqual(len(row), width)
                 self.assertIn("▌ ❯ deny", self.rows(width))

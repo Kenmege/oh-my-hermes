@@ -1,27 +1,29 @@
 """One repaint: from what the app holds to the rows `LiveRegion.render` draws.
 
 The app loop calls `build_frame` once per repaint with the terminal size, the
-parts it holds (sticky prompt, streaming tail, slot, composer, mode row,
-status line) and the input mode, then hands the result to
+parts it holds (sticky prompt, streaming tail, slot, composer, info line)
+and the input mode, then hands the result to
 `LiveRegion.render(frame.lines, frame.cursor, cols, flush=lines)`.
 
-The composer is framed: a rule above it and a rule below it, both drawn in
-the input mode's glyph and colour (normal `─` in the rule colour, accept `━`
-in `mode_accept`, plan `┄` in `mode_plan`, a `!` shell line `╌` in the
-accent), so the mode reads from the frame
-even where hue alone would not tell it apart. Accept with plan on beside it
-(Hermes has approvals off on its own, and the plan flag is on) draws accept's
-rules: approvals off is what the frame must never hide, and the mode row
-names both. The mode row under the bottom rule is a line the app builds; the
-frame only places it.
+The composer is a rounded box: a top edge `╭─…─╮`, its input rows each drawn
+as `│ ` + row + ` │`, and a bottom edge `╰─…─╯`, all in the rule colour
+whatever the input mode, so the composer rows are `BOX_INSET` cells narrower
+than the terminal on each side. The box takes the rows the layout gives the
+composer frame (`layout.allocate`: the top edge where the top rule was, the
+bottom edge where the bottom rule was), so a 6-row terminal draws it open at
+the bottom, and below `layout.MIN_ROWS` rows or `layout.MIN_COLS` columns the
+input rows are drawn full width with no box at all. While the composer holds
+a `!` line for Hermes' shell the prompt mark is drawn in the accent instead
+of the prompt colour; the box stays as it is. The info line under the bottom
+edge is a line the app builds; the frame only places it.
 
 The composer follows the content until the screen is full, then stays on the
 bottom rows. With `min_height` 0 a frame is exactly as tall as what it holds
 (`layout.allocate`), and `LiveRegion` draws it right under the output, so the
 composer sits under the last row printed, the panel, prompt slot, completion
-menu, tail and sticky prompt above it, and the rows under it (bottom rule,
-mode row, status line, a function of the terminal size alone,
-`layout.under_composer`) under it. When something above the composer grows,
+menu, tail and sticky prompt above it, and the rows under it (the bottom
+edge, by the terminal size alone, `layout.under_composer`, and the info line)
+under it. When something above the composer grows,
 the composer moves down with it until the region's last row is the screen's
 last row, and from then on the screen scrolls instead; when something above
 it shrinks, the composer moves up by as many rows. Once the region's last row
@@ -34,14 +36,14 @@ colour while the app asks for it (no slot open). It is drawn, never typed:
 the caret stays right after the glyph and the composer's text stays empty.
 
 While the person picks from a list (`composer` is None) the frame draws no
-composer at all: no rules, no input rows, and no caret (`Frame.cursor` is None,
+composer at all: no box, no input rows, and no caret (`Frame.cursor` is None,
 and `LiveRegion` hides the cursor) unless `slot_caret` puts one in the slot (a
 picker's filter row or the history search's query row, where typing goes). The slot stands in the
-composer's place, right above the mode row, with the rows `layout.choice_cap`
+composer's place, right above the info line, with the rows `layout.choice_cap`
 gives it. The rows under the composer are the same either way.
 
 The attachment row (the images queued for the next message) is the composer's
-first row while there is one: it counts against the composer's cap.
+first row inside the box while there is one: it counts against the composer's cap.
 """
 
 from __future__ import annotations
@@ -50,21 +52,24 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 from .composer import PROMPT, Composer
-from .layout import Budget, allocate, caret_row, compose, composer_cap
+from .layout import Budget, allocate, caret_row, compose, composer_cap, is_tiny
 from .style import Line, Span, fill
 from .theme import DEFAULT_THEME, Theme, on_status_bar
-from .width import truncate_line
+from .width import line_width, truncate_line
 
-RULE_GLYPH = "─"
+# The composer's box: its corners, its edges and its sides.
+BOX_EDGE = "─"
+BOX_TOP = ("╭", "╮")
+BOX_BOTTOM = ("╰", "╯")
+BOX_SIDE = "│"
+BOX_INSET = 2  # cells the box takes on each side of a composer row: the side and a space
 STICKY_PREFIX = "↳ you: "
-STATUS_SEPARATOR = " │ "
 
 MODE_NORMAL = "normal"
 MODE_ACCEPT = "accept"
 MODE_PLAN = "plan"
 MODE_ACCEPT_PLAN = "accept+plan"  # approvals off and the plan flag on, both at once
 MODE_SHELL = "shell"  # the composer holds a `!` line: it goes to Hermes' shell.exec, not to the model
-MODE_RULE_GLYPHS = {MODE_NORMAL: RULE_GLYPH, MODE_ACCEPT: "━", MODE_PLAN: "┄", MODE_ACCEPT_PLAN: "━", MODE_SHELL: "╌"}
 
 
 @dataclass(frozen=True)
@@ -80,7 +85,7 @@ def build_frame(
     cols: int,
     rows: int,
     composer: Composer | None,
-    status: Line,
+    info: Line,
     sticky: Line | None = None,
     tail: Sequence[Line] = (),
     slot: Sequence[Line] = (),
@@ -88,7 +93,6 @@ def build_frame(
     prompt: str = PROMPT,
     attachments: Line | None = None,
     mode: str = MODE_NORMAL,
-    mode_row: Line = (),
     placeholder: str = "",
     slot_caret: tuple[int, int] | None = None,
     text_question: bool = False,
@@ -99,25 +103,31 @@ def build_frame(
 
     `attachments` is drawn as the composer's first row when the composer may
     have two rows; a terminal too short for that shows the input alone.
-    `mode` picks both rules' glyph and colour; `mode_row` is drawn under the
-    bottom rule where the terminal has room for it. `composer` None draws no
+    `mode` MODE_SHELL draws the prompt mark in the accent; `info` is the
+    region's last row. `composer` None draws no
     composer (nor the attachment row): the slot takes its place, and the caret
     is `slot_caret`, a (row, col) within `slot`, or none where that is None or
     its row is cut.
     `text_question` says the slot holds a question answered with text, whose
     label keeps a row on a tiny terminal (`layout.allocate`). `below` is drawn
-    under the bottom rule, above the mode row: the completion menu where the
+    under the bottom edge, above the info line: the completion menu where the
     app puts it under the composer.
     """
     cap = composer_cap(rows)
+    boxed = not is_tiny(rows, cols)
+    inner = cols - 2 * BOX_INSET if boxed else cols
     composer_lines: list[Line] = []
     caret_line = caret_col = 0
     if composer is not None:
-        chips = [attachments] if attachments is not None and cap >= 2 else []
-        input_lines, (caret_line, caret_col) = composer.render(cols, cap - len(chips), prompt, theme.prompt, theme.accent)
+        chips = [truncate_line(attachments, inner)] if attachments is not None and cap >= 2 else []
+        mark = replace(theme.accent, bold=True) if mode == MODE_SHELL else theme.prompt
+        input_lines, (caret_line, caret_col) = composer.render(inner, cap - len(chips), prompt, mark, theme.accent)
         if placeholder and not composer.text and input_lines:
-            input_lines[0] = truncate_line((*input_lines[0], Span(placeholder, theme.hint)), cols)
+            input_lines[0] = truncate_line((*input_lines[0], Span(placeholder, theme.hint)), inner)
         composer_lines = chips + input_lines
+        if boxed:
+            composer_lines = [box_row(line, inner, theme) for line in composer_lines]
+            caret_col += BOX_INSET
         caret_line += len(chips)
     budget = allocate(
         rows,
@@ -131,17 +141,15 @@ def build_frame(
         text_question=text_question,
         below_rows=len(below),
     )
-    rule = rule_line(cols, theme, mode)
     lines = compose(
         budget,
         sticky=sticky,
         tail=tail,
         slot=slot,
-        rule=rule,
+        rule=box_edge(cols, theme, BOX_TOP),
         composer=composer_lines,
-        bottom_rule=rule,
-        mode=truncate_line(mode_row, cols),
-        status=status,
+        bottom_rule=box_edge(cols, theme, BOX_BOTTOM),
+        info=truncate_line(info, cols),
         below=below,
     )
     if composer is not None:
@@ -158,21 +166,26 @@ def build_frame(
     )
 
 
-def rule_line(width: int, theme: Theme = DEFAULT_THEME, mode: str = MODE_NORMAL) -> Line:
-    """One edge of the composer frame, full width, in the mode's glyph and colour (normal for an unknown mode)."""
-    style = {
-        MODE_ACCEPT: theme.mode_accept, MODE_ACCEPT_PLAN: theme.mode_accept, MODE_PLAN: theme.mode_plan,
-        MODE_SHELL: theme.accent,
-    }.get(mode, theme.rule)
-    return (Span(MODE_RULE_GLYPHS.get(mode, RULE_GLYPH) * max(width, 0), style),)
+def box_edge(width: int, theme: Theme = DEFAULT_THEME, corners: tuple[str, str] = BOX_TOP) -> Line:
+    """The box's top (`BOX_TOP`) or bottom (`BOX_BOTTOM`) edge, full width, in the rule colour."""
+    if width < 2:
+        return (Span(BOX_EDGE * max(width, 0), theme.rule),)
+    return (Span(corners[0] + BOX_EDGE * (width - 2) + corners[1], theme.rule),)
+
+
+def box_row(line: Line, inner: int, theme: Theme = DEFAULT_THEME) -> Line:
+    """One composer row inside the box: the side, a space, `line` padded to `inner` cells, a space, the side."""
+    shown = truncate_line(line, inner)
+    pad = (Span(" " * (inner - line_width(shown))),) if line_width(shown) < inner else ()
+    return (Span(BOX_SIDE + " ", theme.rule), *shown, *pad, Span(" " + BOX_SIDE, theme.rule))
 
 
 def sticky_line(prompt_text: str, width: int, theme: Theme = DEFAULT_THEME) -> Line:
     """`↳ you: <first line of the prompt>` cut to `width`, shown while a turn runs.
 
-    It is drawn on the status line's band, filled to the right edge, in roles
-    measured against that band: the region's own reminder, which the band
-    tells apart from the transcript rows right above it.
+    It is drawn on the palette's status-bar band (`theme.status`), filled to
+    the right edge, in roles measured against that band: the region's own
+    reminder, which the band tells apart from the transcript rows right above it.
     """
     first = prompt_text.strip().split("\n", 1)[0]
     bar, roles = theme.status, on_status_bar(theme)

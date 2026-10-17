@@ -1,4 +1,4 @@
-"""The subagent roster in the OMH TUI's loop: which events feed it, what empties it, and its strip on the mode row.
+"""The subagent roster in the OMH TUI's loop: which events feed it, what empties it, and its strip on the info line.
 
 Every case drives an `App` over the recording client from `test_tui_modes`.
 The subagent frames are the ones Hermes 6c61c3e27d built
@@ -11,18 +11,20 @@ screen the scripted terminal paints into.
 
 from __future__ import annotations
 
+import re
 import unittest
 
 from _tui_lines import line_text
-from test_tui_app import status_index
+from test_tui_app import info_index
 from test_tui_modes import SID, RecordingClient, answer, drawn, make_app, show_mode, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND, cells, payload
 from omh.tui.app import App
-from omh.tui.modes import mode_label, mode_row_line, strip_column
+from omh.tui.modes import mode_label, info_line, strip_column
 from omh.tui.frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, ServerRequest
 from omh.tui.keys import CHAR, ENTER, Key
 from omh.tui.panels import SPINNER_FRAMES
+from omh.tui.style import Span
 from omh.tui.subagents import MAIN_ID, Roster
 from omh.tui.theme import DEFAULT_THEME
 from omh.tui.transcript import NoticeBlock
@@ -33,7 +35,7 @@ SPIN = SPINNER_FRAMES[0]  # a clock at 0 draws the spinner's first frame
 STRIP = f"● main  {SPIN} find usages of  {SPIN} read the diff  ↓ agents"
 DONE_STRIP = "● main  ○ find usages of  ✗ read the diff  ↓ agents"
 BUSY_HINT = "esc interrupt · /steer <text> steers"
-IDLE_HINT = "? shortcuts · ⇧⇥ accept all/plan · ctrl+t effort"
+IDLE_HINT = "? for shortcuts"
 
 
 def relay(app: App, frames: list[tuple[str, dict[str, object]]] = FRAMES, session_id: str = SID) -> None:
@@ -55,9 +57,14 @@ def agent_app(*, busy: bool = True, frames: list[tuple[str, dict[str, object]]] 
 
 
 def mode_row(app: App) -> str:
-    """The row right above the status line, where the mode row is drawn on a terminal of 10 rows or more."""
+    """The info line: the region's last row, where the strip is drawn wherever a slot has room."""
     screen = drawn(app)
-    return screen[status_index(screen) - 1]
+    return screen[info_index(screen)]
+
+
+def info_left(app: App) -> str:
+    """The info line's left side: its right side (model, context, effort) stands 3 cells or more away."""
+    return re.split(r" {3,}", mode_row(app))[0]
 
 
 class BidiControlTests(unittest.TestCase):
@@ -194,21 +201,21 @@ class RosterClearTests(unittest.TestCase):
 
 
 class StripTests(unittest.TestCase):
-    def test_the_strip_joins_the_mode_row_with_the_first_agent_and_leaves_with_the_next_prompt(self) -> None:
+    def test_the_strip_joins_the_info_line_with_the_first_agent_and_leaves_with_the_next_prompt(self) -> None:
         app, _client = make_app(busy=True, cols=120, clock=lambda: 0.0)
-        self.assertEqual(mode_row(app), BUSY_HINT)
+        self.assertEqual(info_left(app), BUSY_HINT)
         relay(app, STARTS[:1])
-        self.assertEqual(mode_row(app), f"● main  {SPIN} find usages of  ↓ agents · {BUSY_HINT}")
+        self.assertEqual(info_left(app), f"● main  {SPIN} find usages of  ↓ agents · {BUSY_HINT}")
         relay(app, STARTS[1:])
-        self.assertEqual(mode_row(app), f"{STRIP} · {BUSY_HINT}")
+        self.assertEqual(info_left(app), f"{STRIP} · {BUSY_HINT}")
         app.turn_pending = False
         type_text(app, "next")
         app._on_input(Key(ENTER))
-        self.assertEqual(mode_row(app), BUSY_HINT)
+        self.assertEqual(info_left(app), BUSY_HINT)
 
     def test_a_finished_turn_keeps_its_strip_with_each_agents_verdict(self) -> None:
         app, _client = agent_app(busy=False, frames=FRAMES, cols=120)
-        self.assertEqual(mode_row(app), f"{DONE_STRIP} · {IDLE_HINT}")
+        self.assertEqual(info_left(app), f"{DONE_STRIP} · {IDLE_HINT}")
 
     def test_at_eighty_columns_two_agents_leave_the_hint_cut_and_the_strip_whole(self) -> None:
         app, _client = agent_app()
@@ -223,36 +230,41 @@ class StripTests(unittest.TestCase):
     def test_the_mode_label_comes_first_then_the_strip_then_the_hints(self) -> None:
         expected = {
             MODE_NORMAL: f"{STRIP} · {BUSY_HINT}",
-            MODE_ACCEPT: f"⏵⏵ accept all on · {STRIP} · no approvals (⇧⇥ plan)",
-            MODE_PLAN: f"⏸ plan mode on · {STRIP} · prompts go as /plan (⇧⇥ normal/accept all)",
+            MODE_ACCEPT: f"⏵⏵ accept all on · {STRIP} · (⇧⇥ plan)",  # approvals Hermes turned off itself
+            MODE_PLAN: f"⏸ plan mode on · {STRIP} · (⇧⇥ to cycle)",
         }
         for mode, row in expected.items():
             with self.subTest(mode=mode):
                 app, _client = agent_app(cols=120)
                 show_mode(app, mode)
-                self.assertEqual(mode_row(app), row)
+                self.assertEqual(info_left(app), row)
 
-    def test_the_effort_stays_on_the_right_while_the_strip_leaves_it_room(self) -> None:
+    def test_the_right_side_stays_while_the_strip_leaves_it_room(self) -> None:
         app, _client = agent_app(cols=120)
         app.effort = "high"
         row = mode_row(app)
         self.assertTrue(row.startswith(f"{STRIP} · {BUSY_HINT}"), row)
-        self.assertTrue(row.endswith("ctrl+t effort (high)"), row)
+        self.assertTrue(row.endswith("effort high"), row)
         self.assertEqual(len(row), 120)
 
-    def test_cut_short_the_hint_goes_first_then_the_effort_then_the_strip_and_never_the_label(self) -> None:
+    def test_cut_short_the_right_side_goes_first_then_the_hint_then_the_strip_and_never_the_label(self) -> None:
         roster = Roster()
         for event_type, frame in STARTS:
             roster.apply(event_type, frame, 0.0)
         label = "⏵⏵ accept all on"
+        right = ((Span("effort xhigh", DEFAULT_THEME.muted),),)
+        hint = "(⇧⇥ to cycle)"
         seen = set()
-        for width in range(10, 170):
-            start = strip_column(MODE_ACCEPT, DEFAULT_THEME)
-            strip = roster.strip_line(width - start, DEFAULT_THEME, 0)[0]
-            row = line_text(
-                mode_row_line(mode=MODE_ACCEPT, busy=True, queued=0, keyboard_protocol=False, effort="xhigh",
-                              width=width, theme=DEFAULT_THEME, strip=strip)
+
+        def row_at(width: int) -> str:
+            strip = roster.strip_line(width - strip_column(MODE_ACCEPT, DEFAULT_THEME), DEFAULT_THEME, 0)[0]
+            return line_text(
+                info_line(mode=MODE_ACCEPT, busy=True, queued=0, keyboard_protocol=False, width=width,
+                          theme=DEFAULT_THEME, strip=strip, right=right)
             )
+
+        for width in range(10, 170):
+            row = row_at(width)
             with self.subTest(width=width):
                 self.assertLessEqual(len(row), width)
                 self.assertTrue(row.startswith(label[: width - 1]), row)  # the label, whole wherever it fits
@@ -261,27 +273,29 @@ class StripTests(unittest.TestCase):
                     self.assertTrue(row.startswith(whole), row)  # the strip is whole before a cell goes to the rest
                     seen.add("strip")
                 if "effort" in row:
-                    self.assertTrue(row.startswith(whole) or "agents ↓" in row, row)
-                    self.assertTrue(row.endswith("ctrl+t effort (xhigh)"), row)
+                    self.assertTrue(row.endswith("effort xhigh"), row)
+                    self.assertTrue(hint in row or row.startswith(label + " · ● 2 agents ↓") or "·   " not in row, row)
                     seen.add("effort")
-                if "Hermes asks no approvals in this session (⇧⇥ plan/normal)" in row:
-                    self.assertTrue(row.endswith("ctrl+t effort (xhigh)"), row)  # the whole hint only beside the effort
+                if hint in row:
                     seen.add("hint")
+                    if len(f"{whole} · {hint}   effort xhigh") <= width:
+                        self.assertTrue(row.endswith("effort xhigh"), row)  # the whole left side leaves it room
                 if "2 agents ↓" in row:
                     seen.add("collapsed")
         self.assertEqual(seen, {"strip", "effort", "hint", "collapsed"})
-        # Two widths where the rules show. At 75 the strip is whole, the hint is cut to a letter and the
-        # effort has no room; at 62 the strip no longer fits, counts its agents, and the room that frees
-        # goes to the effort and what is left of the hint.
-        rows = {}
-        for width in (75, 62):
-            strip = roster.strip_line(width - strip_column(MODE_ACCEPT, DEFAULT_THEME), DEFAULT_THEME, 0)[0]
-            rows[width] = line_text(
-                mode_row_line(mode=MODE_ACCEPT, busy=True, queued=0, keyboard_protocol=False, effort="xhigh",
-                              width=width, theme=DEFAULT_THEME, strip=strip)
-            )
-        self.assertEqual(rows[75], f"{label} · {STRIP} · (…")
-        self.assertEqual(rows[62], f"{label} · ● 2 agents ↓ · (⇧⇥…   ctrl+t effort (xhigh)")
+        # The whole left side and the right side fit from 101 cells; at 100 the right side goes first and the hint
+        # stays whole; at 85 the hint has gone and the strip is whole, and the room the hint left takes the right
+        # side; at 62 the strip counts its agents, and the room that frees goes to the hint and the right side.
+        full = f"{label} · {STRIP} · {hint}"
+        rows = {width: row_at(width) for width in (101, 100, 85, 84, 62, 61)}
+        self.assertEqual(rows, {
+            101: f"{full}   effort xhigh",
+            100: full,
+            85: f"{label} · {STRIP}   effort xhigh",
+            84: f"{label} · {STRIP}",
+            62: f"{label} · ● 2 agents ↓ · {hint}   effort xhigh",
+            61: f"{label} · ● 2 agents ↓ · {hint}",
+        })
 
     def test_the_strip_starts_right_after_the_label_and_at_the_edge_without_one(self) -> None:
         self.assertEqual(strip_column(MODE_NORMAL, DEFAULT_THEME), 0)
@@ -312,15 +326,19 @@ class StripTests(unittest.TestCase):
         self.assertTrue(mode_row(app).startswith("● 2 agents ↓"), mode_row(app))
         self.assertEqual(app._agent_strip(40)[1], ())
 
-    def test_below_ten_rows_there_is_no_mode_row_and_so_no_strip(self) -> None:
-        for rows in (6, 7, 9):
+    def test_the_strip_is_on_the_info_line_wherever_the_agent_list_can_open(self) -> None:
+        for rows in (6, 7, 9, 10):
             with self.subTest(rows=rows):
                 app, _client = agent_app(rows=rows)
+                self.assertTrue(mode_row(app).startswith("● main"), drawn(app))
+                self.assertTrue(app._list_available())
+        for rows, cols in ((5, 80), (24, 19)):  # too small for a slot: no list, so no strip offering one
+            with self.subTest(rows=rows, cols=cols):
+                app, _client = agent_app(rows=rows, cols=cols)
                 self.assertNotIn("● main", "\n".join(drawn(app)))
-        app, _client = agent_app(rows=10)
-        self.assertIn("● main", mode_row(app))
+                self.assertFalse(app._list_available())
 
-    def test_an_open_question_keeps_the_strip_on_the_mode_row(self) -> None:
+    def test_an_open_question_keeps_the_strip_on_the_info_line(self) -> None:
         from omh.tui.gateway import ServerRequest
 
         app, _client = agent_app()
@@ -385,12 +403,11 @@ class OneAgentSurfaceTests(unittest.TestCase):
         self.assertIn(f"{SPIN} read the diff", text)  # a name that is its own stays as it is
         self.assertEqual(len(hits), 4)
 
-    def test_idle_with_agents_still_running_says_how_many_on_the_status_line(self) -> None:
-        app, _client = agent_app(busy=False)
-        self.assertEqual(app._state_text(), "idle · 2 agents running")
-        relay(app, FRAMES[11:12])  # the first agent's verdict
-        self.assertEqual(app._state_text(), "idle · 1 agent running")
+    def test_idle_with_agents_still_running_the_strip_says_which_and_no_state_word_does(self) -> None:
+        # The status line's `idle · 2 agents running` is gone with the status line: the strip marks each agent.
+        app, _client = agent_app(busy=False, cols=120)
+        self.assertEqual(info_left(app), f"{STRIP} · {IDLE_HINT}")
         relay(app, FRAMES)
-        self.assertEqual(app._state_text(), "idle")
-        busy, _client = agent_app(busy=True)
-        self.assertEqual(busy._state_text(), "running")
+        self.assertEqual(info_left(app), f"{DONE_STRIP} · {IDLE_HINT}")
+        for state in ("idle", "running", "agents running"):
+            self.assertNotIn(state, mode_row(app))

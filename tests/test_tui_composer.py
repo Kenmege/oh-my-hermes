@@ -344,7 +344,7 @@ class MoveTests(unittest.TestCase):
 
     def test_up_and_down_follow_wrapped_rows_after_a_render(self) -> None:
         composer = at("abcdefghij", 10)
-        composer.render(6, 5)  # "› " + 4 cells per row: abcd / efgh / ij
+        composer.render(6, 5)  # "> " + 4 cells per row: abcd / efgh / ij
         press(composer, Key(UP))
         self.assertEqual(composer.caret, 6)
         press(composer, Key(UP))
@@ -445,7 +445,7 @@ class PasteTests(unittest.TestCase):
     def test_a_tab_draws_as_four_cells(self) -> None:
         composer = at("\tx", 2)
         lines, caret = composer.render(40, 3)
-        self.assertEqual(lines_text(lines), ["›     x"])
+        self.assertEqual(lines_text(lines), [">     x"])
         self.assertEqual(caret, (0, 7))
 
 
@@ -599,7 +599,7 @@ class MaskedTests(unittest.TestCase):
         composer = Composer(masked=True)
         composer.handle(Paste("p" + HANGUL_NFD + FAMILY))
         lines, caret = composer.render(40, 3)
-        self.assertEqual(lines_text(lines), ["› ••••"])
+        self.assertEqual(lines_text(lines), ["> ••••"])
         self.assertEqual(caret, (0, 6))
         press(composer, Key(LEFT), Key(LEFT))
         self.assertEqual(composer.render(40, 3)[1], (0, 4))
@@ -608,7 +608,7 @@ class MaskedTests(unittest.TestCase):
         composer = Composer(masked=True)
         typed(composer, "한글한글한글")  # 12 cells of Hangul, 6 bullets
         lines, caret = composer.render(6, 5)
-        self.assertEqual(lines_text(lines), ["› ••••", "  ••"])
+        self.assertEqual(lines_text(lines), ["> ••••", "  ••"])
         self.assertEqual(caret, (1, 4))
 
     def test_masked_input_never_enters_or_browses_history(self) -> None:
@@ -659,18 +659,18 @@ class MeasureOnceTests(unittest.TestCase):
 
     def test_a_new_text_a_new_mask_or_a_new_width_is_laid_out_again(self) -> None:
         composer = at("abcdef", 6)
-        self.assertEqual(lines_text(composer.render(20, 3)[0]), ["› abcdef"])
+        self.assertEqual(lines_text(composer.render(20, 3)[0]), ["> abcdef"])
         composer.masked = True
-        self.assertEqual(lines_text(composer.render(20, 3)[0]), ["› ••••••"])
+        self.assertEqual(lines_text(composer.render(20, 3)[0]), ["> ••••••"])
         typed(composer, "g")
-        self.assertEqual(lines_text(composer.render(20, 3)[0]), ["› •••••••"])
-        self.assertEqual(lines_text(composer.render(6, 3)[0]), ["› ••••", "  •••"])
+        self.assertEqual(lines_text(composer.render(20, 3)[0]), ["> •••••••"])
+        self.assertEqual(lines_text(composer.render(6, 3)[0]), ["> ••••", "  •••"])
 
 
 class RenderTests(unittest.TestCase):
     def test_empty_input_draws_the_prompt_with_the_caret_after_it(self) -> None:
         lines, caret = Composer().render(40, 3)
-        self.assertEqual(lines_text(lines), ["› "])
+        self.assertEqual(lines_text(lines), ["> "])
         self.assertEqual(caret, (0, 2))
 
     def test_the_prompt_is_styled_and_continuation_rows_are_indented(self) -> None:
@@ -683,13 +683,13 @@ class RenderTests(unittest.TestCase):
     def test_wrapping_is_by_cells_and_never_splits_a_wide_glyph(self) -> None:
         composer = at("ab한글cd", 6)
         lines, caret = composer.render(7, 5)  # 5 cells per row
-        self.assertEqual(lines_text(lines), ["› ab한", "  글cd"])
+        self.assertEqual(lines_text(lines), ["> ab한", "  글cd"])
         self.assertEqual(caret, (1, 6))
 
     def test_the_caret_after_a_full_row_starts_a_new_row(self) -> None:
         composer = at("abcd", 4)
         lines, caret = composer.render(6, 5)  # exactly 4 cells per row
-        self.assertEqual(lines_text(lines), ["› abcd", "  "])
+        self.assertEqual(lines_text(lines), ["> abcd", "  "])
         self.assertEqual(caret, (1, 2))
         composer.caret = 3
         self.assertEqual(composer.render(6, 5)[1], (0, 5))
@@ -697,7 +697,7 @@ class RenderTests(unittest.TestCase):
     def test_the_caret_at_a_soft_wrap_sits_at_the_next_row_start(self) -> None:
         composer = at("abcdef", 4)
         lines, caret = composer.render(6, 5)
-        self.assertEqual(lines_text(lines), ["› abcd", "  ef"])
+        self.assertEqual(lines_text(lines), ["> abcd", "  ef"])
         self.assertEqual(caret, (1, 2))
 
     def test_the_caret_col_counts_wide_glyphs_and_emoji(self) -> None:
@@ -717,7 +717,7 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(caret, (0, 3))
         press(composer, Key(UP), Key(UP))
         lines, caret = composer.render(40, 3)
-        self.assertEqual(lines_text(lines), ["› 1", "  2", "  3"])
+        self.assertEqual(lines_text(lines), ["> 1", "  2", "  3"])
         self.assertEqual(caret, (0, 3))
 
     def test_the_window_refills_when_rows_go_away(self) -> None:
@@ -744,35 +744,35 @@ class WordWrapTests(unittest.TestCase):
         self.assertEqual(
             self.rows(prompt, 110),
             [
-                '› Do these steps in order. 1) Call todo_list once with this nested plan and never touch it again: a "Map the ',
+                '> Do these steps in order. 1) Call todo_list once with this nested plan and never touch it again: a "Map the ',
                 '  Hermes-hosted HUD" completed, with subtask "Inventory the layout complaints" completed',
             ],
         )
-        self.assertEqual(self.rows("the quick brown fox", 12), ["› the quick ", "  brown fox"])  # 10 cells a row
+        self.assertEqual(self.rows("the quick brown fox", 12), ["> the quick ", "  brown fox"])  # 10 cells a row
 
     def test_spaces_at_the_break_end_the_row_and_a_tab_breaks_like_one(self) -> None:
         # The spaces stay on the row (a run of them too), so the row after starts with the word, never a space.
-        self.assertEqual(self.rows("ab hello   world", 11), ["› ab ", "  hello   ", "  world"])  # 9 cells a row
-        self.assertEqual(self.rows("ab\tcdef", 10), ["› ab    ", "  cdef"])  # the tab is drawn as four spaces
+        self.assertEqual(self.rows("ab hello   world", 11), ["> ab ", "  hello   ", "  world"])  # 9 cells a row
+        self.assertEqual(self.rows("ab\tcdef", 10), ["> ab    ", "  cdef"])  # the tab is drawn as four spaces
 
     def test_a_word_longer_than_a_row_still_breaks_at_the_cell(self) -> None:
-        self.assertEqual(self.rows("see abcdefghijk end", 10), ["› see ", "  abcdefgh", "  ijk end"])  # 8 cells
-        self.assertEqual(self.rows("日本語の文を書く", 8), ["› 日本語", "  の文を", "  書く"])  # no spaces at all
+        self.assertEqual(self.rows("see abcdefghijk end", 10), ["> see ", "  abcdefgh", "  ijk end"])  # 8 cells
+        self.assertEqual(self.rows("日本語の文を書く", 8), ["> 日本語", "  の文を", "  書く"])  # no spaces at all
 
     def test_a_word_reaching_the_last_cell_puts_the_space_after_it_on_the_next_row(self) -> None:
         # A continuation row starts with a space only after a row of one word (or of only spaces) with no room left
         # for that space: it cannot hang past the edge, where the caret before it would sit.
         composer = at("abcdefgh end", 8)
         lines, caret = composer.render(10, 5)  # 8 cells a row
-        self.assertEqual(lines_text(lines), ["› abcdefgh", "   end"])
+        self.assertEqual(lines_text(lines), ["> abcdefgh", "   end"])
         self.assertEqual(caret, (1, 2))  # the caret before that space opens the row
 
     def test_masked_input_and_a_no_break_space_wrap_by_the_cell(self) -> None:
         # A word break under the mask would show where the secret's spaces are.
-        self.assertEqual(self.rows("ab cd ef", 6, masked=True), ["› ••••", "  ••••", "  "])
+        self.assertEqual(self.rows("ab cd ef", 6, masked=True), ["> ••••", "  ••••", "  "])
         nbsp = chr(0xA0)
-        self.assertEqual(self.rows(f"ab cd{nbsp}ef", 8), ["› ab ", f"  cd{nbsp}ef"])  # `cd ef` moves as one word
-        self.assertEqual(self.rows(f"abcd{nbsp}efgh", 8), [f"› abcd{nbsp}e", "  fgh"])
+        self.assertEqual(self.rows(f"ab cd{nbsp}ef", 8), ["> ab ", f"  cd{nbsp}ef"])  # `cd ef` moves as one word
+        self.assertEqual(self.rows(f"abcd{nbsp}efgh", 8), [f"> abcd{nbsp}e", "  fgh"])
 
     def test_every_caret_position_has_its_own_cell_inside_a_row_no_wider_than_the_screen(self) -> None:
         texts = [

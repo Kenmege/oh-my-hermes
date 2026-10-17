@@ -32,13 +32,15 @@ none when no background was reported. What is drawn on a band takes
 `on_band(theme, band)`, the roles measured against that band, so its words
 reach 4.5:1 and its marks 3:1 on it.
 
-The status line sits on a bar of its own: the palette's status-bar
-background on a dark terminal or one that reported none, and on a light one
-a light tint of that colour (`LIGHT_STATUS_SHARE`), so the bar belongs to a
-light screen instead of being a dark band across it. Its words are measured
-against that bar instead of the terminal's background: the `status*` roles
-here, and `on_status_bar(theme)` for the roles the status line borrows (OMH's
-chips, the mode).
+The sticky prompt and the pager's footer sit on a bar of their own
+(`status`): the palette's status-bar background on a dark terminal or one
+that reported none, and on a light one a light tint of that colour
+(`LIGHT_STATUS_SHARE`), so the bar belongs to a light screen instead of being
+a dark band across it. Words on it are measured against that bar instead of
+the terminal's background: `status` itself, and `on_status_bar(theme)` for
+the roles the sticky prompt borrows. The info line under the composer has no
+bar: its words and marks are measured against the terminal's background like
+any transcript row.
 """
 
 from __future__ import annotations
@@ -109,10 +111,6 @@ class Theme:
     syntax_number: Style
     syntax_comment: Style
     status: Style
-    status_dim: Style
-    status_good: Style
-    status_warn: Style
-    status_bad: Style
     menu: Style
     menu_current: Style
     hint: Style
@@ -239,10 +237,6 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         syntax_number=Style(fg=read("syntax_number")),
         syntax_comment=Style(fg=read("syntax_comment"), italic=True),
         status=on_bar("status_bar_text"),
-        status_dim=on_bar("status_bar_dim", EDGE_CONTRAST),  # the separators between the status line's fields
-        status_good=on_bar("status_bar_good"),
-        status_warn=on_bar("status_bar_warn"),
-        status_bad=on_bar("status_bar_critical"),
         menu=Style(fg=c["banner_text"], bg=c["completion_menu_bg"]),
         menu_current=Style(fg=c["banner_text"], bg=c["completion_menu_current_bg"], bold=True),
         hint=Style(fg=read("banner_dim")),
@@ -283,7 +277,7 @@ def on_band(theme: Theme, band: Style) -> Theme:
 
 @lru_cache(maxsize=16)
 def on_status_bar(theme: Theme) -> Theme:
-    """`theme`'s roles measured against its own status-bar background, for what the status line draws in them."""
+    """`theme`'s roles measured against its own status-bar background, for what is drawn on that bar in them."""
     skin = theme_for_name(theme.name) or default_theme()
     return build_theme(skin, theme.status.bg)
 

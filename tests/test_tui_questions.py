@@ -3,7 +3,7 @@
 Ctrl+O while a question is open pages it whole (a long command every row of
 it) and answers nothing; q or Esc goes back to the question as it was, and a
 question that closes while paged takes its pager with it. A terminal too small
-for anything but the composer and the status line still shows a question
+for anything but the composer and the info line still shows a question
 answered with text its label. These cases drive an `App` whose gateway client
 only records, and read the VT screen it painted.
 """
@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import unittest
 
-from _tui_lines import line_text
+from _tui_lines import box_inner, line_text
 from test_tui_choice_ui import armed, drawn, press
 from test_tui_app import FakePoller, ScriptedTerminal
 from test_tui_modes import RecordingClient, make_app, type_text
@@ -324,33 +324,34 @@ class WaitingTimeTests(unittest.TestCase):
         # The deny also stops the turn: the row is the turn's own clock again, while Hermes stops it.
         self.assertTrue([row for row in drawn(app) if "interrupting… (22s" in row])
 
-    def test_the_status_bars_activity_chip_keeps_no_second_clock_and_goes_with_the_turn(self) -> None:
+    def test_the_info_lines_activity_chip_keeps_no_second_clock_and_goes_with_the_turn(self) -> None:
         # The OMH HUD's in-flight chip counts the open call's own seconds; it lags the turn by a poll or more.
         from test_tui_panels import hud_payload
 
         from omh.tui.panels import HudSnapshot
 
         def status() -> str:
-            return next(row for row in drawn(app) if row.startswith("⚚ OMH"))
+            screen = drawn(app)
+            return screen[max(index for index, row in enumerate(screen) if row)]  # the info line, the region's last row
 
         app, _client, now = self.clocked()
         app.stored_id = "stored"
         payload = hud_payload()
         payload["activity"].update(live=True, post_tool_call_observed=True, open_call_count=1, oldest_open_elapsed_seconds=9)
         app.hud = HudSnapshot("stored", payload, now[0])
-        self.assertIn("• 1 tool · 9s", status())  # while the turn runs, the call's seconds
+        self.assertIn("1 tool · 9s", status())  # while the turn runs, the call's seconds
         app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
         now[0] = 114.0
         screen = drawn(app)
         self.assertIn("? waiting on you (14s)", screen)
-        self.assertIn("• 1 tool │", status())  # one clock: the wait's, on the working row
+        self.assertIn("1 tool", status())  # one clock: the wait's, on the working row
         self.assertNotIn("9s", status())
         armed(app)
         press(app, Key(DOWN), Key(ENTER))
-        self.assertIn("• 1 tool · 9s", status())
+        self.assertIn("1 tool · 9s", status())
         app._on_event(Event("message.complete", SID, {"text": "done"}))
         self.assertNotIn("tool", status())  # the snapshot still says live; the turn is over
-        self.assertIn("idle", status())
+        self.assertTrue(status().startswith("? for shortcuts"), status())
 
     def test_back_to_back_questions_are_one_wait(self) -> None:
         app, _client, now = self.clocked()
@@ -526,7 +527,7 @@ TELL_APPROVAL = ServerRequest("srq-1", "approval", {
 
 
 def mode_row(app) -> str:
-    return line_text(app._mode_row_line(100))
+    return line_text(app._info_line(100))
 
 
 class TellRowTests(unittest.TestCase):
@@ -548,7 +549,7 @@ class TellRowTests(unittest.TestCase):
         self.assertEqual(app.tell_draft.text, "my draft")  # type: ignore[union-attr]
         self.assertIn(app_module.TELL_SAY[0], mode_row(app))
         self.assertNotIn("esc to interrupt", mode_row(app))  # Esc leaves the field, it interrupts nothing
-        self.assertIn(f"› {app_module.TELL_PLACEHOLDER}", drawn(app))
+        self.assertIn(f"> {app_module.TELL_PLACEHOLDER}", [box_inner(row) for row in drawn(app)])
         self.assertEqual(client.named("session.steer"), [])  # nothing is sent until the person sends it
 
     def test_what_is_sent_goes_into_the_running_turn_as_a_steer_and_the_draft_comes_back(self) -> None:
@@ -814,8 +815,8 @@ class DocumentedQuestionViewTests(unittest.TestCase):
         always = prompts.open_request("srq-1", "approval", {"description": "recursive delete", "choices": ["always"]})
         self.assertIn(f"(`{always.approval_label('always')}`)", installation)  # type: ignore[union-attr]
         self.assertNotIn("Approving a command permanently stays a choice for `hermes --tui`", installation)
-        self.assertIn(f"labelled `{app_module.TELL_SAY[0]}` on the mode row", installation)
-        self.assertIn(f"which is what the mode row's `{prompts.APPROVAL_KEYS[-1]}` says", installation)
+        self.assertIn(f"labelled `{app_module.TELL_SAY[0]}` on the info line", installation)
+        self.assertIn(f"which is what the info line's `{prompts.APPROVAL_KEYS[-1]}` says", installation)
         self.assertIn("When the approval came from a subagent, that stops the session's whole running turn", installation)
         tell = prompts.open_request("srq-1", "approval", {})
         self.assertIn(f"last {tell.approval_label(prompts.APPROVAL_TELL)}, one per row", installation)  # type: ignore[union-attr]
@@ -877,7 +878,7 @@ class TinyTerminalQuestionTests(unittest.TestCase):
                     (row,) = [line for line in screen if line.startswith("▌ ")]
                     shown = row[2:].removeprefix("🔑 ").removeprefix("? ").split(" …")[0].rstrip("…")
                     self.assertTrue(shown and label.startswith(shown), row)
-                    self.assertTrue([line for line in screen if line.startswith("›")], screen)  # the composer under it
+                    self.assertTrue([line for line in screen if line.startswith(">")], screen)  # the composer under it
 
     def test_the_label_row_is_the_text_questions_alone(self) -> None:
         # A tiny terminal still gives a panel, a menu or a picked list nothing beyond what it gave before.

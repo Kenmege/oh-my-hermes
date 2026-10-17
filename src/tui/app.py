@@ -86,6 +86,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import signal
 import sys
 import time
@@ -115,7 +116,7 @@ from ..skin_pack import (
 )
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
-from .frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN, MODE_SHELL, STATUS_SEPARATOR, Frame, build_frame, sticky_line
+from .frame import MODE_NORMAL, MODE_SHELL, Frame, build_frame, sticky_line
 from .history import SEARCH_ACCEPT, SEARCH_CANCEL, SEARCH_HINTS, HistorySearch, append_entry, history_path, load_history
 from .gateway import (
     Event,
@@ -148,25 +149,26 @@ from .keys import (
 )
 from .launch import request_fallback
 from .agent_view import AGENT_STEER_LEFT_UNANSWERED_NOTICE, STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
-from .layout import choice_cap, slot_cap, under_composer
+from .layout import choice_cap, is_tiny, slot_cap
 from .markdown import clean_text
 from .modes import (
     HERMES_OWN_CYCLE,
-    MODE_ROW_GAP,
+    INFO_SEPARATOR,
     NO_SESSION_NOTICE,
     STRIP_SEPARATOR,
     ModesMixin,
     configured_effort,
     effort_words,
-    mode_row_line,
+    info_line,
+    model_forms,
 )
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .model_picker import KEYS as MODEL_PICKER_KEYS
 from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows
-from .panels import HudPoller, HudSnapshot, panel_lines, plan_state, plan_text, status_segments
+from .panels import HudPoller, HudSnapshot, hud_chips, panel_lines, plan_state, plan_text
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
-from .screen import CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
+from .screen import CARRIAGE_RETURN, CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion, cursor_up
 from .session_picker import KEYS as SESSION_PICKER_KEYS
 from .session_picker import PICK, SessionPicker, session_rows
 from .rewind_picker import KEYS as REWIND_PICKER_KEYS
@@ -200,7 +202,6 @@ from .theme import (
     build_theme,
     is_light,
     logo_lines,
-    on_status_bar,
     surface_for,
     theme_named,
 )
@@ -265,12 +266,12 @@ RESIZE_SETTLE_SECONDS = 0.15
 REDRAW_TAIL_ROWS = 3000
 EXIT_CONFIRM_SECONDS = 2.0
 # Esc pressed twice within this long: with text, clears it into this session's history; on an empty composer
-# between turns, opens the rewind picker. The mode row says what the second press will do.
+# between turns, opens the rewind picker. The info line says what the second press will do.
 DOUBLE_ESCAPE_SECONDS = 0.8
 ESCAPE_CLEAR = "clear"
 ESCAPE_REWIND = "rewind"
 ESCAPE_AGAIN = "esc again to {}"
-# What the mode row says while a picked rewind waits to be sent, longest first: a narrow row takes the first that fits,
+# What the info line says while a picked rewind waits to be sent, longest first: a narrow line takes the first that fits,
 # so what sending it replaces and how to cancel it survive.
 REWIND_SAY = (
     "⏪ rewind: sending replaces prompt #{ordinal} and everything after it · esc cancels",
@@ -280,7 +281,7 @@ REWIND_SAY = (
 )
 REWIND_BUSY_NOTICE = "Rewind works between turns: let this one end, or interrupt it with Esc."
 CHAINS_CLOSED_NOTICE = "Hermes asked you something, so /omh-model closed:"
-# What the mode row says while the draft spans lines on a terminal that has sent no key report, where Shift+Enter
+# What the info line says while the draft spans lines on a terminal that has sent no key report, where Shift+Enter
 # arrives as Enter and sends; longest first.
 NEWLINE_KEYS = ("⏎ sends · \\⏎, alt+⏎ or ctrl+j adds a line", "\\⏎ or alt+⏎ adds a line", "alt+⏎ adds a line")
 # A composer line that starts with this is the person's own shell command (`shell.exec`), never a prompt.
@@ -339,9 +340,7 @@ TELL_SAY = (
 )
 BARE_HERMES_NOTE = "Bare `hermes` opens Hermes' own terminal."
 
-# The mode on the status line, where the terminal is too short for the mode row.
-MODE_CHIPS = {MODE_ACCEPT: "⏵⏵ accept", MODE_PLAN: "⏸ plan"}
-# The context figure turns warn, then bad, on the status line.
+# The context figure turns warn, then bad, on the info line.
 CONTEXT_WARN_PERCENT = 80
 CONTEXT_BAD_PERCENT = 95
 
@@ -473,7 +472,7 @@ TITLE_SET = "\x1b]2;{}" + STRING_TERMINATOR
 TITLE_DEFAULT = "Hermes"
 TITLE_CHARS = 80
 
-EXIT_HINT = "ctrl+c again to exit"  # on the mode row while a second Ctrl+C would exit
+EXIT_HINT = "ctrl+c again to exit"  # on the info line while a second Ctrl+C would exit
 INTERRUPT_HINT = "esc to interrupt"
 OSC52_COPY = "\x1b]52;c;{}\x07"
 # The completion menu's name column: at least this wide, wider for the longest name it lists (OMH skills are
@@ -513,6 +512,11 @@ YOLO_NOTE = (
 # The keys themselves are `shortcuts.SHORTCUTS`, drawn by `?` and /keys; /help only points there.
 HELP_KEYS = "Keys: ? on an empty composer, or /keys, lists every key."
 SKILL_COMMANDS_NOTE = "{count} skill commands available: type / and part of a skill's name to find one."
+# Hermes 6c61c3e27d's note for a skill whose name a built-in command takes (`agent/skill_commands.py`,
+# `skill_command_collision_note`): the skill has no `/<name>` and runs as `/skill <name>`. `commands.catalog` joins
+# the notes with "; " into its `warning`, and only when no discovery failed. `/help` lists them; no notice says them.
+COLLISION_NOTE = re.compile(r"slash command /[^\s;]+ unavailable — name taken by built-in; use /skill [^;]+?(?=; slash command /|$)")
+COLLISION_NOTES_HEADING = "Skills a built-in command's name takes:"
 RELOAD_REFUSED_NOTICE = (
     "Hermes did not rescan its skills ({code}: {message}); a skill installed since the OMH TUI started runs as "
     "/<name> once it is restarted."
@@ -798,6 +802,13 @@ def queue_lines(
     return [truncate_line(row, width) for row in rows]
 
 
+def collision_notes(warning: str) -> tuple[str, ...]:
+    """Hermes' built-in-name notes in a catalog `warning`, each as Hermes wrote it; () unless the warning is nothing
+    but them (a discovery failure, or anything else, is not one)."""
+    notes = tuple(match.group(0) for match in COLLISION_NOTE.finditer(warning))
+    return notes if notes and "; ".join(notes) == warning else ()
+
+
 def initial_theme(ready_payload: Mapping[str, Any], omh_home: str | None = None) -> Theme:
     """The theme `effective_theme` picks: saved under `omh_home`, else `gateway.ready`'s skin name, else sky."""
     skin = ready_payload.get("skin")
@@ -825,8 +836,8 @@ def banner_lines(*, cwd: str, resumed: str, theme: Theme, width: int) -> list[Li
     The header is one row at `width`: the brand, the version, the session it
     resumed and the working directory, shortened from the left to what is
     left over (and dropped when that is too little); whatever still
-    overflows is cut at the edge rather than wrapped. The model is the status
-    line's, and the keys the mode row's.
+    overflows is cut at the edge rather than wrapped. The model and the keys
+    are the info line's.
     """
     facts = [f"resumed {resumed}"] if resumed else []
 
@@ -1122,14 +1133,13 @@ class App(ModesMixin, AgentViewMixin):
         self.sid = ""
         self.stored_id = ""
         self.model = ""
-        self.context = ""
         self.context_percent: float | None = None
-        # What the composer shows (`mode`): accept while Hermes has approvals off, the TUI's own plan flag.
+        # What the info line shows (`mode`): accept while Hermes has approvals off, the TUI's own plan flag.
         self.approvals_off = False
         self.plan_mode = False
         self.yolo_by_tui = False  # the approvals off shown are the TUI's own confirmed `on`, not Hermes' own
         self.hermes_approvals_said = False  # HERMES_APPROVALS_NOTICE was shown in this session
-        self.effort = ""  # the reasoning effort the mode row shows; "" shows none
+        self.effort = ""  # the reasoning effort the info line shows; "" shows none
         # The effort Hermes' config sets (`configured_effort`), from the last `config.get`: what a session that has
         # not said its own starts with, the launch session and each one opened later (`_adopt_session`).
         self.effort_configured = ""
@@ -1144,6 +1154,7 @@ class App(ModesMixin, AgentViewMixin):
         self.catalog_categories: list[tuple[str, list[str]]] = []
         self.skill_count = 0
         self.catalog_warning = ""  # the last warning shown, so a re-read repeats none
+        self.catalog_collisions: tuple[str, ...] = ()  # Hermes' built-in-name notes, which /help lists
         self.slot: PromptSlot | None = None
         self.slot_opened_at = 0.0
         self.slot_arm_seconds = SLOT_ARM_SECONDS  # the open slot's arm delay, fixed as it opened
@@ -1214,7 +1225,7 @@ class App(ModesMixin, AgentViewMixin):
         self.tail_asked_at: float | None = None  # when the last `subagent.tail` went out
         self.tail_open = False  # that call has no answer yet
         self.tail_misses: dict[str, int] = {}  # agent id -> answers in a row without a tail
-        # The cells a click opens, as last drawn: rows above the status line → the entries on that row.
+        # The cells a click opens, as last drawn: rows above the info line → the entries on that row.
         self.clickable: dict[int, tuple[Hit, ...]] = {}
         self.mouse_off_at: float | None = None  # when `_set_mouse` last turned reports off; None before that
         self.wake: int | None = None  # the gateway client's wake descriptor, which `run` selects on with the input
@@ -1226,8 +1237,8 @@ class App(ModesMixin, AgentViewMixin):
         self.session_title = ""  # Hermes' auto-title for the session (`session.title`)
         self.shown_title: str | None = None  # the terminal title last written
         self.title_words = ""  # what that title was cut from: the same words need no new cut
-        # The status line last composed, with what it showed and the theme and HUD snapshot it was composed with.
-        self.status_held: tuple[tuple[object, ...], Theme, HudSnapshot | None, Line] | None = None
+        # The info line's right side last composed: what it showed, and the theme and HUD snapshot it was composed with.
+        self.info_held: tuple[tuple[object, ...], Theme, HudSnapshot | None, tuple[Line, ...]] | None = None
         self.title_pushed = False
         self.background_mode = BACKGROUND_AUTO
         self.dirty = True
@@ -1339,13 +1350,18 @@ class App(ModesMixin, AgentViewMixin):
         """Keep what completion and `/help` read from a `commands.catalog` result; a new warning is a notice.
 
         Hermes' warning says skill, quick-command or plugin discovery failed,
-        or names skills that share a built-in command's name and run only as
-        `/skill <name>`.
+        or, when nothing failed, names the skills that share a built-in
+        command's name and run only as `/skill <name>` (`collision_notes`).
+        Only a failure is a notice: those notes come with every catalog Hermes'
+        own bundled skills collide in, so they are kept for `/help` instead.
         """
         self.catalog = catalog_pairs(result)
         self.catalog_categories = catalog_categories(result)
         self.skill_count = catalog_skill_count(result)
         warning = as_text(result.get("warning")).strip()
+        self.catalog_collisions = collision_notes(warning)
+        if self.catalog_collisions:
+            warning = ""
         if warning and warning != self.catalog_warning:
             self.transcript.add_notice(f"Hermes' command catalog: {warning}", NOTICE_WARN)
         self.catalog_warning = warning
@@ -1382,8 +1398,7 @@ class App(ModesMixin, AgentViewMixin):
         self.sid = as_text(result.get("session_id"))
         info = result.get("info")
         self.model = as_text(info.get("model")) if isinstance(info, dict) else ""
-        self.context = ""  # the next session.usage says how full this session is
-        self.context_percent = None
+        self.context_percent = None  # the next session.usage says how full this session is
         self.usage_output = self.turn_output_base = None  # the token counter is the session's own
         cwd = as_text(info.get("cwd")) if isinstance(info, dict) else ""
         self.transcript.cwd = cwd or str(self._create_params().get("cwd", ""))
@@ -1424,8 +1439,27 @@ class App(ModesMixin, AgentViewMixin):
         self.background_named_dark = self.background is None and colorfgbg_names_dark(named)
         self.theme = build_theme(self._skin(), self._surface())
 
+    def clear_launch_screen(self, row: int | None) -> None:
+        """Push the rows above the cursor into the terminal's scrollback and start the region on the screen's top row.
+
+        From the cursor's row, `rows - 1` line feeds reach the screen's last
+        row and then scroll exactly the rows above the cursor off the top, into
+        scrollback, whichever row the cursor was on; relative moves bring the
+        cursor back to the top row, which is where the first frame starts (the
+        row the cursor was on is erased by that frame, as at any launch). With
+        `row` 1 (the launch's cursor position report put the cursor on the top
+        row) nothing is above it, and nothing is written. Nothing is erased:
+        what the screen showed stays one scroll up.
+        """
+        rows = self.size[1]
+        if rows < 2 or self.region.height:
+            return
+        if row != 1:
+            self.terminal.write("\n" * (rows - 1) + cursor_up(rows - 1) + CARRIAGE_RETURN)
+        self.region = LiveRegion(self.terminal.write, at_top=True)
+
     def adopt_cursor_row(self, row: int | None) -> None:
-        """The 1-based row the terminal reported its cursor on at launch: the region knows its place from the first frame.
+        """The 1-based row the terminal reported its cursor on after a stop: the region knows its place from the next frame.
 
         None (no report) or a row outside the screen leaves the place unknown,
         as without the report, until output has pushed it to certainty.
@@ -1480,6 +1514,8 @@ class App(ModesMixin, AgentViewMixin):
         except EOFError:
             self.exit_code = 0
             return
+        if self.terminal.resized():  # one that ended the read: nothing in this step is drawn at the old size
+            self._on_resize()
         self._take_input(data)
         if self.exit_code is not None:
             return
@@ -2088,7 +2124,7 @@ class App(ModesMixin, AgentViewMixin):
         from the first one it brings.
         """
         if context_text(usage):
-            self.context, self.context_percent = context_text(usage), context_percent(usage)
+            self.context_percent = context_percent(usage)
         output = usage.get("output") if isinstance(usage, dict) else None
         if isinstance(output, int) and not isinstance(output, bool):
             if self.turn_output_base is None and self._busy():
@@ -2417,8 +2453,8 @@ class App(ModesMixin, AgentViewMixin):
         the shell stays readable above the session's rows. The shell's window
         title is back while the job is stopped (popped, and pushed again by the
         next frame). Continued, the TUI asks the terminal for the cursor row
-        again, as at launch (`adopt_cursor_row`), so the region knows its place
-        from its first frame; keys typed while that query waited are read after
+        (`adopt_cursor_row`), so the region knows its place from its first
+        frame; keys typed while that query waited are read after
         the keys that came in the same read as the Ctrl+Z (`held_input`).
         """
         if getattr(signal, "SIGTSTP", None) is None:
@@ -2504,13 +2540,13 @@ class App(ModesMixin, AgentViewMixin):
         return True
 
     def _expire_exit(self) -> None:
-        """Forget a first Ctrl+C once the second can no longer exit, so the mode row stops naming it."""
+        """Forget a first Ctrl+C once the second can no longer exit, so the info line stops naming it."""
         if self.exit_armed_at is not None and self.clock() - self.exit_armed_at > EXIT_CONFIRM_SECONDS:
             self.exit_armed_at = None
             self.dirty = True
 
     def _expire_escape(self) -> None:
-        """Forget a first Esc once the second can no longer come, so the mode row stops naming it."""
+        """Forget a first Esc once the second can no longer come, so the info line stops naming it."""
         if self.escape_armed is not None and self.clock() - self.escape_armed[1] > DOUBLE_ESCAPE_SECONDS:
             self.escape_armed = None
             self.dirty = True
@@ -2704,7 +2740,7 @@ class App(ModesMixin, AgentViewMixin):
         if self.exit_armed_at is not None and now - self.exit_armed_at <= EXIT_CONFIRM_SECONDS:
             self.exit_code = 0
             return
-        self.exit_armed_at = now  # the mode row says so until the second press can no longer come
+        self.exit_armed_at = now  # the info line says so until the second press can no longer come
         self.dirty = True
 
     def _menu_entries(self) -> list[Completion]:
@@ -3304,7 +3340,8 @@ class App(ModesMixin, AgentViewMixin):
         }
 
     def _help(self, arg: str) -> None:
-        """The TUI's commands, Hermes' by category, and how many skill commands there are; paged when long."""
+        """The TUI's commands, Hermes' by category, how many skill commands there are and, in Hermes' words, which
+        skills a built-in command's name takes; paged when long."""
         local = [command for command in COMMANDS if command.route == LOCAL]
         width = max(len(command.name) for command in local)
         rows = ["OMH TUI commands:"]
@@ -3316,6 +3353,9 @@ class App(ModesMixin, AgentViewMixin):
             rows.append("Hermes commands: none listed.")
         if self.skill_count:
             rows.append(SKILL_COMMANDS_NOTE.format(count=self.skill_count))
+        if self.catalog_collisions:
+            rows.append(COLLISION_NOTES_HEADING)
+            rows += [f"  {note}" for note in self.catalog_collisions]
         rows.append(YOLO_NOTE)
         rows.append(HELP_KEYS)
         rows.append(BARE_HERMES_NOTE)
@@ -3882,7 +3922,7 @@ class App(ModesMixin, AgentViewMixin):
             rows=rows,
             min_height=max(self.region.height - len(stable), 0) if pinned else 0,
             composer=None if self._composer_hidden() else self.composer,
-            status=self._status_line(cols),
+            info=self._info_line(cols, strip),
             tail=self._tail(cols),
             slot=self._slot_lines(cols, rows),
             below=self.menu_under,  # read after `_slot_lines` made it
@@ -3893,7 +3933,6 @@ class App(ModesMixin, AgentViewMixin):
             if self.attachments and self.slot is None
             else None,
             mode=self._display_mode(),
-            mode_row=self._mode_row_line(cols, strip),
             placeholder=(TELL_PLACEHOLDER if self.tell_draft is not None else PLACEHOLDER)
             if self._composer_open()
             else "",
@@ -3941,7 +3980,7 @@ class App(ModesMixin, AgentViewMixin):
         return False
 
     def _display_mode(self) -> str:
-        """What the composer's frame shows: the shell while it holds a `!` line for Hermes' shell, else the input mode."""
+        """What the info line shows: the shell while the composer holds a `!` line for Hermes' shell, else the input mode."""
         if self._composer_open() and self.composer.text.startswith(SHELL_PREFIX):
             return MODE_SHELL
         return self.mode
@@ -3968,12 +4007,13 @@ class App(ModesMixin, AgentViewMixin):
             or self.search is not None or self.list_selected is not None
         )
 
-    def _mode_row_line(self, cols: int, strip: Line | None = None) -> Line:
-        """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's or Ctrl+C's second press).
+    def _info_line(self, cols: int, strip: Line | None = None) -> Line:
+        """The info line, saying what the next key does when that is not the usual (a rewind, Esc's or Ctrl+C's second press).
 
         A picked steer or rewind keeps room for its last form but one, the shortest that still names what it
-        acts on, beside the effort: the strip collapses (`● 2 agents ↓`) before that would be cut. The mode's
-        label keeps its room too (`_agent_strip` starts after it).
+        acts on: the strip collapses (`● 2 agents ↓`) before that would be cut. The mode's label keeps its room
+        too (`_agent_strip` starts after it). The right side (`_info_right`) gives way before either. A terminal
+        too small for a slot draws no strip: the agent list its `↓ agents` offers cannot open there.
         """
         say: str | tuple[str, ...] = ""
         say_style = None
@@ -3999,18 +4039,17 @@ class App(ModesMixin, AgentViewMixin):
         elif self._newline_keys_due():
             say = NEWLINE_KEYS
         if isinstance(say, tuple):
-            effort = cell_width(effort_words(self.effort)) + MODE_ROW_GAP if self.effort else 0
-            strip = self._agent_strip(cols - effort - cell_width(STRIP_SEPARATOR + say[max(len(say) - 2, 0)]))[0]
-        if self.list_selected is not None and self.slot is None:
-            strip = ()  # the open list shows the agents itself
-        return mode_row_line(
+            strip = self._agent_strip(cols - cell_width(STRIP_SEPARATOR + say[max(len(say) - 2, 0)]))[0]
+        if (self.list_selected is not None and self.slot is None) or is_tiny(self.size[1], cols):
+            strip = ()  # the open list shows the agents itself; a tiny terminal has no room for it
+        return info_line(
             mode=self._display_mode(),
             busy=self._busy(),
             queued=len(self.queued),
             keyboard_protocol=self.keyboard_protocol,
-            effort=self.effort,
             width=cols,
             theme=self.theme,
+            right=self._info_right(),
             strip=self._agent_strip(cols)[0] if strip is None else strip,
             say=say,
             say_style=say_style,
@@ -4020,7 +4059,7 @@ class App(ModesMixin, AgentViewMixin):
         )
 
     def _newline_keys_due(self) -> bool:
-        """Whether the mode row names the keys that add a line: the draft spans lines (typed, or a pasted chip of them)
+        """Whether the info line names the keys that add a line: the draft spans lines (typed, or a pasted chip of them)
         on a terminal that has sent no key report, where Shift+Enter would send it; idle, in normal mode."""
         return (
             not self.keyboard_protocol and self._composer_open() and not self._busy()
@@ -4039,7 +4078,7 @@ class App(ModesMixin, AgentViewMixin):
         return picker.caret if picker is not None else None
 
     def _picker_keys(self) -> tuple[str, ...]:
-        """The open picker's or search's keys, said on the mode row in place of the composer's; () with neither open."""
+        """The open picker's or search's keys, said on the info line in place of the composer's; () with neither open."""
         if self.picker is not None:
             return SESSION_PICKER_KEYS
         if self.search is not None:
@@ -4076,7 +4115,7 @@ class App(ModesMixin, AgentViewMixin):
 
         Asking the terminal for those reports is not enough, since a terminal
         on the list can ignore the request and send Ctrl+Enter as Enter. So
-        the mode row names `/steer` until the first such key, and Ctrl+Enter
+        the info line names `/steer` until the first such key, and Ctrl+Enter
         from then on.
         """
         return self.decoder.protocol_reported
@@ -4164,21 +4203,17 @@ class App(ModesMixin, AgentViewMixin):
             cap = max(cap, 1)  # on a tiny terminal a question answered with text keeps a row for its label (`allocate`)
         if cap <= 0:
             return []
+        # The info line says a question's or a picker's keys at every height, so neither repeats them in its rows.
         if self.slot is not None:
-            # Where the terminal has no mode row, the question's keys take a row of the slot's own.
-            keys = not under_composer(rows, cols)[1]
-            return self.slot.lines(
-                cols, self.theme, cap, keys_row=keys, waiting=len(self.waiting_requests), turn_runs=self._busy()
-            )
-        keys = not under_composer(rows, cols)[1]  # a picker's keys go in its header where no mode row says them
+            return self.slot.lines(cols, self.theme, cap, waiting=len(self.waiting_requests), turn_runs=self._busy())
         if self.picker is not None:
-            return self.picker.lines(cols, self.theme, cap, self.wall_clock(), keys=keys)
+            return self.picker.lines(cols, self.theme, cap, self.wall_clock(), keys=False)
         if self.search is not None:
-            return self.search.lines(cols, self.theme, cap, keys=keys)
+            return self.search.lines(cols, self.theme, cap, keys=False)
         if self.rewind_picker is not None:
-            return self.rewind_picker.lines(cols, self.theme, cap, self.wall_clock(), keys=keys)
+            return self.rewind_picker.lines(cols, self.theme, cap, self.wall_clock(), keys=False)
         if self.model_picker is not None:
-            return self.model_picker.lines(cols, self.theme, cap, keys=keys)
+            return self.model_picker.lines(cols, self.theme, cap, keys=False)
         if self.list_selected is not None:
             lines, self.listed = self._agent_list(cols, cap)
             return lines
@@ -4212,82 +4247,49 @@ class App(ModesMixin, AgentViewMixin):
             motion=self.motion,
         )
 
-    def _state_text(self) -> str:
-        """What the session is doing; idle with subagents still running says how many, since the turn is not all."""
-        if self.slot is not None:
-            state = STATE_WAITING
-        elif self._busy():
-            state = STATE_RUNNING
-        else:
-            state = STATE_IDLE
-            running = self.roster.running_count()
-            if running:
-                state += f" · {running} agent{'' if running == 1 else 's'} running"
-        return f"{state} · queued {len(self.queued)}" if self.queued else state
-
     def _context_style(self) -> Style:
         percent = self.context_percent if self.context_percent is not None else 0.0
         if percent >= CONTEXT_BAD_PERCENT:
-            return self.theme.status_bad
-        return self.theme.status_warn if percent >= CONTEXT_WARN_PERCENT else self.theme.status
+            return self.theme.error
+        return self.theme.warn if percent >= CONTEXT_WARN_PERCENT else self.theme.muted
 
-    def _mode_chips(self) -> tuple[tuple[str, Style], ...]:
-        """The mode in short for the status line, accept then plan: only where the mode row is not drawn."""
-        bar = self.theme.status
-        cols, rows = self.size
-        if under_composer(rows, cols)[1]:
-            return ()
-        roles = on_status_bar(self.theme)  # measured against the bar they are drawn on
-        shown = (
-            (MODE_ACCEPT, roles.mode_accept, self.approvals_off),
-            (MODE_PLAN, roles.mode_plan, self.plan_mode),
-        )
-        return tuple((MODE_CHIPS[mode], replace(colour, bg=bar.bg, bold=True)) for mode, colour, on in shown if on)
+    def _info_right(self) -> tuple[Line, ...]:
+        """The info line's right side, composed again only when something it shows changed (a spinner tick changes nothing).
 
-    def _status_line(self, cols: int) -> Line:
-        """The status line, composed again only when something it shows changed (a spinner tick changes nothing)."""
-        shown = (cols, self.size[1], self.model, self.context, self.context_percent, self._state_text(),
-                 self.approvals_off, self.plan_mode)
-        held = self.status_held
+        Its forms are the same at every width; `info_line` picks the one that fits.
+        """
+        shown = (self.model, self.context_percent, self.effort, self._busy(), self.slot is not None)
+        held = self.info_held
         if held is not None and held[0] == shown and held[1] is self.theme and held[2] is self.hud:
             return held[3]
-        line = self._compose_status_line(cols)
-        self.status_held = (shown, self.theme, self.hud, line)
-        return line
+        forms = self._compose_info_right()
+        self.info_held = (shown, self.theme, self.hud, forms)
+        return forms
 
-    def _compose_status_line(self, cols: int) -> Line:
-        """OMH's segments, then model, context and state, on the status bar's background, in roles measured against it.
+    def _compose_info_right(self) -> tuple[Line, ...]:
+        """The right side's forms, longest first: the HUD's chips, the model, the context and the effort, then less.
 
-        The context turns warn from `CONTEXT_WARN_PERCENT` full and bad from
-        `CONTEXT_BAD_PERCENT`. A terminal too short for the mode row carries
-        the mode here, before the state, so accept and plan are never
-        invisible. When the line does not fit, the context goes first and the
-        model next; then OMH's segments are cut from their right, so the mode
-        and the state (idle / running / waiting on you) are the last things cut.
+        The model shortens first (`model_forms`), then goes, then the effort,
+        then the context; the HUD's chips (`hud_chips`: a repeating call, the
+        tool calls in flight) go last. The context turns warn from
+        `CONTEXT_WARN_PERCENT` full and error from `CONTEXT_BAD_PERCENT`.
         """
-        bar = self.theme.status
         payload = self.hud.payload if self.hud is not None else None
-        head: Line = tuple(
-            Span(span.text, replace(span.style, bg=bar.bg))
-            for span in status_segments(
-                payload, on_status_bar(self.theme), turn_runs=self._busy(), question_waits=self.slot is not None
-            )
-        )
-        model, context, state = (self.model, bar), (self.context, self._context_style()), (self._state_text(), bar)
-        chips = self._mode_chips()
-        tail: Line = ()
-        for fields in ((model, context, *chips, state), (model, *chips, state), (*chips, state)):
-            tail = tuple(
-                span
-                for text, style in fields
-                if text
-                for span in (Span(STATUS_SEPARATOR, self.theme.status_dim), Span(text, style))
-            )
-            if line_width(head) + line_width(tail) <= cols:
-                break
-        line = truncate_line(truncate_line(head, max(cols - line_width(tail), 0)) + tail, cols)
-        filler = cols - line_width(line)
-        return line + ((Span(" " * filler, bar),) if filler > 0 else ())
+        chips = list(hud_chips(payload, self.theme, turn_runs=self._busy(), question_waits=self.slot is not None))
+        percent = self.context_percent
+        context: Line = (Span(f"ctx {percent:.0f}%", self._context_style()),) if percent is not None else ()
+        effort: Line = (Span(effort_words(self.effort), self.theme.muted),)
+        models: list[Line] = [(Span(name, self.theme.muted),) for name in model_forms(self.model)]
+        fields = [[*chips, model, context, effort] for model in models]
+        fields += [[*chips, context, effort], [*chips, context], chips]
+        forms: list[Line] = []
+        for parts in fields:
+            joined: Line = ()
+            for part in (part for part in parts if part):
+                joined += ((Span(INFO_SEPARATOR, self.theme.dim),) if joined else ()) + part
+            if joined and joined not in forms:
+                forms.append(joined)
+        return tuple(forms)
 
 
 # ── entry point ───────────────────────────────────────────────────────────
@@ -4382,7 +4384,7 @@ def _run(
         with terminal:
             background, typed, row = terminal.query_background()
             app.adopt_background(background, environ)
-            app.adopt_cursor_row(row)
+            app.clear_launch_screen(row)  # started: the shell's rows and the launcher's warnings go one scroll up
             code = app.run(typed)
     finally:
         if app.client is not client:  # a gateway spawned after a crash; the caller reaps the first one

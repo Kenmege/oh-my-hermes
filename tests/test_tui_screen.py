@@ -418,7 +418,7 @@ class InsertedRowsTests(unittest.TestCase):
         self.assertEqual(harness.screen.lines()[3:12], ["tail 1", "tail 2", "tail 3", *under, ""])
 
     def test_an_insert_among_repeated_rows_compares_each_row_with_the_one_that_moved_there(self) -> None:
-        # Real frames repeat rows (the composer's two rules, blank rows). After the insert a row must be compared
+        # Real frames repeat rows (blank rows, a rule drawn twice). After the insert a row must be compared
         # with what IL moved onto it, never with what was there before: here a stale rule would stay on row 3.
         rule = "─" * 12
         harness = Harness(rows=24, cols=40, history=3)

@@ -79,7 +79,7 @@ class TableTests(unittest.TestCase):
                 self.assertNotIn("`", "".join(row))
 
     def test_the_list_row_names_every_picker_that_takes_its_keys(self) -> None:
-        # The session, rewind and bare /model pickers each say these keys on the mode row; the list names all three.
+        # The session, rewind and bare /model pickers each say these keys on the info line; the list names all three.
         from omh.tui.model_picker import KEYS as MODEL_KEYS
         from omh.tui.rewind_picker import KEYS as REWIND_KEYS
         from omh.tui.session_picker import KEYS as SESSION_KEYS
@@ -91,7 +91,7 @@ class TableTests(unittest.TestCase):
                 self.assertTrue(said[0].startswith("↑↓ move · enter ") and said[0].endswith(" · esc closes"), said)
 
     def test_the_steer_row_names_the_key_and_the_command_that_works_everywhere(self) -> None:
-        # The mode row names /steer until the terminal has sent a CSI u or modifyOtherKeys key; the list names both.
+        # The info line names /steer until the terminal has sent a CSI u or modifyOtherKeys key; the list names both.
         (steer,) = [does for keys, does in SHORTCUTS if keys.startswith("Ctrl+Enter")]
         self.assertIn("/steer <text>", steer)
 

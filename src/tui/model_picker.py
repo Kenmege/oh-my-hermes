@@ -37,7 +37,7 @@ from .width import cell_width, truncate, truncate_line
 
 PICK = "pick"
 CLOSE = "close"
-# Its keys, longest first: on the mode row while it is open, in its header where there is no mode row.
+# Its keys, longest first: on the info line while it is open; in its header only when `lines` is asked for them.
 KEYS = ("↑↓ move · enter switches this session · esc closes", "↑↓ enter switches · esc closes", "esc closes")
 TITLE = " Model ({count})"
 TITLE_AT = " Model ({at}/{count})"  # once the list has more rows than it shows

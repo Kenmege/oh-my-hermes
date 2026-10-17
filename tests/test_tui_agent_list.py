@@ -12,12 +12,13 @@ the replay gateway, with the recorded frames injected into a recorded turn.
 from __future__ import annotations
 
 import json
+import re
 import unittest
 
 from _tui_gateway_replay import Scenario, recorded_answer, spans
 from _tui_lines import lines_text
 from test_tui_agent_strip import STARTS, agent_app, agent_event, relay
-from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, Step, startup_answers, status_index
+from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, Step, startup_answers, info_index
 from test_tui_modes import SID, RecordingClient, answer, composer_index, drawn, make_app, notices, queue, steers, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND
 from omh.tui import gateway_contract as contract
@@ -47,14 +48,20 @@ NO_TAIL = {"subagent_id": FIRST, "available": False, "text": "", "truncated": Fa
 
 
 def under_the_frame(app: App) -> list[str]:
-    """The rows between the composer's bottom rule and the status line, the mode row; while the agent list is open,
-    the list's rows, which stand where the composer was, and the mode row under them."""
+    """The rows under the composer's box down to the info line, which is the last of them; while the agent list is
+    open, the list's rows, which stand where the composer was, and the info line under them."""
     screen = drawn(app)
-    status = status_index(screen)
+    info = info_index(screen)
     if app.list_selected is not None:
-        return screen[status - 1 - len(app.listed) : status]
-    rules = [index for index, line in enumerate(screen) if line.strip() and set(line.strip()) <= set("─━┄")]
-    return screen[rules[-1] + 1 : status]
+        rows = screen[info - len(app.listed) : info + 1]
+    else:
+        rows = screen[max(index for index, line in enumerate(screen) if line.startswith("╰")) + 1 : info + 1]
+    return [*rows[:-1], info_left(rows[-1])]
+
+
+def info_left(row: str) -> str:
+    """The info line's left side: its right side (model, context, effort) stands 3 cells or more away."""
+    return re.split(r" {3,}", row)[0]
 
 
 def focused(**options: object) -> tuple[App, RecordingClient]:
@@ -90,7 +97,7 @@ def tails(client: RecordingClient) -> list[dict]:
 class ListFocusTests(unittest.TestCase):
     def test_down_on_an_empty_composer_gives_the_list_the_keys_on_the_first_agent(self) -> None:
         app, client = agent_app()
-        self.assertEqual(len(under_the_frame(app)), 1)  # the mode row, with the strip
+        self.assertEqual(len(under_the_frame(app)), 1)  # the info line, with the strip
         app._on_input(Key(DOWN))
         self.assertEqual(app.list_selected, FIRST)
         rows = under_the_frame(app)
@@ -164,15 +171,17 @@ class ListFocusTests(unittest.TestCase):
                 self.assertIsNone(app.list_selected)
                 self.assertEqual((client.calls, client.answers), ([], []))
 
-    def test_below_ten_rows_there_is_no_list_to_open(self) -> None:
-        for rows in (6, 9):
+    def test_a_terminal_too_small_for_a_slot_has_no_list_to_open(self) -> None:
+        for rows, cols in ((5, 80), (24, 19)):
+            with self.subTest(rows=rows, cols=cols):
+                app, _client = agent_app(rows=rows, cols=cols)
+                app._on_input(Key(DOWN))
+                self.assertIsNone(app.list_selected)
+        for rows in (6, 9, 10):  # the info line says the list's keys at every height with a slot
             with self.subTest(rows=rows):
                 app, _client = agent_app(rows=rows)
                 app._on_input(Key(DOWN))
-                self.assertIsNone(app.list_selected)
-        app, _client = agent_app(rows=10)
-        app._on_input(Key(DOWN))
-        self.assertEqual(app.list_selected, FIRST)
+                self.assertEqual(app.list_selected, FIRST)
 
     def test_up_and_down_move_the_highlight_and_stop_at_either_end(self) -> None:
         app, _client = focused()
@@ -208,7 +217,7 @@ class ListFocusTests(unittest.TestCase):
         more_agents(app, 7)
         app._on_input(Key(DOWN))
         rows = under_the_frame(app)
-        self.assertEqual(len(rows), choice_cap(10, 80) + 1)  # what a picker gets there, and the mode row
+        self.assertEqual(len(rows), choice_cap(10, 80) + 1)  # what a picker gets there, and the info line
         self.assertEqual(rows[-1], AGENT_LIST_HINT)
         self.assertTrue(rows[1].startswith("▸ "), rows)
 
@@ -217,28 +226,28 @@ class ListFocusTests(unittest.TestCase):
         type_text(app, "x")
         app._set_composer("")  # an empty composer, drawn once
         before = drawn(app)
-        resting, status = composer_index(before), status_index(before)
+        resting, status = composer_index(before), info_index(before)
         app._on_input(Key(DOWN))
         during = drawn(app)
-        self.assertFalse([row for row in during if row.startswith("› ")], during)  # no composer
-        self.assertFalse([row for row in during if row.strip() and set(row.strip()) <= set("─━┄")], during)  # no rules
-        self.assertEqual(status_index(during), status)
-        self.assertEqual(during[status - 1], AGENT_LIST_HINT)  # the mode row says the list's keys
-        self.assertEqual(during[status - 1 - len(app.listed) : status - 1], under_the_frame(app)[:-1])
+        self.assertFalse([row for row in during if row.startswith("│ > ")], during)  # no composer
+        self.assertFalse([row for row in during if row.startswith(("╭", "╰"))], during)  # no box
+        self.assertEqual(info_index(during), status)
+        self.assertEqual(info_left(during[status]), AGENT_LIST_HINT)  # the info line says the list's keys
+        self.assertEqual(during[status - len(app.listed) : status], under_the_frame(app)[:-1])
         app._on_input(Key(ESCAPE))
         after = drawn(app)
-        self.assertEqual((composer_index(after), status_index(after)), (resting, status))
+        self.assertEqual((composer_index(after), info_index(after)), (resting, status))
         self.assertEqual(after, before)
 
     def test_the_list_stands_where_the_composer_was(self) -> None:
         app, _client = agent_app()
         app.transcript.add_notice("printed above the region")
         before = drawn(app)
-        bottom_rule = status_index(before) - 2
+        bottom_edge = info_index(before) - 1
         app._on_input(Key(DOWN))
         during = drawn(app)
-        self.assertTrue(during[bottom_rule].startswith("  ⠋ read the diff"), during)  # the list's last row, on the rule's
-        top = status_index(during) + 1 - app.region.height
+        self.assertTrue(during[bottom_edge].startswith("  ⠋ read the diff"), during)  # the list's last row, on the edge's
+        top = info_index(during) + 1 - app.region.height
         self.assertIn("· printed above the region", during[:top])
         self.assertEqual(during[:top], before[:top])  # nothing above it moved
 
@@ -326,10 +335,10 @@ class ListLeaveTests(unittest.TestCase):
         self.assertEqual((app.list_selected, app.pager), (None, None))
         self.assertIsNotNone(app.slot)
         screen = drawn(app)
-        status = status_index(screen)
-        # The approval stands where the composer was, and the one row under it is the mode row, with its keys.
-        self.assertEqual(screen[status - 2], "▌   no, and tell Hermes what to do instead")  # the approval's last row
-        self.assertIn("esc denies", screen[status - 1])
+        status = info_index(screen)
+        # The approval stands where the composer was, and the one row under it is the info line, with its keys.
+        self.assertEqual(screen[status - 1], "▌   no, and tell Hermes what to do instead")  # the approval's last row
+        self.assertIn("esc denies", screen[status])
         now[0] += SLOT_ARM_SECONDS
         for key in (Key(DOWN), Key(UP)):
             app._on_input(key)  # the approval takes every key: these two move its highlight there and back
@@ -362,9 +371,9 @@ class ListLeaveTests(unittest.TestCase):
         self.assertEqual(len(under_the_frame(app)), 1)
         self.assertIsNone(app.list_selected)
 
-    def test_a_terminal_resized_below_ten_rows_closes_the_list(self) -> None:
+    def test_a_terminal_resized_too_small_for_a_slot_closes_the_list(self) -> None:
         app, _client = focused()
-        app.terminal.screen.resize(9, 80)  # type: ignore[attr-defined]
+        app.terminal.screen.resize(5, 80)  # type: ignore[attr-defined]
         app._on_resize()
         app._full_redraw()
         app.redraw_at = None
@@ -1220,22 +1229,22 @@ class AgentReplayTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         captures = terminal.captures
-        strip = captures["strip"][status_index(captures["strip"]) - 1]
+        strip = captures["strip"][info_index(captures["strip"])]
         self.assertTrue(strip.startswith("● main  "), strip)
         self.assertIn("find usages of", strip)
         self.assertIn("read the diff", strip)
         rows = captures["list"]
-        status = status_index(rows)
-        self.assertEqual(rows[status - 4], "  ● main")
-        self.assertTrue(rows[status - 3].startswith("▸ ") and "find usages of old_api" in rows[status - 3], rows)
+        status = info_index(rows)
+        self.assertEqual(rows[status - 3], "  ● main")
+        self.assertTrue(rows[status - 2].startswith("▸ ") and "find usages of old_api" in rows[status - 2], rows)
         # The list's keys, and on the right the effort the replayed config leaves unset (`default`).
-        self.assertEqual(rows[status - 1].split("  ")[0], AGENT_LIST_HINT)
-        self.assertTrue(rows[status - 1].endswith("ctrl+t effort (default)"), rows[status - 1])
-        # The list stands where the composer was: no composer rule anywhere on the screen.
-        self.assertFalse([row for row in rows if row.strip() and set(row.strip()) <= set("─━┄")], rows)
+        self.assertEqual(info_left(rows[status]), AGENT_LIST_HINT)
+        self.assertTrue(rows[status].endswith("effort default"), rows[status])
+        # The list stands where the composer was: no box anywhere on the screen.
+        self.assertFalse([row for row in rows if row.startswith(("╭", "╰"))], rows)
         self.assertEqual(captures["log"][0], "find usages of old_api in src/ and list every call site")
         self.assertEqual(captures["second"][0], "read the diff for risks")
-        self.assertTrue(captures["back"][status_index(captures["back"]) - 2].startswith("▸ "), captures["back"])
+        self.assertTrue(captures["back"][info_index(captures["back"]) - 1].startswith("▸ "), captures["back"])
         calls = run.calls("subagent.tail")
         self.assertEqual(calls[0]["params"], {"session_id": LIVE_ID, "subagent_id": FIRST})
         self.assertLessEqual(len(calls), 2)

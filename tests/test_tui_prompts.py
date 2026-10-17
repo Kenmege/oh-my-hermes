@@ -179,7 +179,7 @@ class ApprovalTests(unittest.TestCase):
         self.assertEqual([unbarred(row) for row in text[3:6]], ["  deny", "❯ allow once", "  allow this session"])
 
     def test_no_number_and_no_key_hint_is_drawn_on_the_choices(self) -> None:
-        # Allowing takes the arrows and Enter: nothing on the rows reads as a shortcut. The keys are on the mode row.
+        # Allowing takes the arrows and Enter: nothing on the rows reads as a shortcut. The keys are on the info line.
         text = lines_text(slot("approval", APPROVAL).lines(80, DEFAULT_THEME, max_rows=6))
         for row in text[-3:]:
             with self.subTest(row=row):

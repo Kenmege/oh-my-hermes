@@ -44,7 +44,7 @@ from _tui_gateway_replay import (
     replay_env,
     spans,
 )
-from _tui_lines import line_text
+from _tui_lines import box_inner, line_text
 from _vt_screen import VTScreen
 from omh.tui import terminal as terminal_module
 from omh.skin_pack import default_theme, hex_to_rgb, theme_for_name, write_theme_choice
@@ -55,15 +55,15 @@ from omh.tui.app import (
     banner_logo,
     initial_theme,
     main,
-    mode_row_line,
     picker_key,
     run_model_chain_picker,
 )
 from omh.tui.gateway import GatewayClient, GatewayUnavailable, ServerRequest, gateway_spawn
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
 from omh.tui.launch import FALLBACK_EXIT, FALLBACK_SENTINEL_ENV
-from omh.tui.prompts import open_request
+from omh.tui.modes import ACCEPT_LABEL, IDLE_HINT, PLAN_LABEL, STEER_COMMAND_HINT, STEER_KEY_HINT, info_line
 from omh.tui.screen import CLEAR_SCREEN_AND_SCROLLBACK
+from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME, theme_named
 from omh.tui.width import line_width
 from omh.version import __version__
@@ -73,10 +73,12 @@ STORED_ID = "20261013_115656_e709ea"
 LIVE_ID = "b6af062a"
 APPROVAL_STORED_ID = "20261013_115811_9850e7"
 ROTATED_ID = "20261013_130000_rotated"
-STATUS_MARK = "⚚ OMH"
-RULE_MARK = "────"
-# Between the composer and the status line on these 24-row terminals: the bottom rule and the mode row.
-UNDER_COMPOSER = 2
+RULE_MARK = "────"  # in both edges of the composer's box
+BOX_MARK = "╭─"  # the composer box's top edge: one per frame
+# The working row's clock, `(12s · …` or `(1m 4s)`: on screen while a turn runs or waits on the person.
+WORKING_CLOCK = re.compile(r"\(\d+(?:m \d+)?s(?: · |\))")
+# Between the composer and the info line on these 24-row terminals: the box's bottom edge.
+UNDER_COMPOSER = 1
 # Only the session call is awaited. The catalog is read after the session, naming it, so project-local skills
 # are listed for its workspace; a fresh session then asks for the stored sessions, to name the last one.
 STARTUP_METHODS = ["client.capabilities", "session.create", "config.get", "commands.catalog", "session.list"]
@@ -219,31 +221,46 @@ class ScriptedTerminal:
 
     # -- reading the screen --
 
-    def status_row(self) -> str:
-        return next((line for line in self.screen.lines() if STATUS_MARK in line), "")
+    def info_row(self) -> str:
+        """The info line: the screen's last row that is not blank ("" on a blank screen)."""
+        rows = [line for line in self.screen.lines() if line]
+        return rows[-1] if rows else ""
 
     def history(self) -> str:
         return "\n".join(self.screen.history())
 
     def idle(self) -> bool:
-        """The status line says idle, with or without subagents still running (`idle · 2 agents running`)."""
-        return re.search(r"idle( · \d+ agents? running)?$", self.status_row().rstrip()) is not None
+        """No turn runs and nothing asks (agents may still run): the info line offers `? for shortcuts`, or, in accept
+        or plan, whose line is the same either way, it names the mode and no working row is on the screen."""
+        row = self.info_row()
+        if IDLE_HINT in row:
+            return True
+        return row.startswith((ACCEPT_LABEL, PLAN_LABEL)) and not any(
+            WORKING_CLOCK.search(line) for line in self.screen.lines()
+        )
+
+    def running(self) -> bool:
+        """The info line offers a steer: a turn runs, nothing asks, normal mode."""
+        row = self.info_row()
+        return STEER_COMMAND_HINT in row or STEER_KEY_HINT in row
 
     def shows(self, needle: str) -> Callable[[], bool]:
         return lambda: needle in "\n".join(self.screen.lines())
 
     def prompt_foreground(self) -> tuple[int, ...]:
-        """The colour of the composer's `›`, read off the screen: the last row that starts with one."""
+        """The colour of the composer's `>`, read off the screen: the last row of the box that starts with one."""
         rows = self.screen.lines()
-        row = next(index for index in range(len(rows) - 1, -1, -1) if rows[index].startswith("› "))
-        attrs = self.screen.attrs_at(row, 0)
+        row = next(index for index in range(len(rows) - 1, -1, -1) if rows[index].startswith("│ > "))
+        attrs = self.screen.attrs_at(row, 2)
         start = attrs.index(38)
         return tuple(attrs[start + 2 : start + 5])
 
-    def status_background(self) -> tuple[int, ...]:
-        row = next(index for index, line in enumerate(self.screen.lines()) if STATUS_MARK in line)
-        attrs = self.screen.attrs_at(row, self.screen.cols - 1)  # a filler cell: background only
-        start = attrs.index(48)
+    def box_foreground(self) -> tuple[int, ...]:
+        """The colour of the composer box's top edge, read off the screen."""
+        rows = self.screen.lines()
+        row = next(index for index, line in enumerate(rows) if line.startswith("╭"))
+        attrs = self.screen.attrs_at(row, 0)
+        start = attrs.index(38)
         return tuple(attrs[start + 2 : start + 5])
 
 
@@ -348,7 +365,7 @@ class AppTestCase(unittest.TestCase):
         self.assertTrue(run.fallback_sentinel.exists(), "exited 75 without creating the fallback sentinel")
 
     def submit(self, run: Run, text: str) -> Step:
-        return Step(text.encode("utf-8") + b"\r", when=run.terminal.idle, label="the idle status line")
+        return Step(text.encode("utf-8") + b"\r", when=run.terminal.idle, label="the idle info line")
 
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
@@ -393,10 +410,14 @@ class StartupRefusalTests(AppTestCase):
         # Hermes 6c61c3e27d's real -32601 answer, served for session.create.
         drift = recorded_answer("session", "drift_reply")
         run = self.prepare(Scenario("session", spans("session", "startup"), answers=(("session.create", drift),)))
+        shell = [f"$ shell {n}" for n in range(5)]
+        run.terminal.screen.feed("".join(f"{line}\r\n" for line in shell))
         self.run_main(run)
         self.assert_fell_back(run)
         self.assertIn("-32601", run.stderr.getvalue())
         self.assertEqual(run.terminal.entered, 0)
+        # A launch that falls back clears nothing: the shell's rows stay on the screen, and nothing went to scrollback.
+        self.assertEqual((run.terminal.screen.lines()[:5], run.terminal.screen.scrollback), (shell, []))
         self.assertEqual(run.clients[0].close(grace=FAST_GRACE), 0)
 
     def test_drift_on_the_busy_mode_call_is_a_notice_and_the_session_goes_on(self) -> None:
@@ -511,13 +532,13 @@ class SessionTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         screen = run.terminal.captures["ready"]
-        status = next(index for index, line in enumerate(screen) if STATUS_MARK in line)
-        self.assertIn("deepseek/deepseek-v4.1-flash-ultrafast", screen[status])
-        composer = status - 1 - UNDER_COMPOSER
-        self.assertEqual(screen[composer], "› Ask Hermes anything", screen)
-        self.assertIn(RULE_MARK, screen[composer - 1])
-        self.assertIn(RULE_MARK, screen[composer + 1])
-        self.assertEqual(screen[status - 1], "? shortcuts · ⇧⇥ accept all/plan · ctrl+t effort", screen)
+        info = info_index(screen)
+        self.assertTrue(screen[info].startswith(IDLE_HINT), screen)
+        self.assertIn("deepseek/deepseek-v4.1-flash-ultrafast · ", screen[info])
+        composer = info - 1 - UNDER_COMPOSER
+        self.assertEqual(box_inner(screen[composer]), "> Ask Hermes anything", screen)
+        self.assertTrue(screen[composer - 1].startswith(BOX_MARK), screen)
+        self.assertTrue(screen[composer + 1].startswith("╰─"), screen)
         self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
         self.assertEqual(run.calls("config.get")[0]["params"], {"key": "full"})
         self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": STORED_ID})
@@ -528,7 +549,7 @@ class SessionTests(AppTestCase):
         self.assertEqual(getattr(run.poller.wake, "__func__", None), App._wake_loop)
         self.assertEqual((run.terminal.entered, run.terminal.exited), (1, 1))
         # The region is gone after exit; nothing of it is left on the screen.
-        self.assertNotIn(STATUS_MARK, run.terminal.history())
+        self.assertNotIn(BOX_MARK, run.terminal.history())
 
     def test_a_typed_prompt_is_submitted_and_the_reply_lands_in_scrollback(self) -> None:
         prompt = "Reply with exactly the word: ok"
@@ -576,7 +597,7 @@ class SessionTests(AppTestCase):
         )
         run.terminal.script(
             self.submit(run, "Write the numbers from 1 to 300, one per line, nothing else."),
-            Step(b"\x03", when=lambda: run.terminal.status_row().rstrip().endswith("running"), label="running"),
+            Step(b"\x03", when=run.terminal.running, label="running"),
             Step(b"\x04", when=lambda: "Interrupted." in run.terminal.history() and run.terminal.idle(), label="end"),
         )
         self.run_main(run)
@@ -776,7 +797,7 @@ class SessionTests(AppTestCase):
             def ready() -> bool:
                 screen = run.terminal.screen
                 cleared = sum(text.count(CLEAR_SCREEN_AND_SCROLLBACK) for text in run.terminal.writes)
-                shown = any(line.startswith(STATUS_MARK) for line in screen.lines())
+                shown = any(line.startswith(BOX_MARK) for line in screen.lines())
                 return (screen.rows, screen.cols) == (rows, cols) and cleared >= redraws and shown
 
             return ready
@@ -793,13 +814,13 @@ class SessionTests(AppTestCase):
                 screen = run.terminal.captures[name]
                 self.assertEqual(len(screen), rows)
                 drawn = [line for line in screen if line]
-                self.assertEqual(sum(STATUS_MARK in line for line in screen), 1, screen)
+                self.assertEqual(sum(BOX_MARK in line for line in screen), 1, screen)
                 self.assertEqual(sum(RULE_MARK in line for line in screen), 2, screen)
                 # The redrawn session (the banner, and at 100 columns the logo above it, since the whole session
-                # fits the redraw) and the region (rule, composer, rule, mode row, status), nothing else.
+                # fits the redraw) and the region (top edge, composer, bottom edge, info line), nothing else.
                 logo = LOGO[:-1] if cols >= 100 else []
                 self.assertEqual(drawn[: len(logo)], logo, screen)
-                self.assertEqual(len(drawn), 6 + len(logo), screen)
+                self.assertEqual(len(drawn), 5 + len(logo), screen)
                 self.assertTrue(drawn[len(logo)].startswith("⚚ OH-MY-HERMES"), screen)
                 self.assertTrue(all(len(line) <= cols for line in screen))
 
@@ -818,7 +839,7 @@ class SessionTests(AppTestCase):
             def ready() -> bool:
                 screen = run.terminal.screen
                 cleared = sum(text.count(CLEAR_SCREEN_AND_SCROLLBACK) for text in run.terminal.writes)
-                shown = any(line.startswith(STATUS_MARK) for line in screen.lines())
+                shown = any(line.startswith(BOX_MARK) for line in screen.lines())
                 return (screen.rows, screen.cols) == (rows, cols) and cleared >= redraws and shown
 
             return ready
@@ -832,7 +853,7 @@ class SessionTests(AppTestCase):
         self.assert_clean_run(run)
         screen = run.terminal.captures["final"]
         everything = run.terminal.screen.scrollback + screen
-        self.assertEqual(sum(STATUS_MARK in line for line in everything), 1, everything)
+        self.assertEqual(sum(BOX_MARK in line for line in everything), 1, everything)
         self.assertEqual(sum(line.startswith("⚚ OH-MY-HERMES") for line in everything), 1, everything)
         self.assertTrue(screen[0].startswith("⚚ OH-MY-HERMES"), screen[:2])
         self.assertTrue(all(len(line) <= 60 for line in everything))
@@ -1058,7 +1079,7 @@ class PromptSlotTests(AppTestCase):
             Step(when=terminal.shows("Which color do you prefer?"), label="the clarify slot"),
             Step(b"blue\r", when=self.armed(run, "the clarify slot"), label="armed"),
             Step(b"\x1b[A", when=lambda: terminal.idle() and not terminal.shows("1. red")(), label="idle"),
-            Step(b"\x03\x04", when=lambda: composer_row(terminal.screen.lines()) == "› Ask me red or blue.",
+            Step(b"\x03\x04", when=lambda: composer_row(terminal.screen.lines()) == "> Ask me red or blue.",
                  label="the recalled prompt"),
         )
         self.run_main(run)
@@ -1122,7 +1143,7 @@ class SlashCommandTests(AppTestCase):
             self.submit(run, "Reply with exactly the word: ok"),
             Step(b"/hist", when=lambda: "later." in terminal.history() and terminal.idle(), label="reply"),
             Step(b"\t", when=terminal.shows("/history"), capture="menu", label="the completion menu"),
-            Step(b"\r", when=terminal.shows("› /history"), label="the completed command"),
+            Step(b"\r", when=terminal.shows("│ > /history"), label="the completed command"),
             Step(b"q", when=lambda: terminal.screen.alternate, capture="pager", label="the pager"),
             Step(b"\x04", when=lambda: not terminal.screen.alternate and terminal.idle(), capture="back", label="back"),
         )
@@ -1133,7 +1154,7 @@ class SlashCommandTests(AppTestCase):
         self.assertIn("I'm Hermes, your agent", pager)
         self.assertIn("history · ", pager)
         back = "\n".join(terminal.captures["back"])
-        self.assertIn(STATUS_MARK, back)
+        self.assertIn(BOX_MARK, back)
         self.assertNotIn("history · ", back)
         self.assertEqual(run.calls("slash.exec"), [])
 
@@ -1170,44 +1191,104 @@ class SlashCommandTests(AppTestCase):
         self.assertNotIn("picker frame", "\n".join(terminal.screen.scrollback + terminal.screen.lines()))
 
 
-class StatusLineTests(unittest.TestCase):
-    def test_the_state_is_the_last_thing_cut(self) -> None:
-        # 20 cells: since the version left the brand, brand and state alone fit 24.
-        app = App(ScriptedTerminal(rows=24, cols=20), None, {}, poller=FakePoller())  # type: ignore[arg-type]
-        app.model, app.context = "a-model", "ctx 4%"
-        app.slot = open_request("srq-1", "approval", {"command": "ls"})  # type: ignore[assignment]
-        line = app._status_line(20)
-        self.assertTrue(line_text(line).startswith("⚚"), line_text(line))
-        self.assertTrue(line_text(line).endswith(" │ waiting on you"), line_text(line))
-        self.assertEqual(line_width(line), 20)
+class InfoLineRightTests(unittest.TestCase):
+    """The info line's right side: the model, the context and the effort, no brand and no state words."""
 
-    def test_the_order_is_brand_model_context_state_with_no_version(self) -> None:
-        app = App(ScriptedTerminal(rows=24, cols=80), None, {}, poller=FakePoller())  # type: ignore[arg-type]
-        app.model, app.context = "a-model", "ctx 14k/1M 1%"
-        self.assertEqual(line_text(app._status_line(80)).rstrip(), "⚚ OMH │ a-model │ ctx 14k/1M 1% │ idle")
+    MODEL = "deepseek/deepseek-v4.1-flash-ultrafast"
 
-    def test_the_context_turns_warn_then_bad_as_it_fills(self) -> None:
-        app = App(ScriptedTerminal(rows=24, cols=80), None, {}, poller=FakePoller())  # type: ignore[arg-type]
+    def app(self, cols: int = 100) -> App:
+        app = App(ScriptedTerminal(rows=24, cols=cols), None, {}, poller=FakePoller())  # type: ignore[arg-type]
+        app.model, app.context_percent, app.effort = self.MODEL, 5.0, "high"
+        return app
+
+    def right(self, app: App, width: int) -> str:
+        row = line_text(app._info_line(width))
+        self.assertTrue(row.startswith(IDLE_HINT), row)
+        self.assertLessEqual(line_width(app._info_line(width)), width)
+        return row[len(IDLE_HINT) :].strip()
+
+    def test_the_right_side_is_model_context_and_effort_with_no_brand_and_no_state(self) -> None:
+        app = self.app()
+        row = line_text(app._info_line(100))
+        self.assertTrue(row.endswith(f"{self.MODEL} · ctx 5% · effort high"), row)
+        self.assertEqual(line_width(app._info_line(100)), 100)  # the right side ends on the last cell
+        for gone in ("⚚", "OMH", "idle", "running", "│"):
+            self.assertNotIn(gone, row)
+
+    def test_the_model_shortens_first_then_goes_then_the_effort_then_the_context(self) -> None:
+        # `? for shortcuts` and the 3-cell gap take 18 cells; the right side takes the longest form that fits beside.
+        app = self.app()
+        expected = {
+            79: f"{self.MODEL} · ctx 5% · effort high",
+            78: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
+            70: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
+            69: "v4.1-flash-ultrafast · ctx 5% · effort high",
+            61: "v4.1-flash-ultrafast · ctx 5% · effort high",
+            60: "ctx 5% · effort high",
+            38: "ctx 5% · effort high",
+            37: "ctx 5%",
+            24: "ctx 5%",
+            23: "",
+        }
+        self.assertEqual({width: self.right(app, width) for width in expected}, expected)
+
+    def test_a_model_has_up_to_three_names_longest_first(self) -> None:
+        from omh.tui.modes import model_forms
+
+        self.assertEqual(model_forms(self.MODEL), (self.MODEL, "deepseek-v4.1-flash-ultrafast", "v4.1-flash-ultrafast"))
+        self.assertEqual(model_forms("claude-opus-5-5"), ("claude-opus-5-5", "opus-5-5"))
+        self.assertEqual(model_forms("openrouter/gpt5"), ("openrouter/gpt5", "gpt5"))
+        self.assertEqual(model_forms("gpt5"), ("gpt5",))
+        self.assertEqual(model_forms("vendor/model-"), ("vendor/model-", "model-"))  # no word after the dash
+        self.assertEqual(model_forms("vendor/-x"), ("vendor/-x", "-x"))  # no word before it
+        self.assertEqual(model_forms(""), ())
+
+    def test_the_effort_says_its_level_or_names_the_key_while_hermes_reported_none(self) -> None:
+        app = self.app()
+        for effort, said in (("", "ctrl+t effort"), ("default", "effort default"), ("xhigh", "effort xhigh")):
+            with self.subTest(effort=effort):
+                app.effort = effort
+                self.assertTrue(line_text(app._info_line(100)).endswith(f"ctx 5% · {said}"))
+
+    def test_the_context_turns_warn_then_error_as_it_fills(self) -> None:
+        app = self.app()
         theme = app.theme
-        for percent, style in ((None, theme.status), (79.9, theme.status), (80, theme.status_warn),
-                               (94.9, theme.status_warn), (95, theme.status_bad), (100, theme.status_bad)):
+        for percent, style in ((None, theme.muted), (79.9, theme.muted), (80, theme.warn),
+                               (94.9, theme.warn), (95, theme.error), (100, theme.error)):
             with self.subTest(percent=percent):
                 app._take_usage({"context_used": 1, "context_max": 2, "context_percent": percent}
                                 if percent is not None else {"context_used": 1, "context_max": 1_000_000})
-                span = next(span for span in app._status_line(80) if span.text.startswith("ctx"))
+                span = next(span for span in app._info_line(100) if span.text.startswith("ctx"))
                 self.assertEqual(span.style, style)
 
+    def test_the_huds_chips_stand_first_on_the_right_and_go_last(self) -> None:
+        from test_tui_panels import hud_payload
+
+        from omh.tui.panels import HudSnapshot
+
+        app = self.app(cols=160)
+        payload = hud_payload()
+        payload["repeat"] = {"status": "observed", "consecutive": 4, "period": 2, "intercepted": 1, "stage": "approval"}
+        payload["activity"].update(live=True, post_tool_call_observed=True, open_call_count=2, oldest_open_elapsed_seconds=12)
+        app.hud = HudSnapshot(app.stored_id, payload, 0.0)
+        idle = line_text(app._info_line(160))
+        self.assertTrue(idle.endswith(f"repeat x4 cycle-of-2 approval · {self.MODEL} · ctx 5% · effort high"), idle)
+        self.assertNotIn("tool", idle)  # the calls in flight only while a turn runs
+        app.turn_pending = True
+        running = line_text(app._info_line(160))
+        self.assertTrue(running.endswith(f"repeat x4 cycle-of-2 approval · 2 tools · 12s · {self.MODEL} · ctx 5% · effort high"),
+                        running)
+        app.turn_pending = False
+        self.assertEqual(self.right(app, 50), "repeat x4 cycle-of-2 approval")
 
 
-class ModeRowTests(unittest.TestCase):
+class InfoLineLeftTests(unittest.TestCase):
     def row(self, width: int = 80, **facts: object) -> str:
-        defaults: dict[str, object] = {"mode": "normal", "busy": False, "queued": 0, "keyboard_protocol": False, "effort": ""}
-        return line_text(mode_row_line(**{**defaults, **facts}, width=width, theme=DEFAULT_THEME))  # type: ignore[arg-type]
+        defaults: dict[str, object] = {"mode": "normal", "busy": False, "queued": 0, "keyboard_protocol": False}
+        return line_text(info_line(**{**defaults, **facts}, width=width, theme=DEFAULT_THEME))  # type: ignore[arg-type]
 
     def test_normal_mode_names_the_keys_that_matter_now(self) -> None:
-        # What Shift+Tab turns on, the next mode first, and Ctrl+T with the effort it steps, said once.
-        self.assertEqual(self.row(), "? shortcuts · ⇧⇥ accept all/plan · ctrl+t effort")
-        self.assertEqual(self.row(effort="medium"), "? shortcuts · ⇧⇥ accept all/plan · ctrl+t effort (medium)")
+        self.assertEqual(self.row(), "? for shortcuts")
         self.assertEqual(self.row(busy=True), "esc interrupt · /steer <text> steers")
         self.assertEqual(self.row(busy=True, keyboard_protocol=True), "esc interrupt · ctrl+enter steer")
         self.assertEqual(self.row(busy=True, queued=2), "esc interrupt · /steer <text> steers · ↑ edit queued")
@@ -1218,44 +1299,41 @@ class ModeRowTests(unittest.TestCase):
                 self.assertNotIn("ctrl+enter", self.row(busy=busy, keyboard_protocol=False))
 
     def test_accept_and_plan_say_so_in_their_own_colour(self) -> None:
-        accept = mode_row_line(mode="accept", busy=False, queued=0, keyboard_protocol=False, effort="", width=80,
-                               theme=DEFAULT_THEME)
-        self.assertEqual(line_text(accept), "⏵⏵ accept all on · Hermes asks no approvals in this session (⇧⇥ plan/normal)")
+        accept = info_line(mode="accept", busy=False, queued=0, keyboard_protocol=False, width=80, theme=DEFAULT_THEME)
+        self.assertEqual(line_text(accept), "⏵⏵ accept all on (⇧⇥ to cycle)")
         self.assertEqual(accept[0].style, replace(DEFAULT_THEME.mode_accept, bold=True))
-        plan = mode_row_line(mode="plan", busy=True, queued=1, keyboard_protocol=True, effort="", width=80,
-                             theme=DEFAULT_THEME)
-        self.assertEqual(line_text(plan), "⏸ plan mode on · prompts go as /plan (⇧⇥ normal/accept all)")
-        hermes_own = mode_row_line(mode="accept", busy=False, queued=0, keyboard_protocol=False, effort="", width=80,
-                                   theme=DEFAULT_THEME, cycle="plan")
-        self.assertEqual(line_text(hermes_own), "⏵⏵ accept all on · Hermes asks no approvals in this session (⇧⇥ plan)")
+        plan = info_line(mode="plan", busy=True, queued=1, keyboard_protocol=True, width=80, theme=DEFAULT_THEME)
+        self.assertEqual(line_text(plan), "⏸ plan mode on (⇧⇥ to cycle)")
         self.assertEqual(plan[0].style, replace(DEFAULT_THEME.mode_plan, bold=True))
+        hermes_own = info_line(mode="accept", busy=False, queued=0, keyboard_protocol=False, width=80,
+                               theme=DEFAULT_THEME, cycle="plan")
+        self.assertEqual(line_text(hermes_own), "⏵⏵ accept all on (⇧⇥ plan)")
+        both = info_line(mode="accept+plan", busy=False, queued=0, keyboard_protocol=False, width=80,
+                         theme=DEFAULT_THEME, cycle="plan off")
+        self.assertEqual(line_text(both), "⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ plan off)")
 
-    def test_the_effort_is_said_once_in_the_idle_hint_and_on_the_right_otherwise(self) -> None:
-        self.assertNotIn("(high)", self.row())
-        idle = self.row(effort="high")
-        self.assertEqual(idle, "? shortcuts · ⇧⇥ accept all/plan · ctrl+t effort (high)")  # no second display
-        self.assertEqual(idle.count("effort"), 1)
-        for facts in ({"busy": True}, {"mode": "plan"}, {"mode": "accept"}):
-            with self.subTest(**facts):
-                row = self.row(effort="high", **facts)
-                self.assertTrue(row.endswith("ctrl+t effort (high)"), row)
-                self.assertEqual((len(row), row.count("effort")), (80, 1))
+    def test_the_right_side_goes_before_the_left_side_shortens(self) -> None:
+        right = ((Span("a-model · effort high", DEFAULT_THEME.muted),),)
+        whole = len("⏵⏵ accept all on (⇧⇥ to cycle)") + 3 + len("a-model · effort high")
+        self.assertTrue(self.row(whole, mode="accept", right=right).endswith("   a-model · effort high"))
+        self.assertEqual(self.row(whole - 1, mode="accept", right=right), "⏵⏵ accept all on (⇧⇥ to cycle)")
+        say = ("↑↓ pick · enter confirms · d or esc denies and stops", "↑↓ · enter · d/esc")
+        self.assertEqual(self.row(60, say=say, right=right), "↑↓ pick · enter confirms · d or esc denies and stops")
+        self.assertEqual(self.row(30, say=say, right=right), "↑↓ · enter · d/esc")
 
     def test_the_hint_is_cut_from_its_end_and_the_label_survives(self) -> None:
+        right = ((Span("ctrl+t effort", DEFAULT_THEME.muted),),)
         for width in range(18, 110):
             with self.subTest(width=width):
-                row = self.row(width, mode="accept", effort="xhigh")
+                row = self.row(width, mode="accept", right=right)
                 self.assertTrue(row.startswith("⏵⏵ accept all on"), row)
                 self.assertLessEqual(len(row), width)
                 if "effort" in row:
-                    self.assertTrue(row.endswith("ctrl+t effort (xhigh)"), row)
-        # A narrower row takes shorter words of the same kind before anything is cut.
-        self.assertEqual(self.row(45, effort="high"), "⇧⇥ accept all · ctrl+t effort (high)")
-        self.assertEqual(self.row(30, effort="high"), "? shortcuts · ⇧⇥ accept all")
-        self.assertEqual(self.row(60, mode="accept"), "⏵⏵ accept all on · no approvals (⇧⇥ plan)")
-        self.assertEqual(self.row(30, mode="plan"), "⏸ plan mode on (⇧⇥ normal)")
-        # Too narrow for the label and the effort together: the effort goes, the label stays whole.
-        self.assertEqual(self.row(20, mode="accept", effort="xhigh"), "⏵⏵ accept all on (⇧…")
+                    self.assertTrue(row.endswith("ctrl+t effort"), row)
+        # Too narrow for where Shift+Tab goes: the label stays whole, and alone.
+        self.assertEqual(self.row(20, mode="accept"), "⏵⏵ accept all on")
+        self.assertEqual(self.row(20, mode="plan"), "⏸ plan mode on")
+        self.assertEqual(self.row(10, mode="accept"), "⏵⏵ accept…")
 
 
 class LeaveSessionDeclineTests(unittest.TestCase):
@@ -1426,8 +1504,8 @@ class OpeningTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         history = run.terminal.screen.history()
-        # At 100 columns the block logo comes first. The banner is one row: the model is the status line's and the
-        # keys the mode row's.
+        # At 100 columns the block logo comes first. The banner is one row: the model and the keys are the info
+        # line's.
         self.assertEqual(history[:LOGO_ROWS], LOGO)
         self.assertEqual(history[LOGO_ROWS], f"⚚ OH-MY-HERMES v{__version__} · ~/project")
         self.assertEqual([row for row in history[LOGO_ROWS + 1 :] if row], [])
@@ -1450,7 +1528,7 @@ class OpeningTests(AppTestCase):
 
     def test_the_composer_follows_the_banner_and_then_the_turn_with_no_blank_rows_but_a_spacer(self) -> None:
         # Claude Code's input box follows what was printed: no screen of blank rows over the composer at the start
-        # or after a turn, only the one spacer row every block opens with, and nothing under the status line.
+        # or after a turn, only the one spacer row every block opens with, and nothing under the info line.
         run = self.prepare(
             Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers()),
             rows=34,
@@ -1467,7 +1545,7 @@ class OpeningTests(AppTestCase):
         for name, above in (("start", f"⚚ OH-MY-HERMES v{__version__} · ~/project"), ("turn", "  ✻ ")):
             with self.subTest(capture=name):
                 screen = run.terminal.captures[name]
-                status = status_index(screen)
+                status = info_index(screen)
                 rule = status - 2 - UNDER_COMPOSER
                 self.assertIn(RULE_MARK, screen[rule], screen)
                 self.assertEqual(screen[rule - 1], "", screen)
@@ -1475,33 +1553,56 @@ class OpeningTests(AppTestCase):
                 self.assertEqual(screen[status + 1 :], [""] * (33 - status), screen)
                 self.assertLess(status, 33)
 
-    def test_launched_on_the_last_row_with_the_cursor_reported_a_closing_menu_leaves_the_composer_there(self) -> None:
-        # The startup query's cursor position report reaches the region: on the last row of a terminal already
-        # holding output, the composer is on the bottom rows from the first frame and the slash menu closing there
-        # does not pull it up (without the report the place is unknown and it moved 11 rows at 34x110).
-        run = self.prepare(
-            Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), rows=34, cols=110
-        )
-        run.terminal.screen.feed("".join(f"$ shell {n}\r\n" for n in range(40)))
-        run.terminal.cursor_row = 34
-        rows: dict[str, int] = {}
+    def test_launched_on_a_screen_holding_output_it_starts_on_the_top_row_with_that_output_one_scroll_up(self) -> None:
+        # The owner, round 4: the launcher's warnings may stay, but not on the screen the TUI opens on. Whatever row
+        # the shell left the cursor on, reported or not, the rows above it go to scrollback, nothing is erased, and the
+        # first frame starts on the top row, so a menu closing leaves the composer where it was.
+        shell = [f"$ shell {n}" for n in range(40)]
+        for row, label in ((34, "the last row, reported"), (None, "the last row, not reported"), (12, "mid-screen")):
+            with self.subTest(launch=label):
+                run = self.prepare(
+                    Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), rows=34, cols=110
+                )
+                printed = shell[: (row or 34) - 1]
+                run.terminal.screen.feed("".join(f"{line}\r\n" for line in printed))  # the cursor on `row`, at column 0
+                run.terminal.cursor_row = row
+                rows: dict[str, int] = {}
 
-        def composer_row(name: str) -> Callable[[], bool]:
-            def note() -> bool:
-                screen = run.terminal.screen.lines()
-                rows[name] = next(index for index, row in enumerate(screen) if row.startswith("› Ask Hermes"))
-                return True
-            return note
+                def composer_row(name: str, run: object = run, rows: dict[str, int] = rows) -> Callable[[], bool]:
+                    def note() -> bool:
+                        screen = run.terminal.screen.lines()  # type: ignore[attr-defined]
+                        rows[name] = next(index for index, line in enumerate(screen) if line.startswith("│ > Ask Hermes"))
+                        return True
+                    return note
 
-        run.terminal.script(
-            Step(b"/", when=lambda: run.terminal.idle() and composer_row("before")(), label="idle"),
-            Step(b"\x7f", when=run.terminal.shows("/help"), label="the menu"),
-            Step(b"\x04", when=lambda: not run.terminal.shows("/help")() and composer_row("after")(), label="closed"),
-        )
+                run.terminal.script(
+                    Step(b"/", when=lambda run=run, composer_row=composer_row: run.terminal.idle() and composer_row("before")(),
+                         capture="first", label="idle"),
+                    Step(b"\x7f", when=run.terminal.shows("/help"), label="the menu"),
+                    Step(b"\x04", when=lambda run=run, composer_row=composer_row: not run.terminal.shows("/help")()
+                         and composer_row("after")(), label="closed"),
+                )
+                self.run_main(run)
+                self.assert_clean_run(run)
+                first = run.terminal.captures["first"]
+                self.assertEqual(run.terminal.screen.scrollback, printed)  # in order, one scroll up, and nothing else
+                self.assertFalse([line for line in first if line.startswith("$ shell")], first)
+                self.assertEqual(first[: LOGO_ROWS - 1], LOGO[:-1])  # the logo opens the top row
+                self.assertEqual(rows["after"], rows["before"])
+                self.assertEqual(rows["before"], LOGO_ROWS + 3)  # the logo, the banner and its blank row, the top edge
+                writes = "".join(run.terminal.writes)
+                self.assertNotIn("\x1b[2J", writes)  # nothing erased: no ED 2, and no ED 3 for the scrollback
+                self.assertNotIn("\x1b[3J", writes)
+
+    def test_launched_on_the_top_row_nothing_is_pushed_and_nothing_is_written_for_it(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.terminal.cursor_row = 1
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, capture="first", label="idle"))
         self.run_main(run)
         self.assert_clean_run(run)
-        self.assertEqual(rows["after"], rows["before"])
-        self.assertEqual(rows["before"], 30)  # the bottom rows: rule, input, rule, mode row, status line
+        self.assertEqual(run.terminal.screen.scrollback, [])
+        self.assertTrue(run.terminal.captures["first"][0].startswith("⚚ OH-MY-HERMES"))
+        self.assertNotIn("\n" * 23, "".join(run.terminal.writes))
 
     def test_the_banner_stays_one_row_and_keeps_the_end_of_a_long_path(self) -> None:
         from omh.tui.app import banner_lines
@@ -1531,11 +1632,11 @@ class OpeningTests(AppTestCase):
                 seen: list[tuple[int, ...]] = []
                 run.terminal.script(
                     Step(b"\x04", when=lambda run=run, seen=seen: run.terminal.idle() and not seen.append(
-                        run.terminal.status_background()), label="the first frame")
+                        run.terminal.box_foreground()), label="the first frame")
                 )
                 self.run_main(run)
                 self.assert_clean_run(run)
-                self.assertEqual(seen[-1], hex_to_rgb(theme_named(name).status.bg))
+                self.assertEqual(seen[-1], hex_to_rgb(theme_named(name).rule.fg))
 
     def test_a_resumed_session_draws_its_earlier_turns_before_the_first_frame(self) -> None:
         messages = [
@@ -1599,7 +1700,7 @@ class OpeningTests(AppTestCase):
         pressed = run.terminal.fired["exit"]
         self.assertLess(run.terminal.exited_at - pressed, 0.5)
         self.assertLess(returned - pressed, 1.5)
-        self.assertNotIn(STATUS_MARK, run.terminal.history())
+        self.assertNotIn(BOX_MARK, run.terminal.history())
 
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
@@ -1746,7 +1847,7 @@ class LocalCommandTests(AppTestCase):
     def test_keys_typed_while_the_background_query_waited_reach_the_composer(self) -> None:
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
         run.terminal.typed_during_query = b"hi"
-        run.terminal.script(Step(b"\x15\x04", when=run.terminal.shows("› hi"), label="the early keys"))
+        run.terminal.script(Step(b"\x15\x04", when=run.terminal.shows("│ > hi"), label="the early keys"))
         self.run_main(run)
         self.assert_clean_run(run)
 
@@ -1785,12 +1886,12 @@ class LocalCommandTests(AppTestCase):
         terminal.script(
             self.submit(run, "/theme crimson"),
             Step(b"/theme nope\r", when=lambda: terminal.idle() and "applies to this session" in terminal.history()
-                 and not seen.append(terminal.status_background()), label="the switch notice"),
+                 and not seen.append(terminal.box_foreground()), label="the switch notice"),
             Step(b"\x04", when=terminal.shows("No theme named nope"), label="the unknown-theme notice"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        self.assertEqual(seen[-1], hex_to_rgb(theme_named("crimson").status.bg))
+        self.assertEqual(seen[-1], hex_to_rgb(theme_named("crimson").rule.fg))
         history = terminal.history()
         self.assertIn("Theme crimson applies to this session", history)
         self.assertIn("No theme named nope. Available: sky, amber, crimson, mono.", history)
@@ -1940,17 +2041,18 @@ def bracketed(text: str) -> bytes:
     return b"\x1b[200~" + text.encode("utf-8") + b"\x1b[201~"
 
 
-def status_index(screen: list[str]) -> int:
-    return next(index for index, line in enumerate(screen) if STATUS_MARK in line)
+def info_index(screen: list[str]) -> int:
+    """The info line's row: the last that is not blank, since every row under the region is."""
+    return max(index for index, line in enumerate(screen) if line)
 
 
-def status_row_of(screen: list[str]) -> str:
-    return screen[status_index(screen)]
+def info_row_of(screen: list[str]) -> str:
+    return screen[info_index(screen)]
 
 
 def composer_row(screen: list[str]) -> str:
-    """The row of a one-row composer: above the bottom rule and the mode row."""
-    return screen[status_index(screen) - 1 - UNDER_COMPOSER]
+    """What a one-row composer shows inside the box: the row above the box's bottom edge, sides taken off."""
+    return box_inner(screen[info_index(screen) - 1 - UNDER_COMPOSER])
 
 
 def resumed_other(messages: list[dict] | None = None) -> dict:
@@ -1983,12 +2085,12 @@ class AttachmentTests(AppTestCase):
         (attach,) = run.calls("image.attach")
         self.assertEqual(attach["params"], {"session_id": LIVE_ID, "path": "./shot.png"})
         before, chip = terminal.captures["before"], terminal.captures["chip"]
-        status = status_index(chip)
-        # The chip row sits between the rule and the input, and the region grew by it.
-        self.assertEqual(status, status_index(before) + 3)  # the command's echo and the spacer under it, the chip
+        status = info_index(chip)
+        # The chip row sits between the box's top edge and the input, and the region grew by it.
+        self.assertEqual(status, info_index(before) + 3)  # the command's echo and the spacer under it, the chip
         composer = status - 1 - UNDER_COMPOSER
-        self.assertTrue(chip[composer].startswith("›"), chip)
-        self.assertEqual(chip[composer - 1], "📎 shot.png 1280×720  Backspace removes")
+        self.assertTrue(box_inner(chip[composer]).startswith(">"), chip)
+        self.assertEqual(box_inner(chip[composer - 1]), "📎 shot.png 1280×720  Backspace removes")  # inside the box
         self.assertIn(RULE_MARK, chip[composer - 2])
         self.assertEqual(len(run.calls("prompt.submit")), 1)
         self.assertNotIn("📎 shot.png", "\n".join(terminal.captures["after"]))  # the echo above still names it
@@ -2029,7 +2131,7 @@ class AttachmentTests(AppTestCase):
             Step(bracketed("/fixture/project/drop.png"), when=terminal.idle, label="idle"),
             Step(bracketed("/fixture/project/notes.txt"), when=terminal.shows("drop.png 800×600"), capture="image",
                  label="the image chip"),
-            Step(bracketed(" and hello"), when=terminal.shows(f"› {file_ref}"), label="the file reference"),
+            Step(bracketed(" and hello"), when=terminal.shows(f"│ > {file_ref}"), label="the file reference"),
             Step(bracketed("line one\nline two"), when=terminal.shows("and hello"), capture="typed",
                  label="the unmatched paste"),
             Step(b"\x03\x04", when=terminal.shows("line two"), label="the multi-line paste"),
@@ -2043,8 +2145,8 @@ class AttachmentTests(AppTestCase):
             {"session_id": LIVE_ID, "text": " and hello"},
         ])
         # An image drop is queued by the gateway: a chip, and nothing typed (the placeholder is drawn, not typed).
-        self.assertEqual(composer_row(terminal.captures["image"]), "› Ask Hermes anything")
-        self.assertEqual(composer_row(terminal.captures["typed"]), f"› {file_ref} and hello")
+        self.assertEqual(composer_row(terminal.captures["image"]), "> Ask Hermes anything")
+        self.assertEqual(composer_row(terminal.captures["typed"]), f"> {file_ref} and hello")
 
     def test_backspace_on_an_empty_composer_detaches_the_last_image(self) -> None:
         answers = (
@@ -2064,7 +2166,7 @@ class AttachmentTests(AppTestCase):
         self.assert_clean_run(run)
         (detach,) = run.calls("image.detach")
         self.assertEqual(detach["params"], {"session_id": LIVE_ID, "path": "/fixture/project/shot.png"})
-        self.assertTrue(composer_row(terminal.captures["gone"]).startswith("›"))
+        self.assertTrue(composer_row(terminal.captures["gone"]).startswith(">"))
 
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
@@ -2167,7 +2269,7 @@ class KeyTests(AppTestCase):
         )
 
     def running(self, run: Run) -> Callable[[], bool]:
-        return lambda: run.terminal.status_row().rstrip().endswith("running")
+        return run.terminal.running
 
     def test_esc_on_an_empty_composer_interrupts_and_with_text_keeps_the_draft(self) -> None:
         run = self.interrupted_run()
@@ -2175,19 +2277,21 @@ class KeyTests(AppTestCase):
         terminal.script(
             self.submit(run, "Write the numbers from 1 to 300, one per line, nothing else."),
             Step(b"draft", when=self.running(run), capture="running", label="running"),
-            Step(b"\x1b", when=terminal.shows("› draft"), label="the draft"),
+            Step(b"\x1b", when=terminal.shows("│ > draft"), label="the draft"),
             # The replay holds the turn open until it sees session.interrupt, so a turn still running
             # well after that Esc proves the Esc sent nothing.
-            Step(b"\x15", when=lambda: terminal.shows("› draft")() and time.monotonic() - terminal.fired["the draft"] > 0.4,
+            Step(b"\x15", when=lambda: terminal.shows("│ > draft")() and time.monotonic() - terminal.fired["the draft"] > 0.4,
                  capture="after the first esc", label="the draft after Esc"),
-            Step(b"\x1b", when=lambda: not terminal.shows("› draft")(), label="the empty composer"),
+            Step(b"\x1b", when=lambda: not terminal.shows("│ > draft")(), label="the empty composer"),
             Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(), label="end"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
         (interrupt,) = run.calls("session.interrupt")
         self.assertEqual(interrupt["params"], {"session_id": LIVE_ID})
-        self.assertTrue(status_row_of(terminal.captures["after the first esc"]).rstrip().endswith("running"))
+        after = terminal.captures["after the first esc"]
+        self.assertNotIn("Interrupted.", "\n".join(after))  # the turn still runs
+        self.assertIn("esc again to", info_row_of(after))  # and the info line says what a second Esc does
         activity = [line for line in terminal.captures["running"] if INTERRUPT_ROW.search(line)]
         self.assertEqual(len(activity), 1, terminal.captures["running"])
 
@@ -2203,7 +2307,7 @@ class KeyTests(AppTestCase):
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        pressed = terminal.fired["the idle status line"]
+        pressed = terminal.fired["the idle info line"]
         self.assertGreaterEqual(terminal.fired["two seconds in"] - pressed, 2.0)
 
     def test_at_completion_asks_complete_path_and_tab_replaces_the_token(self) -> None:
@@ -2218,7 +2322,7 @@ class KeyTests(AppTestCase):
             Step(b"look at @sr", when=terminal.idle, label="idle"),
             Step(b"\t", when=terminal.shows(" app.py"), capture="menu", label="the path menu"),
             # Past the debounce, so a re-ask for the accepted file would have gone out by now.
-            Step(b"\x03\x04", when=lambda: terminal.shows("› look at @file:src/app.py")()
+            Step(b"\x03\x04", when=lambda: terminal.shows("│ > look at @file:src/app.py")()
                  and time.monotonic() - terminal.fired["the path menu"] > 0.5, capture="accepted",
                  label="the accepted path"),
         )
@@ -2228,11 +2332,11 @@ class KeyTests(AppTestCase):
         (asked,) = run.calls("complete.path")
         self.assertEqual(asked["params"], {"word": "@sr", "session_id": LIVE_ID})
         menu = terminal.captures["menu"]
-        status = status_index(menu)
-        rule = status - 2 - UNDER_COMPOSER
-        self.assertTrue(menu[rule - 2].startswith(" app.py"), menu)
-        self.assertTrue(menu[rule - 1].startswith(" src/"), menu)
-        self.assertIn("dir", menu[rule - 1])
+        # The launch starts the region on the top row, so it knows its place and the menu opens under the composer.
+        bottom = next(index for index, line in enumerate(menu) if line.startswith("╰"))
+        self.assertTrue(menu[bottom + 1].startswith(" app.py"), menu)
+        self.assertTrue(menu[bottom + 2].startswith(" src/"), menu)
+        self.assertIn("dir", menu[bottom + 2])
         accepted = terminal.captures["accepted"]
         self.assertFalse(any(line.startswith(" src/") for line in accepted), accepted)
 

@@ -319,7 +319,7 @@ class AppHistoryTests(unittest.TestCase):
         self.assertIsNotNone(self.app.search)
         type_text(self.app, "ls")
         rows = lines_text(self.app._slot_lines(80, 24))
-        self.assertEqual(rows[-1].rstrip(), "⌕ search history: ls", rows)  # its keys are on the mode row here
+        self.assertEqual(rows[-1].rstrip(), "⌕ search history: ls", rows)  # its keys are on the info line
         self.assertEqual(self.app.composer.text, "half")  # untouched while searching
         self.app._on_input(Key(ENTER))
         self.assertIsNone(self.app.search)

@@ -19,13 +19,13 @@ Ctrl+T and `/effort <level>` set the session's reasoning effort the same way
 (`config.set` with the session id); the level shown is the one Hermes
 confirmed or reports in `session.info`.
 
-The mode row under the composer frame is drawn here too (`mode_row_line`),
-since its label is the mode's and the agent strip starts after it.
+The info line under the composer is drawn here too (`info_line`), since its
+left side starts with the mode's label and the agent strip starts after it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 import json
 from typing import Any
@@ -42,26 +42,15 @@ from .width import cell_width, line_width, truncate_line
 # says it too, and `app` imports this module.
 NO_SESSION_NOTICE = "No session is open yet; try again in a moment."
 
-# The mode row under the composer frame. In normal mode it carries the keys that matter now: what Shift+Tab turns on,
-# the next mode first, and Ctrl+T beside the effort Hermes confirmed. Each list is longest first: a row takes the
-# first that fits. `{cycle}` is every mode Shift+Tab reaches from here in order, `{next}` the first of them,
-# `{effort}` " (medium)" once Hermes reported one.
-IDLE_KEYS_HINTS = (
-    "? shortcuts · ⇧⇥ {cycle} · ctrl+t effort{effort}",
-    "? shortcuts · ⇧⇥ {next} · ctrl+t effort{effort}",
-    "⇧⇥ {next} · ctrl+t effort{effort}",
-    "? shortcuts · ⇧⇥ {next}",
-    "? shortcuts",
-)
-# Accept all: Hermes asks for no approval in this session. Plan: each prompt goes to Hermes as `/plan <text>`.
-ACCEPT_HINTS = (" · Hermes asks no approvals in this session (⇧⇥ {cycle})", " · no approvals (⇧⇥ {next})", " (⇧⇥ {next})")
-PLAN_HINTS = (" · prompts go as /plan (⇧⇥ {cycle})", " · prompts go as /plan (⇧⇥ {next})", " (⇧⇥ {next})")
-BOTH_HINTS = (" (⇧⇥ {cycle})",)
-# What Shift+Tab reaches from each mode, in order (`ModesMixin._cycle_mode`). While Hermes has approvals off on its
-# own, the key turns plan on and off and nothing else (`HERMES_OWN_CYCLE`).
-MODE_CYCLE = {MODE_NORMAL: "accept all/plan", MODE_ACCEPT: "plan/normal", MODE_PLAN: "normal/accept all"}
+# The info line under the composer. Its left side is the mode's label, the agent strip and the keys that matter now;
+# its right side is what `App._info_right` gives (model, context, effort), cut down first when the line is narrow.
+IDLE_HINT = "? for shortcuts"
+# After accept's or plan's label: what Shift+Tab does next. `{cycle}` is CYCLE_WORDS while the key walks normal, accept
+# all and plan; while Hermes has approvals off on its own it turns plan on and off and nothing else (`HERMES_OWN_CYCLE`).
+MODE_HINTS = (" (⇧⇥ {cycle})", "")
+CYCLE_WORDS = "to cycle"
 HERMES_OWN_CYCLE = {MODE_ACCEPT: "plan", MODE_ACCEPT_PLAN: "plan off"}
-EFFORT_KEY = "ctrl+t effort"  # the effort's one display: in the idle hint, or on the row's right in any other state
+EFFORT_KEY = "ctrl+t effort"  # the right side's effort while Hermes has reported none
 INTERRUPT_KEY_HINT = "esc interrupt"
 STEER_KEY_HINT = "ctrl+enter steer"  # only once the terminal has sent a key in a CSI u or modifyOtherKeys report
 STEER_COMMAND_HINT = "/steer <text> steers"
@@ -69,13 +58,14 @@ QUEUED_KEY_HINT = "↑ edit queued"
 ACCEPT_LABEL = "⏵⏵ accept all on"
 PLAN_LABEL = "⏸ plan mode on"
 SHELL_LABEL = "! shell (not sent to the model)"
-# Each label's shorter forms, for a row where what the next key does would not fit beside the full words.
+# Each label's shorter forms, for a line where what the next key does would not fit beside the full words.
 ACCEPT_LABELS = (ACCEPT_LABEL, "⏵⏵ accept", "⏵⏵")
 PLAN_LABELS = (PLAN_LABEL, "⏸ plan", "⏸")
 SHELL_LABELS = (SHELL_LABEL, "! shell", "!")
 SHELL_HINT = " · enter runs it in Hermes' shell, 30 s at most"
-MODE_ROW_GAP = 3
-STRIP_SEPARATOR = " · "  # between the mode's label, the agent strip and the hint on the mode row
+INFO_GAP = 3  # the fewest blank cells between the left side and the right side
+STRIP_SEPARATOR = " · "  # between the mode's label, the agent strip and the hint on the info line
+INFO_SEPARATOR = " · "  # between the right side's fields
 
 # Accept mode is Hermes' per-session yolo. The TUI sends these words; Hermes answers "1" or "0".
 YOLO_ON = "on"
@@ -83,7 +73,7 @@ YOLO_OFF = "off"
 YOLO_ANSWERS = {True: "1", False: "0"}
 # Hermes builds `session.info` on other threads too, reading yolo before its slow probes, so one snapshot
 # taken before a confirmed on can arrive after it. For this long after a confirmed on, a `session.info`
-# saying approvals are on does not take accept off the composer by itself.
+# saying approvals are on does not take accept off the info line by itself.
 YOLO_SETTLE_SECONDS = 2.0
 ACCEPT_REFUSED_NOTICE = (
     "Hermes did not turn approvals off for this session alone ({}). "
@@ -107,14 +97,14 @@ LEFT_YOLO_NOTICE = (
 
 # Ctrl+T steps through these; `/effort` takes any level in `contract.REASONING_LEVELS`.
 EFFORT_CYCLE = ("low", "medium", "high", "xhigh", "max")
-# What the mode row says while Hermes reports no level for the session: none is configured, so each route sends its
+# What the info line says while Hermes reports no level for the session: none is configured, so each route sends its
 # own default or none at all (Hermes 6c61c3e27d `_session_info`: "" = provider default). No level Ctrl+T steps from.
 EFFORT_DEFAULT = "default"
 EFFORT_REFUSED_NOTICE = "Hermes did not set the reasoning effort to {} ({}); it stays as shown."
 
 
 def mode_label(mode: str, theme: Theme, form: int = 0) -> Line:
-    """The mode's own words on the mode row: accept and plan have them, both when both are on, normal has none.
+    """The mode's own words on the info line: accept and plan have them, both when both are on, normal has none.
 
     `form` picks a shorter form (`ACCEPT_LABELS`, `PLAN_LABELS`, `SHELL_LABELS`): 1 the short words, 2 the glyph.
     """
@@ -128,7 +118,7 @@ def mode_label(mode: str, theme: Theme, form: int = 0) -> Line:
 
 
 def strip_column(mode: str, theme: Theme) -> int:
-    """The mode row cell the agent strip starts on: after the mode's label and a separator, or the row's first."""
+    """The info line cell the agent strip starts on: after the mode's label and a separator, or the line's first."""
     label = mode_label(mode, theme)
     return line_width(label) + cell_width(STRIP_SEPARATOR) if label else 0
 
@@ -155,96 +145,115 @@ def configured_effort(config_result: Mapping[str, Any]) -> str:
 
 
 def effort_words(effort: str) -> str:
-    """`ctrl+t effort (medium)`, or `ctrl+t effort` while Hermes has reported none: the effort's one display."""
-    return f"{EFFORT_KEY} ({effort})" if effort else EFFORT_KEY
+    """`effort medium`, or `ctrl+t effort` while Hermes has reported none: the effort on the info line's right."""
+    return f"effort {effort}" if effort else EFFORT_KEY
 
 
-def default_hints(mode: str, busy: bool, cycle: str, effort: str) -> tuple[str, ...]:
-    """The mode row's own words when nothing else is said: the mode's meaning and Shift+Tab, or the idle keys."""
-    cycle = cycle or MODE_CYCLE.get(mode, "")
-    words = {"cycle": cycle, "next": cycle.split("/", 1)[0], "effort": f" ({effort})" if effort else ""}
-    if mode == MODE_ACCEPT:
-        forms = ACCEPT_HINTS
-    elif mode == MODE_PLAN:
-        forms = PLAN_HINTS
-    elif mode == MODE_ACCEPT_PLAN:
-        forms = BOTH_HINTS
-    elif not busy:
-        forms = IDLE_KEYS_HINTS
-    else:
-        return ()
-    return tuple(form.format(**words) for form in forms)
+def model_forms(model: str) -> tuple[str, ...]:
+    """The model's names on the info line, longest first: as Hermes names it, its last path segment, then that
+    segment without its first `-` word (`deepseek/deepseek-v4.1-flash` → `deepseek-v4.1-flash` → `v4.1-flash`).
+
+    A form equal to the one before it is left out, and so is an empty one.
+    """
+    segment = model.rsplit("/", 1)[-1]
+    head, dash, rest = segment.partition("-")
+    forms: list[str] = []
+    for form in (model, segment, rest if dash and head and rest else segment):
+        if form and form not in forms:
+            forms.append(form)
+    return tuple(forms)
 
 
-def mode_row_line(
+def default_hints(mode: str, busy: bool, cycle: str) -> tuple[str, ...]:
+    """The info line's own words when nothing else is said: where Shift+Tab goes from accept or plan, or the idle hint.
+
+    Longest first; the last of accept's and plan's is empty, so a narrow line drops it whole.
+    """
+    if mode in (MODE_ACCEPT, MODE_PLAN, MODE_ACCEPT_PLAN):
+        return tuple(form.format(cycle=cycle or CYCLE_WORDS) for form in MODE_HINTS)
+    return (IDLE_HINT,) if mode == MODE_NORMAL and not busy else ()
+
+
+def info_line(
     *,
     mode: str,
     busy: bool,
     queued: int,
     keyboard_protocol: bool,
-    effort: str,
     width: int,
     theme: Theme,
+    right: Sequence[Line] = (),
     strip: Line = (),
     say: str | tuple[str, ...] = "",
     say_style: Style | None = None,
     esc_interrupts: bool = True,
     cycle: str = "",
 ) -> Line:
-    """The row under the composer frame: the mode's label (accept, plan), the agent strip, the keys that matter now, the effort.
+    """The line under the composer: the mode's label (accept, plan, a shell line), the agent strip, the keys that
+    matter now, and on the right the first of `right` (forms, longest first) that leaves room for the left side whole.
 
     `strip` is the roster's strip while it holds an agent, drawn from cell
     `strip_column(mode, theme)` on. `say`, when given, is what the next key
-    will do (a rewind waiting to be sent, Esc's second press) and stands in
-    for the hint, in `say_style`; given as forms, longest first, the first
-    that fits whole is said, so a narrow row keeps the point rather than the
-    start of the long one. When none fits beside the effort the effort goes,
-    and when none fits beside the label's words the label takes its short
-    words, then its glyph alone, before the last form is cut. During a turn
-    the hint offers Esc for the interrupt only while `esc_interrupts` says Esc
-    does that now. The label always survives, in some form, and the strip
-    after it: the hint (its longest form that fits, `default_hints`) is cut
-    from its end first, and the effort on the right goes only when even the
-    label and the strip beside it do not fit. Accept and plan say what they
-    mean and where Shift+Tab goes next (`cycle`, every mode it reaches from
-    here; `MODE_CYCLE` when not given). Idle, the effort is said in the hint
-    beside Ctrl+T (`effort_words`) and not again on the right.
+    will do (a rewind waiting to be sent, Esc's second press, a question's
+    keys) and stands in for the hint, in `say_style`; given as forms, longest
+    first. The right side shrinks first: it is the longest of `right` beside
+    which the label, the strip and the hint's longest form fit. When none
+    leaves room the left side shortens alone: the first `say` form that fits
+    whole is said, so a narrow line keeps the point rather than the start of
+    the long one, and when none fits beside the label's words the label takes
+    its short words, then its glyph alone, before the last form is cut; any
+    other hint takes its longest form that fits, else its last, cut at the
+    edge. The right side then takes the longest of `right` that fits in what
+    the shortened left side leaves. During a turn the hint offers Esc for the interrupt only
+    while `esc_interrupts` says Esc does that now. The label always survives,
+    in some form, and the strip after it. Accept and plan say where Shift+Tab
+    goes next (`cycle`; CYCLE_WORDS when not given).
     """
     forms = (say,) if isinstance(say, str) else say
-    idle = not any(forms) and mode == MODE_NORMAL and not busy
-    for form in range(len(ACCEPT_LABELS)):
-        mode_part = mode_label(mode, theme, form)
-        label = (*mode_part, Span(STRIP_SEPARATOR, theme.hint), *strip) if strip and mode_part else strip or mode_part
-        right: Line = (Span(effort_words(effort), theme.muted),) if effort and not idle else ()
-        room = width - line_width(label) - (line_width(right) + MODE_ROW_GAP if right else 0)
-        if room < 0:
-            right, room = (), width - line_width(label)
-        if not any(forms):
-            break
-        said = [text if not label else STRIP_SEPARATOR + text for text in forms]
-        fits = [text for text in said if cell_width(text) <= room]
-        if not fits and right:  # what the next key does outranks the effort
-            right, room = (), width - line_width(label)
-            fits = [text for text in said if cell_width(text) <= room]
-        if fits or not mode_part:
-            break  # and it outranks the label's words, which shorten while nothing fits
     if any(forms):
-        hint = fits[0] if fits else said[-1]
+        hints = tuple(forms)
     elif mode == MODE_SHELL:
-        hint = SHELL_HINT
+        hints = (SHELL_HINT,)
     elif mode == MODE_NORMAL and busy:
         keys = [*([INTERRUPT_KEY_HINT] if esc_interrupts else []), STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
-        hint = " · ".join(keys + ([QUEUED_KEY_HINT] if queued else []))
+        hints = (" · ".join(keys + ([QUEUED_KEY_HINT] if queued else [])),)
     else:
-        own = default_hints(mode, busy, cycle, effort)
-        placed = [text if not strip else STRIP_SEPARATOR + text.removeprefix(STRIP_SEPARATOR).strip() for text in own]
-        hint = next((text for text in placed if cell_width(text) <= max(room, 0)), placed[-1] if placed else "")
-    if strip:
-        hint = hint if hint.startswith(STRIP_SEPARATOR) else STRIP_SEPARATOR + hint.strip()
-    left = truncate_line(label, width) + truncate_line((Span(hint, say_style or theme.hint),), max(room, 0))
-    if not right:
+        hints = default_hints(mode, busy, cycle)
+
+    def label_of(form: int) -> Line:
+        own = mode_label(mode, theme, form)
+        return (*own, Span(STRIP_SEPARATOR, theme.hint), *strip) if strip and own else strip or own
+
+    def placed(texts: Sequence[str], label: Line) -> list[str]:
+        """The hint's forms as drawn after `label`: what the next key does after a separator, the rest glued on."""
+        if any(forms):
+            return [text if not label else STRIP_SEPARATOR + text for text in texts]
+        if strip:
+            return [STRIP_SEPARATOR + text.removeprefix(STRIP_SEPARATOR).strip() if text else "" for text in texts]
+        return list(texts)
+
+    longest = line_width(label_of(0)) + (cell_width(placed(hints, label_of(0))[0]) if hints else 0)
+    shown_right: Line = next((form for form in right if form and longest + INFO_GAP + line_width(form) <= width), ())
+    room = width - (line_width(shown_right) + INFO_GAP if shown_right else 0)
+    label = label_of(0)
+    hint = ""
+    if any(forms):
+        for form in range(len(ACCEPT_LABELS)):
+            label = label_of(form)
+            said = placed(hints, label)
+            fits = [text for text in said if cell_width(text) <= room - line_width(label)]
+            if fits or not mode_label(mode, theme, form):
+                break  # what the next key does outranks the label's words, which shorten while nothing fits
+        hint = fits[0] if fits else said[-1]
+    elif hints:
+        said = placed(hints, label)
+        hint = next((text for text in said if cell_width(text) <= max(room - line_width(label), 0)), said[-1])
+    left = truncate_line(label, room) + truncate_line((Span(hint, say_style or theme.hint),), max(room - line_width(label), 0))
+    if not shown_right:
+        shown_right = next((form for form in right if form and line_width(left) + INFO_GAP + line_width(form) <= width), ())
+    if not shown_right:
         return left
-    return (*left, Span(" " * (width - line_width(left) - line_width(right))), *right)
+    return (*left, Span(" " * (width - line_width(left) - line_width(shown_right))), *shown_right)
 
 
 def yolo_answer_problem(result: Mapping[str, Any], on: bool) -> str:
@@ -280,7 +289,7 @@ class ModesMixin:
 
     @property
     def mode(self) -> str:
-        """What the composer's rules and mode row show: accept while approvals are off, plan while its flag is on."""
+        """What the info line shows: accept while approvals are off, plan while its flag is on."""
         if self.approvals_off:
             return MODE_ACCEPT_PLAN if self.plan_mode else MODE_ACCEPT
         return MODE_PLAN if self.plan_mode else MODE_NORMAL
@@ -291,7 +300,7 @@ class ModesMixin:
         Approvals off means accept is shown, on means it is not; the plan
         flag is the TUI's and stays as it is. Hermes reports yolo on for its
         own reasons too (`approvals.mode` off, `--yolo`, a `/yolo` typed to
-        it), and then the composer says so as well.
+        it), and then the info line says so as well.
 
         One `session.info` saying approvals are on, within
         `YOLO_SETTLE_SECONDS` of the TUI's confirmed on, is held instead: it
@@ -300,7 +309,7 @@ class ModesMixin:
         (`config.get` reads `approvals.mode`, the global setting, and nothing
         reads the session switch), so accept stays shown and the next
         `session.info` decides. The other way round needs no hold: approvals
-        off is shown at once, since in doubt the composer shows accept.
+        off is shown at once, since in doubt the info line shows accept.
         """
         effort = info.get(contract.SESSION_INFO_REASONING_EFFORT)
         if isinstance(effort, str):
@@ -455,7 +464,7 @@ class ModesMixin:
             self.transcript.add_notice(f"{now} /effort <level> sets it for this session. Levels: {levels}.")
 
     def _set_effort(self, level: str) -> None:
-        """Ask Hermes for `level` in this session; the mode row changes once Hermes confirms it."""
+        """Ask Hermes for `level` in this session; the info line changes once Hermes confirms it."""
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return

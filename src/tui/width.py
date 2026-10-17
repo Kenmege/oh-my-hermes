@@ -39,7 +39,7 @@ _SPACING_MARK = "Mc"
 _WIDE = frozenset({"W", "F"})
 # Hangul medial vowels and final consonants: zero width after a leading consonant.
 _HANGUL_TRAILING_JAMO = ((0x1160, 0x11FF), (0xD7B0, 0xD7FF))
-# Every frame measures the same short non-ASCII strings again (the rules, the mode row, the status line, a
+# Every frame measures the same short non-ASCII strings again (the composer's box, the info line, a
 # spinner glyph), so their clusters and cluster widths are kept; longer text is measured afresh.
 _KEPT_TEXT_CHARS = 256
 _KEPT_ENTRIES = 4096

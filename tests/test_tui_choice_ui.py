@@ -1,9 +1,9 @@
 """While the person picks from a list, the OMH TUI draws no composer, as Claude Code does.
 
 An approval and a clarify question with choices are answered by picking, and
-the session, rewind and model pickers are lists too: the composer's two rules
-and its rows are gone, and the list stands where the composer was, right above
-the mode row. A question shows no caret; a picker shows it at the end of its
+the session, rewind and model pickers are lists too: the composer's box and
+its rows are gone, and the list stands where the composer was, right above
+the info line. A question shows no caret; a picker shows it at the end of its
 filter row, its last, where its typing goes. The draft (its
 text, caret and paste chips) is not touched while it is hidden, no key types
 into it, and it comes back as it was the moment the list closes; a request
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import unittest
 
-from _tui_lines import line_text
+from _tui_lines import box_inner, line_text
 from test_tui_modes import RecordingClient, make_app, type_text
 from omh.tui.app import BELL, App
 from omh.tui.gateway import ServerRequest
@@ -29,7 +29,6 @@ CLARIFY = ServerRequest(
     "srq-2", "clarify", {"questions": [{"qid": "q0", "question": "Which color?", "choices": ["red", "blue"]}]}
 )
 SUDO = ServerRequest("srq-3", "sudo", {"command": "apt install x"})
-RULES = frozenset("─━┄╌")
 LONG_PASTE = "\n".join(f"pasted line {n}" for n in range(6))
 
 
@@ -38,17 +37,18 @@ def drawn(app: App) -> list[str]:
     return app.terminal.screen.lines()  # type: ignore[attr-defined]
 
 
-def status_row(screen: list[str]) -> int:
-    (row,) = [index for index, line in enumerate(screen) if line.startswith("⚚ OMH")]
-    return row
+def info_row(screen: list[str]) -> int:
+    """The info line's row: the last that is not blank, since every row under the region is."""
+    return max(index for index, line in enumerate(screen) if line)
 
 
 def rule_rows(screen: list[str]) -> list[int]:
-    return [index for index, line in enumerate(screen) if line.strip() and set(line.strip()) <= RULES]
+    """The rows of the composer box's top and bottom edges."""
+    return [index for index, line in enumerate(screen) if line.startswith(("╭", "╰"))]
 
 
 def composer_drawn(app: App, screen: list[str]) -> bool:
-    """The composer's frame is on the screen: its two rules, and the caret shown."""
+    """The composer's box is on the screen: its two edges, and the caret shown."""
     return len(rule_rows(screen)) == 2 and app.terminal.screen.cursor_visible  # type: ignore[attr-defined]
 
 
@@ -92,11 +92,11 @@ class HiddenComposerTests(unittest.TestCase):
         during = drawn(app)
         self.assertEqual(rule_rows(during), [], during)
         self.assertFalse(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
-        self.assertFalse([row for row in during if row.startswith("› ")], during)
-        mode_row = status_row(during) - 1
-        self.assertEqual(during[mode_row - 4 : mode_row],
+        self.assertFalse([row for row in during if row.startswith("│ > ")], during)
+        info = info_row(during)
+        self.assertEqual(during[info - 4 : info],
                          ["▌ ❯ deny", "▌   allow once", "▌   allow this session", "▌   no, and tell Hermes what to do instead"])
-        self.assertIn("↑↓ pick · enter confirms · d or esc denies and stops", during[mode_row])
+        self.assertIn("↑↓ pick · enter confirms · d or esc denies and stops", during[info])
         armed(app)
         press(app, Key(DOWN), Key(ENTER))
         self.assertEqual(answered(client, "srq-1"), [{"result": {"choice": "once"}}])
@@ -104,9 +104,9 @@ class HiddenComposerTests(unittest.TestCase):
         self.assertIs(app.composer, composer)
         self.assertEqual(held(app), draft)
         self.assertTrue(composer_drawn(app, after))
-        # The rows from the composer's top rule down are what they were; above them, the answer the person gave.
+        # The rows from the composer's top edge down are what they were; above them, the answer the person gave.
         top, top_after = rule_rows(before)[0], rule_rows(after)[0]
-        self.assertEqual(after[top_after : status_row(after) + 1], before[top : status_row(before) + 1])
+        self.assertEqual(after[top_after : info_row(after) + 1], before[top : info_row(before) + 1])
         self.assertIn("✓ allowed once · rm -rf ./build", after[:top_after])
         self.assertFalse([row for row in after if "allow this session" in row or "Hermes asks" in row], after)
 
@@ -201,7 +201,7 @@ class HiddenComposerTests(unittest.TestCase):
         app.transcript.add_notice("something to view")
         app._open_session_picker(SESSIONS)
         screen = drawn(app)
-        filter_row = status_row(screen) - 2
+        filter_row = info_row(screen) - 1
         press(app, Key(CHAR, "o", ctrl=True))  # the details view, over the picker
         self.assertIsNotNone(app.pager)
         press(app, Key(CHAR, "q"))
@@ -298,26 +298,22 @@ class HiddenComposerTests(unittest.TestCase):
 
 
 class ModeShownTests(unittest.TestCase):
-    """While a list hides the composer and its rules, the mode row (or, below 10 rows, the status line) shows the mode."""
+    """While a list hides the composer and its box, the info line still names the mode, at every height."""
 
-    def test_the_mode_row_or_the_status_line_names_the_mode_while_a_list_hides_the_composer(self) -> None:
+    def test_the_info_line_names_the_mode_while_a_list_hides_the_composer(self) -> None:
         from test_tui_modes import show_mode
         from omh.tui.frame import MODE_ACCEPT, MODE_PLAN
 
-        for mode, label, chip in ((MODE_ACCEPT, "⏵⏵ accept all on", "⏵⏵ accept"), (MODE_PLAN, "⏸ plan mode on", "⏸ plan")):
+        for mode, label in ((MODE_ACCEPT, "⏵⏵ accept all on"), (MODE_PLAN, "⏸ plan mode on")):
             for opener in (lambda app: app._on_server_request(CLARIFY), lambda app: app._open_session_picker(SESSIONS)):
-                with self.subTest(mode=mode):
-                    app, _client = make_app(busy=True)
-                    show_mode(app, mode)
-                    opener(app)
-                    screen = drawn(app)
-                    self.assertEqual(rule_rows(screen), [])  # no rule carries the mode now
-                    self.assertTrue(screen[status_row(screen) - 1].startswith(label), screen)
-                    short, _client = make_app(busy=True, rows=9)
-                    show_mode(short, mode)
-                    opener(short)
-                    screen = drawn(short)
-                    self.assertIn(chip, screen[status_row(screen)])
+                for rows in (24, 9):
+                    with self.subTest(mode=mode, rows=rows):
+                        app, _client = make_app(busy=True, rows=rows)
+                        show_mode(app, mode)
+                        opener(app)
+                        screen = drawn(app)
+                        self.assertEqual(rule_rows(screen), [])
+                        self.assertTrue(screen[info_row(screen)].startswith(label), screen)
 
 
 class ClarifyFieldTests(unittest.TestCase):
@@ -332,9 +328,9 @@ class ClarifyFieldTests(unittest.TestCase):
         app, _client, _draft = self.open()
         screen = drawn(app)
         self.assertFalse(composer_drawn(app, screen))
-        mode_row = status_row(screen) - 1
+        info = info_row(screen)
         self.assertEqual(
-            screen[mode_row - 4 : mode_row],
+            screen[info - 4 : info],
             ["▌ ? Which color?", "▌ ❯ 1. red", "▌   2. blue", "▌   3. Other (type your answer)"],
         )
 
@@ -343,7 +339,7 @@ class ClarifyFieldTests(unittest.TestCase):
         type_text(app, "green")
         screen = drawn(app)
         self.assertTrue(composer_drawn(app, screen), screen)
-        self.assertIn("› green", screen)
+        self.assertIn("> green", [box_inner(row) for row in screen])
         self.assertIn("▌ ❯ 3. Other (type your answer)", screen)
         press(app, Key(ENTER))
         self.assertEqual(answered(client, "srq-2"), [{"result": {"answers": {"q0": "green"}}}])
@@ -359,7 +355,7 @@ class ClarifyFieldTests(unittest.TestCase):
         self.assertIn("▌ ❯ 2. blue", screen)
         press(app, Key(DOWN), Key(ENTER))
         screen = drawn(app)
-        self.assertIn("› gre", screen)
+        self.assertIn("> gre", [box_inner(row) for row in screen])
         type_text(app, "en")
         press(app, Key(ENTER))
         self.assertEqual(answered(client, "srq-2"), [{"result": {"answers": {"q0": "green"}}}])
@@ -418,19 +414,19 @@ class PickerTests(unittest.TestCase):
                 opener(app)  # type: ignore[operator]
                 screen = drawn(app)
                 self.assertEqual(rule_rows(screen), [], screen)
-                status = status_row(screen)
-                self.assertEqual(screen[status - 2], " › type to filter")  # right above the mode row
-                self.assertEqual(app.terminal.screen.cursor, (status - 2, 3))  # type: ignore[attr-defined]  # the caret on it
+                info = info_row(screen)
+                self.assertEqual(screen[info - 1], " › type to filter")  # right above the info line
+                self.assertEqual(app.terminal.screen.cursor, (info - 1, 3))  # type: ignore[attr-defined]  # the caret on it
                 type_text(app, "s")
                 screen = drawn(app)
-                self.assertEqual(screen[status_row(screen) - 2], " › s")  # the list shrank: the row moved with it
+                self.assertEqual(screen[info_row(screen) - 1], " › s")  # the list shrank: the row moved with it
                 self.assertEqual(held(app), draft)  # the filter is the picker's, not the draft's
                 press(app, Key(ESCAPE))
                 self.assertTrue(composer_drawn(app, drawn(app)))
                 self.assertEqual(held(app), draft)
 
-    def test_the_mode_row_says_the_pickers_keys_not_the_composers(self) -> None:
-        # The composer's hints (`? shortcuts`, `⇧⇥ mode`) do nothing while a picker has the keys.
+    def test_the_info_line_says_the_pickers_keys_not_the_composers(self) -> None:
+        # The composer's hint (`? for shortcuts`) does nothing while a picker has the keys.
         keys = {"sessions": "↑↓ move · enter switches · esc closes", "rewind": "↑↓ move · enter edits it · esc closes",
                 "model": "↑↓ move · enter switches this session · esc closes"}
         for name, opener in self.openers():
@@ -438,14 +434,14 @@ class PickerTests(unittest.TestCase):
                 app, _client = make_app()
                 opener(app)  # type: ignore[operator]
                 screen = drawn(app)
-                mode_row = screen[status_row(screen) - 1]
-                self.assertIn(keys[name], mode_row)
-                self.assertNotIn("shortcuts", mode_row)
-                self.assertEqual([row for row in screen if "esc closes" in row], [mode_row])  # not in the header too
-                narrow = line_text(app._mode_row_line(40))
+                info = screen[info_row(screen)]
+                self.assertIn(keys[name], info)
+                self.assertNotIn("shortcuts", info)
+                self.assertEqual([row for row in screen if "esc closes" in row], [info])  # not in the header too
+                narrow = line_text(app._info_line(40))
                 self.assertTrue(narrow.rstrip().endswith("esc closes"), narrow)
                 press(app, Key(ESCAPE))
-                self.assertIn("shortcuts", drawn(app)[status_row(drawn(app)) - 1])
+                self.assertIn("shortcuts", drawn(app)[info_row(drawn(app))])
 
     def test_the_caret_shows_at_the_end_of_the_filter_row_where_typing_goes(self) -> None:
         # An IME pre-edit (Hangul, kana) is drawn at the cursor: it must be where the filter's text is typed.
@@ -455,16 +451,16 @@ class PickerTests(unittest.TestCase):
                 type_text(app, "a draft")
                 opener(app)  # type: ignore[operator]
                 screen = drawn(app)
-                row = status_row(screen) - 2
+                row = info_row(screen) - 1
                 self.assertEqual(screen[row], " › type to filter")
                 self.assertTrue(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
                 self.assertEqual(app.terminal.screen.cursor, (row, 3))  # type: ignore[attr-defined]
                 type_text(app, "s")
                 screen = drawn(app)
-                self.assertEqual(app.terminal.screen.cursor, (status_row(screen) - 2, 4))  # type: ignore[attr-defined]
+                self.assertEqual(app.terminal.screen.cursor, (info_row(screen) - 1, 4))  # type: ignore[attr-defined]
                 press(app, Key(ESCAPE))
                 screen = drawn(app)
-                self.assertEqual(app.terminal.screen.cursor[0], next(i for i, line in enumerate(screen) if line.startswith("› a draft")))  # type: ignore[attr-defined]
+                self.assertEqual(app.terminal.screen.cursor[0], next(i for i, line in enumerate(screen) if line.startswith("│ > a draft")))  # type: ignore[attr-defined]
 
     def test_the_caret_stays_on_the_filter_row_with_the_echo_and_the_working_row_above(self) -> None:
         # The slot's top is below the sticky echo and the working row: the caret counts them.
@@ -475,7 +471,7 @@ class PickerTests(unittest.TestCase):
         screen = drawn(app)
         self.assertTrue(any(line.startswith("↳ you: run the tools") for line in screen), screen)
         self.assertTrue(any("Working…" in line for line in screen), screen)
-        row = status_row(screen) - 2
+        row = info_row(screen) - 1
         self.assertEqual(screen[row], " › re")
         self.assertEqual(app.terminal.screen.cursor, (row, 5))  # type: ignore[attr-defined]
 
@@ -490,7 +486,7 @@ class PickerTests(unittest.TestCase):
         press(app, Key(ESCAPE))
         self.assertEqual(answered(client, "srq-1"), [{"result": {"choice": "deny"}}])
         screen = drawn(app)
-        filter_row = status_row(screen) - 2  # the answer is printed above the region, which moves down under it
+        filter_row = info_row(screen) - 1  # the answer is printed above the region, which moves down under it
         self.assertEqual(screen[filter_row], " › type to filter")
         self.assertEqual(app.terminal.screen.cursor, (filter_row, 3))  # type: ignore[attr-defined]
 
@@ -516,15 +512,14 @@ class PickerTests(unittest.TestCase):
                 self.assertTrue(any(line.startswith(" ● Release notes") or line.startswith("   Release notes")
                                     for line in screen), screen)
 
-    def test_below_ten_rows_a_pickers_keys_stay_in_its_header(self) -> None:
-        app, _client = make_app(rows=9)
-        app._open_session_picker(SESSIONS)
-        screen = drawn(app)
-        self.assertTrue(any(row.startswith(" Sessions (2)") and "esc closes" in row for row in screen), screen)
-        narrow, _client = make_app(rows=9, cols=40)  # the header's keys take their short form, never a cut-off long one
-        narrow._open_session_picker(SESSIONS)
-        header = next(row for row in drawn(narrow) if row.startswith(" Sessions (2)"))
-        self.assertTrue(header.rstrip().endswith("esc closes"), header)
+    def test_a_short_terminal_says_a_pickers_keys_on_the_info_line_and_not_in_its_header(self) -> None:
+        for rows, cols in ((9, 80), (6, 40)):  # the keys take their short form, never a cut-off long one
+            with self.subTest(rows=rows, cols=cols):
+                app, _client = make_app(rows=rows, cols=cols)
+                app._open_session_picker(SESSIONS)
+                screen = drawn(app)
+                self.assertFalse(any(row.startswith(" Sessions (2)") and "esc" in row for row in screen), screen)
+                self.assertTrue(screen[info_row(screen)].split("   ")[0].endswith("esc closes"), screen)
 
     def test_the_history_search_hides_the_composer_and_the_completion_menu_keeps_it(self) -> None:
         app, _client = make_app()
@@ -678,17 +673,17 @@ class ResizeAndShortTerminalTests(unittest.TestCase):
                 self.assertTrue(any(row.startswith("▌ ❯ deny") for row in screen), screen)
                 self.assertTrue(all(len(row) <= cols for row in screen))
                 self.assertEqual(rule_rows(screen), [], screen)
-                if rows >= 10:  # the mode row; below it a spare row shows the command's head rather than the keys
-                    self.assertTrue(any("esc denies" in row for row in screen), screen)
+                self.assertIn("esc", screen[info_row(screen)])  # the info line keeps a way to deny at every height
 
-    def test_below_ten_rows_the_keys_take_a_slot_row_and_not_a_composer_row(self) -> None:
+    def test_on_a_short_terminal_the_keys_are_on_the_info_line_and_the_slot_keeps_its_rows(self) -> None:
         app, _client = make_app(busy=True, rows=9, cols=80)
         app._on_server_request(ServerRequest("srq-1", "approval", {**APPROVAL.params, "choices": ["once", "deny"]}))
         screen = drawn(app)
-        status = status_row(screen)
-        self.assertEqual(screen[status - 1], "▌   ↑↓ pick · enter confirms · d or esc denies and stops")
-        self.assertEqual(screen[status - 4 : status - 1],
+        info = info_row(screen)
+        self.assertTrue(screen[info].startswith("↑↓ pick · enter confirms · d or esc denies and stops"), screen)
+        self.assertEqual(screen[info - 3 : info],
                          ["▌ ❯ deny", "▌   allow once", "▌   no, and tell Hermes what to do instead"])
+        self.assertFalse([row for row in screen if row.startswith("▌") and "esc" in row], screen)  # no slot row for keys
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ from omh.tui.panels import (
     HudSnapshot,
     panel_lines,
     plan_state,
-    status_segments,
+    hud_chips,
 )
 from omh.tui.theme import DEFAULT_THEME
 from omh.tui.width import line_width
@@ -414,37 +414,40 @@ class BudgetInvariantTests(unittest.TestCase):
                             self.assertTrue(all(span.text for span in line))
 
 
-class StatusSegmentsTests(unittest.TestCase):
-    def test_brand_and_session_wide_chips(self) -> None:
-        # The version is the banner's: the status line spends its cells on model, context and state.
+class HudChipsTests(unittest.TestCase):
+    """The HUD's session-wide chips for the info line's right side: no `⚚ OMH` brand, no yolo chip."""
+
+    def texts(self, *args: object, **options: object) -> list[str]:
+        return [line_text(chip) for chip in hud_chips(*args, **options)]  # type: ignore[arg-type]
+
+    def test_session_wide_chips_with_no_brand(self) -> None:
         payload = hud_payload()
-        self.assertEqual(line_text(status_segments(payload, THEME)), "⚚ OMH")
+        self.assertEqual(self.texts(payload, THEME), [])
         payload["repeat"] = {"status": "observed", "consecutive": 4, "period": 2, "intercepted": 1, "stage": "blocking"}
         payload["activity"].update(
             live=True, post_tool_call_observed=True, open_call_count=2, oldest_open_elapsed_seconds=12
         )
         payload["yolo"] = {"status": "observed", "enabled": True}
-        line = status_segments(payload, THEME)
-        self.assertEqual(line_text(line), "⚚ OMH · repeat x4 cycle-of-2 blocked • 2 tools · 12s")  # no yolo chip
-        chip = next(span for span in line if span.text.startswith("repeat"))
-        self.assertEqual(chip.style.fg, THEME.warn.fg)
+        chips = hud_chips(payload, THEME)
+        self.assertEqual([line_text(chip) for chip in chips], ["repeat x4 cycle-of-2 blocked", "2 tools · 12s"])  # no yolo
+        self.assertEqual(chips[0][0].style.fg, THEME.warn.fg)
 
     def test_the_in_flight_chip_drops_its_clock_while_a_question_waits_and_goes_when_no_turn_runs(self) -> None:
         payload = hud_payload()
         payload["repeat"] = {"status": "observed", "consecutive": 4, "period": 2, "intercepted": 1, "stage": "blocking"}
         payload["activity"].update(live=True, post_tool_call_observed=True, open_call_count=2, oldest_open_elapsed_seconds=12)
-        self.assertEqual(line_text(status_segments(payload, THEME, question_waits=True)),
-                         "⚚ OMH · repeat x4 cycle-of-2 blocked • 2 tools")
-        self.assertEqual(line_text(status_segments(payload, THEME, turn_runs=False)), "⚚ OMH · repeat x4 cycle-of-2 blocked")
+        self.assertEqual(self.texts(payload, THEME, question_waits=True), ["repeat x4 cycle-of-2 blocked", "2 tools"])
+        self.assertEqual(self.texts(payload, THEME, turn_runs=False), ["repeat x4 cycle-of-2 blocked"])
 
     def test_liveness_is_not_claimed_where_it_cannot_be_read(self) -> None:
         payload = hud_payload()
         payload["activity"].update(live=True, post_tool_call_observed=False, open_call_count=2)
-        self.assertNotIn("tools", line_text(status_segments(payload, THEME)))
+        self.assertNotIn("2 tools · 0s", self.texts(payload, THEME))
+        self.assertEqual(self.texts(payload, THEME), [])
 
-    def test_without_a_payload_the_line_still_names_omh(self) -> None:
-        self.assertEqual(line_text(status_segments(None, THEME)), "⚚ OMH")
-        self.assertEqual(line_text(status_segments({"error": "OSError"}, THEME)), "⚚ OMH")
+    def test_without_a_payload_there_are_no_chips(self) -> None:
+        self.assertEqual(hud_chips(None, THEME), ())
+        self.assertEqual(hud_chips({"error": "OSError"}, THEME), ())
 
 
 class FakeReader:
@@ -680,7 +683,7 @@ class PanelRowsTests(unittest.TestCase):
                 plan_at = next(index for index, row in enumerate(mine) if row.startswith("[Plan]"))
                 # The widget's dock-top ended with the composer rule, and its
                 # dock-bottom opened with a rule and the branded header, which
-                # the TUI's status line and `[Agents]` header replace; the
+                # the TUI's info line and `[Agents]` header replace; the
                 # recording leaves those out. The widget also ended a moving
                 # plan's header with a walking ellipsis (` .` at this frame),
                 # which read as a stray dot (audit D7); the TUI draws none, so it

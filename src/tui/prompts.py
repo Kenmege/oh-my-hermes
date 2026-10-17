@@ -83,7 +83,7 @@ TICKED, UNTICKED = "[x] ", "[ ] "
 MULTI_NOTE = " (choose one or more)"
 SLOT_BAR = "▌ "
 CHOICE_MARK = "❯ "
-# Each question's keys, longest first, for the mode row while it is open: Esc then has one meaning on the screen.
+# Each question's keys, longest first, for the info line while it is open: Esc then has one meaning on the screen.
 APPROVAL_KEYS = (
     "↑↓ pick · enter confirms · d or esc denies and stops",
     "↑↓ pick · enter confirms · esc denies and stops",
@@ -206,7 +206,7 @@ class PromptSlot:
 
     @property
     def keys(self) -> tuple[str, ...]:
-        """The keys this question takes now, longest form first, said on the mode row."""
+        """The keys this question takes now, longest form first, said on the info line."""
         if self.method == "approval":
             return APPROVAL_KEYS
         if self.method == "clarify":
@@ -470,7 +470,7 @@ class PromptSlot:
     def lines(
         self, width: int, theme: Theme, max_rows: int, keys_row: bool = False, waiting: int = 0, turn_runs: bool = True
     ) -> list[Line]:
-        """The slot's rows, at most `max_rows`; `keys_row` adds the question's keys (where no mode row says them),
+        """The slot's rows, at most `max_rows`; `keys_row` adds the question's keys as a row of the slot's own,
         as they are while a turn runs or not (`keys_while`).
 
         A list keeps the highlighted row whatever the budget (`_fit`). A

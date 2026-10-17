@@ -26,7 +26,7 @@ from omh.tui.app import (
     working_spans,
 )
 from omh.tui.gateway import Event
-from omh.tui.panels import HudSnapshot, panel_lines, status_segments
+from omh.tui.panels import HudSnapshot, hud_chips, panel_lines
 from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.theme import theme_named
@@ -260,31 +260,35 @@ class ReducedMotionTests(unittest.TestCase):
 
 
 class SteadyRowsTests(unittest.TestCase):
-    """A tick that changes only the spinner leaves the status line and the title as they were, uncomputed."""
+    """A tick that changes only the spinner leaves the info line's right side and the title as they were, uncomputed."""
 
-    def test_the_status_line_is_composed_again_only_when_something_it_shows_changes(self) -> None:
+    def test_the_info_lines_right_side_is_composed_again_only_when_something_it_shows_changes(self) -> None:
+        from omh.tui.prompts import open_request
+
         clock = Clock()
         app, _client = make_app(busy=True, clock=clock)
-        with mock.patch("omh.tui.app.status_segments", wraps=status_segments) as segments:
-            first = app._status_line(80)
+        with mock.patch("omh.tui.app.hud_chips", wraps=hud_chips) as chips:
+            first = app._info_right()
             clock.now += TICK_SECONDS
-            self.assertIs(app._status_line(80), first)
-            self.assertEqual(segments.call_count, 1)
+            self.assertIs(app._info_right(), first)
+            self.assertEqual(chips.call_count, 1)
             for change in (
                 lambda: setattr(app, "model", "another/model"),
-                lambda: setattr(app, "turn_pending", False),  # running -> idle
-                lambda: app.queued.append(("next", "", "")),
+                lambda: setattr(app, "turn_pending", False),  # running -> idle: the tool chip goes
                 lambda: setattr(app, "context_percent", 91.0),
+                lambda: setattr(app, "effort", "max"),
+                lambda: setattr(app, "slot", open_request("srq-1", "approval", {"command": "ls"})),  # its clock goes
                 lambda: setattr(app, "theme", theme_named("amber")),
                 lambda: setattr(app, "hud", HudSnapshot("s", hud_payload(), 0.0)),
             ):
-                before = segments.call_count
+                before = chips.call_count
                 change()
-                app._status_line(80)
-                self.assertEqual(segments.call_count, before + 1)
-            before = segments.call_count
-            app._status_line(60)  # another width
-            self.assertEqual(segments.call_count, before + 1)
+                app._info_right()
+                self.assertEqual(chips.call_count, before + 1)
+            before = chips.call_count
+            app.size = (60, 24)  # another width: the same forms, `info_line` picks among them
+            app._info_line(60)
+            self.assertEqual(chips.call_count, before)
 
     def test_the_title_is_cut_only_when_its_words_change(self) -> None:
         app, _client = make_app(busy=True)

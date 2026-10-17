@@ -27,7 +27,7 @@ from .width import cell_width, truncate, truncate_line
 
 PICK = "pick"
 CLOSE = "close"
-# Its keys, longest first: on the mode row while it is open, in its header where there is no mode row.
+# Its keys, longest first: on the info line while it is open; in its header only when `lines` is asked for them.
 KEYS = ("↑↓ move · enter edits it · esc closes", "↑↓ enter edits it · esc closes", "esc closes")
 TITLE = " Rewind to a prompt ({count})"
 

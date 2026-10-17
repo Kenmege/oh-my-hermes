@@ -196,7 +196,7 @@ class HistorySearch:
 
     def lines(self, width: int, theme: Theme, max_rows: int, keys: bool = True) -> list[Line]:
         """The match's first line and where it is among the matches, then the query row: the query, and its keys
-        after it when `keys` (the app says them on the mode row where there is one). One row is the query row."""
+        after it when `keys` (the app says them on the info line and asks for none here). One row is the query row."""
         self.caret = None
         if max_rows <= 0:
             return []
