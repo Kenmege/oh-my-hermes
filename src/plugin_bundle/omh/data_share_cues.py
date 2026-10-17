@@ -607,7 +607,7 @@ def _sends_stay_inside(words: list[str], raw_words: list[str], sentence_starts: 
     inside = False
     for number, index in enumerate(sends):
         following = sends[number + 1] if number + 1 < len(sends) else len(words)
-        stop = next((start for start in sentence_starts if index < start < following), following)
+        stop = next((sentence for sentence in sentence_starts if index < sentence < following), following)
         # Composed: the router reads Hangul decomposed ("... to the dev team. 감사합니다.").
         if not {composed(word) for word in words[stop:following]} <= _REMARKS:
             return False

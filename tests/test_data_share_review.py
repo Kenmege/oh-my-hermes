@@ -750,6 +750,12 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "고객의 개인정보 마스킹해서 개발팀에 보내줘",
             "고객용 엑셀 개인정보 마스킹해서 개발팀에 보내줘",
             "고객이 받을 파일 개인정보 지우고 QA팀에 올려줘",
+            # Not right before a data word, it is the party too, as "the
+            # customer and employee emails" is in English.
+            "고객 및 직원 연락처 마스킹해서 인사팀에 보내줘",
+            # A party word off the list, before a data word or owning one.
+            "보험사 엑셀 개인정보 마스킹해서 개발팀에 보내줘",
+            "은행의 고객 명단 개인정보 마스킹해서 데이터팀에 공유해줘",
         ):
             with self.subTest(message=message):
                 self.assertTrue(_offered(message))
@@ -769,6 +775,7 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "내부용 파일 개인정보 지우고 개발팀에 보내줘",
             "개발팀에 보낼 고객 파일 가명 처리해줘",
             "개인정보 마스킹 후 데이터팀에 공유해줘",
+            "개인정보 마스킹 진행 후 개발팀에 보내줘",
             # "-기 전에" is a step, as "다음에" is, not a place.
             "개발팀에 보내기 전에 고객 정보 마스킹해줘",
             "스테이징에 올리기 전에 회원 데이터에서 개인정보 지워줘",
@@ -790,6 +797,13 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "고객 정보 마스킹해서 개발팀에 보내줘. 협력사에도 공유해줘.",
             "고객 정보 마스킹해줘. 그리고 벤더한테 보내줘.",
             "고객 정보 마스킹해서 개발팀에 보내줘. 그리고 보험사가 원하는 형식으로 정리해줘.",
+            "고객 정보 마스킹해서 개발팀에 보내줘. 벤더한테도 보낼 거야.",
+            "고객 정보 마스킹해서 개발팀에 보내줘. 고객이 볼 거야.",
+            "고객 정보 마스킹해줘. 벤더한테 줄 거야.",
+            "고객 정보 마스킹해줘. 그리고 Acme에 보내줘.",
+            # An apostrophe opens no quote, on either fold: both surfaces read
+            # the request, and its place outside.
+            "고객 정보 마스킹해서 Acme's team에 보내줘. It's urgent.",
         ):
             with self.subTest(message=message):
                 self.assertTrue(_offered(message))
@@ -842,6 +856,7 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             # Between a send and its "to", only the data sent and remarks.
             "Redact the PII in the export and send it where Acme wants it, to the dev team.",
             "Redact the PII in the export and send it, as Acme asked, to the dev team.",
+            "Redact the PII in the export and send Acme's copy to the dev team.",
         ):
             with self.subTest(message=message):
                 self.assertTrue(_offered(message))
