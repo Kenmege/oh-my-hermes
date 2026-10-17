@@ -42,7 +42,7 @@ DIFF_REMOVED = "removed"
 DIFF_CONTEXT = "context"
 DIFF_NOTE = "note"  # the omitted-lines summary, "\ No newline at end of file", anything else
 
-DIFF_INDENT = 4  # the diff hangs under the tool row's name, where a result summary sits
+DIFF_INDENT = 5  # the diff hangs under the tool row's result column, where `  ⎿  ` puts a result's words
 PREVIEW_LINES = 24  # diff lines shown in the live and flushed view; /history shows them all
 
 FILE_ARROW = " → "  # `_render_inline_unified_diff` joins the two file names with it
@@ -102,12 +102,24 @@ def compact_file_header(text: str) -> str:
     return f"{old}{FILE_ARROW}{new}"
 
 
+def _without_padding(line: DiffLine) -> DiffLine:
+    """A code line without the spaces after its text, its `+`, `-` or ` ` kept; any other line as it is."""
+    if line.kind in (DIFF_ADDED, DIFF_REMOVED, DIFF_CONTEXT):
+        return DiffLine(line.kind, line.text[:1] + line.text[1:].rstrip())
+    return line
+
+
 def parse_inline_diff(payload: str) -> tuple[DiffLine, ...]:
-    """The classified lines of an `inline_diff` payload; () for an empty one or one that is only the header."""
+    """The classified lines of an `inline_diff` payload; () for an empty one or one that is only the header.
+
+    Hermes pads each changed line with spaces (to 143 cells in a live patch);
+    a band reaches the right edge by itself, and the padding would wrap it
+    into a second, empty band row, so a code line's trailing spaces go.
+    """
     lines = _trimmed([clean_text(line) for line in payload.split("\n")])
     if lines and lines[0].lstrip().startswith(REVIEW_HEADER_MARK):
         lines = _trimmed(lines[1:])
-    classified = [DiffLine(_kind(line), line) for line in lines]
+    classified = [_without_padding(DiffLine(_kind(line), line)) for line in lines]
     return tuple(
         DiffLine(line.kind, compact_file_header(line.text)) if line.kind == DIFF_FILE else line for line in classified
     )
@@ -205,10 +217,14 @@ def _hidden_note(hidden: int) -> str:
     return f"… +{hidden} {noun} · ctrl+o shows all"
 
 
-def diff_rows(lines: Sequence[DiffLine], width: int, theme: Theme, full: bool = False) -> list[Line]:
+def diff_rows(
+    lines: Sequence[DiffLine], width: int, theme: Theme, full: bool = False, lead: Line = ()
+) -> list[Line]:
     """The rows for a parsed diff at `width`: the first `PREVIEW_LINES` lines and a count of the rest, or all.
 
     Hunk headers count toward the preview, but not toward the hidden count, which names rows.
+    `lead` (`DIFF_INDENT` cells: the tool row's result mark) takes the place of
+    the first row's indent when that row has one.
     """
     width = max(1, width)
     numbered = _numbered(lines)
@@ -226,4 +242,7 @@ def diff_rows(lines: Sequence[DiffLine], width: int, theme: Theme, full: bool = 
     hidden = sum(1 for line, _number in numbered[len(shown) :] if line.kind != DIFF_HUNK)
     if hidden:
         rows.extend(_note_rows(_hidden_note(hidden), theme.muted, width))
+    indent = _indent(width)
+    if lead and indent and rows and rows[0][: len(indent)] == indent:
+        rows[0] = (*lead, *rows[0][len(indent) :])
     return rows

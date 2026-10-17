@@ -3,7 +3,7 @@
 Everything finished goes to the terminal's own scrollback as plain lines
 (`flush_above`), so scrolling, selecting and copying stay the terminal's
 native behaviour. Right below the last of them sits one live region: sticky
-prompt, streaming tail, panels, composer, status line. The region starts
+prompt, streaming tail, panels, composer, info line. The region starts
 where the output ends and is as tall as its frame, so it follows the content:
 it grows downward until its last row is the screen's last row, and from then
 on growing scrolls the screen up as printed output would. From then on the
@@ -66,9 +66,10 @@ scrolls the region up. A frame that shrinks does not move it. Each is
 `row -> min(row + shift, screen_rows - floor)`, and so is any sequence of
 them, so the region keeps one `shift` and one `floor` and can say where its
 top row is for any starting row. The starting row is the screen's top row
-when the caller says so (`at_top`: it homed the cursor first), or the row the
-caller learned from the terminal (`start_row`: the cursor position report at
-launch), and then the top row is certain from the first write. Otherwise it
+when the caller says so (`at_top`: it homed the cursor first, or at launch
+moved it there after scrolling the rows above it into scrollback), or the row
+the caller learned from the terminal (`start_row`: the cursor position report
+after a stop), and then the top row is certain from the first write. Otherwise it
 is unknown, and the top row is certain once every possible start gives the
 same row, that is once the flushes have pushed it as far down as the screen
 allows.

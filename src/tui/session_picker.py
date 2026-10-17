@@ -21,14 +21,14 @@ from dataclasses import dataclass
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
 from .style import Line, Span
 from .theme import Theme
-from .width import cell_width, line_width, truncate, truncate_line
+from .width import cell_width, truncate, truncate_line
 
 PICK = "pick"
 CLOSE = "close"
 CURRENT_MARK = "●"
-# Its keys, longest first: on the mode row while it is open, in its header where there is no mode row.
+# Its keys, longest first: on the info line while it is open.
 KEYS = ("↑↓ move · enter switches · esc closes", "↑↓ enter switches · esc closes", "esc closes")
-FILTER_PROMPT = " › "
+FILTER_PROMPT = " > "  # the composer's mark, on the row that stands where the composer was
 FILTER_PLACEHOLDER = "type to filter"
 
 
@@ -105,7 +105,6 @@ class PickerFrame:
 
 def picker_frame(
     head: Line,
-    keys: tuple[str, ...],
     count: int,
     index: int,
     row: Callable[[int], Line],
@@ -117,9 +116,8 @@ def picker_frame(
 ) -> PickerFrame:
     """A picker's rows within `max_rows`, the same for every picker.
 
-    A header (`head`, then the longest form of `keys` that fits beside it;
-    `keys` empty says none), the `count` list rows `row` draws scrolled so
-    the highlighted `index` shows (`empty` when there are none), then the
+    A header (`head`), the `count` list rows `row` draws scrolled so the
+    highlighted `index` shows (`empty` when there are none), then the
     filter row, its caret at the end of what was typed so an IME pre-edit
     shows there. With two rows or fewer the header goes first, so the
     highlighted row stays.
@@ -131,9 +129,7 @@ def picker_frame(
     if max_rows <= 2:
         lines = [current(index), filter_line(query, width, theme)][:max_rows]
         return PickerFrame(lines, (1, caret) if max_rows == 2 else None, 1)
-    room = width - line_width(head) - 2
-    said = next((form for form in keys if cell_width(form) <= room), keys[-1]) if keys else ""
-    header = truncate_line((*head, Span(f"  {said}" if said else "", theme.hint)), width)
+    header = truncate_line(head, width)
     body = max_rows - 2
     start = min(max(index - body + 1, 0), max(count - body, 0))
     rows = [current(number) for number in range(start, min(start + body, count))] if count else [current(0)]
@@ -184,14 +180,14 @@ class SessionPicker:
         self.query = query
         self.index = 0
 
-    def lines(self, width: int, theme: Theme, max_rows: int, now: float, keys: bool = True) -> list[Line]:
-        """A header row (its keys after the title when `keys`), the filtered rows scrolled so the highlighted one
-        shows, then the filter row (`picker_frame`)."""
+    def lines(self, width: int, theme: Theme, max_rows: int, now: float) -> list[Line]:
+        """A header row, the filtered rows scrolled so the highlighted one shows, then the filter row
+        (`picker_frame`)."""
         shown = self.visible()
         self.index = min(self.index, max(len(shown) - 1, 0))
         title = f" Sessions ({len(shown)}/{len(self.rows)})" if self.query else f" Sessions ({len(self.rows)})"
         frame = picker_frame(
-            (Span(title, theme.heading),), KEYS if keys else (), len(shown), self.index,
+            (Span(title, theme.heading),), len(shown), self.index,
             lambda number: self._row(shown[number], number == self.index, width, theme, now),
             " no session matches the filter", self.query, width, theme, max_rows,
         )

@@ -327,16 +327,22 @@ through: `🧠 OMH — recalled 2 memories`.
 
 Bare `omh` opens the OMH TUI: OMH's own terminal over your Hermes install.
 Hermes still runs every model call, tool and approval; OMH owns the screen —
+it opens on a clean screen with what your shell showed one scroll up,
 finished replies go to your terminal's scrollback, the plan and agents panel
-sits right above the prompt, and the prompt sits right under the output
-until the screen fills, then stays on the bottom rows: a list or question
-closing there does not pull it up. It reads on a light terminal as on a
+sits right above the prompt, and the prompt, a rounded box with one dim line
+under it for the mode or the keys that matter now and the model, context and
+effort, sits right under the output until the screen fills, then stays on
+the bottom rows: a list or question closing there does not pull it up. It reads on a light terminal as on a
 dark one, keeps a
 slash command's output in the transcript, runs a `!` line in Hermes' shell
 (never sent to the model), shares your input history with `hermes --tui`
 (Ctrl+R searches it), rewinds to an earlier prompt (Esc Esc or `/rewind`),
 lets you interrupt (`x`) or steer (`s`) one subagent from the agent list,
-lists an approval's or a question's choices where the prompt was, and marks
+lists an approval's or a question's choices where the prompt was, shows
+each tool call as one Claude Code style `⏺ name(args)` row with what it
+printed under `⎿` (a read as one line, `Read 715 lines`), says what Hermes
+is doing as Claude Code does (`✶ Analyzing… (12s · ↓1.2k tokens)` with a key
+tip under it), shows your prompt as a dim `> …` with no band, and marks
 outcomes on green and red bands (the light colours and the bands
 need a terminal that reports its background, a `COLORFGBG` that names it,
 or `/theme light|dark`). Bare
@@ -349,22 +355,28 @@ omh
 <table align="center">
   <tr>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-turn.png" alt="The OMH TUI after a turn: one row per tool call naming what it ran on and how long it took, the new file and the patch as green and red diff bands, the command's output cut to three lines and a '… +2 lines · ctrl+o shows all' row, and the live plan panel above the prompt"><br>
-      <sub><b>One row per call, its diff, and the plan above the prompt.</b></sub>
+      <img src="assets/omh-tui-turn.png" alt="The OMH TUI after a turn: your prompt as a dim '&gt;' line with no band; each tool call one row, a green ⏺ then its name, what it ran on in parentheses and how long it took; under ⎿ the new file and the patch as green and red diff bands, the command's output cut to three lines with a '… +2 lines · ctrl+o shows all' row, and the read as 'Read 7 lines'; the reply; the turn's dim done line with no rule; the live plan panel; the rounded prompt box; and one info line under it, '? for shortcuts' on the left and the model, context and 'effort medium' on the right"><br>
+      <sub><b>One row per call, its diff, and the plan above the prompt box.</b></sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete: five rows where the prompt was (deny, highlighted; allow once; allow this session; always allow; no, and tell Hermes what to do instead) under a waiting-on-you timer, with an earlier command denied on a red band and one allowed once on a green band, and each done line naming the seconds spent waiting on you"><br>
+      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete: five rows where the prompt box was (deny, highlighted; allow once; allow this session; always allow; no, and tell Hermes what to do instead) under a '? waiting on you' timer, with the keys on the info line under them; above it, an earlier terminal call with a red ⏺ and its '⎿ ✗ denied' answer on a red band, which stopped that turn, and one with a green ⏺ and its '⎿ ✓ allowed once' answer on a green band; each done line names the seconds spent waiting on you"><br>
       <sub><b>Hermes asks; you pick. Deny is the default.</b></sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-clarify.png" alt="The OMH TUI at start, with its logo: right under the prompt, Hermes asks a choose-one-or-more question with check boxes, two of them ticked, and a numbered row to type your own answer; the mode row names space or 1-9 to tick"><br>
+      <img src="assets/omh-tui-clarify.png" alt="The OMH TUI at start, with its logo: right under your prompt and the clarify call's row, Hermes asks a choose-one-or-more question with check boxes, two of them ticked, and a numbered row to type your own answer; the prompt box is hidden, and the info line under the list names the keys (space or 1-9 ticks, enter sends, type to answer, esc cancels)"><br>
       <sub><b>A question opens under your prompt; tick several, or type your own.</b></sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-light.png" alt="The same five-row approval on a light terminal, with light red and green bands and a tinted status bar"><br>
+      <img src="assets/omh-tui-light.png" alt="The same five-row approval on a light terminal: the denied call on a light red band, the one allowed once on a light green band, and the info line under the choices"><br>
       <sub><b>On a light terminal, light bands.</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="assets/omh-tui-working.png" width="50%" alt="The OMH TUI during a turn: the terminal call's ⏺ row while it runs, then the working row 'Working… (5s · ↓59 tokens · thinking with medium effort · esc to interrupt)' with a '⎿ Tip:' line under it, the prompt box still open, and the info line with '/steer &lt;text&gt; steers' on the left and the running tool's time beside the model on the right"><br>
+      <sub><b>While Hermes works: what it is doing, for how long, and a tip.</b></sub>
     </td>
   </tr>
 </table>

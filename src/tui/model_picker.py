@@ -37,7 +37,7 @@ from .width import cell_width, truncate, truncate_line
 
 PICK = "pick"
 CLOSE = "close"
-# Its keys, longest first: on the mode row while it is open, in its header where there is no mode row.
+# Its keys, longest first: on the info line while it is open.
 KEYS = ("↑↓ move · enter switches this session · esc closes", "↑↓ enter switches · esc closes", "esc closes")
 TITLE = " Model ({count})"
 TITLE_AT = " Model ({at}/{count})"  # once the list has more rows than it shows
@@ -153,9 +153,9 @@ class ModelPicker:
         self.query = query
         self.index = 0
 
-    def lines(self, width: int, theme: Theme, max_rows: int, keys: bool = True) -> list[Line]:
-        """A header row naming the current model, and the highlight's place once the rows scroll (its keys after it
-        when `keys`), the filtered rows scrolled so the highlighted one shows, the filter row."""
+    def lines(self, width: int, theme: Theme, max_rows: int) -> list[Line]:
+        """A header row naming the current model, and the highlight's place once the rows scroll, the filtered
+        rows scrolled so the highlighted one shows, the filter row."""
         shown = self.visible()
         self.index = min(self.index, max(len(shown) - 1, 0))
         scrolls = max_rows > 2 and len(shown) > max_rows - 2  # the header and the filter row take two
@@ -165,7 +165,7 @@ class ModelPicker:
             Span(f"  now {self.current}" if self.current else "", theme.text),
         )
         frame = picker_frame(
-            head, KEYS if keys else (), len(shown), self.index,
+            head, len(shown), self.index,
             lambda number: self._row(shown[number], number == self.index, width, theme),
             " no model matches the filter; /model <name> --provider <slug> names any", self.query, width, theme, max_rows,
         )

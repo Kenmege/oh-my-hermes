@@ -3,7 +3,7 @@
 Ctrl+O while a question is open pages it whole (a long command every row of
 it) and answers nothing; q or Esc goes back to the question as it was, and a
 question that closes while paged takes its pager with it. A terminal too small
-for anything but the composer and the status line still shows a question
+for anything but the composer and the info line still shows a question
 answered with text its label. These cases drive an `App` whose gateway client
 only records, and read the VT screen it painted.
 """
@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import unittest
 
-from _tui_lines import line_text
+from _tui_lines import INFO_INSET, box_inner, line_text
 from test_tui_choice_ui import armed, drawn, press
 from test_tui_app import FakePoller, ScriptedTerminal
 from test_tui_modes import RecordingClient, make_app, type_text
@@ -25,7 +25,8 @@ from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, UP, Key
 from omh.tui.layout import MIN_COLS, allocate
 from omh.tui.app import BELL, App
 from omh.tui.pager import ALT_SCREEN_OFF, HistoryPager
-from omh.tui.transcript import NOTICE_ERROR, NOTICE_OK, TURN_WAITED, NoticeBlock, ToolGroup, TurnSummaryBlock
+from omh.tui.style import Span
+from omh.tui.transcript import NOTICE_ERROR, NOTICE_OK, TURN_WAITED, NoticeBlock, ToolGroup, TurnSummaryBlock, block_rows
 
 LONG_COMMAND = "\n".join(f"echo line {n}" for n in range(1, 21))
 LONG_APPROVAL = ServerRequest(
@@ -197,8 +198,12 @@ class QuestionOutcomeTests(unittest.TestCase):
                 self.assertEqual(outcome_rows(app), [("cancelled · Which colour?", NOTICE_ERROR)])
                 self.assertIn("✗ cancelled · Which colour?", drawn(app))
 
-    def test_a_question_that_went_unanswered_leaves_its_tool_row_a_red_cross_too(self) -> None:
+    def test_a_question_that_went_unanswered_leaves_its_tool_row_a_red_mark_too(self) -> None:
         # Hermes' clarify result says how the wait ended (`outcome`); only `submitted` was an answer.
+        def mark(app) -> Span:
+            (group,) = [block for block in app.transcript.blocks if isinstance(block, ToolGroup)]
+            return block_rows(group, 80, app.theme)[0][0]
+
         def complete(app, outcome: str) -> list[str]:
             app._on_event(Event("tool.start", SID, {"tool_id": "c1", "name": "clarify", "context": "Which colour?"}))
             responses = [{"question": "Which colour?", "choices_offered": ["red", "blue"], "status": "unanswered",
@@ -213,19 +218,21 @@ class QuestionOutcomeTests(unittest.TestCase):
                 press(app, Key(ESCAPE))
                 screen = complete(app, outcome)
                 (row,) = [line for line in screen if "clarify" in line and "Which colour?" in line and "·" not in line]
-                self.assertTrue(row.lstrip().startswith("✗ clarify"), row)
-                self.assertIn(f"⎿ {words}", "\n".join(screen))
+                self.assertTrue(row.startswith("⏺ clarify("), row)
+                self.assertEqual(mark(app), Span("⏺", app.theme.error))
+                self.assertIn(f"⎿  {words}", "\n".join(screen))
         app, _client = opened(COLOUR)
         press(app, Key(ENTER))
         (row,) = [line for line in complete(app, "submitted") if "clarify" in line and "·" not in line]
-        self.assertTrue(row.lstrip().startswith("✓ clarify"), row)
+        self.assertTrue(row.startswith("⏺ clarify("), row)
+        self.assertEqual(mark(app), Span("⏺", app.theme.ok))
 
     def test_hermes_notice_says_why_under_the_cross_when_it_gives_one(self) -> None:
         app, _client = make_app(busy=True)
         app._on_event(Event("tool.start", SID, {"tool_id": "c1", "name": "clarify", "context": "Which colour?"}))
         result = {"responses": [], "outcome": "timed_out", "notice": "No answer within 300 s."}
         app._on_event(Event("tool.complete", SID, {"tool_id": "c1", "name": "clarify", "result": result}))
-        self.assertIn("⎿ No answer within 300 s.", "\n".join(drawn(app)))
+        self.assertIn("⎿  No answer within 300 s.", "\n".join(drawn(app)))
 
     def test_each_question_of_a_batch_gets_its_row_and_an_empty_answer_is_skipped(self) -> None:
         app, _client = opened(ServerRequest("srq-8", "clarify", {"questions": [
@@ -305,7 +312,7 @@ class WaitingTimeTests(unittest.TestCase):
 
     def test_the_working_row_says_it_waits_on_you_with_one_clock(self) -> None:
         app, _client, now = self.clocked()
-        self.assertTrue([row for row in drawn(app) if "working… (10s" in row])
+        self.assertTrue([row for row in drawn(app) if "Working… (10s" in row])
         app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
         now[0] = 111.0
         screen = drawn(app)
@@ -317,33 +324,34 @@ class WaitingTimeTests(unittest.TestCase):
         # The deny also stops the turn: the row is the turn's own clock again, while Hermes stops it.
         self.assertTrue([row for row in drawn(app) if "interrupting… (22s" in row])
 
-    def test_the_status_bars_activity_chip_keeps_no_second_clock_and_goes_with_the_turn(self) -> None:
+    def test_the_info_lines_activity_chip_keeps_no_second_clock_and_goes_with_the_turn(self) -> None:
         # The OMH HUD's in-flight chip counts the open call's own seconds; it lags the turn by a poll or more.
         from test_tui_panels import hud_payload
 
         from omh.tui.panels import HudSnapshot
 
         def status() -> str:
-            return next(row for row in drawn(app) if row.startswith("⚚ OMH"))
+            screen = drawn(app)
+            return screen[max(index for index, row in enumerate(screen) if row)]  # the info line, the region's last row
 
         app, _client, now = self.clocked()
         app.stored_id = "stored"
         payload = hud_payload()
         payload["activity"].update(live=True, post_tool_call_observed=True, open_call_count=1, oldest_open_elapsed_seconds=9)
         app.hud = HudSnapshot("stored", payload, now[0])
-        self.assertIn("• 1 tool · 9s", status())  # while the turn runs, the call's seconds
+        self.assertIn("1 tool · 9s", status())  # while the turn runs, the call's seconds
         app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
         now[0] = 114.0
         screen = drawn(app)
         self.assertIn("? waiting on you (14s)", screen)
-        self.assertIn("• 1 tool │", status())  # one clock: the wait's, on the working row
+        self.assertIn("1 tool", status())  # one clock: the wait's, on the working row
         self.assertNotIn("9s", status())
         armed(app)
         press(app, Key(DOWN), Key(ENTER))
-        self.assertIn("• 1 tool · 9s", status())
+        self.assertIn("1 tool · 9s", status())
         app._on_event(Event("message.complete", SID, {"text": "done"}))
         self.assertNotIn("tool", status())  # the snapshot still says live; the turn is over
-        self.assertIn("idle", status())
+        self.assertTrue(status().startswith(INFO_INSET + "? for shortcuts"), status())
 
     def test_back_to_back_questions_are_one_wait(self) -> None:
         app, _client, now = self.clocked()
@@ -430,7 +438,7 @@ class WaitingTimeTests(unittest.TestCase):
         app._on_event(Event("message.complete", SID, {"text": "done"}))
         (summary,) = [block for block in app.transcript.blocks if isinstance(block, TurnSummaryBlock)]
         self.assertEqual((summary.seconds, summary.waited), (40.0, 27.0))
-        self.assertTrue([row for row in drawn(app) if row.startswith("✻ 40s (27s waiting on you)")])
+        self.assertTrue([row for row in drawn(app) if row.startswith("  ✻ 40s (27s waiting on you)")])
 
     def test_the_next_turn_starts_with_no_wait_whoever_started_it(self) -> None:
         for start in ("prompt", "message.start"):
@@ -455,7 +463,7 @@ class WaitingTimeTests(unittest.TestCase):
         app, _client, now = self.clocked()
         now[0] = 130.0
         app._on_event(Event("message.complete", SID, {"text": "done"}))
-        self.assertTrue([row for row in drawn(app) if row.startswith("✻ 40s ") and "waiting" not in row])
+        self.assertTrue([row for row in drawn(app) if row.startswith("  ✻ 40s") and "waiting" not in row])
 
 
 class QuestionAttentionTests(unittest.TestCase):
@@ -519,7 +527,7 @@ TELL_APPROVAL = ServerRequest("srq-1", "approval", {
 
 
 def mode_row(app) -> str:
-    return line_text(app._mode_row_line(100))
+    return line_text(app._info_line(100))
 
 
 class TellRowTests(unittest.TestCase):
@@ -541,7 +549,7 @@ class TellRowTests(unittest.TestCase):
         self.assertEqual(app.tell_draft.text, "my draft")  # type: ignore[union-attr]
         self.assertIn(app_module.TELL_SAY[0], mode_row(app))
         self.assertNotIn("esc to interrupt", mode_row(app))  # Esc leaves the field, it interrupts nothing
-        self.assertIn(f"› {app_module.TELL_PLACEHOLDER}", drawn(app))
+        self.assertIn(f"> {app_module.TELL_PLACEHOLDER}", [box_inner(row) for row in drawn(app)])
         self.assertEqual(client.named("session.steer"), [])  # nothing is sent until the person sends it
 
     def test_what_is_sent_goes_into_the_running_turn_as_a_steer_and_the_draft_comes_back(self) -> None:
@@ -807,8 +815,8 @@ class DocumentedQuestionViewTests(unittest.TestCase):
         always = prompts.open_request("srq-1", "approval", {"description": "recursive delete", "choices": ["always"]})
         self.assertIn(f"(`{always.approval_label('always')}`)", installation)  # type: ignore[union-attr]
         self.assertNotIn("Approving a command permanently stays a choice for `hermes --tui`", installation)
-        self.assertIn(f"labelled `{app_module.TELL_SAY[0]}` on the mode row", installation)
-        self.assertIn(f"which is what the mode row's `{prompts.APPROVAL_KEYS[-1]}` says", installation)
+        self.assertIn(f"labelled `{app_module.TELL_SAY[0]}` on the info line", installation)
+        self.assertIn(f"which is what the info line's `{prompts.APPROVAL_KEYS[-1]}` says", installation)
         self.assertIn("When the approval came from a subagent, that stops the session's whole running turn", installation)
         tell = prompts.open_request("srq-1", "approval", {})
         self.assertIn(f"last {tell.approval_label(prompts.APPROVAL_TELL)}, one per row", installation)  # type: ignore[union-attr]
@@ -870,7 +878,7 @@ class TinyTerminalQuestionTests(unittest.TestCase):
                     (row,) = [line for line in screen if line.startswith("▌ ")]
                     shown = row[2:].removeprefix("🔑 ").removeprefix("? ").split(" …")[0].rstrip("…")
                     self.assertTrue(shown and label.startswith(shown), row)
-                    self.assertTrue([line for line in screen if line.startswith("›")], screen)  # the composer under it
+                    self.assertTrue([line for line in screen if line.startswith(">")], screen)  # the composer under it
 
     def test_the_label_row_is_the_text_questions_alone(self) -> None:
         # A tiny terminal still gives a panel, a menu or a picked list nothing beyond what it gave before.

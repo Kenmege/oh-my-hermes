@@ -97,7 +97,7 @@ from .keys import (
 from .style import DEFAULT_STYLE, Line, Span, Style
 from .width import TAB_CELLS, cell_width, cluster_width, clusters, is_control
 
-PROMPT = "› "
+PROMPT = "> "
 MASK = "•"
 NEWLINE = "\n"
 TAB_CHAR = "\t"

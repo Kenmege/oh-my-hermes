@@ -7,12 +7,11 @@ Top to bottom the region holds:
     streaming tail  the last rows of the live transcript block
     slot            panel, completion menu or server-request prompt (one at a time); under a
                     panel or menu, or alone, the app's rows for the queued prompts
-    top rule        the composer frame's upper edge
+    top rule        the composer box's top edge
     composer        1..composer_cap(rows) input rows, the caret parked here
-    bottom rule     the composer frame's lower edge
+    bottom rule     the composer box's bottom edge
     menu below      the completion menu, where the app draws it under the composer instead of in the slot
-    mode row        the input mode, or a hint for the keys that matter now
-    status line
+    info line       the input mode or the keys that matter now, then model, context and effort
 
 The budget is a pure function of the terminal size, the content sizes and
 `min_height`. With `min_height` 0 the region is exactly as tall as its
@@ -27,28 +26,26 @@ and the next flushed lines cover the pad rows.
   relative to its own top and cursor-up stops at the top of the screen, so a
   region taller than the screen loses its bookkeeping; the spare row keeps the
   region clear of that edge.
-- Composer and status are placed first, so they always fit: the composer gets
-  `min(input rows, max(1, rows // 4))`, at least one row whenever the screen
-  has two; the status row comes next.
-- Then the rows under the composer, each by the terminal's height alone: the
-  bottom rule from `BOTTOM_RULE_MIN_ROWS` rows, the mode row from
-  `MODE_ROW_MIN_ROWS`. A short terminal loses the mode row first and the
-  bottom rule next, so a slot still gets its full cap there.
+- Composer and info line are placed first, so they always fit: the composer
+  gets `min(input rows, max(1, rows // 4))`, at least one row whenever the
+  screen has two; the info line comes next.
+- Then the bottom rule, by the terminal's height alone: from
+  `BOTTOM_RULE_MIN_ROWS` rows, so a slot still gets its full cap on a shorter
+  terminal.
 - Then the top rule, then the menu below (at most `rows // 3`), then the
   slot (at most `rows // 3` less the menu below's rows), then the sticky
   prompt (only when asked and a row is left), and the tail takes whatever
   remains, keeping its last rows.
-- Below `MIN_ROWS` rows or `MIN_COLS` columns only composer and status are
+- Below `MIN_ROWS` rows or `MIN_COLS` columns only composer and info line are
   drawn, and, while a question answered with text is open (`text_question`),
   one slot row above them for its label when a row is left.
 - Pad rows fill the region up to `min_height`, never past `rows - 1`, and
   only where the content needs fewer rows.
 - With the composer hidden (`composer_hidden`: the person picks from a list,
   so nothing is typed) the region draws no top rule, no input rows and no
-  bottom rule, and the slot stands right above the mode row (above the status
-  line where there is none), taking up to `choice_cap` rows: its own cap and
-  the rows a one-row composer frame takes at that size. The mode row and the
-  status line keep their rows.
+  bottom rule, and the slot stands right above the info line, taking up to
+  `choice_cap` rows: its own cap and the rows a one-row composer frame takes
+  at that size. The info line keeps its row.
 """
 
 from __future__ import annotations
@@ -60,9 +57,8 @@ from .style import Line
 
 MIN_ROWS = 6
 MIN_COLS = 20
-# The rows under the composer, kept only where the slot still gets its full cap beside them.
+# The bottom rule under the composer, kept only where the slot still gets its full cap beside it.
 BOTTOM_RULE_MIN_ROWS = 7
-MODE_ROW_MIN_ROWS = 10
 
 BLANK: Line = ()
 
@@ -75,10 +71,9 @@ class Budget:
     rule: int
     composer: int
     bottom_rule: int
-    mode: int
-    status: int
+    info: int
     pad: int = 0
-    below: int = 0  # the menu below: between the bottom rule and the mode row
+    below: int = 0  # the menu below: between the bottom rule and the info line
 
     @property
     def total(self) -> int:
@@ -91,8 +86,7 @@ class Budget:
             + self.composer
             + self.bottom_rule
             + self.below
-            + self.mode
-            + self.status
+            + self.info
         )
 
     @property
@@ -107,23 +101,21 @@ def max_height(rows: int) -> int:
 
 
 def is_tiny(rows: int, cols: int) -> bool:
-    """True when the terminal is too small for anything but composer and status."""
+    """True when the terminal is too small for anything but composer and info line."""
     return rows < MIN_ROWS or cols < MIN_COLS
 
 
-def under_composer(rows: int, cols: int) -> tuple[int, int]:
-    """(bottom rule, mode row): the rows between the composer and the status line, by terminal size alone."""
-    if is_tiny(rows, cols):
-        return 0, 0
-    return int(rows >= BOTTOM_RULE_MIN_ROWS), int(rows >= MODE_ROW_MIN_ROWS)
+def under_composer(rows: int, cols: int) -> int:
+    """The bottom rule's rows (0 or 1): what lies between the composer and the info line, by terminal size alone."""
+    return 0 if is_tiny(rows, cols) else int(rows >= BOTTOM_RULE_MIN_ROWS)
 
 
 def composer_cap(rows: int) -> int:
     """The most rows the composer may show; render it with this as `max_rows`."""
     room = max_height(rows)
     if room >= 2:
-        room -= 1  # the status row
-    room -= int(rows >= BOTTOM_RULE_MIN_ROWS) + int(rows >= MODE_ROW_MIN_ROWS)
+        room -= 1  # the info line
+    room -= int(rows >= BOTTOM_RULE_MIN_ROWS)
     return min(max(1, rows // 4), room)
 
 
@@ -135,13 +127,13 @@ def slot_cap(rows: int, cols: int) -> int:
 def choice_cap(rows: int, cols: int) -> int:
     """The most rows a slot may take while the composer is hidden: `slot_cap` and a one-row composer frame's rows.
 
-    The frame is its top rule, its one input row and its bottom rule where the
+    The frame is the box's top edge, its one input row and its bottom edge where the
     terminal draws one; below `MIN_ROWS` rows or `MIN_COLS` columns it is the
     input row alone.
     """
     frame = min(1, composer_cap(rows))
     if not is_tiny(rows, cols):
-        frame += 1 + under_composer(rows, cols)[0]
+        frame += 1 + under_composer(rows, cols)
     return slot_cap(rows, cols) + frame
 
 
@@ -161,11 +153,11 @@ def allocate(
     """Rows for each part of the region (see the module docstring for the rules)."""
     room = max_height(rows)
     composer = min(max(composer_rows, 1), composer_cap(rows))
-    status = min(1, room - composer)
-    bottom_rule, mode = under_composer(rows, cols)
+    info = min(1, room - composer)
+    bottom_rule = under_composer(rows, cols)
     if composer_hidden:
         composer = bottom_rule = 0  # their rows, and the top rule's, go to the slot (`choice_cap`)
-    left = room - composer - status - bottom_rule - mode
+    left = room - composer - info - bottom_rule
     rule = slot = sticky_rows = tail = below = 0
     if composer_hidden:
         slot = min(max(slot_rows, 0), choice_cap(rows, cols), left)
@@ -184,7 +176,7 @@ def allocate(
         sticky_rows = 1 if sticky and left > 0 else 0
         left -= sticky_rows
         tail = min(max(tail_rows, 0), left)
-    content = sticky_rows + tail + slot + rule + composer + bottom_rule + below + mode + status
+    content = sticky_rows + tail + slot + rule + composer + bottom_rule + below + info
     return Budget(
         pad=min(max(min_height - content, 0), room - content),
         sticky=sticky_rows,
@@ -193,8 +185,7 @@ def allocate(
         rule=rule,
         composer=composer,
         bottom_rule=bottom_rule,
-        mode=mode,
-        status=status,
+        info=info,
         below=below,
     )
 
@@ -220,8 +211,7 @@ def compose(
     rule: Line,
     composer: Sequence[Line],
     bottom_rule: Line,
-    mode: Line,
-    status: Line,
+    info: Line,
     below: Sequence[Line] = (),
 ) -> list[Line]:
     """The region's rows, exactly `budget.total` of them, top to bottom.
@@ -241,9 +231,8 @@ def compose(
     if budget.bottom_rule:
         region.append(bottom_rule)
     region.extend(list(below)[: budget.below])
-    region.extend(_first([mode], budget.mode))
-    if budget.status:
-        region.append(status)
+    if budget.info:
+        region.append(info)
     return region
 
 
