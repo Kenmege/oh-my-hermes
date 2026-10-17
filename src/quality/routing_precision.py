@@ -6918,6 +6918,33 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "data-share-review",
     ),
+    # A place ends with its sentence, and a "-기 전에" clause is a step, not a
+    # place. Main dispatched the review on the first and named it in the
+    # clarify on the other two.
+    RoutingPrecisionCase(
+        "export-to-the-dev-team-then-an-urgent-remark-is-not-a-data-share-review",
+        "Redacting an export for the dev team and saying it is urgent keeps it inside the company",
+        "redact the pii in the export and send it to the dev team. it's urgent.",
+        "answer_clarification",
+        "",
+        "data-share-review",
+    ),
+    RoutingPrecisionCase(
+        "patient-csv-to-our-qa-team-then-a-please-is-not-a-data-share-review",
+        "Pseudonymizing a patient CSV for our QA team and asking to hurry keeps it inside the company",
+        "pseudonymize the patient csv and share it with our qa team. please hurry.",
+        "answer_clarification",
+        "",
+        "data-share-review",
+    ),
+    RoutingPrecisionCase(
+        "korean-mask-before-sending-to-the-dev-team-is-not-a-data-share-review",
+        "Masking customer information before it goes to the dev team keeps it inside the company",
+        "개발팀에 보내기 전에 고객 정보 마스킹해줘",
+        "answer_clarification",
+        "",
+        "data-share-review",
+    ),
 )
 
 
@@ -15467,6 +15494,74 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "export-after-a-plural-possessive-reaches-data-share-review",
         "Redacting the users' export before it goes to a company's team reaches the data share review",
         "redact pii in the users' export and send it to the acme team",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    # A Korean request names any party before the place, so every word there
+    # must be a closed word: one acting, a purpose, "for", and an outside word
+    # with no particle keep the review. A later sentence that sends counts
+    # too, and so do an English party between a send and its "to" and a
+    # place in the next sentence. None of the seven dispatched on main.
+    RoutingInterventionCase(
+        "korean-member-file-a-partner-will-use-reaches-data-share-review",
+        "Pseudonymizing a member file a partner will use, then handing it to the dev team, reaches the data share review",
+        "협력사가 쓸 회원 파일 가명 처리해서 개발팀에 넘겨줘",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "korean-file-for-a-partner-reaches-data-share-review",
+        "De-identifying a file meant for a partner, then uploading it for the QA team, reaches the data share review",
+        "협력사용 파일 비식별화해서 QA팀에 올려줘",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "korean-member-list-for-a-partner-reaches-data-share-review",
+        "Pseudonymizing a member list for a partner, then sending it to the dev team, reaches the data share review",
+        "협력사를 위한 회원 리스트 가명 처리해서 개발팀에 보내줘",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "korean-papers-an-outside-auditor-will-see-reach-data-share-review",
+        "Masking papers an outside auditor will see, then sending them to the finance team, reaches the data share review",
+        "외부 감사인이 볼 자료 개인정보 마스킹해서 재무팀에 보내줘",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "korean-send-to-the-dev-team-then-a-vendor-reaches-data-share-review",
+        "Masking customer information for the dev team and sending it to a vendor next reaches the data share review",
+        "고객 정보 마스킹해서 개발팀에 보내줘. 벤더한테도 보내줘.",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "export-sent-where-a-company-wants-it-reaches-data-share-review",
+        "Redacting an export and sending it where a company wants it reaches the data share review",
+        "redact pii in the export and send it where acme wants it, to the dev team",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "export-a-company-wants-delivered-reaches-data-share-review",
+        "Redacting an export a company wants delivered to the dev team reaches the data share review",
+        "redact the pii in the export and send it. acme wants it delivered to the dev team.",
         "dispatch",
         "data-share-review",
         "prepare_data_share_review",

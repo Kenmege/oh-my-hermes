@@ -20,6 +20,61 @@ All notable changes will be documented here.
   phrase, `implementasi paralel`: its always-loaded body had room for one
   under the byte ceiling. `id` is an input language only: it is not a
   `--language` / `OMH_LANG` output choice.
+- **A party named before a Korean data-share place, or after an English one,
+  keeps the review.** Korean puts the data, and any party, before the place,
+  and only the place was read: "보험사가 원하는 고객 엑셀 개인정보 마스킹해서
+  개발팀에 보내줘" read inside and named no review. Every word outside the
+  places and before the requested verb must now be a closed word, as English
+  already reads the span before a send: data containers and field names in
+  either script, a verb the rule knows, an inside place word, a determiner or
+  a softener, and a word that says whose records the data holds (고객, 회원,
+  환자, ...) only bare and right before a data word. A party acting
+  ("보험사가 원하는"), owning ("보험사의", "고객의"), a purpose ("협력사용",
+  "보험사를 위한") or any other noun ("삼성 고객 파일") keeps the review, and
+  "-기 전에" is a step rather than a place. Korean also read only the first
+  sentence; a later one now counts when it sends, names a recipient or a
+  place outside, or names a party acting ("... 개발팀에 보내줘. 벤더한테도
+  보내줘.", "... 보험사가 볼 거야."), and remarks alone ("급해요.") say
+  nothing. In English a place now ends with its sentence (".", "!", "?" or
+  ";" before a space), so "... send it to the dev team. It's urgent." names
+  no review, while every sentence is still read for sends and the words after
+  a place must be remarks -- thanks, please, urgency -- so "... to the dev
+  team. Acme will review it." and "... Also cc Acme." keep it. A line break
+  alone ends no sentence, because the router reads it as a space; a period
+  before a space ends one even after an abbreviation ("Acme Inc. today", "the
+  U.S. team"), which only cuts a place short. Between a send and its "to"
+  only closed words may stand, read as the span before the first send is:
+  the data, also as protected, counted or the version the redaction made
+  ("the anonymized copy", "both files", "the updated file", "the customer
+  export"), the verb's particle, "straight" or "directly", and remarks; so
+  "send it where Acme wants it, to the dev team" and "send the Acme copy to
+  the dev team" keep the review, and so does any other word there ("send the
+  sorted export to the dev team"), the safe direction. The Korean reader no longer
+  opens a quote at an apostrophe after a Latin letter or digit, nor closes
+  one before a Latin letter, so the router and the hint read "고객 정보
+  마스킹해서 Acme's team에 보내줘. It's urgent." alike; a quote a Korean
+  particle follows ("'고객 정보'를") is still a quote.
+  Measured against main on sets written before the change (104 Korean
+  outside rows, NFD copies included; 80 Korean inside controls; 57 English
+  sentence-end rows) and every earlier data-share set: no request to an
+  outside party lost the review on admission, router offers or the hint, and
+  the router and the hint never disagree with every cache cleared (three
+  disagreements on main). Korean outside rows gained the review on
+  admission and the hint from 16 to 98 of 104, and on router offers from 2
+  to 26; the six left are two that name a regulator, which reads as a legal
+  question, and one that names no personal data, each with its NFD copy.
+  Korean requests sent on in a later sentence gained it from 0 to 12 of 12.
+  English inside requests followed by a remark stopped firing (20 to 5 of
+  20), and no English inside request on these sets or the review's starts
+  firing. Of 196 Korean inside rows that read inside on main, 8 now fire, the
+  safe direction: an order history, survey responses, "this month's" orders,
+  and "고객의" (a customer's), each with its NFD copy. On the review's own
+  sets no outside request lost the review either, and 19 more Korean inside
+  rows now fire for the same kinds of word: time words ("이번 달", "지난달",
+  "어제 받은", "오늘 안에"), descriptors ("주문 내역", "거래 내역", "설문 응답",
+  "가입 정보"), an inside team acting ("우리 팀이 만든", "개발팀이 요청한"), and
+  "고객의".
+
 - **A plural possessive no longer hides the rest of a message from routing.**
   The routing masker read the `'` of "the customers' export" as an opening
   quote. Nothing closed it, so everything after it was masked and no matcher
