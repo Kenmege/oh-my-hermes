@@ -594,7 +594,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   in the error colour, or, when it failed by its exit code alone (a test
   run, say), the last three lines it printed, in the same colour, under the
   count of the lines above them. An edit's diff hangs under the same `⎿`, and a long diff counts
-  its rest the same way. Ctrl+O opens the whole transcript with every detail
+  its rest the same way. A resumed session's earlier calls (`omh --resume`,
+  `/resume`, a switch) are drawn the same way, one row each with no blank
+  row between them, with a dim `⏺`, since Hermes' record of them keeps no
+  outcome, and an edit's diff under it where Hermes kept the one it showed.
+  Ctrl+O opens the whole transcript with every detail
   (thinking, tool output, whole diffs) in the pager, at its end.
 - While a turn runs, the working row reads as Claude Code's does,
   `✶ Synthesizing… (1m 24s · ↓4.2k tokens · thinking with high effort · esc

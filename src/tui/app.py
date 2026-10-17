@@ -935,10 +935,6 @@ def at_token(text: str, caret: int) -> tuple[int, str]:
     return (start, word) if word.startswith("@") else (caret, "")
 
 
-def _tool_summary(message: Mapping[str, Any]) -> str:
-    return f"{as_text(message.get('name')) or 'tool'}  {as_text(message.get('context'))}".strip()
-
-
 def resume_command(stored_id: str) -> str:
     return f"hermes --tui --resume {stored_id}" if stored_id else "hermes --tui"
 
@@ -1293,32 +1289,34 @@ class App(ModesMixin, AgentViewMixin):
                 self._on_server_request(ServerRequest(entry["id"], entry["method"], params if isinstance(params, dict) else {}))
 
     def _draw_history(self, messages: object) -> None:
-        """A resumed session's earlier turns as transcript blocks: text only, each tool call one dim row.
+        """A resumed session's earlier turns as transcript blocks: prompts, replies, and each tool call one row as
+        a live call draws it (`Transcript.add_recorded_tools`); the calls between two messages with words are one
+        group, with no row between them.
 
         Only the last `REDRAW_TAIL_ROWS` rows of them are printed; /history shows the rest.
         """
         if not isinstance(messages, list):
             return
-        tools: list[str] = []
+        tools: list[dict[str, Any]] = []
         for message in messages:
             if not isinstance(message, dict):
                 continue
             role = message.get("role")
             if role == "tool":
-                tools.append(_tool_summary(message))
+                tools.append(message)
                 continue
-            if role not in ("user", "assistant"):
+            text = as_text(message.get("text"))
+            if role not in ("user", "assistant") or not text.strip():
                 continue
             if tools:
-                self.transcript.add_notice("\n".join(tools))
+                self.transcript.add_recorded_tools(tools)
                 tools = []
-            text = as_text(message.get("text"))
-            if role == "user" and text.strip():
+            if role == "user":
                 self.transcript.add_user(text)
-            elif role == "assistant":
+            else:
                 self.transcript.add_assistant(text)
         if tools:
-            self.transcript.add_notice("\n".join(tools))
+            self.transcript.add_recorded_tools(tools)
         self.transcript.retake_tail(self.size[0], self.theme, REDRAW_TAIL_ROWS)
 
     def _take_settings(self, result: dict[str, Any]) -> None:

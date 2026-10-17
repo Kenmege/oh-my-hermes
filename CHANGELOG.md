@@ -11,7 +11,10 @@ All notable changes will be documented here.
   printed, and an edit's diff, hang under `  ⎿  `, as a command's output
   does. A read or a load no longer echoes the first lines it read: it says
   `Read 715 lines` (`read_file`), `loaded skill omh-docs` (`skill_view`) or
-  `12 matches` (`search_files`).
+  `12 matches` (`search_files`). A resumed session's earlier calls read the
+  same way, with a dim `⏺` (Hermes' record keeps no outcome) and an edit's
+  diff under it, in place of the `· read_file  README.md` rows with a blank
+  row between each.
 - **An OMH TUI diff no longer doubles each changed line.** Hermes pads every
   added and removed line of an edit's diff with spaces, to 143 columns in a
   live patch, so on any narrower terminal each green or red band wrapped into

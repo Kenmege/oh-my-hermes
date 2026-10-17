@@ -96,6 +96,7 @@ TOOL_OK = "ok"
 TOOL_ERROR = "error"
 TOOL_DENIED = "denied"
 TOOL_INTERRUPTED = "interrupted"  # still open when its group closed: it never reported a result
+TOOL_RECORDED = "recorded"  # a resumed session's call: Hermes' record says what ran, not how it ended
 
 NOTICE_INFO = "info"
 NOTICE_OK = "ok"  # something the person allowed went ahead
@@ -142,6 +143,7 @@ EXPANDED_MARK = "▾"
 ASSISTANT_MARK = "⏺ "
 ASSISTANT_INDENT = "  "
 TOOL_MARK = "⏺"  # every call that started: the accent while it runs, then green done or red failed or denied
+# (dim for a resumed session's call, whose outcome its record does not keep)
 # A running tool's mark alternates the accent and dim this often, counted from its own start, so calls that run
 # side by side pulse each on its own. Only the live region is drawn with a clock; scrollback gets the settled mark.
 PULSE_SECONDS = 0.5
@@ -708,6 +710,8 @@ def _tool_mark(status: str, theme: Theme, dim: bool = False) -> Span:
         return Span(TOOL_MARK, theme.error)  # the line under a denial says it was denied
     if status == TOOL_RUNNING:
         return Span(TOOL_MARK, theme.dim if dim else theme.accent)
+    if status == TOOL_RECORDED:
+        return Span(TOOL_MARK, theme.dim)
     if status == TOOL_INTERRUPTED:
         return Span("▪", theme.dim)
     return Span("◌", theme.dim)
@@ -993,6 +997,22 @@ class Transcript:
         """A finished reply (a resumed session's history), rendered like a streamed one."""
         if text.strip():
             self._append(AssistantBlock(text, done=True))
+
+    def add_recorded_tools(self, messages: list[dict[str, Any]]) -> None:
+        """A resumed session's tool calls (its history's `role: tool` messages) as one settled group, each drawn as a
+        live call is (`⏺ name(args)`) with a dim mark, since the record keeps no outcome, and an edit's diff under
+        it where Hermes kept the one it showed live (`display_metadata.tool_result_metadata.inline_diff`)."""
+        rows = []
+        for message in messages:
+            metadata = message.get("display_metadata")
+            shown = metadata.get("tool_result_metadata") if isinstance(metadata, dict) else None
+            diff = as_text(shown.get("inline_diff")) if isinstance(shown, dict) else ""
+            name, args = _first_line(as_text(message.get("name"))) or "tool", self._display_args(_args_summary(message))
+            row = ToolRow(as_text(message.get("tool_call_id")), name, args, TOOL_RECORDED)
+            row.inline_diff, row.diff_root = diff.encode("utf-8", "surrogatepass"), self.cwd
+            rows.append(row)
+        if rows:
+            self._append(ToolGroup(rows, done=True))
 
     def fail_turn(self, message: str) -> None:
         """A turn the gateway ended with a bare `error` event instead of `message.complete`.

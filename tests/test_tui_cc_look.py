@@ -19,6 +19,7 @@ and no rule after it.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import unittest
 from unittest import mock
@@ -403,6 +404,53 @@ class DoneLineTests(unittest.TestCase):
         self.assertEqual(line_width(narrow), 12)
         (wide,) = block_rows(TurnSummaryBlock(5.0, 3, 1300), 200, THEME)
         self.assertEqual(line_text(wide), "  ✻ 5s · 3 tools · ↓1.3k")
+
+
+# A real resume's `messages` (tests/fixtures/tui_gateway/resume_history.json): one turn of five calls, an edit among them.
+RESUME = json.loads(
+    (Path(__file__).resolve().parent / "fixtures" / "tui_gateway" / "resume_history.json").read_text(encoding="utf-8")
+)["messages"]
+RESUME_CWD = "/fixture/demo"
+
+
+class ResumedHistoryTests(unittest.TestCase):
+    """A resumed session's calls are drawn by the live rows' code: `⏺ name(args)`, the edit's diff under `⎿`."""
+
+    def history(self, width: int = 100) -> list:
+        app, _client = make_app(rows=40, cols=width)
+        app.transcript.cwd = RESUME_CWD
+        app._draw_history(RESUME)
+        return [line for line in app.transcript.take_stable_lines(width, THEME)]
+
+    def test_each_recorded_call_is_one_row_with_a_neutral_mark_and_no_blank_row_between(self) -> None:
+        lines = self.history()
+        texts = lines_text(lines)
+        first, after = texts.index("⏺ read_file(README.md)"), texts.index("⏺ terminal(sleep 6 + 1 command)")
+        self.assertEqual(texts[first + 1 : first + 3], ["⏺ read_file(calc.py)", "⏺ patch(calc.py)"])
+        self.assertTrue(all(text.strip() for text in texts[first:after]), texts)  # the diff, and no blank row
+        self.assertEqual(texts[after : after + 3], ["⏺ terminal(sleep 6 + 1 command)", "⏺ terminal(ls does-not-exist)", ""])
+        self.assertTrue(texts[after + 3].startswith("⏺ Done — div added to calc.py"), texts)
+        calls = [lines[index] for index in (first, first + 1, first + 2, after, after + 1)]
+        # The record says what ran, not how it ended: neither green nor red.
+        self.assertEqual({row[0] for row in calls}, {Span("⏺", THEME.dim)})
+        self.assertNotIn("·", "".join(texts[first : after + 2]))  # no old-style `· name  args` row
+
+    def test_the_edit_shows_the_diff_a_live_call_shows(self) -> None:
+        texts = lines_text(self.history())
+        start = texts.index("⏺ patch(calc.py)") + 1
+        recorded = texts[start : texts.index("⏺ terminal(sleep 6 + 1 command)")]
+        patch = next(message for message in RESUME if message.get("name") == "patch")
+        transcript = Transcript(clock=Clock())
+        transcript.cwd = RESUME_CWD
+        transcript.apply(Event("message.start", SID, {}))
+        transcript.apply(Event("tool.start", SID, {"tool_id": "t", "name": "patch", "context": "calc.py"}))
+        inline_diff = patch["display_metadata"]["tool_result_metadata"]["inline_diff"]
+        transcript.apply(Event("tool.complete", SID, {"tool_id": "t", "name": "patch", "inline_diff": inline_diff}))
+        transcript.apply(Event("message.complete", SID, {"text": "", "status": "complete"}))
+        live = lines_text(transcript.take_stable_lines(100, THEME))
+        self.assertTrue(live[0].startswith("⏺ patch(calc.py)"), live)
+        self.assertEqual(recorded, live[1:])
+        self.assertTrue(recorded and recorded[0].startswith("  ⎿  "), recorded)
 
 
 def installation() -> str:
