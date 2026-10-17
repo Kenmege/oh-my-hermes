@@ -90,12 +90,26 @@ Two things to get right in the phrases themselves:
   and to `ROUTING_INTERVENTION_CASES` proving the lanes you claim are reached.
   Both corpora assert exact counts; update them in the same commit.
 
+A pack in a Latin-script language adds whole phrases and nothing else. A
+Hangul, Kana or Han phrase never shares a word with an English message, but a
+Latin-script phrase does: Indonesian borrows `bug`, `crash`, `error` and
+`file`. So a shipped pack phrase written entirely in ASCII scores only as a
+whole phrase. Its words do not join the skill's trigger tokens, and the
+lexical shortlist's English index leaves the phrase out of the skill's
+document and anchors, as it already leaves out every non-ASCII trigger. The
+pack does not have to list those words. A phrase with any non-ASCII character
+scores as before. This covers shipped packs only: a user pack's phrases also
+score word by word, so hold a word back with `whole_phrase_only_tokens` where
+it should count only inside its phrase.
+
 Two gates hold the mechanism together. `tests/test_trigger_language_packs.py`
-proves every shipped phrase is live in its skill's scored surface and that
-every language with a shipped `--language` / `OMH_LANG` **output**
-localization also ships a **trigger** pack, so input and output support cannot
-diverge. `tests/test_trigger_holdback_reachability.py` proves no hold-back
-entry, in any language, quietly removes nothing.
+proves every shipped phrase is live in its skill's scored surface, that a
+Latin-script pack leaves every skill's trigger tokens, lexical document and
+anchors as they are without it, and that every language with a shipped
+`--language` / `OMH_LANG` **output** localization also ships a **trigger**
+pack, so input and output support cannot diverge.
+`tests/test_trigger_holdback_reachability.py` proves no hold-back entry, in any
+language, quietly removes nothing.
 
 ## Calibrating the corpus against real recorded decisions
 

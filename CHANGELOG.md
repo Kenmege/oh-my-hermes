@@ -4,6 +4,22 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Indonesian ships as a trigger language pack.** `src/routing/trigger_packs/id.json`,
+  contributed by @fauzibrevy-hub (#2154), covers the 21 skills the `ja` and
+  `zh` packs cover, with phrases such as `tinjau kode`, `audit aksesibilitas`,
+  `build gagal` and `lakukan riset mendalam`. It is the first pack in a
+  Latin-script language, and that shares the English token space: Indonesian
+  borrows `bug`, `crash`, `error` and `file`. So a shipped pack phrase written
+  entirely in ASCII now scores only as a whole phrase. Its words never join the
+  skill's trigger tokens, and the lexical shortlist leaves it out of the
+  skill's English document and anchors. A test holds every skill's trigger
+  tokens, lexical document and anchors equal to the view without the pack.
+  Phrases that routed ordinary Indonesian chat (a team work plan, "ask me one
+  at a time", a medicine reminder) did not ship, and neither did a few that
+  read as word-for-word translations. `ultrawork` carries one Indonesian
+  phrase, `implementasi paralel`: its always-loaded body had room for one
+  under the byte ceiling. `id` is an input language only: it is not a
+  `--language` / `OMH_LANG` output choice.
 - **A plural possessive no longer hides the rest of a message from routing.**
   The routing masker read the `'` of "the customers' export" as an opening
   quote. Nothing closed it, so everything after it was masked and no matcher

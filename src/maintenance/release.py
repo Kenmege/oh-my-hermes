@@ -753,7 +753,14 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64651
 # grounded-citations, curator-ledger, and document-producer rules, and the
 # presence clauses sit past the rows' bounds or render byte-identical and
 # move nothing here. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 501990
+# 501990 -> 502052: the shipped `id` (Indonesian) trigger language pack.
+# Packs merge in language order, so `id` phrases now come before the `ja`
+# ones. `design-orchestration` has few enough authored triggers that two of
+# them reach its row's first seven: `tangani desain produk ini secara
+# menyeluruh` and `koordinasikan seluruh proses desain` replace two `ja`
+# phrases (+62). The other 20 pack skills change only their `+N more
+# triggers` count, at the same width. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 502052
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

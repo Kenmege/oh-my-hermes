@@ -20,10 +20,13 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from omh.commands.language import LANGUAGE_CODES
+from omh.routing import lexical_shortlist
 from omh.routing.localization import normalized_phrase
 from omh.routing.recommend import (
+    _prepare_definition,
     _prepared_routable_definitions,
     _tokens,
     recommend_skills,
@@ -40,6 +43,7 @@ from omh.routing.trigger_language_packs import (
     trigger_pack_state,
     user_trigger_pack_dir,
 )
+from omh.skills import catalog
 from omh.skills.catalog import builtin_definitions, routable_definitions
 
 
@@ -212,6 +216,62 @@ class ShippedTriggerPackTests(unittest.TestCase):
             "author believes is live: " + "; ".join(dead[:20]),
         )
 
+    def test_a_latin_script_pack_adds_whole_phrases_and_nothing_else(self) -> None:
+        """An ASCII pack phrase scores as a phrase; its words never score alone.
+
+        `ja`, `zh` and `ko` phrases carry Hangul, Kana or Han, so their words
+        never meet an English message. A pack in a Latin-script language shares
+        the English token space: the first `id` draft's phrases borrowed `bug`,
+        `crash`, `error` and `file`, and with those words scoring on their own,
+        or in the lexical index, English routes and shortlists moved (#2154).
+        So each skill's scored tokens, lexical-index document and shortlist
+        anchors must equal the view the catalog gives with every pack that has
+        an ASCII phrase left out. That the phrase itself still scores is held
+        by `test_every_shipped_pack_phrase_is_live_in_its_skills_scored_surface`.
+
+        An ASCII pack phrase that repeats one of the skill's English triggers
+        fails here too: the rule would take that trigger's words out of scoring.
+        """
+        packs = shipped_trigger_language_packs(_known_skills())
+        latin = {
+            pack.language
+            for pack in packs
+            if any(phrase.isascii() for _, phrases in pack.skills for phrase in phrases)
+        }
+        # Without a Latin-script pack this compares the catalog with itself.
+        self.assertIn("id", latin)
+        other_packs = tuple(pack for pack in packs if pack.language not in latin)
+        with mock.patch.object(catalog, "shipped_trigger_language_packs", return_value=other_packs):
+            without = {
+                definition.name: definition
+                for definition in catalog._with_shipped_trigger_packs(tuple(catalog._DEFINITIONS))
+            }
+        # `_anchor_vocabulary` finds the skill through `routable_definitions`;
+        # its uncached body runs against the view, and the cached live answers
+        # are read only outside the patch.
+        with mock.patch.object(lexical_shortlist, "routable_definitions", return_value=tuple(without.values())):
+            anchors_without = {
+                name: lexical_shortlist._anchor_vocabulary.__wrapped__(name) for name in without
+            }
+
+        moved: list[str] = []
+        for prepared in _prepared_routable_definitions():
+            definition = prepared.definition
+            view = without[definition.name]
+            if prepared.trigger_tokens != _prepare_definition(view).trigger_tokens:
+                moved.append(f"{definition.name}: trigger tokens")
+            if lexical_shortlist._document(definition) != lexical_shortlist._document(view):
+                moved.append(f"{definition.name}: lexical document")
+            if lexical_shortlist._anchor_vocabulary(definition.name) != anchors_without[definition.name]:
+                moved.append(f"{definition.name}: anchors")
+
+        self.assertEqual(
+            moved,
+            [],
+            "A Latin-script pack moved what its words score on their own; its phrases "
+            "must count only as whole phrases (`shipped_ascii_pack_phrases`): " + "; ".join(moved[:20]),
+        )
+
     def test_the_seed_packs_reach_their_lane_end_to_end(self) -> None:
         """One live probe per seed language, through the ordinary router."""
         probes = (
@@ -224,6 +284,10 @@ class ShippedTriggerPackTests(unittest.TestCase):
             ("zh", "段错误和核心转储怎么排查", "native-debugging"),
             ("zh", "前端落地页需要响应式布局", "frontend"),
             ("ko", "빌드 실패 원인 봐줘", "build-failure-triage"),
+            ("id", "lakukan riset mendalam", "research"),
+            ("id", "review kode ini", "code-review"),
+            ("id", "audit aksesibilitas", "accessibility-audit"),
+            ("id", "build gagal", "build-failure-triage"),
         )
 
         for language, message, expected in probes:
