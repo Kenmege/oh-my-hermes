@@ -130,10 +130,12 @@ class SummarisedReadTests(unittest.TestCase):
                          ["⏺ read_file(x)  0.2s", "  ⎿  Read 3 lines"])
         self.assertEqual(completed("read_file", {"content": "     1|one", "total_lines": 1})[1], "  ⎿  Read 1 line")
 
-    def test_a_binary_or_failed_read_is_not_summarised(self) -> None:
+    def test_a_binary_read_or_a_failed_call_is_not_summarised(self) -> None:
         self.assertEqual(completed("read_file", {"error": "File not found: x"})[1:], ["  ⎿  File not found: x"])
         binary = completed("read_file", {"content": "", "is_binary": True, "error": None})
         self.assertNotIn("Read", "\n".join(binary))
+        # Hermes' SearchResult always carries total_count, a failed search too: its error is what it says.
+        self.assertEqual(completed("search_files", {"total_count": 0, "error": "rg failed"})[1:], ["  ⎿  rg failed"])
 
     def test_a_skill_view_names_the_skill_it_loaded(self) -> None:
         loaded = {"success": True, "name": "omh-docs", "content": "---\nname: omh-docs\n---\n# body"}
