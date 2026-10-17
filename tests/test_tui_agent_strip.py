@@ -34,7 +34,7 @@ STARTS = FRAMES[:2]  # both recorded agents started, neither finished
 SPIN = SPINNER_FRAMES[0]  # a clock at 0 draws the spinner's first frame
 STRIP = f"● main  {SPIN} find usages of  {SPIN} read the diff  ↓ agents"
 DONE_STRIP = "● main  ○ find usages of  ✗ read the diff  ↓ agents"
-BUSY_HINT = "esc interrupt · /steer <text> steers"
+BUSY_HINT = "/steer <text> steers"
 IDLE_HINT = "? for shortcuts"
 
 
@@ -226,9 +226,11 @@ class StripTests(unittest.TestCase):
         app, _client = agent_app(busy=False, frames=FRAMES, cols=120)
         self.assertEqual(info_left(app), f"{DONE_STRIP} · {IDLE_HINT}")
 
-    def test_at_eighty_columns_two_agents_leave_the_hint_cut_and_the_strip_whole(self) -> None:
+    def test_a_narrow_row_cuts_the_hint_and_keeps_the_strip_whole(self) -> None:
         app, _client = agent_app()
-        self.assertEqual(info_text(app), f"{STRIP} · esc interrupt · /steer …")
+        self.assertEqual(info_text(app), f"{STRIP} · {BUSY_HINT}")  # 80 columns hold both
+        narrow, _client = agent_app(cols=70)
+        self.assertEqual(info_text(narrow), f"{STRIP} · /steer <text>…")
 
     def test_the_spinner_turns_with_the_clock(self) -> None:
         now = [0.0]

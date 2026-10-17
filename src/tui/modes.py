@@ -51,7 +51,6 @@ MODE_HINTS = (" (⇧⇥ {cycle})", "")
 CYCLE_WORDS = "to cycle"
 HERMES_OWN_CYCLE = {MODE_ACCEPT: "plan", MODE_ACCEPT_PLAN: "plan off"}
 EFFORT_KEY = "ctrl+t effort"  # the right side's effort while Hermes has reported none
-INTERRUPT_KEY_HINT = "esc interrupt"
 STEER_KEY_HINT = "ctrl+enter steer"  # only once the terminal has sent a key in a CSI u or modifyOtherKeys report
 STEER_COMMAND_HINT = "/steer <text> steers"
 QUEUED_KEY_HINT = "↑ edit queued"
@@ -188,7 +187,6 @@ def info_line(
     strip: Line = (),
     say: str | tuple[str, ...] = "",
     say_style: Style | None = None,
-    esc_interrupts: bool = True,
     cycle: str = "",
 ) -> Line:
     """The line under the composer: the mode's label (accept, plan, a shell line), the agent strip, the keys that
@@ -207,8 +205,8 @@ def info_line(
     other hint takes its longest form that fits, else its last, cut at the
     edge, after a label that takes its short words, then its glyph alone,
     when its own words do not fit. The right side then takes the longest of `right` that fits in what
-    the shortened left side leaves. During a turn the hint offers Esc for the interrupt only
-    while `esc_interrupts` says Esc does that now. The label always survives,
+    the shortened left side leaves. During a turn the hint names the steer
+    keys, not Esc: the working row offers the interrupt. The label always survives,
     in some form, and the strip after it. Accept and plan say where Shift+Tab
     goes next (`cycle`; CYCLE_WORDS when not given).
     """
@@ -218,7 +216,7 @@ def info_line(
     elif mode == MODE_SHELL:
         hints = (SHELL_HINT,)
     elif mode == MODE_NORMAL and busy:
-        keys = [*([INTERRUPT_KEY_HINT] if esc_interrupts else []), STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
+        keys = [STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
         hints = (" · ".join(keys + ([QUEUED_KEY_HINT] if queued else [])),)
     else:
         hints = default_hints(mode, busy, cycle)

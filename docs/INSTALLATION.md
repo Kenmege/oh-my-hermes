@@ -351,7 +351,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   while Hermes has approvals off on its own it reads `⏵⏵ accept all on (⇧⇥
   plan)`, since Shift+Tab then turns only plan on and off. The composer's box
   keeps its colour in every mode. While a turn runs in the normal mode the
-  left offers `esc interrupt · ctrl+enter steer` (`/steer <text> steers` where the terminal
+  left offers `ctrl+enter steer` (`/steer <text> steers` where the terminal
   does not tell Ctrl+Enter from Enter), and `↑ edit queued` once prompts are
   queued (in accept all and plan it keeps the label and where Shift+Tab
   goes); while Hermes asks something it names that question's keys (`↑↓
@@ -359,10 +359,12 @@ run and approval decision stays Hermes'; the screen is OMH's.
   the Ctrl+R search is open, its keys (`↑↓ move · enter switches · esc
   closes`). After a first Ctrl+C between turns it says `ctrl+c again to
   exit` for the 2 s a second one exits in, and writes nothing to the
-  transcript. The working row and the info line offer Esc for an interrupt only
-  while Esc would do that: not while a question, a picker, the history
-  search, the agent list, a picked steer or rewind, the `@` menu or a draft in
-  the composer takes Esc, so Esc means one thing on the screen. When the OMH
+  transcript. The interrupt is offered in one place, the working row's `esc
+  to interrupt`, and only while Esc does it: in every mode, while the
+  composer is empty and nothing else takes Esc (a question, a picker, the
+  history search, the agent list, a picked steer or rewind, or the `@` menu
+  does), and not again while `interrupting…` shows, so Esc means one thing
+  on the screen. When the OMH
   HUD sees a call repeating, or tool calls in flight during a turn, the right
   side says that first (`repeat x4`, `1 tool · 9s`). On a narrower terminal
   the right side gives way first: the model shortens to its last path

@@ -4049,7 +4049,6 @@ class App(ModesMixin, AgentViewMixin):
             strip=self._agent_strip(cols)[0] if strip is None else strip,
             say=say,
             say_style=say_style,
-            esc_interrupts=self._esc_interrupts(),
             # While Hermes has approvals off on its own, Shift+Tab turns plan on and off and nothing else.
             cycle=HERMES_OWN_CYCLE.get(self._display_mode(), "") if self.approvals_off and not self.yolo_by_tui else "",
         )
@@ -4090,8 +4089,8 @@ class App(ModesMixin, AgentViewMixin):
         return MODEL_PICKER_KEYS if self.model_picker is not None else ()
 
     def _esc_interrupts(self) -> bool:
-        """Whether the rows offer Esc for the interrupt: Esc interrupts the running turn now, nothing else taking it
-        (`_escape`, and what has the keys), and no interrupt is on its way yet.
+        """Whether the working row offers Esc for the interrupt: Esc interrupts the running turn now, nothing else
+        taking it (`_escape`, and what has the keys), and no interrupt is on its way yet.
 
         So the screen gives Esc one meaning: a question, a picker, the search, the agent list, a picked steer or
         rewind, the `@` menu and a draft each take it. While `interrupting…` shows, Esc still asks again.

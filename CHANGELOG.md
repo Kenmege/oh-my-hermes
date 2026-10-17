@@ -53,7 +53,9 @@ All notable changes will be documented here.
   question's or a picker's keys) and the model, `ctx 5%` and `effort medium`
   on the right, with the OMH HUD's repeat and in-flight tool counts first
   when there are any. The `⚚ OMH` brand and the `idle` / `running` words
-  are gone: the working row, the strip and the queue rows already say them.
+  are gone: the working row, the strip and the queue rows already say them,
+  and during a turn the left names only the steer keys, since the working
+  row already offers `esc to interrupt`.
   On a narrow terminal the right side gives way first, the model shortening
   to `deepseek-v4.1-flash` and then `v4.1-flash` before it goes. The line is
   on every terminal of 3 rows or more, so the mode is never hidden, and the

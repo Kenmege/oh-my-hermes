@@ -56,10 +56,11 @@ class QuestionKeyTests(unittest.TestCase):
         app.turn_pending = True
         self.assertIn("d or esc denies and stops", mode_row(app))
 
-    def test_without_a_question_the_working_row_still_offers_the_interrupt(self) -> None:
+    def test_without_a_question_the_working_row_offers_the_interrupt_and_only_it(self) -> None:
+        # Review B: the info line's `esc interrupt` repeated the working row's `esc to interrupt`.
         app, _client = make_app(busy=True)
         self.assertIn("esc to interrupt", line_text(app._tail(100)[-2]))  # the working row, its tip under it
-        self.assertIn("esc interrupt", mode_row(app))
+        self.assertNotIn("esc", mode_row(app))
 
 
 class EscMeaningTests(unittest.TestCase):
@@ -107,8 +108,8 @@ class EscMeaningTests(unittest.TestCase):
 
         app, client = make_app(busy=True, cols=100)
         said = self.screen_says(app)
-        self.assertIn("esc to interrupt", said)
-        self.assertIn("esc interrupt", said)
+        self.assertEqual(said.count("esc to interrupt"), 1)  # offered once, on the working row
+        self.assertNotIn("esc interrupt", said)
         app._on_input(Key(ESCAPE))
         self.assertEqual(client.calls[-1][0], "session.interrupt")
 

@@ -408,16 +408,16 @@ class SteerTests(unittest.TestCase):
         app.terminal.keyboard_protocol = True  # type: ignore[attr-defined]  # asked, as on an allowlisted terminal
 
         def hint() -> str:
-            row = next(line for line in drawn(app) if line.startswith(INFO_INSET + "esc interrupt"))
+            row = next(line for line in drawn(app) if line.startswith((INFO_INSET + "/steer", INFO_INSET + "ctrl+enter")))
             return re.split(r" {3,}", row[len(INFO_INSET) :])[0]  # the left side: the right one stands 3 cells away
 
-        self.assertEqual(hint(), "esc interrupt · /steer <text> steers")
+        self.assertEqual(hint(), "/steer <text> steers")
         for event in app.decoder.feed(b"x\r"):  # a terminal that ignored the request: Ctrl+Enter comes as Enter
             app._on_input(event)
-        self.assertEqual(hint(), "esc interrupt · /steer <text> steers · ↑ edit queued")
+        self.assertEqual(hint(), "/steer <text> steers · ↑ edit queued")
         for event in app.decoder.feed(b"\x1b[108;5u"):  # Ctrl+L, as kitty reports it (Esc would interrupt the turn)
             app._on_input(event)
-        self.assertEqual(hint(), "esc interrupt · ctrl+enter steer · ↑ edit queued")
+        self.assertEqual(hint(), "ctrl+enter steer · ↑ edit queued")
 
     def test_only_ctrl_enter_and_the_steer_command_can_steer(self) -> None:
         # Steer text is what the person typed and sent, so `session.steer` has one sender with two callers.

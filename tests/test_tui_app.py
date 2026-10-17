@@ -1313,9 +1313,9 @@ class InfoLineLeftTests(unittest.TestCase):
 
     def test_normal_mode_names_the_keys_that_matter_now(self) -> None:
         self.assertEqual(self.row(), "? for shortcuts")
-        self.assertEqual(self.row(busy=True), "esc interrupt · /steer <text> steers")
-        self.assertEqual(self.row(busy=True, keyboard_protocol=True), "esc interrupt · ctrl+enter steer")
-        self.assertEqual(self.row(busy=True, queued=2), "esc interrupt · /steer <text> steers · ↑ edit queued")
+        self.assertEqual(self.row(busy=True), "/steer <text> steers")  # the working row offers the interrupt
+        self.assertEqual(self.row(busy=True, keyboard_protocol=True), "ctrl+enter steer")
+        self.assertEqual(self.row(busy=True, queued=2), "/steer <text> steers · ↑ edit queued")
 
     def test_ctrl_enter_is_named_only_where_the_terminal_tells_it_from_enter(self) -> None:
         for busy in (False, True):
