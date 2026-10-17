@@ -51,7 +51,8 @@ All notable changes will be documented here.
 - **The OMH TUI opens on a clean screen.** As it starts, what your terminal
   showed above the cursor (your shell, the warnings `hermes` printed) scrolls
   up into the terminal's own scrollback, and the TUI starts on the top row.
-  Nothing is erased: scroll up to read it. A launch that falls back to
+  Nothing is erased: scroll up to read it, until a full redraw (a resize,
+  Ctrl+L, `/redraw`) clears the scrollback. A launch that falls back to
   Hermes' own terminal leaves the screen as it was.
 - **Hermes' note about a skill named like a built-in command is no longer an
   OMH TUI notice at every start.** Hermes' own bundled `plan` skill shares

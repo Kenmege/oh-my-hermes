@@ -349,10 +349,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   accept's colour and in plan `⏸ plan mode on (⇧⇥ to cycle)` in plan's;
   while Hermes has approvals off on its own it reads `⏵⏵ accept all on (⇧⇥
   plan)`, since Shift+Tab then turns only plan on and off. The composer's box
-  keeps its colour in every mode. While a turn runs the left offers `esc
-  interrupt · ctrl+enter steer` (`/steer <text> steers` where the terminal
+  keeps its colour in every mode. While a turn runs in the normal mode the
+  left offers `esc interrupt · ctrl+enter steer` (`/steer <text> steers` where the terminal
   does not tell Ctrl+Enter from Enter), and `↑ edit queued` once prompts are
-  queued; while Hermes asks something it names that question's keys (`↑↓
+  queued (in accept all and plan it keeps the label and where Shift+Tab
+  goes); while Hermes asks something it names that question's keys (`↑↓
   pick · enter confirms · d or esc denies and stops`), and while a picker or
   the Ctrl+R search is open, its keys (`↑↓ move · enter switches · esc
   closes`). After a first Ctrl+C between turns it says `ctrl+c again to
@@ -404,7 +405,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   As it starts, the TUI scrolls what your terminal showed above its cursor
   (your shell, the launcher's warnings) up into the terminal's own
   scrollback, erasing nothing, and opens on the top row of a clean screen:
-  scroll up to read what was there. A launch that falls back to Hermes' own
+  scroll up to read what was there, until a full redraw (a resize, Ctrl+L,
+  `/redraw`, switching or resuming a session) clears the scrollback with
+  the rest. A launch that falls back to Hermes' own
   terminal leaves the screen as it was.
 - A notice Hermes sends outside the transcript (the agent still starting, a
   credit warning, a provider that could not be reached) takes one row above
@@ -589,8 +592,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   stopped counting, and Hermes' warning on the line under it when it gave
   one, such as why nothing matched). A failed call (a red `⏺`) shows its error's first line
   in the error colour, or, when it failed by its exit code alone (a test
-  run, say), the last three lines it printed, under the count of the lines
-  above them. An edit's diff hangs under the same `⎿`, and a long diff counts
+  run, say), the last three lines it printed, in the same colour, under the
+  count of the lines above them. An edit's diff hangs under the same `⎿`, and a long diff counts
   its rest the same way. Ctrl+O opens the whole transcript with every detail
   (thinking, tool output, whole diffs) in the pager, at its end.
 - While a turn runs, the working row reads as Claude Code's does,
@@ -630,8 +633,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   - A tool call's `⏺` says its state by colour, as in Claude Code: the
     accent while it runs, pulsing between the accent and dim every 0.5 s
     from its own start (parallel calls pulse on their own), green once done,
-    red when it failed or was denied, with the error's first line, or the
-    denial's words (`denied` when the result gives none), under it in red.
+    red when it failed or was denied. Done and failed share the mark and
+    differ by its colour and by the red lines under a failure: the error's
+    first line, the denial's words (`denied` when the result gives none), or,
+    for a command that failed by its exit code alone, the last lines it
+    printed.
     `▪` marks a call that was cut off and
     `◌` one still being written (a call Hermes never starts, such as a streamed
     attempt it discards and retries, leaves no row and is not counted in the
