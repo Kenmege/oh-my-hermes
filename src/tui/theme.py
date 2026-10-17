@@ -8,8 +8,8 @@ default palette's value, so a partial skin still paints every role. Keywords
 are bold and comments italic as well as coloured, so the `mono` palette, whose
 keyword and text colours nearly match, still tells them apart.
 
-The terminal's background decides the rest. Body text (`text`, the user's
-prompt mark, the reply) has no colour of its own: it is the terminal's
+The terminal's background decides the rest. Body text (`text`, `user`, the
+reply) has no colour of its own: it is the terminal's
 default foreground, which is readable on whatever background the person
 chose. Every other role is measured against that background
 (`build_theme(skin, background)`: the colour the terminal reported, or the
@@ -22,12 +22,10 @@ background, black on a light one) as far as that takes, so a palette that
 already clears the background keeps its colour. On a light background the
 diff bands are tints of the palette's word colours over the background, so
 the default foreground stays readable on them; a dark diff band names its own
-text colour (`banner_text`), since the dark it assumes may be a guess. With no
-background reported there is no prompt band at all: its text is the
-terminal's own colour, which a guessed band can drown. `dim` is for
-decoration glyphs; words go on `muted` or `hint`.
+text colour (`banner_text`), since the dark it assumes may be a guess. `dim` is
+for decoration glyphs; words go on `muted` or `hint`.
 
-Outcomes sit on bands too (`ok_band` behind what the person allowed,
+Outcomes sit on bands (`ok_band` behind what the person allowed,
 `error_band` behind a denial or a failure): light tints of the palette's diff
 colours on a light background, its dark diff colours on a dark one, and
 none when no background was reported. What is drawn on a band takes
@@ -71,8 +69,6 @@ LIGHT_STAND_IN = WHITE
 # word band inside it.
 LIGHT_BAND_SHARE = 0.82
 LIGHT_WORD_BAND_SHARE = 0.62
-# Your prompt's band: the background moved this far toward the ink, a tint the default foreground still reads on.
-USER_BAND_SHARE = 0.08
 # A light background's status bar: the palette's status-bar colour moved this far toward the background.
 LIGHT_STATUS_SHARE = 0.85
 # The roles a person reads as text: each reaches TEXT_CONTRAST against the background. `text` and `user` are not
@@ -123,7 +119,6 @@ class Theme:
     muted: Style
     mode_accept: Style
     mode_plan: Style
-    user_band: Style  # the background behind your prompt in the transcript
     ok_band: Style  # behind what the person allowed (an approval)
     error_band: Style  # behind a denial or a failure: a denied approval, a failed tool row and its lines, an error notice
 
@@ -254,7 +249,6 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         muted=Style(fg=read("banner_dim")),
         mode_accept=Style(fg=read("ui_warn")),
         mode_plan=Style(fg=read("ui_ok")),
-        user_band=Style(bg=_mix(surface, ink, USER_BAND_SHARE)) if reported else Style(),
         ok_band=ok_band,
         error_band=error_band,
     )

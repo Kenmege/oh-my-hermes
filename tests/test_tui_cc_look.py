@@ -11,6 +11,10 @@ While a turn runs the working row reads `✶ Synthesizing… (1m 24s · ↓4.2k
 tokens · thinking with high effort · esc to interrupt)`: a glyph that turns,
 Hermes' activity as a verb with its kaomoji and dots taken off, and under it
 one tip a turn (`  ⎿  Tip: …`) where the rows allow.
+
+Your prompt reads `> 오마이 헤르메스란`: a dim `>` and dim text with no band, as
+a command's echo does. A turn closes with a dim `  ✻ 5s · 3 tools · ↓1.3k`
+and no rule after it.
 """
 
 from __future__ import annotations
@@ -22,21 +26,26 @@ from unittest import mock
 from _tui_lines import line_text, lines_text
 from test_tui_modes import drawn, make_app, type_text
 from omh.skin_pack import SKIN_THEMES
-from omh.tui.app import INTERRUPTING, TICK_SECONDS, TIP_MIN_ROWS, TIPS, WORKING_GLYPHS, working_verb
+from omh.tui.app import INTERRUPTING, TICK_SECONDS, TIP_MIN_ROWS, TIPS, WORKING_GLYPHS, queue_lines, working_verb
+from omh.tui.frame import sticky_line
 from omh.tui.diff_view import DIFF_ADDED, DIFF_FILE, DIFF_HUNK, DIFF_INDENT, DiffLine, diff_rows
 from omh.tui.gateway import Event
 from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.theme import build_theme, contrast_ratio
 from omh.tui.transcript import (
+    NOTICE_INFO,
     PULSE_SECONDS,
     TOOL_DENIED,
     TOOL_ERROR,
     TOOL_OK,
     TOOL_RUNNING,
+    CommandBlock,
     ToolGroup,
     ToolRow,
     Transcript,
+    TurnSummaryBlock,
+    UserBlock,
     block_rows,
 )
 from omh.tui.width import line_width
@@ -289,6 +298,51 @@ class WorkingRowTests(unittest.TestCase):
         listing.list_selected = 0  # the agent list has the keys
         self.assertTrue([line for line in lines_text(listing._tail(100)) if "Tip:" in line])
 
+class PromptRowTests(unittest.TestCase):
+    def test_a_prompt_is_a_dim_mark_and_dim_text_on_no_band(self) -> None:
+        for theme in (THEME, build_theme(SKIN_THEMES[0], "#1E1E1E"), build_theme(SKIN_THEMES[0], "#FFFFFF")):
+            rows = block_rows(UserBlock("first line\nsecond line"), 40, theme)
+            with self.subTest(theme=theme.name):
+                self.assertEqual(lines_text(rows), ["> first line", "  second line"])
+                self.assertEqual(rows[0][0], Span("> ", theme.dim))
+                self.assertEqual({span.style for row in rows for span in row[1:]}, {theme.muted})  # after the lead
+                self.assertEqual({span.style.bg for row in rows for span in row}, {None})  # no band, no fill
+
+    def test_a_prompt_the_queue_sent_says_so_in_the_same_dim(self) -> None:
+        (row,) = block_rows(UserBlock("next one", from_queue=True), 40, THEME)
+        self.assertEqual(line_text(row), "> next one  ⧗ from queue")
+        self.assertEqual(row[-1].style, THEME.muted)
+
+    def test_the_sticky_reminder_and_the_queue_read_apart_from_a_prompt(self) -> None:
+        prompt = line_text(block_rows(UserBlock("fix it"), 40, THEME)[0])
+        sticky = line_text(sticky_line("fix it", 40, THEME))
+        (queued,) = lines_text(queue_lines(["fix it"], 40, 3, THEME))
+        self.assertEqual([prompt[:2], sticky[:7], queued[:2]], ["> ", "↳ you: ", "⧗ "])
+
+    def test_a_command_echoes_as_a_prompt_does_in_the_hint_colour(self) -> None:
+        rows = block_rows(CommandBlock("/model", [("Current model: x", NOTICE_INFO)], done=True), 40, THEME)
+        self.assertEqual(lines_text(rows), ["> /model", "  ⎿  Current model: x"])
+        self.assertEqual((rows[0][0], rows[0][1].style), (Span("> ", THEME.dim), THEME.hint))
+
+
+class DoneLineTests(unittest.TestCase):
+    def test_the_done_line_is_one_dim_line_without_a_rule(self) -> None:
+        (row,) = block_rows(TurnSummaryBlock(5.0, 3, 1300), 80, THEME)
+        self.assertEqual(line_text(row), "  ✻ 5s · 3 tools · ↓1.3k")
+        self.assertNotIn("─", line_text(row))
+        self.assertEqual([span.style for span in row if span.text.strip()], [THEME.dim, THEME.muted])
+
+    def test_the_wait_on_you_stays_beside_the_time(self) -> None:
+        (row,) = block_rows(TurnSummaryBlock(30.0, 1, None, waited=27.0), 80, THEME)
+        self.assertEqual(line_text(row), "  ✻ 30s (27s waiting on you) · 1 tool")
+
+    def test_a_narrow_terminal_cuts_it_and_a_wide_one_adds_nothing(self) -> None:
+        (narrow,) = block_rows(TurnSummaryBlock(5.0, 3, 1300), 12, THEME)
+        self.assertEqual(line_width(narrow), 12)
+        (wide,) = block_rows(TurnSummaryBlock(5.0, 3, 1300), 200, THEME)
+        self.assertEqual(line_text(wide), "  ✻ 5s · 3 tools · ↓1.3k")
+
+
 def installation() -> str:
     return " ".join((Path(__file__).resolve().parents[1] / "docs" / "INSTALLATION.md").read_text(encoding="utf-8").split())
 
@@ -329,6 +383,15 @@ class DocumentedLookTests(unittest.TestCase):
         app.interrupting, app.usage_output = True, None  # the example has written nothing yet
         (row,) = [line for line in lines_text(app._tail(100)) if INTERRUPTING in line]
         self.assertTrue(f"`{row.replace('1m 24s', '12s')}`" in prose, row)
+
+
+    def test_installation_shows_the_prompt_and_the_done_line_the_code_draws(self) -> None:
+        prose = installation()
+        (done,) = block_rows(TurnSummaryBlock(34.0, 3, 1200), 80, THEME)
+        self.assertTrue(f"(`{line_text(done).strip()}`)" in prose, line_text(done))
+        echo = block_rows(CommandBlock("/model", done=True), 80, THEME)[0]
+        self.assertTrue(f"(`{line_text(echo)}`)" in prose, line_text(echo))
+        self.assertTrue("a dim `>` and dim text with no band behind it" in prose)
 
 
 if __name__ == "__main__":

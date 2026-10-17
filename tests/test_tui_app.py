@@ -544,9 +544,9 @@ class SessionTests(AppTestCase):
         (submitted,) = run.calls("prompt.submit")
         self.assertEqual(submitted["params"], {"session_id": LIVE_ID, "text": prompt})
         history = run.terminal.history()
-        self.assertIn(f"› {prompt}", history)
+        self.assertIn(f"> {prompt}", history)
         self.assertIn("I'm Hermes, your agent", history)
-        self.assertLess(history.index(f"› {prompt}"), history.index("I'm Hermes"))
+        self.assertLess(history.index(f"> {prompt}"), history.index("I'm Hermes"))
 
     def test_input_during_a_turn_is_queued_and_sent_when_the_turn_ends(self) -> None:
         run = self.prepare(
@@ -567,8 +567,8 @@ class SessionTests(AppTestCase):
         self.assertEqual(first["params"], {"session_id": LIVE_ID, "text": "first prompt"})
         self.assertEqual(second["params"], {"session_id": LIVE_ID, "text": "second prompt", "queued": True})
         history = run.terminal.history()
-        self.assertLess(history.index("› first prompt"), history.index("later."))
-        self.assertLess(history.index("later."), history.index("› second prompt"))
+        self.assertLess(history.index("> first prompt"), history.index("later."))
+        self.assertLess(history.index("later."), history.index("> second prompt"))
 
     def test_ctrl_c_during_a_turn_sends_session_interrupt(self) -> None:
         run = self.prepare(
@@ -710,7 +710,7 @@ class SessionTests(AppTestCase):
         self.assertEqual(first["params"], {"session_id": LIVE_ID, "text": "first prompt"})
         self.assertEqual(second["params"], {"session_id": LIVE_ID, "text": "second prompt", "queued": True})
         history = terminal.history()
-        self.assertLess(history.index(TURN_CANCELLED), history.index("› second prompt"))
+        self.assertLess(history.index(TURN_CANCELLED), history.index("> second prompt"))
 
     def test_a_refused_submit_sends_the_next_queued_prompt(self) -> None:
         answers = (
@@ -1464,7 +1464,7 @@ class OpeningTests(AppTestCase):
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        for name, above in (("start", f"⚚ OH-MY-HERMES v{__version__} · ~/project"), ("turn", "✻ ")):
+        for name, above in (("start", f"⚚ OH-MY-HERMES v{__version__} · ~/project"), ("turn", "  ✻ ")):
             with self.subTest(capture=name):
                 screen = run.terminal.captures[name]
                 status = status_index(screen)
@@ -1571,7 +1571,7 @@ class OpeningTests(AppTestCase):
         self.assertEqual(
             history[LOGO_ROWS + 2 : LOGO_ROWS + 12],
             [
-                "› What is in this repo?",
+                "> What is in this repo?",
                 "",
                 "⏺ Let me look.",
                 "",
@@ -1580,7 +1580,7 @@ class OpeningTests(AppTestCase):
                 "",
                 "⏺ It is oh-my-hermes.",
                 "",
-                "› Thanks",
+                "> Thanks",
             ],
         )
         text = "\n".join(history)
@@ -1825,7 +1825,7 @@ class LocalCommandTests(AppTestCase):
         self.assertIn("/yolo included", pager)
         # The banner no longer says it, so /help is where the way back to Hermes' own terminal stays.
         self.assertIn("Bare `hermes` opens Hermes' own terminal.", pager)
-        self.assertIn("› /help\n  ⎿  OMH TUI commands:", terminal.history())
+        self.assertIn("> /help\n  ⎿  OMH TUI commands:", terminal.history())
         self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
 
     def test_reload_skills_rescans_in_the_gateway_and_the_new_skill_completes(self) -> None:
@@ -1878,10 +1878,10 @@ class LocalCommandTests(AppTestCase):
         self.assert_clean_run(run)
         history = terminal.screen.history()
         listed = history.index("  ⎿  Queued (sent one at a time as each turn ends):")
-        self.assertEqual(history[listed - 1], "› /queue")
+        self.assertEqual(history[listed - 1], "> /queue")
         self.assertEqual(history[listed + 1], "     1. second prompt")
-        self.assertIn("› second prompt  ⧗ from queue", history[listed:])  # the queue sent it once the turn ended
-        self.assertLess(history.index("› first prompt"), listed)
+        self.assertIn("> second prompt  ⧗ from queue", history[listed:])  # the queue sent it once the turn ended
+        self.assertLess(history.index("> first prompt"), listed)
 
     def test_steer_and_interrupt_modes_send_input_during_a_turn_at_once(self) -> None:
         for mode in ("steer", "interrupt"):
@@ -2112,7 +2112,7 @@ class SessionSwitchTests(AppTestCase):
         self.assertLess(methods.index("session.resume"), methods.index("session.close"))
         shown = terminal.history()
         self.assertTrue(shown.startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {OTHER_STORED_ID}"), shown[:200])
-        self.assertIn("› Split the router in two", shown)
+        self.assertIn("> Split the router in two", shown)
         self.assertIn("Done: chat.py and recommend.py.", shown)
         self.assertNotIn("I'm Hermes, your agent", shown)  # the old transcript went with the redraw
         self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": OTHER_STORED_ID})
@@ -2278,7 +2278,7 @@ class KeyTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         details = "\n".join(terminal.captures["details"])
-        self.assertIn("› Reply with exactly the word: ok", details)
+        self.assertIn("> Reply with exactly the word: ok", details)
         self.assertIn("⏺ ok", details)
         self.assertIn("history · ", details)
 

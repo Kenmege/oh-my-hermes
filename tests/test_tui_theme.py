@@ -14,7 +14,7 @@ from omh.tui.theme import DEFAULT_THEME, GLYPH_ROLES, TEXT_ROLES, build_theme, i
 # for a dark terminal), pure white and black, and the near-white and near-black defaults common terminals ship.
 LIGHT_BACKGROUNDS = ("#FFFFFF", "#F6F8FA", "#FDF6E3")
 DARK_BACKGROUNDS = ("#000000", "#1E1E1E", "#002B36")
-BAND_ROLES = ("user_band", "ok_band", "error_band")
+BAND_ROLES = ("ok_band", "error_band")
 
 
 def luminance(colour: str) -> float:

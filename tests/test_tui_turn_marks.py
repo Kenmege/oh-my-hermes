@@ -1,8 +1,9 @@
-"""Your prompt's band, the queue's tag, and where a steer lands.
+"""Outcome bands, the queue's tag, and where a steer lands.
 
-Your prompt sits on `user_band` behind `›`, filled to the right edge by an
-erase in that background rather than by spaces. A prompt the queue sent once
-the turn before it ended says `⧗ from queue`. A steer shows as
+Your prompt sits on no band: a dim `>` and dim text, as Claude Code shows it.
+A band (an outcome's) fills to the right edge by an erase in its background
+rather than by spaces. A prompt the queue sent once the turn before it ended
+says `⧗ from queue`. A steer shows as
 `↪ steer · <text>` under what is running until Hermes answers, and is
 written into the transcript at the next block boundary after that, so it
 never closes a running tool group (whose calls would read as cut off) or
@@ -18,7 +19,7 @@ from _tui_lines import line_text, lines_text
 from test_tui_modes import CTRL_ENTER, SID, answer, drawn, make_app, type_text
 from test_tui_panels import hud_payload, phased_plan
 from test_tui_theme import DARK_BACKGROUNDS, LIGHT_BACKGROUNDS, contrast
-from omh.skin_pack import SKIN_THEMES, skin_colors
+from omh.skin_pack import SKIN_THEMES
 from omh.tui.app import SLOT_ARM_SECONDS
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, ENTER, RIGHT, Key
@@ -47,7 +48,6 @@ from omh.tui.transcript import (
     UserBlock,
     block_rows,
 )
-from omh.tui.width import line_width
 
 
 def ev(kind: str, **payload: object) -> Event:
@@ -59,21 +59,14 @@ REPORTED = build_theme(SKIN_THEMES[0], "#1E1E1E")
 
 
 class BandTests(unittest.TestCase):
-    def test_every_row_of_a_prompt_is_on_the_band_and_ends_in_a_fill(self) -> None:
-        rows = block_rows(UserBlock("first line\nsecond line"), 40, REPORTED)
-        self.assertEqual(lines_text(rows), ["› first line", "  second line"])  # no spaces to copy
-        for row in rows:
-            self.assertEqual({span.style.bg for span in row}, {REPORTED.user_band.bg})
-            self.assertEqual(row[-1], fill(REPORTED.user_band))
-
-    def test_with_no_background_reported_the_prompt_has_no_band(self) -> None:
-        # The theme would only guess dark, and the person's own text colour on a guessed band read 1.4:1 on light.
+    def test_a_prompt_has_no_band_on_any_theme_or_background(self) -> None:
+        # Round 4: your prompt reads as Claude Code's, a dim `>` and dim text with no band behind it.
         for skin in SKIN_THEMES:
-            theme = build_theme(skin, None)
-            with self.subTest(theme=skin.short_name):
-                self.assertIsNone(theme.user_band.bg)
-                rows = block_rows(UserBlock("a prompt"), 40, theme)
-                self.assertEqual({span.style.bg for row in rows for span in row}, {None})
+            for background in (None, *LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
+                rows = block_rows(UserBlock("first line\nsecond line"), 40, build_theme(skin, background))
+                with self.subTest(theme=skin.short_name, background=background):
+                    self.assertEqual(lines_text(rows), ["> first line", "  second line"])
+                    self.assertEqual({span.style.bg for row in rows for span in row}, {None})
 
     def test_the_fill_erases_to_the_edge_in_its_background_and_a_full_row_erases_nothing(self) -> None:
         band = Style(bg="#102030")
@@ -83,22 +76,11 @@ class BandTests(unittest.TestCase):
         self.assertEqual(paint_line((Span("› go"), Span("")), 20), f"› go{ERASE_TO_LINE_END}")  # empty, no background
         self.assertNotIn(ERASE_TO_LINE_END, paint_line((Span("x" * 20, band), fill(band)), 20))
 
-    def test_the_band_is_a_tint_the_ink_still_reads_on_for_every_palette_and_background(self) -> None:
-        for skin in SKIN_THEMES:
-            for background in (*LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
-                theme = build_theme(skin, background)
-                surface = background
-                ink = "#000000" if background in LIGHT_BACKGROUNDS else skin_colors(skin.skin_name)["banner_text"]
-                with self.subTest(theme=skin.short_name, background=background):
-                    self.assertNotEqual(theme.user_band.bg, surface)
-                    self.assertLess(contrast(theme.user_band.bg, surface), 1.5)  # a tint, not a block of colour
-                    self.assertGreaterEqual(contrast(ink, theme.user_band.bg), 4.5)
-
 
 class OutcomeBandTests(unittest.TestCase):
     """Owner decision 6: an outcome's whole row sits on a band, green for allowed, red for a denial or a failure.
 
-    Built like the prompt band: every span on the band's background and an
+    Every span on the band's background and an
     erase to the right edge, so a copy carries no trailing spaces. Words on a
     band reach 4.5:1 against it and marks 3:1; with no background reported
     there is no band. Warnings and running rows carry none.
@@ -160,7 +142,7 @@ class OutcomeBandTests(unittest.TestCase):
                 app.adopt_background(None)
                 type_text(app, f"/theme {word}")
                 app._on_input(Key(ENTER))
-                for role in ("user_band", "ok_band", "error_band"):
+                for role in ("ok_band", "error_band"):
                     band = getattr(app.theme, role).bg
                     self.assertIsNotNone(band, role)
                     self.assertEqual(is_light(band), light, role)
@@ -178,14 +160,14 @@ class OutcomeBandTests(unittest.TestCase):
             with self.subTest(colorfgbg=value):
                 app, _client = make_app()
                 app.adopt_background(None, {"COLORFGBG": value})  # the terminal did not answer OSC 11
-                for role in ("user_band", "ok_band", "error_band"):
+                for role in ("ok_band", "error_band"):
                     self.assertIsNotNone(getattr(app.theme, role).bg, role)
                     self.assertEqual(getattr(app.theme, role), getattr(expected, role), role)
         for environ in ({}, {"COLORFGBG": "garbage"}, {"COLORFGBG": "15;99"}):
             with self.subTest(environ=environ):  # nothing reported: no band
                 app, _client = make_app()
                 app.adopt_background(None, environ)
-                self.assertEqual([app.theme.user_band.bg, app.theme.ok_band.bg, app.theme.error_band.bg], [None] * 3)
+                self.assertEqual([app.theme.ok_band.bg, app.theme.error_band.bg], [None] * 2)
         app, _client = make_app()
         app.adopt_background("#FFFFFF", {"COLORFGBG": "15;0"})  # an answer outranks the variable
         self.assertTrue(is_light(app.theme.error_band.bg))
@@ -223,23 +205,22 @@ class FromQueueTests(unittest.TestCase):
         app._on_event(ev("message.complete", text="done"))
         self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": "next one", "queued": True}))
         users = [block for block in app.transcript.blocks if isinstance(block, UserBlock)]
-        self.assertEqual([line_text(block_rows(block, 80, THEME)[0]) for block in users], ["› next one  ⧗ from queue"])
+        self.assertEqual([line_text(block_rows(block, 80, THEME)[0]) for block in users], ["> next one  ⧗ from queue"])
         typed = block_rows(UserBlock("typed"), 80, THEME)[0]
-        self.assertEqual(line_text(typed), "› typed")
+        self.assertEqual(line_text(typed), "> typed")
 
     def test_the_tag_waits_for_room(self) -> None:
         row = block_rows(UserBlock("a long prompt that fills the row", from_queue=True), 34, THEME)[0]
-        self.assertEqual(line_text(row), "› a long prompt that fills the row")
+        self.assertEqual(line_text(row), "> a long prompt that fills the row")
 
-    def test_the_tag_reads_on_the_band_it_sits_on(self) -> None:
-        # Measured against the terminal's background, muted read 3.7 to 4.0:1 on the band.
+    def test_the_tag_reads_on_the_terminals_background(self) -> None:
         for skin in SKIN_THEMES:
             for background in (*LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
                 theme = build_theme(skin, background)
                 row = block_rows(UserBlock("next", from_queue=True), 80, theme)[0]
                 (tag,) = [span for span in row if "from queue" in span.text]
                 with self.subTest(theme=skin.short_name, background=background):
-                    self.assertGreaterEqual(contrast(tag.style.fg, theme.user_band.bg), 4.5)
+                    self.assertGreaterEqual(contrast(tag.style.fg, background), 4.5)
 
 
 class SteerPlacementTests(unittest.TestCase):
@@ -267,7 +248,7 @@ class SteerPlacementTests(unittest.TestCase):
         self.assertEqual(app.transcript.blocks[1].state, STEER_QUEUED)
 
     def test_the_steer_command_is_its_own_echo_and_leaves_a_running_tool_running(self) -> None:
-        # Found live: `› /steer ...` echoed as a command closed the tool group and marked the running call `▪`.
+        # Found live: `> /steer ...` echoed as a command closed the tool group and marked the running call `▪`.
         app, client = make_app(busy=True)
         app._on_event(ev("message.start"))
         app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="sleep 6"))
@@ -459,7 +440,7 @@ class CommandPlacementTests(unittest.TestCase):
     def test_the_echo_and_its_output_wait_under_the_call_then_land_after_its_group(self) -> None:
         app, _client = self.mid_tool("/queue")
         live = lines_text(app.transcript.live_lines(80, THEME))
-        self.assertEqual(live[-2:], ["› /queue", "  ⎿  Nothing is queued."])  # under what runs, its output under it
+        self.assertEqual(live[-2:], ["> /queue", "  ⎿  Nothing is queued."])  # under what runs, its output under it
         app._on_event(ev("tool.complete", tool_id="t1", name="terminal", result={"output": "1 passed"}))
         app._on_event(ev("message.delta", text="All green."))
         kinds = [type(block).__name__ for block in app.transcript.blocks]
@@ -496,7 +477,7 @@ class CommandPlacementTests(unittest.TestCase):
         self.assertIsInstance(group, ToolGroup)
         self.assertEqual(group.tools[0].status, TOOL_RUNNING)
         self.assertEqual(lines_text(app.transcript.live_lines(140, THEME))[-2:],
-                         ["› /usage", "  ⎿  ⚠ Hermes has not answered slash.exec in 120 s; the OMH TUI stopped waiting for it."])
+                         ["> /usage", "  ⎿  ⚠ Hermes has not answered slash.exec in 120 s; the OMH TUI stopped waiting for it."])
 
     def usage_out_past_the_turn(self) -> tuple[object, object, int]:
         """`/usage` typed over a running tool, the turn ended with it still out, and the next prompt streaming."""
@@ -531,7 +512,7 @@ class CommandPlacementTests(unittest.TestCase):
         replies = [block.text for block in app.transcript.blocks if isinstance(block, AssistantBlock)]
         self.assertEqual(replies, ["done", "Second reply goes on."])
         held = lines_text(app.transcript.live_lines(100, THEME))
-        self.assertEqual(held[-2:], ["› /usage", "  ⎿  ✗ Usage is unavailable."])
+        self.assertEqual(held[-2:], ["> /usage", "  ⎿  ✗ Usage is unavailable."])
 
     def test_output_for_an_echo_already_closed_waits_under_a_running_call(self) -> None:
         app, client = make_app()
@@ -545,7 +526,7 @@ class CommandPlacementTests(unittest.TestCase):
         group = app.transcript.blocks[-1]
         self.assertIsInstance(group, ToolGroup)
         self.assertEqual(group.tools[0].status, TOOL_RUNNING)  # the repeated echo did not cut the call off
-        self.assertEqual(lines_text(app.transcript.live_lines(80, THEME))[-2:], ["› /usage", "  ⎿  Session cost: $0.01"])
+        self.assertEqual(lines_text(app.transcript.live_lines(80, THEME))[-2:], ["> /usage", "  ⎿  Session cost: $0.01"])
 
 
 class Clock:
@@ -556,22 +537,15 @@ class Clock:
         return self.now
 
 
-class TurnRuleTests(unittest.TestCase):
-    def test_a_turn_closes_with_its_facts_on_a_thin_rule_to_the_edge(self) -> None:
+class TurnDoneLineTests(unittest.TestCase):
+    def test_a_turn_closes_with_its_facts_in_one_dim_line_and_no_rule(self) -> None:
         (row,) = block_rows(TurnSummaryBlock(34, 3, 1200), 50, THEME)
-        text = line_text(row)
-        self.assertTrue(text.startswith("✻ 34s · 3 tools · ↓1.2k  ─"), text)
-        self.assertEqual(line_width(row), 50)
-        self.assertEqual(set(text.split("  ", 1)[1]), {"─"})
-        self.assertEqual(row[-1].style, THEME.rule)
+        self.assertEqual(line_text(row), "  ✻ 34s · 3 tools · ↓1.2k")
+        self.assertNotIn(THEME.rule, [span.style for span in row])
 
     def test_a_turn_without_tools_says_nothing_of_tools(self) -> None:
         (row,) = block_rows(TurnSummaryBlock(2, 0, 40), 30, THEME)
-        self.assertEqual(line_text(row).split("  ")[0], "✻ 2s · ↓40")
-
-    def test_a_narrow_terminal_keeps_the_facts_and_drops_the_rule(self) -> None:
-        (row,) = block_rows(TurnSummaryBlock(34, 3, 1200), 24, THEME)
-        self.assertEqual(line_text(row), "✻ 34s · 3 tools · ↓1.2k")
+        self.assertEqual(line_text(row), "  ✻ 2s · ↓40")
 
 
 class FinishedPlanTests(unittest.TestCase):
@@ -668,7 +642,7 @@ class SettledTailTests(unittest.TestCase):
                 plan = next(index for index, line in enumerate(screen) if "[Plan]" in line)
                 # the spacer row every block opens with, then the panel
                 self.assertEqual(screen[plan - 1], "", "\n".join(screen[plan - 4 : plan + 1]))
-                self.assertTrue(screen[plan - 2].startswith("✻ "), "\n".join(screen[plan - 4 : plan + 1]))
+                self.assertTrue(screen[plan - 2].startswith("  ✻ "), "\n".join(screen[plan - 4 : plan + 1]))
 
     def test_the_prompt_and_its_sticky_echo_are_never_on_screen_together(self) -> None:
         # A reply streams line by line under the prompt: the prompt shows until it scrolls off, the echo after.
@@ -685,7 +659,7 @@ class SettledTailTests(unittest.TestCase):
                     app._on_event(ev("message.delta", text=f"line {index}\n"))
                     app._render()
                     screen = app.terminal.screen.lines()
-                    prompt = any(line.startswith("› run the tools") for line in screen)
+                    prompt = any(line.startswith("> run the tools") for line in screen)
                     echo = any(line.startswith("↳ you: run the tools") for line in screen)
                     self.assertFalse(prompt and echo, f"line {index}: the prompt and its echo are both on screen")
                     self.assertTrue(prompt or echo, f"line {index}: the prompt scrolled off and nothing echoes it")
@@ -695,7 +669,7 @@ class SettledTailTests(unittest.TestCase):
     def assert_prompt_xor_echo(self, app: object, where: str) -> bool:
         """Exactly one of the prompt and its sticky echo is on screen; True when it is the echo."""
         screen = app.terminal.screen.lines()  # type: ignore[attr-defined]
-        prompt = any(line.startswith("› run the tools") for line in screen)
+        prompt = any(line.startswith("> run the tools") for line in screen)
         echo = any(line.startswith("↳ you: run the tools") for line in screen)
         self.assertFalse(prompt and echo, f"{where}: the prompt and its echo are both on screen\n" + "\n".join(screen))
         self.assertTrue(prompt or echo, f"{where}: the prompt scrolled off and nothing echoes it")
@@ -850,7 +824,7 @@ class NewSessionSpacerTests(unittest.TestCase):
         screen = drawn(app)
         row = next(index for index, line in enumerate(screen) if "New session stored-2." in line)
         self.assertEqual(screen[row - 1], "")
-        self.assertTrue(screen[row - 2].startswith("✻"), screen)  # the done line, one blank row above
+        self.assertTrue(screen[row - 2].startswith("  ✻"), screen)  # the done line, one blank row above
         app._full_redraw()  # a redraw starts the new session's transcript at the top: no spacer over it
         self.assertTrue(drawn(app)[0].strip())
 

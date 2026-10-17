@@ -1357,7 +1357,7 @@ class RedrawTailTests(unittest.TestCase):
             app._draw_history(messages)
         taken = [line for line in app.transcript.take_stable_lines(80, DEFAULT_THEME) if line]
         self.assertEqual(taken[0][0].text, "⋯ 37 earlier messages · /history shows all")
-        self.assertEqual([line_text(line) for line in taken[1:]], ["› question 37", "› question 38", "› question 39"])
+        self.assertEqual([line_text(line) for line in taken[1:]], ["> question 37", "> question 38", "> question 39"])
 
 
 class CallExpiryTests(unittest.TestCase):
@@ -2318,7 +2318,7 @@ class ModeReplayTests(AppTestCase):
         self.assertEqual(dispatch["params"], {"name": "plan", "arg": "fix the flaky test", "session_id": LIVE_ID})
         (submitted,) = run.calls("prompt.submit")
         self.assertEqual(submitted["params"], {"session_id": LIVE_ID, "text": PLAN_PROMPT})
-        self.assertIn("› /plan fix the flaky test", terminal.history())
+        self.assertIn("> /plan fix the flaky test", terminal.history())
         self.assertNotIn("PLAN MODE", terminal.history())
 
 

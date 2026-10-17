@@ -2962,7 +2962,7 @@ class App(ModesMixin, AgentViewMixin):
             self._run_shell(command, echo=echo)
 
     def _run_shell(self, command: str, drain_after: bool = False, echo: str = "") -> None:
-        """`shell.exec` with the command the person typed, echoed as `› !command`; its output lands under the echo.
+        """`shell.exec` with the command the person typed, echoed as `> !command`; its output lands under the echo.
 
         `echo` is the line as the composer showed it, when paste chips made it
         differ. `drain_after` sends the next queued line once Hermes answered,

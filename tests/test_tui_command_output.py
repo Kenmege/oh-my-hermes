@@ -2,7 +2,7 @@
 
 The pager opens only when the person asks for one (`/history`, `/keys`,
 `/logs`, Ctrl+O); a command's output, however long, is the transcript's: the
-echo `› /name arg`, its output under `⎿`, the first rows of a long one and a
+echo `> /name arg`, its output under `⎿`, the first rows of a long one and a
 count of the rest naming Ctrl+O, whose details view shows it in full. Driven through the
 recording client of `test_tui_modes`, answering each call by hand.
 """
@@ -38,7 +38,7 @@ class CommandEchoTests(unittest.TestCase):
         answer(app, client, {"output": "Session cost: $0.01"})
         self.assertEqual((block.parts, block.done), ([("Session cost: $0.01", NOTICE_INFO)], True))
         screen = drawn(app)
-        self.assertIn("› /usage", screen)
+        self.assertIn("> /usage", screen)
         self.assertIn("  ⎿  Session cost: $0.01", screen)
 
     def test_long_output_stays_in_the_transcript_and_no_pager_opens(self) -> None:

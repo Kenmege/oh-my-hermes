@@ -103,7 +103,7 @@ class DoneLineTests(unittest.TestCase):
         self.assertIsInstance(block, TurnSummaryBlock)
         drawn(app)
         screen = app.terminal.screen.history() + app.terminal.screen.lines()  # type: ignore[attr-defined]
-        self.assertTrue(any(line.startswith("✻ 34s · 3 tools · ↓1.2k") for line in screen), screen)
+        self.assertIn("  ✻ 34s · 3 tools · ↓1.2k", screen)
 
     def test_one_tool_and_no_tokens_read_as_such(self) -> None:
         clock = Clock()
@@ -114,7 +114,7 @@ class DoneLineTests(unittest.TestCase):
         from omh.tui.transcript import block_rows
         from omh.tui.theme import DEFAULT_THEME
 
-        self.assertEqual(line_text(block_rows(block, 60, DEFAULT_THEME)[0]).split("  ")[0], "✻ 2s · 1 tool")
+        self.assertEqual(line_text(block_rows(block, 60, DEFAULT_THEME)[0]), "  ✻ 2s · 1 tool")
 
 
 class AlertTests(unittest.TestCase):

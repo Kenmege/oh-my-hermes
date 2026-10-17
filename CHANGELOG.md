@@ -21,6 +21,11 @@ All notable changes will be documented here.
   under it, one a turn, on a terminal 16 rows tall or more
   (`⎿  Tip: ctrl+o shows the whole transcript`); it is local text and nothing
   is sent. `interrupting…` lines up under the same glyph column.
+- **Your prompt and a turn's end read as in Claude Code.** A prompt in the
+  OMH TUI transcript is a dim `>` and dim text, with no tinted band behind
+  it, and a command's echo takes the same `>` (`> /model`). A turn's done
+  line is one dim line under the reply, `✻ 5s · 3 tools · ↓1.3k`, without
+  the rule that ran to the right edge.
 - **A plural possessive no longer hides the rest of a message from routing.**
   The routing masker read the `'` of "the customers' export" as an opening
   quote. Nothing closed it, so everything after it was masked and no matcher

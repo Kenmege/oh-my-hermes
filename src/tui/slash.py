@@ -49,7 +49,7 @@ class SlashCommand:
     summary: str
     aliases: tuple[str, ...] = ()
     target: str = ""  # RENAMED: the Hermes command it runs
-    # Whether the transcript echoes it as `› /name arg`. A command whose own row says what it did (the steer, or
+    # Whether the transcript echoes it as `> /name arg`. A command whose own row says what it did (the steer, or
     # the prompt it sends) is not echoed: the echo would say it twice.
     echo: bool = True
     # Whether it is echoed when typed bare. A bare command that only opens a picker or a pager, or only repaints,

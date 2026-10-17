@@ -19,11 +19,11 @@ by `live_lines()` equal `history_lines(details=False)` at the same width
 Only the LAST block can still change; appending any block first closes the
 one before it, so a block is flushed only after every block above it.
 
-Assistant text opens with `⏺ ` in the accent on its first row, and every
+Assistant text opens with `⏺ ` in the text colour on its first row, and every
 later row of that reply, however many flushes it arrives in, is indented to
-match, so a reply reads as one block beside the `› ` of the prompt above it.
+match, so a reply reads as one block beside the dim `> ` of the prompt above it.
 
-A slash command the person runs is a block of its own: `› /name arg` in the
+A slash command the person runs is a block of its own: `> /name arg` in the
 hint colour, then what it printed under `⎿`, each part in its level's colour
 and, for a warning or an error, its glyph. Its echo stays live while the
 command may still print (`close_command` ends that); what it says meanwhile
@@ -118,7 +118,7 @@ DROPPED_NOTICE = "⋯ {earlier} no longer held"
 # longer has them.
 BLOCK_CAP = 2000
 
-USER_MARK = "› "
+USER_MARK = "> "  # dim, before your prompt's dim text, with no band behind it
 FROM_QUEUE_TAG = "⧗ from queue"  # on a prompt the queue sent once the turn before it ended
 # A steer the person sent: SENT until Hermes answers, then QUEUED (Hermes took it: it reads it after its next
 # tool call, or sends it as the next prompt while compressing, and says the same for both) or REFUSED.
@@ -127,7 +127,7 @@ STEER_SENT = "sent"
 STEER_QUEUED = "queued"
 STEER_REFUSED = "refused"
 STEER_REFUSED_MARK = "⧗ "
-COMMAND_MARK = "› "  # a command the person ran, echoed in the hint colour above what it printed
+COMMAND_MARK = USER_MARK  # a command the person ran, echoed in the hint colour above what it printed
 # What a call or a command printed hangs under its row behind `  ⎿  `, and its later rows line up with the words.
 OUTPUT_MARK = "⎿  "
 OUTPUT_INDENT = "  "
@@ -538,15 +538,14 @@ def _text_rows(
 
 
 def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
-    """Your prompt behind `›` on its band, which every row fills to the right edge; `⧗ from queue` when the queue sent it."""
-    rows = _text_rows(block.text, theme.text, (Span(USER_MARK, theme.user),), (Span(" " * len(USER_MARK)),), width)
+    """Your prompt behind a dim `>`, in the muted colour on no band, as Claude Code shows it; `⧗ from queue` when the
+    queue sent it."""
+    rows = _text_rows(block.text, theme.muted, (Span(USER_MARK, theme.dim),), (Span(" " * len(USER_MARK)),), width)
     if block.from_queue and rows:
-        roles = on_band(theme, theme.user_band) if theme.user_band.bg is not None else theme
-        tag: Line = (Span(COLUMN_GAP + FROM_QUEUE_TAG, roles.muted),)  # read against the band it sits on
+        tag: Line = (Span(COLUMN_GAP + FROM_QUEUE_TAG, theme.muted),)
         if line_width(rows[0]) + line_width(tag) <= width:
             rows[0] = (*rows[0], *tag)
-    band = theme.user_band
-    return [(*(Span(span.text, replace(span.style, bg=band.bg)) for span in row), fill(band)) for row in rows]
+    return rows
 
 
 def _awaits_answer(block: Block) -> bool:
@@ -601,13 +600,12 @@ def _notice_rows(block: NoticeBlock, width: int, theme: Theme) -> list[Line]:
 
 
 TURN_DONE_MARK = "✻ "
-TURN_RULE = "─"
 # After a turn's wall-clock time, the part of it a question waited on the person, when that is a second or more.
 TURN_WAITED = " ({elapsed} waiting on you)"
 
 
 def _summary_rows(block: TurnSummaryBlock, width: int, theme: Theme) -> list[Line]:
-    """`✻ 34s · 3 tools · ↓1.2k  ────`: the turn's facts on the thin rule that closes it (no tool count for none).
+    """`  ✻ 34s · 3 tools · ↓1.2k`: the turn's facts in one dim line under the reply's words (no tool count for none).
 
     The time is the turn's wall clock, with the wait on the person beside it
     (`✻ 30s (27s waiting on you)`) when that is a second or more.
@@ -619,9 +617,8 @@ def _summary_rows(block: TurnSummaryBlock, width: int, theme: Theme) -> list[Lin
         facts.append(f"{block.tools} tool{'' if block.tools == 1 else 's'}")
     if block.output_tokens:
         facts.append(f"↓{compact_count(block.output_tokens)}")
-    done: Line = (Span(TURN_DONE_MARK, theme.dim), Span(" · ".join(facts), theme.muted))
-    rule = width - line_width(done) - len(COLUMN_GAP)
-    return [truncate_line((*done, Span(COLUMN_GAP + TURN_RULE * rule, theme.rule)) if rule > 0 else done, width)]
+    done: Line = (Span(ASSISTANT_INDENT), Span(TURN_DONE_MARK, theme.dim), Span(" · ".join(facts), theme.muted))
+    return [truncate_line(done, width)]
 
 
 _OUTPUT_GLYPHS = {NOTICE_WARN: "⚠ ", NOTICE_ERROR: "✗ "}
@@ -633,7 +630,7 @@ def _output_leads(theme: Theme) -> tuple[Line, Line]:
 
 
 def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool) -> list[Line]:
-    """`› /name arg`, then each part of its output under `⎿` in its level's colour (and glyph), cut unless `expanded`."""
+    """`> /name arg`, then each part of its output under `⎿` in its level's colour (and glyph), cut unless `expanded`."""
     rows = wrap_prefixed((Span(block.command, theme.hint),), (Span(COMMAND_MARK, theme.dim),), (Span("  "),), width)
     rest = _output_leads(theme)[1]
     output: list[Line] = []

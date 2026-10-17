@@ -437,7 +437,7 @@ class WaitingTimeTests(unittest.TestCase):
         app._on_event(Event("message.complete", SID, {"text": "done"}))
         (summary,) = [block for block in app.transcript.blocks if isinstance(block, TurnSummaryBlock)]
         self.assertEqual((summary.seconds, summary.waited), (40.0, 27.0))
-        self.assertTrue([row for row in drawn(app) if row.startswith("✻ 40s (27s waiting on you)")])
+        self.assertTrue([row for row in drawn(app) if row.startswith("  ✻ 40s (27s waiting on you)")])
 
     def test_the_next_turn_starts_with_no_wait_whoever_started_it(self) -> None:
         for start in ("prompt", "message.start"):
@@ -462,7 +462,7 @@ class WaitingTimeTests(unittest.TestCase):
         app, _client, now = self.clocked()
         now[0] = 130.0
         app._on_event(Event("message.complete", SID, {"text": "done"}))
-        self.assertTrue([row for row in drawn(app) if row.startswith("✻ 40s ") and "waiting" not in row])
+        self.assertTrue([row for row in drawn(app) if row.startswith("  ✻ 40s") and "waiting" not in row])
 
 
 class QuestionAttentionTests(unittest.TestCase):

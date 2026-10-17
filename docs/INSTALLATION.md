@@ -597,8 +597,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   a queued `!` line, which is never joined to a prompt, and what follows it
   stay queued (`held · ↑ edit`) until you send your next
   prompt or take them back with Up, and so does the whole queue if you typed
-  something while the turn was stopping. Each turn ends with a line
-  `✻ 34s · 3 tools · ↓1.2k` on a thin rule. While a question Hermes asked
+  something while the turn was stopping. Each turn ends with a dim line,
+  `✻ 34s · 3 tools · ↓1.2k`, under the reply's words. While a question Hermes asked
   waits on you, the working row reads `? waiting on you (11s)` instead, its
   one clock counting that wait (the status bar's OMH count of running tool
   calls, `• 1 tool · 9s`, drops its seconds meanwhile and leaves once the
@@ -628,19 +628,17 @@ run and approval decision stays Hermes'; the screen is OMH's.
     pulse.
   - The working row's glyph turns (`· ✢ ✳ ✶ ✻ ✽`) and a highlight sweeps
     across its verb, beside the elapsed time and the tokens written.
-  - Your prompt sits on a tinted band behind `›` that reaches the right edge
-    (painted by the terminal's erase, so a copy picks up no trailing
-    spaces), when the terminal reported its background; a prompt the queue
-    sent says `⧗ from queue`.
+  - Your prompt reads as in Claude Code, a dim `>` and dim text with no
+    band behind it; a prompt the queue sent says `⧗ from queue`. A command
+    you run is echoed the same way (`> /model`).
   - A steer shows as `↪ steer · <text>` under what is running until Hermes
     answers, then becomes `↪ steer queued by Hermes · <text>`, or the amber
     refusal, at the next boundary in the transcript (see below).
-  - Each turn closes with its done line on a thin rule to the right edge
-    (`✻ 34s · 3 tools · ↓1.2k  ────`), so the start of the next one is easy
-    to find when you scroll back.
-  - Green and red mark outcomes as full-row bands, built like your prompt's
-    (each row's background is erased to the right edge, so a copy carries
-    no trailing spaces). The answer you gave an approval is written above
+  - Each turn closes with its done line, dim and with no rule after it
+    (`✻ 34s · 3 tools · ↓1.2k`), so the start of the next one is easy to
+    find when you scroll back.
+  - Green and red mark outcomes as full-row bands (each row's background is
+    erased to the right edge, so a copy carries no trailing spaces). The answer you gave an approval is written above
     the call it was about: allowed (`✓ allowed once · <command>`) on a light
     green band, denied (`✗ denied · <command>`) on a light red one. So is
     the answer you gave any other question: the label you picked or what you
@@ -680,7 +678,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   one, its rules turn `╌` in the accent and the mode row says
   `! shell (not sent to the model)`. Sending it runs it through Hermes'
   `shell.exec` (Hermes' own limit of 30 s, its refusal of dangerous commands,
-  and its redaction of what the command printed) and shows `› !command`
+  and its redaction of what the command printed) and shows `> !command`
   with what it printed (its stdout, then its stderr, in the same colour) and
   its exit code when that is not 0 (`exit 0` when it printed nothing; a
   failure's lines are red on the red band with that exit line), or
@@ -837,7 +835,7 @@ says so; for an agent's steer it names the agent and the session you left. The O
 steers only with text you typed and sent this way: a queued prompt is never
 turned into a steer.
 
-A slash command you run is echoed in the transcript as `› /name arg` (but
+A slash command you run is echoed in the transcript as `> /name arg` (but
 `/steer`, whose own row is its echo, and a bare `/sessions`, `/rewind`,
 `/model`, `/keys`, `/history`, `/logs` or `/redraw`, which only open a picker
 or a pager, or repaint, and print nothing to attribute), and what it prints stays there, under it after `⎿`, in the terminal's scrollback
