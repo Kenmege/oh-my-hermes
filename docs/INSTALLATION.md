@@ -568,15 +568,22 @@ run and approval decision stays Hermes'; the screen is OMH's.
   terminal's own notification: OSC 9 in iTerm2, WezTerm and Ghostty, OSC 777
   in foot and rxvt, the bell elsewhere (tmux among them, which flags the
   window); `OMH_TUI_BELL=0` keeps all of it quiet.
-- Each tool call is a row of its own: its mark, its name and what it ran on
-  (a path, a command, a query), with no header over a turn's calls. Under its
-  name (`⎿`) it shows the first three lines of what the tool printed and
-  counts the rest (`… +5 lines · ctrl+o shows all`); a failed call (`✗`)
-  shows its error's first line in the error colour, or, when it failed by its
-  exit code alone (a test run, say), the last three lines it printed, under
-  the count of the lines above them. A long diff counts its rest the same
-  way. Ctrl+O opens the whole transcript with every detail (thinking, tool
-  output, whole diffs) in the pager, at its end.
+- Each tool call is a row of its own, as in Claude Code: a `⏺` in its
+  state's colour, its name, and what it ran on (a path, a command, a query)
+  in parentheses, cut with `…` where the row is too narrow
+  (`⏺ terminal(rm -rf ./tmp-cache)  1.9s`), with no header over a turn's
+  calls. Under it (`  ⎿  `) it shows the first three lines of what the tool
+  printed and counts the rest (`… +5 lines · ctrl+o shows all`). A read or a
+  load says in one line what it read instead: `Read 715 lines` for
+  `read_file`, `loaded skill omh-docs` for `skill_view` (`loaded
+  references/api.md from skill omh-docs` for a file in it), `12 matches` for
+  `search_files` (`3 files` when it listed files, `50+ matches` when Hermes
+  stopped counting). A failed call (a red `⏺`) shows its error's first line
+  in the error colour, or, when it failed by its exit code alone (a test
+  run, say), the last three lines it printed, under the count of the lines
+  above them. An edit's diff hangs under the same `⎿`, and a long diff counts
+  its rest the same way. Ctrl+O opens the whole transcript with every detail
+  (thinking, tool output, whole diffs) in the pager, at its end.
 - While a turn runs, the working row reads
   `⠋ <what Hermes is doing> (12s · ↓1.2k tokens · esc to interrupt)`, the
   tokens being what the turn has written so far. Once you interrupt it (Esc
@@ -602,14 +609,15 @@ run and approval decision stays Hermes'; the screen is OMH's.
   title stack.
 - Motion and colour follow one rule set, so scrollback reads at a glance:
   - What Hermes said opens with `⏺` in the text colour; each call it made
-    opens its own row with its state mark (below) in that state's colour and
-    its name in the tool colour.
-  - A tool call's mark says its state by glyph as well as colour: `⏺`
-    running, pulsing between the accent and dim every 0.5 s from its own
-    start (parallel calls pulse on their own), `✓` done in green, `✗` failed
-    or denied in red, with the error's first line, or the denial's words
-    (`denied` when the result gives none), under it in red, `▪` cut off,
-    `◌` still being written (a call Hermes never starts, such as a streamed
+    opens its own row with a `⏺` in its state's colour (below) and its name
+    in the tool colour.
+  - A tool call's `⏺` says its state by colour, as in Claude Code: the
+    accent while it runs, pulsing between the accent and dim every 0.5 s
+    from its own start (parallel calls pulse on their own), green once done,
+    red when it failed or was denied, with the error's first line, or the
+    denial's words (`denied` when the result gives none), under it in red.
+    `▪` marks a call that was cut off and
+    `◌` one still being written (a call Hermes never starts, such as a streamed
     attempt it discards and retries, leaves no row and is not counted in the
     turn's done line). Only the live region at the bottom
     moves; what reaches scrollback is the settled mark, never a frame of a
@@ -639,20 +647,21 @@ run and approval decision stays Hermes'; the screen is OMH's.
     sent empty (a multi-select answer with no item left too), or Hermes
     withdrew says so in red (`✗ cancelled · <question>`,
     `✗ skipped`, `✗ timed out`, `✗ interrupted`, or `✗ withdrawn (<Hermes'
-    reason>)`), and the `clarify` call it was about is a red `✗` too, with
+    reason>)`), and the `clarify` call it was about has a red `⏺` too, with
     `cancelled`, `timed out` or `not delivered` under it. A failed
     or denied tool row with the lines under it, an error notice, and a
     command's error line (for a failed `!` command, with what it printed
-    above it) are on the light red band too. A denial shows one
-    mark, the red `✗`. Warnings stay amber, with no band. The bands follow
+    above it) are on the light red band too. A denied call's row shows one
+    mark, a failure's red `⏺`. Warnings stay amber, with no band. The bands follow
     the theme and the background: light tints on a light terminal, dark
     ones on a dark terminal, with words on them at 4.5:1 and marks at 3:1
     against the band; with no background reported (by the terminal or its
     `COLORFGBG`) and none named with `/theme light` or `/theme dark`, no band
     is painted. Only
-    settled rows carry bands, never one that moves, and every state still
-    reads apart without colour, by its glyph or its words. Diff lines keep
-    their own bands.
+    settled rows carry bands, never one that moves. Every notice still
+    reads apart without colour, by its glyph or its words; a tool call's
+    state is its mark's colour, as in Claude Code, with a failure's or a
+    denial's line under it. Diff lines keep their own bands.
   - `OMH_TUI_REDUCED_MOTION=1`, or `NO_COLOR`, stops the motion: no pulse
     and no sweep, every spinner holds its first frame, and while a turn runs
     the screen repaints once a second for the elapsed time instead of ten

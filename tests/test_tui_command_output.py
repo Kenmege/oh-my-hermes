@@ -39,7 +39,7 @@ class CommandEchoTests(unittest.TestCase):
         self.assertEqual((block.parts, block.done), ([("Session cost: $0.01", NOTICE_INFO)], True))
         screen = drawn(app)
         self.assertIn("› /usage", screen)
-        self.assertIn("  ⎿ Session cost: $0.01", screen)
+        self.assertIn("  ⎿  Session cost: $0.01", screen)
 
     def test_long_output_stays_in_the_transcript_and_no_pager_opens(self) -> None:
         app, client = make_app(rows=24, cols=80)
@@ -49,9 +49,9 @@ class CommandEchoTests(unittest.TestCase):
         self.assertIsNone(app.pager)
         self.assertEqual(last(app).parts, [(long, NOTICE_INFO)])  # all of it held, for /history
         screen = drawn(app)
-        self.assertIn(f"    context row {OUTPUT_PREVIEW_ROWS - 1}", screen)
-        self.assertNotIn(f"    context row {OUTPUT_PREVIEW_ROWS}", screen)
-        self.assertIn(f"    … +{40 - OUTPUT_PREVIEW_ROWS} rows · ctrl+o shows all", screen)
+        self.assertIn(f"     context row {OUTPUT_PREVIEW_ROWS - 1}", screen)
+        self.assertNotIn(f"     context row {OUTPUT_PREVIEW_ROWS}", screen)
+        self.assertIn(f"     … +{40 - OUTPUT_PREVIEW_ROWS} rows · ctrl+o shows all", screen)
 
     def test_a_command_dispatch_owns_answers_under_the_same_echo_and_closes_it_only_then(self) -> None:
         app, client = make_app()

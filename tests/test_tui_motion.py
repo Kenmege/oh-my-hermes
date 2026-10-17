@@ -1,7 +1,7 @@
 """Motion in the OMH TUI: the marks that tell said from done, the running tool's pulse, the working row's sweep.
 
-A reply opens with `⏺` in the text colour and a group of tool calls in the
-tool colour. A running tool's `⏺` alternates the accent and dim every
+A reply opens with `⏺` in the text colour, and each tool call with a `⏺` in
+its state's colour, its name in the tool colour. A running tool's `⏺` alternates the accent and dim every
 `PULSE_SECONDS` from its own start, only in the live region: scrollback
 gets the settled mark. The working row's verb carries a highlight that
 sweeps across it. `OMH_TUI_REDUCED_MOTION=1` (or `NO_COLOR`) stops all of
@@ -52,8 +52,8 @@ def ev(kind: str, **payload: object) -> Event:
 
 
 def mark(line: tuple) -> object:
-    """The span of a tool row's mark (after its indent)."""
-    return line[1]
+    """The span of a tool row's mark (its first)."""
+    return line[0]
 
 
 class SaidAndDoneTests(unittest.TestCase):
@@ -62,20 +62,21 @@ class SaidAndDoneTests(unittest.TestCase):
         self.assertEqual((reply[0].text, reply[0].style), ("⏺ ", THEME.text))
         group = ToolGroup([ToolRow("a", "read_file", status=TOOL_OK), ToolRow("b", "terminal", status=TOOL_OK)], done=True)
         rows = block_rows(group, 40, THEME)
-        self.assertEqual([(row[3].text, row[3].style) for row in rows], [("read_file", THEME.tool), ("terminal", THEME.tool)])
+        self.assertEqual([(row[2].text, row[2].style) for row in rows], [("read_file", THEME.tool), ("terminal", THEME.tool)])
         self.assertNotEqual(THEME.text, THEME.tool)
 
-    def test_every_tool_state_is_told_apart_without_colour(self) -> None:
-        glyphs, lines = {}, {}
+    def test_every_tool_state_is_told_apart_by_its_marks_glyph_or_colour(self) -> None:
+        marks, lines = {}, {}
         for status in (TOOL_RUNNING, TOOL_OK, TOOL_ERROR, TOOL_DENIED, TOOL_INTERRUPTED, TOOL_GENERATING):
             rows = block_rows(ToolGroup([ToolRow("a", "terminal", status=status)], done=True), 40, THEME)
-            glyphs[status], lines[status] = mark(rows[0]).text, line_text(rows[-1])
-        self.assertEqual(glyphs[TOOL_RUNNING], "⏺")
-        # A denial shows one mark, the red cross of a failure (owner decision 6), and says so on its line.
-        self.assertEqual(glyphs[TOOL_DENIED], glyphs[TOOL_ERROR])
-        self.assertTrue(lines[TOOL_DENIED].endswith("⎿ denied"), lines[TOOL_DENIED])
-        del glyphs[TOOL_DENIED]
-        self.assertEqual(len(set(glyphs.values())), len(glyphs), glyphs)
+            marks[status], lines[status] = mark(rows[0]), line_text(rows[-1])
+        # Claude Code's one glyph for every call that started, in its state's colour.
+        self.assertEqual({marks[status].text for status in (TOOL_RUNNING, TOOL_OK, TOOL_ERROR, TOOL_DENIED)}, {"⏺"})
+        # A denial shows the failure's red mark, and says so on its line.
+        self.assertEqual(marks[TOOL_DENIED], marks[TOOL_ERROR])
+        self.assertTrue(lines[TOOL_DENIED].endswith("⎿  denied"), lines[TOOL_DENIED])
+        del marks[TOOL_DENIED]
+        self.assertEqual(len(set(marks.values())), len(marks), marks)
 
 
 class PulseTests(unittest.TestCase):
@@ -137,11 +138,21 @@ class PulseTests(unittest.TestCase):
         app._on_event(ev("tool.complete", tool_id="t1", name="terminal", result={"output": "a.py"}))
         app._on_event(ev("tool.complete", tool_id="t2", name="read_file", result={"error": "missing"}))
         app._on_event(ev("message.complete", text="done", status="complete"))
-        app._render()
+        flushed: list = []
+        take = app.transcript.take_stable_lines
+
+        def recorded(*args: object) -> list:
+            lines = take(*args)
+            flushed.extend(lines)
+            return lines
+
+        with mock.patch.object(app.transcript, "take_stable_lines", recorded):
+            app._render()
         history = app.terminal.screen.history() + app.terminal.screen.lines()  # type: ignore[attr-defined]
-        self.assertTrue(any(line.startswith("  ✓ terminal") for line in history), history)
-        self.assertTrue(any(line.startswith("  ✗ read_file") for line in history), history)
-        self.assertFalse([line for line in history if line.startswith("  ⏺ ")], history)
+        self.assertTrue(any(line.startswith("⏺ terminal") for line in history), history)
+        self.assertTrue(any(line.startswith("⏺ read_file") for line in history), history)
+        calls = [row for row in flushed if row and row[0].text == "⏺" and len(row) > 2 and row[2].text in ("terminal", "read_file")]
+        self.assertEqual([mark(row).style for row in calls], [THEME.ok, THEME.error])  # settled, never a frame of a pulse
 
     def test_a_take_in_the_middle_of_a_pulse_writes_no_frame_of_it(self) -> None:
         # A boundary while the call's mark is in its dim half: the group leaves the live region right then.

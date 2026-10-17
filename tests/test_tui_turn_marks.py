@@ -197,13 +197,16 @@ class OutcomeBandTests(unittest.TestCase):
                 with self.subTest(theme=skin.short_name):
                     self.assertEqual({span.style.bg for row in rows for span in row}, {None})
 
-    def test_a_denial_shows_one_mark_the_red_cross(self) -> None:
+    def test_a_denial_shows_one_mark_the_failures_red_one(self) -> None:
         theme = build_theme(SKIN_THEMES[0], "#FFFFFF")
-        rows = [line_text(row) for _role, rows in self.outcomes(theme) for row in rows]
+        styled = [row for _role, rows in self.outcomes(theme) for row in rows]
+        rows = [line_text(row) for row in styled]
         self.assertFalse([row for row in rows if "⊘" in row], rows)
-        denied = [row for row in rows if "rm -rf ./build" in row and "terminal" in row]
-        self.assertEqual([row.split()[0] for row in denied], ["✗"])
-        self.assertIn("    ⎿ " + self.DENIAL, rows)  # told apart from a failure by its words, not only its colour
+        denied = [row for row in styled if "terminal(rm -rf ./build)" in line_text(row)]
+        failed = [row for row in styled if "terminal(pytest -q)" in line_text(row)]
+        self.assertEqual([row[0] for row in denied], [row[0] for row in failed])
+        self.assertEqual([row[0].text for row in denied], ["⏺"])
+        self.assertIn("  ⎿  " + self.DENIAL, rows)  # told apart from a failure by its words, not only its colour
 
     def test_warnings_and_running_rows_carry_no_band(self) -> None:
         theme = build_theme(SKIN_THEMES[0], "#FFFFFF")
@@ -456,7 +459,7 @@ class CommandPlacementTests(unittest.TestCase):
     def test_the_echo_and_its_output_wait_under_the_call_then_land_after_its_group(self) -> None:
         app, _client = self.mid_tool("/queue")
         live = lines_text(app.transcript.live_lines(80, THEME))
-        self.assertEqual(live[-2:], ["› /queue", "  ⎿ Nothing is queued."])  # under what runs, its output under it
+        self.assertEqual(live[-2:], ["› /queue", "  ⎿  Nothing is queued."])  # under what runs, its output under it
         app._on_event(ev("tool.complete", tool_id="t1", name="terminal", result={"output": "1 passed"}))
         app._on_event(ev("message.delta", text="All green."))
         kinds = [type(block).__name__ for block in app.transcript.blocks]
@@ -493,7 +496,7 @@ class CommandPlacementTests(unittest.TestCase):
         self.assertIsInstance(group, ToolGroup)
         self.assertEqual(group.tools[0].status, TOOL_RUNNING)
         self.assertEqual(lines_text(app.transcript.live_lines(140, THEME))[-2:],
-                         ["› /usage", "  ⎿ ⚠ Hermes has not answered slash.exec in 120 s; the OMH TUI stopped waiting for it."])
+                         ["› /usage", "  ⎿  ⚠ Hermes has not answered slash.exec in 120 s; the OMH TUI stopped waiting for it."])
 
     def usage_out_past_the_turn(self) -> tuple[object, object, int]:
         """`/usage` typed over a running tool, the turn ended with it still out, and the next prompt streaming."""
@@ -528,7 +531,7 @@ class CommandPlacementTests(unittest.TestCase):
         replies = [block.text for block in app.transcript.blocks if isinstance(block, AssistantBlock)]
         self.assertEqual(replies, ["done", "Second reply goes on."])
         held = lines_text(app.transcript.live_lines(100, THEME))
-        self.assertEqual(held[-2:], ["› /usage", "  ⎿ ✗ Usage is unavailable."])
+        self.assertEqual(held[-2:], ["› /usage", "  ⎿  ✗ Usage is unavailable."])
 
     def test_output_for_an_echo_already_closed_waits_under_a_running_call(self) -> None:
         app, client = make_app()
@@ -542,7 +545,7 @@ class CommandPlacementTests(unittest.TestCase):
         group = app.transcript.blocks[-1]
         self.assertIsInstance(group, ToolGroup)
         self.assertEqual(group.tools[0].status, TOOL_RUNNING)  # the repeated echo did not cut the call off
-        self.assertEqual(lines_text(app.transcript.live_lines(80, THEME))[-2:], ["› /usage", "  ⎿ Session cost: $0.01"])
+        self.assertEqual(lines_text(app.transcript.live_lines(80, THEME))[-2:], ["› /usage", "  ⎿  Session cost: $0.01"])
 
 
 class Clock:

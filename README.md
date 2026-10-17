@@ -336,7 +336,9 @@ slash command's output in the transcript, runs a `!` line in Hermes' shell
 (never sent to the model), shares your input history with `hermes --tui`
 (Ctrl+R searches it), rewinds to an earlier prompt (Esc Esc or `/rewind`),
 lets you interrupt (`x`) or steer (`s`) one subagent from the agent list,
-lists an approval's or a question's choices where the prompt was, and marks
+lists an approval's or a question's choices where the prompt was, shows
+each tool call as one Claude Code style `⏺ name(args)` row with what it
+printed under `⎿` (a read as one line, `Read 715 lines`), and marks
 outcomes on green and red bands (the light colours and the bands
 need a terminal that reports its background, a `COLORFGBG` that names it,
 or `/theme light|dark`). Bare

@@ -42,7 +42,7 @@ DIFF_REMOVED = "removed"
 DIFF_CONTEXT = "context"
 DIFF_NOTE = "note"  # the omitted-lines summary, "\ No newline at end of file", anything else
 
-DIFF_INDENT = 4  # the diff hangs under the tool row's name, where a result summary sits
+DIFF_INDENT = 5  # the diff hangs under the tool row's result column, where `  ⎿  ` puts a result's words
 PREVIEW_LINES = 24  # diff lines shown in the live and flushed view; /history shows them all
 
 FILE_ARROW = " → "  # `_render_inline_unified_diff` joins the two file names with it
@@ -205,10 +205,14 @@ def _hidden_note(hidden: int) -> str:
     return f"… +{hidden} {noun} · ctrl+o shows all"
 
 
-def diff_rows(lines: Sequence[DiffLine], width: int, theme: Theme, full: bool = False) -> list[Line]:
+def diff_rows(
+    lines: Sequence[DiffLine], width: int, theme: Theme, full: bool = False, lead: Line = ()
+) -> list[Line]:
     """The rows for a parsed diff at `width`: the first `PREVIEW_LINES` lines and a count of the rest, or all.
 
     Hunk headers count toward the preview, but not toward the hidden count, which names rows.
+    `lead` (`DIFF_INDENT` cells: the tool row's result mark) takes the place of
+    the first row's indent when that row has one.
     """
     width = max(1, width)
     numbered = _numbered(lines)
@@ -226,4 +230,7 @@ def diff_rows(lines: Sequence[DiffLine], width: int, theme: Theme, full: bool = 
     hidden = sum(1 for line, _number in numbered[len(shown) :] if line.kind != DIFF_HUNK)
     if hidden:
         rows.extend(_note_rows(_hidden_note(hidden), theme.muted, width))
+    indent = _indent(width)
+    if lead and indent and rows and rows[0][: len(indent)] == indent:
+        rows[0] = (*lead, *rows[0][len(indent) :])
     return rows

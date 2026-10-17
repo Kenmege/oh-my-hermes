@@ -4,6 +4,14 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **OMH TUI tool calls read as in Claude Code.** Each call is one row,
+  `⏺ read_file(README.md)  0.2s`: a `⏺` in the accent while it runs, green
+  once done, red when it failed or was denied, in place of the `✓` and `✗`
+  marks, then the tool's name and what it ran on in parentheses. What it
+  printed, and an edit's diff, hang under `  ⎿  `, as a command's output
+  does. A read or a load no longer echoes the first lines it read: it says
+  `Read 715 lines` (`read_file`), `loaded skill omh-docs` (`skill_view`) or
+  `12 matches` (`search_files`).
 - **A plural possessive no longer hides the rest of a message from routing.**
   The routing masker read the `'` of "the customers' export" as an opening
   quote. Nothing closed it, so everything after it was masked and no matcher
