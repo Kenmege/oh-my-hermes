@@ -22,7 +22,7 @@ from test_tui_theme import DARK_BACKGROUNDS, LIGHT_BACKGROUNDS, contrast
 from omh.skin_pack import SKIN_THEMES
 from omh.tui.app import SLOT_ARM_SECONDS
 from omh.tui.gateway import Event, Response, ServerRequest
-from omh.tui.keys import CHAR, ENTER, RIGHT, Key
+from omh.tui.keys import CHAR, ENTER, ESCAPE, RIGHT, Key
 from omh.tui.panels import HudSnapshot
 from omh.tui.screen import ERASE_TO_LINE_END, paint_line
 from omh.tui.style import SGR_RESET, Span, Style, fill
@@ -871,6 +871,35 @@ class ApprovalOutcomeTests(unittest.TestCase):
         app._on_withdrawn({"id": "srq-2", "reason": "timeout"})
         (group,) = app.transcript.blocks
         self.assertEqual([tool.answers for tool in group.tools], [[("timed out · Which colour?", NOTICE_ERROR)], []])
+
+    def test_a_clarify_that_closed_unanswered_says_so_once_under_its_call(self) -> None:
+        # Hermes withdraws the request (`timeout`) or the person cancels it, then the clarify returns its `outcome`:
+        # the answer row already says how the wait ended. A notice of Hermes' says why, and stays.
+        cases = (
+            ("timeout", "timed_out", "", ["  ⎿  ✗ timed out · Which colour?"]),
+            ("timeout", "timed_out", "No answer within 300 s.",
+             ["  ⎿  ✗ timed out · Which colour?", "  ⎿  No answer within 300 s."]),
+            ("", "cancelled", "", ["  ⎿  ✗ cancelled · Which colour?"]),
+        )
+        for reason, outcome, notice, under in cases:
+            with self.subTest(outcome=outcome, notice=notice):
+                clock = Clock()
+                app, _client = make_app(busy=True, clock=clock)
+                app._on_event(ev("message.start"))
+                app._on_event(ev("tool.start", tool_id="t1", name="clarify", context="Which colour?"))
+                question = {"questions": [{"qid": "q0", "question": "Which colour?", "choices": ["red", "blue"]}]}
+                app._on_server_request(ServerRequest("srq-2", "clarify", question))
+                if reason:
+                    app._on_withdrawn({"id": "srq-2", "reason": reason})
+                else:
+                    clock.now += SLOT_ARM_SECONDS + 0.1
+                    app._on_input(Key(ESCAPE))
+                result = {"responses": [], "outcome": outcome, **({"notice": notice} if notice else {})}
+                app._on_event(ev("tool.complete", tool_id="t1", name="clarify", result=result))
+                (group,) = app.transcript.blocks
+                rows = lines_text(block_rows(group, 80, THEME))
+                self.assertTrue(rows[0].startswith("⏺ clarify(Which colour?)"), rows)
+                self.assertEqual(rows[1:], under)
 
     def test_over_a_streaming_reply_the_answer_waits_for_the_boundary(self) -> None:
         clock = Clock()

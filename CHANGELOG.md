@@ -22,7 +22,10 @@ All notable changes will be documented here.
   the first row under the call that asked, `⎿  ✓ allowed once · <command>`,
   on the same green or red band; a denial reads `⏺ terminal(…)`, then
   `⎿  ✗ denied · …`, then Hermes' denial line. With no call running (a
-  subagent's question after its turn), it is still a row of its own.
+  subagent's question after its turn), it is still a row of its own. A
+  clarify question Hermes timed out, or one you cancelled, says so once under
+  its call (`⎿  ✗ timed out · Which colour?`), not again in a bare
+  `⎿  timed out` row under that.
 - **An OMH TUI diff no longer doubles each changed line.** Hermes pads every
   added and removed line of an edit's diff with spaces, to 143 columns in a
   live patch, so on any narrower terminal each green or red band wrapped into

@@ -687,7 +687,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
     withdrew says so in red (`✗ cancelled · <question>`,
     `✗ skipped`, `✗ timed out`, `✗ interrupted`, or `✗ withdrawn (<Hermes'
     reason>)`), and the `clarify` call it was about has a red `⏺` too, with
-    `cancelled`, `timed out` or `not delivered` under it. A failed
+    `cancelled`, `timed out` or `not delivered` under it when no such answer
+    of yours is under it already to say so. A failed
     or denied tool row with the lines under it, an error notice, and a
     command's error line (for a failed `!` command, with what it printed
     above it) are on the light red band too. A denied call's row shows one

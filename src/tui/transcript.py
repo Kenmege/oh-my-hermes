@@ -261,6 +261,11 @@ class ToolRow:
         self.held_lines = lines if hold else None
         return lines
 
+    def answer_refused(self) -> bool:
+        """Whether an answer under the row says the call was refused or its question closed unanswered
+        (`✗ denied · …`, `✗ timed out · …`: one at `NOTICE_ERROR`)."""
+        return any(level == NOTICE_ERROR for _text, level in self.answers)
+
 
 @dataclass
 class ToolGroup:
@@ -423,13 +428,15 @@ TOOL_OUTPUT_ROWS = 3  # shown under a tool row; the details view shows up to TOO
 TOOL_OUTPUT_KEEP = 40
 
 
-def _tool_output(result: object, status: str) -> tuple[tuple[str, ...], int]:
+def _tool_output(result: object, status: str, closed_said: bool = False) -> tuple[tuple[str, ...], int]:
     """(lines, how many more) of what a tool printed: its first lines; for a failed or denied tool, one line, its
     reason's first.
 
     A failed tool whose result names no reason, only what it printed (Hermes' terminal tool reports a non-zero
     exit that way: `output` and `exit_code`, `error` None), gives the end of that instead, blank lines left out:
     a test run's summary is its last lines. `_output_rows` shows a failed tool's lines from their end.
+    With `closed_said` (an answer under the row says how the question closed) an unanswered clarify gives no
+    outcome word (`timed out`); a notice of Hermes' saying why is still its line.
     """
     if isinstance(result, str):
         found = [("text", result)]
@@ -437,7 +444,7 @@ def _tool_output(result: object, status: str) -> tuple[tuple[str, ...], int]:
         keys = _ERROR_KEYS if status == TOOL_ERROR else _DENIED_KEYS if status == TOOL_DENIED else _OUTPUT_KEYS
         found = [(key, as_text(result.get(key))) for key in keys]
         if status == TOOL_DENIED:  # a clarify question's: why its wait ended, else how
-            outcome = UNANSWERED_OUTCOMES.get(as_text(result.get("outcome")), "")
+            outcome = "" if closed_said else UNANSWERED_OUTCOMES.get(as_text(result.get("outcome")), "")
             found.append(("notice", as_text(result.get("notice")) or outcome))
     else:
         return (), 0
@@ -751,9 +758,10 @@ def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> lis
 
     A failed tool's are its last ones, with the count of the rest above them
     (`_tool_output`). A denied call whose result gave no reason says
-    `denied`, so a denial reads apart from a failure without colour.
+    `denied`, so a denial reads apart from a failure without colour, unless
+    an answer under its row already says so (`ToolRow.answer_refused`).
     """
-    output = tool.output or ((DENIED_LINE,) if tool.status == TOOL_DENIED else ())
+    output = tool.output or ((DENIED_LINE,) if tool.status == TOOL_DENIED and not tool.answer_refused() else ())
     if not output:
         return []
     failed = tool.status in (TOOL_ERROR, TOOL_DENIED)
@@ -1284,7 +1292,9 @@ class Transcript:
         row.duration_s = _duration(payload, row, now, waited)
         row.summary = _result_summary(payload)
         read = _read_summary(row.name, payload.get("result")) if row.status == TOOL_OK else ()
-        row.output, row.output_more = (read, 0) if read else _tool_output(payload.get("result"), row.status)
+        row.output, row.output_more = (read, 0) if read else _tool_output(
+            payload.get("result"), row.status, closed_said=row.answer_refused()
+        )
         row.inline_diff, row.diff_root = as_text(payload.get("inline_diff")).encode("utf-8", "surrogatepass"), self.cwd
         row.held_lines = None
 
