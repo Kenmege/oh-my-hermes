@@ -39,7 +39,7 @@ When Hermes exposes installed skill descriptions to the model, use this registry
 - `meta-router`: `/omh`, `./omh`
 - `loop`: `loop`, `./loop`, `$loop`, `goal loop`, `long horizon goal`, `never stop`, `research plan goal feedback`, `token exhaustion resume`, `permission profile`
 - `context`: `ulw-context`, `$context`, `./context`, `project terminology alignment`, `review project terms`, `align project terminology`, `terminology this project uses`
-- `deep-interview`: `deep-interview`, `$deep-interview`, `interview me`, `don't assume`, `clarify`, `feature shaping`, `ambiguous product request`, `one question`, `perjelas kebutuhan fitur ini`
+- `deep-interview`: `deep-interview`, `$deep-interview`, `interview me`, `don't assume`, `clarify`, `feature shaping`, `ambiguous product request`, `one question`, `要件を詰めて`
 - `jit-learn`: `jit-learn`, `learn next`, `learn now`, `blocker-specific learning target`, `highest-leverage learning target`, `immediate learning payoff`, `immediately applicable learning brief`, `source-backed learning brief`, `학습 주제`
 - `ultrawork`: `ultrawork`, `$ultrawork`, `ulw`, `$ulw`, `parallel work`, `parallel implementation`, `parallel then integrate`, `high throughput`, `coding team`
 - `maestro`: `$maestro`, `ulw-maestro`, `coding handoff`, `prepare the handoff`, `prepare a coding handoff`, `hand off the coding work`, `external executor handoff`, `handoff prompt`, `delegation prompt`
@@ -67,7 +67,7 @@ When Hermes exposes installed skill descriptions to the model, use this registry
 - `materials-package`: `materials-package`, `material package`, `materials package`, `document package`, `deck file`, `binary export`, `file export`, `render qa`, `layout qa`
 - `img-summary`: `img-summary`, `img summary`, `visual prompt card`, `image card`, `image generation`, `image edit`, `edit this image`, `remove the background`, `background removal`
 - `apple-design`: `apple-design`, `apple design`, `apple ui design`, `apple hig`, `human interface guidelines`, `ios design guidelines`, `macos app design`, `apple-inspired web`, `liquid glass review`
-- `design-orchestration`: `design-orchestration`, `design orchestration`, `design ownership`, `handle this product design`, `take on the design`, `tangani desain produk ini secara menyeluruh`, `koordinasikan seluruh proses desain`, `bantu urus desain produk dari awal`, `siapkan arahan desain untuk tim eksekusi`
+- `design-orchestration`: `design-orchestration`, `design orchestration`, `design ownership`, `handle this product design`, `take on the design`, `デザインを任せる`, `デザイン全体を任せ`, `プロダクトデザインを任せ`, `디자인 맡겨`
 - `design-quality-gate`: `design-quality-gate`, `design quality gate`, `ui ux pro max`, `design pro max`, `frontend pro max`, `visual qa pro`, `premium design`, `high quality design`, `beautiful website`
 - `award-bar-score`: `award-bar-score`, `award bar score`, `award winning`, `award-winning`, `award winning website`, `award-winning website`, `award winning design`, `award ready`, `make it award winning`
 - `frontend`: `frontend`, `front-end`, `front end`, `frontend skill`, `in the frontend`, `on the frontend`, `to the frontend`, `web ui`, `ui ux`
@@ -94,7 +94,7 @@ When Hermes exposes installed skill descriptions to the model, use this registry
 - `llm-app-dev`: `llm-app-dev`, `$llm-app-dev`, `llm app development`, `llm application development`, `build an llm app`, `build an llm feature`, `llm feature development`, `build a rag pipeline`, `rag pipeline`
 - `cto-loop`: `cto-loop`, `cto loop`, `cto`, `cto pm`, `pm dev qa security ops`, `roadmap technical tradeoffs`, `technical tradeoff`, `delivery risk`, `release readiness`
 - `deploy-and-monitor`: `deploy-and-monitor`, `deploy and monitor`, `deploy monitor`, `deployment monitoring`, `release monitor`, `post deploy`, `post-deploy`, `rollback`, `rollback gate`
-- `ultraqa`: `ultraqa`, `$ultraqa`, `adversarial qa`, `hostile scenarios`, `e2e qa`, `real-world qa`, `qa scenario`, `release qa`, `uji skenario ekstrem`
+- `ultraqa`: `ultraqa`, `$ultraqa`, `adversarial qa`, `hostile scenarios`, `e2e qa`, `real-world qa`, `qa scenario`, `release qa`, `敵対的QA`
 - `plan`: `plan`, `$plan`, `implementation plan`, `make a plan`, `write a plan`, `write the plan`, `task breakdown`, `safe feature`, `safely add a feature`
 - `ralplan`: `ralplan`, `$ralplan`, `consensus plan`, `reviewed plan`, `issue to PR`, `acceptance criteria`, `verification command`, `reviewable PR`, `risky planning`
 - `adversarial-consensus`: `adversarial-consensus`, `$adversarial-consensus`, `adversarial planning`, `adversarial plan review`, `red team this plan`, `red-team this plan`, `red team the proposal`, `multi-perspective review`, `multiple perspectives`

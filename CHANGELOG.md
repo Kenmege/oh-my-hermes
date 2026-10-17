@@ -12,8 +12,12 @@ All notable changes will be documented here.
   borrows `bug`, `crash`, `error` and `file`. So a shipped pack phrase written
   entirely in ASCII now scores only as a whole phrase. Its words never join the
   skill's trigger tokens, and the lexical shortlist leaves it out of the
-  skill's English document and anchors. A test holds every skill's trigger
-  tokens, lexical document and anchors equal to the view without the pack.
+  skill's English document and anchors. Tests hold every skill's trigger
+  tokens, lexical document and anchors equal to the view with its ASCII pack
+  phrases taken out, and refuse an ASCII hold-back entry that none of the
+  pack's own non-ASCII phrases carries. ASCII pack phrases merge after the
+  `ja`, `ko` and `zh` ones, so `SKILL.md` descriptions and capability rows,
+  which show only a skill's first triggers, keep the cues they showed before.
   Phrases that routed ordinary Indonesian chat (a team work plan, "ask me one
   at a time", a medicine reminder) did not ship, and neither did a few that
   read as word-for-word translations. `ultrawork` carries one Indonesian

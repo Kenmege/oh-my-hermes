@@ -97,17 +97,24 @@ Latin-script phrase does: Indonesian borrows `bug`, `crash`, `error` and
 whole phrase. Its words do not join the skill's trigger tokens, and the
 lexical shortlist's English index leaves the phrase out of the skill's
 document and anchors, as it already leaves out every non-ASCII trigger. The
-pack does not have to list those words. A phrase with any non-ASCII character
-scores as before. This covers shipped packs only: a user pack's phrases also
-score word by word, so hold a word back with `whole_phrase_only_tokens` where
-it should count only inside its phrase.
+pack does not have to list those words, and must not: an ASCII
+`whole_phrase_only_tokens` entry that none of the pack's own non-ASCII phrases
+for the skill carries can only remove the skill's English words. A phrase with
+any non-ASCII character scores as before. ASCII pack phrases also merge after
+every pack phrase that has a non-ASCII character, so where a surface shows
+only a skill's first triggers (the `SKILL.md` description, the capability
+row), a Latin-script pack takes none of the places the Hangul, Kana or Han
+phrases had. This covers shipped packs only: a user pack's phrases also score
+word by word, so hold a word back with `whole_phrase_only_tokens` where it
+should count only inside its phrase.
 
 Two gates hold the mechanism together. `tests/test_trigger_language_packs.py`
-proves every shipped phrase is live in its skill's scored surface, that a
-Latin-script pack leaves every skill's trigger tokens, lexical document and
-anchors as they are without it, and that every language with a shipped
-`--language` / `OMH_LANG` **output** localization also ships a **trigger**
-pack, so input and output support cannot diverge.
+proves every shipped phrase is live in its skill's scored surface, that every
+skill's trigger tokens, lexical document and anchors stay as they are with its
+shipped ASCII pack phrases taken out, that no pack holds back an ASCII word
+none of its own non-ASCII phrases for that skill carries, and that every
+language with a shipped `--language` / `OMH_LANG` **output** localization also
+ships a **trigger** pack, so input and output support cannot diverge.
 `tests/test_trigger_holdback_reachability.py` proves no hold-back entry, in any
 language, quietly removes nothing.
 
