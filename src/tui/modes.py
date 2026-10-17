@@ -165,14 +165,15 @@ def model_forms(model: str) -> tuple[str, ...]:
     return tuple(forms)
 
 
-def default_hints(mode: str, busy: bool, cycle: str) -> tuple[str, ...]:
-    """The info line's own words when nothing else is said: where Shift+Tab goes from accept or plan, or the idle hint.
+def default_hints(mode: str, busy: bool, cycle: str, drafting: bool = False) -> tuple[str, ...]:
+    """The info line's own words when nothing else is said: where Shift+Tab goes from accept or plan, or the idle hint,
+    which is said only while `?` would open the list, between turns with nothing typed (`drafting` False).
 
     Longest first; the last of accept's and plan's is empty, so a narrow line drops it whole.
     """
     if mode in (MODE_ACCEPT, MODE_PLAN, MODE_ACCEPT_PLAN):
         return tuple(form.format(cycle=cycle or CYCLE_WORDS) for form in MODE_HINTS)
-    return (IDLE_HINT,) if mode == MODE_NORMAL and not busy else ()
+    return (IDLE_HINT,) if mode == MODE_NORMAL and not busy and not drafting else ()
 
 
 def info_line(
@@ -188,6 +189,7 @@ def info_line(
     say: str | tuple[str, ...] = "",
     say_style: Style | None = None,
     cycle: str = "",
+    drafting: bool = False,
 ) -> Line:
     """The line under the composer: the mode's label (accept, plan, a shell line), the agent strip, the keys that
     matter now, and on the right the first of `right` (forms, longest first) that leaves room for the left side whole.
@@ -208,7 +210,8 @@ def info_line(
     the shortened left side leaves. During a turn the hint names the steer
     keys, not Esc: the working row offers the interrupt. The label always survives,
     in some form, and the strip after it. Accept and plan say where Shift+Tab
-    goes next (`cycle`; CYCLE_WORDS when not given).
+    goes next (`cycle`; CYCLE_WORDS when not given). `drafting` (the composer
+    holds text) takes the idle hint away.
     """
     forms = (say,) if isinstance(say, str) else say
     if any(forms):
@@ -219,7 +222,7 @@ def info_line(
         keys = [STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
         hints = (" · ".join(keys + ([QUEUED_KEY_HINT] if queued else [])),)
     else:
-        hints = default_hints(mode, busy, cycle)
+        hints = default_hints(mode, busy, cycle, drafting)
 
     def label_of(form: int) -> Line:
         own = mode_label(mode, theme, form)

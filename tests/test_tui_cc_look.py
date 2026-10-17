@@ -25,7 +25,7 @@ import unittest
 from unittest import mock
 
 from _tui_lines import line_text, lines_text
-from test_tui_modes import drawn, make_app, type_text
+from test_tui_modes import drawn, make_app, show_mode, type_text
 from omh.skin_pack import SKIN_THEMES
 from omh.tui.app import (
     CYCLE_TIP,
@@ -38,9 +38,10 @@ from omh.tui.app import (
     queue_lines,
     working_verb,
 )
-from omh.tui.frame import sticky_line
+from omh.tui.frame import MODE_ACCEPT, MODE_PLAN, sticky_line
 from omh.tui.diff_view import DIFF_ADDED, DIFF_FILE, DIFF_HUNK, DIFF_INDENT, DiffLine, diff_rows
 from omh.tui.gateway import Event
+from omh.tui.keys import BACKSPACE, Key
 from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.theme import build_theme, contrast_ratio
@@ -433,6 +434,37 @@ class InfoLineInsetTests(unittest.TestCase):
         screen = [row for row in drawn(app) if row]
         self.assertTrue(screen[-1].startswith("? for shortcuts"), screen)
         self.assertFalse([row for row in screen if row.startswith("╭")], screen)
+
+
+class ShortcutsHintTests(unittest.TestCase):
+    """`? for shortcuts` is said only while `?` would open the list: on an empty composer (review B, NIT-2)."""
+
+    def test_the_hint_leaves_while_the_composer_holds_text_and_comes_back_when_it_is_empty(self) -> None:
+        app, _client = make_app(cols=100)
+        self.assertTrue(line_text(app._info_line(100)).startswith("  ? for shortcuts"))
+        for typed in ("/", "model"):  # the slash menu opens over the `/`
+            type_text(app, typed)
+            self.assertTrue(app._menu_rows())
+            row = line_text(app._info_line(100))
+            with self.subTest(composer=app.composer.text):
+                self.assertNotIn("shortcuts", row)
+                self.assertTrue(row.endswith("ctrl+t effort"), row)  # the right side stays
+        for _ in "/model":
+            app._on_input(Key(BACKSPACE))
+        type_text(app, "hello")
+        self.assertNotIn("shortcuts", line_text(app._info_line(100)))
+        for _ in "hello":
+            app._on_input(Key(BACKSPACE))
+        self.assertTrue(line_text(app._info_line(100)).startswith("  ? for shortcuts"))
+
+    def test_a_mode_keeps_its_label_and_where_shift_tab_goes_while_text_is_typed(self) -> None:
+        for mode, said in ((MODE_ACCEPT, "⏵⏵ accept all on (⇧⇥ to cycle)"), (MODE_PLAN, "⏸ plan mode on (⇧⇥ to cycle)")):
+            with self.subTest(mode=mode):
+                app, _client = make_app(cols=100)
+                show_mode(app, mode)
+                app.yolo_by_tui = app.approvals_off  # accept as the TUI turns it on: Shift+Tab walks every mode
+                type_text(app, "hello")
+                self.assertTrue(line_text(app._info_line(100)).startswith(f"  {said}"))
 
 
 # A real resume's `messages` (tests/fixtures/tui_gateway/resume_history.json): one turn of five calls, an edit among them.

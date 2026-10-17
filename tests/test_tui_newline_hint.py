@@ -41,20 +41,18 @@ class NewlineHintTests(unittest.TestCase):
                 app._on_input(Paste(pasted))
                 self.assertEqual(mode_row(app), NEWLINE_KEYS[0])
 
-    def test_one_line_keeps_the_usual_hint(self) -> None:
+    def test_one_line_names_no_newline_keys(self) -> None:
         app, _client = make_app()
-        usual = mode_row(app)
         type_text(app, "one line")
-        self.assertEqual(mode_row(app), usual)
-        self.assertTrue(usual.startswith("? for shortcuts"), usual)
+        row = "".join(span.text for span in app._info_line(100))
+        self.assertNotIn(NEWLINE_KEYS[-1], row)
+        self.assertNotIn("shortcuts", row)  # `?` types itself into a draft
 
-    def test_a_terminal_that_reported_keys_keeps_the_usual_hint(self) -> None:
+    def test_a_terminal_that_reported_keys_names_no_newline_keys(self) -> None:
         app, _client = make_app()
         app.decoder.protocol_reported = True  # Shift+Enter is a key of its own there
-        usual = mode_row(app)
         two_lines(app)
-        self.assertEqual(mode_row(app), usual)
-        self.assertTrue(usual.startswith("? for shortcuts"), usual)
+        self.assertNotIn(NEWLINE_KEYS[-1], "".join(span.text for span in app._info_line(100)))
 
     def test_a_turn_running_or_another_mode_keeps_its_own_hint(self) -> None:
         app, _client = make_app(busy=True)

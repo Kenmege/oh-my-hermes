@@ -4051,6 +4051,7 @@ class App(ModesMixin, AgentViewMixin):
             say_style=say_style,
             # While Hermes has approvals off on its own, Shift+Tab turns plan on and off and nothing else.
             cycle=HERMES_OWN_CYCLE.get(self._display_mode(), "") if self.approvals_off and not self.yolo_by_tui else "",
+            drafting=bool(self.composer.text),  # `?` types itself then, so `? for shortcuts` would be untrue
         )
         return (Span(" " * inset), *line) if inset and line else line
 
