@@ -319,7 +319,7 @@ class AgentsAcrossARespawnTests(unittest.TestCase):
         self.assertEqual({agent.subagent_id: agent.status for agent in app.roster.agents.values()},
                          {FIRST: COMPLETED, SECOND: INTERRUPTED})  # the gateway that ran it is gone
         self.assertIsNone(app.agent_steer)
-        strip = line_text(app._agent_strip(120)[0])
+        strip = line_text(app._agent_strip(120))
         self.assertIn("○ …one", strip)
         self.assertIn("▪ …two", strip)
         self.assertFalse([line for line in app._slot_lines(120, 30) if line_text(line).startswith("[Agents]")])

@@ -4038,7 +4038,7 @@ class App(ModesMixin, AgentViewMixin):
         elif self._newline_keys_due():
             say = NEWLINE_KEYS
         if isinstance(say, tuple):
-            strip = self._agent_strip(cols - cell_width(STRIP_SEPARATOR + say[max(len(say) - 2, 0)]))[0]
+            strip = self._agent_strip(cols - cell_width(STRIP_SEPARATOR + say[max(len(say) - 2, 0)]))
         if (self.list_selected is not None and self.slot is None) or is_tiny(self.size[1], cols):
             strip = ()  # the open list shows the agents itself; a tiny terminal has no room for it
         line = info_line(
@@ -4049,7 +4049,7 @@ class App(ModesMixin, AgentViewMixin):
             width=cols - inset,
             theme=self.theme,
             right=self._info_right(),
-            strip=self._agent_strip(cols)[0] if strip is None else strip,
+            strip=self._agent_strip(cols) if strip is None else strip,
             say=say,
             say_style=say_style,
             # While Hermes has approvals off on its own, Shift+Tab turns plan on and off and nothing else.

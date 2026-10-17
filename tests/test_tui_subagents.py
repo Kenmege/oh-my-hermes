@@ -30,7 +30,6 @@ from omh.tui.subagents import (
     ROW_CHARS,
     TAIL_CHARS,
     Agent,
-    Hit,
     Roster,
 )
 from omh.tui.theme import DEFAULT_THEME as THEME
@@ -103,7 +102,7 @@ def style_of(line: Line, text: str) -> Style:
 
 def every_row(roster: Roster, width: int = 60, now: float = 50.0) -> list[Line]:
     """Every row the roster can draw at `width`: the strip, the list, and each agent's log view."""
-    rows: list[Line] = [roster.strip_line(width, THEME, 0)[0]]
+    rows: list[Line] = [roster.strip_line(width, THEME, 0)]
     rows.extend(roster.list_lines(width, THEME, MAIN_ID, 0, ROSTER_CAP + 1, now)[0])
     for subagent_id in roster.agents:
         rows.extend(roster.log_lines(subagent_id, width, THEME, now))
@@ -173,7 +172,7 @@ class RelayFixtureTests(unittest.TestCase):
 
     def test_replay_renders(self) -> None:
         roster = replayed()
-        self.assertEqual(line_text(roster.strip_line(80, THEME, 0)[0]), "● main  ○ find usages of  ✗ read the diff  ↓ agents")
+        self.assertEqual(line_text(roster.strip_line(80, THEME, 0)), "● main  ○ find usages of  ✗ read the diff  ↓ agents")
         rows, ids = roster.list_lines(60, THEME, SECOND, 0, 6, 500.0)
         self.assertEqual(
             lines_text(rows),
@@ -655,13 +654,13 @@ class RosterCapTests(unittest.TestCase):
 
     def test_the_collapsed_strip_says_when_the_cap_pushed_agents_out_until_clear(self) -> None:
         roster = self._full()
-        self.assertEqual(line_text(roster.strip_line(200, THEME, 0)[0]), "● 64 agents ↓")
+        self.assertEqual(line_text(roster.strip_line(200, THEME, 0)), "● 64 agents ↓")
         feed(roster, "start", subagent_id="sa-new")
-        self.assertEqual(line_text(roster.strip_line(200, THEME, 0)[0]), "● 64+ agents ↓")
+        self.assertEqual(line_text(roster.strip_line(200, THEME, 0)), "● 64+ agents ↓")
         roster.clear()
         self.assertEqual(roster.evicted, 0)
         feed(roster, "start", goal="a " * 200)
-        self.assertEqual(line_text(roster.strip_line(10, THEME, 0)[0]), "● 1 agent…")
+        self.assertEqual(line_text(roster.strip_line(10, THEME, 0)), "● 1 agent…")
 
 
 class CleaningTests(unittest.TestCase):
@@ -717,7 +716,7 @@ class CleaningTests(unittest.TestCase):
 
 class StripTests(unittest.TestCase):
     def test_there_is_no_strip_without_an_agent(self) -> None:
-        self.assertEqual(Roster().strip_line(80, THEME, 0), ((), ()))
+        self.assertEqual(Roster().strip_line(80, THEME, 0), ())
 
     def test_each_status_has_its_glyph_and_colour(self) -> None:
         roster = Roster()
@@ -728,11 +727,10 @@ class StripTests(unittest.TestCase):
         for status in ("failed", "error", "timeout", "interrupted"):
             feed(roster, "start", subagent_id=f"sa-{status}", goal=status)
             feed(roster, "complete", subagent_id=f"sa-{status}", status=status)
-        line, hits = roster.strip_line(200, THEME, 2)
+        line = roster.strip_line(200, THEME, 2)
         self.assertEqual(
             line_text(line), "● main  ⠹ explore  ○ review  ◌ wait  ✗ failed  ✗ error  ✗ timeout  ▪ interrupted  ↓ agents"
         )
-        self.assertEqual([hit.subagent_id for hit in hits][:3], [MAIN_ID, "sa-run", "sa-done"])
         self.assertEqual(style_of(line, "●"), THEME.accent)
         self.assertEqual(style_of(line, "main"), THEME.hint)
         self.assertEqual(style_of(line, "⠹"), THEME.accent)
@@ -751,9 +749,9 @@ class StripTests(unittest.TestCase):
         roster = started(FIRST)
         for frame, glyph in ((0, "⠋"), (4, "⠼"), (9, "⠏"), (10, "⠋"), (23, "⠸")):
             with self.subTest(frame=frame):
-                self.assertEqual(line_text(roster.strip_line(80, THEME, frame)[0]), f"● main  {glyph} find usages of  ↓ agents")
+                self.assertEqual(line_text(roster.strip_line(80, THEME, frame)), f"● main  {glyph} find usages of  ↓ agents")
 
-    def test_hits_are_the_cells_each_entry_is_drawn_in(self) -> None:
+    def test_wide_names_sit_on_the_strip_with_the_gap_between_them(self) -> None:
         roster = Roster()
         goals = {
             "sa-a": "explore",
@@ -765,35 +763,18 @@ class StripTests(unittest.TestCase):
         for subagent_id, goal in goals.items():
             feed(roster, "start", subagent_id=subagent_id, goal=goal)
         feed(roster, "complete", subagent_id="sa-e", status="failed")
-        line, hits = roster.strip_line(200, THEME, 0)
-        text = line_text(line)
-        self.assertEqual(text, "● main  ⠋ explore  ⠋ 한글 검색  ⠋ 🚀 deploy the  ⠋ 가나다라마바사…  ✗ review  ↓ agents")
+        line = roster.strip_line(200, THEME, 0)
         self.assertEqual(
-            hits,
-            (
-                Hit(0, 6, MAIN_ID),
-                Hit(8, 17, "sa-a"),
-                Hit(19, 30, "sa-b"),
-                Hit(32, 47, "sa-c"),
-                Hit(49, 66, "sa-d"),
-                Hit(68, 76, "sa-e"),
-            ),
+            line_text(line), "● main  ⠋ explore  ⠋ 한글 검색  ⠋ 🚀 deploy the  ⠋ 가나다라마바사…  ✗ review  ↓ agents"
         )
-        drawn = ["● main", "⠋ explore", "⠋ 한글 검색", "⠋ 🚀 deploy the", "⠋ 가나다라마바사…", "✗ review"]
-        self.assertEqual([cells(text, hit.start, hit.end) for hit in hits], drawn)
-        # Between two entries, and after the last, lies the gap: no hit claims it.
-        for left, right in zip(hits, hits[1:], strict=False):
-            self.assertEqual(cells(text, left.end, right.start), "  ")
-        self.assertEqual(cells(text, hits[-1].end, line_width(line)), "  ↓ agents")
 
     def test_the_strip_collapses_the_moment_it_does_not_fit(self) -> None:
         roster = started("sa-a", "sa-b")
         full = "● main  ⠋ 1·find usages of  ⠋ 2·find usages of  ↓ agents"  # one goal twice: numbered
-        self.assertEqual(line_width(roster.strip_line(200, THEME, 0)[0]), 56)
-        line, hits = roster.strip_line(56, THEME, 0)
-        self.assertEqual((line_text(line), len(hits)), (full, 3))
-        line, hits = roster.strip_line(55, THEME, 0)
-        self.assertEqual((line_text(line), hits), ("● 2 agents ↓", ()))
+        self.assertEqual(line_width(roster.strip_line(200, THEME, 0)), 56)
+        self.assertEqual(line_text(roster.strip_line(56, THEME, 0)), full)
+        line = roster.strip_line(55, THEME, 0)
+        self.assertEqual(line_text(line), "● 2 agents ↓")
         self.assertEqual(style_of(line, "●"), THEME.accent)
         self.assertEqual(style_of(line, "2 agents"), THEME.hint)
 
@@ -802,18 +783,15 @@ class StripTests(unittest.TestCase):
         cases = {12: "● 2 agents ↓", 11: "● 2 agents…", 4: "● 2…", 1: "…", 0: "", -3: ""}
         for width, text in cases.items():
             with self.subTest(width=width):
-                line, hits = roster.strip_line(width, THEME, 0)
-                self.assertEqual((line_text(line), hits), (text, ()))
+                self.assertEqual(line_text(roster.strip_line(width, THEME, 0)), text)
 
     def test_one_agent_is_singular(self) -> None:
-        self.assertEqual(line_text(started(FIRST).strip_line(12, THEME, 0)[0]), "● 1 agent ↓")
+        self.assertEqual(line_text(started(FIRST).strip_line(12, THEME, 0)), "● 1 agent ↓")
 
     def test_the_strip_never_exceeds_its_width(self) -> None:
         roster = started("sa-a", "sa-b", "sa-c")
         for width in range(0, 90):
-            line, hits = roster.strip_line(width, THEME, 0)
-            self.assertLessEqual(line_width(line), width)
-            self.assertTrue(all(0 <= hit.start < hit.end <= width for hit in hits))
+            self.assertLessEqual(line_width(roster.strip_line(width, THEME, 0)), width)
 
 
 class ListTests(unittest.TestCase):
@@ -928,7 +906,7 @@ class ListTests(unittest.TestCase):
         roster = Roster()
         feed(roster, "start", goal="")
         self.assertEqual(line_text(roster.list_lines(40, THEME, MAIN_ID, 0, 6, 0.0)[0][1])[:9], "  ⠋ agent")
-        self.assertEqual(line_text(roster.strip_line(40, THEME, 0)[0]), "● main  ⠋ agent  ↓ agents")
+        self.assertEqual(line_text(roster.strip_line(40, THEME, 0)), "● main  ⠋ agent  ↓ agents")
         self.assertEqual(lines_text(roster.log_lines(FIRST, 40, THEME, 0.0))[0], "agent")
 
 

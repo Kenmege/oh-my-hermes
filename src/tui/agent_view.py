@@ -91,12 +91,11 @@ class AgentViewMixin:
     `ModesMixin`'s, and the methods it calls without defining them are `App`'s.
     """
 
-    def _agent_strip(self, cols: int) -> tuple[Line, tuple[Hit, ...]]:
-        """The roster's strip for an info line `cols` wide, and the cells each entry covers as 0-based screen columns
-        (after the line's inset, `_info_inset`)."""
+    def _agent_strip(self, cols: int) -> Line:
+        """The roster's strip for an info line `cols` wide: the room after the line's inset (`_info_inset`) and the
+        mode's label."""
         start = self._info_inset() + strip_column(self.mode, self.theme)
-        line, hits = self.roster.strip_line(cols - start, self.theme, self._spinner_frame())
-        return line, tuple(Hit(hit.start + start, hit.end + start, hit.subagent_id) for hit in hits)
+        return self.roster.strip_line(cols - start, self.theme, self._spinner_frame())
 
     def _agent_list(self, cols: int, room: int) -> tuple[list[Line], tuple[str, ...]]:
         """The open agent list in `room` rows (at most `AGENT_LIST_ROWS`), scrolled to the highlight, and the id of

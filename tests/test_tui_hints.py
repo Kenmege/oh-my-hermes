@@ -227,7 +227,7 @@ class StripMarkTests(unittest.TestCase):
     def test_the_strips_last_mark_says_what_down_opens(self) -> None:
         self.assertEqual(OPEN_MARK, "↓ agents")
         app, _client = agent_app()
-        self.assertTrue(line_text(app._agent_strip(120)[0]).endswith("↓ agents"))
+        self.assertTrue(line_text(app._agent_strip(120)).endswith("↓ agents"))
 
 
 class NarrowApprovalTests(unittest.TestCase):
