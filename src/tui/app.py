@@ -116,7 +116,7 @@ from ..skin_pack import (
 )
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
-from .frame import MODE_NORMAL, MODE_SHELL, Frame, build_frame, sticky_line
+from .frame import BOX_INSET, MODE_NORMAL, MODE_SHELL, Frame, build_frame, sticky_line
 from .history import SEARCH_ACCEPT, SEARCH_CANCEL, SEARCH_HINTS, HistorySearch, append_entry, history_path, load_history
 from .gateway import (
     Event,
@@ -3904,7 +3904,6 @@ class App(ModesMixin, AgentViewMixin):
             self.flushed_since_prompt = len(stable) - prompt_row
         else:
             self.flushed_since_prompt += len(stable)
-        strip, _hits = self._agent_strip(cols)
         if not self._menu_rows():
             self.menu_below = None
         # On the screen's last row the region keeps its height (what the flush below covers aside), so what shrinks
@@ -3917,7 +3916,7 @@ class App(ModesMixin, AgentViewMixin):
             rows=rows,
             min_height=max(self.region.height - len(stable), 0) if pinned else 0,
             composer=None if self._composer_hidden() else self.composer,
-            info=self._info_line(cols, strip),
+            info=self._info_line(cols),
             tail=self._tail(cols),
             slot=self._slot_lines(cols, rows),
             below=self.menu_under,  # read after `_slot_lines` made it
@@ -4008,8 +4007,10 @@ class App(ModesMixin, AgentViewMixin):
         A picked steer or rewind keeps room for its last form but one, the shortest that still names what it
         acts on: the strip collapses (`● 2 agents ↓`) before that would be cut. The mode's label keeps its room
         too (`_agent_strip` starts after it). The right side (`_info_right`) gives way before either. A terminal
-        too small for a slot draws no strip: the agent list its `↓ agents` offers cannot open there.
+        too small for a slot draws no strip: the agent list its `↓ agents` offers cannot open there. The line
+        starts `_info_inset()` cells in.
         """
+        inset = self._info_inset()
         say: str | tuple[str, ...] = ""
         say_style = None
         armed = self.escape_armed
@@ -4037,12 +4038,12 @@ class App(ModesMixin, AgentViewMixin):
             strip = self._agent_strip(cols - cell_width(STRIP_SEPARATOR + say[max(len(say) - 2, 0)]))[0]
         if (self.list_selected is not None and self.slot is None) or is_tiny(self.size[1], cols):
             strip = ()  # the open list shows the agents itself; a tiny terminal has no room for it
-        return info_line(
+        line = info_line(
             mode=self._display_mode(),
             busy=self._busy(),
             queued=len(self.queued),
             keyboard_protocol=self.keyboard_protocol,
-            width=cols,
+            width=cols - inset,
             theme=self.theme,
             right=self._info_right(),
             strip=self._agent_strip(cols)[0] if strip is None else strip,
@@ -4052,6 +4053,12 @@ class App(ModesMixin, AgentViewMixin):
             # While Hermes has approvals off on its own, Shift+Tab turns plan on and off and nothing else.
             cycle=HERMES_OWN_CYCLE.get(self._display_mode(), "") if self.approvals_off and not self.yolo_by_tui else "",
         )
+        return (Span(" " * inset), *line) if inset and line else line
+
+    def _info_inset(self) -> int:
+        """Cells before the info line's text: `BOX_INSET` under the box, where the box's text starts; none on a tiny
+        terminal, which draws no box."""
+        return 0 if is_tiny(self.size[1], self.size[0]) else BOX_INSET
 
     def _newline_keys_due(self) -> bool:
         """Whether the info line names the keys that add a line: the draft spans lines (typed, or a pasted chip of them)

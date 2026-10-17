@@ -20,7 +20,7 @@ from test_tui_modes import SID, RecordingClient, answer, drawn, make_app, show_m
 from test_tui_subagents import FIRST, FRAMES, SECOND, cells, payload
 from omh.tui.app import App
 from omh.tui.modes import mode_label, info_line, strip_column
-from omh.tui.frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
+from omh.tui.frame import BOX_INSET, MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, ServerRequest
 from omh.tui.keys import CHAR, ENTER, Key
 from omh.tui.panels import SPINNER_FRAMES
@@ -62,9 +62,18 @@ def mode_row(app: App) -> str:
     return screen[info_index(screen)]
 
 
+def info_text(app: App) -> str:
+    """The info line after the inset it starts with under the box."""
+    row = mode_row(app)
+    if not row.startswith(" " * BOX_INSET):
+        raise AssertionError(f"the info line does not start {BOX_INSET} cells in: {row!r}")
+    return row[BOX_INSET:]
+
+
 def info_left(app: App) -> str:
-    """The info line's left side: its right side (model, context, effort) stands 3 cells or more away."""
-    return re.split(r" {3,}", mode_row(app))[0]
+    """The info line's left side, after its inset: its right side (model, context, effort) stands 3 cells or more
+    away."""
+    return re.split(r" {3,}", info_text(app))[0]
 
 
 class BidiControlTests(unittest.TestCase):
@@ -219,7 +228,7 @@ class StripTests(unittest.TestCase):
 
     def test_at_eighty_columns_two_agents_leave_the_hint_cut_and_the_strip_whole(self) -> None:
         app, _client = agent_app()
-        self.assertEqual(mode_row(app), f"{STRIP} · esc interrupt · /steer <t…")
+        self.assertEqual(info_text(app), f"{STRIP} · esc interrupt · /steer …")
 
     def test_the_spinner_turns_with_the_clock(self) -> None:
         now = [0.0]
@@ -242,10 +251,10 @@ class StripTests(unittest.TestCase):
     def test_the_right_side_stays_while_the_strip_leaves_it_room(self) -> None:
         app, _client = agent_app(cols=120)
         app.effort = "high"
-        row = mode_row(app)
+        row = info_text(app)
         self.assertTrue(row.startswith(f"{STRIP} · {BUSY_HINT}"), row)
         self.assertTrue(row.endswith("effort high"), row)
-        self.assertEqual(len(row), 120)
+        self.assertEqual(len(mode_row(app)), 120)  # after its inset, to the last cell
 
     def test_cut_short_the_right_side_goes_first_then_the_hint_then_the_strip_and_never_the_label(self) -> None:
         roster = Roster()
@@ -324,14 +333,14 @@ class StripTests(unittest.TestCase):
 
     def test_a_strip_too_wide_for_the_row_counts_the_agents_and_names_none(self) -> None:
         app, _client = agent_app(cols=40)
-        self.assertTrue(mode_row(app).startswith("● 2 agents ↓"), mode_row(app))
+        self.assertTrue(info_text(app).startswith("● 2 agents ↓"), info_text(app))
         self.assertEqual(app._agent_strip(40)[1], ())
 
     def test_the_strip_is_on_the_info_line_wherever_the_agent_list_can_open(self) -> None:
         for rows in (6, 7, 9, 10):
             with self.subTest(rows=rows):
                 app, _client = agent_app(rows=rows)
-                self.assertTrue(mode_row(app).startswith("● main"), drawn(app))
+                self.assertTrue(info_text(app).startswith("● main"), drawn(app))
                 self.assertTrue(app._list_available())
         for rows, cols in ((5, 80), (24, 19)):  # too small for a slot: no list, so no strip offering one
             with self.subTest(rows=rows, cols=cols):
@@ -342,18 +351,22 @@ class StripTests(unittest.TestCase):
     def test_an_open_question_keeps_the_strip_on_the_info_line(self) -> None:
         from omh.tui.gateway import ServerRequest
 
-        app, _client = agent_app()
-        app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
-        self.assertTrue(mode_row(app).startswith(STRIP), mode_row(app))
+        # 80 columns less the inset are one cell short of the strip whole beside the keys' short form.
+        for cols, said in ((82, f"{STRIP} · ↑↓ · esc denies and stops"),
+                           (80, "● 2 agents ↓ · ↑↓ pick · enter confirms · d or esc denies and stops")):
+            with self.subTest(cols=cols):
+                app, _client = agent_app(cols=cols)
+                app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+                self.assertTrue(info_text(app).startswith(said), info_text(app))
 
     def test_typing_never_changes_the_strip(self) -> None:
         # The hint after it may change (a draft takes Esc from the interrupt); the strip does not.
         app, _client = agent_app()
-        strip = mode_row(app).partition(" · ")[0]
+        strip = info_text(app).partition(" · ")[0]
         self.assertTrue(strip.endswith("↓ agents"), strip)
         for char in "what are they doing":
             app._on_input(Key(CHAR, char))
-        self.assertEqual(mode_row(app).partition(" · ")[0], strip)
+        self.assertEqual(info_text(app).partition(" · ")[0], strip)
 
 
 if __name__ == "__main__":

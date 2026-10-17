@@ -21,7 +21,7 @@ import unittest
 from unittest.mock import patch
 
 from _tui_gateway_replay import Scenario, spans
-from _tui_lines import box_edges, box_inner, line_text, lines_text
+from _tui_lines import INFO_INSET, box_edges, box_inner, line_text, lines_text
 from test_tui_app import (
     INTERRUPTED,
     LIVE_ID,
@@ -40,7 +40,7 @@ from omh.tui.app import ATTACH_LEFT_NOTICE, OSC52_COPY, SLOT_ARM_SECONDS, App, Q
 from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, GatewayUnavailable, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder, Paste
-from omh.tui.layout import slot_cap
+from omh.tui.layout import MIN_COLS, MIN_ROWS, slot_cap
 from omh.tui.modes import EFFORT_CYCLE
 from omh.tui.pager import Pager
 from omh.tui.session_picker import SessionPicker, SessionRow
@@ -408,8 +408,8 @@ class SteerTests(unittest.TestCase):
         app.terminal.keyboard_protocol = True  # type: ignore[attr-defined]  # asked, as on an allowlisted terminal
 
         def hint() -> str:
-            row = next(line for line in drawn(app) if line.startswith("esc interrupt"))
-            return re.split(r" {3,}", row)[0]  # the left side: the right one stands 3 cells or more away
+            row = next(line for line in drawn(app) if line.startswith(INFO_INSET + "esc interrupt"))
+            return re.split(r" {3,}", row[len(INFO_INSET) :])[0]  # the left side: the right one stands 3 cells away
 
         self.assertEqual(hint(), "esc interrupt · /steer <text> steers")
         for event in app.decoder.feed(b"x\r"):  # a terminal that ignored the request: Ctrl+Enter comes as Enter
@@ -953,13 +953,14 @@ class HermesOwnApprovalsTests(unittest.TestCase):
         app._on_input(SHIFT_TAB)
         screen = drawn(app)
         # Hermes has approvals off on its own: Shift+Tab only turns plan back off, and the line says so.
-        self.assertTrue(info_row_of(screen).startswith("⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ plan off)"), screen)
+        self.assertTrue(info_row_of(screen).startswith(INFO_INSET + "⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ plan off)"),
+                        screen)
         top, bottom = box_edges(80)
         self.assertEqual((screen.count(top), screen.count(bottom)), (1, 1))  # no mode recolours or redraws the box
         short, _client = make_app(rows=9)
         session_info(short, yolo=True)
         short._on_input(SHIFT_TAB)
-        self.assertTrue(info_row_of(drawn(short)).startswith("⏵⏵ accept all on · ⏸ plan mode on"))
+        self.assertTrue(info_row_of(drawn(short)).startswith(INFO_INSET + "⏵⏵ accept all on · ⏸ plan mode on"))
 
 
 class StaleSessionInfoTests(unittest.TestCase):
@@ -2081,18 +2082,21 @@ class InfoLineModeTests(unittest.TestCase):
         return info_row_of(drawn(app))
 
     def test_every_height_with_an_info_line_says_the_mode_on_it(self) -> None:
-        # From 3 rows: a 2-row terminal has room for the composer alone and draws no info line at all.
+        # From 3 rows: a 2-row terminal has room for the composer alone and draws no info line at all. Under the box
+        # the line starts where the box's text does; a tiny terminal draws no box, and there it starts on the edge.
         for rows in (3, 5, 6, 7, 9, 10, 24):
             with self.subTest(rows=rows):
-                self.assertTrue(self.info(MODE_ACCEPT, rows).startswith("⏵⏵ accept all on (⇧⇥ to cycle)"))
-                self.assertTrue(self.info(MODE_PLAN, rows).startswith("⏸ plan mode on (⇧⇥ to cycle)"))
-                self.assertTrue(self.info(MODE_NORMAL, rows).startswith("? for shortcuts"))
+                inset = INFO_INSET if rows >= MIN_ROWS else ""
+                self.assertTrue(self.info(MODE_ACCEPT, rows).startswith(inset + "⏵⏵ accept all on (⇧⇥ to cycle)"))
+                self.assertTrue(self.info(MODE_PLAN, rows).startswith(inset + "⏸ plan mode on (⇧⇥ to cycle)"))
+                self.assertTrue(self.info(MODE_NORMAL, rows).startswith(inset + "? for shortcuts"))
 
     def test_a_narrow_terminal_keeps_the_label_whole(self) -> None:
         for cols in (19, 20, 30):
             with self.subTest(cols=cols):
-                self.assertTrue(self.info(MODE_ACCEPT, 24, cols).startswith("⏵⏵ accept all on"))
-                self.assertTrue(self.info(MODE_PLAN, 24, cols).startswith("⏸ plan mode on"))
+                inset = INFO_INSET if cols >= MIN_COLS else ""
+                self.assertTrue(self.info(MODE_ACCEPT, 24, cols).startswith(inset + "⏵⏵ accept all on"))
+                self.assertTrue(self.info(MODE_PLAN, 24, cols).startswith(inset + "⏸ plan mode on"))
 
     def test_the_label_takes_the_modes_colour_and_reads_on_every_palette_and_background(self) -> None:
         from dataclasses import replace

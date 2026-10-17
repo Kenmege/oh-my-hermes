@@ -24,7 +24,7 @@ from pathlib import Path
 import unittest
 
 from _tui_gateway_replay import Scenario
-from test_tui_agent_list import INTERRUPTED_PROMPT, delegating_scenario, focused, more_agents, under_the_frame
+from test_tui_agent_list import INTERRUPTED_PROMPT, delegating_scenario, focused, info_left, more_agents, under_the_frame
 from test_tui_agent_strip import STARTS, agent_app, relay
 from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, FakePoller, ScriptedTerminal, Step, info_index
 from test_tui_modes import SID, RecordingClient, composer_index, drawn, make_app, type_text
@@ -1234,7 +1234,7 @@ class MouseReplayTests(AppTestCase):
         rows, y = captures["listed"], aimed[0]
         self.assertEqual(info_index(rows), y)  # the info line right under it (y counts from 1, the screen from 0)
         self.assertIn("read the diff for risks", rows[y - 1])
-        self.assertEqual(rows[y].split("  ")[0], AGENT_LIST_HINT)  # the list's keys, the effort on their right
+        self.assertEqual(info_left(rows[y]), AGENT_LIST_HINT)  # the list's keys, the effort on their right
         # Wheel, motion, a right press, a release and two near misses (the info line, the row under the region):
         # still the list, on the first agent, and nothing typed.
         ignored = captures["ignored"]

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import unittest
 
-from _tui_lines import line_text, lines_text
+from _tui_lines import INFO_INSET, line_text, lines_text
 from test_tui_modes import make_app, type_text
 from omh.tui.history import SEARCH_HINT, SEARCH_LABEL, HistorySearch
 from omh.tui.keys import CHAR, ENTER, ESCAPE, LEFT, Key, Paste
@@ -77,7 +77,7 @@ class SearchStandsWhereTheComposerWasTests(unittest.TestCase):
         app, _client = searching()
         for width, keys in ((50, SEARCH_HINT), (40, "ctrl+r older · esc cancels"), (20, "esc cancels")):
             with self.subTest(width=width):
-                self.assertEqual(line_text(app._info_line(width)).rstrip(), keys)
+                self.assertEqual(line_text(app._info_line(width)).rstrip(), INFO_INSET + keys)
 
     def test_esc_gives_back_the_draft_with_its_caret_and_chips(self) -> None:
         app, _client = make_app()

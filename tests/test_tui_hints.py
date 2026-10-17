@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import unittest
 
-from _tui_lines import line_text, lines_text
+from _tui_lines import INFO_INSET, line_text, lines_text
 from test_tui_agent_strip import agent_app
 from test_tui_modes import answer, make_app
 from omh.tui.app import App, banner_lines
@@ -154,9 +154,9 @@ class NarrowSayTests(unittest.TestCase):
                 self.assertTrue(steer.rstrip().endswith("↪ steer · esc cancels"), steer)
                 self.assertIn("plan mode on", steer)  # the label always stays
         # Once the say form has shortened, the right side takes the room it left over.
-        row = self.rewind_row(69, agents=False, mode=MODE_PLAN, effort="high")
+        row = self.rewind_row(71, agents=False, mode=MODE_PLAN, effort="high")
         self.assertTrue(row.endswith("⏪ replaces #2 and later · esc cancels   effort high"), row)
-        self.assertNotIn("effort", self.rewind_row(68, agents=False, mode=MODE_PLAN, effort="high"))
+        self.assertNotIn("effort", self.rewind_row(70, agents=False, mode=MODE_PLAN, effort="high"))
 
     def test_at_forty_columns_with_accept_and_plan_the_labels_shorten_before_the_say_form_is_cut(self) -> None:
         from omh.tui.frame import MODE_ACCEPT_PLAN
@@ -168,7 +168,7 @@ class NarrowSayTests(unittest.TestCase):
                 self.assertTrue(rewind.rstrip().endswith("⏪ replaces #2+ · esc"), rewind)
                 self.assertTrue(steer.rstrip().endswith("↪ steer · esc cancels"), steer)
                 for row in (rewind, steer):
-                    self.assertTrue(row.startswith("⏵⏵") and "⏸" in row, row)  # both modes are still named
+                    self.assertTrue(row.startswith(INFO_INSET + "⏵⏵") and "⏸" in row, row)  # both modes are still named
                     self.assertFalse(row.rstrip().endswith("…"), row)
                     self.assertLessEqual(len(row), 40)
 
@@ -178,7 +178,7 @@ class NarrowSayTests(unittest.TestCase):
         for cols in (60, 100):
             with self.subTest(cols=cols):
                 row = self.rewind_row(cols, agents=False, mode=MODE_ACCEPT_PLAN)
-                self.assertTrue(row.startswith("⏵⏵ accept all on · ⏸ plan mode on · ⏪"), row)
+                self.assertTrue(row.startswith(INFO_INSET + "⏵⏵ accept all on · ⏸ plan mode on · ⏪"), row)
 
     def test_a_question_keeps_its_way_out_at_forty_columns_with_accept_and_plan(self) -> None:
         from test_tui_modes import show_mode
@@ -189,7 +189,7 @@ class NarrowSayTests(unittest.TestCase):
         app._on_server_request(CLARIFY)
         row = line_text(app._info_line(40))
         self.assertTrue(row.rstrip().endswith("esc cancels"), row)
-        self.assertTrue(row.startswith("⏵⏵") and "⏸" in row, row)
+        self.assertTrue(row.startswith(INFO_INSET + "⏵⏵") and "⏸" in row, row)
 
     def test_the_right_side_gives_way_before_the_strip_or_the_steered_agents_name(self) -> None:
         row = self.steer_row(100, effort="high")

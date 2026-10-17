@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from omh.tui.frame import BOX_INSET
 from omh.tui.style import Line
+
+INFO_INSET = " " * BOX_INSET  # the info line under the box starts where the box's text does
 
 
 def line_text(line: Line) -> str:

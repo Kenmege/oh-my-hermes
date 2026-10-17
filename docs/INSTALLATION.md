@@ -339,8 +339,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   each row in the theme's gradient made to read on the terminal's
   background; `/new` and a switched session do not repeat it, and a full
   redraw shows it again only on top of the whole session.
-- The info line under the composer says, on the left, the input mode or the
-  keys that matter right now, and on the right the model, how full the
+- The info line under the composer, two cells in so it starts under the
+  box's text (on the edge on a terminal too small for the box), says, on
+  the left, the input mode or the keys that matter right now, and on the right the model, how full the
   context is and the reasoning effort, as `deepseek/deepseek-v4.1-flash ·
   ctx 5% · effort medium` (the context in the warning colour from 80 % full
   and the error colour from 95 %; `ctrl+t effort` while no level is

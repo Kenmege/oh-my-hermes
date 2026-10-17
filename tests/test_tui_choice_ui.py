@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import unittest
 
-from _tui_lines import box_inner, line_text
+from _tui_lines import INFO_INSET, box_inner, line_text
 from test_tui_modes import RecordingClient, make_app, type_text
 from omh.tui.app import BELL, App
 from omh.tui.gateway import ServerRequest
@@ -313,7 +313,7 @@ class ModeShownTests(unittest.TestCase):
                         opener(app)
                         screen = drawn(app)
                         self.assertEqual(rule_rows(screen), [])
-                        self.assertTrue(screen[info_row(screen)].startswith(label), screen)
+                        self.assertTrue(screen[info_row(screen)].startswith(INFO_INSET + label), screen)
 
 
 class ClarifyFieldTests(unittest.TestCase):
@@ -680,7 +680,7 @@ class ResizeAndShortTerminalTests(unittest.TestCase):
         app._on_server_request(ServerRequest("srq-1", "approval", {**APPROVAL.params, "choices": ["once", "deny"]}))
         screen = drawn(app)
         info = info_row(screen)
-        self.assertTrue(screen[info].startswith("↑↓ pick · enter confirms · d or esc denies and stops"), screen)
+        self.assertTrue(screen[info].startswith(INFO_INSET + "↑↓ pick · enter confirms · d or esc denies and stops"), screen)
         self.assertEqual(screen[info - 3 : info],
                          ["▌ ❯ deny", "▌   allow once", "▌   no, and tell Hermes what to do instead"])
         self.assertFalse([row for row in screen if row.startswith("▌") and "esc" in row], screen)  # no slot row for keys

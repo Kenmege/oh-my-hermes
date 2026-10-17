@@ -92,8 +92,9 @@ class AgentViewMixin:
     """
 
     def _agent_strip(self, cols: int) -> tuple[Line, tuple[Hit, ...]]:
-        """The roster's strip for the info line, and the cells each entry covers as 0-based screen columns."""
-        start = strip_column(self.mode, self.theme)
+        """The roster's strip for an info line `cols` wide, and the cells each entry covers as 0-based screen columns
+        (after the line's inset, `_info_inset`)."""
+        start = self._info_inset() + strip_column(self.mode, self.theme)
         line, hits = self.roster.strip_line(cols - start, self.theme, self._spinner_frame())
         return line, tuple(Hit(hit.start + start, hit.end + start, hit.subagent_id) for hit in hits)
 

@@ -47,8 +47,8 @@ All notable changes will be documented here.
 - **The OMH TUI's composer is a rounded box over one dim info line, as in
   Claude Code.** The composer's two rules, the mode row and the dark status
   band are gone. The composer sits in a box (`╭─╮`, `│ > … │`, `╰─╯`) that
-  keeps its colour in every mode, and the line under it says the mode or the
-  keys that matter now on the left (`? for shortcuts`, `⏵⏵ accept all on (⇧⇥
+  keeps its colour in every mode, and the line under it, two cells in under
+  the box's text, says the mode or the keys that matter now on the left (`? for shortcuts`, `⏵⏵ accept all on (⇧⇥
   to cycle)` in accept's colour, `⏸ plan mode on (⇧⇥ to cycle)` in plan's, a
   question's or a picker's keys) and the model, `ctx 5%` and `effort medium`
   on the right, with the OMH HUD's repeat and in-flight tool counts first

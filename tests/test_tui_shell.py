@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import unittest
 
-from _tui_lines import box_edges, line_text
+from _tui_lines import INFO_INSET, box_edges, line_text
 from test_tui_gateway_contract import recorded_rows
 from test_tui_modes import SID, answer, drawn, make_app, notices, type_text
 from omh.skin_pack import SKIN_THEMES
@@ -58,7 +58,7 @@ class ShellModeTests(unittest.TestCase):
         app, _client = make_app()
         type_text(app, "!ls")
         screen = drawn(app)
-        self.assertTrue(info_row_of(screen).startswith(SHELL_LABEL), screen)
+        self.assertTrue(info_row_of(screen).startswith(INFO_INSET + SHELL_LABEL), screen)
         self.assertTrue(set(box_edges(80)) <= set(screen))  # the box as in every mode
         self.assertEqual(mark_colour(screen), hex_to_rgb(DEFAULT_THEME.accent.fg))  # the mark says it, not only the label
         app.composer.replace(0, len(app.composer.text), "ls")

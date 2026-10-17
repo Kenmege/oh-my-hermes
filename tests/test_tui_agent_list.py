@@ -16,7 +16,7 @@ import re
 import unittest
 
 from _tui_gateway_replay import Scenario, recorded_answer, spans
-from _tui_lines import lines_text
+from _tui_lines import INFO_INSET, lines_text
 from test_tui_agent_strip import STARTS, agent_app, agent_event, relay
 from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, Step, startup_answers, info_index
 from test_tui_modes import SID, RecordingClient, answer, composer_index, drawn, make_app, notices, queue, steers, type_text
@@ -31,7 +31,7 @@ from omh.tui.agent_view import (
 )
 from omh.tui.app import SLOT_ARM_SECONDS, App
 from omh.tui.layout import choice_cap
-from omh.tui.frame import MODE_NORMAL
+from omh.tui.frame import BOX_INSET, MODE_NORMAL
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Paste
 from omh.tui.pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
@@ -60,8 +60,11 @@ def under_the_frame(app: App) -> list[str]:
 
 
 def info_left(row: str) -> str:
-    """The info line's left side: its right side (model, context, effort) stands 3 cells or more away."""
-    return re.split(r" {3,}", row)[0]
+    """The info line's left side, after the inset it starts with under the box: its right side (model, context,
+    effort) stands 3 cells or more away."""
+    if not row.startswith(INFO_INSET):
+        raise AssertionError(f"the info line does not start {BOX_INSET} cells in: {row!r}")
+    return re.split(r" {3,}", row[BOX_INSET:])[0]
 
 
 def focused(**options: object) -> tuple[App, RecordingClient]:
@@ -753,7 +756,7 @@ class AgentActionTests(unittest.TestCase):
         self.assertEqual(client.calls, [])
 
     def test_a_narrow_list_keeps_its_keys_and_the_way_back(self) -> None:
-        for cols, said in ((100, AGENT_LIST_HINT), (40, "⏎ log · x interrupt · s steer · esc back"),
+        for cols, said in ((100, AGENT_LIST_HINT), (42, "⏎ log · x interrupt · s steer · esc back"),  # and the inset
                            (34, "x interrupt · s steer · esc back")):
             with self.subTest(cols=cols):
                 app, _client = focused(cols=cols)
@@ -1230,7 +1233,7 @@ class AgentReplayTests(AppTestCase):
         self.assert_clean_run(run)
         captures = terminal.captures
         strip = captures["strip"][info_index(captures["strip"])]
-        self.assertTrue(strip.startswith("● main  "), strip)
+        self.assertTrue(strip.startswith(INFO_INSET + "● main  "), strip)
         self.assertIn("find usages of", strip)
         self.assertIn("read the diff", strip)
         rows = captures["list"]

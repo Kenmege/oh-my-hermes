@@ -44,7 +44,7 @@ from _tui_gateway_replay import (
     replay_env,
     spans,
 )
-from _tui_lines import box_inner, line_text
+from _tui_lines import INFO_INSET, box_inner, line_text
 from _vt_screen import VTScreen
 from omh.tui import terminal as terminal_module
 from omh.skin_pack import default_theme, hex_to_rgb, theme_for_name, write_theme_choice
@@ -235,7 +235,7 @@ class ScriptedTerminal:
         row = self.info_row()
         if IDLE_HINT in row:
             return True
-        return row.startswith((ACCEPT_LABEL, PLAN_LABEL)) and not any(
+        return row.removeprefix(INFO_INSET).startswith((ACCEPT_LABEL, PLAN_LABEL)) and not any(
             WORKING_CLOCK.search(line) for line in self.screen.lines()
         )
 
@@ -533,7 +533,7 @@ class SessionTests(AppTestCase):
         self.assert_clean_run(run)
         screen = run.terminal.captures["ready"]
         info = info_index(screen)
-        self.assertTrue(screen[info].startswith(IDLE_HINT), screen)
+        self.assertTrue(screen[info].startswith(INFO_INSET + IDLE_HINT), screen)
         self.assertIn("deepseek/deepseek-v4.1-flash-ultrafast · ", screen[info])
         composer = info - 1 - UNDER_COMPOSER
         self.assertEqual(box_inner(screen[composer]), "> Ask Hermes anything", screen)
@@ -1203,9 +1203,9 @@ class InfoLineRightTests(unittest.TestCase):
 
     def right(self, app: App, width: int) -> str:
         row = line_text(app._info_line(width))
-        self.assertTrue(row.startswith(IDLE_HINT), row)
+        self.assertTrue(row.startswith(INFO_INSET + IDLE_HINT), row)
         self.assertLessEqual(line_width(app._info_line(width)), width)
-        return row[len(IDLE_HINT) :].strip()
+        return row[len(INFO_INSET + IDLE_HINT) :].strip()
 
     def test_the_right_side_is_model_context_and_effort_with_no_brand_and_no_state(self) -> None:
         app = self.app()
@@ -1216,19 +1216,20 @@ class InfoLineRightTests(unittest.TestCase):
             self.assertNotIn(gone, row)
 
     def test_the_model_shortens_first_then_goes_then_the_effort_then_the_context(self) -> None:
-        # `? for shortcuts` and the 3-cell gap take 18 cells; the right side takes the longest form that fits beside.
+        # The inset, `? for shortcuts` and the 3-cell gap take 20 cells; the right side takes the longest form that
+        # fits beside.
         app = self.app()
         expected = {
-            79: f"{self.MODEL} · ctx 5% · effort high",
-            78: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
-            70: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
-            69: "v4.1-flash-ultrafast · ctx 5% · effort high",
-            61: "v4.1-flash-ultrafast · ctx 5% · effort high",
-            60: "ctx 5% · effort high",
-            38: "ctx 5% · effort high",
-            37: "ctx 5%",
-            24: "ctx 5%",
-            23: "",
+            81: f"{self.MODEL} · ctx 5% · effort high",
+            80: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
+            72: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
+            71: "v4.1-flash-ultrafast · ctx 5% · effort high",
+            63: "v4.1-flash-ultrafast · ctx 5% · effort high",
+            62: "ctx 5% · effort high",
+            40: "ctx 5% · effort high",
+            39: "ctx 5%",
+            26: "ctx 5%",
+            25: "",
         }
         self.assertEqual({width: self.right(app, width) for width in expected}, expected)
 

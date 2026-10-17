@@ -418,6 +418,23 @@ class DoneLineTests(unittest.TestCase):
         self.assertEqual(line_text(wide), "  ✻ 5s · 3 tools · ↓1.3k")
 
 
+class InfoLineInsetTests(unittest.TestCase):
+    def test_the_info_line_starts_where_the_boxs_text_does(self) -> None:
+        app, _client = make_app(rows=24, cols=80)
+        screen = [row for row in drawn(app) if row]
+        composer, info = screen[-3], screen[-1]
+        self.assertTrue(composer.startswith("│ > "), screen)
+        self.assertEqual(info.index("?"), composer.index(">"))  # under the box's text, two cells in
+        self.assertTrue(info.startswith("  ? for shortcuts"), info)
+        self.assertEqual(line_width(app._info_line(80)), 80)  # the right side still ends on the last cell
+
+    def test_a_tiny_terminal_draws_no_box_and_the_line_starts_on_the_edge(self) -> None:
+        app, _client = make_app(rows=5, cols=80)
+        screen = [row for row in drawn(app) if row]
+        self.assertTrue(screen[-1].startswith("? for shortcuts"), screen)
+        self.assertFalse([row for row in screen if row.startswith("╭")], screen)
+
+
 # A real resume's `messages` (tests/fixtures/tui_gateway/resume_history.json): one turn of five calls, an edit among them.
 RESUME = json.loads(
     (Path(__file__).resolve().parent / "fixtures" / "tui_gateway" / "resume_history.json").read_text(encoding="utf-8")
