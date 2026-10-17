@@ -76,7 +76,7 @@ INTERRUPTED = "interrupted"
 FAILED_STATUSES = frozenset({"failed", "error", "timeout"})  # Hermes' SUBAGENT_FAILURE_STATUSES
 FINISHED_STATUSES = FAILED_STATUSES | {COMPLETED, INTERRUPTED}
 
-MAIN_ID = ""  # the main agent's row and strip entry: `apply` ignores an empty `subagent_id`, so no agent has it
+MAIN_ID = ""  # the main agent's row: `apply` ignores an empty `subagent_id`, so no agent has it
 
 ROSTER_CAP = 64
 LOG_ROW_CAP = 400
@@ -136,7 +136,8 @@ class LogRow(NamedTuple):
 
 
 class Hit(NamedTuple):
-    """The cells one strip entry covers: `start` to `end` (exclusive), 0-based from the strip's first cell."""
+    """The cells a click on one row of the agent list lands in: `start` to `end` (exclusive), 0-based screen
+    columns, and the id of that row's agent (`MAIN_ID` for main), as `App.clickable` keeps them."""
 
     start: int
     end: int
@@ -473,35 +474,32 @@ class Roster:
                 shown[subagent_id] = part if told_apart else f"{numbers[subagent_id]}{NUMBER_MARK}{name}"
         return shown
 
-    def strip_line(self, width: int, theme: Theme, spinner_frame: int) -> tuple[Line, tuple[Hit, ...]]:
-        """`● main  ⠹ explore  ○ review  ↓ agents`, and the cells each entry covers on it.
+    def strip_line(self, width: int, theme: Theme, spinner_frame: int) -> Line:
+        """`● main  ⠹ explore  ○ review  ↓ agents`.
 
         A running agent shows frame `spinner_frame` of the spinner, a finished
         one `○`, a failed one `✗`. Agents whose names match are told apart
         (`strip_names`), so no two entries read the same. When that row is wider than `width` it
-        becomes `● 2 agents ↓` (cut to `width`), which names no agent and so
-        has no hits; `64+ agents` when the cap pushed some out. With no agent
-        there is no strip.
+        becomes `● 2 agents ↓` (cut to `width`), which names no agent;
+        `64+ agents` when the cap pushed some out. With no agent there is no
+        strip.
         """
         if not self.agents:
-            return (), ()
+            return ()
         spans = [Span(f"{MAIN_MARK} ", theme.accent), Span(MAIN_NAME, theme.hint)]
         column = cell_width(f"{MAIN_MARK} {MAIN_NAME}")
-        hits = [Hit(0, column, MAIN_ID)]
         tail = f"{STRIP_GAP}{OPEN_MARK}"
         names = self.strip_names()
         for agent in self.agents.values():
             mark = _mark(agent, theme, spinner_frame)
             name = names[agent.subagent_id]
-            start = column + cell_width(STRIP_GAP)
-            column = start + cell_width(f"{mark.text} {name}")
+            column += cell_width(STRIP_GAP) + cell_width(f"{mark.text} {name}")
             if column + cell_width(tail) > width:
-                return self._collapsed_strip(width, theme), ()
+                return self._collapsed_strip(width, theme)
             style = theme.muted if agent.status in FINISHED_STATUSES else theme.hint
             spans += [Span(STRIP_GAP), mark, Span(f" {name}", style)]
-            hits.append(Hit(start, column, agent.subagent_id))
         spans.append(Span(tail, theme.hint))
-        return tuple(spans), tuple(hits)
+        return tuple(spans)
 
     def _collapsed_strip(self, width: int, theme: Theme) -> Line:
         count = len(self.agents)

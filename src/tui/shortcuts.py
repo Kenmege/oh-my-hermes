@@ -25,8 +25,7 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
              "highlighted row too, and sends a command already typed in full"),
     ("Shift+Tab", "Cycles the input mode: normal, accept all (Hermes asks no approvals in this session), plan "
                   "(prompts go as /plan); while Hermes itself has approvals off, turns plan on and off"),
-    ("Ctrl+T", "Steps the reasoning effort: low, medium, high, xhigh, max; the mode row shows it as ctrl+t effort "
-               "(medium)"),
+    ("Ctrl+T", "Steps the reasoning effort: low, medium, high, xhigh, max; the info line shows it as effort medium"),
     ("@", "Starts a file or folder reference; Hermes offers matches above the composer"),
     ("!", "At the start of a line, makes it a shell command Hermes runs when you send it (30 s at most); "
           "it and its output are not sent to the model"),
@@ -37,7 +36,7 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
                "Esc leaves the composer as it was"),
     ("Ctrl+X", "Opens the /sessions picker"),
     ("↑", "On an empty composer with prompts queued, takes them back into the composer to edit; a queued shell line comes back on its own"),
-    ("↓", "On an empty composer while the mode row shows subagents, opens the agent list in the composer's place"),
+    ("↓", "On an empty composer while the info line shows subagents, opens the agent list in the composer's place"),
     ("← / →", "Move by a character; with Ctrl or Alt, by a word (Alt+B and Alt+F too)"),
     ("Home / End, Ctrl+A / Ctrl+E", "Go to the start or the end of the line"),
     ("Backspace / Delete", "Delete a character, or a paste chip whole; Backspace on an empty composer removes "

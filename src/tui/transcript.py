@@ -19,11 +19,11 @@ by `live_lines()` equal `history_lines(details=False)` at the same width
 Only the LAST block can still change; appending any block first closes the
 one before it, so a block is flushed only after every block above it.
 
-Assistant text opens with `⏺ ` in the accent on its first row, and every
+Assistant text opens with `⏺ ` in the text colour on its first row, and every
 later row of that reply, however many flushes it arrives in, is indented to
-match, so a reply reads as one block beside the `› ` of the prompt above it.
+match, so a reply reads as one block beside the dim `> ` of the prompt above it.
 
-A slash command the person runs is a block of its own: `› /name arg` in the
+A slash command the person runs is a block of its own: `> /name arg` in the
 hint colour, then what it printed under `⎿`, each part in its level's colour
 and, for a warning or an error, its glyph. Its echo stays live while the
 command may still print (`close_command` ends that); what it says meanwhile
@@ -39,15 +39,16 @@ so a reply that ends there leaves nothing to take back) and fully at
 `message.complete`; the markdown state (an open fence) carries across the
 flush boundary; thinking flushes as ONE collapsed row ("▸ thought for 4.2s");
 a tool group flushes when the next block arrives (message text, thinking) or
-at `message.complete`, as one row per call (its mark, name and argument
-summary) with what it printed under it, no header over them. A
+at `message.complete`, as one row per call (`⏺ name(argument summary)`, the
+`⏺` in its state's colour) with what it printed under `⎿`, no header over
+them; a read or a load says in one line what it read instead (`_read_summary`). A
 `tool.generating` row (`◌`) is a draft: a `tool.start` takes over the first
 unclaimed draft of its name, or else the first unclaimed draft of the
 `tool_call` bridge (`gateway_contract.TOOL_CALL_BRIDGE`), whose call starts
 under the name of the tool it reached. A draft no start took is dropped when
 its group closes, so it is never written or counted, and a group left with no
 calls shows nothing. An edit tool whose `tool.complete` carries
-an `inline_diff` shows that diff under its row (`diff_view.py`): the first
+an `inline_diff` shows that diff under its row's `⎿` (`diff_view.py`): the first
 `PREVIEW_LINES` diff lines and a count of the rest, which Ctrl+O's details
 view (and `history_lines` with details) shows in full. Lines rendered at one width stay as they were taken; a
 resize changes only what has not been taken yet.
@@ -95,6 +96,7 @@ TOOL_OK = "ok"
 TOOL_ERROR = "error"
 TOOL_DENIED = "denied"
 TOOL_INTERRUPTED = "interrupted"  # still open when its group closed: it never reported a result
+TOOL_RECORDED = "recorded"  # a resumed session's call: Hermes' record says what ran, not how it ended
 
 NOTICE_INFO = "info"
 NOTICE_OK = "ok"  # something the person allowed went ahead
@@ -117,7 +119,7 @@ DROPPED_NOTICE = "⋯ {earlier} no longer held"
 # longer has them.
 BLOCK_CAP = 2000
 
-USER_MARK = "› "
+USER_MARK = "> "  # dim, before your prompt's dim text, with no band behind it
 FROM_QUEUE_TAG = "⧗ from queue"  # on a prompt the queue sent once the turn before it ended
 # A steer the person sent: SENT until Hermes answers, then QUEUED (Hermes took it: it reads it after its next
 # tool call, or sends it as the next prompt while compressing, and says the same for both) or REFUSED.
@@ -126,8 +128,9 @@ STEER_SENT = "sent"
 STEER_QUEUED = "queued"
 STEER_REFUSED = "refused"
 STEER_REFUSED_MARK = "⧗ "
-COMMAND_MARK = "› "  # a command the person ran, echoed in the hint colour above what it printed
-OUTPUT_MARK = "⎿ "
+COMMAND_MARK = USER_MARK  # a command the person ran, echoed in the hint colour above what it printed
+# What a call or a command printed hangs under its row behind `  ⎿  `, and its later rows line up with the words.
+OUTPUT_MARK = "⎿  "
 OUTPUT_INDENT = "  "
 # The rows a command's output shows under its echo; past them one row counts the rest (rows at that width, so the
 # count changes with it), which Ctrl+O's details view shows.
@@ -139,11 +142,11 @@ COLLAPSED_MARK = "▸"
 EXPANDED_MARK = "▾"
 ASSISTANT_MARK = "⏺ "
 ASSISTANT_INDENT = "  "
-TOOL_SUMMARY_MARK = "⎿ "
+TOOL_MARK = "⏺"  # every call that started: the accent while it runs, then green done or red failed or denied
+# (dim for a resumed session's call, whose outcome its record does not keep)
 # A running tool's mark alternates the accent and dim this often, counted from its own start, so calls that run
 # side by side pulse each on its own. Only the live region is drawn with a clock; scrollback gets the settled mark.
 PULSE_SECONDS = 0.5
-TOOL_ROW_INDENT = "  "
 DETAIL_INDENT = "  "
 COLUMN_GAP = "  "
 
@@ -238,6 +241,8 @@ class ToolRow:
     # failed tool, its error's first line.
     output: tuple[str, ...] = ()
     output_more: int = 0
+    # What the person answered a question this call asked, as (words, notice level), drawn under its row.
+    answers: list[tuple[str, str]] = field(default_factory=list)
 
     def diff_lines(self, hold: bool = False) -> tuple[DiffLine, ...]:
         """The diff colour-stripped and classified, its file names relative to `diff_root`.
@@ -255,6 +260,11 @@ class ToolRow:
         )
         self.held_lines = lines if hold else None
         return lines
+
+    def answer_refused(self) -> bool:
+        """Whether an answer under the row says the call was refused or its question closed unanswered
+        (`✗ denied · …`, `✗ timed out · …`: one at `NOTICE_ERROR`)."""
+        return any(level == NOTICE_ERROR for _text, level in self.answers)
 
 
 @dataclass
@@ -411,19 +421,22 @@ _ERROR_KEYS = ("error", "stderr", "user_summary", "output")
 # A denied call says so in the person's words first; `error` there is what Hermes told the model.
 _DENIED_KEYS = ("user_summary", "error", "output")
 DENIED_LINE = "denied"  # a denied call whose result says nothing more
+CLARIFY_TOOL = "clarify"  # the Hermes tool a clarify question comes from
 # Hermes' clarify `outcome` for a question that went unanswered (beside `submitted`), worded for the row under its ✗.
 UNANSWERED_OUTCOMES = {"cancelled": "cancelled", "timed_out": "timed out", "undelivered": "not delivered"}
 TOOL_OUTPUT_ROWS = 3  # shown under a tool row; the details view shows up to TOOL_OUTPUT_KEEP
 TOOL_OUTPUT_KEEP = 40
 
 
-def _tool_output(result: object, status: str) -> tuple[tuple[str, ...], int]:
+def _tool_output(result: object, status: str, closed_said: bool = False) -> tuple[tuple[str, ...], int]:
     """(lines, how many more) of what a tool printed: its first lines; for a failed or denied tool, one line, its
     reason's first.
 
     A failed tool whose result names no reason, only what it printed (Hermes' terminal tool reports a non-zero
     exit that way: `output` and `exit_code`, `error` None), gives the end of that instead, blank lines left out:
     a test run's summary is its last lines. `_output_rows` shows a failed tool's lines from their end.
+    With `closed_said` (an answer under the row says how the question closed) an unanswered clarify gives no
+    outcome word (`timed out`); a notice of Hermes' saying why is still its line.
     """
     if isinstance(result, str):
         found = [("text", result)]
@@ -431,7 +444,7 @@ def _tool_output(result: object, status: str) -> tuple[tuple[str, ...], int]:
         keys = _ERROR_KEYS if status == TOOL_ERROR else _DENIED_KEYS if status == TOOL_DENIED else _OUTPUT_KEYS
         found = [(key, as_text(result.get(key))) for key in keys]
         if status == TOOL_DENIED:  # a clarify question's: why its wait ended, else how
-            outcome = UNANSWERED_OUTCOMES.get(as_text(result.get("outcome")), "")
+            outcome = "" if closed_said else UNANSWERED_OUTCOMES.get(as_text(result.get("outcome")), "")
             found.append(("notice", as_text(result.get("notice")) or outcome))
     else:
         return (), 0
@@ -447,6 +460,47 @@ def _tool_output(result: object, status: str) -> tuple[tuple[str, ...], int]:
     if status in (TOOL_ERROR, TOOL_DENIED):
         return tuple(lines[:1]), 0
     return tuple(lines[:TOOL_OUTPUT_KEEP]), max(len(lines) - TOOL_OUTPUT_KEEP, 0)
+
+
+# The file Hermes' `skill_view` names when it read the skill itself (its repeat-view stub says so too).
+SKILL_FILE = "SKILL.md"
+
+
+def _read_summary(name: str, result: object) -> tuple[str, ...]:
+    """One line for what a read or a load returned, shown in place of its first lines; () for any other call.
+
+    `read_file` counts the lines of its `content` (a binary or image read has
+    none to count); `skill_view` names the skill, and the file in it when it
+    read one; `search_files` gives its `total_count`, with `+` when that is a
+    lower bound, as files when it listed only files, and the first line of
+    Hermes' `warning` under it when it gave one.
+    """
+    if not isinstance(result, dict):
+        return ()
+    if name == "read_file":
+        content = result.get("content")
+        if not isinstance(content, str) or result.get("is_binary") or result.get("is_image"):
+            return ()
+        lines = content.split("\n")
+        if lines[-1] == "":
+            lines.pop()
+        return (f"Read {len(lines)} line{'' if len(lines) == 1 else 's'}",)
+    if name == "skill_view":
+        skill = _first_line(as_text(result.get("name")))
+        file = _first_line(as_text(result.get("file")))
+        if not skill:
+            return ()
+        return (f"loaded {file} from skill {skill}" if file and file != SKILL_FILE else f"loaded skill {skill}",)
+    if name == "search_files":
+        total = result.get("total_count")
+        if not isinstance(total, int) or isinstance(total, bool):
+            return ()
+        files = "files" in result and "matches" not in result and "matches_text" not in result
+        noun = ("file" if total == 1 else "files") if files else ("match" if total == 1 else "matches")
+        count = f"{total}{'+' if result.get('total_count_is_lower_bound') else ''} {noun}"
+        warning = _first_line(as_text(result.get("warning")))
+        return (count, warning) if warning else (count,)
+    return ()
 
 
 def _relative(root: str, path: str) -> str:
@@ -499,15 +553,14 @@ def _text_rows(
 
 
 def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
-    """Your prompt behind `›` on its band, which every row fills to the right edge; `⧗ from queue` when the queue sent it."""
-    rows = _text_rows(block.text, theme.text, (Span(USER_MARK, theme.user),), (Span(" " * len(USER_MARK)),), width)
+    """Your prompt behind a dim `>`, in the muted colour on no band, as Claude Code shows it; `⧗ from queue` when the
+    queue sent it."""
+    rows = _text_rows(block.text, theme.muted, (Span(USER_MARK, theme.dim),), (Span(" " * len(USER_MARK)),), width)
     if block.from_queue and rows:
-        roles = on_band(theme, theme.user_band) if theme.user_band.bg is not None else theme
-        tag: Line = (Span(COLUMN_GAP + FROM_QUEUE_TAG, roles.muted),)  # read against the band it sits on
+        tag: Line = (Span(COLUMN_GAP + FROM_QUEUE_TAG, theme.muted),)
         if line_width(rows[0]) + line_width(tag) <= width:
             rows[0] = (*rows[0], *tag)
-    band = theme.user_band
-    return [(*(Span(span.text, replace(span.style, bg=band.bg)) for span in row), fill(band)) for row in rows]
+    return rows
 
 
 def _awaits_answer(block: Block) -> bool:
@@ -562,42 +615,50 @@ def _notice_rows(block: NoticeBlock, width: int, theme: Theme) -> list[Line]:
 
 
 TURN_DONE_MARK = "✻ "
-TURN_RULE = "─"
 # After a turn's wall-clock time, the part of it a question waited on the person, when that is a second or more.
 TURN_WAITED = " ({elapsed} waiting on you)"
 
 
 def _summary_rows(block: TurnSummaryBlock, width: int, theme: Theme) -> list[Line]:
-    """`✻ 34s · 3 tools · ↓1.2k  ────`: the turn's facts on the thin rule that closes it (no tool count for none).
+    """`  ✻ 34s · 3 tools · ↓1.2k`: the turn's facts in one dim line under the reply's words (no tool count for none).
 
     The time is the turn's wall clock, with the wait on the person beside it
-    (`✻ 30s (27s waiting on you)`) when that is a second or more.
+    (`✻ 30s (27s waiting on you)`) when that is a second or more. A line too
+    narrow for all of it drops whole facts, the tokens first, then the tools,
+    then the wait; the time stays, and is cut at the edge only where it does
+    not fit alone.
     """
-    facts = [elapsed_text(block.seconds)]
-    if int(block.waited) >= 1:
-        facts[0] += TURN_WAITED.format(elapsed=elapsed_text(block.waited))
-    if block.tools:
-        facts.append(f"{block.tools} tool{'' if block.tools == 1 else 's'}")
-    if block.output_tokens:
-        facts.append(f"↓{compact_count(block.output_tokens)}")
-    done: Line = (Span(TURN_DONE_MARK, theme.dim), Span(" · ".join(facts), theme.muted))
-    rule = width - line_width(done) - len(COLUMN_GAP)
-    return [truncate_line((*done, Span(COLUMN_GAP + TURN_RULE * rule, theme.rule)) if rule > 0 else done, width)]
+    elapsed = elapsed_text(block.seconds)
+    waited = TURN_WAITED.format(elapsed=elapsed_text(block.waited)) if int(block.waited) >= 1 else ""
+    tools = f"{block.tools} tool{'' if block.tools == 1 else 's'}" if block.tools else ""
+    written = f"↓{compact_count(block.output_tokens)}" if block.output_tokens else ""
+    lead: Line = (Span(ASSISTANT_INDENT), Span(TURN_DONE_MARK, theme.dim))
+    done: Line = ()
+    for facts in ((elapsed + waited, tools, written), (elapsed + waited, tools), (elapsed + waited,), (elapsed,)):
+        done = (*lead, Span(" · ".join(fact for fact in facts if fact), theme.muted))
+        if line_width(done) <= width:
+            break
+    return [truncate_line(done, width)]
 
 
 _OUTPUT_GLYPHS = {NOTICE_WARN: "⚠ ", NOTICE_ERROR: "✗ "}
 
 
+def _output_leads(theme: Theme) -> tuple[Line, Line]:
+    """What goes before the first row of a call's or a command's output (`  ⎿  `), and before every later one."""
+    return (Span(OUTPUT_INDENT), Span(OUTPUT_MARK, theme.dim)), (Span(OUTPUT_INDENT + " " * len(OUTPUT_MARK)),)
+
+
 def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool) -> list[Line]:
-    """`› /name arg`, then each part of its output under `⎿` in its level's colour (and glyph), cut unless `expanded`."""
+    """`> /name arg`, then each part of its output under `⎿` in its level's colour (and glyph), cut unless `expanded`."""
     rows = wrap_prefixed((Span(block.command, theme.hint),), (Span(COMMAND_MARK, theme.dim),), (Span("  "),), width)
-    rest: Line = (Span(OUTPUT_INDENT + " " * len(OUTPUT_MARK)),)
+    rest = _output_leads(theme)[1]
     output: list[Line] = []
     for text, level in block.parts:
         band = _outcome_band(level, theme)
         roles = on_band(theme, band) if band is not None else theme
         style = {NOTICE_WARN: roles.warn, NOTICE_ERROR: roles.error, OUTPUT_FAILED: roles.error}.get(level, roles.text)
-        lead = rest if output else (Span(OUTPUT_INDENT), Span(OUTPUT_MARK, roles.dim))
+        lead = rest if output else _output_leads(roles)[0]
         part = _text_rows(_OUTPUT_GLYPHS.get(level, "") + text, style, lead, rest, width)
         output.extend(_banded(part, band) if band is not None else part)
     if not expanded and not block.whole and len(output) > OUTPUT_PREVIEW_ROWS:
@@ -659,13 +720,13 @@ def _pulse_dim(tool: ToolRow, now: float | None) -> bool:
 
 def _tool_mark(status: str, theme: Theme, dim: bool = False) -> Span:
     if status == TOOL_OK:
-        return Span("✓", theme.ok)
-    if status == TOOL_ERROR:
-        return Span("✗", theme.error)
-    if status == TOOL_DENIED:
-        return Span("✗", theme.error)  # one mark for a denial, as its approval row has; its line says it was denied
+        return Span(TOOL_MARK, theme.ok)
+    if status in (TOOL_ERROR, TOOL_DENIED):
+        return Span(TOOL_MARK, theme.error)  # the line under a denial says it was denied
     if status == TOOL_RUNNING:
-        return Span("⏺", theme.dim if dim else theme.accent)
+        return Span(TOOL_MARK, theme.dim if dim else theme.accent)
+    if status == TOOL_RECORDED:
+        return Span(TOOL_MARK, theme.dim)
     if status == TOOL_INTERRUPTED:
         return Span("▪", theme.dim)
     return Span("◌", theme.dim)
@@ -677,17 +738,18 @@ def _is_path(text: str) -> bool:
 
 
 def _tool_row(tool: ToolRow, width: int, theme: Theme, now: float | None = None) -> Line:
-    """One line per tool: mark (pulsing while it runs, given `now`), name, args summary (cut first), duration."""
+    """One line per call: `⏺ name(args summary)` and its duration; the mark pulses while it runs, given `now`, and
+    the summary is cut first (a path from the left)."""
     mark = _tool_mark(tool.status, theme, tool.status == TOOL_RUNNING and _pulse_dim(tool, now))
-    head: Line = (Span(TOOL_ROW_INDENT), mark, Span(" "), Span(tool.name, theme.tool))
+    head: Line = (mark, Span(" "), Span(tool.name, theme.tool))
     tail: Line = ()
     if tool.duration_s is not None:
         tail = (Span(COLUMN_GAP + _seconds(tool.duration_s), theme.muted),)
-    room = width - line_width(head) - line_width(tail) - len(COLUMN_GAP)
+    room = width - line_width(head) - line_width(tail) - len("()")
     args: Line = ()
     if tool.args_summary and room > 1:
         cut = truncate_left if _is_path(tool.args_summary) else truncate
-        args = (Span(COLUMN_GAP + cut(tool.args_summary, room), theme.muted),)
+        args = (Span(f"({cut(tool.args_summary, room)})", theme.muted),)
     return truncate_line((*head, *args, *tail), width)
 
 
@@ -696,41 +758,53 @@ def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> lis
 
     A failed tool's are its last ones, with the count of the rest above them
     (`_tool_output`). A denied call whose result gave no reason says
-    `denied`, so a denial reads apart from a failure without colour.
+    `denied`, so a denial reads apart from a failure without colour, unless
+    an answer under its row already says so (`ToolRow.answer_refused`).
     """
-    output = tool.output or ((DENIED_LINE,) if tool.status == TOOL_DENIED else ())
+    output = tool.output or ((DENIED_LINE,) if tool.status == TOOL_DENIED and not tool.answer_refused() else ())
     if not output:
         return []
     failed = tool.status in (TOOL_ERROR, TOOL_DENIED)
     shown = output if expanded else output[-TOOL_OUTPUT_ROWS:] if failed else output[:TOOL_OUTPUT_ROWS]
     hidden = len(output) - len(shown) + tool.output_more
     style = theme.error if failed else theme.muted
-    first: Line = (Span(TOOL_ROW_INDENT * 2), Span(TOOL_SUMMARY_MARK, theme.dim))
-    rest: Line = (Span(TOOL_ROW_INDENT * 2 + " " * len(TOOL_SUMMARY_MARK)),)
+    first, rest = _output_leads(theme)
     texts = [Span(line, style) for line in shown]
     more = [Span(f"… +{hidden} line{'' if hidden == 1 else 's'}{SHOWS_ALL}", theme.muted)] if hidden else []
     ordered = [*more, *texts] if failed else [*texts, *more]
     return [truncate_line((*(rest if index else first), span), width) for index, span in enumerate(ordered)]
 
 
+def _answer_rows(text: str, level: str, width: int, theme: Theme) -> list[Line]:
+    """`  ⎿  ✓ allowed once · <command>`: what the person answered, under the call that asked, on its outcome's band."""
+    band = _outcome_band(level, theme)
+    roles = on_band(theme, band) if band is not None else theme
+    mark, style = _notice_style(level, roles)
+    first, rest = _output_leads(roles)
+    rows = _text_rows(text, style, (*first, Span(mark, style)), (*rest, Span(" " * len(mark))), width)
+    return _banded(rows, band) if band is not None else rows
+
+
 def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: float | None = None) -> list[Line]:
-    """Each call's own row (what ran, on what) and what it printed under it; a group with no call shows nothing."""
+    """Each call's own row (what ran, on what), what the person answered it right under that, and what it printed
+    under them; a group with no call shows nothing."""
     rows: list[Line] = []
-    summary_rest: Line = (Span(" " * (len(TOOL_ROW_INDENT) * 2 + len(TOOL_SUMMARY_MARK))),)
     band = theme.error_band if theme.error_band.bg is not None else None
     for tool in group.tools:
         failed = band is not None and tool.status in (TOOL_ERROR, TOOL_DENIED)  # a settled mark: nothing pulses on a band
         roles = on_band(theme, band) if failed else theme
         own = [_tool_row(tool, width, roles, now)]
         if expanded and tool.summary and tool.summary not in tool.output[:1]:  # a failure's line is said once
-            summary_first: Line = (Span(TOOL_ROW_INDENT * 2 + TOOL_SUMMARY_MARK, roles.dim),)  # read against its band
+            summary_first, summary_rest = _output_leads(roles)  # read against its band
             own.extend(wrap_prefixed((Span(tool.summary, roles.muted),), summary_first, summary_rest, width))
         lines = tool.diff_lines(hold=not group.done) if tool.inline_diff else ()
         if not lines:
             own.extend(_output_rows(tool, width, roles, expanded))
-        rows.extend(_banded(own, band) if failed and band is not None else own)
-        if lines:
-            rows.extend(diff_rows(lines, width, theme, full=expanded))  # a diff keeps its own bands
+        shown = _banded(own, band) if failed and band is not None else own
+        answers = [row for text, level in tool.answers for row in _answer_rows(text, level, width, theme)]
+        rows.extend([shown[0], *answers, *shown[1:]])
+        if lines:  # a diff keeps its own bands
+            rows.extend(diff_rows(lines, width, theme, full=expanded, lead=_output_leads(theme)[0]))
     return rows
 
 
@@ -846,13 +920,24 @@ class Transcript:
         self._version += 1
         return block
 
-    def add_answer(self, text: str, level: str) -> None:
-        """What the person answered Hermes (`✓ allowed once · <command>`), ahead of the tool call it was about.
+    def add_answer(self, text: str, level: str, clarify: bool = False) -> None:
+        """What the person answered Hermes (`✓ allowed once · <command>`), under the tool call it was about.
 
-        A tool group still live has printed nothing yet, so the answer goes in
-        above it; above any other live block it waits for the next boundary,
-        as a steer does, rather than closing it.
+        A request does not name the call that asked, so the answer goes under
+        the live group's last running call: its last running `clarify` for a
+        clarify question's answer (`clarify`), its last running other call for
+        the rest. With no such call it is a row of its own: a tool group still
+        live has printed nothing yet, so it goes in above it; above any other
+        live block it waits for the next boundary, as a steer does, rather than
+        closing it.
         """
+        group = self._live(ToolGroup)
+        tools = group.tools if group is not None else []
+        asked = [row for row in tools if row.status == TOOL_RUNNING and (row.name == CLARIFY_TOOL) == clarify]
+        if asked:
+            asked[-1].answers.append((text, level))
+            self._version += 1
+            return
         block = NoticeBlock(text, level)
         last = self.blocks[-1] if self.blocks else None
         if isinstance(last, ToolGroup) and not last.done and len(self.blocks) - 1 >= self._cursor:
@@ -952,6 +1037,22 @@ class Transcript:
         """A finished reply (a resumed session's history), rendered like a streamed one."""
         if text.strip():
             self._append(AssistantBlock(text, done=True))
+
+    def add_recorded_tools(self, messages: list[dict[str, Any]]) -> None:
+        """A resumed session's tool calls (its history's `role: tool` messages) as one settled group, each drawn as a
+        live call is (`⏺ name(args)`) with a dim mark, since the record keeps no outcome, and an edit's diff under
+        it where Hermes kept the one it showed live (`display_metadata.tool_result_metadata.inline_diff`)."""
+        rows = []
+        for message in messages:
+            metadata = message.get("display_metadata")
+            shown = metadata.get("tool_result_metadata") if isinstance(metadata, dict) else None
+            diff = as_text(shown.get("inline_diff")) if isinstance(shown, dict) else ""
+            name, args = _first_line(as_text(message.get("name"))) or "tool", self._display_args(_args_summary(message))
+            row = ToolRow(as_text(message.get("tool_call_id")), name, args, TOOL_RECORDED)
+            row.inline_diff, row.diff_root = diff.encode("utf-8", "surrogatepass"), self.cwd
+            rows.append(row)
+        if rows:
+            self._append(ToolGroup(rows, done=True))
 
     def fail_turn(self, message: str) -> None:
         """A turn the gateway ended with a bare `error` event instead of `message.complete`.
@@ -1190,7 +1291,10 @@ class Transcript:
         waited = self.waited_within(row.started_at, now) if row.started_at is not None else 0.0
         row.duration_s = _duration(payload, row, now, waited)
         row.summary = _result_summary(payload)
-        row.output, row.output_more = _tool_output(payload.get("result"), row.status)
+        read = _read_summary(row.name, payload.get("result")) if row.status == TOOL_OK else ()
+        row.output, row.output_more = (read, 0) if read else _tool_output(
+            payload.get("result"), row.status, closed_said=row.answer_refused()
+        )
         row.inline_diff, row.diff_root = as_text(payload.get("inline_diff")).encode("utf-8", "surrogatepass"), self.cwd
         row.held_lines = None
 

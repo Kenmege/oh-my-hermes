@@ -91,21 +91,32 @@ class ParseTests(unittest.TestCase):
         decomposed = unicodedata.normalize("NFD", "한글")
         lines = parse_inline_diff(f"{PLUS}+\t{decomposed}{RESET}")
         self.assertEqual(lines, (DiffLine(DIFF_ADDED, "+   " + decomposed),))
-        self.assertEqual(lines_text(diff_rows(lines, 12, THEME)), ["    +   한글"])
+        self.assertEqual(lines_text(diff_rows(lines, 13, THEME)), ["     +   한글"])
 
 
 class RowTests(unittest.TestCase):
+    def test_hermes_padding_after_a_changed_line_wraps_no_band_row(self) -> None:
+        # Hermes 6c61c3e27d pads each changed line to 143 cells with spaces (a live patch's inline_diff, read back from
+        # its state.db display_metadata); on a narrower terminal each band wrapped into an empty second band row.
+        removed, added = '-print("hello")'.ljust(143), '+print("hi")'.ljust(143)
+        padded = "\n".join([REVIEW_HEADER, f"{FILE}a/app.py → b/app.py{RESET}", f"{DIM}@@ -1,3 +1,3 @@{RESET}",
+                            f"{DIM} import os{RESET}", f"{DIM} {RESET}", f"{MINUS}{removed}{RESET}", f"{PLUS}{added}{RESET}"])
+        lines = parse_inline_diff(padded)
+        self.assertEqual([line.text for line in lines[2:]], [" import os", " ", '-print("hello")', '+print("hi")'])
+        self.assertEqual([line_text(row).rstrip() for row in diff_rows(lines, 100, THEME)],
+                         ["     app.py", "   1  import os", "   2", '   3 -print("hello")', '   3 +print("hi")'])
+
     def test_rows_hang_under_the_tool_and_take_their_roles(self) -> None:
         rows = diff_rows(parse_inline_diff(SAMPLE), 40, THEME)
-        indent = Span("    ")
+        indent = Span("     ")
         self.assertEqual(
             rows,
             [
                 (indent, Span("src/app.py", THEME.label)),
                 # the hunk header is no row: its starts number the lines in the dim gutter
-                (Span("  1 ", THEME.muted), Span(" import os", THEME.code)),
-                (Span("  2 ", THEME.muted), Span("-print('hello')" + " " * 21, THEME.diff_remove)),
-                (Span("  2 ", THEME.muted), Span(f"+print('안녕 {EARTH}')" + " " * 19, THEME.diff_add)),  # 17 cells
+                (Span("   1 ", THEME.muted), Span(" import os", THEME.code)),
+                (Span("   2 ", THEME.muted), Span("-print('hello')" + " " * 20, THEME.diff_remove)),
+                (Span("   2 ", THEME.muted), Span(f"+print('안녕 {EARTH}')" + " " * 18, THEME.diff_add)),  # 17 cells
                 (indent, Span("\\ No newline at end of file", THEME.muted)),
                 (indent, Span("… omitted 12 diff line(s) across 1", THEME.muted)),
                 (indent, Span("additional file(s)/section(s)", THEME.muted)),
@@ -125,7 +136,8 @@ class RowTests(unittest.TestCase):
     def test_a_terminal_too_narrow_for_the_indent_drops_it(self) -> None:
         lines = (DiffLine(DIFF_HUNK, "@@ -1 +1 @@"), DiffLine(DIFF_ADDED, "+abc"), DiffLine(DIFF_CONTEXT, " x"))
         self.assertEqual(lines_text(diff_rows(lines, 8, THEME)), ["+abc    ", " x"])
-        self.assertEqual(lines_text(diff_rows(lines, 9, THEME)), ["  1 +abc ", "  2  x"])
+        self.assertEqual(lines_text(diff_rows(lines, 10, THEME)), ["+abc      ", " x"])
+        self.assertEqual(lines_text(diff_rows(lines, 11, THEME)), ["   1 +abc  ", "   2  x"])
 
     def test_the_gutter_numbers_each_side_and_marks_where_a_later_hunk_jumps(self) -> None:
         lines = (
@@ -143,12 +155,13 @@ class RowTests(unittest.TestCase):
         rows = diff_rows(lines, 20, THEME)
         self.assertEqual(
             [line_text(row).rstrip() for row in rows],
-            ["    app.py", " 10  keep", " 11 -old", " 11 +new", " 12 +more", " 13  tail", "  ⋮", "120 -x = 1", "121 +x = 2"],
+            ["     app.py", "  10  keep", "  11 -old", "  11 +new", "  12 +more", "  13  tail", "   ⋮", " 120 -x = 1",
+             " 121 +x = 2"],
         )
-        self.assertEqual(rows[6], (Span("  ⋮", THEME.dim),))
+        self.assertEqual(rows[6], (Span("   ⋮", THEME.dim),))
         # every numbered row's text starts where the indent ends; a band runs from there to the edge
         for row in rows[1:6] + rows[7:]:
-            self.assertEqual((line_width(row[:1]), row[0].style), (4, THEME.muted))
+            self.assertEqual((line_width(row[:1]), row[0].style), (5, THEME.muted))
         for row in (rows[2], rows[3], rows[4], rows[7], rows[8]):
             self.assertEqual(line_width(row), 20)
             self.assertIn(row[1].style, (THEME.diff_add, THEME.diff_remove))
@@ -159,7 +172,7 @@ class RowTests(unittest.TestCase):
 
     def test_a_header_without_both_starts_numbers_nothing(self) -> None:
         lines = (DiffLine(DIFF_HUNK, "@@ garbage @@"), DiffLine(DIFF_ADDED, "+b"))
-        self.assertEqual(lines_text(diff_rows(lines, 20, THEME)), ["    +b" + " " * 14])
+        self.assertEqual(lines_text(diff_rows(lines, 20, THEME)), ["     +b" + " " * 13])
 
     def test_the_preview_shows_24_lines_and_counts_the_rest(self) -> None:
         lines = parse_inline_diff(long_diff(28))
@@ -167,12 +180,12 @@ class RowTests(unittest.TestCase):
         rows = diff_rows(lines, 60, THEME)
         # the file row, the 22 added lines the preview reaches (its hunk header is the gutter), the count
         self.assertEqual(len(rows), 1 + 22 + 1)
-        self.assertEqual(lines_text(rows)[22].rstrip(), " 22 +line 22")
-        self.assertEqual(rows[-1], (Span("    "), Span("… +6 lines · ctrl+o shows all", THEME.muted)))
+        self.assertEqual(lines_text(rows)[22].rstrip(), "  22 +line 22")
+        self.assertEqual(rows[-1], (Span("     "), Span("… +6 lines · ctrl+o shows all", THEME.muted)))
         full = diff_rows(lines, 60, THEME, full=True)
         self.assertEqual(len(full), 1 + 28)
-        self.assertEqual(lines_text(full)[-1].rstrip(), " 28 +line 28")
-        self.assertEqual(lines_text(diff_rows(parse_inline_diff(long_diff(23)), 60, THEME))[-1], "    … +1 line · ctrl+o shows all")
+        self.assertEqual(lines_text(full)[-1].rstrip(), "  28 +line 28")
+        self.assertEqual(lines_text(diff_rows(parse_inline_diff(long_diff(23)), 60, THEME))[-1], "     … +1 line · ctrl+o shows all")
         self.assertEqual(len(diff_rows(parse_inline_diff(long_diff(22)), 60, THEME)), 1 + 22)
 
     def test_random_payloads_never_raise_or_paint_a_control_character(self) -> None:

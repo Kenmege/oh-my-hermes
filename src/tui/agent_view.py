@@ -2,10 +2,10 @@
 
 Subagents: every `subagent.*` event of the live session is folded into one
 `subagents.Roster`, which a new turn and a new session empty. While it holds
-an agent the mode row carries a strip of them, Down on an empty composer
+an agent the info line carries a strip of them, Down on an empty composer
 gives the keys to a list of them, a list the person picks from as from a
 picker: the composer is hidden while it is open, the list stands where the
-composer was, and the mode row says its keys. Every key goes to the list
+composer was, and the info line says its keys. Every key goes to the list
 then; a key it does not bind does nothing. Enter or a click opens one
 agent's log in the pager. The log is
 read-only: `subagent.tail` is asked for the open agent while it runs, at most
@@ -34,7 +34,7 @@ from typing import Any
 
 from . import gateway_contract as contract
 from .keys import BUTTON_LEFT, CHAR, DOWN, ENTER, ESCAPE, LEFT, UP, Key, Mouse, Paste
-from .layout import Budget, under_composer
+from .layout import Budget, is_tiny
 from .modes import strip_column
 from .style import Line, Style
 from .subagents import FINISHED_STATUSES, MAIN_ID, RUNNING, Hit
@@ -42,14 +42,14 @@ from .transcript import NOTICE_WARN, STEER_QUEUED, STEER_REFUSED, NoticeBlock, S
 
 # The list Down opens, and one agent's log in the pager.
 AGENT_LIST_ROWS = 7  # main and six agents; a longer roster scrolls
-# Its keys, on the mode row while it is open, longest first: each keeps the two action keys and the way back.
+# Its keys, on the info line while it is open, longest first: each keeps the two action keys and the way back.
 AGENT_LIST_HINT = "↑↓ select · ⏎ log · x interrupt · s steer · esc back"
 AGENT_LIST_HINTS = (AGENT_LIST_HINT, "⏎ log · x interrupt · s steer · esc back", "x interrupt · s steer · esc back")
-# What the mode row says once `x` asked, longest first.
+# What the info line says once `x` asked, longest first.
 INTERRUPT_CONFIRM = "x again interrupts {name} · any other key cancels"
 INTERRUPT_CONFIRMS = (INTERRUPT_CONFIRM, "x again interrupts {name}", "x again interrupts")
 LEAVE_KEYS = frozenset({"q"})  # with Esc, Left and Ctrl+C, the plain keys that leave the list
-# What the mode row says while `s` has picked an agent, longest first: a narrow row takes the first that fits.
+# What the info line says while `s` has picked an agent, longest first: a narrow line takes the first that fits.
 STEER_SAY = (
     "↪ steering {name}: enter sends it to that agent · esc cancels",
     "↪ steering {name} · enter sends · esc cancels",
@@ -91,11 +91,11 @@ class AgentViewMixin:
     `ModesMixin`'s, and the methods it calls without defining them are `App`'s.
     """
 
-    def _agent_strip(self, cols: int) -> tuple[Line, tuple[Hit, ...]]:
-        """The roster's strip for the mode row, and the cells each entry covers as 0-based screen columns."""
-        start = strip_column(self.mode, self.theme)
-        line, hits = self.roster.strip_line(cols - start, self.theme, self._spinner_frame())
-        return line, tuple(Hit(hit.start + start, hit.end + start, hit.subagent_id) for hit in hits)
+    def _agent_strip(self, cols: int) -> Line:
+        """The roster's strip for an info line `cols` wide: the room after the line's inset (`_info_inset`) and the
+        mode's label."""
+        start = self._info_inset() + strip_column(self.mode, self.theme)
+        return self.roster.strip_line(cols - start, self.theme, self._spinner_frame())
 
     def _agent_list(self, cols: int, room: int) -> tuple[list[Line], tuple[str, ...]]:
         """The open agent list in `room` rows (at most `AGENT_LIST_ROWS`), scrolled to the highlight, and the id of
@@ -107,7 +107,7 @@ class AgentViewMixin:
         )
 
     def _agent_list_say(self) -> tuple[tuple[str, ...], Style]:
-        """What the mode row says while the list is open: its keys, or, once `x` asked, the confirmation in warn."""
+        """What the info line says while the list is open: its keys, or, once `x` asked, the confirmation in warn."""
         armed = self.roster.agents.get(self.interrupt_armed or "") if self.interrupt_armed == self.list_selected else None
         if armed is not None:
             return tuple(form.format(name=armed.name) for form in INTERRUPT_CONFIRMS), self.theme.warn
@@ -117,22 +117,22 @@ class AgentViewMixin:
         """Note the agent list's rows a click opens in the frame just drawn, and ask for mouse reports only while it is open.
 
         The list is the slot's rows, from its first, with the composer hidden,
-        so its first row is the slot's, mode and status rows above the
-        region's last. A list row is clickable from edge to edge; nothing else
+        so its first row is the slot's, the info line's row above the region's
+        last. A list row is clickable from edge to edge; nothing else
         is, the strip included. Reports stay off while the region's place on
         the screen is not certain, since no click could be read then.
         """
         cols, rows = self.size
-        top = budget.slot + budget.mode + budget.status - 1  # rows above the region's last row of the slot's first row
+        top = budget.slot + budget.info - 1  # rows above the region's last row of the slot's first row
         self.clickable = {top - index: (Hit(0, cols, row_id),) for index, row_id in enumerate(listed[: budget.slot])}
         self._set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
 
     def _list_available(self) -> bool:
-        """Whether the agent list can be shown: agents to list, a mode row to say its keys, and nothing else holding
-        the keys (a question, a picker, the history search)."""
+        """Whether the agent list can be shown: agents to list, a terminal with room for a slot (the info line says
+        its keys), and nothing else holding the keys (a question, a picker, the history search)."""
         cols, rows = self.size
         return (
-            bool(self.roster.agents and under_composer(rows, cols)[1]) and self.slot is None and self.picker is None
+            bool(self.roster.agents) and not is_tiny(rows, cols) and self.slot is None and self.picker is None
             and self.rewind_picker is None and self.model_picker is None and self.search is None
         )
 

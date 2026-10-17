@@ -44,7 +44,7 @@ class InterruptingRowTests(unittest.TestCase):
         screen = "\n".join(drawn(app))
         self.assertIn(INTERRUPTING, screen)
         self.assertNotIn("esc to interrupt", screen)
-        self.assertNotIn("esc interrupt", screen)  # the mode row does not offer it either
+        self.assertNotIn("esc interrupt", screen)  # the info line does not offer it either
 
     def test_ctrl_c_shows_it_too(self) -> None:
         app, _client = running()

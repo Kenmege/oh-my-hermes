@@ -1,7 +1,7 @@
 """Motion in the OMH TUI: the marks that tell said from done, the running tool's pulse, the working row's sweep.
 
-A reply opens with `⏺` in the text colour and a group of tool calls in the
-tool colour. A running tool's `⏺` alternates the accent and dim every
+A reply opens with `⏺` in the text colour, and each tool call with a `⏺` in
+its state's colour, its name in the tool colour. A running tool's `⏺` alternates the accent and dim every
 `PULSE_SECONDS` from its own start, only in the live region: scrollback
 gets the settled mark. The working row's verb carries a highlight that
 sweeps across it. `OMH_TUI_REDUCED_MOTION=1` (or `NO_COLOR`) stops all of
@@ -16,9 +16,17 @@ from unittest import mock
 from _tui_lines import line_text
 from test_tui_modes import SID, make_app
 from test_tui_panels import hud_payload
-from omh.tui.app import REDUCED_TICK_SECONDS, SWEEP_CLUSTERS, TICK_SECONDS, App, reduced_motion, working_spans
+from omh.tui.app import (
+    REDUCED_TICK_SECONDS,
+    SWEEP_CLUSTERS,
+    TICK_SECONDS,
+    WORKING_GLYPHS,
+    App,
+    reduced_motion,
+    working_spans,
+)
 from omh.tui.gateway import Event
-from omh.tui.panels import SPINNER_FRAMES, HudSnapshot, panel_lines, status_segments
+from omh.tui.panels import HudSnapshot, hud_chips, panel_lines
 from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.theme import theme_named
@@ -52,8 +60,8 @@ def ev(kind: str, **payload: object) -> Event:
 
 
 def mark(line: tuple) -> object:
-    """The span of a tool row's mark (after its indent)."""
-    return line[1]
+    """The span of a tool row's mark (its first)."""
+    return line[0]
 
 
 class SaidAndDoneTests(unittest.TestCase):
@@ -62,20 +70,21 @@ class SaidAndDoneTests(unittest.TestCase):
         self.assertEqual((reply[0].text, reply[0].style), ("⏺ ", THEME.text))
         group = ToolGroup([ToolRow("a", "read_file", status=TOOL_OK), ToolRow("b", "terminal", status=TOOL_OK)], done=True)
         rows = block_rows(group, 40, THEME)
-        self.assertEqual([(row[3].text, row[3].style) for row in rows], [("read_file", THEME.tool), ("terminal", THEME.tool)])
+        self.assertEqual([(row[2].text, row[2].style) for row in rows], [("read_file", THEME.tool), ("terminal", THEME.tool)])
         self.assertNotEqual(THEME.text, THEME.tool)
 
-    def test_every_tool_state_is_told_apart_without_colour(self) -> None:
-        glyphs, lines = {}, {}
+    def test_every_tool_state_is_told_apart_by_its_marks_glyph_or_colour(self) -> None:
+        marks, lines = {}, {}
         for status in (TOOL_RUNNING, TOOL_OK, TOOL_ERROR, TOOL_DENIED, TOOL_INTERRUPTED, TOOL_GENERATING):
             rows = block_rows(ToolGroup([ToolRow("a", "terminal", status=status)], done=True), 40, THEME)
-            glyphs[status], lines[status] = mark(rows[0]).text, line_text(rows[-1])
-        self.assertEqual(glyphs[TOOL_RUNNING], "⏺")
-        # A denial shows one mark, the red cross of a failure (owner decision 6), and says so on its line.
-        self.assertEqual(glyphs[TOOL_DENIED], glyphs[TOOL_ERROR])
-        self.assertTrue(lines[TOOL_DENIED].endswith("⎿ denied"), lines[TOOL_DENIED])
-        del glyphs[TOOL_DENIED]
-        self.assertEqual(len(set(glyphs.values())), len(glyphs), glyphs)
+            marks[status], lines[status] = mark(rows[0]), line_text(rows[-1])
+        # Claude Code's one glyph for every call that started, in its state's colour.
+        self.assertEqual({marks[status].text for status in (TOOL_RUNNING, TOOL_OK, TOOL_ERROR, TOOL_DENIED)}, {"⏺"})
+        # A denial shows the failure's red mark, and says so on its line.
+        self.assertEqual(marks[TOOL_DENIED], marks[TOOL_ERROR])
+        self.assertTrue(lines[TOOL_DENIED].endswith("⎿  denied"), lines[TOOL_DENIED])
+        del marks[TOOL_DENIED]
+        self.assertEqual(len(set(marks.values())), len(marks), marks)
 
 
 class PulseTests(unittest.TestCase):
@@ -116,7 +125,7 @@ class PulseTests(unittest.TestCase):
         app._on_event(ev("message.start"))
         app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="ls"))
         clock.now += PULSE_SECONDS + 0.1
-        *_rest, tool, _working = app._tail(80)
+        *_rest, tool, _working, _tip = app._tail(80)
         self.assertEqual(mark(tool).style, THEME.dim)
 
     def test_without_a_clock_the_mark_holds_the_accent(self) -> None:
@@ -137,11 +146,21 @@ class PulseTests(unittest.TestCase):
         app._on_event(ev("tool.complete", tool_id="t1", name="terminal", result={"output": "a.py"}))
         app._on_event(ev("tool.complete", tool_id="t2", name="read_file", result={"error": "missing"}))
         app._on_event(ev("message.complete", text="done", status="complete"))
-        app._render()
+        flushed: list = []
+        take = app.transcript.take_stable_lines
+
+        def recorded(*args: object) -> list:
+            lines = take(*args)
+            flushed.extend(lines)
+            return lines
+
+        with mock.patch.object(app.transcript, "take_stable_lines", recorded):
+            app._render()
         history = app.terminal.screen.history() + app.terminal.screen.lines()  # type: ignore[attr-defined]
-        self.assertTrue(any(line.startswith("  ✓ terminal") for line in history), history)
-        self.assertTrue(any(line.startswith("  ✗ read_file") for line in history), history)
-        self.assertFalse([line for line in history if line.startswith("  ⏺ ")], history)
+        self.assertTrue(any(line.startswith("⏺ terminal") for line in history), history)
+        self.assertTrue(any(line.startswith("⏺ read_file") for line in history), history)
+        calls = [row for row in flushed if row and row[0].text == "⏺" and len(row) > 2 and row[2].text in ("terminal", "read_file")]
+        self.assertEqual([mark(row).style for row in calls], [THEME.ok, THEME.error])  # settled, never a frame of a pulse
 
     def test_a_take_in_the_middle_of_a_pulse_writes_no_frame_of_it(self) -> None:
         # A boundary while the call's mark is in its dim half: the group leaves the live region right then.
@@ -180,7 +199,7 @@ class SweepTests(unittest.TestCase):
         rows = []
         for _ in range(2):
             clock.now += TICK_SECONDS
-            rows.append(app._tail(80)[-1])
+            rows.append(app._tail(80)[-2])  # the working row, its tip under it
         self.assertEqual(line_text(rows[0])[2:], line_text(rows[1])[2:])  # past the spinner, the same words
         self.assertNotEqual(rows[0][2:], rows[1][2:])  # in a different light
         self.assertEqual(rows[0][0].style, THEME.accent)
@@ -207,12 +226,12 @@ class ReducedMotionTests(unittest.TestCase):
         seen = set()
         for _ in range(12):
             clock.now += PULSE_SECONDS / 2
-            *_rest, tool, working = app._tail(80)
+            *_rest, tool, working, _tip = app._tail(80)
             seen.add((mark(tool).style, tuple(working)))
         self.assertEqual(len(seen), 1)  # the same rows at every moment (this turn has no start time to count from)
         ((style, working),) = seen
         self.assertEqual(style, THEME.accent)
-        self.assertTrue(line_text(working).startswith(f"{SPINNER_FRAMES[0]} Reading the router (0s"))
+        self.assertTrue(line_text(working).startswith(f"{WORKING_GLYPHS[0]} Reading the router… (0s"))
         self.assertFalse([span for span in working if span.style.bold])
 
     def test_the_screen_repaints_once_a_second_instead_of_ten_times(self) -> None:
@@ -241,31 +260,35 @@ class ReducedMotionTests(unittest.TestCase):
 
 
 class SteadyRowsTests(unittest.TestCase):
-    """A tick that changes only the spinner leaves the status line and the title as they were, uncomputed."""
+    """A tick that changes only the spinner leaves the info line's right side and the title as they were, uncomputed."""
 
-    def test_the_status_line_is_composed_again_only_when_something_it_shows_changes(self) -> None:
+    def test_the_info_lines_right_side_is_composed_again_only_when_something_it_shows_changes(self) -> None:
+        from omh.tui.prompts import open_request
+
         clock = Clock()
         app, _client = make_app(busy=True, clock=clock)
-        with mock.patch("omh.tui.app.status_segments", wraps=status_segments) as segments:
-            first = app._status_line(80)
+        with mock.patch("omh.tui.app.hud_chips", wraps=hud_chips) as chips:
+            first = app._info_right()
             clock.now += TICK_SECONDS
-            self.assertIs(app._status_line(80), first)
-            self.assertEqual(segments.call_count, 1)
+            self.assertIs(app._info_right(), first)
+            self.assertEqual(chips.call_count, 1)
             for change in (
                 lambda: setattr(app, "model", "another/model"),
-                lambda: setattr(app, "turn_pending", False),  # running -> idle
-                lambda: app.queued.append(("next", "", "")),
+                lambda: setattr(app, "turn_pending", False),  # running -> idle: the tool chip goes
                 lambda: setattr(app, "context_percent", 91.0),
+                lambda: setattr(app, "effort", "max"),
+                lambda: setattr(app, "slot", open_request("srq-1", "approval", {"command": "ls"})),  # its clock goes
                 lambda: setattr(app, "theme", theme_named("amber")),
                 lambda: setattr(app, "hud", HudSnapshot("s", hud_payload(), 0.0)),
             ):
-                before = segments.call_count
+                before = chips.call_count
                 change()
-                app._status_line(80)
-                self.assertEqual(segments.call_count, before + 1)
-            before = segments.call_count
-            app._status_line(60)  # another width
-            self.assertEqual(segments.call_count, before + 1)
+                app._info_right()
+                self.assertEqual(chips.call_count, before + 1)
+            before = chips.call_count
+            app.size = (60, 24)  # another width: the same forms, `info_line` picks among them
+            app._info_line(60)
+            self.assertEqual(chips.call_count, before)
 
     def test_the_title_is_cut_only_when_its_words_change(self) -> None:
         app, _client = make_app(busy=True)

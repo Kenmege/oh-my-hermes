@@ -8,8 +8,8 @@ default palette's value, so a partial skin still paints every role. Keywords
 are bold and comments italic as well as coloured, so the `mono` palette, whose
 keyword and text colours nearly match, still tells them apart.
 
-The terminal's background decides the rest. Body text (`text`, the user's
-prompt mark, the reply) has no colour of its own: it is the terminal's
+The terminal's background decides the rest. Body text (`text`, `user`, the
+reply) has no colour of its own: it is the terminal's
 default foreground, which is readable on whatever background the person
 chose. Every other role is measured against that background
 (`build_theme(skin, background)`: the colour the terminal reported, or the
@@ -22,25 +22,24 @@ background, black on a light one) as far as that takes, so a palette that
 already clears the background keeps its colour. On a light background the
 diff bands are tints of the palette's word colours over the background, so
 the default foreground stays readable on them; a dark diff band names its own
-text colour (`banner_text`), since the dark it assumes may be a guess. With no
-background reported there is no prompt band at all: its text is the
-terminal's own colour, which a guessed band can drown. `dim` is for
-decoration glyphs; words go on `muted` or `hint`.
+text colour (`banner_text`), since the dark it assumes may be a guess. `dim` is
+for decoration glyphs; words go on `muted` or `hint`.
 
-Outcomes sit on bands too (`ok_band` behind what the person allowed,
+Outcomes sit on bands (`ok_band` behind what the person allowed,
 `error_band` behind a denial or a failure): light tints of the palette's diff
 colours on a light background, its dark diff colours on a dark one, and
 none when no background was reported. What is drawn on a band takes
 `on_band(theme, band)`, the roles measured against that band, so its words
 reach 4.5:1 and its marks 3:1 on it.
 
-The status line sits on a bar of its own: the palette's status-bar
-background on a dark terminal or one that reported none, and on a light one
-a light tint of that colour (`LIGHT_STATUS_SHARE`), so the bar belongs to a
-light screen instead of being a dark band across it. Its words are measured
-against that bar instead of the terminal's background: the `status*` roles
-here, and `on_status_bar(theme)` for the roles the status line borrows (OMH's
-chips, the mode).
+The pager's footer sits on a bar of its own (`status`): the palette's
+status-bar background on a dark terminal or one that reported none, and on
+a light one a light tint of that colour (`LIGHT_STATUS_SHARE`), so the bar
+belongs to a light screen instead of being a dark band across it. Its words
+are measured against that bar instead of the terminal's background. The
+info line under the composer and the sticky prompt over a running turn have
+no bar: their words and marks are measured against the terminal's background
+like any transcript row.
 """
 
 from __future__ import annotations
@@ -71,8 +70,6 @@ LIGHT_STAND_IN = WHITE
 # word band inside it.
 LIGHT_BAND_SHARE = 0.82
 LIGHT_WORD_BAND_SHARE = 0.62
-# Your prompt's band: the background moved this far toward the ink, a tint the default foreground still reads on.
-USER_BAND_SHARE = 0.08
 # A light background's status bar: the palette's status-bar colour moved this far toward the background.
 LIGHT_STATUS_SHARE = 0.85
 # The roles a person reads as text: each reaches TEXT_CONTRAST against the background. `text` and `user` are not
@@ -113,17 +110,12 @@ class Theme:
     syntax_number: Style
     syntax_comment: Style
     status: Style
-    status_dim: Style
-    status_good: Style
-    status_warn: Style
-    status_bad: Style
     menu: Style
     menu_current: Style
     hint: Style
     muted: Style
     mode_accept: Style
     mode_plan: Style
-    user_band: Style  # the background behind your prompt in the transcript
     ok_band: Style  # behind what the person allowed (an approval)
     error_band: Style  # behind a denial or a failure: a denied approval, a failed tool row and its lines, an error notice
 
@@ -244,17 +236,12 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         syntax_number=Style(fg=read("syntax_number")),
         syntax_comment=Style(fg=read("syntax_comment"), italic=True),
         status=on_bar("status_bar_text"),
-        status_dim=on_bar("status_bar_dim", EDGE_CONTRAST),  # the separators between the status line's fields
-        status_good=on_bar("status_bar_good"),
-        status_warn=on_bar("status_bar_warn"),
-        status_bad=on_bar("status_bar_critical"),
         menu=Style(fg=c["banner_text"], bg=c["completion_menu_bg"]),
         menu_current=Style(fg=c["banner_text"], bg=c["completion_menu_current_bg"], bold=True),
         hint=Style(fg=read("banner_dim")),
         muted=Style(fg=read("banner_dim")),
         mode_accept=Style(fg=read("ui_warn")),
         mode_plan=Style(fg=read("ui_ok")),
-        user_band=Style(bg=_mix(surface, ink, USER_BAND_SHARE)) if reported else Style(),
         ok_band=ok_band,
         error_band=error_band,
     )
@@ -285,13 +272,6 @@ def on_band(theme: Theme, band: Style) -> Theme:
     """`theme`'s roles measured against `band`'s background, for the words and marks drawn on that band."""
     skin = theme_for_name(theme.name) or default_theme()
     return build_theme(skin, band.bg)
-
-
-@lru_cache(maxsize=16)
-def on_status_bar(theme: Theme) -> Theme:
-    """`theme`'s roles measured against its own status-bar background, for what the status line draws in them."""
-    skin = theme_for_name(theme.name) or default_theme()
-    return build_theme(skin, theme.status.bg)
 
 
 def theme_named(value: str, background: str | None = None) -> Theme:

@@ -47,7 +47,7 @@ def esc(app: App) -> None:
 
 
 def mode_row(app: App, cols: int) -> str:
-    return line_text(app._mode_row_line(cols))
+    return line_text(app._info_line(cols))
 
 
 class PickerTests(unittest.TestCase):
@@ -80,8 +80,7 @@ class PickerTests(unittest.TestCase):
 
     def test_the_slot_names_what_picking_does(self) -> None:
         rows = lines_text(RewindPicker(rewind_rows(HISTORY)).lines(100, DEFAULT_THEME, 6, 1792006300.0))
-        self.assertIn("Rewind", rows[0])
-        self.assertIn("enter edits it", rows[0])
+        self.assertEqual(rows[0].rstrip(), " Rewind to a prompt (2)")  # its keys are the info line's
         self.assertTrue(rows[1].startswith(" #2 Reply with exactly the word: two"), rows)
 
 

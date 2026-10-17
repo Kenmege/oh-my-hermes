@@ -319,7 +319,7 @@ class AgentsAcrossARespawnTests(unittest.TestCase):
         self.assertEqual({agent.subagent_id: agent.status for agent in app.roster.agents.values()},
                          {FIRST: COMPLETED, SECOND: INTERRUPTED})  # the gateway that ran it is gone
         self.assertIsNone(app.agent_steer)
-        strip = line_text(app._agent_strip(120)[0])
+        strip = line_text(app._agent_strip(120))
         self.assertIn("○ …one", strip)
         self.assertIn("▪ …two", strip)
         self.assertFalse([line for line in app._slot_lines(120, 30) if line_text(line).startswith("[Agents]")])
@@ -409,6 +409,22 @@ class CapTests(unittest.TestCase):
         old.close = close  # type: ignore[method-assign]
         crash(app, old)
         self.assertIn("starting it again", screens[0])
+
+    def test_a_resize_as_the_gateway_is_lost_still_shows_the_notice_before_the_wait(self) -> None:
+        # A resize waits for the size to settle before it redraws; the respawn blocks before that, so it is drawn now.
+        app, old, _spawner, _now = crashing()
+        screens: list[str] = []
+
+        def close(grace: float = 3.0, terminate_grace: float | None = None) -> int | None:
+            screens.append("\n".join(app.terminal.screen.lines()))  # type: ignore[attr-defined]
+            return 1
+
+        old.close = close  # type: ignore[method-assign]
+        app.terminal.screen.resize(24, 100)  # type: ignore[attr-defined]
+        app.terminal._resized = True  # type: ignore[attr-defined]
+        crash(app, old)
+        self.assertIn("starting it again", screens[0])
+        self.assertEqual(app.size, (100, 24))
 
     def test_a_respawn_waits_seconds_not_a_minute_for_the_new_gateway(self) -> None:
         # Hermes' own TUI reports a gateway with no `gateway.ready` after 15 s (ui-tui `STARTUP_TIMEOUT_MS`); the keys

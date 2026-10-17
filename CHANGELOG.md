@@ -24,6 +24,95 @@ All notable changes will be documented here.
   phrase, `implementasi paralel`: its always-loaded body had room for one
   under the byte ceiling. `id` is an input language only: it is not a
   `--language` / `OMH_LANG` output choice.
+- **OMH TUI tool calls read as in Claude Code.** Each call is one row,
+  `⏺ read_file(README.md)  0.2s`: a `⏺` in the accent while it runs, green
+  once done, red when it failed or was denied, in place of the `✓` and `✗`
+  marks, then the tool's name and what it ran on in parentheses. What it
+  printed, and an edit's diff, hang under `  ⎿  `, as a command's output
+  does. A read or a load no longer echoes the first lines it read: it says
+  `Read 715 lines` (`read_file`), `loaded skill omh-docs` (`skill_view`) or
+  `12 matches` (`search_files`). A resumed session's earlier calls read the
+  same way, with a dim `⏺` (Hermes' record keeps no outcome) and an edit's
+  diff under it, in place of the `· read_file  README.md` rows with a blank
+  row between each.
+- **An answer you gave Hermes reads under the call it was about.** The
+  record of an approval or a question (`✓ allowed once · <command>`,
+  `✓ blue · Which colour?`) was written above the turn's live tool calls, so
+  with one row per call it stood over the first read of the turn. It is now
+  the first row under the call that asked, `⎿  ✓ allowed once · <command>`,
+  on the same green or red band; a denial reads `⏺ terminal(…)`, then
+  `⎿  ✗ denied · …`, then Hermes' denial line. With no call running (a
+  subagent's question after its turn), it is still a row of its own. A
+  clarify question Hermes timed out, or one you cancelled, says so once under
+  its call (`⎿  ✗ timed out · Which colour?`), not again in a bare
+  `⎿  timed out` row under that.
+- **An OMH TUI diff no longer doubles each changed line.** Hermes pads every
+  added and removed line of an edit's diff with spaces, to 143 columns in a
+  live patch, so on any narrower terminal each green or red band wrapped into
+  a second, empty band row. A diff line's trailing spaces are dropped now;
+  the band still reaches the right edge.
+- **The OMH TUI's working row reads as Claude Code's.** It was a braille
+  spinner and Hermes' kaomoji text (`⠋ (⌐■_■) analyzing... (12s)`). It is now
+  `✶ Analyzing… (12s · ↓1.2k tokens · thinking with high effort · esc to
+  interrupt)`: a glyph turning through `· ✢ ✳ ✶ ✻ ✽` (still under reduced
+  motion), Hermes' verb without its face or dots (`Working…` when it gives
+  none; a stall or retry notice, `No response from provider in 120s —
+  reconnecting…`, keeps its words), and the effort when the session reports
+  one. A tip naming a key sits
+  under it, one a turn, on a terminal 16 rows tall or more
+  (`⎿  Tip: ctrl+o shows the whole transcript`); it is local text and nothing
+  is sent. `interrupting…` lines up under the same glyph column.
+- **Your prompt and a turn's end read as in Claude Code.** A prompt in the
+  OMH TUI transcript is a dim `>` and dim text, with no tinted band behind
+  it, and a command's echo takes the same `>` (`> /model`). The `↳ you: …`
+  reminder over a running turn loses its band too: `↳ you:` in the accent,
+  your words dim. A turn's done
+  line is one dim line under the reply, `✻ 5s · 3 tools · ↓1.3k`, without
+  the rule that ran to the right edge.
+- **The OMH TUI's composer is a rounded box over one dim info line, as in
+  Claude Code.** The composer's two rules, the mode row and the dark status
+  band are gone. The composer sits in a box (`╭─╮`, `│ > … │`, `╰─╯`) that
+  keeps its colour in every mode, and the line under it, two cells in under
+  the box's text, says the mode or the keys that matter now on the left (`? for shortcuts`
+  while the composer is empty, `⏵⏵ accept all on (⇧⇥
+  to cycle)` in accept's colour, `⏸ plan mode on (⇧⇥ to cycle)` in plan's, a
+  question's or a picker's keys) and the model, `ctx 5%` and `effort medium`
+  on the right, with the OMH HUD's repeat and in-flight tool counts first
+  when there are any. The `⚚ OMH` brand and the `idle` / `running` words
+  are gone: the working row, the strip and the queue rows already say them,
+  and during a turn the left names only the steer keys, since the working
+  row already offers `esc to interrupt`.
+  On a narrow terminal the right side gives way first, the model shortening
+  to `deepseek-v4.1-flash` and then `v4.1-flash` before it goes. The line is
+  on every terminal of 3 rows or more, so the mode is never hidden, and the
+  agent list now opens from 6 rows (and 20 columns) instead of 10. A `!` shell line keeps its `! shell`
+  label, and its `>` mark turns the accent colour.
+- **The OMH TUI opens on a clean screen.** As it starts, what your terminal
+  showed above the cursor (your shell, the warnings `hermes` printed) scrolls
+  up into the terminal's own scrollback, and the TUI starts on the top row.
+  Nothing is erased: scroll up to read it, until a full redraw (a resize,
+  Ctrl+L, `/redraw`) clears the scrollback. A launch that falls back to
+  Hermes' own terminal leaves the screen as it was.
+- **Hermes' note about a skill named like a built-in command is no longer an
+  OMH TUI notice at every start.** Hermes' own bundled `plan` skill shares
+  its name with `/plan`, so every start said `Hermes' command catalog: slash
+  command /plan unavailable — name taken by built-in; use /skill plan`.
+  `/help` now lists those notes, in Hermes' words, under the skill count; a
+  real discovery failure (skills, quick commands, plugins) is still a notice.
+- **`omh handoff-risk-scan --repo` completes on ordinary repositories.**
+  The scan charged the raw bytes of every Git listing to its 1 MiB metadata
+  budget, and the index listing with its stat lines alone prints about 190
+  bytes per short-path entry, so a clean repository of 4,500 short-path
+  files, or 6,538 files with 59-byte paths, ended in
+  `scan_error / metadata_oversized`, far under the documented 10000 entries
+  (#2157, reported by @jhlee0409). The budget now charges what the scan keeps:
+  the HEAD and branch output, each committed path with its mode and object id,
+  each index path the commit lacks, and the untracked listing; a path in both
+  the commit and the index is kept and counted once. The 10000-entry and
+  1 MiB limits are unchanged. The tree and index listings are read in 64 KiB
+  pieces up to a fixed cap derived from them, and a longer listing still kills
+  the Git process and ends the scan with `metadata_oversized`. Git output the
+  scanner failed to read is a scan error, never an empty listing.
 - **A party named before a Korean data-share place, or after an English one,
   keeps the review.** Korean puts the data, and any party, before the place,
   and only the place was read: "보험사가 원하는 고객 엑셀 개인정보 마스킹해서
@@ -159,8 +248,8 @@ All notable changes will be documented here.
   `⠼ working… (16s · ↓262 tokens)`, beside the status line's `waiting on
   you`; a command you took 20 s to allow then read `✗ terminal  rm -rf
   ./tmp-a  21.8s`, as if it were slow. The working row now reads `? waiting
-  on you (11s)` with no spinner and one clock, that wait's (the status bar's
-  OMH tool count shows no seconds of its own meanwhile, and leaves with the
+  on you (11s)` with no spinner and one clock, that wait's (the OMH tool
+  count beside the model shows no seconds of its own meanwhile, and leaves with the
   turn instead of lingering into idle); a tool's row
   leaves the wait out of its time; and the done line keeps the turn's wall
   clock with the wait beside it, `✻ 30s (27s waiting on you) · 1 tool`.
@@ -235,7 +324,7 @@ All notable changes will be documented here.
   that model (first, when no provider lists it) and shows `Model (12/162)`
   once it scrolls.
 - **OMH TUI list commands leave no echo in scrollback.** Bare `/sessions`,
-  `/rewind`, `/keys`, `/history`, `/logs` and `/redraw` leave no `› /name`
+  `/rewind`, `/keys`, `/history`, `/logs` and `/redraw` leave no `> /name`
   row.
 - **New OMH TUI keys.** Ctrl+X opens the session picker, Ctrl+_ and Ctrl+Y
   undo and redo in the composer, and Ctrl+Z suspends to the shell on POSIX
@@ -523,7 +612,7 @@ All notable changes will be documented here.
   background (the status line's against its own bar), words that sat on the 3:1 decoration colour moved to colours that
   read, and a light background gets light diff bands (on white the body text
   measured 1.08 to 1.13:1 before); `/theme auto|light|dark` picks the background
-  for the open session. A slash command is echoed as `› /name arg` and what it
+  for the open session. A slash command is echoed as `> /name arg` and what it
   prints stays in the transcript under it, a long output as its first 12 rows
   and a count of the rest for `/history`; nothing a command prints opens the
   pager any more, so typed-ahead keys are no longer swallowed and the output is
@@ -548,7 +637,7 @@ All notable changes will be documented here.
   edit, and sending it truncates the session before it (`prompt.submit` with
   `truncate_before_row_id` and `confirm_truncate`) and redraws from the cut.
   A line that starts with `!` runs in Hermes' shell (`shell.exec`, 30 s at
-  most, dangerous commands refused) and shows `› !cmd` with its output and
+  most, dangerous commands refused) and shows `> !cmd` with its output and
   exit code; it never reaches the model, and during a turn it waits in the
   queue. A paste of more than 3 lines or 800 characters is one atomic chip,
   `[Pasted text #1 +60 lines]`, sent whole and shown compact in the

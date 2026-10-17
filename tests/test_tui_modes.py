@@ -15,12 +15,13 @@ from __future__ import annotations
 import ast
 import base64
 from pathlib import Path
+import re
 import time
 import unittest
 from unittest.mock import patch
 
 from _tui_gateway_replay import Scenario, spans
-from _tui_lines import line_text, lines_text
+from _tui_lines import INFO_INSET, box_edges, box_inner, line_text, lines_text
 from test_tui_app import (
     INTERRUPTED,
     LIVE_ID,
@@ -30,7 +31,7 @@ from test_tui_app import (
     ScriptedTerminal,
     Step,
     startup_answers,
-    status_row_of,
+    info_row_of,
 )
 from omh.tui import app as app_module
 from omh.tui import gateway_contract as contract
@@ -39,7 +40,7 @@ from omh.tui.app import ATTACH_LEFT_NOTICE, OSC52_COPY, SLOT_ARM_SECONDS, App, Q
 from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, GatewayUnavailable, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder, Paste
-from omh.tui.layout import slot_cap
+from omh.tui.layout import MIN_COLS, MIN_ROWS, slot_cap
 from omh.tui.modes import EFFORT_CYCLE
 from omh.tui.pager import Pager
 from omh.tui.session_picker import SessionPicker, SessionRow
@@ -402,21 +403,21 @@ class SteerTests(unittest.TestCase):
         app._on_response(Response(steer, None, {"code": 4010, "message": "agent does not support steer"}))
         self.assertEqual(app.composer.text, "a draft\nkeep this")
 
-    def test_the_mode_row_names_ctrl_enter_only_once_the_terminal_has_sent_a_report(self) -> None:
+    def test_the_info_line_names_ctrl_enter_only_once_the_terminal_has_sent_a_report(self) -> None:
         app, _client = make_app(busy=True)
         app.terminal.keyboard_protocol = True  # type: ignore[attr-defined]  # asked, as on an allowlisted terminal
 
         def hint() -> str:
-            row = next(line for line in drawn(app) if line.startswith("esc interrupt"))
-            return row.strip()
+            row = next(line for line in drawn(app) if line.startswith((INFO_INSET + "/steer", INFO_INSET + "ctrl+enter")))
+            return re.split(r" {3,}", row[len(INFO_INSET) :])[0]  # the left side: the right one stands 3 cells away
 
-        self.assertEqual(hint(), "esc interrupt · /steer <text> steers")
+        self.assertEqual(hint(), "/steer <text> steers")
         for event in app.decoder.feed(b"x\r"):  # a terminal that ignored the request: Ctrl+Enter comes as Enter
             app._on_input(event)
-        self.assertEqual(hint(), "esc interrupt · /steer <text> steers · ↑ edit queued")
+        self.assertEqual(hint(), "/steer <text> steers · ↑ edit queued")
         for event in app.decoder.feed(b"\x1b[108;5u"):  # Ctrl+L, as kitty reports it (Esc would interrupt the turn)
             app._on_input(event)
-        self.assertEqual(hint(), "esc interrupt · ctrl+enter steer · ↑ edit queued")
+        self.assertEqual(hint(), "ctrl+enter steer · ↑ edit queued")
 
     def test_only_ctrl_enter_and_the_steer_command_can_steer(self) -> None:
         # Steer text is what the person typed and sent, so `session.steer` has one sender with two callers.
@@ -555,9 +556,9 @@ class ModeCycleTests(unittest.TestCase):
         self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])  # plan is the TUI's flag: no call
         self.assertEqual(notices(app), [])
 
-    def test_the_screen_states_the_approval_mode_once_in_the_composers_words_whatever_the_hud_read(self) -> None:
+    def test_the_screen_states_the_approval_mode_once_in_the_info_lines_words_whatever_the_hud_read(self) -> None:
         # The audit's case (D4): the mode row said approvals off while the status line, reading Hermes' saved state
-        # through the HUD, still said `yolo mode: off`.
+        # through the HUD, still said `yolo mode: off`. The info line carries both now, and only the mode's words.
         from test_tui_panels import hud_payload
 
         from omh.tui.panels import HudSnapshot
@@ -573,9 +574,8 @@ class ModeCycleTests(unittest.TestCase):
                     app._on_input(SHIFT_TAB)
                     answer(app, client, YOLO_IS_ON)
                 screen = drawn(app)
-                status = next(index for index, row in enumerate(screen) if row.startswith("⚚ OMH"))
                 self.assertFalse([row for row in screen if "yolo" in row], screen)
-                self.assertEqual([row for row in screen if "no approvals" in row], [screen[status - 1]])  # the mode row
+                self.assertEqual([row for row in screen if "accept all on" in row], [info_row_of(screen)])
 
     def test_a_yolo_answer_that_is_not_this_session_only_is_a_failure(self) -> None:
         refusals = {
@@ -861,7 +861,7 @@ class ModeCycleTests(unittest.TestCase):
 
 
 class ExitHintTests(unittest.TestCase):
-    def test_a_first_ctrl_c_says_so_on_the_mode_row_for_two_seconds_and_writes_nothing(self) -> None:
+    def test_a_first_ctrl_c_says_so_on_the_info_line_for_two_seconds_and_writes_nothing(self) -> None:
         from omh.tui.app import EXIT_CONFIRM_SECONDS, EXIT_HINT
 
         now = [100.0]
@@ -869,8 +869,7 @@ class ExitHintTests(unittest.TestCase):
         resting = drawn(app)
         app._on_input(Key(CHAR, "c", ctrl=True))
         screen = drawn(app)
-        status = next(index for index, row in enumerate(screen) if row.startswith("⚚ OMH"))
-        self.assertIn(EXIT_HINT, screen[status - 1])  # the mode row, as the Esc-armed message is
+        self.assertIn(EXIT_HINT, info_row_of(screen))  # the info line, as the Esc-armed message is
         self.assertEqual(notices(app), [])  # nothing left in the transcript or the scrollback
         self.assertIsNone(app.exit_code)
         now[0] += EXIT_CONFIRM_SECONDS - 0.5
@@ -948,19 +947,20 @@ class HermesOwnApprovalsTests(unittest.TestCase):
         self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])
         self.assertEqual(notices(app), [])
 
-    def test_both_labels_show_on_the_mode_row_and_both_chips_on_a_short_terminal(self) -> None:
+    def test_both_labels_show_on_the_info_line_at_every_height_and_the_box_stays_as_it_is(self) -> None:
         app, _client = make_app()
         session_info(app, yolo=True)
         app._on_input(SHIFT_TAB)
         screen = drawn(app)
-        # Hermes has approvals off on its own: Shift+Tab only turns plan back off, and the row says so.
-        self.assertTrue(any(line.startswith("⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ plan off)") for line in screen))
-        rules = [line for line in screen if line and set(line) == {"━"}]
-        self.assertEqual(len(rules), 2)  # approvals off is what the rules keep showing
+        # Hermes has approvals off on its own: Shift+Tab only turns plan back off, and the line says so.
+        self.assertTrue(info_row_of(screen).startswith(INFO_INSET + "⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ plan off)"),
+                        screen)
+        top, bottom = box_edges(80)
+        self.assertEqual((screen.count(top), screen.count(bottom)), (1, 1))  # no mode recolours or redraws the box
         short, _client = make_app(rows=9)
         session_info(short, yolo=True)
         short._on_input(SHIFT_TAB)
-        self.assertTrue(status_row_of(drawn(short)).rstrip().endswith("⏵⏵ accept │ ⏸ plan │ idle"))
+        self.assertTrue(info_row_of(drawn(short)).startswith(INFO_INSET + "⏵⏵ accept all on · ⏸ plan mode on"))
 
 
 class StaleSessionInfoTests(unittest.TestCase):
@@ -1357,7 +1357,7 @@ class RedrawTailTests(unittest.TestCase):
             app._draw_history(messages)
         taken = [line for line in app.transcript.take_stable_lines(80, DEFAULT_THEME) if line]
         self.assertEqual(taken[0][0].text, "⋯ 37 earlier messages · /history shows all")
-        self.assertEqual([line_text(line) for line in taken[1:]], ["› question 37", "› question 38", "› question 39"])
+        self.assertEqual([line_text(line) for line in taken[1:]], ["> question 37", "> question 38", "> question 39"])
 
 
 class CallExpiryTests(unittest.TestCase):
@@ -1671,10 +1671,10 @@ class EffortTests(unittest.TestCase):
     def test_before_the_first_prompt_the_configured_effort_is_shown_and_ctrl_t_steps_from_it(self) -> None:
         # The re-review: no session.info names the effort before Hermes has built the session's agent.
         def hint(app: App) -> str:
-            return line_text(app._mode_row_line(100))
+            return line_text(app._info_line(100))
 
         app, client = self.started_with({"agent": {"reasoning_effort": "high"}})
-        self.assertIn("ctrl+t effort (high)", hint(app))
+        self.assertIn("effort high", hint(app))
         app._on_input(CTRL_T)
         self.assertEqual(client.calls[-1], effort_call("xhigh"))
         for config, shown in (({}, "default"), ({"agent": {"reasoning_effort": ""}}, "default"),
@@ -1684,7 +1684,7 @@ class EffortTests(unittest.TestCase):
                               ({"agent": {"reasoning_effort": "hgih"}}, "default")):  # Hermes falls back as for unset
             with self.subTest(config=config):
                 app, _client = self.started_with(config)
-                self.assertIn(f"ctrl+t effort ({shown})", hint(app))
+                self.assertIn(f"effort {shown}", hint(app))
 
     def test_a_per_model_override_or_the_sessions_own_word_wins_over_the_global_setting(self) -> None:
         app, _client = self.started_with({"agent": {"reasoning_effort": "high", "reasoning_overrides": {"m": "low"}}})
@@ -1701,7 +1701,7 @@ class EffortTests(unittest.TestCase):
         # The round-4 verification: /new and a switch adopt the new session's lazy info, which names no effort, and
         # no config.get goes out for them; the level the config set is still the one the new session starts with.
         def hint(app: App) -> str:
-            return line_text(app._mode_row_line(100))
+            return line_text(app._info_line(100))
 
         lazy = {"session_id": "live-2", "stored_session_id": "stored-2", "info": {"model": "m", "lazy": True}}
         for leave in ("new", "switch"):
@@ -1709,13 +1709,13 @@ class EffortTests(unittest.TestCase):
                 app, client = self.started_with({"agent": {"reasoning_effort": "high"}})
                 app._on_input(CTRL_T)
                 answer(app, client, effort_set("xhigh"))  # this session's own level, not the config's
-                self.assertIn("ctrl+t effort (xhigh)", hint(app))
+                self.assertIn("effort xhigh", hint(app))
                 sent = len(client.calls)
                 if leave == "new":
                     app._on_new_session(lazy)
                 else:
                     app._on_session_resumed("stored-2", {**lazy, "messages": []})
-                self.assertIn("ctrl+t effort (high)", hint(app))
+                self.assertIn("effort high", hint(app))
                 self.assertNotIn("config.get", [method for method, _params in client.calls[sent:]])
                 app._on_input(CTRL_T)
                 self.assertEqual(client.calls[-1], effort_call("xhigh", sid="live-2"))
@@ -1768,18 +1768,18 @@ class EffortTests(unittest.TestCase):
         # Hermes 6c61c3e27d sends the session's effort in the session.info that follows the agent's build, before
         # any turn: a configured level, or "" where none is configured and the route's own default applies.
         def hint(app: App) -> str:
-            return line_text(app._mode_row_line(100))
+            return line_text(app._info_line(100))
 
         app, client = make_app()
-        self.assertIn("ctrl+t effort", hint(app))  # no word from Hermes yet (the lazy info carries none)
-        self.assertNotIn("ctrl+t effort (", hint(app))
+        self.assertTrue(hint(app).endswith("ctrl+t effort"))  # no word from Hermes yet (the lazy info carries none)
+        self.assertNotIn("effort ", hint(app).replace("ctrl+t effort", ""))
         session_info(app, reasoning_effort="high")
-        self.assertIn("ctrl+t effort (high)", hint(app))
+        self.assertIn("effort high", hint(app))
         app._on_input(CTRL_T)
         self.assertEqual(client.calls[-1], effort_call("xhigh"))  # one step up from the level shown
         app, client = make_app()
         session_info(app, reasoning_effort="")
-        self.assertIn("ctrl+t effort (default)", hint(app))  # never a level Hermes did not name
+        self.assertIn("effort default", hint(app))  # never a level Hermes did not name
         app._on_input(CTRL_T)
         self.assertEqual(client.calls[-1], effort_call("low"))  # the default is no step of the cycle
 
@@ -1840,9 +1840,8 @@ def drawn(app: App) -> list[str]:
 
 
 def composer_index(screen: list[str]) -> int:
-    """The composer's first row: the one under the upper of the frame's two rules (terminals of 7 rows or more)."""
-    rules = [index for index, line in enumerate(screen) if line.strip() and set(line.strip()) <= set("─━┄")]
-    return rules[-2] + 1
+    """The composer's first row: the one under the box's top edge (terminals of 6 rows and 20 columns or more)."""
+    return next(index for index, line in enumerate(screen) if line.startswith("╭")) + 1
 
 
 def queue(app: App, *prompts: str) -> None:
@@ -1908,7 +1907,7 @@ class QueueTests(unittest.TestCase):
             for menu in (False, True):
                 with self.subTest(rows=rows, cols=cols, menu=menu):
                     app, _client = make_app(busy=True, rows=rows, cols=cols)
-                    working = composer_index(drawn(app)) - 1  # the working row, right above the top rule
+                    working = composer_index(drawn(app)) - 1  # where the top edge is, the working row right above it
                     for count in (1, 2, 3, 6):
                         app.queued.clear()
                         queue(app, *(f"prompt {number}" for number in range(count)))
@@ -1922,16 +1921,17 @@ class QueueTests(unittest.TestCase):
                             # three named and "+N more", within the slot's cap of a third of the rows
                             self.assertEqual(len(between), min(count, 4, rows // 3), screen)
 
-    def test_the_rows_sit_right_above_the_composers_top_rule(self) -> None:
+    def test_the_rows_sit_right_above_the_composers_top_edge(self) -> None:
         app, _client = make_app(busy=True)
         queue(app, "fix the failing test", "then update the changelog")
         screen = drawn(app)
         top = composer_index(screen)
-        self.assertEqual(set(screen[top - 1]), {"─"})
+        self.assertEqual(screen[top - 1], box_edges(80)[0])
         self.assertEqual(screen[top - 3].rstrip(), "⧗ fix the failing test")
         self.assertTrue(screen[top - 2].startswith("⧗ then update the changelog"))
         self.assertTrue(screen[top - 2].rstrip().endswith("↑ edit"))
-        self.assertIn("esc to interrupt", screen[top - 4])  # the turn's activity row stays above them
+        self.assertTrue(screen[top - 4].startswith("  ⎿  Tip: "), screen)
+        self.assertIn("esc to interrupt", screen[top - 5])  # the turn's activity row and its tip stay above them
 
     def test_a_completion_menu_keeps_the_rows_left_and_stays_above_the_queue(self) -> None:
         app, _client = make_app(busy=True, rows=24)
@@ -2072,69 +2072,51 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(app.composer.text, "fix the flaky test\n/learn the build")
 
 
-class ModeChipTests(unittest.TestCase):
-    """Below 10 rows the mode row is not drawn, so the status line says which mode is on."""
+class InfoLineModeTests(unittest.TestCase):
+    """The info line under the composer says the mode at every height and width; the box never changes with it."""
 
-    def status(self, mode: str, rows: int, cols: int = 80) -> str:
+    def info(self, mode: str, rows: int, cols: int = 80) -> str:
         app, _client = make_app(rows=rows, cols=cols)
         show_mode(app, mode)
-        return status_row_of(drawn(app))
+        app.yolo_by_tui = app.approvals_off  # accept as the TUI turns it on, so Shift+Tab walks every mode
+        return info_row_of(drawn(app))
 
-    def test_a_short_terminal_carries_the_mode_on_the_status_line(self) -> None:
-        # From 3 rows: a 2-row terminal has room for the composer alone and draws no status line at all.
-        for rows in (3, 5, 6, 7, 9):
+    def test_every_height_with_an_info_line_says_the_mode_on_it(self) -> None:
+        # From 3 rows: a 2-row terminal has room for the composer alone and draws no info line at all. Under the box
+        # the line starts where the box's text does; a tiny terminal draws no box, and there it starts on the edge.
+        for rows in (3, 5, 6, 7, 9, 10, 24):
             with self.subTest(rows=rows):
-                self.assertTrue(self.status(MODE_ACCEPT, rows).rstrip().endswith("⏵⏵ accept │ idle"))
-                self.assertTrue(self.status(MODE_PLAN, rows).rstrip().endswith("⏸ plan │ idle"))
+                inset = INFO_INSET if rows >= MIN_ROWS else ""
+                self.assertTrue(self.info(MODE_ACCEPT, rows).startswith(inset + "⏵⏵ accept all on (⇧⇥ to cycle)"))
+                self.assertTrue(self.info(MODE_PLAN, rows).startswith(inset + "⏸ plan mode on (⇧⇥ to cycle)"))
+                self.assertTrue(self.info(MODE_NORMAL, rows).startswith(inset + "? for shortcuts"))
 
-    def test_normal_mode_adds_nothing_to_the_status_line(self) -> None:
-        for rows in (5, 9, 10, 24):
-            with self.subTest(rows=rows):
-                self.assertEqual(self.status(MODE_NORMAL, rows).rstrip(), "⚚ OMH │ idle")
+    def test_a_narrow_terminal_keeps_the_label_whole(self) -> None:
+        for cols in (19, 20, 30):
+            with self.subTest(cols=cols):
+                inset = INFO_INSET if cols >= MIN_COLS else ""
+                self.assertTrue(self.info(MODE_ACCEPT, 24, cols).startswith(inset + "⏵⏵ accept all on"))
+                self.assertTrue(self.info(MODE_PLAN, 24, cols).startswith(inset + "⏸ plan mode on"))
 
-    def test_where_the_mode_row_is_drawn_the_status_line_does_not_repeat_it(self) -> None:
-        for rows in (10, 11, 24, 40):
-            for mode, label in ((MODE_ACCEPT, "⏵⏵ accept all on"), (MODE_PLAN, "⏸ plan mode on")):
-                with self.subTest(rows=rows, mode=mode):
-                    app, _client = make_app(rows=rows)
-                    show_mode(app, mode)
-                    screen = drawn(app)
-                    self.assertEqual(status_row_of(screen).rstrip(), "⚚ OMH │ idle")
-                    self.assertTrue(any(line.startswith(label) for line in screen))
+    def test_the_label_takes_the_modes_colour_and_reads_on_every_palette_and_background(self) -> None:
+        from dataclasses import replace
 
-    def test_a_terminal_too_narrow_for_the_mode_row_carries_the_chip_too(self) -> None:
-        # Under 20 columns only composer and status are drawn, whatever the height. At 19 the
-        # chip and the state fill the line, so the brand is what gives way.
-        for mode, expected in ((MODE_ACCEPT, " │ ⏵⏵ accept │ idle"), (MODE_PLAN, " │ ⏸ plan │ idle")):
-            with self.subTest(mode=mode):
-                app, _client = make_app(rows=24, cols=19)
-                show_mode(app, mode)
-                self.assertIn(expected, "\n".join(drawn(app)))
-        wide, _client = make_app(rows=24, cols=20)
-        show_mode(wide, MODE_ACCEPT)
-        self.assertEqual(status_row_of(drawn(wide)).rstrip(), "⚚ OMH │ idle")
-
-    def test_the_chip_outlasts_the_model_and_the_context_when_the_line_is_cut(self) -> None:
-        app, _client = make_app(rows=9, cols=30)
-        show_mode(app, MODE_ACCEPT)
-        app.model, app.context = "a-rather-long-model-name", "ctx 14k/1M 1%"
-        text = line_text(app._status_line(30))
-        self.assertEqual(text.rstrip(), "⚚ OMH │ ⏵⏵ accept │ idle")
-        self.assertEqual(line_width(app._status_line(30)), 30)
-
-    def test_the_chip_takes_the_modes_colour_on_the_bar_and_reads_on_every_palette(self) -> None:
-        from omh.skin_pack import theme_names
-        from omh.tui.theme import TEXT_CONTRAST, contrast_ratio, theme_named
+        from omh.skin_pack import default_theme, theme_for_name, theme_names
+        from omh.tui.theme import TEXT_CONTRAST, contrast_ratio, surface_for, theme_named
 
         for name in theme_names():
-            theme = theme_named(name)
-            for mode, colour in ((MODE_ACCEPT, theme.mode_accept), (MODE_PLAN, theme.mode_plan)):
-                with self.subTest(theme=name, mode=mode):
-                    app, _client = make_app(rows=9, theme=theme)
-                    show_mode(app, mode)
-                    chip = next(span for span in app._status_line(80) if span.text in ("⏵⏵ accept", "⏸ plan"))
-                    self.assertEqual((chip.style.fg, chip.style.bg, chip.style.bold), (colour.fg, theme.status.bg, True))
-                    self.assertGreaterEqual(contrast_ratio(chip.style.fg, chip.style.bg), TEXT_CONTRAST)
+            for background in (None, "#FFFFFF", "#F6F1E6", "#1E1E1E", "#000000"):
+                theme = theme_named(name, background)
+                surface = surface_for(theme_for_name(name) or default_theme(), background)
+                for mode, colour, label in ((MODE_ACCEPT, theme.mode_accept, "⏵⏵ accept all on"),
+                                            (MODE_PLAN, theme.mode_plan, "⏸ plan mode on")):
+                    with self.subTest(theme=name, background=background, mode=mode):
+                        app, _client = make_app(rows=9, theme=theme)
+                        show_mode(app, mode)
+                        chip = next(span for span in app._info_line(80) if span.text == label)
+                        self.assertEqual(chip.style, replace(colour, bold=True))
+                        self.assertIsNone(chip.style.bg)  # no band: the line sits on the terminal's background
+                        self.assertGreaterEqual(contrast_ratio(chip.style.fg, surface), TEXT_CONTRAST)
 
 
 def bells(app_or_terminal: object) -> int:
@@ -2226,21 +2208,21 @@ class BellReplayTests(AppTestCase):
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
 class ModeReplayTests(AppTestCase):
-    def test_queued_prompts_show_above_the_rule_and_up_takes_them_back_unsent(self) -> None:
+    def test_queued_prompts_show_above_the_box_and_up_takes_them_back_unsent(self) -> None:
         run = self.prepare(
             Scenario("session", spans("session", "startup", "create", "interrupted_turn"), answers=startup_answers())
         )
         terminal = run.terminal
 
         def running() -> bool:
-            return terminal.status_row().rstrip().endswith("running")
+            return terminal.running()
 
         terminal.script(
             Step(b"Write the numbers from 1 to 300, one per line, nothing else.\r", when=terminal.idle, label="idle"),
             # The replay holds this turn open until it sees session.interrupt.
             Step(b"second prompt\rthird prompt\r", when=running, label="running"),
             Step(b"\x1b[A", when=terminal.shows("⧗ third prompt"), capture="queued", label="queued"),
-            Step(b"\x03", when=terminal.shows("› second prompt"), capture="recalled", label="recalled"),
+            Step(b"\x03", when=terminal.shows("│ > second prompt"), capture="recalled", label="recalled"),
             Step(b"\x03", when=lambda: not terminal.shows("third prompt")(), label="cleared"),
             Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(), label="end"),
         )
@@ -2252,25 +2234,25 @@ class ModeReplayTests(AppTestCase):
         self.assertEqual(queued[top - 3].rstrip(), "⧗ second prompt")
         self.assertTrue(queued[top - 2].startswith("⧗ third prompt"))
         self.assertTrue(queued[top - 2].rstrip().endswith("↑ edit"))
-        self.assertIn("queued 2", status_row_of(queued))
+        self.assertIn("↑ edit queued", info_row_of(queued))  # the rows above say how many; the line, the key
         self.assertNotIn("⧗", "\n".join(recalled))
-        self.assertEqual(recalled[composer_index(recalled) + 1].strip(), "third prompt")
-        self.assertNotIn("queued", status_row_of(recalled))
+        self.assertEqual(box_inner(recalled[composer_index(recalled) + 1]).strip(), "third prompt")
+        self.assertNotIn("queued", info_row_of(recalled))
 
-    def test_ctrl_t_shows_the_effort_hermes_confirmed_on_the_mode_row(self) -> None:
+    def test_ctrl_t_shows_the_effort_hermes_confirmed_on_the_info_line(self) -> None:
         answers = (*startup_answers(), ("config.set", {"result": effort_set("low")}))
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
         terminal = run.terminal
         terminal.script(
             Step(b"\x14", when=terminal.idle, capture="before", label="idle"),
-            Step(b"\x04", when=terminal.shows("ctrl+t effort (low)"), label="the effort"),
+            Step(b"\x04", when=terminal.shows("effort low"), label="the effort"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
         (call,) = run.calls("config.set")
         self.assertEqual(call["params"], {"key": "reasoning", "session_id": LIVE_ID, "value": "low"})
-        # "ctrl+t effort" is the hint; the level itself is absent until Hermes names one.
-        self.assertNotIn("(low)", "\n".join(terminal.captures["before"]))
+        # The level is absent until Hermes names one.
+        self.assertNotIn("effort low", "\n".join(terminal.captures["before"]))
 
     def test_shift_tab_walks_the_modes_and_the_frame_shows_each(self) -> None:
         answers = (*startup_answers(), ("config.set", {"result": YOLO_IS_ON}), ("config.set", {"result": YOLO_IS_OFF}))
@@ -2280,7 +2262,7 @@ class ModeReplayTests(AppTestCase):
             Step(SHIFT_TAB_BYTES, when=terminal.idle, capture="normal", label="idle"),
             Step(SHIFT_TAB_BYTES, when=terminal.shows("⏵⏵ accept all on"), capture="accept", label="accept"),
             Step(SHIFT_TAB_BYTES, when=terminal.shows("⏸ plan mode on"), capture="plan", label="plan"),
-            Step(b"\x04", when=terminal.shows("? shortcuts"), label="normal again"),
+            Step(b"\x04", when=terminal.shows("? for shortcuts"), label="normal again"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
@@ -2291,9 +2273,10 @@ class ModeReplayTests(AppTestCase):
                 {"key": "yolo", "session_id": LIVE_ID, "value": "off"},
             ],
         )
-        for name, glyph in (("normal", "─"), ("accept", "━"), ("plan", "┄")):
-            rules = [line for line in terminal.captures[name] if line and set(line) == {glyph}]
-            self.assertEqual(len(rules), 2, terminal.captures[name])
+        top, bottom = box_edges(80)
+        for name in ("normal", "accept", "plan"):  # the box is the same in every mode
+            screen = terminal.captures[name]
+            self.assertEqual((screen.count(top), screen.count(bottom)), (1, 1), screen)
 
     def test_a_plan_mode_prompt_reaches_hermes_as_the_prompt_slash_plan_builds(self) -> None:
         answers = (
@@ -2317,7 +2300,7 @@ class ModeReplayTests(AppTestCase):
         self.assertEqual(dispatch["params"], {"name": "plan", "arg": "fix the flaky test", "session_id": LIVE_ID})
         (submitted,) = run.calls("prompt.submit")
         self.assertEqual(submitted["params"], {"session_id": LIVE_ID, "text": PLAN_PROMPT})
-        self.assertIn("› /plan fix the flaky test", terminal.history())
+        self.assertIn("> /plan fix the flaky test", terminal.history())
         self.assertNotIn("PLAN MODE", terminal.history())
 
 

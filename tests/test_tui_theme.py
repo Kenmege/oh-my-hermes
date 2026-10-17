@@ -14,7 +14,7 @@ from omh.tui.theme import DEFAULT_THEME, GLYPH_ROLES, TEXT_ROLES, build_theme, i
 # for a dark terminal), pure white and black, and the near-white and near-black defaults common terminals ship.
 LIGHT_BACKGROUNDS = ("#FFFFFF", "#F6F8FA", "#FDF6E3")
 DARK_BACKGROUNDS = ("#000000", "#1E1E1E", "#002B36")
-BAND_ROLES = ("user_band", "ok_band", "error_band")
+BAND_ROLES = ("ok_band", "error_band")
 
 
 def luminance(colour: str) -> float:
@@ -112,7 +112,7 @@ class ThemeTests(unittest.TestCase):
         self.assertNotEqual(mono.syntax_comment, mono.text)
 
     def test_hints_read_at_text_contrast_on_every_palette(self) -> None:
-        # With no background reported, the status-bar background stands in for the dark terminal behind the mode row.
+        # With no background reported, the status-bar background stands in for the dark terminal behind the info line.
         for skin in SKIN_THEMES:
             theme = build_theme(skin)
             background = skin_colors(skin.skin_name).get("status_bar_bg") or theme.status.bg
@@ -121,12 +121,14 @@ class ThemeTests(unittest.TestCase):
                 self.assertGreaterEqual(contrast(theme.muted.fg, background), 4.5)
                 self.assertGreaterEqual(contrast(theme.rule.fg, background), 3.0)
 
-    def test_the_three_composer_rules_differ_on_every_palette(self) -> None:
+    def test_accept_plan_and_the_hint_differ_on_the_info_line_on_every_palette(self) -> None:
+        # The composer's box no longer changes with the mode; the info line says it in words and in the mode's colour.
         for skin in SKIN_THEMES:
-            theme = build_theme(skin)
-            rules = {"normal": theme.rule, "accept": theme.mode_accept, "plan": theme.mode_plan}
-            with self.subTest(theme=skin.short_name):
-                self.assertEqual(len(set(rules.values())), 3, rules)
+            for background in (None, *LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
+                theme = build_theme(skin, background)
+                roles = {"hint": theme.hint.fg, "accept": theme.mode_accept.fg, "plan": theme.mode_plan.fg}
+                with self.subTest(theme=skin.short_name, background=background):
+                    self.assertEqual(len(set(roles.values())), 3, roles)
 
     def test_a_palette_that_clears_the_background_keeps_its_own_colours(self) -> None:
         sky = theme_named("sky")
@@ -144,40 +146,45 @@ class ThemeTests(unittest.TestCase):
         self.assertEqual(DEFAULT_THEME.name, "sky")
 
 
-class StatusBarContrastTests(unittest.TestCase):
-    """Words on the status line are measured against the status bar they sit on, not the terminal's background."""
+class InfoLineContrastTests(unittest.TestCase):
+    """The info line has no bar: its words and marks are measured against the terminal's background."""
 
-    def line(self, background: str | None, skin: object, stage: str, yolo: bool, rows: int) -> list:
+    def line(self, background: str | None, skin: object, stage: str) -> tuple[list, str]:
         from test_tui_modes import make_app
         from test_tui_panels import hud_payload
         from omh.tui.panels import HudSnapshot
+        from omh.tui.theme import surface_for
 
         theme = build_theme(skin, background)  # type: ignore[arg-type]
-        app, _client = make_app(theme=theme, rows=rows, cols=200)
+        app, _client = make_app(theme=theme, busy=True, rows=24, cols=200)
         payload = hud_payload()
         payload["repeat"] = {"status": "observed", "consecutive": 4, "period": 2, "intercepted": 1, "stage": stage}
         payload["activity"].update(live=True, post_tool_call_observed=True, open_call_count=2, oldest_open_elapsed_seconds=12)
-        payload["yolo"] = {"status": "observed", "enabled": yolo}
         app.hud = HudSnapshot(app.stored_id, payload, 0.0)
-        app.approvals_off = app.plan_mode = True  # the mode chips, on a terminal too short for the mode row
-        app.model, app.context, app.context_percent = "some/model", "ctx 96k/100k 96%", 96.0
-        return [(span, theme.status.bg) for span in app._compose_status_line(200)]
+        app.approvals_off = app.plan_mode = True  # both labels, in the modes' colours
+        app.model, app.context_percent, app.effort = "some/model", 96.0, "high"
+        return list(app._info_line(200)), surface_for(skin, background)  # type: ignore[arg-type]
 
-    def test_every_coloured_word_on_the_status_line_reaches_4_5_against_the_bar(self) -> None:
+    def test_every_coloured_word_on_the_info_line_reaches_4_5_against_the_background(self) -> None:
         for skin in SKIN_THEMES:
             for background in (None, *LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
-                for stage, yolo, rows in (("watching", False, 24), ("blocking", True, 6), ("approval", True, 6)):
-                    for span, bar in self.line(background, skin, stage, yolo, rows):
+                for stage in ("watching", "blocking", "approval"):
+                    spans, surface = self.line(background, skin, stage)
+                    self.assertTrue(any(span.text == "ctx 96%" for span in spans))
+                    for span in spans:
                         if not span.text.strip() or span.style.fg is None:
                             continue
                         minimum = 4.5 if any(char.isalnum() for char in span.text) else 3.0
                         with self.subTest(theme=skin.short_name, background=background, stage=stage, text=span.text):
-                            self.assertEqual(span.style.bg, bar)
-                            self.assertGreaterEqual(contrast(span.style.fg, bar), minimum)
+                            self.assertIsNone(span.style.bg)
+                            self.assertGreaterEqual(contrast(span.style.fg, surface), minimum)
 
 
 class StatusBarTintTests(unittest.TestCase):
-    """The audit's G8: on a light terminal the status line was the palette's dark bar, a band across a light screen."""
+    """The audit's G8: on a light terminal the status bar was the palette's dark bar, a band across a light screen.
+
+    The bar now backs only the pager's footer; the info line and the sticky prompt have none.
+    """
 
     def test_a_light_terminal_gets_a_light_bar_of_the_palettes_own_and_a_dark_or_unknown_one_keeps_it(self) -> None:
         tints = set()
