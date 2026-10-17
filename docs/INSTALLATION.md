@@ -322,7 +322,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   menu when it does not open under the composer), the prompts queued behind
   the running turn (`⧗`, up to three named and the rest counted), the
   composer in a rounded box (`╭─╮`, then `│ > … │` rows, then `╰─╯`), and
-  one dim info line under it. While you pick from a
+  one dim info line under it. On a terminal 6 rows tall the box keeps its
+  top edge and drops its bottom one, so the slot above it still gets its
+  two rows; from 7 rows the box is closed, and under 6 rows (or 20
+  columns) the composer is a bare `> …` row with no box. While you pick from a
   list (a question answered by picking, the `/sessions`, `/rewind` or bare
   `/model` picker, or the agent list) or search the history with Ctrl+R, the
   composer and its box are not drawn and the list or the search stands in
