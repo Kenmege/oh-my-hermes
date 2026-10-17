@@ -27,8 +27,13 @@ All notable changes will be documented here.
   alone ends no sentence, because the router reads it as a space; a period
   before a space ends one even after an abbreviation ("Acme Inc. today", "the
   U.S. team"), which only cuts a place short. Between a send and its "to"
-  only the data sent, its particle and remarks may stand ("send it where Acme
-  wants it, to the dev team" keeps the review). The Korean reader no longer
+  only closed words may stand, read as the span before the first send is:
+  the data, also as protected, counted or the version the redaction made
+  ("the anonymized copy", "both files", "the updated file", "the customer
+  export"), the verb's particle, "straight" or "directly", and remarks; so
+  "send it where Acme wants it, to the dev team" and "send the Acme copy to
+  the dev team" keep the review, and so does any other word there ("send the
+  sorted export to the dev team"), the safe direction. The Korean reader no longer
   opens a quote at an apostrophe after a Latin letter or digit, nor closes
   one before a Latin letter, so the router and the hint read "고객 정보
   마스킹해서 Acme's team에 보내줘. It's urgent." alike; a quote a Korean
@@ -44,9 +49,15 @@ All notable changes will be documented here.
   question, and one that names no personal data, each with its NFD copy.
   Korean requests sent on in a later sentence gained it from 0 to 12 of 12.
   English inside requests followed by a remark stopped firing (20 to 5 of
-  20). Of 196 Korean inside rows that read inside on main, 8 now fire, the
+  20), and no English inside request on these sets or the review's starts
+  firing. Of 196 Korean inside rows that read inside on main, 8 now fire, the
   safe direction: an order history, survey responses, "this month's" orders,
-  and "고객의" (a customer's), each with its NFD copy.
+  and "고객의" (a customer's), each with its NFD copy. On the review's own
+  sets no outside request lost the review either, and 19 more Korean inside
+  rows now fire for the same kinds of word: time words ("이번 달", "지난달",
+  "어제 받은", "오늘 안에"), descriptors ("주문 내역", "거래 내역", "설문 응답",
+  "가입 정보"), an inside team acting ("우리 팀이 만든", "개발팀이 요청한"), and
+  "고객의".
 
 - **A plural possessive no longer hides the rest of a message from routing.**
   The routing masker read the `'` of "the customers' export" as an opening
