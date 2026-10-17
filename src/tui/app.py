@@ -1812,6 +1812,9 @@ class App(ModesMixin, AgentViewMixin):
             ), NOTICE_WARN)
             self.dirty = True
             self._render_when_due()  # the notice shows while the old gateway is reaped and the new one starts
+            if self.redraw_at is not None:  # a resize waits to settle, and what follows blocks: redraw now instead
+                self.redraw_at = self.clock()
+                self._render_when_due()
             if old is not None:  # reaped before a new one is spawned, once the screen says why the TUI waits
                 old.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
                 old = None
