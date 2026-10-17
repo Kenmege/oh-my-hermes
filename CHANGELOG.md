@@ -12,6 +12,11 @@ All notable changes will be documented here.
   does. A read or a load no longer echoes the first lines it read: it says
   `Read 715 lines` (`read_file`), `loaded skill omh-docs` (`skill_view`) or
   `12 matches` (`search_files`).
+- **An OMH TUI diff no longer doubles each changed line.** Hermes pads every
+  added and removed line of an edit's diff with spaces, to 143 columns in a
+  live patch, so on any narrower terminal each green or red band wrapped into
+  a second, empty band row. A diff line's trailing spaces are dropped now;
+  the band still reaches the right edge.
 - **The OMH TUI's working row reads as Claude Code's.** It was a braille
   spinner and Hermes' kaomoji text (`⠋ (⌐■_■) analyzing... (12s)`). It is now
   `✶ Analyzing… (12s · ↓1.2k tokens · thinking with high effort · esc to

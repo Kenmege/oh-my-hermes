@@ -102,12 +102,24 @@ def compact_file_header(text: str) -> str:
     return f"{old}{FILE_ARROW}{new}"
 
 
+def _without_padding(line: DiffLine) -> DiffLine:
+    """A code line without the spaces after its text, its `+`, `-` or ` ` kept; any other line as it is."""
+    if line.kind in (DIFF_ADDED, DIFF_REMOVED, DIFF_CONTEXT):
+        return DiffLine(line.kind, line.text[:1] + line.text[1:].rstrip())
+    return line
+
+
 def parse_inline_diff(payload: str) -> tuple[DiffLine, ...]:
-    """The classified lines of an `inline_diff` payload; () for an empty one or one that is only the header."""
+    """The classified lines of an `inline_diff` payload; () for an empty one or one that is only the header.
+
+    Hermes pads each changed line with spaces (to 143 cells in a live patch);
+    a band reaches the right edge by itself, and the padding would wrap it
+    into a second, empty band row, so a code line's trailing spaces go.
+    """
     lines = _trimmed([clean_text(line) for line in payload.split("\n")])
     if lines and lines[0].lstrip().startswith(REVIEW_HEADER_MARK):
         lines = _trimmed(lines[1:])
-    classified = [DiffLine(_kind(line), line) for line in lines]
+    classified = [_without_padding(DiffLine(_kind(line), line)) for line in lines]
     return tuple(
         DiffLine(line.kind, compact_file_header(line.text)) if line.kind == DIFF_FILE else line for line in classified
     )
