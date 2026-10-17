@@ -22,6 +22,15 @@ from .handoff_risk_model import (
 _GIT_TIMEOUT: Final = 5
 _SECRET: Final = re.compile(r"(?:^\.env(?:\.|$)|^\.?(?:credentials|secrets?)(?:\.|$)|^id_(?:rsa|dsa|ecdsa|ed25519)(?:\.|$)|\.(?:pem|key|p12|pfx)$)", re.I)
 _STAT: Final = re.compile(rb"  ctime: (\d+):(\d+)\n  mtime: (\d+):(\d+)\n  dev: \d+\s+ino: \d+\n  uid: \d+\s+gid: \d+\n  size: (\d+)\s+flags: ([0-9a-f]+)\n")
+# Git prints an index record as "%06o %s %d\t", the path and NUL, then five stat lines
+# of 32-bit "%u" fields and a "%x" flags word. With an 11-digit 32-bit mode and a
+# 64-hex object id that is at most 245 bytes besides the path; a tree record is smaller.
+_RECORD_OVERHEAD: Final = 245
+# Each listing keeps at most MAX_ENTRIES distinct paths, every kept path is charged to
+# MAX_METADATA_BYTES, and an index Git wrote holds at most three merge-stage records
+# per path. So the tree or index listing of a repository within both bounds fits.
+_LISTING_BYTES: Final = 3 * (MAX_ENTRIES * _RECORD_OVERHEAD + MAX_METADATA_BYTES)
+_LISTINGS: Final = frozenset({("ls-tree", "-r", "-z", "HEAD"), ("ls-files", "--stage", "--debug", "-z")})
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +52,9 @@ def _git(repo: Path, args: tuple[str, ...]) -> tuple[int, bytes]:
     # repo-wide blessed-override gate admits only core.fsmonitor=false here.
     argv = ["git", "--no-optional-locks", "--no-lazy-fetch", "-c", "core.fsmonitor=false",
             "-C", str(repo), *args]
+    # The untracked, HEAD and branch outputs are charged whole, so the budget caps them;
+    # the two rev-parse probes print one line each and keep the same cap.
+    limit = _LISTING_BYTES if args in _LISTINGS else MAX_METADATA_BYTES
     chunks: list[bytes] = []
     try:
         with subprocess.Popen(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=False) as process:
@@ -52,9 +64,9 @@ def _git(repo: Path, args: tuple[str, ...]) -> tuple[int, bytes]:
             read_bytes: Callable[[int], bytes] = stream.read
 
             def collect() -> None:
-                data = read_bytes(MAX_METADATA_BYTES + 1)
+                data = read_bytes(limit + 1)
                 chunks.append(data)
-                if len(data) > MAX_METADATA_BYTES:
+                if len(data) > limit:
                     process.kill()
 
             reader = Thread(target=collect, name="omh-risk-git-reader")
@@ -70,7 +82,7 @@ def _git(repo: Path, args: tuple[str, ...]) -> tuple[int, bytes]:
     except OSError as exc:
         raise ScanError("repository_unreadable") from exc
     data = b"".join(chunks)
-    if len(data) > MAX_METADATA_BYTES:
+    if len(data) > limit:
         raise ScanError("metadata_oversized")
     return code, data
 
@@ -110,19 +122,26 @@ def observe_repository(repo: Path) -> RepositoryObservation:
     branch = os.fsdecode(branch_data.rstrip(b"\n")) if branch_code == 0 else None
     head_code, head = _git(root, ("rev-parse", "--verify", "HEAD"))
     tree: dict[bytes, bytes] = {}
+    # Retained metadata charged to MAX_METADATA_BYTES: the HEAD and branch output, each
+    # tree path with its mode and object id, each index path the tree lacks, and the
+    # untracked listing. Index records reuse the kept path; stat values are not kept.
+    kept: dict[bytes, bytes] = {}
     metadata_bytes = len(head) + len(branch_data)
     if head_code == 0:
         tree_data = _required(root, ("ls-tree", "-r", "-z", "HEAD"))
-        metadata_bytes += len(tree_data)
         for entry in _paths(tree_data):
             header, path = entry.split(b"\t", 1)
             mode, _, oid = header.split(b" ")
+            path = kept.setdefault(path, path)
             tree[path] = mode + b" " + oid
+            metadata_bytes += len(path) + len(tree[path])
+            if metadata_bytes > MAX_METADATA_BYTES:
+                raise ScanError("metadata_oversized")
     elif branch is None or head_code != 128:
         raise ScanError("repository_invalid")
     index = _required(root, ("ls-files", "--stage", "--debug", "-z"))
     others = _required(root, ("ls-files", "--others", "--exclude-standard", "-z"))
-    metadata_bytes += len(index) + len(others)
+    metadata_bytes += len(others)
     if metadata_bytes > MAX_METADATA_BYTES:
         raise ScanError("metadata_oversized")
     untracked = _paths(others)
@@ -140,6 +159,12 @@ def observe_repository(repo: Path) -> RepositoryObservation:
         if record is None:
             raise ScanError("repository_invalid")
         offset = record.end()
+        if path not in kept:
+            kept[path] = path
+            metadata_bytes += len(path)
+            if metadata_bytes > MAX_METADATA_BYTES:
+                raise ScanError("metadata_oversized")
+        path = kept[path]
         tracked.add(path)
         if len(tracked) > MAX_ENTRIES:
             raise ScanError("metadata_oversized")
