@@ -4150,19 +4150,25 @@ class App(ModesMixin, AgentViewMixin):
             if self.transcript.moa:
                 text = f"{text} · {self.transcript.moa}"
             frame = self._spinner_frame()
-            facts = [elapsed_text(now - (self.busy_since or now))]
+            elapsed = elapsed_text(now - (self.busy_since or now))
             tokens = self._turn_tokens()
-            if tokens:
-                facts.append(f"↓{compact_count(tokens)} tokens")
+            written = f"↓{compact_count(tokens)} tokens" if tokens else ""
             effort = ""
             if self.effort in contract.REASONING_LEVELS and self.effort != "none":  # `none` is thinking off
                 effort = THINKING_EFFORT.format(self.effort)
-            interrupt = [INTERRUPT_HINT] if self._esc_interrupts() else []  # else Esc means something else now
+            interrupt = INTERRUPT_HINT if self._esc_interrupts() else ""  # else Esc means something else now
             lead = (Span(WORKING_GLYPHS[frame % len(WORKING_GLYPHS)], self.theme.accent), Span(" "),
                     *working_spans(text, frame, self.theme))
-            row = (*lead, Span(f" ({' · '.join([*facts, *([effort] if effort else []), *interrupt])})", self.theme.muted))
-            if effort and line_width(row) > cols:  # the effort goes first; the info line says it where it has room
-                row = (*lead, Span(f" ({' · '.join([*facts, *interrupt])})", self.theme.muted))
+            # A narrow row drops whole facts, the effort first (the info line says it where it has room), then the
+            # tokens, the time, and the interrupt last; only a verb too long for the row alone is cut at the edge.
+            row: Line = lead
+            for facts in ((elapsed, written, effort, interrupt), (elapsed, written, interrupt), (elapsed, interrupt),
+                          (interrupt,)):
+                said = " · ".join(fact for fact in facts if fact)
+                candidate = (*lead, Span(f" ({said})", self.theme.muted)) if said else lead
+                if line_width(candidate) <= cols:
+                    row = candidate
+                    break
             lines.append(truncate_line(row, cols))
             tip = self._tip_line(cols)
             if tip is not None:

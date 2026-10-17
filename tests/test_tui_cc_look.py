@@ -289,7 +289,19 @@ class WorkingRowTests(unittest.TestCase):
         clock.now += 84
         self.assertEqual(working_rows(app, 60)[0][2:], "Synthesizing… (1m 24s · esc to interrupt)")  # the info line says it
         self.assertEqual(working_rows(app, 80)[0][2:], "Synthesizing… (1m 24s · thinking with high effort · esc to interrupt)")
-        self.assertEqual(line_width(app._tail(30)[-2]), 30)  # past that, the row is cut at the edge
+        self.assertEqual(working_rows(app, 30)[0][2:], "Synthesizing…")  # nothing in parentheses fits whole
+
+    def test_a_narrow_row_drops_whole_parts_and_never_cuts_one(self) -> None:
+        # Review B at 40 columns: `✶ Working… (4s · ↓170 tokens · esc to i…`.
+        app, clock = self.busy()
+        app.effort = "high"
+        app.usage_output, app.turn_output_base = 170, 0
+        clock.now += 4
+        for width, said in ((100, "Working… (4s · ↓170 tokens · thinking with high effort · esc to interrupt)"),
+                            (60, "Working… (4s · ↓170 tokens · esc to interrupt)"), (40, "Working… (4s · esc to interrupt)"),
+                            (30, "Working… (esc to interrupt)"), (20, "Working…")):
+            with self.subTest(width=width):
+                self.assertEqual(working_rows(app, width)[0][2:], said)
 
     def test_the_glyph_turns_through_claude_codes_set_and_holds_under_reduced_motion(self) -> None:
         app, clock = self.busy()

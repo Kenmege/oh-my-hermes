@@ -607,8 +607,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   such as `No response from provider in 120s — reconnecting…` or `Retrying
   in 5.0s (attempt 1/3)…` keeps its words, cut at the edge), the
   time, the tokens the turn has written so far, and the reasoning effort when
-  the session reports one (a row too narrow for all of it leaves the effort
-  out first). On a terminal 16 rows tall or more a tip sits
+  the session reports one (a row too narrow for all of it leaves out the
+  effort first, then the tokens, then the time, then `esc to interrupt`,
+  each one whole rather than cut). On a terminal 16 rows tall or more a tip sits
   under it, one a turn, each naming a key (`⎿  Tip: ctrl+o shows the whole
   transcript`). Once you interrupt it (Esc or Ctrl+C on an empty composer)
   it reads `✻ interrupting… (12s)` until Hermes has stopped the turn. What you queued behind that turn is not sent then:
