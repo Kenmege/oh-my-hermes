@@ -153,12 +153,14 @@ def model_forms(model: str) -> tuple[str, ...]:
     """The model's names on the info line, longest first: as Hermes names it, its last path segment, then that
     segment without its first `-` word (`deepseek/deepseek-v4.1-flash` → `deepseek-v4.1-flash` → `v4.1-flash`).
 
-    A form equal to the one before it is left out, and so is an empty one.
+    A form equal to the one before it is left out, and so is an empty one;
+    the third is left out too when what is left starts with a digit, a bare
+    version (`glm-5.3`, `gemini-3.1-pro`).
     """
     segment = model.rsplit("/", 1)[-1]
     head, dash, rest = segment.partition("-")
     forms: list[str] = []
-    for form in (model, segment, rest if dash and head and rest else segment):
+    for form in (model, segment, rest if dash and head and rest and not rest[0].isdigit() else segment):
         if form and form not in forms:
             forms.append(form)
     return tuple(forms)

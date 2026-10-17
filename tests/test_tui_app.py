@@ -1243,6 +1243,20 @@ class InfoLineRightTests(unittest.TestCase):
         self.assertEqual(model_forms("vendor/-x"), ("vendor/-x", "-x"))  # no word before it
         self.assertEqual(model_forms(""), ())
 
+    def test_no_name_of_a_shipped_model_is_a_bare_version(self) -> None:
+        from omh.coding.model_recommendations import SHIPPED_MODEL_RECOMMENDATIONS
+        from omh.tui.modes import model_forms
+
+        chains = SHIPPED_MODEL_RECOMMENDATIONS["categories"].values()
+        for alias in sorted({entry["model_alias"] for chain in chains for entry in chain}):
+            for model in (alias, f"vendor/{alias}"):
+                with self.subTest(model=model):
+                    self.assertFalse([form for form in model_forms(model) if form[:1].isdigit()])
+        self.assertEqual(model_forms("z-ai/glm-5.3"), ("z-ai/glm-5.3", "glm-5.3"))
+        self.assertEqual(model_forms("gemini-3.1-pro"), ("gemini-3.1-pro",))
+        self.assertEqual(model_forms("openai/gpt-5.5"), ("openai/gpt-5.5", "gpt-5.5"))
+        self.assertEqual(model_forms("kimi-k3"), ("kimi-k3", "k3"))  # a word that starts with a letter stays
+
     def test_the_effort_says_its_level_or_names_the_key_while_hermes_reported_none(self) -> None:
         app = self.app()
         for effort, said in (("", "ctrl+t effort"), ("default", "effort default"), ("xhigh", "effort xhigh")):

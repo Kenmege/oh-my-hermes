@@ -365,7 +365,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   side says that first (`repeat x4`, `1 tool · 9s`). On a narrower terminal
   the right side gives way first: the model shortens to its last path
   segment, then that segment loses its first word (`deepseek-v4.1-flash`,
-  then `v4.1-flash`), then the model goes, then the effort, then the context,
+  then `v4.1-flash`; never down to a bare version, so `glm-5.3` stays
+  whole), then the model goes, then the effort, then the context,
   and the HUD's counts last. Only then does the left side take shorter
   words: on a line too narrow for what the next key does, the mode's label
   shortens (`⏵⏵ accept`, then `⏵⏵`; `⏸ plan`, then `⏸`) before that is cut,
