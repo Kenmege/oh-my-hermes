@@ -300,6 +300,11 @@ class ModesMixin:
             return MODE_ACCEPT_PLAN if self.plan_mode else MODE_ACCEPT
         return MODE_PLAN if self.plan_mode else MODE_NORMAL
 
+    @property
+    def approvals_off_by_hermes(self) -> bool:
+        """Whether approvals are off on Hermes' own, not by the TUI's Shift+Tab: the key then turns plan on and off."""
+        return self.approvals_off and not self.yolo_by_tui
+
     def _take_session_state(self, info: Mapping[str, Any]) -> None:
         """Hermes' own word on the session: its reasoning effort, and whether its approvals are off.
 
@@ -353,7 +358,7 @@ class ModesMixin:
         """
         if self.mode_request_open:
             return  # one change at a time: the mode shown is the last one Hermes confirmed
-        if self.approvals_off and not self.yolo_by_tui:
+        if self.approvals_off_by_hermes:
             self.plan_mode = not self.plan_mode
             self._say_hermes_approvals()
         elif self.approvals_off:

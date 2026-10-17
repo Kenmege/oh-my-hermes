@@ -4003,7 +4003,7 @@ class App(ModesMixin, AgentViewMixin):
             or self.search is not None or self.list_selected is not None
         )
 
-    def _info_line(self, cols: int, strip: Line | None = None) -> Line:
+    def _info_line(self, cols: int) -> Line:
         """The info line, saying what the next key does when that is not the usual (a rewind, Esc's or Ctrl+C's second press).
 
         A picked steer or rewind keeps room for its last form but one, the shortest that still names what it
@@ -4015,6 +4015,7 @@ class App(ModesMixin, AgentViewMixin):
         inset = self._info_inset()
         say: str | tuple[str, ...] = ""
         say_style = None
+        strip: Line | None = None
         armed = self.escape_armed
         steered = self.roster.agents.get(self.agent_steer or "")
         picker_keys = self._picker_keys()
@@ -4052,7 +4053,7 @@ class App(ModesMixin, AgentViewMixin):
             say=say,
             say_style=say_style,
             # While Hermes has approvals off on its own, Shift+Tab turns plan on and off and nothing else.
-            cycle=HERMES_OWN_CYCLE.get(self._display_mode(), "") if self.approvals_off and not self.yolo_by_tui else "",
+            cycle=HERMES_OWN_CYCLE.get(self._display_mode(), "") if self.approvals_off_by_hermes else "",
             drafting=bool(self.composer.text),  # `?` types itself then, so `? for shortcuts` would be untrue
         )
         return (Span(" " * inset), *line) if inset and line else line
@@ -4200,7 +4201,7 @@ class App(ModesMixin, AgentViewMixin):
         if self.tip_turn != self.busy_since:
             self.tip_turn, self.tip_index = self.busy_since, self.tip_index + 1
         tip = TIPS[self.tip_index % len(TIPS)]
-        if tip == CYCLE_TIP and self.approvals_off and not self.yolo_by_tui:
+        if tip == CYCLE_TIP and self.approvals_off_by_hermes:
             tip = HERMES_OWN_CYCLE_TIP
         return truncate_line(
             (Span(OUTPUT_INDENT), Span(OUTPUT_MARK, self.theme.dim), Span(f"Tip: {tip}", self.theme.hint)), cols
