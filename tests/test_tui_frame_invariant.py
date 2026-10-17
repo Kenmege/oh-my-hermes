@@ -622,10 +622,11 @@ class AppBottomRowsTests(unittest.TestCase):
         self.assertEqual(self.gap(redrawn), self.gap(before))
         self.assertEqual(self.where(redrawn)[1], 23)
 
-    def test_launched_on_the_last_row_it_follows_the_content_until_its_place_is_certain(self) -> None:
-        # The owner's rule for an unknown place: count it as short of the bottom. The TUI does not ask the terminal
-        # where its cursor is, so after a launch from a terminal already holding output, the first screen of
-        # output is followed, a closing menu taking the composer up, and the bottom rows hold from then on.
+    def test_started_on_the_last_row_it_follows_the_content_until_its_place_is_certain(self) -> None:
+        # The owner's rule for an unknown place: count it as short of the bottom. A region told nothing about where
+        # it starts (no launch clear and no cursor report: the app as `make_app` builds it), on a terminal already
+        # holding output, follows the first screen of output, a closing menu taking the composer up, and holds the
+        # bottom rows from then on.
         from test_tui_modes import drawn, make_app, type_text
 
         app = make_app(rows=24, cols=80)[0]
@@ -643,8 +644,8 @@ class AppBottomRowsTests(unittest.TestCase):
         self.assertEqual(app.region.last_row(24), 23)  # its own output filled the screen: certain, and pinned
 
     def test_a_cursor_row_the_terminal_reported_makes_the_place_certain_from_the_first_frame(self) -> None:
-        # The startup query's cursor position report (CSI 6n): launched on the last row of a terminal already
-        # holding output, the region knows it is on the bottom rows at once, so a closing menu leaves it there.
+        # The cursor position report (CSI 6n) a job continued after a stop asks for: on the last row of a terminal
+        # already holding output, the region knows it is on the bottom rows at once, so a closing menu leaves it there.
         from test_tui_modes import drawn, make_app, type_text
 
         app = make_app(rows=24, cols=80)[0]

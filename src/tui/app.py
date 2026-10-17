@@ -167,7 +167,7 @@ from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, hud_chips, panel_lines, plan_state, plan_text
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
-from .screen import CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
+from .screen import CARRIAGE_RETURN, CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion, cursor_up
 from .session_picker import KEYS as SESSION_PICKER_KEYS
 from .session_picker import PICK, SessionPicker, session_rows
 from .rewind_picker import KEYS as REWIND_PICKER_KEYS
@@ -1374,8 +1374,27 @@ class App(ModesMixin, AgentViewMixin):
         self.background_named_dark = self.background is None and colorfgbg_names_dark(named)
         self.theme = build_theme(self._skin(), self._surface())
 
+    def clear_launch_screen(self, row: int | None) -> None:
+        """Push the rows above the cursor into the terminal's scrollback and start the region on the screen's top row.
+
+        From the cursor's row, `rows - 1` line feeds reach the screen's last
+        row and then scroll exactly the rows above the cursor off the top, into
+        scrollback, whichever row the cursor was on; relative moves bring the
+        cursor back to the top row, which is where the first frame starts (the
+        row the cursor was on is erased by that frame, as at any launch). With
+        `row` 1 (the launch's cursor position report put the cursor on the top
+        row) nothing is above it, and nothing is written. Nothing is erased:
+        what the screen showed stays one scroll up.
+        """
+        rows = self.size[1]
+        if rows < 2 or self.region.height:
+            return
+        if row != 1:
+            self.terminal.write("\n" * (rows - 1) + cursor_up(rows - 1) + CARRIAGE_RETURN)
+        self.region = LiveRegion(self.terminal.write, at_top=True)
+
     def adopt_cursor_row(self, row: int | None) -> None:
-        """The 1-based row the terminal reported its cursor on at launch: the region knows its place from the first frame.
+        """The 1-based row the terminal reported its cursor on after a stop: the region knows its place from the next frame.
 
         None (no report) or a row outside the screen leaves the place unknown,
         as without the report, until output has pushed it to certainty.
@@ -2369,8 +2388,8 @@ class App(ModesMixin, AgentViewMixin):
         the shell stays readable above the session's rows. The shell's window
         title is back while the job is stopped (popped, and pushed again by the
         next frame). Continued, the TUI asks the terminal for the cursor row
-        again, as at launch (`adopt_cursor_row`), so the region knows its place
-        from its first frame; keys typed while that query waited are read after
+        (`adopt_cursor_row`), so the region knows its place from its first
+        frame; keys typed while that query waited are read after
         the keys that came in the same read as the Ctrl+Z (`held_input`).
         """
         if getattr(signal, "SIGTSTP", None) is None:
@@ -4267,7 +4286,7 @@ def _run(
         with terminal:
             background, typed, row = terminal.query_background()
             app.adopt_background(background, environ)
-            app.adopt_cursor_row(row)
+            app.clear_launch_screen(row)  # started: the shell's rows and the launcher's warnings go one scroll up
             code = app.run(typed)
     finally:
         if app.client is not client:  # a gateway spawned after a crash; the caller reaps the first one

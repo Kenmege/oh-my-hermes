@@ -410,10 +410,14 @@ class StartupRefusalTests(AppTestCase):
         # Hermes 6c61c3e27d's real -32601 answer, served for session.create.
         drift = recorded_answer("session", "drift_reply")
         run = self.prepare(Scenario("session", spans("session", "startup"), answers=(("session.create", drift),)))
+        shell = [f"$ shell {n}" for n in range(5)]
+        run.terminal.screen.feed("".join(f"{line}\r\n" for line in shell))
         self.run_main(run)
         self.assert_fell_back(run)
         self.assertIn("-32601", run.stderr.getvalue())
         self.assertEqual(run.terminal.entered, 0)
+        # A launch that falls back clears nothing: the shell's rows stay on the screen, and nothing went to scrollback.
+        self.assertEqual((run.terminal.screen.lines()[:5], run.terminal.screen.scrollback), (shell, []))
         self.assertEqual(run.clients[0].close(grace=FAST_GRACE), 0)
 
     def test_drift_on_the_busy_mode_call_is_a_notice_and_the_session_goes_on(self) -> None:
@@ -1549,33 +1553,56 @@ class OpeningTests(AppTestCase):
                 self.assertEqual(screen[status + 1 :], [""] * (33 - status), screen)
                 self.assertLess(status, 33)
 
-    def test_launched_on_the_last_row_with_the_cursor_reported_a_closing_menu_leaves_the_composer_there(self) -> None:
-        # The startup query's cursor position report reaches the region: on the last row of a terminal already
-        # holding output, the composer is on the bottom rows from the first frame and the slash menu closing there
-        # does not pull it up (without the report the place is unknown and it moved 11 rows at 34x110).
-        run = self.prepare(
-            Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), rows=34, cols=110
-        )
-        run.terminal.screen.feed("".join(f"$ shell {n}\r\n" for n in range(40)))
-        run.terminal.cursor_row = 34
-        rows: dict[str, int] = {}
+    def test_launched_on_a_screen_holding_output_it_starts_on_the_top_row_with_that_output_one_scroll_up(self) -> None:
+        # The owner, round 4: the launcher's warnings may stay, but not on the screen the TUI opens on. Whatever row
+        # the shell left the cursor on, reported or not, the rows above it go to scrollback, nothing is erased, and the
+        # first frame starts on the top row, so a menu closing leaves the composer where it was.
+        shell = [f"$ shell {n}" for n in range(40)]
+        for row, label in ((34, "the last row, reported"), (None, "the last row, not reported"), (12, "mid-screen")):
+            with self.subTest(launch=label):
+                run = self.prepare(
+                    Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), rows=34, cols=110
+                )
+                printed = shell[: (row or 34) - 1]
+                run.terminal.screen.feed("".join(f"{line}\r\n" for line in printed))  # the cursor on `row`, at column 0
+                run.terminal.cursor_row = row
+                rows: dict[str, int] = {}
 
-        def composer_row(name: str) -> Callable[[], bool]:
-            def note() -> bool:
-                screen = run.terminal.screen.lines()
-                rows[name] = next(index for index, row in enumerate(screen) if row.startswith("│ > Ask Hermes"))
-                return True
-            return note
+                def composer_row(name: str, run: object = run, rows: dict[str, int] = rows) -> Callable[[], bool]:
+                    def note() -> bool:
+                        screen = run.terminal.screen.lines()  # type: ignore[attr-defined]
+                        rows[name] = next(index for index, line in enumerate(screen) if line.startswith("│ > Ask Hermes"))
+                        return True
+                    return note
 
-        run.terminal.script(
-            Step(b"/", when=lambda: run.terminal.idle() and composer_row("before")(), label="idle"),
-            Step(b"\x7f", when=run.terminal.shows("/help"), label="the menu"),
-            Step(b"\x04", when=lambda: not run.terminal.shows("/help")() and composer_row("after")(), label="closed"),
-        )
+                run.terminal.script(
+                    Step(b"/", when=lambda run=run, composer_row=composer_row: run.terminal.idle() and composer_row("before")(),
+                         capture="first", label="idle"),
+                    Step(b"\x7f", when=run.terminal.shows("/help"), label="the menu"),
+                    Step(b"\x04", when=lambda run=run, composer_row=composer_row: not run.terminal.shows("/help")()
+                         and composer_row("after")(), label="closed"),
+                )
+                self.run_main(run)
+                self.assert_clean_run(run)
+                first = run.terminal.captures["first"]
+                self.assertEqual(run.terminal.screen.scrollback[: len(printed)], printed)  # in order, one scroll up
+                self.assertFalse([line for line in first if line.startswith("$ shell")], first)
+                self.assertEqual(first[: LOGO_ROWS - 1], LOGO[:-1])  # the logo opens the top row
+                self.assertEqual(rows["after"], rows["before"])
+                self.assertEqual(rows["before"], LOGO_ROWS + 3)  # the logo, the banner and its blank row, the top edge
+                writes = "".join(run.terminal.writes)
+                self.assertNotIn("\x1b[2J", writes)  # nothing erased: no ED 2, and no ED 3 for the scrollback
+                self.assertNotIn("\x1b[3J", writes)
+
+    def test_launched_on_the_top_row_nothing_is_pushed_and_nothing_is_written_for_it(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.terminal.cursor_row = 1
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, capture="first", label="idle"))
         self.run_main(run)
         self.assert_clean_run(run)
-        self.assertEqual(rows["after"], rows["before"])
-        self.assertEqual(rows["before"], 31)  # the bottom rows: top edge, input, bottom edge, info line
+        self.assertEqual(run.terminal.screen.scrollback, [])
+        self.assertTrue(run.terminal.captures["first"][0].startswith("⚚ OH-MY-HERMES"))
+        self.assertNotIn("\n" * 23, "".join(run.terminal.writes))
 
     def test_the_banner_stays_one_row_and_keeps_the_end_of_a_long_path(self) -> None:
         from omh.tui.app import banner_lines
@@ -2305,11 +2332,11 @@ class KeyTests(AppTestCase):
         (asked,) = run.calls("complete.path")
         self.assertEqual(asked["params"], {"word": "@sr", "session_id": LIVE_ID})
         menu = terminal.captures["menu"]
-        status = info_index(menu)
-        rule = status - 2 - UNDER_COMPOSER
-        self.assertTrue(menu[rule - 2].startswith(" app.py"), menu)
-        self.assertTrue(menu[rule - 1].startswith(" src/"), menu)
-        self.assertIn("dir", menu[rule - 1])
+        # The launch starts the region on the top row, so it knows its place and the menu opens under the composer.
+        bottom = next(index for index, line in enumerate(menu) if line.startswith("╰"))
+        self.assertTrue(menu[bottom + 1].startswith(" app.py"), menu)
+        self.assertTrue(menu[bottom + 2].startswith(" src/"), menu)
+        self.assertIn("dir", menu[bottom + 2])
         accepted = terminal.captures["accepted"]
         self.assertFalse(any(line.startswith(" src/") for line in accepted), accepted)
 

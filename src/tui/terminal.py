@@ -28,9 +28,9 @@ is on).
 `query_background` asks the terminal for its background colour once, before
 the first frame, so the theme can be measured against the background the
 person really has (`theme.build_theme`), and in the same write for the row
-its cursor is on, so the live region knows its place on the screen from its
-first frame (`screen.LiveRegion(start_row=...)`): OSC 11, then the cursor
-position request (CSI 6n), with a device-attributes request behind them that
+its cursor is on, which the launch reads to know whether any row above the
+cursor needs pushing into scrollback before the first frame
+(`App.clear_launch_screen`): OSC 11, then the cursor position request (CSI 6n), with a device-attributes request behind them that
 every terminal answers, in order, so that answer ends the wait whether or not
 the others were answered, and `BACKGROUND_QUERY_SECONDS` bounds it when
 nothing comes. Keys typed while it waits are handed back to the caller. A terminal that does not answer OSC 11
