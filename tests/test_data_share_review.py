@@ -649,8 +649,7 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "이메일 주소를 익명화해서 사내 슬랙 채널에 공유해줘",
             "개인정보 지우고 개발팀에 이메일로 보내줘",
             "고객 정보 마스킹해서 개발팀에 보내고 QA팀으로도 보내줘",
-            # 로 that names no destination ("업체별로") is no place.
-            "업체별로 정리한 고객 정보 마스킹해서 개발팀에 보내줘",
+            "redact pii in the export and send it back to the dev team",
         ):
             with self.subTest(message=message):
                 self.assertFalse(_offered(message))
@@ -716,6 +715,133 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "고객 정보 마스킹해서 은행 보안 개발 팀에 보내줘",
             "고객 정보 마스킹해서 은행 it 보안 개발 팀에 보내줘",
             "고객 정보 마스킹해서 삼성 데이터 분석 플랫폼 운영 팀에 보내줘",
+            # Before the place, every word is closed too: "업체별로" (by
+            # vendor) is no place, and no closed word either.
+            "업체별로 정리한 고객 정보 마스킹해서 개발팀에 보내줘",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(_offered(message))
+                self.assertTrue(self._hinted(message))
+
+    def test_a_party_named_before_a_korean_place_keeps_the_review(self) -> None:
+        # Korean names the data, and any party, before the place, so every
+        # word outside the places and before the verb must be closed: data
+        # containers and field names, a verb the rule knows, an inside place
+        # word, a determiner or a softener.
+        for message in (
+            "보험사가 원하는 고객 엑셀 개인정보 마스킹해서 개발팀에 보내줘",
+            "보험사가 원하는 고객 파일을 가명 처리해서 개발팀에 보내줘",
+            "감사법인이 볼 자료에서 개인정보를 삭제하고 재무팀에 보내줘",
+            "협력사용 파일 비식별화해서 QA팀에 올려줘",
+            "보험사의 고객 파일 가명 처리해서 개발팀에 보내줘",
+            "보험사를 위한 고객 파일 가명 처리해서 개발팀에 보내줘",
+            "은행 제출용 고객 데이터 익명화해서 데이터팀에 보내줘",
+            "삼성 고객 파일 가명 처리해서 개발팀에 보내줘",
+            "외부 감사인이 볼 자료 개인정보 마스킹해서 재무팀에 보내줘",
+            "대행사가 받을 고객 리스트 개인정보 지우고 마케팅팀에 공유해줘",
+            "보험사랑 공유할 고객 파일 가명 처리해서 개발팀에 보내줘",
+            "Acme가 받을 엑셀에서 개인정보 마스킹하고 개발팀에 공유해줘",
+            "Acme's 고객 파일 가명 처리해서 개발팀에 보내줘",
+            "the bank가 요청한 고객 명단 가명 처리해서 데이터팀에 보내줘",
+            # After the place too.
+            "개발팀에 보내기 전에 보험사가 원하는 고객 파일 가명 처리해줘",
+            # A word that says whose records the data holds, with a particle,
+            # is the party, as "the customer's" is in English.
+            "고객의 개인정보 마스킹해서 개발팀에 보내줘",
+            "고객용 엑셀 개인정보 마스킹해서 개발팀에 보내줘",
+            "고객이 받을 파일 개인정보 지우고 QA팀에 올려줘",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(_offered(message))
+                self.assertTrue(self._hinted(message))
+                self.assertTrue(_offered(unicodedata.normalize("NFD", message)))
+        for message in (
+            "고객 엑셀에서 개인정보 마스킹해서 개발팀에 보내줘",
+            "회원 명단 가명 처리해서 데이터팀에 공유해줘",
+            "테스트 데이터에서 고객 정보 지우고 스테이징에 올려줘",
+            "이 파일 개인정보 삭제하고 우리 팀에 공유해줘",
+            "회원 DB 덤프에서 주민번호 삭제하고 개발서버에 올려줘",
+            "고객 주소랑 전화번호 마스킹해서 개발팀에 보내줘",
+            "고객 이름과 연락처 마스킹해서 QA팀에 보내줘",
+            "회원 정보 좀 마스킹해서 개발팀에 보내줘",
+            "해당 파일의 개인정보 삭제하고 데이터팀에 공유해줘",
+            "고객데이터 익명화해서 개발팀에 보내줘",
+            "내부용 파일 개인정보 지우고 개발팀에 보내줘",
+            "개발팀에 보낼 고객 파일 가명 처리해줘",
+            "개인정보 마스킹 후 데이터팀에 공유해줘",
+            # "-기 전에" is a step, as "다음에" is, not a place.
+            "개발팀에 보내기 전에 고객 정보 마스킹해줘",
+            "스테이징에 올리기 전에 회원 데이터에서 개인정보 지워줘",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(_offered(message))
+                self.assertFalse(self._hinted(message))
+                self.assertFalse(_offered(unicodedata.normalize("NFD", message)))
+
+    def test_every_korean_sentence_is_read(self) -> None:
+        # A later sentence that sends, names a place outside, or names a party
+        # acting keeps the review; one of remarks only says nothing about
+        # where the data goes, and a later request read inside keeps it inside.
+        for message in (
+            "고객 정보 마스킹해서 개발팀에 보내줘. 보험사가 볼 거야.",
+            "고객 정보 마스킹해서 개발팀에 보내줘. 벤더한테도 보내줘.",
+            "고객 정보 마스킹해서 개발팀에 보내줘. Acme가 검토할 거야.",
+            "개인정보 지우고 QA팀에 올려줘. 그다음 은행에 넘겨줘.",
+            "고객 정보 마스킹해서 개발팀에 보내줘. 협력사에도 공유해줘.",
+            "고객 정보 마스킹해줘. 그리고 벤더한테 보내줘.",
+            "고객 정보 마스킹해서 개발팀에 보내줘. 그리고 보험사가 원하는 형식으로 정리해줘.",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(_offered(message))
+                self.assertTrue(self._hinted(message))
+        for message in (
+            "고객 정보 마스킹해서 개발팀에 보내줘. 급해요.",
+            "고객 정보 마스킹해서 개발팀에 보내줘. 고마워!",
+            "개인정보 지우고 QA팀에 올려줘. 감사합니다.",
+            "고객 정보 마스킹해서 개발팀에 보내줘. It's urgent.",
+            "고객 정보 마스킹해서 개발팀에 보내줘. QA팀에도 공유해줘.",
+            "고객 정보 마스킹해서 개발팀에 보내줘. 제가 확인할게요.",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(_offered(message))
+                self.assertFalse(self._hinted(message))
+
+    def test_an_english_place_ends_with_its_sentence(self) -> None:
+        # A place stops at ".", "!", "?" or ";" before a space. What follows,
+        # up to the next send, must be remarks; sends are read in every
+        # sentence.
+        for message in (
+            "Redact the PII in the export and send it to the dev team. It's urgent.",
+            "Redact the PII in the export and send it to the dev team! Thanks!",
+            "Redact the PII in the export and send it to the dev team; it’s urgent.",
+            "Pseudonymize the patient CSV and share it with our QA team. Please hurry.",
+            "Anonymize the user logs and upload them to staging. ASAP please.",
+            "Redact the PII in the export and send it to the dev team... No rush.",
+            "Redact the PII in the export and send it to the dev team. 감사합니다.",
+            "Redact the PII in the export and send it to the dev team. Then share it with the QA team.",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(_offered(message))
+                self.assertFalse(self._hinted(message))
+        for message in (
+            "Redact the PII in the export and send it to the dev team. Acme will review it.",
+            "Redact the PII in the export and send it to the dev team. Also cc Acme.",
+            "Redact the PII in the export and send it to the dev team. Then forward it to Acme.",
+            "Redact the PII in the export and send it to the dev team; Acme will audit it.",
+            "Redact the PII in the export and send it to the dev team. Thanks, Kim.",
+            "Redact the PII in the export and send it to the dev team. It's for Acme.",
+            "Redact the PII in the export and send it. Acme wants it delivered to the dev team.",
+            # A line break alone ends nothing: the router reads it as a space.
+            "Redact the PII in the export and send it to the dev team\nThanks",
+            # A period before a space ends the place, which can only cut it
+            # short: what follows is read as remarks.
+            "Redact the PII in the export and send it to the U.S. team.",
+            "Redact the PII in the export and send it to Acme Inc. The dev team will check.",
+            "Redact the PII in the export and send it to the dev team, e.g. Kim.",
+            "Redact the PII in the v1.2 export and send it to the dev team.",
+            # Between a send and its "to", only the data sent and remarks.
+            "Redact the PII in the export and send it where Acme wants it, to the dev team.",
+            "Redact the PII in the export and send it, as Acme asked, to the dev team.",
         ):
             with self.subTest(message=message):
                 self.assertTrue(_offered(message))
@@ -982,6 +1108,11 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             ("anonymize the csv before sending it to the university research team", "개인정보 익명화해서 대학 연구팀에 보내줘", True),
             ("redact the emails in the export before sending it to the data team at acme", "이메일 주소 지우고 acme 데이터팀에 보내줘", True),
             ("anonymize the dataset, send it to the qa team and upload it to kaggle", "개인정보 익명화해서 QA팀에 보내고 캐글에 올려줘", True),
+            ("redact the pii in the export the insurer wants and send it to the dev team", "보험사가 원하는 엑셀 개인정보 지우고 개발팀에 보내줘", True),
+            ("redact the pii in the export for the bank and send it to the data team", "은행을 위한 파일 개인정보 지우고 데이터팀에 보내줘", True),
+            ("redact pii in the export and send it to the dev team. it's urgent.", "개인정보 지우고 개발팀에 보내줘. 급해요.", False),
+            ("redact pii in the export and send it to the dev team. acme will review it.", "개인정보 지우고 개발팀에 보내줘. acme가 검토할 거야.", True),
+            ("redact pii in the export and send it to the dev team. then share it with the qa team.", "개인정보 지우고 개발팀에 보내줘. QA팀에도 공유해줘.", False),
         ):
             with self.subTest(english=english):
                 self.assertIs(_offered(english), offered)
@@ -1097,13 +1228,13 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
                 "csv", "json", "pdf", "txt", "xlsx", "백업", "엑셀", "텍스트", "파일", "폴더",
             },
             "_KOREAN_TIMES": {
-                "다음", "뒤", "후",
+                "다음", "뒤", "전", "후",
             },
             "_KOREAN_CHANNELS": {
                 "메신저", "메일", "슬랙", "이메일",
             },
             "_KOREAN_PLACE_EDGES": {
-                "다음", "다음에", "뒤", "뒤에", "후", "후에",
+                "다음", "다음에", "뒤", "뒤에", "전", "전에", "후", "후에",
             },
             "_KOREAN_PLACE_PARTICLES": {
                 "께", "께도", "로", "로도", "에", "에게", "에게도", "에도", "으로", "으로도", "쪽에", "쪽으로", "측에", "한테", "한테도",
@@ -1116,11 +1247,51 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
                 "비식별", "비식별처리", "비식별화", "빼", "삭제", "업로드", "올려", "올리", "익명", "익명처리", "익명화", "전달", "제거", "제공", "제출",
                 "지워", "처리", "첨부", "해시",
             },
+            "_REMARK_WORDS": {
+                "also", "asap", "cheers", "hurry", "is", "no", "now", "ok", "okay", "please", "pls", "plz", "quickly",
+                "rush", "s", "so", "soon", "thank", "thanks", "today", "tomorrow", "tonight", "too", "urgent",
+                "urgently", "very", "you", "감사", "감사드립니다", "감사합니다", "감사해요", "고마워", "고마워요", "고맙습니다",
+                "급합니다", "급해", "급해요", "꼭", "내일", "바로", "부탁드려요", "부탁드립니다", "부탁합니다", "부탁해", "부탁해요",
+                "빨리", "오늘", "좀", "지금",
+            },
+            "_KOREAN_DATA_CONTAINERS": {
+                "csv", "json", "pdf", "txt", "xlsx", "기록", "내역", "덤프", "데이터", "데이터셋", "레코드", "로그", "리스트",
+                "리포트", "명단", "목록", "문서", "백업", "보고서", "사본", "샘플", "스프레드시트", "시트", "엑셀", "열", "원본", "자료",
+                "추출본", "컬럼", "테이블", "텍스트", "파일", "폴더", "표", "필드", "행",
+            },
+            "_KOREAN_DATA_FIELDS": {
+                "ip", "pii", "개인", "개인정보", "계좌번호", "고객정보", "닉네임", "민감", "민감정보", "사번", "생년월일", "식별",
+                "식별자", "식별정보", "실명", "아이디", "연락처", "이름", "이메일", "전화번호", "정보", "주민등록번호", "주민번호", "주소",
+                "카드번호", "학번",
+            },
+            "_KOREAN_PARTY_MODIFIERS": {
+                "account", "accounts", "applicant", "applicants", "client", "clients", "customer", "customers",
+                "donor", "donors", "employee", "employees", "member", "members", "patient", "patients", "staff",
+                "student", "students", "subscriber", "subscribers", "user", "users", "가입자", "계정", "고객", "구독자",
+                "기부자", "멤버", "사용자", "사원", "유저", "이용자", "임직원", "지원자", "직원", "클라이언트", "학생", "환자", "회원",
+                "후원자",
+            },
+            "_KOREAN_SPAN_PARTICLES": {
+                "과", "까지", "나", "는", "도", "랑", "로", "를", "만", "부터", "에서", "와", "으로", "은", "을", "의", "이나", "이랑",
+                "하고",
+            },
+            "_KOREAN_SPAN_WORDS": {
+                "각", "그", "그리고", "꼭", "다시", "대신", "또", "또는", "먼저", "및", "바로", "빨리", "아래", "위", "이", "이번", "저",
+                "좀", "지금", "해당", "혹은",
+            },
+            "_KOREAN_SPAN_VERBS": {
+                "가려", "가명", "가명처리", "가명화", "공개", "공유", "내보내", "넘겨", "넘기", "마스킹", "반출", "별표", "보내", "보내드려",
+                "블러", "비식별", "비식별처리", "비식별화", "빼", "삭제", "업로드", "올려", "올리", "완료", "익명", "익명처리", "익명화",
+                "전달", "제거", "제공", "제출", "지워", "진행", "처리", "첨부", "해시",
+            },
         }
         for name, expected in tables.items():
             with self.subTest(table=name):
                 self.assertEqual(set(getattr(data_share_cues, name)), expected)
         self.assertEqual(data_share_cues._HANDED_BACK, (["it", "back"], ["them", "back"]))
+        self.assertEqual(data_share_cues._REMARKS, data_share_cues._BEFORE_SEND_WORDS | data_share_cues._REMARK_WORDS)
+        self.assertEqual(data_share_cues._SENT_THING_WORDS - data_share_cues._REMARKS, {"back", "over", "them"})
+        self.assertEqual(data_share_cues._SENTENCE_BREAK.pattern, r"[.!?;]\S*\s")
 
     def test_outside_words_keep_the_review(self) -> None:
         # Words that name an outside party, beside a unit that would otherwise

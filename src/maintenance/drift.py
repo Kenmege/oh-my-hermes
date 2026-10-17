@@ -666,7 +666,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The plural-possessive masker fix adds one: a quoted workflow
             # name after "the users'" stays a reference, where the `'` of the
             # possessive used to pair with the quote's opener (1).
-            expected=829,
+            # Bounding a data-share place by its sentence adds two: an export
+            # sent to the dev team then called urgent, and a patient CSV
+            # shared with our QA team then a "please hurry" (2, main dispatched
+            # the review on the first and named it in the clarify on the
+            # second); reading a Korean "-기 전에" clause as a step adds one
+            # that masks customer information before it goes to the dev team
+            # (1, main named the review in the clarify).
+            expected=832,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -962,7 +969,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The plural-possessive masker fix adds one: the users' export
             # sent to a company's team, where the `'` of the possessive used
             # to mask the send and the place (1).
-            expected=863,
+            # Reading every word before a Korean place, and every sentence,
+            # adds seven that keep the review, none dispatched on main: a
+            # member file a partner will use, a file for a partner, a member
+            # list for a partner, papers an outside auditor will see, and the
+            # dev team then a vendor in a later sentence (5); and in English an
+            # export sent where a company wants it, and one a company wants
+            # delivered, named in the next sentence (2).
+            expected=870,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
