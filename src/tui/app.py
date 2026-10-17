@@ -748,29 +748,19 @@ def busy_mode(config_result: Mapping[str, Any]) -> str:
     return value if value in BUSY_MODES else BUSY_QUEUE
 
 
-def context_text(usage: object) -> str:
-    """`ctx 13.9k/1M 1%` from a `session.usage` / `session.info` usage block; "" when it has no context figures."""
+def context_percent(usage: object) -> float | None:
+    """How full the context is, 0 to 100, from a `session.usage` / `session.info` usage block: its percent, else
+    used over max; None when it has no context figures (a used and a max above 0)."""
     if not isinstance(usage, dict):
-        return ""
+        return None
     used = usage.get("context_used")
     limit = usage.get("context_max")
     if not isinstance(used, int | float) or not isinstance(limit, int | float) or limit <= 0:
-        return ""
-    text = f"ctx {compact_count(used)}/{compact_count(limit)}"
-    percent = usage.get("context_percent")
-    if isinstance(percent, int | float) and not isinstance(percent, bool):
-        text += f" {percent:.0f}%"
-    return text
-
-
-def context_percent(usage: object) -> float | None:
-    """How full the context is, 0 to 100, from the same usage block; None without the figures."""
-    if not isinstance(usage, dict) or not context_text(usage):
         return None
     percent = usage.get("context_percent")
     if isinstance(percent, int | float) and not isinstance(percent, bool):
         return float(percent)
-    return usage["context_used"] / usage["context_max"] * 100
+    return used / limit * 100
 
 
 def first_line(text: str) -> str:
@@ -2124,8 +2114,9 @@ class App(ModesMixin, AgentViewMixin):
         first: Hermes sends its first usage block after `prompt.submit`) counts
         from the first one it brings.
         """
-        if context_text(usage):
-            self.context_percent = context_percent(usage)
+        percent = context_percent(usage)
+        if percent is not None:
+            self.context_percent = percent
         output = usage.get("output") if isinstance(usage, dict) else None
         if isinstance(output, int) and not isinstance(output, bool):
             if self.turn_output_base is None and self._busy():
@@ -4169,7 +4160,7 @@ class App(ModesMixin, AgentViewMixin):
             lead = (Span(WORKING_GLYPHS[frame % len(WORKING_GLYPHS)], self.theme.accent), Span(" "),
                     *working_spans(text, frame, self.theme))
             row = (*lead, Span(f" ({' · '.join([*facts, *([effort] if effort else []), *interrupt])})", self.theme.muted))
-            if effort and line_width(row) > cols:  # the effort goes first: the mode row shows it too, where drawn
+            if effort and line_width(row) > cols:  # the effort goes first; the info line says it where it has room
                 row = (*lead, Span(f" ({' · '.join([*facts, *interrupt])})", self.theme.muted))
             lines.append(truncate_line(row, cols))
             tip = self._tip_line(cols)

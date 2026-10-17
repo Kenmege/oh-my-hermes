@@ -270,7 +270,7 @@ class WorkingRowTests(unittest.TestCase):
         app, clock = self.busy()
         app.transcript.activity, app.effort = "(⌐■_■) synthesizing...", "high"
         clock.now += 84
-        self.assertEqual(working_rows(app, 60)[0][2:], "Synthesizing… (1m 24s · esc to interrupt)")  # the mode row says it
+        self.assertEqual(working_rows(app, 60)[0][2:], "Synthesizing… (1m 24s · esc to interrupt)")  # the info line says it
         self.assertEqual(working_rows(app, 80)[0][2:], "Synthesizing… (1m 24s · thinking with high effort · esc to interrupt)")
         self.assertEqual(line_width(app._tail(30)[-2]), 30)  # past that, the row is cut at the edge
 

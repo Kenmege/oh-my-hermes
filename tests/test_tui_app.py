@@ -1275,6 +1275,15 @@ class InfoLineRightTests(unittest.TestCase):
                 span = next(span for span in app._info_line(100) if span.text.startswith("ctx"))
                 self.assertEqual(span.style, style)
 
+    def test_a_usage_block_without_context_figures_leaves_the_shown_context(self) -> None:
+        app = self.app()
+        app._take_usage({"context_used": 50_000, "context_max": 200_000})
+        self.assertEqual(app.context_percent, 25.0)  # no percent in it: used over max
+        for usage in ({"output": 12}, {"context_used": 1, "context_max": 0}, {"context_max": 10}, None):
+            with self.subTest(usage=usage):
+                app._take_usage(usage)
+                self.assertEqual(app.context_percent, 25.0)
+
     def test_the_huds_chips_stand_first_on_the_right_and_go_last(self) -> None:
         from test_tui_panels import hud_payload
 
