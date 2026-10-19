@@ -21,10 +21,13 @@ All notable changes will be documented here.
   for a payload of the required shape; it now answers `unavailable` with the
   same block and records nothing. A sweep that called each of the 22 tools
   and 10 hooks on a plugin-only host, with one or more payloads each, found no
-  other raise. The Installation page now lists
-  native Loop, the decision gate, `omh_team` and `omh_source_trust` among the
-  features that need the package, and no longer tells every reader to install
-  it into Hermes' environment (#2166).
+  other raise. The Installation page now lists native Loop, the decision gate,
+  `omh_team` and `omh_source_trust` among the features that need the package,
+  and no longer tells every reader to install it into Hermes' environment
+  (#2166).
+
+## 4.0.0 - 2026-10-19
+
 - **Indonesian ships as a trigger language pack.** `src/routing/trigger_packs/id.json`,
   contributed by @fauzibrevy-hub (#2154), covers the 21 skills the `ja` and
   `zh` packs cover, with phrases such as `tinjau kode`, `audit aksesibilitas`,
