@@ -19,11 +19,20 @@ state to read, so there is nothing to degrade to. A few core constants are
 restated here as literals for the same reason -- `tests/test_loop_tool.py`
 pins every one of them against its producer, so a drift is a test failure
 rather than a silent disagreement.
+
+A closed failure still says which failure it is: a `package_backend` block
+from the shared classifier in `package_backend.py` (#2166).
 """
 
 from __future__ import annotations
 
 from typing import Any
+
+from .package_backend import (
+    available_backend,
+    classify_backend_failure,
+    package_backend_detail,
+)
 
 
 # Restated from `omh.workflows.loop_operations`; pinned by the parity tests.
@@ -131,6 +140,12 @@ ROOT_SELECTING_ARGS = ("hermes_home", "omh_home", "paths", "root", "state_dir")
 # sees it. Everything else must be a field of the requested action.
 ENVELOPE_ARGS = ("action", "expected_revision", "loop_id", "mutation_id", "observation")
 
+# Native Loop's own path to the same store, named in every refusal.
+_CLI_ROUTE = (
+    "The omh loop CLI reads and writes the same Loop store when it is given this "
+    "profile's OMH home: omh --omh-home <that home> loop status."
+)
+
 
 def _prepared_versus_observed(mutating: bool) -> dict[str, Any]:
     return {
@@ -172,6 +187,41 @@ def _expected_revision(args: dict[str, Any]) -> int | None:
     if value is None or isinstance(value, bool) or not isinstance(value, int):
         return None
     return value
+
+
+def _import_loop_service() -> tuple[Any, Any, Any, Any]:
+    """The core Loop service; raises whatever ImportError this interpreter gives.
+
+    Called per use and never cached here: whether `omh` imports is a property
+    of the interpreter at that moment, and a module-level answer would outlive
+    a package installed, or an import finished, after this bundle loaded.
+    """
+    from omh.system.paths import resolve_paths
+    from omh.workflows.loop_operations import (
+        LOOP_TOOL_REDACTED_ARTIFACTS,
+        LoopOperationRequest,
+        loop_operation_envelope,
+    )
+
+    return resolve_paths, LOOP_TOOL_REDACTED_ARTIFACTS, LoopOperationRequest, loop_operation_envelope
+
+
+def loop_backend_status() -> dict[str, str]:
+    """The `package_backend` block for native Loop on this interpreter, resolved now.
+
+    The import is the check: a top-level `omh` that lacks the Loop service is
+    not a backend, and only importing what the tool imports can tell.
+    """
+    try:
+        _import_loop_service()
+    except ImportError as error:
+        return classify_backend_failure(error)
+    return available_backend()
+
+
+def loop_backend_detail(backend: dict[str, str]) -> str:
+    """The `package_backend` sentence for native Loop, naming its CLI route."""
+    return package_backend_detail(backend, feature="native Loop", cli_route=_CLI_ROUTE)
 
 
 def run_loop_tool_action(args: dict[str, Any], *, session_ref: str) -> dict[str, Any]:
@@ -236,20 +286,22 @@ def run_loop_tool_action(args: dict[str, Any], *, session_ref: str) -> dict[str,
             "action=status and submit the record_revision it reports",
         )
     try:
-        from omh.system.paths import resolve_paths
-        from omh.workflows.loop_operations import (
+        (
+            resolve_paths,
             LOOP_TOOL_REDACTED_ARTIFACTS,
             LoopOperationRequest,
             loop_operation_envelope,
-        )
-    except (ImportError, ModuleNotFoundError):
-        return error_envelope(
+        ) = _import_loop_service()
+    except ImportError as error:
+        backend = classify_backend_failure(error)
+        envelope = error_envelope(
             action,
             loop_id,
             SERVICE_UNAVAILABLE,
-            "the installed OMH package is unavailable on this host, so no Loop state "
-            "can be read or written; install oh-my-hermes or use the omh loop CLI",
+            "No Loop state was read or written. " + loop_backend_detail(backend),
         )
+        envelope["package_backend"] = backend
+        return envelope
     # Every remaining name is already known to belong to this action; a None
     # value means "not supplied" and takes the service's declared default.
     fields = {
@@ -304,5 +356,7 @@ __all__ = [
     "REVISION_REQUIRED_TOOL_ACTIONS",
     "TOOL_ACTION_FIELDS",
     "error_envelope",
+    "loop_backend_detail",
+    "loop_backend_status",
     "run_loop_tool_action",
 ]

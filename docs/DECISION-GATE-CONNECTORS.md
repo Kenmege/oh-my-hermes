@@ -30,7 +30,7 @@ OMH takes the existing OS lock on `runtime/decision_gates.jsonl`, validates the 
 
 The durable transaction makes a retry recover an append-after-answer/before-receipt crash only for the same event. `event_id` is the idempotency key: an identical event returns `already_applied`; changed content under the same id returns `invalid` with `conflicting_replay`; a new event cannot reuse an answered gate. Two concurrent answers cannot both win under the shared store lock. Connector observation time must be between gate opening and trusted application time; gate expiry is evaluated at trusted application and wrapper-consumption time.
 
-Results use bounded statuses: `applied`, `already_applied`, `expired`, `superseded`, `unauthorized`, `invalid_choice`, `stale_revision`, `unknown_gate`, `cancelled`, or `invalid`. No result echoes message bodies, tokens, credentials, or raw connector data.
+Results use bounded statuses: `applied`, `already_applied`, `expired`, `superseded`, `unauthorized`, `invalid_choice`, `stale_revision`, `unknown_gate`, `cancelled`, `invalid`, or `unavailable`. The `omh_decision_gate` plugin tool answers `unavailable` when the interpreter running it cannot import a usable `omh` package: it records nothing and carries a `package_backend` block, as described in [What the Hermes interpreter must be able to import](INSTALLATION.md#what-the-hermes-interpreter-must-be-able-to-import). No result echoes message bodies, tokens, credentials, or raw connector data.
 
 ## Runnable opening and answer flow
 

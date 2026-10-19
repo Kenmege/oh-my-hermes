@@ -4,6 +4,9 @@ import builtins
 from collections.abc import Callable, Iterable
 import importlib
 import importlib.util
+import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -119,3 +122,47 @@ def standalone_bundle_import_failures() -> dict[str, str]:
 def _load_standalone_bundle_awareness():
     """Load bundled awareness without access to the installed ``omh`` package."""
     return load_standalone_bundle(("awareness",))["awareness"]
+
+
+_NO_PACKAGE_HOST_PRELUDE = """
+import importlib.util
+import json
+import sys
+
+bundle = sys.argv[1]
+spec = importlib.util.spec_from_file_location(
+    "hermes_plugin_omh", bundle + "/__init__.py", submodule_search_locations=[bundle]
+)
+module = importlib.util.module_from_spec(spec)
+sys.modules["hermes_plugin_omh"] = module
+spec.loader.exec_module(module)
+omh_spec = importlib.util.find_spec("omh") is not None
+"""
+
+
+def run_in_no_package_host(code: str, *, cwd: Path) -> dict:
+    """Run `code` in a real interpreter with no `omh` package; return its JSON.
+
+    `-S` keeps the editable install's `.pth` out and `-P` keeps the cwd out,
+    so the child is a Hermes host with no `omh` package at all, the state a
+    `sys.modules` patch in this process can only imitate. The bundle loads
+    under a foreign name, as Hermes' loaders give it one. `code` runs after
+    the bundle is importable as `hermes_plugin_omh`, sees `omh_spec`, and must
+    print one JSON document.
+    """
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"PYTHONPATH", "PYTHONHOME", "PYTHONSAFEPATH"}
+    }
+    result = subprocess.run(
+        [sys.executable, "-S", "-P", "-c", _NO_PACKAGE_HOST_PRELUDE + code, str(bundle_dir())],
+        env=env,
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"no-package host exited {result.returncode}: {result.stderr}")
+    return json.loads(result.stdout)

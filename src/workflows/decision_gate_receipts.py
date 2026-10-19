@@ -39,6 +39,9 @@ AUTHENTICATION_METHODS: Final[tuple[str, ...]] = ("host_authenticated", "signed_
 CONNECTOR_DECISION_STATUSES: Final[tuple[str, ...]] = (
     "applied", "already_applied", "expired", "superseded", "unauthorized", "invalid_choice",
     "stale_revision", "unknown_gate", "cancelled", "invalid",
+    # Only the plugin tool answers this, on a host whose interpreter has no
+    # usable `omh` package; nothing here produces it (#2166).
+    "unavailable",
 )
 CLAIM_BOUNDARY: Final[str] = (
     "A connector decision-gate receipt records authenticated connector metadata bound to one gate answer. "

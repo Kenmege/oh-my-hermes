@@ -4,6 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A plugin-only install says why native Loop has no backend.** Every
+  documented install puts the `oh-my-hermes` package in OMH's own environment,
+  so the interpreter Hermes runs usually cannot import it. `omh_loop` still
+  refuses there with `service_unavailable` and reads or writes no Loop state,
+  and now carries a `package_backend` block: `absent` when the interpreter has
+  no `omh` package, `incompatible` when it has one that lacks a module or name
+  the bundle imports, and `broken` for any other import failure. A package
+  that is present never reads as absent. The detail used to say only "install
+  oh-my-hermes". It now says the plugin is registered, that an environment
+  Hermes' package manager prepares has no supported way to add the package
+  yet, that an environment you manage yourself can take it, and that
+  `omh --omh-home <that home> loop status` reaches the same Loop store.
+  `omh_probe` reports the same state as its own `package_backend` row, apart
+  from registration. `omh_decision_gate` raised `ModuleNotFoundError` there
+  for a payload of the required shape; it now answers `unavailable` with the
+  same block and records nothing. A sweep that called each of the 22 tools
+  and 10 hooks on a plugin-only host, with one or more payloads each, found no
+  other raise. The Installation page now lists
+  native Loop, the decision gate, `omh_team` and `omh_source_trust` among the
+  features that need the package, and no longer tells every reader to install
+  it into Hermes' environment (#2166).
 - **Indonesian ships as a trigger language pack.** `src/routing/trigger_packs/id.json`,
   contributed by @fauzibrevy-hub (#2154), covers the 21 skills the `ja` and
   `zh` packs cover, with phrases such as `tinjau kode`, `audit aksesibilitas`,

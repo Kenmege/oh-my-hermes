@@ -2,17 +2,22 @@ from __future__ import annotations
 
 import json
 import os
+import types
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from _local_package import load_local_package
+from _module_patch import patch_modules
+from _standalone_bundle import run_in_no_package_host
 
 load_local_package()
 from omh.paths import resolve_paths  # noqa: E402
+from omh.plugin_bundle.omh.package_backend import PACKAGE_BACKEND_ROUTE  # noqa: E402
 from omh.plugin_bundle.omh.tools.decision_gate_tool import OMH_DECISION_GATE_SCHEMA, omh_decision_gate_handler  # noqa: E402
 from omh.system.local_store import utc_now  # noqa: E402
+from omh.workflows.decision_gate_receipts import CONNECTOR_DECISION_STATUSES  # noqa: E402
 from omh.wrapper_sessions import create_or_resume_wrapper_session, open_wrapper_session_decision_gate  # noqa: E402
 
 
@@ -113,3 +118,65 @@ class DecisionGatePluginTests(unittest.TestCase):
         self.assertEqual(applied["status"], "applied")
         self.assertEqual(applied["wrapper"]["session"]["status"], "plan_accepted")
         self.assertEqual(replayed["status"], "already_applied")
+
+
+_GATE_ARGS = {
+    "gate_id": "gate-1", "expected_resume_digest": "a" * 64, "choice": "approve", "actor": "actor-1",
+    "connector": "discord", "channel_ref": "channel-1", "thread_ref": "thread-1",
+    "interaction_ref": "interaction-1", "authentication_method": "host_authenticated",
+    "observed_at": "2026-09-07T10:00:00Z", "event_id": "event-1", "wrapper_session_ref": "ws-1",
+    "wrapper_expected_revision": 1,
+}
+
+
+class DecisionGatePackageBackendTests(unittest.TestCase):
+    """With no usable `omh` package the tool refuses, bounded, and never raises (#2166)."""
+
+    def assert_unavailable(self, payload: dict, status: str) -> dict:
+        self.assertEqual(payload["schema_version"], "connector_decision_gate_result/v1")
+        self.assertEqual(payload["status"], "unavailable")
+        self.assertEqual(payload["reason_code"], f"package_backend_{status}")
+        self.assertEqual(payload["receipt"], {})
+        self.assertEqual(payload["package_backend"]["status"], status)
+        self.assertEqual(payload["package_backend"]["install_route"], PACKAGE_BACKEND_ROUTE)
+        self.assertTrue(payload["detail"].startswith("No gate answer was recorded."))
+        self.assertIn(PACKAGE_BACKEND_ROUTE, payload["detail"])
+        return payload["package_backend"]
+
+    def test_a_host_with_no_omh_package_gets_a_bounded_refusal(self) -> None:
+        code = (
+            "from hermes_plugin_omh.tools.decision_gate_tool import omh_decision_gate_handler\n"
+            f"args = json.loads({json.dumps(json.dumps(_GATE_ARGS))})\n"
+            "print(json.dumps({'omh_spec': omh_spec, 'result': json.loads(omh_decision_gate_handler(args))}))\n"
+        )
+        with TemporaryDirectory() as tmp:
+            omh_home = Path(tmp) / ".omh"
+            env = {"OMH_HOME": str(omh_home), "HERMES_HOME": str(Path(tmp) / ".hermes")}
+            with patch.dict(os.environ, env, clear=False):
+                observed = run_in_no_package_host(code, cwd=Path(tmp))
+            self.assertEqual([path.name for path in omh_home.rglob("*decision*")], [])
+        self.assertFalse(observed["omh_spec"])
+        backend = self.assert_unavailable(observed["result"], "absent")
+        self.assertEqual(backend["failed_import"], "omh")
+        detail = observed["result"]["detail"]
+        self.assertIn("so the decision gate has no backend here", detail)
+        self.assertIn("on a Hermes environment you manage yourself", detail)
+        for forbidden in ("pip", "uv ", "omh --omh-home"):
+            self.assertNotIn(forbidden, detail)
+
+    def test_a_present_package_missing_the_receipt_module_reads_incompatible(self) -> None:
+        with patch_modules({"omh.workflows.decision_gate_receipts": None}):
+            payload = json.loads(omh_decision_gate_handler(dict(_GATE_ARGS)))
+        backend = self.assert_unavailable(payload, "incompatible")
+        self.assertEqual(backend["failed_import"], "omh.workflows.decision_gate_receipts")
+
+    def test_a_present_package_lacking_a_name_reads_incompatible_without_raising(self) -> None:
+        # `cannot import name` is a plain ImportError, not ModuleNotFoundError.
+        empty = types.ModuleType("omh.workflows.decision_gate_receipts")
+        with patch_modules({"omh.workflows.decision_gate_receipts": empty}):
+            payload = json.loads(omh_decision_gate_handler(dict(_GATE_ARGS)))
+        backend = self.assert_unavailable(payload, "incompatible")
+        self.assertEqual(backend["failed_import"], "omh.workflows.decision_gate_receipts")
+
+    def test_the_refusal_is_in_the_core_status_vocabulary(self) -> None:
+        self.assertIn("unavailable", CONNECTOR_DECISION_STATUSES)
