@@ -58,6 +58,13 @@ from __future__ import annotations
 
 from typing import Any, Final, Mapping
 
+# Defined in the bundle, which also puts them in every Hermes `delegate_task`
+# child's system prompt and cannot import `omh` to read them from here.
+from ..plugin_bundle.omh.delegation_protocol import (
+    GOAL_ECHO_PROTOCOL as GOAL_ECHO_PROTOCOL,
+    REVIEW_ROLE_PROTOCOL as REVIEW_ROLE_PROTOCOL,
+    VERIFICATION_STOP_PROTOCOL as VERIFICATION_STOP_PROTOCOL,
+)
 from .coding_contracts import STRUCTURAL_SEARCH_DISCIPLINE_GUIDANCE
 from .model_contracts import contract_model_id
 
@@ -91,18 +98,6 @@ UNIT_PROMPT_APPEND_MAX_BYTES: Final[int] = 11000
 
 # Reasoning efforts that mark a route as high-effort for calibration purposes.
 HIGH_EFFORT_TIER: Final[frozenset[str]] = frozenset({"high", "xhigh", "max"})
-
-GOAL_ECHO_PROTOCOL: Final[str] = (
-    "Before using tools, restate the overall goal, your deliverable, and the numbered criteria. "
-    "If they conflict with your brief, stop and report the conflict instead of guessing."
-)
-
-VERIFICATION_STOP_PROTOCOL: Final[str] = (
-    "After finishing work, run one full verification pass; verification is never skipped. "
-    "A failed check blocks only a stated criterion; report other observations. Once criteria pass, "
-    "STOP verification, including after unrelated edits. After two failed fix-and-verify cycles, "
-    "commit what passes and report the failed criterion and output."
-)
 
 FAILURE_KIND_PROTOCOL: Final[str] = (
     "A permission, sandbox, or policy denial is a boundary, not a bug: do not try another tool or route; "
@@ -160,12 +155,6 @@ PROMPT_CACHE_COMPOSITION_PROTOCOL: Final[str] = (
     "byte-identical across sibling unit prompts — stable ordering, no timestamps, counts, or other "
     "volatile status — append unit-specific content after the shared preamble, and stagger a fan-out "
     "so the first dispatch writes the cache its siblings read."
-)
-
-REVIEW_ROLE_PROTOCOL: Final[str] = (
-    "Review discipline: a finding blocks only when it violates a stated success criterion of the reviewed "
-    "work; list every other finding as non-blocking. Cap re-review at two rounds — after that, report the "
-    "remaining criterion-cited blockers rather than starting another round."
 )
 
 # Per-family counters to the over-verification inertia of high-effort routes.

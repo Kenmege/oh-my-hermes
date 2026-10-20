@@ -28,6 +28,30 @@ All notable changes will be documented here.
   caller's next candidate, and when the caller's own chain is exhausted it
   clears that route, as the issue scopes. The leaked-route check before a
   baseline is captured still reads every session's records.
+
+- **Every Hermes `delegate_task` child gets OMH's delegation protocol.** The
+  `coding-handling` harness requires the protocol in every delegated or
+  reviewer prompt, runtime-native spawns included, but a Hermes-native child
+  got it only when the parent model pasted it into the goal. The plugin now
+  registers a second system prompt section, `omh.delegation-protocol`, which
+  renders only for a session Hermes builds as a `delegate_task` child
+  (platform `subagent`). It carries the goal echo-back, verification-stop and
+  re-review-cap lines that `omh coding composition-guide` returns, which now
+  read the same definitions. Only the goal echo-back applies to every child.
+  The verification rule is framed for a task that changes files, and the
+  review rule for a child that reviews work against stated success criteria.
+  The section also reaches children no OMH-guided parent wrote, such as
+  Hermes' own `/review` reviewer, whose brief from Hermes states no success
+  criteria, so the review rule's condition does not match it. The section
+  renders once in each child's system prompt. The `coding-handling` harness
+  and `omh coding composition-guide` (its `applies_to` and its printed
+  header) now tell the parent not to paste the protocol into a Hermes
+  `delegate_task` goal, and still to embed it for Codex, Claude Code and
+  other runtime-native spawns. A goal that pastes it anyway carries it twice. The parent's own
+  prompt, the dispatched goals and the bot persona do not change. Each
+  child's system prompt grows by 1,007 characters: the 920-character section
+  plus Hermes' framing (#2174).
+
 - **`omh_probe` says why its own package probe did not import, and a broken
   import hook cannot make the classifier raise.** When `omh.probe` alone fails
   to import, the probe's bundle answer now carries a `package_probe` row with

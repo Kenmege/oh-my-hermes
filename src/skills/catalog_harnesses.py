@@ -99,7 +99,7 @@ _HARNESSES = [
             DELEGATE_RESUMABLE_SESSION_RULE,
             DELEGATE_PERMISSION_PREFLIGHT_RULE,
             EXECUTION_WAIT_DISCIPLINE_RULE,
-            "Embed the delegation protocol (omh coding composition-guide) into EVERY delegated or reviewer prompt — runtime-native spawns included: goal echo-back before tool use, numbered pre-declared done criteria, exactly one mandatory verification pass with a two fix-and-verify cycle cap, and a two-round re-review cap — after two review rounds, stop and report the criterion-cited blockers instead of starting another reviewer.",
+            "EVERY delegated or reviewer prompt carries the delegation protocol (omh coding composition-guide): goal echo-back before tool use, numbered pre-declared done criteria, exactly one mandatory verification pass with a two fix-and-verify cycle cap, and a two-round re-review cap. On Hermes `delegate_task` the OMH plugin puts the protocol in each child's system prompt, so do not paste it into the goal; still write the numbered done criteria there. For Codex, Claude Code, and other runtime-native spawns, embed it in the prompt yourself. After two review rounds, stop and report the criterion-cited blockers instead of starting another reviewer.",
         ),
         evidence_ladder=(
             "coding_delegation_prepared",
