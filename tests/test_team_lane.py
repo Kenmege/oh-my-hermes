@@ -19,12 +19,14 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
+from _hermes_session_rows import compacted, row as hermes_row, write_sessions
 from _local_package import load_local_package
 from _module_patch import patch_modules
 
 load_local_package()
 
 from omh.plugin_bundle.omh import team_gate  # noqa: E402
+from omh.plugin_bundle.omh.live_session import compaction_ancestors  # noqa: E402
 from omh.plugin_bundle.omh.hooks import nudge_budget  # noqa: E402
 from omh.plugin_bundle.omh.todo_store import todo_items_digest  # noqa: E402
 from omh.workflows import team  # noqa: E402
@@ -602,6 +604,8 @@ class TeamEventsAreRenderable(TeamHarness):
         team._block(record, record["units"][0], self.now(), {"reason": "dispatch_not_observed"})
         summaries = {item["summary"] for item in events} | {record["events"][-1]["summary"]}
         summaries |= {f"Stopped: {why}." for why in team._BLOCKED_SAY.values()}
+        summaries |= {f"A helper came back under a session OMH could not link to any part, because {why}."
+                      for why in team._UNLINKED_SAY.values()}
         for summary in summaries:
             with self.subTest(summary=summary):
                 self.assertTrue(build_reply_lint(summary)["ok"], build_reply_lint(summary)["findings"])
@@ -722,6 +726,185 @@ class HostLifecycleHooksDriveTheBarrier(TeamHarness):
         subagent_stop(child_session_id="other-child", **common)
         self.assertEqual(self.states(team.team_status(self.ctx, team_id="t1")), {"a": "dispatched"})
         subagent_stop(child_session_id="hook-child", **common)
+        self.assertEqual(self.states(team.team_status(self.ctx, team_id="t1")), {"a": "awaiting_check"})
+
+
+class CompactedHelperComesBack(TeamHarness):
+    """A helper Hermes compacted into a new session id still comes back, and nothing looser counts.
+
+    Hermes reads `child_session_id` off the child at `subagent_start` and again
+    at `subagent_stop` (`tools/delegate_tool.py`, `tools/delegate_tool_results.py`);
+    rotating compaction re-points the child at a new row in between, so the
+    stop names a later segment and the part used to stay `dispatched` until
+    the 4-hour block called it "never came back". The rows are in the shape
+    Hermes' own `SessionDB` writes (`_hermes_session_rows`).
+
+    Mutations: match the stop id only; drop the fork-marker or inherited-marker
+    check; follow a parent Hermes did not close for compaction; drop the
+    unlinked-return record or its block reason.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.hermes = self.home.parent / "hermes"
+        self.hermes.mkdir()
+        self.lineage_reads: list[str] = []
+
+    def lineage(self, session_id: str) -> dict[str, object]:
+        self.lineage_reads.append(session_id)
+        return compaction_ancestors(str(self.hermes), session_id)
+
+    def dispatch_one(self) -> None:
+        goal = self.entries(self.start([unit("a", CHECK_A)]))[0]["goal"]
+        self.assertTrue(team.observe_dispatch(self.home, SESSION, child_session_id="C1", goal=goal, now=self.now()))
+
+    def stop(self, child: str) -> bool:
+        return team.observe_return(self.home, SESSION, child_session_id=child, now=self.now(), lineage=self.lineage)
+
+    def helper_rows(self, *later: dict[str, object]) -> None:
+        write_sessions(
+            self.hermes,
+            hermes_row(SESSION),
+            compacted("C1", at=1100.0, parent=SESSION, source="subagent", delegate_from=SESSION),
+            *later,
+        )
+
+    def test_a_helper_compacted_into_a_new_session_comes_back(self) -> None:
+        self.dispatch_one()
+        self.helper_rows(hermes_row("C2", parent="C1", source="subagent", delegate_from=SESSION,
+                                    started_at=1100.0, ended_at=1200.0, end_reason="agent_close"))
+        self.assertTrue(self.stop("C2"))
+        record = self.record()
+        attempt = record["units"][0]["attempts"][-1]
+        self.assertEqual((attempt["dispatch"]["child_session_id"], attempt["returned_as"]), ("C1", "C2"))
+        self.assertEqual(record["events"][-1]["summary"],
+                         "Came back after Hermes compacted its session; its check runs next.")
+        from omh.quality.reply_lint import build_reply_lint
+
+        self.assertTrue(build_reply_lint(record["events"][-1]["summary"])["ok"])
+        self.assertEqual(self.states(self.reconcile()), {"a": "accepted"})
+        self.assertEqual(self.runner.calls, [CHECK_A])
+
+    def test_a_helper_compacted_twice_comes_back(self) -> None:
+        self.dispatch_one()
+        self.helper_rows(
+            compacted("C2", at=1200.0, parent="C1", source="subagent", delegate_from=SESSION, started_at=1100.0),
+            hermes_row("C3", parent="C2", source="subagent", delegate_from=SESSION, started_at=1200.0),
+        )
+        self.assertTrue(self.stop("C3"))
+        self.assertEqual(self.states(team.team_status(self.ctx, team_id="t1")), {"a": "awaiting_check"})
+
+    def test_a_return_under_the_recorded_id_reads_no_lineage(self) -> None:
+        self.dispatch_one()
+        self.assertTrue(self.stop("C1"))
+        self.assertEqual(self.lineage_reads, [])
+        self.assertNotIn("returned_as", self.record()["units"][0]["attempts"][-1])
+        self.assertEqual(self.record()["events"][-1]["summary"], "Came back; its check runs next.")
+
+    def test_a_forged_continuation_is_not_its_return_and_is_said(self) -> None:
+        # Names the helper's closed segment as its parent, but its inherited
+        # `_delegate_from` is not the helper's: Hermes never writes that.
+        self.dispatch_one()
+        self.helper_rows(hermes_row("F", parent="C1", source="subagent", delegate_from="someone-else",
+                                    started_at=1100.0))
+        self.assertFalse(self.stop("F"))
+        self.assertEqual(self.states(team.team_status(self.ctx, team_id="t1")), {"a": "dispatched"})
+        notes = self.record()["unlinked_returns"]
+        self.assertEqual([(note["child_session_id"], note["reason"]) for note in notes],
+                         [("F", "continuation_not_authenticated")])
+        result = self.reconcile()
+        self.assertEqual((result["reason"], self.runner.calls), ("delegations_in_flight", []))
+        self.assertEqual(result["say"], "1 part(s) have not come back in a way OMH can confirm, so nothing is "
+                                        "checked yet. A helper came back under a session OMH could not link to "
+                                        "any part, because its session history does not match how Hermes "
+                                        "records a compaction.")
+        self.assertEqual([note["child_session_id"] for note in result["unlinked_returns"]], ["F"])
+
+    def test_other_conversations_beside_the_helper_are_not_its_return(self) -> None:
+        # A child the helper delegated to (a fork of it), a sibling under the
+        # same parent, and a row naming the helper as parent while Hermes never
+        # closed the helper's segment for compaction: same parent, near in
+        # time, none of them the helper's continuation, and none unreadable.
+        self.dispatch_one()
+        write_sessions(
+            self.hermes,
+            hermes_row(SESSION),
+            hermes_row("C1", parent=SESSION, source="subagent", delegate_from=SESSION),
+            hermes_row("G", parent="C1", source="subagent", delegate_from="C1", started_at=1100.0),
+            hermes_row("X", parent=SESSION, source="subagent", delegate_from=SESSION, started_at=1000.0),
+            hermes_row("Y", parent="C1", source="subagent", delegate_from=SESSION, started_at=1100.0),
+        )
+        for child in ("G", "X", "Y"):
+            with self.subTest(child=child):
+                self.assertFalse(self.stop(child))
+        self.assertEqual(self.states(team.team_status(self.ctx, team_id="t1")), {"a": "dispatched"})
+        self.assertNotIn("unlinked_returns", self.record())
+
+    def test_a_fork_of_the_compacted_helper_is_not_its_return(self) -> None:
+        # The helper's segment WAS closed for compaction, and these rows name
+        # it as parent, but each is a conversation of its own: a child it
+        # delegated to, a branch of it, a tool row. Not its return, and not
+        # unreadable either.
+        self.dispatch_one()
+        self.helper_rows(
+            hermes_row("G", parent="C1", source="subagent", delegate_from="C1", started_at=1100.0),
+            hermes_row("B", parent="C1", source="subagent", started_at=1100.0,
+                       config={"_branched_from": "C1", "_delegate_from": SESSION}),
+            hermes_row("T", parent="C1", source="tool", delegate_from=SESSION, started_at=1100.0),
+        )
+        for child in ("G", "B", "T"):
+            with self.subTest(child=child):
+                self.assertFalse(self.stop(child))
+        self.assertEqual(self.states(team.team_status(self.ctx, team_id="t1")), {"a": "dispatched"})
+        self.assertNotIn("unlinked_returns", self.record())
+
+    def test_an_unreadable_lineage_stops_the_part_as_not_linked(self) -> None:
+        # No `state.db` to read: the stop links to nothing and is kept, and
+        # the stale bound names it instead of "never came back".
+        self.dispatch_one()
+        self.assertFalse(self.stop("C2"))
+        self.assertEqual(self.record()["unlinked_returns"][0]["reason"], "state_db_unavailable")
+        self.clock += team.DELEGATION_STALE_SECONDS + 10
+        result = self.reconcile()
+        self.assertEqual(result["units"][0]["blocked"]["reason"], "return_not_linked")
+        self.assertEqual(result["say"], "Stopped: 'Part a' is blocked because a helper came back that OMH "
+                                        "could not link to it.")
+
+    def test_every_reason_the_lineage_reader_gives_has_words(self) -> None:
+        # `no_continuation` is the forward walk's alone; the backward walk a
+        # return uses never gives it.
+        from omh.plugin_bundle.omh.live_session import LINEAGE_UNVERIFIED_REASONS
+
+        self.assertLessEqual(set(LINEAGE_UNVERIFIED_REASONS) - {"no_continuation"}, set(team._UNLINKED_SAY))
+
+    def test_a_return_is_not_kept_when_no_helper_is_out(self) -> None:
+        self.start([unit("a", CHECK_A)])
+        self.assertFalse(self.stop("C2"))
+        self.assertNotIn("unlinked_returns", self.record())
+
+    def test_an_unlinked_return_from_before_a_helper_started_is_not_said_for_it(self) -> None:
+        self.runner = FakeRunner({CHECK_A: [exited(1), exited(0)]})
+        self.dispatch_one()
+        self.assertFalse(self.stop("stray"))
+        self.assertEqual([note["child_session_id"] for note in self.record()["unlinked_returns"]], ["stray"])
+        self.assertTrue(self.stop("C1"))
+        repair = self.reconcile()
+        self.assertTrue(team.observe_dispatch(self.home, SESSION, child_session_id="R1",
+                                              goal=self.entries(repair)[0]["goal"], now=self.now()))
+        result = self.reconcile()
+        self.assertEqual(result["say"], "1 part(s) are still being worked on; nothing is checked until they come back.")
+        self.assertNotIn("unlinked_returns", result)
+
+    def test_the_stop_hook_follows_the_compaction(self) -> None:
+        from omh.plugin_bundle.omh.hooks.session_hooks import subagent_start, subagent_stop
+
+        nudge_budget.reset_nudge_budget()
+        self.addCleanup(nudge_budget.reset_nudge_budget)
+        goal = self.entries(self.start([unit("a", CHECK_A)]))[0]["goal"]
+        self.helper_rows(hermes_row("C2", parent="C1", source="subagent", delegate_from=SESSION, started_at=1100.0))
+        common = {"omh_home": str(self.home), "hermes_home": str(self.hermes), "parent_session_id": SESSION}
+        subagent_start(child_session_id="C1", child_goal=goal, **common)
+        subagent_stop(child_session_id="C2", **common)
         self.assertEqual(self.states(team.team_status(self.ctx, team_id="t1")), {"a": "awaiting_check"})
 
 
@@ -1170,6 +1353,9 @@ class DamagedRecordsAreRefused(TeamHarness):
             "next_seq missing": lambda r: r.pop("next_seq"),
             "unknown parent": lambda r: r["units"][0].__setitem__("depends_on", ["ghost"]),
             "event without a seq": lambda r: r["events"].append({"seq": "x", "event": "started"}),
+            "unlinked returns not a list": lambda r: r.__setitem__("unlinked_returns", "C2"),
+            "unlinked return without a reason": lambda r: r.__setitem__(
+                "unlinked_returns", [{"child_session_id": "C2", "observed_at": "2026-10-20T00:00:00Z"}]),
         }
         for name, damage in damages.items():
             record = json.loads(json.dumps(good))

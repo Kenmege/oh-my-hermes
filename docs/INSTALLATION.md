@@ -1533,6 +1533,13 @@ answers that it is not; a row the host never closed, which is what a killed
 TUI and most gateway sessions leave behind, falls back to a six-hour bound
 on the route's own age. Such a route can outlive its session by that long
 rather than risk being taken back while the writer is still dispatching.
+A row Hermes closed to compact the conversation (`end_reason` `compression`,
+which its rotating compaction writes when `compression.in_place` is `false`)
+does not answer either: the conversation goes on in a new row, so the
+question goes to the rows Hermes continued it in, following only the
+continuation links Hermes itself writes. If those rows cannot be read or do
+not match how Hermes records a compaction, the route stays and the restore
+reports `continuation_unverified`.
 
 What returns is the previous values, not the previous bytes: the writer
 normalises quoting, emits the three keys in a fixed order, and drops an

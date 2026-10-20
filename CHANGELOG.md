@@ -4,6 +4,28 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A Hermes compaction no longer reads as the end of the work, for the
+  delegation route or for `omh_team`.** Hermes' rotating compaction
+  (`compression.in_place: false`; the default in-place compaction keeps one
+  session id and was never affected) closes the running session row with
+  `end_reason` `compression` and goes on in a new row that names it as its
+  parent. Two OMH readers took that closure for an ending. The session-start
+  restore of a delegation route read the writer's closed row as "not live" and
+  put the person's baseline back while the compacted conversation was still
+  dispatching; it now follows the continuation and keeps the route while any
+  continuation is running, restores once Hermes closed every one, and keeps it
+  as `continuation_unverified` when the continuation cannot be read. A team
+  helper that compacted came back under its new session id, which matched
+  nothing, so its part stayed `dispatched` until the four-hour bound blocked it
+  as "never came back"; the return now links to the attempt through the
+  earlier segments the new id continues. Both read only the links Hermes itself
+  writes on a compaction (the closed row's end reason, the new row's
+  `parent_session_id`, and its inherited `_delegate_from`), never the same
+  parent or a nearby time. A return whose links cannot be read links to no
+  part: it is kept on the team as `unlinked_returns` and said by
+  `team_reconcile` while a part is still out, and a part still out at the
+  four-hour bound stops as `return_not_linked` instead of "never came back".
+
 - **`omh_probe` says why its own package probe did not import, and a broken
   import hook cannot make the classifier raise.** When `omh.probe` alone fails
   to import, the probe's bundle answer now carries a `package_probe` row with

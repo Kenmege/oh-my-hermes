@@ -18,9 +18,12 @@ import json
 import sqlite3
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
+
+from _hermes_session_rows import compacted, row, write_sessions
 
 from omh.plugin_bundle.omh.awareness_delivery import _awareness_delivery_lock
 from omh.plugin_bundle.omh.delegation_route_restore import (
@@ -1393,6 +1396,214 @@ class ClearActionTest(RouteRestoreTestCase):
         )
 
         self.assertEqual(self.record()["writer_session_id"], "real-host-session")
+
+
+class CompactionContinuationTest(RouteRestoreTestCase):
+    """A writer row Hermes closed to COMPACT the conversation is not the writer stopping.
+
+    Rotating compaction (`compression.in_place: false`) closes the running
+    segment mid-turn with `end_reason` `compression` and goes on in a new row
+    naming it as its parent. Reading that closure as "the writer is gone" put
+    the person's baseline back under a conversation still dispatching: any
+    session starting in the rest of that turn, a delegate child included, took
+    the route away. The rows are in the shape Hermes' own `SessionDB` writes
+    (`_hermes_session_rows`).
+
+    Mutation: answer a compaction closure from its own `ended_at`.
+    """
+
+    WRITTEN = 1000.0
+    NOW = 1100.0
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.route(session_id="W", now=self.WRITTEN)
+
+    def session_start(self, now: float | None = None) -> dict:
+        return self.restore(
+            trigger="session_start",
+            require_writer_not_live=True,
+            now=self.NOW if now is None else now,
+        )
+
+    def test_a_running_continuation_keeps_the_route(self) -> None:
+        write_sessions(self.hermes_home, compacted("W", at=1050.0), row("W2", parent="W", started_at=1050.0))
+
+        result = self.session_start()
+
+        self.assertEqual(
+            (result["status"], result["liveness"], result["writer_continuation"]),
+            ("writer_live", "live", "W2"),
+        )
+        self.assertEqual(self.current()["model"], "routed-model")
+
+    def test_a_continuation_is_followed_through_two_compactions(self) -> None:
+        write_sessions(
+            self.hermes_home,
+            compacted("W", at=1020.0),
+            compacted("W2", parent="W", at=1040.0, started_at=1020.0),
+            row("W3", parent="W2", started_at=1040.0),
+        )
+
+        result = self.session_start()
+
+        self.assertEqual((result["liveness"], result["writer_continuation"]), ("live", "W3"))
+        self.assertEqual(self.current()["model"], "routed-model")
+
+    def test_a_continuation_hermes_closed_puts_the_baseline_back(self) -> None:
+        write_sessions(
+            self.hermes_home,
+            compacted("W", at=1050.0),
+            row("W2", parent="W", started_at=1050.0, ended_at=1080.0, end_reason="agent_close"),
+        )
+
+        result = self.session_start()
+
+        self.assertEqual(
+            (result["status"], result["liveness"], result["writer_continuation"]),
+            ("cleared", "not_live", "W2"),
+        )
+        self.assertEqual(self.config.read_text(encoding="utf-8"), BASE_CONFIG)
+
+    def test_a_writer_that_ended_without_compaction_is_still_restored(self) -> None:
+        # The negative control: a session that truly ended has no continuation
+        # to ask, and its own closure answers as before.
+        write_sessions(self.hermes_home, row("W", ended_at=1050.0, end_reason="agent_close"))
+
+        result = self.session_start()
+
+        self.assertEqual((result["status"], result["liveness"]), ("cleared", "not_live"))
+        self.assertNotIn("writer_continuation", result)
+        self.assertEqual(self.current(), {})
+
+    def test_other_conversations_under_the_closed_segment_do_not_count(self) -> None:
+        # Live rows naming W as parent that Hermes does not write as its
+        # continuation: forks of W (a delegate child, a branch, a reset, a tool
+        # row) and one whose inherited `_delegate_from` disagrees with W's.
+        # Mutation: drop the fork-marker check, or the inherited-marker check.
+        write_sessions(
+            self.hermes_home,
+            compacted("W", at=1050.0),
+            row("W2", parent="W", started_at=1050.0, ended_at=1080.0, end_reason="agent_close"),
+            row("delegate", parent="W", source="subagent", delegate_from="W", started_at=1090.0),
+            row("branch", parent="W", config={"_branched_from": "W"}, started_at=1090.0),
+            row("reset", parent="W", config={"_reset_from": "W"}, started_at=1090.0),
+            row("tool", parent="W", source="tool", started_at=1090.0),
+            row("forged", parent="W", delegate_from="someone-else", started_at=1090.0),
+        )
+
+        result = self.session_start()
+
+        self.assertEqual(
+            (result["status"], result["liveness"], result["writer_continuation"]),
+            ("cleared", "not_live", "W2"),
+        )
+
+    def test_one_running_continuation_holds_beside_a_closed_one(self) -> None:
+        # Mutation: take the first continuation's verdict instead of the one
+        # that holds. Both orders, so the order rows are read in cannot decide.
+        for closed, running in (("W2a", "W2b"), ("W2z", "W2b")):
+            with self.subTest(closed=closed):
+                (self.hermes_home / "state.db").unlink(missing_ok=True)
+                write_sessions(
+                    self.hermes_home,
+                    compacted("W", at=1050.0),
+                    row(closed, parent="W", started_at=1050.0, ended_at=1060.0, end_reason="ws_orphan_reap"),
+                    row(running, parent="W", started_at=1050.0),
+                )
+
+                result = self.session_start()
+
+                self.assertEqual((result["liveness"], result["writer_continuation"]), ("live", running))
+                self.assertEqual(self.current()["model"], "routed-model")
+
+    def test_no_continuation_holds_the_route_and_says_why(self) -> None:
+        # Hermes inserts the continuation in the transaction that closes the
+        # segment, so a closure with none is a shape this cannot read -- not
+        # the conversation ending, not even past the age bound.
+        write_sessions(
+            self.hermes_home,
+            compacted("W", at=1050.0),
+            row("forged", parent="W", delegate_from="someone-else", started_at=1090.0),
+        )
+
+        for now in (self.NOW, self.WRITTEN + LIVE_TUI_SESSION_FRESH_SECONDS + 1):
+            with self.subTest(now=now):
+                result = self.session_start(now=now)
+                self.assertEqual(
+                    (result["status"], result["liveness"], result["lineage_unverified"]),
+                    ("writer_live", "continuation_unverified", "no_continuation"),
+                )
+        self.assertEqual(self.current()["model"], "routed-model")
+
+    def test_an_unreadable_continuation_holds_the_route(self) -> None:
+        write_sessions(
+            self.hermes_home,
+            compacted("W", at=1050.0),
+            row("W2", parent="W", config="{not json", started_at=1050.0),
+        )
+
+        result = self.session_start()
+
+        self.assertEqual(
+            (result["liveness"], result["lineage_unverified"]),
+            ("continuation_unverified", "continuation_not_authenticated"),
+        )
+        self.assertEqual(self.current()["model"], "routed-model")
+
+    def test_an_unclosed_stale_continuation_waits_out_the_age_bound(self) -> None:
+        # The continuation is the same conversation, so it gets the bound an
+        # unclosed writer row gets: its activity stamp went stale, and the
+        # route's own age decides.
+        written = 50_000.0
+        self.route(session_id="W", now=written)
+        write_sessions(
+            self.hermes_home,
+            compacted("W", at=1050.0),
+            row("W2", parent="W", started_at=1050.0, last_activity_at=1060.0),
+        )
+
+        held = self.session_start(now=written + 100)
+        released = self.session_start(now=written + LIVE_TUI_SESSION_FRESH_SECONDS + 1)
+
+        self.assertEqual((held["status"], held["liveness"]), ("writer_live", "unclosed_within_age_bound"))
+        self.assertEqual((released["status"], released["liveness"]), ("cleared", "unclosed_and_stale_by_age"))
+
+    def test_a_compacted_delegate_child_writer_is_followed(self) -> None:
+        # A subagent writes routes too. Its continuation carries the same
+        # `_delegate_from` as the segment it continues, which is not a fork.
+        write_sessions(
+            self.hermes_home,
+            row("P"),
+            compacted("W", at=1050.0, parent="P", source="subagent", delegate_from="P"),
+            row("W2", parent="W", source="subagent", delegate_from="P", started_at=1050.0),
+        )
+
+        result = self.session_start()
+
+        self.assertEqual(
+            (result["liveness"], result["writer_source"], result["writer_continuation"]),
+            ("live", "subagent", "W2"),
+        )
+
+    def test_the_session_start_hook_keeps_the_route(self) -> None:
+        # The hook Hermes calls, at the real clock: another session starting
+        # while the compacted conversation is still running.
+        write_sessions(
+            self.hermes_home,
+            compacted("W", at=time.time() - 5),
+            row("W2", parent="W", started_at=time.time() - 5),
+        )
+
+        payload = on_session_start(
+            session_id="someone-else",
+            omh_home=str(self.omh_home),
+            hermes_home=str(self.hermes_home),
+        )
+
+        self.assertEqual(payload["route_restore"]["status"], "writer_live")
+        self.assertEqual(payload["route_restore"]["writer_continuation"], "W2")
+        self.assertEqual(self.current()["model"], "routed-model")
 
 
 if __name__ == "__main__":
