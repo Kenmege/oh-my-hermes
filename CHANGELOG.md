@@ -17,13 +17,14 @@ All notable changes will be documented here.
   do not fit its third of the screen, and `/dag` opens it whole in the pager.
   The `[Agents]` block stops repeating a native lane the graph draws, and its
   header then counts only the rows it still lists, so the lanes have one
-  count line. On Slack, Discord, Telegram, Mattermost and Matrix a reply never
-  carries the boxes. The reply Hermes sends gets a code block naming the run
-  (`DAG · <name> · <N> tasks · <W> layers`, then one line per layer) once when
-  the run starts, a plain count line (`DAG <name> · 1/3 done · 1 running`) on
-  a turn its counts changed, and a short block once when every lane has
-  settled: each lane under Done, Failed or Stopped, the first failure and the
-  totals. Where a block and the reply do not fit one message, the count line
+  count line, also past the eight rows it lists. On Slack, Discord, Telegram,
+  Mattermost and Matrix a reply never carries the boxes. The reply Hermes
+  sends gets a code block naming the run (`DAG · <name> · <N> tasks · <W>
+  layers`, then one line per layer) once when the run starts, a plain count
+  line (`DAG <name> · 1/3 done · 1 running`) on a turn its counts changed, and
+  a short block once when every lane has settled, or when nothing has moved
+  for 15 minutes: each lane under Done, Failed or Stopped, the lane that
+  failed first and the totals. Where a block and the reply do not fit one message, the count line
   goes in its place; where even that does not fit, a later reply carries it.
   OMH sends nothing itself. A category is shown only where the route OMH
   recorded matches the model the child ran, and no field reads current

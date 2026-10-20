@@ -353,11 +353,12 @@ dispatched work, not intended work), reading a wave as a dependency
 
 **Delegated run**:
 The lanes of a conversation's delegation graph that no chat end post has
-closed yet. It starts when a reply first finds one of them working, and ends
-on the first reply after all of them have settled (done, failed,
-interrupted, or `unknown`); the ledger's `posted` record keeps its phase,
-its last counts and the keys of the lanes earlier runs closed. A later
-wave's lanes form the next run.
+closed yet. It starts on the first reply that finds one of them not settled,
+and ends on the first reply after all of them have settled (done, failed,
+interrupted, or `unknown`), or after nothing has been in flight or changed
+for 15 minutes (`stalled`; the parts not moving stay open). The ledger's
+`posted` record keeps its phase, its last counts and the keys of the lanes
+earlier runs closed. A later wave's lanes form the next run.
 _Avoid_: a single `delegate_task` call (a run can span several waves), a
 Hermes session
 

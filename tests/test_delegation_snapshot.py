@@ -22,10 +22,12 @@ load_local_package()
 from _cli_harness import run_cli  # noqa: E402
 from _delegation_graphs import graph, lane, root  # noqa: E402
 from _delegation_state import PARENT, dispatched, homes, route, start, stop  # noqa: E402
+from omh.plugin_bundle.omh.delegation_ledger import ledger_key  # noqa: E402
 from omh.plugin_bundle.omh.delegation_ledger import posted_record, read_ledger  # noqa: E402
 from omh.plugin_bundle.omh.delegation_snapshot import (  # noqa: E402
     LINE_CELLS,
     MESSENGER_PLATFORMS,
+    STALL_SECONDS,
     count_line,
     end_block,
     lane_key,
@@ -73,10 +75,26 @@ All lanes are back.
 DAG · delegation · ended
 ✓ Done     Polish HUD CLI
 ✗ Failed   Update HUD tests (no model call)
-▪ Stopped  Refresh HUD docs
+▪ Stopped  Refresh HUD docs (interrupted)
 first failure: Update HUD tests (no model call)
 3 tasks · 1 done · 1 failed · 1 stopped
 ```"""
+
+
+def write_team(home, units: list[dict], *, at: float) -> None:
+    """The conversation's `omh_team/v1` record, written as the team writes it, last changed at ``at``."""
+    from test_delegation_graph import team_record
+
+    directory = home.omh / "runtime" / "teams" / ledger_key(PARENT)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "hud-graph.json"
+    path.write_text(json.dumps(team_record(units)), encoding="utf-8")
+    os.utime(path, (at, at))
+
+
+def at(moment: float):
+    """The wall clock the chat post reads, set to ``moment``."""
+    return patch("omh.plugin_bundle.omh.delegation_snapshot.time.time", return_value=moment)
 
 
 def chain(depth: int, width: int = 1) -> dict:
@@ -182,6 +200,61 @@ class MomentTests(unittest.TestCase):
             self.assertEqual(posted_record(home.omh, PARENT)["fingerprint"], fingerprint)
             home.usage("child-1", "glm-5.3-flash", last_seen=time.time())
             self.assertIsNotNone(reply("Running now.", turn="turn-6"), "the counts moved")
+
+    def test_a_run_whose_team_part_never_moves_ends_stalled_with_what_settled(self) -> None:
+        from test_delegation_graph import unit
+
+        with homes() as home:
+            now = time.time()
+            home.session(PARENT, "claude-opus-5-5", effort="high")
+            start(home, "child-0", "sa-0", "[omh-team:hud-graph/a/attempt-1] Port the parser", now=now - 5)
+            home.session("child-0", "claude-opus-5-5", parent=PARENT)
+            sent = {"n": 1, "dispatch": {"child_session_id": "child-0", "subagent_id": "sa-0"}, "inconclusive": []}
+            write_team(home, [unit("a", "Port the parser", [], [sent]), unit("b", "Wire the CLI", ["a"])], at=now - 5)
+            with at(now):
+                self.assertIn("DAG · team hud-graph · 2 tasks · 2 layers\n1  Port the parser\n2  Wire the CLI", reply())
+            home.usage("child-0", "claude-opus-5-5", last_seen=now + 10)
+            stop(home, "child-0", now=now + 20)
+            passed = {**sent, "returned_at": "t", "check": {"outcome": "passed"}}
+            write_team(home, [unit("a", "Port the parser", [], [passed]), unit("b", "Wire the CLI", ["a"])],
+                       at=now + 30)
+            with at(now + 40):
+                self.assertEqual(reply("The parser passed.", turn="turn-4"),
+                                 "The parser passed.\n\nDAG team hud-graph · 1/2 done · 0 running")
+            stalled = now + 30 + STALL_SECONDS + 60
+            with at(stalled - 120):
+                self.assertIsNone(reply("Waiting on the CLI part.", turn="turn-5"), "a quiet minute is not a stall")
+            with at(stalled):
+                post = reply("Anything new?", turn="turn-6")
+            self.assertTrue(post.endswith("```\nDAG · team hud-graph · stalled\n✓ Done     Port the parser\n"
+                                          "▪ Stopped  Wire the CLI (waiting)\n2 tasks · 1 done · 0 failed · 1 stopped\n```"),
+                            post)
+            renamed = {**passed}
+            write_team(home, [unit("a", "Port the parser module", [], [renamed]), unit("b", "Wire the CLI", ["a"])],
+                       at=now + 30)
+            with at(stalled + 60):
+                self.assertIsNone(reply("Still nothing.", turn="turn-7"), "a part still not moving is not news")
+            start(home, "child-1", "sa-1", "[omh-team:hud-graph/b/attempt-1] Wire the CLI", now=stalled + 100)
+            home.session("child-1", "claude-opus-5-5", parent=PARENT)
+            wiring = {"n": 1, "dispatch": {"child_session_id": "child-1", "subagent_id": "sa-1"}, "inconclusive": []}
+            write_team(home, [unit("a", "Port the parser module", [], [renamed]),
+                              unit("b", "Wire the CLI", ["a"], [wiring])], at=stalled + 100)
+            with at(stalled + 120):
+                post = reply("Wiring the CLI now.", turn="turn-8")
+            self.assertIn("DAG · team hud-graph · 1 task · 1 layer\n1  Wire the CLI\n", post,
+                          "the part that moved opens a run of its own; the closed part stays out")
+
+    def test_a_team_that_has_sent_nothing_yet_posts_its_start(self) -> None:
+        from test_delegation_graph import unit
+
+        with homes() as home:
+            now = time.time()
+            home.session(PARENT, "claude-opus-5-5", effort="high")
+            write_team(home, [unit("a", "Port the parser", []), unit("b", "Wire the CLI", ["a"])], at=now - 5)
+            with at(now):
+                post = reply("Planned two parts.")
+            self.assertIn("DAG · team hud-graph · 2 tasks · 2 layers", post)
+            self.assertEqual(posted_record(home.omh, PARENT)["moment"], "start")
 
     def test_a_post_that_could_not_be_recorded_is_not_posted(self) -> None:
         with homes() as home, patch(
@@ -309,6 +382,15 @@ class TextTests(unittest.TestCase):
                          "a native child closed by an end stays closed when a team record renames the graph")
         self.assertNotEqual(lane_key("team a", "t:u1"), lane_key("team b", "t:u1"), "two teams' parts are two lanes")
 
+    def test_the_first_failure_is_the_one_that_failed_first(self) -> None:
+        later = lane("a", "Port the auth module", "deep", "m", "", "failed", order=1, status="timeout")
+        earlier = lane("b", "Fix the parser", "deep", "m", "", "failed", order=2)
+        later["ended_at"], earlier["ended_at"] = 200.0, 100.0
+        self.assertEqual(tally([later, earlier])["first_failed"], "Fix the parser")
+        unstamped = lane("c", "Rotate keys", "deep", "m", "", "failed", order=3)
+        self.assertEqual(tally([unstamped, later])["first_failed"], "Port the auth module",
+                         "a failure with no stop time comes after one with a time")
+
     def test_the_count_line(self) -> None:
         lanes = [lane("a", "Port the auth module", "deep", "m", "", "failed", order=1, status="timeout"),
                  lane("b", "Refresh docs", "quick", "m", "", "running", order=2),
@@ -371,7 +453,36 @@ class HudTests(unittest.TestCase):
             reply("Short.", turn="turn-4")
             self.assertEqual((chat()["moment"], chat()["phase"], chat()["skipped"]), ("start", "open", ""))
 
+    def test_rows_hidden_past_the_eight_row_cap_that_the_graph_draws_are_not_other_agents(self) -> None:
+        from omh.tui.panels import panel_lines
+        from test_tui_panels import THEME
+
+        def header(payload: dict) -> str:
+            lines = ["".join(span.text for span in line) for line in panel_lines(payload, 120, 60, THEME, 0.0)]
+            return next(line for line in lines if line.startswith("[Agents]"))
+
+        for in_ledger, expected_hidden_in_graph, expected in ((20, 12, "lanes in the graph below"),
+                                                              (12, 4, "8 other agents")):
+            with self.subTest(in_ledger=in_ledger), homes() as home:
+                now = time.time()
+                home.session(PARENT, "claude-opus-5-5", effort="high")
+                # The oldest children have no ledger row (they started before the hooks were registered).
+                for index in range(20):
+                    child = f"20261020_170501_k{index:02d}"
+                    if index >= 20 - in_ledger:
+                        start(home, child, f"sa-{index}", f"Lane {index}", now=now - 40 + index)
+                    home.session(child, "claude-opus-5-5", parent=PARENT, started=now - 40 + index)
+                    home.execute("UPDATE sessions SET parent_session_id = ? WHERE id = ?", (PARENT, child))
+                    home.usage(child, "claude-opus-5-5", last_seen=now - 1)
+                payload = read_omh_hud(home.omh, home.hermes, session_ref=PARENT, status={"runs": []})
+                agents = payload["subagents"]
+                self.assertEqual((len(agents["rows"]), agents["hidden_rows"]), (8, 12))
+                self.assertEqual(agents["hidden_in_graph"], expected_hidden_in_graph)
+                self.assertTrue(header(payload).replace("[global] ", "").startswith(f"[Agents] │ {expected}"),
+                                header(payload))
+
     def test_the_model_facing_and_hot_path_readers_leave_the_graph_unread(self) -> None:
+        from omh.plugin_bundle.omh.tools import probe_tool
         from omh.plugin_bundle.omh.tools.hud_tool import omh_hud_handler
 
         with homes() as home:
@@ -381,6 +492,8 @@ class HudTests(unittest.TestCase):
                                                   session_id=PARENT))
                 lean = read_omh_hud(home.omh, home.hermes, session_ref=PARENT, status={"runs": []},
                                     delegation_graph=False)
+                probe_tool._standalone_probe(omh_home=str(home.omh), hermes_home=str(home.hermes),
+                                             include_parity=False, include_roadmap=False)
             build.assert_not_called()
             for payload in (tool, lean):
                 self.assertEqual((payload["delegation_graph"]["status"], payload["delegation_graph"]["reason"]),

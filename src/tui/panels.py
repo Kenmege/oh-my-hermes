@@ -698,6 +698,7 @@ def _agents_view(payload: Mapping[str, Any]) -> _Agents | None:
     graph = _delegation_graph(payload)
     drawn = _graph_sessions(graph)
     listed = rows
+    hidden_in_graph = 0
     if drawn:
         # A native row whose child the delegation block draws is left out, so one lane is not drawn twice; a row the
         # graph does not hold stays. The header keeps the session's cost and tokens, and Maestro and board rows stay.
@@ -705,12 +706,15 @@ def _agents_view(payload: Mapping[str, Any]) -> _Agents | None:
             row for row in rows
             if _safe_text(row.get("role")) != "hermes-native" or _safe_text(row.get("task_id")) not in drawn
         ]
+        # The rows the reader did not list are counted the same way: the ones the graph draws are its lanes.
+        hidden_in_graph = min(hidden, max(0, _count(agents.get("hidden_in_graph")))) if active else 0
+        hidden -= hidden_in_graph
     if not (main or listed or hidden or graph is not None):
         return None
     running = sum(1 for row in listed if _is_running(row))
     wanted = len(main) + min(len(listed), max(max(DEFAULT_AGENT_ROWS - len(main), 1), running))
     return _Agents(rows=tuple(main + listed), main_count=len(main), wanted=wanted, hidden=hidden,
-                   in_graph=len(rows) - len(listed))
+                   in_graph=len(rows) - len(listed) + hidden_in_graph)
 
 
 def _graph_sessions(graph: Mapping[str, Any] | None) -> frozenset[str]:

@@ -459,6 +459,7 @@ def _build(
         model = observed or delegation.get("model", "")
         category, source = _category(child.get("route") or {}, observed, parent_model)
         state, status, elapsed = _child_state(child, facts, now)
+        stop = child.get("stop")
         return {
             "model": model or "?",
             "effort": (facts["sessions"].get(session) or {}).get("effort", ""),
@@ -467,6 +468,8 @@ def _build(
             "state": state,
             "status": status,
             "elapsed_seconds": elapsed,
+            # When Hermes reported the child stopped, so "first failure" can mean first in time.
+            "ended_at": float(stop["observed_at"]) if isinstance(stop, Mapping) else None,
         }
 
     def title_for(child: Mapping[str, Any]) -> str:
@@ -519,7 +522,7 @@ def _build(
                     # The team record says the attempt was sent; only the child's own records say it is moving.
                     repairing = states[unit_id] == "repairing" and derived["state"] == "running"
                     node.update(state=derived["state"], status="repairing" if repairing else derived["status"],
-                                elapsed_seconds=derived["elapsed_seconds"])
+                                elapsed_seconds=derived["elapsed_seconds"], ended_at=derived["ended_at"])
                 elif derived["elapsed_seconds"] is not None:
                     node["elapsed_seconds"] = derived["elapsed_seconds"]
                 node_of_subagent[child["subagent_id"]] = node_id
@@ -579,6 +582,7 @@ def _build(
     name = f"team {_text(team[0].get('team_id'), 48)}" if team is not None and team[0].get("team_id") else "delegation"
     graph = _finish(name, nodes, edges, scope)
     graph["chat"] = _chat_record(ledger)
+    graph["changed_at"] = newest  # the last start, stop or team-record write: when this graph last moved
     return graph
 
 

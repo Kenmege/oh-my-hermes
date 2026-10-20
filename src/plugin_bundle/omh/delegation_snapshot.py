@@ -13,9 +13,14 @@ the conversation's lanes that no end post has closed yet:
 * **during**, no graph: on a turn where the counts changed since the last
   post, one plain line, ``DAG <name> · <done>/<total> done · <running>
   running``, and the failures with the first one's title when there are any;
-* **end**, once, on the first reply after every lane has settled: a short
-  block that puts each lane under Done, Failed or Stopped (and Working, only
-  while one still runs), names the first failure, and gives the totals.
+* **end**, once: a short block that puts each lane under Done, Failed or
+  Stopped (and Working, only while one is in flight), names the lane that
+  failed first, and gives the totals. It goes on the first reply after
+  every lane has settled, or, for a run a start opened, once nothing has
+  been in flight and nothing has changed for `STALL_SECONDS` (a team part
+  waiting on work that will not come). Such a ``stalled`` end lists the
+  parts not moving under Stopped with their status, and leaves them out of
+  the closed lanes, so a part that moves again opens a run of its own.
 
 A run whose first reply finds it already settled (a synchronous call) gets the
 end post alone. A chat reply never carries the box drawing: the OMH TUI and
@@ -25,10 +30,11 @@ Nothing is appended:
 
 * with ``OMH_SUBAGENT_GRAPH=off`` in Hermes' environment, the switch that
   already turns the HUD's graphs off;
-* on a delegated child's own turn, or with no active graph;
+* on a delegated child's own turn, with no active graph, or for a run no
+  start opened that is not moving;
 * when the graph's fingerprint (structure, states and labels, never elapsed
-  time) equals the one the last post recorded, or a running run's counts did
-  not change;
+  time) equals the one the last post recorded, unless time alone has
+  brought a stalled end, or a running run's counts did not change;
 * unless the post can be recorded in the delegation ledger, so a ledger that
   cannot be written never turns into a post on every reply, and a restart
   does not post it again;
@@ -51,7 +57,7 @@ import time
 from typing import Any, Final
 
 from . import runtime_paths
-from .delegation_graph import GRAPH_LINGER_SECONDS, build_delegation_graph, graph_fingerprint
+from .delegation_graph import GRAPH_LINGER_SECONDS, SETTLED_STATES, build_delegation_graph, graph_fingerprint
 from .delegation_ledger import note_posted, note_skipped, posted_record, root_session
 from .delegation_view import UNICODE, cells, clean_text, fit
 
@@ -79,16 +85,11 @@ MATRIX_CAP_ENV: Final = "MATRIX_MAX_MESSAGE_LENGTH"
 CAP_SHARE: Final = 0.9
 SKIPPED_CAP: Final = "graph_skipped_cap"
 SKIPPED_OPEN_FENCE: Final = "graph_skipped_open_fence"
-STOPPED_STATES: Final = frozenset({"interrupted", "unknown"})
-WORKING_STATES: Final = frozenset({"running", "stuck", "dispatched", "waiting"})
-# The end post's collapse, in the order it lists them, with the glyph state each takes; Working is listed only while
-# a lane still runs.
-COLLAPSE: Final = (
-    ("Done", "done", frozenset({"done"})),
-    ("Failed", "failed", frozenset({"failed"})),
-    ("Stopped", "interrupted", STOPPED_STATES),
-    ("Working", "running", WORKING_STATES),
-)
+KNOWN_STATES: Final = frozenset({"done", "failed", "interrupted", "unknown", "running", "stuck", "dispatched", "waiting"})
+# A run with nothing in flight that has not changed for this long is stalled: its end post goes out with what settled.
+STALL_SECONDS: Final = GRAPH_LINGER_SECONDS
+# The end post's groups, in the order it lists them, with the glyph each takes (`collapse` puts a lane in one).
+COLLAPSE: Final = (("Done", "done"), ("Failed", "failed"), ("Stopped", "interrupted"), ("Working", "running"))
 
 
 def appended(reply: str, post: str) -> str:
@@ -150,29 +151,54 @@ def lanes_of(graph: Mapping[str, Any]) -> list[Mapping[str, Any]]:
 
 
 def _state(node: Mapping[str, Any]) -> str:
-    """The node's state, or ``unknown`` for one no collapse group names."""
+    """The node's state, or ``unknown`` for one the graph does not define."""
     state = node.get("state")
-    return state if isinstance(state, str) and any(state in states for _word, _glyph, states in COLLAPSE) else "unknown"
+    return state if isinstance(state, str) and state in KNOWN_STATES else "unknown"
+
+
+def collapse(node: Mapping[str, Any]) -> str:
+    """The lane's group in an end post.
+
+    Working is a lane in flight: running, stuck, or dispatched to a child
+    Hermes recorded (`session_tail`), which settles on its own. Stopped is one
+    that is not moving: interrupted, `unknown`, or a team part waiting or sent
+    with no child the ledger holds.
+    """
+    state = _state(node)
+    if state in ("done", "failed"):
+        return state.capitalize()
+    if state in ("running", "stuck") or (state == "dispatched" and node.get("session_tail")):
+        return "Working"
+    return "Stopped"
 
 
 def _label(node: Mapping[str, Any], *, with_status: bool = False) -> str:
-    """A lane's title, and, when asked, its status word where that says more than its state (``no model call``)."""
+    """A lane's title, and, when asked, its status word: always for a Stopped lane, which says why it is not moving,
+    and otherwise where the word says more than the state (``no model call``)."""
     title = fit(clean_text(node.get("title")) or "?", LABEL_CELLS)
     status = fit(clean_text(node.get("status")), STATUS_CELLS)
-    return f"{title} ({status})" if with_status and status and status != _state(node) else title
+    shown = with_status and status and (status != _state(node) or collapse(node) == "Stopped")
+    return f"{title} ({status})" if shown else title
+
+
+def _ended_at(node: Mapping[str, Any]) -> float:
+    value = node.get("ended_at")
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else float("inf")
 
 
 def tally(lanes: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """The counts a count line and an end post give, and the first failed lane's title."""
-    states = [_state(node) for node in lanes]
-    failed = [node for node in lanes if _state(node) == "failed"]
+    """The counts a count line and an end post give, and the title of the lane that failed first (by its stop time,
+    then by drawing order)."""
+    groups = [collapse(node) for node in lanes]
+    failed = sorted((node for node in lanes if _state(node) == "failed"), key=_ended_at)
     return {
         "total": len(lanes),
-        "done": states.count("done"),
-        "running": states.count("running"),
+        "done": groups.count("Done"),
+        "running": sum(1 for node in lanes if _state(node) == "running"),
         "failed": len(failed),
-        "stopped": sum(1 for state in states if state in STOPPED_STATES),
-        "working": sum(1 for state in states if state in WORKING_STATES),
+        "stopped": groups.count("Stopped"),
+        "working": groups.count("Working"),
+        "settled": all(_state(node) in SETTLED_STATES for node in lanes),
         "first_failed": _label(failed[0]) if failed else "",
         "first_failure": _label(failed[0], with_status=True) if failed else "",
     }
@@ -234,13 +260,18 @@ def start_block(graph: Mapping[str, Any], lanes: Sequence[Mapping[str, Any]]) ->
 
 
 def end_block(graph: Mapping[str, Any], lanes: Sequence[Mapping[str, Any]]) -> str:
-    """The run's end: each lane under Done, Failed or Stopped (Working while one runs), the first failure, totals."""
+    """The run's end: each lane under Done, Failed, Stopped or Working (`collapse`), the first failure, the totals.
+
+    The header says ``ended`` when every lane settled, ``stalled`` when some
+    are not moving and none is in flight, and ``so far`` while one is.
+    """
     counts = tally(lanes)
     sep = UNICODE.separator
-    lines = [sep.join(["DAG", graph_name(graph), "ended" if not counts["working"] else "so far"])]
-    width = max(len(word) for word, _glyph, _states in COLLAPSE)
-    for word, glyph_state, states in COLLAPSE:
-        members = [node for node in lanes if _state(node) in states]
+    verdict = "ended" if counts["settled"] else ("so far" if counts["working"] else "stalled")
+    lines = [sep.join(["DAG", graph_name(graph), verdict])]
+    width = max(len(word) for word, _glyph in COLLAPSE)
+    for word, glyph_state in COLLAPSE:
+        members = [node for node in lanes if collapse(node) == word]
         if members:
             lead = f"{UNICODE.glyphs[glyph_state]} {word.ljust(width)}  "
             lines.append(_listing(lead, [_label(node, with_status=word != "Done") for node in members]))
@@ -287,17 +318,24 @@ def messenger_snapshot(
     )
     if graph.get("status") != "active":
         return ""
-    fingerprint = graph_fingerprint(graph)
-    if fingerprint == posted.get("fingerprint"):
-        return ""
     name = graph_name(graph)
     closed = list(posted.get("closed") or [])
     lanes = [node for node in lanes_of(graph) if lane_key(name, str(node["id"])) not in set(closed)]
     if not lanes:
         return ""
     counts = tally(lanes)
-    if not counts["working"]:
+    changed_at = graph.get("changed_at")
+    # Nothing in flight and no start, stop or team write for `STALL_SECONDS`: a team part that waits on a part that
+    # will not come (or was sent with no child the ledger holds) would otherwise keep its run from ever ending.
+    stalled = (not counts["working"] and isinstance(changed_at, (int, float))
+               and moment - float(changed_at) > STALL_SECONDS)
+    fingerprint = graph_fingerprint(graph)
+    if fingerprint == posted.get("fingerprint") and not (run_open and stalled):
+        return ""  # the graph the last post showed; only time can still bring a stalled end
+    if counts["settled"] or (run_open and stalled):
         moment_name, block = "end", end_block(graph, lanes)
+    elif stalled:
+        return ""  # a run no start opened that is not moving is not news
     elif not run_open:
         moment_name, block = "start", start_block(graph, lanes)
     elif counts_key(counts) != posted.get("counts"):
@@ -316,7 +354,8 @@ def messenger_snapshot(
         note_skipped(omh_home, session, fingerprint, SKIPPED_CAP, now=moment)
         return ""
     if moment_name == "end":
-        closed += [lane_key(name, str(node["id"])) for node in lanes]
+        # A lane that settled is closed; one left not moving at a stalled end stays, so it opens a run if it moves.
+        closed += [lane_key(name, str(node["id"])) for node in lanes if _state(node) in SETTLED_STATES]
     if not note_posted(
         omh_home, session, fingerprint, moment_name=moment_name, phase="closed" if moment_name == "end" else "open",
         counts=counts_key(counts), closed=closed, now=moment,

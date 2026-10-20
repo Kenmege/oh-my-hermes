@@ -64,6 +64,7 @@ TITLE_LIMIT: Final = 120
 TITLE_CACHE_LIMIT: Final = 512
 DURATION_MS_LIMIT: Final = 10**12  # about 31 years: a duration past it is not a duration
 ROOT_CACHE_LIMIT: Final = 1024
+CLOSED_LIMIT: Final = 256  # lane keys a chat end post closed: ledger children and team parts alike
 PRUNE_INTERVAL_SECONDS: Final = 3600.0  # how often one process looks for records that aged out
 PRUNE_LOCK_SECONDS: Final = 0.1
 LEDGER_CLAIM_BOUNDARY: Final = (
@@ -313,7 +314,7 @@ def parse_ledger(raw: object) -> dict[str, Any] | None:
             "phase": posted.get("phase") if posted.get("phase") in RUN_PHASES else "",
             "counts": _text(posted.get("counts"), 64),
             "closed": [_text(item, 16) for item in (closed if isinstance(closed, list) else []) if _text(item, 16)][
-                -LEDGER_CHILD_LIMIT:
+                -CLOSED_LIMIT:
             ],
         }
     skipped = raw.get("skipped")
@@ -621,15 +622,13 @@ def note_posted(
     moment = time.time() if now is None else now
 
     def mark(record: dict[str, Any]) -> bool:
-        if not record["children"]:
-            return False
         record["posted"] = {
             "fingerprint": fingerprint[:64],
             "observed_at": moment,
             "moment": moment_name if moment_name in POST_MOMENTS else "",
             "phase": phase if phase in RUN_PHASES else "",
             "counts": _text(counts, 64),
-            "closed": [_text(item, 16) for item in closed if _text(item, 16)][-LEDGER_CHILD_LIMIT:],
+            "closed": [_text(item, 16) for item in closed if _text(item, 16)][-CLOSED_LIMIT:],
         }
         record["skipped"] = {}
         return True
@@ -643,7 +642,7 @@ def note_skipped(omh_home: Path, session_id: str, fingerprint: str, reason: str,
 
     def mark(record: dict[str, Any]) -> bool:
         current = record.get("skipped") or {}
-        if not record["children"] or (current.get("fingerprint"), current.get("reason")) == (fingerprint[:64], reason):
+        if (current.get("fingerprint"), current.get("reason")) == (fingerprint[:64], reason):
             return False
         record["skipped"] = {"fingerprint": fingerprint[:64], "reason": _text(reason, WORD_LIMIT), "observed_at": moment}
         return True

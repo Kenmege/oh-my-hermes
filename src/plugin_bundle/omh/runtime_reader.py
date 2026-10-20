@@ -22,7 +22,7 @@ from .approval_bypass import effective_approval_bypass
 from .awareness_delivery import _awareness_delivery_lock
 from .delegation_graph import build_delegation_graph, inactive_graph
 from .delegation_ledger import newest_ledger_session
-from .hermes_delegation import read_hermes_native_subagents
+from .hermes_delegation import _CHILD_SELECT_LIMIT, read_hermes_native_subagents
 from .kanban_board_reader import conversation_session_ids, kanban_db_path, read_kanban_lanes
 from .live_session import (
     LIVE_TUI_SESSION_FRESH_SECONDS,
@@ -148,6 +148,9 @@ TODO_STALL_CLAIM_BOUNDARY = (
 # own per-source bound (`hermes_delegation._ROW_LIMIT`); the TUI widget
 # applies its viewport clamp on top and names anything hidden with `+N more`.
 ACTIVITY_ROW_LIMIT = 8
+# The native reader is asked for every child row its query read (`hermes_delegation._CHILD_SELECT_LIMIT`), and the
+# HUD applies `ACTIVITY_ROW_LIMIT` itself, so it knows which rows it did not list.
+NATIVE_ROW_SCAN_LIMIT = _CHILD_SELECT_LIMIT
 HUD_REQUIRED_TOOLS = PROVIDED_TOOLS
 HUD_REQUIRED_HOOKS = REQUIRED_HOOKS
 HUD_OPTIONAL_HOOKS = OPTIONAL_HOOKS
@@ -1049,18 +1052,26 @@ def read_omh_hud(
         omh_home=home,
         session_ref=reference if scoped else None,
         owned_only=tui_identity_expected and bool(session_ref),
+        # Every child row the query read; the per-source bound is applied just below, so the rows it drops can
+        # still be matched against the delegation graph's lanes (`hidden_in_graph`).
+        limit=NATIVE_ROW_SCAN_LIMIT,
     )
+    native_rows = list(native["rows"])
+    unlisted = native_rows[ACTIVITY_ROW_LIMIT:]  # rows the HUD counts in `hidden_rows` and does not list
+    native_rows = native_rows[:ACTIVITY_ROW_LIMIT]
     payload["subagents"]["scope"] = (
         "mixed" if omh_activity and native["scope"] == "session" else native["scope"]
     )
-    if native["rows"]:
+    if native_rows:
         merged = payload["subagents"]
-        combined = _ordered_activity_rows(list(merged["rows"]) + list(native["rows"]))
+        combined = _ordered_activity_rows(list(merged["rows"]) + native_rows)
         merged["hidden_rows"] = (
             max(0, len(combined) - ACTIVITY_ROW_LIMIT)
             + int(merged.get("hidden_rows", 0))
             + int(native.get("hidden", 0))
+            + len(unlisted)
         )
+        unlisted.extend(combined[ACTIVITY_ROW_LIMIT:])
         merged["rows"] = combined[:ACTIVITY_ROW_LIMIT]
         merged["active"] = int(merged.get("active", 0)) + int(native["active"])
         merged["running"] = int(merged.get("running", 0)) + int(native["running"])
@@ -1098,6 +1109,7 @@ def read_omh_hud(
             + int(merged.get("hidden_rows", 0))
             + int(kanban["hidden"])
         )
+        unlisted.extend(combined[ACTIVITY_ROW_LIMIT:])
         merged["rows"] = combined[:ACTIVITY_ROW_LIMIT]
         merged["active"] = int(merged.get("active", 0)) + int(kanban["active"])
         merged["running"] = int(merged.get("running", 0)) + int(kanban["running"])
@@ -1131,6 +1143,7 @@ def read_omh_hud(
             fanout=_hud_verified_fanout(fanout_record),
             scope="session" if scoped else "global",
         )
+    payload["subagents"]["hidden_in_graph"] = _hidden_graph_lanes(unlisted, payload["delegation_graph"])
     payload["active"] = bool(
         payload["runtime"]["workflow"] != "idle"
         or payload["subagents"]["active"]
@@ -1678,6 +1691,20 @@ def _hud_graph_roster(
         "fanout_id": fanout_id,
         "units": list(units_by_id.values()),
     }
+
+
+def _hidden_graph_lanes(rows: list[dict[str, Any]], graph: dict[str, Any]) -> int:
+    """How many native rows the HUD did not list are lanes the delegation graph draws (matched by `session_tail`,
+    the native row's `task_id`): the TUI counts those once, on the graph's header, never as other agents."""
+    if graph.get("status") != "active" or graph.get("source") != "native":
+        return 0
+    tails = {
+        node["session_tail"] for node in graph.get("nodes") or []
+        if isinstance(node, dict) and isinstance(node.get("session_tail"), str) and node["session_tail"]
+    }
+    return sum(
+        1 for row in rows if isinstance(row, dict) and row.get("role") == "hermes-native" and row.get("task_id") in tails
+    )
 
 
 def _hud_metadata_mtime(path: Path) -> float:

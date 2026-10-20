@@ -14,6 +14,7 @@ load_local_package()
 from _delegation_state import PARENT, dispatched, homes, route, start, stop  # noqa: E402
 from omh.plugin_bundle.omh import delegation_ledger  # noqa: E402
 from omh.plugin_bundle.omh.delegation_ledger import (  # noqa: E402
+    CLOSED_LIMIT,
     LEDGER_CHILD_LIMIT,
     LEDGER_MAX_AGE_SECONDS,
     child_title,
@@ -206,7 +207,8 @@ class RecordTests(unittest.TestCase):
 
     def test_the_posted_fingerprint_round_trips(self) -> None:
         with homes() as home:
-            self.assertFalse(note_posted(home.omh, PARENT, "f" * 64, now=NOW), "nothing to have posted about")
+            self.assertTrue(note_posted(home.omh, PARENT, "e" * 64, now=NOW), "a team that has sent nothing yet")
+            self.assertEqual(posted_fingerprint(home.omh, PARENT), "e" * 64)
             start(home, "child-0", "sa-0-x", "goal", now=NOW)
             self.assertTrue(note_posted(home.omh, PARENT, "f" * 64, now=NOW))
             self.assertEqual(posted_fingerprint(home.omh, PARENT), "f" * 64)
@@ -223,11 +225,11 @@ class RecordTests(unittest.TestCase):
             )
             path = ledger_path(home.omh, PARENT)
             raw = json.loads(path.read_text(encoding="utf-8"))
-            raw["posted"].update(moment="boxes", phase="half", closed=["c" * 99, 7] * 200)
+            raw["posted"].update(moment="boxes", phase="half", closed=["c" * 99, 7] * 300)
             path.write_text(json.dumps(raw), encoding="utf-8")
             posted = posted_record(home.omh, PARENT)
             self.assertEqual((posted["moment"], posted["phase"]), ("", ""))
-            self.assertEqual(posted["closed"], ["c" * 16] * LEDGER_CHILD_LIMIT)
+            self.assertEqual(posted["closed"], ["c" * 16] * CLOSED_LIMIT)
 
     def test_records_no_hook_wrote_for_a_day_are_removed_and_their_locks_stay(self) -> None:
         with homes() as home:

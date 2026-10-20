@@ -116,9 +116,11 @@ Where it shows:
   child's session id, so that lane is drawn once. A row whose child the graph
   does not hold stays. While the graph draws some of the lanes, the header
   counts only the rows the block still lists (`2 other agents · 2 running`),
-  or says `lanes in the graph below`. The lanes are then counted once, on the
-  graph's own header line, and the `[Agents]` header keeps the session's cost
-  and tokens.
+  or says `lanes in the graph below`. The rows the HUD did not list (it lists
+  eight) are counted the same way: the HUD reports how many of them the graph
+  draws (`subagents.hidden_in_graph`), and those are not other agents. The
+  lanes are then counted once, on the graph's own header line, and the
+  `[Agents]` header keeps the session's cost and tokens.
   The panel gets a third of the terminal's rows. Where four-line boxes do not
   fit, two-line boxes are drawn instead: the title, then the category and
   model, with each arrow drawn into the box it enters. Where those do not fit
@@ -143,28 +145,36 @@ Where it shows:
   - **During:** no graph. On a turn where the counts changed since the last
     post, one plain line:
     `DAG delegation · 1/3 done · 1 running · 1 failed (Update HUD tests)`.
-  - **End, once,** on the first reply after every lane has settled: each
-    lane under Done, Failed or Stopped, the first failure, and the totals.
-    Stopped is an interrupted lane or an `unknown` one, with its reason (`no
-    news` after 30 minutes, `compacted`, `ended`). A Working group is listed
-    only while a lane still runs, so an end post, which waits for every lane
-    to settle, has none.
+  - **End, once:** each lane under Done, Failed or Stopped, the lane that
+    failed first (by when Hermes reported it stopped), and the totals. It goes
+    on the first reply after every lane has settled. A run a start opened also
+    gets it once nothing has been in flight and nothing has started, stopped
+    or changed in the team record for 15 minutes, as when a team part waits
+    on work that will not come. That end reads `stalled`, lists those parts
+    under Stopped, and leaves them open, so a part that moves later opens a
+    run of its own. Stopped is a lane not moving, with its reason:
+    `interrupted`, `unknown` (`no news` after 30 minutes, `compacted`,
+    `ended`), or a team part `waiting` or sent with no child the ledger
+    holds. A Working group (running, stuck, or dispatched to a child Hermes
+    recorded) is listed only while one is in flight, so an end post has none.
 
     ```
     DAG · delegation · ended
     ✓ Done     Polish HUD CLI
     ✗ Failed   Update HUD tests (no model call)
-    ▪ Stopped  Refresh HUD docs
+    ▪ Stopped  Refresh HUD docs (interrupted)
     first failure: Update HUD tests (no model call)
     3 tasks · 1 done · 1 failed · 1 stopped
     ```
 
   A run whose first reply finds it already settled, such as a synchronous
   call, gets the end alone. A run a start opened gets its end however long it
-  took to settle, and a later run lists only its own lanes. Nothing is posted
-  when the graph's fingerprint (structure, states and labels, never elapsed
-  time) is the one last posted or a running run's counts did not change, and
-  nothing is posted unless the post can be recorded in the ledger. A start or
+  took to settle, and a later run lists only its own lanes. An `omh_team`
+  that has sent nothing yet gets its start too. Nothing is posted when the
+  graph's fingerprint (structure, states and labels, never elapsed time) is
+  the one last posted, unless time alone has brought a stalled end, or when a
+  running run's counts did not change. Nothing is posted unless the post can
+  be recorded in the ledger. A start or
   end block goes only when it and the reply together fit nine tenths of the
   platform's single-message cap, measured the way Hermes' adapter measures it:
   Discord 2,000 characters, Slack 39,000, Telegram 4,096 UTF-16 units,
@@ -183,8 +193,8 @@ Where it shows:
 `OMH_SUBAGENT_GRAPH=off` turns the graph off in the process that reads it:
 in Hermes' environment for chat replies, and in the OMH TUI's or `omh hud`'s
 own for those. The ledger keeps recording while it is off. `omh hud --graph` names no conversation, so it draws the one
-whose ledger changed last, under a `[global]` line. The `omh_hud` tool, the MCP status tool and the per-call status
-read leave the graph unread: a model reading its status pays no tokens for
+whose ledger changed last, under a `[global]` line. The `omh_hud` tool, the MCP status tool, the standalone `omh_probe` and the
+per-call status read leave the graph unread: a model reading its status pays no tokens for
 it.
 
 What it shows, and what it leaves as `?`:

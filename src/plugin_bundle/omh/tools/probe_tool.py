@@ -139,7 +139,7 @@ def _standalone_probe(
     # must answer setup/status questions without importing the installed package.
     home, hermes = runtime_paths.resolve_homes(omh_home, hermes_home)
     status = read_omh_status(omh_home=home, limit=3)
-    hud = read_omh_hud(omh_home=home, hermes_home=hermes, preset="focused", limit=1)
+    hud = read_omh_hud(omh_home=home, hermes_home=hermes, preset="focused", limit=1, delegation_graph=False)
     plugin_observation = _latest_plugin_observation(home)
     plugin_runtime_observed = bool(plugin_observation and plugin_observation.get("observed"))
     plugin_runtime_active = (
