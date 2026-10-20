@@ -178,5 +178,25 @@ class DecisionGatePackageBackendTests(unittest.TestCase):
         backend = self.assert_unavailable(payload, "incompatible")
         self.assertEqual(backend["failed_import"], "omh.workflows.decision_gate_receipts")
 
+    def test_the_whole_core_service_is_imported_before_validating(self) -> None:
+        # A trusted, well-formed event would otherwise reach the answer path
+        # and raise there; importing the service up front refuses it here.
+        with patch_modules({"omh.commands.decision_gate": None}):
+            payload = json.loads(
+                omh_decision_gate_handler(dict(_GATE_ARGS), trusted_connector_event=dict(_GATE_ARGS))
+            )
+        backend = self.assert_unavailable(payload, "incompatible")
+        self.assertEqual(backend["failed_import"], "omh.commands.decision_gate")
+
+    def test_a_non_import_error_at_import_is_refused_as_broken(self) -> None:
+        from omh.plugin_bundle.omh.tools import decision_gate_tool
+
+        failure = RuntimeError("receipts failed at import time")
+        with patch.object(decision_gate_tool, "_import_gate_service", side_effect=failure):
+            payload = json.loads(omh_decision_gate_handler(dict(_GATE_ARGS)))
+        backend = self.assert_unavailable(payload, "broken")
+        self.assertEqual(backend["error_type"], "RuntimeError")
+        self.assertNotIn("failed at import time", json.dumps(payload))
+
     def test_the_refusal_is_in_the_core_status_vocabulary(self) -> None:
         self.assertIn("unavailable", CONNECTOR_DECISION_STATUSES)

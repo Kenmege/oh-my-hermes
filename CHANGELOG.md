@@ -9,22 +9,25 @@ All notable changes will be documented here.
   so the interpreter Hermes runs usually cannot import it. `omh_loop` still
   refuses there with `service_unavailable` and reads or writes no Loop state,
   and now carries a `package_backend` block: `absent` when the interpreter has
-  no `omh` package, `incompatible` when it has one that lacks a module or name
-  the bundle imports, and `broken` for any other import failure. A package
-  that is present never reads as absent. The detail used to say only "install
-  oh-my-hermes". It now says the plugin is registered, that an environment
-  Hermes' package manager prepares has no supported way to add the package
-  yet, that an environment you manage yourself can take it, and that
+  no `omh` package, `incompatible` when it finds an `omh` that lacks a module
+  or name the bundle imports, and `broken` for any other failure while
+  importing it, including one that is not an `ImportError`. A present `omh`
+  never reads as absent, and the block names the plugin's own version beside
+  the package's. The detail used to say "install oh-my-hermes or use the omh
+  loop CLI". It now says the plugin is registered, that an environment Hermes'
+  package manager prepares has no supported way to add the package yet, that
+  an environment you manage yourself can take it, and that
   `omh --omh-home <that home> loop status` reaches the same Loop store.
-  `omh_probe` reports the same state as its own `package_backend` row, apart
-  from registration. `omh_decision_gate` raised `ModuleNotFoundError` there
-  for a payload of the required shape; it now answers `unavailable` with the
-  same block and records nothing. A sweep that called each of the 22 tools
-  and 10 hooks on a plugin-only host, with one or more payloads each, found no
-  other raise. The Installation page now lists native Loop, the decision gate,
-  `omh_team` and `omh_source_trust` among the features that need the package,
-  and no longer tells every reader to install it into Hermes' environment
-  (#2166).
+  `omh_decision_gate` raised `ModuleNotFoundError` there for a payload of the
+  required shape; it now answers `unavailable` with the same block and records
+  nothing. `omh_probe` reports the same state as its own `package_backend`
+  row, apart from registration, and answers from the bundle whenever the
+  package's own probe cannot be imported, where it used to raise for a present
+  but broken package. A sweep that called each of the 22 tools and 10 hooks on
+  a plugin-only host, with one or more payloads each, found no other raise.
+  The Installation page now lists native Loop, the decision gate, `omh_team`
+  and `omh_source_trust` among the features that need the package, and no
+  longer tells every reader to install it into Hermes' environment (#2166).
 
 ## 4.0.0 - 2026-10-19
 

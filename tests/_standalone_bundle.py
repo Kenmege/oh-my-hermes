@@ -130,6 +130,7 @@ import json
 import sys
 
 bundle = sys.argv[1]
+sys.path[:0] = sys.argv[2:]
 spec = importlib.util.spec_from_file_location(
     "hermes_plugin_omh", bundle + "/__init__.py", submodule_search_locations=[bundle]
 )
@@ -140,7 +141,7 @@ omh_spec = importlib.util.find_spec("omh") is not None
 """
 
 
-def run_in_no_package_host(code: str, *, cwd: Path) -> dict:
+def run_in_no_package_host(code: str, *, cwd: Path, extra_paths: Iterable[Path] = ()) -> dict:
     """Run `code` in a real interpreter with no `omh` package; return its JSON.
 
     `-S` keeps the editable install's `.pth` out and `-P` keeps the cwd out,
@@ -148,7 +149,8 @@ def run_in_no_package_host(code: str, *, cwd: Path) -> dict:
     `sys.modules` patch in this process can only imitate. The bundle loads
     under a foreign name, as Hermes' loaders give it one. `code` runs after
     the bundle is importable as `hermes_plugin_omh`, sees `omh_spec`, and must
-    print one JSON document.
+    print one JSON document. `extra_paths` go first on the child's path, which
+    is how a test puts a stray or skewed `omh` in front of it.
     """
     env = {
         key: value
@@ -156,7 +158,15 @@ def run_in_no_package_host(code: str, *, cwd: Path) -> dict:
         if key not in {"PYTHONPATH", "PYTHONHOME", "PYTHONSAFEPATH"}
     }
     result = subprocess.run(
-        [sys.executable, "-S", "-P", "-c", _NO_PACKAGE_HOST_PRELUDE + code, str(bundle_dir())],
+        [
+            sys.executable,
+            "-S",
+            "-P",
+            "-c",
+            _NO_PACKAGE_HOST_PRELUDE + code,
+            str(bundle_dir()),
+            *(str(path) for path in extra_paths),
+        ],
         env=env,
         cwd=str(cwd),
         capture_output=True,

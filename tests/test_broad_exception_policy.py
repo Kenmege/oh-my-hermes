@@ -538,6 +538,17 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "happens, which cancels against the failure that caused it and leaves no trace.",
     ),
     ClassifiedSite(
+        "src/plugin_bundle/omh/package_backend.py",
+        "load_backend",
+        INTENTIONAL,
+        "A native tool's import of its `omh` package backend. Every failure becomes a "
+        "`package_backend` block whose status is `absent`, `incompatible` or `broken` and whose "
+        "`error_type` names the exception class; `omh_loop` and `omh_decision_gate` return it inside "
+        "a refusal that wrote nothing and `omh_probe` reports it as its own row, so a skewed "
+        "install is never mistaken for a working backend or for the supported no-package host, "
+        "and a module-scope RuntimeError never raises out of a tool (#2166).",
+    ),
+    ClassifiedSite(
         "src/tui/panels.py",
         "_read",
         INTENTIONAL,
@@ -571,8 +582,10 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # not verify).
 # 57 -> 58 / 52 -> 53: `tui/panels._read`, the OMH TUI's in-process HUD poll (a
 # reader failure is a visible notice, never an empty panel or a dead thread).
-EXPECTED_HANDLER_COUNT = 58
-EXPECTED_ANCHOR_COUNT = 53
+# 58 -> 59 / 53 -> 54: `package_backend.load_backend`, a native tool's backend
+# import (a failure is a classified refusal or probe row, never a raise; #2166).
+EXPECTED_HANDLER_COUNT = 59
+EXPECTED_ANCHOR_COUNT = 54
 
 
 class DerivedSite(NamedTuple):

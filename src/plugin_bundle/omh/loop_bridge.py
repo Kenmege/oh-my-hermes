@@ -28,11 +28,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .package_backend import (
-    available_backend,
-    classify_backend_failure,
-    package_backend_detail,
-)
+from .package_backend import available_backend, load_backend, package_backend_detail
 
 
 # Restated from `omh.workflows.loop_operations`; pinned by the parity tests.
@@ -190,7 +186,7 @@ def _expected_revision(args: dict[str, Any]) -> int | None:
 
 
 def _import_loop_service() -> tuple[Any, Any, Any, Any]:
-    """The core Loop service; raises whatever ImportError this interpreter gives.
+    """The core Loop service; raises whatever this interpreter's import raises.
 
     Called per use and never cached here: whether `omh` imports is a property
     of the interpreter at that moment, and a module-level answer would outlive
@@ -206,20 +202,17 @@ def _import_loop_service() -> tuple[Any, Any, Any, Any]:
     return resolve_paths, LOOP_TOOL_REDACTED_ARTIFACTS, LoopOperationRequest, loop_operation_envelope
 
 
-def loop_backend_status() -> dict[str, str]:
+def loop_backend_status() -> dict[str, Any]:
     """The `package_backend` block for native Loop on this interpreter, resolved now.
 
     The import is the check: a top-level `omh` that lacks the Loop service is
     not a backend, and only importing what the tool imports can tell.
     """
-    try:
-        _import_loop_service()
-    except ImportError as error:
-        return classify_backend_failure(error)
-    return available_backend()
+    _service, failure = load_backend(_import_loop_service)
+    return failure or available_backend()
 
 
-def loop_backend_detail(backend: dict[str, str]) -> str:
+def loop_backend_detail(backend: dict[str, Any]) -> str:
     """The `package_backend` sentence for native Loop, naming its CLI route."""
     return package_backend_detail(backend, feature="native Loop", cli_route=_CLI_ROUTE)
 
@@ -285,15 +278,8 @@ def run_loop_tool_action(args: dict[str, Any], *, session_ref: str) -> dict[str,
             "expected_revision is required for this action; read the loop with "
             "action=status and submit the record_revision it reports",
         )
-    try:
-        (
-            resolve_paths,
-            LOOP_TOOL_REDACTED_ARTIFACTS,
-            LoopOperationRequest,
-            loop_operation_envelope,
-        ) = _import_loop_service()
-    except ImportError as error:
-        backend = classify_backend_failure(error)
+    service, backend = load_backend(_import_loop_service)
+    if service is None:
         envelope = error_envelope(
             action,
             loop_id,
@@ -302,6 +288,7 @@ def run_loop_tool_action(args: dict[str, Any], *, session_ref: str) -> dict[str,
         )
         envelope["package_backend"] = backend
         return envelope
+    resolve_paths, LOOP_TOOL_REDACTED_ARTIFACTS, LoopOperationRequest, loop_operation_envelope = service
     # Every remaining name is already known to belong to this action; a None
     # value means "not supplied" and takes the service's declared default.
     fields = {

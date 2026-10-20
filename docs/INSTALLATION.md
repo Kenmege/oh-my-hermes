@@ -1298,10 +1298,15 @@ none where `omh chat route-hint` hints one, or hints one where it hints none.
 
 `omh_probe` reports which state a host is in, apart from registration: its
 `package_backend` row reads `available`; `absent` (the interpreter has no
-`omh` package, the state above); `incompatible` (an `omh` package that does
-not provide what this bundle imports, usually a different version); or
-`broken` (the import fails for any other reason). `omh_loop` and
-`omh_decision_gate` carry the same block whenever they refuse for one of these.
+`omh` package, the state above); `incompatible` (an `omh` that does not provide
+what this bundle imports: an oh-my-hermes of another version, or an `omh`
+module that is not an installed oh-my-hermes package at all); or `broken`
+(any other failure while importing it, including one that is not an
+`ImportError`). When the package's own probe cannot be imported, `omh_probe`
+answers from the bundle and the row still says why. `omh_loop` and
+`omh_decision_gate` carry the same block, with the plugin's own version beside
+the package's, whenever they refuse for one of these; the other tools in the
+table above keep their own refusals.
 
 To turn these features on, the interpreter Hermes runs must be able to import
 `omh`. Whether there is a supported way to arrange that depends on who owns
