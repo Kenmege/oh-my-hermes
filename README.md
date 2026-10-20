@@ -325,32 +325,19 @@ through: `🧠 OMH — recalled 2 memories`.
 
 ## The OH-MY-HERMES terminal
 
-Bare `omh` opens the OMH TUI: OMH's own terminal over your Hermes install.
-Hermes still runs every model call, tool and approval; OMH owns the screen —
-it opens on a clean screen with what your shell showed one scroll up,
-finished replies go to your terminal's scrollback, the plan and agents panel
-sits right above the prompt, and the prompt, a rounded box with one dim line
-under it for the mode or the keys that matter now and the model, context and
-effort, sits right under the output until the screen fills, then stays on
-the bottom rows: a list or question closing there does not pull it up. It reads on a light terminal as on a
-dark one, keeps a
-slash command's output in the transcript, runs a `!` line in Hermes' shell
-(never sent to the model), shares your input history with `hermes --tui`
-(Ctrl+R searches it), rewinds to an earlier prompt (Esc Esc or `/rewind`),
-lets you interrupt (`x`) or steer (`s`) one subagent from the agent list,
-lists an approval's or a question's choices where the prompt was, shows
-each tool call as one Claude Code style `⏺ name(args)` row with what it
-printed under `⎿` (a read as one line, `Read 715 lines`), says what Hermes
-is doing as Claude Code does (`✶ Analyzing… (12s · ↓1.2k tokens)` with a key
-tip under it), shows your prompt as a dim `> …` with no band, and marks
-outcomes on green and red bands (the light colours and the bands
-need a terminal that reports its background, a `COLORFGBG` that names it,
-or `/theme light|dark`). Bare
-`hermes` keeps opening Hermes' own terminal:
+Bare `omh` opens the OMH TUI, OMH's own terminal on top of your Hermes install.
+Hermes still runs every model call, tool and approval; OMH owns the screen.
+Bare `hermes` keeps opening Hermes' own terminal.
 
 ```sh
 omh
 ```
+
+- **Claude Code style turns**: one `⏺ name(args)` row per tool call with its output under `⎿`, and a live `✶ Working… (12s · ↓1.2k tokens)` row.
+- **Plan and agents above the prompt**: interrupt (`x`) or steer (`s`) one subagent from the agent list.
+- **Approvals and questions in place**: the choices open where the prompt was, and deny is the default.
+- **Shell and history**: a `!` line runs in Hermes' shell without the model, history is shared with `hermes --tui` (Ctrl+R), and Esc Esc or `/rewind` goes back to an earlier prompt.
+- **Light or dark**: outcome bands follow your terminal's background, or set it with `/theme light|dark`.
 
 <table align="center">
   <tr>
@@ -381,10 +368,9 @@ omh
   </tr>
 </table>
 
-Where the OMH TUI cannot start, `omh` says why in one line and opens Hermes'
-own TUI (`hermes --tui`) instead (Windows, a terminal without `termios`), or
-plain `hermes` under `TERM=dumb` or `OMH_NO_TUI=1` or without Node. Bare `hermes` is stock Hermes, with no OMH skin or HUD; OMH's tools,
-memory and skills are still there. See
+If the OMH TUI cannot start, `omh` says why in one line and opens `hermes --tui`
+instead (Windows, no `termios`), or plain `hermes` (`TERM=dumb`, `OMH_NO_TUI=1`,
+no Node). OMH's tools, memory and skills work there too. See
 [The OMH TUI](docs/INSTALLATION.md#the-omh-tui).
 
 What the terminal shows while OMH workflows run:
