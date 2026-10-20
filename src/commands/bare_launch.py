@@ -514,13 +514,23 @@ def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
     wait is interrupted: the terminal's SIGHUP reaches Hermes' launcher on its
     own, and a SIGTERM sent to `omh` alone leaves it running, as before.
     """
-    from ..tui.launch import exit_on_signals, fallback_requested, fallback_sentinel, omh_tui_environment
+    from ..tui.launch import (
+        exit_on_signals,
+        fallback_requested,
+        fallback_sentinel,
+        omh_import_root,
+        omh_tui_environment,
+    )
 
     blocker = _omh_tui_blocker(paths)
     if not blocker:
         with exit_on_signals(), fallback_sentinel() as sentinel:
             environment = omh_tui_environment(
-                os.environ, python=sys.executable, omh_home=_tui_omh_home(args, paths), fallback_sentinel=sentinel
+                os.environ,
+                python=sys.executable,
+                site=omh_import_root(),
+                omh_home=_tui_omh_home(args, paths),
+                fallback_sentinel=sentinel,
             )
             child = subprocess.Popen([hermes, *_hermes_passthrough_argv(args, tui=True)], env=environment)
             returncode = int(child.wait())

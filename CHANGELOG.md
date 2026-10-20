@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Bare `omh` opens the OMH TUI on Bun and npm installs (#2168).** The npm
+  and Bun launcher puts its extracted cache on Python's import path only
+  inside its own process, and the TUI's interpreter, started `-E -P` by the
+  frontend shim, could not import `omh`: bare `omh` said `the OMH TUI could
+  not import itself: No module named 'omh'` and opened Hermes' own TUI.
+  `omh` now hands the TUI the directory it imported its own `omh` package
+  from, in `OMH_TUI_SITE`, and the shim's bootstrap puts that directory first
+  on the import path when the interpreter does not already import `omh` from
+  there. It then writes no bytecode: the launcher checks its cache against a
+  digest on every run, and rebuilds a cache that has bytecode in it. `-E -P`
+  stay, so Hermes' `PYTHONPATH` still never reaches the OMH interpreter, and
+  `omh` sets the variable on every launch, so a value left in your environment
+  does not choose the tree.
+
 ## 4.0.0 - 2026-10-19
 
 - **Indonesian ships as a trigger language pack.** `src/routing/trigger_packs/id.json`,

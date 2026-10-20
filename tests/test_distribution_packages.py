@@ -4,10 +4,13 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import select
 import shutil
+import signal
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
+import time
 import unittest
 from zipfile import ZipFile
 
@@ -28,6 +31,69 @@ METADATA_TOOL = (
     PROJECT_ROOT / "tools" / "package_manager" / "metadata.py"
 )
 PYTHON_BRIDGE = NPM_PACKAGE_SOURCE / "bin" / "python_bridge.py"
+# Stands in for Hermes' launcher: with HERMES_TUI_DIR set it runs the OMH
+# frontend shim as the launcher does, under a PYTHONPATH of its own; without
+# it, it is the fallback terminal and exits at once.
+STUB_HERMES = """#!/bin/sh
+echo "hermes $*" >> "$STUB_LOG"
+if [ -n "$HERMES_TUI_DIR" ]; then
+  echo "site=$OMH_TUI_SITE" >> "$STUB_LOG"
+  PYTHONPATH="$STUB_HERMES_PATH" exec node "$HERMES_TUI_DIR/dist/entry.js"
+fi
+exit 0
+"""
+
+
+def _run_in_pty(
+    argv: list[str], env: dict[str, str], timeout: float = 120.0
+) -> tuple[int, str]:
+    """Run `argv` with a pty as its stdin, stdout and stderr; its exit code and what it wrote.
+
+    A run still going at `timeout` raises `subprocess.TimeoutExpired`, after
+    its session is killed and reaped.
+    """
+    import pty  # POSIX only
+
+    master, slave = pty.openpty()
+    try:
+        child = subprocess.Popen(
+            argv,
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            env=env,
+            start_new_session=True,
+        )
+    except BaseException:
+        os.close(master)
+        raise
+    finally:
+        os.close(slave)
+    output = bytearray()
+    deadline = time.monotonic() + timeout
+    try:
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([master], [], [], 0.2)
+            if not ready:
+                continue
+            try:
+                chunk = os.read(master, 65536)
+            except OSError:  # EIO once every process has closed the terminal
+                break
+            if not chunk:
+                break
+            output += chunk
+        child.wait(timeout=max(0.0, deadline - time.monotonic()))
+    finally:
+        if child.poll() is None:
+            # The session this call started, by its id, and nothing else.
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            child.wait(timeout=30)
+        os.close(master)
+    return child.returncode, output.decode("utf-8", "replace")
 
 
 class DistributionHelperTests(unittest.TestCase):
@@ -458,6 +524,84 @@ class NpmBunDistributionTests(unittest.TestCase):
             ),
             staged_files,
         )
+
+    @unittest.skipIf(
+        os.name == "nt", "needs a pty; the OMH TUI is never attempted on Windows"
+    )
+    def test_bare_omh_opens_the_tui_from_the_launcher_cache(self) -> None:
+        # #2168: the bridge puts the cache on the import path in-process, and
+        # the TUI's interpreter, started `-E -P` by the frontend shim, could
+        # not import `omh`, so bare `omh` fell back to Hermes' own TUI.
+        venv = self.root / "venv"
+        run([sys.executable, "-m", "venv", "--without-pip", str(venv)])
+        python = venv / "bin" / "python"
+        alone = run([str(python), "-E", "-P", "-c", "import omh"], check=False)
+        self.assertNotEqual(
+            alone.returncode, 0, "the launcher's interpreter must not import omh by itself"
+        )
+        stub_bin = self.root / "stub-bin"
+        stub_bin.mkdir()
+        hermes = stub_bin / "hermes"
+        hermes.write_text(STUB_HERMES, encoding="utf-8", newline="\n")
+        hermes.chmod(0o755)
+        hermes_path = self.root / "hermes-pythonpath"
+        hermes_path.mkdir()
+        marker = self.root / "hermes-pythonpath-reached"
+        (hermes_path / "sitecustomize.py").write_text(
+            "import os\n"
+            "open(os.environ['STUB_MARKER'], 'a').write('reached\\n')\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        cache = self.root / "tui-cache"
+        log = self.root / "hermes.log"
+        (self.root / "home").mkdir()
+        env = {
+            "PATH": os.pathsep.join(
+                [str(stub_bin), str(Path(require_tool("node")).parent), "/usr/bin", "/bin"]
+            ),
+            "HOME": str(self.root / "home"),
+            "TERM": "xterm-256color",
+            "OMH_CACHE_DIR": str(cache),
+            "OMH_PYTHON": str(python),
+            "STUB_LOG": str(log),
+            "STUB_HERMES_PATH": str(hermes_path),
+            "STUB_MARKER": str(marker),
+            # A value left in the person's environment does not pick the tree.
+            "OMH_TUI_SITE": str(self.root / "another-tree"),
+        }
+        omh_js = str(self.package / "bin" / "omh.js")
+        run([require_tool("node"), omh_js, "--version"], env=env)
+        site = self._published_cache(cache) / "site"
+        ready_inode = (site.parent / "ready.json").stat().st_ino
+
+        returncode, output = _run_in_pty(
+            [
+                require_tool("node"),
+                omh_js,
+                "--omh-home",
+                str(self.root / "omh-home"),
+                "--hermes-home",
+                str(self.root / "hermes-home"),
+            ],
+            env,
+        )
+
+        self.assertEqual(returncode, 0, output)
+        self.assertNotIn("could not import itself", output)
+        # Past the import: `main` ran from the cache and stopped at the gateway
+        # the stub launcher does not provide, then asked for the fallback.
+        self.assertIn("the Hermes gateway did not start", output)
+        calls = log.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(calls[0], "hermes --tui")
+        named = [line.removeprefix("site=") for line in calls if line.startswith("site=")]
+        self.assertEqual([os.path.realpath(path) for path in named], [os.path.realpath(site)])
+        self.assertFalse(marker.exists(), "Hermes' PYTHONPATH reached an OMH interpreter")
+        # The bridge checks the cache against its digest on every run: the TUI
+        # wrote nothing into it, and the next run used it as it was.
+        self.assertEqual(sorted(site.rglob("__pycache__")), [])
+        run([require_tool("node"), omh_js, "--version"], env=env)
+        self.assertEqual((site.parent / "ready.json").stat().st_ino, ready_inode)
 
     def test_cache_tampering_and_unsafe_permissions_force_rebuild(self) -> None:
         cache = self.root / "tampered-cache"
