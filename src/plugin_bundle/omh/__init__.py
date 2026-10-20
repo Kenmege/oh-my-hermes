@@ -194,6 +194,11 @@ def register(ctx: _PluginContext) -> None:
         from .egress_attempts import register as register_egress_attempts
         register_egress_attempts(ctx, egress_config)
 
+    from .delegation_protocol import (
+        DELEGATION_PROTOCOL_SECTION,
+        DELEGATION_PROTOCOL_SECTION_ID,
+        delegation_protocol_section,
+    )
     from .hooks.llm_hooks import (
         AWARENESS_SECTION_ID,
         AWARENESS_SECTION_MAX_CHARS,
@@ -401,6 +406,17 @@ def register(ctx: _PluginContext) -> None:
             awareness_system_prompt_section,
             position="after_memory",
             max_chars=AWARENESS_SECTION_MAX_CHARS,
+        )
+    # Renders only for a `delegate_task` child (`delegation_protocol`), so the
+    # parent's own prompt is unchanged.
+    if not _section_already_registered(ctx, DELEGATION_PROTOCOL_SECTION_ID):
+        _register_optional_surface(
+            ctx,
+            "register_system_prompt_section",
+            DELEGATION_PROTOCOL_SECTION_ID,
+            delegation_protocol_section,
+            position="after_memory",
+            max_chars=len(DELEGATION_PROTOCOL_SECTION),
         )
     _ = ctx.register_hook("pre_tool_call", pre_tool_call)
     _register_optional_hook(ctx, "on_session_start", on_session_start)
