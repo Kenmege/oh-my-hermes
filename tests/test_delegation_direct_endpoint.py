@@ -97,9 +97,13 @@ class GuardTestCase(unittest.TestCase):
         (self.managed_dir / "config.yaml").write_text(text, encoding="utf-8")
 
     def call(self, **args) -> dict:
+        # The host's own keywords, as Hermes passes them on every dispatch;
+        # a fallback reads its chain position from this conversation.
         return json.loads(
             omh_delegate_route_handler(
-                {"hermes_home": str(self.home), "omh_home": str(self.omh_home), **args}
+                {"hermes_home": str(self.home), "omh_home": str(self.omh_home), **args},
+                session_id="guard-session",
+                task_id="guard-task",
             )
         )
 
