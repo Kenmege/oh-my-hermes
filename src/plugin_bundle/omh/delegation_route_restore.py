@@ -74,9 +74,15 @@ A route does not always end with its turn, and two paths are known:
   here.
 * A session killed mid-task, which is what `on_session_start` covers.
 
-In both, the route survives until the next session start, where the liveness
-bound can hold it for up to six hours. Turn scope makes a leak short and
-bounded rather than impossible.
+In both, the route survives until the next session start. A session start
+puts it back once nothing says the writer's conversation is still running:
+the writer's row is closed (or, after a compaction, every row Hermes
+continued it in is), or that row's activity stamp is more than six hours old
+(or unusable) and so is the route. A route whose writer row cannot be found,
+or whose compaction continuation cannot be read, is held until the route
+itself is six hours old. Only a conversation whose row shows activity within
+the last six hours, and whose continuation can be read, holds it past that.
+Turn scope makes a leak short and bounded rather than impossible.
 
 `action=fallback` is the one flow that legitimately spans turns: a child that
 dies on HTTP 400 is reported in a later turn. It used to read the chain
@@ -95,7 +101,11 @@ values, never wording.
 `on_session_start` covers the case a killed session never reaches: it
 restores only a route whose recorded writer is not live, asked of that
 writer's OWN `state.db` row. Each verdict is named so a caller can tell an
-observation from an age bound; see `writer_session_liveness`.
+observation from an age bound; see `writer_session_liveness`. A row Hermes
+closed to compact the conversation is not that conversation ending: rotating
+compaction closes the writer's row mid-turn and goes on in a new one, so the
+question is asked of the rows Hermes went on in, and a route whose
+continuation cannot be read stays where it is.
 
 The whole read-through-replace sits inside one lock, because two sessions
 routing at once would otherwise both read "no baseline recorded" and the
@@ -143,7 +153,12 @@ from .delegation_routing import (
     write_delegation_route,
 )
 from .hermes_delegation import load_delegation_route_provenance
-from .live_session import LIVE_TUI_SESSION_FRESH_SECONDS, session_row
+from .live_session import (
+    COMPACTION_END_REASON,
+    LIVE_TUI_SESSION_FRESH_SECONDS,
+    compaction_continuations,
+    session_row,
+)
 
 DELEGATION_ROUTE_RESTORE_SCHEMA_VERSION = "delegation_route_restore/v2"
 DELEGATION_ROUTE_RESTORE_FILE = "route-restore.json"
@@ -172,7 +187,12 @@ _ROUTE_LEAVING_ORIGINS = ("head", "explicit", "fallback")
 # row. The other two are the age bound, named so a reader can tell a bound
 # from an observation.
 LIVENESS_CLEARS_RESTORE = frozenset(
-    {"not_live", "not_live_by_age", "unclosed_and_stale_by_age"}
+    {"not_live", "not_live_by_age", "unclosed_and_stale_by_age", "continuation_unverified_expired"}
+)
+# The verdicts a compaction continuation can give, the ones that hold the
+# route first.
+_CONTINUATION_VERDICT_ORDER = (
+    "live", "unclosed_within_age_bound", "unclosed_and_stale_by_age", "not_live"
 )
 
 RESTORE_CLAIM_BOUNDARY = (
@@ -721,9 +741,9 @@ def restore_delegation_baseline(
                     "trigger": trigger,
                     "lock_enforced": enforced,
                 }
-            liveness, writer_source = "not_checked", ""
+            liveness, writer_source, lineage_report = "not_checked", "", {}
             if require_writer_not_live:
-                liveness, writer_source = _writer_liveness(
+                liveness, writer_source, lineage_report = _writer_liveness(
                     record["writer_session_id"],
                     hermes_home=hermes_home,
                     written_at=record["written_at"],
@@ -740,6 +760,7 @@ def restore_delegation_baseline(
                         # already read from, not a second query.
                         "writer_source": writer_source,
                         "lock_enforced": enforced,
+                        **lineage_report,
                     }
             current = read_delegation_route(hermes_home)
             if current != record["written"]:
@@ -782,6 +803,7 @@ def restore_delegation_baseline(
                 "replaced": current,
                 "liveness": liveness,
                 "lock_enforced": enforced,
+                **lineage_report,
             }
     except TimeoutError:
         return {
@@ -834,25 +856,55 @@ def _writer_liveness(
     hermes_home: str | Path | None = None,
     written_at: float,
     now: float | None = None,
-) -> tuple[str, str]:
-    """`(verdict, source)` from ONE read of the writer's own row."""
+) -> tuple[str, str, dict[str, str]]:
+    """`(verdict, source, report)` from the writer's own row and, when Hermes
+    closed that row for compaction, the rows it went on in.
+
+    `report` names the continuation that decided (`writer_continuation`) or
+    why none could be read (`lineage_unverified`); it is empty otherwise.
+    """
     home = str(hermes_home) if hermes_home else ""
     row = session_row(home, writer_session_id)
     current = float(now if now is not None else time.time())
     if row is None:
         if current - written_at > LIVE_TUI_SESSION_FRESH_SECONDS:
-            return "not_live_by_age", ""
-        return "unknown_within_age_bound", ""
-    source = str(row["source"])
+            return "not_live_by_age", "", {}
+        return "unknown_within_age_bound", "", {}
+    if row["ended_at"] is None or row.get("end_reason") != COMPACTION_END_REASON:
+        return _row_liveness(row, written_at, current), str(row["source"]), {}
+    # Hermes closed the writer's row to compact the conversation and went on
+    # in another row, so the closure says nothing about the writer stopping.
+    # Ask the rows it went on in; if they cannot be read, hold the route.
+    lineage = compaction_continuations(home, writer_session_id)
+    if lineage["status"] != "resolved":
+        # Held, but no longer than an unanswered writer row is: past the same
+        # age bound an indefinite hold would leave `delegation.*` changed for
+        # every later session of the profile, which is the leak this module
+        # exists to end.
+        verdict = "continuation_unverified"
+        if current - written_at > LIVE_TUI_SESSION_FRESH_SECONDS:
+            verdict = "continuation_unverified_expired"
+        return verdict, str(row["source"]), {"lineage_unverified": str(lineage["reason"])}
+    # A verdict that holds the route wins over one that clears it, so one
+    # running continuation is enough to keep it.
+    verdict, tip = min(
+        ((_row_liveness(tip, written_at, current), tip) for tip in lineage["tips"]),
+        key=lambda pair: _CONTINUATION_VERDICT_ORDER.index(pair[0]),
+    )
+    return verdict, str(tip["source"]), {"writer_continuation": str(tip["id"])}
+
+
+def _row_liveness(row: Mapping[str, Any], written_at: float, current: float) -> str:
+    """The verdict one `sessions` row gives, for a row not closed for compaction."""
     if row["ended_at"] is not None:
-        return "not_live", source
+        return "not_live"
     activity = row["activity"]
     if isinstance(activity, (int, float)) and not isinstance(activity, bool):
         if current - float(activity) <= LIVE_TUI_SESSION_FRESH_SECONDS:
-            return "live", source
+            return "live"
     if current - written_at > LIVE_TUI_SESSION_FRESH_SECONDS:
-        return "unclosed_and_stale_by_age", source
-    return "unclosed_within_age_bound", source
+        return "unclosed_and_stale_by_age"
+    return "unclosed_within_age_bound"
 
 
 def writer_session_liveness(
@@ -895,6 +947,19 @@ def writer_session_liveness(
     * `not_live_by_age` / `unknown_within_age_bound` -- no row at all, or the
       host surface could not be read. Same bound, same honesty about which
       question went unanswered.
+    * `continuation_unverified` / `continuation_unverified_expired` --
+      Hermes closed the writer's row to compact the conversation
+      (`end_reason` `compression`), and the rows it went on in could not be
+      read or authenticated. A closure for compaction is not the writer
+      stopping and nothing read here says the conversation stopped, so the
+      route is held -- until the route is older than the bound, as for a
+      writer row that cannot be found, and then the age bound answers.
+
+    A row Hermes closed for compaction is never answered from its own
+    `ended_at`. Its verdict is the one the conversation's continuation gives
+    (`compaction_continuations`): `live` while any continuation is running,
+    `not_live` once Hermes closed every one, and the age bound for an
+    unclosed one, as for any other row.
 
     The bound is `LIVE_TUI_SESSION_FRESH_SECONDS`, six hours. Task scope
     makes it matter far less than it did: the ordinary way back is the end of

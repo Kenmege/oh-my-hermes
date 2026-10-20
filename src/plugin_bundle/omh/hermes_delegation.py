@@ -25,6 +25,7 @@ mixture routing is visible as such instead of masquerading as a routed one.
 from __future__ import annotations
 
 from . import runtime_paths
+from .live_session import conversation_segments
 from .provider_detection import detect_linked_providers, env_row_is_covered
 
 import json
@@ -1848,11 +1849,18 @@ def _parse_local_timestamp(value: str) -> float:
 
 
 def _conversation_session_ids(connection: sqlite3.Connection, session_ref: str) -> set[str]:
-    """Exact durable identity plus unambiguous compression continuations only.
+    """Exact durable identity plus the segments Hermes' compaction links join to it.
 
-    A transport id is not a durable id. Never substitute the latest session,
-    normalize an invalid reference, or follow ordinary branch/delegate parents.
-    Older schemas can still answer exact ownership without answering lineage.
+    A transport id is not a durable id. Never substitute the latest session
+    or normalize an invalid reference. The lineage is
+    `live_session.conversation_segments`, which decides each link with the
+    same predicates as the route restore's liveness and `omh_team`'s returns:
+    within its row bound, every segment of a conversation gets the same set
+    here, and the segments those walkers resolve from it are in that set. A
+    branch, a delegate child, a reset and a `tool` row are forks, never this
+    conversation; a stale sibling Hermes left beside a continuation, under
+    any segment, is included. Older schemas can still answer exact ownership
+    without answering lineage.
     """
     if not isinstance(session_ref, str) or not (1 <= len(session_ref) <= 160) or any(
         not (char.isalnum() or char in "_.:@-") for char in session_ref
@@ -1860,35 +1868,7 @@ def _conversation_session_ids(connection: sqlite3.Connection, session_ref: str) 
         return set()
     if not connection.execute("SELECT 1 FROM sessions WHERE id = ?", (session_ref,)).fetchone():
         return set()
-    columns = {row[1] for row in connection.execute('PRAGMA table_info("sessions")')}
-    if not {"parent_session_id", "end_reason", "source"} <= columns:
-        return {session_ref}
-    rows = connection.execute(
-        """
-        WITH RECURSIVE candidates(parent, child) AS (
-            SELECT parent.id, child.id
-            FROM sessions parent JOIN sessions child ON child.parent_session_id = parent.id
-            WHERE parent.end_reason = 'compression'
-              AND COALESCE(child.source, '') != 'tool'
-              AND CASE WHEN child.model_config IS NULL OR child.model_config = '' THEN 1
-                  WHEN json_valid(child.model_config) THEN
-                      json_type(child.model_config) = 'object'
-                      AND json_extract(child.model_config, '$._delegate_from') IS NULL
-                      AND json_extract(child.model_config, '$._branched_from') IS NULL
-                  ELSE 0 END
-        ), edges(parent, child) AS (
-            SELECT parent, child FROM candidates c
-            WHERE (SELECT COUNT(*) FROM candidates WHERE parent = c.parent) = 1
-        ), conversation(id) AS (
-            SELECT ?
-            UNION SELECT edges.child FROM edges JOIN conversation ON edges.parent = conversation.id
-            UNION SELECT edges.parent FROM edges JOIN conversation ON edges.child = conversation.id
-        )
-        SELECT id FROM conversation
-        """,
-        (session_ref,),
-    )
-    return {row[0] for row in rows}
+    return conversation_segments(connection, session_ref)
 
 
 def _informative_cost_row_sql(columns: set[str]) -> str:

@@ -38,6 +38,20 @@ marker, which is how the host's `subagent_start` / `subagent_stop` callbacks
 A marker only ever binds to an attempt the record already reserved; it is an
 identifier OMH minted, looked up exactly, never text that is interpreted.
 
+A return is matched on the child session id `subagent_start` recorded. Under
+Hermes' rotating compaction (`compression.in_place: false`) a helper that
+compacts goes on under a new session id, and `subagent_stop` names that one.
+The caller then passes `lineage`, which reads the earlier segments that id
+continues from Hermes' own compaction links, and the attempt that recorded
+one of them is the one back. Nothing looser counts: not the same parent, not
+the time. A return whose lineage cannot be read is not matched; it is kept in
+the record as an unlinked return, said in `team_reconcile` while a part is
+still out, and named when that part stops as `return_not_linked`. The parent
+compacts too: its tool calls and its `subagent_stop` then name a later
+segment, and the team is found under the segment that started it through the
+same links (`owning_session`), or refused as `team_lineage_unverified` when
+they cannot be read.
+
 Check outcomes
 --------------
 ``passed`` accepts the unit. ``failed`` (the command ran and exited non-zero)
@@ -88,7 +102,7 @@ cron session, but a person who turned approvals off has not seen the list.
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -135,6 +149,9 @@ EMIT_GRACE_SECONDS: Final = 120
 # can take TEAM_CHECK_TIMEOUT_SECONDS, so this bounds one turn at two of them.
 MAX_CHECKS_PER_RECONCILE: Final = 2
 MAX_TEAM_RECORD_BYTES: Final = 262_144
+# Returns kept per record that OMH saw but could not link to any part; the
+# oldest drop first.
+MAX_UNLINKED_RETURNS: Final = 8
 MAX_TITLE_CHARS: Final = 80
 MAX_COMMAND_CHARS: Final = 200
 UNIT_STATES: Final = (
@@ -459,6 +476,13 @@ def _record_shape_ok(record: Mapping[str, Any]) -> bool:
         return False
     if not all(isinstance(event, dict) and _is_int(event.get("seq")) and isinstance(event.get("event"), str)
                for event in events):
+        return False
+    unlinked = record.get("unlinked_returns", [])
+    if not isinstance(unlinked, list) or not all(
+        isinstance(note, dict) and all(isinstance(note.get(key), str)
+                                       for key in ("child_session_id", "observed_at", "reason"))
+        for note in unlinked
+    ):
         return False
     ids = [unit.get("unit_id") if isinstance(unit, dict) else None for unit in units]
     return all(_unit_shape_ok(unit, ids) for unit in units)
@@ -970,10 +994,39 @@ def _in_flight(record: dict[str, Any], now: float, *, include_emitted: bool = Tr
             continue
         started = _epoch(attempt["dispatch"].get("dispatched_at"))
         if started is not None and now - started > DELEGATION_STALE_SECONDS:
-            _block(record, unit, now, {"reason": "delegation_not_returned", "observed_at": _iso(now)})
+            # A return OMH saw and could not link may have been this helper's,
+            # so the stop says that rather than "never came back".
+            reason = "return_not_linked" if _unlinked_since(record, started) else "delegation_not_returned"
+            _block(record, unit, now, {"reason": reason, "observed_at": _iso(now)})
             continue
         flying.append(str(unit["unit_id"]))
     return flying
+
+
+def _unlinked_since(record: Mapping[str, Any], started: float) -> list[dict[str, Any]]:
+    """Returns OMH saw but could not link to any part, at or after ``started``."""
+    return [dict(note) for note in record.get("unlinked_returns") or []
+            if (_epoch(note.get("observed_at")) or 0.0) >= started]
+
+
+def _out_attempts(record: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The latest attempt of every unit whose helper was seen starting and not yet coming back."""
+    out = []
+    for unit in record["units"]:
+        attempt = _latest(unit)
+        if not unit.get("blocked") and attempt is not None and attempt.get("dispatch") and not attempt.get("returned_at"):
+            out.append(attempt)
+    return out
+
+
+def _unlinked_while_out(record: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Unlinked returns since the oldest helper still out was started; empty when none is out."""
+    starts = []
+    for attempt in _out_attempts(record):
+        started = _epoch(attempt["dispatch"].get("dispatched_at"))
+        if started is not None:
+            starts.append(started)
+    return _unlinked_since(record, min(starts)) if starts else []
 
 
 def _lease_live(unit: Mapping[str, Any], now: float) -> bool:
@@ -998,9 +1051,14 @@ def team_reconcile(ctx: TeamContext, *, team_id: object, since_seq: object = 0) 
         flying = _in_flight(record, now)
         if flying:
             write_team(path, record)
+            say = f"{len(flying)} part(s) are still being worked on; nothing is checked until they come back."
+            unlinked = _unlinked_while_out(record)
+            if unlinked:
+                why = _UNLINKED_SAY.get(unlinked[-1]["reason"], _UNLINKED_SAY["lineage_unverified"])
+                say = (f"{len(flying)} part(s) have not come back in a way OMH can confirm, so nothing is checked "
+                       f"yet. A helper came back under a session OMH could not link to any part, because {why}.")
             return _result(record, "team_reconcile", entries=[], reason="delegations_in_flight",
-                           say=f"{len(flying)} part(s) are still being worked on; nothing is checked until they come back.",
-                           since_seq=since_seq)
+                           say=say, since_seq=since_seq)
         waiting = [str(unit["unit_id"]) for unit in record["units"] if unit_state(unit) == "awaiting_check"]
         before = {str(unit["unit_id"]): len(unit.get("attempts") or []) for unit in record["units"]}
         helpers = _helper_branches(record, waiting)
@@ -1243,6 +1301,7 @@ _BLOCKED_SAY: Final[dict[str, str]] = {
     "check_inconclusive": "its check never gave a clear answer",
     "dispatch_not_observed": "its helper was never seen starting",
     "delegation_not_returned": "its helper never came back",
+    "return_not_linked": "a helper came back that OMH could not link to it",
     "command_refused_by_host": "Hermes' own command rules refuse its check",
     "host_command_floor_unavailable": "Hermes' own command rules could not be reached",
 }
@@ -1253,22 +1312,55 @@ _BLOCKED_SAY: Final[dict[str, str]] = {
 # --------------------------------------------------------------------------
 
 
+def owning_session(omh_home: Path, session_ref: str, team_id: str, earlier: Sequence[str] = ()) -> str:
+    """The session whose record holds ``team_id``: ``session_ref``, else the nearest of ``earlier``, else "".
+
+    ``earlier`` is the earlier segments of this conversation that Hermes'
+    compaction links say it continues (`live_session.compaction_ancestors`).
+    It is how a parent Hermes compacted into a new session id after
+    `team_start` reaches the team it started. Nothing else is searched: not
+    another session, not the newest team.
+    """
+    for ref in (session_ref, *earlier):
+        path = team_path(omh_home, ref, team_id)
+        if path.is_file() and not path.is_symlink():
+            return ref
+    return ""
+
+
+def lineage_refusal(reason: str) -> TeamRefusal:
+    """No team under this session, and its earlier segments could not be read either."""
+    why = _UNLINKED_SAY.get(reason, _UNLINKED_SAY["lineage_unverified"])
+    return TeamRefusal(
+        "team_lineage_unverified",
+        "No team with that name was started in this session, and OMH could not check whether this session "
+        f"continues an earlier one Hermes compacted, because {why}.",
+    )
+
+
 def observe_dispatch(
     omh_home: Path, session_ref: str, *, child_session_id: object, goal: object, now: float,
-    subagent_id: object = None,
+    subagent_id: object = None, earlier: Callable[[], Sequence[str]] | None = None,
 ) -> bool:
     """`subagent_start` saw a goal carrying a team marker: bind that attempt to the child.
 
     ``subagent_id`` is the host's id for the child, kept so `team_reconcile`
     can find the branch a worktree-isolated helper left its work on.
+    ``earlier`` is read only when this session holds no record of the team
+    (see `owning_session`).
     """
     match = _MARKER.match(goal) if isinstance(goal, str) else None
     if match is None or not isinstance(child_session_id, str) or not child_session_id.strip():
         return False
     team_id, unit_id, n = match.group(1), match.group(2), int(match.group(3))
-    with locked_team(omh_home, session_ref, team_id) as path:
+    owner = owning_session(omh_home, session_ref, team_id)
+    if not owner and earlier is not None:
+        owner = owning_session(omh_home, session_ref, team_id, earlier())
+    if not owner:
+        return False
+    with locked_team(omh_home, owner, team_id) as path:
         record = read_team(path)
-        if record is None or record.get("session_ref") != session_ref:
+        if record is None or record.get("session_ref") != owner:
             return False
         unit = next((item for item in record["units"] if item["unit_id"] == unit_id), None)
         attempt = _latest(unit) if unit is not None else None
@@ -1284,29 +1376,107 @@ def observe_dispatch(
     return True
 
 
-def observe_return(omh_home: Path, session_ref: str, *, child_session_id: object, now: float) -> bool:
-    """`subagent_stop` for a child bound above: its attempt is back and may be checked."""
+def observe_return(
+    omh_home: Path, session_ref: str, *, child_session_id: object, now: float,
+    lineage: Callable[[str], Mapping[str, Any]] | None = None,
+    earlier: Callable[[], Sequence[str]] | None = None,
+) -> bool:
+    """`subagent_stop` for a child bound above: its attempt is back and may be checked.
+
+    The id `subagent_start` recorded is matched first, in this session's
+    teams and then, through ``earlier`` (see `owning_session`), in the teams of
+    the segments this session continues. Failing that, ``lineage(child)``
+    names the earlier segments Hermes' compaction links say this child
+    continues (``{"status", "ancestors", "reason"}``), and an attempt that
+    recorded one of them is the one back. A lineage that could not be read
+    leaves every attempt out and is kept as an unlinked return.
+    """
     if not isinstance(child_session_id, str) or not child_session_id.strip():
         return False
     child = child_session_id.strip()[:160]
+    teams = _session_teams(omh_home, session_ref)
+    if _mark_returned(omh_home, teams, child, {child}, now):
+        return True
+    if earlier is not None:
+        more = [pair for ref in earlier() for pair in _session_teams(omh_home, ref)]
+        if _mark_returned(omh_home, more, child, {child}, now):
+            return True
+        teams = teams + more
+    if not teams or lineage is None:
+        return False
+    found = lineage(child)
+    ancestors = {item[:160] for item in found.get("ancestors") or [] if isinstance(item, str) and item}
+    if ancestors and _mark_returned(omh_home, teams, child, ancestors, now):
+        return True
+    if found.get("status") != "resolved":
+        reason = str(found.get("reason") or "")
+        _note_unlinked_return(omh_home, teams, child, reason if reason in _UNLINKED_SAY else "lineage_unverified", now)
+    return False
+
+
+def _session_teams(omh_home: Path, session_ref: str) -> list[tuple[str, str]]:
+    """``(session, team_id)`` for every team record under one session."""
     directory = teams_dir(omh_home, session_ref)
     if not directory.is_dir() or directory.is_symlink():
-        return False
-    for candidate in sorted(directory.glob("*.json"))[:MAX_TEAMS_PER_SESSION]:
-        with locked_team(omh_home, session_ref, candidate.stem) as path:
+        return []
+    return [(session_ref, candidate.stem) for candidate in sorted(directory.glob("*.json"))[:MAX_TEAMS_PER_SESSION]]
+
+
+def _mark_returned(
+    omh_home: Path, teams: list[tuple[str, str]], child: str, started_as: set[str], now: float,
+) -> bool:
+    """Mark returned the out attempt whose recorded child id is in ``started_as``."""
+    for session_ref, team_id in teams:
+        with locked_team(omh_home, session_ref, team_id) as path:
             record = read_team(path)
             if record is None or record.get("session_ref") != session_ref:
                 continue
             for unit in record["units"]:
                 attempt = _latest(unit)
                 dispatch = attempt.get("dispatch") if attempt else None
-                if dispatch and dispatch.get("child_session_id") == child and not attempt.get("returned_at"):
+                if dispatch and dispatch.get("child_session_id") in started_as and not attempt.get("returned_at"):
                     attempt["returned_at"] = _iso(now)
-                    _emit(record, now, unit=unit, event="finished", summary="Came back; its check runs next.",
+                    summary = "Came back; its check runs next."
+                    if dispatch["child_session_id"] != child:
+                        # The later segment Hermes' compaction moved the helper to.
+                        attempt["returned_as"] = child
+                        summary = "Came back after Hermes compacted its session; its check runs next."
+                    _emit(record, now, unit=unit, event="finished", summary=summary,
                           detail_ref=attempt_key(str(record["team_id"]), str(unit["unit_id"]), int(attempt["n"])))
                     write_team(path, record)
                     return True
     return False
+
+
+def _note_unlinked_return(
+    omh_home: Path, teams: list[tuple[str, str]], child: str, reason: str, now: float,
+) -> None:
+    """Keep a return OMH could not link, in every record that has a helper out."""
+    for session_ref, team_id in teams:
+        with locked_team(omh_home, session_ref, team_id) as path:
+            record = read_team(path)
+            if record is None or record.get("session_ref") != session_ref:
+                continue
+            if not _out_attempts(record):
+                continue
+            notes = record.setdefault("unlinked_returns", [])
+            notes.append({"child_session_id": child, "observed_at": _iso(now), "reason": reason})
+            del notes[:-MAX_UNLINKED_RETURNS]
+            write_team(path, record)
+
+
+# Why a return could not be linked, as a person reads it. The keys are the
+# reasons `live_session.compaction_ancestors` gives, plus `lineage_unverified`
+# for a reason this table does not know.
+_UNLINKED_SAY: Final[dict[str, str]] = {
+    "state_db_unavailable": "Hermes' session records could not be read",
+    "session_row_missing": "Hermes has no record of the session",
+    "segment_row_missing": "a session it continues is missing from Hermes' records",
+    "continuation_not_authenticated": "its session history does not match how Hermes records a compaction",
+    "tool_session_ambiguous": "Hermes records it as a tool session, which OMH cannot tell apart from a compacted one",
+    "lineage_too_long": "its session history was too long to follow",
+    "lineage_unverified": "its session history could not be checked",
+}
 
 
 # --------------------------------------------------------------------------
@@ -1371,6 +1541,11 @@ def _result(
         "delegate_task": {"tool_name": "delegate_task", "arguments": {"tasks": entries}} if entries else None,
     }
     result.update(_events_since(record, since_seq))
+    unlinked = _unlinked_while_out(record)
+    if unlinked:
+        # Returns OMH saw while a part was out and could not link to any part.
+        # The parts stay out; this is what names why.
+        result["unlinked_returns"] = unlinked
     if reason:
         result["reason"] = reason
     if commands_digest:

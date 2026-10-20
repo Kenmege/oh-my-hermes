@@ -46,6 +46,48 @@ All notable changes will be documented here.
   never refused. A leading byte-order mark before `delegation:` is now kept,
   and that section is reused instead of a second `delegation:` being
   appended. Hermes' loader rejected the duplicate.
+- **A Hermes compaction no longer reads as the end of the work, for the
+  delegation route or for `omh_team`.** Hermes' rotating compaction
+  (`compression.in_place: false`; the default in-place compaction keeps one
+  session id and was never affected) closes the running session row with
+  `end_reason` `compression` and goes on in a new row that names it as its
+  parent. Three OMH readers took that for an ending or a different session.
+  The session-start restore of a delegation route read the writer's closed
+  row as "not live" and put the person's baseline back while the compacted
+  conversation was still dispatching; it now follows the continuation, keeps
+  the route while any continuation is running, restores once Hermes closed
+  every one, and holds it as `continuation_unverified` when the continuation
+  cannot be read, for at most six hours of the route's age
+  (`continuation_unverified_expired` after that). A team helper that compacted
+  came back under its new session id, which matched nothing, so its part
+  stayed `dispatched` until the four-hour bound blocked it as "never came
+  back"; the return now links to the attempt through the earlier segments the
+  new id continues. A parent that compacted after `team_start` lost its team:
+  `team_reconcile` and `team_status` from the new segment answered
+  `team_not_found`, and a helper's start or stop naming the new segment was
+  dropped; the team is now found under the segment that started it, and a
+  `team_start` there binds to the plan accepted before the compaction. All three
+  read only the links Hermes itself writes on a compaction (the closed row's
+  end reason, the new row's `parent_session_id`, and its inherited
+  `_delegate_from`), never the same parent or a nearby time, and delegate
+  children under a segment do not count toward the lineage bound. A return
+  whose links cannot be read links to no part: it is kept on the team as
+  `unlinked_returns` and said by `team_reconcile` while a part is still out,
+  and a part still out at the four-hour bound stops as `return_not_linked`
+  instead of "never came back". A team asked for from a session whose earlier
+  segments cannot be read is refused as `team_lineage_unverified`, with the
+  reason, instead of `team_not_found`. The conversation identity the HUD,
+  board lanes, cost receipts and `fallback` own records by now decides each
+  link with the same predicates, so the five row shapes where it used to
+  answer differently agree: a rotated delegate child keeps its earlier
+  segment (and its route position), a stale sibling Hermes left beside a
+  continuation under any segment is counted in the conversation, a reset fork
+  is never a continuation whether or not it sits beside one, and a rotated
+  branch keeps its inherited `_branched_from` lineage. Every segment of a
+  conversation, the middle ones included, answers the same set. Past 64
+  rotations the identity, like the walkers, stops at 64 links and keeps what
+  it verified up to there, so which end drops out depends on the segment
+  asked from; it used to have no bound.
 - **A delegation child's model verdict rests only on what the run recorded.**
   A HUD row's `model_attestation` says whether the model that answered a
   child is the model it asked for. It had two ways to report a match it could
