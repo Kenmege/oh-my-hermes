@@ -2126,12 +2126,15 @@ class ServedModelAttestationTest(unittest.TestCase):
         # prose. Neither is read, only the trailer paragraph.
         prompt = _identity_prompt(
             "gpt-6-astra",
-            # Memory may quote the runtime heading verbatim: only the LAST
-            # heading starts the runtime block, or this paragraph would be
-            # read as the trailer.
+            # Memory may quote an earlier prompt's trailer and the runtime
+            # heading verbatim. Only the LAST heading starts the runtime
+            # block: cut at the first one, the quoted trailer would be read
+            # as this child's request and attest an agreement.
             earlier=(
-                "## Memory\nModel: claude-fable-5-1\n\n# Hermes runtime environment\n\n"
-                "quoted from a note"
+                "## Memory\nModel: claude-fable-5-1\n\n"
+                "Conversation started: Monday, August 18, 2026\n"
+                "Model: claude-fable-5-1\nProvider: openrouter\n\n"
+                "# Hermes runtime environment\n\nquoted from a note"
             ),
             runtime="Model: claude-fable-5-1\nCurrent working directory: /tmp",
         )

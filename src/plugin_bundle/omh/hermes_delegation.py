@@ -2095,9 +2095,10 @@ def _attach_prompt_identity_models(
     user message. Any other row with a stored prompt is marked
     `prompt_may_be_rebuilt`, and an agreement there reads `unknown`.
 
-    Not covered: a row Hermes re-creates after it disappeared mid-run
-    (`_ensure_db_session`) carries the in-memory prompt, which may already
-    name a fallback; nothing in the row marks it.
+    Not covered: a row `_ensure_db_session` creates late carries the
+    in-memory prompt, which may already name a fallback, and nothing in the
+    row marks it. That is a retry after the create at turn start failed
+    transiently, or a re-create after the row disappeared mid-run.
 
     A first segment names the delegating session as `parent_session_id`, the
     same id as `_delegate_from`. A compression continuation names the

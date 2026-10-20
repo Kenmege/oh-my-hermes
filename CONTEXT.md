@@ -573,8 +573,9 @@ only on a first segment (`parent_session_id` is the delegating session) with
 no archived message and at most one user message. Any other row with a stored
 prompt is marked as possibly rebuilt, and an agreement there reads `unknown`
 (`requested_model_prompt_may_be_rebuilt`). A compression continuation names
-the previous segment and rebuilds its prompt, so it attests nothing. One path
-is not covered: a row Hermes re-creates after it disappeared mid-run carries
+the previous segment and rebuilds its prompt, so it attests nothing. Not
+covered: a row Hermes creates late (a retry after the create at turn start
+failed transiently, or a re-create after the row disappeared mid-run) carries
 the in-memory prompt, and nothing in the row marks it. The read takes the end
 of the stored prompt, drops the runtime block at its last heading, and reads
 the last paragraph only when every line in it is one `_timestamp_line` writes.
