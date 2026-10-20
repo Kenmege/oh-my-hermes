@@ -4,6 +4,38 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A delegation route is refused when Hermes would not send the child where
+  it says.** `omh_delegate_route` wrote model, provider and effort, and
+  answered `routed` even when Hermes would build the child elsewhere. That
+  was measured with Hermes' own resolver functions, imported from `git
+  archive` copies of Hermes main `8b9ac5773e` and `v0.22.2`:
+  - With `delegation.base_url`, `delegation.api_key` and
+    `delegation.api_mode` set, a route to `anthropic` built a `custom` child
+    on that endpoint, using `delegation.api_key`.
+  - With a local `model.base_url` and no `model.provider`, Hermes'
+    local-endpoint fallback ignored the requested provider. The child went to
+    OpenRouter with the OpenRouter key, or the dispatch failed for want of
+    one.
+
+  `set` and `fallback` now refuse these cases with `status: error`, a
+  `reason`, and `conflicting_keys`:
+  - a direct `delegation.base_url` that overrides the provider, or that
+    names it but has no `delegation.api_key` of its own, so the parent
+    session's key would be sent;
+  - a route with no provider that would remove an SDK provider beside that
+    endpoint;
+  - the local-endpoint fallback;
+  - a managed config (`$HERMES_MANAGED_DIR` or `/etc/hermes`) that sets the
+    endpoint or pins a route key;
+  - a config line OMH cannot read safely, including a repeated key, a merge
+    key, and a value continued past its line.
+
+  A refusal changes nothing in `config.yaml` and records nothing: no restore
+  record and no provenance. The route lock's file is the only file left.
+  OMH changes none of the keys it names. Restoring the person's own values is
+  never refused. A leading byte-order mark before `delegation:` is now kept,
+  and that section is reused instead of a second `delegation:` being
+  appended. Hermes' loader rejected the duplicate.
 - **`omh_probe` says why its own package probe did not import, and a broken
   import hook cannot make the classifier raise.** When `omh.probe` alone fails
   to import, the probe's bundle answer now carries a `package_probe` row with

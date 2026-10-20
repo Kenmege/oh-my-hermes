@@ -480,6 +480,7 @@ def write_route_with_baseline(
                 reasoning_effort=reasoning_effort,
                 provider=provider,
                 expected_previous=expected_previous,
+                guard_route_endpoint=True,
             )
             result["lock_enforced"] = enforced
             if result.get("status") != "routed":

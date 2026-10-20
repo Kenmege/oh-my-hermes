@@ -1752,6 +1752,47 @@ wrong. A provider neither recorded nor linked, a model the catalog never
 described, and a multi-vendor relay (which serves every family) all leave
 the answer unknown, and unknown dispatches unchanged.
 
+A route is also refused when Hermes would not send the child where the route
+says. OMH reads `config.yaml` and Hermes' managed config
+(`$HERMES_MANAGED_DIR/config.yaml`, otherwise `/etc/hermes/config.yaml`),
+which Hermes applies over it. It refuses in these cases:
+
+- `delegation.base_url` is set and the route names a provider. Hermes'
+  `delegate_task` then builds the child against that endpoint, with
+  `delegation.api_key` (or the parent session's key) and `delegation.api_mode`
+  (or a mode it detects from the URL), and takes only request overrides from
+  `delegation.provider`. Two kinds of route still write. One is a provider
+  Hermes resolves through its own SDK: `bedrock`, `vertex`, `google`,
+  `google-genai`. The other is an endpoint Hermes itself names as the routed
+  provider, when `delegation.api_key` is set: `https://api.anthropic.com` for
+  `anthropic`, the Codex backend for `openai-codex`, and any other URL for
+  `custom`. Without that key, the parent session's key goes to the endpoint,
+  unless a credential pool for that provider serves it.
+- The route names no provider, but `delegation.base_url` is set and the file's
+  `delegation.provider` is one of those SDK providers. Writing the route
+  removes that provider, so the child would move to the endpoint.
+- `model.base_url` is on a host other than openrouter.ai, anthropic.com and
+  openai.com (or their subdomains), and `model.provider` is unset or `auto`.
+  Hermes then sends an explicit delegation provider through its local-endpoint
+  fallback, which resolves it as OpenRouter, or as the custom endpoint for a
+  custom alias. Some providers reach the same place with or without that
+  fallback, so they still route: `openrouter`, `custom`, `openai`, `moa`,
+  `azure-foundry` and the Vertex names. A `model` section OMH cannot read
+  safely counts as having that shape.
+- The managed config sets `delegation.model`, `delegation.provider` or
+  `delegation.reasoning_effort`. Hermes would apply those values over the
+  route.
+- OMH cannot read one of the two files safely. That covers a repeated key
+  (Hermes' loader rejects one), a merge key, a value continued past its line,
+  and a block, flow, tagged, escaped or `${VAR}` value. In the `delegation`
+  section it also covers any line that is not a plain `key: value`, a
+  comment, or a nested line under a key with no value. A value Hermes reads
+  as unset (`''`, `~`, `null`, `false`, `no`, `off`, `n`, zero) counts as
+  unset.
+
+Each refusal names the keys to change and changes none of them, in either
+file. Restoring the person's own values is never refused.
+
 An alias listed here dispatches as that provider's model; an alias not listed
 dispatches unchanged with no provider, which is what a direct-billing host
 wants — the file is optional and absent by default. A `provider` passed

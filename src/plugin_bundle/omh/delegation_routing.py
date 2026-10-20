@@ -18,6 +18,14 @@ This module owns that write. It is deliberately narrow:
   than quoted, so a crafted "model name" can never smuggle YAML structure.
 * The write is atomic (temp file + rename in the config's directory) and a
   symlinked config is refused instead of silently replaced with a file.
+* A route Hermes would not send where it says is refused before any byte is
+  written (`guard_route_endpoint`, see `route_endpoint_guard`): a direct
+  `delegation.base_url` that overrides the provider, the main model's
+  local-endpoint bypass, a managed config layered over this file, or a shape
+  the guard cannot read. The keys it names are the person's; OMH never
+  rewrites them.
+* A leading byte-order mark stays where it is, and the `delegation:` line
+  after it is recognised rather than duplicated.
 
 Writing a route is preparation, not execution: nothing dispatches from here,
 and the route only takes effect when the agent's next `delegate_task` call
@@ -27,6 +35,7 @@ reads it.
 from __future__ import annotations
 
 from . import runtime_paths
+from .route_endpoint_guard import BOM, managed_config_layer, route_endpoint_refusal
 
 import os
 import re
@@ -58,7 +67,7 @@ def read_delegation_route(hermes_home: str | Path | None = None) -> dict[str, st
 
 
 def _read_delegation_route_text(text: str) -> dict[str, str]:
-    lines = text.splitlines()
+    lines = text.removeprefix(BOM).splitlines()
     if _has_unsupported_delegation(lines):
         return {}
     child_indents = _delegation_child_indents(lines)
@@ -106,7 +115,7 @@ def read_session_provider(hermes_home: str | Path | None = None) -> str:
 
 
 def _read_session_provider_text(text: str) -> str:
-    lines = text.splitlines()
+    lines = text.removeprefix(BOM).splitlines()
     in_model = False
     provider = ""
     for line in lines:
@@ -134,11 +143,17 @@ def write_delegation_route(
     provider: str = "",
     clear: bool = False,
     expected_previous: Mapping[str, str] | None = None,
+    guard_route_endpoint: bool = False,
 ) -> dict[str, Any]:
     """Set (or clear) the routable delegation keys, touching nothing else.
 
     Keys with an empty desired value are removed, restoring parent
     inheritance for that key; `clear=True` removes all three.
+
+    `guard_route_endpoint` is for a route: it refuses one Hermes would not
+    send where it says (`route_endpoint_guard.route_endpoint_refusal`),
+    judged on the same snapshot the write replaces. A restore leaves it off,
+    because putting back the person's own values is not a switch.
     """
     desired = {} if clear else {
         "model": model.strip(),
@@ -160,7 +175,8 @@ def write_delegation_route(
             "status": "error",
             "error": "active route changed before fallback write",
         }
-    lines = text.splitlines()
+    bom = BOM if text.startswith(BOM) else ""
+    lines = text[len(bom):].splitlines()
     if _has_unsupported_delegation(lines):
         return {
             "status": "error",
@@ -170,6 +186,15 @@ def write_delegation_route(
                 "inherits the parent model"
             ),
         }
+    if guard_route_endpoint:
+        refusal = route_endpoint_refusal(
+            text,
+            provider=desired.get("provider", ""),
+            current_provider=previous.get("provider", ""),
+            managed=managed_config_layer(),
+        )
+        if refusal:
+            return refusal
     child_indents = _delegation_child_indents(lines)
     output: list[str] = []
     inserted = False
@@ -211,7 +236,7 @@ def write_delegation_route(
         # Nothing to remove and nothing to add: leave the file untouched.
         return {"status": "cleared" if clear else "routed", "previous": previous, "applied": {}}
 
-    new_text = "\n".join(output)
+    new_text = bom + "\n".join(output)
     if text.endswith("\n") or not text:
         new_text += "\n"
     try:
