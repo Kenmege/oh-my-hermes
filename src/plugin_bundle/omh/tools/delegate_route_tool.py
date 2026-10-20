@@ -7,8 +7,8 @@ import time
 from typing import Any
 
 from ..delegation_route_restore import (
+    load_route_restore_record,
     newest_written_provenance,
-    omh_wrote_current_keys,
     provenance_route_keys,
     restore_delegation_baseline,
     write_route_with_baseline,
@@ -32,6 +32,7 @@ from ..hermes_delegation import (
     effective_mixture_category_chains,
 )
 from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, host_session_id, observe_plugin_tool_call
+from ..kanban_board_reader import conversation_session_ids
 from ..orchestration_say import route_say, with_say
 
 _EVIDENCE_BOUNDARY = (
@@ -135,11 +136,26 @@ def _clear_to_baseline(
 
 
 def _fallback_position(
-    route: dict[str, str], omh_home: Any
+    route: dict[str, str], hermes_home: Any, omh_home: Any, session_id: str
 ) -> tuple[dict[str, str], str]:
     """The route a fallback is advancing FROM, and where that came from.
 
-    The live keys are used ONLY when OMH can prove it wrote them. They are
+    Only the CALLING conversation's own route is a position. The live keys,
+    the restore record and provenance are each one per profile, shared by
+    every session on it, and reading the newest of them let another
+    session's route decide this one's fallback: an error naming a model
+    this conversation never routed, a fallback from that session's model,
+    an exhausted chain that still had candidates, or that session's live
+    route advanced as if it were this one's (#2175). The conversation is the
+    host's session id plus its compression continuations, the identity set
+    the HUD owns children and route records with. The id itself counts when
+    `state.db` cannot answer, since it is the host's own keyword, and with
+    no id there is no conversation and so no position. `task_id` is no use:
+    provenance does not record it, and TUI and CLI mint a new one each turn
+    while a fallback normally comes the turn after the route.
+
+    The live keys are used ONLY when the restore record shows this
+    conversation wrote them and the file still holds that write. They are
     not simply "empty once the route has been taken back": a turn-end
     restore puts the PERSON's pinned model back, and reading that as the
     chain position is how one failed lane came to report a whole exhausted
@@ -151,9 +167,22 @@ def _fallback_position(
     Provenance records every route OMH wrote, so the position survives the
     restore even though the value does not.
     """
-    if route.get("model") and omh_wrote_current_keys(route, omh_home):
+    conversation = (
+        {session_id} | conversation_session_ids(hermes_home, session_id)
+        if session_id
+        else set()
+    )
+    record = load_route_restore_record(omh_home)
+    if (
+        route.get("model")
+        and record
+        and record["writer_session_id"] in conversation
+        and dict(route) == record["written"]
+    ):
         return dict(route), "live_route"
-    recovered = provenance_route_keys(newest_written_provenance(omh_home))
+    recovered = provenance_route_keys(
+        newest_written_provenance(omh_home, session_ids=conversation)
+    )
     return (recovered, "provenance") if recovered.get("model") else ({}, "none")
 
 
@@ -346,10 +375,12 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
         # A fallback normally happens a turn AFTER the route was written --
         # the child dies on HTTP 400 and the model is told next turn -- and
         # by then the turn-end restore has taken the route back out. The
-        # chain position therefore comes from provenance when the live keys
-        # no longer carry it; `expected_previous` below still guards against
-        # what is actually in the file.
-        position, position_source = _fallback_position(route, omh_home)
+        # chain position therefore comes from this conversation's provenance
+        # when the live keys no longer carry its route; `expected_previous`
+        # below still guards against what is actually in the file.
+        position, position_source = _fallback_position(
+            route, hermes_home, omh_home, session_id
+        )
         current_model = str(position.get("model", ""))
         current_provider = str(position.get("provider", ""))
         # The live route holds whatever was dispatched, which is the provider's

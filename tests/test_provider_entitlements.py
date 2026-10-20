@@ -298,12 +298,16 @@ class ChainSurfaceConsistencyTests(unittest.TestCase):
             hermes_home.mkdir()
             (hermes_home / "config.yaml").write_text("model:\n  provider: openai-codex\n", encoding="utf-8")
             common = {"omh_home": str(home), "hermes_home": str(hermes_home)}
-            routed = json.loads(omh_delegate_route_handler({"action": "set", "category": "architect", **common}))
+            # `fallback` advances only the route the host's session wrote (#2175).
+            host = {"session_id": "host-session"}
+            routed = json.loads(
+                omh_delegate_route_handler({"action": "set", "category": "architect", **common}, **host)
+            )
             self.assertEqual(routed["status"], "routed", routed)
             self.assertEqual(routed["applied"]["alias"], "gpt-6-astra")
             for expected in ("claude-opus-5-5", "claude-fable-5-1", "kimi-k3"):
                 fallback = json.loads(
-                    omh_delegate_route_handler({"action": "fallback", "category": "architect", **common})
+                    omh_delegate_route_handler({"action": "fallback", "category": "architect", **common}, **host)
                 )
                 self.assertEqual(fallback["applied"]["alias"], expected)
             status = json.loads(omh_delegate_route_handler({"action": "status", **common}))
