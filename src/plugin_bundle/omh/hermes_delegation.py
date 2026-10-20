@@ -25,7 +25,6 @@ mixture routing is visible as such instead of masquerading as a routed one.
 from __future__ import annotations
 
 from . import runtime_paths
-from .delegation_routing import read_delegation_route
 from .provider_detection import detect_linked_providers, env_row_is_covered
 
 import json
@@ -2017,12 +2016,20 @@ def served_model_attestation(
 ) -> dict[str, Any]:
     """Compare the model a run was routed to against the model that answered.
 
-    Hermes records the two independently: `sessions.model` is the model that
-    was asked for (written at session creation and on an explicit `/model`
-    switch, never from a provider's answer), while `session_model_usage.model`
-    is written per call from the model that actually answered. Nothing
-    compared them, and `_observed_wire_model` prefers the recorded value —
-    which hides the difference in exactly the case it exists.
+    Hermes records the two separately: `sessions.model` is written at session
+    creation from the model the agent was built with and on an explicit
+    `/model` switch, while `session_model_usage.model` is written per call
+    from the model that actually answered. Nothing compared them, and
+    `_observed_wire_model` prefers the recorded value — which hides the
+    difference in exactly the case it exists.
+
+    The first is not a pure record of the request. Hermes'
+    `update_token_counts` fills a NULL `sessions.model` from any accounted
+    call, and on a session's first accounted call that names a billing
+    provider it overwrites a different value with that call's model
+    (`first_accounted_route`, there for a fallback route). A substitution on
+    a child's first call therefore reads as agreement here; the state.db rows
+    this reads hold no other run-time record of the request.
 
     Both sides resolve through `_model_alias_candidates`, so a vendor pointer
     (`deepseek-flash`) answered by its exact contract id, or a base answered
@@ -2048,8 +2055,7 @@ def served_model_attestation(
     shared_aliases: list[str] = []
     # The answering side is judged first: it is the observation the verdict
     # exists to report, and its absence is the structural case. A caller that
-    # knows neither side hears about the missing observation, not about a
-    # request it can already read out of its own config.
+    # knows neither side hears about the missing observation first.
     if not answering_key:
         verdict = "unknown"
         basis = (
@@ -2390,16 +2396,6 @@ def read_hermes_native_subagents(
             record for record in route_provenance if record.get("session_id") in owners
         ]
     payload["attestation_coverage"] = ATTESTATION_COVERAGE_CLAIM
-    # The requested side of the attestation, for children whose session row
-    # names no model: `delegation.model` is what the next `delegate_task`
-    # dispatch resolves, so it is the route the host asked for. It is read
-    # once and only when some child needs it -- the config is rewritten per
-    # dispatch, so it describes the most recent one, and a child that started
-    # under an earlier route is attested against the value its own session row
-    # recorded instead.
-    configured_route_model = ""
-    if any(not _text(child.get("model")) for child in children):
-        configured_route_model = _text(read_delegation_route(home).get("model", ""))
 
     # Children of one manifest, oldest-first, pair with the manifest's tasks
     # by dispatch order; the pairing is best-effort context (goal text and
@@ -2491,15 +2487,19 @@ def read_hermes_native_subagents(
         # usage rows observed, never from a guess; see `_observed_wire_model`.
         wire_model = _observed_wire_model(child)
         # The same two surfaces the fill above chooses between, compared
-        # instead of collapsed: the recorded route is what was asked for, the
-        # usage model is what answered. A child whose session row names no
-        # model is attested against the configured delegation route, which is
-        # the only record of what was asked for in that case.
-        recorded_model = _text(child.get("model"))
+        # instead of collapsed: the recorded route stands for what was asked
+        # for (with the limit `served_model_attestation` states), the usage
+        # model is what answered. The requested side is the child's own
+        # session row and nothing else. A child whose row names no model has
+        # no run-time record of what was asked for, so its verdict is
+        # `unknown` (`no_requested_model`). Today's `delegation.model` is not
+        # that record: OMH rewrites it per dispatch and restores it at turn
+        # end, so reading it here made a finished child's verdict change
+        # when the config did.
         attestation = served_model_attestation(
-            recorded_model or configured_route_model,
+            _text(child.get("model")),
             _text(usage.get("model")),
-            requested_source="session_model" if recorded_model else "delegation_route",
+            requested_source="session_model",
             answering_observations=int(usage.get("model_count") or 0),
         )
 

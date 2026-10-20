@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A finished delegation child's model verdict no longer follows later
+  config edits.** A HUD row's `model_attestation` judged a child whose
+  session row names no model against the current `delegation.model`, and
+  reported it as `requested_source: delegation_route`. OMH rewrites that key
+  for each dispatch and puts the person's value back at turn end, so the
+  same finished child read `agreement` or `disagreement` depending on when
+  the HUD was read. The requested side is now the child's own
+  `sessions.model` and nothing else. Without one the verdict is `unknown`
+  with basis `no_requested_model`, which is neither a match nor a mismatch,
+  and `delegation_route` is no longer emitted. A child whose row names a
+  model is judged as before, whatever the config says. Known limit,
+  unchanged: Hermes rewrites `sessions.model` to the model of a session's
+  first accounted call when that call names a billing provider and a
+  different model, so a substitution on a child's first call still reads as
+  agreement.
 - **`omh_probe` says why its own package probe did not import, and a broken
   import hook cannot make the classifier raise.** When `omh.probe` alone fails
   to import, the probe's bundle answer now carries a `package_probe` row with

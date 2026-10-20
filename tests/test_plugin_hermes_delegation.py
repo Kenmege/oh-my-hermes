@@ -1954,28 +1954,108 @@ class ServedModelAttestationTest(unittest.TestCase):
         self.assertEqual(attestation["answering"], "glm-5.3-fast")
         self.assertEqual(attestation["resolved"], "glm-5.3")
 
-    def test_a_child_with_no_recorded_model_is_attested_against_the_configured_route(self):
-        # `sessions.model` is empty on a child whose row was created before
-        # the model was known. `delegation.model` is what the next dispatch
-        # resolves, so it is the only record of what was asked for -- and the
-        # verdict says which side it read.
+    def _write_delegation_model(self, model: str) -> None:
         (self.home / "config.yaml").write_text(
-            "delegation:\n  model: 'gpt-6-astra'\n", encoding="utf-8"
+            f"delegation:\n  model: '{model}'\n", encoding="utf-8"
         )
-        attestation = self._attestation(
-            {
-                "id": "20260818_100100_routed1",
-                "model": "",
-                "started_at": NOW - 60,
-                "usage": {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 5},
-            }
+
+    def _read_attestation(self) -> dict:
+        return read_hermes_native_subagents(
+            self.home, now=NOW, omh_home=self.home / ".omh"
+        )["rows"][0]["model_attestation"]
+
+    def test_a_child_with_no_recorded_model_is_unknown_whatever_the_config_says(self):
+        # `sessions.model` can be empty on a child, and then nothing from the
+        # run records what was asked for. Today's `delegation.model` is not
+        # that record: OMH rewrites it per dispatch and restores it at turn
+        # end. A config that would agree with the answering model and one
+        # that would not must both leave the verdict unknown.
+        _build_state_db(
+            self.home,
+            [
+                {
+                    "id": "20260818_100100_routed1",
+                    "model": "",
+                    "started_at": NOW - 600,
+                    "usage": {
+                        "model": "claude-fable-5-1",
+                        "output_tokens": 10,
+                        "last_seen": NOW - 300,
+                    },
+                }
+            ],
         )
-        self.assertEqual(attestation["verdict"], "disagreement")
-        self.assertEqual(attestation["requested"], "gpt-6-astra")
-        self.assertEqual(attestation["requested_source"], "delegation_route")
+        for configured in ("claude-fable-5-1", "gpt-6-astra"):
+            with self.subTest(delegation_model=configured):
+                self._write_delegation_model(configured)
+                attestation = self._read_attestation()
+                self.assertEqual(attestation["verdict"], "unknown")
+                self.assertEqual(attestation["basis"], "no_requested_model")
+                self.assertEqual(attestation["answering"], "claude-fable-5-1")
+                self.assertNotIn("requested", attestation)
+                self.assertNotIn("requested_source", attestation)
+
+    def test_a_finished_childs_verdict_does_not_move_when_the_config_does(self):
+        # The defect itself: one finished child, read twice, with only
+        # `delegation.model` rewritten between the reads. The verdict
+        # belongs to the run, so the two reads must be identical.
+        _build_state_db(
+            self.home,
+            [
+                {
+                    "id": "20260818_100100_pastrun",
+                    "model": "",
+                    "started_at": NOW - 600,
+                    "usage": {
+                        "model": "claude-fable-5-1",
+                        "output_tokens": 10,
+                        "last_seen": NOW - 300,
+                    },
+                }
+            ],
+        )
+        payload = read_hermes_native_subagents(self.home, now=NOW, omh_home=self.home / ".omh")
+        self.assertEqual(payload["rows"][0]["state"], "done")
+        self._write_delegation_model("claude-fable-5-1")
+        before = self._read_attestation()
+        self._write_delegation_model("gpt-6-astra")
+        after = self._read_attestation()
+        self.assertEqual(before, after)
+
+    def test_a_recorded_model_keeps_its_verdict_against_a_contradicting_config(self):
+        # The negative control: a child whose row names a model is judged on
+        # that row alone, so a config saying the opposite moves neither
+        # verdict.
+        cases = (
+            ("20260818_100100_keepagr", "claude-fable-5-1", "gpt-6-astra", "agreement"),
+            ("20260818_100100_keepdis", "gpt-6-astra", "claude-fable-5-1", "disagreement"),
+        )
+        for child_id, recorded, configured, verdict in cases:
+            with self.subTest(recorded=recorded, configured=configured):
+                (self.home / "state.db").unlink(missing_ok=True)
+                _build_state_db(
+                    self.home,
+                    [
+                        {
+                            "id": child_id,
+                            "model": recorded,
+                            "started_at": NOW - 60,
+                            "usage": {
+                                "model": "claude-fable-5-1",
+                                "output_tokens": 10,
+                                "last_seen": NOW - 5,
+                            },
+                        }
+                    ],
+                )
+                self._write_delegation_model(configured)
+                attestation = self._read_attestation()
+                self.assertEqual(attestation["verdict"], verdict)
+                self.assertEqual(attestation["requested"], recorded)
+                self.assertEqual(attestation["requested_source"], "session_model")
 
     def test_a_child_nothing_recorded_a_request_for_attests_unknown(self):
-        # No session model and no configured route: the answering model is
+        # No session model and no config at all: the answering model is
         # observed, and there is nothing to attest it against.
         attestation = self._attestation(
             {
