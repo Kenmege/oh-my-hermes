@@ -498,17 +498,19 @@ class OmhTuiDoorTests(unittest.TestCase):
             [["/usr/local/bin/hermes", "--profile", "work", "--tui", "--resume", "sess-alpha"]],
         )
 
-    def test_the_attempt_carries_the_frontend_dir_the_interpreter_and_the_omh_home(self) -> None:
-        from omh.tui.launch import FRONTEND_DIR
+    def test_the_attempt_carries_the_frontend_dir_the_interpreter_its_import_root_and_the_omh_home(self) -> None:
+        from omh.tui.launch import FRONTEND_DIR, SITE_ENV, omh_import_root
 
         environments: list[dict[str, str] | None] = []
-        with TemporaryDirectory() as tmp:
+        # A value left in the person's environment must not pick the tree the TUI imports.
+        with TemporaryDirectory() as tmp, patch.dict(os.environ, {SITE_ENV: "/another/tree"}):
             with launched(Path(tmp), ["--omh-home", str(Path(tmp) / "omh")], omh_tui=True,
                           environments=environments) as (_r, _o, _s):
                 pass
         (environment,) = environments
         self.assertEqual(environment["HERMES_TUI_DIR"], str(FRONTEND_DIR))
         self.assertEqual(environment["OMH_TUI_PYTHON"], sys.executable)
+        self.assertEqual(environment[SITE_ENV], omh_import_root())
         self.assertEqual(Path(environment["OMH_HOME"]).name, "omh")
 
     def test_a_profile_that_names_its_own_store_hands_the_tui_that_store(self) -> None:

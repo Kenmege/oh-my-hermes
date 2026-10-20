@@ -10,9 +10,18 @@
 // with -E (PYTHONPATH and PYTHONHOME ignored) and -P (no working directory on
 // the import path), and the value moves to OMH_TUI_GATEWAY_PYTHONPATH, which
 // the TUI hands back to the gateway child it spawns. Not -I: that also drops
-// the user's site-packages, where a `pip install --user` OMH lives. An OMH that
-// cannot import itself exits with FALLBACK_EXIT, so `omh` opens Hermes' own
-// terminal instead of showing a traceback.
+// the user's site-packages, where a `pip install --user` OMH lives.
+//
+// The TUI has to import the `omh` that `omh` itself runs, and that package is
+// not always on this interpreter's own path: the npm and Bun launcher puts its
+// extracted cache on the path in-process (python_bridge.py). So `omh` names, in
+// OMH_TUI_SITE, the directory its `omh` package was imported from, and the
+// bootstrap puts it first on the path unless this interpreter already imports
+// `omh` from there. Only the environment carries it, never this source. With
+// it on the path no bytecode is written: the npm launcher checks its cache
+// against a digest on every run. An OMH that still cannot import itself exits
+// with FALLBACK_EXIT, so `omh` opens Hermes' own terminal instead of showing a
+// traceback.
 //
 // Exit 75 alone is not a fallback request, because Hermes exits 75 on paths of
 // its own: `omh` also needs the file it named in OMH_TUI_FALLBACK_SENTINEL to
@@ -24,10 +33,19 @@ const { constants } = require('node:os')
 
 const FALLBACK_EXIT = 75
 const FALLBACK_SENTINEL_ENV = 'OMH_TUI_FALLBACK_SENTINEL'
+const SITE_ENV = 'OMH_TUI_SITE'
 
 const BOOTSTRAP = `
 import os, sys
 try:
+    site = os.environ.get("${SITE_ENV}", "")
+    if site:
+        import importlib.util
+        spec = importlib.util.find_spec("omh")
+        own = os.path.dirname(os.path.dirname(spec.origin)) if spec is not None and spec.origin else ""
+        if not own or os.path.realpath(own) != os.path.realpath(site):
+            sys.dont_write_bytecode = True
+            sys.path.insert(0, site)
     from omh.tui.app import main
 except ImportError as error:
     sys.stderr.write(f"omh: the OMH TUI could not import itself: {error}\\n")
