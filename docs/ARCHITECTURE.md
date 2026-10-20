@@ -236,13 +236,17 @@ registers it as the `omh.awareness` system prompt section, which Hermes freezes
 into each new session's system prompt, and `pre_llm_call` delivers it only for a
 session the section did not render for. A second section,
 `omh.delegation-protocol`, renders only for a Hermes `delegate_task` child
-(platform `subagent`) and is empty for every other session: it carries the
-delegation protocol that `omh coding composition-guide` returns (goal echo-back,
-one bounded verification pass, the two-round re-review cap), so every child of a
-batch gets it without the parent pasting it into the goal. The `pre_tool_call`
-hook enforces user-authored toolcall rules (a matching rule returns the host's
-block directive) and validates delegate role markers, warning on unknown
-roles; it does not inject generic-tool checkpoint metadata or raw tool input.
+(platform `subagent`) and is empty for every other session. It carries the
+delegation protocol that `omh coding composition-guide` returns: the goal
+echo-back for every child, the bounded verification pass when the task changes
+files, and the two-round re-review cap when the child reviews work against
+stated success criteria. So every child of a batch gets it without the parent
+pasting it into the goal, and the `coding-handling` harness tells the parent
+not to. The `pre_tool_call` hook enforces user-authored toolcall rules (a
+matching rule returns the host's block directive). Its delegate role-marker
+check reads a `tool_input` argument, while Hermes passes the arguments as
+`args`, so the unknown-role warning does not fire on current Hermes. The hook
+does not inject generic-tool checkpoint metadata or raw tool input.
 `omh hud`
 exposes the same status-line payload for local operator smoke tests. The HUD
 line stays limited to version, plugin bridge readiness, target topology, current

@@ -6,6 +6,10 @@ it; a Hermes-native child got it only when the parent model pasted it in. The
 plugin now registers the `omh.delegation-protocol` system prompt section,
 which renders for a child (`platform == "subagent"`) and is empty for every
 other session, so the parent's own prompt does not change.
+
+Everything except the single-definition check reaches the section through
+`register()`, so on a tree without it these tests fail on what the plugin
+registers, not on a missing import.
 """
 
 from __future__ import annotations
@@ -21,8 +25,9 @@ load_local_package()
 
 from _cli_harness import run_cli  # noqa: E402
 from omh.coding import unit_prompt_protocol  # noqa: E402
-from omh.plugin_bundle.omh import delegation_protocol, register  # noqa: E402
+from omh.plugin_bundle.omh import register  # noqa: E402
 from omh.plugin_bundle.omh.hooks import tool_hooks  # noqa: E402
+from omh.skills.catalog import harness_definition  # noqa: E402
 
 SECTION_ID = "omh.delegation-protocol"
 # Hermes' own limits (`hermes_cli/plugins_dispatch.py`), copied because the
@@ -48,6 +53,13 @@ def _session_info(platform: str, session_id: str = "s-1") -> dict[str, str]:
 
 def _host_framed(section_id: str, text: str) -> str:
     return f"## Plugin Context: {section_id}\n<!-- hermes-plugin-section-chars:{len(text)} -->\n\n{text}"
+
+
+def _composition_guide_protocol() -> dict[str, str]:
+    status, stdout, _stderr = run_cli(["coding", "composition-guide", "--json"])
+    if status != 0:
+        raise AssertionError(f"composition-guide exited {status}")
+    return json.loads(stdout)["delegation_protocol"]
 
 
 class _SectionCtx:
@@ -96,20 +108,43 @@ def _registered_section(ctx: _SectionCtx) -> dict[str, object]:
     return found[0]
 
 
+def _render(platform: object, session_id: str = "s-1") -> str:
+    """What the registered section renders for a session on `platform`."""
+    ctx = _SectionCtx()
+    register(ctx)
+    content = _registered_section(ctx)["content"]
+    info = _session_info(platform, session_id) if isinstance(platform, str) else platform
+    return content(info)
+
+
 class ProducerParityTests(unittest.TestCase):
     def test_a_child_section_carries_every_composition_guide_protocol_line(self) -> None:
-        status, stdout, _stderr = run_cli(["coding", "composition-guide", "--json"])
-        self.assertEqual(status, 0)
-        protocol = json.loads(stdout)["delegation_protocol"]
-        text = delegation_protocol.delegation_protocol_section(_session_info("subagent"))
+        protocol = _composition_guide_protocol()
+        text = _render("subagent")
         for key in _CHILD_PROTOCOL_KEYS:
             with self.subTest(key=key):
                 self.assertIn(protocol[key], text)
 
     def test_the_control_plane_reads_the_bundle_definitions(self) -> None:
+        from omh.plugin_bundle.omh import delegation_protocol
+
         for name in ("GOAL_ECHO_PROTOCOL", "VERIFICATION_STOP_PROTOCOL", "REVIEW_ROLE_PROTOCOL"):
             with self.subTest(name=name):
                 self.assertIs(getattr(unit_prompt_protocol, name), getattr(delegation_protocol, name))
+
+
+class FramingTests(unittest.TestCase):
+    """The section also reaches children no OMH-guided parent composed, such as
+    Hermes' own `/review` reviewer, so only the goal echo-back is unconditional."""
+
+    def test_only_the_goal_echo_applies_to_every_child(self) -> None:
+        protocol = _composition_guide_protocol()
+        lines = _render("subagent").splitlines()
+        self.assertIn(f"- {protocol['goal_echo']}", lines)
+        self.assertIn(f"- When your task changes files: {protocol['verification_stop']}", lines)
+        self.assertIn(
+            f"- When you review work against stated success criteria: {protocol['review_cap']}", lines
+        )
 
 
 class RegistrationTests(unittest.TestCase):
@@ -117,6 +152,8 @@ class RegistrationTests(unittest.TestCase):
         ctx = _SectionCtx()
         register(ctx)
         section = _registered_section(ctx)
+        from omh.plugin_bundle.omh import delegation_protocol
+
         self.assertEqual(section["position"], "after_memory")
         text = section["content"](_session_info("subagent"))
         self.assertEqual(text, delegation_protocol.DELEGATION_PROTOCOL_SECTION)
@@ -127,6 +164,7 @@ class RegistrationTests(unittest.TestCase):
     def test_both_omh_sections_together_leave_most_of_the_shared_budget(self) -> None:
         ctx = _SectionCtx()
         register(ctx)
+        _registered_section(ctx)
         info = _session_info("subagent")
         blocks = [_host_framed(str(s["id"]), s["content"](info)) for s in sorted(ctx.sections, key=lambda s: s["id"])]
         rendered = len(_HOST_SECTIONS_CONTAINER) + len("\n\n".join(blocks))
@@ -143,23 +181,22 @@ class RegistrationTests(unittest.TestCase):
 
 
 class RenderTests(unittest.TestCase):
-    def test_every_child_of_a_batch_gets_one_copy(self) -> None:
-        texts = [
-            delegation_protocol.delegation_protocol_section(_session_info("subagent", f"child-{index}"))
-            for index in range(3)
-        ]
-        self.assertEqual(texts, [delegation_protocol.DELEGATION_PROTOCOL_SECTION] * 3)
-        heading = delegation_protocol.DELEGATION_PROTOCOL_SECTION.splitlines()[0]
+    def test_each_child_section_carries_the_protocol_once(self) -> None:
+        protocol = _composition_guide_protocol()
+        texts = [_render("subagent", f"child-{index}") for index in range(3)]
+        self.assertEqual(len(set(texts)), 1)
         for text in texts:
-            self.assertEqual(text.count(heading), 1)
-            self.assertEqual(text.count(delegation_protocol.GOAL_ECHO_PROTOCOL), 1)
+            for key in _CHILD_PROTOCOL_KEYS:
+                with self.subTest(key=key):
+                    self.assertEqual(text.count(protocol[key]), 1)
 
     def test_the_parent_and_every_other_session_render_nothing(self) -> None:
+        self.assertNotEqual(_render("subagent"), "")
         for platform in ("cli", "tui", "telegram", "discord", "cron", "desktop", "", "SUBAGENT", " subagent"):
             with self.subTest(platform=platform):
-                self.assertEqual(delegation_protocol.delegation_protocol_section(_session_info(platform)), "")
-        self.assertEqual(delegation_protocol.delegation_protocol_section({"session_id": "s-1"}), "")
-        self.assertEqual(delegation_protocol.delegation_protocol_section(None), "")
+                self.assertEqual(_render(platform), "")
+        self.assertEqual(_render({"session_id": "s-1"}), "")
+        self.assertEqual(_render(None), "")
 
 
 class DelegateToolCallTests(unittest.TestCase):
@@ -194,6 +231,19 @@ class DelegateToolCallTests(unittest.TestCase):
             with self.subTest(tool_name=tool_name, args=args):
                 result = self.pre_tool_call(tool_name, args)
                 self.assertFalse(isinstance(result, dict) and result.get("action") == "modify", result)
+
+
+class HarnessGuidanceTests(unittest.TestCase):
+    """The parent stops pasting the protocol where the plugin already carries it."""
+
+    def test_coding_handling_leaves_hermes_children_to_the_plugin(self) -> None:
+        lines = [line for line in harness_definition("coding-handling").quality_bar if "composition-guide" in line]
+        self.assertEqual(len(lines), 1, lines)
+        line = lines[0]
+        self.assertIn("On Hermes `delegate_task` the OMH plugin puts the protocol in each child's system prompt", line)
+        self.assertIn("do not paste it into the goal", line)
+        self.assertIn("still write the numbered done criteria there", line)
+        self.assertIn("For Codex, Claude Code, and other runtime-native spawns, embed it in the prompt yourself", line)
 
 
 if __name__ == "__main__":

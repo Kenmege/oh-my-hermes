@@ -12,11 +12,19 @@ All notable changes will be documented here.
   renders only for a session Hermes builds as a `delegate_task` child
   (platform `subagent`). It carries the goal echo-back, verification-stop and
   re-review-cap lines that `omh coding composition-guide` returns, which now
-  read the same definitions. Every child of a batch gets one copy, and so does
-  the reviewer that Hermes' review engine spawns without a tool call. The
-  parent's own prompt, the dispatched goals and the bot persona do not change.
-  Each child's system prompt grows by 923 characters (the 836-character
-  section plus Hermes' framing) (#2174).
+  read the same definitions. Only the goal echo-back applies to every child.
+  The verification rule is framed for a task that changes files, and the
+  review rule for a child that reviews work against stated success criteria.
+  The section also reaches children no OMH-guided parent wrote, such as
+  Hermes' own `/review` reviewer, whose brief from Hermes states no success
+  criteria, so the review rule's condition does not match it. The section
+  renders once in each child's system prompt. The `coding-handling` harness
+  now tells the parent not to paste the protocol into a Hermes `delegate_task`
+  goal, and still to embed it for Codex, Claude Code and other runtime-native
+  spawns. A goal that pastes it anyway carries it twice. The parent's own
+  prompt, the dispatched goals and the bot persona do not change. Each
+  child's system prompt grows by 1,007 characters: the 920-character section
+  plus Hermes' framing (#2174).
 
 - **`omh_probe` says why its own package probe did not import, and a broken
   import hook cannot make the classifier raise.** When `omh.probe` alone fails

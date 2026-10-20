@@ -35,19 +35,25 @@ REVIEW_ROLE_PROTOCOL: Final[str] = (
 # `tasks[].goal`. Hermes renders every plugin section into each agent's
 # system prompt, a `delegate_task` child's included
 # (`agent/system_prompt.py`, `build_system_prompt_parts`), so the section
-# reaches every child of a batch, a nested child, and the reviewer that
-# `agent/review_engine.py` spawns by calling `delegate_task` itself, with no
-# tool call for `pre_tool_call` to see. A `modify` would also rewrite the
-# goal that the parent's display, the `subagent_start` hook and the child's
-# first user turn all show.
+# reaches every child of a batch and a nested child. A `modify` would also
+# rewrite the goal that the parent's display, the `subagent_start` hook and
+# the child's first user turn all show.
+#
+# It also reaches children no OMH-guided parent composed, such as the
+# reviewer that `agent/review_engine.py` spawns for Hermes' own `/review`.
+# So only the goal echo-back applies to every child. The verification rule
+# and the review rule each carry the condition they were written for (OMH's
+# own unit prompts give the review rule to review units only). A child whose
+# task matches neither, like a `/review` reviewer that has no stated success
+# criteria, is not bound by them.
 DELEGATION_PROTOCOL_SECTION_ID: Final[str] = "omh.delegation-protocol"
 
 DELEGATION_PROTOCOL_SECTION: Final[str] = "\n".join(
     (
         "OMH delegation protocol for this delegated task:",
         f"- {GOAL_ECHO_PROTOCOL}",
-        f"- {VERIFICATION_STOP_PROTOCOL}",
-        f"- {REVIEW_ROLE_PROTOCOL}",
+        f"- When your task changes files: {VERIFICATION_STOP_PROTOCOL}",
+        f"- When you review work against stated success criteria: {REVIEW_ROLE_PROTOCOL}",
     )
 )
 
