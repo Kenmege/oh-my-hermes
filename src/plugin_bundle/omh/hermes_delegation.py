@@ -2080,7 +2080,7 @@ def _attach_prompt_identity_models(
     before the first model call (`agent/turn_context.build_turn_context`). A
     fallback during the turn swaps the running model and rewrites only the
     in-memory prompt (`rewrite_prompt_model_identity`: "Not persisted"), and
-    the first accounted call rewrites `sessions.model`, not the prompt.
+    the first accounted call can rewrite `sessions.model`, not the prompt.
 
     Hermes does rewrite the STORED prompt from the running model, which after
     a fallback is the fallback, in two places:
@@ -2092,7 +2092,7 @@ def _attach_prompt_identity_models(
       retry is a second turn).
     So a stored prompt is read as the request only when the row cannot have
     passed either: a first segment, with no archived message and at most one
-    user message. Any other row with a stored prompt is marked
+    user message. Any other first segment with a stored prompt is marked
     `prompt_may_be_rebuilt`, and an agreement there reads `unknown`.
 
     Not covered: a row `_ensure_db_session` creates late carries the
@@ -2667,8 +2667,9 @@ def read_hermes_native_subagents(
         # What was asked for, compared with what answered (the usage model).
         # The request comes from the child's own records and nothing else:
         # the model its first stored system prompt names, read only from a
-        # row whose stored prompt cannot have been rebuilt since the first
-        # call (`_attach_prompt_identity_models`), else its `sessions.model`,
+        # row that shows neither way Hermes rebuilds a stored prompt
+        # (`_attach_prompt_identity_models`, which names the late-created row
+        # it cannot see), else its `sessions.model`,
         # which Hermes can rewrite to the answering model and so cannot
         # attest an agreement (see `served_model_attestation`). A child with
         # neither is `unknown` (`no_requested_model`). Today's

@@ -570,15 +570,31 @@ a rebuilt prompt at its start (a child's output-schema retry is a second
 turn). So the line is read as the child's request, the requested side of a
 HUD row's `model_attestation` (`src/plugin_bundle/omh/hermes_delegation.py`),
 only on a first segment (`parent_session_id` is the delegating session) with
-no archived message and at most one user message. Any other row with a stored
-prompt is marked as possibly rebuilt, and an agreement there reads `unknown`
-(`requested_model_prompt_may_be_rebuilt`). A compression continuation names
-the previous segment and rebuilds its prompt, so it attests nothing. Not
+no archived message and at most one user message. Any other first segment
+with a stored prompt is marked as possibly rebuilt. A compression continuation
+names the previous segment and rebuilds its prompt, so it attests nothing. Not
 covered: a row Hermes creates late (a retry after the create at turn start
 failed transiently, or a re-create after the row disappeared mid-run) carries
 the in-memory prompt, and nothing in the row marks it. The read takes the end
 of the stored prompt, drops the runtime block at its last heading, and reads
 the last paragraph only when every line in it is one `_timestamp_line` writes.
+
+Without an attested request no agreement is reported. These cases read
+`unknown`, and the basis says which:
+- `requested_model_not_attested`: no stored first prompt names a model (none
+  is stored, the row is a compression continuation, the schema lacks the
+  columns, the read failed, or the trailer has no `Model:` line), and
+  `sessions.model` agrees with the answering model;
+- `requested_model_prompt_may_be_rebuilt`: a first segment's stored prompt was
+  withheld (an archived message, or more than one user message), and
+  `sessions.model` agrees with the answering model;
+- `no_requested_model`: neither an attested stored prompt nor `sessions.model`
+  names a model.
+
+In the first two cases, a `sessions.model` that disagrees with the sole model
+the usage rows name reads `disagreement`. The answering side is judged before
+any of the three: no usage row (`no_usage_observation`) or more than one usage
+model (`multiple_usage_models`) also reads `unknown`.
 
 This is a read-only coupling to a Hermes-private shape, the same class as
 the lease registry above: widening `requires_hermes` includes checking the
@@ -586,9 +602,7 @@ trailer lines, the runtime-block markers, the two storage columns and
 `messages.active`. If the shape moves, the read goes quiet, unless the new
 last paragraph is itself made only of trailer lines, in which case it is read
 as the trailer, as Hermes' own `identity_line_value` would read it. A quiet
-read leaves the request unattested: an agreement reads `unknown`
-(`requested_model_not_attested`), and a disagreement with `sessions.model`
-stays detectable.
+read attests no request, so the cases above apply.
 _Avoid_: reading `sessions.model` or the current `delegation.model` as a past
 request, reading a `Model:` line outside the trailer, reading the prompt of a
 continuation, of a compacted row or of a later turn as the child's request

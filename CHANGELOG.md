@@ -20,18 +20,29 @@ All notable changes will be documented here.
   model, which after a fallback is the fallback, at an in-place compaction
   (its default) and at the start of a later turn, so the line is read only on
   a first segment with no archived message and at most one user message.
-  Elsewhere an agreement reads `unknown`: `requested_model_prompt_may_be_rebuilt`
-  where a stored prompt was withheld, `requested_model_not_attested` where no
-  first prompt is read (none stored, a compression continuation, or a schema
-  without the columns) or its trailer names no model. Not covered: a row
-  Hermes creates late (a retry after a transient create failure, or a
-  re-create after the row disappeared mid-run) carries the in-memory prompt,
-  and nothing in the row marks it. A disagreement with `sessions.model` is
-  still `disagreement`, a child with no request at all is `unknown`
-  (`no_requested_model`), and `delegation_route` is no longer emitted.
-  Measured read-only over every delegation child row in two local Hermes
-  databases (a profile and a pre-update backup, 550 children; rows still only
-  in the WAL were not read): 518 requests attested by the stored prompt, 32
+  Not covered: a row Hermes creates late (a retry after a transient create
+  failure, or a re-create after the row disappeared mid-run) carries the
+  in-memory prompt, and nothing in the row marks it. Without an attested
+  request no agreement is reported. These cases read `unknown`, and the
+  basis says which:
+  - `requested_model_not_attested`: no stored first prompt names a model
+    (none is stored, the row is a compression continuation, the schema lacks
+    the columns, the read failed, or the trailer has no `Model:` line), and
+    `sessions.model` agrees with the answering model.
+  - `requested_model_prompt_may_be_rebuilt`: a first segment's stored prompt
+    was withheld (an archived message, or more than one user message), and
+    `sessions.model` agrees with the answering model.
+  - `no_requested_model`: neither an attested stored prompt nor
+    `sessions.model` names a model.
+
+  In the first two cases, a `sessions.model` that disagrees with the sole
+  model the usage rows name reads `disagreement`. The answering side is
+  judged before any of the three: no usage row (`no_usage_observation`) or
+  more than one usage model (`multiple_usage_models`) also reads `unknown`.
+  `delegation_route` is no longer emitted. Measured read-only over every
+  delegation child row in two local Hermes databases (a profile and a
+  pre-update backup, 550 children; rows still only in the WAL were not
+  read): 518 requests attested by the stored prompt, 32
   withheld (28 compacted in place, 4 with more than one user message); 513
   `agreement`, 30 `unknown` because the prompt may be rebuilt, 7 `unknown`
   with more than one usage model. Before the change the same rows read 543
