@@ -327,7 +327,7 @@ through: `🧠 OMH — recalled 2 memories`.
 
 Bare `omh` opens the OMH TUI, OMH's own terminal on top of your Hermes install.
 Hermes still runs every model call, tool and approval; OMH owns the screen.
-Bare `hermes` keeps opening Hermes' own terminal.
+Bare `hermes` keeps opening Hermes' own terminal, with no OMH skin or HUD.
 
 ```sh
 omh
@@ -337,7 +337,7 @@ omh
 - **Plan and agents above the prompt**: interrupt (`x`) or steer (`s`) one subagent from the agent list.
 - **Approvals and questions in place**: the choices open where the prompt was, and deny is the default.
 - **Shell and history**: a `!` line runs in Hermes' shell without the model, history is shared with `hermes --tui` (Ctrl+R), and Esc Esc or `/rewind` goes back to an earlier prompt.
-- **Light or dark**: outcome bands follow your terminal's background, or set it with `/theme light|dark`.
+- **Light or dark**: colours and outcome bands follow the background your terminal reports (or `COLORFGBG`); set it with `/theme light|dark` when it does not.
 
 <table align="center">
   <tr>
