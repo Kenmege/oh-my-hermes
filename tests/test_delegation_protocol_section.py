@@ -245,6 +245,19 @@ class HarnessGuidanceTests(unittest.TestCase):
         self.assertIn("still write the numbered done criteria there", line)
         self.assertIn("For Codex, Claude Code, and other runtime-native spawns, embed it in the prompt yourself", line)
 
+    def test_composition_guide_gives_the_parent_the_same_instruction(self) -> None:
+        # The harness line names composition-guide as the protocol's source, so
+        # the two must not disagree about pasting.
+        applies_to = _composition_guide_protocol()["applies_to"]
+        self.assertIn("On Hermes `delegate_task` the OMH plugin puts goal_echo, verification_stop", applies_to)
+        self.assertIn("do not paste them into the goal", applies_to)
+        self.assertIn("For Codex, Claude Code, and other runtime-native spawns, embed them", applies_to)
+        status, stdout, _stderr = run_cli(["coding", "composition-guide", "--model", "gpt-6-astra"], output_json=False)
+        self.assertEqual(status, 0)
+        header = next(line for line in stdout.splitlines() if line.startswith("Delegation protocol ("))
+        self.assertIn("each Hermes `delegate_task` child, so do not paste them there", header)
+        self.assertIn("embed them for Codex, Claude Code", header)
+
 
 if __name__ == "__main__":
     unittest.main()

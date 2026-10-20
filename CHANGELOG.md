@@ -19,9 +19,10 @@ All notable changes will be documented here.
   Hermes' own `/review` reviewer, whose brief from Hermes states no success
   criteria, so the review rule's condition does not match it. The section
   renders once in each child's system prompt. The `coding-handling` harness
-  now tells the parent not to paste the protocol into a Hermes `delegate_task`
-  goal, and still to embed it for Codex, Claude Code and other runtime-native
-  spawns. A goal that pastes it anyway carries it twice. The parent's own
+  and `omh coding composition-guide` (its `applies_to` and its printed
+  header) now tell the parent not to paste the protocol into a Hermes
+  `delegate_task` goal, and still to embed it for Codex, Claude Code and
+  other runtime-native spawns. A goal that pastes it anyway carries it twice. The parent's own
   prompt, the dispatched goals and the bot persona do not change. Each
   child's system prompt grows by 1,007 characters: the 920-character section
   plus Hermes' framing (#2174).

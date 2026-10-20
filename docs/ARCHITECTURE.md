@@ -241,8 +241,8 @@ delegation protocol that `omh coding composition-guide` returns: the goal
 echo-back for every child, the bounded verification pass when the task changes
 files, and the two-round re-review cap when the child reviews work against
 stated success criteria. So every child of a batch gets it without the parent
-pasting it into the goal, and the `coding-handling` harness tells the parent
-not to. The `pre_tool_call` hook enforces user-authored toolcall rules (a
+pasting it into the goal, and the `coding-handling` harness and
+`omh coding composition-guide` tell the parent not to. The `pre_tool_call` hook enforces user-authored toolcall rules (a
 matching rule returns the host's block directive). Its delegate role-marker
 check reads a `tool_input` argument, while Hermes passes the arguments as
 `args`, so the unknown-role warning does not fire on current Hermes. The hook
