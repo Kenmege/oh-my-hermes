@@ -47,7 +47,11 @@ exit 0
 def _run_in_pty(
     argv: list[str], env: dict[str, str], timeout: float = 120.0
 ) -> tuple[int, str]:
-    """Run `argv` with a pty as its stdin, stdout and stderr; its exit code and what it wrote."""
+    """Run `argv` with a pty as its stdin, stdout and stderr; its exit code and what it wrote.
+
+    A run still going at `timeout` raises `subprocess.TimeoutExpired`, after
+    its session is killed and reaped.
+    """
     import pty  # POSIX only
 
     master, slave = pty.openpty()
@@ -60,19 +64,15 @@ def _run_in_pty(
             env=env,
             start_new_session=True,
         )
+    except BaseException:
+        os.close(master)
+        raise
     finally:
         os.close(slave)
     output = bytearray()
     deadline = time.monotonic() + timeout
     try:
-        while True:
-            if time.monotonic() > deadline:
-                # The session this call started, by its id, and nothing else.
-                try:
-                    os.killpg(child.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                break
+        while time.monotonic() < deadline:
             ready, _, _ = select.select([master], [], [], 0.2)
             if not ready:
                 continue
@@ -83,9 +83,17 @@ def _run_in_pty(
             if not chunk:
                 break
             output += chunk
-        return child.wait(timeout=30), output.decode("utf-8", "replace")
+        child.wait(timeout=max(0.0, deadline - time.monotonic()))
     finally:
+        if child.poll() is None:
+            # The session this call started, by its id, and nothing else.
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            child.wait(timeout=30)
         os.close(master)
+    return child.returncode, output.decode("utf-8", "replace")
 
 
 class DistributionHelperTests(unittest.TestCase):

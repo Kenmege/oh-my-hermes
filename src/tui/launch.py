@@ -7,9 +7,10 @@ for its own terminal, and runs `frontend/dist/entry.js` in place of its Ink
 app. That file is a small Node shim that hands the terminal to
 `omh.tui.app.main` on the interpreter named in `OMH_TUI_PYTHON`, started with
 `-E -P` so neither the launcher's `PYTHONPATH` nor the working directory is
-on its import path. That interpreter does not always find the `omh` this
-process runs on its own path: the npm and Bun launcher puts its extracted
-cache on the path in-process, and `-E` ignores a custom `PYTHONUSERBASE`. So
+on its import path. (`-E` does not hide a custom `PYTHONUSERBASE`: `site`
+reads that variable from the environment either way.) That interpreter does
+not always find the `omh` this process runs on its own path: the npm and Bun
+launcher puts its extracted cache on the path in-process. So
 `omh` also names the directory its `omh` package was imported from
 (`SITE_ENV`, `omh_import_root`), and the shim puts that directory first on
 the path unless the interpreter already imports `omh` from there. An OMH that
@@ -116,8 +117,8 @@ def omh_import_root() -> str:
 
     For example `site-packages` for a wheel install, or the extracted cache
     `site` under the npm and Bun launcher. The path is not resolved: a uv
-    editable install is a tree of links, and the TUI has to find the package
-    where this process found it.
+    editable install is a tree of links into `src/`, and resolving would name
+    `src/` rather than the directory this process imported `omh` from.
     """
     import omh
 

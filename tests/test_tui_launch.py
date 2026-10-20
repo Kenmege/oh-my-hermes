@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.machinery
 import json
 import os
 from pathlib import Path
@@ -16,6 +15,19 @@ import unittest
 from unittest.mock import patch
 
 from omh.tui import launch
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+# Puts argv[1] first on the path, imports `omh` from there, and reports the root `omh_import_root` gives,
+# the package file, and what a path search of that root alone finds.
+_IMPORT_ROOT_PROBE = (
+    "import importlib.machinery, json, sys\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "import omh\n"
+    "from omh.tui.launch import omh_import_root\n"
+    "root = omh_import_root()\n"
+    "spec = importlib.machinery.PathFinder.find_spec('omh', [root])\n"
+    "print(json.dumps({'root': root, 'file': omh.__file__, 'found': spec.origin if spec else None}))\n"
+)
 
 
 class _Tty:
@@ -127,12 +139,34 @@ class EnvironmentTests(unittest.TestCase):
         )
         self.assertEqual(env[launch.SITE_ENV], "/site")
 
-    def test_the_import_root_is_where_this_process_found_omh(self) -> None:
-        import omh
+    def _import_root_in_a_fresh_process(self, root: Path) -> dict:
+        # Not this process: a shard worker may hold the synthetic `omh` tests/_local_package.py makes,
+        # whose `__file__` is a directory rather than a package's `__init__.py`.
+        result = subprocess.run(
+            [sys.executable, "-P", "-c", _IMPORT_ROOT_PROBE, str(root)],
+            capture_output=True, text=True, timeout=60, cwd=REPO_ROOT,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
 
-        spec = importlib.machinery.PathFinder.find_spec("omh", [launch.omh_import_root()])
-        self.assertIsNotNone(spec)
-        self.assertEqual(spec.origin, os.path.abspath(omh.__file__))
+    def test_the_import_root_is_where_the_process_found_omh(self) -> None:
+        recorded = self._import_root_in_a_fresh_process(REPO_ROOT)
+        self.assertEqual(recorded["root"], str(REPO_ROOT))
+        self.assertEqual(recorded["file"], str(REPO_ROOT / "omh" / "__init__.py"))
+        self.assertEqual(recorded["found"], recorded["file"])
+
+    @unittest.skipIf(os.name == "nt", "symbolic links; the OMH TUI is never attempted on Windows")
+    def test_the_import_root_of_a_tree_of_links_is_the_tree_not_the_source(self) -> None:
+        # A uv editable install is this shape: a directory of links into src/. Resolving `omh.__file__` would
+        # name src/, which is not the directory the process imported `omh` from.
+        with TemporaryDirectory() as tmp:
+            tree = Path(tmp) / "tree"
+            (tree / "omh").mkdir(parents=True)
+            for entry in (REPO_ROOT / "src" / "omh").iterdir():
+                (tree / "omh" / entry.name).symlink_to(entry, target_is_directory=entry.is_dir())
+            recorded = self._import_root_in_a_fresh_process(tree)
+        self.assertEqual(recorded["root"], str(tree))
+        self.assertEqual(recorded["found"], recorded["file"])
 
     def test_the_fallback_code_is_none_hermes_or_a_session_uses(self) -> None:
         self.assertNotIn(launch.FALLBACK_EXIT, (0, 1, 2, 42, 130))
@@ -333,6 +367,16 @@ class ShimTests(unittest.TestCase):
         self.assertEqual(os.path.realpath(Path(recorded["file"]).parents[2]), os.path.realpath(own))
         self.assertEqual(path.count(os.path.realpath(own)), 1)
         self.assertNotEqual(path[0], os.path.realpath(own))
+        self.assertFalse(recorded["no_bytecode"])
+
+    def test_the_same_site_named_through_a_link_is_not_added_either(self) -> None:
+        # One directory, two spellings (macOS gives /var and /private/var for the same temp directory).
+        with TemporaryDirectory() as tmp:
+            python, own = self._venv_with_a_stub_omh(Path(tmp))
+            alias = Path(tmp) / "alias-site"
+            alias.symlink_to(own, target_is_directory=True)
+            recorded = self._run_stub(Path(tmp), python, alias)
+        self.assertNotIn(str(alias), recorded["path"])
         self.assertFalse(recorded["no_bytecode"])
 
     def test_the_named_site_wins_over_another_omh_on_the_interpreters_own_path(self) -> None:

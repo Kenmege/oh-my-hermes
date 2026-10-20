@@ -13,11 +13,10 @@ All notable changes will be documented here.
   from, in `OMH_TUI_SITE`, and the shim's bootstrap puts that directory first
   on the import path when the interpreter does not already import `omh` from
   there. It then writes no bytecode: the launcher checks its cache against a
-  digest on every run, and rebuilds a cache that has bytecode in it. The same
-  path reaches an OMH installed under a custom `PYTHONUSERBASE`, which `-E`
-  hides. `-E -P` stay, so Hermes' `PYTHONPATH` still never reaches the OMH
-  interpreter, and `omh` sets the variable on every launch, so a value left in
-  your environment does not choose the tree.
+  digest on every run, and rebuilds a cache that has bytecode in it. `-E -P`
+  stay, so Hermes' `PYTHONPATH` still never reaches the OMH interpreter, and
+  `omh` sets the variable on every launch, so a value left in your environment
+  does not choose the tree.
 
 ## 4.0.0 - 2026-10-19
 
