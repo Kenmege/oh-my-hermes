@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .. import runtime_paths
+from ..delegation_ledger import observe_delegate_call
 from ..engagement_nudges import observe_engagement_outcome
 
 from collections.abc import Mapping
@@ -444,6 +445,11 @@ def post_tool_call(**kwargs: object) -> dict[str, object] | None:
             else tool_result_digest(kwargs.get("result"))
         ),
     )
+    # A `delegate_task` call's own result ties each child `subagent_start`
+    # reported to its call, task index and delegation (`delegation_ledger`).
+    # A blocked call's result is a refusal, not Hermes' dispatch handle.
+    if kwargs.get("tool_name") == "delegate_task" and str(kwargs.get("status", "") or "").lower() != "blocked":
+        observe_delegate_call(kwargs)
     return None
 
 

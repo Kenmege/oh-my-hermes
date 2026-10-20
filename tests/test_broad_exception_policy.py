@@ -513,6 +513,15 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "accusing a session that may well be watching something.",
     ),
     ClassifiedSite(
+        "src/plugin_bundle/omh/hooks/result_transforms.py",
+        "_delegation_snapshot",
+        INTENTIONAL,
+        "The delegation snapshot runs on `transform_llm_output` beside the honest stop, in OMH's one "
+        "handler for that hook; Hermes swallows a raise from it (`agent/turn_finalizer.py::"
+        "_invoke_hook_safely`), which would also drop the honest stop. The failure is counted by "
+        "type in `snapshot_failures` and the reply goes out with no block, never with a wrong one.",
+    ),
+    ClassifiedSite(
         "src/plugin_bundle/omh/remote_wait_nudge.py",
         "honest_stop_output",
         INTENTIONAL,
@@ -595,8 +604,11 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # import (a failure is a classified refusal or probe row, never a raise; #2166).
 # 59 -> 60 / 54 -> 55: `package_backend._found_omh`, the presence check an
 # import hook can make raise (it reads `broken`, never a raise out of a tool).
-EXPECTED_HANDLER_COUNT = 60
-EXPECTED_ANCHOR_COUNT = 55
+# 60 -> 61 / 55 -> 56: `result_transforms._delegation_snapshot`, the messenger
+# block beside the honest stop (a failure is counted and the reply goes out
+# without a block, never without the honest stop).
+EXPECTED_HANDLER_COUNT = 61
+EXPECTED_ANCHOR_COUNT = 56
 
 
 class DerivedSite(NamedTuple):

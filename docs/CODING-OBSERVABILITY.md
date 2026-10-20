@@ -77,6 +77,91 @@ and the three more the chat-copy set resolves from a message. The CLI does not
 yet pass one, so the command still prints English; an adapter that already
 knows its reader's language can pass it today.
 
+## The delegation graph
+
+What the delegated work of one conversation looks like as a graph: who
+started whom, and, for parts with recorded dependencies, what waits on what.
+Each node shows its title, category, model and effort, and its state.
+
+```
+DAG · ulw-work hud-graph · 5 nodes · 6 edges
+2 running · 1 waiting · 1 done
+                        ┌───────────────────────┐
+                        │ ◆ main · orchestrator │
+                        │ opus-5-5 · high       │
+                        └───────────┬───────────┘
+           ┌────────────────────────┼────────────────────────┐
+           ▼                        ▼                        ▼
+┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
+│ ● Refresh HUD docs  │  │ ✓ Polish HUD CLI    │  │ ● Update HUD tests  │
+│ writing             │  │ quick               │  │ deep                │
+│ opus-5-5 · medium   │  │ glm-5.3-flash · low │  │ opus-5-5 · high     │
+│ running 2m 10s      │  │ done 1m 2s          │  │ running 2m 8s       │
+└──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘
+           └────────────────────────┼────────────────────────┘
+                                    ▼
+                         ┌─────────────────────┐
+                         │ · Integration veri… │
+                         │ inherit             │
+                         │ opus-5-5            │
+                         │ waits on 3 lanes    │
+                         └─────────────────────┘
+```
+
+Where it shows:
+
+- **The OMH TUI** draws it live in its panel, above the plan, and keeps it
+  while the info line shows the agents. While it holds Hermes-native lanes,
+  the `[Agents]` block leaves their activity rows out, so a lane is drawn
+  once; its header keeps the session's cost and tokens.
+- **Slack, Discord, Telegram, Mattermost and Matrix** get a snapshot as a
+  code block at the end of the reply Hermes is already sending, on a turn
+  where the graph changed: the turn that dispatched the lanes, and each turn
+  their results come back on. OMH sends no message of its own; Hermes'
+  gateway delivers the reply with the block in it. The block is at most 40
+  cells wide, so a box border does not wrap in a phone's code block, and at
+  most 1,800 characters, under Discord's 2,000. A graph that does not fit is
+  drawn as a tree, and a tree that does not fit names how many nodes it left
+  out. Nothing is appended in the TUI, the CLI or the desktop app.
+- **`omh hud --graph`** prints it under the HUD line, sized to the terminal,
+  in ASCII when the output cannot encode the line characters.
+
+`OMH_SUBAGENT_GRAPH=off` in Hermes' environment turns the graph off in all
+three places.
+
+What it shows, and what it leaves as `?`:
+
+- **Edges** are recorded, never inferred: a dispatch (a parent started this
+  child) or a `depends_on` from an `omh_team` part or a fanout unit. Lanes one
+  turn dispatched form a `wave N · HH:MM`; a later wave is later, not
+  dependent, and no edge says otherwise. Hermes' `group` field orders delivery,
+  not execution, and draws nothing.
+- **Category** is the route `omh_delegate_route` recorded for the session when
+  the child started, shown only while the child's observed model matches it.
+  A child on its parent's own recorded model with no route is `inherit`.
+  Anything else is `?`.
+- **Model** is what Hermes recorded for the child: its session row, the one
+  model its usage rows observed, or the model the dispatch was pinned to. It
+  is never read from the current `delegation.model`.
+- **State** comes from Hermes' `subagent_stop`, a recorded model call, or the
+  team's own record. A child Hermes reported completed with no model call at
+  all reads `failed` (`no model call`). A child with no news for 30 minutes,
+  or whose session closed for compaction without a stop OMH could join, is
+  `unknown`; it is never shown running or done.
+
+The structure comes from a metadata-only record, `delegation_ledger/v1` under
+`<omh_home>/runtime/delegation/`, that OMH writes from Hermes' own
+`subagent_start`, `post_tool_call` (for `delegate_task`) and `subagent_stop`
+hooks: session and subagent ids, task order, turn ids, times, status words
+and OMH's own route. It holds no goal, summary, prompt or tool history. A
+title is read from Hermes' records when the graph is drawn.
+
+Boxes are drawn for three shapes only, each unambiguous: one bus joining a
+layer to the next (a fan-out or a fan-in), several fan-outs side by side
+under their own parents, and a layer wrapped into rows a trunk feeds. A graph
+with an edge that skips a layer, or two components a single bus would merge,
+is drawn as the tree, which draws no edge at all.
+
 ## What was actually broken
 
 **The model was dropped.** The runtime (`codex` / `claude_code`) was tracked
@@ -235,6 +320,7 @@ normalizes both vocabularies onto one set of keys.
 | executor progress bindings | live cross-unit state and latest observed event |
 | Hermes `state.db` (read-only) | `delegate_task` children: model, effort, state, elapsed, tokens, goal text |
 | Hermes `kanban.db` (read-only) | board tasks: state, native status, title; a linked worker session's model, tokens and tool calls |
+| `~/.omh/runtime/delegation/<key>.json` | the delegation graph's structure: which call started each child, its task index, parent and stop |
 
 Tokens and session ids are parsed from the spawned CLI's own structured output
 by `parse_unit_telemetry`, which is pure: no file I/O, no clock, no network.

@@ -20,6 +20,8 @@ from typing import Any, Callable
 
 from .approval_bypass import effective_approval_bypass
 from .awareness_delivery import _awareness_delivery_lock
+from .delegation_graph import build_delegation_graph, inactive_graph
+from .delegation_ledger import newest_ledger_session
 from .hermes_delegation import read_hermes_native_subagents
 from .kanban_board_reader import conversation_session_ids, kanban_db_path, read_kanban_lanes
 from .live_session import (
@@ -260,7 +262,9 @@ def _hud_text(value: Any, *, limit: int = MAX_HUD_TEXT_CHARS) -> str:
 def _fit_widget_hud_budget(payload: dict[str, Any]) -> dict[str, Any]:
     if _widget_hud_bytes(payload) <= MAX_WIDGET_HUD_BYTES:
         return payload
-    protected = {"schema_version", "privacy", "version", "profile", "active", "graph", "display"}
+    # `delegation_graph` bounds itself (`delegation_graph.GRAPH_BYTE_LIMIT`): cutting its node list here
+    # would leave edges naming nodes that are gone.
+    protected = {"schema_version", "privacy", "version", "profile", "active", "graph", "delegation_graph", "display"}
     for item_limit in (64, 16, 4):
         bounded = {
             key: value if key in protected else _bounded_hud_value(value, item_limit=item_limit)
@@ -1095,12 +1099,30 @@ def read_omh_hud(
         merged["completed"] = int(merged.get("completed", 0)) + int(kanban["completed"])
         if merged.get("status") == "idle":
             merged["status"] = "observed"
+    fanout_record = _hud_local_fanout_record(home)
     payload["graph"] = _hud_subagent_graph(
         home,
         native_rows_present=bool(native["rows"]),
         preference=_hud_graph_preference(graph_preference),
+        record=fanout_record,
     )
     payload["graph"]["scope"] = "global"
+    # The delegation graph of the conversation this poll reads for: who
+    # started whom, from the delegation ledger, with each child's facts from
+    # state.db (`delegation_graph`). A reader that names no session (the
+    # `omh hud` command) gets the conversation whose ledger changed last,
+    # marked global. A verified fanout is drawn when there is no native one.
+    if _hud_graph_preference(graph_preference) == "off":
+        payload["delegation_graph"] = inactive_graph("explicit_off", scope="session" if scoped else "global")
+    else:
+        graph_session = reading[0] if scoped else newest_ledger_session(home, now=time.time())
+        payload["delegation_graph"] = build_delegation_graph(
+            home,
+            hermes,
+            graph_session,
+            fanout=_hud_verified_fanout(fanout_record),
+            scope="session" if scoped else "global",
+        )
     payload["active"] = bool(
         payload["runtime"]["workflow"] != "idle"
         or payload["subagents"]["active"]
@@ -1117,13 +1139,32 @@ def read_omh_hud(
     return _fit_widget_hud_budget(payload)
 
 
+# `_hud_subagent_graph` without a record reads one; `None` is a record, the answer "no fanout".
+_RECORD_NOT_READ: Any = object()
+
+
+def _hud_verified_fanout(record: object) -> dict[str, Any] | None:
+    """The fanout contract and roster the delegation graph may draw: only a frozen, verified, paired one."""
+    if not isinstance(record, tuple):
+        return None
+    contract, provenance, roster, fanout_id, record_blocker = record
+    if record_blocker or recorded_contract_blocker(contract, provenance, expected_fanout_id=fanout_id):
+        return None
+    checked = project_subagent_graph(contract, roster, preference="on")
+    if checked["status"] != "active" and checked["reason"] != "single_owner":
+        return None
+    return {"contract": contract, "roster": roster}
+
+
 def _hud_subagent_graph(
     home: Path,
     *,
     native_rows_present: bool,
     preference: str,
+    record: object = _RECORD_NOT_READ,
 ) -> dict[str, object]:
-    record = _hud_local_fanout_record(home)
+    if record is _RECORD_NOT_READ:
+        record = _hud_local_fanout_record(home)
     if isinstance(record, str):
         return project_subagent_graph(
             None,
@@ -1561,6 +1602,7 @@ def _hud_fanout_roster(
                 return _hud_graph_roster(fanout_id, units_by_id), "invalid_fanout_status"
             seen_summary_units.add(unit_id)
             units_by_id[unit_id]["status"] = status
+            _hud_roster_model(units_by_id[unit_id], entry)
         if seen_summary_units != set(units_by_id):
             return _hud_graph_roster(fanout_id, units_by_id), "invalid_fanout_status"
     inflight_dir = fanout_dir / "inflight"
@@ -1598,12 +1640,30 @@ def _hud_fanout_roster(
             return _hud_graph_roster(fanout_id, units_by_id), "invalid_fanout_status"
         if units_by_id[unit_id]["status"] in {"prepared_not_observed", "running"}:
             units_by_id[unit_id]["status"] = "running"
+            if "model" not in units_by_id[unit_id]:
+                _hud_roster_model(units_by_id[unit_id], marker)
+            # Whether the running unit's work is moving, as the dispatcher assessed it: the same
+            # marker fields the running-work board reads (`status_board_reader`).
+            for field, limit in (("unit_state", 40), ("state_reason", 80), ("stalled_for_seconds", 12)):
+                value = marker.get(field)
+                if isinstance(value, (str, int)) and not isinstance(value, bool) and str(value).strip():
+                    units_by_id[unit_id][field] = _hud_text(str(value), limit=limit)
     return _hud_graph_roster(fanout_id, units_by_id), ""
+
+
+def _hud_roster_model(unit: dict[str, Any], source: dict[str, Any]) -> None:
+    """The model and effort a dispatch record names for a unit, bounded; nothing when it names none."""
+    model = source.get("model")
+    if isinstance(model, str) and model.strip():
+        unit["model"] = _hud_text(model, limit=80)
+        effort = source.get("reasoning_effort")
+        if isinstance(effort, str) and effort.strip():
+            unit["reasoning_effort"] = _hud_text(effort, limit=40)
 
 
 def _hud_graph_roster(
     fanout_id: str,
-    units_by_id: dict[str, dict[str, str]],
+    units_by_id: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     return {
         "schema_version": _FANOUT_ROSTER_SCHEMA_VERSION,

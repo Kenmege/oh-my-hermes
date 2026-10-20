@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import shutil
+import sys
 import time
 from typing import Any
 
 from ..hud import build_hud_payload
+from ..plugin_bundle.omh.delegation_view import render_delegation_view
 from .common import _paths, _print_json, _wants_json
+
+# Every glyph and line character the Unicode drawing can use: an output that cannot encode them gets ASCII.
+DELEGATION_VIEW_PROBE = "┌┐└┘─│┬┴├┤┼▼◆●◌✓✗▪·…!"
 
 
 def cmd_hud(args: argparse.Namespace) -> int:
@@ -13,7 +19,7 @@ def cmd_hud(args: argparse.Namespace) -> int:
     if _wants_json(args):
         _print_json(payload)
     else:
-        print(payload["display"]["line"])
+        _print_text(payload, args)
     if not getattr(args, "watch", False):
         return 0
     while True:
@@ -22,7 +28,30 @@ def cmd_hud(args: argparse.Namespace) -> int:
         if _wants_json(args):
             _print_json(payload)
         else:
-            print(payload["display"]["line"], flush=True)
+            _print_text(payload, args)
+
+
+def _print_text(payload: dict[str, Any], args: argparse.Namespace) -> None:
+    """The HUD line; with ``--graph``, the delegation view under it, sized to the terminal."""
+    lines = [payload["display"]["line"]]
+    if getattr(args, "graph", False):
+        graph = payload.get("delegation_graph")
+        view = render_delegation_view(
+            graph if isinstance(graph, dict) and graph.get("status") == "active" else None,
+            width=shutil.get_terminal_size((100, 24)).columns,
+            charset="unicode" if _encodes(DELEGATION_VIEW_PROBE) else "ascii",
+        )
+        lines += view.text_lines()
+    print("\n".join(lines), flush=True)
+
+
+def _encodes(text: str) -> bool:
+    """Whether stdout says it can encode ``text``; an output that names no encoding is taken as ASCII."""
+    try:
+        text.encode(getattr(sys.stdout, "encoding", None) or "ascii")
+    except (UnicodeEncodeError, LookupError):
+        return False
+    return True
 
 
 def _hud_payload(args: argparse.Namespace) -> dict[str, Any]:
@@ -60,6 +89,10 @@ def _add_hud_commands(sub) -> None:
     hud.add_argument("--context-remaining-percent", type=float, default=None, help="Optional host-provided context remaining percentage.")
     hud.add_argument("--watch", action="store_true", help="Keep printing the HUD line until interrupted.")
     hud.add_argument("--interval", type=float, default=2.0, help="Seconds between --watch refreshes.")
-    hud.add_argument("--graph", action="store_true", help="Show a safe recorded fanout graph when one is available.")
+    hud.add_argument(
+        "--graph",
+        action="store_true",
+        help="Print the delegation graph under the HUD line: recorded delegations, team parts or a fanout.",
+    )
     hud.add_argument("--json", action="store_true", help="Print the full machine-readable HUD payload.")
     hud.set_defaults(func=cmd_hud)

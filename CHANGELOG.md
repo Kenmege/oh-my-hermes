@@ -4,6 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Delegated work is drawn as a graph: in the OMH TUI, in chat replies, and
+  in `omh hud --graph`.** A conversation's `delegate_task` children, its
+  `omh_team` parts, or a fanout's units are drawn as boxes with their title,
+  category, model and effort, and state, joined by the edges OMH or Hermes
+  recorded: a dispatch from parent to child, or a `depends_on`. Lanes one turn
+  dispatched form a wave; waves are not drawn as dependencies. Where boxes do
+  not fit, or a shape cannot be drawn without implying an edge, the same
+  graph is a compact tree. The OMH TUI draws it live above the plan, and the
+  `[Agents]` block stops repeating the native lanes it holds. On Slack,
+  Discord, Telegram, Mattermost and Matrix, the reply Hermes sends on a turn
+  where the graph changed ends with it as a code block, at most 40 cells wide
+  and 1,800 characters; OMH sends nothing itself. A category is shown only
+  where the route OMH recorded matches the model the child ran, and no field
+  reads current config: what has no record is `?`. The structure comes from a
+  new metadata-only record, `delegation_ledger/v1`, written from Hermes'
+  `subagent_start`, `post_tool_call` and `subagent_stop` hooks.
+  `OMH_SUBAGENT_GRAPH=off` turns it off everywhere. The TUI no longer draws
+  the fanout-only `DAG · N ready` block; a fanout is drawn by the same view.
+  A stuck fanout unit (its dispatcher's `unit_state`) is drawn `stuck`, never
+  running.
+
 - **`omh_delegate_route` `fallback` advances only the calling conversation's
   own route (#2175).** With two sessions on one profile, `fallback` took its
   chain position from whichever session had routed last: the newest

@@ -92,7 +92,11 @@ transcripts by default.
 Hermes-facing progress, completion, and blocker updates should render as plain
 language unless the user asks for JSON, schema output, debug data, or an API
 payload. JSON/code-block output is an internal or opt-in surface, not normal
-chat UX.
+chat UX. The one exception, by owner decision (2026-10-20), is the delegation
+view: on a chat platform, a reply on a turn where the conversation's
+delegation graph changed ends with that graph as a code block, appended to the
+reply Hermes sends (never a message of OMH's own). `OMH_SUBAGENT_GRAPH=off`
+turns it off. See [Seeing What Coding Work Is Running](CODING-OBSERVABILITY.md).
 
 Internal awareness rails such as `[OMH Awareness]`, native bridge status
 context, evidence-boundary reminders, process wrappers, and raw CI/watch
