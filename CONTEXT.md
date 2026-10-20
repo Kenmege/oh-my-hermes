@@ -552,6 +552,33 @@ result's usage as complete (the child was killed, deltas still in Hermes'
 daemon token-writer queue are lost, and the read is a lower bound with no
 marker of its own)
 
+**Stored prompt identity**:
+The `Model:` line of the identity trailer Hermes ends every system prompt
+with (`agent/system_prompt._timestamp_line`), as stored for a delegation
+child's first segment in `state.db`: `system_prompts.prompt` by
+`sessions.system_prompt_hash`, or inline `sessions.system_prompt` on older
+rows. Hermes builds the prompt and creates the row with it before the
+child's first model call. A fallback rewrites only the in-memory copy
+(`rewrite_prompt_model_identity`), while the first accounted call can rewrite
+`sessions.model` to the model that answered (`first_accounted_route`). So
+this line is the record in `state.db` of the model a child asked for, and the
+requested side of a HUD row's `model_attestation`
+(`src/plugin_bundle/omh/hermes_delegation.py`). It is read with the rule
+Hermes' own `identity_line_value` uses (the last paragraph before the
+runtime block), from the end of the stored prompt only. A compression
+continuation names the previous segment as `parent_session_id` and rebuilds
+its prompt from whatever model is running, so it attests nothing.
+
+This is a read-only coupling to a Hermes-private shape, the same class as
+the lease registry above: widening `requires_hermes` includes checking the
+trailer, the runtime-block markers and the two storage columns. If the shape
+moves, the read goes quiet: the request is unattested, an agreement reads
+`unknown` (`requested_model_not_attested`), and a disagreement with
+`sessions.model` stays detectable.
+_Avoid_: reading `sessions.model` or the current `delegation.model` as a past
+request, reading a `Model:` line outside the trailer, reading a continuation's
+prompt as the child's request
+
 **Originating session stamp**:
 `origin_session_id` on a fanout unit (and on the dispatch summary, for that
 run's recovery attempts), copied by `omh coding fanout dispatch` from the

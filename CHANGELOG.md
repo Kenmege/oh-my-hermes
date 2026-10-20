@@ -4,21 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
-- **A finished delegation child's model verdict no longer follows later
-  config edits.** A HUD row's `model_attestation` judged a child whose
-  session row names no model against the current `delegation.model`, and
-  reported it as `requested_source: delegation_route`. OMH rewrites that key
-  for each dispatch and puts the person's value back at turn end, so the
-  same finished child read `agreement` or `disagreement` depending on when
-  the HUD was read. The requested side is now the child's own
-  `sessions.model` and nothing else. Without one the verdict is `unknown`
-  with basis `no_requested_model`, which is neither a match nor a mismatch,
-  and `delegation_route` is no longer emitted. A child whose row names a
-  model is judged as before, whatever the config says. Known limit,
-  unchanged: Hermes rewrites `sessions.model` to the model of a session's
-  first accounted call when that call names a billing provider and a
-  different model, so a substitution on a child's first call still reads as
-  agreement.
+- **A delegation child's model verdict rests only on what the run recorded.**
+  A HUD row's `model_attestation` says whether the model that answered a
+  child is the model it asked for. It had two ways to report a match it could
+  not prove. A child whose session row names no model was judged against the
+  current `delegation.model`, which OMH rewrites for each dispatch and puts
+  back at turn end, so the same finished child read `agreement` or
+  `disagreement` depending on when the HUD was read. And the request was read
+  from `sessions.model`, which Hermes rewrites to the answering model on a
+  session's first accounted call when that call names a billing provider, so
+  a substitution on a child's first call read as `agreement`. The request now
+  comes from the `Model:` line of the identity trailer Hermes stored with the
+  child's first system prompt, written before its first call and kept on a
+  fallback (`requested_source: prompt_identity`). Without that record a
+  session row that agrees with the answer is `unknown`
+  (`requested_model_not_attested`), one that disagrees is still
+  `disagreement`, a child with neither is `unknown` (`no_requested_model`),
+  and `delegation_route` is no longer emitted. Measured read-only over every
+  delegation child row in two local Hermes databases (a profile and a
+  pre-update backup, 550 children; rows still only in the WAL were not
+  read): all 550 carried the trailer, and the verdicts were the same as
+  before the change, 543 `agreement` and 7 `unknown`.
 - **`omh_probe` says why its own package probe did not import, and a broken
   import hook cannot make the classifier raise.** When `omh.probe` alone fails
   to import, the probe's bundle answer now carries a `package_probe` row with

@@ -8,6 +8,7 @@ effort, mixture-category attribution (including the deliberate ``inherit``
 label), liveness windows, and the read_omh_hud merge.
 """
 
+import hashlib
 import json
 import sqlite3
 import tempfile
@@ -40,10 +41,33 @@ from omh.plugin_bundle.omh.hermes_delegation import (
     provider_serves_alias,
     read_hermes_native_subagents,
     served_model_attestation,
+    _prompt_identity_model,
 )
 
 NOW = 1_800_000_000.0
 PARENT_ID = "20260818_100000_parent"
+
+
+def _identity_prompt(model: str, *, earlier: str = "", runtime: str | None = None) -> str:
+    """A stored system prompt in the shape Hermes builds one.
+
+    The last paragraph is the identity trailer (`_timestamp_line`), optionally
+    followed by the renderer's runtime block; `earlier` stands for memory or
+    context-file prose ahead of it.
+    """
+    prompt = "You are a helpful agent.\n\n"
+    if earlier:
+        prompt += earlier + "\n\n"
+    prompt += "Conversation started: Monday, August 18, 2026"
+    if model:
+        prompt += f"\nModel: {model}"
+    prompt += "\nProvider: openrouter\nPlatform: cli"
+    if runtime is not None:
+        prompt += (
+            "\n\n# Hermes runtime environment\n\n"
+            f"{runtime}\n\n<!-- End Hermes runtime environment -->"
+        )
+    return prompt
 
 
 def _build_state_db(
@@ -53,14 +77,24 @@ def _build_state_db(
     delegation_states: dict[str, str] | None = None,
     include_cost_provenance: bool = True,
     include_end_columns: bool = False,
+    include_prompt_columns: bool = False,
 ) -> None:
     connection = sqlite3.connect(home / "state.db")
+    # `parent_session_id` and the stored system prompt are what attest a
+    # child's request; without them the table is a schema that cannot. Off by
+    # default: other suites extend this four-column shape themselves.
+    prompt_columns = (
+        ", parent_session_id TEXT, system_prompt TEXT, system_prompt_hash TEXT"
+        if include_prompt_columns
+        else ""
+    )
     connection.executescript(
-        """
+        f"""
         CREATE TABLE sessions (
             id TEXT PRIMARY KEY, model TEXT, model_config TEXT,
-            started_at REAL NOT NULL
+            started_at REAL NOT NULL{prompt_columns}
         );
+        CREATE TABLE system_prompts (hash TEXT PRIMARY KEY, prompt TEXT NOT NULL);
         CREATE TABLE session_model_usage (
             session_id TEXT NOT NULL, model TEXT NOT NULL,
             billing_provider TEXT NOT NULL DEFAULT '',
@@ -103,6 +137,29 @@ def _build_state_db(
             "INSERT INTO sessions (id, model, model_config, started_at) VALUES (?, ?, ?, ?)",
             (child["id"], child["model"], json.dumps(config), child["started_at"]),
         )
+        if include_prompt_columns:
+            # A child's first segment names the delegating session as its
+            # parent; a compression continuation names the previous segment.
+            connection.execute(
+                "UPDATE sessions SET parent_session_id = ? WHERE id = ?",
+                (child.get("parent_session_id", PARENT_ID), child["id"]),
+            )
+            prompt = child.get("prompt")
+            if prompt is None and "prompt_model" in child:
+                prompt = _identity_prompt(child["prompt_model"])
+            if prompt is not None and child.get("prompt_inline"):
+                connection.execute(
+                    "UPDATE sessions SET system_prompt = ? WHERE id = ?", (prompt, child["id"])
+                )
+            elif prompt is not None:
+                digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+                connection.execute(
+                    "INSERT OR IGNORE INTO system_prompts (hash, prompt) VALUES (?, ?)",
+                    (digest, prompt),
+                )
+                connection.execute(
+                    "UPDATE sessions SET system_prompt_hash = ? WHERE id = ?", (digest, child["id"])
+                )
         if include_end_columns:
             connection.execute(
                 "UPDATE sessions SET ended_at = ?, end_reason = ? WHERE id = ?",
@@ -1778,12 +1835,14 @@ class HermesNativeSubagentReaderTest(unittest.TestCase):
 
 
 class ServedModelAttestationTest(unittest.TestCase):
-    """The model a child was routed to, compared against the one that answered.
+    """The model a child asked for, compared against the one that answered.
 
-    Hermes records the two separately and never compares them: `sessions.model`
-    is what was asked for, `session_model_usage.model` is written per call from
-    the model that answered. The row reader preferred the recorded value, which
-    hid the difference in exactly the case it exists.
+    `session_model_usage.model` is written per call from the model that
+    answered. The request is read from the child's own records: the `Model:`
+    line of the identity trailer Hermes stored with its first system prompt,
+    written before the first call and kept on a fallback. `sessions.model` is
+    not enough on its own, because Hermes rewrites it to the first accounted
+    call's model, so it can show a disagreement but never attest agreement.
     """
 
     def setUp(self):
@@ -1791,16 +1850,18 @@ class ServedModelAttestationTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.home = Path(self._tmp.name)
 
-    def _attestation(self, child: dict) -> dict:
-        _build_state_db(self.home, [child])
+    def _attestation(self, child: dict, **build) -> dict:
+        build.setdefault("include_prompt_columns", True)
+        _build_state_db(self.home, [child], **build)
         payload = read_hermes_native_subagents(self.home, now=NOW, omh_home=self.home / ".omh")
         return payload["rows"][0]["model_attestation"]
 
-    def test_the_answering_model_matching_the_recorded_route_attests_agreement(self):
+    def test_an_attested_request_the_answer_matches_attests_agreement(self):
         attestation = self._attestation(
             {
                 "id": "20260818_100100_agree1",
                 "model": "claude-fable-5-1",
+                "prompt_model": "claude-fable-5-1",
                 "started_at": NOW - 60,
                 "usage": {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 5},
             }
@@ -1809,13 +1870,64 @@ class ServedModelAttestationTest(unittest.TestCase):
         self.assertEqual(attestation["basis"], "resolved_match")
         self.assertEqual(attestation["requested"], "claude-fable-5-1")
         self.assertEqual(attestation["answering"], "claude-fable-5-1")
-        self.assertEqual(attestation["requested_source"], "session_model")
+        self.assertEqual(attestation["requested_source"], "prompt_identity")
 
-    def test_an_answering_model_the_route_never_asked_for_attests_disagreement(self):
-        # The case the row reader used to hide: the recorded model wins the
-        # `model` column, so without this comparison the substitution is
-        # invisible. Both sides are named RESOLVED -- the vendor prefix the
-        # usage row carried is not what the reader reports.
+    def test_a_first_call_substitution_the_session_row_hides_attests_disagreement(self):
+        # The shape Hermes leaves behind (`first_accounted_route`): the child
+        # asked for gpt-6-astra, its first call was answered by
+        # claude-fable-5-1 under a billing provider, and Hermes rewrote
+        # `sessions.model` to the answer. The stored prompt still names the
+        # request, so this is a substitution, not an agreement.
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_hidden1",
+                "model": "claude-fable-5-1",
+                "prompt_model": "gpt-6-astra",
+                "started_at": NOW - 60,
+                "usage": {
+                    "model": "claude-fable-5-1",
+                    "billing_provider": "openrouter",
+                    "output_tokens": 10,
+                    "last_seen": NOW - 5,
+                },
+            }
+        )
+        self.assertEqual(attestation["verdict"], "disagreement")
+        self.assertEqual(attestation["basis"], "resolved_mismatch")
+        self.assertEqual(attestation["requested"], "gpt-6-astra")
+        self.assertEqual(attestation["requested_source"], "prompt_identity")
+        self.assertEqual(attestation["answering"], "claude-fable-5-1")
+
+    def test_an_unattested_session_model_that_agrees_is_unknown_not_agreement(self):
+        # No stored prompt names the request, and the session row agrees with
+        # the answer. That row may be the answer itself, so the verdict says
+        # it cannot tell, and does not name the row `requested`.
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_noattst",
+                "model": "claude-fable-5-1",
+                "started_at": NOW - 60,
+                "usage": {
+                    "model": "claude-fable-5-1",
+                    "billing_provider": "openrouter",
+                    "output_tokens": 10,
+                    "last_seen": NOW - 5,
+                },
+            }
+        )
+        self.assertEqual(attestation["verdict"], "unknown")
+        self.assertEqual(attestation["basis"], "requested_model_not_attested")
+        self.assertEqual(attestation["answering"], "claude-fable-5-1")
+        self.assertNotIn("requested", attestation)
+        self.assertNotIn("requested_source", attestation)
+        self.assertNotIn("resolved", attestation)
+
+    def test_an_unattested_session_model_that_disagrees_still_attests_disagreement(self):
+        # Hermes only ever copies an accounted call's model into the row, so a
+        # row that differs from the sole answering model was not copied from
+        # it. That disagreement stays detectable without a stored prompt. Both
+        # sides are named RESOLVED -- the vendor prefix the usage row carried
+        # is not what the reader reports.
         attestation = self._attestation(
             {
                 "id": "20260818_100100_swap1",
@@ -1831,17 +1943,122 @@ class ServedModelAttestationTest(unittest.TestCase):
         self.assertEqual(attestation["verdict"], "disagreement")
         self.assertEqual(attestation["basis"], "resolved_mismatch")
         self.assertEqual(attestation["requested"], "gpt-6-astra")
+        self.assertEqual(attestation["requested_source"], "session_model")
         self.assertEqual(attestation["answering"], "claude-fable-5-1")
+
+    def test_a_compression_continuation_prompt_attests_nothing(self):
+        # A continuation row's parent is the previous segment, not the
+        # delegating session, and its prompt was rebuilt from whatever model
+        # ran at compaction, which can be a fallback. Its trailer is ignored.
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_contin1",
+                "model": "claude-fable-5-1",
+                "prompt_model": "claude-fable-5-1",
+                "parent_session_id": "20260818_100050_segment",
+                "started_at": NOW - 60,
+                "usage": {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 5},
+            }
+        )
+        self.assertEqual(attestation["verdict"], "unknown")
+        self.assertEqual(attestation["basis"], "requested_model_not_attested")
+
+    def test_a_schema_that_cannot_tell_a_first_segment_attests_nothing(self):
+        # Without `parent_session_id` a first segment and a continuation look
+        # alike, so no stored prompt is read as a request.
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_nocolum",
+                "model": "claude-fable-5-1",
+                "started_at": NOW - 60,
+                "usage": {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 5},
+            },
+            include_prompt_columns=False,
+        )
+        self.assertEqual(attestation["verdict"], "unknown")
+        self.assertEqual(attestation["basis"], "requested_model_not_attested")
+
+    def test_an_inline_legacy_prompt_attests_like_a_stored_one(self):
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_inline1",
+                "model": "claude-fable-5-1",
+                "prompt_model": "gpt-6-astra",
+                "prompt_inline": True,
+                "started_at": NOW - 60,
+                "usage": {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 5},
+            }
+        )
+        self.assertEqual(attestation["verdict"], "disagreement")
+        self.assertEqual(attestation["requested"], "gpt-6-astra")
+        self.assertEqual(attestation["requested_source"], "prompt_identity")
+
+    def test_only_the_identity_trailer_names_the_request(self):
+        # Memory and context files come before the trailer and may carry a
+        # `Model:` line of their own; the runtime block after it is embedder
+        # prose. Neither is read, only the trailer paragraph.
+        prompt = _identity_prompt(
+            "gpt-6-astra",
+            earlier="## Memory\nModel: claude-fable-5-1",
+            runtime="Model: claude-fable-5-1\nCurrent working directory: /tmp",
+        )
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_trailr1",
+                "model": "claude-fable-5-1",
+                "prompt": prompt,
+                "started_at": NOW - 60,
+                "usage": {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 5},
+            }
+        )
+        self.assertEqual(attestation["verdict"], "disagreement")
+        self.assertEqual(attestation["requested"], "gpt-6-astra")
+
+    def test_a_trailer_without_a_model_line_attests_nothing(self):
+        # An earlier paragraph's `Model:` line never stands in for a trailer
+        # that has none.
+        prompt = _identity_prompt("", earlier="## Memory\nModel: claude-fable-5-1")
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_nomodel",
+                "model": "claude-fable-5-1",
+                "prompt": prompt,
+                "started_at": NOW - 60,
+                "usage": {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 5},
+            }
+        )
+        self.assertEqual(attestation["verdict"], "unknown")
+        self.assertEqual(attestation["basis"], "requested_model_not_attested")
+
+    def test_the_trailer_reader_refuses_a_tail_it_cannot_bound(self):
+        # The reader takes only the end of a stored prompt. A tail with no
+        # paragraph break before the trailer, or a runtime block whose heading
+        # is outside the tail, is not known to hold the whole trailer.
+        self.assertEqual(_prompt_identity_model(_identity_prompt("gpt-6-astra")), "gpt-6-astra")
+        self.assertEqual(_prompt_identity_model("Model: gpt-6-astra\nProvider: openrouter"), "")
+        self.assertEqual(
+            _prompt_identity_model(
+                "Model: gpt-6-astra\n\nnot the heading\n\n<!-- End Hermes runtime environment -->"
+            ),
+            "",
+        )
+        self.assertEqual(
+            _prompt_identity_model(
+                _identity_prompt("gpt-6-astra", runtime="Model: claude-fable-5-1")
+            ),
+            "gpt-6-astra",
+        )
 
     def test_a_child_that_changed_models_mid_run_attests_unknown_not_agreement(self):
         # `_sole_distinct_value` hands two distinct usage models over as an
         # empty string, which is the right answer for the `model` column and
         # a trap for a verdict: an empty answering side must never read as a
-        # match against the recorded route.
+        # match against the request.
         attestation = self._attestation(
             {
                 "id": "20260818_100100_switch",
                 "model": "claude-fable-5-1",
+                "prompt_model": "claude-fable-5-1",
                 "started_at": NOW - 60,
                 "usages": [
                     {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 20},
@@ -1865,6 +2082,8 @@ class ServedModelAttestationTest(unittest.TestCase):
         self.assertEqual(attestation["verdict"], "unknown")
         self.assertEqual(attestation["basis"], "no_usage_observation")
         self.assertNotIn("answering", attestation)
+        # An unattested session row is not named the request either.
+        self.assertNotIn("requested", attestation)
 
     def test_a_vendor_pointer_answered_by_its_exact_contract_id_agrees(self):
         # `deepseek-flash` is DeepSeek's served pointer for the exact contract
@@ -1874,6 +2093,7 @@ class ServedModelAttestationTest(unittest.TestCase):
             {
                 "id": "20260818_100100_pointer",
                 "model": "deepseek-flash",
+                "prompt_model": "deepseek-flash",
                 "started_at": NOW - 60,
                 "usage": {
                     "model": "deepseek/deepseek-v4.1-flash",
@@ -1893,6 +2113,7 @@ class ServedModelAttestationTest(unittest.TestCase):
             {
                 "id": "20260818_100100_snapsho",
                 "model": "gpt-6-astra",
+                "prompt_model": "gpt-6-astra",
                 "started_at": NOW - 60,
                 "usage": {
                     "model": "gpt-6-astra-2026-07-09",
@@ -1915,6 +2136,7 @@ class ServedModelAttestationTest(unittest.TestCase):
         child = {
             "id": "20260818_100100_newptr1",
             "model": "claude-fable-5-1",
+            "prompt_model": "claude-fable-5-1",
             "started_at": NOW - 60,
             "usage": {
                 "model": "anthropic/claude-fable-5-1-preview",
@@ -1945,6 +2167,7 @@ class ServedModelAttestationTest(unittest.TestCase):
             {
                 "id": "20260818_100100_tiers11",
                 "model": "glm-5.3-ultrafast",
+                "prompt_model": "glm-5.3-ultrafast",
                 "started_at": NOW - 60,
                 "usage": {"model": "glm-5.3-fast", "output_tokens": 10, "last_seen": NOW - 5},
             }
@@ -2022,37 +2245,37 @@ class ServedModelAttestationTest(unittest.TestCase):
         after = self._read_attestation()
         self.assertEqual(before, after)
 
-    def test_a_recorded_model_keeps_its_verdict_against_a_contradicting_config(self):
-        # The negative control: a child whose row names a model is judged on
-        # that row alone, so a config saying the opposite moves neither
-        # verdict.
+    def test_a_recorded_request_keeps_its_verdict_against_a_contradicting_config(self):
+        # The negative control: a child is judged on its own records alone,
+        # so a config saying the opposite moves neither an attested agreement
+        # nor a session-row disagreement.
         cases = (
-            ("20260818_100100_keepagr", "claude-fable-5-1", "gpt-6-astra", "agreement"),
-            ("20260818_100100_keepdis", "gpt-6-astra", "claude-fable-5-1", "disagreement"),
+            ("20260818_100100_keepagr", "claude-fable-5-1", "claude-fable-5-1",
+             "gpt-6-astra", "agreement", "prompt_identity"),
+            ("20260818_100100_keepdis", "gpt-6-astra", None,
+             "claude-fable-5-1", "disagreement", "session_model"),
         )
-        for child_id, recorded, configured, verdict in cases:
+        for child_id, recorded, prompt_model, configured, verdict, source in cases:
             with self.subTest(recorded=recorded, configured=configured):
                 (self.home / "state.db").unlink(missing_ok=True)
-                _build_state_db(
-                    self.home,
-                    [
-                        {
-                            "id": child_id,
-                            "model": recorded,
-                            "started_at": NOW - 60,
-                            "usage": {
-                                "model": "claude-fable-5-1",
-                                "output_tokens": 10,
-                                "last_seen": NOW - 5,
-                            },
-                        }
-                    ],
-                )
+                child = {
+                    "id": child_id,
+                    "model": recorded,
+                    "started_at": NOW - 60,
+                    "usage": {
+                        "model": "claude-fable-5-1",
+                        "output_tokens": 10,
+                        "last_seen": NOW - 5,
+                    },
+                }
+                if prompt_model:
+                    child["prompt_model"] = prompt_model
+                _build_state_db(self.home, [child], include_prompt_columns=True)
                 self._write_delegation_model(configured)
                 attestation = self._read_attestation()
                 self.assertEqual(attestation["verdict"], verdict)
                 self.assertEqual(attestation["requested"], recorded)
-                self.assertEqual(attestation["requested_source"], "session_model")
+                self.assertEqual(attestation["requested_source"], source)
 
     def test_a_child_nothing_recorded_a_request_for_attests_unknown(self):
         # No session model and no config at all: the answering model is
@@ -2079,6 +2302,7 @@ class ServedModelAttestationTest(unittest.TestCase):
                 {
                     "id": "20260818_100100_cover11",
                     "model": "claude-fable-5-1",
+                    "prompt_model": "claude-fable-5-1",
                     "started_at": NOW - 60,
                     "usage": {
                         "model": "claude-fable-5-1",
@@ -2087,6 +2311,7 @@ class ServedModelAttestationTest(unittest.TestCase):
                     },
                 }
             ],
+            include_prompt_columns=True,
         )
         payload = read_hermes_native_subagents(self.home, now=NOW, omh_home=self.home / ".omh")
         self.assertEqual(
@@ -2115,6 +2340,21 @@ class ServedModelAttestationTest(unittest.TestCase):
                 )["verdict"],
                 "unknown",
             )
+
+    def test_a_caller_that_does_not_attest_its_request_gets_no_agreement(self):
+        # The default is the fail-safe one: agreement needs a caller that says
+        # its request is attested.
+        unattested = served_model_attestation("gpt-6-astra", "gpt-6-astra")
+        self.assertEqual(unattested["verdict"], "unknown")
+        self.assertEqual(unattested["basis"], "requested_model_not_attested")
+        attested = served_model_attestation(
+            "gpt-6-astra", "gpt-6-astra", request_attested=True
+        )
+        self.assertEqual(attested["verdict"], "agreement")
+        self.assertEqual(
+            served_model_attestation("gpt-6-astra", "claude-fable-5-1")["verdict"],
+            "disagreement",
+        )
 
 
 class HudMergeTest(unittest.TestCase):
@@ -2180,6 +2420,7 @@ class HudMergeTest(unittest.TestCase):
                     {
                         "id": "20260818_100100_eeee55",
                         "model": "gpt-6.1-sol",
+                        "prompt_model": "gpt-6.1-sol",
                         "effort": "high",
                         "started_at": time.time() - 30,
                         "usage": {
@@ -2191,6 +2432,7 @@ class HudMergeTest(unittest.TestCase):
                         },
                     }
                 ],
+                include_prompt_columns=True,
             )
             payload = read_omh_hud(omh_home, hermes_home)
             self.assertTrue(payload["active"])

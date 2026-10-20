@@ -2007,29 +2007,151 @@ def _shared_model_aliases(requested_key: str, answering_key: str) -> list[str]:
     ]
 
 
+# Hermes ends every system prompt it builds with an identity trailer
+# (`agent/system_prompt._timestamp_line`): one paragraph of `Label: value`
+# lines, `Model: <agent.model>` among them, followed only by the renderer's
+# own runtime block when there is one. Hermes reads it back with
+# `agent/surface_switch.identity_line_value`, and these constants are the
+# boundary that function splits on (`agent/prompt_builder.py`).
+_RUNTIME_ENVIRONMENT_HEADING = "# Hermes runtime environment"
+_RUNTIME_ENVIRONMENT_END = "<!-- End Hermes runtime environment -->"
+_PROMPT_IDENTITY_LABEL = "Model:"
+# The trailer sits within the last few hundred characters of a stored prompt,
+# so the read takes only this much of each one. A tail that does not hold the
+# whole trailer paragraph reads as no identity, never as a partial one.
+_PROMPT_IDENTITY_TAIL_CHARS = 8192
+
+
+def _prompt_identity_model(prompt_tail: str) -> str:
+    """The `Model:` value of a stored prompt's identity trailer, else "".
+
+    Read the way Hermes' `identity_line_value` reads it: drop the runtime
+    block when the prompt ends in its end marker, take the last paragraph of
+    what remains, and take the last line there that starts with the label.
+    Memory, context files and plugin prose sit in earlier paragraphs, so a
+    `Model:` line of theirs is never read. A tail with no paragraph break
+    before the trailer is not known to hold the whole paragraph and reads as
+    "".
+    """
+    identity = prompt_tail
+    if prompt_tail.endswith(_RUNTIME_ENVIRONMENT_END):
+        # A heading outside the tail leaves nothing before it, which the
+        # paragraph rule below reads as "".
+        identity = prompt_tail.rpartition(f"\n\n{_RUNTIME_ENVIRONMENT_HEADING}\n\n")[0]
+    _earlier, paragraph_break, trailer = identity.rpartition("\n\n")
+    if not paragraph_break:
+        return ""
+    values = [
+        line[len(_PROMPT_IDENTITY_LABEL):].strip()
+        for line in trailer.splitlines()
+        if line.startswith(_PROMPT_IDENTITY_LABEL)
+    ]
+    return _text(values[-1]) if values else ""
+
+
+def _attach_prompt_identity_models(
+    connection: sqlite3.Connection,
+    children: list[dict[str, Any]],
+    session_columns: set[str],
+) -> None:
+    """The model each child's first system prompt names, as its attested request.
+
+    Hermes builds a child's system prompt at the start of its first turn and
+    creates the session row with it before the first model call
+    (`agent/turn_context.build_turn_context`). A fallback afterwards rewrites
+    only the in-memory copy (`rewrite_prompt_model_identity`: "Not persisted:
+    the stored row keeps the primary's labels"), and the first accounted call
+    rewrites `sessions.model`, not the prompt. So the stored trailer still
+    names the model the child asked for after both.
+
+    Only a child's first segment qualifies: there `sessions.parent_session_id`
+    is the session that delegated, the same id as `_delegate_from`. A
+    compression continuation is a new row whose parent is the previous
+    segment, and its prompt is rebuilt from the model running at that moment,
+    which can be a fallback. A schema without the column cannot tell the two
+    apart and attests nothing.
+
+    The prompt is in `system_prompts`, keyed by `sessions.system_prompt_hash`,
+    or inline in `sessions.system_prompt` on rows that predate the table.
+    Best-effort like the other enrichments: any read fault leaves the request
+    unattested, which withholds an agreement rather than inventing one.
+    """
+    if not children or "parent_session_id" not in session_columns:
+        return
+    try:
+        tables = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        prompt_columns = (
+            {
+                str(row[1])
+                for row in connection.execute(
+                    'PRAGMA table_info("system_prompts")'
+                ).fetchall()
+            }
+            if "system_prompts" in tables
+            else set()
+        )
+        tail = _PROMPT_IDENTITY_TAIL_CHARS
+        sources: list[str] = []
+        join = ""
+        if "system_prompt_hash" in session_columns and {"hash", "prompt"} <= prompt_columns:
+            sources.append(f"substr(p.prompt, -{tail})")
+            join = " LEFT JOIN system_prompts p ON p.hash = s.system_prompt_hash"
+        if "system_prompt" in session_columns:
+            sources.append(f"substr(s.system_prompt, -{tail})")
+        if not sources:
+            return
+        prompt_tail = sources[0] if len(sources) == 1 else f"COALESCE({', '.join(sources)})"
+        placeholders = ",".join("?" for _ in children)
+        cursor = connection.execute(
+            f"SELECT s.id, s.parent_session_id, {prompt_tail} FROM sessions s{join} "
+            f"WHERE s.id IN ({placeholders})",
+            tuple(child["session_id"] for child in children),
+        )
+        rows = cursor.fetchall()
+    except sqlite3.Error:
+        return
+    by_id = {child["session_id"]: child for child in children}
+    for session_id, parent_session_id, prompt in rows:
+        child = by_id.get(_text(session_id))
+        if child is None or _text(parent_session_id) != child["parent_id"]:
+            continue
+        if isinstance(prompt, str):
+            child["prompt_model"] = _prompt_identity_model(prompt)
+
+
 def served_model_attestation(
     requested: str,
     answering: str,
     *,
     requested_source: str = "",
+    request_attested: bool = False,
     answering_observations: int = 0,
 ) -> dict[str, Any]:
     """Compare the model a run was routed to against the model that answered.
 
-    Hermes records the two separately: `sessions.model` is written at session
-    creation from the model the agent was built with and on an explicit
-    `/model` switch, while `session_model_usage.model` is written per call
-    from the model that actually answered. Nothing compared them, and
+    `session_model_usage.model` is written per call from the model that
+    actually answered. The requested side is the caller's: the reader passes
+    the model a child's first stored system prompt names when there is one
+    (`_attach_prompt_identity_models`), else `sessions.model` with
+    ``request_attested=False``. Nothing compared the two before, and
     `_observed_wire_model` prefers the recorded value — which hides the
     difference in exactly the case it exists.
 
-    The first is not a pure record of the request. Hermes'
-    `update_token_counts` fills a NULL `sessions.model` from any accounted
-    call, and on a session's first accounted call that names a billing
-    provider it overwrites a different value with that call's model
-    (`first_accounted_route`, there for a fallback route). A substitution on
-    a child's first call therefore reads as agreement here; the state.db rows
-    this reads hold no other run-time record of the request.
+    `sessions.model` is not a record of the request. Hermes'
+    `update_token_counts` fills a NULL one from any accounted call, and on a
+    session's first accounted call that names a billing provider it
+    overwrites a different value with that call's model
+    (`first_accounted_route`, there for a fallback route). So an unattested
+    request that agrees with the answer may be the answer itself, and the
+    verdict is `unknown` (`requested_model_not_attested`), never agreement.
+    One that disagrees still reads as disagreement: those writes copy the
+    model of an accounted call, so a value that differs from the sole model
+    the usage rows name was not copied from any call that left a usage row.
 
     Both sides resolve through `_model_alias_candidates`, so a vendor pointer
     (`deepseek-flash`) answered by its exact contract id, or a base answered
@@ -2040,13 +2162,18 @@ def served_model_attestation(
     model (`no_usage_observation`), when the usage rows named more than one so
     no single model answered the run (`multiple_usage_models` — the mid-run
     switch, which `_sole_distinct_value` hands over as an empty string that
-    must not read as a match), or when nothing recorded what was requested
-    (`no_requested_model`).
+    must not read as a match), when nothing recorded what was requested
+    (`no_requested_model`), or when only an unattested request agrees
+    (`requested_model_not_attested`).
 
     ``answering_observations`` is the distinct-model count behind ``answering``
     and is consulted only when ``answering`` is empty, to tell those first two
-    apart. ``requested_source`` names where the requested side came from, and
-    is reported only when there is a requested side to attribute.
+    apart. ``requested_source`` names where the requested side came from. The
+    requested side is reported only when it is attested, or when it is the
+    disagreeing value; an unattested value is never named `requested` beside
+    a verdict that could not use it. ``request_attested`` defaults to False,
+    so a caller that does not say where its request came from gets no
+    agreement out of it.
     """
     requested_key = _unqualified_model_alias(requested)
     answering_key = _unqualified_model_alias(answering)
@@ -2068,10 +2195,15 @@ def served_model_attestation(
         basis = "no_requested_model"
     else:
         shared_aliases = _shared_model_aliases(requested_key, answering_key)
-        verdict = "agreement" if shared_aliases else "disagreement"
-        basis = "resolved_match" if shared_aliases else "resolved_mismatch"
+        if shared_aliases and not request_attested:
+            verdict = "unknown"
+            basis = "requested_model_not_attested"
+            shared_aliases = []
+        else:
+            verdict = "agreement" if shared_aliases else "disagreement"
+            basis = "resolved_match" if shared_aliases else "resolved_mismatch"
     attestation: dict[str, Any] = {"verdict": verdict, "basis": basis}
-    if resolved_requested:
+    if resolved_requested and (request_attested or verdict == "disagreement"):
         attestation["requested"] = resolved_requested
         if requested_source:
             attestation["requested_source"] = requested_source
@@ -2308,6 +2440,7 @@ def _query_state_db(
             for child in children:
                 child["usage"] = usage.get(child["session_id"], {})
             _attach_opening_goals(connection, children)
+            _attach_prompt_identity_models(connection, children, session_columns)
 
         cursor = connection.execute(
             "SELECT delegation_id, state FROM async_delegations WHERE dispatched_at >= ?",
@@ -2486,20 +2619,22 @@ def read_hermes_native_subagents(
         # An empty `sessions.model` is filled from the one model the child's
         # usage rows observed, never from a guess; see `_observed_wire_model`.
         wire_model = _observed_wire_model(child)
-        # The same two surfaces the fill above chooses between, compared
-        # instead of collapsed: the recorded route stands for what was asked
-        # for (with the limit `served_model_attestation` states), the usage
-        # model is what answered. The requested side is the child's own
-        # session row and nothing else. A child whose row names no model has
-        # no run-time record of what was asked for, so its verdict is
-        # `unknown` (`no_requested_model`). Today's `delegation.model` is not
-        # that record: OMH rewrites it per dispatch and restores it at turn
-        # end, so reading it here made a finished child's verdict change
-        # when the config did.
+        # What was asked for, compared with what answered (the usage model).
+        # The request comes from the child's own records and nothing else:
+        # the model its first stored system prompt names, which Hermes wrote
+        # before the first call and does not rewrite on a fallback, else its
+        # `sessions.model`, which Hermes can rewrite to the answering model
+        # and so cannot attest an agreement (see `served_model_attestation`).
+        # A child with neither is `unknown` (`no_requested_model`). Today's
+        # `delegation.model` is not a record of a past request: OMH rewrites
+        # it per dispatch and restores it at turn end, so reading it here
+        # made a finished child's verdict change when the config did.
+        prompt_model = _text(child.get("prompt_model"))
         attestation = served_model_attestation(
-            _text(child.get("model")),
+            prompt_model or _text(child.get("model")),
             _text(usage.get("model")),
-            requested_source="session_model",
+            requested_source="prompt_identity" if prompt_model else "session_model",
+            request_attested=bool(prompt_model),
             answering_observations=int(usage.get("model_count") or 0),
         )
 
