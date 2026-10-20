@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Every Hermes `delegate_task` child gets OMH's delegation protocol.** The
+  `coding-handling` harness requires the protocol in every delegated or
+  reviewer prompt, runtime-native spawns included, but a Hermes-native child
+  got it only when the parent model pasted it into the goal. The plugin now
+  registers a second system prompt section, `omh.delegation-protocol`, which
+  renders only for a session Hermes builds as a `delegate_task` child
+  (platform `subagent`). It carries the goal echo-back, verification-stop and
+  re-review-cap lines that `omh coding composition-guide` returns, which now
+  read the same definitions. Every child of a batch gets one copy, and so does
+  the reviewer that Hermes' review engine spawns without a tool call. The
+  parent's own prompt, the dispatched goals and the bot persona do not change.
+  Each child's system prompt grows by 923 characters (the 836-character
+  section plus Hermes' framing) (#2174).
+
 - **`omh_probe` says why its own package probe did not import, and a broken
   import hook cannot make the classifier raise.** When `omh.probe` alone fails
   to import, the probe's bundle answer now carries a `package_probe` row with

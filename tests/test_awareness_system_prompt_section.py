@@ -34,6 +34,9 @@ from omh.plugin_bundle.omh import turn_budget
 _HOST_MAX_SECTION_CHARS = 4000
 _HOST_MAX_SECTIONS_TOTAL_CHARS = 8000
 _HOST_HEADING = "## Plugin Context: "
+# Every section the plugin registers; the delegation protocol's own contract is
+# `tests/test_delegation_protocol_section.py`.
+_OMH_SECTION_IDS = ["omh.awareness", "omh.delegation-protocol"]
 
 # No OMH vocabulary and no skill candidate line either (`skill_shortlist`), so
 # a section session's turn on it has nothing of its own to inject.
@@ -119,7 +122,7 @@ class RegistrationTests(SectionTestCase):
     def test_a_host_with_the_api_gets_one_bounded_section(self) -> None:
         ctx = _SectionCtx()
         register(ctx)
-        self.assertEqual(len(ctx.sections), 1)
+        self.assertEqual([section["id"] for section in ctx.sections], _OMH_SECTION_IDS)
         section = ctx.sections[0]
         self.assertEqual(section["id"], "omh.awareness")
         self.assertEqual(section["position"], "after_memory")
@@ -201,36 +204,36 @@ class SingleRegistrationTests(SectionTestCase):
         register(plugin_ctx)
         collector = _CollectorCtx(_ManagedSectionCtx(manager))
         register(collector)
-        self.assertEqual(len(plugin_ctx.sections), 1)
+        self.assertEqual(len(plugin_ctx.sections), len(_OMH_SECTION_IDS))
         self.assertEqual(collector.forwarded, [])
-        self.assertEqual(list(manager._system_prompt_sections), ["omh.awareness"])
+        self.assertEqual(list(manager._system_prompt_sections), _OMH_SECTION_IDS)
 
     def test_a_second_pass_on_the_same_plugin_context_also_skips(self) -> None:
         manager = _Manager()
         ctx = _ManagedSectionCtx(manager)
         register(ctx)
         register(ctx)
-        self.assertEqual(len(ctx.sections), 1)
+        self.assertEqual(len(ctx.sections), len(_OMH_SECTION_IDS))
 
     def test_another_home_manager_still_registers_its_own_section(self) -> None:
         first, second = _Manager(), _Manager()
         register(_ManagedSectionCtx(first))
         other = _ManagedSectionCtx(second)
         register(other)
-        self.assertEqual(len(other.sections), 1)
+        self.assertEqual(len(other.sections), len(_OMH_SECTION_IDS))
         self.assertIn("omh.awareness", second._system_prompt_sections)
 
     def test_the_collector_path_registers_when_its_manager_lacks_the_section(self) -> None:
         manager = _Manager()
         collector = _CollectorCtx(_ManagedSectionCtx(manager))
         register(collector)
-        self.assertEqual(collector.forwarded, ["omh.awareness"])
+        self.assertEqual(collector.forwarded, _OMH_SECTION_IDS)
         self.assertIn("omh.awareness", manager._system_prompt_sections)
 
     def test_a_context_of_unknown_shape_registers_as_before(self) -> None:
         ctx = _SectionCtx()
         register(ctx)
-        self.assertEqual(len(ctx.sections), 1)
+        self.assertEqual(len(ctx.sections), len(_OMH_SECTION_IDS))
 
     def test_a_collector_whose_context_cannot_be_built_answers_not_registered(self) -> None:
         from omh.plugin_bundle.omh import _section_already_registered
