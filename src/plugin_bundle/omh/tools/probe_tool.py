@@ -11,6 +11,8 @@ from typing import Any
 from ..buzz_diagnostics import probe_buzz
 from ..host_observation import PLUGIN_HOST_ACTIVE_OBSERVATION_EVENTS
 from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, observe_plugin_tool_call
+from ..loop_bridge import loop_backend_detail, loop_backend_status
+from ..package_backend import load_backend
 from ..runtime_reader import read_omh_hud, read_omh_status
 
 OMH_PROBE_SCHEMA = {
@@ -52,35 +54,58 @@ def omh_probe_handler(args: dict, **kwargs) -> str:
     omh_home = runtime_paths.plugin_home(args.get("omh_home"))
     hermes_home = runtime_paths.plugin_home(args.get("hermes_home"), hermes=True)
     observation = observe_plugin_tool_call("omh_probe", args, kwargs)
-    try:
-        payload = _package_probe(
-            omh_home=omh_home,
-            hermes_home=hermes_home,
-            include_parity=include_parity,
-            include_roadmap=include_roadmap,
-        )
-    except ModuleNotFoundError as exc:
-        if exc.name != "omh":
-            raise
+    # Any failure to import the package probe falls back, so a skewed install
+    # still gets an answer whose row below says why; a failure while the
+    # imported probe runs is that probe's own fault and is not swallowed here.
+    package_probe, _failure = load_backend(_import_package_probe)
+    if package_probe is None:
         payload = _standalone_probe(
             omh_home=omh_home,
             hermes_home=hermes_home,
             include_parity=include_parity,
             include_roadmap=include_roadmap,
         )
+    else:
+        payload = _package_probe(
+            *package_probe,
+            omh_home=omh_home,
+            hermes_home=hermes_home,
+            include_parity=include_parity,
+            include_roadmap=include_roadmap,
+        )
+    # Its own row, apart from registration: Hermes registers every tool of a
+    # bundle whose interpreter has no `omh` package, and the tools that need
+    # the package still have no backend (#2166).
+    payload["capabilities"].append(_package_backend_capability())
     return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
 
 
+def _package_backend_capability() -> dict[str, str]:
+    backend = loop_backend_status()
+    return _capability(
+        "package_backend",
+        backend["status"],
+        backend["failed_import"] or "omh.workflows.loop_operations",
+        loop_backend_detail(backend),
+    )
+
+
+def _import_package_probe() -> tuple[Any, Any]:
+    from omh.paths import resolve_paths
+    from omh.probe import probe_capabilities
+
+    return resolve_paths, probe_capabilities
+
+
 def _package_probe(
+    resolve_paths: Any,
+    probe_capabilities: Any,
     *,
     omh_home: str | None,
     hermes_home: str | None,
     include_parity: bool,
     include_roadmap: bool,
 ) -> dict[str, Any]:
-    from omh.paths import resolve_paths
-    from omh.probe import probe_capabilities
-
     paths = resolve_paths(omh_home=omh_home, hermes_home=hermes_home)
     payload = probe_capabilities(paths, include_parity=include_parity, include_roadmap=include_roadmap)
     payload["source"] = "package_probe_backend"

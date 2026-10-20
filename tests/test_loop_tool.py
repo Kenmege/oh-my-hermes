@@ -23,20 +23,25 @@ from __future__ import annotations
 import ast
 import copy
 import importlib
+import importlib.metadata
 import importlib.util
 import json
 import os
+import re
 import sys
+import types
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
 from _cli_harness import run_cli
+from _module_patch import patch_modules
+from _standalone_bundle import run_in_no_package_host
 from _local_package import load_local_package
 
 load_local_package()
-from omh.plugin_bundle.omh import loop_bridge  # noqa: E402
+from omh.plugin_bundle.omh import loop_bridge, package_backend  # noqa: E402
 from omh.plugin_bundle.omh.metadata import PROVIDED_TOOLS, TOOL_FILE_STEMS  # noqa: E402
 from omh.plugin_bundle.omh.tools import BUILTIN_TOOL_NAMES, builtin_tool_schemas  # noqa: E402
 from omh.plugin_bundle.omh.tools.loop_tool import OMH_LOOP_SCHEMA, omh_loop_handler  # noqa: E402
@@ -1220,13 +1225,381 @@ class StandaloneBundleTests(unittest.TestCase):
         module, _blocked = self._standalone_tool()
         self.assertEqual(module.OMH_LOOP_SCHEMA["name"], "omh_loop")
 
-    def test_a_call_without_the_package_fails_closed(self) -> None:
+    def test_a_call_whose_core_import_fails_fails_closed(self) -> None:
+        # The hook raises a nameless ImportError while this process still has
+        # an `omh` package, so it reads `broken`, never `absent`; the host with
+        # no package at all is `PackageBackendClassificationTests`' subprocess.
         module, blocked = self._standalone_tool()
         with mock.patch("builtins.__import__", side_effect=blocked):
             payload = json.loads(module.omh_loop_handler({"action": "status"}, session_id=SESSION))
         self.assertEqual(payload["status"], "error")
         self.assertEqual(payload["error"], "service_unavailable")
-        self.assertIn("omh loop", payload["error_detail"])
+        self.assertFalse(payload["mutation_applied"])
+        self.assertEqual(payload["package_backend"]["status"], "broken")
+        self.assertIn("omh --omh-home", payload["error_detail"])
+
+
+_NO_PACKAGE_CALLS = """
+from hermes_plugin_omh.tools.loop_tool import omh_loop_handler
+from hermes_plugin_omh.tools.probe_tool import omh_probe_handler
+
+start = {
+    "action": "start",
+    "goal_summary": "g",
+    "goal_reframe": "r",
+    "success_criteria": ["c"],
+    "permission_profile": "observe_only",
+}
+print(json.dumps({
+    "omh_spec": omh_spec,
+    "status": json.loads(omh_loop_handler({"action": "status"}, session_id="s")),
+    "start": json.loads(omh_loop_handler(start, session_id="s")),
+    "probe": json.loads(omh_probe_handler({})),
+}))
+"""
+
+
+class PackageBackendClassificationTests(_LoopHome):
+    """Every failed core import refuses; only a host with no `omh` reads absent."""
+
+    def assert_refused_without_writing(self, payload: dict, status: str) -> dict:
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["error"], "service_unavailable")
+        self.assertFalse(payload["mutation_applied"])
+        self.assertEqual(payload["record_revision"], 0)
+        backend = payload["package_backend"]
+        self.assertEqual(backend["status"], status)
+        self.assertEqual(backend["install_route"], package_backend.PACKAGE_BACKEND_ROUTE)
+        self.assertTrue(payload["error_detail"].startswith("No Loop state was read or written."))
+        self.assertIn("omh --omh-home <that home> loop status", payload["error_detail"])
+        self.assertIn(package_backend.PACKAGE_BACKEND_ROUTE, payload["error_detail"])
+        self.assertEqual(list(self.omh_home.rglob("cycle.json")), [])
+        return backend
+
+    def start(self) -> dict:
+        return tool(
+            action="start",
+            goal_summary=GOAL,
+            goal_reframe=REFRAME,
+            success_criteria=["install path fixed"],
+            permission_profile="observe_only",
+        )
+
+    def test_an_interpreter_with_no_omh_package_reads_absent(self) -> None:
+        observed = run_in_no_package_host(_NO_PACKAGE_CALLS, cwd=self.hermes_home)
+        self.assertFalse(observed["omh_spec"])
+        for name in ("status", "start"):
+            with self.subTest(action=name):
+                backend = self.assert_refused_without_writing(observed[name], "absent")
+                self.assertEqual(backend["failed_import"], "omh")
+                self.assertEqual(backend["package_version"], "")
+                detail = observed[name]["error_detail"]
+                self.assertIn("The OMH plugin is registered", detail)
+                self.assertIn("no supported way to add the package yet", detail)
+                self.assertIn("on a Hermes environment you manage yourself", detail)
+                # The remedy a package-manager-owned environment forbids.
+                for forbidden in ("pip", "uv "):
+                    self.assertNotIn(forbidden, detail)
+        probe = observed["probe"]
+        self.assertEqual(probe["source"], "standalone_plugin_bundle_fallback")
+        self.assertIn("plugin_runtime_active", probe)
+        row = next(item for item in probe["capabilities"] if item["name"] == "package_backend")
+        self.assertEqual(row["status"], "absent")
+        self.assertEqual(row["evidence"], "omh")
+        self.assertIn("The OMH plugin is registered", row["message"])
+
+    def test_a_present_package_missing_the_loop_module_reads_incompatible(self) -> None:
+        with patch_modules({"omh.workflows.loop_operations": None}):
+            backend = self.assert_refused_without_writing(self.start(), "incompatible")
+        self.assertEqual(backend["failed_import"], "omh.workflows.loop_operations")
+        self.assertEqual(backend["package_version"], importlib.metadata.version("oh-my-hermes"))
+
+    def test_a_present_package_lacking_a_loop_name_reads_incompatible(self) -> None:
+        # `cannot import name` is a plain ImportError naming the module: the
+        # package is there and does not provide what this bundle imports.
+        empty = types.ModuleType("omh.workflows.loop_operations")
+        with patch_modules({"omh.workflows.loop_operations": empty}):
+            backend = self.assert_refused_without_writing(self.start(), "incompatible")
+        self.assertEqual(backend["failed_import"], "omh.workflows.loop_operations")
+
+    def test_a_missing_omh_name_is_never_absent_while_omh_is_present(self) -> None:
+        missing = ModuleNotFoundError("No module named 'omh'", name="omh")
+        with mock.patch.object(loop_bridge, "_import_loop_service", side_effect=missing):
+            self.assert_refused_without_writing(tool(action="status"), "incompatible")
+
+    def test_only_a_module_not_found_error_reads_absent(self) -> None:
+        # With no top-level `omh`, a plain ImportError naming an `omh` module
+        # is still not the package being missing -- something else answered
+        # that import -- so it is reported as `broken`, never `absent`.
+        failure = ImportError("cannot import name 'x'", name="omh.workflows.loop_operations")
+        with (
+            mock.patch.object(package_backend, "_found_omh", return_value=package_backend.FOUND_NONE),
+            mock.patch.object(loop_bridge, "_import_loop_service", side_effect=failure),
+        ):
+            self.assert_refused_without_writing(tool(action="status"), "broken")
+
+    def test_a_non_import_error_at_import_reads_broken_and_names_its_type(self) -> None:
+        # A skewed install can fail at module scope with something other than
+        # ImportError; the tool still refuses, bounded, and never raises.
+        failure = RuntimeError("loop_operations failed at import time")
+        with mock.patch.object(loop_bridge, "_import_loop_service", side_effect=failure):
+            payload = tool(action="status")
+            row_backend = loop_bridge.loop_backend_status()
+        backend = self.assert_refused_without_writing(payload, "broken")
+        self.assertEqual(backend["error_type"], "RuntimeError")
+        self.assertEqual(backend["failed_import"], "")
+        self.assertIn("failed with RuntimeError", payload["error_detail"])
+        self.assertNotIn("failed at import time", json.dumps(payload))
+        self.assertEqual(row_backend["status"], "broken")
+
+    def test_a_spec_less_omh_in_sys_modules_is_present_and_raises_nothing(self) -> None:
+        # `find_spec` raises ValueError for a module whose __spec__ is None, so
+        # an `omh` already in sys.modules has to answer before it is asked.
+        specless = types.ModuleType("omh")
+        specless.__spec__ = None
+        failure = ModuleNotFoundError("No module named 'omh.system'", name="omh.system")
+        with patch_modules({"omh": specless}):
+            backend = package_backend.classify_backend_failure(failure)
+        self.assertEqual(backend["status"], "incompatible")
+
+    def test_a_dependency_named_like_omh_is_not_an_omh_module(self) -> None:
+        failure = ModuleNotFoundError("No module named 'omhx'", name="omhx")
+        self.assertEqual(package_backend.classify_backend_failure(failure)["status"], "broken")
+
+    def test_the_incompatible_detail_names_this_plugins_version(self) -> None:
+        version = re.search(
+            r'(?m)^version:\s*"([^"]+)"', (_BUNDLE / "plugin.yaml").read_text(encoding="utf-8")
+        ).group(1)
+        with patch_modules({"omh.workflows.loop_operations": None}):
+            payload = self.start()
+        backend = self.assert_refused_without_writing(payload, "incompatible")
+        self.assertEqual(backend["bundle_version"], version)
+        self.assertEqual(backend["found_omh"], "oh-my-hermes")
+        self.assertIn(f"This plugin is {version}: bring that package to that version", payload["error_detail"])
+
+    def test_a_failure_naming_a_module_outside_omh_reads_broken(self) -> None:
+        missing = ModuleNotFoundError("No module named 'tomli_w'", name="tomli_w")
+        with mock.patch.object(loop_bridge, "_import_loop_service", side_effect=missing):
+            backend = self.assert_refused_without_writing(self.start(), "broken")
+        self.assertEqual(backend["failed_import"], "tomli_w")
+        self.assertEqual(backend["package_version"], importlib.metadata.version("oh-my-hermes"))
+
+    def test_a_failure_naming_nothing_reads_broken(self) -> None:
+        with mock.patch.object(loop_bridge, "_import_loop_service", side_effect=ImportError("boom")):
+            backend = self.assert_refused_without_writing(tool(action="status"), "broken")
+        self.assertEqual(backend["failed_import"], "")
+        self.assertNotIn("boom", json.dumps(backend))
+
+    def test_the_answer_is_resolved_per_call(self) -> None:
+        with patch_modules({"omh.workflows.loop_operations": None}):
+            self.assertEqual(loop_bridge.loop_backend_status()["status"], "incompatible")
+        self.assertEqual(loop_bridge.loop_backend_status()["status"], "available")
+        self.assertEqual(tool(action="status")["status"], "ok")
+
+    def test_the_probe_reports_the_backend_apart_from_registration(self) -> None:
+        from omh.plugin_bundle.omh.tools.probe_tool import omh_probe_handler
+
+        def row(payload: dict) -> dict:
+            return next(item for item in payload["capabilities"] if item["name"] == "package_backend")
+
+        available = json.loads(omh_probe_handler({}))
+        self.assertEqual(
+            row(available),
+            {
+                "name": "package_backend",
+                "status": "available",
+                "evidence": "omh.workflows.loop_operations",
+                "message": "The Python interpreter running this plugin imports the oh-my-hermes backend for native Loop.",
+            },
+        )
+        with patch_modules({"omh.workflows.loop_operations": None}):
+            incompatible = json.loads(omh_probe_handler({}))
+        self.assertEqual(row(incompatible)["status"], "incompatible")
+        self.assertEqual(row(incompatible)["evidence"], "omh.workflows.loop_operations")
+        # The package probe still answered; only the backend row moved.
+        self.assertEqual(incompatible["source"], available["source"])
+
+
+_SKEWED_HOST_CALLS = """
+from hermes_plugin_omh.tools.decision_gate_tool import omh_decision_gate_handler
+from hermes_plugin_omh.tools.loop_tool import omh_loop_handler
+from hermes_plugin_omh.tools.probe_tool import omh_probe_handler
+
+finder = "@FINDER@"
+if finder:
+    class _Raiser:
+        def find_spec(self, name, path=None, target=None):
+            if name == finder:
+                raise RuntimeError(finder + " failed at import time")
+            return None
+
+    sys.meta_path.insert(0, _Raiser())
+gate_args = {
+    "gate_id": "gate-1", "expected_resume_digest": "a" * 64, "choice": "approve",
+    "actor": "actor-1", "connector": "discord", "channel_ref": "channel-1",
+    "thread_ref": "thread-1", "interaction_ref": "interaction-1",
+    "authentication_method": "host_authenticated", "observed_at": "2026-09-07T10:00:00Z",
+    "event_id": "event-1", "wrapper_session_ref": "ws-1", "wrapper_expected_revision": 1,
+}
+loop = json.loads(omh_loop_handler({"action": "status"}, session_id="s"))
+version_imported = "omh.version" in sys.modules
+print(json.dumps({
+    "loop": loop,
+    "version_imported": version_imported,
+    "gate": json.loads(omh_decision_gate_handler(gate_args)),
+    "probe": json.loads(omh_probe_handler({})),
+}))
+"""
+
+# Each shape is an `omh` a real host can meet in front of the bundle. Files
+# map relative path -> text; a shape with no files is an empty directory, the
+# namespace package a stray `omh/` makes.
+_SKEWED_SHAPES = {
+    "namespace_dir": ({}, "incompatible", "omh.system", "other"),
+    "plain_module": ({"omh.py": "VALUE = 1\n"}, "incompatible", "omh.system", "other"),
+    # A bare `omh/` beside real oh-my-hermes distribution metadata: the
+    # version is there, but what imports as `omh` is not that package.
+    "namespace_dir_beside_an_installed_distribution": (
+        {
+            "omh/.keep": "",
+            "oh_my_hermes-9.9.9.dist-info/METADATA": (
+                "Metadata-Version: 2.1\nName: oh-my-hermes\nVersion: 9.9.9\n"
+            ),
+        },
+        "incompatible",
+        "omh.system",
+        "other",
+    ),
+    "init_fails_on_a_missing_submodule": (
+        {"omh/__init__.py": "import omh.version  # noqa: F401\n"},
+        "incompatible",
+        "omh.version",
+        "other",
+    ),
+    "missing_dependency": (
+        {
+            "omh/__init__.py": "",
+            "omh/system/__init__.py": "",
+            "omh/system/paths.py": "import tomli_w_missing_dep  # noqa: F401\n",
+        },
+        "broken",
+        "tomli_w_missing_dep",
+        "other",
+    ),
+    "nameless_import_error": (
+        {
+            "omh/__init__.py": "",
+            "omh/system/__init__.py": "",
+            "omh/system/paths.py": "raise ImportError('boom')\n",
+        },
+        "broken",
+        "",
+        "other",
+    ),
+    "loop_module_raises_runtime_error": (
+        {
+            "omh/__init__.py": "",
+            "omh/system/__init__.py": "",
+            "omh/system/paths.py": "def resolve_paths():\n    return None\n",
+            "omh/workflows/__init__.py": "",
+        },
+        "broken",
+        "",
+        "other",
+    ),
+    "loop_module_missing": (
+        {
+            "omh/__init__.py": "",
+            "omh/version.py": "__version__ = '9.9.9'\n",
+            "omh/system/__init__.py": "",
+            "omh/system/paths.py": "def resolve_paths():\n    return None\n",
+            "omh/workflows/__init__.py": "",
+        },
+        "incompatible",
+        "omh.workflows.loop_operations",
+        "other",
+    ),
+}
+
+
+class SkewedPackageHostTests(unittest.TestCase):
+    """A present `omh` that does not serve the bundle never raises and never reads absent."""
+
+    def test_every_native_tool_answers_on_every_skewed_shape(self) -> None:
+        for shape, (files, status, failed_import, found) in _SKEWED_SHAPES.items():
+            with self.subTest(shape=shape), TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                site = root / "site"
+                site.mkdir()
+                if not files:
+                    (site / "omh").mkdir()
+                for relative, text in files.items():
+                    target = site / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(text, encoding="utf-8")
+                finder = "omh.workflows.loop_operations" if shape == "loop_module_raises_runtime_error" else ""
+                env = {"OMH_HOME": str(root / ".omh"), "HERMES_HOME": str(root / ".hermes")}
+                with mock.patch.dict(os.environ, env, clear=False):
+                    observed = run_in_no_package_host(
+                        _SKEWED_HOST_CALLS.replace("@FINDER@", finder), cwd=root, extra_paths=(site,)
+                    )
+                loop = observed["loop"]
+                self.assertEqual(loop["error"], "service_unavailable")
+                self.assertFalse(loop["mutation_applied"])
+                backend = loop["package_backend"]
+                self.assertEqual(backend["status"], status)
+                self.assertNotEqual(backend["status"], "absent")
+                self.assertEqual(backend["failed_import"], failed_import)
+                self.assertEqual(backend["found_omh"], found)
+                if status == "incompatible":
+                    self.assertIn("finds an `omh` module that is not an installed oh-my-hermes package", loop["error_detail"])
+                    self.assertNotIn("bring that package", loop["error_detail"])
+                if shape == "loop_module_raises_runtime_error":
+                    self.assertEqual(backend["error_type"], "RuntimeError")
+                if shape == "namespace_dir_beside_an_installed_distribution":
+                    self.assertEqual(backend["package_version"], "9.9.9")
+                # Classifying never imports the package again to name a version.
+                self.assertFalse(observed["version_imported"])
+                gate = observed["gate"]
+                self.assertEqual(gate["status"], "unavailable")
+                self.assertIn(gate["package_backend"]["status"], {"incompatible", "broken"})
+                probe = observed["probe"]
+                self.assertEqual(probe["source"], "standalone_plugin_bundle_fallback")
+                row = next(item for item in probe["capabilities"] if item["name"] == "package_backend")
+                self.assertEqual(row["status"], status)
+                self.assertEqual(list((root / ".omh").rglob("cycle.json")), [])
+
+
+class BackendModuleScopeTests(unittest.TestCase):
+    """The modules that import the package backend resolve it per call, never at load."""
+
+    def test_no_backend_module_imports_omh_at_module_scope(self) -> None:
+        def module_scope(nodes: list[ast.stmt]):
+            for node in nodes:
+                yield node
+                if isinstance(node, ast.Try):
+                    yield from module_scope(node.body + node.orelse + node.finalbody)
+                    for handler in node.handlers:
+                        yield from module_scope(handler.body)
+                elif isinstance(node, ast.If):
+                    yield from module_scope(node.body + node.orelse)
+
+        for relative in (
+            "loop_bridge.py",
+            "package_backend.py",
+            "tools/decision_gate_tool.py",
+            "tools/probe_tool.py",
+        ):
+            tree = ast.parse((_BUNDLE / relative).read_text(encoding="utf-8"))
+            for node in module_scope(tree.body):
+                names = []
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and not node.level:
+                    names = [node.module or ""]
+                for name in names:
+                    with self.subTest(module=relative, name=name):
+                        self.assertFalse(name == "omh" or name.startswith("omh."))
 
 
 class RegistrationMirrorTests(unittest.TestCase):

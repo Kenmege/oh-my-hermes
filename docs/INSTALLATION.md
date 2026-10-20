@@ -1266,20 +1266,27 @@ rules, and boundaries.
 
 ### What the Hermes interpreter must be able to import
 
-`omh setup` copies the plugin bundle to `$HERMES_HOME/plugins/omh`, and Hermes
-loads it with **its own** interpreter. Every documented install — Homebrew,
-bun, npm, the universal installer, `uv tool install`, `pip install --user` —
-puts the `omh` **package** in OMH's environment, not Hermes'. On most machines
-the Hermes interpreter therefore cannot import `omh` at all.
+`omh setup` copies the plugin bundle to `$HERMES_HOME/plugins/omh`, and
+installing `omh` from Hermes' plugin catalog places the same bundle there.
+Hermes loads it with **its own** interpreter. Every documented install —
+Homebrew, bun, npm, the universal installer, `uv tool install`,
+`pip install --user` — puts the `omh` **package** in OMH's environment, not
+Hermes'. On most machines the Hermes interpreter therefore cannot import `omh`
+at all.
 
-That is a supported state, not a broken one. Every module of the bundle imports
-without the package: the imports that need it are guarded, and the features it
-carries report their own absence instead of failing. These features live in
-the package rather than the bundle, so absence turns them off:
+That is a supported state, not a broken one. Hermes still registers every tool
+and hook of the plugin. Every module of the bundle imports without the package:
+the imports that need it are guarded, and the features it carries report their
+own absence instead of failing. These features live in the package rather than
+the bundle, so absence turns them off:
 
 | Feature | Behavior when Hermes cannot import `omh` |
 | --- | --- |
 | Agent board (`omh_agent_board`) | Answers `unavailable` with reason `omh_agent_board_core_unavailable`, and leaves native `kanban_*` calls alone. See [Agent board and native Kanban coordination](AGENT-BOARD.md). |
+| Native Loop (`omh_loop`) | Answers `service_unavailable` with a `package_backend` block whose `status` is `absent`, and reads or writes no Loop state. The `omh loop` CLI reaches the same Loop store when it is given that profile's OMH home: `omh --omh-home <that home> loop status`. |
+| Connector decision gate (`omh_decision_gate`) | A payload of the required shape answers `unavailable` with reason `package_backend_absent` and the same `package_backend` block, and records no gate answer. See [Decision-gate connectors](DECISION-GATE-CONNECTORS.md). |
+| Team gate (`omh_team`) | Answers `refused` with reason `omh_team_core_unavailable`. |
+| Source-trust ceiling (`omh_source_trust`) | Answers with `ceiling_applied: false` and no summary, so an unenforced answer cannot read as an enforced one. |
 | Local activity observer engine | `register` reports `observer_setup_failed`; the rest of the plugin still loads. See [Session activity receipts](SESSION-ACTIVITY-RECEIPTS.md). |
 | Route hint for your own trigger packs | A phrase that only a pack under `<omh-home>/routing/trigger-packs/` recognises gets no route hint in chat; `omh chat route-hint` still hints it. |
 | Coding owner on coding-delivery route hints | The hint asks the user to choose the executor instead of carrying the router's coding-owner decision. |
@@ -1289,9 +1296,35 @@ copies of the router's cue tables, guards and classifiers, so for some messages
 it disagrees with `omh chat route-hint`: it hints a different workflow, hints
 none where `omh chat route-hint` hints one, or hints one where it hints none.
 
-To turn these on, install `oh-my-hermes` into the environment that runs
-Hermes as well, so `omh` is importable from both. Nothing else changes: the
-bundle, the configuration, and every doctor check stay the same.
+`omh_probe` reports which state a host is in, apart from registration: its
+`package_backend` row reads `available`; `absent` (the interpreter has no
+`omh` package, the state above); `incompatible` (an `omh` that does not provide
+what this bundle imports: an oh-my-hermes of another version, or an `omh`
+module that is not an installed oh-my-hermes package at all); or `broken`
+(any other failure while importing it, including one that is not an
+`ImportError`). When the package's own probe cannot be imported, `omh_probe`
+answers from the bundle and the row still says why. `omh_loop` and
+`omh_decision_gate` carry the same block, with the plugin's own version beside
+the package's, whenever they refuse for one of these; the other tools in the
+table above keep their own refusals.
+
+To turn these features on, the interpreter Hermes runs must be able to import
+`omh`. Whether there is a supported way to arrange that depends on who owns
+that environment:
+
+- **An environment you manage yourself**, one Hermes' package manager does not
+  prepare: install `oh-my-hermes` there as well, at the version of the plugin
+  bundle, so `omh` is importable from both. Nothing else changes: the bundle,
+  the configuration, and every doctor check stay the same.
+- **An environment Hermes' package manager prepares** (`hermes pm`, which
+  admits a plugin's Python dependencies when the plugin is installed or
+  enabled): there is no supported way yet. Hermes admits only the
+  dependencies a plugin declares and does not manage direct-URL requirements,
+  and `oh-my-hermes` is not published to a package index, so the bundle
+  declares none. Do not add the package to that environment with `pip` or
+  `uv` by hand: Hermes' rules forbid it, and its developer guide says
+  "Dependencies installed manually with pip are not durable PM declarations".
+  Until then, the `omh loop` CLI is the way to drive a Loop from that host.
 
 What is **not** supported is a bundle module that imports `omh.*` at module
 level without a guard. Hermes' memory-provider lane execs every top-level file

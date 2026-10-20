@@ -4,6 +4,30 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A plugin-only install says why native Loop has no backend.** Every
+  documented install puts the `oh-my-hermes` package in OMH's own environment,
+  so the interpreter Hermes runs usually cannot import it. `omh_loop` still
+  refuses there with `service_unavailable` and reads or writes no Loop state,
+  and now carries a `package_backend` block: `absent` when the interpreter has
+  no `omh` package, `incompatible` when it finds an `omh` that lacks a module
+  or name the bundle imports, and `broken` for any other failure while
+  importing it, including one that is not an `ImportError`. A present `omh`
+  never reads as absent, and the block names the plugin's own version beside
+  the package's. The detail used to say "install oh-my-hermes or use the omh
+  loop CLI". It now says the plugin is registered, that an environment Hermes'
+  package manager prepares has no supported way to add the package yet, that
+  an environment you manage yourself can take it, and that
+  `omh --omh-home <that home> loop status` reaches the same Loop store.
+  `omh_decision_gate` raised `ModuleNotFoundError` there for a payload of the
+  required shape; it now answers `unavailable` with the same block and records
+  nothing. `omh_probe` reports the same state as its own `package_backend`
+  row, apart from registration, and answers from the bundle whenever the
+  package's own probe cannot be imported, where it used to raise for a present
+  but broken package. A sweep that called each of the 22 tools and 10 hooks on
+  a plugin-only host, with one or more payloads each, found no other raise.
+  The Installation page now lists native Loop, the decision gate, `omh_team`
+  and `omh_source_trust` among the features that need the package, and no
+  longer tells every reader to install it into Hermes' environment (#2166).
 - **Bare `omh` opens the OMH TUI on Bun and npm installs (#2168).** The npm
   and Bun launcher puts its extracted cache on Python's import path only
   inside its own process, and the TUI's interpreter, started `-E -P` by the

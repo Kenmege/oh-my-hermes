@@ -923,7 +923,7 @@ print(json.dumps(observed, ensure_ascii=False))
             ["choose_permission_profile", "reframe_north_star", "route_direct_task"],
         )
 
-    def test_probe_tool_falls_back_only_when_package_is_absent(self) -> None:
+    def test_probe_tool_falls_back_when_its_import_fails_but_not_when_it_runs(self) -> None:
         from omh.plugin_bundle.omh.tools import probe_tool
 
         with TemporaryDirectory() as tmp:
@@ -934,12 +934,21 @@ print(json.dumps(observed, ensure_ascii=False))
             package_missing = ModuleNotFoundError("No module named 'omh'", name="omh")
             backend_broken = ModuleNotFoundError("No module named 'omh.probe'", name="omh.probe")
 
-            with mock.patch.object(probe_tool, "_package_probe", side_effect=package_missing):
-                fallback_payload = json.loads(probe_tool.omh_probe_handler(args))
+            # Absent, or present but skewed: the import fails either way, and
+            # the fallback answers while its package_backend row says why
+            # (#2166). Only the import is guarded.
+            for failure in (package_missing, backend_broken, RuntimeError("probe import boom")):
+                with self.subTest(failure=type(failure).__name__):
+                    with mock.patch.object(probe_tool, "_import_package_probe", side_effect=failure):
+                        fallback_payload = json.loads(probe_tool.omh_probe_handler(args))
+                    self.assertEqual(fallback_payload["source"], "standalone_plugin_bundle_fallback")
+                    self.assertTrue(fallback_payload["degraded"])
+                    self.assertIn(
+                        "package_backend", [row["name"] for row in fallback_payload["capabilities"]]
+                    )
 
-            self.assertEqual(fallback_payload["source"], "standalone_plugin_bundle_fallback")
-            self.assertTrue(fallback_payload["degraded"])
-
+            # A failure while the imported probe runs is that probe's own
+            # fault, and the fallback must not hide it.
             with mock.patch.object(probe_tool, "_package_probe", side_effect=backend_broken):
                 with self.assertRaises(ModuleNotFoundError):
                     probe_tool.omh_probe_handler(args)
