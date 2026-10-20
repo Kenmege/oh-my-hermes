@@ -35,12 +35,17 @@ All notable changes will be documented here.
   instead of "never came back". A team asked for from a session whose earlier
   segments cannot be read is refused as `team_lineage_unverified`, with the
   reason, instead of `team_not_found`. The conversation identity the HUD,
-  board lanes, cost receipts and `fallback` own records by now reads the same
-  links, so the five row shapes where it used to answer differently agree: a
-  rotated delegate child keeps its earlier segment (and its route position),
-  a stale sibling beside a continuation is the same chat, a reset fork is
-  never a continuation whether or not it sits beside one, and a rotated
-  branch keeps its inherited `_branched_from` lineage.
+  board lanes, cost receipts and `fallback` own records by now decides each
+  link with the same predicates, so the five row shapes where it used to
+  answer differently agree: a rotated delegate child keeps its earlier
+  segment (and its route position), a stale sibling Hermes left beside a
+  continuation under any segment is counted in the conversation, a reset fork
+  is never a continuation whether or not it sits beside one, and a rotated
+  branch keeps its inherited `_branched_from` lineage. Every segment of a
+  conversation, the middle ones included, answers the same set. Past 64
+  rotations the identity, like the walkers, stops at 64 links and keeps what
+  it verified up to there, so which end drops out depends on the segment
+  asked from; it used to have no bound.
 - **`omh_delegate_route` `fallback` advances only the calling conversation's
   own route (#2175).** With two sessions on one profile, `fallback` took its
   chain position from whichever session had routed last: the newest

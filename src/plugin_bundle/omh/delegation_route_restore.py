@@ -81,8 +81,8 @@ continued it in is), or that row's activity stamp is more than six hours old
 (or unusable) and so is the route. A route whose writer row cannot be found,
 or whose compaction continuation cannot be read, is held until the route
 itself is six hours old. Only a conversation whose row shows activity within
-the last six hours holds it past that. Turn scope makes a leak short and
-bounded rather than impossible.
+the last six hours, and whose continuation can be read, holds it past that.
+Turn scope makes a leak short and bounded rather than impossible.
 
 `action=fallback` is the one flow that legitimately spans turns: a child that
 dies on HTTP 400 is reported in a later turn. It used to read the chain

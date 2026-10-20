@@ -1854,13 +1854,14 @@ def _conversation_session_ids(connection: sqlite3.Connection, session_ref: str) 
 
     A transport id is not a durable id. Never substitute the latest session
     or normalize an invalid reference. The lineage is
-    `live_session.conversation_segments`, the one compaction rule OMH has:
-    the route restore's liveness and `omh_team`'s returns read the same links,
-    so ownership here cannot disagree with them about which rows are one
-    conversation. A branch, a delegate child, a reset and a `tool` row are
-    forks, never this conversation; a stale sibling Hermes left beside a
-    continuation is the same chat and is included. Older schemas can still
-    answer exact ownership without answering lineage.
+    `live_session.conversation_segments`, which decides each link with the
+    same predicates as the route restore's liveness and `omh_team`'s returns:
+    within its row bound, every segment of a conversation gets the same set
+    here, and the segments those walkers resolve from it are in that set. A
+    branch, a delegate child, a reset and a `tool` row are forks, never this
+    conversation; a stale sibling Hermes left beside a continuation, under
+    any segment, is included. Older schemas can still answer exact ownership
+    without answering lineage.
     """
     if not isinstance(session_ref, str) or not (1 <= len(session_ref) <= 160) or any(
         not (char.isalnum() or char in "_.:@-") for char in session_ref

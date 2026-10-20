@@ -9,10 +9,15 @@ one link rule, #2177 measured five row shapes on which the identity answered
 differently from the walkers. Each is pinned here with the answer all three
 now give.
 
+Every segment of a conversation is asked, not only its tip: the identity
+pre-seeds the asker and its earlier segments, and each still has to be
+expanded, or a middle segment loses the segments after it.
+
 Rows are in the shape Hermes' own `SessionDB` writes (`_hermes_session_rows`).
 Mutations: put back the presence-only marker rule or the one-candidate rule in
 the identity; let a reset fork count as a continuation; stop a walker at an
-inherited `_branched_from`.
+inherited `_branched_from`; skip a pre-seeded segment's expansion; drop the
+expansion guard on a cycle.
 """
 from __future__ import annotations
 
@@ -20,7 +25,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from _hermes_session_rows import compacted, row, write_sessions
+from _hermes_session_rows import compacted, row, within_seconds, write_sessions
 from omh.plugin_bundle.omh.kanban_board_reader import conversation_session_ids
 from omh.plugin_bundle.omh.live_session import compaction_ancestors, compaction_continuations
 
@@ -51,6 +56,7 @@ class LineageAgreementTest(unittest.TestCase):
             with self.subTest(member=member):
                 self.assertEqual(self.identity(member), members)
                 self.assertLessEqual(set(self.ancestors(member)), members)
+                self.assertLessEqual(self.tips(member), members)
 
     def test_a_plain_rotation_is_one_conversation(self) -> None:
         write_sessions(self.hermes, compacted("A", at=1050.0), row("A2", parent="A", started_at=1050.0))
@@ -70,7 +76,46 @@ class LineageAgreementTest(unittest.TestCase):
         self.assertEqual(self.identity("P"), {"P"})
         self.assertEqual(self.tips("C1"), {"C2"})
 
-    def test_a_stale_sibling_beside_the_continuation_is_the_same_chat(self) -> None:
+    def test_every_segment_of_a_three_segment_chain_names_the_whole_chain(self) -> None:
+        # Asked from the middle segment, the identity answered {A, A2}: it
+        # pre-seeded A2 and never expanded it, while `compaction_continuations`
+        # from A2 reached A3. A delegate child of the middle segment is a fork.
+        write_sessions(
+            self.hermes,
+            compacted("A", at=1050.0),
+            compacted("A2", at=1100.0, parent="A", started_at=1050.0),
+            row("A3", parent="A2", started_at=1100.0),
+            row("D2", parent="A2", source="subagent", delegate_from="A2", started_at=1060.0),
+        )
+        self.assert_one_conversation({"A", "A2", "A3"})
+        self.assertEqual({member: self.tips(member) for member in ("A", "A2", "A3")},
+                         {"A": {"A3"}, "A2": {"A3"}, "A3": {"A3"}})
+        self.assertEqual(self.ancestors("A3"), ["A2", "A"])
+        self.assertEqual(self.identity("D2"), {"D2"})
+
+    def test_a_stale_sibling_under_a_later_segment_is_in_the_conversation_from_every_segment(self) -> None:
+        write_sessions(
+            self.hermes,
+            compacted("A", at=1050.0),
+            compacted("A2", at=1100.0, parent="A", started_at=1050.0),
+            row("A3", parent="A2", started_at=1100.0),
+            row("A3-stale", parent="A2", started_at=1100.0, ended_at=1110.0, end_reason="ws_orphan_reap"),
+        )
+        self.assert_one_conversation({"A", "A2", "A3", "A3-stale"})
+        self.assertEqual(self.tips("A2"), {"A3", "A3-stale"})
+
+    def test_a_continuation_cycle_answers_instead_of_hanging(self) -> None:
+        # Hermes never writes one. Each segment is expanded once, so the walk
+        # ends; both rows are verified continuation links of each other.
+        write_sessions(
+            self.hermes,
+            compacted("A", at=1050.0, parent="B"),
+            compacted("B", at=1060.0, parent="A", started_at=1050.0),
+        )
+        self.assertEqual(within_seconds(5.0, lambda: self.identity("A")), {"A", "B"})
+        self.assertEqual(within_seconds(5.0, lambda: self.identity("B")), {"A", "B"})
+
+    def test_a_stale_sibling_beside_the_continuation_is_in_the_conversation(self) -> None:
         # #2177: the identity dropped the edge when a closed segment had two
         # continuation-shaped children, so the conversation split in two.
         write_sessions(

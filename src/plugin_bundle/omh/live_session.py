@@ -336,14 +336,20 @@ def conversation_segments(connection: Any, session_id: str) -> set[str]:
     """Every session id of the one conversation ``session_id`` is a segment of.
 
     The conversation identity OMH owns HUD rows, board lanes, cost and a
-    fallback's route position by (`hermes_delegation._conversation_session_ids`),
-    on the same links the two walkers above follow, so the identity and the
-    liveness and return answers cannot disagree about which rows are one
-    conversation. It is ``session_id``, the earlier segments
-    ``compaction_ancestors`` would verify, and every segment Hermes'
-    continuation links reach forward from the first of them -- a stale
-    sibling beside a continuation included, a fork (branch, delegate child,
-    reset, ``tool`` row) never.
+    fallback's route position by (`hermes_delegation._conversation_session_ids`).
+    It is ``session_id``, the earlier segments ``compaction_ancestors`` would
+    verify, and every segment Hermes' continuation links reach forward from
+    the first of them, expanding every segment it holds. A stale sibling
+    beside a continuation, under any segment, is included; a fork (branch,
+    delegate child, reset, ``tool`` row) never is.
+
+    It decides a link with the walkers' own predicates (`_closed_for_compaction`,
+    `_compaction_link`). So, within ``COMPACTION_LINEAGE_ROW_LIMIT``, every
+    segment of one conversation answers the same set, and the segments
+    ``compaction_ancestors`` and ``compaction_continuations`` resolve from any
+    of them are in it. At the bound the answers can differ by who asks: the
+    walk stops there with what it verified, so which end drops out depends
+    on the segment asked from.
 
     It fails closed: a link that cannot be authenticated, or more than
     ``COMPACTION_LINEAGE_ROW_LIMIT`` of them, ends the walk there and keeps
@@ -358,17 +364,25 @@ def conversation_segments(connection: Any, session_id: str) -> set[str]:
     _walk_back(connection, select, session_id, ancestors)
     root = ancestors[-1] if ancestors else session_id
     conversation = {session_id, root, *ancestors}
-    frontier = [root]
+    # Membership and expansion are kept apart: ``session_id`` and its
+    # ancestors are members before the walk reaches them, and each still has
+    # to be expanded, or a middle segment loses the segments after it.
+    frontier, expanded = [root], set()
     while frontier:
-        segment = _lineage_row(connection, select, frontier.pop())
+        current = frontier.pop()
+        if current in expanded:
+            continue
+        expanded.add(current)
+        segment = _lineage_row(connection, select, current)
         if segment is None or not _closed_for_compaction(segment):
             continue
         for child in _child_rows(connection, select, segment["id"]):
-            if child["id"] in conversation or _compaction_link(segment, child) != "continuation":
+            if _compaction_link(segment, child) != "continuation":
                 continue
-            if len(conversation) > COMPACTION_LINEAGE_ROW_LIMIT:
-                return conversation
-            conversation.add(child["id"])
+            if child["id"] not in conversation:
+                if len(conversation) > COMPACTION_LINEAGE_ROW_LIMIT:
+                    return conversation
+                conversation.add(child["id"])
             frontier.append(child["id"])
     return conversation
 
