@@ -4,8 +4,9 @@
 and `delegation.provider` into `config.yaml`. Hermes resolves the child from
 the merged config, and the rungs below can send that child somewhere the
 route does not name while OMH answers `routed`. Each is mirrored from Hermes'
-source, read at Hermes main 8b9ac5773e and at v0.22.2 (d923a5eb48); a line
-number without a revision is the same at both.
+source, read at Hermes main 8b9ac5773e and at v0.22.2 (d923a5eb48), and the
+behaviour checked at v0.21.1 (v2026.9.7), the oldest release OMH supports; a
+line number without a revision is the same at main and v0.22.2.
 
 1. Direct endpoint. `_resolve_delegation_credentials`
    (tools/delegate_tool_config.py:421-440) takes its direct-endpoint branch
@@ -18,7 +19,9 @@ number without a revision is the same at both.
 2. Local-endpoint bypass. `_local_endpoint_bypass`
    (hermes_cli/runtime_provider.py:1001-1011 at main, :957-967 at v0.22.2)
    runs for any requested provider the earlier rungs did not resolve. It
-   checks the MAIN model's config, not the request: `model.base_url` on a host
+   checks the MAIN model's config, not the request: `model.base_url` (after
+   `_normalize_root_model_keys`, hermes_cli/config.py:1722 at main, :1742 at
+   v0.21.1, moves a root `base_url` or an `api_base` there) on a host
    other than openrouter.ai, anthropic.com and openai.com or their subdomains
    (`_LOCAL_BYPASS_CLOUD_HOSTS`, :914 at main, :875 at v0.22.2), with
    `model.provider` empty or `auto`. The request then goes to
@@ -27,8 +30,10 @@ number without a revision is the same at both.
 3. Managed overlay. `_merge_managed_overlay` (hermes_cli/config.py:2282 at
    main, :2261 at v0.22.2) deep-merges `$HERMES_MANAGED_DIR/config.yaml`, or
    else `/etc/hermes/config.yaml`, over the user's file leaf by leaf
-   (hermes_cli/managed_scope.py:45-57, :107-109), so a key set there wins
-   over what OMH writes.
+   (hermes_cli/managed_scope.py:45-57, :107-109; `_deep_merge`, config.py:1487),
+   so a key set there wins over what OMH writes, even an empty one. A section
+   given there as one scalar replaces the user's whole section; only a null
+   one is ignored.
 4. Unparseable file. Hermes' loader raises on a repeated key and then uses
    its last good copy of the file, or else its defaults
    (hermes_cli/config.py:2250-2275 at main), so a route written to that file
@@ -37,7 +42,10 @@ number without a revision is the same at both.
 OMH reads YAML with line scans, not a parser, and Hermes' loader reads more
 shapes than these scans do. Any line this module does not model makes its
 section unreadable, and the route is refused. Reading a value as "unset" by
-mistake is the unsafe answer here; refusing is the safe one.
+mistake is the unsafe answer here; refusing is the safe one. Hermes 0.21.x
+loads YAML with PyYAML (utils.py:389-391 at v0.21.1); 0.22 and later use
+ruamel in YAML 1.1 mode (hermes_yaml.py), which reads a few plain scalars
+differently. A scalar whose meaning depends on the loader is undecidable.
 """
 
 from __future__ import annotations
@@ -58,24 +66,34 @@ NATIVE_SDK_PROVIDERS = frozenset({"bedrock", "vertex", "google", "google-genai"}
 # Requested providers the local-endpoint bypass leaves where they would go
 # anyway. `moa`, `azure-foundry` and the Vertex names are decided by
 # `_resolve_requested_shortcuts` before the bypass (runtime_provider.py:978-998
-# at main, :934-954 at v0.22.2; `_VERTEX_NAMES` :913 / :874). `openai` becomes
-# a direct alias with an explicit endpoint, which skips the bypass
-# (`expand_direct_api_alias`, runtime_provider_custom.py:478-495).
-# `openrouter` and `custom` reach `_resolve_openrouter_runtime` either way.
+# at main, :934-954 at v0.22.2, :755-775 at v0.21.1; `_VERTEX_NAMES` :913 /
+# :874 / :726). `openrouter` and `custom` reach `_resolve_openrouter_runtime`
+# either way. `openai` is not here: `expand_direct_api_alias` sends it past the
+# bypass only from Hermes v0.21.4, and v0.21.1 builds it as OpenRouter.
 _BYPASS_EXEMPT_PROVIDERS = frozenset(
-    {"openrouter", "custom", "openai", "moa", "azure-foundry",
+    {"openrouter", "custom", "moa", "azure-foundry",
      "vertex", "google-vertex", "vertex-ai", "gcp-vertex", "vertexai"}
 )
 _LOCAL_BYPASS_CLOUD_HOSTS = ("openrouter.ai", "anthropic.com", "openai.com")
-# Plain scalars Hermes' loader reads as null, false or zero, all of which
+# Plain scalars both loaders read as null, false or zero, all of which
 # `str(value or "").strip()` reads as unset. Measured with Hermes' own
-# `utils.fast_safe_load` at both revisions; `y`, `On`, `0o0` and `0:0` read
-# as set and are left out.
-_UNSET_PLAIN_SCALARS = frozenset(
-    {"~", "null", "Null", "NULL", "false", "False", "FALSE", "n", "N", "no", "No", "NO",
-     "off", "Off", "OFF"}
+# `utils.fast_safe_load` at v0.21.1, v0.22.2 and main; `y`, `On`, `0o0`,
+# `0:0`, `.0e0` and `-.0` read as set at all three and are left out.
+_NULL_PLAIN_SCALARS = frozenset({"~", "null", "Null", "NULL"})
+_UNSET_PLAIN_SCALARS = _NULL_PLAIN_SCALARS | frozenset(
+    {"false", "False", "FALSE", "no", "No", "NO", "off", "Off", "OFF"}
 )
-_ZERO_RE = re.compile(r"[-+]?(?:0b[0_]+|0x[0_]+|(?:0[0_]*(?:\.[0_]*)?|\.0[0_]*)(?:[eE][-+]?[0-9]+)?)")
+# Zero under PyYAML's int and float rules, each also a zero under ruamel's.
+_ZERO_RE = re.compile(
+    r"[-+]?(?:0b[0_]*0[0_]*|0x[0_]*0[0_]*|0[0_]*(?:(?::0?0)+\.[0_]*|\.[0_]*(?:[eE][-+][0-9]+)?)?)"
+    r"|\.0[0_]*(?:[eE][-+][0-9]+)?"
+)
+# False or zero under ruamel and a string under PyYAML: `n`/`N`, an exponent
+# without a dot or a sign, a fraction opening with `_`. Neither loader can
+# build `=`, `0x_` or `0b_`. Each is undecidable.
+_LOADER_DEPENDENT_RE = re.compile(
+    r"[nN=]|[-+]?0[0_]*(?:\.[0_]*)?[eE][-+]?[0-9]+|\._[0_]*(?:[eE][-+][0-9]+)?|[-+]?0[bx]_+"
+)
 # A key this module reads: a plain name, or one quoted with no escape in it.
 _PLAIN_KEY_RE = re.compile(
     r"(?P<key>[A-Za-z0-9_][A-Za-z0-9_.-]*|'[A-Za-z0-9_.-]+'|\"[A-Za-z0-9_.-]+\")[ ]*:(?:[ ]+(?P<value>.*))?"
@@ -83,7 +101,6 @@ _PLAIN_KEY_RE = re.compile(
 _COMMENT_RE = re.compile(r"(?:^|\s)#")
 _YAML_INDICATORS = frozenset("[]{}|>&*!%@`-?:,")
 _TRACKED_SECTIONS = ("delegation", "model")
-_ROOT_MODEL_KEYS = ("base_url", "api_base", "provider")
 _MISSING = object()
 
 
@@ -94,6 +111,8 @@ class Layer:
     root: dict[str, str | None] = field(default_factory=dict)
     sections: dict[str, dict[str, str | None]] = field(default_factory=dict)
     unreadable_sections: set[str] = field(default_factory=set)
+    # Tracked keys given one non-null scalar on their own line.
+    scalar_sections: set[str] = field(default_factory=set)
     unreadable_top_level: bool = False
 
 
@@ -133,6 +152,8 @@ def scan_config(text: str) -> Layer:
             seen.add(key)
             top_key, header_empty = key, _strip_comment(value) == ""
             layer.root[key] = scalar(value)
+            if key in _TRACKED_SECTIONS and not header_empty:
+                _read_header_value(layer, key, value)
             continue
         first_content = False
         if top_key is None:
@@ -141,6 +162,85 @@ def scan_config(text: str) -> Layer:
         body.append(line)
     _close_section(layer, top_key, header_empty, body)
     return layer
+
+
+def _read_header_value(layer: Layer, key: str, value: str) -> None:
+    """A tracked key whose value sits on its own line: a flow mapping or a scalar."""
+    if value.strip().startswith("{"):
+        entries = _flow_mapping(value)
+        if entries is None:
+            layer.unreadable_sections.add(key)
+        else:
+            layer.sections[key] = entries
+    elif layer.root[key] is None:
+        # An alias, anchor, tag, block scalar, flow sequence or `${VAR}`.
+        layer.unreadable_sections.add(key)
+    elif _strip_comment(value) not in _NULL_PLAIN_SCALARS:
+        layer.scalar_sections.add(key)
+
+
+def _flow_mapping(raw: str) -> dict[str, str | None] | None:
+    """The entries of a one-line flow mapping (`{key: value, ...}`); None if unreadable.
+
+    Hermes' own `save_config` keeps a section written in flow style. An entry
+    whose value is a collection reads as set. A comment, a `?`, a repeated
+    key, a `key:` with no space after the colon (ruamel reads `key:` as the
+    key there), or a plain value holding `: ` or a bracket makes the whole
+    mapping unreadable.
+    """
+    value = raw.strip()
+    entries: list[str] = []
+    depth, quote, start, end, index, token_start = 0, "", 1, -1, 0, True
+    while index < len(value):
+        char = value[index]
+        if quote:
+            if quote == '"' and char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                if quote == "'" and value[index + 1 : index + 2] == "'":
+                    index += 2
+                    continue
+                quote = ""
+        elif char in "'\"" and token_start:
+            quote, token_start = char, False
+        elif char == "#":
+            return None
+        elif char in "{[":
+            depth, token_start = depth + 1, True
+        elif char in "}]":
+            depth -= 1
+            if depth == 0:
+                end = index
+                break
+        elif char == ",":
+            if depth == 1:
+                entries.append(value[start:index])
+                start = index + 1
+            token_start = True
+        elif char == ":" and value[index + 1 : index + 2] in {"", " "}:
+            token_start = True
+        elif char != " ":
+            token_start = False
+        index += 1
+    if end < 0 or value[end] != "}" or _strip_comment(value[end + 1 :]):
+        return None
+    entries.append(value[start:end])
+    values: dict[str, str | None] = {}
+    if len(entries) == 1 and not entries[0].strip():
+        return values
+    for entry in entries:
+        match = _PLAIN_KEY_RE.fullmatch(entry.strip())
+        if not match or _unquote(match["key"]) in values or (match["value"] is None and not entry.endswith(" ")):
+            return None
+        item = (match["value"] or "").strip()
+        if item[:1] in {"{", "["}:
+            values[_unquote(match["key"])] = None
+            continue
+        if item[:1] not in {"'", '"'} and (": " in item or item.endswith(":") or any(c in item for c in "[]{}?")):
+            return None
+        values[_unquote(match["key"])] = scalar(item)
+    return values
 
 
 def _close_section(layer: Layer, key: str | None, header_empty: bool, body: list[str]) -> None:
@@ -212,9 +312,10 @@ def scalar(raw: str) -> str | None:
     value = _strip_comment(value)
     if not value or value in _UNSET_PLAIN_SCALARS or _ZERO_RE.fullmatch(value):
         return ""
-    if value[0] in _YAML_INDICATORS or "${" in value:
-        # An anchor, alias, tag, block or flow value, or an environment
-        # reference: not decidable here.
+    if value[0] in _YAML_INDICATORS or "${" in value or _LOADER_DEPENDENT_RE.fullmatch(value):
+        # An anchor, alias, tag, block or flow value, an environment
+        # reference, or a value the two loaders read differently: not
+        # decidable here.
         return None
     return value
 
@@ -350,6 +451,14 @@ def route_endpoint_refusal(
             "send the child.",
             "That file is managed outside OMH; once it reads as plain `key: value` lines, route again.",
         )
+    if "delegation" in layer.scalar_sections:
+        return _refusal(
+            "managed_config_pins_route", ["delegation"],
+            f"Hermes' managed config {managed_path} gives delegation a single value, and Hermes puts that value "
+            "in place of the whole delegation section of config.yaml, so the route OMH writes there would not "
+            "take effect.",
+            "That file is managed outside OMH.",
+        )
     managed_delegation = layer.sections.get("delegation", {})
     pinned = [f"delegation.{key}" for key in ROUTE_KEYS if key in managed_delegation]
     if pinned:
@@ -432,8 +541,8 @@ def _local_bypass_refusal(user: Layer, managed: Layer, provider: str, wanted: st
     if "model" in user.unreadable_sections or "model" in managed.unreadable_sections:
         base_url, model_provider = None, None
     else:
-        base_url = _merged(_base_url_candidates(managed), _base_url_candidates(user))
-        model_provider = _merged(_provider_candidates(managed), _provider_candidates(user))
+        base_url = _merged_leaf(_base_url_leaf(managed), _base_url_leaf(user))
+        model_provider = _merged_leaf(_provider_leaf(managed), _provider_leaf(user))
     if base_url == "":
         return None
     if model_provider is not None and model_provider.strip().lower() not in ("", "auto"):
@@ -457,34 +566,83 @@ def _local_bypass_refusal(user: Layer, managed: Layer, provider: str, wanted: st
     )
 
 
-def _base_url_candidates(layer: Layer) -> list[Any]:
-    """Hermes' order: model.base_url, model.api_base, root base_url, root api_base."""
+def _base_url_leaf(layer: Layer) -> Any:
+    """This layer's `model.base_url` once `_normalize_root_model_keys` has read it.
+
+    A set `model.base_url` stays. Otherwise the first set one of root
+    `base_url`, root `api_base` and `model.api_base` takes its place, in that
+    order. With none set, the leaf is what `model.base_url` holds, or _MISSING
+    when the layer does not have it, which leaves the other layer's leaf.
+    """
     section = layer.sections.get("model", {})
-    return [
-        section.get("base_url", _MISSING), section.get("api_base", _MISSING),
-        layer.root.get("base_url", _MISSING), layer.root.get("api_base", _MISSING),
-    ]
-
-
-def _provider_candidates(layer: Layer) -> list[Any]:
-    """model.provider, root provider, then a provider nested in model.default/model/name."""
-    section = layer.sections.get("model", {})
-    candidates: list[Any] = [section.get("provider", _MISSING), layer.root.get("provider", _MISSING)]
-    if layer.root.get("model", "") is None and "model" not in layer.sections:
-        candidates.append(None)
-    candidates.extend(None for key in ("default", "model", "name") if section.get(key, "") is None)
-    return candidates
-
-
-def _merged(managed: list[Any], user: list[Any]) -> str | None:
-    """Managed leaves win where the managed file sets any of them."""
-    chosen = managed if any(value is not _MISSING for value in managed) else user
-    for value in chosen:
-        if value is _MISSING:
-            continue
-        if value is None or value != "":
+    own = section.get("base_url", _MISSING)
+    for value in (own, layer.root.get("base_url", _MISSING), layer.root.get("api_base", _MISSING),
+                  section.get("api_base", _MISSING)):
+        if value is not _MISSING and value != "":
             return value
-    return ""
+    return own
+
+
+def _provider_leaf(layer: Layer) -> Any:
+    """This layer's `model.provider` once `_normalize_root_model_keys` has read it.
+
+    A provider nested under `model.default`, `model.model` or `model.name`
+    replaces an unset or exactly `auto` one; a scan reads that nesting as
+    undecidable. A set root `provider` replaces an unset one.
+    """
+    section = layer.sections.get("model", {})
+    own = section.get("provider", _MISSING)
+    nested = any(section.get(key, "") is None for key in ("default", "model", "name"))
+    if own is None or (nested and own in (_MISSING, "", "auto")):
+        return None
+    if own is not _MISSING and own != "":
+        return own
+    root = layer.root.get("provider", _MISSING)
+    return own if root is _MISSING or root == "" else root
+
+
+def _merged_leaf(managed: Any, user: Any) -> Any:
+    """Hermes' `_deep_merge`: a leaf the managed layer has replaces the user's, even an empty one."""
+    value = user if managed is _MISSING else managed
+    return "" if value is _MISSING else value
+
+
+def child_endpoint(text: str, managed: tuple[str, str | None, str]) -> dict[str, str] | None:
+    """The direct endpoint Hermes builds a delegated child against, or None.
+
+    None when neither `config.yaml` (`text`) nor the managed config sets
+    `delegation.base_url`, or when `delegation.provider` is one Hermes
+    resolves through its own SDK. Otherwise `from` names the file whose value
+    wins, `host` the endpoint's host and port, and `provider` the provider
+    Hermes names the child; both are "" when this scan cannot read them.
+    """
+    user = scan_config(text)
+    managed_path, managed_text, managed_error = managed
+    layer = scan_config(managed_text) if managed_text is not None else Layer()
+    if managed_error or "delegation" in layer.unreadable_sections or "delegation" in layer.scalar_sections:
+        return {"from": managed_path, "host": "", "provider": ""}
+    if "delegation" in user.unreadable_sections:
+        return {"from": "config.yaml", "host": "", "provider": ""}
+    managed_delegation = layer.sections.get("delegation", {})
+    delegation = {**user.sections.get("delegation", {}), **managed_delegation}
+    base_url = delegation.get("base_url", "")
+    current = delegation.get("provider", "")
+    if base_url == "" or (current is not None and current.lower() in NATIVE_SDK_PROVIDERS):
+        return None
+    return {
+        "from": managed_path if "base_url" in managed_delegation else "config.yaml",
+        "host": _host_and_port(base_url) if base_url is not None else "",
+        "provider": direct_endpoint_provider(base_url) if base_url is not None else "",
+    }
+
+
+def _host_and_port(raw: str) -> str:
+    try:
+        parsed = urlparse(raw.strip() if "://" in raw else f"//{raw.strip()}")
+        host, port = parsed.hostname or "", parsed.port
+    except ValueError:
+        return ""
+    return f"{host}:{port}" if host and port else host
 
 
 def _refusal(reason: str, keys: list[str], lead: str, remedy: str) -> dict[str, Any]:

@@ -1770,25 +1770,42 @@ which Hermes applies over it. It refuses in these cases:
   unless a credential pool for that provider serves it.
 - The route names no provider, but `delegation.base_url` is set and the file's
   `delegation.provider` is one of those SDK providers. Writing the route
-  removes that provider, so the child would move to the endpoint.
+  removes that provider, so the child would move to the endpoint. Otherwise a
+  route that names no provider writes: the child runs that model on
+  `delegation.base_url`, which is the endpoint the person configured. The
+  `status` action names it under `child_endpoint`: the file it comes from,
+  its host and port, and the provider Hermes names the child.
 - `model.base_url` is on a host other than openrouter.ai, anthropic.com and
   openai.com (or their subdomains), and `model.provider` is unset or `auto`.
   Hermes then sends an explicit delegation provider through its local-endpoint
   fallback, which resolves it as OpenRouter, or as the custom endpoint for a
-  custom alias. Some providers reach the same place with or without that
-  fallback, so they still route: `openrouter`, `custom`, `openai`, `moa`,
-  `azure-foundry` and the Vertex names. A `model` section OMH cannot read
-  safely counts as having that shape.
+  custom alias. `model.base_url` here is what Hermes reads after it moves a
+  root `base_url`, a root `api_base` or a `model.api_base` into it, in that
+  order, when the key is empty. A managed value replaces the person's value
+  one key at a time, even an empty one. Some providers reach the same place
+  with or without that fallback, so they still route: `openrouter`, `custom`,
+  `moa`, `azure-foundry` and the Vertex names. `openai` is refused, because
+  Hermes v0.21.1 to v0.21.3 send it through the fallback. A `model` section
+  OMH cannot read safely counts as having that shape.
 - The managed config sets `delegation.model`, `delegation.provider` or
-  `delegation.reasoning_effort`. Hermes would apply those values over the
-  route.
+  `delegation.reasoning_effort`, or gives `delegation` one value that is not
+  null. Hermes would apply those values over the route, and a single value
+  replaces the whole section.
 - OMH cannot read one of the two files safely. That covers a repeated key
   (Hermes' loader rejects one), a merge key, a value continued past its line,
-  and a block, flow, tagged, escaped or `${VAR}` value. In the `delegation`
-  section it also covers any line that is not a plain `key: value`, a
-  comment, or a nested line under a key with no value. A value Hermes reads
-  as unset (`''`, `~`, `null`, `false`, `no`, `off`, `n`, zero) counts as
-  unset.
+  and a block, tagged, escaped or `${VAR}` value. A `model:` or `delegation:`
+  whose whole value sits on its line counts too when it is an alias, an
+  anchor, a tag or a `${VAR}`. OMH reads a one-line flow mapping there
+  (`model: {default: llama3, base_url: ...}`, the shape Hermes keeps when it
+  saves such a section). That mapping is unreadable when it has a comment, a
+  `?`, a repeated key, or a `key:` with no space after the colon. In the
+  `delegation` section it also covers any line that is not a plain
+  `key: value`, a comment, or a nested line under a key with no value. A
+  value every supported Hermes reads as unset (`''`, `~`, `null`, `false`,
+  `no`, `off`, zero) counts as unset. A spelling Hermes versions read
+  differently is undecidable, like a value OMH cannot read: Hermes 0.21
+  reads `n` and `0e0` as text, and later versions read them as false and
+  zero.
 
 Each refusal names the keys to change and changes none of them, in either
 file. Restoring the person's own values is never refused.

@@ -35,7 +35,7 @@ reads it.
 from __future__ import annotations
 
 from . import runtime_paths
-from .route_endpoint_guard import BOM, managed_config_layer, route_endpoint_refusal
+from .route_endpoint_guard import BOM, child_endpoint, managed_config_layer, route_endpoint_refusal
 
 import os
 import re
@@ -64,6 +64,19 @@ def read_delegation_route(hermes_home: str | Path | None = None) -> dict[str, st
     if error:
         return {}
     return _read_delegation_route_text(text)
+
+
+def read_child_endpoint(hermes_home: str | Path | None = None) -> dict[str, str] | None:
+    """Where Hermes builds a delegated child while `delegation.base_url` is set.
+
+    `route_endpoint_guard.child_endpoint` over config.yaml and Hermes'
+    managed config. A route that names no provider is written on that
+    endpoint, so this is what makes it visible.
+    """
+    text, _, error = _read_config_snapshot(_config_path(hermes_home))
+    if error:
+        return {"from": "config.yaml", "host": "", "provider": ""}
+    return child_endpoint(text, managed_config_layer())
 
 
 def _read_delegation_route_text(text: str) -> dict[str, str]:

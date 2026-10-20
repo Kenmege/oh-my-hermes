@@ -8,7 +8,7 @@ All notable changes will be documented here.
   it says.** `omh_delegate_route` wrote model, provider and effort, and
   answered `routed` even when Hermes would build the child elsewhere. That
   was measured with Hermes' own resolver functions, imported from `git
-  archive` copies of Hermes main `8b9ac5773e` and `v0.22.2`:
+  archive` copies of Hermes main `8b9ac5773e`, `v0.22.2` and `v0.21.1`:
   - With `delegation.base_url`, `delegation.api_key` and
     `delegation.api_mode` set, a route to `anthropic` built a `custom` child
     on that endpoint, using `delegation.api_key`.
@@ -27,8 +27,18 @@ All notable changes will be documented here.
   - the local-endpoint fallback;
   - a managed config (`$HERMES_MANAGED_DIR` or `/etc/hermes`) that sets the
     endpoint or pins a route key;
+  - a managed config that gives `delegation` one non-null value, which
+    replaces the whole section;
   - a config line OMH cannot read safely, including a repeated key, a merge
-    key, and a value continued past its line.
+    key, a value continued past its line, and a `model:` or `delegation:`
+    given as an alias, anchor or tag. A one-line flow mapping there is read,
+    the shape Hermes' own `save_config` keeps.
+
+  `openai` is refused under the local-endpoint fallback, because Hermes
+  v0.21.1 to v0.21.3 send it to OpenRouter. A spelling Hermes versions read
+  differently, such as `n` or `0e0`, is undecidable. A route that names no
+  provider still writes over `delegation.base_url`, and `status` names that
+  endpoint under `child_endpoint`.
 
   A refusal changes nothing in `config.yaml` and records nothing: no restore
   record and no provenance. The route lock's file is the only file left.

@@ -2,8 +2,8 @@
 
 `omh_delegate_route` writes `delegation.model`, `delegation.reasoning_effort`
 and `delegation.provider`. Hermes resolves the child from the merged config,
-and these Hermes paths (read at Hermes main 8b9ac5773e and v0.22.2) can send it
-elsewhere while OMH answered `routed`:
+and these Hermes paths (read at Hermes main 8b9ac5773e and v0.22.2, checked at
+v0.21.1) can send it elsewhere while OMH answered `routed`:
 
 * a direct `delegation.base_url`, which `_resolve_delegation_credentials`
   prefers over `delegation.provider` (tools/delegate_tool_config.py:432);
@@ -15,8 +15,8 @@ elsewhere while OMH answered `routed`:
 * a shape OMH's line scan cannot read the way Hermes' loader does.
 
 These tests pin each refusal, every case that must still route, that the
-restore path is never refused, and that a refusal writes nothing to the config
-and records nothing. Every test uses temporary homes and its own managed
+restore path is never refused, that a refusal writes nothing to the config
+and records nothing, and that `status` names a direct endpoint. Every test uses temporary homes and its own managed
 directory, so nothing reads the developer's `~/.hermes`, `~/.omh` or
 `/etc/hermes`.
 """
@@ -250,12 +250,28 @@ class StrictReadingTest(GuardTestCase):
             f"  base_url: [{ENDPOINT}]\n",
             "  base_url: 'it''s'\n",
             "  base_url: ${DELEGATION_BASE_URL}\n",
+            "  base_url: '${DELEGATION_BASE_URL}'\n",
         ):
             with self.subTest(shape=shape):
                 before = self.write_config(shape)
                 result = self.set_route()
                 self.assert_refused(result, before, "direct_endpoint_overrides_provider", ["delegation.base_url"])
                 self.assertIn("cannot read, so it counts as set", result["error"])
+
+    def test_a_spelling_hermes_versions_read_differently_is_undecidable(self) -> None:
+        # Hermes 0.21.x loads with PyYAML, which reads these as strings; 0.22
+        # and later load with ruamel in YAML 1.1 mode, which reads them as
+        # false or zero. Neither can load `=` or `0x_`.
+        for spelling in ("n", "N", "0e0", "0E5", "0.0e0", "._0", "=", "0x_"):
+            with self.subTest(key="delegation.base_url", spelling=spelling):
+                before = self.write_config(f"  base_url: {spelling}\n")
+                self.assert_refused(
+                    self.set_route(), before, "direct_endpoint_overrides_provider", ["delegation.base_url"]
+                )
+            with self.subTest(key="model.provider", spelling=spelling):
+                # Read as a set provider, it would lift the bypass 0.22 applies.
+                before = self.write_config(head=f"model:\n  base_url: {LOCAL_MAIN}\n  provider: {spelling}\n")
+                self.assert_refused(self.set_route(), before, "local_endpoint_bypass")
 
     def test_an_escaped_double_quoted_value_is_not_read_raw(self) -> None:
         # Hermes decodes `\x2e` to `.`, so the child is built as `anthropic`;
@@ -298,10 +314,11 @@ class LeftToHermesTest(GuardTestCase):
         self.assert_routed(self.set_route(), "anthropic")
 
     def test_every_spelling_hermes_reads_as_unset_routes(self) -> None:
-        # Measured with Hermes' own loader at both revisions.
+        # Measured with Hermes' own loader at v0.21.1, v0.22.2 and main.
         spellings = (
-            "''", '""', "'   '", "~", "null", "Null", "NULL", "false", "False", "no", "Off", "n", "N",
-            "0", "-0", "00", "0_0", "0.0", ".0", "0.", "0e0", "0x0", "0b0", "", "# none yet",
+            "''", '""', "'   '", "~", "null", "Null", "NULL", "false", "False", "no", "Off",
+            "0", "-0", "+0", "00", "0_0", "0.0", ".0", "0.", "0.0e+0", ".0e+0", "0:0.0", "0x0", "0x_0",
+            "0b0", "", "# none yet",
         )
         for spelling in spellings:
             with self.subTest(spelling=spelling):
@@ -309,7 +326,7 @@ class LeftToHermesTest(GuardTestCase):
                 self.assert_routed(self.set_route(), "anthropic")
 
     def test_spellings_hermes_reads_as_set_refuse(self) -> None:
-        for spelling in ("y", "On", "0o0", "0:0", "1", "'0'", "'~'"):
+        for spelling in ("y", "On", "0o0", "0:0", ".0e0", "+.0", "-.0", "0b", "1", "'0'", "'~'"):
             with self.subTest(spelling=spelling):
                 before = self.write_config(f"  base_url: {spelling}\n")
                 self.assert_refused(self.set_route(), before, "direct_endpoint_overrides_provider")
@@ -370,12 +387,17 @@ class LeftToHermesTest(GuardTestCase):
 
 class RouteWithoutProviderTest(GuardTestCase):
     def test_removing_a_native_sdk_provider_beside_a_direct_endpoint_is_refused(self) -> None:
-        before = self.write_config(
-            "  provider: bedrock\n  base_url: https://bedrock-runtime.us-east-1.amazonaws.com\n"
-        )
-        result = self.call(action="set", model="local-llama")
-        self.assert_refused(result, before, "native_provider_removed", ["delegation.provider", "delegation.base_url"])
-        self.assertIn("'bedrock'", result["error"])
+        # Hermes compares the provider case-insensitively.
+        for native in ("bedrock", "Bedrock"):
+            with self.subTest(native=native):
+                before = self.write_config(
+                    f"  provider: {native}\n  base_url: https://bedrock-runtime.us-east-1.amazonaws.com\n"
+                )
+                result = self.call(action="set", model="local-llama")
+                self.assert_refused(
+                    result, before, "native_provider_removed", ["delegation.provider", "delegation.base_url"]
+                )
+                self.assertIn(f"'{native}'", result["error"])
 
     def test_a_route_without_a_provider_otherwise_routes(self) -> None:
         for shape in (
@@ -399,9 +421,18 @@ class LocalEndpointBypassTest(GuardTestCase):
             "LAN host": "model:\n  base_url: http://192.168.1.20:8000/v1\n",
             "non-cloud host": "model:\n  base_url: https://llm.example.internal/v1\n",
             "cloud lookalike": "model:\n  base_url: https://openrouter.ai.example.test/v1\n",
+            "cloud name without its dot": "model:\n  base_url: https://evilanthropic.com/v1\n",
             "root base_url": f"base_url: {LOCAL_MAIN}\nmodel:\n  default: llama3\n",
+            "root api_base": f"api_base: {LOCAL_MAIN}\nmodel:\n  default: llama3\n",
             "model.api_base": f"model:\n  api_base: {LOCAL_MAIN}\n",
+            # Hermes promotes a root base_url before it reads model.api_base.
+            "root base_url over model.api_base": (
+                f"base_url: {LOCAL_MAIN}\nmodel:\n  api_base: https://openrouter.ai/api/v1\n"
+            ),
             "scalar model, root base_url": f"model: llama3\nbase_url: {LOCAL_MAIN}\n",
+            "provider from an environment reference": (
+                f"model:\n  base_url: {LOCAL_MAIN}\n  provider: '${{MAIN_PROVIDER}}'\n"
+            ),
         }
         for name, head in heads.items():
             for provider in ("anthropic", "bedrock", "BEDROCK"):
@@ -423,6 +454,22 @@ class LocalEndpointBypassTest(GuardTestCase):
             # section counts as unreadable.
             f'model:\n  note: "line one\nx: y"\n  base_url: {LOCAL_MAIN}\n',
             f"x-m: &m\n  base_url: {LOCAL_MAIN}\nmodel:\n  <<: *m\n",
+            # A whole value on the header line that is not a plain scalar or a
+            # flow mapping this scan reads.
+            f"x-local: &local\n  base_url: {LOCAL_MAIN}\nmodel: *local\n",
+            f"model: &m {{base_url: '{LOCAL_MAIN}'}}\n",
+            f"model: !!map {{base_url: '{LOCAL_MAIN}'}}\n",
+            "model: ${MAIN_MODEL}\n",
+            "model: [llama3]\n",
+            f"model: {{base_url: {LOCAL_MAIN}, base_url: ''}}\n",
+            f"model: {{base_url:{LOCAL_MAIN}}}\n",
+            "model: {base_url: http://127.0.0.1:11434/v1?x=1}\n",
+            "model: {base_url: http://127.0.0.1:11434/v1#x}\n",
+            # Each would read as pinned to `custom` if the rest were skipped.
+            f"model: {{provider: custom, base_url: '{LOCAL_MAIN}'}} trailing\n",
+            f"model: {{provider: custom, base_url: '{LOCAL_MAIN}', default:}}\n",
+            # A collection counts as set: Hermes reads its text as the URL.
+            f"model: {{default: llama3, base_url: [{LOCAL_MAIN}]}}\n",
         ):
             with self.subTest(head=head):
                 before = self.write_config(head=head)
@@ -439,6 +486,7 @@ class LocalEndpointBypassTest(GuardTestCase):
             "openai subdomain": "model:\n  base_url: https://eu.api.openai.com/v1\n",
             "no base_url": "model:\n  default: llama3\n",
             "unset base_url": "model:\n  base_url: ''\n",
+            "model.base_url over root": f"base_url: {LOCAL_MAIN}\nmodel:\n  base_url: https://openrouter.ai/api/v1\n",
         }
         for name, head in heads.items():
             with self.subTest(shape=name):
@@ -446,10 +494,44 @@ class LocalEndpointBypassTest(GuardTestCase):
                 self.assert_routed(self.set_route(), "anthropic")
 
     def test_providers_the_bypass_leaves_alone_route(self) -> None:
-        for provider in ("openrouter", "custom", "openai", "moa", "azure-foundry", "vertex", "vertexai"):
+        for provider in ("openrouter", "custom", "moa", "azure-foundry", "vertex", "vertexai"):
             with self.subTest(provider=provider):
                 self.write_config(head=f"model:\n  base_url: {LOCAL_MAIN}\n")
                 self.assert_routed(self.set_route(model="some-model", provider=provider), provider)
+
+    def test_openai_meets_the_bypass_on_the_oldest_hermes_omh_supports(self) -> None:
+        # Hermes v0.21.1 sends `openai` through the bypass to OpenRouter;
+        # `expand_direct_api_alias` takes it past the bypass only from v0.21.4.
+        before = self.write_config(head=f"model:\n  base_url: {LOCAL_MAIN}\n")
+        self.assert_refused(self.set_route(model="some-model", provider="openai"), before, "local_endpoint_bypass")
+
+    def test_a_model_section_written_on_one_line_is_read(self) -> None:
+        refused = {
+            # The shape Hermes main's own save_config keeps for a flow-style model.
+            "Hermes-written flow": f"model: {{default: llama3, provider: auto, base_url: {LOCAL_MAIN}}}\n",
+            "quoted base_url": f"model: {{default: llama3, base_url: '{LOCAL_MAIN}'}}  # local\n",
+            "root base_url beside": f"model: {{default: llama3}}\nbase_url: {LOCAL_MAIN}\n",
+        }
+        for name, head in refused.items():
+            with self.subTest(shape=name):
+                before = self.write_config(head=head)
+                result = self.set_route()
+                self.assert_refused(result, before, "local_endpoint_bypass", ["model.base_url", "model.provider"])
+                self.assertNotIn("cannot read safely", result["error"])
+        routed = {
+            "provider pinned": f"model: {{base_url: '{LOCAL_MAIN}', provider: custom}}\n",
+            "quoted comma and hash": f"model: {{default: 'llama3, #4', provider: custom, base_url: '{LOCAL_MAIN}'}}\n",
+            "nested values": (
+                f"model: {{provider: custom, extra: {{a: [1, 2], b: 'c, d'}}, base_url: '{LOCAL_MAIN}'}}\n"
+            ),
+            "cloud host": "model: {default: x, base_url: https://openrouter.ai/api/v1}\n",
+            "no base_url": "model: {default: x, provider: openrouter}\n",
+            "empty": "model: {}\n",
+        }
+        for name, head in routed.items():
+            with self.subTest(shape=name):
+                self.write_config(head=head)
+                self.assert_routed(self.set_route(), "anthropic")
 
     def test_a_matching_direct_endpoint_goes_around_the_bypass(self) -> None:
         # The direct branch never asks the runtime provider for an endpoint.
@@ -487,6 +569,59 @@ class ManagedLayerTest(GuardTestCase):
         before = self.write_config(head="model:\n  default: llama3\n")
         self.assert_refused(self.set_route(), before, "local_endpoint_bypass")
 
+    def test_an_empty_managed_leaf_replaces_only_the_leaf_hermes_merges(self) -> None:
+        user = f"model:\n  default: llama3\n  base_url: {LOCAL_MAIN}\n"
+        # Hermes moves a root base_url or api_base, or a model.api_base, into
+        # model.base_url only when it is set, so an empty one leaves the
+        # person's endpoint where it was.
+        for managed in ("api_base: ''\n", "base_url: ''\n", "model:\n  api_base: ''\n"):
+            with self.subTest(managed=managed):
+                self.write_managed(managed)
+                before = self.write_config(head=user)
+                self.assert_refused(self.set_route(), before, "local_endpoint_bypass")
+        # An empty provider there replaces the person's pin.
+        self.write_managed("model:\n  provider: ''\n")
+        before = self.write_config(head=f"model:\n  base_url: {LOCAL_MAIN}\n  provider: custom\n")
+        self.assert_refused(self.set_route(), before, "local_endpoint_bypass")
+        # An empty model.base_url there replaces the person's endpoint.
+        self.write_managed("model:\n  base_url: ''\n")
+        self.write_config(head=user)
+        self.assert_routed(self.set_route(), "anthropic")
+
+    def test_a_managed_section_written_on_one_line_is_read(self) -> None:
+        cases = (
+            (
+                f"delegation: {{base_url: '{ENDPOINT}'}}\n",
+                "direct_endpoint_overrides_provider", ["delegation.base_url"],
+            ),
+            ("delegation: {provider: openrouter}\n", "managed_config_pins_route", ["delegation.provider"]),
+            (f"model: {{base_url: '{LOCAL_MAIN}'}}\n", "local_endpoint_bypass", ["model.base_url", "model.provider"]),
+        )
+        for managed, reason, keys in cases:
+            with self.subTest(managed=managed):
+                self.write_managed(managed)
+                before = self.write_config("  max_iterations: 5\n", head="model:\n  default: llama3\n")
+                self.assert_refused(self.set_route(), before, reason, keys)
+
+    def test_a_managed_delegation_given_one_value_replaces_the_section(self) -> None:
+        # Hermes' merge puts any value but null in place of the person's
+        # section, so the route OMH writes would be dropped.
+        for value in ("''", "false", "0", "off", "inherit"):
+            with self.subTest(value=value):
+                self.write_managed(f"delegation: {value}\n")
+                before = self.write_config("  max_iterations: 5\n")
+                for args in ({"model": "m", "provider": "anthropic"}, {"model": "m"}):
+                    result = self.call(action="set", **args)
+                    self.assert_refused(result, before, "managed_config_pins_route", ["delegation"])
+                    self.assertIn("whole delegation section", result["error"])
+
+    def test_a_null_or_empty_managed_delegation_routes(self) -> None:
+        for managed in ("delegation:\n", "delegation: ~\n", "delegation: null  # none\n", "delegation: {}\n"):
+            with self.subTest(managed=managed):
+                self.write_managed(managed)
+                self.write_config("  max_iterations: 5\n")
+                self.assert_routed(self.set_route(), "anthropic")
+
     def test_a_managed_provider_pin_lifts_the_bypass(self) -> None:
         self.write_managed("model:\n  provider: custom\n")
         self.write_config(head=f"model:\n  base_url: {LOCAL_MAIN}\n")
@@ -498,8 +633,15 @@ class ManagedLayerTest(GuardTestCase):
         self.assert_refused(self.set_route(), before, "managed_config_unreadable")
         self.write_managed("a: 1\na: 2\n")
         self.assert_refused(self.set_route(), before, "managed_config_unreadable")
-        self.write_managed("delegation:\n  <<: *x\n")
-        self.assert_refused(self.set_route(), before, "managed_config_unreadable")
+        for managed in (
+            "delegation:\n  <<: *x\n",
+            "delegation: *x\n",
+            "delegation: {base_url: a, base_url: b}\n",
+            # A value on the header line and lines under it.
+            "delegation: {}\n  provider: openrouter\n",
+        ):
+            self.write_managed(managed)
+            self.assert_refused(self.set_route(), before, "managed_config_unreadable")
         with mock.patch.object(guard.Path, "read_bytes", side_effect=PermissionError("denied")):
             result = self.set_route()
         self.assert_refused(result, before, "managed_config_unreadable")
@@ -522,8 +664,53 @@ class ManagedLayerTest(GuardTestCase):
         # /etc/hermes (get_managed_dir, managed_scope.py:45-57).
         not_a_dir = self.managed_dir / "file"
         not_a_dir.write_text("x", encoding="utf-8")
-        with mock.patch.dict(os.environ, {"HERMES_MANAGED_DIR": str(not_a_dir)}):
+        with mock.patch.dict(os.environ, {"HERMES_MANAGED_DIR": str(not_a_dir)}), \
+                mock.patch.object(guard.Path, "is_dir", autospec=True, side_effect=lambda self: str(self) == etc):
             self.assertEqual(guard.managed_config_layer(), ("", None, ""))
+
+
+class StatusNamesTheEndpointTest(GuardTestCase):
+    """A route that names no provider runs on delegation.base_url; status says so."""
+
+    def test_status_names_the_endpoint_a_route_without_a_provider_runs_on(self) -> None:
+        self.write_config(f"  base_url: {ENDPOINT}\n  api_key: {ENDPOINT_KEY}\n")
+        self.assertEqual(self.call(action="set", model="local-llama")["status"], "routed")
+
+        status = self.call(action="status")
+
+        self.assertEqual(status["route"]["model"], "local-llama")
+        self.assertEqual(
+            status["child_endpoint"], {"from": "config.yaml", "host": "127.0.0.1:8000", "provider": "custom"}
+        )
+        self.assertNotIn(ENDPOINT_KEY, json.dumps(status))
+
+    def test_status_names_no_endpoint_when_the_child_goes_by_provider(self) -> None:
+        for shape in ("  max_iterations: 5\n", "  base_url: ''\n", f"  provider: Bedrock\n  base_url: {ENDPOINT}\n"):
+            with self.subTest(shape=shape):
+                self.write_config(shape)
+                self.assertIsNone(self.call(action="status")["child_endpoint"])
+
+    def test_status_names_a_managed_endpoint_and_one_it_cannot_read(self) -> None:
+        managed = str(self.managed_dir / "config.yaml")
+        self.write_config(f"  base_url: {ENDPOINT}\n")
+        self.write_managed("delegation:\n  base_url: https://api.anthropic.com\n")
+        self.assertEqual(
+            self.call(action="status")["child_endpoint"],
+            {"from": managed, "host": "api.anthropic.com", "provider": "anthropic"},
+        )
+        for text in ("delegation:\n  base_url: ${ENDPOINT}\n", "delegation: ''\n", "delegation: *x\n"):
+            with self.subTest(managed=text):
+                self.write_managed(text)
+                self.assertEqual(
+                    self.call(action="status")["child_endpoint"], {"from": managed, "host": "", "provider": ""}
+                )
+        (self.managed_dir / "config.yaml").unlink()
+        for shape in (f"  base_url: >\n    {ENDPOINT}\n", f"  base_url:\n  - {ENDPOINT}\n"):
+            with self.subTest(shape=shape):
+                self.write_config(shape)
+                self.assertEqual(
+                    self.call(action="status")["child_endpoint"], {"from": "config.yaml", "host": "", "provider": ""}
+                )
 
 
 class RestoreIsNotASwitchTest(GuardTestCase):
