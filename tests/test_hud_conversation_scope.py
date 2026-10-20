@@ -129,9 +129,11 @@ class HudConversationScopeTests(unittest.TestCase):
     def test_compression_edges_keep_own_history_but_not_delegates_or_branches(self):
         self.build()
         with closing(sqlite3.connect(self.hermes / 'state.db')) as db, db:
-            for column in ('parent_session_id TEXT', 'end_reason TEXT', 'source TEXT'):
+            for column in ('parent_session_id TEXT', 'end_reason TEXT', 'source TEXT', 'ended_at REAL'):
                 db.execute('ALTER TABLE sessions ADD COLUMN ' + column)
-            db.execute("UPDATE sessions SET end_reason='compression', source='tui' WHERE id=?", (PARENT_ID,))
+            # Hermes closes a compacted segment with both stamps in one UPDATE.
+            db.execute("UPDATE sessions SET end_reason='compression', ended_at=?, source='tui' WHERE id=?",
+                       (NOW - 400, PARENT_ID))
             for sid, parent, config, source in (
                 ('continued', PARENT_ID, {}, 'tui'),
                 ('branch', PARENT_ID, {'_branched_from': PARENT_ID}, 'tui'),
@@ -204,9 +206,11 @@ class HudConversationScopeTests(unittest.TestCase):
         # continuation reading its own HUD.
         self.build()
         with closing(sqlite3.connect(self.hermes / 'state.db')) as db, db:
-            for column in ('parent_session_id TEXT', 'end_reason TEXT', 'source TEXT'):
+            for column in ('parent_session_id TEXT', 'end_reason TEXT', 'source TEXT', 'ended_at REAL'):
                 db.execute('ALTER TABLE sessions ADD COLUMN ' + column)
-            db.execute("UPDATE sessions SET end_reason='compression', source='tui' WHERE id=?", (PARENT_ID,))
+            # Hermes closes a compacted segment with both stamps in one UPDATE.
+            db.execute("UPDATE sessions SET end_reason='compression', ended_at=?, source='tui' WHERE id=?",
+                       (NOW - 400, PARENT_ID))
             db.execute('INSERT INTO sessions (id, model, model_config, started_at, parent_session_id, source) VALUES (?, ?, ?, ?, ?, ?)',
                        ('continued', 'gpt-5.6-sol', '{}', NOW - 400, PARENT_ID, 'tui'))
         _write_provenance(self.omh, [self._head_record(session_id=PARENT_ID)])

@@ -97,6 +97,7 @@ def omh_team_handler(args: Mapping[str, object], **kwargs: object) -> str:
         read_omh_todo = _runtime_reader.read_omh_todo
         reading_session_id = _runtime_reader.reading_session_id
         todo_items_digest = _todo_store.todo_items_digest
+        compaction_ancestors = _live_session.compaction_ancestors
         _ = (_evidence_tool.run_verification_command, _cost_receipt.build_cost_receipt)
     except AttributeError:
         return _refused(action, "omh_team_core_unavailable", "This install has no team engine.",
@@ -112,8 +113,20 @@ def omh_team_handler(args: Mapping[str, object], **kwargs: object) -> str:
         durable = reading_session_id(hermes_home, session)
         if not durable:
             return _refused(action, "session_required", "A team needs a named chat session.")
+        # The session the team was started under. Hermes' rotating compaction
+        # moves this conversation to a new session id; the team stays under
+        # the segment that started it, reached only through the links Hermes
+        # wrote (`team.owning_session`).
+        owner = durable
+        lineage: Mapping[str, Any] = {}
+        team_id = args.get("team_id")
+        if isinstance(team_id, str) and not team.owning_session(omh_home, durable, team_id):
+            lineage = compaction_ancestors(str(hermes_home), durable)
+            owner = team.owning_session(omh_home, durable, team_id, lineage.get("ancestors") or []) or durable
+            if owner == durable and lineage.get("status") != "resolved" and action != "team_start":
+                raise team.lineage_refusal(str(lineage.get("reason") or ""))
         ctx = team.TeamContext(
-            omh_home=omh_home, session_ref=durable, runner=_runner(team),
+            omh_home=omh_home, session_ref=owner, runner=_runner(team),
             fingerprint=_fingerprint, now=_now, host_guard=_host_floor, helper_work=_helper_work,
             approved=_APPROVED_TEAMS, observed_checks=_OBSERVED_CHECKS,
         )
@@ -122,7 +135,19 @@ def omh_team_handler(args: Mapping[str, object], **kwargs: object) -> str:
             # person reading the command list.
             return _refused(action, "called_from_cron", "A scheduled run cannot start a team; start it in a chat.")
         if action == "team_start":
-            plan = dict(read_omh_todo(omh_home, hermes_home, session_ref=session))
+            # A team resumed from a later segment binds to the plan it was
+            # started with, which is that segment's own.
+            plan = dict(read_omh_todo(omh_home, hermes_home, session_ref=session if owner == durable else owner))
+            if not plan.get("own_record") and owner == durable:
+                # This segment holds no plan of its own. The plan the person
+                # accepted earlier in this conversation is under the segment
+                # Hermes compacted it from, found through the same links.
+                lineage = lineage or compaction_ancestors(str(hermes_home), durable)
+                for earlier in lineage.get("ancestors") or []:
+                    found = dict(read_omh_todo(omh_home, hermes_home, session_ref=earlier))
+                    if found.get("own_record"):
+                        plan = found
+                        break
             plan["items_digest"] = todo_items_digest(plan.get("items"))
             try:
                 result = team.team_start(
@@ -138,7 +163,7 @@ def omh_team_handler(args: Mapping[str, object], **kwargs: object) -> str:
                     # verbatim command match and the person's own prompt.
                     payload["plan_ref"] = plan["items_digest"]
                 return json.dumps(payload, sort_keys=True)
-            _APPROVED_TEAMS.add((durable, str(result["team_id"]), str(result["commands_digest"])))
+            _APPROVED_TEAMS.add((owner, str(result["team_id"]), str(result["commands_digest"])))
         elif action == "team_reconcile":
             result = team.team_reconcile(ctx, team_id=args.get("team_id"), since_seq=args.get("since_seq", 0))
         else:
@@ -319,6 +344,7 @@ def _refused(action: str, reason: str, say: str, *, detail: str = "") -> str:
 # an import cycle finds every name.
 try:
     from .. import cost_receipt as _cost_receipt
+    from .. import live_session as _live_session
     from .. import runtime_reader as _runtime_reader
     from .. import todo_store as _todo_store
     from ..hooks import nudge_budget as _nudge_budget

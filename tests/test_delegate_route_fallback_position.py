@@ -26,6 +26,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from _hermes_session_rows import compacted, row, write_sessions
 from omh.plugin_bundle.omh.delegation_route_restore import (
     LEFTOVER_MATCH,
     delegation_route_restore_path,
@@ -371,6 +372,45 @@ class FallbackAcrossCompressionTest(FallbackPositionTestCase):
         self.route("A-before", category="deep")
 
         result = self.fallback("A-branch", category="deep")
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["position_source"], "none")
+
+
+
+class FallbackAcrossADelegateChildsCompressionTest(FallbackPositionTestCase):
+    """A delegate child Hermes rotated keeps the position its earlier segment routed.
+
+    The child's continuation inherits `_delegate_from`, which the conversation
+    identity once read as a fork, so the child lost its own pre-split route.
+    It now shares the compaction walkers' link rule
+    (`test_compaction_lineage_agreement`). Rows are in the shape Hermes'
+    `SessionDB` writes.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        write_sessions(
+            self.hermes_home,
+            row("P"),
+            compacted("C1", at=1050.0, parent="P", source="subagent", delegate_from="P"),
+            row("C2", parent="C1", source="subagent", delegate_from="P", started_at=1050.0),
+        )
+
+    def test_a_rotated_delegate_child_falls_back_from_its_own_earlier_route(self) -> None:
+        self.route("C1", category="deep")
+        self.route("B", category="quick")
+
+        result = self.fallback("C2", category="deep")
+
+        self.assertEqual(result["status"], "fell_back", result)
+        self.assertEqual(result["position_source"], "provenance")
+        self.assertEqual(result["from"], "deep-head")
+
+    def test_the_parent_is_not_the_childs_conversation(self) -> None:
+        self.route("C1", category="deep")
+
+        result = self.fallback("P", category="deep")
 
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["position_source"], "none")
