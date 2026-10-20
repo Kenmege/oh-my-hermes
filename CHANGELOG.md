@@ -46,6 +46,49 @@ All notable changes will be documented here.
   rotations the identity, like the walkers, stops at 64 links and keeps what
   it verified up to there, so which end drops out depends on the segment
   asked from; it used to have no bound.
+- **A delegation child's model verdict rests only on what the run recorded.**
+  A HUD row's `model_attestation` says whether the model that answered a
+  child is the model it asked for. It had two ways to report a match it could
+  not prove. A child whose session row names no model was judged against the
+  current `delegation.model`, which OMH rewrites for each dispatch and puts
+  back at turn end, so the same finished child read `agreement` or
+  `disagreement` depending on when the HUD was read. And the request was read
+  from `sessions.model`, which Hermes rewrites to the answering model on a
+  session's first accounted call when that call names a billing provider, so
+  a substitution on a child's first call read as `agreement`. The request now
+  comes from the `Model:` line of the identity trailer Hermes stored with the
+  child's first system prompt (`requested_source: prompt_identity`), written
+  before its first call. Hermes rewrites that stored prompt from the running
+  model, which after a fallback is the fallback, at an in-place compaction
+  (its default) and at the start of a later turn, so the line is read only on
+  a first segment with no archived message and at most one user message.
+  Not covered: a row Hermes creates late (a retry after a transient create
+  failure, or a re-create after the row disappeared mid-run) carries the
+  in-memory prompt, and nothing in the row marks it. Without an attested
+  request no agreement is reported. These cases read `unknown`, and the
+  basis says which:
+  - `requested_model_not_attested`: no stored first prompt names a model
+    (none is stored, the row is a compression continuation, the schema lacks
+    the columns, the read failed, or the trailer has no `Model:` line), and
+    `sessions.model` agrees with the answering model.
+  - `requested_model_prompt_may_be_rebuilt`: a first segment's stored prompt
+    was withheld (an archived message, or more than one user message), and
+    `sessions.model` agrees with the answering model.
+  - `no_requested_model`: neither an attested stored prompt nor
+    `sessions.model` names a model.
+
+  In the first two cases, a `sessions.model` that disagrees with the sole
+  model the usage rows name reads `disagreement`. The answering side is
+  judged before any of the three: no usage row (`no_usage_observation`) or
+  more than one usage model (`multiple_usage_models`) also reads `unknown`.
+  `delegation_route` is no longer emitted. Measured read-only over every
+  delegation child row in two local Hermes databases (a profile and a
+  pre-update backup, 550 children; rows still only in the WAL were not
+  read): 518 requests attested by the stored prompt, 32
+  withheld (28 compacted in place, 4 with more than one user message); 513
+  `agreement`, 30 `unknown` because the prompt may be rebuilt, 7 `unknown`
+  with more than one usage model. Before the change the same rows read 543
+  `agreement` and 7 `unknown`.
 - **`omh_delegate_route` `fallback` advances only the calling conversation's
   own route (#2175).** With two sessions on one profile, `fallback` took its
   chain position from whichever session had routed last: the newest
