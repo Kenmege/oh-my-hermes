@@ -922,8 +922,14 @@ def read_omh_hud(
     tui_session_ref: str = "",
     session_scoped: bool = False,
     tui_identity_expected: bool = False,
+    delegation_graph: bool = True,
 ) -> dict[str, Any]:
     """The HUD payload for one reading session.
+
+    Without ``delegation_graph`` the payload's graph is left inactive
+    (``not_requested``) unread: a reader that only wants the status line, or
+    hands the payload to a model, does not pay for the ledger scan or the
+    graph's bytes.
 
     A mapped durable reference scopes native activity to its conversation.
     Missing/invalid/unmapped identities retain explicitly global native activity,
@@ -1112,7 +1118,9 @@ def read_omh_hud(
     # state.db (`delegation_graph`). A reader that names no session (the
     # `omh hud` command) gets the conversation whose ledger changed last,
     # marked global. A verified fanout is drawn when there is no native one.
-    if _hud_graph_preference(graph_preference) == "off":
+    if not delegation_graph:
+        payload["delegation_graph"] = inactive_graph("not_requested", scope="session" if scoped else "global")
+    elif _hud_graph_preference(graph_preference) == "off":
         payload["delegation_graph"] = inactive_graph("explicit_off", scope="session" if scoped else "global")
     else:
         graph_session = reading[0] if scoped else newest_ledger_session(home, now=time.time())

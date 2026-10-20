@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sys
 import time
 from typing import Any
 
 from ..hud import build_hud_payload
-from ..plugin_bundle.omh.delegation_view import render_delegation_view
+from ..install.config_adapter import display_skin_selection, read_config
+from ..plugin_bundle.omh.delegation_view import View, render_delegation_view
+from ..skin_pack import SkinTheme, default_theme, effective_theme
+from ..tui.panels import dag_line
+from ..tui.screen import paint_line
+from ..tui.style import NO_COLOR, color_depth
+from ..tui.terminal import background_from_colorfgbg, colorfgbg_names_dark
+from ..tui.theme import build_theme
+from ..tui.width import line_width
 from .common import _paths, _print_json, _wants_json
 
 # Every glyph and line character the Unicode drawing can use: an output that cannot encode them gets ASCII.
@@ -36,13 +45,44 @@ def _print_text(payload: dict[str, Any], args: argparse.Namespace) -> None:
     lines = [payload["display"]["line"]]
     if getattr(args, "graph", False):
         graph = payload.get("delegation_graph")
+        active = isinstance(graph, dict) and graph.get("status") == "active"
         view = render_delegation_view(
-            graph if isinstance(graph, dict) and graph.get("status") == "active" else None,
+            graph if active else None,
             width=shutil.get_terminal_size((100, 24)).columns,
             charset="unicode" if _encodes(DELEGATION_VIEW_PROBE) else "ascii",
         )
-        lines += view.text_lines()
+        if view.lines and graph.get("scope") == "global":
+            lines.append("[global] the newest conversation with delegated work")
+        lines += _view_lines(view, args)
     print("\n".join(lines), flush=True)
+
+
+def _view_lines(view: View, args: argparse.Namespace) -> list[str]:
+    """The view in the OMH TUI's colours on a terminal that takes them, else as plain text.
+
+    Colours are measured against the background, and a printed command cannot
+    ask the terminal for it as the TUI does (OSC 11): it paints only where
+    `COLORFGBG` names a light or a dark one, never a guess that could put a
+    light line on a light background.
+    """
+    depth = color_depth(os.environ, sys.stdout.isatty())
+    light = background_from_colorfgbg(os.environ)
+    if depth == NO_COLOR or (light is None and not colorfgbg_names_dark(os.environ)):
+        return view.text_lines()
+    theme = build_theme(_active_skin(args), light)  # None: the palette's own dark background stands in
+    return [
+        paint_line(line, line_width(line)) for line in (dag_line(row, view.levels, theme, depth) for row in view.lines)
+    ]
+
+
+def _active_skin(args: argparse.Namespace) -> SkinTheme:
+    """The palette the OMH TUI opens with (`effective_theme`); the default when Hermes' config cannot be read."""
+    paths = _paths(args)
+    try:
+        hermes_skin = display_skin_selection(read_config(paths.hermes_config_path))
+    except (OSError, UnicodeDecodeError):
+        return default_theme()
+    return effective_theme(paths.omh_home, hermes_skin)[0]
 
 
 def _encodes(text: str) -> bool:

@@ -60,6 +60,7 @@ GRAPH_CLAIM_BOUNDARY: Final = (
     "OMH's recorded route, shown only where the child's observed model matches it. Not execution, verification, "
     "review, CI or merge evidence."
 )
+SETTLED_STATES: Final = frozenset({"done", "failed", "interrupted", "unknown"})
 _FAILED_STOPS: Final = frozenset({"failed", "error", "timeout"})
 _FANOUT_SUCCESS: Final = frozenset({"completed", "already_completed", "dry_run_planned"})
 
@@ -90,6 +91,11 @@ def graph_fingerprint(graph: Mapping[str, Any]) -> str:
         "edges": [[edge.get("from"), edge.get("to"), edge.get("kind")] for edge in edges if isinstance(edge, Mapping)],
     }
     return hashlib.sha256(json.dumps(shape, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+
+def session_tail(session_id: str) -> str:
+    """A child session's short id as the native HUD rows name it (their `task_id`, `hermes_delegation`)."""
+    return session_id.rsplit("_", 1)[-1][:8]
 
 
 def _text(value: object, limit: int = 160) -> str:
@@ -130,7 +136,9 @@ def state_facts(
     hermes_home: Path, session_ids: Sequence[str], delegation_ids: Sequence[str]
 ) -> dict[str, Any]:
     """What Hermes recorded about these sessions and delegations. Each read is on its own: one that fails is absent."""
-    facts: dict[str, Any] = {"read": False, "sessions": {}, "usage": {}, "openers": {}, "delegations": {}}
+    facts: dict[str, Any] = {
+        "read": False, "usage_read": False, "sessions": {}, "usage": {}, "openers": {}, "delegations": {},
+    }
     ids = [item for item in dict.fromkeys(session_ids) if item][:160]
     connection = _connect(hermes_home)
     if connection is None:
@@ -171,6 +179,7 @@ def state_facts(
                         "model": _text(models[0]) if len(models) == 1 else "",
                         "last_seen": row[3] if isinstance(row[3], (int, float)) else None,
                     }
+                facts["usage_read"] = True  # an empty answer now means no model call, not an unread table
             except sqlite3.Error:
                 pass
             try:
@@ -275,7 +284,7 @@ _TEAM_VIEW: Final = {
     "prepared": ("waiting", "prepared"),
     "dispatched": ("dispatched", "dispatched"),
     "awaiting_check": ("waiting", "awaiting check"),
-    "repairing": ("running", "repairing"),
+    "repairing": ("waiting", "repair prepared"),  # a repair attempt with no dispatch yet; a dispatched one is read
     "accepted": ("done", "accepted"),
     "blocked": ("failed", "blocked"),
 }
@@ -305,8 +314,9 @@ def _child_state(
         duration = stop.get("duration_ms")
         elapsed = duration / 1000.0 if isinstance(duration, int) else max(0.0, float(stop["observed_at"]) - started)
         if status == "completed":
-            # Hermes reports a provider refusal as a completed child with no model call at all.
-            if facts["read"] and row is not None and not usage.get("rows"):
+            # A completed child with no model call did no work: Hermes delivers a provider's error text as a normal
+            # result (the native HUD rows' rule, `hermes_delegation`). Only a usage table that was read says "none".
+            if facts["read"] and facts["usage_read"] and row is not None and not usage.get("rows"):
                 return "failed", "no model call", elapsed
             return "done", "done", elapsed
         if status in _FAILED_STOPS:
@@ -353,15 +363,19 @@ def build_delegation_graph(
     titles: Callable[[str], str] = child_title,
     fanout: Mapping[str, Any] | None = None,
     scope: str = "session",
+    linger: float | None = GRAPH_LINGER_SECONDS,
 ) -> dict[str, Any]:
     """The graph of one conversation's delegated work, or of the fanout passed in when it has none.
 
-    Never raises: an unreadable record or database leaves the graph smaller or
-    inactive, and a field it cannot evidence ``?``.
+    A graph whose lanes have all settled is inactive once ``linger`` seconds
+    have passed since its last change; ``None`` keeps it (the chat end post of
+    a run it opened, `delegation_snapshot.py`). Never raises: an unreadable
+    record or database leaves the graph smaller or inactive, and a field it
+    cannot evidence ``?``.
     """
     moment = time.time() if now is None else now
     try:
-        graph = _build(omh_home, hermes_home, session_id, moment, root_model, titles, scope)
+        graph = _build(omh_home, hermes_home, session_id, moment, root_model, titles, scope, linger)
     except (OSError, ValueError, TypeError, KeyError, sqlite3.Error) as error:
         graph = inactive_graph(f"unreadable:{type(error).__name__}", scope=scope)
     if graph["status"] != "active" and fanout:
@@ -380,6 +394,7 @@ def _build(
     root_model: str,
     titles: Callable[[str], str],
     scope: str,
+    linger: float | None,
 ) -> dict[str, Any]:
     if not session_id:
         return inactive_graph("no_session", scope=scope)
@@ -494,11 +509,16 @@ def _build(
                 node["waits_on"] = len(unmet)
             child_session = next((session for session, bound in team_bound.items() if bound == unit_id), "")
             child = by_session.get(child_session)
+            if states[unit_id] == "repairing" and child_session and child is None:
+                node.update(state="dispatched", status="repair dispatched")
             if child is not None:
                 derived = facts_for(child, model_of_node["root"])
                 node.update({key: derived[key] for key in ("model", "effort", "category", "category_source")})
-                if states[unit_id] == "dispatched":
-                    node.update(state=derived["state"], status=derived["status"],
+                node["session_tail"] = session_tail(child_session)
+                if states[unit_id] in ("dispatched", "repairing"):
+                    # The team record says the attempt was sent; only the child's own records say it is moving.
+                    repairing = states[unit_id] == "repairing" and derived["state"] == "running"
+                    node.update(state=derived["state"], status="repairing" if repairing else derived["status"],
                                 elapsed_seconds=derived["elapsed_seconds"])
                 elif derived["elapsed_seconds"] is not None:
                     node["elapsed_seconds"] = derived["elapsed_seconds"]
@@ -512,45 +532,111 @@ def _build(
             else:
                 edges.append({"from": "root", "to": node_id, "kind": "dispatch"})
 
-    for child in ordered:
-        if child["child_session_id"] in team_bound:
-            continue
-        node_id = f"s:{child['subagent_id']}"
-        node_of_subagent[child["subagent_id"]] = node_id
-        node_of_session[child["child_session_id"]] = node_id
-    for child in ordered:
-        if child["child_session_id"] in team_bound:
-            continue
-        node_id = node_of_subagent[child["subagent_id"]]
+    def parent_of(child: Mapping[str, Any]) -> str:
         parent_id = node_of_subagent.get(child["parent_subagent_id"], "") if child["parent_subagent_id"] else ""
         if not parent_id:
             parent_id = node_of_session.get(child["parent_session_id"], "")
         if not parent_id:
             parent_id = "root" if child["parent_session_id"] == session_id else ""
-        if not parent_id:
-            continue  # a child whose parent this graph does not hold is not drawn hanging from the wrong node
+        return parent_id
+
+    # A child is placed once its parent is: passes repeat until none places, so a child whose parent this graph
+    # does not hold is left out (never drawn hanging from the wrong node), and so is everything under it.
+    pending = [child for child in ordered if child["child_session_id"] not in team_bound]
+    while True:
+        placeable = [child for child in pending if parent_of(child)]
+        if not placeable:
+            break
+        child = placeable[0]
+        pending.remove(child)
+        parent_id = parent_of(child)
+        node_id = f"s:{child['subagent_id']}"
+        node_of_subagent[child["subagent_id"]] = node_id
+        node_of_session[child["child_session_id"]] = node_id
         derived = facts_for(child, model_of_node.get(parent_id, ""))
         key = (child["parent_session_id"], child["parent_turn_id"] or child.get("call_id", ""))
         group = f"wave {waves[key]} · {_clock(wave_start[key])}" if parent_id == "root" and key in waves else ""
         nodes.append({
             "id": node_id, "kind": "lane", "title": _text(title_for(child), TITLE_LIMIT) or "?",
             **derived, "order": order, "group": group, "waits_on": 0,
+            "session_tail": session_tail(child["child_session_id"]),
         })
         model_of_node[node_id] = derived["model"] if derived["model"] != "?" else ""
         order += 1
         edges.append({"from": parent_id, "to": node_id, "kind": "dispatch"})
 
+    if linger is not None:
+        nodes, edges = _without_old_waves(nodes, edges, children, now, linger)
     lanes = [node for node in nodes if node["kind"] != "root"]
     if not lanes:
         return inactive_graph("no_delegation", scope=scope)
-    settled = all(node["state"] in ("done", "failed", "interrupted", "unknown") for node in lanes)
+    settled = all(node["state"] in SETTLED_STATES for node in lanes)
     newest = max([child["started_at"] for child in children]
                  + [float(child["stop"]["observed_at"]) for child in children if isinstance(child.get("stop"), dict)]
                  + ([team[1]] if team is not None else []))
-    if settled and now - newest > GRAPH_LINGER_SECONDS:
+    if settled and linger is not None and now - newest > linger:
         return inactive_graph("settled", scope=scope)
     name = f"team {_text(team[0].get('team_id'), 48)}" if team is not None and team[0].get("team_id") else "delegation"
-    return _finish(name, nodes, edges, scope)
+    graph = _finish(name, nodes, edges, scope)
+    graph["chat"] = _chat_record(ledger)
+    return graph
+
+
+def _without_old_waves(
+    nodes: list[dict[str, Any]], edges: list[dict[str, str]], children: Sequence[Mapping[str, Any]], now: float,
+    linger: float,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """The graph without each dispatch wave that settled more than ``linger`` ago, while some other lane still moves.
+
+    A wave goes with every lane under it, and only when all of them have
+    settled and none started or stopped within ``linger``, so a conversation's
+    earlier waves stop filling the drawing once newer work is under way.
+    """
+    if all(node["state"] in SETTLED_STATES for node in nodes if node["kind"] != "root"):
+        return nodes, edges
+    latest: dict[str, float] = {}
+    for child in children:
+        stop = child.get("stop")
+        latest[f"s:{child['subagent_id']}"] = max(
+            [float(child["started_at"])] + ([float(stop["observed_at"])] if isinstance(stop, dict) else [])
+        )
+    below: dict[str, list[str]] = {}
+    for edge in edges:
+        below.setdefault(edge["from"], []).append(edge["to"])
+    state_of = {node["id"]: node["state"] for node in nodes}
+    waves: dict[str, list[str]] = {}
+    for edge in edges:
+        group = next((node["group"] for node in nodes if node["id"] == edge["to"]), "")
+        if edge["from"] == "root" and edge["to"].startswith("s:") and group.startswith("wave "):
+            waves.setdefault(group, []).append(edge["to"])
+    dropped: set[str] = set()
+    for heads in waves.values():
+        members, pending = set(), list(heads)
+        while pending:
+            node_id = pending.pop()
+            if node_id not in members:
+                members.add(node_id)
+                pending.extend(below.get(node_id, []))
+        if all(state_of.get(node_id) in SETTLED_STATES and now - latest.get(node_id, now) > linger
+               for node_id in members):
+            dropped |= members
+    if not dropped:
+        return nodes, edges
+    return ([node for node in nodes if node["id"] not in dropped],
+            [edge for edge in edges if edge["from"] not in dropped and edge["to"] not in dropped])
+
+
+def _chat_record(ledger: Mapping[str, Any] | None) -> dict[str, Any]:
+    """What the conversation's last chat post was (`delegation_snapshot.py`) and why the last one due was skipped."""
+    posted = ledger.get("posted") if ledger else {}
+    skipped = ledger.get("skipped") if ledger else {}
+    return {
+        "moment": posted.get("moment", "") if posted else "",
+        "phase": posted.get("phase", "") if posted else "",
+        "posted_at": posted.get("observed_at") if posted else None,
+        "skipped": skipped.get("reason", "") if skipped else "",
+        "skipped_at": skipped.get("observed_at") if skipped else None,
+    }
 
 
 def fanout_graph(record: Mapping[str, Any]) -> dict[str, Any]:

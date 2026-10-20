@@ -60,6 +60,8 @@ class FieldEvidenceTests(unittest.TestCase):
                  ("Update HUD tests", "deep", "claude-opus-5-5", "high")],
             )
             self.assertEqual({item["category_source"] for item in graph["nodes"][1:]}, {"route_provenance"})
+            self.assertEqual([item["session_tail"] for item in graph["nodes"][1:]], ["child-0", "child-1", "child-2"],
+                             "each lane names its child the way the native HUD rows do")
 
     def test_a_route_the_child_did_not_run_is_no_category(self) -> None:
         with homes() as home:
@@ -133,6 +135,18 @@ class StateTests(unittest.TestCase):
             )
             self.assertAlmostEqual(node(graph, "Polish HUD CLI")["elapsed_seconds"], 62.0)
 
+    def test_an_unread_usage_table_never_turns_a_completed_child_into_a_failure(self) -> None:
+        with homes() as home:
+            three_lanes(home)
+            home.usage("child-1", "glm-5.3-flash", last_seen=NOW + 60)
+            stop(home, "child-1", now=NOW + 62)
+            stop(home, "child-2", now=NOW + 70)  # completed with no model call
+            home.execute("ALTER TABLE session_model_usage RENAME TO session_model_usage_gone")
+            graph = built(home)
+            self.assertEqual([(item["state"], item["status"]) for item in graph["nodes"][2:]],
+                             [("done", "done"), ("done", "done")],
+                             "with no usage table read, nothing says there was no model call")
+
     def test_a_child_with_no_news_is_unknown_never_running(self) -> None:
         with homes() as home:
             start(home, "child-0", "sa-0", "Quiet", now=NOW)
@@ -180,6 +194,20 @@ class StructureTests(unittest.TestCase):
             self.assertIn({"from": "s:sa-0-orch", "to": "s:sa-0-leaf", "kind": "dispatch"}, graph["edges"])
             self.assertEqual(len(graph["layers"]), 3)
 
+    def test_a_child_under_a_parent_the_graph_does_not_hold_leaves_no_edge_behind(self) -> None:
+        from omh.plugin_bundle.omh import delegation_ledger
+
+        with homes() as home:
+            # The orphan lands in this conversation's ledger, under a parent session the ledger holds no child for.
+            delegation_ledger._remember(delegation_ledger._roots, "pruned-parent", PARENT, 10)
+            start(home, "child-1", "sa-1", "Orphan", parent="pruned-parent", now=NOW)
+            start(home, "grand-1", "sa-2", "Under the orphan", parent="child-1", parent_subagent="sa-1", now=NOW + 1)
+            start(home, "child-2", "sa-3", "Placed", now=NOW + 2)
+            graph = built(home)
+            ids = {item["id"] for item in graph["nodes"]}
+            self.assertEqual(ids, {"root", "s:sa-3"})
+            self.assertTrue(all(edge["from"] in ids and edge["to"] in ids for edge in graph["edges"]), graph["edges"])
+
     def test_the_graph_is_bounded_and_every_kept_edge_has_both_ends(self) -> None:
         with homes() as home:
             for index in range(GRAPH_NODE_LIMIT + 20):
@@ -197,6 +225,31 @@ class StructureTests(unittest.TestCase):
             self.assertEqual(built(home, now=NOW + 20)["status"], "active")
             later = built(home, now=NOW + 10 + GRAPH_LINGER_SECONDS + 1)
             self.assertEqual((later["status"], later["reason"]), ("inactive", "settled"))
+
+    def test_a_wave_settled_past_the_linger_leaves_while_newer_work_moves(self) -> None:
+        with homes() as home:
+            home.session(PARENT, "claude-opus-5-5")
+            start(home, "child-0", "sa-0", "Old lane", turn="turn-1", now=NOW)
+            start(home, "grand-0", "sa-0a", "Old leaf", parent="child-0", parent_subagent="sa-0", now=NOW + 1)
+            stop(home, "grand-0", now=NOW + 10)
+            stop(home, "child-0", now=NOW + 20)
+            later = NOW + 20 + GRAPH_LINGER_SECONDS + 60
+            start(home, "child-1", "sa-1", "Recent lane", turn="turn-2", now=later - 120)
+            stop(home, "child-1", now=later - 60)
+            start(home, "child-2", "sa-2", "New lane", turn="turn-3", now=later)
+            home.session("child-2", "claude-opus-5-5", parent=PARENT)
+            home.usage("child-2", "claude-opus-5-5", last_seen=later + 5)
+            graph = built(home, now=later + 10)
+            self.assertEqual([item["title"] for item in graph["nodes"]], ["main", "Recent lane", "New lane"],
+                             "the old wave leaves with its nested lane; one settled within the linger stays")
+            ids = {item["id"] for item in graph["nodes"]}
+            self.assertTrue(all(edge["from"] in ids and edge["to"] in ids for edge in graph["edges"]))
+            whole = built(home, now=later + 10, linger=None)
+            self.assertEqual(len(whole["nodes"]), 5, "with no linger nothing is dropped")
+            stop(home, "child-2", now=later + 20)
+            settled = built(home, now=later + 30)
+            self.assertIn("Old lane", [item["title"] for item in settled["nodes"]],
+                          "with nothing moving, no wave is dropped: the whole graph lingers or goes quiet")
 
     def test_the_fingerprint_ignores_elapsed_time(self) -> None:
         with homes() as home:
@@ -272,6 +325,39 @@ class TeamOverlayTests(unittest.TestCase):
         for shape in shapes:
             with self.subTest(shape=shape):
                 self.assertEqual(team_unit_state(shape), unit_state(shape))
+
+
+    def test_a_repair_is_running_only_while_its_child_is(self) -> None:
+        first = {"n": 1, "dispatch": {"child_session_id": "child-0", "subagent_id": "sa-0"}, "returned_at": "t",
+                 "check": {"outcome": "failed"}, "inconclusive": []}
+        with homes() as home:
+            home.session(PARENT, "claude-opus-5-5")
+            start(home, "child-0", "sa-0", "[omh-team:hud-graph/fix/attempt-1] Fix the parser", now=NOW)
+            self.write_team(home, [unit("fix", "Fix the parser", [], [first, {"n": 2, "inconclusive": []}]),
+                                   unit("next", "Keep going", [])])
+            reserved = node(built(home), "Fix the parser")
+            self.assertEqual((reserved["state"], reserved["status"]), ("waiting", "repair prepared"))
+        with homes() as home:
+            home.session(PARENT, "claude-opus-5-5")
+            start(home, "child-0", "sa-0", "[omh-team:hud-graph/fix/attempt-1] Fix the parser", now=NOW)
+            start(home, "child-1", "sa-1", "[omh-team:hud-graph/fix/attempt-2] Fix the parser", now=NOW + 10)
+            home.session("child-1", "claude-opus-5-5", parent=PARENT)
+            home.usage("child-1", "claude-opus-5-5", last_seen=NOW + 20)
+            repair = {"n": 2, "dispatch": {"child_session_id": "child-1", "subagent_id": "sa-1"}, "inconclusive": []}
+            self.write_team(home, [unit("fix", "Fix the parser", [], [first, repair]), unit("next", "Keep going", [])])
+            moving = node(built(home, now=NOW + 30), "Fix the parser")
+            self.assertEqual((moving["state"], moving["status"]), ("running", "repairing"))
+            later = NOW + CHILD_STALE_SECONDS + 60
+            start(home, "child-9", "sa-9", "Fresh", now=later - 5)  # keeps the graph from settling
+            silent = node(built(home, now=later), "Fix the parser")
+            self.assertEqual((silent["state"], silent["status"]), ("unknown", "no news"),
+                             "a repair silent past the stale window is not drawn running")
+        with homes() as home:
+            home.session(PARENT, "claude-opus-5-5")
+            repair = {"n": 2, "dispatch": {"child_session_id": "child-x", "subagent_id": "sa-x"}, "inconclusive": []}
+            self.write_team(home, [unit("fix", "Fix the parser", [], [first, repair])])
+            unseen = node(built(home), "Fix the parser")
+            self.assertEqual((unseen["state"], unseen["status"]), ("dispatched", "repair dispatched"))
 
 
 class FanoutTests(unittest.TestCase):

@@ -77,7 +77,7 @@ from collections import Counter
 from typing import Any
 
 from ..code_mode_guidance import annotate_execute_code_result
-from ..delegation_snapshot import messenger_snapshot
+from ..delegation_snapshot import appended, messenger_snapshot
 from ..engagement_nudges import annotate_engagement_nudge
 from ..kanban_readback import KANBAN_READBACK_TOOLS, transform_kanban_readback
 from ..remote_wait_nudge import annotate_remote_wait, honest_stop_output
@@ -174,9 +174,9 @@ def transform_llm_output(**kwargs: Any) -> str | None:
     return a non-empty string wins, so both of OMH's end-of-turn passes are
     composed in this one handler. The honest stop (``remote_wait_nudge.py``)
     reads the latch its tool-result half records. The delegation snapshot
-    (``delegation_snapshot.py``) appends the conversation's delegation graph
-    as a code block on a chat platform, and only on a turn where the graph
-    changed. Both append and neither rewrites: the CLI prints only the suffix
+    (``delegation_snapshot.py``) appends, on a chat platform, a delegated
+    run's start block, a count line on a turn its counts changed, or its end
+    block. Both append and neither rewrites: the CLI prints only the suffix
     of a transformed reply that starts with the streamed one
     (`cli.py::_post_stream_transform_output`). The host passes no home, so the
     process record resolves the way the tool-result half resolves it.
@@ -190,17 +190,18 @@ def transform_llm_output(**kwargs: Any) -> str | None:
     reply = honest if honest is not None else kwargs.get("response_text")
     if not isinstance(reply, str) or not reply.strip():
         return honest
-    block = _delegation_snapshot(kwargs)
-    return f"{reply.rstrip()}\n\n{block}" if block else honest
+    post = _delegation_snapshot(kwargs, reply)
+    return appended(reply, post) if post else honest
 
 
-def _delegation_snapshot(kwargs: dict[str, Any]) -> str:
-    """The delegation block, or "": a failure in it must not take the honest stop above down with it."""
+def _delegation_snapshot(kwargs: dict[str, Any], reply: str) -> str:
+    """The delegation post for ``reply``, or "": a failure in it must not take the honest stop above down with it."""
     try:
         return messenger_snapshot(
-            session_id=kwargs.get("session_id"), platform=kwargs.get("platform"), model=kwargs.get("model")
+            session_id=kwargs.get("session_id"), platform=kwargs.get("platform"), model=kwargs.get("model"),
+            reply=reply,
         )
     except Exception as exc:  # noqa: BLE001 - the host swallows a raise from this hook, which would also
-        # drop the honest stop composed beside it; recorded by type, and the reply goes out without a block.
+        # drop the honest stop composed beside it; recorded by type, and the reply goes out without a post.
         snapshot_failures[type(exc).__name__] += 1
         return ""

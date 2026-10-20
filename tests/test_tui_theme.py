@@ -45,8 +45,9 @@ class ThemeTests(unittest.TestCase):
                     if background is None and field.name in BAND_ROLES:
                         continue  # no band is painted over a background nobody reported
                     with self.subTest(theme=skin.short_name, background=background, role=field.name):
-                        style = getattr(theme, field.name)
-                        self.assertTrue(style.fg or style.bg, "a role without any colour paints as plain text")
+                        value = getattr(theme, field.name)
+                        for style in value if isinstance(value, tuple) else (value,):  # a gradient is its steps
+                            self.assertTrue(style.fg or style.bg, "a role without any colour paints as plain text")
 
     def test_body_text_and_the_prompt_mark_are_the_terminals_default_foreground(self) -> None:
         # A light terminal showed near-white body text on white (1.08:1); the default foreground is readable on

@@ -87,5 +87,6 @@ def omh_hud_handler(args: dict[str, Any], **kwargs) -> str:
         limit=args.get("limit") or 3,
         token_metadata=token_metadata,
         session_ref=host_session_id(kwargs),
+        delegation_graph=False,  # a model reading its status gets no drawing data (the TUI and chat show it)
     )
     return json.dumps(attach_public_observation(payload, observation), sort_keys=True)

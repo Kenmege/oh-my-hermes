@@ -31,6 +31,7 @@ never with something wrong, and is counted (`ledger_declines`).
 from __future__ import annotations
 
 from collections import Counter, OrderedDict
+from collections.abc import Sequence
 import hashlib
 import json
 import os
@@ -61,19 +62,26 @@ ROUTE_FRESHNESS_SECONDS: Final = 900.0
 ROOT_WALK_LIMIT: Final = 6
 TITLE_LIMIT: Final = 120
 TITLE_CACHE_LIMIT: Final = 512
+DURATION_MS_LIMIT: Final = 10**12  # about 31 years: a duration past it is not a duration
 ROOT_CACHE_LIMIT: Final = 1024
+PRUNE_INTERVAL_SECONDS: Final = 3600.0  # how often one process looks for records that aged out
+PRUNE_LOCK_SECONDS: Final = 0.1
 LEDGER_CLAIM_BOUNDARY: Final = (
     "Delegation structure as Hermes' own hooks reported it: session and subagent ids, task order, turn ids, "
     "times, status words and the route OMH had prepared. It holds no goal, summary, prompt or tool history, and "
     "it is not execution, verification, review, CI or merge evidence."
 )
 ROUTE_FIELDS: Final = ("category", "alias", "wire_model", "reasoning_effort", "origin")
+# What a chat reply last carried (`delegation_snapshot.py`): the moment, and whether its run is still open.
+POST_MOMENTS: Final = ("start", "count", "end")
+RUN_PHASES: Final = ("open", "closed")
 
 _TEAM_MARKER: Final = re.compile(r"^\[omh-team:[^\]]{1,200}\]\s*")
 _TASK_LABEL: Final = re.compile(r"^(?:TASK|Task)\s*:\s*")
 _roots: OrderedDict[str, str] = OrderedDict()
 _titles: OrderedDict[str, str] = OrderedDict()
 ledger_declines: Counter[str] = Counter()
+_pruned_at: list[float] = [0.0]
 
 
 def ledger_key(session_id: str) -> str:
@@ -199,6 +207,7 @@ def _empty(session_id: str) -> dict[str, Any]:
         "children": [],
         "unjoined_stops": [],
         "posted": {},
+        "skipped": {},
         "updated_at": 0.0,
         "claim_boundary": LEDGER_CLAIM_BOUNDARY,
     }
@@ -237,14 +246,19 @@ def _valid_child(value: object) -> dict[str, Any] | None:
         entry["task_index"] = index
     stop = value.get("stop")
     if isinstance(stop, dict) and _number(stop.get("observed_at")) is not None:
-        duration = stop.get("duration_ms")
         entry["stop"] = {
             "status": _text(stop.get("status"), WORD_LIMIT),
             "observed_at": _number(stop.get("observed_at")),
-            "duration_ms": duration if isinstance(duration, int) and not isinstance(duration, bool) and duration >= 0
-            else None,
+            "duration_ms": _duration(stop.get("duration_ms")),
         }
     return entry
+
+
+def _duration(value: object) -> int | None:
+    """Milliseconds as Hermes reports them: a non-negative int under `DURATION_MS_LIMIT`, else None."""
+    if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < DURATION_MS_LIMIT:
+        return value
+    return None
 
 
 def _valid_call(value: object) -> dict[str, Any] | None:
@@ -291,7 +305,21 @@ def parse_ledger(raw: object) -> dict[str, Any] | None:
     ][-LEDGER_STOP_LIMIT:]
     posted = raw.get("posted")
     if isinstance(posted, dict) and isinstance(posted.get("fingerprint"), str):
-        record["posted"] = {"fingerprint": posted["fingerprint"][:64], "observed_at": _number(posted.get("observed_at"))}
+        closed = posted.get("closed")
+        record["posted"] = {
+            "fingerprint": posted["fingerprint"][:64],
+            "observed_at": _number(posted.get("observed_at")),
+            "moment": posted.get("moment") if posted.get("moment") in POST_MOMENTS else "",
+            "phase": posted.get("phase") if posted.get("phase") in RUN_PHASES else "",
+            "counts": _text(posted.get("counts"), 64),
+            "closed": [_text(item, 16) for item in (closed if isinstance(closed, list) else []) if _text(item, 16)][
+                -LEDGER_CHILD_LIMIT:
+            ],
+        }
+    skipped = raw.get("skipped")
+    if isinstance(skipped, dict) and isinstance(skipped.get("fingerprint"), str):
+        record["skipped"] = {"fingerprint": skipped["fingerprint"][:64], "reason": _text(skipped.get("reason"), WORD_LIMIT),
+                             "observed_at": _number(skipped.get("observed_at"))}
     record["updated_at"] = _number(raw.get("updated_at")) or 0.0
     return record
 
@@ -332,6 +360,36 @@ def newest_ledger_session(omh_home: Path, *, now: float, max_age: float = LEDGER
         return ""
     record = parse_ledger(raw)
     return record["session_id"] if record else ""
+
+
+def prune_ledgers(omh_home: Path, *, now: float | None = None) -> int:
+    """Remove the conversation records no hook has written for `LEDGER_MAX_AGE_SECONDS`; everything in them aged out.
+
+    A record's age is its file's modification time against the wall clock
+    (``now`` defaults to it). Each is removed under its own lock, after its age
+    is read again there, so a record a hook is writing is never removed. The
+    lock files stay: another process may be waiting on one, and a lock removed
+    under a waiter would let two writers in at once. Returns how many records
+    were removed.
+    """
+    now = time.time() if now is None else now
+    try:
+        paths = [path for path in ledger_dir(omh_home).iterdir()
+                 if path.suffix == ".json" and not path.name.startswith(".") and not path.is_symlink()]
+    except OSError:
+        return 0
+    removed = 0
+    for path in paths:
+        try:
+            if now - path.stat().st_mtime <= LEDGER_MAX_AGE_SECONDS:
+                continue
+            with _awareness_delivery_lock(path, timeout_seconds=PRUNE_LOCK_SECONDS):
+                if not path.is_symlink() and now - path.stat().st_mtime > LEDGER_MAX_AGE_SECONDS:
+                    path.unlink()
+                    removed += 1
+        except (OSError, ValueError) as error:  # a record another process holds is left for a later pass
+            ledger_declines[f"ledger_prune:{type(error).__name__}"] += 1
+    return removed
 
 
 def _prune(record: dict[str, Any], now: float) -> None:
@@ -423,7 +481,12 @@ def observe_subagent_start(kwargs: dict[str, object], *, now: float | None = Non
         record["children"].append(entry)
         return True
 
-    return _update(omh_home, root, add, now=moment)
+    added = _update(omh_home, root, add, now=moment)
+    wall = time.time()
+    if wall - _pruned_at[0] > PRUNE_INTERVAL_SECONDS:
+        _pruned_at[0] = wall
+        prune_ledgers(omh_home, now=wall)
+    return added
 
 
 def observe_delegate_call(kwargs: dict[str, object], *, now: float | None = None) -> bool:
@@ -511,12 +574,10 @@ def observe_subagent_stop(kwargs: dict[str, object], *, now: float | None = None
         return False
     omh_home, hermes_home = homes
     root = root_session(parent, hermes_home)
-    duration = kwargs.get("duration_ms")
     stop = {
         "status": _text(kwargs.get("child_status"), WORD_LIMIT),
         "observed_at": moment,
-        "duration_ms": duration if isinstance(duration, int) and not isinstance(duration, bool) and duration >= 0
-        else None,
+        "duration_ms": _duration(kwargs.get("duration_ms")),
     }
 
     def close(record: dict[str, Any]) -> bool:
@@ -532,18 +593,59 @@ def observe_subagent_stop(kwargs: dict[str, object], *, now: float | None = None
 
 
 def posted_fingerprint(omh_home: Path, session_id: str) -> str:
+    return str(posted_record(omh_home, session_id).get("fingerprint", ""))
+
+
+def posted_record(omh_home: Path, session_id: str) -> dict[str, Any]:
+    """What the last chat post recorded (fingerprint, moment, run phase, counts, closed lanes), or {}."""
     record = read_ledger(omh_home, session_id)
-    return str(record["posted"].get("fingerprint", "")) if record else ""
+    return dict(record["posted"]) if record else {}
 
 
-def note_posted(omh_home: Path, session_id: str, fingerprint: str, *, now: float | None = None) -> bool:
-    """Record the fingerprint of the snapshot a reply just carried, so an unchanged graph is not posted again."""
+def note_posted(
+    omh_home: Path,
+    session_id: str,
+    fingerprint: str,
+    *,
+    moment_name: str = "",
+    phase: str = "",
+    counts: str = "",
+    closed: Sequence[str] = (),
+    now: float | None = None,
+) -> bool:
+    """Record what a reply just carried, so the same graph, or the same counts in a run, is not posted again.
+
+    ``closed`` holds the keys of the lanes whose run an end post closed; a
+    later run is made of the lanes not in it.
+    """
     moment = time.time() if now is None else now
 
     def mark(record: dict[str, Any]) -> bool:
         if not record["children"]:
             return False
-        record["posted"] = {"fingerprint": fingerprint[:64], "observed_at": moment}
+        record["posted"] = {
+            "fingerprint": fingerprint[:64],
+            "observed_at": moment,
+            "moment": moment_name if moment_name in POST_MOMENTS else "",
+            "phase": phase if phase in RUN_PHASES else "",
+            "counts": _text(counts, 64),
+            "closed": [_text(item, 16) for item in closed if _text(item, 16)][-LEDGER_CHILD_LIMIT:],
+        }
+        record["skipped"] = {}
+        return True
+
+    return _update(omh_home, session_id, mark, now=moment)
+
+
+def note_skipped(omh_home: Path, session_id: str, fingerprint: str, reason: str, *, now: float | None = None) -> bool:
+    """Record that a changed graph was not posted, and why; the posted fingerprint stays, so a later reply can post it."""
+    moment = time.time() if now is None else now
+
+    def mark(record: dict[str, Any]) -> bool:
+        current = record.get("skipped") or {}
+        if not record["children"] or (current.get("fingerprint"), current.get("reason")) == (fingerprint[:64], reason):
+            return False
+        record["skipped"] = {"fingerprint": fingerprint[:64], "reason": _text(reason, WORD_LIMIT), "observed_at": moment}
         return True
 
     return _update(omh_home, session_id, mark, now=moment)

@@ -32,6 +32,13 @@ none when no background was reported. What is drawn on a band takes
 `on_band(theme, band)`, the roles measured against that band, so its words
 reach 4.5:1 and its marks 3:1 on it.
 
+The delegation view's edges step through a gradient (`dag_edges`, from the
+top of the drawing to the bottom): the palette's `dag_edge_start`,
+`dag_edge_mid` and `dag_edge_end` when it names them, else the violet, indigo
+and blue of `DAG_EDGE_STOPS`. Each step is a graphical mark, so it is lifted to
+3:1 like `dim`: toward black on a light background, toward the palette's light
+ink on a dark one, never the other way.
+
 The pager's footer sits on a bar of its own (`status`): the palette's
 status-bar background on a dark terminal or one that reported none, and on
 a light one a light tint of that colour (`LIGHT_STATUS_SHARE`), so the bar
@@ -72,6 +79,9 @@ LIGHT_BAND_SHARE = 0.82
 LIGHT_WORD_BAND_SHARE = 0.62
 # A light background's status bar: the palette's status-bar colour moved this far toward the background.
 LIGHT_STATUS_SHARE = 0.85
+# The delegation view's edge gradient, top to bottom, for a palette that names none of these tokens.
+DAG_EDGE_STOPS = {"dag_edge_start": "#8B5CF6", "dag_edge_mid": "#6366F1", "dag_edge_end": "#3B82F6"}
+DAG_EDGE_STEPS = 9  # an odd count, so the middle stop is a step of its own
 # The roles a person reads as text: each reaches TEXT_CONTRAST against the background. `text` and `user` are not
 # here because they are the terminal's own foreground.
 TEXT_ROLES = (
@@ -118,6 +128,7 @@ class Theme:
     mode_plan: Style
     ok_band: Style  # behind what the person allowed (an approval)
     error_band: Style  # behind a denial or a failure: a denied approval, a failed tool row and its lines, an error notice
+    dag_edges: tuple[Style, ...]  # the delegation view's edges, top layer to bottom (`DAG_EDGE_STEPS` of them)
 
 
 def _channel(value: int) -> float:
@@ -154,7 +165,17 @@ def _lifted(colour: str, toward: str, background: str, minimum: float) -> str:
 
 def _palette(skin: SkinTheme) -> dict[str, str]:
     base = skin_colors(default_theme().skin_name)
-    return {**base, **skin_colors(skin.skin_name)}
+    return {**DAG_EDGE_STOPS, **base, **skin_colors(skin.skin_name)}
+
+
+def _gradient(stops: list[str], steps: int) -> list[str]:
+    """`steps` colours evenly through `stops`, the first stop first and the last stop last."""
+    colours = []
+    for step in range(steps):
+        at = step / (steps - 1) * (len(stops) - 1)
+        index = min(int(at), len(stops) - 2)
+        colours.append(_mix(stops[index], stops[index + 1], at - index))
+    return colours
 
 
 def is_light(background: str) -> bool:
@@ -244,6 +265,10 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         mode_plan=Style(fg=read("ui_ok")),
         ok_band=ok_band,
         error_band=error_band,
+        dag_edges=tuple(
+            Style(fg=_lifted(colour, ink, surface, EDGE_CONTRAST))
+            for colour in _gradient([c[key] for key in DAG_EDGE_STOPS], DAG_EDGE_STEPS)
+        ),
     )
 
 

@@ -340,12 +340,26 @@ A conversation's delegated work drawn as a graph (`delegation_graph/v1`:
 nodes, edges, layers): a layered box DAG with recorded edges only (a
 dispatch, or a recorded `depends_on`), or a compact tree when boxes do not fit
 or the shape cannot be drawn without implying an edge. The OMH TUI draws it
-in its panel; `transform_llm_output` appends it as a code block to the reply
-Hermes is sending on Slack, Discord, Telegram, Mattermost and Matrix, on a
-turn where it changed; `omh hud --graph` prints it. A field with no record is
-`?`, and nothing in it reads current config.
+in its panel, with two-line boxes where four-line ones do not fit, and `/dag`
+opens it whole; `omh hud --graph` prints it. A chat reply never carries the
+boxes: on Slack, Discord, Telegram, Mattermost and Matrix,
+`transform_llm_output` appends to the reply Hermes is sending a run's start
+block once, a count line on a turn its counts changed, and its end block once
+(**Delegated run**). A field with no record is `?`, and nothing in it reads
+current config. Colour is the TUI theme's (`dag_edges` and the state roles),
+never part of the text: a chat post is plain.
 _Avoid_: a message OMH sends (Hermes delivers the reply), a plan (it shows
 dispatched work, not intended work), reading a wave as a dependency
+
+**Delegated run**:
+The lanes of a conversation's delegation graph that no chat end post has
+closed yet. It starts when a reply first finds one of them working, and ends
+on the first reply after all of them have settled (done, failed,
+interrupted, or `unknown`); the ledger's `posted` record keeps its phase,
+its last counts and the keys of the lanes earlier runs closed. A later
+wave's lanes form the next run.
+_Avoid_: a single `delegate_task` call (a run can span several waves), a
+Hermes session
 
 **HUD payload**:
 The metadata-only JSON projection built by `read_omh_hud()` from OMH home and

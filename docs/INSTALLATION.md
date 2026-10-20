@@ -794,7 +794,7 @@ Esc closes it):
 | x, s | In the agent list, on an agent: x twice interrupts it; s steers it with the next line you send (Esc cancels) |
 | Click | On a row of the agent list, opens that agent's log (on main, only leaves the list) |
 | ← / →, q or Esc | In an agent's log, show the agent before or after, or go back; the pager's keys scroll it |
-| j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, an agent's log, this list), move a line, a page, or to either end, or leave |
+| j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, `/dag`, an agent's log, this list), move a line, a page, or to either end, or leave |
 
 Ctrl+Enter and Shift+Enter reach the OMH TUI as keys of their own only where
 the terminal reports them. On start it asks iTerm2, kitty, WezTerm, tmux, VS
@@ -875,7 +875,7 @@ turned into a steer.
 
 A slash command you run is echoed in the transcript as `> /name arg` (but
 `/steer`, whose own row is its echo, and a bare `/sessions`, `/rewind`,
-`/model`, `/keys`, `/history`, `/logs` or `/redraw`, which only open a picker
+`/model`, `/keys`, `/history`, `/logs`, `/dag` or `/redraw`, which only open a picker
 or a pager, or repaint, and print nothing to attribute), and what it prints stays there, under it after `⎿`, in the terminal's scrollback
 (each command's output under its own echo, also when you send a second command before the first answers).
 Typed during a turn, the echo and its output wait under what is running and are written after it, as a
@@ -885,7 +885,7 @@ what it prints later goes under a repeat of its echo. In the transcript, a long 
 first 12 rows and a count of the rest
 (`… +K rows · ctrl+o shows all`, rows at that width), and Ctrl+O or `/history` shows all of it. Nothing a
 command prints opens a pager; a pager opens only when you ask for one
-(`/history`, `/keys`, `/logs`, an agent's log), and output that arrives while
+(`/history`, `/keys`, `/logs`, `/dag`, an agent's log), and output that arrives while
 one is open is in the transcript when you leave it.
 
 Slash commands the OMH TUI runs itself: `/help` (which also lists, in Hermes'
@@ -895,7 +895,9 @@ words, any skill whose name a built-in command takes, such as Hermes' own
 `/sessions`, `/redraw`, `/history` (an in-memory pager over this session),
 `/details` (show or hide thinking and tool detail on the live block),
 `/queue`, `/steer <text>`, `/effort <level>`, `/logs` (the gateway's recent
-stderr, kept in memory only), `/copy`, `/image`, `/paste` (the clipboard
+stderr, kept in memory only), `/dag` (the session's delegation graph as the
+HUD last read it, whole and with four-line boxes, in the pager; q or Esc
+closes it), `/copy`, `/image`, `/paste` (the clipboard
 image), `/theme`, `/omh-model`, `/rewind`, `/todos` (the session's whole
 plan), `/model` (alone, a picker of the models Hermes offers this session,
 from Hermes' `model.options`, opened on the session's model, marked `●`, which

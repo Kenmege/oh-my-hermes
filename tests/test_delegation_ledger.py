@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import unittest
 
 from _local_package import load_local_package
@@ -14,12 +15,15 @@ from _delegation_state import PARENT, dispatched, homes, route, start, stop  # n
 from omh.plugin_bundle.omh import delegation_ledger  # noqa: E402
 from omh.plugin_bundle.omh.delegation_ledger import (  # noqa: E402
     LEDGER_CHILD_LIMIT,
+    LEDGER_MAX_AGE_SECONDS,
     child_title,
     ledger_key,
     ledger_path,
     note_posted,
     observe_delegate_call,
     posted_fingerprint,
+    posted_record,
+    prune_ledgers,
     read_ledger,
     title_from_goal,
 )
@@ -206,6 +210,38 @@ class RecordTests(unittest.TestCase):
             start(home, "child-0", "sa-0-x", "goal", now=NOW)
             self.assertTrue(note_posted(home.omh, PARENT, "f" * 64, now=NOW))
             self.assertEqual(posted_fingerprint(home.omh, PARENT), "f" * 64)
+
+    def test_the_posted_moment_round_trips_and_a_tampered_one_is_dropped(self) -> None:
+        with homes() as home:
+            start(home, "child-0", "sa-0-x", "goal", now=NOW)
+            self.assertTrue(note_posted(home.omh, PARENT, "f" * 64, moment_name="end", phase="closed",
+                                        counts="1/1/0/0/", closed=["a" * 16, "b" * 16], now=NOW))
+            posted = posted_record(home.omh, PARENT)
+            self.assertEqual(
+                {key: posted[key] for key in ("moment", "phase", "counts", "closed")},
+                {"moment": "end", "phase": "closed", "counts": "1/1/0/0/", "closed": ["a" * 16, "b" * 16]},
+            )
+            path = ledger_path(home.omh, PARENT)
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw["posted"].update(moment="boxes", phase="half", closed=["c" * 99, 7] * 200)
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            posted = posted_record(home.omh, PARENT)
+            self.assertEqual((posted["moment"], posted["phase"]), ("", ""))
+            self.assertEqual(posted["closed"], ["c" * 16] * LEDGER_CHILD_LIMIT)
+
+    def test_records_no_hook_wrote_for_a_day_are_removed_and_their_locks_stay(self) -> None:
+        with homes() as home:
+            start(home, "child-0", "sa-0-x", "goal", now=NOW)
+            start(home, "child-9", "sa-9-x", "goal", parent="other-parent", now=NOW)
+            old = ledger_path(home.omh, "other-parent")
+            lock = old.with_name(f".{old.name}.lock")
+            stale = time.time() - LEDGER_MAX_AGE_SECONDS - 60
+            os.utime(old, (stale, stale))
+            self.assertEqual(prune_ledgers(home.omh), 1)
+            self.assertFalse(old.exists())
+            self.assertTrue(lock.exists(), "a lock file stays: a waiter may hold it")
+            self.assertIsNotNone(read_ledger(home.omh, PARENT), "a record written today stays")
+            self.assertEqual(prune_ledgers(home.omh), 0)
 
     def test_the_file_key_is_the_team_records_key(self) -> None:
         from omh.workflows.team import session_key

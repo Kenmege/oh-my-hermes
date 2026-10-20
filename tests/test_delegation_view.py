@@ -4,7 +4,7 @@ The snapshots are the drawings themselves, reviewed as drawings: the box DAG
 of the owner's mock-up at 73 columns, 1, 3 and 6 parallel lanes (6 wrap into a
 second row a trunk feeds), a fan-in, nesting down to a sub-orchestrator, a
 Korean title, the ASCII charset, the tree a narrow terminal gets, and what a
-40-column messenger block holds. The property tests hold what no snapshot
+40-column, 1,782-character budget holds. The property tests hold what no snapshot
 can: no line wider than its width in terminal cells, no arrow without a
 recorded edge, the tree for every shape the boxes cannot draw honestly, and
 no exception for anything malformed.
@@ -183,7 +183,7 @@ DAG - ulw-work hud-graph - 5 nodes - 6 edges
                          +---------------------+
 """
 
-MOCK40MSG = """\
+MOCK40BUDGET = """\
 DAG · ulw-work hud-graph · 5 nodes · 6…
 2 running · 1 waiting · 1 done
   ┌───────────────────────┐
@@ -226,7 +226,7 @@ DAG · ulw-work hud-graph · 5 nodes · 6…
   └──────────────────────┘
 """
 
-NESTED40MSG = """\
+NESTED40BUDGET = """\
 DAG · delegation · 7 nodes · 6 edges
 3 running · 2 dispatched · 1 done
 ◆ main · opus-5-5:high
@@ -276,14 +276,14 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(view.layout, "tree")
         self.assertEqual(view.text() + "\n", NESTED34TREE)
 
-    def test_a_messenger_block_keeps_boxes_when_they_fit_and_the_tree_when_they_do_not(self) -> None:
+    def test_a_40_column_budget_keeps_boxes_when_they_fit_and_the_tree_when_they_do_not(self) -> None:
         budget = dict(width=40, max_chars=1782, max_lines=42)
         view = render_delegation_view(owner_mock(), **budget)
-        self.assertEqual((view.layout, view.text() + "\n"), ("box", MOCK40MSG))
+        self.assertEqual((view.layout, view.text() + "\n"), ("box", MOCK40BUDGET))
         view = render_delegation_view(nested(), **budget)
-        self.assertEqual((view.layout, view.text() + "\n"), ("tree", NESTED40MSG))
+        self.assertEqual((view.layout, view.text() + "\n"), ("tree", NESTED40BUDGET))
 
-    def test_a_messenger_cap_discloses_what_it_left_out(self) -> None:
+    def test_a_character_cap_discloses_what_it_left_out(self) -> None:
         view = render_delegation_view(parallel(60), width=40, max_chars=1782, max_lines=42)
         lines = view.text_lines()
         self.assertEqual(view.layout, "tree")
@@ -305,6 +305,18 @@ class FieldTests(unittest.TestCase):
         tree = text(bare, width=80, layout="tree")
         self.assertIn("?  ", tree)
 
+    def test_a_question_mark_is_marked_unknown_for_the_painter(self) -> None:
+        bare = graph([root(model="", effort=""), {"id": "x", "kind": "lane", "state": "dispatched"}],
+                     [("root", "x", "dispatch")])
+        for layout, width in (("box", 80), ("tree", 80), ("tree", 40)):
+            view = render_delegation_view(bare, width=width, layout=layout)
+            segments = [segment for line in view.lines for segment in line]
+            with self.subTest(layout=layout, width=width):
+                self.assertEqual({segment.text.strip() for segment in segments if segment.role == "unknown"}, {"?"})
+                self.assertFalse(any(segment.text.strip() == "?" and segment.role != "unknown" for segment in segments))
+        known = render_delegation_view(owner_mock(), width=73)
+        self.assertFalse(any(segment.role == "unknown" for line in known.lines for segment in line))
+
     def test_waits_on_names_how_many_recorded_dependencies_are_unmet(self) -> None:
         self.assertIn("waits on 3 lanes", text(owner_mock(), width=73))
         single = owner_mock()
@@ -316,7 +328,7 @@ class FieldTests(unittest.TestCase):
                                      status="stuck: same error")], [("root", "s", "dispatch")])
         drawn = text(stuck, width=80)
         self.assertIn("! Fan out", drawn)
-        self.assertIn("stuck: same error 6m 40s", drawn)
+        self.assertIn("stuck 6m 40s: same error", drawn)
         self.assertNotIn("running", drawn)
 
     def test_a_root_without_a_model_is_one_line(self) -> None:
@@ -351,6 +363,37 @@ class FieldTests(unittest.TestCase):
 
 
 class StructureTests(unittest.TestCase):
+    def test_each_edge_carries_the_level_it_is_drawn_at(self) -> None:
+        def edge_levels(view) -> list[list[int]]:
+            return [sorted({segment.level for segment in line if segment.role == "edge"}) for line in view.lines]
+
+        mock = render_delegation_view(owner_mock(), width=73)
+        self.assertEqual((mock.layout, mock.levels), ("box", 2))
+        levels = edge_levels(mock)
+        lanes = next(at for at, line in enumerate(mock.text_lines()) if "Refresh HUD docs" in line)
+        self.assertEqual({level for line in levels[:lanes] for level in line}, {0}, "the dispatch band is the first")
+        self.assertEqual({level for line in levels[lanes:] for level in line}, {1}, "the fan-in band is the second")
+        deep = render_delegation_view(nested(), width=120)
+        self.assertEqual((deep.layout, deep.levels), ("box", 3))
+        self.assertEqual({level for line in edge_levels(deep) for level in line}, {0, 1, 2})
+        tree = render_delegation_view(nested(), width=34)
+        self.assertEqual((tree.layout, tree.levels), ("tree", 3), "the tree's levels are its depths")
+        for width in (34, 90):
+            columns: dict[int, set[int]] = {}
+            for line in render_delegation_view(nested(), width=width, layout="tree").lines:
+                at = 0
+                for segment in line:
+                    for offset, char in enumerate(segment.text):
+                        if segment.role == "edge" and char in "│├└─":
+                            columns.setdefault(at + offset, set()).add(segment.level)
+                    at += len(segment.text)
+            with self.subTest(width=width):
+                self.assertEqual(sorted(columns), [0, 1, 3, 4, 6, 7], "three depths of branches")
+                self.assertEqual([columns[x] for x in (0, 3, 6)], [{0}, {1}, {2}], "a bar keeps its depth's level")
+        flat = render_delegation_view(parallel(3), width=80)
+        self.assertEqual(flat.levels, 1)
+        self.assertTrue(all(segment.level == 0 for line in flat.lines for segment in line if segment.role != "edge"))
+
     def test_an_arrow_only_where_an_edge_is_recorded(self) -> None:
         """Every node with a recorded incoming edge gets exactly one arrow, and no other node gets one."""
         for case in (owner_mock(), parallel(1), parallel(3), parallel(6), nested()):
@@ -396,6 +439,24 @@ class StructureTests(unittest.TestCase):
                                               max_lines=generator.choice([None, 3, 12, 40]))
                 with self.subTest(trial=trial, width=width, charset=charset, layout=view.layout):
                     self.assertTrue(all(cells(line) <= max(8, width) for line in view.text_lines()))
+
+    def test_a_chain_too_deep_for_the_width_numbers_its_depth_and_stays_inside(self) -> None:
+        nodes = [root()] + [lane(f"n{index}", f"Level {index} task", "deep", "claude-opus-5-5", "high", "running",
+                                 elapsed=60) for index in range(16)]
+        chain = graph(nodes, [("root", "n0", "dispatch")] + [(f"n{index}", f"n{index + 1}", "dispatch")
+                                                             for index in range(15)])
+        for width in (34, 40, 80):
+            view = render_delegation_view(chain, width=width, layout="tree")
+            with self.subTest(width=width):
+                self.assertTrue(all(cells(line) <= width for line in view.text_lines()))
+                self.assertTrue(any("15 └─ ● Level 15" in line for line in view.text_lines()) or width >= 80)
+
+    def test_inf_nan_and_huge_numbers_draw_without_a_duration(self) -> None:
+        for elapsed in (float("inf"), float("nan"), 1e300, -5):
+            case = graph([root(), lane("a", "A", "c", "m", "", "running", elapsed=elapsed)], [("root", "a", "dispatch")])
+            with self.subTest(elapsed=elapsed):
+                self.assertIn("│ running ", render_delegation_view(case, width=60).text() + " ")
+                self.assertNotIn("running 1", render_delegation_view(case, width=60).text())
 
     def test_nothing_malformed_raises(self) -> None:
         for payload in (None, {}, {"nodes": "x"}, {"nodes": [1, None, {"id": 3}]},
