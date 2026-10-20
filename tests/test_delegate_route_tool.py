@@ -328,9 +328,12 @@ class DelegateRouteToolTest(unittest.TestCase):
         self.omh_home = self.home / ".omh"
 
     def _call(self, **args) -> dict:
+        # The host names the session on every dispatch, and `fallback`
+        # advances only that conversation's own route (#2175).
         return json.loads(
             omh_delegate_route_handler(
-                {"hermes_home": str(self.home), "omh_home": str(self.omh_home), **args}
+                {"hermes_home": str(self.home), "omh_home": str(self.omh_home), **args},
+                session_id="host-session",
             )
         )
 
@@ -540,11 +543,12 @@ class DelegateRouteToolTest(unittest.TestCase):
         self.assertEqual(self.config.read_bytes(), before)
 
         # The provenance record is part of the setup now, not decoration.
-        # `fallback` only treats the live keys as its chain position when OMH
-        # can prove it wrote them; without that a hand-written value is read
-        # as the person's and the position comes from provenance instead. The
-        # guard under test here is about the provider identity of the
-        # position, so the position has to be a real one.
+        # `fallback` only treats the live keys as its chain position when the
+        # restore record shows this conversation wrote them, which a
+        # hand-written value never is, so the position comes from this
+        # conversation's provenance instead (#2175). The guard under test
+        # here is about the provider identity of the position, so the
+        # position has to be a real one.
         write_delegation_route(
             self.home,
             model="vendor/shared",
@@ -558,6 +562,7 @@ class DelegateRouteToolTest(unittest.TestCase):
                 "wire_model": "vendor/shared",
                 "provider": "wrong-provider",
                 "reasoning_effort": "low",
+                "session_id": "host-session",
                 "written_at": 3.0,
             },
             self.omh_home,
@@ -565,7 +570,8 @@ class DelegateRouteToolTest(unittest.TestCase):
         before = self.config.read_bytes()
         wrong = self._call(action="fallback", category="quick")
         self.assertEqual(wrong["status"], "error")
-        self.assertEqual(wrong["position_source"], "live_route")
+        self.assertEqual(wrong["position_source"], "provenance")
+        self.assertEqual(wrong["from"], "vendor/shared")
         self.assertEqual(self.config.read_bytes(), before)
 
     def test_registry_backed_alias_requires_provider_before_fallback(self):
@@ -587,8 +593,8 @@ class DelegateRouteToolTest(unittest.TestCase):
             "delegation:\n  model: head\n  reasoning_effort: low\n",
             encoding="utf-8",
         )
-        # Same reason as above: the keys have to be ones OMH can prove it
-        # wrote before `fallback` will read them as its position.
+        # Same reason as above: the position has to be one this
+        # conversation recorded before `fallback` will advance from it.
         append_delegation_route_provenance(
             {
                 "origin": "explicit",
@@ -596,6 +602,7 @@ class DelegateRouteToolTest(unittest.TestCase):
                 "wire_model": "head",
                 "provider": "",
                 "reasoning_effort": "low",
+                "session_id": "host-session",
                 "written_at": 1.0,
             },
             self.omh_home,
@@ -1048,11 +1055,11 @@ class RouteProvenanceRecordingTest(unittest.TestCase):
         )
 
     def test_set_fallback_and_exhaustion_each_record_their_origin(self):
-        first = self._call(action="set", category="quick")
+        first = self._call(action="set", category="quick", host_session="s1")
         self.assertEqual(first["route_provenance"], "recorded")
         for _ in range(3):
-            self._call(action="fallback", category="quick")
-        last = self._call(action="fallback", category="quick")
+            self._call(action="fallback", category="quick", host_session="s1")
+        last = self._call(action="fallback", category="quick", host_session="s1")
         self.assertEqual(last["status"], "exhausted_to_inherit")
         self.assertEqual(last["route_provenance"], "recorded")
 

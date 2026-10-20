@@ -81,8 +81,8 @@ bounded rather than impossible.
 `action=fallback` is the one flow that legitimately spans turns: a child that
 dies on HTTP 400 is reported in a later turn. It used to read the chain
 position out of the live `delegation.*` values, which a turn-end restore
-empties, so it now recovers that position from the newest provenance record.
-See `delegate_route_tool`.
+empties, so it now recovers that position from the newest provenance record
+the calling conversation wrote. See `delegate_route_tool`.
 
 ## Ownership, liveness, locking
 
@@ -131,7 +131,7 @@ import os
 import secrets
 import time
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Collection, Mapping
 
 from . import runtime_paths
 from .awareness_delivery import LOCK_MECHANISM_NONE, _awareness_delivery_lock
@@ -353,17 +353,31 @@ def _routable_subset(applied: Mapping[str, Any]) -> dict[str, str]:
     }
 
 
-def newest_written_provenance(omh_home: str | Path | None = None) -> dict[str, Any]:
+def newest_written_provenance(
+    omh_home: str | Path | None = None,
+    *,
+    session_ids: Collection[str] | None = None,
+) -> dict[str, Any]:
     """The newest provenance record that left a route in the file, or `{}`.
 
     Two callers need it: recognising a leaked OMH route so it is never
     recorded as a person's baseline, and recovering a chain position for
     `fallback` after the route was restored at the end of the turn that
     wrote it.
+
+    They ask different questions, which is what `session_ids` is for. The
+    leftover check is about the `delegation.*` keys, which are profile-wide,
+    so it reads every session's records (`None`). A chain position belongs to
+    one conversation, so `fallback` passes that conversation's session ids
+    and gets only a record one of them wrote. A record that names no session
+    is nobody's there, and an empty set matches nothing.
     """
     for record in reversed(load_delegation_route_provenance(omh_home)):
-        if record.get("origin") in _ROUTE_LEAVING_ORIGINS:
-            return record
+        if record.get("origin") not in _ROUTE_LEAVING_ORIGINS:
+            continue
+        if session_ids is not None and record.get("session_id") not in session_ids:
+            continue
+        return record
     return {}
 
 
@@ -421,11 +435,13 @@ def omh_wrote_current_keys(
 ) -> bool:
     """Can OMH prove it wrote the three keys the file holds right now?
 
-    Two callers need this and neither may act on a "no". `action=fallback`
-    reads the live keys as its chain position, and after a turn-end restore
-    those keys hold the PERSON's pinned model; treating that as the position
-    made one failed lane report a whole exhausted chain and then deleted the
-    pin. Chain exhaustion needs the same answer before it clears.
+    Chain exhaustion asks this before it clears, and may not act on a "no":
+    after a turn-end restore the keys hold the PERSON's pinned model, and
+    clearing it deleted the pin the moment a lane failed. Any OMH writer
+    counts here, because the keys are profile-wide. `action=fallback` used
+    to ask the same question for its chain position and no longer does: a
+    position is one conversation's, so it asks whose write it is
+    (`delegate_route_tool._fallback_position`).
 
     The record is the first authority, provenance the second, because the
     record is the only one written under a lock.
