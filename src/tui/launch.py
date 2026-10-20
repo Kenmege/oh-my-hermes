@@ -7,9 +7,13 @@ for its own terminal, and runs `frontend/dist/entry.js` in place of its Ink
 app. That file is a small Node shim that hands the terminal to
 `omh.tui.app.main` on the interpreter named in `OMH_TUI_PYTHON`, started with
 `-E -P` so neither the launcher's `PYTHONPATH` nor the working directory is
-on its import path. `-E` also ignores `PYTHONUSERBASE`: an OMH installed under
-a custom user base cannot import itself there, and the shim exits 75 so `omh`
-falls back.
+on its import path. That interpreter does not always find the `omh` this
+process runs on its own path: the npm and Bun launcher puts its extracted
+cache on the path in-process, and `-E` ignores a custom `PYTHONUSERBASE`. So
+`omh` also names the directory its `omh` package was imported from
+(`SITE_ENV`, `omh_import_root`), and the shim puts that directory first on
+the path unless the interpreter already imports `omh` from there. An OMH that
+still cannot import itself exits 75, so `omh` falls back.
 
 When the TUI cannot start it creates the file `omh` named in
 `FALLBACK_SENTINEL_ENV` and exits with `FALLBACK_EXIT`, and `omh` opens
@@ -45,6 +49,10 @@ FALLBACK_EXIT = 75
 # (`fallback_sentinel`); `gateway_spawn` drops every `OMH_TUI_` name, so the
 # gateway and its tools never see it.
 FALLBACK_SENTINEL_ENV = "OMH_TUI_FALLBACK_SENTINEL"
+# The directory the TUI's interpreter imports `omh` from when its own path
+# does not already import it from there (`omh_import_root`). `omh` always sets
+# it, so a value left in the person's environment never picks the tree.
+SITE_ENV = "OMH_TUI_SITE"
 # Signals that end `omh` while the TUI runs: closing the terminal window sends SIGHUP.
 EXIT_SIGNALS = ("SIGTERM", "SIGHUP")
 
@@ -103,19 +111,33 @@ def hermes_tui_fits(environ: Mapping[str, str]) -> bool:
     return environ.get("TERM", "") != "dumb" and environ.get("OMH_NO_TUI", "") != "1"
 
 
+def omh_import_root() -> str:
+    """The import-path directory the running `omh` package was imported from.
+
+    For example `site-packages` for a wheel install, or the extracted cache
+    `site` under the npm and Bun launcher. The path is not resolved: a uv
+    editable install is a tree of links, and the TUI has to find the package
+    where this process found it.
+    """
+    import omh
+
+    return os.path.dirname(os.path.dirname(os.path.abspath(omh.__file__)))
+
+
 def omh_tui_environment(
-    environ: Mapping[str, str], *, python: str, omh_home: Path, fallback_sentinel: Path
+    environ: Mapping[str, str], *, python: str, site: str, omh_home: Path, fallback_sentinel: Path
 ) -> dict[str, str]:
     """The environment `hermes --tui` runs with when it should start the OMH TUI.
 
     `OMH_HOME` carries the home this `omh` resolved (including `--omh-home` and
     `--scope project`, and for `--profile <name>` the store that profile's
     config names) across the three processes in between, which do not see
-    `omh`'s own arguments.
+    `omh`'s own arguments. `SITE_ENV` is set over any inherited value.
     """
     env = dict(environ)
     env["HERMES_TUI_DIR"] = str(FRONTEND_DIR)
     env["OMH_TUI_PYTHON"] = python
+    env[SITE_ENV] = site
     env["OMH_HOME"] = str(omh_home)
     env[FALLBACK_SENTINEL_ENV] = str(fallback_sentinel)
     return env

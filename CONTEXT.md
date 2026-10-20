@@ -354,7 +354,11 @@ the packaged shim `omh/tui/frontend/dist/entry.js`, so Hermes' launcher still
 resolves the profile, the resume target, the working directory and session
 ownership, then starts the shim in place of its Ink app. The shim hands the
 terminal to `omh.tui.app.main` on OMH's interpreter, started `-E -P` so the
-launcher's `PYTHONPATH` and the working directory stay off its import path;
+launcher's `PYTHONPATH` and the working directory stay off its import path,
+with the directory `omh` imported its own package from (`OMH_TUI_SITE`) put
+first on that path when the interpreter does not already import `omh` from
+there, as under the npm and Bun launcher, whose cache is on the path only
+inside its own process;
 the TUI spawns Hermes' `tui_gateway`, one at a time, with the interpreter and
 import path the launcher provided and speaks its stdio JSON-RPC; when that
 child exits on its own with a failure, it spawns it again the same way and

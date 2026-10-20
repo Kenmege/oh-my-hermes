@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.machinery
 import json
 import os
 from pathlib import Path
@@ -27,6 +28,22 @@ def _executable(path: Path, body: str) -> Path:
     path.write_text(body, encoding="utf-8", newline="\n")
     path.chmod(0o755)
     return path
+
+
+def _stub_omh(root: Path) -> Path:
+    """A stand-in `omh` under `root` whose `omh.tui.app.main` records where it ran from, and returns 0."""
+    for package in (root / "omh", root / "omh" / "tui"):
+        package.mkdir(parents=True, exist_ok=True)
+        (package / "__init__.py").write_text("", encoding="utf-8", newline="\n")
+    (root / "omh" / "tui" / "app.py").write_text(
+        "import json, sys\n"
+        "def main(environ):\n"
+        "    with open(environ['STUB_RECORD'], 'w', encoding='utf-8') as out:\n"
+        "        json.dump({'file': __file__, 'path': sys.path, 'no_bytecode': sys.dont_write_bytecode}, out)\n"
+        "    return 0\n",
+        encoding="utf-8", newline="\n",
+    )
+    return root
 
 
 class NodeAvailabilityTests(unittest.TestCase):
@@ -90,16 +107,32 @@ class AvailabilityTests(unittest.TestCase):
 
 
 class EnvironmentTests(unittest.TestCase):
-    def test_the_environment_adds_four_names_and_keeps_the_rest(self) -> None:
+    def test_the_environment_adds_five_names_and_keeps_the_rest(self) -> None:
         env = launch.omh_tui_environment(
-            {"PATH": "/bin", "HERMES_HOME": "/h"}, python="/py", omh_home=Path("/o"), fallback_sentinel=Path("/t/f")
+            {"PATH": "/bin", "HERMES_HOME": "/h"},
+            python="/py", site="/site", omh_home=Path("/o"), fallback_sentinel=Path("/t/f"),
         )
         self.assertEqual(env["HERMES_TUI_DIR"], str(launch.FRONTEND_DIR))
         self.assertEqual(env["OMH_TUI_PYTHON"], "/py")
+        self.assertEqual(env["OMH_TUI_SITE"], "/site")
         self.assertEqual(env["OMH_HOME"], str(Path("/o")))
         self.assertEqual(env["OMH_TUI_FALLBACK_SENTINEL"], str(Path("/t/f")))
         self.assertEqual(env["PATH"], "/bin")
         self.assertEqual(env["HERMES_HOME"], "/h")
+
+    def test_a_site_left_in_the_environment_is_replaced(self) -> None:
+        env = launch.omh_tui_environment(
+            {launch.SITE_ENV: "/another/tree"},
+            python="/py", site="/site", omh_home=Path("/o"), fallback_sentinel=Path("/t/f"),
+        )
+        self.assertEqual(env[launch.SITE_ENV], "/site")
+
+    def test_the_import_root_is_where_this_process_found_omh(self) -> None:
+        import omh
+
+        spec = importlib.machinery.PathFinder.find_spec("omh", [launch.omh_import_root()])
+        self.assertIsNotNone(spec)
+        self.assertEqual(spec.origin, os.path.abspath(omh.__file__))
 
     def test_the_fallback_code_is_none_hermes_or_a_session_uses(self) -> None:
         self.assertNotIn(launch.FALLBACK_EXIT, (0, 1, 2, 42, 130))
@@ -236,6 +269,84 @@ class ShimTests(unittest.TestCase):
         self.assertEqual(result.returncode, launch.FALLBACK_EXIT, result.stderr)
         self.assertIn("could not import", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
+
+    def test_an_omh_that_only_the_named_site_holds_is_the_one_the_tui_imports(self) -> None:
+        # The npm and Bun launcher's shape (#2168): the interpreter cannot import `omh` by itself, and `omh` names
+        # the directory it imported its own package from. `-S` keeps every install of this OMH off the path.
+        with TemporaryDirectory() as tmp:
+            sentinel = Path(tmp) / "fallback"
+            no_site = _executable(Path(tmp) / "python", f'#!/bin/sh\nexec "{sys.executable}" -S "$@"\n')
+            alone = subprocess.run(
+                [str(no_site), "-E", "-P", "-c", "import omh"], capture_output=True, text=True, timeout=30, cwd=tmp
+            )
+            self.assertNotEqual(alone.returncode, 0, "this interpreter must not import omh by itself")
+            result = subprocess.run(
+                ["node", str(launch.FRONTEND_ENTRY)],
+                env={
+                    "PATH": os.environ.get("PATH", ""),
+                    "OMH_TUI_PYTHON": str(no_site),
+                    launch.SITE_ENV: launch.omh_import_root(),
+                    launch.FALLBACK_SENTINEL_ENV: str(sentinel),
+                },
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60, cwd=tmp,
+            )
+            fell_back = sentinel.is_file()
+        self.assertNotIn("could not import", result.stderr)
+        # Past the import, `main` itself turns down a stdout that is not a terminal and asks for the fallback.
+        self.assertIn("this terminal cannot run the OMH TUI", result.stderr)
+        self.assertEqual(result.returncode, launch.FALLBACK_EXIT, result.stderr)
+        self.assertTrue(fell_back)
+
+    def _venv_with_a_stub_omh(self, tmp: Path) -> tuple[Path, Path]:
+        """An interpreter whose own path imports a stub `omh`, and the directory that stub is in."""
+        venv = tmp / "venv"
+        subprocess.run(
+            [sys.executable, "-m", "venv", "--without-pip", str(venv)], check=True, capture_output=True, timeout=120
+        )
+        python = venv / "bin" / "python"
+        purelib = subprocess.run(
+            [str(python), "-E", "-P", "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
+            check=True, capture_output=True, text=True, timeout=30,
+        ).stdout.strip()
+        return python, _stub_omh(Path(purelib))
+
+    def _run_stub(self, tmp: Path, python: Path, site: Path) -> dict:
+        record = tmp / "record.json"
+        result = subprocess.run(
+            ["node", str(launch.FRONTEND_ENTRY)],
+            env={
+                "PATH": os.environ.get("PATH", ""),
+                "OMH_TUI_PYTHON": str(python),
+                launch.SITE_ENV: str(site),
+                "STUB_RECORD": str(record),
+            },
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60, cwd=tmp,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(record.read_text(encoding="utf-8"))
+
+    def test_a_site_the_interpreter_already_imports_omh_from_is_not_added_again(self) -> None:
+        with TemporaryDirectory() as tmp:
+            python, own = self._venv_with_a_stub_omh(Path(tmp))
+            recorded = self._run_stub(Path(tmp), python, own)
+        path = [os.path.realpath(entry) for entry in recorded["path"]]
+        self.assertEqual(os.path.realpath(Path(recorded["file"]).parents[2]), os.path.realpath(own))
+        self.assertEqual(path.count(os.path.realpath(own)), 1)
+        self.assertNotEqual(path[0], os.path.realpath(own))
+        self.assertFalse(recorded["no_bytecode"])
+
+    def test_the_named_site_wins_over_another_omh_on_the_interpreters_own_path(self) -> None:
+        # The TUI runs the `omh` that `omh` ran, not an older install the interpreter would find first; and it
+        # writes no bytecode into that directory, which for npm and Bun is a cache checked against a digest.
+        with TemporaryDirectory() as tmp:
+            python, _own = self._venv_with_a_stub_omh(Path(tmp))
+            site = _stub_omh(Path(tmp) / "cache" / "site")
+            recorded = self._run_stub(Path(tmp), python, site)
+            written = sorted(str(path) for path in site.rglob("__pycache__"))
+        self.assertEqual(os.path.realpath(Path(recorded["file"]).parents[2]), os.path.realpath(site))
+        self.assertEqual(recorded["path"][0], str(site))
+        self.assertTrue(recorded["no_bytecode"])
+        self.assertEqual(written, [])
 
     def test_without_an_interpreter_the_shim_asks_for_the_fallback(self) -> None:
         with TemporaryDirectory() as tmp:
