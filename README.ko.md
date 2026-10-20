@@ -266,31 +266,6 @@ OMH의 코딩 쪽은 세 가지입니다. 모델별로 프롬프트를 튜닝하
 
 ## OH-MY-HERMES 터미널
 
-`omh`만 입력하면 OMH TUI가 열립니다. 설치된 Hermes 위에서 도는 OMH 전용 터미널입니다.
-모델 호출, 도구 실행, 승인은 여전히 Hermes가 하고, 화면은 OMH가 그립니다. 끝난 답변은
-터미널 스크롤백으로 넘어가고, plan과 agent 패널은 프롬프트 바로 위에 붙으며, 패널이
-커지거나 줄어도 프롬프트 위치는 움직이지 않습니다. `hermes`는 그대로 Hermes 자체 터미널을 엽니다:
-
-```sh
-omh
-```
-
-<table align="center">
-  <tr>
-    <td width="50%" align="center">
-      <img src="assets/omh-tui-turn.png" alt="The OMH TUI: an edit with its diff, highlighted code, and the plan panel above the composer"><br>
-      <sub><b>편집과 diff, 그리고 프롬프트 위의 plan.</b></sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete, with deny selected by default"><br>
-      <sub><b>Hermes가 묻고 사람이 정합니다. 기본값은 거부.</b></sub>
-    </td>
-  </tr>
-</table>
-
-OMH TUI를 열 수 없으면 `omh`가 이유를 한 줄로 알리고 Hermes 자체 TUI(`hermes --tui`)를 엽니다(Windows, `termios`가 없는 터미널).
-`TERM=dumb`, `OMH_NO_TUI=1`, Node가 없는 환경에서는 그냥 `hermes`를 엽니다. `hermes`는 OMH skin과 HUD가 없는 순정 Hermes로 열리고, OMH의 도구·메모리·스킬은 그대로 남아 있습니다([The OMH TUI](docs/INSTALLATION.md#the-omh-tui)).
-
 OMH 워크플로가 도는 동안 터미널이 보여주는 것:
 
 - **Mixture-of-Models Routing** — 위임되는 lane마다 카테고리(ultrabrain,
