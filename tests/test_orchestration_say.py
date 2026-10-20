@@ -184,8 +184,13 @@ class RouteHandlerTests(unittest.TestCase):
         self.enterContext(patch_modules({"hermes_constants": None}))
 
     def call(self, **args: object) -> dict:
+        # `fallback` advances only the calling conversation's route, which
+        # the host names in this keyword (#2175).
         return json.loads(
-            omh_delegate_route_handler({"hermes_home": str(self.home), "omh_home": str(self.omh_home), **args})
+            omh_delegate_route_handler(
+                {"hermes_home": str(self.home), "omh_home": str(self.omh_home), **args},
+                session_id="host-session",
+            )
         )
 
     def test_set_fallback_and_exhaustion_each_carry_a_sentence(self) -> None:

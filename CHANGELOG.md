@@ -32,6 +32,54 @@ All notable changes will be documented here.
   `agreement`, 30 `unknown` because the prompt may be rebuilt, 7 `unknown`
   with more than one usage model. Before the change the same rows read 543
   `agreement` and 7 `unknown`.
+- **`omh_delegate_route` `fallback` advances only the calling conversation's
+  own route (#2175).** With two sessions on one profile, `fallback` took its
+  chain position from whichever session had routed last: the newest
+  provenance record, or the live `delegation.*` keys whenever OMH had written
+  them. One session's route then decided another's fallback: an error naming
+  a model the caller never routed, a fallback from the other session's
+  model, an exhausted chain while the caller's own chain still had
+  candidates, or the other session's live route advanced one step with the
+  caller recorded as its writer. The position now comes from the newest
+  route-leaving provenance record whose `session_id` belongs to the calling
+  conversation, which is the host's session id plus its compression
+  continuations, the set the HUD already owns route records with. The live
+  keys count only when the restore record names a writer in that
+  conversation and the file still holds that write. A conversation with no
+  route of its own gets the existing `no active route to fall back from`
+  error with `position_source: "none"`, and nothing is written. A record
+  that names no session is nobody's, so a call that reaches the tool without
+  the host's session id gets that error too. Like `set`, a fallback still
+  writes into the profile-wide keys, and it now does so from its own
+  position. Where another session's route is live, the fallback that 4.0.0
+  refused with a category mismatch now replaces that route with the
+  caller's next candidate, and when the caller's own chain is exhausted it
+  clears that route, as the issue scopes. The leaked-route check before a
+  baseline is captured still reads every session's records.
+
+- **Every Hermes `delegate_task` child gets OMH's delegation protocol.** The
+  `coding-handling` harness requires the protocol in every delegated or
+  reviewer prompt, runtime-native spawns included, but a Hermes-native child
+  got it only when the parent model pasted it into the goal. The plugin now
+  registers a second system prompt section, `omh.delegation-protocol`, which
+  renders only for a session Hermes builds as a `delegate_task` child
+  (platform `subagent`). It carries the goal echo-back, verification-stop and
+  re-review-cap lines that `omh coding composition-guide` returns, which now
+  read the same definitions. Only the goal echo-back applies to every child.
+  The verification rule is framed for a task that changes files, and the
+  review rule for a child that reviews work against stated success criteria.
+  The section also reaches children no OMH-guided parent wrote, such as
+  Hermes' own `/review` reviewer, whose brief from Hermes states no success
+  criteria, so the review rule's condition does not match it. The section
+  renders once in each child's system prompt. The `coding-handling` harness
+  and `omh coding composition-guide` (its `applies_to` and its printed
+  header) now tell the parent not to paste the protocol into a Hermes
+  `delegate_task` goal, and still to embed it for Codex, Claude Code and
+  other runtime-native spawns. A goal that pastes it anyway carries it twice. The parent's own
+  prompt, the dispatched goals and the bot persona do not change. Each
+  child's system prompt grows by 1,007 characters: the 920-character section
+  plus Hermes' framing (#2174).
+
 - **`omh_probe` says why its own package probe did not import, and a broken
   import hook cannot make the classifier raise.** When `omh.probe` alone fails
   to import, the probe's bundle answer now carries a `package_probe` row with
