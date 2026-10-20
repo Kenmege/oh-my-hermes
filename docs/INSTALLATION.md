@@ -1535,6 +1535,15 @@ answers that it is not; a row the host never closed, which is what a killed
 TUI and most gateway sessions leave behind, falls back to a six-hour bound
 on the route's own age. Such a route can outlive its session by that long
 rather than risk being taken back while the writer is still dispatching.
+A row Hermes closed to compact the conversation (`end_reason` `compression`,
+which its rotating compaction writes when `compression.in_place` is `false`)
+does not answer either: the conversation goes on in a new row, so the
+question goes to the rows Hermes continued it in, following only the
+continuation links Hermes itself writes. If those rows cannot be read or do
+not match how Hermes records a compaction, the route stays and the restore
+reports `continuation_unverified`, but only until the route is six hours old,
+the bound a writer row that cannot be found gets; after that it is put back
+and reported as `continuation_unverified_expired`.
 
 What returns is the previous values, not the previous bytes: the writer
 normalises quoting, emits the three keys in a fixed order, and drops an
@@ -2518,8 +2527,10 @@ otherwise. It writes nothing. The record shape and the reading rules are in
 
 Native agent activity is a separate ownership policy from todos. A mapped
 valid durable identity selects native `state.db` children before row limits
-and totals, following only unambiguous compression continuations, never
-branches or delegated children. Missing, invalid or unmapped identities retain
+and totals, following only the compaction continuations Hermes itself links
+(the same rule the route restore and `omh_team` read), never a branch, a
+reset, a `tool` session or a delegated child. Missing, invalid or unmapped
+identities retain
 the previous global native fallback, including best-effort manifest context.
 The OMH TUI is the one exception: it names the durable key the gateway handed
 it, and Hermes writes that key's `state.db` row on the session's first prompt,
