@@ -75,10 +75,13 @@ def _build_state_db(home: Path) -> None:
         (OTHER, "tui", "gpt-6-sol", "{}", None, SESSION_START - 3600, None),
     ]
     for session_id, source, model, config, parent, started, end_reason in sessions:
+        # Hermes closes a compacted segment with `ended_at` and `end_reason` in
+        # one UPDATE (`publish_compression_child`), here when CONTINUED starts.
+        ended = SESSION_START + 3600 if end_reason == "compression" else None
         connection.execute(
-            "INSERT INTO sessions (id, source, model, model_config, parent_session_id, started_at, end_reason) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (session_id, source, model, config, parent, started, end_reason),
+            "INSERT INTO sessions (id, source, model, model_config, parent_session_id, started_at, ended_at,"
+            " end_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (session_id, source, model, config, parent, started, ended, end_reason),
         )
     usage = [
         # (session, model, input, output, estimated, actual, status, source)

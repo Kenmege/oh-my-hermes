@@ -2525,8 +2525,10 @@ otherwise. It writes nothing. The record shape and the reading rules are in
 
 Native agent activity is a separate ownership policy from todos. A mapped
 valid durable identity selects native `state.db` children before row limits
-and totals, following only unambiguous compression continuations, never
-branches or delegated children. Missing, invalid or unmapped identities retain
+and totals, following only the compaction continuations Hermes itself links
+(the same rule the route restore and `omh_team` read), never a branch, a
+reset, a `tool` session or a delegated child. Missing, invalid or unmapped
+identities retain
 the previous global native fallback, including best-effort manifest context.
 The OMH TUI is the one exception: it names the durable key the gateway handed
 it, and Hermes writes that key's `state.db` row on the session's first prompt,

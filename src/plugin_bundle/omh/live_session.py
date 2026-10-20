@@ -229,13 +229,13 @@ LINEAGE_UNVERIFIED_REASONS = (
 def compaction_continuations(hermes_home: str, session_id: str) -> dict[str, Any]:
     """Where Hermes went on with a conversation after closing ``session_id``.
 
-    Follows only links Hermes itself writes when it compacts: a segment
-    closed with ``COMPACTION_END_REASON`` and a row naming it as
-    ``parent_session_id`` that is not a fork of it and inherited its
-    ``_delegate_from``. A fork (a branch, a delegate child, a reset, a
-    ``tool`` row) is another conversation and is not followed, and neither is
-    a row whose inherited marker disagrees with the segment's, which Hermes
-    never writes as a continuation.
+    Follows only links Hermes itself writes when it compacts (see
+    `_compaction_link`): a segment closed with ``COMPACTION_END_REASON`` and
+    a row naming it as ``parent_session_id`` that is not a fork of it and
+    inherited its ``_delegate_from``. A fork (a branch, a delegate child, a
+    reset, a ``tool`` row) is another conversation and is not followed, and
+    neither is a row whose inherited marker disagrees with the segment's,
+    which Hermes never writes as a continuation.
 
     Returns ``{"status": "resolved", "tips": [row, ...]}``, every segment the
     links reach that Hermes did not close for compaction, each with
@@ -259,7 +259,10 @@ def compaction_continuations(hermes_home: str, session_id: str) -> dict[str, Any
     if connection is None:
         return _unverified("state_db_unavailable")
     try:
-        found = _lineage_row(connection, session_id)
+        select = _lineage_select(connection)
+        if select is None:
+            return _unverified("state_db_unavailable")
+        found = _lineage_row(connection, select, session_id)
         if found is None:
             return _unverified("session_row_missing")
         frontier, tips, seen = [found], [], {session_id}
@@ -269,7 +272,7 @@ def compaction_continuations(hermes_home: str, session_id: str) -> dict[str, Any
                 tips.append(segment)
                 continue
             continuations = []
-            for child in _child_rows(connection, segment["id"]):
+            for child in _child_rows(connection, select, segment["id"]):
                 link = _compaction_link(segment, child)
                 if link == "unreadable":
                     return _unverified("continuation_not_authenticated")
@@ -319,33 +322,82 @@ def compaction_ancestors(hermes_home: str, session_id: str) -> dict[str, Any]:
         return _unverified("state_db_unavailable", ancestors=[])
     ancestors: list[str] = []
     try:
-        current = _lineage_row(connection, session_id)
-        if current is None:
-            return _unverified("session_row_missing", ancestors=ancestors)
-        seen = {session_id}
-        while current["parent_session_id"]:
-            segment = _lineage_row(connection, current["parent_session_id"])
-            if segment is None:
-                return _unverified("segment_row_missing", ancestors=ancestors)
-            if not _closed_for_compaction(segment):
-                break
-            link = _compaction_link(segment, current)
-            if link == "fork":
-                break
-            if link == "tool":
-                return _unverified("tool_session_ambiguous", ancestors=ancestors)
-            if link != "continuation":
-                return _unverified("continuation_not_authenticated", ancestors=ancestors)
-            if segment["id"] in seen or len(seen) >= COMPACTION_LINEAGE_ROW_LIMIT:
-                return _unverified("lineage_too_long", ancestors=ancestors)
-            seen.add(segment["id"])
-            ancestors.append(segment["id"])
-            current = segment
-        return {"status": "resolved", "ancestors": ancestors}
+        select = _lineage_select(connection)
+        if select is None:
+            return _unverified("state_db_unavailable", ancestors=ancestors)
+        return _walk_back(connection, select, session_id, ancestors)
     except (sqlite3.Error, TypeError, ValueError):
         return _unverified("state_db_unavailable", ancestors=ancestors)
     finally:
         _close(connection)
+
+
+def conversation_segments(connection: Any, session_id: str) -> set[str]:
+    """Every session id of the one conversation ``session_id`` is a segment of.
+
+    The conversation identity OMH owns HUD rows, board lanes, cost and a
+    fallback's route position by (`hermes_delegation._conversation_session_ids`),
+    on the same links the two walkers above follow, so the identity and the
+    liveness and return answers cannot disagree about which rows are one
+    conversation. It is ``session_id``, the earlier segments
+    ``compaction_ancestors`` would verify, and every segment Hermes'
+    continuation links reach forward from the first of them -- a stale
+    sibling beside a continuation included, a fork (branch, delegate child,
+    reset, ``tool`` row) never.
+
+    It fails closed: a link that cannot be authenticated, or more than
+    ``COMPACTION_LINEAGE_ROW_LIMIT`` of them, ends the walk there and keeps
+    what was verified. A schema without the lineage columns answers the exact
+    identity alone. A ``sqlite3.Error`` reaches the caller, which reports the
+    question as unanswerable.
+    """
+    select = _lineage_select(connection)
+    if select is None:
+        return {session_id}
+    ancestors: list[str] = []
+    _walk_back(connection, select, session_id, ancestors)
+    root = ancestors[-1] if ancestors else session_id
+    conversation = {session_id, root, *ancestors}
+    frontier = [root]
+    while frontier:
+        segment = _lineage_row(connection, select, frontier.pop())
+        if segment is None or not _closed_for_compaction(segment):
+            continue
+        for child in _child_rows(connection, select, segment["id"]):
+            if child["id"] in conversation or _compaction_link(segment, child) != "continuation":
+                continue
+            if len(conversation) > COMPACTION_LINEAGE_ROW_LIMIT:
+                return conversation
+            conversation.add(child["id"])
+            frontier.append(child["id"])
+    return conversation
+
+
+def _walk_back(connection: Any, select: str, session_id: str, ancestors: list[str]) -> dict[str, Any]:
+    """`compaction_ancestors` on an open connection; appends to ``ancestors`` as each link is verified."""
+    current = _lineage_row(connection, select, session_id)
+    if current is None:
+        return _unverified("session_row_missing", ancestors=ancestors)
+    seen = {session_id}
+    while current["parent_session_id"]:
+        segment = _lineage_row(connection, select, current["parent_session_id"])
+        if segment is None:
+            return _unverified("segment_row_missing", ancestors=ancestors)
+        if not _closed_for_compaction(segment):
+            break
+        link = _compaction_link(segment, current)
+        if link == "fork":
+            break
+        if link == "tool":
+            return _unverified("tool_session_ambiguous", ancestors=ancestors)
+        if link != "continuation":
+            return _unverified("continuation_not_authenticated", ancestors=ancestors)
+        if segment["id"] in seen or len(seen) >= COMPACTION_LINEAGE_ROW_LIMIT:
+            return _unverified("lineage_too_long", ancestors=ancestors)
+        seen.add(segment["id"])
+        ancestors.append(segment["id"])
+        current = segment
+    return {"status": "resolved", "ancestors": ancestors}
 
 
 def _unverified(reason: str, **fields: Any) -> dict[str, Any]:
@@ -405,27 +457,39 @@ def _lineage_connection(hermes_home: str):
         return None
 
 
-# A schema without the lineage columns raises `sqlite3.Error` here, which the
-# callers report as unanswerable.
-_LINEAGE_COLUMNS = """
-    SELECT id, source, parent_session_id, model_config, ended_at, end_reason,
-           COALESCE(last_activity_at, started_at)
-    FROM sessions
-"""
+# The `sessions` columns a lineage link is read from. Hermes has carried all
+# of them since before the plugin floor; a schema without one cannot say
+# whether a row was closed for compaction or what it was forked from.
+_LINEAGE_COLUMNS = frozenset({"id", "source", "parent_session_id", "model_config", "ended_at", "end_reason"})
 
 
-def _lineage_row(connection: Any, session_id: str) -> dict[str, Any] | None:
-    found = connection.execute(_LINEAGE_COLUMNS + " WHERE id = ? LIMIT 1", (str(session_id or ""),)).fetchone()
+def _lineage_select(connection: Any) -> str | None:
+    """The row query for this schema, or None when it lacks a lineage column.
+
+    The activity stamp is only read for liveness, so a schema without
+    ``last_activity_at`` (or ``started_at``) still answers lineage.
+    """
+    columns = {row[1] for row in connection.execute('PRAGMA table_info("sessions")')}
+    if not _LINEAGE_COLUMNS <= columns:
+        return None
+    stamps = [name for name in ("last_activity_at", "started_at") if name in columns]
+    activity = f"COALESCE({', '.join(stamps)})" if len(stamps) > 1 else (stamps[0] if stamps else "NULL")
+    # Fixed column names only, never caller text.
+    return f"SELECT id, source, parent_session_id, model_config, ended_at, end_reason, {activity} FROM sessions"
+
+
+def _lineage_row(connection: Any, select: str, session_id: str) -> dict[str, Any] | None:
+    found = connection.execute(select + " WHERE id = ? LIMIT 1", (str(session_id or ""),)).fetchone()
     return _lineage_dict(found) if found else None
 
 
-def _child_rows(connection: Any, parent_id: str):
+def _child_rows(connection: Any, select: str, parent_id: str):
     """Every row naming ``parent_id`` as its parent, read one at a time.
 
     Not capped: a fan-out writer can have any number of delegate children,
     and they are forks, not links. The cap is on links followed.
     """
-    for found in connection.execute(_LINEAGE_COLUMNS + " WHERE parent_session_id = ? ORDER BY id", (parent_id,)):
+    for found in connection.execute(select + " WHERE parent_session_id = ? ORDER BY id", (parent_id,)):
         yield _lineage_dict(found)
 
 
