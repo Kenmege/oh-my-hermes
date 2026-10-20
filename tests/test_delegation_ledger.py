@@ -128,7 +128,8 @@ class RecordTests(unittest.TestCase):
             stored = ledger_path(home.omh, PARENT).read_text(encoding="utf-8")
             for text in (*GOALS, "Refresh HUD docs", "Update HUD tests", "SECRET SUMMARY TEXT", "VERIFY"):
                 self.assertNotIn(text, stored)
-            self.assertEqual(oct(os.stat(ledger_path(home.omh, PARENT)).st_mode & 0o777), "0o600")
+            if os.name == "posix":  # Windows keeps no POSIX mode bits to check
+                self.assertEqual(oct(os.stat(ledger_path(home.omh, PARENT)).st_mode & 0o777), "0o600")
 
     def test_titles_stay_in_this_process(self) -> None:
         with homes() as home:
