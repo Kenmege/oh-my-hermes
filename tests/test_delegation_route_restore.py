@@ -23,7 +23,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from _hermes_session_rows import compacted, row, write_sessions
+from _hermes_session_rows import compacted, row, within_seconds as _within_seconds, write_sessions
 
 from omh.plugin_bundle.omh.awareness_delivery import _awareness_delivery_lock
 from omh.plugin_bundle.omh.delegation_route_restore import (
@@ -1517,24 +1517,76 @@ class CompactionContinuationTest(RouteRestoreTestCase):
                 self.assertEqual((result["liveness"], result["writer_continuation"]), ("live", running))
                 self.assertEqual(self.current()["model"], "routed-model")
 
-    def test_no_continuation_holds_the_route_and_says_why(self) -> None:
+    def test_no_continuation_holds_the_route_until_the_age_bound_and_says_why(self) -> None:
         # Hermes inserts the continuation in the transaction that closes the
-        # segment, so a closure with none is a shape this cannot read -- not
-        # the conversation ending, not even past the age bound.
+        # segment, so a closure with none is a shape this cannot read: not the
+        # conversation ending. It holds the route, but no longer than a writer
+        # row that cannot be found, or `delegation.*` would stay changed for
+        # every later session of the profile.
+        # Mutations: let the unverified verdict clear at once; drop its bound.
         write_sessions(
             self.hermes_home,
             compacted("W", at=1050.0),
             row("forged", parent="W", delegate_from="someone-else", started_at=1090.0),
         )
 
-        for now in (self.NOW, self.WRITTEN + LIVE_TUI_SESSION_FRESH_SECONDS + 1):
-            with self.subTest(now=now):
-                result = self.session_start(now=now)
-                self.assertEqual(
-                    (result["status"], result["liveness"], result["lineage_unverified"]),
-                    ("writer_live", "continuation_unverified", "no_continuation"),
-                )
+        held = self.session_start(now=self.WRITTEN + LIVE_TUI_SESSION_FRESH_SECONDS)
+
+        self.assertEqual(
+            (held["status"], held["liveness"], held["lineage_unverified"]),
+            ("writer_live", "continuation_unverified", "no_continuation"),
+        )
         self.assertEqual(self.current()["model"], "routed-model")
+
+        released = self.session_start(now=self.WRITTEN + LIVE_TUI_SESSION_FRESH_SECONDS + 1)
+
+        self.assertEqual(
+            (released["status"], released["liveness"], released["lineage_unverified"]),
+            ("cleared", "continuation_unverified_expired", "no_continuation"),
+        )
+        self.assertEqual(self.current(), {})
+
+    def test_a_fan_out_under_the_writer_is_not_counted_as_lineage(self) -> None:
+        # Every delegate child names the segment it was spawned from, so a
+        # writer that fanned out to many helpers before compacting has many
+        # child rows. They are forks, not links, and do not count toward the
+        # lineage bound. Mutation: count every child row.
+        children = [
+            row(f"D{index:02d}", parent="W", source="subagent", delegate_from="W", started_at=1010.0,
+                ended_at=1040.0, end_reason="agent_close")
+            for index in range(70)
+        ]
+        for closed in (True, False):
+            with self.subTest(continuation_closed=closed):
+                self.route(session_id="W", now=self.WRITTEN)
+                (self.hermes_home / "state.db").unlink(missing_ok=True)
+                tip = (row("W2", parent="W", started_at=1050.0, ended_at=1080.0, end_reason="agent_close")
+                       if closed else row("W2", parent="W", started_at=1050.0))
+                write_sessions(self.hermes_home, compacted("W", at=1050.0), *children, tip)
+
+                result = self.session_start()
+
+                self.assertEqual(
+                    (result["liveness"], result["writer_continuation"]),
+                    ("not_live" if closed else "live", "W2"),
+                )
+
+    def test_a_continuation_cycle_answers_instead_of_hanging(self) -> None:
+        # A parent cycle is no shape Hermes writes, but the reader runs inside
+        # Hermes' own `on_session_start`, so it must end on one. Mutation: drop
+        # the seen-set check (the count alone never grows on a cycle).
+        write_sessions(
+            self.hermes_home,
+            compacted("W", at=1050.0, parent="W2"),
+            compacted("W2", at=1060.0, parent="W", started_at=1050.0),
+        )
+
+        result = _within_seconds(5.0, self.session_start)
+
+        self.assertEqual(
+            (result["liveness"], result["lineage_unverified"]),
+            ("continuation_unverified", "lineage_too_long"),
+        )
 
     def test_an_unreadable_continuation_holds_the_route(self) -> None:
         write_sessions(

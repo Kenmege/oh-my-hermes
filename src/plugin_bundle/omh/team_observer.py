@@ -15,7 +15,10 @@ saying so:
   reads the id off the child at stop time, so a helper its rotating
   compaction moved to a new session stops under the new id. The earlier
   segments that id continues are read from Hermes' own compaction links in
-  `state.db` (`live_session.compaction_ancestors`) and matched exactly.
+  `state.db` (`live_session.compaction_ancestors`) and matched exactly. The
+  parent's id is read the same way at both calls, so a parent compacted in
+  between names a later segment; its team is found under the earlier
+  segments the same links name.
 
 A goal without the marker is not a team helper and costs one prefix test.
 Nothing here raises: both are observers the host fires on the spawn path, and
@@ -39,11 +42,12 @@ def observe_team_dispatch(kwargs: dict[str, object]) -> bool:
     try:
         from omh.workflows import team
 
-        home, _hermes, parent = _parent(kwargs)
+        home, hermes, parent = _parent(kwargs)
         if not parent:
             return False
         return team.observe_dispatch(home, parent, child_session_id=kwargs.get("child_session_id"),
-                                     goal=goal, now=time.time(), subagent_id=kwargs.get("child_subagent_id"))
+                                     goal=goal, now=time.time(), subagent_id=kwargs.get("child_subagent_id"),
+                                     earlier=lambda: _earlier_segments(hermes, parent))
     except (ImportError, OSError, ValueError, RuntimeError):
         return False
 
@@ -59,12 +63,18 @@ def observe_team_return(kwargs: dict[str, object]) -> bool:
         if not (runtime_paths.plugin_home(kwargs.get("omh_home")) / "runtime" / "teams").is_dir():
             return False
         home, hermes, parent = _parent(kwargs)
-        if not parent or not team.teams_dir(home, parent).is_dir():
+        if not parent:
             return False
         return team.observe_return(home, parent, child_session_id=child, now=time.time(),
-                                   lineage=lambda session_id: compaction_ancestors(str(hermes), session_id))
+                                   lineage=lambda session_id: compaction_ancestors(str(hermes), session_id),
+                                   earlier=lambda: _earlier_segments(hermes, parent))
     except (ImportError, OSError, ValueError, RuntimeError):
         return False
+
+
+def _earlier_segments(hermes: object, session: str) -> list[str]:
+    """The earlier segments of this session's conversation that every link up to them was verified for."""
+    return [str(item) for item in compaction_ancestors(str(hermes), session).get("ancestors") or []]
 
 
 def _parent(kwargs: dict[str, object]) -> tuple[object, object, str]:

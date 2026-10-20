@@ -71,3 +71,37 @@ def write_sessions(hermes_home: Path, *rows: dict[str, object]) -> Path:
     finally:
         connection.close()
     return path
+
+
+def write_unreadable_state_db(hermes_home: Path) -> Path:
+    """A `state.db` that exists and is not a database: the reader opens it and every query fails."""
+    path = Path(hermes_home) / "state.db"
+    path.write_bytes(b"this is not an sqlite database\n" * 64)
+    return path
+
+
+def within_seconds(limit: float, call):
+    """``call()``'s result, or an AssertionError if it has not returned within ``limit`` seconds.
+
+    For a reader that runs inside a Hermes hook: a loop that never ends must
+    fail the test, not hang the suite. The call runs on a daemon thread, so a
+    hung one is abandoned rather than joined.
+    """
+    import threading
+
+    outcome: dict[str, object] = {}
+
+    def run() -> None:
+        try:
+            outcome["value"] = call()
+        except BaseException as exc:  # noqa: BLE001 - re-raised on the test's thread below
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(limit)
+    if worker.is_alive():
+        raise AssertionError(f"did not return within {limit} seconds")
+    if "error" in outcome:
+        raise outcome["error"]  # type: ignore[misc]
+    return outcome["value"]

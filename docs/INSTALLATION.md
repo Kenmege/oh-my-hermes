@@ -1539,7 +1539,9 @@ does not answer either: the conversation goes on in a new row, so the
 question goes to the rows Hermes continued it in, following only the
 continuation links Hermes itself writes. If those rows cannot be read or do
 not match how Hermes records a compaction, the route stays and the restore
-reports `continuation_unverified`.
+reports `continuation_unverified`, but only until the route is six hours old,
+the bound a writer row that cannot be found gets; after that it is put back
+and reported as `continuation_unverified_expired`.
 
 What returns is the previous values, not the previous bytes: the writer
 normalises quoting, emits the three keys in a fixed order, and drops an

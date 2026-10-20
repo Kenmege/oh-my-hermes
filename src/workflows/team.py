@@ -46,7 +46,11 @@ continues from Hermes' own compaction links, and the attempt that recorded
 one of them is the one back. Nothing looser counts: not the same parent, not
 the time. A return whose lineage cannot be read is not matched; it is kept in
 the record as an unlinked return, said in `team_reconcile` while a part is
-still out, and named when that part stops as `return_not_linked`.
+still out, and named when that part stops as `return_not_linked`. The parent
+compacts too: its tool calls and its `subagent_stop` then name a later
+segment, and the team is found under the segment that started it through the
+same links (`owning_session`), or refused as `team_lineage_unverified` when
+they cannot be read.
 
 Check outcomes
 --------------
@@ -98,7 +102,7 @@ cron session, but a person who turned approvals off has not seen the list.
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -1308,22 +1312,55 @@ _BLOCKED_SAY: Final[dict[str, str]] = {
 # --------------------------------------------------------------------------
 
 
+def owning_session(omh_home: Path, session_ref: str, team_id: str, earlier: Sequence[str] = ()) -> str:
+    """The session whose record holds ``team_id``: ``session_ref``, else the nearest of ``earlier``, else "".
+
+    ``earlier`` is the earlier segments of this conversation that Hermes'
+    compaction links say it continues (`live_session.compaction_ancestors`).
+    It is how a parent Hermes compacted into a new session id after
+    `team_start` reaches the team it started. Nothing else is searched: not
+    another session, not the newest team.
+    """
+    for ref in (session_ref, *earlier):
+        path = team_path(omh_home, ref, team_id)
+        if path.is_file() and not path.is_symlink():
+            return ref
+    return ""
+
+
+def lineage_refusal(reason: str) -> TeamRefusal:
+    """No team under this session, and its earlier segments could not be read either."""
+    why = _UNLINKED_SAY.get(reason, _UNLINKED_SAY["lineage_unverified"])
+    return TeamRefusal(
+        "team_lineage_unverified",
+        "No team with that name was started in this session, and OMH could not check whether this session "
+        f"continues an earlier one Hermes compacted, because {why}.",
+    )
+
+
 def observe_dispatch(
     omh_home: Path, session_ref: str, *, child_session_id: object, goal: object, now: float,
-    subagent_id: object = None,
+    subagent_id: object = None, earlier: Callable[[], Sequence[str]] | None = None,
 ) -> bool:
     """`subagent_start` saw a goal carrying a team marker: bind that attempt to the child.
 
     ``subagent_id`` is the host's id for the child, kept so `team_reconcile`
     can find the branch a worktree-isolated helper left its work on.
+    ``earlier`` is read only when this session holds no record of the team
+    (see `owning_session`).
     """
     match = _MARKER.match(goal) if isinstance(goal, str) else None
     if match is None or not isinstance(child_session_id, str) or not child_session_id.strip():
         return False
     team_id, unit_id, n = match.group(1), match.group(2), int(match.group(3))
-    with locked_team(omh_home, session_ref, team_id) as path:
+    owner = owning_session(omh_home, session_ref, team_id)
+    if not owner and earlier is not None:
+        owner = owning_session(omh_home, session_ref, team_id, earlier())
+    if not owner:
+        return False
+    with locked_team(omh_home, owner, team_id) as path:
         record = read_team(path)
-        if record is None or record.get("session_ref") != session_ref:
+        if record is None or record.get("session_ref") != owner:
             return False
         unit = next((item for item in record["units"] if item["unit_id"] == unit_id), None)
         attempt = _latest(unit) if unit is not None else None
@@ -1342,42 +1379,54 @@ def observe_dispatch(
 def observe_return(
     omh_home: Path, session_ref: str, *, child_session_id: object, now: float,
     lineage: Callable[[str], Mapping[str, Any]] | None = None,
+    earlier: Callable[[], Sequence[str]] | None = None,
 ) -> bool:
     """`subagent_stop` for a child bound above: its attempt is back and may be checked.
 
-    The id `subagent_start` recorded is matched first. Failing that,
-    ``lineage(child)`` names the earlier segments Hermes' compaction links say
-    this child continues (``{"status", "ancestors", "reason"}``), and an
-    attempt that recorded one of them is the one back. A lineage that could not
-    be read leaves every attempt out and is kept as an unlinked return.
+    The id `subagent_start` recorded is matched first, in this session's
+    teams and then, through ``earlier`` (see `owning_session`), in the teams of
+    the segments this session continues. Failing that, ``lineage(child)``
+    names the earlier segments Hermes' compaction links say this child
+    continues (``{"status", "ancestors", "reason"}``), and an attempt that
+    recorded one of them is the one back. A lineage that could not be read
+    leaves every attempt out and is kept as an unlinked return.
     """
     if not isinstance(child_session_id, str) or not child_session_id.strip():
         return False
     child = child_session_id.strip()[:160]
-    directory = teams_dir(omh_home, session_ref)
-    if not directory.is_dir() or directory.is_symlink():
-        return False
-    team_ids = [candidate.stem for candidate in sorted(directory.glob("*.json"))[:MAX_TEAMS_PER_SESSION]]
-    if _mark_returned(omh_home, session_ref, team_ids, child, {child}, now):
+    teams = _session_teams(omh_home, session_ref)
+    if _mark_returned(omh_home, teams, child, {child}, now):
         return True
-    if lineage is None:
+    if earlier is not None:
+        more = [pair for ref in earlier() for pair in _session_teams(omh_home, ref)]
+        if _mark_returned(omh_home, more, child, {child}, now):
+            return True
+        teams = teams + more
+    if not teams or lineage is None:
         return False
     found = lineage(child)
-    earlier = {item[:160] for item in found.get("ancestors") or [] if isinstance(item, str) and item}
-    if earlier and _mark_returned(omh_home, session_ref, team_ids, child, earlier, now):
+    ancestors = {item[:160] for item in found.get("ancestors") or [] if isinstance(item, str) and item}
+    if ancestors and _mark_returned(omh_home, teams, child, ancestors, now):
         return True
     if found.get("status") != "resolved":
         reason = str(found.get("reason") or "")
-        _note_unlinked_return(omh_home, session_ref, team_ids, child,
-                              reason if reason in _UNLINKED_SAY else "lineage_unverified", now)
+        _note_unlinked_return(omh_home, teams, child, reason if reason in _UNLINKED_SAY else "lineage_unverified", now)
     return False
 
 
+def _session_teams(omh_home: Path, session_ref: str) -> list[tuple[str, str]]:
+    """``(session, team_id)`` for every team record under one session."""
+    directory = teams_dir(omh_home, session_ref)
+    if not directory.is_dir() or directory.is_symlink():
+        return []
+    return [(session_ref, candidate.stem) for candidate in sorted(directory.glob("*.json"))[:MAX_TEAMS_PER_SESSION]]
+
+
 def _mark_returned(
-    omh_home: Path, session_ref: str, team_ids: list[str], child: str, started_as: set[str], now: float,
+    omh_home: Path, teams: list[tuple[str, str]], child: str, started_as: set[str], now: float,
 ) -> bool:
     """Mark returned the out attempt whose recorded child id is in ``started_as``."""
-    for team_id in team_ids:
+    for session_ref, team_id in teams:
         with locked_team(omh_home, session_ref, team_id) as path:
             record = read_team(path)
             if record is None or record.get("session_ref") != session_ref:
@@ -1400,10 +1449,10 @@ def _mark_returned(
 
 
 def _note_unlinked_return(
-    omh_home: Path, session_ref: str, team_ids: list[str], child: str, reason: str, now: float,
+    omh_home: Path, teams: list[tuple[str, str]], child: str, reason: str, now: float,
 ) -> None:
     """Keep a return OMH could not link, in every record that has a helper out."""
-    for team_id in team_ids:
+    for session_ref, team_id in teams:
         with locked_team(omh_home, session_ref, team_id) as path:
             record = read_team(path)
             if record is None or record.get("session_ref") != session_ref:
@@ -1421,9 +1470,10 @@ def _note_unlinked_return(
 # for a reason this table does not know.
 _UNLINKED_SAY: Final[dict[str, str]] = {
     "state_db_unavailable": "Hermes' session records could not be read",
-    "session_row_missing": "Hermes has no record of that session",
+    "session_row_missing": "Hermes has no record of the session",
     "segment_row_missing": "a session it continues is missing from Hermes' records",
     "continuation_not_authenticated": "its session history does not match how Hermes records a compaction",
+    "tool_session_ambiguous": "Hermes records it as a tool session, which OMH cannot tell apart from a compacted one",
     "lineage_too_long": "its session history was too long to follow",
     "lineage_unverified": "its session history could not be checked",
 }

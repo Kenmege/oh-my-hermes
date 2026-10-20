@@ -74,8 +74,14 @@ A route does not always end with its turn, and two paths are known:
   here.
 * A session killed mid-task, which is what `on_session_start` covers.
 
-In both, the route survives until the next session start, where the liveness
-bound can hold it for up to six hours. Turn scope makes a leak short and
+In both, the route survives until the next session start. A session start
+puts it back once nothing says the writer's conversation is still running:
+the writer's row is closed (or, after a compaction, every row Hermes
+continued it in is), or that row's activity stamp is more than six hours old
+(or unusable) and so is the route. A route whose writer row cannot be found,
+or whose compaction continuation cannot be read, is held until the route
+itself is six hours old. Only a conversation whose row shows activity within
+the last six hours holds it past that. Turn scope makes a leak short and
 bounded rather than impossible.
 
 `action=fallback` is the one flow that legitimately spans turns: a child that
@@ -181,7 +187,7 @@ _ROUTE_LEAVING_ORIGINS = ("head", "explicit", "fallback")
 # row. The other two are the age bound, named so a reader can tell a bound
 # from an observation.
 LIVENESS_CLEARS_RESTORE = frozenset(
-    {"not_live", "not_live_by_age", "unclosed_and_stale_by_age"}
+    {"not_live", "not_live_by_age", "unclosed_and_stale_by_age", "continuation_unverified_expired"}
 )
 # The verdicts a compaction continuation can give, the ones that hold the
 # route first.
@@ -854,7 +860,14 @@ def _writer_liveness(
     # Ask the rows it went on in; if they cannot be read, hold the route.
     lineage = compaction_continuations(home, writer_session_id)
     if lineage["status"] != "resolved":
-        return "continuation_unverified", str(row["source"]), {"lineage_unverified": str(lineage["reason"])}
+        # Held, but no longer than an unanswered writer row is: past the same
+        # age bound an indefinite hold would leave `delegation.*` changed for
+        # every later session of the profile, which is the leak this module
+        # exists to end.
+        verdict = "continuation_unverified"
+        if current - written_at > LIVE_TUI_SESSION_FRESH_SECONDS:
+            verdict = "continuation_unverified_expired"
+        return verdict, str(row["source"]), {"lineage_unverified": str(lineage["reason"])}
     # A verdict that holds the route wins over one that clears it, so one
     # running continuation is enough to keep it.
     verdict, tip = min(
@@ -917,11 +930,13 @@ def writer_session_liveness(
     * `not_live_by_age` / `unknown_within_age_bound` -- no row at all, or the
       host surface could not be read. Same bound, same honesty about which
       question went unanswered.
-    * `continuation_unverified` -- Hermes closed the writer's row to compact
-      the conversation (`end_reason` `compression`), and the rows it went on
-      in could not be read or authenticated. Holds the route: a closure for
-      compaction is not the writer stopping, and nothing read here says the
-      conversation stopped.
+    * `continuation_unverified` / `continuation_unverified_expired` --
+      Hermes closed the writer's row to compact the conversation
+      (`end_reason` `compression`), and the rows it went on in could not be
+      read or authenticated. A closure for compaction is not the writer
+      stopping and nothing read here says the conversation stopped, so the
+      route is held -- until the route is older than the bound, as for a
+      writer row that cannot be found, and then the age bound answers.
 
     A row Hermes closed for compaction is never answered from its own
     `ended_at`. Its verdict is the one the conversation's continuation gives
