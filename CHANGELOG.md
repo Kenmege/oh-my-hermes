@@ -4,6 +4,26 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh_delegate_route` `fallback` advances only the calling conversation's
+  own route (#2175).** With two sessions on one profile, `fallback` took its
+  chain position from whichever session had routed last: the newest
+  provenance record, or the live `delegation.*` keys whenever OMH had written
+  them. One session's route then decided another's fallback: an error naming
+  a model the caller never routed, a fallback from the other session's
+  model, an exhausted chain while the caller's own chain still had
+  candidates, or the other session's live route advanced one step with the
+  caller recorded as its writer. The position now comes from the newest
+  route-leaving provenance record whose `session_id` belongs to the calling
+  conversation, which is the host's session id plus its compression
+  continuations, the set the HUD already owns route records with. The live
+  keys count only when the restore record names a writer in that
+  conversation and the file still holds that write. A conversation with no
+  route of its own gets the existing `no active route to fall back from`
+  error with `position_source: "none"`, and nothing is written. A record
+  that names no session is nobody's, so a call that reaches the tool without
+  the host's session id gets that error too. Writing the next route into the
+  profile-wide keys, and the leaked-route check before a baseline is
+  captured, are unchanged.
 - **`omh_probe` says why its own package probe did not import, and a broken
   import hook cannot make the classifier raise.** When `omh.probe` alone fails
   to import, the probe's bundle answer now carries a `package_probe` row with
