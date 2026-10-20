@@ -16,7 +16,7 @@ from ..delegation_route_restore import (
 # Every write of the three keys now goes through `delegation_route_restore`,
 # which pairs it with the baseline bookkeeping under one lock. Reaching for
 # the raw writer here again would reopen the window this PR closed.
-from ..delegation_routing import read_delegation_route, read_session_provider
+from ..delegation_routing import read_child_endpoint, read_delegation_route, read_session_provider
 from ..hermes_delegation import (
     HERMES_MIXTURE_CATEGORY_CHAINS,
     append_delegation_route_provenance,
@@ -324,6 +324,9 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
         payload: dict[str, Any] = {
             "status": "status",
             "route": route,
+            # Where a direct delegation.base_url sends the child, whatever
+            # provider the route names; None when no direct endpoint applies.
+            "child_endpoint": read_child_endpoint(hermes_home),
             "categories": {
                 category: [
                     _chain_entry(alias, effort, provider_routes)
