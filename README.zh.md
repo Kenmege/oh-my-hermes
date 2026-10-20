@@ -262,31 +262,6 @@ OMH 的编码面有三步：按模型调整提示（03），把工作拆成并�
 
 ## OH-MY-HERMES 终端
 
-只需输入 `omh`,即可打开 OMH TUI:运行在已安装 Hermes 之上的 OMH 专属终端。模型调用、
-工具执行和审批仍由 Hermes 完成,画面由 OMH 绘制:已完成的回复进入终端自身的滚动缓冲区,
-plan 与 agent 面板紧贴在提示符上方,面板伸缩时提示符的位置不会移动。`hermes` 仍然打开
-Hermes 自己的终端:
-
-```sh
-omh
-```
-
-<table align="center">
-  <tr>
-    <td width="50%" align="center">
-      <img src="assets/omh-tui-turn.png" alt="The OMH TUI: an edit with its diff, highlighted code, and the plan panel above the composer"><br>
-      <sub><b>一次编辑及其 diff,以及提示符上方的 plan。</b></sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete, with deny selected by default"><br>
-      <sub><b>Hermes 询问,由人决定。默认拒绝。</b></sub>
-    </td>
-  </tr>
-</table>
-
-无法启动 OMH TUI 时,`omh` 会用一行说明原因,改为打开 Hermes 自己的 TUI(`hermes --tui`)(Windows、没有 `termios` 的终端)。
-在 `TERM=dumb`、`OMH_NO_TUI=1` 或没有 Node 的环境中则打开普通的 `hermes`。`hermes` 以没有 OMH 皮肤和 HUD 的原生 Hermes 打开,OMH 的工具、记忆和技能仍然可用(详见 [The OMH TUI](docs/INSTALLATION.md#the-omh-tui))。
-
 OMH 工作流运行时,终端会展示:
 
 - **Mixture-of-Models Routing** — 每条委派 lane 按类别(ultrabrain、deep、

@@ -268,32 +268,6 @@ OMH のコーディング面は 3 つの動きだ。モデルごとにプロン�
 
 ## OH-MY-HERMES ターミナル
 
-`omh` と入力するだけで OMH TUI が開きます。インストール済みの Hermes の上で動く、OMH
-専用のターミナルです。モデル呼び出し、ツール実行、承認はこれまでどおり Hermes が行い、
-画面は OMH が描きます。終わった応答はターミナルのスクロールバックへ流れ、plan と agent の
-パネルはプロンプトのすぐ上に置かれ、パネルが伸び縮みしてもプロンプトの位置は動きません。
-`hermes` はこれまでどおり Hermes 自身のターミナルを開きます:
-
-```sh
-omh
-```
-
-<table align="center">
-  <tr>
-    <td width="50%" align="center">
-      <img src="assets/omh-tui-turn.png" alt="The OMH TUI: an edit with its diff, highlighted code, and the plan panel above the composer"><br>
-      <sub><b>編集とその diff、プロンプトの上の plan。</b></sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete, with deny selected by default"><br>
-      <sub><b>Hermes が尋ね、人が決める。既定は拒否。</b></sub>
-    </td>
-  </tr>
-</table>
-
-OMH TUI を起動できないとき、`omh` は理由を 1 行で示して Hermes 自身の TUI(`hermes --tui`)を開きます(Windows、`termios` のない端末)。
-`TERM=dumb`、`OMH_NO_TUI=1`、Node なしの環境では素の `hermes` を開きます。`hermes` は OMH のスキンと HUD のない素の Hermes として開き、OMH のツール・メモリ・スキルはそのまま残ります([The OMH TUI](docs/INSTALLATION.md#the-omh-tui))。
-
 OMH ワークフローの実行中にターミナルが表示するもの:
 
 - **Mixture-of-Models Routing** — 委譲される lane ごとにカテゴリ
