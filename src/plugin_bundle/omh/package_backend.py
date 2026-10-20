@@ -55,7 +55,14 @@ def _found_omh(package_version: str) -> str:
     if module is not None:
         namespace = getattr(module, "__file__", None) is None
     else:
-        spec = importlib.util.find_spec("omh")
+        try:
+            spec = importlib.util.find_spec("omh")
+        except Exception:
+            # This runs inside `load_backend`'s handler, so a raise here would
+            # escape the tool. An import hook that raises for `omh` itself is
+            # something answering for that name, and not a working
+            # oh-my-hermes, so the failure reads `broken`, never `absent`.
+            return FOUND_OTHER
         if spec is None:
             return FOUND_NONE
         namespace = spec.origin is None

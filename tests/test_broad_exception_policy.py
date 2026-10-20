@@ -549,6 +549,15 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "and a module-scope RuntimeError never raises out of a tool (#2166).",
     ),
     ClassifiedSite(
+        "src/plugin_bundle/omh/package_backend.py",
+        "_found_omh",
+        INTENTIONAL,
+        "The presence check runs inside `load_backend`'s own handler, so a raise from an import "
+        "hook asked for the name `omh` would escape the tool. It answers `other`, which makes "
+        "the block read `broken` with the original import's class in `error_type`: never "
+        "`absent`, never a working backend, and never a raise (#2166 follow-up).",
+    ),
+    ClassifiedSite(
         "src/tui/panels.py",
         "_read",
         INTENTIONAL,
@@ -584,8 +593,10 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # reader failure is a visible notice, never an empty panel or a dead thread).
 # 58 -> 59 / 53 -> 54: `package_backend.load_backend`, a native tool's backend
 # import (a failure is a classified refusal or probe row, never a raise; #2166).
-EXPECTED_HANDLER_COUNT = 59
-EXPECTED_ANCHOR_COUNT = 54
+# 59 -> 60 / 54 -> 55: `package_backend._found_omh`, the presence check an
+# import hook can make raise (it reads `broken`, never a raise out of a tool).
+EXPECTED_HANDLER_COUNT = 60
+EXPECTED_ANCHOR_COUNT = 55
 
 
 class DerivedSite(NamedTuple):

@@ -4,6 +4,13 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh_probe` says why its own package probe did not import, and a broken
+  import hook cannot make the classifier raise.** When `omh.probe` alone fails
+  to import, the probe's bundle answer now carries a `package_probe` row with
+  that failure, so the `package_backend` row, which reports the Loop backend,
+  is no longer the only reason given. An import hook that raises for the name
+  `omh` itself now reads `broken` instead of raising out of `omh_loop`,
+  `omh_decision_gate` or `omh_probe` (#2166 follow-up).
 - **A plugin-only install says why native Loop has no backend.** Every
   documented install puts the `oh-my-hermes` package in OMH's own environment,
   so the interpreter Hermes runs usually cannot import it. `omh_loop` still

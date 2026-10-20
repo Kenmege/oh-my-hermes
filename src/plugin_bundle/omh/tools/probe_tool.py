@@ -12,7 +12,7 @@ from ..buzz_diagnostics import probe_buzz
 from ..host_observation import PLUGIN_HOST_ACTIVE_OBSERVATION_EVENTS
 from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, observe_plugin_tool_call
 from ..loop_bridge import loop_backend_detail, loop_backend_status
-from ..package_backend import load_backend
+from ..package_backend import load_backend, package_backend_detail
 from ..runtime_reader import read_omh_hud, read_omh_status
 
 OMH_PROBE_SCHEMA = {
@@ -55,9 +55,10 @@ def omh_probe_handler(args: dict, **kwargs) -> str:
     hermes_home = runtime_paths.plugin_home(args.get("hermes_home"), hermes=True)
     observation = observe_plugin_tool_call("omh_probe", args, kwargs)
     # Any failure to import the package probe falls back, so a skewed install
-    # still gets an answer whose row below says why; a failure while the
-    # imported probe runs is that probe's own fault and is not swallowed here.
-    package_probe, _failure = load_backend(_import_package_probe)
+    # still gets an answer, and its `package_probe` row says why that import
+    # failed; a failure while the imported probe runs is that probe's own
+    # fault and is not swallowed here.
+    package_probe, failure = load_backend(_import_package_probe)
     if package_probe is None:
         payload = _standalone_probe(
             omh_home=omh_home,
@@ -65,6 +66,7 @@ def omh_probe_handler(args: dict, **kwargs) -> str:
             include_parity=include_parity,
             include_roadmap=include_roadmap,
         )
+        payload["capabilities"].append(_package_probe_capability(failure))
     else:
         payload = _package_probe(
             *package_probe,
@@ -78,6 +80,17 @@ def omh_probe_handler(args: dict, **kwargs) -> str:
     # the package still have no backend (#2166).
     payload["capabilities"].append(_package_backend_capability())
     return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
+
+
+def _package_probe_capability(failure: dict[str, Any]) -> dict[str, str]:
+    # Why this answer came from the bundle: the package probe's own import,
+    # which can fail while the Loop backend the next row reports imports fine.
+    return _capability(
+        "package_probe",
+        failure["status"],
+        failure["failed_import"] or "omh.probe",
+        package_backend_detail(failure, feature="the package probe"),
+    )
 
 
 def _package_backend_capability() -> dict[str, str]:
