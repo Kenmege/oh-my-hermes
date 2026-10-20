@@ -1307,6 +1307,8 @@ class PackageBackendClassificationTests(_LoopHome):
         self.assertEqual(row["status"], "absent")
         self.assertEqual(row["evidence"], "omh")
         self.assertIn("The OMH plugin is registered", row["message"])
+        probe_row = next(item for item in probe["capabilities"] if item["name"] == "package_probe")
+        self.assertEqual(probe_row["status"], "absent")
 
     def test_a_present_package_missing_the_loop_module_reads_incompatible(self) -> None:
         with patch_modules({"omh.workflows.loop_operations": None}):
@@ -1395,6 +1397,28 @@ class PackageBackendClassificationTests(_LoopHome):
             self.assertEqual(loop_bridge.loop_backend_status()["status"], "incompatible")
         self.assertEqual(loop_bridge.loop_backend_status()["status"], "available")
         self.assertEqual(tool(action="status")["status"], "ok")
+
+    def test_the_probe_fallback_says_why_its_own_import_failed(self) -> None:
+        # The Loop backend imports here while `omh.probe` does not, so the
+        # package_backend row alone would read `available` for a fallback.
+        from omh.plugin_bundle.omh.tools import probe_tool
+
+        def rows(payload: dict) -> dict:
+            return {item["name"]: item for item in payload["capabilities"]}
+
+        failure = AttributeError("omh.probe module-scope failure")
+        with mock.patch.object(probe_tool, "_import_package_probe", side_effect=failure):
+            fallback = json.loads(probe_tool.omh_probe_handler({}))
+        self.assertEqual(fallback["source"], "standalone_plugin_bundle_fallback")
+        probe_row = rows(fallback)["package_probe"]
+        self.assertEqual(probe_row["status"], "broken")
+        self.assertEqual(probe_row["evidence"], "omh.probe")
+        self.assertIn("the package probe", probe_row["message"])
+        self.assertIn("failed with AttributeError", probe_row["message"])
+        self.assertNotIn("module-scope failure", json.dumps(fallback))
+        self.assertEqual(rows(fallback)["package_backend"]["status"], "available")
+        # A probe that imports needs no such row.
+        self.assertNotIn("package_probe", rows(json.loads(probe_tool.omh_probe_handler({}))))
 
     def test_the_probe_reports_the_backend_apart_from_registration(self) -> None:
         from omh.plugin_bundle.omh.tools.probe_tool import omh_probe_handler
@@ -1568,6 +1592,58 @@ class SkewedPackageHostTests(unittest.TestCase):
                 row = next(item for item in probe["capabilities"] if item["name"] == "package_backend")
                 self.assertEqual(row["status"], status)
                 self.assertEqual(list((root / ".omh").rglob("cycle.json")), [])
+
+
+_RAISING_OMH_HOOK_CALLS = """
+from hermes_plugin_omh.tools.decision_gate_tool import omh_decision_gate_handler
+from hermes_plugin_omh.tools.loop_tool import omh_loop_handler
+from hermes_plugin_omh.tools.probe_tool import omh_probe_handler
+
+
+class _Raiser:
+    def find_spec(self, name, path=None, target=None):
+        if name == "omh":
+            raise RuntimeError("finder broke on omh")
+        return None
+
+
+sys.meta_path.insert(0, _Raiser())
+gate_args = {
+    "gate_id": "gate-1", "expected_resume_digest": "a" * 64, "choice": "approve",
+    "actor": "actor-1", "connector": "discord", "channel_ref": "channel-1",
+    "thread_ref": "thread-1", "interaction_ref": "interaction-1",
+    "authentication_method": "host_authenticated", "observed_at": "2026-09-07T10:00:00Z",
+    "event_id": "event-1", "wrapper_session_ref": "ws-1", "wrapper_expected_revision": 1,
+}
+print(json.dumps({
+    "loop": json.loads(omh_loop_handler({"action": "status"}, session_id="s")),
+    "gate": json.loads(omh_decision_gate_handler(gate_args)),
+    "probe": json.loads(omh_probe_handler({})),
+}))
+"""
+
+
+class RaisingImportHookTests(unittest.TestCase):
+    """An import hook that raises for `omh` itself is classified, not raised (#2166)."""
+
+    def test_a_hook_raising_for_omh_reads_broken_in_every_tool(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = {"OMH_HOME": str(root / ".omh"), "HERMES_HOME": str(root / ".hermes")}
+            with mock.patch.dict(os.environ, env, clear=False):
+                observed = run_in_no_package_host(_RAISING_OMH_HOOK_CALLS, cwd=root)
+        backend = observed["loop"]["package_backend"]
+        self.assertEqual(observed["loop"]["error"], "service_unavailable")
+        self.assertEqual(backend["status"], "broken")
+        self.assertEqual(backend["error_type"], "RuntimeError")
+        self.assertEqual(backend["found_omh"], "other")
+        self.assertNotIn("finder broke", json.dumps(observed))
+        self.assertEqual(observed["gate"]["status"], "unavailable")
+        self.assertEqual(observed["gate"]["package_backend"]["status"], "broken")
+        rows = {item["name"]: item for item in observed["probe"]["capabilities"]}
+        self.assertEqual(observed["probe"]["source"], "standalone_plugin_bundle_fallback")
+        self.assertEqual(rows["package_backend"]["status"], "broken")
+        self.assertEqual(rows["package_probe"]["status"], "broken")
 
 
 class BackendModuleScopeTests(unittest.TestCase):

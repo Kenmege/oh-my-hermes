@@ -1303,7 +1303,9 @@ what this bundle imports: an oh-my-hermes of another version, or an `omh`
 module that is not an installed oh-my-hermes package at all); or `broken`
 (any other failure while importing it, including one that is not an
 `ImportError`). When the package's own probe cannot be imported, `omh_probe`
-answers from the bundle and the row still says why. `omh_loop` and
+answers from the bundle and adds a `package_probe` row whose `absent`,
+`incompatible` or `broken` says why that import failed; the `package_backend`
+row still reports the Loop backend, which can import while the probe does not. `omh_loop` and
 `omh_decision_gate` carry the same block, with the plugin's own version beside
 the package's, whenever they refuse for one of these; the other tools in the
 table above keep their own refusals.
