@@ -2016,22 +2016,38 @@ def _shared_model_aliases(requested_key: str, answering_key: str) -> list[str]:
 _RUNTIME_ENVIRONMENT_HEADING = "# Hermes runtime environment"
 _RUNTIME_ENVIRONMENT_END = "<!-- End Hermes runtime environment -->"
 _PROMPT_IDENTITY_LABEL = "Model:"
+# Every line `_timestamp_line` can write. A last paragraph with any other line
+# in it is not the trailer (memory or plugin prose when no trailer was
+# written), and names no request.
+_PROMPT_TRAILER_LABELS = (
+    "Conversation started:",
+    "Today's date (as of the last context rebuild):",
+    "Timezone:",
+    "Session ID:",
+    "Model:",
+    "Provider:",
+    "Platform:",
+)
 # The trailer sits within the last few hundred characters of a stored prompt,
 # so the read takes only this much of each one. A tail that does not hold the
 # whole trailer paragraph reads as no identity, never as a partial one.
 _PROMPT_IDENTITY_TAIL_CHARS = 8192
+# The unknown basis for a row whose stored prompt Hermes may have rewritten
+# after the first call: see `_attach_prompt_identity_models`.
+PROMPT_MAY_BE_REBUILT_BASIS = "requested_model_prompt_may_be_rebuilt"
 
 
 def _prompt_identity_model(prompt_tail: str) -> str:
     """The `Model:` value of a stored prompt's identity trailer, else "".
 
-    Read the way Hermes' `identity_line_value` reads it: drop the runtime
-    block when the prompt ends in its end marker, take the last paragraph of
-    what remains, and take the last line there that starts with the label.
-    Memory, context files and plugin prose sit in earlier paragraphs, so a
-    `Model:` line of theirs is never read. A tail with no paragraph break
-    before the trailer is not known to hold the whole paragraph and reads as
-    "".
+    Read the way Hermes' `identity_line_value` reads it, and stricter: drop the
+    runtime block at its LAST heading when the prompt ends in its end marker
+    (memory or context prose may quote the heading), take the last paragraph
+    of what remains, and require every line in it to be one `_timestamp_line`
+    writes. Memory, context files and plugin prose sit in earlier paragraphs,
+    and a last paragraph that is prose is not a trailer, so a `Model:` line of
+    theirs is never read. A tail with no paragraph break before the trailer is
+    not known to hold the whole paragraph and reads as "".
     """
     identity = prompt_tail
     if prompt_tail.endswith(_RUNTIME_ENVIRONMENT_END):
@@ -2041,9 +2057,12 @@ def _prompt_identity_model(prompt_tail: str) -> str:
     _earlier, paragraph_break, trailer = identity.rpartition("\n\n")
     if not paragraph_break:
         return ""
+    lines = trailer.splitlines()
+    if not lines or not all(line.startswith(_PROMPT_TRAILER_LABELS) for line in lines):
+        return ""
     values = [
         line[len(_PROMPT_IDENTITY_LABEL):].strip()
-        for line in trailer.splitlines()
+        for line in lines
         if line.startswith(_PROMPT_IDENTITY_LABEL)
     ]
     return _text(values[-1]) if values else ""
@@ -2056,20 +2075,35 @@ def _attach_prompt_identity_models(
 ) -> None:
     """The model each child's first system prompt names, as its attested request.
 
-    Hermes builds a child's system prompt at the start of its first turn and
-    creates the session row with it before the first model call
-    (`agent/turn_context.build_turn_context`). A fallback afterwards rewrites
-    only the in-memory copy (`rewrite_prompt_model_identity`: "Not persisted:
-    the stored row keeps the primary's labels"), and the first accounted call
-    rewrites `sessions.model`, not the prompt. So the stored trailer still
-    names the model the child asked for after both.
+    Hermes builds a child's system prompt at the start of its first turn, from
+    the model the child was built with, and creates the session row with it
+    before the first model call (`agent/turn_context.build_turn_context`). A
+    fallback during the turn swaps the running model and rewrites only the
+    in-memory prompt (`rewrite_prompt_model_identity`: "Not persisted"), and
+    the first accounted call rewrites `sessions.model`, not the prompt.
 
-    Only a child's first segment qualifies: there `sessions.parent_session_id`
-    is the session that delegated, the same id as `_delegate_from`. A
-    compression continuation is a new row whose parent is the previous
-    segment, and its prompt is rebuilt from the model running at that moment,
-    which can be a fallback. A schema without the column cannot tell the two
-    apart and attests nothing.
+    Hermes does rewrite the STORED prompt from the running model, which after
+    a fallback is the fallback, in two places:
+    - an in-place compaction (`compression.in_place`, on by default) archives
+      the compacted rows (`messages.active = 0`), then writes a prompt rebuilt
+      for the running model to the same row (`update_system_prompt`);
+    - a later turn whose stored identity differs from the running model
+      rebuilds and stores the prompt at its start (a child's output-schema
+      retry is a second turn).
+    So a stored prompt is read as the request only when the row cannot have
+    passed either: a first segment, with no archived message and at most one
+    user message. Any other row with a stored prompt is marked
+    `prompt_may_be_rebuilt`, and an agreement there reads `unknown`.
+
+    Not covered: a row Hermes re-creates after it disappeared mid-run
+    (`_ensure_db_session`) carries the in-memory prompt, which may already
+    name a fallback; nothing in the row marks it.
+
+    A first segment names the delegating session as `parent_session_id`, the
+    same id as `_delegate_from`. A compression continuation names the
+    previous segment and rebuilds its prompt from the running model, so it is
+    never read. A schema without `parent_session_id` or `messages.active`
+    cannot show the shape and attests nothing.
 
     The prompt is in `system_prompts`, keyed by `sessions.system_prompt_hash`,
     or inline in `sessions.system_prompt` on rows that predate the table.
@@ -2085,20 +2119,21 @@ def _attach_prompt_identity_models(
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             ).fetchall()
         }
-        prompt_columns = (
-            {
+
+        def columns_of(table: str) -> set[str]:
+            if table not in tables:
+                return set()
+            return {
                 str(row[1])
-                for row in connection.execute(
-                    'PRAGMA table_info("system_prompts")'
-                ).fetchall()
+                for row in connection.execute(f'PRAGMA table_info("{table}")').fetchall()
             }
-            if "system_prompts" in tables
-            else set()
-        )
+
+        if not {"session_id", "role", "active"} <= columns_of("messages"):
+            return
         tail = _PROMPT_IDENTITY_TAIL_CHARS
         sources: list[str] = []
         join = ""
-        if "system_prompt_hash" in session_columns and {"hash", "prompt"} <= prompt_columns:
+        if "system_prompt_hash" in session_columns and {"hash", "prompt"} <= columns_of("system_prompts"):
             sources.append(f"substr(p.prompt, -{tail})")
             join = " LEFT JOIN system_prompts p ON p.hash = s.system_prompt_hash"
         if "system_prompt" in session_columns:
@@ -2108,20 +2143,26 @@ def _attach_prompt_identity_models(
         prompt_tail = sources[0] if len(sources) == 1 else f"COALESCE({', '.join(sources)})"
         placeholders = ",".join("?" for _ in children)
         cursor = connection.execute(
-            f"SELECT s.id, s.parent_session_id, {prompt_tail} FROM sessions s{join} "
-            f"WHERE s.id IN ({placeholders})",
+            f"SELECT s.id, s.parent_session_id, {prompt_tail}, "
+            "EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id AND m.active = 0), "
+            "(SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND m.role = 'user') "
+            f"FROM sessions s{join} WHERE s.id IN ({placeholders})",
             tuple(child["session_id"] for child in children),
         )
         rows = cursor.fetchall()
     except sqlite3.Error:
         return
     by_id = {child["session_id"]: child for child in children}
-    for session_id, parent_session_id, prompt in rows:
+    for session_id, parent_session_id, prompt, archived, user_rows in rows:
         child = by_id.get(_text(session_id))
         if child is None or _text(parent_session_id) != child["parent_id"]:
             continue
-        if isinstance(prompt, str):
-            child["prompt_model"] = _prompt_identity_model(prompt)
+        if not isinstance(prompt, str):
+            continue
+        if archived or int(user_rows or 0) > 1:
+            child["prompt_may_be_rebuilt"] = True
+            continue
+        child["prompt_model"] = _prompt_identity_model(prompt)
 
 
 def served_model_attestation(
@@ -2130,6 +2171,7 @@ def served_model_attestation(
     *,
     requested_source: str = "",
     request_attested: bool = False,
+    unattested_basis: str = "requested_model_not_attested",
     answering_observations: int = 0,
 ) -> dict[str, Any]:
     """Compare the model a run was routed to against the model that answered.
@@ -2164,7 +2206,9 @@ def served_model_attestation(
     switch, which `_sole_distinct_value` hands over as an empty string that
     must not read as a match), when nothing recorded what was requested
     (`no_requested_model`), or when only an unattested request agrees
-    (`requested_model_not_attested`).
+    (``unattested_basis``: `requested_model_not_attested`, or
+    `requested_model_prompt_may_be_rebuilt` when the reader withheld a stored
+    prompt Hermes may have rewritten).
 
     ``answering_observations`` is the distinct-model count behind ``answering``
     and is consulted only when ``answering`` is empty, to tell those first two
@@ -2197,7 +2241,7 @@ def served_model_attestation(
         shared_aliases = _shared_model_aliases(requested_key, answering_key)
         if shared_aliases and not request_attested:
             verdict = "unknown"
-            basis = "requested_model_not_attested"
+            basis = unattested_basis
             shared_aliases = []
         else:
             verdict = "agreement" if shared_aliases else "disagreement"
@@ -2621,11 +2665,12 @@ def read_hermes_native_subagents(
         wire_model = _observed_wire_model(child)
         # What was asked for, compared with what answered (the usage model).
         # The request comes from the child's own records and nothing else:
-        # the model its first stored system prompt names, which Hermes wrote
-        # before the first call and does not rewrite on a fallback, else its
-        # `sessions.model`, which Hermes can rewrite to the answering model
-        # and so cannot attest an agreement (see `served_model_attestation`).
-        # A child with neither is `unknown` (`no_requested_model`). Today's
+        # the model its first stored system prompt names, read only from a
+        # row whose stored prompt cannot have been rebuilt since the first
+        # call (`_attach_prompt_identity_models`), else its `sessions.model`,
+        # which Hermes can rewrite to the answering model and so cannot
+        # attest an agreement (see `served_model_attestation`). A child with
+        # neither is `unknown` (`no_requested_model`). Today's
         # `delegation.model` is not a record of a past request: OMH rewrites
         # it per dispatch and restores it at turn end, so reading it here
         # made a finished child's verdict change when the config did.
@@ -2635,6 +2680,11 @@ def read_hermes_native_subagents(
             _text(usage.get("model")),
             requested_source="prompt_identity" if prompt_model else "session_model",
             request_attested=bool(prompt_model),
+            unattested_basis=(
+                PROMPT_MAY_BE_REBUILT_BASIS
+                if child.get("prompt_may_be_rebuilt")
+                else "requested_model_not_attested"
+            ),
             answering_observations=int(usage.get("model_count") or 0),
         )
 

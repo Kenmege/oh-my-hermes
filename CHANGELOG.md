@@ -15,16 +15,23 @@ All notable changes will be documented here.
   session's first accounted call when that call names a billing provider, so
   a substitution on a child's first call read as `agreement`. The request now
   comes from the `Model:` line of the identity trailer Hermes stored with the
-  child's first system prompt, written before its first call and kept on a
-  fallback (`requested_source: prompt_identity`). Without that record a
-  session row that agrees with the answer is `unknown`
-  (`requested_model_not_attested`), one that disagrees is still
-  `disagreement`, a child with neither is `unknown` (`no_requested_model`),
-  and `delegation_route` is no longer emitted. Measured read-only over every
-  delegation child row in two local Hermes databases (a profile and a
-  pre-update backup, 550 children; rows still only in the WAL were not
-  read): all 550 carried the trailer, and the verdicts were the same as
-  before the change, 543 `agreement` and 7 `unknown`.
+  child's first system prompt (`requested_source: prompt_identity`), written
+  before its first call. Hermes rewrites that stored prompt from the running
+  model, which after a fallback is the fallback, at an in-place compaction
+  (its default) and at the start of a later turn, so the line is read only on
+  a first segment with no archived message and at most one user message.
+  Elsewhere an agreement reads `unknown`: `requested_model_prompt_may_be_rebuilt`
+  where a stored prompt was withheld, `requested_model_not_attested` where
+  there is none. A disagreement with `sessions.model` is still
+  `disagreement`, a child with no request at all is `unknown`
+  (`no_requested_model`), and `delegation_route` is no longer emitted.
+  Measured read-only over every delegation child row in two local Hermes
+  databases (a profile and a pre-update backup, 550 children; rows still only
+  in the WAL were not read): 518 requests attested by the stored prompt, 32
+  withheld (28 compacted in place, 4 with more than one user message); 513
+  `agreement`, 30 `unknown` because the prompt may be rebuilt, 7 `unknown`
+  with more than one usage model. Before the change the same rows read 543
+  `agreement` and 7 `unknown`.
 - **`omh_probe` says why its own package probe did not import, and a broken
   import hook cannot make the classifier raise.** When `omh.probe` alone fails
   to import, the probe's bundle answer now carries a `package_probe` row with

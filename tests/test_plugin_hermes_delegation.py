@@ -88,6 +88,9 @@ def _build_state_db(
         if include_prompt_columns
         else ""
     )
+    # Hermes soft-archives compacted rows (`active = 0`); a row that has any
+    # may have had its stored prompt rebuilt.
+    message_columns = ", active INTEGER NOT NULL DEFAULT 1" if include_prompt_columns else ""
     connection.executescript(
         f"""
         CREATE TABLE sessions (
@@ -112,7 +115,7 @@ def _build_state_db(
             dispatched_at REAL NOT NULL
         );
         CREATE TABLE messages (
-            session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT
+            session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT{message_columns}
         );
         """
     )
@@ -170,6 +173,11 @@ def _build_state_db(
         for role, content in child.get("messages", []):
             connection.execute(
                 "INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)",
+                (child["id"], role, content),
+            )
+        for role, content in child.get("archived_messages", []):
+            connection.execute(
+                "INSERT INTO messages (session_id, role, content, active) VALUES (?, ?, ?, 0)",
                 (child["id"], role, content),
             )
         usages = child.get("usages")
@@ -1840,9 +1848,12 @@ class ServedModelAttestationTest(unittest.TestCase):
     `session_model_usage.model` is written per call from the model that
     answered. The request is read from the child's own records: the `Model:`
     line of the identity trailer Hermes stored with its first system prompt,
-    written before the first call and kept on a fallback. `sessions.model` is
-    not enough on its own, because Hermes rewrites it to the first accounted
-    call's model, so it can show a disagreement but never attest agreement.
+    written before the first call. Hermes rewrites that stored prompt from the
+    running model at an in-place compaction and at a later turn's start, so it
+    is read only from a first segment with no archived message and at most one
+    user message. `sessions.model` is not enough on its own, because Hermes
+    rewrites it to the first accounted call's model, so it can show a
+    disagreement but never attest agreement.
     """
 
     def setUp(self):
@@ -1876,8 +1887,9 @@ class ServedModelAttestationTest(unittest.TestCase):
         # The shape Hermes leaves behind (`first_accounted_route`): the child
         # asked for gpt-6-astra, its first call was answered by
         # claude-fable-5-1 under a billing provider, and Hermes rewrote
-        # `sessions.model` to the answer. The stored prompt still names the
-        # request, so this is a substitution, not an agreement.
+        # `sessions.model` to the answer. With one turn and no compaction the
+        # stored prompt still names the request, so this is a substitution,
+        # not an agreement.
         attestation = self._attestation(
             {
                 "id": "20260818_100100_hidden1",
@@ -1963,6 +1975,121 @@ class ServedModelAttestationTest(unittest.TestCase):
         self.assertEqual(attestation["verdict"], "unknown")
         self.assertEqual(attestation["basis"], "requested_model_not_attested")
 
+    def test_an_in_place_compaction_withholds_the_stored_request(self):
+        # Hermes' default compaction keeps the session id: it archives the
+        # compacted rows (`active = 0`) and stores a prompt rebuilt for the
+        # RUNNING model, which after a fallback is the fallback. This child
+        # asked for gpt-6-astra, claude-fable-5-1 answered, and the rebuilt
+        # trailer now names the answer. It must not read as an agreement.
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_inplace",
+                "model": "claude-fable-5-1",
+                "prompt_model": "claude-fable-5-1",
+                # One user message in all, so only the archived row can
+                # withhold the prompt here.
+                "archived_messages": [("user", "the delegated goal")],
+                "messages": [("assistant", "[compaction summary]")],
+                "started_at": NOW - 60,
+                "usage": {
+                    "model": "claude-fable-5-1",
+                    "billing_provider": "openrouter",
+                    "output_tokens": 10,
+                    "last_seen": NOW - 5,
+                },
+            }
+        )
+        self.assertEqual(attestation["verdict"], "unknown")
+        self.assertEqual(attestation["basis"], "requested_model_prompt_may_be_rebuilt")
+        self.assertNotIn("requested", attestation)
+        self.assertNotIn("requested_source", attestation)
+
+    def test_a_later_turn_withholds_the_stored_request(self):
+        # A turn after the first rebuilds and stores the prompt when its
+        # identity differs from the running model (a child's output-schema
+        # retry is a second turn). Two user messages mean it may have.
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_retry11",
+                "model": "claude-fable-5-1",
+                "prompt_model": "claude-fable-5-1",
+                "messages": [
+                    ("user", "the delegated goal"),
+                    ("assistant", "an answer the schema refused"),
+                    ("user", "the schema retry"),
+                ],
+                "started_at": NOW - 60,
+                "usage": {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 5},
+            }
+        )
+        self.assertEqual(attestation["verdict"], "unknown")
+        self.assertEqual(attestation["basis"], "requested_model_prompt_may_be_rebuilt")
+
+    def test_a_single_turn_child_with_its_goal_attests(self):
+        # The negative control for the guard above: one user message, the
+        # goal, and nothing archived is the shape whose stored prompt is the
+        # first turn's build.
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_oneturn",
+                "model": "claude-fable-5-1",
+                "prompt_model": "gpt-6-astra",
+                "messages": [("user", "the delegated goal"), ("assistant", "done")],
+                "started_at": NOW - 60,
+                "usage": {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 5},
+            }
+        )
+        self.assertEqual(attestation["verdict"], "disagreement")
+        self.assertEqual(attestation["requested"], "gpt-6-astra")
+        self.assertEqual(attestation["requested_source"], "prompt_identity")
+
+    def test_a_withheld_prompt_still_shows_a_session_row_disagreement(self):
+        # Withholding the prompt withholds an agreement only; a session row
+        # that differs from the sole answering model is still a substitution.
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_wheldis",
+                "model": "gpt-6-astra",
+                "prompt_model": "claude-fable-5-1",
+                "archived_messages": [("user", "the delegated goal")],
+                "started_at": NOW - 60,
+                "usage": {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 5},
+            }
+        )
+        self.assertEqual(attestation["verdict"], "disagreement")
+        self.assertEqual(attestation["requested"], "gpt-6-astra")
+        self.assertEqual(attestation["requested_source"], "session_model")
+
+    def test_a_schema_without_message_activity_attests_nothing(self):
+        # Without `messages.active` an in-place compaction cannot be seen, so
+        # no stored prompt is read as a request.
+        _build_state_db(
+            self.home,
+            [
+                {
+                    "id": "20260818_100100_noactiv",
+                    "model": "claude-fable-5-1",
+                    "prompt_model": "claude-fable-5-1",
+                    "started_at": NOW - 60,
+                    "usage": {
+                        "model": "claude-fable-5-1",
+                        "output_tokens": 10,
+                        "last_seen": NOW - 5,
+                    },
+                }
+            ],
+            include_prompt_columns=True,
+        )
+        connection = sqlite3.connect(self.home / "state.db")
+        connection.execute("ALTER TABLE messages DROP COLUMN active")
+        connection.commit()
+        connection.close()
+        attestation = read_hermes_native_subagents(
+            self.home, now=NOW, omh_home=self.home / ".omh"
+        )["rows"][0]["model_attestation"]
+        self.assertEqual(attestation["verdict"], "unknown")
+        self.assertEqual(attestation["basis"], "requested_model_not_attested")
+
     def test_a_schema_that_cannot_tell_a_first_segment_attests_nothing(self):
         # Without `parent_session_id` a first segment and a continuation look
         # alike, so no stored prompt is read as a request.
@@ -1999,7 +2126,13 @@ class ServedModelAttestationTest(unittest.TestCase):
         # prose. Neither is read, only the trailer paragraph.
         prompt = _identity_prompt(
             "gpt-6-astra",
-            earlier="## Memory\nModel: claude-fable-5-1",
+            # Memory may quote the runtime heading verbatim: only the LAST
+            # heading starts the runtime block, or this paragraph would be
+            # read as the trailer.
+            earlier=(
+                "## Memory\nModel: claude-fable-5-1\n\n# Hermes runtime environment\n\n"
+                "quoted from a note"
+            ),
             runtime="Model: claude-fable-5-1\nCurrent working directory: /tmp",
         )
         attestation = self._attestation(
@@ -2048,6 +2181,28 @@ class ServedModelAttestationTest(unittest.TestCase):
             ),
             "gpt-6-astra",
         )
+
+    def test_the_trailer_reader_reads_only_a_paragraph_of_trailer_lines(self):
+        # Every shape `_timestamp_line` writes is read...
+        for trailer in (
+            "Conversation started: Monday, August 18, 2026 (KST, UTC+09:00)\nModel: gpt-6-astra",
+            "Conversation started: Monday, August 18, 2026\nToday's date (as of the last context "
+            "rebuild): Tuesday, August 19, 2026 — trust this over the start date.\nModel: gpt-6-astra",
+            "Timezone: KST, UTC+09:00\nSession ID: abc\nModel: gpt-6-astra\nProvider: openrouter",
+            # an empty timestamp line leaves the labels after a blank line
+            "\nModel: gpt-6-astra\nPlatform: cli",
+        ):
+            with self.subTest(trailer=trailer):
+                prompt = "You are a helpful agent.\n\n## Memory\nModel: claude-fable-5-1\n\n" + trailer
+                self.assertEqual(_prompt_identity_model(prompt), "gpt-6-astra")
+        # ...and a last paragraph that is prose is not a trailer, even when a
+        # line in it looks like one: that is a prompt with no trailer at all.
+        for prose in (
+            "## Memory\nModel: claude-fable-5-1",
+            "Model: claude-fable-5-1\nremember to be brief",
+        ):
+            with self.subTest(prose=prose):
+                self.assertEqual(_prompt_identity_model("You are a helpful agent.\n\n" + prose), "")
 
     def test_a_child_that_changed_models_mid_run_attests_unknown_not_agreement(self):
         # `_sole_distinct_value` hands two distinct usage models over as an
