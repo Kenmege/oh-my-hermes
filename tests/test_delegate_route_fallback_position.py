@@ -167,6 +167,33 @@ class FallbackAcrossConversationsTest(FallbackPositionTestCase):
         self.assertEqual(record["writer_session_id"], "B")
         self.assertEqual(load_delegation_route_provenance(self.omh_home), records)
 
+    def test_a_chain_walk_steps_from_this_conversations_newest_record(self) -> None:
+        # B routes between every step of A's walk, so A holds several
+        # records with foreign ones between them; each step must start
+        # from the one A wrote last.
+        self.route("A", category="deep")
+        walked = []
+        for _ in range(3):
+            self.route("B", category="quick")
+            task = f"A-turn-{next(self._turns)}"
+            result = self.call("A", task, action="fallback", category="deep")
+            walked.append((result["status"], result["from"], result.get("applied", {}).get("alias", "")))
+            on_session_end(
+                session_id="A",
+                task_id=task,
+                omh_home=str(self.omh_home),
+                hermes_home=str(self.hermes_home),
+            )
+
+        self.assertEqual(
+            walked,
+            [
+                ("fell_back", "deep-head", "deep-next"),
+                ("fell_back", "deep-next", "deep-last"),
+                ("exhausted_to_inherit", "deep-last", ""),
+            ],
+        )
+
     def test_another_conversations_last_entry_does_not_exhaust_this_chain(self) -> None:
         # Inferred in the issue and observed while reproducing it: B's
         # position at the end of the chain restored the baseline for A,

@@ -21,9 +21,13 @@ All notable changes will be documented here.
   route of its own gets the existing `no active route to fall back from`
   error with `position_source: "none"`, and nothing is written. A record
   that names no session is nobody's, so a call that reaches the tool without
-  the host's session id gets that error too. Writing the next route into the
-  profile-wide keys, and the leaked-route check before a baseline is
-  captured, are unchanged.
+  the host's session id gets that error too. Like `set`, a fallback still
+  writes into the profile-wide keys, and it now does so from its own
+  position. Where another session's route is live, the fallback that 4.0.0
+  refused with a category mismatch now replaces that route with the
+  caller's next candidate, and when the caller's own chain is exhausted it
+  clears that route, as the issue scopes. The leaked-route check before a
+  baseline is captured still reads every session's records.
 - **`omh_probe` says why its own package probe did not import, and a broken
   import hook cannot make the classifier raise.** When `omh.probe` alone fails
   to import, the probe's bundle answer now carries a `package_probe` row with
