@@ -73,14 +73,19 @@ host fields runs before the one that reformats text.
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 from ..code_mode_guidance import annotate_execute_code_result
+from ..delegation_snapshot import appended, messenger_snapshot
 from ..engagement_nudges import annotate_engagement_nudge
 from ..kanban_readback import KANBAN_READBACK_TOOLS, transform_kanban_readback
 from ..remote_wait_nudge import annotate_remote_wait, honest_stop_output
 from ..truncated_read_recovery import annotate_truncated_read_recovery
 from .diff_presentation import transform_tool_result as _pad_diff_result
+
+# Failures of the delegation snapshot by exception type; a block that failed is a reply without one.
+snapshot_failures: Counter[str] = Counter()
 
 
 def transform_tool_result(**kwargs: Any) -> str | None:
@@ -161,19 +166,42 @@ def transform_tool_result(**kwargs: Any) -> str | None:
 
 
 def transform_llm_output(**kwargs: Any) -> str | None:
-    """The end-of-turn half of unarmed remote waits (``remote_wait_nudge.py``).
+    """The end-of-turn half of unarmed remote waits, then the delegation snapshot.
 
     Hermes fires this once per turn after the tool loop with ``response_text``,
     ``session_id``, ``model``, ``platform`` and ``turn_id``
     (`agent/turn_finalizer.py::_apply_output_hooks`); the first plugin to
-    return a non-empty string wins. It is composed here, beside the tool-result
-    seam, because the one pass it runs is the same pass's second half and
-    reads the latch the tool-result half records. The host passes no home, so
-    the process record resolves the way the tool-result half resolves it.
+    return a non-empty string wins, so both of OMH's end-of-turn passes are
+    composed in this one handler. The honest stop (``remote_wait_nudge.py``)
+    reads the latch its tool-result half records. The delegation snapshot
+    (``delegation_snapshot.py``) appends, on a chat platform, a delegated
+    run's start block, a count line on a turn its counts changed, or its end
+    block. Both append and neither rewrites: the CLI prints only the suffix
+    of a transformed reply that starts with the streamed one
+    (`cli.py::_post_stream_transform_output`). The host passes no home, so the
+    process record resolves the way the tool-result half resolves it.
     """
-    return honest_stop_output(
+    honest = honest_stop_output(
         response_text=kwargs.get("response_text"),
         session_id=kwargs.get("session_id"),
         turn_id=kwargs.get("turn_id"),
         hermes_home=str(kwargs.get("hermes_home", "") or ""),
     )
+    reply = honest if honest is not None else kwargs.get("response_text")
+    if not isinstance(reply, str) or not reply.strip():
+        return honest
+    post = _delegation_snapshot(kwargs, reply)
+    return appended(reply, post) if post else honest
+
+
+def _delegation_snapshot(kwargs: dict[str, Any], reply: str) -> str:
+    """The delegation post for ``reply``, or "": a failure in it must not take the honest stop above down with it."""
+    try:
+        return messenger_snapshot(
+            session_id=kwargs.get("session_id"), platform=kwargs.get("platform"), model=kwargs.get("model"),
+            reply=reply,
+        )
+    except Exception as exc:  # noqa: BLE001 - the host swallows a raise from this hook, which would also
+        # drop the honest stop composed beside it; recorded by type, and the reply goes out without a post.
+        snapshot_failures[type(exc).__name__] += 1
+        return ""

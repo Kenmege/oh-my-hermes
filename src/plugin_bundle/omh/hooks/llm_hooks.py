@@ -879,6 +879,7 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
                 preset="focused",
                 limit=3,
                 token_metadata=_token_metadata_from_kwargs(kwargs),
+                delegation_graph=False,  # this hot path reads the status line, never the graph
             )
         else:
             status = activity

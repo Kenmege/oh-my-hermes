@@ -166,7 +166,7 @@ from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .model_picker import KEYS as MODEL_PICKER_KEYS
 from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows
-from .panels import HudPoller, HudSnapshot, hud_chips, panel_lines, plan_state, plan_text
+from .panels import HudPoller, HudSnapshot, dag_page_lines, hud_chips, panel_lines, plan_state, plan_text
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
 from .screen import CARRIAGE_RETURN, CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion, cursor_up
 from .session_picker import KEYS as SESSION_PICKER_KEYS
@@ -192,7 +192,7 @@ from .slash import (
     parse_slash,
     plan_invocation,
 )
-from .style import CSI, Line, Span, Style
+from .style import CSI, Line, Span, Style, color_depth
 from .subagents import Hit, Roster
 from .terminal import Terminal, background_from_colorfgbg, colorfgbg_names_dark, terminal_name, terminal_supported
 from .theme import (
@@ -1094,6 +1094,7 @@ class App(ModesMixin, AgentViewMixin):
         self.respawn_reason = ""  # the gateway is gone, for this reason, and a respawn is due after this step
         self.environ = environ
         self.motion = not reduced_motion(environ)
+        self.color_depth = color_depth(environ)  # what the delegation graph is painted at
         self.poller = poller
         self.theme = theme
         self.clock = clock
@@ -3328,6 +3329,7 @@ class App(ModesMixin, AgentViewMixin):
             "steer": self._steer_command,
             "effort": self._effort_command,
             "logs": self._logs,
+            "dag": self._dag,
             "copy": self._copy,
             "theme": self._theme,
             "omh-model": self._omh_model,
@@ -3648,6 +3650,15 @@ class App(ModesMixin, AgentViewMixin):
             self._open_pager("gateway stderr (memory only)", [(Span(line),) for line in tail])
         else:  # /logs has no echo: during a turn this waits under what runs
             self.transcript.add_aside(NoticeBlock("The gateway has written nothing to stderr."))
+
+    def _dag(self, arg: str) -> None:
+        """The session's delegation graph as the HUD last read it, whole, with four-line boxes, in the pager."""
+        payload = self.hud.payload if self.hud is not None else None
+        lines = dag_page_lines(payload, self.size[0], self.theme, self.color_depth)
+        if lines:
+            self._open_pager("delegation graph", lines)
+        else:  # /dag has no echo: during a turn this waits under what runs
+            self.transcript.add_aside(NoticeBlock("No delegation graph: this session has no recent delegated work."))
 
     def _copy(self, arg: str) -> None:
         last = next((block for block in reversed(self.transcript.blocks) if isinstance(block, AssistantBlock)), None)
@@ -4261,6 +4272,7 @@ class App(ModesMixin, AgentViewMixin):
             show_agents=not self.roster.agents,  # the strip and the list show them while the roster holds any
             show_plan=not self.retired_plan or plan_text(payload) != self.retired_plan,
             motion=self.motion,
+            color_depth=self.color_depth,
         )
 
     def _context_style(self) -> Style:

@@ -13,6 +13,7 @@ from ..degradation import (
     degradation_payload,
     runtime_binding_degradation,
 )
+from ..delegation_ledger import observe_subagent_start, observe_subagent_stop
 from ..delegation_route_restore import restore_delegation_baseline
 from ..engagement_nudges import record_engagement_observer_failure
 from ..host_observation import host_session_id, observe_plugin_hook_call
@@ -64,6 +65,9 @@ def subagent_start(**kwargs) -> None:
     # A checked-team helper is bound to the attempt its goal names; any other
     # goal leaves on a prefix test (`team_observer`). Never raises.
     observe_team_dispatch(kwargs)
+    # The delegation graph's record of who started whom (`delegation_ledger`):
+    # ids, turn and OMH's own route, never the goal. Never raises.
+    observe_subagent_start(kwargs)
     return None
 
 
@@ -72,11 +76,15 @@ def subagent_stop(**kwargs) -> None:
 
     The host's own end-of-child callback, fired once per child with the same
     `child_session_id` `subagent_start` carried. It is the only return signal
-    `omh_team` accepts: a helper's summary or status is never read here, and
-    nothing about the child's outcome is recorded beyond "it came back".
+    `omh_team` accepts: the team reads neither a helper's summary nor its
+    status, and records nothing about the outcome beyond "it came back".
     Never raises, never blocks.
+
+    The delegation ledger, for the delegation graph, keeps the child's own
+    status word and duration; it does not read the summary either.
     """
     observe_team_return(kwargs)
+    observe_subagent_stop(kwargs)
     return None
 
 

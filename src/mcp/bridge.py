@@ -470,7 +470,7 @@ def _call_tool(paths: OmhPaths, name: str, arguments: dict[str, Any]) -> dict[st
         if preset not in {"minimal", "focused", "full"}:
             raise ValueError("omh_status.preset must be minimal, focused, or full")
         limit = _bounded_int(arguments.get("limit"), default=3, minimum=1, maximum=20)
-        hud = build_hud_payload(paths, preset=preset, limit=limit)
+        hud = build_hud_payload(paths, preset=preset, limit=limit, delegation_graph=False)
         return _tool_result(
             "omh_status_result/v1",
             "omh_status",

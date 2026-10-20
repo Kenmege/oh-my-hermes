@@ -173,12 +173,15 @@ HOOK_REVIEWS: dict[str, dict[str, Any]] = {
     "post_tool_call": {
         "source_path": "hooks/tool_hooks.py",
         "event_scope": ("post_tool_call",),
-        "reviewed_timeout_ms": 1000,
+        "reviewed_timeout_ms": 2000,
         "capability": (
             "closing the in-flight tool-call ledger entry that backs the OMH "
             "HUD's liveness signal (open-call count, stalled-todo warning, "
-            "parallel-shot lifetime), and mirroring Hermes' native todo_list "
-            "writes into the session's OMH plan todo"
+            "parallel-shot lifetime), mirroring Hermes' native todo_list "
+            "writes into the session's OMH plan todo, and, for a delegate_task "
+            "Hermes did not block, tying each child to its call, task index and "
+            "delegation in the delegation ledger (ids only, from the dispatch "
+            "handle; no goal text)"
         ),
     },
     "pre_verify": {
@@ -193,35 +196,45 @@ HOOK_REVIEWS: dict[str, dict[str, Any]] = {
     "subagent_start": {
         "source_path": "hooks/session_hooks.py",
         "event_scope": ("subagent_start",),
-        "reviewed_timeout_ms": 1000,
+        "reviewed_timeout_ms": 2000,
         "capability": (
             "recording the delegated child's session id in process memory so "
             "the engagement nudges can tell a subagent from the session that "
-            "spawned it, and binding an omh_team helper whose goal carries a "
-            "reserved attempt key to that attempt in the team record (the only "
-            "file write, and only for such a goal; never blocks a spawn)"
+            "spawned it, binding an omh_team helper whose goal carries a "
+            "reserved attempt key to that attempt in the team record, and "
+            "adding the child to the conversation's delegation ledger (ids, "
+            "role, turn, time and the route OMH had recorded; its goal only as a "
+            "title held in process memory, never written); never blocks a spawn"
         ),
     },
     "subagent_stop": {
         "source_path": "hooks/session_hooks.py",
         "event_scope": ("subagent_stop",),
-        "reviewed_timeout_ms": 1000,
+        "reviewed_timeout_ms": 2000,
         "capability": (
             "marking an omh_team helper's attempt as returned in the team "
-            "record so its check may run; reads no child summary or status "
+            "record so its check may run, and keeping the child's status word "
+            "and duration in the delegation ledger; reads no child summary "
             "and never blocks"
         ),
     },
     "transform_llm_output": {
         "source_path": "hooks/result_transforms.py",
         "event_scope": ("transform_llm_output",),
-        "reviewed_timeout_ms": 1000,
+        "reviewed_timeout_ms": 2000,
         "capability": (
             "one appended sentence on a turn's final response telling the "
             "person the session has stopped, only when that turn started "
             "remote work, received the unarmed-wait directive, and the live "
-            "process record still shows nothing armed to wake it (every "
-            "other response passes through untouched)"
+            "process record still shows nothing armed to wake it; and, on "
+            "Slack, Discord, Telegram, Mattermost and Matrix, a delegated "
+            "run's start block, a one-line count on a turn its counts "
+            "changed, or its end block appended, never the box drawing, and "
+            "the count line alone where a block and the reply do not fit one "
+            "message; read from the delegation ledger and Hermes' state.db, "
+            "with the posted moment, run phase, counts and graph fingerprint, "
+            "or the skip, written back to the ledger (every other response "
+            "passes through untouched)"
         ),
     },
     "transform_tool_result": {

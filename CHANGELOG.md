@@ -131,6 +131,47 @@ All notable changes will be documented here.
   `agreement`, 30 `unknown` because the prompt may be rebuilt, 7 `unknown`
   with more than one usage model. Before the change the same rows read 543
   `agreement` and 7 `unknown`.
+
+- **Delegated work is drawn as a graph in the OMH TUI and `omh hud --graph`,
+  and reported in chat replies at three moments.** A conversation's
+  `delegate_task` children, its `omh_team` parts, or a fanout's units are
+  drawn as boxes with their title, category, model and effort, and state,
+  joined by the edges OMH or Hermes recorded: a dispatch from parent to child,
+  or a `depends_on`. Lanes one turn dispatched form a wave; waves are not drawn
+  as dependencies, and a wave that settled more than 15 minutes ago leaves the
+  drawing while newer work moves. Where boxes do not fit, or a shape cannot be
+  drawn without implying an edge, the same graph is a compact tree. The OMH
+  TUI draws it live above the plan, with two-line boxes where four-line ones
+  do not fit its third of the screen, and `/dag` opens it whole in the pager.
+  The `[Agents]` block stops repeating a native lane the graph draws, and its
+  header then counts only the rows it still lists, so the lanes have one
+  count line, also past the eight rows it lists. On Slack, Discord, Telegram,
+  Mattermost and Matrix a reply never carries the boxes. The reply Hermes
+  sends gets a code block naming the run (`DAG · <name> · <N> tasks · <W>
+  layers`, then one line per layer) once when the run starts, a plain count
+  line (`DAG <name> · 1/3 done · 1 running`) on a turn its counts changed, and
+  a short block once when every lane has settled, or when nothing has moved
+  for 15 minutes: each lane under Done, Failed or Stopped, the lane that
+  failed first and the totals. Where a block and the reply do not fit one message, the count line
+  goes in its place; where even that does not fit, a later reply carries it.
+  OMH sends nothing itself. A category is shown only where the route OMH
+  recorded matches the model the child ran, and no field reads current
+  config: what has no record is `?`. The structure comes from a new
+  metadata-only record, `delegation_ledger/v1`, written from Hermes'
+  `subagent_start`, `post_tool_call` and `subagent_stop` hooks; a
+  conversation's record that no hook wrote for a day is removed.
+  `OMH_SUBAGENT_GRAPH=off` turns it off everywhere. The TUI no longer draws
+  the fanout-only `DAG · N ready` block; a fanout is drawn by the same view.
+  A native child with no news for 30 minutes is `unknown`, an `omh_team`
+  repair is `repairing` only while its child runs, and a stuck fanout unit
+  (its dispatcher's `unit_state`) is drawn `stuck`. In the TUI the graph is
+  in the theme's colours: edges step from violet to blue down the layers
+  (`dag_edge_start`, `dag_edge_mid` and `dag_edge_end`, which a palette can
+  name), a box's border shows its state, and every colour is measured against
+  the terminal's background. It is painted at the depth the terminal takes
+  (24-bit, 256 or 16 colours, none with `NO_COLOR`), and colour changes no
+  character or width. A chat post is always plain text.
+
 - **`omh_delegate_route` `fallback` advances only the calling conversation's
   own route (#2175).** With two sessions on one profile, `fallback` took its
   chain position from whichever session had routed last: the newest

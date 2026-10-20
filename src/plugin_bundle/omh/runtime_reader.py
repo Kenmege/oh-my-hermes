@@ -20,7 +20,9 @@ from typing import Any, Callable
 
 from .approval_bypass import effective_approval_bypass
 from .awareness_delivery import _awareness_delivery_lock
-from .hermes_delegation import read_hermes_native_subagents
+from .delegation_graph import build_delegation_graph, inactive_graph
+from .delegation_ledger import newest_ledger_session
+from .hermes_delegation import _CHILD_SELECT_LIMIT, read_hermes_native_subagents
 from .kanban_board_reader import conversation_session_ids, kanban_db_path, read_kanban_lanes
 from .live_session import (
     LIVE_TUI_SESSION_FRESH_SECONDS,
@@ -146,6 +148,9 @@ TODO_STALL_CLAIM_BOUNDARY = (
 # own per-source bound (`hermes_delegation._ROW_LIMIT`); the TUI widget
 # applies its viewport clamp on top and names anything hidden with `+N more`.
 ACTIVITY_ROW_LIMIT = 8
+# The native reader is asked for every child row its query read (`hermes_delegation._CHILD_SELECT_LIMIT`), and the
+# HUD applies `ACTIVITY_ROW_LIMIT` itself, so it knows which rows it did not list.
+NATIVE_ROW_SCAN_LIMIT = _CHILD_SELECT_LIMIT
 HUD_REQUIRED_TOOLS = PROVIDED_TOOLS
 HUD_REQUIRED_HOOKS = REQUIRED_HOOKS
 HUD_OPTIONAL_HOOKS = OPTIONAL_HOOKS
@@ -260,7 +265,9 @@ def _hud_text(value: Any, *, limit: int = MAX_HUD_TEXT_CHARS) -> str:
 def _fit_widget_hud_budget(payload: dict[str, Any]) -> dict[str, Any]:
     if _widget_hud_bytes(payload) <= MAX_WIDGET_HUD_BYTES:
         return payload
-    protected = {"schema_version", "privacy", "version", "profile", "active", "graph", "display"}
+    # `delegation_graph` bounds itself (`delegation_graph.GRAPH_BYTE_LIMIT`): cutting its node list here
+    # would leave edges naming nodes that are gone.
+    protected = {"schema_version", "privacy", "version", "profile", "active", "graph", "delegation_graph", "display"}
     for item_limit in (64, 16, 4):
         bounded = {
             key: value if key in protected else _bounded_hud_value(value, item_limit=item_limit)
@@ -918,8 +925,14 @@ def read_omh_hud(
     tui_session_ref: str = "",
     session_scoped: bool = False,
     tui_identity_expected: bool = False,
+    delegation_graph: bool = True,
 ) -> dict[str, Any]:
     """The HUD payload for one reading session.
+
+    Without ``delegation_graph`` the payload's graph is left inactive
+    (``not_requested``) unread: a reader that only wants the status line, or
+    hands the payload to a model, does not pay for the ledger scan or the
+    graph's bytes.
 
     A mapped durable reference scopes native activity to its conversation.
     Missing/invalid/unmapped identities retain explicitly global native activity,
@@ -1039,18 +1052,26 @@ def read_omh_hud(
         omh_home=home,
         session_ref=reference if scoped else None,
         owned_only=tui_identity_expected and bool(session_ref),
+        # Every child row the query read; the per-source bound is applied just below, so the rows it drops can
+        # still be matched against the delegation graph's lanes (`hidden_in_graph`).
+        limit=NATIVE_ROW_SCAN_LIMIT,
     )
+    native_rows = list(native["rows"])
+    unlisted = native_rows[ACTIVITY_ROW_LIMIT:]  # rows the HUD counts in `hidden_rows` and does not list
+    native_rows = native_rows[:ACTIVITY_ROW_LIMIT]
     payload["subagents"]["scope"] = (
         "mixed" if omh_activity and native["scope"] == "session" else native["scope"]
     )
-    if native["rows"]:
+    if native_rows:
         merged = payload["subagents"]
-        combined = _ordered_activity_rows(list(merged["rows"]) + list(native["rows"]))
+        combined = _ordered_activity_rows(list(merged["rows"]) + native_rows)
         merged["hidden_rows"] = (
             max(0, len(combined) - ACTIVITY_ROW_LIMIT)
             + int(merged.get("hidden_rows", 0))
             + int(native.get("hidden", 0))
+            + len(unlisted)
         )
+        unlisted.extend(combined[ACTIVITY_ROW_LIMIT:])
         merged["rows"] = combined[:ACTIVITY_ROW_LIMIT]
         merged["active"] = int(merged.get("active", 0)) + int(native["active"])
         merged["running"] = int(merged.get("running", 0)) + int(native["running"])
@@ -1088,6 +1109,7 @@ def read_omh_hud(
             + int(merged.get("hidden_rows", 0))
             + int(kanban["hidden"])
         )
+        unlisted.extend(combined[ACTIVITY_ROW_LIMIT:])
         merged["rows"] = combined[:ACTIVITY_ROW_LIMIT]
         merged["active"] = int(merged.get("active", 0)) + int(kanban["active"])
         merged["running"] = int(merged.get("running", 0)) + int(kanban["running"])
@@ -1095,12 +1117,33 @@ def read_omh_hud(
         merged["completed"] = int(merged.get("completed", 0)) + int(kanban["completed"])
         if merged.get("status") == "idle":
             merged["status"] = "observed"
+    fanout_record = _hud_local_fanout_record(home)
     payload["graph"] = _hud_subagent_graph(
         home,
         native_rows_present=bool(native["rows"]),
         preference=_hud_graph_preference(graph_preference),
+        record=fanout_record,
     )
     payload["graph"]["scope"] = "global"
+    # The delegation graph of the conversation this poll reads for: who
+    # started whom, from the delegation ledger, with each child's facts from
+    # state.db (`delegation_graph`). A reader that names no session (the
+    # `omh hud` command) gets the conversation whose ledger changed last,
+    # marked global. A verified fanout is drawn when there is no native one.
+    if not delegation_graph:
+        payload["delegation_graph"] = inactive_graph("not_requested", scope="session" if scoped else "global")
+    elif _hud_graph_preference(graph_preference) == "off":
+        payload["delegation_graph"] = inactive_graph("explicit_off", scope="session" if scoped else "global")
+    else:
+        graph_session = reading[0] if scoped else newest_ledger_session(home, now=time.time())
+        payload["delegation_graph"] = build_delegation_graph(
+            home,
+            hermes,
+            graph_session,
+            fanout=_hud_verified_fanout(fanout_record),
+            scope="session" if scoped else "global",
+        )
+    payload["subagents"]["hidden_in_graph"] = _hidden_graph_lanes(unlisted, payload["delegation_graph"])
     payload["active"] = bool(
         payload["runtime"]["workflow"] != "idle"
         or payload["subagents"]["active"]
@@ -1117,13 +1160,32 @@ def read_omh_hud(
     return _fit_widget_hud_budget(payload)
 
 
+# `_hud_subagent_graph` without a record reads one; `None` is a record, the answer "no fanout".
+_RECORD_NOT_READ: Any = object()
+
+
+def _hud_verified_fanout(record: object) -> dict[str, Any] | None:
+    """The fanout contract and roster the delegation graph may draw: only a frozen, verified, paired one."""
+    if not isinstance(record, tuple):
+        return None
+    contract, provenance, roster, fanout_id, record_blocker = record
+    if record_blocker or recorded_contract_blocker(contract, provenance, expected_fanout_id=fanout_id):
+        return None
+    checked = project_subagent_graph(contract, roster, preference="on")
+    if checked["status"] != "active" and checked["reason"] != "single_owner":
+        return None
+    return {"contract": contract, "roster": roster}
+
+
 def _hud_subagent_graph(
     home: Path,
     *,
     native_rows_present: bool,
     preference: str,
+    record: object = _RECORD_NOT_READ,
 ) -> dict[str, object]:
-    record = _hud_local_fanout_record(home)
+    if record is _RECORD_NOT_READ:
+        record = _hud_local_fanout_record(home)
     if isinstance(record, str):
         return project_subagent_graph(
             None,
@@ -1561,6 +1623,7 @@ def _hud_fanout_roster(
                 return _hud_graph_roster(fanout_id, units_by_id), "invalid_fanout_status"
             seen_summary_units.add(unit_id)
             units_by_id[unit_id]["status"] = status
+            _hud_roster_model(units_by_id[unit_id], entry)
         if seen_summary_units != set(units_by_id):
             return _hud_graph_roster(fanout_id, units_by_id), "invalid_fanout_status"
     inflight_dir = fanout_dir / "inflight"
@@ -1598,18 +1661,50 @@ def _hud_fanout_roster(
             return _hud_graph_roster(fanout_id, units_by_id), "invalid_fanout_status"
         if units_by_id[unit_id]["status"] in {"prepared_not_observed", "running"}:
             units_by_id[unit_id]["status"] = "running"
+            if "model" not in units_by_id[unit_id]:
+                _hud_roster_model(units_by_id[unit_id], marker)
+            # Whether the running unit's work is moving, as the dispatcher assessed it: the same
+            # marker fields the running-work board reads (`status_board_reader`).
+            for field, limit in (("unit_state", 40), ("state_reason", 80), ("stalled_for_seconds", 12)):
+                value = marker.get(field)
+                if isinstance(value, (str, int)) and not isinstance(value, bool) and str(value).strip():
+                    units_by_id[unit_id][field] = _hud_text(str(value), limit=limit)
     return _hud_graph_roster(fanout_id, units_by_id), ""
+
+
+def _hud_roster_model(unit: dict[str, Any], source: dict[str, Any]) -> None:
+    """The model and effort a dispatch record names for a unit, bounded; nothing when it names none."""
+    model = source.get("model")
+    if isinstance(model, str) and model.strip():
+        unit["model"] = _hud_text(model, limit=80)
+        effort = source.get("reasoning_effort")
+        if isinstance(effort, str) and effort.strip():
+            unit["reasoning_effort"] = _hud_text(effort, limit=40)
 
 
 def _hud_graph_roster(
     fanout_id: str,
-    units_by_id: dict[str, dict[str, str]],
+    units_by_id: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     return {
         "schema_version": _FANOUT_ROSTER_SCHEMA_VERSION,
         "fanout_id": fanout_id,
         "units": list(units_by_id.values()),
     }
+
+
+def _hidden_graph_lanes(rows: list[dict[str, Any]], graph: dict[str, Any]) -> int:
+    """How many native rows the HUD did not list are lanes the delegation graph draws (matched by `session_tail`,
+    the native row's `task_id`): the TUI counts those once, on the graph's header, never as other agents."""
+    if graph.get("status") != "active" or graph.get("source") != "native":
+        return 0
+    tails = {
+        node["session_tail"] for node in graph.get("nodes") or []
+        if isinstance(node, dict) and isinstance(node.get("session_tail"), str) and node["session_tail"]
+    }
+    return sum(
+        1 for row in rows if isinstance(row, dict) and row.get("role") == "hermes-native" and row.get("task_id") in tails
+    )
 
 
 def _hud_metadata_mtime(path: Path) -> float:
