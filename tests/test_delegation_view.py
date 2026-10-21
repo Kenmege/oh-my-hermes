@@ -472,7 +472,8 @@ class BoxTests(unittest.TestCase):
         self.assertNotIn("[-]", static.text(), "no key acts on the transcript's drawing")
         view = render_delegation_view(export_run(), width=100, focus=Focus(node=CLI, folded=frozenset({"d:r1:api"})))
         boxes = box_lines(view)
-        self.assertEqual(boxes["d:r1:api"], ["[+] ✓ Export API"], "a folded box is its title line")
+        self.assertEqual(boxes["d:r1:api"], ["[+] ✓ Export API · Accepted"],
+                         "a folded box is one line, and keeps its glyph and its status word")
         self.assertEqual(boxes[CLI][0], "[-] > Export CLI flag")
         self.assertEqual(boxes[BUTTON][0], "[-] Export button")
         borders = {node_id: {role for _text, role in box_spans(view, node_id)[0]} for node_id, _top, _bottom in view.boxes}
@@ -544,12 +545,137 @@ class TreeTests(unittest.TestCase):
         self.assertIn("quick             glm-5.3-flash:…", tight, "the model is cut, not the category")
 
 
+class ReviewTests(unittest.TestCase):
+    """What the #2191 review measured: cut lines, `?`, the hud probe, folded words, the run word, and survivors."""
+
+    def test_a_narrow_dependency_line_keeps_its_kind_and_cuts_its_titles(self) -> None:
+        for charset, arrow, ellipsis in (("unicode", "→", "…"), ("ascii", "->", "...")):
+            for width in (50, 40, 30):
+                view = render_delegation_view(export_repair_run(), width=width, charset=charset)
+                lines = section(view, "Dependencies")
+                with self.subTest(charset=charset, width=width):
+                    self.assertEqual(len(lines), 8)
+                    self.assertTrue(lines[-2].endswith(" (extend)") and lines[-1].endswith(" (repair)"), lines)
+                    for line in lines:
+                        source, _, target = line.strip().partition(f" {arrow} ")
+                        self.assertTrue(source and target, f"both ends drawn: {line!r}")
+                        self.assertLessEqual(cells(line), width)
+                    self.assertTrue(lines[-1].startswith("  CSV ") and ellipsis in lines[-1])
+        self.assertEqual(section(render_delegation_view(export_repair_run(), width=30), "Dependencies")[-2:],
+                         ["  Verify expo… → CSV… (extend)", "  CSV export → CSV e… (repair)"])
+
+    def test_every_cut_line_ends_in_the_ellipsis(self) -> None:
+        generator = random.Random(2191)
+        words = ["Export", "보고서 작성 및 검토 단계", "x" * 40, "CSV export, with the header row", "A"]
+        for trial in range(80):
+            nodes = [root()] + [lane(f"n{index}", " ".join(generator.choice(words) for _ in range(generator.randint(1, 3))),
+                                     "quick", "glm-5.3-flash", "", generator.choice(["running", "done", "waiting"]),
+                                     order=index) for index in range(6)]
+            edges = [("root", "n0", "dispatch")] + [
+                (f"n{generator.randint(0, index - 1)}", f"n{index}", generator.choice(["depends_on", "repair", "extend"]))
+                for index in range(1, 6)
+            ]
+            for charset, arrow, ellipsis in (("unicode", "→", "…"), ("ascii", "->", "...")):
+                for width in (26, 30, 34, 40):
+                    view = render_delegation_view(graph(nodes, edges), width=width, charset=charset)
+                    for line in section(view, "Dependencies"):
+                        with self.subTest(trial=trial, width=width, charset=charset, line=line):
+                            self.assertFalse(line.rstrip().endswith((arrow, "·", "-")), "never an arrow with no target")
+                            whole = {f"  {node['title']} {arrow} {other['title']}" for node in nodes for other in nodes}
+                            if not any(line.startswith(prefix) for prefix in whole):
+                                self.assertIn(ellipsis, line, "a cut line says so")
+
+    def test_a_line_filled_to_the_edge_still_says_it_was_cut(self) -> None:
+        """A category that fills the box exactly leaves no room for ` · model`: the category gives way to the
+        ellipsis rather than the model vanishing with nothing to say so."""
+        for charset, category, expected in (("unicode", "a" * 22, "a" * 21 + "…"), ("ascii", "a" * 21, "a" * 19 + "...")):
+            full = graph([root(), lane("x", "Short", category, "glm-5.3-flash", "low", "running", elapsed=5)],
+                         [("root", "x", "dispatch")])
+            with self.subTest(charset=charset):
+                self.assertEqual(box_lines(render_delegation_view(full, width=26, charset=charset))["x"][1], expected)
+
+    def test_a_box_draws_no_question_mark(self) -> None:
+        unowned = graph([root(model="", effort=""),
+                         lane("u", "Unit one", "?", "?", "", "running", elapsed=30),
+                         lane("w", "Unit two", "?", "?", "", "unknown", status="no news")],
+                        [("root", "u", "dispatch"), ("root", "w", "dispatch")], source="fanout")
+        view = render_delegation_view(unowned, width=80)
+        boxes = box_lines(view)
+        self.assertEqual(boxes["u"], ["Unit one", "", "● Running 30s", "Start node"])
+        self.assertEqual(boxes["w"], ["Unit two", "", "◇ No news", "Start node"], "an unknown state's glyph is no `?`")
+        self.assertNotIn("?", view.text())
+        self.assertEqual(section(view, "Node details"), ["  ● Unit one", "    Running 30s"], "no facts line, no `?`")
+        self.assertIn("<> No news", text(unowned, width=80, charset="ascii"))
+
+    def test_the_hud_probe_names_every_character_a_box_draws(self) -> None:
+        from omh.commands.hud import DELEGATION_VIEW_PROBE
+
+        drawn = set()
+        for case in (export_run(), export_repair_run(), nested(), owner_mock()):
+            for focus in (None, Focus(node="d:r1:api", folded=frozenset({"d:r1:api"}))):
+                drawn |= set(render_delegation_view(case, width=120, focus=focus).text())
+        unknown = graph([root(), lane("w", "Unit", "quick", "m", "", "unknown")], [("root", "w", "dispatch")])
+        drawn |= set(render_delegation_view(unknown, width=80).text())
+        lines_only = {char for char in drawn if not char.isascii() and not char.isalnum() and char not in "인증모듈문서정리"}
+        self.assertEqual(lines_only - set(DELEGATION_VIEW_PROBE), set())
+        self.assertIn("↻", lines_only)
+
+    def test_a_folded_box_keeps_its_status_word_in_both_charsets(self) -> None:
+        focus = Focus(node="d:r1:cli", folded=frozenset({"d:r1:api", "d:r1:cli"}))
+        unicode_boxes = box_lines(render_delegation_view(export_run(), width=140, focus=focus))
+        self.assertEqual(unicode_boxes["d:r1:api"], ["[+] ✓ Export API · Accepted"])
+        self.assertEqual(unicode_boxes["d:r1:cli"], ["[+] > ✗ Export CLI f… · Failed"], "past 30 cells the title gives way")
+        ascii_boxes = box_lines(render_delegation_view(export_run(), width=140, focus=focus, charset="ascii"))
+        self.assertEqual(ascii_boxes["d:r1:api"], ["[+] + Export API - Accepted"])
+        self.assertEqual(ascii_boxes["d:r1:cli"], ["[+] > x Export CLI... - Failed"])
+        # A folded, selected box whose one line is the widest of the drawing measures all of it: `[+] > ✓ ` is 8
+        # cells, then the title, then ` · Accepted`, so nothing is cut while the width allows.
+        alone = graph([root(), lane("a", "Export API", "quick", "m", "", "done", status="accepted", elapsed=12)],
+                      [("root", "a", "dispatch")])
+        line = box_lines(render_delegation_view(alone, width=80, focus=Focus(node="a", folded=frozenset({"a"}))))["a"]
+        self.assertEqual(line, ["[+] > ✓ Export API · Accepted"])
+
+    def test_a_run_that_only_lost_its_news_does_not_read_as_an_error(self) -> None:
+        lost = export_run()
+        for node in lost["nodes"][1:]:
+            node.update(state="unknown", status="no news")
+        view = render_delegation_view(lost, width=100)
+        self.assertEqual(view.text_lines()[2], "Ended · Done 0/5")
+        self.assertEqual(view.lines[2][0].role, "node-word:unknown")
+        cancelled = export_run()
+        cancelled["nodes"][2].update(state="interrupted", status="cancelled")
+        for node in cancelled["nodes"][1:]:
+            if node["state"] != "interrupted":
+                node["state"] = "done"
+        self.assertEqual(render_delegation_view(cancelled, width=100).lines[2][0].role, "node-word:interrupted")
+
+    def test_a_connector_into_a_frontier_with_nothing_running_is_dim(self) -> None:
+        handed = export_run()
+        handed["nodes"][2].update(state="dispatched", status="handed out")  # the frontier: handed out, failed
+        view = render_delegation_view(handed, width=100)
+        roles = [segment.role for line in view.lines for segment in line
+                 if "".join(piece.text for piece in line).strip() in ("│", "▼") and segment.text.strip()]
+        self.assertEqual(roles, ["connector"] * 4, "handed out is not running: the connector stays dim")
+
+    def test_a_duplicated_edge_is_listed_once(self) -> None:
+        twice = export_run()
+        twice["edges"].append({"from": "d:r1:api", "to": "d:r1:docs", "kind": "depends_on"})
+        lines = section(render_delegation_view(twice, width=100), "Dependencies")
+        self.assertEqual(lines.count("  Export API → Export docs"), 1)
+        self.assertEqual(len(lines), 6)
+
+    def test_a_repair_mark_wins_over_an_extend_mark(self) -> None:
+        both = export_repair_run()
+        both["edges"].append({"from": "d:r1:verify", "to": "d:r1:csv-fix", "kind": "extend"})
+        self.assertEqual(box_lines(render_delegation_view(both, width=100))["d:r1:csv-fix"][0][:2], "↻ ")
+
+
 class FieldTests(unittest.TestCase):
     def test_a_field_without_evidence_is_a_question_mark(self) -> None:
         bare = graph([root(model="", effort=""), {"id": "x", "kind": "lane", "state": "dispatched"}],
                      [("root", "x", "dispatch")])
         self.assertEqual(box_lines(render_delegation_view(bare, width=80))["x"],
-                         ["?", "?", "◌ Dispatched", "Start node"], "one `?` where neither category nor model is known")
+                         ["?", "", "◌ Dispatched", "Start node"], "neither category nor model known: the line is blank")
         self.assertIn("?  ", text(bare, width=80, layout="tree"))
 
     def test_a_question_mark_is_marked_unknown_for_the_painter(self) -> None:
@@ -612,8 +738,8 @@ class StructureTests(unittest.TestCase):
                 self.assertEqual({role for _text, role in title if role != "fold"},
                                  {f"node-title:{named}", f"node:{named}"} if named == "selected" else
                                  {f"node-title:{named}"})
-                self.assertEqual({role for _text, role in status}, {f"node:{node['state']}"},
-                                 "the status line keeps the state's colour, selected or not")
+                self.assertEqual([role for _text, role in status], [f"node:{node['state']}", f"node-word:{node['state']}"],
+                                 "the glyph is a mark, the words a word; both keep the state's colour, selected or not")
 
     def test_a_connector_is_dim_and_blue_into_a_running_frontier(self) -> None:
         view = render_delegation_view(export_run(), width=100)

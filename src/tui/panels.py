@@ -1000,18 +1000,19 @@ def dag_style(role: str, theme: Theme, level: int = 0, levels: int = 1, depth: s
     """The theme role for one piece of the delegation view (`delegation_view` names them), painted at `depth`.
 
     A tree's edge takes the step of the theme's gradient for its level, the
-    top of the drawing violet and its bottom blue by default. A box's border,
-    title and status take its node's state (`node_style`); the connector
-    between two frontiers is dim, and blue into a frontier with a node
-    running. A title is bold; a field with no record (`?`) dim.
+    top of the drawing violet and its bottom blue by default. A box's border
+    and glyph take its node's state (`node`), and its title and status words
+    the same hue lifted to a word's contrast (`node-title`, `node-word`;
+    `node_style`); the connector between two frontiers is dim, and blue into a
+    frontier with a node running. A title is bold; a field with no record dim.
     """
     kind, _, state = role.partition(":")
     if kind == "edge":
         steps = theme.dag_edges
         at = round(min(max(level, 0), levels - 1) / (levels - 1) * (len(steps) - 1)) if levels > 1 else 0
         style = steps[at] if steps else theme.dim
-    elif kind in ("node", "node-title"):
-        style = node_style(state, theme)
+    elif kind in ("node", "node-word", "node-title"):
+        style = node_style(state, theme, words=kind != "node")
         style = _bold(style) if kind == "node-title" else style
     elif kind == "connector":
         style = node_style("running", theme) if state == "running" else theme.dim
@@ -1029,17 +1030,23 @@ def dag_style(role: str, theme: Theme, level: int = 0, levels: int = 1, depth: s
     return replace(style, depth=depth) if depth != style.depth else style
 
 
-def node_style(state: str, theme: Theme) -> Style:
+def node_style(state: str, theme: Theme, words: bool = False) -> Style:
     """A box's colour by its node's state, from the theme's roles: selected (`/dag`'s highlight) the violet the
     edge gradient starts at, running the blue it ends at, handed out the step between them, failed and cancelled
-    the error colour, stuck the warning colour, done the terminal's own foreground, waiting and unknown dim."""
-    steps = theme.dag_edges
+    the error colour, stuck the warning colour, done the terminal's own foreground, waiting and unknown dim.
+
+    Lines and glyphs are marks and reach 3:1 (`dag_edges`, `dim`). With
+    `words`, the same hue reaches the 4.5:1 a word needs (`dag_words`), and
+    waiting and unknown take `muted`, since words never go on `dim`.
+    """
+    steps = theme.dag_words if words else theme.dag_edges
+    quiet = theme.muted if words else theme.dim
     if not steps:
-        return theme.text if state == "done" else theme.accent if state in ("selected", "running") else theme.dim
+        return theme.text if state == "done" else theme.accent if state in ("selected", "running") else quiet
     return {
         "selected": steps[0], "running": steps[-1], "dispatched": steps[len(steps) // 2], "failed": theme.error,
         "interrupted": theme.error, "stuck": theme.warn, "done": theme.text,
-    }.get(state, theme.dim)
+    }.get(state, quiet)
 
 
 @dataclass
@@ -1072,11 +1079,11 @@ def _dag_view(graph: Mapping[str, Any], columns: int, budget: int | None, layout
 
 
 def _dag_heights(graph: Mapping[str, Any], columns: int) -> tuple[int, tuple[int, ...], int]:
-    """(lines with no limit, the two-line boxes' heights tallest first, lines of the uncapped tree).
+    """(lines with no limit, the three-line boxes' heights tallest first, lines of the uncapped tree).
 
-    Two-line boxes come in up to two heights under the four-line ones: as wide
-    as they read comfortably, and, where those wrap, narrower ones that fit
-    more to a row in fewer lines.
+    Three-line boxes (title, status, parents; no sections) are the step down
+    from the boxes with their Dependencies and Node details, before the tree.
+    One width draws them at one height, so the steps hold at most one.
     """
     natural = _dag_view(graph, columns, None)
     if natural.layout != "box":

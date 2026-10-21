@@ -24,7 +24,7 @@ from _tui_lines import lines_text  # noqa: E402
 from omh.plugin_bundle.omh import delegation_view  # noqa: E402
 from omh.plugin_bundle.omh.delegation_view import render_delegation_view  # noqa: E402
 from omh.tui.dag_pager import DAG_KEYS, DagPager  # noqa: E402
-from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, UP, Key  # noqa: E402
+from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key  # noqa: E402
 from omh.tui.keys import TAB as TAB_KEY  # noqa: E402
 from omh.tui.layout import slot_cap  # noqa: E402
 from omh.tui.panels import panel_lines  # noqa: E402
@@ -230,7 +230,7 @@ class DagCommandTests(unittest.TestCase):
         send(app, "/dag")
         screen(app)
         rows = press(app, SPACE)
-        self.assertIn("│ [+] > ● Export button", "\n".join(rows), "folded to its title line, its state's glyph kept")
+        self.assertIn("│ [+] > ● Export bu… · Running │", "\n".join(rows), "folded to one line: glyph, title, status word")
         self.assertNotIn("● Running 21s", "\n".join(rows[:20]))
         rows = press(app, Key(ENTER))
         self.assertIn("│ [-] > Export button", "\n".join(rows))
@@ -257,6 +257,12 @@ class DagCommandTests(unittest.TestCase):
         self.assertEqual(app.pager.top, top + 1)
         press(app, Key(CHAR, "g"))
         self.assertEqual(app.pager.top, 0)
+        press(app, Key(PAGE_DOWN))
+        self.assertEqual(app.pager.top, 14, "PageDown moves a page: 16 rows less the two footer rows")
+        press(app, Key(CHAR, "G"))
+        self.assertEqual(app.pager.top, len(app.pager.lines) - 14, "G shows the last page")
+        press(app, Key(PAGE_UP))
+        self.assertEqual(app.pager.top, len(app.pager.lines) - 28)
 
     def test_dag_is_live_from_the_newest_hud_read(self) -> None:
         app, client = make_app(rows=60, cols=100)
@@ -275,6 +281,26 @@ class DagCommandTests(unittest.TestCase):
         with_hud(app, None)
         self.assertIn("✓ Accepted 40s", "\n".join(screen(app)), "a graph that aged out leaves the last drawing")
         self.assertEqual(client.calls, [])
+
+    def test_a_drawing_kept_after_the_graph_is_gone_says_it_is_not_live(self) -> None:
+        now = [100.0]
+        app, _client = make_app(rows=60, cols=100, clock=lambda: now[0])
+        with_hud(app, export_run())
+        send(app, "/dag")
+        rows = screen(app)
+        self.assertEqual(rows[0], "OMH / DAG · 5 tasks", "live: no note")
+        now[0] = 112.0
+        with_hud(app, None)
+        rows = screen(app)
+        self.assertEqual(rows[:2], ["not live · last update 12s ago", "OMH / DAG · 5 tasks"])
+        note = app.pager.lines[0][0]
+        self.assertEqual(note.style.fg, DEFAULT_THEME.muted.fg, "a word on `muted`, never on `dim`")
+        now[0] = 185.0
+        self.assertEqual(screen(app)[0], "not live · last update 1m 25s ago", "the age moves with the clock")
+        press(app, Key(TAB_KEY))
+        self.assertTrue(any("[-] > " in row for row in screen(app)), "the kept boxes still take the keys")
+        with_hud(app, export_run())
+        self.assertEqual(screen(app)[0], "OMH / DAG · 5 tasks", "live again: the note goes")
 
     def test_dag_follows_the_terminals_depth(self) -> None:
         app, _client = make_app(rows=24, cols=100, environ={"NO_COLOR": "1"})

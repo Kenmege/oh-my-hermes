@@ -17,11 +17,13 @@ under them, and one connector (``│`` then ``▼``) joins one frontier to the
 next, whatever its edges. So the drawing implies no edge: the edges are
 exact in each box's parents line and in the ``Dependencies`` section under
 the boxes, which lists every edge between two lanes. ``Node details`` then
-gives a card to each running node: its whole title, category and model,
-status, group and session.
+gives a card to each running or stuck node, and in `/dag` to the highlighted
+one: its whole title, category and model, status, group and session. A box
+draws no ``?``: a field with no record is left out (a blank line where
+neither category nor model is), and an unknown state's glyph is ``◇``.
 
 Every box is one width: as wide as the widest node needs, narrowed to put
-each frontier on one row (its category and model line is cut first), and a
+each frontier on one row (every line is cut to it with ``…``), and a
 frontier that does not fit even then wraps. Under a line or character
 budget the boxes give up Node details, then Dependencies, then (where the
 caller allows ``compact``) their category and model line; then the tree is
@@ -83,6 +85,7 @@ class Charset:
     arrow: str
     glyphs: Mapping[str, str]
     pending: str  # a box's glyph for a waiting node
+    unrecorded: str  # a box's glyph for a node whose state has no record (the tree draws `?`)
     left: str  # before a box's parents
     right: str  # between the two ends of a dependency
     dot: str  # before a frontier's label
@@ -109,6 +112,7 @@ UNICODE: Final = Charset(
         "failed": "✗", "interrupted": "▪", "unknown": "?",
     },
     pending="○",
+    unrecorded="◇",
     left="←",
     right="→",
     dot="·",
@@ -139,6 +143,7 @@ ASCII: Final = Charset(
         "failed": "x", "interrupted": "-", "unknown": "?",
     },
     pending=".",
+    unrecorded="<>",
     left="<-",
     right="->",
     dot="-",
@@ -480,8 +485,12 @@ def _glyph(node: Mapping[str, Any], charset: Charset, spinner: str | None) -> st
 
 
 def _box_glyph(node: Mapping[str, Any], charset: Charset, spinner: str | None) -> str:
-    """The tree's glyph, but a waiting node's is the hollow ``○`` a box draws for a node not handed out."""
-    return charset.pending if _state(node) == "waiting" else _glyph(node, charset, spinner)
+    """The tree's glyph, but a waiting node's is the hollow ``○`` a box draws for a node not handed out, and an
+    unknown one's ``◇``: a box draws no ``?``."""
+    state = _state(node)
+    if state in ("waiting", "unknown"):
+        return charset.pending if state == "waiting" else charset.unrecorded
+    return _glyph(node, charset, spinner)
 
 
 def _capital(text: str) -> str:
@@ -495,11 +504,11 @@ def _field_role(text: str, role: str) -> str:
 
 def _facts(node: Mapping[str, Any], charset: Charset) -> list[Segment]:
     """``quick · glm-5.3-flash:low``: the category, then the model and its effort; a field with no record yet is
-    left out (``writing`` for a node no child has taken), and ``?`` stands for both only when neither is known."""
+    left out (``writing`` for a node no child has taken), and with neither known the line is empty."""
     known = [(text, role) for text, role in ((_category(node), "category"), (_model_text(node, ":"), "model"))
              if text != UNKNOWN_FIELD]
     if not known:
-        return [Segment(UNKNOWN_FIELD, "unknown")]
+        return []
     pieces = [Segment(known[0][0], known[0][1])]
     for text, role in known[1:]:
         pieces += [Segment(charset.separator, "model"), Segment(text, role)]
@@ -512,12 +521,18 @@ def _origin_mark(node_id: str, shape: _Frontiers, charset: Charset) -> str:
     return f"{charset.repair} " if kind == "repair" else f"{charset.extend} " if kind == "extend" else ""
 
 
-def _box_natural(node_id: str, shape: _Frontiers, charset: Charset, focused: bool, compact: bool) -> int:
+def _box_natural(node_id: str, shape: _Frontiers, charset: Charset, focus: Focus | None, compact: bool) -> int:
     """The inner width a box needs for its title, facts and status, whatever its duration reads; the parents line
-    is cut to the box (the Dependencies section holds every edge whole)."""
+    is cut to the box (the Dependencies section holds every edge whole). A folded box's one line holds its glyph
+    and its status word too."""
     node = shape.lanes[node_id]
-    lead = cells("[-] > ") if focused else 0
-    status = cells(_box_glyph(node, charset, None)) + 1 + _status_cells(node)
+    glyph = cells(_box_glyph(node, charset, None)) + 1
+    lead = 0
+    if focus is not None:
+        lead = cells("[-] > ")
+        if node_id in focus.folded:
+            lead += glyph + cells(charset.separator) + cells(_capital(_status_parts(node)[0]))
+    status = glyph + _status_cells(node)
     widths = [lead + cells(_origin_mark(node_id, shape, charset)) + cells(_title(node)), status]
     if not compact:
         widths.append(sum(cells(segment.text) for segment in _facts(node, charset)))
@@ -544,17 +559,23 @@ def _box_content(
     if folded:
         head += [Segment(glyph, f"node:{state}"), Segment(" ", "")]
     head.append(Segment(_origin_mark(node_id, shape, charset), f"node-title:{named}"))
-    head.append(Segment(title, "unknown" if title == UNKNOWN_FIELD else f"node-title:{named}"))
+    title_role = "unknown" if title == UNKNOWN_FIELD else f"node-title:{named}"
+    if folded:
+        # One line: the title gives way so the status word (`Accepted`) stays, as every state keeps its word.
+        word = [Segment(charset.separator, "parents"), Segment(_capital(_status_parts(node)[0]), f"node-word:{state}")]
+        room = inner - sum(cells(segment.text) for segment in (*head, *word))
+        head.append(Segment(fit(title, max(room, cells(charset.ellipsis) + 1), charset.ellipsis), title_role))
+        return [_fit_pieces([*head, *word], inner, charset)]
+    head.append(Segment(title, title_role))
     lines = [head]
-    if not folded:
-        if not compact:
-            lines.append(_facts(node, charset))
-        lines.append([Segment(glyph, f"node:{state}"), Segment(" " + _capital(_status_text(node)), f"node:{state}")])
-        parents = [_title(shape.lanes[upper]) for upper in shape.parents[node_id]]
-        if parents:
-            lines.append([Segment(f"{charset.left} ", "parents"), Segment(", ".join(parents), "parents")])
-        else:
-            lines.append([Segment("Start node", "parents")])
+    if not compact:
+        lines.append(_facts(node, charset))
+    lines.append([Segment(glyph, f"node:{state}"), Segment(" " + _capital(_status_text(node)), f"node-word:{state}")])
+    parents = [_title(shape.lanes[upper]) for upper in shape.parents[node_id]]
+    if parents:
+        lines.append([Segment(f"{charset.left} ", "parents"), Segment(", ".join(parents), "parents")])
+    else:
+        lines.append([Segment("Start node", "parents")])
     return [_fit_pieces(line, inner, charset) for line in lines]
 
 
@@ -573,8 +594,9 @@ def _framed(content: list[tuple[Segment, ...]], inner: int, border: str, charset
 
 
 def _fit_pieces(pieces: Sequence[Segment], width: int, charset: Charset) -> tuple[Segment, ...]:
-    """``pieces`` cut to ``width`` cells: the first that does not fit ends in the ellipsis (alone, when that is all
-    the room left), so a cut line never ends on a separator."""
+    """``pieces`` cut to ``width`` cells, a cut line always ending in the ellipsis: the first piece that does not
+    fit is cut to it (or is it alone), and where too little room is left even for that, the pieces kept before it
+    give way, so a line never ends on a separator or an arrow with nothing after it."""
     kept: list[Segment] = []
     used = 0
     for piece in pieces:
@@ -583,10 +605,27 @@ def _fit_pieces(pieces: Sequence[Segment], width: int, charset: Charset) -> tupl
             kept.append(piece)
             used += size
             continue
-        if width - used >= cells(charset.ellipsis):
-            kept.append(Segment(fit(piece.text, width - used, charset.ellipsis), piece.role, piece.level))
+        room = width - used
+        if room >= cells(charset.ellipsis):
+            kept.append(Segment(fit(piece.text, room, charset.ellipsis), piece.role, piece.level))
+        while kept and room < cells(charset.ellipsis):
+            last = kept.pop()
+            room += cells(last.text)
+            if room >= cells(charset.ellipsis):
+                kept.append(Segment(_ending(last.text, room, charset.ellipsis), last.role, last.level))
         break
     return _tidy(kept)
+
+
+def _ending(text: str, width: int, ellipsis: str) -> str:
+    """``text`` cut to end in ``ellipsis`` within ``width`` cells, whether or not it would fit whole."""
+    kept, used = [], 0
+    for ch in text:
+        if used + char_cells(ch) > width - cells(ellipsis):
+            break
+        kept.append(ch)
+        used += char_cells(ch)
+    return "".join(kept).rstrip() + ellipsis
 
 
 def _tidy(pieces: Sequence[Segment]) -> tuple[Segment, ...]:
@@ -607,7 +646,11 @@ def _tidy(pieces: Sequence[Segment]) -> tuple[Segment, ...]:
 
 
 def _run_state(lanes: Sequence[Mapping[str, Any]]) -> tuple[str, str]:
-    """The run's word and the state it is painted as: running while a lane is out, else waiting, else settled."""
+    """The run's word and the state it is painted as: running while a lane is out, else waiting, else settled.
+
+    A run whose unsettled lanes only lost their news (unknown) ended without a failure or a cancel, so it is
+    painted as unknown, never in the error colour.
+    """
     states = {_state(node) for node in lanes}
     if states & {"running", "stuck", "dispatched"}:
         return "Running", "running"
@@ -615,7 +658,9 @@ def _run_state(lanes: Sequence[Mapping[str, Any]]) -> tuple[str, str]:
         return "Waiting", "waiting"
     if "failed" in states:
         return "Failed", "failed"
-    return ("Completed", "done") if states <= {"done"} else ("Ended", "interrupted")
+    if states <= {"done"}:
+        return "Completed", "done"
+    return ("Ended", "interrupted") if "interrupted" in states else ("Ended", "unknown")
 
 
 def _box_header(graph: Mapping[str, Any], shape: _Frontiers, width: int, charset: Charset) -> list[tuple[Segment, ...]]:
@@ -633,11 +678,11 @@ def _box_header(graph: Mapping[str, Any], shape: _Frontiers, width: int, charset
         second += [Segment(f"{sep}main ", "header"), Segment(model, "model")]
     word, state = _run_state(lanes)
     done = sum(1 for node in lanes if _state(node) == "done")
-    third = [Segment(word, f"node:{state}"), Segment(f"{sep}Done {done}/{len(lanes)}", "header")]
+    third = [Segment(word, f"node-word:{state}"), Segment(f"{sep}Done {done}/{len(lanes)}", "header")]
     for alarm in ("failed", "stuck"):
         count = sum(1 for node in lanes if _state(node) == alarm)
         if count:
-            third += [Segment(sep, "header"), Segment(f"{count} {alarm}", f"node:{alarm}")]
+            third += [Segment(sep, "header"), Segment(f"{count} {alarm}", f"node-word:{alarm}")]
     if hidden:
         third.append(Segment(f"{sep}+{hidden} more node{'' if hidden == 1 else 's'}", "more"))
     return [_fit_pieces(line, width, charset) for line in (first, second, third)]
@@ -647,13 +692,23 @@ def _dependencies(shape: _Frontiers, width: int, charset: Charset) -> list[tuple
     """Every edge between lanes as text, ``Export API → Export button``, its kind named unless it is a
     `depends_on`: the boxes draw one connector per frontier gap, so this is where the edges are exact."""
     lines: list[tuple[Segment, ...]] = [(), (Segment("Dependencies", "header"),)]
+    arrow = f" {charset.right} "
     for upper, lower, kind in shape.edges:
+        source, target = _title(shape.lanes[upper]), _title(shape.lanes[lower])
+        suffix = f" ({kind})" if kind and kind != "depends_on" else ""
+        room = width - cells(SECTION_INDENT) - cells(arrow) - cells(suffix)
+        if cells(source) + cells(target) > room:
+            # The kind stays whole and the titles give way, the target first, each keeping a few cells.
+            keep = cells(charset.ellipsis) + 3
+            target_room = min(cells(target), max(min(cells(target), keep), room - cells(source)))
+            source = fit(source, max(min(cells(source), keep), room - target_room), charset.ellipsis)
+            target = fit(target, max(min(cells(target), keep), room - cells(source)), charset.ellipsis)
         pieces = [
-            Segment(SECTION_INDENT, ""), Segment(_title(shape.lanes[upper]), "dependency"),
-            Segment(f" {charset.right} ", "connector"), Segment(_title(shape.lanes[lower]), "dependency"),
+            Segment(SECTION_INDENT, ""), Segment(source, "dependency"), Segment(arrow, "connector"),
+            Segment(target, "dependency"),
         ]
-        if kind and kind != "depends_on":
-            pieces.append(Segment(f" ({kind})", "parents"))
+        if suffix:
+            pieces.append(Segment(suffix, "parents"))
         lines.append(_fit_pieces(pieces, width, charset))
     return lines
 
@@ -696,8 +751,10 @@ def _details(
                 Segment(" " * cells(lead), "")]
             role = "unknown" if title == UNKNOWN_FIELD else f"node-title:{state}"
             lines.append(_fit_pieces([*pieces, Segment(text, role)], width, charset))
-        lines.append(_fit_pieces([Segment(deeper, ""), *_facts(node, charset)], width, charset))
-        where = [Segment(_capital(_status_text(node)), f"node:{state}")]
+        facts = _facts(node, charset)
+        if facts:
+            lines.append(_fit_pieces([Segment(deeper, ""), *facts], width, charset))
+        where = [Segment(_capital(_status_text(node)), f"node-word:{state}")]
         group = _group_label(node.get("group"), charset)
         if group:
             where.append(Segment(f"{charset.separator}{group}", "more"))
@@ -722,14 +779,14 @@ def _box_view(
 
     Every box is one width: as wide as the widest lane needs, up to
     `BOX_INNER_MAX`, and narrower where that puts a frontier on one row,
-    down to `BOX_INNER_MIN` (the category and model line is cut first). A
+    down to `BOX_INNER_MIN` (each line cut to it with the ellipsis). A
     frontier that does not fit one row even then wraps, at that same width.
     Where one box does not fit `BOX_INNER_MIN`, None, and the tree is drawn.
     """
     shape = _frontiers(graph)
     if shape is None:
         return None
-    natural = max(_box_natural(node_id, shape, charset, focus is not None, compact) for node_id in shape.lanes)
+    natural = max(_box_natural(node_id, shape, charset, focus, compact) for node_id in shape.lanes)
     one_row = [(width - (len(row) - 1) * GAP) // len(row) - 4 for row in shape.rows]
     inner = min([max(natural, BOX_INNER_MIN), BOX_INNER_MAX, width - 4,
                  *(fit for fit in one_row if fit >= BOX_INNER_MIN)])

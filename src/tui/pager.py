@@ -113,7 +113,7 @@ class Pager:
             self._paint(row, shown[row] if row < len(shown) else (), cols, parts)
         footer = self.footer(position, theme)
         for at, line in enumerate(footer):
-            if rows - len(footer) + at >= body:  # a screen too short for the footer keeps its last rows
+            if rows - len(footer) + at >= 0:  # a screen shorter than the footer keeps its last rows, over the page
                 self._paint(rows - len(footer) + at, line, cols, parts)
         return SYNC_BEGIN + HIDE_CURSOR + "".join(parts) + SYNC_END if parts else ""
 

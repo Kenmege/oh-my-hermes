@@ -3660,7 +3660,7 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_aside(NoticeBlock("No delegation graph: this session has no recent delegated work."))
             return
         self._show_pager(DagPager("delegation graph", payload=lambda: self.hud.payload if self.hud is not None else None,
-                                  depth=self.color_depth))
+                                  depth=self.color_depth, clock=self.clock))
 
     def _copy(self, arg: str) -> None:
         last = next((block for block in reversed(self.transcript.blocks) if isinstance(block, AssistantBlock)), None)

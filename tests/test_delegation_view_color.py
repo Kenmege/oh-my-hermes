@@ -48,6 +48,7 @@ from omh.tui.style import (  # noqa: E402
 )
 from omh.tui.theme import (  # noqa: E402
     BLACK,
+    TEXT_CONTRAST,
     DAG_EDGE_STEPS,
     DAG_EDGE_STOPS,
     EDGE_CONTRAST,
@@ -173,23 +174,58 @@ class GradientTests(unittest.TestCase):
     def test_a_box_takes_its_nodes_state_colour_from_the_theme(self) -> None:
         for background in (None, "#1E1E1E", "#FFFFFF"):
             theme = build_theme(default_theme(), background)
-            violet, indigo, blue = theme.dag_edges[0], theme.dag_edges[DAG_EDGE_STEPS // 2], theme.dag_edges[-1]
-            self.assertEqual(indigo.fg, DAG_EDGE_STOPS["dag_edge_mid"], "handed out is the gradient's middle stop")
-            expected = {
-                "selected": violet, "running": blue, "dispatched": indigo, "failed": theme.error,
-                "interrupted": theme.error, "stuck": theme.warn, "done": theme.text, "waiting": theme.dim,
-                "unknown": theme.dim,
+            middle = DAG_EDGE_STEPS // 2
+            self.assertEqual(theme.dag_edges[middle].fg, DAG_EDGE_STOPS["dag_edge_mid"], "handed out is the middle stop")
+            marks = {
+                "selected": theme.dag_edges[0], "running": theme.dag_edges[-1], "dispatched": theme.dag_edges[middle],
+                "failed": theme.error, "interrupted": theme.error, "stuck": theme.warn, "done": theme.text,
+                "waiting": theme.dim, "unknown": theme.dim,
             }
-            for state, style in expected.items():
+            words = {
+                **marks, "selected": theme.dag_words[0], "running": theme.dag_words[-1],
+                "dispatched": theme.dag_words[middle], "waiting": theme.muted, "unknown": theme.muted,
+            }
+            for state in marks:
                 with self.subTest(background=background, state=state):
-                    self.assertEqual(dag_style(f"node:{state}", theme), style)
-                    self.assertEqual(dag_style(f"node-title:{state}", theme), Style(**{**vars(style), "bold": True}))
-                    self.assertEqual(node_style(state, theme), style)
+                    self.assertEqual(dag_style(f"node:{state}", theme), marks[state], "a border or a glyph")
+                    self.assertEqual(node_style(state, theme), marks[state])
+                    self.assertEqual(dag_style(f"node-word:{state}", theme), words[state], "a status word")
+                    self.assertEqual(dag_style(f"node-title:{state}", theme), Style(**{**vars(words[state]), "bold": True}))
             self.assertIsNone(dag_style("node:done", theme).fg, "done is the terminal's own foreground, light or dark")
-            self.assertEqual((dag_style("connector", theme), dag_style("connector:running", theme)), (theme.dim, blue))
+            self.assertEqual((dag_style("connector", theme), dag_style("connector:running", theme)),
+                             (theme.dim, theme.dag_edges[-1]))
         self.assertTrue(dag_style("title", theme).bold)
         self.assertEqual(dag_style("unknown", theme), theme.dim)
         self.assertEqual((dag_style("category", theme), dag_style("model", theme)), (theme.label, theme.hint))
+
+    def test_a_boxs_words_read_at_text_contrast_and_its_lines_at_mark_contrast(self) -> None:
+        """The owner's coloured lines stay at the 3:1 a mark needs; the title and status words in the same hue
+        reach the 4.5:1 every word in the TUI does (`TEXT_ROLES`), on every palette, light or dark."""
+        states = ("selected", "running", "dispatched", "failed", "interrupted", "stuck", "waiting", "unknown")
+        for skin in SKIN_THEMES:
+            for background in (*DARK, *LIGHT, None):
+                theme = build_theme(skin, background)
+                surface = surface_for(skin, background)
+                for state in states:
+                    with self.subTest(skin=skin.short_name, background=background, state=state):
+                        for role in (f"node-word:{state}", f"node-title:{state}"):
+                            self.assertGreaterEqual(contrast_ratio(dag_style(role, theme).fg, surface), TEXT_CONTRAST)
+                        self.assertGreaterEqual(contrast_ratio(dag_style(f"node:{state}", theme).fg, surface),
+                                                EDGE_CONTRAST - 0.01)
+        # The default palette, measured: (word, mark) against its dark stand-in and against white.
+        expected = {
+            None: {"running": (4.78, 4.48), "dispatched": (4.67, 3.69), "selected": (4.51, 3.89), "waiting": (4.56, 3.5)},
+            "#FFFFFF": {"running": (4.9, 3.68), "dispatched": (4.86, 4.47), "selected": (4.63, 4.23),
+                        "waiting": (4.71, 4.71)},
+        }
+        for background, ratios in expected.items():
+            theme = build_theme(default_theme(), background)
+            surface = surface_for(default_theme(), background)
+            for state, (word, mark) in ratios.items():
+                with self.subTest(background=background, state=state):
+                    self.assertEqual((round(contrast_ratio(dag_style(f"node-word:{state}", theme).fg, surface), 2),
+                                      round(contrast_ratio(dag_style(f"node:{state}", theme).fg, surface), 2)),
+                                     (word, mark))
 
     def test_each_depth_downgrades_a_state_colour_to_its_own_parameters(self) -> None:
         theme = build_theme(default_theme(), "#1E1E1E")
