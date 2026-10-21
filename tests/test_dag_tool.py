@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -34,6 +35,7 @@ from omh.coding.fanout_contracts import FANOUT_SPAWN_PLAN_FIELDS, FANOUT_SPAWN_P
 from omh.coding.executors import EXTERNAL_CLI_PROFILES  # noqa: E402
 from omh.plugin_bundle.omh import dag_run  # noqa: E402
 from omh.plugin_bundle.omh import host_process  # noqa: E402
+from omh.plugin_bundle.omh import runtime_paths  # noqa: E402
 from omh.plugin_bundle.omh.delegation_ledger import dag_binding, read_ledger  # noqa: E402
 from omh.plugin_bundle.omh.tools import dag_tool  # noqa: E402
 from omh.routing import owner_preference  # noqa: E402
@@ -80,6 +82,11 @@ def slots_table(home, *, running: list[tuple[str, int]] = ()) -> None:
     for delegation_id, pid in running:
         home.execute("INSERT INTO async_delegations VALUES (?, ?, 'running', 0, '{}', ?)",
                      (delegation_id, PARENT, pid))
+
+
+# The fake Docker or SSH terminal (`Sandbox`) runs a real bash over POSIX paths.
+SANDBOX_SHELL = sys.platform != "win32" and shutil.which("bash") is not None
+SANDBOX_SKIP = "the fake Docker or SSH terminal runs bash over POSIX paths: needs a POSIX host with bash"
 
 
 class Base:
@@ -425,7 +432,7 @@ class RemoteBackendTests(unittest.TestCase):
                 self.assertEqual(record.get("backend"), recorded, record)
                 self.assertEqual("backend" in record, recorded is not None)
 
-    @unittest.skipIf(sys.platform == "win32", "a Docker or SSH terminal runs a POSIX shell over POSIX paths")
+    @unittest.skipUnless(SANDBOX_SHELL, SANDBOX_SKIP)
     def test_a_handoff_inside_the_terminal_is_read_there_under_the_host_checks_rule(self) -> None:
         """Mutation: follow a link, take a directory, read the host, ask with the parent's task id, or hand out ~."""
         with homes() as home, terminal_env():
@@ -476,7 +483,7 @@ class RemoteBackendTests(unittest.TestCase):
                                  {("", dag_tool.BACKEND_READ_SECONDS)})
                 self.assertEqual((len(sandbox.calls), sandbox.recovered), (5, 0))
 
-    @unittest.skipIf(sys.platform == "win32", "a Docker or SSH terminal runs a POSIX shell over POSIX paths")
+    @unittest.skipUnless(SANDBOX_SHELL, SANDBOX_SKIP)
     def test_a_home_another_user_can_write_keeps_this_hosts_path(self) -> None:
         """Mutation: take any home, judge a linked home by the link, or let a `$HOME` with a space through."""
         cases = {"0777": {"mode": 0o777}, "0770": {"mode": 0o770}, "1777": {"mode": 0o1777},
@@ -524,9 +531,10 @@ class RemoteBackendTests(unittest.TestCase):
                     "docker", Answers({"output": line + "\n", "returncode": 0})).modules():
                 defined = call(action="define", run="feat", nodes=FEATURE)
                 record = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))
+                # This host's path as the tool builds it: from the OMH home it resolves (on Windows, the long name).
+                host = dag_run.handoff_path(runtime_paths.default_omh_home(), PARENT, "feat", "api")
             self.assertEqual(record["handoff_root"], "")
-            self.assertIn(str(dag_run.handoff_path(home.omh, PARENT, "feat", "api")),
-                          defined["calls"][0]["tasks"][0]["context"])
+            self.assertIn(f"write your report to {host}:", defined["calls"][0]["tasks"][0]["context"])
         with homes() as home, terminal_env(), Terminal(
                 "docker", Answers({"output": "\x1b]0;t\x07OMH_BACKEND_HOME=/home/dev.ops@corp\n", "returncode": 0})
         ).modules():
@@ -727,8 +735,14 @@ class RemoteBackendTests(unittest.TestCase):
                                   {"action": "status", "run": "feat"}):
                     said.append(dag_tool.omh_dag_handler(arguments, session_id=PARENT))
                 record = dag_run.record_path(home.omh, PARENT, "feat").read_bytes()
-                root = str(home.omh.parent)
-            return [text.replace(os.path.realpath(root), "<home>").replace(root, "<home>") for text in said], record
+                # Each run has its own temp home: the paths it names, as given, resolved (on Windows, the long name)
+                # and JSON-escaped (a result is JSON), are written as one placeholder.
+                roots = {str(home.omh.parent), os.path.realpath(home.omh.parent),
+                         str(runtime_paths.default_omh_home().parent)}
+            forms = sorted({form for root in roots for form in (json.dumps(root)[1:-1], root)}, key=len, reverse=True)
+            for form in forms:
+                said = [text.replace(form, "<home>") for text in said]
+            return said, record
 
         unset = run(None)
         self.assertIn("handoff_missing", unset[0][1])
