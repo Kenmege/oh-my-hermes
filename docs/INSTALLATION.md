@@ -412,12 +412,17 @@ run and approval decision stays Hermes'; the screen is OMH's.
   it takes at most a quarter of the screen, seven rows on a terminal of 28
   rows or more (so a one-row composer's input row is row 16 of 24 or 31 of
   40), raised only to show every running agent and never past a third of the
-  screen; a DAG run's tree takes a third of the screen from the start. While
+  screen; a DAG run's tree takes up to a third of the screen from the start
+  (8 rows of 24, 13 of 40), and no more rows than the tree has. While
   a turn runs the view leaves the working row its place above the composer.
-  As the view shrinks, the composer moves down, never up. A resize or a redraw
-  starts again under the output. Hidden while you pick from a list or search
-  the history with Ctrl+R (the search's row stands where the composer was,
-  the caret at the end of what you typed), it comes back as you left it.
+  As the view shrinks, the composer moves down, never up. On the bottom rows,
+  once a turn ends, the view does not take the working row's place unless it
+  needs more rows to show its agents, so the composer stays where it is and
+  that place stays blank above it until output fills it. A resize or a
+  redraw starts again under the output. Hidden while you pick from a list or
+  search the history with Ctrl+R (the search's row stands where the
+  composer was, the caret at the end of what you typed), it comes back as
+  you left it.
   As it starts, the TUI scrolls what your terminal showed above its cursor
   (your shell, the launcher's warnings) up into the terminal's own
   scrollback, erasing nothing, and opens on the top row of a clean screen:

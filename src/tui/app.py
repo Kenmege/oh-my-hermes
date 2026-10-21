@@ -1226,6 +1226,9 @@ class App(ModesMixin, AgentViewMixin):
         # The cells a click opens, as last drawn: rows above the region's last row → the entries on that row.
         self.clickable: dict[int, tuple[Hit, ...]] = {}
         self.frame_budget: Budget | None = None  # the rows the last frame gave each part of the region
+        # The rows the agent view wanted, the rows it got and the tail's working rows in the last frame drawn while a
+        # turn ran (`_held_view_rows`).
+        self.view_hold: tuple[int, int, int] | None = None
         self.mouse_off_at: float | None = None  # when `_set_mouse` last turned reports off; None before that
         self.wake: int | None = None  # the gateway client's wake descriptor, which `run` selects on with the input
         self.input_at = 0.0  # when input last arrived, on `clock`
@@ -4000,10 +4003,17 @@ class App(ModesMixin, AgentViewMixin):
         if self._place_menu(rows, len(stable), frame):
             build = partial(build, slot=self._slot_lines(cols, rows), below=self.menu_under)
             frame = build()
-        if frame.budget.agents < len(build.keywords["agents"]):
-            # A full slot and a tall composer left the view fewer rows than its cap: drawn again to fit them, so its
-            # last row (the count of what it cannot show) is never the one cut.
-            build = partial(build, agents=self._agent_view(cols, rows, frame.budget.agents))
+        wanted, busy = len(build.keywords["agents"]), self._busy()
+        room = frame.budget.agents
+        if not busy and pinned:
+            room = min(room, self._held_view_rows(wanted, frame.budget, rows))
+        elif not busy:
+            self.view_hold = None  # above the bottom rows the composer follows the content: nothing to keep
+        if room < wanted:
+            # A full slot and a tall composer left the view fewer rows than its cap, or on the bottom rows it leaves
+            # the working rows the ended turn kept: drawn again to fit them, so its last row (the count of what it
+            # cannot show) is never the one cut.
+            build = partial(build, agents=self._agent_view(cols, rows, room))
             frame = build()
         # The rows above the region once the flush below and this frame are drawn: transcript rows.
         if self._sticky_needed(self.region.rows_above(rows, len(stable), frame.height)):
@@ -4013,6 +4023,8 @@ class App(ModesMixin, AgentViewMixin):
         # the frame is drawn under them. Flush and frame are one write, so no screen between them shows.
         self.region.render(frame.lines, frame.cursor, cols, flush=stable, screen_rows=rows)
         self.frame_budget = frame.budget
+        if busy:
+            self.view_hold = (wanted, frame.budget.agents, self._working_rows())
         self._take_clickable(frame.budget, self.listed)
 
     def _place_menu(self, rows: int, flushed: int, frame: Frame) -> bool:

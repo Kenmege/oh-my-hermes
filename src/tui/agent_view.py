@@ -38,7 +38,7 @@ from typing import Any
 
 from . import gateway_contract as contract
 from .keys import BUTTON_LEFT, CHAR, DOWN, ENTER, ESCAPE, LEFT, UP, Key, Mouse, Paste
-from .layout import Budget, agent_view_cap, is_tiny
+from .layout import Budget, agent_view_cap, is_tiny, max_height
 from .panels import agent_view_count, agent_view_keep, graph_is_dag, panel_lines
 from .style import Line, Span, Style
 from .subagents import FINISHED_STATUSES, MAIN_ID, OPEN_MARK, RUNNING, Hit
@@ -102,9 +102,10 @@ class AgentViewMixin:
         same rows, noting each row's agent id in `listed`.
 
         While the conversation's delegation graph is a DAG run its tree is
-        the view, in a third of the screen from the start (the owner wants
-        the graph in sight while it runs), with the HUD's agents block above
-        it while the roster is empty. Down then gives the keys to the
+        the view, in up to a third of the screen from the start and no more
+        rows than the tree has (the owner wants the graph in sight while it
+        runs), with the HUD's agents block above it while the roster is
+        empty. Down then gives the keys to the
         roster's list in the tree's own rows, a shorter list padded with blank
         rows and a longer one scrolled, so opening and closing it moves
         nothing (the tree's nodes name no agent the list could act on).
@@ -137,6 +138,40 @@ class AgentViewMixin:
         """`layout.agent_view_cap` for `keep` rows, and no more than `room` when given."""
         cap = agent_view_cap(rows, cols, keep)
         return cap if room is None else min(cap, room)
+
+    def _held_view_rows(self, wanted: int, budget: Budget, rows: int) -> int:
+        """The most rows the view takes, wanting `wanted`, once a turn has ended and while the region is on the
+        screen's last row, in a frame laid out as `budget` on a terminal of `rows` rows.
+
+        While a turn runs the tail keeps its working rows (`layout.allocate`'s
+        `tail_floor`), and on the bottom rows the composer stands right above
+        the view: a view that took them once the turn ended pulled the
+        composer up, and gave them back at the next turn. So only those rows
+        are held: the view gets what the slot, the menu and the composer open
+        now leave it, less the working rows, and never fewer rows than the
+        turn's last frame gave it. A squeeze that was open as the turn ended
+        (a draft, a menu, a question) is not held once it closes. The held
+        rows stay blank above the composer, as rows the content gives up do
+        (`layout`). A view that wants fewer rows gives them up at once; one
+        that wants more than it did then drops the hold, so it does not snap
+        back when it later wants fewer. An idle frame drawn above the bottom
+        rows drops it too (`_render`). That covers a turn drawn there (the
+        next frame is not on the bottom rows either) and a size change (the
+        full redraw after it starts a new region, not on the bottom rows).
+        Emptying the roster drops it as well (`_clear_roster`): `/new` keeps
+        the region where it is.
+        """
+        if self.view_hold is None:
+            return wanted
+        last_wanted, last_given, working = self.view_hold
+        if wanted > last_wanted:
+            self.view_hold = None
+            return wanted
+        # What allocate left the view and the tail under the parts placed before them (`layout.allocate`).
+        left = max_height(rows) - (
+            budget.composer + budget.info + budget.bottom_rule + budget.rule + budget.below + budget.slot
+        )
+        return max(last_given, left - working)
 
     def _hud_view(self, payload: Mapping[str, Any], cols: int, cap: int, show_agents: bool = True) -> list[Line]:
         """The HUD's agents block (unless `show_agents` is False) and the delegation tree, in `cap` rows."""
@@ -418,8 +453,10 @@ class AgentViewMixin:
         )
 
     def _clear_roster(self) -> None:
-        """Drop the agents and every piece of tail bookkeeping and pending action that names them."""
+        """Drop the agents and every piece of tail bookkeeping and pending action that names them, and the view's
+        hold (`_held_view_rows`)."""
         self.roster.clear()
+        self.view_hold = None
         self._drop_agent_actions()
 
     def _lose_roster(self) -> None:
