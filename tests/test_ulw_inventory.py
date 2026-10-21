@@ -47,7 +47,7 @@ REPO_ROOT = repo_root_default()
 
 # The generated-table row shape shared by all four READMEs. A bare `ulw-`
 # substring count would also match prose lines, so the gate matches rows only.
-README_ROW_PATTERN = re.compile(r"^\| ⚡ `ulw-", re.MULTILINE)
+README_ROW_PATTERN = re.compile(r"^\| ⚡ `(?:ulw-|dag-ulw`)", re.MULTILINE)
 
 
 RETIRED_ENGINES = ("team", "ralph", "ultragoal", "ultraprocess")
@@ -79,7 +79,7 @@ class UlwInventoryProducerTests(unittest.TestCase):
         # Stage 5 contract (#954, window=0): the canonical engines, four
         # retired engines enumerated separately (never silently dropped), no
         # alias/warning stage in between.
-        self.assertEqual(payload["counts"], {"canonical": 9, "alias": 0, "retired": 4, "total": 13})
+        self.assertEqual(payload["counts"], {"canonical": 10, "alias": 0, "retired": 4, "total": 14})
         self.assertEqual(
             {engine["canonical"] for engine in payload["retired_engines"]},
             set(RETIRED_ENGINES),
@@ -144,8 +144,8 @@ class UlwInventoryProducerTests(unittest.TestCase):
         canonical = metrics["ulw_canonical_engine_count"]
         alias = metrics["ulw_alias_engine_count"]
         retired = metrics["ulw_retired_engine_count"]
-        self.assertEqual(canonical.expected, 9)
-        self.assertEqual(canonical.live(), 9)
+        self.assertEqual(canonical.expected, 10)
+        self.assertEqual(canonical.live(), 10)
         self.assertEqual(alias.expected, 0)
         self.assertEqual(alias.live(), 0)
         self.assertEqual(retired.expected, 4)

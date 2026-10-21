@@ -167,6 +167,7 @@ from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .model_picker import KEYS as MODEL_PICKER_KEYS
 from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows
+from . import dag_block
 from .panels import HudPoller, HudSnapshot, dag_page_lines, hud_chips, panel_lines, plan_state, plan_text
 from .dag_pager import DagPager
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
@@ -1103,6 +1104,9 @@ class App(ModesMixin, AgentViewMixin):
         self.wall_clock = wall_clock
         self.pick_model_chains = pick_model_chains
         self.transcript = Transcript(clock)
+        self.dag_ends: set[tuple[str, int]] = set()  # the dag-ulw run ends already printed (`dag_block.moment`)
+        self.dag_end_due: dict[str, str] = {}  # run -> its end's title, printed when the turn ends (`_dag_moment`)
+        self.read_dag_graph = dag_block.read_graph
         self.composer = Composer()
         # Hermes' own input history: read once here, and every line the person sends appended (`history.py`).
         self.history_file = history_path(environ)
@@ -2009,6 +2013,8 @@ class App(ModesMixin, AgentViewMixin):
                 self.tail_misses.pop(as_text(payload.get("subagent_id")), None)
         else:
             self.transcript.apply(event)
+            if event.type == "tool.complete" and isinstance(payload, Mapping):
+                self._dag_moment(payload)
             if event.type == "message.start":
                 if not self.turn_pending:  # a turn this TUI did not start (a resumed one, a server queue)
                     self.busy_since = self.clock()
@@ -2018,11 +2024,40 @@ class App(ModesMixin, AgentViewMixin):
             elif event.type == "message.complete":
                 self.turn_pending = False
                 self._take_usage(payload.get("usage"))
+                self._dag_ends_due()
                 self._retire_finished_plan()  # above the done line: the turn that finished the plan ends here
                 seconds = self.clock() - self.busy_since
                 self.transcript.add_turn_summary(seconds, self._turn_tokens(), self._turn_wait())
                 self._alert_turn_end(seconds)
                 self._turn_ended()
+
+    def _dag_moment(self, payload: Mapping[str, Any]) -> None:
+        """An `omh_dag` call that defined, repaired, extended or ended a run prints the run's graph (`dag_block`)."""
+        found = dag_block.moment(payload, self.dag_ends)
+        if found is None:
+            return
+        title, run, _added = found
+        if title.startswith(dag_block.END):
+            # The end waits for the turn's end: a goal check that extends the run in the same turn moves it on, and
+            # the extend's block shows that instead of an end the person never saw happen.
+            self.dag_end_due[run] = title
+            return
+        self.dag_end_due.pop(run, None)
+        graph = self._read_dag_graph()
+        if graph is not None:
+            self.transcript.add_aside(dag_block.DagBlock(title, graph))
+
+    def _dag_ends_due(self) -> None:
+        """The run ends this turn reached, each printed once if its run is still over as the turn ends."""
+        due, self.dag_end_due = self.dag_end_due, {}
+        for title in due.values():
+            graph = self._read_dag_graph()
+            if graph is not None and not graph.get("dag_open"):
+                self.transcript.add_aside(dag_block.DagBlock(title, graph))
+
+    def _read_dag_graph(self) -> Mapping[str, Any] | None:
+        return self.read_dag_graph(self.environ.get("OMH_HOME") or None, self.environ.get("HERMES_HOME") or None,
+                                   self.stored_id)
 
     def _alert_question(self, slot: PromptSlot) -> None:
         """Once per request, as its slot opens (the wait is on the person), however many questions a clarify carries:

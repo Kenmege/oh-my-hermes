@@ -88,6 +88,9 @@ OMH_SKILL_DISPLAY_NAME_OVERRIDES = {
     "media-input-operator": "omh-media-input",
     "voice-operator": "omh-voice-input",
     "img-summary": "omh-image-cards",
+    # The owner's own name for the graph run: people type `dag ulw` and `/dag-ulw`, and Hermes slugs the
+    # rendered `name` into the slash command, so the label is the canonical name itself.
+    "dag-ulw": "dag-ulw",
 }
 
 ULW_SKILL_NAME_PREFIX = "ulw-"
@@ -107,6 +110,7 @@ ULW_SKILL_NAME_PREFIX = "ulw-"
 ULW_ENGINE_SKILL_NAMES = frozenset(
     {
         "context",
+        "dag-ulw",
         "deep-interview",
         "loop",
         "maestro",

@@ -553,6 +553,15 @@ _SURFACE_EXPOSURES = (
         lifecycle_stage="canonical",
     ),
     SurfaceExposure(
+        "dag-ulw",
+        "direct_skill",
+        _DEFAULT_SURFACE_PROJECTIONS,
+        True,
+        "primary_workflow_skill",
+        _DEFAULT_SURFACE_PREFERRED_USAGE,
+        lifecycle_stage="canonical",
+    ),
+    SurfaceExposure(
         "maestro",
         "direct_skill",
         _DEFAULT_SURFACE_PROJECTIONS,
@@ -838,6 +847,7 @@ _ULW_ENGINE_ORDER = (
     "research",
     "ralplan",
     "ultrawork",
+    "dag-ulw",
     "maestro",
     "ralph",
     "team",
@@ -933,6 +943,16 @@ _ULW_ENGINE_PRESENTATIONS: dict[str, UlwEnginePresentation] = {
         "site_title": "Ultrawork",
         "site_body": "Splits an accepted plan into disjoint lanes.",
         "site_cues": ("ultrawork", "parallel work"),
+    },
+    "dag-ulw": {
+        "summary": (
+            "Runs a big job as a graph of small parallel nodes, verifies the goal with a separate node, and "
+            "repairs what failed."
+        ),
+        "site_tag": "Graph run",
+        "site_title": "DAG ULW",
+        "site_body": "Plans a graph of small nodes, runs them in parallel, verifies and repairs.",
+        "site_cues": ("dag ulw", "/dag-ulw"),
     },
     "maestro": {
         "summary": (

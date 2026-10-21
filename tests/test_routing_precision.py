@@ -23,7 +23,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # omh-docs contributes four measured negatives and five measured interventions.
         # The Indonesian trigger pack adds six negatives and eleven interventions.
         # The Vietnamese trigger pack adds eight negatives and eleven interventions.
-        self.assertEqual(payload["summary"]["case_count"], 846)
+        # dag-ulw adds twenty-one negatives and twenty-nine interventions.
+        self.assertEqual(payload["summary"]["case_count"], 867)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -43,12 +44,14 @@ class RoutingPrecisionTests(unittest.TestCase):
         # to an alert and reprice a price list (+2).
         # The plural-possessive masker fix adds a quoted workflow name after
         # "the users'", answered directly as a reference (+1).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 216)
-        self.assertEqual(payload["summary"]["file_lookup_count"], 9)
+        # Four questions about dag-ulw are answered directly (+4), and so are
+        # eleven stop, cancel or status words for its run in progress (+11).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 234)
+        self.assertEqual(payload["summary"]["file_lookup_count"], 10)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
         self.assertEqual(payload["summary"]["catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["intervention_case_count"], 892)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 921)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )
@@ -269,11 +272,14 @@ class RoutingPrecisionTests(unittest.TestCase):
         self.assertEqual(interventions["loopable-project"]["observed"]["route_workflow"], "loop")
         self.assertEqual(interventions["one-cycle-delivery"]["observed"]["route_workflow"], "ultrawork")
         # Re-pinned by the dispatch-evidence gate: `parallel`, `integrate`, and
-        # `then` lead by 1, so the route asks with ultrawork as its candidate.
+        # `then` lead by 1, so the route asked with ultrawork as its candidate.
+        # Re-pinned again with dag-ulw (2026-10-21): the score is still weak,
+        # but "parallel, then integrate" is the request's own phrase for parts
+        # joined afterwards, so it dispatches dag-ulw.
         self.assertTrue(interventions["dependency-topology-parallel-then-integrate"]["passed"])
         self.assertEqual(
-            interventions["dependency-topology-parallel-then-integrate"]["expected"]["candidate"],
-            "ultrawork",
+            interventions["dependency-topology-parallel-then-integrate"]["observed"]["route_workflow"],
+            "dag-ulw",
         )
         self.assertEqual(
             interventions["owner-learning-ulw-delivery"]["observed"]["next_action"],

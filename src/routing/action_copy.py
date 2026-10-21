@@ -53,6 +53,7 @@ NEXT_ACTION_LABELS: dict[str, str] = {
     "prepare_executor_runtime_readiness": "checking coding-agent readiness",
     "prepare_failure_signal_audit": "preparing a failure signal audit",
     "prepare_finance_analysis": "preparing a finance analysis",
+    "start_dag_run": "planning and running the work as a graph",
     "prepare_people_ops_brief": "preparing a people-operations brief",
     "prepare_llm_app_build": "preparing the LLM app build handoff",
     "prepare_learning_brief": "confirming the learning target and preparing the learning brief",

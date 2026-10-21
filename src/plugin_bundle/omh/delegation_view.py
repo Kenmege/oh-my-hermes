@@ -51,6 +51,7 @@ from functools import lru_cache
 from typing import Any, Final
 import unicodedata
 
+from .dag_core import layer_of
 from .hud_text import elapsed_text
 
 VIEW_LAYOUTS: Final = ("box", "tree", "header")
@@ -58,6 +59,8 @@ NODE_STATES: Final = (
     "root", "waiting", "dispatched", "running", "stuck", "done", "failed", "interrupted", "unknown",
 )
 UNKNOWN_FIELD: Final = "?"
+# The edges the tree draws as nesting: a child under its dispatcher, an added dag node under where it came from.
+NESTING_KINDS: Final = frozenset({"dispatch", "repair", "extend"})
 ELAPSED_LIMIT: Final = 10**9  # seconds, about 31 years: a figure past it (or not finite) is not drawn
 DURATION_CELLS: Final = 7  # a duration's width when a box is measured: `59m 59s`, the widest under 100 hours
 DECISION_LIMIT: Final = 64
@@ -409,23 +412,11 @@ class Focus:
 
 
 def _layers(ids: list[str], edges: list[tuple[str, str]]) -> dict[str, int] | None:
-    incoming = {node_id: 0 for node_id in ids}
-    successors: dict[str, list[str]] = {node_id: [] for node_id in ids}
+    parents: dict[str, list[str]] = {}
     for upper, lower in edges:
-        incoming[lower] += 1
-        successors[upper].append(lower)
-    layer = {node_id: 0 for node_id in ids}
-    ready = [node_id for node_id in ids if incoming[node_id] == 0]
-    visited = 0
-    while ready:
-        current = ready.pop(0)
-        visited += 1
-        for lower in successors[current]:
-            layer[lower] = max(layer[lower], layer[current] + 1)
-            incoming[lower] -= 1
-            if incoming[lower] == 0:
-                ready.append(lower)
-    return layer if visited == len(ids) else None
+        parents.setdefault(lower, []).append(upper)
+    layer, cyclic = layer_of(ids, parents)
+    return None if cyclic else {node_id: layer[node_id] for node_id in ids}
 
 
 @dataclass(frozen=True)
@@ -851,12 +842,12 @@ def _tree_structure(graph: Mapping[str, Any]) -> tuple[
     nested: dict[str, list[str]] = {}
     parent_of: dict[str, str] = {}
     for edge in raw_edges:
-        if not isinstance(edge, Mapping) or edge.get("kind") != "dispatch":
+        if not isinstance(edge, Mapping) or edge.get("kind") not in NESTING_KINDS:
             continue
         upper, lower = edge.get("from"), edge.get("to")
         if upper in by_id and lower in by_id and upper != root_id and lower not in parent_of and upper != lower:
             parent_of[str(lower)] = str(upper)
-    # A dispatch parent chain that loops is not drawn as nesting.
+    # A parent chain that loops is not drawn as nesting.
     for lower in list(parent_of):
         seen, current = {lower}, parent_of.get(lower)
         while current is not None:
@@ -909,8 +900,16 @@ def _tree_lines(
     model_width = min(TREE_MODEL_MAX, max([cells(model) for _category, model in fields.values()] or [1]))
     deepest = max([_depth(n, nested) for n in shown] or [0])
     base = (cells(charset.tee) if labelled else 0) + cells(charset.tee)
-    # Where the title column ends, the same for every depth, so the columns after it line up.
-    title_end = base + cells(charset.bar) * deepest + 2 + title_width
+    # Where the title column ends, the same for every depth, so the columns after it line up. Dispatch nesting widens
+    # it; a repair or extend row nested deeper pays its indent from its own title, down to 8 cells, so that nesting
+    # never takes a status's room on the rows beside it.
+    raw_edges = graph.get("edges") if isinstance(graph.get("edges"), list) else []
+    dispatched = {(str(edge.get("from")), str(edge.get("to"))) for edge in raw_edges
+                  if isinstance(edge, Mapping) and edge.get("kind") == "dispatch"}
+    by_dispatch = {upper: [kid for kid in kids if (upper, kid) in dispatched] for upper, kids in nested.items()}
+    dispatch_deepest = max([_depth(n, by_dispatch) for n in shown] or [0])
+    title_end = max(base + cells(charset.bar) * dispatch_deepest + 2 + title_width,
+                    base + cells(charset.bar) * deepest + 2 + 8)
     room_after = width - title_end - category_width - model_width - 6
     if room_after < 12:
         title_end -= 12 - room_after
@@ -929,6 +928,9 @@ def _tree_lines(
         from_title = min(extra - paid - from_model, max(0, title_end - title_floor))
         title_end -= from_title
         category_width += paid + from_model + from_title
+    # Room the widest status does not need goes back to the nested repair and extend titles, up to their full width.
+    spare = width - title_end - category_width - model_width - 6 - max([12, *(_status_cells(by_id[n]) for n in shown)])
+    title_end += max(0, min(spare, base + cells(charset.bar) * deepest + 2 + title_width - title_end))
     step, offset = len(charset.bar), 1 if labelled else 0
     deepest_shown = max(2, (width - TREE_LEAD_ROOM) // step)
 

@@ -21,7 +21,10 @@ writes what they say, metadata only, into one record per conversation
 
 No goal, summary, prompt or tool history is written. A title is drawn from
 Hermes' records when the graph is read, or, within this process, from the
-goal `subagent_start` carried, held in memory only (`child_title`).
+goal `subagent_start` carried, held in memory only (`child_title`). A goal
+that opens with the ``[dag:<run>/<node>]`` marker `omh_dag` hands out binds
+the child to that node: the two ids are kept (`dag_binding`), the goal is not,
+and `subagent_stop` reaches the node through the child session id.
 
 Every entry point here is an observer: it never blocks or changes a call and
 never raises into the host. A failed write leaves the graph with less in it,
@@ -65,6 +68,7 @@ TITLE_CACHE_LIMIT: Final = 512
 DURATION_MS_LIMIT: Final = 10**12  # about 31 years: a duration past it is not a duration
 ROOT_CACHE_LIMIT: Final = 1024
 CLOSED_LIMIT: Final = 256  # lane keys a chat end post closed: ledger children and team parts alike
+SEEN_LIMIT: Final = 256  # lane keys a chat post already showed, so a dag run names the nodes it added once
 PRUNE_INTERVAL_SECONDS: Final = 3600.0  # how often one process looks for records that aged out
 PRUNE_LOCK_SECONDS: Final = 0.1
 LEDGER_CLAIM_BOUNDARY: Final = (
@@ -78,6 +82,9 @@ POST_MOMENTS: Final = ("start", "count", "end")
 RUN_PHASES: Final = ("open", "closed")
 
 _TEAM_MARKER: Final = re.compile(r"^\[omh-team:[^\]]{1,200}\]\s*")
+# The marker `omh_dag` puts first in a node's goal (`dag_run.MARKER`): ids OMH minted, matched whole or not at all.
+_DAG_MARKER: Final = re.compile(r"^\[dag:([a-z0-9][a-z0-9-]{0,31})/([a-z0-9][a-z0-9-]{0,31})\]")
+_DAG_MARKER_TEXT: Final = re.compile(r"^\[dag:[a-z0-9][a-z0-9-]{0,31}/[a-z0-9][a-z0-9-]{0,31}\]\s*")
 _TASK_LABEL: Final = re.compile(r"^(?:TASK|Task)\s*:\s*")
 _roots: OrderedDict[str, str] = OrderedDict()
 _titles: OrderedDict[str, str] = OrderedDict()
@@ -102,14 +109,25 @@ def ledger_path(omh_home: Path, session_id: str) -> Path:
 
 
 def title_from_goal(goal: object) -> str:
-    """A child's title from its goal: the first line, without the team marker or a leading ``TASK:`` label."""
+    """A child's title from its goal: the first line, without a team or dag marker or a leading ``TASK:`` label."""
     if not isinstance(goal, str):
         return ""
     for line in goal.splitlines():
-        text = _TASK_LABEL.sub("", _TEAM_MARKER.sub("", line.strip())).strip()
+        text = _TASK_LABEL.sub("", _DAG_MARKER_TEXT.sub("", _TEAM_MARKER.sub("", line.strip()))).strip()
         if text:
             return " ".join(text.split())[:TITLE_LIMIT]
     return ""
+
+
+def without_dag_marker(goal: str) -> str:
+    """``goal`` without the leading ``[dag:<run>/<node>]`` marker: the marker binds the child, a person reads the rest."""
+    return _DAG_MARKER_TEXT.sub("", goal, count=1)
+
+
+def dag_binding(goal: object) -> dict[str, str]:
+    """The dag run and node a child's goal names in its leading marker, or {}: two ids, never goal text."""
+    match = _DAG_MARKER.match(goal) if isinstance(goal, str) else None
+    return {"run": match.group(1), "node": match.group(2)} if match else {}
 
 
 def child_title(subagent_id: str) -> str:
@@ -242,6 +260,9 @@ def _valid_child(value: object) -> dict[str, Any] | None:
     for key in ("call_id", "delegation_id"):
         if _text(value.get(key)):
             entry[key] = _text(value.get(key))
+    dag = value.get("dag")
+    if isinstance(dag, dict) and dag_binding(f"[dag:{dag.get('run')}/{dag.get('node')}]"):
+        entry["dag"] = {"run": str(dag["run"]), "node": str(dag["node"])}
     index = value.get("task_index")
     if isinstance(index, int) and not isinstance(index, bool) and 0 <= index < 1024:
         entry["task_index"] = index
@@ -306,7 +327,7 @@ def parse_ledger(raw: object) -> dict[str, Any] | None:
     ][-LEDGER_STOP_LIMIT:]
     posted = raw.get("posted")
     if isinstance(posted, dict) and isinstance(posted.get("fingerprint"), str):
-        closed = posted.get("closed")
+        closed, seen = posted.get("closed"), posted.get("seen")
         record["posted"] = {
             "fingerprint": posted["fingerprint"][:64],
             "observed_at": _number(posted.get("observed_at")),
@@ -315,6 +336,9 @@ def parse_ledger(raw: object) -> dict[str, Any] | None:
             "counts": _text(posted.get("counts"), 64),
             "closed": [_text(item, 16) for item in (closed if isinstance(closed, list) else []) if _text(item, 16)][
                 -CLOSED_LIMIT:
+            ],
+            "seen": [_text(item, 16) for item in (seen if isinstance(seen, list) else []) if _text(item, 16)][
+                -SEEN_LIMIT:
             ],
         }
     skipped = raw.get("skipped")
@@ -475,6 +499,9 @@ def observe_subagent_start(kwargs: dict[str, object], *, now: float | None = Non
         "started_at": moment,
         "route": _route_now(omh_home, parent, moment),
     }
+    binding = dag_binding(kwargs.get("child_goal"))
+    if binding:
+        entry["dag"] = binding
 
     def add(record: dict[str, Any]) -> bool:
         if any(item["subagent_id"] == subagent_id for item in record["children"]):
@@ -598,7 +625,7 @@ def posted_fingerprint(omh_home: Path, session_id: str) -> str:
 
 
 def posted_record(omh_home: Path, session_id: str) -> dict[str, Any]:
-    """What the last chat post recorded (fingerprint, moment, run phase, counts, closed lanes), or {}."""
+    """What the last chat post recorded (fingerprint, moment, run phase, counts, closed and seen lanes), or {}."""
     record = read_ledger(omh_home, session_id)
     return dict(record["posted"]) if record else {}
 
@@ -612,12 +639,14 @@ def note_posted(
     phase: str = "",
     counts: str = "",
     closed: Sequence[str] = (),
+    seen: Sequence[str] = (),
     now: float | None = None,
 ) -> bool:
     """Record what a reply just carried, so the same graph, or the same counts in a run, is not posted again.
 
     ``closed`` holds the keys of the lanes whose run an end post closed; a
-    later run is made of the lanes not in it.
+    later run is made of the lanes not in it. ``seen`` holds the keys of the
+    lanes a post has shown, so a node added mid-run is named once.
     """
     moment = time.time() if now is None else now
 
@@ -629,6 +658,7 @@ def note_posted(
             "phase": phase if phase in RUN_PHASES else "",
             "counts": _text(counts, 64),
             "closed": [_text(item, 16) for item in closed if _text(item, 16)][-CLOSED_LIMIT:],
+            "seen": [_text(item, 16) for item in seen if _text(item, 16)][-SEEN_LIMIT:],
         }
         record["skipped"] = {}
         return True

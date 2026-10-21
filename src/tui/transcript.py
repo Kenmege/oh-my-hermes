@@ -77,10 +77,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+import re
 import time
 from typing import Any
 
 from ..plugin_bundle.omh.hud_text import elapsed_text
+from .dag_block import DagBlock, rows as dag_rows
 from .diff_view import DIFF_FILE, FILE_ARROW, DiffLine, diff_rows, parse_inline_diff
 from .gateway import Event
 from . import gateway_contract as contract
@@ -273,7 +275,10 @@ class ToolGroup:
     done: bool = False
 
 
-Block = UserBlock | AssistantBlock | ThinkingBlock | ToolGroup | NoticeBlock | CommandBlock | TurnSummaryBlock | SteerBlock
+Block = (
+    UserBlock | AssistantBlock | ThinkingBlock | ToolGroup | NoticeBlock | CommandBlock | TurnSummaryBlock | SteerBlock
+    | DagBlock
+)
 
 
 # ── payload reading ───────────────────────────────────────────────────────
@@ -375,9 +380,17 @@ def _result_summary(payload: dict[str, Any]) -> str:
 # separator is the one the transcript puts between its own fields (`✻ 30s · 1 tool`).
 BRIDGE_TOOLS = frozenset({"tool_call", "tool_search", "tool_describe"})
 LABEL_SEPARATOR = " · "
+# A dag-ulw node's goal opens with the marker that binds its child (`delegation_ledger`); Hermes' preview of a
+# `delegate_task` call joins the goals (`2 tasks: [dag:export/ui] Export button | ...`), and a person reads the label.
+_DAG_MARKERS = re.compile(r"\[dag:[a-z0-9][a-z0-9-]{0,31}/[a-z0-9][a-z0-9-]{0,31}\]\s*")
 
 
 def _args_summary(payload: dict[str, Any]) -> str:
+    summary = _call_summary(payload)
+    return _DAG_MARKERS.sub("", summary) if as_text(payload.get("name")) == "delegate_task" else summary
+
+
+def _call_summary(payload: dict[str, Any]) -> str:
     context = _first_line(as_text(payload.get("context")))
     if context and as_text(payload.get("name")) in BRIDGE_TOOLS:
         return context.replace(LABEL_SEPARATOR, ": ", 1)  # the transcript's own field separator: `· 1 tool` is a count
@@ -832,6 +845,8 @@ def block_rows(
         return _assistant_rows(block, width, theme)
     if isinstance(block, ThinkingBlock):
         return _thinking_rows(block, width, theme, expanded, max_rows)
+    if isinstance(block, DagBlock):
+        return dag_rows(block, width, theme)
     return _tool_rows(block, width, theme, expanded, now)
 
 

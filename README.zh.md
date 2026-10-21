@@ -391,7 +391,7 @@ Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appr
   <img src="assets/omh-character-badge.png" alt="Oh My Hermes character mark" width="170">
 </p>
 
-九个 `ulw-` workflow。说出触发词，其余交给 Hermes —— 完整目录见
+十个 `ulw-` workflow。说出触发词，其余交给 Hermes —— 完整目录见
 [Workflow Reference](docs/WORKFLOWS.md)。
 
 | Skill | 做什么 |
@@ -401,6 +401,7 @@ Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appr
 | ⚡ `ulw-research` | 翻真实代码和网页做调研，留下出处，可疑就核实。 |
 | ⚡ `ulw-plan` | 做一份评审过的计划：比过方案、点明风险、定好完成标准。 |
 | ⚡ `ulw-work` | 把已确认的计划放进互不碰同一文件的并行车道执行。 |
+| ⚡ `dag-ulw` | 把大型工作当作由小的并行节点组成的图来运行，用单独的节点验证目标，并修复失败的部分。 |
 | ⚡ `ulw-maestro` | 在 Claude Code 或 Codex 上运行委派的任务 —— 提示词由该 CLI 自身安装的技能组装而成，实时启动，附带仪表行和可操控的会话。 |
 | ⚡ `ulw-loop` | 计划 → 实现 → 评审，循环到目标真正通过。 |
 | ⚡ `ulw-qa` | 故意用狠场景攻击，坏哪修哪。 |

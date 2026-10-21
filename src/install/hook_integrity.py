@@ -203,8 +203,10 @@ HOOK_REVIEWS: dict[str, dict[str, Any]] = {
             "spawned it, binding an omh_team helper whose goal carries a "
             "reserved attempt key to that attempt in the team record, and "
             "adding the child to the conversation's delegation ledger (ids, "
-            "role, turn, time and the route OMH had recorded; its goal only as a "
-            "title held in process memory, never written); never blocks a spawn"
+            "role, turn, time and the route OMH had recorded, and the dag run "
+            "and node ids a leading [dag:<run>/<node>] goal marker names; its "
+            "goal only as a title held in process memory, never written); never "
+            "blocks a spawn"
         ),
     },
     "subagent_stop": {

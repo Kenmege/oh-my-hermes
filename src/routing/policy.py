@@ -30,6 +30,7 @@ from .reference_regions import executable_routing_text
 from .jev_addressing import jev_addressed_skill
 from .localization import normalized_phrase, phrase_is_spoken, routing_terms, routing_tokens
 from .materials_cues import OFFICE_FILE_MATERIAL_PHRASES
+from ..plugin_bundle.omh.dag_ulw_cues import DAG_ULW, asks_about_dag_ulw, dag_ulw_control, declines_dag_ulw, invokes_dag_ulw
 from ..plugin_bundle.omh.request_lead import after_courtesy
 from ..plugin_bundle.omh.spend_signals import (
     SPEND_EVERYDAY_SENSE_ANCHORS,
@@ -6147,6 +6148,14 @@ def explicit_skill_invocation(message: str, names: set[str], query: RoutingQuery
 def _ordinary_explicit_skill_invocation(
     stripped: str, names: set[str], query: RoutingQuery | None = None
 ) -> str | None:
+    # A two-word name read before any one-word form, so `ulw dag ...` is not taken for `ulw` alone. A question
+    # about dag-ulw ("dag-ulw 결과 알려줘") names it without invoking it, unless a sigil makes it a command.
+    if DAG_ULW in names and dag_ulw_control(stripped):
+        return None  # stop or status for the run in progress, sigil or not: never a new run
+    if DAG_ULW in names and invokes_dag_ulw(stripped):
+        return DAG_ULW
+    if DAG_ULW in names and asks_about_dag_ulw(stripped) and not stripped.startswith(("$", "/", "./")):
+        return None
     words = [word.strip(":,").lower() for word in stripped.split()]
     if len(words) >= 3 and words[0] == "use" and words[1] in {
         "omh",
@@ -6366,6 +6375,8 @@ def _resolved_skill_name(token: str, names: set[str]) -> str:
 
 def skill_is_negated(message: str, skill: str) -> bool:
     """The message names `skill` only to decline it ("don't use ultraqa")."""
+    if skill == DAG_ULW and declines_dag_ulw(message):
+        return True  # people write its name with a space ("don't use dag ulw")
     return bool(skill) and _explicit_skill_candidate_is_negated(message, skill)
 
 

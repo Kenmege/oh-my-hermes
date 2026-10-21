@@ -12,7 +12,8 @@ ULW table whose row count must match the roster.
 
 These gates read the numeral per locale and compare it to the roster size, so
 the sentence can be reworded freely as long as the number stays true. The row
-gate matches the table-row form (``| ⚡ `ulw-``) rather than a bare ``ulw-``
+gate matches the table-row form (``| ⚡ `ulw-``, and ``| ⚡ `dag-ulw``, the one engine
+whose label is its own name) rather than a bare ``ulw-``
 substring, because prose lines also mention ``ulw-`` and a bare grep would
 encode an off-by-one that turns into a false failure when prose is reworded.
 """
@@ -50,7 +51,7 @@ _CHINESE_NUMERALS = {
     "十五": 15,
 }
 
-_README_TABLE_ROW = re.compile(r"^\| ⚡ `ulw-", re.MULTILINE)
+_README_TABLE_ROW = re.compile(r"^\| ⚡ `(?:ulw-|dag-ulw`)", re.MULTILINE)
 
 _README_COUNT_PATTERNS = {
     "README.md": re.compile(r"\b([A-Z][a-z]+) `ulw-` workflows\."),
