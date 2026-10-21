@@ -32,6 +32,9 @@ from omh.tui.panels import (
     HUD_POLL_MIN_SECONDS,
     HudPoller,
     HudSnapshot,
+    agent_view_count,
+    agent_view_keep,
+    graph_is_dag,
     panel_lines,
     plan_state,
     hud_chips,
@@ -347,7 +350,7 @@ class AgentsBlockTests(unittest.TestCase):
         )
         rows = lines_text(panel_lines(payload, 160, 20, THEME, 0.0))
         # The reader marks OMH-side rows global, so the header carries the one marker.
-        self.assertTrue(rows[0].startswith("[Agents] │ [global] 5 agents · 3 running"), rows[0])
+        self.assertTrue(rows[0].startswith("● main │ [global] 5 agents · 3 running"), rows[0])
         body = "\n".join(rows)
         self.assertIn("category:architect(claude-opus-5-5:high)", body)
         self.assertIn("category:critic(gpt-6.1-sol:xhigh fallback)", body)
@@ -387,12 +390,13 @@ class AgentsBlockTests(unittest.TestCase):
         # Too small for a row and its disclosure: the header's counts say it.
         self.assertEqual(lines_text(panel_lines(payload, 120, 2, THEME, 0.0)), [roomy[0]])
 
-    def test_the_delegation_block_steps_down_before_rows_and_keeps_its_header_past_the_plan_items(self) -> None:
+    def test_the_delegation_block_is_the_tree_and_keeps_its_header_past_the_plan_items(self) -> None:
         plan = hud_payload(phased_plan(3, phases=1, active=1))
         maestro = [agent_row(index, dispatch_lane="maestro", executor_profile="codex") for index in range(3)]
         payload = with_delegation(with_agents(plan, maestro), [{}, {}, {}])
         full = lines_text(panel_lines(payload, 120, 60, THEME, 0.0))
-        self.assertTrue(any("┌" in row for row in full), "with room, the lanes are drawn as boxes")
+        self.assertFalse([row for row in full if "┌" in row], "boxes are /dag's, never the panel's")
+        self.assertEqual([row for row in full if row.startswith(("  ├─", "  └─"))][-1][:16], "  └─ ● Lane 3   ")
         previous_dag = None
         for budget in range(len(full), -1, -1):
             with self.subTest(budget=budget):
@@ -403,13 +407,12 @@ class AgentsBlockTests(unittest.TestCase):
                 dag = rows[top:end] if top is not None else []
                 agents = [row for row in rows if "maestro" in row]
                 items = item_rows(rows)
-                boxes = any("┌" in row for row in dag)
                 if previous_dag is not None:
                     self.assertLessEqual(len(dag), previous_dag, "the block never grows as the budget shrinks")
                 previous_dag = len(dag)
-                if agents and not boxes:
+                if agents:
                     self.assertTrue(any(row.startswith("  ├─") or row.startswith("  └─") for row in dag),
-                                    f"agent rows stay while the block is a full tree: {rows}")
+                                    f"agent rows stay only while the block is a full tree: {rows}")
                 if len(dag) < 4 and dag:
                     self.assertEqual(agents, [], f"agent rows go before the tree shrinks to its last rows: {rows}")
                 if agents:
@@ -425,13 +428,11 @@ class AgentsBlockTests(unittest.TestCase):
         )
         lines = panel_lines(payload, 120, 30, THEME, 0.0)
         rows = lines_text(lines)
-        # The lane's own rows, as boxes or as the tree draw them: its title, then its facts and status.
-        at = next(index for index, row in enumerate(rows) if "Lane 1" in row)
-        own = "\n".join(rows[at:at + 4]).lower()
-        self.assertIn("stuck 6m 40s: same error", own)
-        self.assertNotIn("running", own)
-        glyphs = [span for line in lines[at:at + 4] for span in line if span.text.startswith("!")]
-        self.assertTrue(glyphs and all(span.style == THEME.warn for span in glyphs))
+        stuck = next(index for index, row in enumerate(rows) if "! Lane 1" in row)
+        self.assertIn("stuck 6m 40s: same error", rows[stuck])
+        glyph = next(span for span in lines[stuck] if span.text == "!")
+        self.assertEqual(glyph.style, THEME.warn)
+        self.assertNotIn("running", rows[stuck])
 
     def test_native_lanes_are_drawn_once_and_maestro_rows_stay(self) -> None:
         native = agent_row(0, role="hermes-native")
@@ -461,8 +462,8 @@ class AgentsBlockTests(unittest.TestCase):
         lanes = [{"session_tail": f"worker{index}", "state": state, "status": state}
                  for index, state in enumerate(("running", "failed", "done"))]
         rows = lines_text(panel_lines(with_delegation(with_agents(hud_payload(), natives), lanes), 120, 40, THEME, 0.0))
-        header = next(row for row in rows if row.startswith("[Agents]")).replace("[global] ", "")
-        self.assertTrue(header.startswith("[Agents] │ lanes in the graph below"), header)
+        header = next(row for row in rows if row.startswith("● main │")).replace("[global] ", "")
+        self.assertTrue(header.startswith("● main │ lanes in the graph below"), header)
         for word in ("running", "blocked", "failed", "done", "agent"):
             self.assertNotIn(f" {word}", header.split("•")[0].replace("lanes in the graph below", ""), header)
         # The tree's header counts `1 running · 1 failed · 1 done`; the boxes' status line `Running · Done 1/3`.
@@ -473,24 +474,93 @@ class AgentsBlockTests(unittest.TestCase):
     def test_the_agents_header_counts_only_the_rows_it_still_lists(self) -> None:
         natives = [agent_row(index, role="hermes-native") for index in range(3)]
         payload = with_delegation(with_agents(hud_payload(), natives), [{"session_tail": "worker1"}])
-        header = next(row for row in lines_text(panel_lines(payload, 120, 40, THEME, 0.0)) if row.startswith("[Agents]"))
-        self.assertTrue(header.replace("[global] ", "").startswith("[Agents] │ 2 other agents · 2 running"), header)
+        header = next(row for row in lines_text(panel_lines(payload, 120, 40, THEME, 0.0)) if row.startswith("● main │"))
+        self.assertTrue(header.replace("[global] ", "").startswith("● main │ 2 other agents · 2 running"), header)
         plain = with_agents(hud_payload(), natives)
-        header = next(row for row in lines_text(panel_lines(plain, 120, 40, THEME, 0.0)) if row.startswith("[Agents]"))
-        self.assertTrue(header.replace("[global] ", "").startswith("[Agents] │ 3 agents · 3 running"),
+        header = next(row for row in lines_text(panel_lines(plain, 120, 40, THEME, 0.0)) if row.startswith("● main │"))
+        self.assertTrue(header.replace("[global] ", "").startswith("● main │ 3 agents · 3 running"),
                         "with no graph the header is as it was")
 
     def test_the_delegation_block_is_drawn_while_the_roster_shows_the_agents(self) -> None:
         payload = with_delegation(with_agents(hud_payload(), [agent_row(0)]), [{}, {}])
         rows = lines_text(panel_lines(payload, 120, 40, THEME, 0.0, show_agents=False))
-        self.assertFalse(any(row.startswith("[Agents]") for row in rows))
-        self.assertTrue(any(row.startswith(("  OMH / DAG · 2 tasks", "  DAG · delegation · 3 nodes · 2 edges"))
-                            for row in rows), rows)
+        self.assertFalse(any(row.startswith("● main") for row in rows))
+        self.assertTrue(any(row.startswith("  DAG · delegation · 3 nodes · 2 edges") for row in rows), rows)
 
     def test_the_old_fanout_graph_field_is_no_longer_drawn(self) -> None:
         payload = with_graph(with_agents(hud_payload(), [agent_row(0)]), 3)
         rows = lines_text(panel_lines(payload, 120, 40, THEME, 0.0))
         self.assertFalse(any("DAG ·" in row or "[R]" in row for row in rows), rows)
+
+
+class AgentViewPartTests(unittest.TestCase):
+    """The agents and delegation blocks as the agent view under the info line draws them."""
+
+    def test_running_rows_are_kept_before_done_ones_and_a_cut_of_done_rows_says_so(self) -> None:
+        rows = [agent_row(0, state="done"), agent_row(1), agent_row(2, state="done"), agent_row(3, state="queued"),
+                agent_row(4)]
+        payload = with_agents(hud_payload(), rows)
+        kept = lines_text(panel_lines(payload, 120, 4, THEME, 0.0, show_plan=False))
+        self.assertEqual([row.split()[2] for row in kept[1:3]], ["worker1", "worker4"], kept)
+        self.assertEqual(kept[3], "  +3 more")
+        three = lines_text(panel_lines(payload, 120, 5, THEME, 0.0, show_plan=False))
+        self.assertEqual([row.split()[2] for row in three[1:4]], ["worker1", "worker3", "worker4"], "in their order")
+        self.assertEqual(three[4], "  +2 done")
+        hidden = lines_text(panel_lines(with_agents(hud_payload(), rows, hidden=1), 120, 5, THEME, 0.0,
+                                        show_plan=False))
+        self.assertEqual(hidden[4], "  +3 more", "a row the reader did not list may be anything")
+
+    def test_the_inset_shifts_the_agents_block_and_the_tree_keeps_its_own(self) -> None:
+        payload = with_delegation(with_agents(hud_payload(), [agent_row(0, dispatch_lane="maestro")]), [{}])
+        flush = lines_text(panel_lines(payload, 80, 20, THEME, 0.0, show_plan=False))
+        inset = lines_text(panel_lines(payload, 80, 20, THEME, 0.0, show_plan=False, agents_inset=2))
+        self.assertTrue(inset[0].startswith("  ● main │ "), inset)
+        self.assertTrue(inset[1].startswith("  ⠋ "), inset)
+        self.assertEqual([row for row in inset if row.startswith("  DAG ·")], [row for row in flush
+                                                                             if row.startswith("  DAG ·")])
+        self.assertTrue(all(line_width(line) <= 80 for line in panel_lines(payload, 80, 20, THEME, 0.0,
+                                                                            show_plan=False, agents_inset=2)))
+
+    def test_with_no_row_of_its_own_the_agents_block_draws_no_header_over_the_tree(self) -> None:
+        rows = lines_text(panel_lines(with_delegation(hud_payload(), [{}, {}]), 100, 20, THEME, 0.0))
+        self.assertTrue(rows[0].startswith("  DAG · delegation"), rows)
+        self.assertFalse([row for row in rows if row.startswith("● main")])
+
+    def test_a_dag_run_is_a_depends_on_edge_or_a_lane_dispatching_a_lane(self) -> None:
+        flat = with_delegation(hud_payload(), [{}, {}])
+        self.assertFalse(graph_is_dag(flat))
+        depends = with_delegation(hud_payload(), [{}, {}], edges=[
+            {"from": "root", "to": "n1", "kind": "dispatch"}, {"from": "n1", "to": "n2", "kind": "depends_on"}])
+        self.assertTrue(graph_is_dag(depends))
+        nested = with_delegation(hud_payload(), [{}, {}], edges=[
+            {"from": "root", "to": "n1", "kind": "dispatch"}, {"from": "n1", "to": "n2", "kind": "dispatch"}])
+        self.assertTrue(graph_is_dag(nested))
+        for payload in (hud_payload(), None, {"error": "x"}, {"delegation_graph": {"status": "inactive"}}):
+            self.assertFalse(graph_is_dag(payload))
+
+    def test_a_settled_lane_is_what_the_graph_builder_calls_settled(self) -> None:
+        from omh.plugin_bundle.omh.delegation_graph import SETTLED_STATES
+        from omh.tui.panels import SETTLED_NODE_STATES
+
+        self.assertEqual(SETTLED_NODE_STATES, SETTLED_STATES)
+
+    def test_keep_is_the_rows_every_running_agent_needs_and_count_is_every_agent(self) -> None:
+        rows = [agent_row(0), agent_row(1, state="done"), agent_row(2)]
+        payload = with_agents(hud_payload(), rows, hidden=2)
+        self.assertEqual(agent_view_keep(payload, 100), 1 + 2 + 1)  # header, two running, the `+N` row
+        self.assertEqual(agent_view_count(payload), 5)
+        self.assertEqual(agent_view_keep(with_agents(hud_payload(), [agent_row(1, state="done")]), 100), 0)
+        twelve = with_delegation(hud_payload(), [{} for _ in range(12)])
+        keep = agent_view_keep(twelve, 100)
+        self.assertEqual(keep, 2 + 12, "the tree's header, main and the twelve running lanes")
+        tree = lines_text(panel_lines(twelve, 100, keep, THEME, 0.0))
+        self.assertFalse([row for row in tree if "more nodes" in row])
+        self.assertTrue([row for row in lines_text(panel_lines(twelve, 100, keep - 1, THEME, 0.0)) if "more nodes" in row])
+        self.assertEqual(agent_view_count(twelve), 12)
+        self.assertEqual(agent_view_count(twelve, show_graph=False), 0)
+        settled = with_delegation(hud_payload(), [{"state": "done", "status": "done"}] * 3)
+        self.assertEqual(agent_view_keep(settled, 100), 0)
+        self.assertEqual((agent_view_keep({"error": "x"}, 100), agent_view_count(None)), (0, 0))
 
 
 class BudgetInvariantTests(unittest.TestCase):
@@ -786,7 +856,7 @@ class PanelRowsTests(unittest.TestCase):
                 plan_at = next(index for index, row in enumerate(mine) if row.startswith("[Plan]"))
                 # The widget's dock-top ended with the composer rule, and its
                 # dock-bottom opened with a rule and the branded header, which
-                # the TUI's info line and `[Agents]` header replace; the
+                # the TUI's info line and `● main │` header replace; the
                 # recording leaves those out. The widget also ended a moving
                 # plan's header with a walking ellipsis (` .` at this frame),
                 # which read as a stray dot (audit D7); the TUI draws none, so it

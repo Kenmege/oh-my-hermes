@@ -459,7 +459,7 @@ class HudTests(unittest.TestCase):
 
         def header(payload: dict) -> str:
             lines = ["".join(span.text for span in line) for line in panel_lines(payload, 120, 60, THEME, 0.0)]
-            return next(line for line in lines if line.startswith("[Agents]"))
+            return next(line for line in lines if line.startswith("● main │"))
 
         for in_ledger, expected_hidden_in_graph, expected in ((20, 12, "lanes in the graph below"),
                                                               (12, 4, "8 other agents")):
@@ -478,7 +478,7 @@ class HudTests(unittest.TestCase):
                 agents = payload["subagents"]
                 self.assertEqual((len(agents["rows"]), agents["hidden_rows"]), (8, 12))
                 self.assertEqual(agents["hidden_in_graph"], expected_hidden_in_graph)
-                self.assertTrue(header(payload).replace("[global] ", "").startswith(f"[Agents] │ {expected}"),
+                self.assertTrue(header(payload).replace("[global] ", "").startswith(f"● main │ {expected}"),
                                 header(payload))
 
     def test_the_model_facing_and_hot_path_readers_leave_the_graph_unread(self) -> None:

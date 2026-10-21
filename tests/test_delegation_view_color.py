@@ -23,7 +23,7 @@ from _local_package import load_local_package
 load_local_package()
 
 from _cli_harness import run_cli  # noqa: E402
-from _delegation_graphs import export_repair_run, export_run, nested, owner_mock, parallel  # noqa: E402
+from _delegation_graphs import dag_export_repair_run, dag_export_run, nested, owner_mock, parallel  # noqa: E402
 from _delegation_state import PARENT, dispatched, homes, route, start  # noqa: E402
 from _tui_lines import line_text  # noqa: E402
 from omh.cli import main  # noqa: E402
@@ -69,9 +69,9 @@ STATES = ("root", "waiting", "dispatched", "running", "stuck", "done", "failed",
 def drawings():
     """(name, view) for every shape: boxes in every state and selected, a wrapped frontier, the tree, ASCII,
     three-line boxes."""
-    yield "export", render_delegation_view(export_run(), width=100)
-    yield "export-dag", render_delegation_view(export_run(), width=100, focus=Focus(node="d:r1:verify"))
-    yield "repair", render_delegation_view(export_repair_run(), width=80)
+    yield "export", render_delegation_view(dag_export_run(), width=100)
+    yield "export-dag", render_delegation_view(dag_export_run(), width=100, focus=Focus(node="d:r1:verify"))
+    yield "repair", render_delegation_view(dag_export_repair_run(), width=80)
     yield "mock", render_delegation_view(owner_mock(), width=73)
     yield "nested", render_delegation_view(nested(), width=120)
     yield "six", render_delegation_view(parallel(6), width=80)
@@ -242,7 +242,7 @@ class GradientTests(unittest.TestCase):
                 self.assertEqual(tuple(dag_style(f"node:{state}", theme, depth=depth).sgr()
                                        for depth in (TRUECOLOR, COLOR_256, COLOR_16, NO_COLOR)), sequences)
         # At 16 colours selected and running both reach bright blue: the `>` before the title still says which.
-        selected = render_delegation_view(export_run(), width=100, focus=Focus(node="d:r1:button"))
+        selected = render_delegation_view(dag_export_run(), width=100, focus=Focus(node="d:r1:button"))
         self.assertIn("[-] > Export button", selected.text())
 
     def test_no_line_is_ever_dark_on_a_dark_background_or_light_on_a_light_one(self) -> None:
@@ -309,7 +309,7 @@ class PaintTests(unittest.TestCase):
                                        "received_at": None})()
             with self.subTest(environ=environ):
                 self.assertEqual(app.color_depth, expected)
-                spans = graph_spans(app._menu_or_panel_lines(100, 40))
+                spans = graph_spans(app._agent_view(100, 40))  # the agent view under the info line draws it
                 self.assertTrue(any("Refresh HUD docs" in span.text for span in spans))
                 self.assertTrue(all(span.style.depth == expected for span in spans))
 

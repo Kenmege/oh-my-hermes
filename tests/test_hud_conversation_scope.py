@@ -84,7 +84,7 @@ class HudConversationScopeTests(unittest.TestCase):
         self.assertEqual(payload['subagents']['scope'], 'session')
         self.assertEqual(payload['subagents']['active'], 0)
         self.assertFalse(payload['active'])
-        self.assertFalse([line for line in self._panel(payload, 100) if line.startswith('[Agents]')])
+        self.assertFalse([line for line in self._panel(payload, 100) if line.startswith('● main')])
         # Once the first prompt writes the row, the key owns what it delegates.
         with closing(sqlite3.connect(self.hermes / 'state.db')) as db, db:
             db.execute('INSERT INTO sessions VALUES (?, ?, ?, ?)', ('fresh-session', '', '{}', NOW))

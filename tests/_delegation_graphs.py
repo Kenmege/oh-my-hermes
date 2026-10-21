@@ -62,8 +62,30 @@ def nested() -> dict:
     )
 
 
-def export_run() -> dict:
-    """A dag run of five nodes over three frontiers: an API, three nodes on it, a verification of all three.
+def export_run(states: dict[str, str] | None = None, *, staged: bool = False) -> dict:
+    """A dag-ulw style run: Export API, then the button, the docs and the CLI flag on it, then a verification on all
+    three. `staged` puts each layer in its own group (`stage N`, as a team record does), which the tree draws as a
+    row of its own: ten rows then, seven without."""
+    states = {"api": "done", "ui": "running", "docs": "waiting", "cli": "waiting", "verify": "waiting", **(states or {})}
+    stage = (lambda number: f"stage {number}") if staged else (lambda number: "")
+    nodes = [
+        root(),
+        lane("api", "Export API", "quick", "glm-5.3-flash", "low", states["api"], elapsed=12, order=1, group=stage(1)),
+        lane("ui", "Export button", "quick", "glm-5.3", "low", states["ui"], elapsed=9, order=2, group=stage(2)),
+        lane("docs", "Export docs", "writing", "claude-opus-5-5", "medium", states["docs"], order=3, group=stage(2)),
+        lane("cli", "Export CLI flag", "quick", "glm-5.3-flash", "low", states["cli"], order=4, group=stage(2)),
+        lane("verify", "Verify export", "deep", "claude-opus-5-5", "high", states["verify"], order=5, group=stage(3),
+             waits=3),
+    ]
+    edges = [("root", "api", "dispatch"), ("api", "ui", "depends_on"), ("api", "docs", "depends_on"),
+             ("api", "cli", "depends_on"), ("ui", "verify", "depends_on"), ("docs", "verify", "depends_on"),
+             ("cli", "verify", "depends_on")]
+    return graph(nodes, edges, name="export feature")
+
+
+def dag_export_run() -> dict:
+    """A dag run record's graph (`d:<run>:<node>` ids, status words), five nodes over three frontiers: an API,
+    three nodes on it, a verification of all three. The boxes' fixture; `export_run` is the tree's.
 
     One node in each state a box colours differently: accepted, running, handed out, failed and waiting.
     """
@@ -91,9 +113,9 @@ def export_run() -> dict:
     )
 
 
-def export_repair_run() -> dict:
+def dag_export_repair_run() -> dict:
     """The export run later: all five accepted, an extend node that failed, and the repair added for it."""
-    run = export_run()
+    run = dag_export_run()
     for node in run["nodes"][1:]:
         node.update(state="done", status="accepted", elapsed_seconds=node.get("elapsed_seconds") or 9, waits_on=0)
     run["nodes"] += [

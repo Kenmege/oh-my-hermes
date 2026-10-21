@@ -18,8 +18,8 @@ All notable changes will be documented here.
   glyph and word. `/dag` opens the graph full screen and redraws it from the
   HUD's newest read: Tab and Shift+Tab move the highlight, Space folds a box,
   d shows or hides Node details, and nothing is sent anywhere. This replaces
-  the #2179 boxes in `/dag`, `omh hud --graph` and the panel; the tree and the
-  chat posts are unchanged.
+  the #2179 boxes in `/dag` and `omh hud --graph`; the panel under the info
+  line keeps the tree, and the chat posts are unchanged.
 
 - **Vietnamese ships as a trigger language pack.** `src/routing/trigger_packs/vi.json`,
   contributed by @PhucNguyen-Dev (#2182), covers 20 of the 21 skills the `id`

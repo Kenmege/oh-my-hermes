@@ -1,8 +1,8 @@
-"""The agent list Down opens in the composer's place, the log view Enter opens from it, and the tail it reads.
+"""The agent list Down opens on the agent view's rows, the log view Enter opens from it, and the tail it reads.
 
 The in-memory cases drive an `App` over the recording client from
 `test_tui_modes`, with Hermes 6c61c3e27d's recorded subagent frames
-(`test_tui_agent_strip.relay`). A `subagent.tail` answer is handed back in the
+(`test_tui_agent_view.relay`). A `subagent.tail` answer is handed back in the
 shape `tui_gateway/methods_subagents.py` gives it: `subagent_id`, `available`,
 `text`, `truncated`. The clock is the test's, so "at most one call every two
 seconds" is counted, never waited for. One case runs the real loop against
@@ -17,23 +17,23 @@ import unittest
 
 from _tui_gateway_replay import Scenario, recorded_answer, spans
 from _tui_lines import INFO_INSET, lines_text
-from test_tui_agent_strip import STARTS, agent_app, agent_event, relay
+from test_tui_agent_view import STARTS, VIEW, agent_app, agent_event, relay, screen_info_index, view_rows
 from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, Step, startup_answers, info_index
 from test_tui_modes import SID, RecordingClient, answer, composer_index, drawn, make_app, notices, queue, steers, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND
 from omh.tui import gateway_contract as contract
 from omh.tui.agent_view import (
     AGENT_LIST_HINT,
-    AGENT_LIST_ROWS,
     TAIL_ANSWER_SECONDS,
     TAIL_MISSES_BEFORE_STOP,
     TAIL_POLL_SECONDS,
 )
 from omh.tui.app import SLOT_ARM_SECONDS, App
-from omh.tui.layout import choice_cap
+from omh.tui.layout import AGENT_VIEW_ROWS, agent_view_cap
 from omh.tui.frame import BOX_INSET, MODE_NORMAL
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Paste
+from omh.tui.modes import IDLE_HINT
 from omh.tui.pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from omh.tui.session_picker import SessionPicker, SessionRow
 from omh.tui.style import Span
@@ -48,15 +48,12 @@ NO_TAIL = {"subagent_id": FIRST, "available": False, "text": "", "truncated": Fa
 
 
 def under_the_frame(app: App) -> list[str]:
-    """The rows under the composer's box down to the info line, which is the last of them; while the agent list is
-    open, the list's rows, which stand where the composer was, and the info line under them."""
+    """While the agent list is open, its rows (the agent view's, under the info line) and then the info line's left
+    side; with it closed, the info line's left side alone."""
     screen = drawn(app)
-    info = info_index(screen)
-    if app.list_selected is not None:
-        rows = screen[info - len(app.listed) : info + 1]
-    else:
-        rows = screen[max(index for index, line in enumerate(screen) if line.startswith("╰")) + 1 : info + 1]
-    return [*rows[:-1], info_left(rows[-1])]
+    info = screen_info_index(app, screen)
+    rows = screen[info + 1 : info + 1 + len(app.listed)] if app.list_selected is not None else []
+    return [*rows, info_left(screen[info])]
 
 
 def info_left(row: str) -> str:
@@ -100,11 +97,11 @@ def tails(client: RecordingClient) -> list[dict]:
 class ListFocusTests(unittest.TestCase):
     def test_down_on_an_empty_composer_gives_the_list_the_keys_on_the_first_agent(self) -> None:
         app, client = agent_app()
-        self.assertEqual(len(under_the_frame(app)), 1)  # the info line, with the strip
+        self.assertEqual(len(under_the_frame(app)), 1)  # the info line, with the count
         app._on_input(Key(DOWN))
         self.assertEqual(app.list_selected, FIRST)
         rows = under_the_frame(app)
-        expected, ids = app.roster.list_lines(80, DEFAULT_THEME, FIRST, 0, AGENT_LIST_ROWS, 0.0)
+        expected, ids = app.roster.list_lines(80, DEFAULT_THEME, FIRST, 0, AGENT_VIEW_ROWS, 0.0)
         self.assertEqual(ids, (MAIN_ID, FIRST, SECOND))
         self.assertEqual(rows, [text.rstrip() for text in lines_text(expected)] + [AGENT_LIST_HINT])
         self.assertEqual(rows[0], "  ● main")
@@ -197,18 +194,20 @@ class ListFocusTests(unittest.TestCase):
         self.assertEqual([row[:2] for row in rows[:3]], ["  ", "▸ ", "  "])
 
     def test_the_list_shows_main_and_six_agents_and_scrolls_to_keep_the_highlight_in_view(self) -> None:
-        app, _client = agent_app()
-        extra = more_agents(app, 7)  # nine agents with the two recorded ones
+        app, _client = agent_app(rows=30)  # a quarter of 30 rows is past the view's usual seven
+        extra = more_agents(app, 7)  # nine agents with the two recorded ones, all running
+        for number, subagent_id in enumerate(extra):  # finished: they raise no cap
+            agent_event(app, "complete", subagent_id, goal=f"task {number}", status="completed")
         app._on_input(Key(DOWN))
         rows = under_the_frame(app)
-        self.assertEqual(len(rows), AGENT_LIST_ROWS + 1)
+        self.assertEqual(len(rows), AGENT_VIEW_ROWS + 1)
         self.assertEqual((rows[0], rows[-1]), ("  ● main", AGENT_LIST_HINT))
         self.assertIn("task 3", rows[6])
         for _ in range(8):
             app._on_input(Key(DOWN))
         self.assertEqual(app.list_selected, extra[-1])
         rows = under_the_frame(app)
-        self.assertEqual(len(rows), AGENT_LIST_ROWS + 1)
+        self.assertEqual(len(rows), AGENT_VIEW_ROWS + 1)
         self.assertTrue(rows[6].startswith("▸ ") and "task 6" in rows[6], rows[6])
         self.assertIn("task 0", rows[0])  # main and the two recorded agents scrolled off
         for _ in range(9):
@@ -218,41 +217,53 @@ class ListFocusTests(unittest.TestCase):
     def test_a_short_terminal_shows_as_many_rows_as_it_can_spare(self) -> None:
         app, _client = agent_app(rows=10)
         more_agents(app, 7)
+        before = view_rows(app)
         app._on_input(Key(DOWN))
         rows = under_the_frame(app)
-        self.assertEqual(len(rows), choice_cap(10, 80) + 1)  # what a picker gets there, and the info line
+        self.assertEqual(len(rows), agent_view_cap(10, 80, 11) + 1)  # what the view gets there, and the info line
+        self.assertEqual(len(rows) - 1, before, "the list takes the view's rows, no more and no fewer")
         self.assertEqual(rows[-1], AGENT_LIST_HINT)
         self.assertTrue(rows[1].startswith("▸ "), rows)
 
-    def test_the_composer_is_hidden_while_the_list_is_open_and_comes_back_on_its_row(self) -> None:
+    def test_the_composer_is_blank_while_the_list_is_open_and_comes_back_on_its_row(self) -> None:
         app, _client = agent_app()
         type_text(app, "x")
         app._set_composer("")  # an empty composer, drawn once
         before = drawn(app)
-        resting, status = composer_index(before), info_index(before)
+        resting, status = composer_index(before), screen_info_index(app, before)
         app._on_input(Key(DOWN))
         during = drawn(app)
         self.assertFalse([row for row in during if row.startswith("│ > ")], during)  # no composer
         self.assertFalse([row for row in during if row.startswith(("╭", "╰"))], during)  # no box
-        self.assertEqual(info_index(during), status)
+        self.assertEqual(during[resting - 1 : resting + 2], ["", "", ""], "its rows stay, drawn blank")
+        self.assertEqual(screen_info_index(app, during), status)
         self.assertEqual(info_left(during[status]), AGENT_LIST_HINT)  # the info line says the list's keys
-        self.assertEqual(during[status - len(app.listed) : status], under_the_frame(app)[:-1])
+        self.assertEqual(during[status + 1 : status + 1 + len(app.listed)], under_the_frame(app)[:-1])
         app._on_input(Key(ESCAPE))
         after = drawn(app)
-        self.assertEqual((composer_index(after), info_index(after)), (resting, status))
+        self.assertEqual((composer_index(after), screen_info_index(app, after)), (resting, status))
         self.assertEqual(after, before)
 
-    def test_the_list_stands_where_the_composer_was(self) -> None:
-        app, _client = agent_app()
-        app.transcript.add_notice("printed above the region")
-        before = drawn(app)
-        bottom_edge = info_index(before) - 1
-        app._on_input(Key(DOWN))
-        during = drawn(app)
-        self.assertTrue(during[bottom_edge].startswith("  ⠋ read the diff"), during)  # the list's last row, on the edge's
-        top = info_index(during) + 1 - app.region.height
-        self.assertIn("· printed above the region", during[:top])
-        self.assertEqual(during[:top], before[:top])  # nothing above it moved
+    def test_the_list_is_the_views_rows_and_nothing_moves_as_it_opens(self) -> None:
+        for pinned in (False, True):
+            with self.subTest(pinned=pinned):
+                app, _client = agent_app()
+                app.transcript.add_notice("printed above the region")
+                if pinned:  # output that brings the region to the screen's last row
+                    for number in range(30):
+                        app.transcript.add_notice(f"line {number}")
+                before = drawn(app)
+                info = screen_info_index(app, before)
+                self.assertEqual(before[info + 1 : info + 4], VIEW)
+                app._on_input(Key(DOWN))
+                during = drawn(app)
+                self.assertEqual(screen_info_index(app, during), info, "the info line stays on its row")
+                self.assertEqual([row[2:] for row in during[info + 1 : info + 4]], [row[2:] for row in VIEW])
+                self.assertTrue(during[info + 2].startswith("▸ "), during)
+                top = info + 1 + len(VIEW) - app.region.height
+                self.assertEqual(during[:top], before[:top])  # nothing above the region moved
+                working = [index for index, row in enumerate(before) if row.startswith("✻ Working")]
+                self.assertEqual(working, [index for index, row in enumerate(during) if row.startswith("✻ Working")])
 
     def test_no_caret_is_shown_while_the_list_has_the_keys(self) -> None:
         app, _client = focused()
@@ -262,11 +273,11 @@ class ListFocusTests(unittest.TestCase):
         drawn(app)
         self.assertTrue(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
 
-    def test_the_strip_leaves_the_mode_row_while_the_list_shows_the_agents(self) -> None:
+    def test_the_count_leaves_the_info_line_while_the_list_shows_the_agents(self) -> None:
         app, _client = agent_app()
-        self.assertIn("main", under_the_frame(app)[0])  # the strip
+        self.assertTrue(under_the_frame(app)[0].startswith("2 agents · ↓ agents"))  # the count
         app._on_input(Key(DOWN))
-        self.assertNotIn("agents ↓", under_the_frame(app)[-1])
+        self.assertNotIn("agents", under_the_frame(app)[-1])
 
 
 class ListLeaveTests(unittest.TestCase):
@@ -338,10 +349,12 @@ class ListLeaveTests(unittest.TestCase):
         self.assertEqual((app.list_selected, app.pager), (None, None))
         self.assertIsNotNone(app.slot)
         screen = drawn(app)
-        status = info_index(screen)
-        # The approval stands where the composer was, and the one row under it is the info line, with its keys.
+        status = screen_info_index(app, screen)
+        # The approval stands where the composer was, the row under it is the info line, with its keys, and the
+        # agent view stays under that.
         self.assertEqual(screen[status - 1], "▌   no, and tell Hermes what to do instead")  # the approval's last row
         self.assertIn("esc denies", screen[status])
+        self.assertEqual([row[4:] for row in screen[status + 1 : status + 4]], [row[4:] for row in VIEW])
         now[0] += SLOT_ARM_SECONDS
         for key in (Key(DOWN), Key(UP)):
             app._on_input(key)  # the approval takes every key: these two move its highlight there and back
@@ -1004,7 +1017,7 @@ class TailPollTests(unittest.TestCase):
         app._ask_tail_when_due()
         self.assertEqual(client.calls, [])
 
-    def test_no_call_while_only_the_list_or_the_strip_is_shown(self) -> None:
+    def test_no_call_while_only_the_list_or_the_view_is_shown(self) -> None:
         app, client = focused()
         app._ask_tail_when_due()
         app._on_input(Key(ESCAPE))
@@ -1214,40 +1227,45 @@ def delegating_scenario(*answers: tuple[str, dict]) -> Scenario:
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
 class AgentReplayTests(AppTestCase):
-    def test_the_strip_the_list_and_the_log_work_in_the_real_loop_and_the_tail_is_asked_of_hermes(self) -> None:
+    def test_the_view_the_list_and_the_log_work_in_the_real_loop_and_the_tail_is_asked_of_hermes(self) -> None:
         tail = {"subagent_id": FIRST, "available": True, "text": "TAIL: grepping src/\n", "truncated": False}
         run = self.prepare(delegating_scenario(("subagent.tail", {"result": tail})))
         terminal = run.terminal
         listed = terminal.shows(AGENT_LIST_HINT)
         terminal.script(
             self.submit(run, INTERRUPTED_PROMPT),
-            Step(b"\x1b[B", when=terminal.shows("● main  "), capture="strip", label="the strip"),
+            Step(b"\x1b[B", when=terminal.shows("  ● main"), capture="view", label="the view"),
             Step(b"\r", when=listed, capture="list", label="the list"),
             Step(b"\x1b[C", when=terminal.shows("TAIL: grepping src/"), capture="log", label="the tail in the log"),
             Step(b"q", when=terminal.shows("read the diff · ←/→ agents"), capture="second", label="the second agent"),
             Step(b"\x1b", when=listed, capture="back", label="the list again"),
-            Step(b"\x1b", when=lambda: not listed() and terminal.shows("● main  ")(), label="the strip again"),
-            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(), label="the end"),
+            Step(b"\x1b", when=lambda: not listed() and terminal.shows("  ● main")(), label="the view again"),
+            # The agent view stays under the info line after the turn: `idle` reads the screen's last row.
+            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.shows(IDLE_HINT)(),
+                 label="the end"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
         captures = terminal.captures
-        strip = captures["strip"][info_index(captures["strip"])]
-        self.assertTrue(strip.startswith(INFO_INSET + "● main  "), strip)
-        self.assertIn("find usages of", strip)
-        self.assertIn("read the diff", strip)
+        view = captures["view"]
+        status = info_index(view) - 3  # the agent view's three rows are the screen's last ones
+        self.assertTrue(view[status].startswith(INFO_INSET + "2 agents · ↓ agents"), view)
+        self.assertEqual(view[status + 1], "  ● main")
+        self.assertIn("find usages of", view[status + 2])
+        self.assertIn("read the diff", view[status + 3])
         rows = captures["list"]
-        status = info_index(rows)
-        self.assertEqual(rows[status - 3], "  ● main")
-        self.assertTrue(rows[status - 2].startswith("▸ ") and "find usages of old_api" in rows[status - 2], rows)
+        self.assertEqual(info_index(rows) - 3, status, "the list opens on the view's rows")
+        self.assertEqual(rows[status + 1], "  ● main")
+        self.assertTrue(rows[status + 2].startswith("▸ ") and "find usages of old_api" in rows[status + 2], rows)
         # The list's keys, and on the right the effort the replayed config leaves unset (`default`).
         self.assertEqual(info_left(rows[status]), AGENT_LIST_HINT)
         self.assertTrue(rows[status].endswith("effort default"), rows[status])
-        # The list stands where the composer was: no box anywhere on the screen.
+        # The composer's rows are blank while the list has the keys: no box anywhere on the screen.
         self.assertFalse([row for row in rows if row.startswith(("╭", "╰"))], rows)
         self.assertEqual(captures["log"][0], "find usages of old_api in src/ and list every call site")
         self.assertEqual(captures["second"][0], "read the diff for risks")
-        self.assertTrue(captures["back"][info_index(captures["back"]) - 1].startswith("▸ "), captures["back"])
+        # Back on the second agent, the list's last row: the screen's last row that is not blank.
+        self.assertTrue(captures["back"][info_index(captures["back"])].startswith("▸ "), captures["back"])
         calls = run.calls("subagent.tail")
         self.assertEqual(calls[0]["params"], {"session_id": LIVE_ID, "subagent_id": FIRST})
         self.assertLessEqual(len(calls), 2)

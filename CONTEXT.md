@@ -342,9 +342,9 @@ category and model, status, parents), one connector per frontier gap, the
 recorded edges listed exactly under `Dependencies`, and a `Node details` card
 per running or stuck node and for `/dag`'s highlighted one; or a compact tree
 when no box fits or the edges loop. The
-OMH TUI draws it in its panel, with three-line boxes where the full ones do
-not fit, and `/dag` opens it full screen, live and keyboard-driven (highlight,
-fold, details), sending nothing anywhere; `omh hud --graph` prints it. A
+OMH TUI draws it as its tree in the agent view under the info line, and
+`/dag` opens the boxes full screen, live and keyboard-driven (highlight, fold,
+details), sending nothing anywhere; `omh hud --graph` prints the boxes. A
 chat reply never carries the boxes: on Slack, Discord, Telegram, Mattermost
 and Matrix,
 `transform_llm_output` appends to the reply Hermes is sending a run's start
@@ -428,8 +428,9 @@ never an answer to a question Hermes asked); its other writes are metadata
 picker write under the OMH home, and an empty fallback marker at the path
 `omh` named, which `omh` removes). Finished
 transcript lines go to the terminal's own scrollback; only a region drawn
-right under them (the streaming tail, one slot for the plan and agents panels
-or a prompt Hermes asked, the composer, and the info line under it) repaints; the
+right under them (the streaming tail, one slot for the plan or a prompt
+Hermes asked, the composer, the info line under it, and under that the agent
+view, always expanded while there are agents) repaints; the
 composer sits right under the output until the screen fills, then stays on
 the bottom rows, and a slot closing there does not move it. When it cannot start
 (an OMH that cannot import itself, gateway unavailable, protocol drift at

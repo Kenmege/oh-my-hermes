@@ -23,8 +23,8 @@ from _local_package import load_local_package
 load_local_package()
 
 from _delegation_graphs import (  # noqa: E402
-    export_repair_run,
-    export_run,
+    dag_export_repair_run,
+    dag_export_run,
     graph,
     lane,
     nested,
@@ -290,12 +290,12 @@ class SnapshotTests(unittest.TestCase):
     maxDiff = None
 
     def test_the_export_run_at_100_columns(self) -> None:
-        view = render_delegation_view(export_run(), width=100)
+        view = render_delegation_view(dag_export_run(), width=100)
         self.assertEqual(view.layout, "box")
         self.assertEqual(view.text() + "\n", EXPORT100)
 
     def test_ascii_charset(self) -> None:
-        drawn = text(export_run(), width=80, charset="ascii")
+        drawn = text(dag_export_run(), width=80, charset="ascii")
         self.assertEqual(drawn + "\n", EXPORT80ASCII)
         self.assertTrue(drawn.isascii(), "the ASCII charset draws nothing else when the titles are ASCII")
 
@@ -331,7 +331,7 @@ class SnapshotTests(unittest.TestCase):
 
 class BoxTests(unittest.TestCase):
     def test_each_box_holds_its_title_facts_status_and_parents(self) -> None:
-        boxes = box_lines(render_delegation_view(export_run(), width=120))
+        boxes = box_lines(render_delegation_view(dag_export_run(), width=120))
         self.assertEqual(boxes["d:r1:api"], ["Export API", "quick · glm-5.3-flash:low", "✓ Accepted 12s", "Start node"])
         self.assertEqual(boxes[BUTTON], ["Export button", "unspecified-high · glm-5.3:low", "● Running 21s",
                                          "← Export API"])
@@ -343,25 +343,25 @@ class BoxTests(unittest.TestCase):
         self.assertNotIn("main", " ".join(" ".join(lines) for lines in boxes.values()), "the root is not a box")
 
     def test_a_node_added_mid_run_says_where_it_came_from(self) -> None:
-        boxes = box_lines(render_delegation_view(export_repair_run(), width=100))
+        boxes = box_lines(render_delegation_view(dag_export_repair_run(), width=100))
         self.assertEqual(boxes["d:r1:csv"][0], "+ CSV export", "an extend")
         self.assertEqual(boxes["d:r1:csv-fix"][0], "↻ CSV export, with the head…", "a repair")
         self.assertEqual(boxes["d:r1:verify"][0], "Verify export")
-        ascii_boxes = box_lines(render_delegation_view(export_repair_run(), width=100, charset="ascii"))
+        ascii_boxes = box_lines(render_delegation_view(dag_export_repair_run(), width=100, charset="ascii"))
         self.assertEqual((ascii_boxes["d:r1:csv"][0], ascii_boxes["d:r1:csv-fix"][0][:4]), ("+ CSV export", "~ CS"))
 
     def test_the_header_names_the_run_its_size_and_its_state(self) -> None:
-        lines = text(export_run(), width=100).splitlines()[:3]
+        lines = text(dag_export_run(), width=100).splitlines()[:3]
         self.assertEqual(lines, ["OMH / DAG · 5 tasks", "export feature · 1/1 · main opus-5-5:high",
                                  "Running · Done 1/5 · 1 failed"])
-        self.assertEqual(text(export_repair_run(), width=100).splitlines()[2], "Running · Done 5/7 · 1 failed")
-        settled = export_run()
+        self.assertEqual(text(dag_export_repair_run(), width=100).splitlines()[2], "Running · Done 5/7 · 1 failed")
+        settled = dag_export_run()
         for node in settled["nodes"][1:]:
             node["state"] = "done"
         self.assertEqual(text(settled, width=100).splitlines()[2], "Completed · Done 5/5")
         settled["nodes"][2]["state"] = "failed"
         self.assertEqual(text(settled, width=100).splitlines()[2], "Failed · Done 4/5 · 1 failed")
-        cut = {**export_run(), "hidden_nodes": 3}
+        cut = {**dag_export_run(), "hidden_nodes": 3}
         self.assertEqual(text(cut, width=100).splitlines()[:3:2],
                          ["OMH / DAG · 8 tasks", "Running · Done 1/5 · 1 failed · +3 more nodes"])
         fanout = graph([root(model="", effort=""), lane("u", "Core", "codex", "?", "", "running")],
@@ -370,7 +370,7 @@ class BoxTests(unittest.TestCase):
                          "a root that names no model adds nothing")
 
     def test_frontiers_sit_side_by_side_and_say_so(self) -> None:
-        view = render_delegation_view(export_run(), width=120)
+        view = render_delegation_view(dag_export_run(), width=120)
         rows = {node_id: (top, bottom) for node_id, top, bottom in view.boxes}
         self.assertEqual(len({rows[node_id] for node_id in (BUTTON, DOCS, CLI)}), 1, "one row")
         self.assertLess(rows["d:r1:api"][1], rows[BUTTON][0])
@@ -379,7 +379,7 @@ class BoxTests(unittest.TestCase):
         self.assertEqual(labels, [rows[BUTTON][1] + 1], "one label, under the frontier of three, none under a lone box")
 
     def test_a_frontier_too_wide_wraps_and_keeps_its_label(self) -> None:
-        view = render_delegation_view(export_run(), width=80)
+        view = render_delegation_view(dag_export_run(), width=80)
         rows = {node_id: (top, bottom) for node_id, top, bottom in view.boxes}
         self.assertEqual(rows[BUTTON], rows[DOCS])
         self.assertEqual(rows[CLI][0], rows[BUTTON][1] + 1, "the third box wraps to the next row")
@@ -389,7 +389,7 @@ class BoxTests(unittest.TestCase):
                          "a wrapped row starts where the first one does")
 
     def test_one_connector_per_frontier_gap(self) -> None:
-        for case, frontiers in ((export_run(), 3), (export_repair_run(), 5), (nested(), 3), (parallel(6), 1)):
+        for case, frontiers in ((dag_export_run(), 3), (dag_export_repair_run(), 5), (nested(), 3), (parallel(6), 1)):
             for width in (40, 80, 120):
                 view = render_delegation_view(case, width=width)
                 with self.subTest(name=case["name"], nodes=len(case["nodes"]), width=width):
@@ -404,7 +404,7 @@ class BoxTests(unittest.TestCase):
                         self.assertTrue(lines[at + 1].lstrip().startswith("┌"), "it ends at the next frontier")
 
     def test_dependencies_are_the_graph_edges_exactly(self) -> None:
-        for case in (export_run(), export_repair_run(), nested(), owner_mock()):
+        for case in (dag_export_run(), dag_export_repair_run(), nested(), owner_mock()):
             view = render_delegation_view(case, width=120)
             drawn = set()
             for line in section(view, "Dependencies"):
@@ -414,29 +414,29 @@ class BoxTests(unittest.TestCase):
             with self.subTest(name=case["name"], nodes=len(case["nodes"])):
                 self.assertEqual(drawn, lane_edges(case))
                 self.assertEqual(len(section(view, "Dependencies")), len(lane_edges(case)), "each edge once")
-        later = text(export_repair_run(), width=120).splitlines()
+        later = text(dag_export_repair_run(), width=120).splitlines()
         self.assertIn("  Verify export → CSV export (extend)", later)
         self.assertIn("  CSV export → CSV export, with the header row (repair)", later)
         self.assertNotIn("Dependencies", text(parallel(3), width=120), "a fan-out from main has none to list")
 
     def test_node_details_only_for_running_or_highlighted_nodes(self) -> None:
-        self.assertEqual(cards(render_delegation_view(export_run(), width=100)), ["Export button"])
-        self.assertEqual(cards(render_delegation_view(export_run(), width=100, focus=Focus(node=CLI))),
+        self.assertEqual(cards(render_delegation_view(dag_export_run(), width=100)), ["Export button"])
+        self.assertEqual(cards(render_delegation_view(dag_export_run(), width=100, focus=Focus(node=CLI))),
                          ["Export button", "Export CLI flag"])
-        self.assertEqual(cards(render_delegation_view(export_run(), width=100, focus=Focus(node=BUTTON))),
+        self.assertEqual(cards(render_delegation_view(dag_export_run(), width=100, focus=Focus(node=BUTTON))),
                          ["Export button"], "a running node highlighted has one card")
-        hidden = render_delegation_view(export_run(), width=100, focus=Focus(node=CLI, details=False))
+        hidden = render_delegation_view(dag_export_run(), width=100, focus=Focus(node=CLI, details=False))
         self.assertNotIn("Node details", hidden.text_lines())
-        stuck = export_run()
+        stuck = dag_export_run()
         stuck["nodes"][2].update(state="stuck", status="stuck: same error", elapsed_seconds=400)
         self.assertEqual(cards(render_delegation_view(stuck, width=100)), ["Export button"])
         self.assertIn("    Stuck 6m 40s: same error · layer 2 · session 7c41e9a2", text(stuck, width=100).splitlines())
-        settled = export_repair_run()
+        settled = dag_export_repair_run()
         settled["nodes"][-1]["state"] = "done"
         self.assertNotIn("Node details", text(settled, width=100), "nothing runs: no card")
 
     def test_a_card_holds_the_whole_title(self) -> None:
-        long = export_run()
+        long = dag_export_run()
         long["nodes"][2]["title"] = "Export button with a confirmation dialog and a keyboard shortcut"
         view = render_delegation_view(long, width=60)
         self.assertEqual(box_lines(view)[BUTTON][0], "Export button with a confirma…")
@@ -453,24 +453,24 @@ class BoxTests(unittest.TestCase):
                                        (100, 3, "unspecified-high · glm-5.3:…"), (82, 3, "unspecified-high · gl…"),
                                        (81, 2, "unspecified-high · glm-5.3:low"), (60, 1, "unspecified-high · glm-5.3:low"),
                                        (34, 1, "unspecified-high · glm-5.3:low")):
-            view = render_delegation_view(export_run(), width=width)
+            view = render_delegation_view(dag_export_run(), width=width)
             with self.subTest(width=width):
                 self.assertEqual((view.layout, per_row(view)), ("box", expected))
                 self.assertEqual(box_lines(view)[BUTTON][1], facts, "the category and model line is what is cut")
                 self.assertEqual([lines[0] for lines in box_lines(view).values()],
                                  ["Export API", "Export button", "Export docs", "Export CLI flag", "Verify export"])
         for width, facts in ((30, "unspecified-high · glm-5.…"), (BOX_MIN_WIDTH, "unspecified-high · gl…")):
-            view = render_delegation_view(export_run(), width=width)
+            view = render_delegation_view(dag_export_run(), width=width)
             with self.subTest(width=width):
                 self.assertEqual(view.layout, "box")
                 self.assertEqual(box_lines(view)[BUTTON][1], facts)
                 self.assertTrue(all(cells(line) <= width for line in view.text_lines()))
-        self.assertEqual(render_delegation_view(export_run(), width=BOX_MIN_WIDTH - 1).layout, "tree")
+        self.assertEqual(render_delegation_view(dag_export_run(), width=BOX_MIN_WIDTH - 1).layout, "tree")
 
     def test_dag_draws_fold_markers_and_the_highlight(self) -> None:
-        static = render_delegation_view(export_run(), width=100)
+        static = render_delegation_view(dag_export_run(), width=100)
         self.assertNotIn("[-]", static.text(), "no key acts on the transcript's drawing")
-        view = render_delegation_view(export_run(), width=100, focus=Focus(node=CLI, folded=frozenset({"d:r1:api"})))
+        view = render_delegation_view(dag_export_run(), width=100, focus=Focus(node=CLI, folded=frozenset({"d:r1:api"})))
         boxes = box_lines(view)
         self.assertEqual(boxes["d:r1:api"], ["[+] ✓ Export API · Accepted"],
                          "a folded box is one line, and keeps its glyph and its status word")
@@ -488,7 +488,7 @@ class TreeTests(unittest.TestCase):
 
     def test_a_cut_tree_closes_its_branches_and_counts_the_cut_where_it_was_made(self) -> None:
         for budget, snapshot in ((8, EXPORT_TREE_CUT_8), (6, EXPORT_TREE_CUT_6)):
-            view = render_delegation_view(export_run(), width=120, layout="tree", max_lines=budget)
+            view = render_delegation_view(dag_export_run(), width=120, layout="tree", max_lines=budget)
             with self.subTest(budget=budget):
                 self.assertEqual(view.text() + "\n", snapshot, "whole layers were cut: the count is at the root")
                 self.assertEqual(branch_problems(view.text()), [])
@@ -522,11 +522,11 @@ class TreeTests(unittest.TestCase):
                         self.assertEqual(branch_problems(view.text()), [], view.text())
 
     def test_a_field_not_recorded_yet_is_blank_in_the_tree(self) -> None:
-        drawn = text(export_run(), width=120, layout="tree").splitlines()
+        drawn = text(dag_export_run(), width=120, layout="tree").splitlines()
         docs = next(row for row in drawn if "Export docs" in row)
         self.assertEqual(docs.split()[-3:], ["writing", "handed", "out"], "no `?` where the model is not known yet")
-        self.assertNotIn("?", text(export_run(), width=120, layout="tree"))
-        narrow = text(export_run(), width=60, layout="tree")
+        self.assertNotIn("?", text(dag_export_run(), width=120, layout="tree"))
+        narrow = text(dag_export_run(), width=60, layout="tree")
         self.assertIn("writing · handed out", narrow)
         self.assertIn("unspecified-high · waits on 3 lanes", narrow)
         bare = graph([root(model="", effort=""), {"id": "x", "kind": "lane", "state": "dispatched"}],
@@ -536,24 +536,24 @@ class TreeTests(unittest.TestCase):
 
     def test_the_category_column_holds_the_longest_category_and_the_model_gives_way(self) -> None:
         for width in (120, 74, 72):
-            rows = text(export_run(), width=width, layout="tree").splitlines()
+            rows = text(dag_export_run(), width=width, layout="tree").splitlines()
             button = next(row for row in rows if "Export button" in row)
             with self.subTest(width=width):
                 self.assertIn(" unspecified-high ", button, "never cut to `unspecified…`")
                 self.assertTrue(all(cells(row) <= width for row in rows))
-        tight = next(row for row in text(export_run(), width=72, layout="tree").splitlines() if "Export API" in row)
+        tight = next(row for row in text(dag_export_run(), width=72, layout="tree").splitlines() if "Export API" in row)
         self.assertIn("quick             glm-5.3-flas…  accepted 12s", tight, "the model is cut, not the category")
 
     def test_the_widened_category_never_takes_a_statuss_room(self) -> None:
         """The cells a long category takes come from room no status needs, then the model, then the title: a
         status main drew whole stays whole, and one main cut is cut no further."""
-        late = export_repair_run()
+        late = dag_export_repair_run()
         late["nodes"][2]["elapsed_seconds"] = 3_725
         button = next(row for row in text(late, width=90, layout="tree").splitlines() if "Export button" in row)
         self.assertTrue(button.endswith("unspecified-high  glm-5.3:low    accepted 1h 02m"), button)
-        verify = next(row for row in text(export_run(), width=72, layout="tree").splitlines() if "Verify export" in row)
+        verify = next(row for row in text(dag_export_run(), width=72, layout="tree").splitlines() if "Verify export" in row)
         self.assertTrue(verify.endswith("waits on 3 la…"), f"cut where main cut it, no further: {verify!r}")
-        self.assertTrue(next(row for row in text(export_run(), width=74, layout="tree").splitlines()
+        self.assertTrue(next(row for row in text(dag_export_run(), width=74, layout="tree").splitlines()
                              if "Verify export" in row).endswith("waits on 3 lanes"))
 
     def test_the_model_gives_way_down_to_its_floor_and_then_the_title(self) -> None:
@@ -591,7 +591,7 @@ class ReviewTests(unittest.TestCase):
     def test_a_narrow_dependency_line_keeps_its_kind_and_cuts_its_titles(self) -> None:
         for charset, arrow, ellipsis in (("unicode", "→", "…"), ("ascii", "->", "...")):
             for width in (50, 40, 30):
-                view = render_delegation_view(export_repair_run(), width=width, charset=charset)
+                view = render_delegation_view(dag_export_repair_run(), width=width, charset=charset)
                 lines = section(view, "Dependencies")
                 with self.subTest(charset=charset, width=width):
                     self.assertEqual(len(lines), 8)
@@ -601,7 +601,7 @@ class ReviewTests(unittest.TestCase):
                         self.assertTrue(source and target, f"both ends drawn: {line!r}")
                         self.assertLessEqual(cells(line), width)
                     self.assertTrue(lines[-1].startswith("  CSV ") and ellipsis in lines[-1])
-        self.assertEqual(section(render_delegation_view(export_repair_run(), width=30), "Dependencies")[-2:],
+        self.assertEqual(section(render_delegation_view(dag_export_repair_run(), width=30), "Dependencies")[-2:],
                          ["  Verify expo… → CSV… (extend)", "  CSV export → CSV e… (repair)"])
 
     def test_every_cut_line_ends_in_the_ellipsis(self) -> None:
@@ -651,7 +651,7 @@ class ReviewTests(unittest.TestCase):
         from omh.commands.hud import DELEGATION_VIEW_PROBE
 
         drawn = set()
-        for case in (export_run(), export_repair_run(), nested(), owner_mock()):
+        for case in (dag_export_run(), dag_export_repair_run(), nested(), owner_mock()):
             for focus in (None, Focus(node="d:r1:api", folded=frozenset({"d:r1:api"}))):
                 drawn |= set(render_delegation_view(case, width=120, focus=focus).text())
         unknown = graph([root(), lane("w", "Unit", "quick", "m", "", "unknown")], [("root", "w", "dispatch")])
@@ -662,10 +662,10 @@ class ReviewTests(unittest.TestCase):
 
     def test_a_folded_box_keeps_its_status_word_in_both_charsets(self) -> None:
         focus = Focus(node="d:r1:cli", folded=frozenset({"d:r1:api", "d:r1:cli"}))
-        unicode_boxes = box_lines(render_delegation_view(export_run(), width=140, focus=focus))
+        unicode_boxes = box_lines(render_delegation_view(dag_export_run(), width=140, focus=focus))
         self.assertEqual(unicode_boxes["d:r1:api"], ["[+] ✓ Export API · Accepted"])
         self.assertEqual(unicode_boxes["d:r1:cli"], ["[+] > ✗ Export CLI f… · Failed"], "past 30 cells the title gives way")
-        ascii_boxes = box_lines(render_delegation_view(export_run(), width=140, focus=focus, charset="ascii"))
+        ascii_boxes = box_lines(render_delegation_view(dag_export_run(), width=140, focus=focus, charset="ascii"))
         self.assertEqual(ascii_boxes["d:r1:api"], ["[+] + Export API - Accepted"])
         self.assertEqual(ascii_boxes["d:r1:cli"], ["[+] > x Export CLI... - Failed"])
         # A folded, selected box whose one line is the widest of the drawing measures all of it: `[+] > ✓ ` is 8
@@ -676,13 +676,13 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(line, ["[+] > ✓ Export API · Accepted"])
 
     def test_a_run_that_only_lost_its_news_does_not_read_as_an_error(self) -> None:
-        lost = export_run()
+        lost = dag_export_run()
         for node in lost["nodes"][1:]:
             node.update(state="unknown", status="no news")
         view = render_delegation_view(lost, width=100)
         self.assertEqual(view.text_lines()[2], "Ended · Done 0/5")
         self.assertEqual(view.lines[2][0].role, "node-word:unknown")
-        cancelled = export_run()
+        cancelled = dag_export_run()
         cancelled["nodes"][2].update(state="interrupted", status="cancelled")
         for node in cancelled["nodes"][1:]:
             if node["state"] != "interrupted":
@@ -690,7 +690,7 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(render_delegation_view(cancelled, width=100).lines[2][0].role, "node-word:interrupted")
 
     def test_a_connector_into_a_frontier_with_nothing_running_is_dim(self) -> None:
-        handed = export_run()
+        handed = dag_export_run()
         handed["nodes"][2].update(state="dispatched", status="handed out")  # the frontier: handed out, failed
         view = render_delegation_view(handed, width=100)
         roles = [segment.role for line in view.lines for segment in line
@@ -698,14 +698,14 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(roles, ["connector"] * 4, "handed out is not running: the connector stays dim")
 
     def test_a_duplicated_edge_is_listed_once(self) -> None:
-        twice = export_run()
+        twice = dag_export_run()
         twice["edges"].append({"from": "d:r1:api", "to": "d:r1:docs", "kind": "depends_on"})
         lines = section(render_delegation_view(twice, width=100), "Dependencies")
         self.assertEqual(lines.count("  Export API → Export docs"), 1)
         self.assertEqual(len(lines), 6)
 
     def test_a_repair_mark_wins_over_an_extend_mark(self) -> None:
-        both = export_repair_run()
+        both = dag_export_repair_run()
         both["edges"].append({"from": "d:r1:verify", "to": "d:r1:csv-fix", "kind": "extend"})
         self.assertEqual(box_lines(render_delegation_view(both, width=100))["d:r1:csv-fix"][0][:2], "↻ ")
 
@@ -769,8 +769,8 @@ class FieldTests(unittest.TestCase):
 
 class StructureTests(unittest.TestCase):
     def test_each_part_of_a_box_carries_its_nodes_state_for_the_painter(self) -> None:
-        view = render_delegation_view(export_run(), width=100, focus=Focus(node="d:r1:verify"))
-        for node in export_run()["nodes"][1:]:
+        view = render_delegation_view(dag_export_run(), width=100, focus=Focus(node="d:r1:verify"))
+        for node in dag_export_run()["nodes"][1:]:
             named = "selected" if node["id"] == "d:r1:verify" else node["state"]
             border, title, _facts, status, _parents, _bottom = box_spans(view, node["id"])
             with self.subTest(node=node["id"]):
@@ -782,7 +782,7 @@ class StructureTests(unittest.TestCase):
                                  "the glyph is a mark, the words a word; both keep the state's colour, selected or not")
 
     def test_a_connector_is_dim_and_blue_into_a_running_frontier(self) -> None:
-        view = render_delegation_view(export_run(), width=100)
+        view = render_delegation_view(dag_export_run(), width=100)
         connectors = [
             [segment.role for segment in line if segment.text.strip()] for line in view.lines
             if "".join(segment.text for segment in line).strip() in ("│", "▼")

@@ -144,8 +144,12 @@ Node details
 
 Where it shows:
 
-- **The OMH TUI** draws it live in its panel, above the plan, and keeps it
-  while the info line shows the agents. The `[Agents]` block leaves out the
+- **The OMH TUI** draws it live, as its tree, in the agent view under the
+  info line (the owner's call of 2026-10-21: the subagent view goes under the
+  prompt, always expanded): in place of the live agent list while the graph
+  is a DAG run (a `depends_on` edge, or a lane that delegates), and under the
+  HUD's agents block while no live agent is listed. The agents block (its
+  header `● main │ …`) leaves out the
   activity row of each Hermes-native child the graph draws, matched by the
   child's session id, so that lane is drawn once. A row whose child the graph
   does not hold stays. While the graph draws some of the lanes, the header
@@ -154,13 +158,15 @@ Where it shows:
   eight) are counted the same way: the HUD reports how many of them the graph
   draws (`subagents.hidden_in_graph`), and those are not other agents. The
   lanes are then counted once, on the graph's own header line, and the
-  `[Agents]` header keeps the session's cost and tokens.
-  The panel gets a third of the terminal's rows. Where the boxes with their
-  sections do not fit, three-line boxes are drawn instead (the title, the
-  status and the parents, without the category and model line or the
-  sections); where those do not fit either, the tree is drawn. Three lanes get
-  three-line boxes from 40 rows at 100 columns; the owner's five-node mock-up
-  gets the tree at every common size.
+  agents block's header keeps the session's cost and tokens.
+  The tree of a DAG run takes a third of the terminal's rows from the start
+  (8 of 24, 13 of 40); other views take at most a quarter, seven from 28
+  rows, raised only to show every running lane. Boxes do not fit there, so
+  the tree is drawn, its done lanes giving way first to a `+N more nodes` row and its
+  running lanes kept. Once every lane has settled (done, failed, interrupted
+  or unknown, and no lane left out by the reader), the tree is one line,
+  `DAG · <name> · done 5/6 · 1 failed`, until the graph lingers out of the
+  HUD.
 - **`/dag`** opens the graph full screen in the pager, as boxes with their
   Dependencies and Node details, redrawn from the HUD's newest read on every
   frame, so a node that starts, finishes or fails while it is open changes on
