@@ -470,9 +470,10 @@ class Roster:
     ) -> tuple[list[Line], tuple[str, ...]]:
         """One row for main and one per agent, and the id each row is for (`MAIN_ID` for main).
 
-        A row is its selection marker, status glyph and goal, with
-        `elapsed · N tools` at the right edge (`waiting <elapsed>` for an
-        agent still waiting for a worker); the `selected` row is one
+        A row is its selection marker, status glyph and goal (muted once the
+        agent finished), with `elapsed · N tools` at the right edge
+        (`waiting <elapsed>` for an agent still waiting for a worker); the
+        `selected` row is one
         `menu_current` bar across `width`. More rows than `max_rows` scroll
         just far enough to keep the selected one on screen. Where the goal
         would be left less than `MIN_GOAL_CELLS`, the tool count goes first,
@@ -511,7 +512,12 @@ class Roster:
         right = f"{pad}{COLUMN_GAP}{figure}" if figure else ""
         if current:
             return truncate_line((Span(f"{lead}{mark.text} {label}{right or pad}", theme.menu_current),), width)
-        return truncate_line((Span(lead), mark, Span(f" {label}", theme.text), Span(right, theme.muted)), width)
+        # A finished agent's goal is muted, as Claude Code dims an idle one: what still runs reads first.
+        finished = agent is not None and agent.status in FINISHED_STATUSES
+        return truncate_line(
+            (Span(lead), mark, Span(f" {label}", theme.muted if finished else theme.text), Span(right, theme.muted)),
+            width,
+        )
 
     def log_lines(self, subagent_id: str, width: int, theme: Theme, now: float) -> list[Line]:
         """An agent's log view: its goal, then `status · elapsed · N tools · model`, a blank row, and its log.

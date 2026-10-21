@@ -662,6 +662,9 @@ class ViewTests(unittest.TestCase):
                                                        THEME.error, THEME.error, THEME.error, THEME.muted)):
             with self.subTest(glyph=glyph):
                 self.assertEqual(style_of(row, glyph), style)
+        # What still runs or waits reads in the text colour; a finished agent's goal is muted.
+        self.assertEqual([style_of(row, line_text(row)[4:].split("  ")[0]) for row in rows[1:]],
+                         [THEME.text, THEME.muted, THEME.text, THEME.muted, THEME.muted, THEME.muted, THEME.muted])
 
     def test_the_spinner_frame_picks_the_running_glyph(self) -> None:
         self.assertEqual(SPINNER_FRAMES, "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
