@@ -94,7 +94,9 @@ whole title, category and model, status, group and session. Main, the
 parent session, is no box: the nodes it dispatched read `Start node`, and its
 model is on the header's second line. A node added mid-run carries `↻ ` (a
 repair) or `+ ` (an extend) before its title. A dag run of five nodes, at
-100 columns:
+100 columns, as `omh hud --graph` prints it, and as a dark terminal paints it:
+
+![The dag run's boxes in a dark terminal, coloured by state](../assets/omh-dag-box-view.png)
 
 ```text
 OMH / DAG · 5 tasks
@@ -171,6 +173,8 @@ Where it shows:
   rows under it name these keys and the rows shown. It sends nothing
   anywhere: no key there reaches the gateway, a child or a chat. One
   conversation has one graph, so it offers no other run to switch to.
+
+  ![/dag in a dark terminal: Export API folded, Verify export highlighted, Node details for the running node and the highlighted one](../assets/omh-dag-pager.png)
 - **Slack, Discord, Telegram, Mattermost and Matrix** never get the box
   drawing. They see a delegated run, the conversation's lanes that no end
   post has closed yet, at three moments. Each is appended to the reply Hermes
