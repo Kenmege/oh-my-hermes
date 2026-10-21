@@ -534,6 +534,21 @@ class T10ResumeReEmitsWhatWasReserved(TeamHarness):
         bound = {item["unit_id"]: item["attempts"][0]["dispatch"]["child_session_id"] for item in self.record()["units"]}
         self.assertEqual(bound, {"a": "old", "b": "both", "c": "appended", "d": "middle"})
 
+    def test_every_line_counts_and_a_goal_ending_in_a_dag_marker_binds_no_part(self) -> None:
+        """Mutation: read team keys only, or the last key of the first line that has one."""
+        self.start([unit("a", CHECK_A), unit("b", CHECK_B)])
+        # A dag node's goal whose title, from before an update, quoted a key: the node's child, not a helper.
+        for goal in ("Part a [omh-team:t1/a/attempt-1] [dag:feat/api]",
+                     "Part a [omh-team:t1/a/attempt-1] [dag:feat/api]. Please hurry"):
+            self.assertFalse(team.observe_dispatch(self.home, SESSION, child_session_id="dag-child", goal=goal,
+                                                   now=self.now()), goal)
+        self.assertTrue(team.observe_dispatch(
+            self.home, SESSION, child_session_id="lines",
+            goal="Part a [omh-team:t1/a/attempt-1]\nnotes\nPart b [omh-team:t1/b/attempt-1]", now=self.now()))
+        bound = {item["unit_id"]: (item["attempts"][0].get("dispatch") or {}).get("child_session_id")
+                 for item in self.record()["units"]}
+        self.assertEqual(bound, {"a": None, "b": "lines"})
+
     def test_a_title_holding_a_key_or_a_dag_marker_is_refused(self) -> None:
         """Mutation: refuse only `[omh-team:`; a leading dag marker would bind this helper to a dag node."""
         for title in ("Part a, after [omh-team:t1/b/attempt-1]", "[dag:feat/api] Fix the parser"):

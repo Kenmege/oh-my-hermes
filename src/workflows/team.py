@@ -252,9 +252,12 @@ _CHECK_FIELD: Final = re.compile(r"check:\s*`([^`\n]+)`", re.IGNORECASE)
 _TEAM_ID: Final = re.compile(r"[a-z0-9][a-z0-9-]{0,47}")
 _UNIT_ID: Final = re.compile(r"[a-z0-9][a-z0-9_-]{0,47}")
 # The attempt key a helper's goal ends with, so Hermes' 40-character previews show the part's title first. The last
-# whole key in a goal binds: a goal handed out before an update opens with it, and a model may add text after it.
+# whole key in a goal binds: a goal handed out before an update opens with it, and a model may add text after it. A
+# goal whose last marker is a dag node's is that node's child, even when an older title quoted a key before it
+# (`delegation_ledger.dag_binding` reads the mirror).
 _MARKER: Final = re.compile(
-    r"\[omh-team:([a-z0-9][a-z0-9-]{0,47})/([a-z0-9][a-z0-9_-]{0,47})/attempt-([1-9][0-9]?)\]"
+    r"\[(?:omh-team:([a-z0-9][a-z0-9-]{0,47})/([a-z0-9][a-z0-9_-]{0,47})/attempt-([1-9][0-9]?)"
+    r"|dag:[a-z0-9][a-z0-9-]{0,31}/[a-z0-9][a-z0-9-]{0,31})\]"
 )
 _CONTROL: Final = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 # The subagent id Hermes hands `subagent_start` (`sa-<index>-<hex>` at v2026.9.7)
@@ -1424,7 +1427,7 @@ def observe_dispatch(
     (`host_process.this_process`), kept so a restart that ended it is seen.
     """
     found = _MARKER.findall(goal) if isinstance(goal, str) else []
-    if not found or not isinstance(child_session_id, str) or not child_session_id.strip():
+    if not found or not found[-1][0] or not isinstance(child_session_id, str) or not child_session_id.strip():
         return False
     team_id, unit_id, number = found[-1]
     n = int(number)

@@ -88,10 +88,12 @@ RUN_PHASES: Final = ("open", "closed")
 
 # The markers OMH ends a delegated goal with (`dag_run.task_for`, `team._delegate_entry`), so Hermes' 40-character
 # previews show the task first. The last whole marker in a goal binds: a goal handed out before an update opens with
-# one, and a model may add text after it. The dag ids are ones OMH minted, matched whole or not at all. No label or
-# title OMH accepts holds a marker (`dag_run._validated_node`, `team._validated_units`).
+# one, and a model may add text after it. The ids are ones OMH minted, matched whole or not at all. No label or title
+# OMH accepts holds a marker (`dag_run._validated_node`, `team._validated_units`); a goal whose last marker is a team
+# key is a team helper's, even when an older title quoted a dag marker before it (`team._MARKER` reads the mirror).
 _DAG_ID: Final = r"[a-z0-9][a-z0-9-]{0,31}"
-_DAG_MARKER: Final = re.compile(rf"\[dag:({_DAG_ID})/({_DAG_ID})\]")
+_TEAM_KEY: Final = r"omh-team:[a-z0-9][a-z0-9-]{0,47}/[a-z0-9][a-z0-9_-]{0,47}/attempt-[1-9][0-9]?"
+_DAG_MARKER: Final = re.compile(rf"\[(?:dag:({_DAG_ID})/({_DAG_ID})|{_TEAM_KEY})\]")
 _GOAL_MARKER: Final = rf"\[(?:dag:{_DAG_ID}/{_DAG_ID}|omh-team:[^\]]{{1,200}})\]"
 _GOAL_MARKER_TEXT: Final = re.compile(rf"\A\s*{_GOAL_MARKER}\s*|\s?{_GOAL_MARKER}")
 _TASK_LABEL: Final = re.compile(r"^(?:TASK|Task)\s*:\s*")
@@ -134,11 +136,14 @@ def without_goal_marker(goal: str) -> str:
 
 
 def dag_binding(goal: object) -> dict[str, str]:
-    """The dag run and node the last whole marker in a child's goal names, or {}: two ids, never goal text."""
+    """The dag run and node the last whole marker in a child's goal names, or {}: two ids, never goal text.
+
+    Every line counts, and a goal whose last marker is a team key binds no node.
+    """
     if not isinstance(goal, str):
         return {}
     found = _DAG_MARKER.findall(goal)
-    if not found:
+    if not found or not found[-1][0]:
         return {}
     run, node = found[-1]
     return {"run": run, "node": node}

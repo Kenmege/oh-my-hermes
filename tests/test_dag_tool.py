@@ -499,6 +499,18 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(dag_binding("please [dag:feat/api] neither first nor last"), {"run": "feat", "node": "api"})
         self.assertEqual(dag_binding("Node docs [dag:feat/docs] and more"), {"run": "feat", "node": "docs"})
         self.assertEqual(dag_binding("Node api [dag:feat/api"), {})
+        # Every line counts: the last marker of the goal, not of its first line.
+        self.assertEqual(dag_binding("Node api [dag:feat/api]\nsecond line\nthen [dag:feat/ui]"),
+                         {"run": "feat", "node": "ui"})
+
+    def test_a_goal_whose_last_marker_is_a_team_key_binds_no_node(self) -> None:
+        """Mutation: read dag markers only, so a team title from before an update that quoted one binds a node."""
+        for goal in ("Fix the parser [dag:feat/api] [omh-team:t1/a/attempt-1]",
+                     "Fix the parser [dag:feat/api] [omh-team:t1/a/attempt-1]. Please hurry"):
+            with self.subTest(goal=goal):
+                self.assertEqual(dag_binding(goal), {})
+        # A team key before the node's own marker does not hide it.
+        self.assertEqual(dag_binding("[omh-team:t1/a/attempt-1] Fix [dag:feat/api]"), {"run": "feat", "node": "api"})
 
 
 NO_HERMES = {"gateway": None, "gateway.status": None}

@@ -12,17 +12,19 @@ All notable changes will be documented here.
   (`🔀 Delegating 1 tasks: [dag:billing-refactor/invoic...`). `omh_dag` and
   `omh_team` now write the marker at the end of the goal, on the label's
   line (`Render invoice PDFs from the new template [dag:billing-refactor/invoice-pdf]`),
-  and the binding reads the last whole marker in the goal: a goal handed
-  out before the update still opens with it and still binds, and text a
-  model adds after the marker no longer leaves the child unbound and its
-  node offered again. A node label or a part title that holds either
-  `[dag:` or `[omh-team:` is refused, so a label cannot name another node or
-  team part. The OMH TUI drops a whole marker wherever it is from a
-  `delegate_task` row and an agent row, also a marker head Hermes' cut left
-  at the end of a goal (`… to API [dag:ex...`); a head too short to name its
-  kind (`[`, `[d`, `[o`) only after a space. Hermes' own lines (the Discord
-  post, its completion line) keep what its cut leaves: after a short label,
-  the marker or its head (`2 tasks: Export API [dag:export/api] ...`).
+  and the binding reads the last whole marker in the goal, on any line, and
+  binds only when it is its own lane's: a goal handed out before the update
+  still opens with it and still binds, and text a model adds after the
+  marker no longer leaves the child unbound and its node offered again. A
+  node label or a part title that holds either `[dag:` or `[omh-team:` is
+  refused, so a label cannot name another node or team part. The OMH TUI
+  drops a whole marker wherever it is from a `delegate_task` row and an
+  agent row, also a marker head Hermes' cut left at the end of a goal
+  (`… to API [dag:ex...`), even where Hermes' cut of the whole row follows
+  it; a head too short to name its kind (`[`, `[d`, `[o`) only after a
+  space. Hermes' own lines (the Discord post, its completion line) keep
+  what its cut leaves: after a short label, the marker or its head
+  (`2 tasks: Export API [dag:export/api] ...`).
 - **A Hermes restart no longer leaves a team part waiting four hours.** A
   helper runs inside the Hermes process that started it, and a restart ends
   it without the `subagent_stop` callback, so `omh_team` held the part as

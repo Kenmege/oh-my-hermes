@@ -217,6 +217,11 @@ class ToolRowTests(unittest.TestCase):
             # A whole marker goes wherever it is: a model may add text after it.
             "1 tasks: Export API [dag:export/api]. Please h...": "1 tasks: Export API. Please h...",
             "1 tasks: Export API [dag:export/api] Extra ins...": "1 tasks: Export API Extra ins...",
+            # Hermes' 80-character cut of the whole row can follow a goal's own cut: the head still goes.
+            "3 tasks: Render t [dag:export/n0] | Render the invoice PDFs f [dag:export... ...":
+                "3 tasks: Render t | Render the invoice PDFs f ...",
+            "3 tasks: Render t [dag:export/n0] | Render the invoice PDFs from the b [d... ...":
+                "3 tasks: Render t | Render the invoice PDFs from the b ...",
             # Only a head that ends its goal is a cut marker.
             "1 tasks: Explain the [dag:...] marker syntax": "1 tasks: Explain the [dag:...] marker syntax",
             # A cut that took no marker keeps its `...`, and so does a label's own bracket.
