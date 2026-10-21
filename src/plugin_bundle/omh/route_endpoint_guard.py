@@ -42,7 +42,10 @@ line number without a revision is the same at main and v0.22.2.
 OMH reads YAML with line scans, not a parser, and Hermes' loader reads more
 shapes than these scans do. Any line this module does not model makes its
 section unreadable, and the route is refused. Reading a value as "unset" by
-mistake is the unsafe answer here; refusing is the safe one. Hermes 0.21.x
+mistake is the unsafe answer here; refusing is the safe one. An alias or a
+`<<` given as a value makes its section unreadable too: both loaders fail on
+an alias whose anchor is not defined and on `<<` as a value, and these scans
+do not follow anchors, so a defined alias is refused as well. Hermes 0.21.x
 loads YAML with PyYAML (utils.py:389-391 at v0.21.1); 0.22 and later use
 ruamel in YAML 1.1 mode (hermes_yaml.py), which reads a few plain scalars
 differently. A scalar whose meaning depends on the loader is undecidable.
@@ -101,6 +104,8 @@ _PLAIN_KEY_RE = re.compile(
 _COMMENT_RE = re.compile(r"(?:^|\s)#")
 _YAML_INDICATORS = frozenset("[]{}|>&*!%@`-?:,")
 _TRACKED_SECTIONS = ("delegation", "model")
+# Top-level keys Hermes reads as `model` keys (`_normalize_root_model_keys`).
+_ROOT_MODEL_KEYS = ("base_url", "api_base", "provider")
 _MISSING = object()
 
 
@@ -152,6 +157,8 @@ def scan_config(text: str) -> Layer:
             seen.add(key)
             top_key, header_empty = key, _strip_comment(value) == ""
             layer.root[key] = scalar(value)
+            if key in _ROOT_MODEL_KEYS and _unloadable(value):
+                layer.unreadable_sections.add("model")
             if key in _TRACKED_SECTIONS and not header_empty:
                 _read_header_value(layer, key, value)
             continue
@@ -172,8 +179,8 @@ def _read_header_value(layer: Layer, key: str, value: str) -> None:
             layer.unreadable_sections.add(key)
         else:
             layer.sections[key] = entries
-    elif layer.root[key] is None:
-        # An alias, anchor, tag, block scalar, flow sequence or `${VAR}`.
+    elif layer.root[key] is None or _unloadable(value):
+        # An alias, `<<`, anchor, tag, block scalar, flow sequence or `${VAR}`.
         layer.unreadable_sections.add(key)
     elif _strip_comment(value) not in _NULL_PLAIN_SCALARS:
         layer.scalar_sections.add(key)
@@ -185,8 +192,8 @@ def _flow_mapping(raw: str) -> dict[str, str | None] | None:
     Hermes' own `save_config` keeps a section written in flow style. An entry
     whose value is a collection reads as set. A comment, a `?`, a repeated
     key, a `key:` with no space after the colon (ruamel reads `key:` as the
-    key there), or a plain value holding `: ` or a bracket makes the whole
-    mapping unreadable.
+    key there), a plain value holding `: ` or a bracket, or an alias or `<<`
+    value makes the whole mapping unreadable.
     """
     value = raw.strip()
     entries: list[str] = []
@@ -239,6 +246,8 @@ def _flow_mapping(raw: str) -> dict[str, str | None] | None:
             continue
         if item[:1] not in {"'", '"'} and (": " in item or item.endswith(":") or any(c in item for c in "[]{}?")):
             return None
+        if _unloadable(item):
+            return None
         values[_unquote(match["key"])] = scalar(item)
     return values
 
@@ -271,8 +280,8 @@ def _close_section(layer: Layer, key: str | None, header_empty: bool, body: list
                 return
             child = _unquote(match["key"])
             value = match["value"] or ""
-            if child in values or _opens_unclosed(value):
-                # Hermes' loader raises on a repeated key.
+            if child in values or _opens_unclosed(value) or _unloadable(value):
+                # Hermes' loader raises on a repeated key, and may on an alias or `<<`.
                 layer.unreadable_sections.add(key)
                 return
             values[child] = scalar(value)
@@ -288,7 +297,7 @@ def _close_section(layer: Layer, key: str | None, header_empty: bool, body: list
         nested = stripped[1:].lstrip() if stripped.startswith("-") else stripped
         match = _PLAIN_KEY_RE.fullmatch(nested)
         nested_value = (match["value"] or "") if match else nested
-        if _opens_unclosed(nested_value):
+        if _opens_unclosed(nested_value) or _unloadable(nested_value):
             layer.unreadable_sections.add(key)
             return
 
@@ -323,6 +332,12 @@ def scalar(raw: str) -> str | None:
 def _strip_comment(value: str) -> str:
     match = _COMMENT_RE.search(value)
     return (value[: match.start()] if match else value).strip()
+
+
+def _unloadable(raw: str) -> bool:
+    """True for a plain alias (`*a`) or `<<`, which Hermes' loaders may not load as a value."""
+    value = _strip_comment(raw)
+    return value[:1] == "*" or value == "<<"
 
 
 def _opens_unclosed(raw: str) -> bool:
@@ -472,8 +487,8 @@ def route_endpoint_refusal(
         return _refusal(
             "delegation_unreadable", ["delegation"],
             "The delegation section of config.yaml has a line this check cannot read safely; it reads only "
-            "plain `key: value` lines, comments, and nested lines under a key with no value. It cannot tell "
-            "whether delegation.base_url sends the child somewhere else.",
+            "plain `key: value` lines with no alias or `<<` value, comments, and nested lines under a key with "
+            "no value. It cannot tell whether delegation.base_url sends the child somewhere else.",
             "Rewrite those lines yourself, then route again.",
         )
     delegation = {**user.sections.get("delegation", {}), **managed_delegation}
@@ -589,6 +604,12 @@ def _provider_leaf(layer: Layer) -> Any:
     A provider nested under `model.default`, `model.model` or `model.name`
     replaces an unset or exactly `auto` one; a scan reads that nesting as
     undecidable. A set root `provider` replaces an unset one.
+
+    `false`, `no`, `off` and zero read as unset here, as Hermes v0.21.1 to
+    v0.21.3 read them (`str(value or "")`), so the bypass applies. From
+    v0.21.4 (`coerce_provider_id`, hermes_cli/config.py:1788 at v0.22.2 and
+    main) Hermes keeps them as the text `False` or `0`, a set provider that
+    lifts the bypass; refusing there is the safe answer for the older ones.
     """
     section = layer.sections.get("model", {})
     own = section.get("provider", _MISSING)

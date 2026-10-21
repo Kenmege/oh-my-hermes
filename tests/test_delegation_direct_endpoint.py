@@ -230,6 +230,11 @@ class StrictReadingTest(GuardTestCase):
             "unterminated quote": f"  base_url: '{ENDPOINT}\n",
             "tab indentation": f"\tbase_url: {ENDPOINT}\n",
             "shallower line": f"    base_url: {ENDPOINT}\n  api_key: k\n",
+            # Hermes' loader fails on an alias with no anchor and on `<<` as a
+            # value; the scan does not follow anchors, so any alias refuses.
+            "alias value": "  base_url: *endpoint\n",
+            "merge value": "  api_mode: <<  # x\n",
+            "nested alias": "  extra:\n    - *endpoint\n",
         }
         for name, shape in shapes.items():
             with self.subTest(shape=name):
@@ -245,7 +250,6 @@ class StrictReadingTest(GuardTestCase):
     def test_a_value_the_scan_cannot_decide_counts_as_set(self) -> None:
         for shape in (
             "  base_url:\n    url: http://nested.test\n",
-            "  base_url: *endpoint\n",
             f"  base_url: !!str {ENDPOINT}\n",
             f"  base_url: [{ENDPOINT}]\n",
             "  base_url: 'it''s'\n",
@@ -411,6 +415,38 @@ class RouteWithoutProviderTest(GuardTestCase):
                 self.assertEqual(result["status"], "routed", result)
                 self.assertEqual(read_delegation_route(self.home), {"model": "local-llama"})
 
+    def test_a_direct_endpoint_does_not_inherit_the_sessions_provider(self) -> None:
+        # Hermes builds the child against delegation.base_url, so the main
+        # model's provider, which cannot serve this model, is not checked.
+        session = "model:\n  default: gpt-5.6-sol\n  provider: openai-codex\n"
+        for name, delegation, managed in (
+            ("config.yaml", f"  base_url: {ENDPOINT}\n", None),
+            ("managed config", None, f"delegation:\n  base_url: {ENDPOINT}\n"),
+        ):
+            with self.subTest(endpoint=name):
+                if managed:
+                    self.write_managed(managed)
+                self.write_config(delegation, head=session)
+                result = self.call(action="set", model="claude-fable-5-1")
+                self.assertEqual(result["status"], "routed", result)
+                self.assertEqual(read_delegation_route(self.home), {"model": "claude-fable-5-1"})
+
+    def test_an_endpoint_the_scan_cannot_read_keeps_the_inherited_provider_check(self) -> None:
+        session = "model:\n  default: gpt-5.6-sol\n  provider: openai-codex\n"
+        for delegation in (
+            None,
+            "  max_iterations: 5\n",
+            "  base_url: ${DELEGATION_BASE_URL}\n",
+            f"  base_url: >\n    {ENDPOINT}\n",
+            "  base_url: *endpoint\n",
+        ):
+            with self.subTest(delegation=delegation):
+                before = self.write_config(delegation, head=session)
+                result = self.call(action="set", model="claude-fable-5-1")
+                self.assertEqual(result["status"], "error", result)
+                self.assertEqual(result["inherited_provider"], "openai-codex")
+                self.assertEqual(self.config.read_bytes(), before)
+
 
 class LocalEndpointBypassTest(GuardTestCase):
     def test_a_local_main_endpoint_with_no_provider_refuses_a_provider_route(self) -> None:
@@ -418,6 +454,9 @@ class LocalEndpointBypassTest(GuardTestCase):
             "model.base_url": f"model:\n  default: llama3\n  base_url: {LOCAL_MAIN}\n",
             "provider auto": f"model:\n  base_url: {LOCAL_MAIN}\n  provider: auto\n",
             "provider null": f"model:\n  base_url: {LOCAL_MAIN}\n  provider: ~\n",
+            # Unset up to Hermes v0.21.3; from v0.21.4 the text `False`, which
+            # lifts the bypass. Refused for the older versions.
+            "provider false": f"model:\n  base_url: {LOCAL_MAIN}\n  provider: false\n",
             "LAN host": "model:\n  base_url: http://192.168.1.20:8000/v1\n",
             "non-cloud host": "model:\n  base_url: https://llm.example.internal/v1\n",
             "cloud lookalike": "model:\n  base_url: https://openrouter.ai.example.test/v1\n",
@@ -470,6 +509,19 @@ class LocalEndpointBypassTest(GuardTestCase):
             f"model: {{provider: custom, base_url: '{LOCAL_MAIN}', default:}}\n",
             # A collection counts as set: Hermes reads its text as the URL.
             f"model: {{default: llama3, base_url: [{LOCAL_MAIN}]}}\n",
+            # A plain value holding `: `, which no Hermes loader parses.
+            f"model: {{provider: custom: x, base_url: '{LOCAL_MAIN}'}}\n",
+            # An alias or `<<` as a value, with the provider pinned: Hermes
+            # cannot load the file, and the scan does not follow anchors, so
+            # a defined alias refuses too.
+            "model: {base_url: *a, provider: custom}\n",
+            "model:\n  base_url: *a\n  provider: custom\n",
+            f"x-local: &a {LOCAL_MAIN}\nmodel:\n  base_url: *a\n  provider: custom\n",
+            f"model: {{base_url: {LOCAL_MAIN}, provider: <<}}\n",
+            f"model:\n  base_url: {LOCAL_MAIN}\n  provider: <<\n",
+            "model: <<\n",
+            f"provider: <<\nmodel:\n  base_url: {LOCAL_MAIN}\n",
+            "base_url: *a\nmodel:\n  provider: custom\n",
         ):
             with self.subTest(head=head):
                 before = self.write_config(head=head)
@@ -487,6 +539,9 @@ class LocalEndpointBypassTest(GuardTestCase):
             "no base_url": "model:\n  default: llama3\n",
             "unset base_url": "model:\n  base_url: ''\n",
             "model.base_url over root": f"base_url: {LOCAL_MAIN}\nmodel:\n  base_url: https://openrouter.ai/api/v1\n",
+            # Text that only opens like `<<` or an alias loads as that text.
+            "provider text opening with <<": f"model:\n  base_url: {LOCAL_MAIN}\n  provider: << x\n",
+            "quoted provider opening with *": f"model:\n  base_url: {LOCAL_MAIN}\n  provider: '*custom'\n",
         }
         for name, head in heads.items():
             with self.subTest(shape=name):

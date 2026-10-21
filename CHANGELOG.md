@@ -4,6 +4,22 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The delegate route tool answers right at its edges.** An alias (`*name`)
+  or `<<` given as a value in the `model` or `delegation` section, or in a
+  root `base_url`, `api_base` or `provider`, now makes that section
+  unreadable and the route is refused. Hermes cannot load the file when an
+  alias has no anchor or a value is `<<`, so a route written there never took
+  effect while OMH answered `routed`; a defined alias refuses too, because
+  the check does not follow anchors. A route that names no provider over a
+  direct `delegation.base_url` is no longer refused for the main session's
+  provider, since Hermes builds that child against the endpoint; the check
+  stays when the endpoint cannot be read. `fallback` with no category now
+  continues the category this conversation's own route was set under, so a
+  model in two chains no longer fails as ambiguous. It refuses when the model
+  is not in that chain, and a route set by model alone still needs the
+  category. `docs/INSTALLATION.md` now says that `false`, `no`, `off` and
+  zero for `model.provider` read as unset only up to Hermes v0.21.3 and as
+  set from v0.21.4, and why OMH still refuses on them.
 - **A Hermes restart no longer leaves a team part waiting four hours.** A
   helper runs inside the Hermes process that started it, and a restart ends
   it without the `subagent_stop` callback, so `omh_team` held the part as

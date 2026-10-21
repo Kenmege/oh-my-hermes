@@ -535,7 +535,10 @@ class DelegateRouteToolTest(unittest.TestCase):
                 ],
             }
         )
-        self._call(action="set", category="quick")
+        # Set by model with no category, so nothing records which chain the
+        # route came from. A route set by category falls back inside it
+        # (`FallbackCategoryTest`); this one still fails closed.
+        self._call(action="set", model="shared", reasoning_effort="low")
         before = self.config.read_bytes()
         ambiguous = self._call(action="fallback")
         self.assertEqual(ambiguous["status"], "error")
