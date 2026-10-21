@@ -299,10 +299,10 @@ class TellFieldAcrossARespawnTests(unittest.TestCase):
 
 
 class AgentsAcrossARespawnTests(unittest.TestCase):
-    """The subagents the strip held stay on it across a respawn: they never move to the HUD's [Agents] block."""
+    """The subagents the agent view held stay in it across a respawn: they never move to the HUD's agents block."""
 
-    def test_finished_agents_stay_on_the_strip_and_running_ones_are_marked_interrupted(self) -> None:
-        from test_tui_agent_strip import agent_event
+    def test_finished_agents_stay_in_the_view_and_running_ones_are_marked_interrupted(self) -> None:
+        from test_tui_agent_view import agent_event
         from test_tui_panels import agent_row, hud_payload, with_agents
         from test_tui_subagents import FIRST, SECOND
 
@@ -319,10 +319,10 @@ class AgentsAcrossARespawnTests(unittest.TestCase):
         self.assertEqual({agent.subagent_id: agent.status for agent in app.roster.agents.values()},
                          {FIRST: COMPLETED, SECOND: INTERRUPTED})  # the gateway that ran it is gone
         self.assertIsNone(app.agent_steer)
-        strip = line_text(app._agent_strip(120))
-        self.assertIn("○ …one", strip)
-        self.assertIn("▪ …two", strip)
-        self.assertFalse([line for line in app._slot_lines(120, 30) if line_text(line).startswith("[Agents]")])
+        view = [line_text(line) for line in app._agent_view(120, 30)]
+        self.assertTrue(view[1].startswith("  ○ Run the shell command one"), view)
+        self.assertTrue(view[2].startswith("  ▪ Run the shell command two"), view)
+        self.assertFalse([row for row in view if "│" in row], "no HUD agents block header beside them")
 
 
 class NoRespawnTests(unittest.TestCase):

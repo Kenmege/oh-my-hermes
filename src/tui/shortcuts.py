@@ -36,7 +36,8 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
                "Esc leaves the composer as it was"),
     ("Ctrl+X", "Opens the /sessions picker"),
     ("↑", "On an empty composer with prompts queued, takes them back into the composer to edit; a queued shell line comes back on its own"),
-    ("↓", "On an empty composer while the info line shows subagents, opens the agent list in the composer's place"),
+    ("↓", "On an empty composer while the agent view under the info line shows subagents, gives its rows the keys "
+          "as the agent list"),
     ("← / →", "Move by a character; with Ctrl or Alt, by a word (Alt+B and Alt+F too)"),
     ("Home / End, Ctrl+A / Ctrl+E", "Go to the start or the end of the line"),
     ("Backspace / Delete", "Delete a character, or a paste chip whole; Backspace on an empty composer removes "

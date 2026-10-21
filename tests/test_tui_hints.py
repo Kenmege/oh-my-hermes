@@ -2,7 +2,7 @@
 
 While Hermes asks something, the info line names that question's keys and
 the working row stops offering Esc for an interrupt, so the screen gives Esc
-one meaning. The strip's last mark says what Down opens (`↓ agents`). An
+one meaning. The agent count's last mark says what Down opens (`↓ agents`). An
 approval keeps a short key hint on the info line at 60 and 40 columns, and a
 long command wraps under its own indent. The banner is one row (brand, version, resumed
 session, working directory; the model and the keys are on the info line), and
@@ -14,7 +14,7 @@ from __future__ import annotations
 import unittest
 
 from _tui_lines import INFO_INSET, line_text, lines_text
-from test_tui_agent_strip import agent_app
+from test_tui_agent_view import agent_app
 from test_tui_modes import answer, make_app
 from omh.tui.app import App, banner_lines
 from omh.tui.gateway import Response, ServerRequest
@@ -71,7 +71,7 @@ class EscMeaningTests(unittest.TestCase):
         return "\n".join(app.terminal.screen.lines())  # type: ignore[attr-defined]
 
     def states(self) -> list[tuple[str, App, object]]:
-        from test_tui_agent_strip import STARTS, relay
+        from test_tui_agent_view import STARTS, relay
         from omh.tui.keys import CHAR, DOWN, Key
 
         draft, client = make_app(busy=True, cols=100)
@@ -118,20 +118,20 @@ class NarrowSayTests(unittest.TestCase):
     """What the next key does keeps its point on a narrow info line: a shorter form, never a cut-off long one."""
 
     def rewind_row(self, cols: int, agents: bool, mode: str = "normal", effort: str = "") -> str:
-        from test_tui_agent_strip import STARTS, relay
+        from test_tui_agent_view import STARTS, relay
         from test_tui_modes import show_mode
         from omh.tui.app import Rewind
 
         app, _client = agent_app(busy=False, frames=[], cols=cols)
         if agents:
-            relay(app, STARTS)  # the strip from the turn before stays on the row
+            relay(app, STARTS)  # the agents from the turn before stay counted on the row
         show_mode(app, mode)
         app.effort = effort
         app.rewind = Rewind(row_id=7, ordinal=2, before=())
         return line_text(app._info_line(cols))
 
     def steer_row(self, cols: int, mode: str = "normal", effort: str = "") -> str:
-        from test_tui_agent_strip import STARTS, relay
+        from test_tui_agent_view import STARTS, relay
         from test_tui_modes import show_mode
         from omh.tui.keys import CHAR, DOWN, Key
 
@@ -192,10 +192,10 @@ class NarrowSayTests(unittest.TestCase):
         self.assertTrue(row.rstrip().endswith("esc cancels"), row)
         self.assertTrue(row.startswith(INFO_INSET + "⏵⏵") and "⏸" in row, row)
 
-    def test_the_right_side_gives_way_before_the_strip_or_the_steered_agents_name(self) -> None:
+    def test_the_right_side_gives_way_before_the_count_or_the_steered_agents_name(self) -> None:
         row = self.steer_row(100, effort="high")
         self.assertIn("steering find usages of", row)
-        self.assertIn("read the diff", row)  # the strip, whole
+        self.assertIn("2 agents · ↓ agents", row)  # the count, whole
         self.assertNotIn("effort", row)
         wide = self.steer_row(140, effort="high")
         self.assertIn("steering find usages of: enter sends it to that agent · esc cancels", wide)
@@ -212,22 +212,22 @@ class NarrowSayTests(unittest.TestCase):
                     self.assertFalse(row.rstrip().endswith("…"), row)
         self.assertIn("replaces prompt #2 and everything after it · esc cancels", self.rewind_row(100, False))
 
-    def test_an_agent_steer_keeps_esc_cancels_at_every_width_with_the_strip_shown(self) -> None:
+    def test_an_agent_steer_keeps_esc_cancels_at_every_width_with_the_count_shown(self) -> None:
         for cols in (100, 80, 60, 40):
             with self.subTest(cols=cols):
                 row = self.steer_row(cols)
                 self.assertIn("esc cancels", row)
                 self.assertIn("steer", row)
                 self.assertFalse(row.rstrip().endswith("…"), row)
-                if cols >= 60:  # the strip gives way before the agent's name does
+                if cols >= 60:  # the count gives way before the agent's name does
                     self.assertIn("steering find usages of", row)
 
 
-class StripMarkTests(unittest.TestCase):
-    def test_the_strips_last_mark_says_what_down_opens(self) -> None:
+class CountMarkTests(unittest.TestCase):
+    def test_the_counts_last_mark_says_what_down_opens(self) -> None:
         self.assertEqual(OPEN_MARK, "↓ agents")
         app, _client = agent_app()
-        self.assertTrue(line_text(app._agent_strip(120)).endswith("↓ agents"))
+        self.assertEqual(line_text(app._agent_chip(120)), "2 agents · ↓ agents")
 
 
 class NarrowApprovalTests(unittest.TestCase):

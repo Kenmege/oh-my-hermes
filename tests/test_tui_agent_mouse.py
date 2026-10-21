@@ -1,8 +1,9 @@
 """Clicks on the agent list, and when the OMH TUI asks the terminal for mouse reports at all: only while the list is open.
 
-The strip on the info line is never clickable (the owner's decision of
-2026-10-14): during a turn the wheel scrolls and a drag selects, and Down
-opens the list from the keyboard.
+Neither the agent view under the info line nor the count on it is clickable
+while the list is closed (the owner's decision of 2026-10-14): during a turn
+the wheel scrolls and a drag selects, and Down opens the list from the
+keyboard, on the view's own rows.
 
 Where a click lands is never taken from the app. Each case reads the VT
 screen the scripted terminal painted (`drawn`), finds the row and the cells
@@ -25,7 +26,7 @@ import unittest
 
 from _tui_gateway_replay import Scenario
 from test_tui_agent_list import INTERRUPTED_PROMPT, delegating_scenario, focused, info_left, more_agents, under_the_frame
-from test_tui_agent_strip import STARTS, agent_app, relay
+from test_tui_agent_view import STARTS, agent_app, relay
 from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, FakePoller, ScriptedTerminal, Step, info_index
 from test_tui_modes import SID, RecordingClient, composer_index, drawn, make_app, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND
@@ -59,6 +60,7 @@ from omh.tui.keys import (
     KeyDecoder,
     Mouse,
 )
+from omh.tui.modes import IDLE_HINT
 from omh.tui.pager import ALT_SCREEN_OFF
 from omh.tui.screen import ERASE_BELOW
 from omh.tui.session_picker import SessionPicker, SessionRow
@@ -93,7 +95,7 @@ def row_of(app: App, text: str) -> int:
 
 
 def column_of(app: App, text: str) -> int:
-    """The 1-based column of the first cell of `text` on the screen (the strip's rows hold no wide glyph)."""
+    """The 1-based column of the first cell of `text` on the screen (the agent rows hold no wide glyph)."""
     (line,) = [line for line in drawn(app) if text in line]
     return line.index(text) + 1
 
@@ -118,7 +120,7 @@ def state(app: App, client: RecordingClient) -> tuple[object, ...]:
 
 
 def running(**options: object) -> tuple[App, RecordingClient]:
-    """A turn running with the two recorded agents on the strip, the region's row known."""
+    """A turn running with the two recorded agents in the view, the region's row known."""
     app, client = agent_app(**options)
     return settled(app), client
 
@@ -148,7 +150,7 @@ class MouseStateTests(unittest.TestCase):
         app.turn_pending = True
         note("a turn running, no agent")
         relay(app, STARTS)
-        note("a turn running, agents on the strip")
+        note("a turn running, agents in the view")
         app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
         note("an approval open")
         now[0] += SLOT_ARM_SECONDS
@@ -161,10 +163,10 @@ class MouseStateTests(unittest.TestCase):
         app._on_input(Key(CHAR, "q"))
         note("back in the list")
         app._on_input(Key(ESCAPE))
-        note("back on the strip, the turn still running")
+        note("back on the view, the turn still running")
         relay(app, FRAMES[2:])
         app._on_event(Event("message.complete", SID, {"text": "done"}))
-        note("the turn over, the finished strip still shown")
+        note("the turn over, the finished agents still shown")
         app._on_input(Key(DOWN))
         note("the list focused while idle")
         app._on_input(Key(ESCAPE))
@@ -177,14 +179,14 @@ class MouseStateTests(unittest.TestCase):
             [
                 ("idle, no agent", False),
                 ("a turn running, no agent", False),
-                ("a turn running, agents on the strip", False),  # the wheel and selection work during the turn
+                ("a turn running, agents in the view", False),  # the wheel and selection work during the turn
                 ("an approval open", False),
                 ("the approval denied, the turn still running", False),
                 ("the list focused", True),
                 ("an agent's log open", False),
                 ("back in the list", True),
-                ("back on the strip, the turn still running", False),
-                ("the turn over, the finished strip still shown", False),
+                ("back on the view, the turn still running", False),
+                ("the turn over, the finished agents still shown", False),
                 ("the list focused while idle", True),
                 ("the list left while idle", False),
                 ("the next turn, the roster empty", False),
@@ -212,9 +214,9 @@ class MouseStateTests(unittest.TestCase):
                 self.assertEqual(reporting(app), on)
                 self.assertEqual(mouse_calls(app), [True] if on else [])
 
-    def test_a_strip_that_names_no_agent_has_nothing_to_click_but_the_list_does(self) -> None:
+    def test_the_view_and_the_count_have_nothing_to_click_but_the_list_does(self) -> None:
         app, _client = running(cols=40)
-        self.assertIn("● 2 agents ↓", "\n".join(drawn(app)))
+        self.assertIn("  2 agents · ↓ agents", "\n".join(drawn(app)))
         self.assertFalse(reporting(app))
         app._on_input(Key(DOWN))
         self.assertTrue(reporting(app))
@@ -410,13 +412,15 @@ class FailingShutdownTests(unittest.TestCase):
         self.assertTrue(app.poller.stopped)  # type: ignore[attr-defined]
 
 
-class StripNotClickableTests(unittest.TestCase):
-    def test_no_cell_of_the_strip_opens_anything_and_reports_stay_off_during_a_turn(self) -> None:
+class ViewNotClickableTests(unittest.TestCase):
+    def test_no_cell_of_the_view_or_the_count_opens_anything_and_reports_stay_off_during_a_turn(self) -> None:
         app, client = running()
-        y = row_of(app, "● main  ")
+        rows = [row_of(app, "2 agents · ↓ agents"), row_of(app, "  ● main"), row_of(app, "find usages of"),
+                row_of(app, SECOND_ROW)]
         before = state(app, client)
-        for x in range(1, 82):
-            click(app, x, y)
+        for y in rows:
+            for x in range(1, 82):
+                click(app, x, y)
         self.assertEqual(state(app, client), before)
         self.assertFalse(reporting(app))
         self.assertEqual(mouse_calls(app), [])
@@ -464,12 +468,14 @@ class ListClickTests(unittest.TestCase):
         self.assertEqual((app.list_selected, app.pager, client.calls), (None, None, []))
         self.assertEqual(len(under_the_frame(app)), 1)
 
-    def test_the_info_line_the_rows_above_the_list_and_the_row_under_the_region_open_nothing(self) -> None:
+    def test_the_info_line_the_rows_above_it_and_the_row_under_the_region_open_nothing(self) -> None:
         app, client = self.open()
         before = state(app, client)
         top = row_of(app, "  ● main")
         info = row_of(app, AGENT_LIST_HINT)
-        for y in (top - 1, info, info + 1, top - 2, 1, 24, 25):
+        last = row_of(app, SECOND_ROW)
+        self.assertEqual((info, last), (top - 1, top + 2), "the list is under the info line, the region's last rows")
+        for y in (info, info - 1, info - 2, last + 1, 1, 24, 25):
             with self.subTest(y=y):
                 click(app, 10, y)
                 self.assertEqual(state(app, client), before)
@@ -483,7 +489,9 @@ class ListClickTests(unittest.TestCase):
         for _ in range(8):
             app._on_input(Key(DOWN))  # the last agent: main and the two recorded ones scrolled off
         settled(app)
-        self.assertEqual([row.split("task ")[1][0] for row in under_the_frame(app)[:-1]], list("0123456"))
+        rows = under_the_frame(app)[:-1]
+        self.assertEqual(len(rows), 8, "nine running agents raise the view to a third of 24 rows")
+        self.assertEqual([row.split("task ")[1][0] for row in rows if "task " in row], list("0123456"))
         # Each click moves the highlight, and the list scrolls to it; the next row is found on the new screen.
         for number in (6, 4, 0):
             with self.subTest(number=number):
@@ -502,11 +510,11 @@ class ListClickTests(unittest.TestCase):
         click(app, 3, row_of(app, "read the diff for risks"))
         self.assertEqual(app.log_agent, SECOND)
 
-    def test_while_the_list_is_shown_the_strip_is_not_there_to_click(self) -> None:
+    def test_while_the_list_is_shown_the_info_line_is_not_there_to_click(self) -> None:
         app, client = running()
-        y, x = row_of(app, "● main  "), column_of(app, "read the diff")
+        y, x = row_of(app, "2 agents · ↓ agents"), column_of(app, "↓ agents")
         app._on_input(Key(DOWN))
-        self.assertEqual(row_of(app, AGENT_LIST_HINT), y)  # the hint row stands where the strip was
+        self.assertEqual(row_of(app, AGENT_LIST_HINT), y)  # the hint stands where the count was
         click(app, x, y)
         self.assertEqual((app.pager, app.list_selected, client.calls), (None, FIRST, []))
 
@@ -561,8 +569,8 @@ class IgnoredReportTests(unittest.TestCase):
         self.assertEqual(under_the_frame(app)[-1], AGENT_LIST_HINT)
 
     def test_a_click_opens_nothing_whenever_the_tui_did_not_ask_for_reports(self) -> None:
-        def strip(app: App, now: list[float]) -> None:
-            app._on_input(Key(ESCAPE))  # the list left: the strip alone is no place to click
+        def view(app: App, now: list[float]) -> None:
+            app._on_input(Key(ESCAPE))  # the list left: the agent view alone is no place to click
 
         def approval(app: App, now: list[float]) -> None:
             app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
@@ -578,7 +586,7 @@ class IgnoredReportTests(unittest.TestCase):
         def resizing(app: App, now: list[float]) -> None:
             app._on_resize()  # the size has not settled: the old frame is still on screen, nothing is redrawn
 
-        for into in (strip, approval, keys_pager, agent_log, resizing):
+        for into in (view, approval, keys_pager, agent_log, resizing):
             with self.subTest(into.__name__):
                 now = [100.0]
                 app, client = listing(clock=lambda: now[0])
@@ -620,7 +628,7 @@ class UnknownRowTests(unittest.TestCase):
 
     def test_at_launch_the_row_is_not_known_so_reports_stay_off_and_a_click_is_not_read(self) -> None:
         app, client = agent_app()  # no Ctrl+L: the app was never told which row the cursor started on
-        y, x = row_of(app, "● main  "), column_of(app, "read the diff")
+        y, x = row_of(app, SECOND_ROW), column_of(app, "read the diff")
         self.assertIsNone(app.region.last_row(24))
         self.assertFalse(reporting(app))
         before = state(app, client)
@@ -640,22 +648,23 @@ class UnknownRowTests(unittest.TestCase):
         self.assertTrue(reporting(app))
         self.assertEqual(app.region.last_row(24), 23)
         y = row_of(app, SECOND_ROW)
-        self.assertEqual(y, 23)  # right above the info line, which is on the screen's last row
+        self.assertEqual(y, 24)  # the list's last row, under the info line: the screen's last row
         click(app, 10, y)
         self.assertEqual(app.log_agent, SECOND)
 
     def test_after_a_redraw_the_region_sits_under_the_output_and_clicks_follow_it(self) -> None:
         app, client = listing()
         screen = drawn(app)
-        status = info_index(screen)
-        self.assertEqual(app.region.last_row(24), status)
-        self.assertLess(status, 23)
-        self.assertEqual(screen[status + 1 :], [""] * (23 - status))  # nothing under the region
+        last = info_index(screen)  # the list's last row is the region's
+        self.assertEqual(app.region.last_row(24), last)
+        self.assertLess(last, 23)
+        self.assertEqual(screen[last + 1 :], [""] * (23 - last))  # nothing under the region
         y = row_of(app, SECOND_ROW)
-        self.assertEqual(y, status)  # right above the info line (the report counts from 1, the screen from 0)
+        self.assertEqual(y, last + 1)  # the report counts from 1, the screen from 0
         before = state(app, client)
-        click(app, 10, y + 1)  # the info line
-        self.assertEqual(state(app, client), before)
+        for off in (1, -3):  # the row under the region, the info line
+            click(app, 10, y + off)
+            self.assertEqual(state(app, client), before)
         click(app, 10, y)
         self.assertEqual(app.log_agent, SECOND)
 
@@ -663,12 +672,12 @@ class UnknownRowTests(unittest.TestCase):
         app, _client = listing()
         self.assertLess(row_of(app, SECOND_ROW), 21)
         app.transcript.add_notice("\n".join(f"line {number}" for number in range(40)))
-        self.assertEqual(row_of(app, SECOND_ROW), 23)
+        self.assertEqual(row_of(app, SECOND_ROW), 24)
         self.assertEqual(app.region.last_row(24), 23)
-        click(app, 10, 22)  # the row above the second agent's holds the first agent
+        click(app, 10, 23)  # the row above the second agent's holds the first agent
         self.assertEqual(app.log_agent, FIRST)
         app._on_input(Key(CHAR, "q"))
-        click(app, 10, 23)
+        click(app, 10, 24)
         self.assertEqual(app.log_agent, SECOND)
 
     def test_a_redraw_behind_an_open_pager_does_not_claim_the_top_row(self) -> None:
@@ -1218,30 +1227,32 @@ class MouseReplayTests(AppTestCase):
 
         terminal.script(
             self.submit(run, INTERRUPTED_PROMPT),
-            Step(b"\x0c", when=terminal.shows("● main  "), capture="launched", label="the strip"),
-            Step(b"\x1b[B", when=lambda: terminal.shows("● main  ")() and not on(), capture="redrawn", label="no reports"),
+            Step(b"\x0c", when=terminal.shows("  ● main"), capture="launched", label="the view"),
+            Step(b"\x1b[B", when=lambda: terminal.shows("  ● main")() and not on(), capture="redrawn", label="no reports"),
             near_misses,
             hit,
             Step(b"q", when=terminal.shows("read the diff · ←/→ agents"), capture="log", label="the second agent's log"),
             Step(b"\x1b", when=lambda: on() and listed(), capture="back", label="the list again"),
-            Step(b"\x1b", when=lambda: not listed() and not on(), label="the strip again"),
-            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(), capture="over", label="the end"),
+            Step(b"\x1b", when=lambda: not listed() and not on(), label="the view again"),
+            # The agent view stays under the info line after the turn: `idle` reads the screen's last row.
+            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.shows(IDLE_HINT)(),
+                 capture="over", label="the end"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
         captures = terminal.captures
         # The coordinates above are where the screen showed the thing clicked.
         rows, y = captures["listed"], aimed[0]
-        self.assertEqual(info_index(rows), y)  # the info line right under it (y counts from 1, the screen from 0)
+        self.assertEqual(info_index(rows), y - 1)  # the list's last row (y counts from 1, the screen from 0)
         self.assertIn("read the diff for risks", rows[y - 1])
-        self.assertEqual(info_left(rows[y]), AGENT_LIST_HINT)  # the list's keys, the effort on their right
-        # Wheel, motion, a right press, a release and two near misses (the info line, the row under the region):
-        # still the list, on the first agent, and nothing typed.
+        self.assertEqual(info_left(rows[y - 4]), AGENT_LIST_HINT)  # over main and two agents; the effort on the right
+        # Wheel, motion, a right press, a release and two near misses (the two rows under the region): still the
+        # list, on the first agent, and nothing typed.
         ignored = captures["ignored"]
         self.assertIn("▸ ", ignored[y - 2])
         self.assertEqual(captures["log"][0], "read the diff for risks")
         self.assertEqual(run.calls("subagent.tail")[0]["params"], {"session_id": LIVE_ID, "subagent_id": SECOND})
-        # Off during the turn with the strip shown, on with the list, off for the log, on back in the list, off once
+        # Off during the turn with the view shown, on with the list, off for the log, on back in the list, off once
         # the list is left.
         self.assertEqual(terminal.mouse_calls, [True, False, True, False])
         self.assertFalse(terminal.mouse_reporting)
