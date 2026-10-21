@@ -2354,6 +2354,7 @@ class ServedModelAttestationTest(unittest.TestCase):
         )
         row = read_hermes_native_subagents(self.home, now=NOW, omh_home=self.home / ".omh")["rows"][0]
         self.assertEqual(row["model"], "")
+        self.assertEqual((row["alias"], row["category"]), ("", ""))
         self.assertEqual(row["model_attestation"]["basis"], "no_usage_observation")
         self.assertTrue(row["cost_approximate"])
         self.assertTrue(row["cost_override"])
