@@ -19,7 +19,7 @@ from _local_package import load_local_package
 
 load_local_package()
 
-from _delegation_graphs import dag_export_run, owner_mock, parallel  # noqa: E402
+from _delegation_graphs import dag_export_run, owner_mock, parallel, with_tokens  # noqa: E402
 from _tui_lines import lines_text  # noqa: E402
 from omh.plugin_bundle.omh import delegation_view  # noqa: E402
 from omh.plugin_bundle.omh.delegation_view import render_delegation_view  # noqa: E402
@@ -75,6 +75,17 @@ class TreeTests(unittest.TestCase):
 
     def test_the_owner_mock_up_under_the_info_line(self) -> None:
         self.assertEqual("\n".join(row.rstrip() for row in panel(owner_mock(), 24, 80)) + "\n", MOCK_24x80)
+
+    def test_the_tree_under_the_info_line_says_each_lanes_count_where_its_row_has_room(self) -> None:
+        counted = with_tokens(owner_mock(), {"a": 1234, "b": 62_000, "c": 45_600})
+        self.assertEqual(
+            [row.rstrip() for row in panel(counted, 24, 80)[2:5]],
+            ["  ├─ ● Refresh HUD docs    writing  opus-5-5:medium    running 2m 10s · ↓1.2k",
+             "  ├─ ✓ Polish HUD CLI      quick    glm-5.3-flash:low  done 1m 2s · ↓62k",
+             "  ├─ ● Update HUD tests    deep     opus-5-5:high      running 2m 8s · ↓45.6k"],
+        )
+        self.assertEqual(panel(counted, 24, 60)[4].rstrip(), "  │    writing · opus-5-5:medium · running 2m 10s · ↓1.2k")
+        self.assertEqual(panel(counted, 24, 40), panel(owner_mock(), 24, 40), "the model whole first, then a count")
 
     def test_running_lanes_raise_the_cap_up_to_a_third_of_the_screen_then_the_tree_says_how_many_more(self) -> None:
         twelve = panel(parallel(12), 24, 100)  # twelve running lanes: more than a third of 24 rows holds

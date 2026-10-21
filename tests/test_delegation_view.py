@@ -31,6 +31,7 @@ from _delegation_graphs import (  # noqa: E402
     owner_mock,
     parallel,
     root,
+    with_tokens,
 )
 from omh.plugin_bundle.omh.delegation_view import (  # noqa: E402
     BOX_MIN_WIDTH,
@@ -651,7 +652,8 @@ class ReviewTests(unittest.TestCase):
         from omh.commands.hud import DELEGATION_VIEW_PROBE
 
         drawn = set()
-        for case in (dag_export_run(), dag_export_repair_run(), nested(), owner_mock()):
+        counted = with_tokens(dag_export_run(), {"d:r1:button": 1234})
+        for case in (dag_export_run(), dag_export_repair_run(), nested(), owner_mock(), counted):
             for focus in (None, Focus(node="d:r1:api", folded=frozenset({"d:r1:api"}))):
                 drawn |= set(render_delegation_view(case, width=120, focus=focus).text())
         unknown = graph([root(), lane("w", "Unit", "quick", "m", "", "unknown")], [("root", "w", "dispatch")])
@@ -659,6 +661,7 @@ class ReviewTests(unittest.TestCase):
         lines_only = {char for char in drawn if not char.isascii() and not char.isalnum() and char not in "인증모듈문서정리"}
         self.assertEqual(lines_only - set(DELEGATION_VIEW_PROBE), set())
         self.assertIn("↻", lines_only)
+        self.assertIn("↓", lines_only)
 
     def test_a_folded_box_keeps_its_status_word_in_both_charsets(self) -> None:
         focus = Focus(node="d:r1:cli", folded=frozenset({"d:r1:api", "d:r1:cli"}))
@@ -708,6 +711,93 @@ class ReviewTests(unittest.TestCase):
         both = dag_export_repair_run()
         both["edges"].append({"from": "d:r1:verify", "to": "d:r1:csv-fix", "kind": "extend"})
         self.assertEqual(box_lines(render_delegation_view(both, width=100))["d:r1:csv-fix"][0][:2], "↻ ")
+
+
+TOKEN_PART = re.compile(r"( · ↓| - out )[0-9.]+[kM]?( tokens)?")
+
+
+def card_start(view) -> int:
+    """Where the Node details section starts in ``view``, or its end when it has none."""
+    lines = view.text_lines()
+    return lines.index("Node details") if "Node details" in lines else len(lines)
+EXPORT_COUNTS = {"d:r1:button": 1234, "d:r1:api": 5600, "d:r1:cli": 800}
+
+
+class OutputTokenTests(unittest.TestCase):
+    """A lane's `output_tokens`: after its status in its box and its tree row where they have room, in its card."""
+
+    def test_a_box_says_its_count_after_its_status(self) -> None:
+        boxes = box_lines(render_delegation_view(with_tokens(dag_export_run(), EXPORT_COUNTS), width=100))
+        self.assertEqual(
+            [boxes[node_id][2] for node_id in ("d:r1:api", "d:r1:button", "d:r1:docs", "d:r1:cli")],
+            ["✓ Accepted 12s · ↓5.6k", "● Running 21s · ↓1.2k", "◌ Handed out", "✗ Failed 8s · ↓800"],
+        )
+        ascii_drawn = text(with_tokens(dag_export_run(), EXPORT_COUNTS), width=80, charset="ascii")
+        self.assertIn("| * Running 21s - out 1.2k       |", ascii_drawn)
+        self.assertIn("| + Accepted 12s                 |", ascii_drawn, "no room at this width: no count")
+        self.assertTrue(ascii_drawn.isascii())
+
+    def test_a_card_says_the_count_in_tokens(self) -> None:
+        view = render_delegation_view(with_tokens(dag_export_run(), EXPORT_COUNTS), width=100)
+        self.assertEqual(
+            section(view, "Node details"),
+            ["  ● Export button", "    unspecified-high · glm-5.3:low",
+             "    Running 21s · ↓1.2k tokens · layer 2 · session 7c41e9a2"],
+        )
+
+    def test_the_tree_status_column_takes_the_count_where_the_row_has_room(self) -> None:
+        counted = with_tokens(nested(), {"o": 45_600, "k": 900, "o1": 3000, "o2": 120})
+        wide = render_delegation_view(counted, width=60, layout="tree").text_lines()
+        self.assertEqual(wide[4], "│    architect · opus-5-5:xhigh · running 6m 40s · ↓45.6k")
+        self.assertEqual(wide[-1], "     writing · opus-5-5:medium · running 5m 55s · ↓900")
+        self.assertNotIn("↓", render_delegation_view(counted, width=34, layout="tree").text(), "the model first")
+        row = render_delegation_view(with_tokens(owner_mock(), {"a": 1234}), width=100, layout="tree").text_lines()[2]
+        self.assertTrue(row.endswith("running 2m 10s · ↓1.2k"), row)
+
+    def test_a_count_takes_only_room_nothing_else_needs_and_never_moves_the_layout(self) -> None:
+        # The same drawing with the count parts taken out, at every width: no box is widened and no field cut for it.
+        cases = [(dag_export_run, EXPORT_COUNTS), (nested, {"o": 45_600, "k": 900, "o1": 3000, "o2": 120}),
+                 (owner_mock, {"a": 1234, "b": 62_000, "c": 7})]
+        for make, counts in cases:
+            for width in range(20, 161, 3):
+                for layout in ("box", "tree"):
+                    plain = render_delegation_view(make(), width=width, layout=layout)
+                    for scale in (1, 1000, 100_000):
+                        scaled = {key: value * scale for key, value in counts.items()}
+                        counted = render_delegation_view(with_tokens(make(), scaled), width=width, layout=layout)
+                        with self.subTest(case=make.__name__, width=width, layout=layout, scale=scale):
+                            self.assertEqual((counted.layout, counted.boxes), (plain.layout, plain.boxes))
+                            # A count blanked out where it stands: a box keeps its padding, a row ends there.
+                            # Node details are left out: a card's group and session give way to a count.
+                            blanked = TOKEN_PART.sub(lambda part: " " * cells(part.group()), counted.text())
+                            self.assertEqual(
+                                [line.rstrip() for line in blanked.splitlines()][:card_start(counted)],
+                                [line.rstrip() for line in plain.text_lines()][:card_start(plain)],
+                            )
+                            cut = [line for line in section(counted, "Node details") if "↓" in line]
+                            self.assertFalse([line for line in cut if not TOKEN_PART.search(line)], "whole or none")
+                            self.assertTrue(all(cells(line) <= width for line in counted.text_lines()))
+
+    def test_a_card_keeps_its_status_whole_and_drops_its_session_before_the_count(self) -> None:
+        counted = with_tokens(dag_export_run(), EXPORT_COUNTS)
+        cases = {
+            70: "    Running 21s · ↓1.2k tokens · layer 2 · session 7c41e9a2",
+            45: "    Running 21s · ↓1.2k tokens · layer 2 · s…",
+            40: "    Running 21s · ↓1.2k tokens · layer…",
+            33: "    Running 21s · layer 2 · sess…",  # no room for a count at its widest: none at all
+        }
+        for width, line in cases.items():
+            with self.subTest(width=width):
+                view = render_delegation_view(counted, width=width, layout="box")
+                self.assertEqual(view.layout, "box")
+                self.assertEqual(section(view, "Node details")[-1], line)
+
+    def test_no_count_draws_nothing(self) -> None:
+        plain = render_delegation_view(dag_export_run(), width=100).text()
+        for count in (None, 0, -5, True, "1200", 1.5, 10**9):
+            with self.subTest(count=count):
+                counted = with_tokens(dag_export_run(), {"d:r1:button": count})
+                self.assertEqual(render_delegation_view(counted, width=100).text(), plain)
 
 
 class FieldTests(unittest.TestCase):

@@ -84,13 +84,15 @@ whom, and, for parts with recorded dependencies, what waits on what. A header
 names the task count, the run and its state; then the nodes stand in
 frontiers, a node's frontier being the longest path of recorded edges that
 leads to it. Each node is a box of four lines: its title, its category and
-model with effort, its status with its glyph and duration, and its parents
-(`← Export API`) or `Start node`. The nodes of one frontier sit side by side
+model with effort, its status with its glyph and duration (then the output
+tokens its child has written, `· ↓1.2k`, where the box has room), and its
+parents (`← Export API`) or `Start node`. The nodes of one frontier sit side by side
 over a `· Same frontier` label, and one connector joins a frontier to the
 next. Under the boxes, `Dependencies` lists every edge between two nodes, its
 kind named unless it is a `depends_on`, and `Node details` gives a card to
 each running or stuck node, and in `/dag` to the highlighted one: its whole
-title, category and model, status, group and session. Main, the parent
+title, category and model, status and output tokens (`↓1.2k tokens`), group
+and session. Main, the parent
 session, is no box: the nodes it dispatched read `Start node`, and its model
 is on the header's second line. A node added mid-run carries `↻ ` (a repair)
 or `+ ` (an extend) before its title. A dag run of five nodes, at 100 columns,
@@ -275,6 +277,17 @@ What it shows, and what it leaves as `?`:
   out of a box and blank in the tree's column, so `writing` reads alone. A
   box draws no `?` at all: where neither is recorded its line is blank, and
   an unknown state is `◇`; the tree keeps `?` in its category column there.
+- **Output tokens** are what the child's own Hermes session row has counted
+  (`sessions.output_tokens`, to which Hermes adds each model call's output as
+  the call returns), read with the child's other facts, so a running lane's
+  count grows from one HUD read to the next and a finished one keeps its
+  final count. A lane has none while that row says 0 or was not read, and a
+  team part no child took, a fanout unit and main have none. A box and the
+  tree's status column show it only where the line has room for a count at
+  its widest, so no box is widened and no other field is cut for it; a card
+  says it after the status, and its group and session give way first. The
+  graph's fingerprint leaves it out, so a growing count posts nothing to a
+  chat.
 - **State** comes from Hermes' `subagent_stop`, a recorded model call, or the
   team's own record.
   - A child Hermes reported completed with no model call at all reads

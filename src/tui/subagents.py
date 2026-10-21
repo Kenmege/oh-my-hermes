@@ -73,13 +73,12 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
-from ..plugin_bundle.omh.hud_text import elapsed_text
+from ..plugin_bundle.omh.hud_text import compact_count, elapsed_text
 from . import gateway_contract as contract
 from .markdown import clean_text, wrap_prefixed
 from .panels import SPINNER_FRAMES
 from .style import Line, Span
 from .theme import Theme
-from .transcript import compact_count
 from .width import cell_width, truncate, truncate_line, wrap_line
 
 QUEUED = "queued"

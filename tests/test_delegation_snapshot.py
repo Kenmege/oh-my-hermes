@@ -20,7 +20,7 @@ from _local_package import load_local_package
 load_local_package()
 
 from _cli_harness import run_cli  # noqa: E402
-from _delegation_graphs import graph, lane, root  # noqa: E402
+from _delegation_graphs import dag_export_run, graph, lane, nested, owner_mock, root, with_tokens  # noqa: E402
 from _delegation_state import PARENT, dispatched, homes, route, start, stop  # noqa: E402
 from omh.plugin_bundle.omh.delegation_ledger import ledger_key  # noqa: E402
 from omh.plugin_bundle.omh.delegation_ledger import posted_record, read_ledger  # noqa: E402
@@ -400,6 +400,21 @@ class TextTests(unittest.TestCase):
                          "DAG delegation · 1/4 done · 1 running · 2 failed (Port the auth module)")
         self.assertEqual(count_line("delegation", tally(lanes[1:2] + lanes[3:])),
                          "DAG delegation · 1/2 done · 1 running")
+
+    def test_a_lanes_token_count_never_reaches_a_chat_post(self) -> None:
+        # Messengers do not change: the start, count and end texts read no count, so a lane's `output_tokens`
+        # leaves every one of them as it was.
+        for make in (dag_export_run, nested, owner_mock):
+            plain = make()
+            counted = with_tokens(make(), {node["id"]: 1234 for node in make()["nodes"]})
+            with self.subTest(graph=make.__name__):
+                for render in (
+                    lambda payload: start_block(payload, lanes_of(payload)),
+                    lambda payload: end_block(payload, lanes_of(payload)),
+                    lambda payload: count_line("delegation", tally(lanes_of(payload))),
+                ):
+                    self.assertEqual(render(counted), render(plain))
+                    self.assertNotIn("↓", render(counted))
 
     def test_an_end_block_lists_working_only_while_a_lane_still_runs(self) -> None:
         lanes = [lane("a", "Port the auth module", "deep", "m", "", "failed", order=1, status="timeout"),

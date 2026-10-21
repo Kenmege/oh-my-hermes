@@ -460,8 +460,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   first. While the conversation's delegation graph is a DAG run (a lane
   waits on another, or a lane delegates), the view draws its tree instead
   (`DAG · <name> · N nodes · …`, `◆ main`, one row per lane with its
-  category, model and state, `+N more nodes` where they do not fit, the
-  running lanes kept), and `/dag` shows it with boxes. Once every lane has
+  category, model and state, and its output tokens where the row has room,
+  `+N more nodes` where they do not fit, the running lanes kept), and `/dag`
+  shows it with boxes. Once every lane has
   settled the tree is one line (`DAG · <name> · done 5/6 · 1 failed`).
   With no live subagent the view shows the HUD's agents block (`● main │ 3
   agents · 1 running`, then its rows). On a terminal under 6 rows or 20

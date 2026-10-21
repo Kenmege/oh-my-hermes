@@ -80,7 +80,7 @@ from dataclasses import dataclass, field, replace
 import time
 from typing import Any
 
-from ..plugin_bundle.omh.hud_text import elapsed_text
+from ..plugin_bundle.omh.hud_text import compact_count, elapsed_text
 from .diff_view import DIFF_FILE, FILE_ARROW, DiffLine, diff_rows, parse_inline_diff
 from .gateway import Event
 from . import gateway_contract as contract
@@ -401,14 +401,6 @@ def _duration(payload: dict[str, Any], row: ToolRow, now: float, waited: float =
     if row.started_at is not None:
         return max(0.0, now - row.started_at - waited)
     return None
-
-
-def compact_count(value: float) -> str:
-    """`950`, `1.2k`, `3M`: a count in at most four characters and a unit."""
-    for size, suffix in ((1_000_000, "M"), (1_000, "k")):
-        if value >= size:
-            return f"{value / size:.1f}".removesuffix(".0") + suffix
-    return str(int(value))
 
 
 def _earlier(count: int) -> str:

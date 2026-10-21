@@ -8,7 +8,8 @@ lines with its own styles (every piece of text carries a role), and `omh hud
 The boxes stand in frontiers under a header that names the task count,
 the run and its state (``Running · Done 1/5``). Every node but the root is a
 box of four lines: its title, its category and model, its status with its
-glyph and duration, and its parents (``← Export API``) or ``Start node``. The
+glyph and duration (and the output tokens its child wrote, ``· ↓1.2k``, where
+the box has room for them), and its parents (``← Export API``) or ``Start node``. The
 root is no box: what it dispatched starts a frontier, and its model is named
 in the header. A node's frontier is the longest path of recorded edges (a
 dispatch, a `depends_on`, a repair or an extend) from a node with none. The
@@ -18,7 +19,9 @@ next, whatever its edges. So the drawing implies no edge: the edges are
 exact in each box's parents line and in the ``Dependencies`` section under
 the boxes, which lists every edge between two lanes. ``Node details`` then
 gives a card to each running or stuck node, and in `/dag` to the highlighted
-one: its whole title, category and model, status, group and session. A box
+one: its whole title, category and model, status and output tokens, group and
+session. The tree's status column takes the token count too where the row has
+room for it. A box
 draws no ``?``: a field with no record is left out (a blank line where
 neither category nor model is), and an unknown state's glyph is ``◇``.
 
@@ -30,7 +33,8 @@ drawn, which nests a node under its dispatcher and draws no edge. So is a
 graph whose edges loop, or one too narrow for a box. Widths are terminal
 cells: a wide (CJK) character counts 2, and text is folded first so that
 what is counted is what is painted. A duration is counted at
-`DURATION_CELLS` whatever it reads, so a ticking clock never resizes a box.
+`DURATION_CELLS` whatever it reads, so a ticking clock never resizes a box,
+and a token count at `TOKEN_CELLS`, so a growing one never comes and goes.
 
 Every part of a box carries its node's state as its role (``node:running``),
 so a painter colours border, title and status by state; the drawing is
@@ -51,7 +55,7 @@ from functools import lru_cache
 from typing import Any, Final
 import unicodedata
 
-from .hud_text import elapsed_text
+from .hud_text import compact_count, elapsed_text
 
 VIEW_LAYOUTS: Final = ("box", "tree", "header")
 NODE_STATES: Final = (
@@ -60,6 +64,8 @@ NODE_STATES: Final = (
 UNKNOWN_FIELD: Final = "?"
 ELAPSED_LIMIT: Final = 10**9  # seconds, about 31 years: a figure past it (or not finite) is not drawn
 DURATION_CELLS: Final = 7  # a duration's width when a box is measured: `59m 59s`, the widest under 100 hours
+TOKEN_LIMIT: Final = 10**9  # output tokens: a count past it (or not a whole number) is not drawn
+TOKEN_CELLS: Final = 6  # a count's width when a line is measured: `999.9M`, the widest under TOKEN_LIMIT
 DECISION_LIMIT: Final = 64
 
 GAP: Final = 2  # cells between two boxes of a row
@@ -91,6 +97,7 @@ class Charset:
     repair: str  # before the title of a node added to repair another
     extend: str  # before the title of a node added to extend the run
     separator: str
+    written: str  # before a node's output token count
     ellipsis: str
     tee: str
     end: str
@@ -118,6 +125,7 @@ UNICODE: Final = Charset(
     repair="↻",
     extend="+",
     separator=" · ",
+    written="↓",
     ellipsis="…",
     tee="├─ ",
     end="└─ ",
@@ -149,6 +157,7 @@ ASCII: Final = Charset(
     repair="~",
     extend="+",
     separator=" - ",
+    written="out ",
     ellipsis="...",
     tee="+- ",
     end="`- ",
@@ -290,6 +299,20 @@ def _status_text(node: Mapping[str, Any]) -> str:
         reason = _stuck_reason(word)
         return f"stuck {elapsed_text(elapsed)}" + (f": {reason}" if reason else "")
     return f"{word} {elapsed_text(elapsed)}"
+
+
+def _tokens_text(node: Mapping[str, Any], charset: Charset) -> str:
+    """``↓1.2k``: the output tokens the node's child has written (`output_tokens`), as the agent view counts them;
+    "" without a count."""
+    count = node.get("output_tokens")
+    if not isinstance(count, int) or isinstance(count, bool) or not 0 < count < TOKEN_LIMIT:
+        return ""
+    return f"{charset.written}{compact_count(count)}"
+
+
+def _tokens_room(charset: Charset) -> int:
+    """The cells a token count takes after a status, separator included, whatever the count reads."""
+    return cells(charset.separator) + cells(charset.written) + TOKEN_CELLS
 
 
 def _stuck_reason(word: str) -> str:
@@ -564,7 +587,13 @@ def _box_content(
         return [_fit_pieces([*head, *word], inner, charset)]
     head.append(Segment(title, title_role))
     lines = [head, _facts(node, charset)]
-    lines.append([Segment(glyph, f"node:{state}"), Segment(" " + _capital(_status_text(node)), f"node-word:{state}")])
+    status = [Segment(glyph, f"node:{state}"), Segment(" " + _capital(_status_text(node)), f"node-word:{state}")]
+    tokens = _tokens_text(node, charset)
+    # Only where the box has room for a count at its widest: the box is never widened for it, and it never comes
+    # and goes as the clock or the count grows.
+    if tokens and cells(_box_glyph(node, charset, None)) + 1 + _status_cells(node) + _tokens_room(charset) <= inner:
+        status.append(Segment(f"{charset.separator}{tokens}", "more"))
+    lines.append(status)
     parents = [_title(shape.lanes[upper]) for upper in shape.parents[node_id]]
     if parents:
         lines.append([Segment(f"{charset.left} ", "parents"), Segment(", ".join(parents), "parents")])
@@ -724,8 +753,8 @@ def _details(
     shape: _Frontiers, order: Sequence[str], width: int, charset: Charset, focus: Focus | None, spinner: str | None
 ) -> list[tuple[Segment, ...]]:
     """One card per running or stuck node, and the highlighted one: its whole title, category and model, status,
-    and the group and session the graph names for it. The graph holds no reply text and no turn or tool counts,
-    so a card shows none."""
+    output tokens, and the group and session the graph names for it. The graph holds no reply text and no turn or
+    tool counts, so a card shows none of those."""
     shown = [
         node_id for node_id in order
         if _state(shape.lanes[node_id]) in ("running", "stuck") or (focus is not None and focus.node == node_id)
@@ -749,6 +778,10 @@ def _details(
         if facts:
             lines.append(_fit_pieces([Segment(deeper, ""), *facts], width, charset))
         where = [Segment(_capital(_status_text(node)), f"node-word:{state}")]
+        tokens = _tokens_text(node, charset)
+        # Whole or not at all, after the status and before the group and session, which give way first.
+        if tokens and cells(deeper) + _status_cells(node) + _tokens_room(charset) + cells(" tokens") <= width:
+            where.append(Segment(f"{charset.separator}{tokens} tokens", "more"))
         group = _group_label(node.get("group"), charset)
         if group:
             where.append(Segment(f"{charset.separator}{group}", "more"))
@@ -964,8 +997,12 @@ def _tree_lines(
                 Segment(f" {title}{pad}  ", _field_role(title, "title")),
                 Segment(_pad(category, category_width) + "  ", _field_role(category, "category")),
                 Segment(_pad(model, model_width) + "  ", _field_role(model, "model")),
-                Segment(_status_text(node), f"status:{state}"),
             ]
+            used = sum(cells(piece.text) for piece in pieces)
+            pieces.append(Segment(_status_text(node), f"status:{state}"))
+            tokens = _tokens_text(node, charset)
+            if tokens and used + _status_cells(node) + _tokens_room(charset) <= width:  # never at a status's cost
+                pieces.append(Segment(f"{sep}{tokens}", "more"))
             lines.append(_cut_line(pieces, width, charset))
         else:
             title = fit(_title(node), width - cells(prefix) - cells(glyph) - 1, charset.ellipsis)
@@ -978,12 +1015,16 @@ def _tree_lines(
             (category, model), status = _tree_fields(node), _status_text(node)
             # The status is what a reader came for: the model gives way first when the line is full.
             model_room = width - cells(indent) - cells(category) - cells(status) - 2 * cells(sep)
+            whole = cells(indent) + sum(cells(text) + cells(sep) for text in (category, model) if text)
             model = fit(model, max(cells(charset.ellipsis) + 3, model_room), charset.ellipsis) if model else ""
             facts = [*lead_segments(shown_under), Segment("  ", "edge", depth)]
             for text, role in ((category, "category"), (model, "model")):
                 if text:  # a field with no record yet is left out with its separator
                     facts += [Segment(text, _field_role(text, role)), Segment(sep, "edge", depth)]
             facts.append(Segment(status, f"status:{state}"))
+            tokens = _tokens_text(node, charset)
+            if tokens and whole + _status_cells(node) + _tokens_room(charset) <= width:  # the model whole first
+                facts.append(Segment(f"{sep}{tokens}", "more"))
             lines.append(_cut_line(facts, width, charset))
         kids = [kid for kid in nested.get(node_id, []) if kid not in hidden]
         for at, kid in enumerate(kids):
