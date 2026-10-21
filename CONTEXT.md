@@ -131,7 +131,7 @@ conversation: what Hermes' own `subagent_start`, `post_tool_call` (for
 `delegate_task`) and `subagent_stop` hooks said about delegated children.
 Session and subagent ids, parent, turn, task index, delegation id, times,
 status words, and the route OMH had recorded for the session when a child
-started, and, for a child whose goal ends with `[dag:<run>/<node>]`, those
+started, and, for a child whose goal carries `[dag:<run>/<node>]`, those
 two ids (**Dag-ulw run**). No goal, summary, prompt or tool history. It is the
 only record that ties a child session to the call and task that made it;
 `state.db`, the delegation manifests and the live logs do not.
@@ -391,7 +391,7 @@ tool is its only writer, and a session keeps at most 16 runs (a new one
 drops the oldest finished one); the delegation graph reads it under every
 segment of the conversation, so a compacted parent still finds its run.
 Hermes runs every node as the parent's own `delegate_task` child; the child
-of a node is the one whose goal ends with `[dag:<run>/<node>]`. Node and
+of a node is the one whose goal carries `[dag:<run>/<node>]`. Node and
 run states are derived on every read. `accepted` is the parent's judgement
 after it read the node's handoff file, refused while that file is missing
 or Hermes reported the child failed; a failed or blocked node blocks only

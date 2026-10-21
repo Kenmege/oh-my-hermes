@@ -142,10 +142,13 @@ class DagPanelSplitTests(unittest.TestCase):
         roster.apply("subagent.start", {"subagent_id": "sa-old", "goal": "[dag:export/ui] Export button"}, 0.0)
         roster.apply("subagent.start", {"subagent_id": "sa-team", "goal": "Refresh docs [omh-team:hud/docs/attempt-1]"},
                      0.0)
+        roster.apply("subagent.start", {"subagent_id": "sa-more", "goal": "Export docs [dag:export/docs]. Please hurry"},
+                     0.0)
         roster.apply("subagent.start", {"subagent_id": "sa-plain", "goal": "Look [dag: not a marker]"}, 0.0)
         self.assertEqual(roster.agents["sa-api"].goal, "Export API")
         self.assertEqual(roster.agents["sa-old"].goal, "Export button")  # handed out before an update
         self.assertEqual(roster.agents["sa-team"].goal, "Refresh docs")
+        self.assertEqual(roster.agents["sa-more"].goal, "Export docs. Please hurry")
         self.assertEqual(roster.agents["sa-plain"].goal, "Look [dag: not a marker]")
 
 

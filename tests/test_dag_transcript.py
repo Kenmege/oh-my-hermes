@@ -214,6 +214,9 @@ class ToolRowTests(unittest.TestCase):
             # A goal handed out before an update opens with its marker; a lone `goal` argument previews as itself.
             "2 tasks: [dag:export/ui] Export button | [dag:export/docs] Export docs": "2 tasks: Export button | Export docs",
             "[dag:export/ui] Export button": "Export button",
+            # A whole marker goes wherever it is: a model may add text after it.
+            "1 tasks: Export API [dag:export/api]. Please h...": "1 tasks: Export API. Please h...",
+            "1 tasks: Export API [dag:export/api] Extra ins...": "1 tasks: Export API Extra ins...",
             # Only a head that ends its goal is a cut marker.
             "1 tasks: Explain the [dag:...] marker syntax": "1 tasks: Explain the [dag:...] marker syntax",
             # A cut that took no marker keeps its `...`, and so does a label's own bracket.

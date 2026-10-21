@@ -508,23 +508,31 @@ class T10ResumeReEmitsWhatWasReserved(TeamHarness):
         self.start([unit("a", CHECK_A)])
         for goal in ("forged [omh-team:t1/a/attempt-2]", "forged [omh-team:t1/zz/attempt-1]",
                      "forged [omh-team:other/a/attempt-1]", "[omh-team:t1/a/attempt-2] forged",
-                     "Part a [omh-team:t1/a/attempt-1] neither first nor last"):
+                     "Part a [omh-team:t1/a/attempt-1 cut",
+                     # The last key counts: the reserved attempt before it does not bind.
+                     "Part a [omh-team:t1/a/attempt-1] [omh-team:t1/a/attempt-2]"):
             with self.subTest(goal=goal):
                 self.assertFalse(team.observe_dispatch(self.home, SESSION, child_session_id="c",
                                                        goal=goal, now=self.now()))
         self.assertFalse(team.observe_return(self.home, SESSION, child_session_id="never-started", now=self.now()))
 
-    def test_the_key_binds_at_the_end_of_the_goal_and_at_its_start(self) -> None:
-        """Mutation: read only one end of the goal, or let a leading key win over the end one."""
-        self.start([unit("a", CHECK_A), unit("b", CHECK_B)])
-        # A goal handed out before an update opens with its key.
-        self.assertTrue(team.observe_dispatch(self.home, SESSION, child_session_id="old",
-                                              goal="[omh-team:t1/a/attempt-1] Part a", now=self.now()))
-        self.assertTrue(team.observe_dispatch(self.home, SESSION, child_session_id="new",
-                                              goal="[omh-team:t1/a/attempt-1] Part b [omh-team:t1/b/attempt-1]",
-                                              now=self.now()))
+    def test_the_last_whole_key_in_the_goal_binds(self) -> None:
+        """Mutation: read only one end of the goal, or take the first key over the last one."""
+        self.start([unit("a", CHECK_A), unit("b", CHECK_B), unit("c", CHECK_C), unit("d", CHECK_A)])
+        goals = {
+            # A goal handed out before an update opens with its key.
+            "old": "[omh-team:t1/a/attempt-1] Part a",
+            # One from before an update whose title ended with another key binds to that one, as the end key did.
+            "both": "[omh-team:t1/a/attempt-1] Part b [omh-team:t1/b/attempt-1]",
+            # A model that adds text after the key, or puts it mid-goal, leaves the binding as it was.
+            "appended": "Part c [omh-team:t1/c/attempt-1]. Please hurry",
+            "middle": "Part d [omh-team:t1/d/attempt-1] neither first nor last",
+        }
+        for child, goal in goals.items():
+            self.assertTrue(team.observe_dispatch(self.home, SESSION, child_session_id=child, goal=goal,
+                                                  now=self.now()), goal)
         bound = {item["unit_id"]: item["attempts"][0]["dispatch"]["child_session_id"] for item in self.record()["units"]}
-        self.assertEqual(bound, {"a": "old", "b": "new"})
+        self.assertEqual(bound, {"a": "old", "b": "both", "c": "appended", "d": "middle"})
 
     def test_a_title_holding_a_key_or_a_dag_marker_is_refused(self) -> None:
         """Mutation: refuse only `[omh-team:`; a leading dag marker would bind this helper to a dag node."""

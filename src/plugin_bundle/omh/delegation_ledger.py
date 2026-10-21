@@ -23,11 +23,12 @@ writes what they say, metadata only, into one record per conversation
 
 No goal, summary, prompt or tool history is written. A title is drawn from
 Hermes' records when the graph is read, or, within this process, from the
-goal `subagent_start` carried, held in memory only (`child_title`). A goal
-that ends with the ``[dag:<run>/<node>]`` marker `omh_dag` hands out binds
-the child to that node: the two ids are kept (`dag_binding`), the goal is not,
-and `subagent_stop` reaches the node through the child session id. A goal
-that opens with the marker binds too: goals handed out before an update did.
+goal `subagent_start` carried, held in memory only (`child_title`). The
+last ``[dag:<run>/<node>]`` marker in a goal binds the child to that node:
+the two ids are kept (`dag_binding`), the goal is not, and `subagent_stop`
+reaches the node through the child session id. `omh_dag` ends each goal with
+its marker, a goal handed out before an update opens with it, and text a
+model adds after it leaves the binding as it was.
 
 Every entry point here is an observer: it never blocks or changes a call and
 never raises into the host. A failed write leaves the graph with less in it,
@@ -86,13 +87,13 @@ POST_MOMENTS: Final = ("start", "count", "end")
 RUN_PHASES: Final = ("open", "closed")
 
 # The markers OMH ends a delegated goal with (`dag_run.task_for`, `team._delegate_entry`), so Hermes' 40-character
-# previews show the task first. Goals handed out before an update open with one instead, so both ends are read; the
-# dag ids are ones OMH minted, matched whole or not at all, and an end marker wins over a leading one.
+# previews show the task first. The last whole marker in a goal binds: a goal handed out before an update opens with
+# one, and a model may add text after it. The dag ids are ones OMH minted, matched whole or not at all. No label or
+# title OMH accepts holds a marker (`dag_run._validated_node`, `team._validated_units`).
 _DAG_ID: Final = r"[a-z0-9][a-z0-9-]{0,31}"
-_DAG_MARKER_END: Final = re.compile(rf"\[dag:({_DAG_ID})/({_DAG_ID})\]\s*\Z")
-_DAG_MARKER_LEAD: Final = re.compile(rf"\A\s*\[dag:({_DAG_ID})/({_DAG_ID})\]\s*")
+_DAG_MARKER: Final = re.compile(rf"\[dag:({_DAG_ID})/({_DAG_ID})\]")
 _GOAL_MARKER: Final = rf"\[(?:dag:{_DAG_ID}/{_DAG_ID}|omh-team:[^\]]{{1,200}})\]"
-_GOAL_MARKER_TEXT: Final = re.compile(rf"\A\s*{_GOAL_MARKER}\s*|\s?{_GOAL_MARKER}\s*\Z")
+_GOAL_MARKER_TEXT: Final = re.compile(rf"\A\s*{_GOAL_MARKER}\s*|\s?{_GOAL_MARKER}")
 _TASK_LABEL: Final = re.compile(r"^(?:TASK|Task)\s*:\s*")
 _roots: OrderedDict[str, str] = OrderedDict()
 _titles: OrderedDict[str, str] = OrderedDict()
@@ -128,16 +129,19 @@ def title_from_goal(goal: object) -> str:
 
 
 def without_goal_marker(goal: str) -> str:
-    """``goal`` without its dag or team marker, at either end: the marker binds the child, a person reads the rest."""
+    """``goal`` without its dag or team markers, wherever they are: a marker binds the child, a person reads the rest."""
     return _GOAL_MARKER_TEXT.sub("", goal)
 
 
 def dag_binding(goal: object) -> dict[str, str]:
-    """The dag run and node a child's goal names in its marker, or {}: two ids, never goal text."""
+    """The dag run and node the last whole marker in a child's goal names, or {}: two ids, never goal text."""
     if not isinstance(goal, str):
         return {}
-    match = _DAG_MARKER_END.search(goal) or _DAG_MARKER_LEAD.match(goal)
-    return {"run": match.group(1), "node": match.group(2)} if match else {}
+    found = _DAG_MARKER.findall(goal)
+    if not found:
+        return {}
+    run, node = found[-1]
+    return {"run": run, "node": node}
 
 
 def child_title(subagent_id: str) -> str:

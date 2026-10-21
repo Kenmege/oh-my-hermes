@@ -251,11 +251,11 @@ _HIDDEN_CHARACTERS: Final = re.compile(
 _CHECK_FIELD: Final = re.compile(r"check:\s*`([^`\n]+)`", re.IGNORECASE)
 _TEAM_ID: Final = re.compile(r"[a-z0-9][a-z0-9-]{0,47}")
 _UNIT_ID: Final = re.compile(r"[a-z0-9][a-z0-9_-]{0,47}")
-# The attempt key a helper's goal ends with, so Hermes' 40-character previews show the part's title first. A goal
-# handed out before an update opens with it instead; an end key wins over a leading one.
-_MARKER_KEY: Final = r"\[omh-team:([a-z0-9][a-z0-9-]{0,47})/([a-z0-9][a-z0-9_-]{0,47})/attempt-([1-9][0-9]?)\]"
-_MARKER_END: Final = re.compile(rf"{_MARKER_KEY}\s*\Z")
-_MARKER_LEAD: Final = re.compile(rf"\A{_MARKER_KEY}")
+# The attempt key a helper's goal ends with, so Hermes' 40-character previews show the part's title first. The last
+# whole key in a goal binds: a goal handed out before an update opens with it, and a model may add text after it.
+_MARKER: Final = re.compile(
+    r"\[omh-team:([a-z0-9][a-z0-9-]{0,47})/([a-z0-9][a-z0-9_-]{0,47})/attempt-([1-9][0-9]?)\]"
+)
 _CONTROL: Final = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 # The subagent id Hermes hands `subagent_start` (`sa-<index>-<hex>` at v2026.9.7)
 # and the branch it names a helper's worktree after
@@ -1423,10 +1423,11 @@ def observe_dispatch(
     (see `owning_session`). ``host`` is the Hermes process the helper runs in
     (`host_process.this_process`), kept so a restart that ended it is seen.
     """
-    match = (_MARKER_END.search(goal) or _MARKER_LEAD.match(goal)) if isinstance(goal, str) else None
-    if match is None or not isinstance(child_session_id, str) or not child_session_id.strip():
+    found = _MARKER.findall(goal) if isinstance(goal, str) else []
+    if not found or not isinstance(child_session_id, str) or not child_session_id.strip():
         return False
-    team_id, unit_id, n = match.group(1), match.group(2), int(match.group(3))
+    team_id, unit_id, number = found[-1]
+    n = int(number)
     owner = owning_session(omh_home, session_ref, team_id)
     if not owner and earlier is not None:
         owner = owning_session(omh_home, session_ref, team_id, earlier())

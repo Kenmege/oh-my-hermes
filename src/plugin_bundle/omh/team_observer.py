@@ -7,8 +7,9 @@ saying so:
 
 * `subagent_start` carries the child's goal. A team entry's goal ends with
   the attempt key OMH reserved (`[omh-team:<team>/<unit>/attempt-<n>]`; one
-  handed out before an update opens with it), and only an attempt the team
-  record already holds, still undispatched, binds to the child's session id. The child's subagent id is kept beside it: with
+  handed out before an update opens with it), the last key in the goal is
+  the one read, and only an attempt the team record already holds, still
+  undispatched, binds to the child's session id. The child's subagent id is kept beside it: with
   Hermes' worktree isolation on, it names the branch the helper's work is on.
   So is this Hermes process (`host_process.this_process`), which the helper
   runs in and ends with: a restart fires no `subagent_stop`.

@@ -467,24 +467,37 @@ class LifecycleTests(unittest.TestCase):
             text = dag_run.record_path(home.omh, PARENT, "feat").read_text(encoding="utf-8")
         self.assertNotIn("SECRET SUMMARY TEXT", text)
 
-    def test_the_ledger_binds_a_child_by_its_goal_marker_only(self) -> None:
+    def test_the_ledger_binds_a_child_by_the_last_whole_marker_in_its_goal(self) -> None:
+        """Mutation: read only the end or only the start of the goal, or bind on a marker that is not whole."""
         with homes() as home:
             child_started(home, "feat", "api")
             start(home, "child-old", "sa-old", "[dag:feat/ui] Node ui", now=time.time())  # before an update
             start(home, "child-x", "sa-x", "wrong case [dag:feat/API]", now=time.time())
-            start(home, "child-y", "sa-y", "please [dag:feat/api] neither first nor last", now=time.time())
-            start(home, "child-z", "sa-z", "Node docs [dag:feat/docs] and more", now=time.time())
+            start(home, "child-c", "sa-c", "Node docs [dag:feat/docs", now=time.time())  # not a whole marker
+            # A model that adds text after the marker leaves the binding as it was.
+            start(home, "child-y", "sa-y", "Node docs [dag:feat/docs]. Please hurry", now=time.time())
+            start(home, "child-z", "sa-z", "Node verify [dag:feat/verify]\n\nExtra instructions from the model",
+                  now=time.time())
             children = {child["subagent_id"]: child for child in read_ledger(home.omh, PARENT)["children"]}
-        self.assertEqual(children["sa-api"]["dag"], {"run": "feat", "node": "api"})
-        self.assertEqual(children["sa-old"]["dag"], {"run": "feat", "node": "ui"})
-        for subagent_id in ("sa-x", "sa-y", "sa-z"):
-            self.assertNotIn("dag", children[subagent_id])
+        self.assertEqual({subagent_id: children[subagent_id].get("dag") for subagent_id in children}, {
+            "sa-api": {"run": "feat", "node": "api"},
+            "sa-old": {"run": "feat", "node": "ui"},
+            "sa-x": None,
+            "sa-c": None,
+            "sa-y": {"run": "feat", "node": "docs"},
+            "sa-z": {"run": "feat", "node": "verify"},
+        })
 
-    def test_a_goal_quoting_another_marker_binds_to_the_one_at_its_end(self) -> None:
-        """Mutation: prefer the leading marker over the end one in `dag_binding`."""
+    def test_a_goal_with_more_than_one_marker_binds_to_the_last(self) -> None:
+        """Mutation: take the first marker in `dag_binding`."""
         self.assertEqual(dag_binding("[dag:feat/ui] the button, after [dag:feat/docs] [dag:feat/api]"),
                          {"run": "feat", "node": "api"})
+        # A goal from before an update whose label ended with a marker binds to that one, as the end marker did.
+        self.assertEqual(dag_binding("[dag:feat/ui] Node ui [dag:feat/api]"), {"run": "feat", "node": "api"})
         self.assertEqual(dag_binding("Node api [dag:feat/api]\n"), {"run": "feat", "node": "api"})
+        # Text before and after the marker: both were unbound while only an end or a leading marker counted.
+        self.assertEqual(dag_binding("please [dag:feat/api] neither first nor last"), {"run": "feat", "node": "api"})
+        self.assertEqual(dag_binding("Node docs [dag:feat/docs] and more"), {"run": "feat", "node": "docs"})
         self.assertEqual(dag_binding("Node api [dag:feat/api"), {})
 
 
