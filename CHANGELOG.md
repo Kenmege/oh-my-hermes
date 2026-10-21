@@ -29,6 +29,23 @@ All notable changes will be documented here.
   team helper as a lane of its own. Start lines name how many parts start:
   "Started 1 part", "1 starts now and the rest wait for the parts they
   depend on", and no line says "1 parts".
+- **A child's answering model is judged on its own calls, not Hermes'
+  auxiliary ones.** Hermes records a compression or vision call in
+  `session_model_usage` under a non-empty `task`, on the aux route's model.
+  The HUD's served-model check counted those rows. One compression call on
+  another model turned a child's `agreement` into
+  `unknown/multiple_usage_models`, and a child whose only rows were auxiliary
+  read as a `disagreement` with the model it asked for. The answering model,
+  its count, and the model the HUD row and the delegation graph show for a
+  child whose session row names none now read only rows with an empty
+  `task`. Tokens, calls and recorded cost still sum every row, because
+  auxiliary calls are real spend, and a child whose only calls were
+  auxiliary is still priced at the model they ran on. One approximate figure
+  moves: a child whose session row names no model, with its own calls on one
+  model and an auxiliary call on another, now gets the model, category and
+  `~$` estimate that a child whose session row names that model already got.
+  Before, it got none, or `$0.0000 (unknown)`. A `state.db` without the
+  `task` column reads as before.
 - **A skill body edit no longer rewrites the six host installer directories.**
   Every `.<host>/install.sh`, `install.ps1` and `manifest.json` embedded the
   full per-file SHA256 list, the installers twice, so a one-line `SKILL.md`
