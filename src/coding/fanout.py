@@ -232,9 +232,14 @@ def validate_fanout_units(units: Sequence[Mapping[str, object]]) -> None:
             raise FanoutContractError(
                 f"unit {unit_id} category {category!r} is not one of {', '.join(MODEL_CATEGORIES)}"
             )
-        problem = dag_core.edge_problem(unit_id, [str(dep) for dep in unit.get("depends_on", []) or []], known)
+        dependencies = list(unit.get("depends_on", []) or [])
+        names = [str(dependency) for dependency in dependencies]
+        problem = dag_core.edge_problem(unit_id, names, known)
         if problem is not None and problem[0] == dag_core.UNKNOWN_DEPENDENCY:
-            raise FanoutContractError(f"unit {unit_id} depends on unknown unit {problem[1]!r}")
+            # The value as the unit gave it, as this message always quoted it.
+            raise FanoutContractError(
+                f"unit {unit_id} depends on unknown unit {dependencies[names.index(problem[1])]!r}"
+            )
         if problem is not None:
             raise FanoutContractError(f"unit {unit_id} cannot depend on itself")
     _require_reproduction_hold_edges(units)
@@ -386,7 +391,7 @@ def _parents(units: Sequence[Mapping[str, object]]) -> dict[str, list[str]]:
 
 
 def merge_order(units: Sequence[Mapping[str, object]]) -> list[str]:
-    placed, stuck = dag_core.layer_of([str(unit["unit_id"]) for unit in units], _parents(units))
+    placed, stuck = dag_core.layer_of([str(unit["unit_id"]) for unit in units], _parents(units), strict=True)
     if stuck:
         cycle = ", ".join(sorted(stuck))
         raise FanoutContractError(f"depends_on contains a cycle among units: {cycle}")
@@ -807,7 +812,7 @@ def _require_acyclic_check_edges(checks: list[dict[str, object]], index: int) ->
                     f"unit at index {index} verification_checks {dep!r} depends on itself"
                 )
     parents = {str(check["id"]): [str(dep) for dep in check["depends_on"]] for check in checks}
-    if dag_core.layers(list(parents), parents) is None:
+    if dag_core.layer_of(list(parents), parents, strict=True)[1]:
         raise FanoutContractError(
             f"unit at index {index} verification_checks depends_on forms a cycle"
         )

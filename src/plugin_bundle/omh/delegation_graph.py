@@ -46,7 +46,7 @@ import sqlite3
 import time
 from typing import Any, Final
 
-from .dag_core import layer_of, layers
+from .dag_core import layer_of
 from .dag_run import derive, run_state, session_runs
 from .delegation_ledger import child_title, ledger_key, read_ledger, title_from_goal
 from .kanban_board_reader import conversation_session_ids
@@ -499,9 +499,17 @@ def _build(
         record, _mtime = team
         units = record["units"]
         states = {str(unit["unit_id"]): team_unit_state(unit) for unit in units}
-        # A hand-edited record can hold a cycle; its parts then all read as stage 1 rather than not at all.
-        stage, _cyclic = layer_of([str(unit["unit_id"]) for unit in units],
-                                  {str(unit["unit_id"]): unit["depends_on"] for unit in units})
+        depth: dict[str, int] = {}
+
+        # Kept on its own walk, not the DAG core's layers: a team record is read without a cycle check, and on a
+        # hand-edited cyclic record this recursion's stages are not the core's (which leaves cyclic parts unplaced).
+        def stage(unit_id: str, seen: frozenset[str] = frozenset()) -> int:
+            if unit_id in depth:
+                return depth[unit_id]
+            unit = next(item for item in units if item["unit_id"] == unit_id)
+            parents = [dep for dep in unit["depends_on"] if dep not in seen]
+            depth[unit_id] = 1 + max([stage(dep, seen | {unit_id}) for dep in parents] or [0])
+            return depth[unit_id]
 
         for unit in units:
             unit_id = str(unit["unit_id"])
@@ -511,7 +519,7 @@ def _build(
                 "id": node_id, "kind": "lane", "title": _text(unit.get("title"), TITLE_LIMIT) or "?",
                 "category": "?", "category_source": "not_dispatched", "model": "?", "effort": "",
                 "state": state, "status": status, "elapsed_seconds": None, "order": order,
-                "group": f"stage {stage.get(unit_id, 0) + 1}", "waits_on": 0, "team_unit": unit_id,
+                "group": f"stage {stage(unit_id)}", "waits_on": 0, "team_unit": unit_id,
             }
             order += 1
             unmet = [dep for dep in unit["depends_on"] if states.get(dep) != "accepted"]
@@ -834,11 +842,29 @@ def fanout_graph(record: Mapping[str, Any]) -> dict[str, Any]:
     return _finish(f"fanout {fanout_id}" if fanout_id else "fanout", nodes, edges, "global", "fanout")
 
 
+# Kept on its own walk, not the DAG core's `layers`: given a repeated node id this walk answers no layers or
+# lists the id twice, where the core reads the id once, and its readers do not drop repeats first.
 def _layers(nodes: Sequence[Mapping[str, Any]], edges: Sequence[Mapping[str, str]]) -> list[list[str]]:
-    parents: dict[str, list[str]] = {}
+    ids = [str(node["id"]) for node in nodes]
+    incoming = {node_id: 0 for node_id in ids}
+    successors: dict[str, list[str]] = {node_id: [] for node_id in ids}
     for edge in edges:
-        parents.setdefault(str(edge["to"]), []).append(str(edge["from"]))
-    return layers([str(node["id"]) for node in nodes], parents) or []
+        if edge["from"] in successors and edge["to"] in incoming:
+            successors[edge["from"]].append(edge["to"])
+            incoming[edge["to"]] += 1
+    layer = {node_id: 0 for node_id in ids}
+    ready = [node_id for node_id in ids if incoming[node_id] == 0]
+    while ready:
+        current = ready.pop(0)
+        for lower in successors[current]:
+            layer[lower] = max(layer[lower], layer[current] + 1)
+            incoming[lower] -= 1
+            if incoming[lower] == 0:
+                ready.append(lower)
+    if any(count for count in incoming.values()):
+        return []
+    depth = max(layer.values(), default=-1) + 1
+    return [[node_id for node_id in ids if layer[node_id] == index] for index in range(depth)]
 
 
 def _finish(

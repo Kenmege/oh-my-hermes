@@ -18,9 +18,12 @@ All notable changes will be documented here.
     48 nodes, and never hands out more `delegate_task` calls than Hermes'
     background pool has free (read from `delegation.max_concurrent_children`
     and this process's running units in `state.db`).
-  - Graph topology is decided once, in `plugin_bundle/omh/dag_core.py`;
-    `omh_team`, the fanout contract and the delegation graph and view read it
-    there, with their refusals unchanged.
+  - Graph topology is decided once, in `plugin_bundle/omh/dag_core.py`.
+    `omh_team`, the fanout contract, a dag run in the delegation graph and
+    the graph drawing read it there, with their refusals, layers and merge
+    order unchanged (5,000 random graphs, old and new code, no difference).
+    The delegation graph's own layers and a team's stages keep their walks:
+    on a repeated node id or a hand-edited cycle the core answers otherwise.
   - The TUI panel, `/dag` and `omh hud --graph` draw the run under its name;
     on Discord, Slack, Telegram, Mattermost and Matrix a reply carries the
     start block once, one status line when counts change (none added when

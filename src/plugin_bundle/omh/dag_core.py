@@ -1,11 +1,13 @@
 """The one DAG core: dependency checks, layers, critical path and bottlenecks for every graph OMH keeps.
 
-Every graph OMH validates or draws goes through these functions: an
-`omh_dag/v1` run (`dag_run.py`), an `omh_team/v1` team
+An `omh_dag/v1` run (`dag_run.py`), an `omh_team/v1` team
 (`omh.workflows.team`), a `fanout_contract/v2` split and its per-unit check
-edges (`omh.coding.fanout`), and the delegation graph and its drawing
-(`delegation_graph.py`, `delegation_view.py`). Each caller keeps its own
-error type and wording; the topology is decided here once.
+edges (`omh.coding.fanout`), a dag run in the delegation graph and the
+graph's drawing (`delegation_graph.py`, `delegation_view.py`) decide their
+topology here. Each caller keeps its own error type and wording. Two older
+walks in `delegation_graph.py` stay on their own code, because the core
+answers differently on inputs they can see: the graph's layers (a repeated
+node id) and a team's stages (a hand-edited record with a cycle).
 
 Pure and stdlib only, and it imports nothing from `omh`: Hermes loads this
 directory with its own interpreter (#1623), and the core-side callers import
@@ -13,9 +15,9 @@ it from here the way they import `run_records`.
 
 A graph is a sequence of node ids and, per node, the ids it depends on (its
 parents). A parent that is not one of the ids is ignored by the topology
-functions, so a caller checks its references first (`edge_problem`). A layer
-is a node's longest path from a node with no parent; it orders, it never
-gates.
+functions (`layer_of` can instead hold what waits on it), so a caller checks
+its references first (`edge_problem`). A layer is a node's longest path from
+a node with no parent; it orders, it never gates.
 """
 
 from __future__ import annotations
@@ -47,16 +49,20 @@ def edge_problem(node: str, parents: Iterable[str], known: Collection[str]) -> t
     return None
 
 
-def layer_of(ids: Sequence[str], parents: Mapping[str, Iterable[str]]) -> tuple[dict[str, int], list[str]]:
-    """Each placed node's layer, and the nodes a cycle leaves unplaced (on a cycle or below one), in ``ids`` order.
+def layer_of(
+    ids: Sequence[str], parents: Mapping[str, Iterable[str]], *, strict: bool = False
+) -> tuple[dict[str, int], list[str]]:
+    """Each placed node's layer, and the nodes left unplaced (on a cycle or below one), in ``ids`` order.
 
     A node is placed in the round after the last of its parents was, so its
     layer is its longest path from a node with no parent. A self edge is a
-    cycle.
+    cycle. A parent outside ``ids`` is ignored, unless ``strict``: then it is
+    never placed, and neither is anything that waits on it (the fanout merge
+    order's own rule).
     """
     order = _unique(ids)
     known = set(order)
-    edges = {node: {parent for parent in parents.get(node, ()) if parent in known} for node in order}
+    edges = {node: {parent for parent in parents.get(node, ()) if strict or parent in known} for node in order}
     placed: dict[str, int] = {}
     remaining = order
     depth = 0

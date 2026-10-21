@@ -1,9 +1,12 @@
 """The one DAG core (`plugin_bundle/omh/dag_core.py`) and the callers that decide topology through it.
 
-`omh_dag`, `omh_team`, the fanout contract and the delegation graph and view
-all read a graph's references, cycles, layers and shared write scopes here.
-These tests pin the core's answers and that each caller still refuses or
-draws exactly what it did, wording included.
+`omh_dag`, `omh_team`, the fanout contract, the delegation graph's dag runs
+and the view's drawing read a graph's references, cycles, layers and shared
+write scopes here. These tests pin the core's answers and that each caller
+still refuses or draws exactly what it did, wording included. Two walks stay
+on their own code because the core answers differently on inputs they can
+see: the graph's `_layers` (a repeated node id) and its team stages (a cyclic
+hand-edited record).
 """
 
 from __future__ import annotations
@@ -48,6 +51,11 @@ class LayerTests(unittest.TestCase):
     def test_a_self_edge_is_a_cycle_and_unknown_parents_are_ignored(self) -> None:
         self.assertIsNone(dag_core.layers(["a"], {"a": ["a"]}))
         self.assertEqual(dag_core.layers(["a", "b"], {"b": ["a", "ghost"]}), [["a"], ["b"]])
+
+    def test_strict_holds_what_waits_on_an_unknown_parent(self) -> None:
+        graph = {"a": [], "b": ["ghost"], "c": ["b"]}
+        self.assertEqual(dag_core.layer_of(list(graph), graph, strict=True), ({"a": 0}, ["b", "c"]))
+        self.assertEqual(dag_core.layer_of(list(graph), graph), ({"a": 0, "b": 0, "c": 1}, []))
 
     def test_ready_needs_every_parent_satisfied(self) -> None:
         self.assertEqual(dag_core.ready(["b", "c", "d"], DIAMOND, {"a", "b"}), ["b", "c"])
@@ -110,14 +118,24 @@ class CallerTests(unittest.TestCase):
                                                                             "depends_on": ["zz"]}])
         with self.assertRaisesRegex(FanoutContractError, r"^unit b cannot depend on itself$"):
             validate_fanout_units([{"unit_id": "b", "file_scope": ["b"], "depends_on": ["b"]}])
+        # The raw value is named, not its text: an int dependency reads 5, not '5'.
+        with self.assertRaisesRegex(FanoutContractError, r"^unit b depends on unknown unit 5$"):
+            validate_fanout_units([{"unit_id": "b", "file_scope": ["b"], "depends_on": [5]}])
+        # An unknown dependency holds the unit out of the merge order, so it is reported as stuck in a cycle.
+        with self.assertRaisesRegex(FanoutContractError, r"^depends_on contains a cycle among units: b, c$"):
+            merge_order([{"unit_id": "a"}, {"unit_id": "b", "depends_on": ["ghost"]}, {"unit_id": "c", "depends_on": ["b"]}])
 
-    def test_graph_and_view_layers_come_from_the_core(self) -> None:
+    def test_view_layers_come_from_the_core_and_graph_layers_keep_their_walk(self) -> None:
+        self.assertEqual(
+            list(view_layers(["b", "root", "a"], [("root", "a"), ("a", "b")]).items()), [("b", 2), ("root", 0), ("a", 1)]
+        )
+        self.assertIsNone(view_layers(["a", "b"], [("a", "b"), ("b", "a")]))
         nodes = [{"id": "root"}, {"id": "a"}, {"id": "b"}]
         edges = [{"from": "root", "to": "a"}, {"from": "a", "to": "b"}, {"from": "root", "to": "b"}]
         self.assertEqual(graph_layers(nodes, edges), [["root"], ["a"], ["b"]])
         self.assertEqual(graph_layers(nodes, edges + [{"from": "b", "to": "a"}]), [])
-        self.assertEqual(view_layers(["root", "a", "b"], [("root", "a"), ("a", "b")]), {"root": 0, "a": 1, "b": 2})
-        self.assertIsNone(view_layers(["a", "b"], [("a", "b"), ("b", "a")]))
+        # A repeated root id is counted twice by the graph's own walk, which then answers no layers at all.
+        self.assertEqual(graph_layers(nodes + [{"id": "root"}], edges), [])
 
 
 if __name__ == "__main__":

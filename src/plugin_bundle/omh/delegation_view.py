@@ -505,7 +505,7 @@ def _layers(ids: list[str], edges: list[tuple[str, str]]) -> dict[str, int] | No
     for upper, lower in edges:
         parents.setdefault(lower, []).append(upper)
     layer, cyclic = layer_of(ids, parents)
-    return None if cyclic else layer
+    return None if cyclic else {node_id: layer[node_id] for node_id in ids}
 
 
 def _bands(
