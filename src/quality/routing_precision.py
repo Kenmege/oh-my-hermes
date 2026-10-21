@@ -58,6 +58,91 @@ class RoutingInterventionCase:
 # helpful but should not hijack the answer into workflow selection, catalog
 # pickers, coding handoffs, or generic workflow acknowledgements.
 ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
+    RoutingPrecisionCase(
+        "market-stall-is-not-a-market-method",
+        "Everyday market vocabulary does not request a market model",
+        "the market stall is closing; price the used monitor",
+        "answer_clarification",
+        "",
+        "market-research",
+    ),
+    # `market-research` is admitted only by a request that leads with one of
+    # its method phrases. A method named as material to send, a concept to
+    # explain, evidence for a kill/pivot call, a topic of other writing, a
+    # word after a sentence break, the skill's name in passing, or a pun must
+    # not name it at all, not even as a clarify candidate.
+    RoutingPrecisionCase(
+        "market-sizing-slide-sent-to-slack",
+        "Sending a market sizing slide is a connector action, not analysis",
+        "Send the market sizing slide to Slack",
+        "answer_clarification",
+        "",
+        "market-research",
+    ),
+    RoutingPrecisionCase(
+        "tam-sam-som-chart-posted-to-discord",
+        "Posting a TAM SAM SOM chart is a connector action, not analysis",
+        "Post the TAM SAM SOM chart to Discord",
+        "answer_clarification",
+        "",
+        "market-research",
+    ),
+    RoutingPrecisionCase(
+        "tam-sam-som-explained",
+        "Explaining a market term is a direct answer",
+        "Explain TAM SAM SOM to me like I'm five",
+        "answer_directly",
+        "direct_answer",
+        "market-research",
+    ),
+    RoutingPrecisionCase(
+        "kill-or-pivot-with-market-sizing-in-hand",
+        "A kill/pivot call over finished market work belongs to discovery validation",
+        "Should we kill or pivot? I have a market sizing and customer evidence analysis",
+        "answer_clarification",
+        "",
+        "market-research",
+    ),
+    RoutingPrecisionCase(
+        "blog-post-about-competitive-pricing-analysis",
+        "A method named inside a writing request is its topic",
+        "Write a blog post about why startups should perform competitive pricing analysis",
+        "answer_clarification",
+        "",
+        "market-research",
+    ),
+    RoutingPrecisionCase(
+        "research-sentence-break-before-competitive-pricing",
+        "A verb that ends one sentence does not request the method that opens the next",
+        "Our interns help us research. Competitive pricing analysis is their favorite part; draft a thank-you message for them",
+        "answer_clarification",
+        "",
+        "market-research",
+    ),
+    RoutingPrecisionCase(
+        "uncompared-competitor-pricing-profiles-status-note",
+        "A method listed in a status note is not a request to run it",
+        "Things we did not compare: competitor pricing profiles. Write that up as a status note",
+        "answer_clarification",
+        "",
+        "market-research",
+    ),
+    RoutingPrecisionCase(
+        "market-research-book-recommendation",
+        "The skill's name in passing does not ask for it",
+        "I read a book on market-research methods, recommend a similar one",
+        "answer_clarification",
+        "",
+        "market-research",
+    ),
+    RoutingPrecisionCase(
+        "tam-sam-som-cat-names",
+        "Method letters used as names are not a market request",
+        "tam sam som are my three cats, suggest a name for the fourth",
+        "answer_clarification",
+        "",
+        "market-research",
+    ),
     # Engine-entry approvals (#1638). Accepting something is the most common
     # thing a person says in the seconds after a planning workflow finishes,
     # and the corpus had no sentence of this shape at all -- 235 negative
@@ -7764,6 +7849,30 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
 # Positive-intervention corpus. These are real OMH-shaped turns where the router
 # should still step in after the direct-answer fallback was added.
 ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
+    RoutingInterventionCase(
+        "market-sizing-with-source-and-sensitivity",
+        "Addressable market method with a scoped source boundary",
+        "Estimate TAM SAM SOM for US dental clinics using market sizing with sources and sensitivity",
+        "dispatch", "market-research", "prepare_market_research", "market_research",
+    ),
+    RoutingInterventionCase(
+        "customer-evidence-jtbd-method",
+        "Attributed customer evidence belongs to a domain analysis",
+        "Prepare a customer evidence analysis and JTBD evidence matrix for dental buyers",
+        "dispatch", "market-research", "prepare_market_research", "market_research",
+    ),
+    RoutingInterventionCase(
+        "competitive-pricing-analysis-of-named-tools",
+        "A request that leads with a pricing method names the analysis",
+        "Do a competitive pricing analysis of Figma versus Sketch",
+        "dispatch", "market-research", "prepare_market_research", "market_research",
+    ),
+    RoutingInterventionCase(
+        "market-sizing-after-courtesy-opener",
+        "A courtesy opener before the method verb still leads the request",
+        "Can you do market sizing for dental clinics in Korea?",
+        "dispatch", "market-research", "prepare_market_research", "market_research",
+    ),
     # `docs/INSTALLATION.md` tells users to type `ulw work …`, and only the
     # hyphenated label routed: `ulw` alone is an `ultrawork` trigger at score
     # 12, so it took the whole request and the second word was never read.

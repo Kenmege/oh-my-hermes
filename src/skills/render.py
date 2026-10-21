@@ -663,12 +663,13 @@ def _opening_steps_block(definition: SkillDefinition) -> str:
 
 def _quality_rubric_sections(
     definition: SkillDefinition, target: Literal["hermes", "agent-skills"] = "hermes",
+    *, include_opening_steps: bool = True,
 ) -> str:
     definition = _target_definition(definition, target)
     return f"""## Why This Exists
 
 {definition.why_this_exists}
-{_opening_steps_block(definition)}
+{_opening_steps_block(definition) if include_opening_steps else ""}
 ## Do Not Use When
 
 {_tuple_list(tuple(loadable_skill_mentions(line) for line in definition.do_not_use_when))}
@@ -2814,7 +2815,7 @@ workflow. The main body owns routing signals, shared rules, the runtime
 operation, delegation fallback, and completion/recovery pointers; this file
 holds the workflow-specific detail without copying those shared rails.
 
-{_quality_rubric_sections(definition)}
+{_quality_rubric_sections(definition, include_opening_steps=False)}
 
 ## When to Use
 
@@ -2858,9 +2859,70 @@ Detailed procedure steps: `references/procedure.md`.
 """
 
 
+def _progressive_method_body(definition: SkillDefinition, name: str) -> str:
+    """Render a compact body for a method skill with no workflow-artifact operation.
+
+    Every line is drawn from the catalog definition, so the body cannot drift
+    from it; the method detail stays in `references/full-contract.md`.
+    """
+    title = name.replace("-", " ").title()
+    bundled_boundary = "".join(
+        f"**Do Not Use When:** {loadable_skill_mentions(line)}\n\n"
+        for line in definition.do_not_use_when
+        if isinstance(line, HermesSkillLine)
+    )
+    return f"""# {title}
+
+Required: {", ".join(definition.required_inputs)}. Output: {", ".join(definition.expected_outputs)}.
+
+{bundled_boundary}**HOLD:** Missing inputs or failed contract gates. Prepared OMH routing is not execution or approval.
+
+## Why This Exists
+
+{loadable_skill_mentions(definition.why_this_exists)}
+
+## First Steps
+
+{_tuple_list(definition.opening_steps)}
+
+Contract: `references/full-contract.md`, loaded before analysis. Procedure: `references/procedure.md`. These are working methods, not an OMH runtime operation.
+
+## Safety Rules
+
+{_tuple_list(definition.safety_rules)}
+
+## When to Use
+
+{definition.use_when}
+
+Strong routing signals: {_shipped_triggers(definition)}
+
+## Catalog Metadata
+
+Category: `{definition.category}`
+Phase: `{definition.phase}`
+Hermes role: `{definition.hermes_role}`
+Quality tier: `{definition.quality_tier}`
+
+## Completion Checklist
+
+{_tuple_list(definition.final_checklist)}
+
+## Recovery Notes
+
+{_tuple_list(definition.recovery_notes)}
+
+{awareness_workflow_context_markdown(name)}
+
+{_common_rail_sections(definition, declared_primary_harness(name))}
+"""
+
+
 def _progressive_workflow_body(definition: SkillDefinition, name: str) -> str:
     """Keep the routing and action boundary in the always-loaded workflow body."""
-    operation = _PROGRESSIVE_WORKFLOW_OPERATIONS[name]
+    operation = _PROGRESSIVE_WORKFLOW_OPERATIONS.get(name)
+    if operation is None:
+        return _progressive_method_body(definition, name)
     title = name.replace("-", " ").title()
     compact_contracts = {
         "decision-prototype": "Required: one decision, a bounded experiment, an isolated scratch boundary, and a measurement method. Output: a decision record, prepared handoff, observation ledger, and receipt. When Hermes' bundled `spike` skill is loaded for the same question, build the way it says and keep these records: `references/spike-composition.md`.",

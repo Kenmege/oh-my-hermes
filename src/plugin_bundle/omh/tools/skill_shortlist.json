@@ -24,7 +24,7 @@
 }
 },
 {
-"anchors":"catalog chain instruction job meta prefix router several slash",
+"anchors":"catalog chain instruction meta prefix router several slash",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-meta-router",
@@ -100,7 +100,7 @@
 }
 },
 {
-"anchors":"accept big coordinat cycl fan finish green high implement integrat job lane modul multi multipl parallel part persistent process red refactor several singl split throughput ultrawork ulw until worker",
+"anchors":"accept big coordinat cycl fan finish green high implement integrat lane modul multi multipl parallel part persistent process red refactor several singl split throughput ultrawork ulw until worker",
 "hangul":"",
 "hangul_anchors":"",
 "label":"ulw-work",
@@ -116,7 +116,7 @@
 }
 },
 {
-"anchors":"chos claud cli codex compos delegation instruction job maestro ulw",
+"anchors":"chos claud cli codex compos delegation instruction maestro ulw",
 "hangul":"넘기 드오 롬프 실행 에이 오프 외부 위임 이전 전트 준비 코딩 트에 프롬 프트 핸드 행기",
 "hangul_anchors":"넘기 드오 롬프 실행 에이 오프 외부 위임 이전 전트 코딩 트에 프롬 프트 핸드 행기",
 "label":"ulw-maestro",
@@ -200,7 +200,7 @@
 }
 },
 {
-"anchors":"business comparison competitiv competitor customer feedback landscap market pric say scan search sizing trend vendor",
+"anchors":"comparison competitiv competitor feedback landscap market pric say scan search trend vendor",
 "hangul":"고객 근거 데이 드백 서치 이터 자료 조사 추세 피드",
 "hangul_anchors":"고객 근거 데이 드백 서치 이터 자료 조사 추세 피드",
 "label":"omh-research-brief",
@@ -208,7 +208,7 @@
 "situation":"Business question on market, competitors, pricing",
 "terms":{
 "1":"boundary department handoff herm link multi ongo preserv raw role scop strategy structur summariz turn ulw vs",
-"2":"call compar comparison competitiv data decision feedback gather inferenc landscap question ready say scan search set sizing trend vendor",
+"2":"call compar comparison competitiv data decision feedback gather inferenc landscap question ready say scan search set trend vendor",
 "3":"back befor competitor",
 "5":"customer market pric sourc",
 "6":"business evidenc research",
@@ -283,7 +283,7 @@
 }
 },
 {
-"anchors":"bug cluster complain complaint customer feedback group payment prioritiz sort stor them trend",
+"anchors":"bug cluster complain complaint feedback group payment prioritiz sort stor them trend",
 "hangul":"결제 고객 기능 드백 모아 백을 버그 분류 불만 실패 오류 요청 이슈 제보 피드",
 "hangul_anchors":"결제 고객 기능 드백 모아 백을 버그 분류 불만 실패 오류 요청 이슈 제보 피드",
 "label":"omh-feedback-triage",
@@ -316,7 +316,7 @@
 }
 },
 {
-"anchors":"debrief description fair fairly hire hiring interview job onboard ops peopl recruit role scorecard structur",
+"anchors":"debrief description fair fairly hire hiring interview onboard ops peopl recruit role scorecard structur",
 "hangul":"가표 계획 면접 보자 비교 채용 평가 후보",
 "hangul_anchors":"가표 계획 면접 보자 비교 채용 평가 후보",
 "label":"omh-people-ops",
@@ -349,7 +349,7 @@
 }
 },
 {
-"anchors":"angry cannot customer draft email engineer escalation refund reply respons ticket urgent",
+"anchors":"angry cannot draft email engineer escalation refund reply respons ticket urgent",
 "hangul":"고객 답변 레이 분류 스컬 에스 이션 지원 초안 컬레 티켓",
 "hangul_anchors":"고객 답변 분류 스컬 에스 이션 지원 초안 컬레 티켓",
 "label":"omh-support-operations",
@@ -460,7 +460,7 @@
 }
 },
 {
-"anchors":"board business deck exec executiv leadership month monthly outlin ppt presentation quarterly slid upload weekly",
+"anchors":"board deck exec executiv leadership month monthly outlin ppt presentation quarterly slid upload weekly",
 "hangul":"경영 고서 더십 라이 로드 리더 발표 보고 슬라 업로 영진 월간 이드 자료 주간 키지 패키 표자 피티 피피",
 "hangul_anchors":"경영 고서 더십 라이 로드 리더 발표 보고 슬라 업로 영진 월간 이드 자료 주간 키지 패키 표자 피티 피피",
 "label":"omh-report-package",
@@ -692,7 +692,7 @@
 }
 },
 {
-"anchors":"brok cargo ci compil compilation dco github job lint npm pipelin pytest red tsc type typecheck upgrad",
+"anchors":"brok cargo ci compil compilation dco github lint npm pipelin pytest red tsc type typecheck upgrad",
 "hangul":"고쳐 깨짐 라인 배포 빌드 스트 실패 에러 이프 입체 체크 컴파 타입 테스 파이 파일 프라",
 "hangul_anchors":"고쳐 깨짐 라인 배포 빌드 실패 에러 이프 입체 체크 컴파 타입 테스 파이 파일 프라",
 "label":"omh-build-failure-triage",
@@ -873,7 +873,7 @@
 }
 },
 {
-"anchors":"automat automation blueprint continuously cron daily day digest discord job morn noth notify ops ping post put recur schedul send silent slack telegram timed weekly",
+"anchors":"automat automation blueprint continuously cron daily day digest discord morn noth notify ops ping post put recur schedul send silent slack telegram timed weekly",
 "hangul":"감시 계속 공유 그램 니터 동화 디스 레그 매일 매주 모니 반복 변화 보내 스케 스코 슬랙 없으 예약 용히 으면 자동 정기 조용 지켜 케줄 켜봐 코드 터링 텔레 화해",
 "hangul_anchors":"감시 계속 공유 그램 니터 동화 디스 레그 매일 매주 모니 반복 변화 보내 스케 스코 슬랙 없으 예약 용히 으면 자동 정기 조용 지켜 케줄 켜봐 터링 텔레 화해",
 "label":"omh-automation-blueprint",
@@ -1416,7 +1416,7 @@
 }
 },
 {
-"anchors":"cannot customer during mitigat progress sev1 sev2 sev3",
+"anchors":"cannot during mitigat progress sev1 sev2 sev3",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-live-incident-response",
@@ -1615,7 +1615,7 @@
 }
 },
 {
-"anchors":"asked attach bug chat contractor copy customer de deidentify email export number phon pseudonymis pseudonymisation pseudonymiz pseudonymization researcher server spreadsheet still train usag vendor",
+"anchors":"asked attach bug chat contractor copy de deidentify email export number phon pseudonymis pseudonymisation pseudonymiz pseudonymization researcher server spreadsheet still train usag vendor",
 "hangul":"가명 감정 개인 객정 거래 계좌 고객 구기 구자 기관 너사 대행 드번 등록 락처 래처 력사 록번 메일 명처 명화 민감 민등 민번 번호 벤더 별자 별정 비식 식별 실명 업체 에이 연구 연락 외부 외주 이메 이전 익명 인정 전시 전화 정보 좌번 주민 주소 처리 카드 트너 파트 행사 협력 화번",
 "hangul_anchors":"가명 감정 개인 객정 거래 계좌 고객 구기 구자 기관 너사 대행 드번 등록 락처 래처 력사 록번 메일 명처 명화 민감 민등 민번 번호 벤더 별자 별정 비식 식별 실명 업체 에이 연구 연락 외부 외주 이메 이전 익명 인정 전시 전화 정보 좌번 주민 주소 처리 카드 트너 파트 행사 협력 화번",
 "label":"omh-data-share-review",
@@ -1666,7 +1666,7 @@
 }
 },
 {
-"anchors":"big job migration modul parallel part several whol",
+"anchors":"big migration modul parallel part several whol",
 "hangul":"",
 "hangul_anchors":"",
 "label":"dag-ulw",
@@ -1715,7 +1715,24 @@
 }
 },
 {
-"anchors":"assumption business customer demand discovery guid hypothesis idea interview kill pay peopl persever pivot portfolio prd riskiest solution startup validat validation willingness worth zero",
+"anchors":"addressabl assumption comparabl demand pain purchas quantify synthesiz trigger",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-market-research",
+"name":"market-research",
+"situation":"Market sizing or customer/competitive analysis",
+"terms":{
+"1":"attribut generic investigat list merely scop specific task",
+"2":"assumption bottom bound brief business jtbd matrix model purchas quantify signal synthesiz trigger",
+"3":"addressabl befor competitiv decision demand job pain sam sensitivity sizing som sourc tam",
+"4":"analysis comparabl evidenc size",
+"5":"profil research",
+"6":"competitor customer pric",
+"9":"market"
+}
+},
+{
+"anchors":"assumption demand discovery guid hypothesis idea interview kill pay peopl persever pivot portfolio prd riskiest solution startup validat validation willingness worth zero",
 "hangul":"가정 검증 결정 고객 발견 스트 지속 테스 피벗",
 "hangul_anchors":"가정 검증 결정 고객 발견 지속 테스 피벗",
 "label":"omh-product-discovery-validation",
@@ -2035,7 +2052,7 @@
 }
 },
 {
-"anchors":"calendar channel creat crm customer discord dm draft edit email event gmail googl hubspot invit jira linear meet notion post saa salesforc send slack ticket",
+"anchors":"calendar channel creat crm discord dm draft edit email event gmail googl hubspot invit jira linear meet notion post saa salesforc send slack ticket",
 "hangul":"넥터 노션 린더 메일 발송 보내 액션 외부 이메 이슈 이지 초대 초안 캘린 커넥 티켓 페이",
 "hangul_anchors":"넥터 노션 린더 메일 발송 보내 액션 외부 이메 이슈 이지 초대 초안 캘린 커넥 티켓 페이",
 "label":"omh-apps",
@@ -2120,7 +2137,7 @@
 }
 },
 {
-"anchors":"announcement audienc changelog content copy customer draft email executiv guid land launch linkedin newsletter plain post publish rewrit social tone voic word",
+"anchors":"announcement audienc changelog content copy draft email executiv guid land launch linkedin newsletter plain post publish rewrit social tone voic word",
 "hangul":"가이 객용 고객 공지 글쓰 널별 노트 뉴스 레이 레터 리즈 릴리 메일 문체 스레 쓰기 오퍼 요약 워크 이드 이메 이터 즈노 지문 채널 초안 콘텐 크플 텐츠 퍼레 플로",
 "hangul_anchors":"가이 객용 고객 공지 글쓰 널별 노트 뉴스 레터 리즈 릴리 메일 문체 스레 쓰기 오퍼 워크 이드 이메 이터 즈노 지문 채널 초안 콘텐 크플 텐츠 퍼레 플로",
 "label":"omh-content-operator",

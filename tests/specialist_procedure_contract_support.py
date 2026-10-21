@@ -6,6 +6,7 @@ TARGETS = frozenset(
         "curriculum-design",
         "decision-prototype",
         "lifecycle-growth",
+        "market-research",
         "product-discovery-validation",
         "sales-pipeline-review",
     }
@@ -126,6 +127,31 @@ DOMAIN_REVIEW_CONTRACTS = {
             "lifecycle_experiment_validity_check": {"primary_metric", "exposure_definition", "assignment_unit", "treatment_control", "exposure_unit", "guardrail_metrics", "pause_rollback_conditions", "assignment_stickiness", "data_health_checks", "approval_state", "holdout_rationale", "minimum_runtime"},
             "lifecycle_readout_evidence_check": {"evidence_refs", "cross_exposure_status", "displayed_count", "overlap_status", "freshness_status", "causal_claim_status", "delivered_count", "instrumentation_status", "denominator_status", "sample_ratio_status", "acted_count", "eligible_count", "disposition", "attempted_count", "outcome_count", "step_outcomes", "step_trace_status", "analysis_run_state", "analysis_observed_at", "analysis_delay_status", "exposure_evidence", "assigned_count", "repeated_contact_count", "contact_pressure_state", "channels"},
             "lifecycle_handoff_boundary_check": {"approver", "evidence_refs", "action_class", "target_owner", "readiness", "disposition", "timing", "stop_conditions", "approval_state", "analysis_cancellation"},
+        },
+    },
+    "market-research": {
+        "outputs": (
+            "market scope and source ledger",
+            "TAM SAM SOM model and sensitivity",
+            "customer evidence and JTBD matrix",
+            "comparable competitor and pricing profiles",
+            "decision-ready market findings",
+        ),
+        "steps": (
+            "frame_market",
+            "register_market_evidence",
+            "size_addressable_market",
+            "analyze_customer_evidence",
+            "compare_competitors_and_pricing",
+            "deliver_market_findings",
+        ),
+        "checks": {
+            "market_scope_check": {"decision", "segment", "geography", "period", "currency_base_year", "units_denominator", "source_cutoff", "budget", "stop_condition"},
+            "market_source_check": {"source_id", "source_date", "retrieved_at", "coverage", "evidence_class", "claim_ids", "failed_retrieval", "contrary_evidence"},
+            "market_size_check": {"input_refs", "assumptions", "formula_units", "tool_receipt", "tam", "sam", "som", "reconciliation", "sensitivity"},
+            "market_customer_check": {"evidence_ids", "quote_ids", "segment", "sample_frame", "jtbd", "past_behavior", "bias", "contrary_evidence", "privacy"},
+            "market_comparability_check": {"competitor", "source_ids", "as_of", "coverage", "segment", "packaging", "normalized_price", "limits", "evidence_class"},
+            "market_findings_check": {"finding_ids", "source_refs", "assumption_refs", "contrary_evidence", "confidence_limits", "decision_implications", "verification_needs", "stop_reason"},
         },
     },
     "product-discovery-validation": {

@@ -74,7 +74,7 @@ _ROLES = (
             "Observed evidence versus inferred trend",
             "Research summary that can feed planning or strategy",
         ),
-        primary_skills=("research", "web-research", "research-brief"),
+        primary_skills=("research", "web-research", "research-brief", "market-research"),
         primary_harnesses=("research", "business-research"),
         wrapper_actions=("ask_followup", "show_sources", "show_status"),
         evidence_boundary="A researcher role can prepare or summarize evidence; it is not implementation, review, CI, or merge evidence.",

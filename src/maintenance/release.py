@@ -172,7 +172,9 @@ CONCEPTUAL_AWARENESS_SURFACES = ("request-to-handoff", "executor selection", "co
 # the visible description window. Re-derived from the producer.
 # 12637 -> 12713: one index line for the new `dag-ulw` skill; the name and the
 # visible description window. Re-derived from the producer.
-SKILL_INDEX_CHAR_LIMIT = 12713
+# 12713 -> 12801: one index line for the new `market-research` skill; the
+# name and the visible description window. Re-derived from the producer.
+SKILL_INDEX_CHAR_LIMIT = 12801
 # The longest single skill line in that index. Every description is already cut
 # to 60 characters, so what moves this is a longer skill name.
 SKILL_INDEX_LINE_CHAR_LIMIT = 100
@@ -779,7 +781,10 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 67130
 # 505556 -> 505649: the `dag-ulw` row's handoff policy says where a coding
 # owner's choice comes from (`omh chat` or `omh coding`, within a day) and
 # that Hermes chat records none (+93). Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 505649
+# 505649 -> 509135: one capability row for the new `market-research` skill
+# (3,484 chars plus its separator); no sibling row moved. Re-derived from the
+# producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 509135
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -873,7 +878,10 @@ FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # skill; no sibling row moved. Re-derived from the producer.
 # 136056 -> 136955: one standalone capability row for the new `dag-ulw` skill;
 # no sibling row moved. Re-derived from the producer.
-STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 136955
+# 136955 -> 137896: one standalone capability row for the new
+# `market-research` skill (939 chars plus its separator); no sibling row
+# moved. Re-derived from the producer.
+STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 137896
 STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # ULW fold context ceiling (issue #954, PR D). The limit is the pre-D measured
 # value of the full profile's `skill_body` chars on `main` @ acb9a060, in the

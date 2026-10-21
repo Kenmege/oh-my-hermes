@@ -73,7 +73,7 @@ prepared handoffs, and observed evidence:
   - Research question and source boundary
   - Observed evidence versus inferred trend
   - Research summary that can feed planning or strategy
-- Primary skills: `research`, `web-research`, `research-brief`
+- Primary skills: `research`, `web-research`, `research-brief`, `market-research`
 - Primary harnesses: `research`, `business-research`
 - Wrapper actions: `ask_followup`, `show_sources`, `show_status`
 - Evidence boundary: A researcher role can prepare or summarize evidence; it is not implementation, review, CI, or merge evidence.

@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "0b97aa22c0c6ff133dba6e11fdbf9b29368359d86f4e8e4f80043fac965e9167",
+  "catalog_revision": "7a3bdbfbadc73b8436f91b7fa4c64534beb732921dc5c889e60016d299889aec",
   "files": {
     "omh-accessibility-audit/SKILL.md": "0be02c4e7af447857f365dc3bff58e7fefae8a1df12adcd0ca793bc363c17ccb",
     "omh-accessibility-audit/references/a11y-rules.md": "cd7e0404576923cfd3bcec9e055b1de7a78f3fc55971fd033598aac1043e4469",
@@ -118,6 +118,12 @@
     "omh-llm-app-dev/references/public-board.md": "e69b890be7da4d91ce612722b180b229821db714bd72aa28a55db013364e7cca",
     "omh-llm-app-dev/references/stateful-contracts.md": "7bda4e79b8c60f406d3a4e7ea9d3e4f7c69d6ee80a23416678be678d6dd95816",
     "omh-localization-review/SKILL.md": "4b8bd3dddca56b72b30e8e9662898a58864a8897f7509f924af2b97bbd2387da",
+    "omh-market-research/SKILL.md": "138d6362ff63ff5c346b3a010618f736e96ee5fde466c5dda018832c030b203e",
+    "omh-market-research/references/competitive-pricing.md": "b711c6509e14cc949ecf16390356eb3ee9afc91a43d40638d182fbe7661108b0",
+    "omh-market-research/references/customer-evidence.md": "8da581b0b92b6abc38d08b5f808afa5a5f85b3c440e6657fb3328e2e14a9eec7",
+    "omh-market-research/references/findings-template.md": "d5ba16727921be3ffef82a4972c02b9375dce85da5460cf3f92815c2c4938af7",
+    "omh-market-research/references/market-sizing.md": "8acd024122a219bf6650e626f8f1ffec60ecf40d85608d9feaae9057246a176b",
+    "omh-market-research/references/procedure.md": "eaf76576a5a7b4d8c19eef79de68400cddda36e1a3302bf12cbe57ca100ee2eb",
     "omh-materials-package/SKILL.md": "77082aaefb8f5a8ea37dbb42987175d52e62e4befbc42a98a372eb94bd4d2023",
     "omh-media-input/SKILL.md": "283a23abac2be6b581ad6cf8c0aa10f8b9360ab7df812abed90b37eb9e960f9a",
     "omh-meeting-brief/SKILL.md": "264868efbdae9da848a92042c9ca600570d7c30afc27c7322083562660943b31",
@@ -150,7 +156,7 @@
     "omh-release-cut/references/release-and-rollback-method.md": "e97a49d65d6b943fa5bbacc4f8083fcd94e52d864cea97301c9b945180e57cc9",
     "omh-reliability-review/SKILL.md": "d2e041b827a76353d864400c601a9362080b23e0ec2c9bc00c750994111804f2",
     "omh-report-package/SKILL.md": "2959527f8350c5f93484de1c53fe786bc6a192353898de25f94a227be0f9ed49",
-    "omh-research-brief/SKILL.md": "f1047f39de4b04a9f8c19a60bd29b766e030b490ca963493ca86ff10a73c96a9",
+    "omh-research-brief/SKILL.md": "d9a8216efef04177df3720197e93045bb2d3ab4fc0a0edbfe32f478787c7b522",
     "omh-rules-distill/SKILL.md": "34242295034cfb13443062c0a1185b0ebfffa2eabc39a76c727cd5ea48a8d21a",
     "omh-run-efficiency/SKILL.md": "08e11de99997bdee27acb8ce288b39d1444c24e8176c32b56cfb18553a7ec10d",
     "omh-running-work-board/SKILL.md": "f3b554d38bad3f42af8738fb0064fe9754e5068dcee902786dcaf05db2a8cd02",
