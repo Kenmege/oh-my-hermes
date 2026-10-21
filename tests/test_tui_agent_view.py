@@ -762,6 +762,20 @@ class RoomTests(unittest.TestCase):
         app._on_input(Key(BACKSPACE))
         self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, 4))
 
+    def test_working_rows_that_drop_mid_turn_go_to_the_view_at_once(self) -> None:
+        # Nothing is held while the turn runs. 16 rows, the plan and a four-line draft leave the view two rows beside
+        # the working row and its tip; the interrupt takes the tip away, and the very next frame gives that row to
+        # the view, as `layout.allocate`'s tail_floor says. A hold applied there would keep it out for one frame.
+        app = self.small_app(running=3, done=4, rows=16)
+        pinned(app)
+        type_text(app, "a")
+        for char in "bcd":
+            app._on_input(Key(ENTER, alt=True))
+            type_text(app, char)
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents, app._working_rows()), (7, 2, 2))
+        app._interrupt()  # what the interrupt keys reach while a turn runs
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents, app._working_rows()), (6, 3, 1))
+
     def test_a_turn_drawn_above_the_bottom_rows_holds_nothing_when_its_answer_brings_them_down(self) -> None:
         # Above the bottom rows the composer follows the content, so a turn drawn there keeps no rows: the answer
         # that brings the region down to the bottom rows must not shrink the view one frame later.
