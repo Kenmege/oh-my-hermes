@@ -24,9 +24,10 @@ writes what they say, metadata only, into one record per conversation
 No goal, summary, prompt or tool history is written. A title is drawn from
 Hermes' records when the graph is read, or, within this process, from the
 goal `subagent_start` carried, held in memory only (`child_title`). A goal
-that opens with the ``[dag:<run>/<node>]`` marker `omh_dag` hands out binds
+that ends with the ``[dag:<run>/<node>]`` marker `omh_dag` hands out binds
 the child to that node: the two ids are kept (`dag_binding`), the goal is not,
-and `subagent_stop` reaches the node through the child session id.
+and `subagent_stop` reaches the node through the child session id. A goal
+that opens with the marker binds too: goals handed out before an update did.
 
 Every entry point here is an observer: it never blocks or changes a call and
 never raises into the host. A failed write leaves the graph with less in it,
@@ -84,10 +85,14 @@ ROUTE_FIELDS: Final = ("category", "alias", "wire_model", "reasoning_effort", "o
 POST_MOMENTS: Final = ("start", "count", "end")
 RUN_PHASES: Final = ("open", "closed")
 
-_TEAM_MARKER: Final = re.compile(r"^\[omh-team:[^\]]{1,200}\]\s*")
-# The marker `omh_dag` puts first in a node's goal (`dag_run.MARKER`): ids OMH minted, matched whole or not at all.
-_DAG_MARKER: Final = re.compile(r"^\[dag:([a-z0-9][a-z0-9-]{0,31})/([a-z0-9][a-z0-9-]{0,31})\]")
-_DAG_MARKER_TEXT: Final = re.compile(r"^\[dag:[a-z0-9][a-z0-9-]{0,31}/[a-z0-9][a-z0-9-]{0,31}\]\s*")
+# The markers OMH ends a delegated goal with (`dag_run.task_for`, `team._delegate_entry`), so Hermes' 40-character
+# previews show the task first. Goals handed out before an update open with one instead, so both ends are read; the
+# dag ids are ones OMH minted, matched whole or not at all, and an end marker wins over a leading one.
+_DAG_ID: Final = r"[a-z0-9][a-z0-9-]{0,31}"
+_DAG_MARKER_END: Final = re.compile(rf"\[dag:({_DAG_ID})/({_DAG_ID})\]\s*\Z")
+_DAG_MARKER_LEAD: Final = re.compile(rf"\A\s*\[dag:({_DAG_ID})/({_DAG_ID})\]\s*")
+_GOAL_MARKER: Final = rf"\[(?:dag:{_DAG_ID}/{_DAG_ID}|omh-team:[^\]]{{1,200}})\]"
+_GOAL_MARKER_TEXT: Final = re.compile(rf"\A\s*{_GOAL_MARKER}\s*|\s?{_GOAL_MARKER}\s*\Z")
 _TASK_LABEL: Final = re.compile(r"^(?:TASK|Task)\s*:\s*")
 _roots: OrderedDict[str, str] = OrderedDict()
 _titles: OrderedDict[str, str] = OrderedDict()
@@ -116,20 +121,22 @@ def title_from_goal(goal: object) -> str:
     if not isinstance(goal, str):
         return ""
     for line in goal.splitlines():
-        text = _TASK_LABEL.sub("", _DAG_MARKER_TEXT.sub("", _TEAM_MARKER.sub("", line.strip()))).strip()
+        text = _TASK_LABEL.sub("", without_goal_marker(line.strip())).strip()
         if text:
             return " ".join(text.split())[:TITLE_LIMIT]
     return ""
 
 
-def without_dag_marker(goal: str) -> str:
-    """``goal`` without the leading ``[dag:<run>/<node>]`` marker: the marker binds the child, a person reads the rest."""
-    return _DAG_MARKER_TEXT.sub("", goal, count=1)
+def without_goal_marker(goal: str) -> str:
+    """``goal`` without its dag or team marker, at either end: the marker binds the child, a person reads the rest."""
+    return _GOAL_MARKER_TEXT.sub("", goal)
 
 
 def dag_binding(goal: object) -> dict[str, str]:
-    """The dag run and node a child's goal names in its leading marker, or {}: two ids, never goal text."""
-    match = _DAG_MARKER.match(goal) if isinstance(goal, str) else None
+    """The dag run and node a child's goal names in its marker, or {}: two ids, never goal text."""
+    if not isinstance(goal, str):
+        return {}
+    match = _DAG_MARKER_END.search(goal) or _DAG_MARKER_LEAD.match(goal)
     return {"run": match.group(1), "node": match.group(2)} if match else {}
 
 
@@ -264,7 +271,7 @@ def _valid_child(value: object) -> dict[str, Any] | None:
         if _text(value.get(key)):
             entry[key] = _text(value.get(key))
     dag = value.get("dag")
-    if isinstance(dag, dict) and dag_binding(f"[dag:{dag.get('run')}/{dag.get('node')}]"):
+    if isinstance(dag, dict) and all(re.fullmatch(_DAG_ID, str(dag.get(key))) for key in ("run", "node")):
         entry["dag"] = {"run": str(dag["run"]), "node": str(dag["node"])}
     if (process := recorded_process(value.get("host"))) is not None:
         entry["host"] = process

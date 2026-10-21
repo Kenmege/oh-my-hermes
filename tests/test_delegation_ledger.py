@@ -140,7 +140,11 @@ class RecordTests(unittest.TestCase):
         with homes() as home:
             start(home, "child-2", "sa-2-x", GOALS[2], now=NOW)
             self.assertEqual(child_title("sa-2-x"), "Update HUD tests")
+        self.assertEqual(title_from_goal("Refresh docs [omh-team:hud/docs/attempt-1]\nmore"), "Refresh docs")
+        self.assertEqual(title_from_goal("Export API [dag:export/api]"), "Export API")
+        # Goals handed out before an update open with their marker.
         self.assertEqual(title_from_goal("[omh-team:hud/docs/attempt-1] Refresh docs\nmore"), "Refresh docs")
+        self.assertEqual(title_from_goal("[dag:export/api] Export API"), "Export API")
         self.assertEqual(title_from_goal("\n\n  TASK:  Port   the module  "), "Port the module")
         self.assertEqual(title_from_goal(7), "")
 

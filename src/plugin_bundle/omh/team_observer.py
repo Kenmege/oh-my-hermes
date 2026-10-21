@@ -5,10 +5,10 @@ Whether a helper is out is a fact only the host has, so it comes from the
 host's own `subagent_start` / `subagent_stop` callbacks, never from the model
 saying so:
 
-* `subagent_start` carries the child's goal. A team entry's goal begins with
-  the attempt key OMH reserved (`[omh-team:<team>/<unit>/attempt-<n>]`), and
-  only an attempt the team record already holds, still undispatched, binds to
-  the child's session id. The child's subagent id is kept beside it: with
+* `subagent_start` carries the child's goal. A team entry's goal ends with
+  the attempt key OMH reserved (`[omh-team:<team>/<unit>/attempt-<n>]`; one
+  handed out before an update opens with it), and only an attempt the team
+  record already holds, still undispatched, binds to the child's session id. The child's subagent id is kept beside it: with
   Hermes' worktree isolation on, it names the branch the helper's work is on.
   So is this Hermes process (`host_process.this_process`), which the helper
   runs in and ends with: a restart fires no `subagent_stop`.
@@ -22,7 +22,7 @@ saying so:
   between names a later segment; its team is found under the earlier
   segments the same links name.
 
-A goal without the marker is not a team helper and costs one prefix test.
+A goal without the marker is not a team helper and costs one substring test.
 Nothing here raises: both are observers the host fires on the spawn path, and
 a failure leaves the attempt undispatched, which `team_reconcile` hands back
 and eventually blocks as `dispatch_not_observed` -- visible, never silent.
@@ -40,7 +40,7 @@ _MARKER_PREFIX = "[omh-team:"
 
 def observe_team_dispatch(kwargs: dict[str, object]) -> bool:
     goal = kwargs.get("child_goal")
-    if not isinstance(goal, str) or not goal.startswith(_MARKER_PREFIX):
+    if not isinstance(goal, str) or _MARKER_PREFIX not in goal:
         return False
     try:
         from omh.workflows import team

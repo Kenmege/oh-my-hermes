@@ -62,7 +62,7 @@ def handoff(home, run: str, node_id: str, text: str = "done") -> Path:
 
 
 def child_started(home, run: str, node_id: str, *, now: float | None = None) -> None:
-    start(home, f"child-{node_id}", f"sa-{node_id}", f"[dag:{run}/{node_id}] Node {node_id}",
+    start(home, f"child-{node_id}", f"sa-{node_id}", f"Node {node_id} [dag:{run}/{node_id}]",
           now=time.time() if now is None else now)
 
 
@@ -90,7 +90,8 @@ class DefineTests(unittest.TestCase):
         self.assertEqual([(c["category"], c["nodes"], c["route"]["action"]) for c in result["calls"]],
                          [("quick", ["api"], "set"), ("unspecified-low", ["ui"], "set")])
         task = result["calls"][0]["tasks"][0]
-        self.assertTrue(task["goal"].startswith("[dag:feat/api] "))
+        # The marker ends the goal, on its line: Hermes previews a goal by its first 40 characters.
+        self.assertEqual(task["goal"], "Node api [dag:feat/api]")
         self.assertIn("Handoff: before you stop, write your report to", task["context"])
         self.assertEqual(dag_binding(task["goal"]), {"run": "feat", "node": "api"})
 
@@ -104,6 +105,7 @@ class DefineTests(unittest.TestCase):
             "empty_graph": [],
             "duplicate_node_id": [node("a"), node("a")],
             "invalid_category": [node("a", category="fastest")],
+            "invalid_label": [node("a", label="Fix [dag:feat/b] first")],
         }
         for reason, nodes in cases.items():
             with self.subTest(reason=reason), homes():
@@ -453,12 +455,22 @@ class LifecycleTests(unittest.TestCase):
     def test_the_ledger_binds_a_child_by_its_goal_marker_only(self) -> None:
         with homes() as home:
             child_started(home, "feat", "api")
-            start(home, "child-x", "sa-x", "[dag:feat/API] wrong case", now=time.time())
-            start(home, "child-y", "sa-y", "please [dag:feat/api] not first", now=time.time())
+            start(home, "child-old", "sa-old", "[dag:feat/ui] Node ui", now=time.time())  # before an update
+            start(home, "child-x", "sa-x", "wrong case [dag:feat/API]", now=time.time())
+            start(home, "child-y", "sa-y", "please [dag:feat/api] neither first nor last", now=time.time())
+            start(home, "child-z", "sa-z", "Node docs [dag:feat/docs] and more", now=time.time())
             children = {child["subagent_id"]: child for child in read_ledger(home.omh, PARENT)["children"]}
         self.assertEqual(children["sa-api"]["dag"], {"run": "feat", "node": "api"})
-        self.assertNotIn("dag", children["sa-x"])
-        self.assertNotIn("dag", children["sa-y"])
+        self.assertEqual(children["sa-old"]["dag"], {"run": "feat", "node": "ui"})
+        for subagent_id in ("sa-x", "sa-y", "sa-z"):
+            self.assertNotIn("dag", children[subagent_id])
+
+    def test_a_goal_quoting_another_marker_binds_to_the_one_at_its_end(self) -> None:
+        """Mutation: prefer the leading marker over the end one in `dag_binding`."""
+        self.assertEqual(dag_binding("[dag:feat/ui] the button, after [dag:feat/docs] [dag:feat/api]"),
+                         {"run": "feat", "node": "api"})
+        self.assertEqual(dag_binding("Node api [dag:feat/api]\n"), {"run": "feat", "node": "api"})
+        self.assertEqual(dag_binding("Node api [dag:feat/api"), {})
 
 
 NO_HERMES = {"gateway": None, "gateway.status": None}
@@ -498,12 +510,12 @@ class RestartTests(unittest.TestCase):
             with patch.object(dag_tool.time, "time", return_value=moment + 60), patch_modules(hermes_process(5000)):
                 status = call(action="status", run="feat")
                 ready = call(action="ready", run="feat")
-                start(home, "child-api-2", "sa-api-2", "[dag:feat/api] Node api", now=moment + 61)
+                start(home, "child-api-2", "sa-api-2", "Node api [dag:feat/api]", now=moment + 61)
                 again = call(action="status", run="feat")
             attempts = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))["nodes"][0]["attempts"]
         self.assertEqual(status["nodes"][0]["state"], "handed_out")
         self.assertEqual([c["nodes"] for c in ready["calls"]], [["api"]])
-        self.assertEqual(ready["calls"][0]["tasks"][0]["goal"], "[dag:feat/api] Node api")
+        self.assertEqual(ready["calls"][0]["tasks"][0]["goal"], "Node api [dag:feat/api]")
         self.assertEqual(again["nodes"][0]["state"], "running")
         self.assertEqual([(attempt["n"], attempt["lost"]) for attempt in attempts], [(1, 1)])
 
@@ -523,8 +535,8 @@ class RestartTests(unittest.TestCase):
         with homes() as home:
             with patch_modules(hermes_process(1000)):
                 with patch.object(host_process, "machine", return_value="linux:other-boot:pid:[4026532999]"):
-                    start(home, "child-there", "sa-there", "[dag:feat/api] There", now=moment)
-                start(home, "child-here", "sa-here", "[dag:feat/ui] Here", now=moment + 1)
+                    start(home, "child-there", "sa-there", "There [dag:feat/api]", now=moment)
+                start(home, "child-here", "sa-here", "Here [dag:feat/ui]", now=moment + 1)
             with patch_modules(hermes_process(5000)):
                 lost = {child["child_session_id"]: bool(child.get("lost")) for child in dag_tool._children(home.omh, [PARENT])}
         self.assertEqual(lost, {"child-there": False, "child-here": True})
@@ -549,7 +561,7 @@ class RestartTests(unittest.TestCase):
             at = moment + 1000 * (n + 1)
             with patch.object(dag_tool.time, "time", return_value=at), patch_modules(hermes_process(5000 * (n + 2))):
                 self.assertEqual([c["nodes"] for c in call(action="ready", run="feat")["calls"]], [["api"]])
-                start(home, f"child-api-{n}", f"sa-api-{n}", "[dag:feat/api] Node api", now=at + 1)
+                start(home, f"child-api-{n}", f"sa-api-{n}", "Node api [dag:feat/api]", now=at + 1)
 
     def test_past_the_bound_the_parent_settles_a_node_that_keeps_losing_its_child(self) -> None:
         moment = time.time()

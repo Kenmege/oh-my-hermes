@@ -62,7 +62,7 @@ def defined(home) -> None:
 
 
 def started(home, node: str, *, now: float) -> None:
-    start(home, f"child-{node}", f"sa-{node}", f"[dag:export/{node}] {node}", now=now)
+    start(home, f"child-{node}", f"sa-{node}", f"{node} [dag:export/{node}]", now=now)
     home.session(f"child-{node}", "glm-5.3-flash", parent=PARENT, effort="low")
     home.usage(f"child-{node}", "glm-5.3-flash", last_seen=now)
 
@@ -249,7 +249,7 @@ class GraphTests(unittest.TestCase):
     def test_omh_hud_graph_prints_the_run(self) -> None:
         with homes() as home:
             defined(home)
-            start(home, "child-api", "sa-api", "[dag:export/api] api", now=time.time())
+            start(home, "child-api", "sa-api", "api [dag:export/api]", now=time.time())
             with patch("omh.commands.hud._encodes", return_value=True):
                 code, stdout, stderr = run_cli(
                     ["--omh-home", str(home.omh), "--hermes-home", str(home.hermes), "hud", "--graph"],

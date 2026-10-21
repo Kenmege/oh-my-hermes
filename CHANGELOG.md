@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A delegated goal ends with its run marker, so a preview shows the task.**
+  Hermes previews each `delegate_task` goal by its first 40 characters on a
+  Discord tool-progress post, the CLI and the TUI, so a dag-ulw node's
+  leading `[dag:<run>/<node>]` marker and an `omh_team` helper's leading
+  `[omh-team:<team>/<unit>/attempt-<n>]` key took the whole preview
+  (`🔀 Delegating 1 tasks: [dag:billing-refactor/invoic...`). `omh_dag` and
+  `omh_team` now write the marker at the end of the goal, on the label's
+  line (`Render invoice PDFs from the new template [dag:billing-refactor/invoice-pdf]`),
+  and the binding reads the marker at the end. A goal handed out before the
+  update still opens with it, and still binds; when a goal holds both, the
+  end one wins. A node label that holds `[dag:` and a part title that holds
+  `[omh-team:` are refused, so a label cannot name another node. The OMH TUI
+  drops the marker from a `delegate_task` row and an agent row, also a
+  marker head Hermes' cut left behind (`… to API [dag:ex...`). Hermes' own
+  lines (the Discord post, its completion line) keep what its cut leaves:
+  after a label shorter than 40 characters, the marker or its head
+  (`2 tasks: Export API [dag:export/api] ...`).
 - **A Hermes restart no longer leaves a team part waiting four hours.** A
   helper runs inside the Hermes process that started it, and a restart ends
   it without the `subagent_stop` callback, so `omh_team` held the part as

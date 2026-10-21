@@ -195,11 +195,33 @@ class ToolRowTests(unittest.TestCase):
     def test_a_delegate_task_row_shows_the_node_labels_not_their_markers(self) -> None:
         app, _client = make_app(rows=30, cols=140)
         app._on_event(Event("tool.start", SID, {"tool_id": "d1", "name": "delegate_task",
-                                                "context": "2 tasks: [dag:export/ui] Export button | [dag:export/docs] Export docs"}))
+                                                "context": "2 tasks: Export API [dag:export/api] | Export docs [dag:export/docs]"}))
         app._on_event(Event("tool.start", SID, {"tool_id": "d2", "name": "terminal", "context": "echo [dag:a/b] kept"}))
         text = "\n".join(lines_text(app.transcript.live_lines(140, THEME)))
-        self.assertIn("delegate_task(2 tasks: Export button | Export docs)", text)
+        self.assertIn("delegate_task(2 tasks: Export API | Export docs)", text)
         self.assertIn("terminal(echo [dag:a/b] kept)", text)  # only a delegate_task preview carries node goals
+
+    def test_a_marker_hermes_cut_goes_too(self) -> None:
+        """Hermes cuts each goal of the preview to 40 characters (`agent/display.py` `_tail_trunc`, `...`), so a label
+        of 24 to 36 characters leaves the head of its marker; these are its previews at d923a5eb48."""
+        cases = {
+            "1 tasks: Wire the export button to API [dag:ex...": "1 tasks: Wire the export button to API",
+            "1 tasks: Document the CSV export in the API [d...": "1 tasks: Document the CSV export in the API",
+            "1 tasks: Document the CSV export in the APIs [...": "1 tasks: Document the CSV export in the APIs",
+            "2 tasks: Refresh docs [omh-team:hud-graph/docs... | Fix the parser [omh-team:...":
+                "2 tasks: Refresh docs | Fix the parser",
+            # A goal handed out before an update opens with its marker.
+            "2 tasks: [dag:export/ui] Export button | [dag:export/docs] Export docs": "2 tasks: Export button | Export docs",
+            # A cut that took no marker keeps its `...`, and so does a label's own bracket.
+            "1 tasks: Render invoice PDFs from the new temp...": "1 tasks: Render invoice PDFs from the new temp...",
+            "1 tasks: Handle [...] in args [dag:a/b]": "1 tasks: Handle [...] in args",
+        }
+        for context, shown in cases.items():
+            with self.subTest(context=context):
+                app, _client = make_app(rows=30, cols=140)
+                app._on_event(Event("tool.start", SID, {"tool_id": "d1", "name": "delegate_task", "context": context}))
+                text = "\n".join(lines_text(app.transcript.live_lines(140, THEME)))
+                self.assertIn(f"delegate_task({shown})", text)
 
 
 class PagerTests(unittest.TestCase):

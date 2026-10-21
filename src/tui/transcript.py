@@ -380,14 +380,20 @@ def _result_summary(payload: dict[str, Any]) -> str:
 # separator is the one the transcript puts between its own fields (`✻ 30s · 1 tool`).
 BRIDGE_TOOLS = frozenset({"tool_call", "tool_search", "tool_describe"})
 LABEL_SEPARATOR = " · "
-# A dag-ulw node's goal opens with the marker that binds its child (`delegation_ledger`); Hermes' preview of a
-# `delegate_task` call joins the goals (`2 tasks: [dag:export/ui] Export button | ...`), and a person reads the label.
-_DAG_MARKERS = re.compile(r"\[dag:[a-z0-9][a-z0-9-]{0,31}/[a-z0-9][a-z0-9-]{0,31}\]\s*")
+# A dag-ulw node's goal and an omh_team helper's goal end with the marker that binds the child (`delegation_ledger`;
+# a goal from before an update opens with it). Hermes' preview of a `delegate_task` call joins the goals, each cut to
+# 40 characters (`2 tasks: Export API [dag:export/api] | Wire the export button to API [dag:ex...`), and a person
+# reads the label: a whole marker goes, and so does one the cut left a head of, up to and including its `...`.
+_GOAL_MARKERS = re.compile(
+    r"\s?\[(?:dag:[a-z0-9][a-z0-9-]{0,31}/[a-z0-9][a-z0-9-]{0,31}|omh-team:[^\]|]{1,200})\]"
+    r"|\s?\[(?:dag:[a-z0-9/-]*|omh-team:[a-z0-9/_-]*|omh-team|omh-tea|omh-te|omh-t|omh-|omh|om|o|dag|da|d)?"
+    r"\.\.\.(?=\s*\||\s*\Z)"
+)
 
 
 def _args_summary(payload: dict[str, Any]) -> str:
     summary = _call_summary(payload)
-    return _DAG_MARKERS.sub("", summary) if as_text(payload.get("name")) == "delegate_task" else summary
+    return _GOAL_MARKERS.sub("", summary).strip() if as_text(payload.get("name")) == "delegate_task" else summary
 
 
 def _call_summary(payload: dict[str, Any]) -> str:

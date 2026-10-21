@@ -212,18 +212,18 @@ class T2DownstreamWaitsForEveryParent(TeamHarness):
     def test_child_waits_until_all_parents_are_accepted(self) -> None:
         self.runner = FakeRunner({CHECK_A: [exited(0)], CHECK_B: [exited(1), exited(0)], CHECK_C: [exited(0)]})
         started = self.start([unit("a", CHECK_A), unit("b", CHECK_B), unit("c", CHECK_C, ["a", "b"])])
-        self.assertEqual([entry["goal"].split("]")[0] for entry in self.entries(started)],
-                         ["[omh-team:t1/a/attempt-1", "[omh-team:t1/b/attempt-1"])
+        self.assertEqual([entry["goal"].rsplit(" ", 1)[1] for entry in self.entries(started)],
+                         ["[omh-team:t1/a/attempt-1]", "[omh-team:t1/b/attempt-1]"])
         self.dispatch_all(started)
         first = self.reconcile()
         self.assertEqual(self.states(first), {"a": "accepted", "b": "repairing", "c": "waiting"})
-        self.assertEqual([entry["goal"].split("]")[0] for entry in self.entries(first)],
-                         ["[omh-team:t1/b/attempt-2"])
+        self.assertEqual([entry["goal"].rsplit(" ", 1)[1] for entry in self.entries(first)],
+                         ["[omh-team:t1/b/attempt-2]"])
         self.dispatch_all(first)
         second = self.reconcile()
         self.assertEqual(self.states(second)["b"], "accepted")
-        self.assertEqual([entry["goal"].split("]")[0] for entry in self.entries(second)],
-                         ["[omh-team:t1/c/attempt-1"])
+        self.assertEqual([entry["goal"].rsplit(" ", 1)[1] for entry in self.entries(second)],
+                         ["[omh-team:t1/c/attempt-1]"])
 
     def test_a_returned_but_unchecked_parent_releases_nothing(self) -> None:
         started = self.start([unit("a", CHECK_A), unit("c", CHECK_C, ["a"])])
@@ -267,12 +267,13 @@ class T4RepairKeyCarriesTheAttempt(TeamHarness):
         self.dispatch_all(self.start([unit("a", CHECK_A)]))
         repair = self.entries(self.reconcile())
         self.assertEqual(len(repair), 1)
-        self.assertTrue(repair[0]["goal"].startswith("[omh-team:t1/a/attempt-2] "))
+        # The key ends the goal, so Hermes' 40-character previews show the part's title first.
+        self.assertEqual(repair[0]["goal"], "Part a [omh-team:t1/a/attempt-2]")
         self.assertIn('{"command": "python -m unittest tests/test_a.py", "exit_code": 1}', repair[0]["context"])
         self.assertNotIn("exit 1", repair[0]["context"])  # the output tail never travels
         # The original attempt's marker no longer binds: it is not the reserved attempt.
         self.assertFalse(team.observe_dispatch(self.home, SESSION, child_session_id="late",
-                                               goal="[omh-team:t1/a/attempt-1] Part a", now=self.now()))
+                                               goal="Part a [omh-team:t1/a/attempt-1]", now=self.now()))
         self.assertEqual(team.attempt_key("t1", "a", 2), "t1/a/attempt-2")
 
 
@@ -505,12 +506,30 @@ class T10ResumeReEmitsWhatWasReserved(TeamHarness):
 
     def test_a_marker_for_an_unreserved_attempt_binds_nothing(self) -> None:
         self.start([unit("a", CHECK_A)])
-        for goal in ("[omh-team:t1/a/attempt-2] forged", "[omh-team:t1/zz/attempt-1] forged",
-                     "[omh-team:other/a/attempt-1] forged", "Part a [omh-team:t1/a/attempt-1]"):
+        for goal in ("forged [omh-team:t1/a/attempt-2]", "forged [omh-team:t1/zz/attempt-1]",
+                     "forged [omh-team:other/a/attempt-1]", "[omh-team:t1/a/attempt-2] forged",
+                     "Part a [omh-team:t1/a/attempt-1] neither first nor last"):
             with self.subTest(goal=goal):
                 self.assertFalse(team.observe_dispatch(self.home, SESSION, child_session_id="c",
                                                        goal=goal, now=self.now()))
         self.assertFalse(team.observe_return(self.home, SESSION, child_session_id="never-started", now=self.now()))
+
+    def test_the_key_binds_at_the_end_of_the_goal_and_at_its_start(self) -> None:
+        """Mutation: read only one end of the goal, or let a leading key win over the end one."""
+        self.start([unit("a", CHECK_A), unit("b", CHECK_B)])
+        # A goal handed out before an update opens with its key.
+        self.assertTrue(team.observe_dispatch(self.home, SESSION, child_session_id="old",
+                                              goal="[omh-team:t1/a/attempt-1] Part a", now=self.now()))
+        self.assertTrue(team.observe_dispatch(self.home, SESSION, child_session_id="new",
+                                              goal="[omh-team:t1/a/attempt-1] Part b [omh-team:t1/b/attempt-1]",
+                                              now=self.now()))
+        bound = {item["unit_id"]: item["attempts"][0]["dispatch"]["child_session_id"] for item in self.record()["units"]}
+        self.assertEqual(bound, {"a": "old", "b": "new"})
+
+    def test_a_title_holding_a_key_is_refused(self) -> None:
+        with self.assertRaises(team.TeamRefusal) as refused:
+            self.start([{**unit("a", CHECK_A), "title": "Part a, after [omh-team:t1/b/attempt-1]"}])
+        self.assertEqual(refused.exception.reason, "invalid_title")
 
 
 class T11NoCheckWhileHelpersAreOut(TeamHarness):
@@ -587,7 +606,7 @@ class ARestartHandsBackTheHelpersItEnded(TeamHarness):
         self.restart()
         self.dispatchers.update({self.PID: False, 5151: True})
         again = self.start([unit("a", CHECK_A), unit("b", CHECK_B)])
-        self.assertEqual([entry["goal"] for entry in self.entries(again)], ["[omh-team:t1/a/attempt-1] Part a"])
+        self.assertEqual([entry["goal"] for entry in self.entries(again)], ["Part a [omh-team:t1/a/attempt-1]"])
         self.assertEqual(self.states(again), {"a": "prepared", "b": "dispatched"})
         self.assertTrue(again["say"].startswith("Hermes restarted while 1 part was out; it starts again."))
         self.dispatchers[5151] = False

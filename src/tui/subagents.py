@@ -32,8 +32,8 @@ frames it built for a scripted run are `tests/fixtures/tui_gateway/subagent_rela
   reply reaches its log as the `summary` of its `subagent.complete`, or
   through `subagent.tail` while the child is live.
 - No frame carries a role or a name. An agent's display name is the first
-  words of its goal, after the `[dag:<run>/<node>]` marker a dag-ulw node's
-  goal opens with (the node's label follows it).
+  words of its goal, without the `[dag:<run>/<node>]` marker a dag-ulw node's
+  goal ends with (the node's label comes first) or an omh_team helper's.
 
 The fold. An agent is keyed by `subagent_id`; a frame without a usable one
 changes nothing. The id is stored as it arrived and is never drawn: rows show
@@ -237,10 +237,10 @@ def _bounded(value: object, ceiling: int) -> bool:
 
 def _identify(agent: Agent, payload: dict[str, Any]) -> None:
     """Take the identity fields a frame carries; one that is missing or mistyped leaves the agent's own."""
-    from ..plugin_bundle.omh.delegation_ledger import without_dag_marker  # the ledger's own marker pattern
+    from ..plugin_bundle.omh.delegation_ledger import without_goal_marker  # the ledger's own marker pattern
 
     # A dag node's child is named by its node's label: the `[dag:<run>/<node>]` marker is for OMH, not the strip.
-    goal = without_dag_marker(_one_line(payload.get("goal"), GOAL_CHARS))
+    goal = without_goal_marker(_one_line(payload.get("goal"), GOAL_CHARS))
     if goal:
         agent.goal = goal
     model = _one_line(payload.get("model"), LABEL_CHARS)
