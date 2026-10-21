@@ -29,8 +29,17 @@ Every field without evidence is ``?``:
   not consulted.
 * **model** is what Hermes recorded for the child, never the configured route.
 * **state** comes from `subagent_stop`, a recorded model call, or the team's
-  own lifecycle. A child whose session closed for compaction without a stop
-  this ledger could join is ``unknown``, never done and never running.
+  own lifecycle. A child whose session closed for compaction is read through
+  the continuation Hermes recorded for it: its state, model calls and output
+  tokens are those of every segment it ran in. With no continuation recorded
+  it is ``unknown``, never done and never running.
+
+A conversation is every segment of it (`graph_segments`): Hermes' rotating
+compaction (``compression.in_place: false``) moves a conversation to a new
+session id mid-run, and its ledger children, team record and dag run stay
+under the segment that wrote them. A stop the ledger could not join (it names
+a parent segment or a child segment the start did not) joins the child whose
+id it names, or whose continuation it names.
 
 A title is never ``?``: where no record names one, a team part or fanout unit
 reads its unit id, a dag node its node id, and a child ``session <tail>``
@@ -58,7 +67,7 @@ from urllib.parse import quote
 from .dag_core import layer_of
 from .dag_run import ADDED_ORIGIN_KINDS, derive, run_state, session_runs
 from .delegation_ledger import child_title, ledger_key, read_ledger, title_from_goal
-from .kanban_board_reader import conversation_session_ids
+from .live_session import conversation_segments
 from .subagent_graph import _roster_progress_fields as roster_progress_fields
 
 GRAPH_SCHEMA_VERSION: Final = "delegation_graph/v1"
@@ -139,6 +148,76 @@ def _connect(hermes_home: Path) -> sqlite3.Connection | None:
         return sqlite3.connect(f"file:{quote(str(state_db))}?mode=ro", uri=True, timeout=0.25)
     except sqlite3.Error:
         return None
+
+
+def graph_segments(hermes_home: Path, session_id: str) -> list[str]:
+    """``session_id``, then the other segments of its conversation (`live_session.conversation_segments`).
+
+    Hermes' default in-place compaction keeps one id and writes no second row,
+    so this is ``[session_id]`` there, and wherever the lineage cannot be read.
+    """
+    connection = _connect(hermes_home)
+    if connection is None:
+        return [session_id]
+    try:
+        others = conversation_segments(connection, session_id) - {session_id}
+    except sqlite3.Error:
+        return [session_id]
+    finally:
+        connection.close()
+    return [session_id, *sorted(others)]
+
+
+def _continuations(hermes_home: Path, facts: Mapping[str, Any], sessions: Sequence[str]) -> dict[str, list[str]]:
+    """Each of ``sessions`` whose row Hermes closed for compaction, with the later segments its conversation ran in.
+
+    Reads ``state.db`` only when such a row exists, which Hermes' default
+    in-place compaction never writes.
+    """
+    compacted = [session for session in dict.fromkeys(sessions)
+                 if (facts["sessions"].get(session) or {}).get("end_reason") == COMPACTION_END_REASON]
+    if not compacted:
+        return {}
+    connection = _connect(hermes_home)
+    if connection is None:
+        return {}
+    try:
+        later = {session: sorted(conversation_segments(connection, session) - {session}) for session in compacted}
+    except sqlite3.Error:
+        return {}
+    finally:
+        connection.close()
+    return {session: segments for session, segments in later.items() if segments}
+
+
+def _carry_on(hermes_home: Path, facts: dict[str, Any], later: Mapping[str, Sequence[str]]) -> None:
+    """Read each compacted session as the conversation it went on in: the facts of its tips, with its segments summed.
+
+    A tip is a later segment Hermes did not close for compaction; the session
+    is open while any tip is (a stale sibling beside the continuation is a
+    tip too). Model calls, their last time and output tokens add up over the
+    segments, the way Hermes' own per-agent count does. A session whose later
+    rows cannot be read keeps its own facts, so it stays ``compacted``.
+    """
+    extra = state_facts(hermes_home, [segment for segments in later.values() for segment in segments], [])
+    for session, segments in later.items():
+        rows = [extra["sessions"][segment] for segment in segments if segment in extra["sessions"]]
+        tips = [row for row in rows if row["end_reason"] != COMPACTION_END_REASON]
+        if not tips:
+            continue
+        live = [tip for tip in tips if tip["ended_at"] is None]
+        last = (live or tips)[0]
+        row = facts["sessions"][session]
+        written = [item["output_tokens"] for item in (row, *rows) if item["output_tokens"]]
+        facts["sessions"][session] = {**row, "ended_at": last["ended_at"], "end_reason": last["end_reason"],
+                                      "output_tokens": sum(written) if written else None}
+        usages = [usage for usage in (facts["usage"].get(session), *(extra["usage"].get(s) for s in segments)) if usage]
+        if usages:
+            models = {usage["model"] for usage in usages if usage["model"]}
+            seen = [usage["last_seen"] for usage in usages if usage["last_seen"] is not None]
+            facts["usage"][session] = {"rows": sum(usage["rows"] for usage in usages),
+                                       "model": models.pop() if len(models) == 1 else "",
+                                       "last_seen": max(seen) if seen else None}
 
 
 def _effort(config: Mapping[str, Any]) -> str:
@@ -392,18 +471,22 @@ def build_delegation_graph(
     fanout: Mapping[str, Any] | None = None,
     scope: str = "session",
     linger: float | None = GRAPH_LINGER_SECONDS,
+    segments: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """The graph of one conversation's delegated work, or of the fanout passed in when it has none.
 
     A graph whose lanes have all settled is inactive once ``linger`` seconds
     have passed since its last change; ``None`` keeps it (the chat end post of
-    a run it opened, `delegation_snapshot.py`). Never raises: an unreadable
-    record or database leaves the graph smaller or inactive, and a field it
-    cannot evidence ``?``.
+    a run it opened, `delegation_snapshot.py`). ``segments`` is
+    `graph_segments`' answer for ``session_id`` when the caller already read
+    it. Never raises: an unreadable record or database leaves the graph
+    smaller or inactive, and a field it cannot evidence ``?``.
     """
     moment = time.time() if now is None else now
     try:
-        graph = _build(omh_home, hermes_home, session_id, moment, root_model, titles, scope, linger)
+        if session_id and not segments:
+            segments = graph_segments(Path(hermes_home), session_id)
+        graph = _build(omh_home, hermes_home, session_id, moment, root_model, titles, scope, linger, segments or [])
     except (OSError, ValueError, TypeError, KeyError, sqlite3.Error) as error:
         graph = inactive_graph(f"unreadable:{type(error).__name__}", scope=scope)
     if graph["status"] != "active" and fanout:
@@ -423,13 +506,15 @@ def _build(
     titles: Callable[[str], str],
     scope: str,
     linger: float | None,
+    segments: Sequence[str],
 ) -> dict[str, Any]:
     if not session_id:
         return inactive_graph("no_session", scope=scope)
-    ledger = read_ledger(Path(omh_home), session_id)
-    team = _team_record(Path(omh_home), session_id)
-    children = list(ledger["children"]) if ledger else []
-    dag = _dag_run(Path(omh_home), Path(hermes_home), session_id, now)
+    ledgers = {segment: read_ledger(Path(omh_home), segment) for segment in segments}
+    teams = [found for found in (_team_record(Path(omh_home), segment) for segment in segments) if found is not None]
+    team = max(teams, key=lambda found: found[1]) if teams else None
+    children = [child for ledger in ledgers.values() if ledger for child in ledger["children"]]
+    dag = _dag_run(Path(omh_home), session_id, ledgers)
     if dag is not None:
         known = {child["child_session_id"] for child in children}
         children += [child for child in dag["children"] if child["child_session_id"] not in known]
@@ -444,6 +529,18 @@ def _build(
                     sessions.append(dispatch["child_session_id"])
     delegations = [child.get("delegation_id", "") for child in children]
     facts = state_facts(Path(hermes_home), sessions, delegations)
+    later = _continuations(Path(hermes_home), facts, sessions[1:])
+    if later:
+        _carry_on(Path(hermes_home), facts, later)
+    stops = [stop for ledger in ledgers.values() if ledger for stop in ledger["unjoined_stops"]]
+    if stops:
+        children = [_with_stop(child, stops, later) for child in children]
+    if dag is not None:
+        dag_children = [_with_stop(child, stops, later) for child in dag["children"]] if stops else dag["children"]
+        derived = derive(dag["record"], dag_children, now)
+        dag = {"record": dag["record"], "children": dag_children, "derived": derived,
+               "state": run_state(dag["record"], derived)}
+    in_conversation = set(segments)
     root_row = facts["sessions"].get(session_id) or {}
     root = {
         "id": "root",
@@ -478,7 +575,7 @@ def _build(
     waves: dict[tuple[str, str], int] = {}
     wave_start: dict[tuple[str, str], float] = {}
     for child in ordered:
-        if (child["parent_session_id"] != session_id or child["child_session_id"] in team_bound
+        if (child["parent_session_id"] not in in_conversation or child["child_session_id"] in team_bound
                 or child["child_session_id"] in dag_bound):
             continue
         key = (child["parent_session_id"], child["parent_turn_id"] or child.get("call_id", ""))
@@ -581,7 +678,7 @@ def _build(
         if not parent_id:
             parent_id = node_of_session.get(child["parent_session_id"], "")
         if not parent_id:
-            parent_id = "root" if child["parent_session_id"] == session_id else ""
+            parent_id = "root" if child["parent_session_id"] in in_conversation else ""
         return parent_id
 
     # A child is placed once its parent is: passes repeat until none places, so a child whose parent this graph
@@ -631,7 +728,9 @@ def _build(
     else:
         name = "delegation"
     graph = _finish(name, nodes, edges, scope)
-    graph["chat"] = _chat_record(ledger)
+    # The segment that posted last speaks for the conversation; a rotation does not start its posts over.
+    graph["chat"] = _chat_record(max((ledger for ledger in ledgers.values() if ledger), default=None,
+                                     key=lambda ledger: ledger["posted"].get("observed_at") or 0.0))
     graph["changed_at"] = newest  # the last start, stop, team-record or dag-record write: when this graph last moved
     if dag is not None:
         # A dag run is not over while a node is out or ready, even when every drawn lane settled. A run that waits
@@ -696,29 +795,49 @@ def dag_origin(node: Mapping[str, Any]) -> tuple[str, str]:
     return kind, str(node.get("found_by") or "")
 
 
-def _dag_run(omh_home: Path, hermes_home: Path, session_id: str, now: float) -> dict[str, Any] | None:
-    """The conversation's newest `omh_dag/v1` run with its bound children and derived states, or None.
+def _dag_run(
+    omh_home: Path, session_id: str, ledgers: Mapping[str, Mapping[str, Any] | None]
+) -> dict[str, Any] | None:
+    """The conversation's newest `omh_dag/v1` run with the ledger children bound to it, or None.
 
     The run is stored under the segment that defined it; when this segment
-    holds none, the conversation's other segments are read
-    (`conversation_session_ids`, the #2176 lineage), so a compacted parent
-    still finds its run.
+    holds none, the conversation's other segments are read (the keys of
+    ``ledgers``, `graph_segments`), so a compacted parent still finds its run.
+    The caller derives the states once it has joined the stops.
     """
     segments = [session_id]
     runs = session_runs(omh_home, session_id)
     if not runs:
-        segments = sorted({session_id, *conversation_session_ids(hermes_home, session_id)})
+        segments = sorted(ledgers)
         runs = [item for segment in segments for item in session_runs(omh_home, segment)]
     if not runs:
         return None
     record = max(runs, key=lambda item: float(item[0].get("updated_at") or 0.0))[0]
     run = str(record["run"])
     children = [
-        child for segment in segments for child in ((read_ledger(omh_home, segment) or {}).get("children") or [])
+        child for segment in segments for child in ((ledgers.get(segment) or {}).get("children") or [])
         if isinstance(child.get("dag"), Mapping) and child["dag"].get("run") == run
     ]
-    derived = derive(record, children, now)
-    return {"record": record, "children": children, "derived": derived, "state": run_state(record, derived)}
+    return {"record": record, "children": children}
+
+
+def _with_stop(
+    child: Mapping[str, Any], stops: Sequence[Mapping[str, Any]], later: Mapping[str, Sequence[str]]
+) -> Mapping[str, Any]:
+    """``child`` with the newest stop the ledger left unjoined that names it or a later segment of it, if it has none.
+
+    Hermes names the sessions as they are when the child stops: a parent
+    rotated since the start files the stop under its new segment, and a child
+    rotated since then is named by its continuation.
+    """
+    if isinstance(child.get("stop"), Mapping):
+        return child
+    names = {child["child_session_id"], *later.get(child["child_session_id"], ())}
+    found = [stop for stop in stops if stop["child_session_id"] in names]
+    if not found:
+        return child
+    stop = max(found, key=lambda item: item["observed_at"])
+    return {**child, "stop": {"status": stop["status"], "observed_at": stop["observed_at"], "duration_ms": None}}
 
 
 def _dag_nodes(

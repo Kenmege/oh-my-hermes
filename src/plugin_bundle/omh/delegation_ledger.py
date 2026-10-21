@@ -630,6 +630,16 @@ def posted_record(omh_home: Path, session_id: str) -> dict[str, Any]:
     return dict(record["posted"]) if record else {}
 
 
+def conversation_posted(omh_home: Path, segments: Sequence[str]) -> dict[str, Any]:
+    """The newest `posted_record` among a conversation's segments, the first segment's on a tie, or {}.
+
+    Hermes' rotating compaction moves a conversation to a new session id mid-run;
+    what an earlier segment posted speaks for the run until the new one posts.
+    """
+    return max((posted_record(omh_home, segment) for segment in segments),
+               key=lambda posted: posted.get("observed_at") or 0.0, default={})
+
+
 def note_posted(
     omh_home: Path,
     session_id: str,

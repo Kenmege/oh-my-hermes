@@ -137,6 +137,26 @@ class MomentTests(unittest.TestCase):
             self.assertIsNone(reply("Anything else?", turn="turn-9"), "the end is posted once")
             self.assertEqual(posted_record(home.omh, PARENT)["phase"], "closed")
 
+    def test_a_run_goes_on_across_a_rotating_compaction_of_its_parent(self) -> None:
+        # Hermes' rotating compaction (`compression.in_place: false`) moves the conversation to a new session id
+        # mid-run, and names that segment as the parent when a child stops: the run neither starts over nor stalls.
+        later = "20261020_150000_later"
+        with homes() as home:
+            three_lanes(home)
+            self.assertEqual(reply(), START3)
+            home.rotate(PARENT, later)
+            home.usage("child-1", "glm-5.3-flash", last_seen=time.time())
+            stop(home, "child-1", parent=later, now=time.time())
+
+            def hud() -> dict:
+                return read_omh_hud(home.omh, home.hermes, session_ref=later, status={"runs": []})["delegation_graph"]
+
+            self.assertEqual((hud()["status"], len(hud()["nodes"]), hud()["chat"]["moment"]), ("active", 4, "start"))
+            self.assertEqual(reply("Polish finished.", session=later, turn="turn-6"),
+                             "Polish finished.\n\nDAG delegation · 1/3 done · 0 running")
+            self.assertIsNone(reply("Still working.", session=later, turn="turn-7"), "the new segment's post counts")
+            self.assertEqual(hud()["chat"]["moment"], "count")
+
     def test_a_chat_post_never_carries_the_box_drawing(self) -> None:
         with homes() as home:
             three_lanes(home)

@@ -32,8 +32,10 @@ the conversation's lanes that no end post has closed yet:
   the closed lanes, so a part that moves again opens a run of its own.
 
 A run whose first reply finds it already settled (a synchronous call) gets the
-end post alone. A chat reply never carries the box drawing: the OMH TUI and
-`omh hud --graph` draw that.
+end post alone. A conversation Hermes' rotating compaction moved to a new
+session id mid-run goes on from the last post any of its segments recorded
+(`conversation_posted`), so its run is not announced again. A chat reply
+never carries the box drawing: the OMH TUI and `omh hud --graph` draw that.
 
 Nothing is appended:
 
@@ -78,8 +80,9 @@ from .delegation_graph import (
     dag_node_id,
     dag_origin,
     graph_fingerprint,
+    graph_segments,
 )
-from .delegation_ledger import note_posted, note_skipped, posted_record, root_session
+from .delegation_ledger import conversation_posted, note_posted, note_skipped, posted_record, root_session
 from .delegation_view import UNICODE, UNTITLED, cells, clean_text, fit
 
 MESSENGER_PLATFORMS: Final = frozenset({"discord", "slack", "telegram", "mattermost", "matrix"})
@@ -400,13 +403,15 @@ def messenger_snapshot(
         return ""  # a host that cannot name this profile's homes gets no post, and the reply goes out as it is
     if root_session(session, hermes_home) != session:
         return ""  # a delegated child's own turn: its parent's reply carries the run
-    posted = posted_record(omh_home, session)
+    # A conversation Hermes' rotating compaction moved to a new session id goes on from its earlier segment's post.
+    segments = graph_segments(hermes_home, session)
+    posted = conversation_posted(omh_home, segments)
     run_open = posted.get("phase") == "open"
     graph = build_delegation_graph(
         omh_home, hermes_home, session, now=moment, root_model=model if isinstance(model, str) else "",
         # A run a start post opened gets its end post however long it took to settle; any other settled graph
         # stops being news after the usual linger.
-        linger=None if run_open else GRAPH_LINGER_SECONDS,
+        linger=None if run_open else GRAPH_LINGER_SECONDS, segments=segments,
     )
     if graph.get("status") != "active":
         return ""

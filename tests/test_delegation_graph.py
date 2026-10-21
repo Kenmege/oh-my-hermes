@@ -436,6 +436,113 @@ class FanoutTests(unittest.TestCase):
             self.assertEqual(built(home, fanout=record)["source"], "native")
 
 
+LATER = "20261020_150000_later"
+
+
+class RotatingCompactionTests(unittest.TestCase):
+    """Hermes' rotating compaction (`compression.in_place: false`) moves a conversation, or one child, to a new id.
+
+    Hermes names the sessions as they are when a child stops
+    (`delegate_tool_results._fire_subagent_stop_hooks`): the parent's current
+    segment and the child's current segment, so the stop reaches the ledger
+    unjoined (`delegation_ledger.observe_subagent_stop`).
+    """
+
+    def test_a_rotated_parent_keeps_its_lanes_and_joins_the_stop_filed_under_its_new_segment(self) -> None:
+        with homes() as home:
+            three_lanes(home)
+            home.usage("child-0", "claude-opus-5-5", last_seen=NOW + 90)
+            home.usage("child-1", "glm-5.3-flash", last_seen=NOW + 60)
+            home.rotate(PARENT, LATER, at=NOW + 40)
+            stop(home, "child-1", parent=LATER, now=NOW + 62)
+            graph = build_delegation_graph(home.omh, home.hermes, LATER, now=NOW + 100)
+            earlier = built(home)
+        lanes = graph["nodes"][1:]
+        self.assertEqual([(item["title"], item["state"]) for item in lanes],
+                         [("Refresh HUD docs", "running"), ("Polish HUD CLI", "done"), ("Update HUD tests", "dispatched")])
+        groups = {item["group"] for item in lanes}
+        self.assertTrue(len(groups) == 1 and groups.pop().startswith("wave 1 · "), lanes)
+        self.assertAlmostEqual(node(graph, "Polish HUD CLI")["elapsed_seconds"], 61.0)
+        self.assertEqual(graph_fingerprint(earlier), graph_fingerprint(graph), "every segment reads one graph")
+
+    def test_a_team_record_under_an_earlier_segment_is_read(self) -> None:
+        with homes() as home:
+            home.session(PARENT, "claude-opus-5-5")
+            directory = home.omh / "runtime" / "teams" / ledger_key(PARENT)
+            directory.mkdir(parents=True)
+            (directory / "hud-graph.json").write_text(json.dumps(team_record([unit("docs", "Refresh docs", [])])),
+                                                      encoding="utf-8")
+            home.rotate(PARENT, LATER, at=NOW + 40)
+            graph = build_delegation_graph(home.omh, home.hermes, LATER, now=NOW + 100)
+            # A team started after the rotation is under the new segment, and the newest record is the one drawn.
+            os.utime(directory / "hud-graph.json", (1_700_000_000, 1_700_000_000))
+            newer = home.omh / "runtime" / "teams" / ledger_key(LATER)
+            newer.mkdir(parents=True)
+            (newer / "second.json").write_text(
+                json.dumps({**team_record([unit("cli", "Polish CLI", [])]), "team_id": "second"}), encoding="utf-8")
+            second = build_delegation_graph(home.omh, home.hermes, LATER, now=NOW + 100)
+        self.assertEqual((graph["name"], node(graph, "Refresh docs")["state"]), ("team hud-graph", "waiting"))
+        self.assertEqual(second["name"], "team second")
+
+    def test_a_rotated_child_is_read_through_its_continuation(self) -> None:
+        late = NOW + CHILD_STALE_SECONDS + 100  # the first segment's last call alone would read `no news` by now
+        with homes() as home:
+            start(home, "child-0", "sa-0", "Long lane", now=NOW)
+            home.session("child-0", "glm-5.3-flash", parent=PARENT, started=NOW)
+            home.usage("child-0", "glm-5.3-flash", last_seen=NOW + 20)
+            home.tokens("child-0", 1_200)
+            home.rotate("child-0", "child-0b", at=NOW + 30)
+            home.usage("child-0b", "glm-5.3-flash", last_seen=late - 10)
+            home.tokens("child-0b", 700)
+            running = node(built(home, now=late), "Long lane")
+            stop(home, "child-0b", now=late - 5)
+            done = node(built(home, now=late), "Long lane")
+        self.assertEqual((running["state"], running["status"], running["output_tokens"]), ("running", "running", 1_900))
+        self.assertEqual((done["state"], done["status"], done["output_tokens"], done["elapsed_seconds"]),
+                         ("done", "done", 1_900, late - 5 - NOW))
+
+    def test_a_stale_sibling_beside_a_rotated_childs_continuation_does_not_end_it(self) -> None:
+        # A reconnect can leave a second row under the closed segment (`get_compression_chain`); the child is open
+        # while any of them is.
+        with homes() as home:
+            start(home, "child-0", "sa-0", "Long lane", now=NOW)
+            home.session("child-0", "glm-5.3-flash", parent=PARENT, started=NOW)
+            home.rotate("child-0", "child-0b", at=NOW + 30)
+            home.rotate("child-0", "child-0a", at=NOW + 30)
+            home.execute("UPDATE sessions SET ended_at = ?, end_reason = 'ws_orphan_reap' WHERE id = 'child-0a'",
+                         (NOW + 31,))
+            home.usage("child-0b", "glm-5.3-flash", last_seen=NOW + 90)
+            lane = node(built(home), "Long lane")
+        self.assertEqual((lane["state"], lane["status"]), ("running", "running"))
+
+    def test_a_rotated_child_whose_continuation_ended_without_a_stop_is_unknown(self) -> None:
+        with homes() as home:
+            start(home, "child-0", "sa-0", "Long lane", now=NOW)
+            home.session("child-0", "glm-5.3-flash", parent=PARENT, started=NOW)
+            home.rotate("child-0", "child-0b", at=NOW + 30)
+            home.execute("UPDATE sessions SET ended_at = ?, end_reason = 'agent_close' WHERE id = 'child-0b'",
+                         (NOW + 60,))
+            lane = node(built(home), "Long lane")
+        self.assertEqual((lane["state"], lane["status"]), ("unknown", "ended"))
+
+    def test_a_fork_of_the_conversation_is_not_one_of_its_segments(self) -> None:
+        # A reset beside the continuation is a chat of its own: neither reads the other's lanes or stops.
+        with homes() as home:
+            three_lanes(home)
+            home.rotate(PARENT, LATER, at=NOW + 40)
+            home.execute("INSERT INTO sessions (id, source, model, model_config, started_at, parent_session_id) "
+                         "VALUES ('reset-1', 'discord', 'claude-opus-5-5', ?, ?, ?)",
+                         (json.dumps({"_reset_from": PARENT}), NOW + 50, PARENT))
+            start(home, "child-r", "sa-r", "Other chat", parent="reset-1", now=NOW + 55)
+            stop(home, "child-1", parent="reset-1", now=NOW + 62)  # a stop no segment of PARENT's filed
+            ours = build_delegation_graph(home.omh, home.hermes, LATER, now=NOW + 100)
+            theirs = build_delegation_graph(home.omh, home.hermes, "reset-1", now=NOW + 100)
+        self.assertEqual([item["title"] for item in ours["nodes"][1:]],
+                         ["Refresh HUD docs", "Polish HUD CLI", "Update HUD tests"])
+        self.assertNotEqual(node(ours, "Polish HUD CLI")["state"], "done")
+        self.assertEqual([item["title"] for item in theirs["nodes"][1:]], ["Other chat"])
+
+
 class OutputTokenTests(unittest.TestCase):
     """Each native lane's `output_tokens`: what its child's state.db row has counted, or None without a count."""
 
