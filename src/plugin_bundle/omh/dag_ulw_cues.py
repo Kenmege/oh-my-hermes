@@ -105,21 +105,30 @@ _STOP: Final = re.compile(
     rf"(?:{_KOREAN_STOP_ADVERB}\s*){{0,2}}"
     rf"(?:{_KOREAN_STOP_NOUN}(?:{_KOREAN_VERB_TAIL}|{_KOREAN_PARTICLE_TAIL})?|꺼\s*(?:줘|주세요|라)?\s*요?)\s*[.!?~]*$"
 )
-# Any other Korean stop word after the name is never a run (owner decision O7): with nothing after it that names
-# work or asks how, it may stop the run or name the work, so it asks which ("dag ulw 주문 취소", "dag ulw 취소 요청",
-# "dag ulw 아까 내가 시작한 결제 작업 좀 취소해줘"). A work noun or verb after it keeps the message work
-# ("dag ulw 주문 취소 기능 만들어요", "dag ulw 결제 취소 플로우 리팩터링 ㄱ"), and so does a clause that makes the stop
-# word a condition of the work ("dag ulw 주문 취소 시 환불되게 해줘").
+# Any other Korean stop word after the name is never a run (owner decision O7). The last stop word decides. With
+# nothing after it that names work, it may stop the run or name the work, so it asks which ("dag ulw 주문 취소",
+# "dag ulw 취소 요청", "dag ulw 결제 취소 기능 만드는 거 그만해줘"). A work noun or verb after it keeps the message work
+# ("dag ulw 주문 취소 기능 만들어요", "dag ulw 결제 취소 이슈 해결해줘"), and so does a clause that makes the stop word a
+# condition of the work ("dag ulw 주문 취소 시 환불되게 해줘"). 꺼줘 takes its object first, so a work word before it
+# keeps the message work ("dag ulw 다크모드 꺼줘"). A how word after it asks about stopping, and is answered
+# (`asks_about_dag_ulw`: "dag ulw 취소 어떻게 해", "dag ulw 중단하면 어떻게 돼").
 _STOP_AFTER_NAME: Final = re.compile(
-    rf"{_NAME}.*?(?:{_KOREAN_STOP_NOUN}|멈추|멈춰|그만(?!큼)|꺼\s*(?:줘|주세요|라))(.*)$", re.DOTALL
+    rf"{_NAME}(.*)(?:{_KOREAN_STOP_NOUN}|멈추|멈춰|멈출|멈췄|그만(?!큼)|(꺼)\s*(?:줘|주세요|라))(.*)$", re.DOTALL
 )
 _KOREAN_WORK_WORD: Final = re.compile(
     r"기능|로직|버튼|화면|페이지|모듈|컴포넌트|서비스|엔드포인트|핸들러|함수|메서드|클래스|코드|처리|구현|만들|추가|리팩터"
     r"|고쳐|고치|수정|정리|작성|개발|테스트|변경|개선|설계|연동|적용|배포|마이그레이션|흐름|플로우|정책|조건|이벤트|알림|넣"
-    r"|붙여|바꿔|분리|나눠|^\s*시\s|[할될]\s*때|[하되]면|되게|되도록|하도록"
-    r"|\b(?:api|ui|button|page|feature|logic|flow|handler|endpoint|tests?)\b"
+    r"|붙여|바꿔|분리|나눠|해결|잡아|버그|이슈|디버깅|디버그|최적화|캐싱|캐시|검토|스펙|문서|써\s*(?:줘|주세요)|정의|쿼리"
+    r"|스키마|설정|중단점|모드|로그|\b(?:api|ui|button|page|feature|logic|flow|handler|endpoint|dto|tests?)\b"
 )
-_KOREAN_HOW: Final = re.compile(r"어떻게|방법|뭐|왜|가능|[할될]\s*수\s*있|되나|될까|돼\s*요?\s*[?？]")
+_KOREAN_WORK_CONDITION: Final = re.compile(r"^\s*시\s|[할될]\s*때|[하되]면|되게|되도록|하도록")
+_KOREAN_HOW: Final = re.compile(r"어떻게|방법|뭐|왜|가능|(?:^|[할될])\s*수\s*있|되나|될까|돼\s*요?\s*[?？]")
+# A stop of the run right after the name, then more work ("dag ulw 지금 거 취소하고 결제 모듈부터 다시 해줘",
+# "dag ulw 취소하고 다시 처음부터 구현해줘"): stop and restart, or work on a cancel, so it asks before either.
+_STOP_THEN_WORK: Final = re.compile(
+    rf"{_NAME}[\s,:]*(?:의\s*)?(?:(?:{_KOREAN_RUN_MODIFIER}\s*){{0,2}}{_KOREAN_RUN_NOUN}\s*)?"
+    rf"(?:{_KOREAN_STOP_ADVERB}\s*){{0,2}}(?:{_KOREAN_STOP_NOUN}|멈추|그만)\s*(?:하|시키)?고(?:서)?\s"
+)
 _STATUS: Final = re.compile(
     rf"{_NAME}[\s,:]*(?:status|progress|logs?)(?:\s+(?:please|now|of\s+the\s+(?:run|dag|graph)))*\s*[.!?]*$"
     rf"|{_NAME}[\s,:]*(?:의\s*)?(?:상태|진행\s*상황|진행\s*상태|진행도|로그)\s*(?:좀\s*)?"
@@ -133,18 +142,22 @@ def _folded(text: str) -> str:
 
 def dag_ulw_control(text: str) -> str:
     """``cancel`` or ``status`` when ``text`` says that word to dag-ulw about the run in progress,
-    ``cancel_or_run`` when another Korean stop word follows the name with no work after it (`_STOP_AFTER_NAME`),
-    else ""."""
+    ``cancel_or_run`` when another Korean stop word follows the name with no work after it (`_STOP_AFTER_NAME`), or
+    a stop of the run is followed by more work (`_STOP_THEN_WORK`), else ""."""
     folded = _folded(text)
     if _STOP.search(folded):
         return "cancel"
     if _STATUS.search(folded):
         return "status"
+    if _STOP_THEN_WORK.search(folded):
+        return "cancel_or_run"
     stop = _STOP_AFTER_NAME.search(folded)
     if not stop:
         return ""
-    after = stop.group(1)
-    return "" if _KOREAN_WORK_WORD.search(after) or _KOREAN_HOW.search(after) else "cancel_or_run"
+    before, turn_off, after = stop.groups()
+    if _KOREAN_HOW.search(after) or _KOREAN_WORK_WORD.search(after) or _KOREAN_WORK_CONDITION.search(after):
+        return ""
+    return "" if turn_off and _KOREAN_WORK_WORD.search(before) else "cancel_or_run"
 
 
 def asks_about_dag_ulw(text: str) -> bool:
@@ -154,6 +167,9 @@ def asks_about_dag_ulw(text: str) -> bool:
         return False
     if _ASKED_ABOUT.search(folded):
         return True
+    stop = _STOP_AFTER_NAME.search(folded)
+    if stop and _KOREAN_HOW.search(stop.group(3)) and not _KOREAN_WORK_WORD.search(stop.group(3)):
+        return True  # how to stop it, not a stop: "dag ulw 취소 어떻게 해", "dag ulw 멈출 수 있어"
     if _POLITE_REQUEST.match(folded):
         return bool(_WEIGHED.search(folded))
     return folded.endswith(("?", "？"))

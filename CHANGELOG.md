@@ -24,12 +24,17 @@ All notable changes will be documented here.
   sentence (`split the paragraph into parallel parts for the translation`)
   no longer start a run or hint "Start at once" either.
   A Korean stop word after the name no longer starts a run unless a work
-  noun or verb follows it (`… 취소 기능 구현해줘`, `… 취소 시 환불되게
-  해줘`). With none, a stop noun after words that may name the work
-  (`dag ulw 주문 취소`, `dag ulw 주문 취소요`, `dag ulw 취소 요청`, or a
-  verb-form cancel after more than three words) neither cancels the run in
-  progress nor starts one: the router clarifies and the hint asks one
-  question naming both readings (owner decision O7). These cancel. On main
+  noun or verb follows the last stop word (`… 취소 기능 구현해줘`, `… 취소
+  이슈 해결해줘`, `… 취소 시 환불되게 해줘`) or is the object of `꺼줘`
+  (`다크모드 꺼줘`). With none, a stop noun after words that may name the
+  work (`dag ulw 주문 취소`, `dag ulw 주문 취소요`, `dag ulw 취소 요청`, a
+  verb-form cancel after more than three words, or a stop of the work on a
+  cancel feature such as `… 취소 기능 만드는 거 그만해줘`) neither cancels
+  the run in progress nor starts one, and neither does a cancel followed by
+  a restart (`… 지금 거 취소하고 결제 모듈부터 다시 해줘`): the router
+  clarifies and the hint asks one question naming both readings (owner
+  decision O7). A question about stopping (`dag ulw 취소 어떻게 해`,
+  `dag ulw 멈출 수 있어`, `dag ulw 중단하면 어떻게 돼`) is answered. These cancel. On main
   the polite endings, `그만 돌려`, `멈춰라`, `취소요`, `정지`, `스톱` and `꺼줘`
   started a run, `취소해줄 수 있어?` was answered, and `can you stop dag ulw`
   clarified:

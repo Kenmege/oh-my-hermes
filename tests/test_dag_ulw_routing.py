@@ -201,11 +201,16 @@ class RouterTests(unittest.TestCase):
                 self.assertEqual((route["action"], route["selected_skill"]), ("fallback", "oh-my-hermes"))
                 self.assertFalse([hint for hint in awareness_route_hint(message)["hints"]
                                   if hint.get("workflow") == "dag-ulw"])
-        for message in ("dag ulw는 취소 어떻게 해?", "dag ulw 취소할 수 있어?"):
+        for message in ("dag ulw는 취소 어떻게 해?", "dag ulw 취소할 수 있어?", "dag ulw 취소 어떻게 해", "dag ulw 취소 방법 알려줘",
+                        "dag ulw 취소할 수 있어", "dag ulw 취소 가능해", "dag ulw 취소 뭐야", "dag ulw 취소 왜 했어",
+                        "dag ulw 취소해줘 왜 안 돼", "dag ulw 멈출 수 있어", "dag ulw 중단하면 어떻게 돼"):
             with self.subTest(message=message):
-                # Asking how to cancel, or whether one can, is a question about the skill, not a stop.
+                # Asking how to cancel, or whether one can, is a question about the skill, not a stop or a run.
                 self.assertEqual(dag_ulw_control(message), "")
+                self.assertTrue(asks_about_dag_ulw(message))
+                self.assertFalse(invokes_dag_ulw(message))
                 self.assertEqual(route_chat_message(message, source="discord")["action"], "fallback")
+                self.assertFalse(awareness_route_hint(message)["hints"])
         self.assertFalse(asks_about_dag_ulw("dag ulw add the export API and its docs"))
         self.assertFalse(asks_about_dag_ulw("can you dag ulw the migration?"))
 
@@ -285,7 +290,14 @@ class RouterTests(unittest.TestCase):
                         "dag ulw 주문 취소 로직 좀 정리해줘요", "dag ulw 결제 취소 플로우 리팩터링 ㄱ",
                         "dag ulw 주문 취소 시 환불되게 해줘", "dag ulw 종료 조건 정리해줘",
                         # 그만큼 ("that much") holds no stop word.
-                        "dag ulw 그만큼 빠르게 해줘"):
+                        "dag ulw 그만큼 빠르게 해줘",
+                        # Work words after the stop word, a work-condition clause with nothing else, and an object
+                        # before 꺼줘.
+                        "dag ulw 결제 취소 이슈 해결해줘", "dag ulw 결제 취소 버그 잡아줘", "dag ulw 결제 취소 디버깅해줘",
+                        "dag ulw 결제 취소 쿼리 최적화해줘", "dag ulw 결제 취소 응답 캐싱해줘", "dag ulw 결제 취소 스펙 검토해줘",
+                        "dag ulw 주문 취소 문서 써줘", "dag ulw 주문 취소 dto 정의해줘", "dag ulw 중단점 걸고 디버깅해줘",
+                        "dag ulw로 중단점 디버깅해줘", "dag ulw 결제 취소 시 쿠폰 복구해줘", "dag ulw 다크모드 꺼줘",
+                        "dag ulw 디버그 로그 꺼줘", "dag ulw로 주문 취소 API 만들어줘", "dag ulw 종료 시 정리 작업 추가해줘"):
             with self.subTest(message=message):
                 self.assertTrue(invokes_dag_ulw(message))
                 self.assertEqual(route_chat_message(message, source="discord")["selected_skill"], "dag-ulw")
@@ -299,7 +311,17 @@ class RouterTests(unittest.TestCase):
                         "dag ulw 지금 돌리는 결제 모듈 작업 취소해줘", "dag ulw 아까 내가 시작한 결제 작업 좀 취소해줘",
                         # After other words a bare 요, 좀 or ㄱ is no verb; and any other stop with no work after it.
                         "dag ulw 주문 취소요", "dag ulw 결제 취소 좀", "dag ulw 주문 취소 ㄱ", "dag ulw 취소 요청",
-                        "dag ulw 취소 바람", "dag ulw로 취소해줘", "dag ulw 이 주문 취소", "dag ulw 결과 취소"):
+                        "dag ulw 취소 바람", "dag ulw로 취소해줘", "dag ulw 이 주문 취소", "dag ulw 결과 취소",
+                        # The last stop word decides: a stop of the work on a cancel feature asks, never runs.
+                        "dag ulw 결제 취소 기능 만드는 거 그만해줘", "dag ulw 주문 취소 로직 작업 중단해줘",
+                        "dag ulw 결제 취소 api 작업 멈춰", "dag ulw 주문 취소 기능 구현하던 거 취소해줘",
+                        "dag ulw 결제 중단 처리 리팩터링 그만해", "dag ulw 종료 시 정리 작업 하던 거 멈춰줘",
+                        "dag ulw 결제 취소 테스트 돌리는 거 중단해", "dag ulw 아까 시작한 주문 취소 기능 작업 취소해줘",
+                        "dag ulw 결제 취소 플로우 리팩터링 중단해주세요",
+                        "dag ulw 결제 모듈에 주문 취소 기능 넣고 기존 주문 취소해줘",
+                        # A stop of the run, then more work: stop and restart, so it asks.
+                        "dag ulw 지금 거 취소하고 결제 모듈부터 다시 해줘", "dag ulw 취소하고 다시 처음부터 구현해줘",
+                        "dag ulw 취소하고 결과 정리해줘"):
             with self.subTest(message=message):
                 self.assertEqual(dag_ulw_control(message), "cancel_or_run")
                 self.assertFalse(invokes_dag_ulw(message))

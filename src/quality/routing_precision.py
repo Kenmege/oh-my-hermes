@@ -7263,6 +7263,34 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
     ),
     RoutingPrecisionCase(
+        "korean-stop-building-the-cancel-feature-asks-which",
+        "Stopping the work on a payment-cancel feature reads the last stop word, so it asks and starts no run",
+        "dag ulw 결제 취소 기능 만드는 거 그만해줘",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "korean-cancel-then-restart-asks-which",
+        "Cancelling the current dag ulw run and starting over asks before either",
+        "dag ulw 지금 거 취소하고 결제 모듈부터 다시 해줘",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "korean-how-to-cancel-dag-ulw-is-answered",
+        "Asking how to cancel dag ulw gets an answer, not a run",
+        "dag ulw 취소 어떻게 해",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "korean-can-dag-ulw-be-stopped-is-answered",
+        "Asking whether dag ulw can be stopped gets an answer, not a run",
+        "dag ulw 멈출 수 있어",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
         "korean-dag-ulw-order-cancel-asks-which",
         "dag ulw beside an order cancel with no verb asks whether to stop the run or build the order cancel",
         "dag ulw 주문 취소",
@@ -16166,6 +16194,18 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "could-you-please-dag-ulw-dispatches",
         "Could you please, before the name, still starts a dag-ulw run",
         "could you please dag ulw the billing refactor",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-dag-ulw-cancel-issue-fix-dispatches",
+        "Korean: resolving a payment-cancel issue with dag ulw is work, so it starts a run",
+        "dag ulw 결제 취소 이슈 해결해줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-dag-ulw-turn-off-dark-mode-dispatches",
+        "Korean: turning off dark mode with dag ulw is work on a feature, not a stop of the run",
+        "dag ulw 다크모드 꺼줘",
         "dispatch", "dag-ulw", "start_dag_run", "dag_run",
     ),
     RoutingInterventionCase(
