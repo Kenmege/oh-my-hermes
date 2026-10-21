@@ -26,7 +26,7 @@ from omh.plugin_bundle.omh.delegation_graph import build_delegation_graph, graph
 from omh.plugin_bundle.omh.delegation_view import render_delegation_view  # noqa: E402
 from omh.plugin_bundle.omh.hooks import result_transforms  # noqa: E402
 from omh.plugin_bundle.omh.tools import dag_tool  # noqa: E402
-from test_dag_tool import Terminal, terminal_env  # noqa: E402
+from test_dag_tool import HOME_UNUSABLE, Answers, Terminal, terminal_env  # noqa: E402
 
 PROMPT = "TASK: t\nDELIVERABLE: d\nSCOPE: s\nVERIFY: v\nSTOP WHEN: w"
 NODES = [
@@ -514,8 +514,10 @@ class HandoffNotCheckedTests(unittest.TestCase):
         handoff cannot be read where the child wrote it. The button's is on the
         host, so it is checked, and the views tell the two apart.
         """
-        with homes() as home, terminal_env(), Terminal("docker", None).modules():
+        terminal = Terminal("docker", Answers(HOME_UNUSABLE))  # this host's path for the run, read there first
+        with homes() as home, terminal_env(), terminal.modules():
             defined(home)
+            terminal.environment = None
             now = time.time()
             for node in ("api", "ui"):
                 started(home, node, now=now)

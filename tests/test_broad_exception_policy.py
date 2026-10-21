@@ -609,19 +609,21 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
     ),
     ClassifiedSite(
         "src/plugin_bundle/omh/tools/dag_tool.py",
-        "backend_handoff",
+        "_backend_lines",
         INTENTIONAL,
         "Two handlers. Hermes' environment registry failing to import or raising is `no_read_path`, "
-        "and the backend's execute raising is `backend_unanswered`. Neither is read as a handoff "
-        "that exists or one that is missing: the node is accepted with handoff_checked false and "
-        "that reason on the attempt, its row and its say, and every view shows `handoff not checked`.",
+        "and the backend's execute raising is `backend_unanswered`; neither yields a line. At settle "
+        "that is never read as a handoff that exists or one that is missing: the node is accepted with "
+        "handoff_checked false and that reason on the attempt, its row and its say, and every view "
+        "shows `handoff not checked`. At the first hand-out it keeps this host's handoff path for the "
+        "run, as before the backend was read.",
     ),
 )
 
 # Ruff reports one hit per handler; the inventory is keyed per enclosing
 # function. `_write_candidate_batch`, `_is_catalog_question`, `pre_llm_call`,
 # `_resume_unlocked`, `_execute_cell`, `host_process.this_process`,
-# `host_process.process_alive` and `dag_tool.backend_handoff` each hold two
+# `host_process.process_alive` and `dag_tool._backend_lines` each hold two
 # handlers, so the handler count is eight above the anchor count.
 # 45 -> 46 / 50 -> 51: `recommend_tool._route_summary`, the additive route beside
 # the ranking (#2005 review: a route failure must not empty the ranking or
@@ -653,7 +655,7 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # never "gone", so it never hands a live helper's work out again).
 # 63 -> 65 / 58 -> 58: the same two functions guard Hermes' import against any
 # failure, as Hermes' own call sites do (#2198 review L2).
-# 65 -> 68 / 58 -> 60: `dag_tool.terminal_backend` and `backend_handoff`, a
+# 65 -> 68 / 58 -> 60: `dag_tool.terminal_backend` and `_backend_lines`, a
 # dag-ulw handoff read inside a Docker or SSH terminal (a failure keeps the host
 # check at define, and at settle accepts with the handoff not checked, never
 # a refusal and never a file taken as there).

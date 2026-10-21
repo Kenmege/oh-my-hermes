@@ -18,10 +18,12 @@ scopes, and each node's prompt, kept so ``ready`` can hand a node out after
 the parent's own context was compacted. It holds no child output, summary or
 tool history. Data between nodes moves through handoff files whose paths
 this module names (`handoff_path`); it never reads them beyond asking
-whether one exists. On a Docker or SSH terminal the child wrote its file
-there, so `dag_tool` asks there (the run records its ``backend`` at define);
-when nothing can reach that terminal, an accepted node keeps
-``handoff_checked: false`` and every view says `HANDOFF_NOT_CHECKED`.
+whether one exists. On a Docker or SSH terminal the child writes its file
+there, under the ``handoff_root`` the run pins in that terminal user's home
+(`node_handoff`), so `dag_tool` asks there (the run records its
+``backend`` at define); when nothing can reach that terminal, an accepted
+node keeps ``handoff_checked: false`` and every view says
+`HANDOFF_NOT_CHECKED`.
 
 State is derived on every read, never stored
 --------------------------------------------
@@ -52,6 +54,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
 import secrets
 import shutil
@@ -135,8 +138,21 @@ def record_path(omh_home: Path, session_id: str, run: str) -> Path:
 
 
 def handoff_path(omh_home: Path, session_id: str, run: str, node: str) -> Path:
-    """Where a node's child writes its report and its dependents read it."""
+    """Where a node's child writes its report and its dependents read it, on this host."""
     return session_dir(omh_home, session_id) / run / f"{node}.md"
+
+
+def node_handoff(record: Mapping[str, Any], omh_home: Path, node: str) -> str:
+    """Where a node's child writes its report and its dependents read it.
+
+    Under the run's pinned ``handoff_root`` inside its Docker or SSH terminal
+    (`dag_tool.backend_root`, the terminal user's own home) when it has one,
+    else on this host (`handoff_path`).
+    """
+    root = record.get("handoff_root")
+    if isinstance(root, str) and root:
+        return posixpath.join(root, ledger_key(str(record["session_id"])), str(record["run"]), f"{node}.md")
+    return str(handoff_path(omh_home, str(record["session_id"]), str(record["run"]), node))
 
 
 def _number(value: object) -> float | None:
@@ -668,17 +684,16 @@ def task_for(
     record: Mapping[str, Any], node: Mapping[str, Any], omh_home: Path, derived: Mapping[str, Mapping[str, Any]]
 ) -> dict[str, str]:
     """One `delegate_task` task: the marked goal, and the node's prompt with where to write and read handoffs."""
-    session = str(record["session_id"])
     run = str(record["run"])
     lines = [
         str(node["prompt"]),
         "",
-        f"Handoff: before you stop, write your report to {handoff_path(omh_home, session, run, str(node['id']))}: "
+        f"Handoff: before you stop, write your report to {node_handoff(record, omh_home, str(node['id']))}: "
         "what you did, the files you changed, what VERIFY showed, and anything still open. The parent reads that "
         "file and your final message.",
     ]
     if node["depends_on"]:
-        reads = ", ".join(str(handoff_path(omh_home, session, run, parent)) for parent in reads_for(record, derived, node))
+        reads = ", ".join(node_handoff(record, omh_home, parent) for parent in reads_for(record, derived, node))
         lines.append(f"Read first: {reads}. A missing file means that part did not finish: stop and say so.")
     lines.append("Stay inside your SCOPE: other parts of this run work at the same time. If you cannot finish, "
                  "say plainly that you are blocked and why; do not report blocked work as done.")
@@ -761,6 +776,9 @@ def settle(
             "child_reported_failure",
             f"Hermes reported node {node_id}'s child {stop.get('status')}; settle it failed or blocked, not accepted.",
         )
+    if reason and record.get("backend"):
+        # A run on a Docker or SSH terminal checks the reason before its backend is asked, so a bad one sends nothing.
+        _plain(reason, MAX_REASON_CHARS, "invalid_reason", "The reason is one short line.")
     unread = ""
     if outcome == "accepted":
         found, unread = read_handoff()

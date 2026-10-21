@@ -20,7 +20,9 @@ from omh.plugin_bundle.omh.delegation_graph import build_delegation_graph  # noq
 from omh.tui import dag_block  # noqa: E402
 from omh.tui.gateway import Event  # noqa: E402
 from omh.tui.transcript import block_rows  # noqa: E402
-from test_dag_tool import Terminal, call, handoff, node, slots_table, terminal_env  # noqa: E402
+from test_dag_tool import (  # noqa: E402
+    HOME_UNUSABLE, Answers, Terminal, call, handoff, node, slots_table, terminal_env,
+)
 from _tui_lines import lines_text  # noqa: E402
 from test_tui_modes import SID, make_app  # noqa: E402
 from test_tui_muscle_memory import send  # noqa: E402
@@ -130,9 +132,11 @@ class BlockTests(unittest.TestCase):
         from omh.tui.panels import dag_run_summary
 
         # An SSH terminal whose environment is gone when api settles; the others' handoffs are on the host.
-        with homes() as home, terminal_env(), Terminal("ssh", None).modules():
+        terminal = Terminal("ssh", Answers(HOME_UNUSABLE))  # this host's path for the run, read there first
+        with homes() as home, terminal_env(), terminal.modules():
             slots_table(home)
             call(action="define", run="export", name="export feature", nodes=NODES)
+            terminal.environment = None
             call(action="settle", run="export", node="api", outcome="accepted")
             for node_id in ("ui", "verify"):
                 handoff(home, "export", node_id)

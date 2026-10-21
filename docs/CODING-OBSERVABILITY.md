@@ -339,7 +339,9 @@ What it shows, and what it leaves as `?`:
     model, effort and time. A node no child has taken shows the category
     its run planned. Nodes of an earlier repair group that were never
     accepted leave the drawing. Each node carries where it came from
-    (`dag_origin`: `define`, `repair:<root>`, `extend:<round>`). A node
+    (`dag_origin`: `define`, `repair:<root>`, `extend:<round>`). On a
+    Docker or SSH terminal the handoff files live in that terminal, under
+    its user's home. A node
     accepted while its handoff could not be read in the Docker or SSH
     terminal its child wrote it in is `done` with the status `handoff not
     checked` (`handoff_checked: false`), and the run's status line, the chat
