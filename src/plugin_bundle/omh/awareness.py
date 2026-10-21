@@ -7,6 +7,7 @@ import re
 import unicodedata
 
 from .boundary_phrase import contains_boundary_phrase as _contains_boundary_phrase
+from .dag_ulw_cues import big_work_for_dag_ulw, dag_ulw_control, invokes_dag_ulw, work_is_split
 from .data_share_cues import DATA_SHARE_REVIEW_PHRASES, data_share_phrases_said, data_share_request_admitted
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES as _CODING_DELIVERY_REQUEST_PHRASES,
@@ -1248,6 +1249,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "ralplan": "intent_to_plan",
     "adversarial-consensus": "intent_to_plan",
     "loop": "intent_to_plan",
+    "dag-ulw": "intent_to_plan",
     "ultraperf": "intent_to_plan",
     "codebase-onboarding": "intent_to_plan",
     "codegraph-refresh": "intent_to_plan",
@@ -6272,6 +6274,10 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
             if rule["id"] == "coding_delivery":
                 next_action = _coding_delivery_route_hint_next_action(matching_message, next_action)
             workflow, next_action = _ulw_retired_hint_target(workflow, next_action, routing_normalized)
+            big_work = workflow == "ultrawork" and big_work_for_dag_ulw(matching_message)
+            if big_work:
+                # The router's own reading (`dag_ulw_cues`): ultrawork-shaped work in several parts runs as a graph.
+                workflow, next_action = "dag-ulw", _DIRECT_WORKFLOW_NEXT_ACTIONS["dag-ulw"]
             if any(isinstance(hint, dict) and hint.get("workflow") == workflow for hint in hints):
                 continue
             if workflow == "workflow-learning" and any(hint.get("workflow") == workflow for hint in hints):
@@ -6283,7 +6289,7 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
                     "workflow": workflow,
                     "lane": str(rule["lane"]),
                     "next_action": next_action,
-                    "reason": str(rule["reason"]),
+                    "reason": _DAG_ULW_BY_SIZE_REASON if big_work else str(rule["reason"]),
                     "fallback_action": str(rule["fallback_action"]),
                     "matched_cues": _bounded_matches(phrase_matches + token_matches),
                     "adjacent_workflows": list(rule["adjacent_workflows"]),
@@ -6295,6 +6301,15 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
             )
             if len(hints) >= hint_limit:
                 break
+        if (
+            not hints
+            and hint_limit
+            and not matching_message.rstrip().endswith(("?", "？"))
+            and getattr(intent, "intent_class", "") not in {"meta_discussion", "feedback_signal"}
+            and work_is_split(matching_message)
+        ):
+            # Work split into parts that no rule named ("split this into parallel work lanes").
+            hints.append(_dag_ulw_by_size_hint())
         domain_signal = _specialist_domain_route_signal(matching_message)
         domain_operator_override = (
             _specialist_domain_operator_override(matching_message, domain_signal)
@@ -6356,6 +6371,11 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
             user_pack_hint = _user_trigger_pack_route_hint(message)
             if user_pack_hint:
                 hints.append(user_pack_hint)
+    control = dag_ulw_control(matching_message)
+    if control:
+        # A stop or status word for the dag-ulw run in progress: that run's own action, and no other hint, so
+        # nothing reads as a request to start one (the router answers the same message directly).
+        hints = [_dag_ulw_control_hint(control)] if hint_limit else []
     hints = [_route_hint_with_coding_route_decision(hint, routing_normalized) for hint in hints]
     hints = [_route_hint_with_action_labels(hint) for hint in hints]
     # Emission boundary (#1249): every consumer above keys off the catalog name
@@ -6897,9 +6917,12 @@ def awareness_route_hint_context_from_payload(payload: dict[str, object]) -> str
         context_card = hint.get("workflow_context_card")
         if isinstance(context_card, dict):
             first_response_shape = str(context_card.get("first_response_shape") or "").strip()
+            if hint.get("workflow") == "dag-ulw":
+                control = hint.get("id") == _DAG_ULW_CONTROL_HINT_ID
+                first_response_shape = _DAG_ULW_CONTROL_RESPONSE if control else _DAG_ULW_FIRST_RESPONSE
             if first_response_shape:
                 lines.append(f"  first_response_shape={first_response_shape}")
-        if workflow_declares_plan_todo(str(hint.get("workflow", ""))):
+        if workflow_declares_plan_todo(str(hint.get("workflow", ""))) and hint.get("id") != _DAG_ULW_CONTROL_HINT_ID:
             lines.append(f"  plan_todo={PLAN_TODO_DECLARATION_RULE}")
         fallback_action = str(hint.get("fallback_action") or "").strip()
         if fallback_action:
@@ -7014,6 +7037,7 @@ def awareness_primer_payload() -> dict[str, object]:
                 "codebase-uml",
                 "refactor-plan",
                 "loop",
+                "dag-ulw",
                 "ultraperf",
                 "product-brief",
                 "decision-prototype",
@@ -7531,6 +7555,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "ralplan": "present_plan",
     "ultragoal": "start_goal",
     "loop": "start_loop_cycle",
+    "dag-ulw": "start_dag_run",
     "ultraprocess": _CODING_ROUTE_LANE_NEXT_ACTION,
     "workflow-learning": "audit_learning_readiness",
     "data-analysis": "prepare_data_analysis_card",
@@ -7708,6 +7733,7 @@ def _workflow_not_evidence_yet(
 _ULW_ENGINE_WORKFLOWS = frozenset(
     {
         "context",
+        "dag-ulw",
         "deep-interview",
         "loop",
         "maestro",
@@ -7732,6 +7758,7 @@ _ULW_ENGINE_WORKFLOWS = frozenset(
 # has to be classified on one side.
 _ULW_ORCHESTRATING_ENGINES = frozenset(
     {
+        "dag-ulw",
         "loop",
         "maestro",
         "ralph",
@@ -7751,6 +7778,7 @@ _ULW_ORCHESTRATING_ENGINES = frozenset(
 # commit that flips the catalog row.
 _ULW_ENGINE_LIFECYCLE_STAGES = {
     "context": "canonical",
+    "dag-ulw": "canonical",
     "deep-interview": "canonical",
     "loop": "canonical",
     "maestro": "canonical",
@@ -7844,6 +7872,7 @@ def _canonical_workflow_by_display_name() -> dict[str, str]:
         ("omh-media-input", "media-input-operator"),
         ("omh-voice-input", "voice-operator"),
         ("omh-image-cards", "img-summary"),
+        ("dag-ulw", "dag-ulw"),
     ):
         if workflow in workflows:
             mapping[display] = workflow
@@ -7886,8 +7915,11 @@ def _public_workflow_names_by_catalog_key() -> dict[str, str]:
     the shortest current `ulw-` label wins to keep the emitted name stable.
     """
     public_names: dict[str, str] = {}
-    for display, workflow in _canonical_workflow_by_display_name().items():
-        if not display.startswith("ulw-") or display == workflow:
+    mapping = _canonical_workflow_by_display_name()
+    # A workflow whose label is its own name (`dag-ulw`) keeps it; its `ulw-` historical alias is not a name.
+    self_labeled = {workflow for display, workflow in mapping.items() if display == workflow}
+    for display, workflow in mapping.items():
+        if not display.startswith("ulw-") or display == workflow or workflow in self_labeled:
             continue
         current = public_names.get(workflow)
         if current is None or len(display) < len(current):
@@ -7978,9 +8010,66 @@ _WORKFLOW_INVOCATION_ALIASES = {
 _ADMISSION_HELD_WORKFLOWS = frozenset({"spend-gate", "data-share-review"})
 
 
+_DAG_ULW_BY_SIZE_REASON = (
+    "The request has several parts to run in parallel or across the codebase, so it runs as a dag-ulw graph."
+)
+# What a dag-ulw hint asks of the first response, in place of its lane card's: dag-ulw starts at once (owner
+# decision D1) and asks only for scope, spend or an irreversible step.
+_DAG_ULW_FIRST_RESPONSE = (
+    "Start at once: plan the graph and call omh_dag define, dispatch the calls it returns; ask only for scope, "
+    "spend or an irreversible step."
+)
+
+
+_DAG_ULW_CONTROL_HINT_ID = "dag_ulw_control"
+_DAG_ULW_CONTROL_REASON = "The request stops or checks the dag-ulw run in progress; it starts no run."
+_DAG_ULW_CONTROL_RESPONSE = (
+    "Do not define a new run: call omh_dag action=cancel to stop the run in progress, or action=status to report "
+    "how it stands, and say what it showed."
+)
+
+
+def _dag_ulw_control_hint(control: str) -> dict[str, object]:
+    context_card = workflow_context_card_for_workflow("dag-ulw")
+    return {
+        "id": _DAG_ULW_CONTROL_HINT_ID,
+        "workflow": "dag-ulw",
+        "lane": str(context_card.get("id") or "intent_to_plan"),
+        "next_action": "cancel" if control == "cancel" else "show_status",
+        "reason": _DAG_ULW_CONTROL_REASON,
+        "fallback_action": "show_status",
+        "matched_cues": [control],
+        "adjacent_workflows": [],
+        "workflow_context_card": context_card,
+        "not_evidence_yet": [],
+    }
+
+
+def _dag_ulw_by_size_hint() -> dict[str, object]:
+    context_card = workflow_context_card_for_workflow("dag-ulw")
+    return {
+        "id": "dag_ulw_by_size",
+        "workflow": "dag-ulw",
+        "lane": str(context_card.get("id") or "intent_to_plan"),
+        "next_action": _DIRECT_WORKFLOW_NEXT_ACTIONS["dag-ulw"],
+        "reason": _DAG_ULW_BY_SIZE_REASON,
+        "fallback_action": "run_the_named_workflow_or_show_picker_if_unavailable",
+        "matched_cues": ["several parts"],
+        "adjacent_workflows": [],
+        "workflow_context_card": context_card,
+        "not_evidence_yet": _workflow_not_evidence_yet("dag-ulw", context_card) if isinstance(context_card, dict) else [],
+    }
+
+
 def _direct_workflow_prefix(routing_normalized: str) -> str:
     normalized = routing_normalized.strip()
+    # The router's own reading of the two-word name (`routing/policy.py` reads the same function), so
+    # `dag ulw해줘`, `ulw dag ...` and `/dag-ulw` hint what the router dispatches.
+    if "dag-ulw" in _DIRECT_WORKFLOW_NEXT_ACTIONS and invokes_dag_ulw(normalized):
+        return "dag-ulw"
     for workflow in sorted(_DIRECT_WORKFLOW_NEXT_ACTIONS, key=len, reverse=True):
+        if workflow == "dag-ulw":
+            continue  # read above, by the router's own function: a question about it is not an invocation
         aliases = (workflow,) if workflow in _ADMISSION_HELD_WORKFLOWS else (workflow, workflow.replace("-", " "))
         if any(_starts_with_direct_workflow_alias(normalized, alias) for alias in aliases):
             return workflow

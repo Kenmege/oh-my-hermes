@@ -58,6 +58,7 @@ from .catalog import (
     workflow_reference_definitions,
 )
 from .procedure_rendering import specialist_procedure_reference_markdown
+from .dag_ulw_skill import dag_ulw_reference_templates
 from .render import (
     SkillReferenceTemplate,
     SkillTemplate,
@@ -247,6 +248,7 @@ REFERENCE_PRODUCERS: tuple[Callable[[], list[SkillReferenceTemplate]], ...] = (
     adversarial_consensus_reference_templates,
     ultraqa_reference_templates,
     ultrawork_reference_templates,
+    dag_ulw_reference_templates,
     idea_to_deploy_reference_templates,
     llm_app_dev_reference_templates,
     _procedure_reference_templates,

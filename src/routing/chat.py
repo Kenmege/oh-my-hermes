@@ -40,6 +40,7 @@ from .domain_signals import (
 )
 from .display_names import canonical_display_mentions
 from .input_language import routing_input_language
+from ..plugin_bundle.omh.dag_ulw_cues import asks_about_dag_ulw, big_work_for_dag_ulw, dag_ulw_control
 from ..plugin_bundle.omh.hermes_session_commands import (
     LOOP_TIMER_GOAL,
     LOOP_TIMER_NATIVE,
@@ -197,11 +198,15 @@ _ROUTER_SKILL = "oh-my-hermes"
 # `loop` and the coding-delegation bridge (choose_executor/present_plan/...)
 # stay out of scope -- their own review step already requires an owner choice
 # before anything runs.
-_HEAVY_LANE_ROUTE_SKILLS = frozenset({"ultrawork", "maestro"})
+_HEAVY_LANE_ROUTE_SKILLS = frozenset({"ultrawork", "maestro", "dag-ulw"})
 _HEAVY_LANE_TRIGGER_TOKEN_STEMS: dict[str, tuple[str, ...]] = {
     "ultrawork": ("ultrawork", "ulw"),
     "maestro": ("maestro",),
+    "dag-ulw": ("ultrawork", "ulw", "dag"),
 }
+# Big work by intent (owner direction 2026-10-21): an `ultrawork` route nobody named, for a request whose own
+# words say it has several parts, goes to `dag-ulw`, which plans it as a graph and runs it to a verified goal. The
+# reading is `dag_ulw_cues.big_work_for_dag_ulw`, which the in-Hermes route hint reads too, so the two agree.
 _HEAVY_LANE_VAGUENESS_MAX_WORDS = 8
 # Generic filler and unresolved deictic references ("this", "it", "그거") in
 # the languages the trigger-language packs already cover. None of these name
@@ -325,6 +330,10 @@ _HEAVY_LANE_VAGUENESS_CLARIFICATION_TEMPLATES: dict[str, str] = {
         "Before preparing a `maestro` handoff, name the concrete target (file, "
         "module, or component), the scope of the handoff, and the success "
         "criterion the executor should verify against."
+    ),
+    "dag-ulw": (
+        "Before starting a `dag-ulw` run, name the goal, the parts it covers "
+        "(files, modules, or components), and the check that proves it is done."
     ),
 }
 _SPECIFIC_CAPABILITY_CATALOG_MIN_SCORE = 6
@@ -2595,6 +2604,42 @@ def _route_chat_message_cached(
         selected_skill = _ROUTER_SKILL
         action = "clarify"
         reason = f"Best match confidence {candidate_confidence} is below {min_confidence}; clarify before dispatch."
+
+    if (
+        candidate_skill == "ultrawork"
+        and action in {"dispatch", "clarify"}
+        and not explicit_skill
+        and big_work_for_dag_ulw(routing_message)
+    ):
+        candidate_skill = "dag-ulw"
+        candidate_harness = primary_harness_for_skill(candidate_skill)
+        # A confident `ultrawork` score held back only because everyday words carried it is dispatched too: the
+        # several-parts phrase is the request's own word for the job, which is the evidence the hold asked for.
+        if action == "dispatch" or reason == WEAK_DISPATCH_EVIDENCE_REASON:
+            selected_skill = candidate_skill
+            action = "dispatch"
+            ambiguity_kind = ""
+            reason = "Several parts to run in parallel or across the codebase: plan and run them as a dag-ulw graph."
+
+    # A question about dag-ulw is answered, the way a question about any other skill is: its two triggers score
+    # its name high in the catalog, and `ulw` inside the name scores ultrawork, but asking what it is, what it
+    # costs or how it went is no request to run either. Nor is a stop or status word for the run in progress
+    # ("dag ulw stop", "dag ulw 상태 보여줘"): Hermes' route hint points that turn at the run's own cancel or status.
+    if (
+        action in {"dispatch", "clarify"}
+        and not explicit_skill
+        and (asks_about_dag_ulw(routing_message) or dag_ulw_control(routing_message))
+    ):
+        selected_skill = _ROUTER_SKILL
+        candidate_skill = selected_skill
+        candidate_harness = primary_harness_for_skill(candidate_skill)
+        candidate_score = 0
+        candidate_confidence = "low"
+        action = "fallback"
+        reason = DIRECT_ANSWER_REASON
+        reason_code = REASON_CODE_DIRECT_ANSWER
+        ambiguous = False
+        ambiguity_kind = ""
 
     # Vagueness gate on heavy-mode routing (P2-12): an `ultrawork`/`maestro`
     # match that names no concrete target asks one specific question instead

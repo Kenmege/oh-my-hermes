@@ -165,9 +165,9 @@ Where it shows:
   rows, raised only to show every running lane. Boxes do not fit there, so
   the tree is drawn, its done lanes giving way first to a `+N more nodes` row and its
   running lanes kept. Once every lane has settled (done, failed, interrupted
-  or unknown, and no lane left out by the reader), the tree is one line,
-  `DAG · <name> · done 5/6 · 1 failed`, until the graph lingers out of the
-  HUD.
+  or unknown, and no lane left out by the reader) and a dag-ulw run is over
+  as a run, the tree is one line, `DAG · <name> · done 5/6 · 1 failed`,
+  until the graph lingers out of the HUD.
 - **`/dag`** opens the graph full screen in the pager, as boxes with their
   Dependencies and Node details, redrawn from the HUD's newest read on every
   frame, so a node that starts, finishes or fails while it is open changes on
@@ -184,7 +184,9 @@ Where it shows:
   `not live · last update 12s ago` line, the age of the data it shows (from
   the HUD's read, not from the last redraw). It sends nothing anywhere: no key
   there reaches the gateway, a child or a chat. One conversation has one
-  graph, so it offers no other run to switch to.
+  graph, so it offers no other run to switch to. For a dag-ulw run the page
+  ends with the run's critical path and its bottlenecks, the nodes the most
+  others wait on (`dag_core`).
 
   ![/dag in a dark terminal: Export API folded, Verify export highlighted, Node details for the running node and the highlighted one](../assets/omh-dag-pager.png)
 - **Slack, Discord, Telegram, Mattermost and Matrix** never get the box
@@ -259,7 +261,10 @@ it.
 What it shows, and what it leaves as `?`:
 
 - **Edges** are recorded, never inferred: a dispatch (a parent started this
-  child) or a `depends_on` from an `omh_team` part or a fanout unit. Lanes one
+  child), a `depends_on` from an `omh_team` part, a dag-ulw node or a fanout
+  unit, or where a node a dag-ulw run added came from: a repair (from the
+  node it repairs) or an extend (from the node whose check found the work
+  missing). The tree layout nests an added node under that node. Lanes one
   turn dispatched form a `wave N · HH:MM`; a later wave is later, not
   dependent, and no edge says otherwise. Hermes' `group` field orders delivery,
   not execution, and draws nothing. A wave whose lanes all settled more than
@@ -281,8 +286,9 @@ What it shows, and what it leaves as `?`:
   (`sessions.output_tokens`, to which Hermes adds each model call's output as
   the call returns), read with the child's other facts, so a running lane's
   count grows from one HUD read to the next and a finished one keeps its
-  final count. A lane has none while that row says 0 or was not read, and a
-  team part no child took, a fanout unit and main have none. A box and the
+  final count. A team part or a dag node takes its bound child's count. A
+  lane has none while that row says 0 or was not read, and a team part or
+  dag node no child took, a fanout unit and main have none. A box and the
   tree's status column show it only where the line has room for a count at
   its widest, so no box is widened and no other field is cut for it; a card
   says it after the status, and its group and session give way first. The
@@ -303,6 +309,40 @@ What it shows, and what it leaves as `?`:
     prepared`).
   - A fanout unit whose dispatcher reports it stalled is `stuck`, with how
     long it has been stuck.
+  - A dag-ulw node takes the state its `omh_dag/v1` run derives: accepted or
+    repaired is `done`, failed or blocked is `failed`, a node handed out
+    with no child yet is `dispatched`, a node whose child returned and that
+    the parent has not settled is `dispatched` (`returned`), and a node
+    waiting on its parents is `waiting` (`held` when one of them failed).
+    Its child, bound by the `[dag:<run>/<node>]` goal marker, gives it a
+    model, effort and time. A node no child has taken shows the category
+    its run planned. Nodes of an earlier repair group that were never
+    accepted leave the drawing. Each node carries where it came from
+    (`dag_origin`: `define`, `repair:<root>`, `extend:<round>`). The graph
+    takes the run's name, and a chat end post waits until the run itself is
+    over: done, cancelled, or out of repair cycles. On a completion turn
+    whose reply is already the run's status line, no second count line is
+    added. Nodes a repair or an extend round added are named once, at the
+    end of the next status line (`+1 added (repair: Docs body)`, two names
+    and then `+N more`); a line that would not fit the platform's cap goes
+    without them, and nodes added after the end post reopen the run with
+    that line instead of a second start block.
+  - In the TUI each block says one thing: `[Plan]` holds the run's layers
+    (the skill keeps one todo item per layer), the delegation tree in the
+    agent view draws the nodes and edges, and the agents block lists only
+    the children the tree does not draw. The agent view and the
+    transcript's `delegate_task` rows name a node's child by the node's
+    label, without its `[dag:<run>/<node>]` marker. The tree collapses a
+    finished run to its one summary line. The transcript keeps the run's
+    graph as boxes, as `omh hud --graph` draws them (with Dependencies and
+    Node details), at define, at each repair and extend with the added nodes
+    marked (`↻` a repair, `+` an extend round), and once at the end, when the
+    turn that ended the run is over and the run still is; where no box fits
+    the width it is the tree.
+
+    ![The dag-ulw plan block in the OMH TUI transcript: Export API handed out as the start node, the button, the docs and the CLI flag waiting on it in the next frontier, and the verification node waiting on all three, with the Dependencies list under them](../assets/omh-tui-dag-ulw-plan-block.png)
+
+    ![A dag-ulw run in the OMH TUI mid-run: five defined nodes accepted, an extend round hanging under the verification node that found CSV export missing, the CSV node blocked with its repair running beneath it, and the plan holding one item per layer](../assets/omh-tui-dag-ulw-run.png)
 
 The structure comes from a metadata-only record, `delegation_ledger/v1` under
 `<omh_home>/runtime/delegation/`, that OMH writes from Hermes' own

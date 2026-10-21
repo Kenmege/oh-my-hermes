@@ -1144,6 +1144,7 @@ print(json.dumps(observed, ensure_ascii=False))
                     "omh_agent_board",
                     "omh_capabilities",
                     "omh_context",
+                    "omh_dag",
                     "omh_decision_gate",
                     "omh_delegate_route",
                     "omh_document_plan",

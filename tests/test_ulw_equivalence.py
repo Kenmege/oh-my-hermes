@@ -534,6 +534,7 @@ class RoutingInertnessTests(unittest.TestCase):
             set(ULW_ENGINE_SKILL_NAMES),
             {
                 "context",
+                "dag-ulw",
                 "deep-interview",
                 "research",
                 "ralplan",
@@ -549,7 +550,7 @@ class RoutingInertnessTests(unittest.TestCase):
             },
         )
         payload = ulw_inventory_payload()
-        self.assertEqual(len(payload["canonical_engines"]), 9)
+        self.assertEqual(len(payload["canonical_engines"]), 10)
         self.assertEqual(payload["alias_engines"], [])
         self.assertEqual(
             {engine["canonical"] for engine in payload["retired_engines"]},

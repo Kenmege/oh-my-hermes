@@ -1192,7 +1192,13 @@ def dag_page_lines(
     if graph is None:
         return None
     view = render_delegation_view(graph, width=max(8, width), layout="box", focus=focus)
-    return [dag_line(row, view.levels, theme, depth) for row in view.lines], view
+    lines = [dag_line(row, view.levels, theme, depth) for row in view.lines]
+    topology = graph.get("dag_topology")
+    if isinstance(topology, Mapping):  # a dag-ulw run: its critical path and bottlenecks close the page
+        from .dag_block import topology_lines
+
+        lines += [(), *topology_lines(topology, width, theme)]
+    return lines, view
 
 
 # A lane in one of these states has finished: `delegation_graph.SETTLED_STATES` (the bundle module the panel does
@@ -1207,11 +1213,13 @@ def dag_run_summary(graph: Mapping[str, Any]) -> str:
     this one line, until the graph lingers out of the HUD
     (`delegation_graph.GRAPH_LINGER_SECONDS`) as the whole block did. The
     counts are the lanes' recorded states; lanes the reader left out
-    (`hidden_nodes`) leave the run unread, so it stays a tree. `/dag` still
-    draws the whole graph.
+    (`hidden_nodes`) leave the run unread, so it stays a tree, and so does a
+    dag-ulw run that is not over (`dag_open`: a node whose child went quiet
+    is still out, though its lane reads settled). `/dag` still draws the
+    whole graph.
     """
     lanes = [node for node in _rows(graph.get("nodes")) if node.get("kind") != "root"]
-    if not lanes or _count(graph.get("hidden_nodes")) or any(
+    if not lanes or _count(graph.get("hidden_nodes")) or graph.get("dag_open") or any(
         node.get("state") not in SETTLED_NODE_STATES for node in lanes
     ):
         return ""

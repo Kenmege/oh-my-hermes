@@ -115,6 +115,7 @@ import secrets
 import shlex
 from typing import Any, Final
 
+from ..plugin_bundle.omh import dag_core
 from ..system.local_store import _with_windows_retry, ensure_dir, file_lock
 
 TEAM_SCHEMA_VERSION: Final = "omh_team/v1"
@@ -712,12 +713,6 @@ def _epoch(value: object) -> float | None:
         return None
 
 
-def _ready(record: Mapping[str, Any], unit: Mapping[str, Any]) -> bool:
-    """Every parent accepted -- ALL of them, and accepted by a check, not by a report."""
-    by_id = {str(item["unit_id"]): item for item in record["units"]}
-    return all(unit_state(by_id[parent]) == "accepted" for parent in unit.get("depends_on", []))
-
-
 # --------------------------------------------------------------------------
 # team_start
 # --------------------------------------------------------------------------
@@ -755,20 +750,16 @@ def _validated_units(raw_units: object) -> list[dict[str, Any]]:
         })
     known = {unit["unit_id"] for unit in units}
     for unit in units:
-        if unit["unit_id"] in unit["depends_on"] or set(unit["depends_on"]) - known:
+        if dag_core.edge_problem(unit["unit_id"], unit["depends_on"], known) is not None:
             raise TeamRefusal("invalid_depends_on", "depends_on must name other parts of this team.")
     _require_acyclic(units)
     return units
 
 
 def _require_acyclic(units: list[Mapping[str, Any]]) -> None:
-    remaining = {str(unit["unit_id"]): set(unit["depends_on"]) for unit in units}
-    while remaining:
-        free = [unit_id for unit_id, parents in remaining.items() if not parents & set(remaining)]
-        if not free:
-            raise TeamRefusal("dependency_cycle", "The parts depend on each other in a circle.")
-        for unit_id in free:
-            del remaining[unit_id]
+    ids = [str(unit["unit_id"]) for unit in units]
+    if dag_core.layers(ids, {str(unit["unit_id"]): unit["depends_on"] for unit in units}) is None:
+        raise TeamRefusal("dependency_cycle", "The parts depend on each other in a circle.")
 
 
 def _bind_to_plan(units: list[dict[str, Any]], plan: Mapping[str, Any], plan_ref: object) -> None:
@@ -1098,9 +1089,14 @@ def team_reconcile(ctx: TeamContext, *, team_id: object, since_seq: object = 0) 
     with locked_team(ctx.omh_home, ctx.session_ref, tid):
         path, record = _load(ctx, tid)
         now = ctx.now()
-        for unit in record["units"]:
-            if unit_state(unit) == "waiting" and not unit.get("blocked") and _ready(record, unit):
-                entries.append(_hand_out(tid, unit, _reserve(unit, now), now))
+        # Every parent accepted -- ALL of them, and accepted by a check, not by a report.
+        accepted = {str(unit["unit_id"]) for unit in record["units"] if unit_state(unit) == "accepted"}
+        waiting = {str(unit["unit_id"]): unit for unit in record["units"]
+                   if unit_state(unit) == "waiting" and not unit.get("blocked")}
+        for unit_id in dag_core.ready(waiting, {key: unit.get("depends_on", []) for key, unit in waiting.items()},
+                                      accepted):
+            unit = waiting[unit_id]
+            entries.append(_hand_out(tid, unit, _reserve(unit, now), now))
         reserved_now = frozenset(
             attempt_key(tid, str(unit["unit_id"]), int(attempt["n"]))
             for unit in record["units"]

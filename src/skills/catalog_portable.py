@@ -231,6 +231,8 @@ _PORTABILITY: dict[str, str] = {
     'omh-github-issue-intake': PORTABILITY_PORTABLE,
     # required_inputs: decision question; expected_outputs: decision_prototype/v1; final_checklist requires evidence/approval, not a native runtime.
     'omh-decision-prototype': PORTABILITY_PORTABLE,
+    # The run is kept by the `omh_dag` Hermes plugin tool and its nodes are Hermes `delegate_task` children.
+    'dag-ulw': PORTABILITY_HERMES_ONLY,
     # required_inputs: lifecycle objective and stage; expected_outputs: lifecycle_growth_brief/v1; final_checklist requires evidence/approval, not a native runtime.
     'omh-lifecycle-growth': PORTABILITY_PORTABLE,
     # required_inputs: problem hypothesis; expected_outputs: discovery_decision_frame/v1; final_checklist requires evidence/approval, not a native runtime.

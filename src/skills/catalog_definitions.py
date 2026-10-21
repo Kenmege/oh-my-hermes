@@ -52,6 +52,7 @@ from ..source_finder import (
     SOURCE_FINDER_SOURCE_KINDS,
 )
 
+from .dag_ulw_skill import DEFINITION as DAG_ULW_DEFINITION
 from .decision_prototype_skill import DEFINITION as DECISION_PROTOTYPE_DEFINITION
 from .jev_skills import JEV_DEFINITIONS
 from .lifecycle_growth_skill import DEFINITION as LIFECYCLE_GROWTH_DEFINITION
@@ -11755,6 +11756,7 @@ _DEFINITIONS.append(
 
 _DEFINITIONS.extend(
     (
+        DAG_ULW_DEFINITION,
         DECISION_PROTOTYPE_DEFINITION,
         LIFECYCLE_GROWTH_DEFINITION,
         PRODUCT_DISCOVERY_DEFINITION,

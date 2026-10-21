@@ -7018,6 +7018,166 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "data-share-review",
     ),
+    # `dag` is data-pipelines' word and a file name; only the complete name `dag ulw` reaches `dag-ulw`, and a
+    # declined, relayed or quoted mention of it never does.
+    RoutingPrecisionCase(
+        "airflow-dag-is-not-a-dag-ulw-run",
+        "An Airflow DAG that failed is a pipeline question, not a dag-ulw run",
+        "the airflow dag failed last night, check the scheduler logs",
+        "answer_directly",
+        "direct_answer",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "dag-file-is-not-a-dag-ulw-run",
+        "A file called dag is a file to open, not a dag-ulw run",
+        "open the dag file and fix the import",
+        "answer_file_lookup",
+        "file_or_text",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "declined-dag-ulw-is-not-a-request",
+        "A person declining dag ulw is not asking for it",
+        "don't use dag ulw for this, just fix the typo in README",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "relayed-dag-ulw-report-does-not-route",
+        "A relayed report that a dag ulw run finished does not start one",
+        "[REPORT] dag ulw finished the auth work",
+        "answer_directly",
+        "direct_answer",
+        "dag-ulw",
+    ),
+    # A question about dag-ulw is answered, as a question about any other skill is.
+    RoutingPrecisionCase(
+        "what-is-dag-ulw-is-answered",
+        "Asking what dag ulw is gets an answer, not a run",
+        "dag ulw는 뭐야?",
+        "answer_directly",
+        "direct_answer",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "explain-dag-ulw-is-answered",
+        "Asking for dag ulw to be explained gets an answer, not a run",
+        "dag ulw 설명해줘",
+        "answer_directly",
+        "direct_answer",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "how-dag-ulw-repairs-is-answered",
+        "Asking how dag-ulw handles repairs gets an answer, not a run",
+        "how does dag-ulw handle repairs?",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "dag-ulw-result-question-is-answered",
+        "Asking for a dag ulw run's result gets an answer, not a new run",
+        "dag ulw 결과 알려줘",
+        "answer_directly",
+        "direct_answer",
+    ),
+    # A stop, cancel or status word for the dag-ulw run in progress starts no new run; Hermes' route hint points it
+    # at the run's own omh_dag cancel or status. The shortlist may still list dag-ulw; the route answers directly.
+    RoutingPrecisionCase(
+        "dag-ulw-stop-does-not-start-a-run",
+        "Telling dag ulw to stop is about the run in progress, not a new one",
+        "dag ulw stop",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "dag-ulw-cancel-the-run-does-not-start-one",
+        "Cancelling the dag ulw run is about that run, not a new one",
+        "dag ulw cancel the run",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "korean-dag-ulw-stop-does-not-start-a-run",
+        "Telling dag ulw to stop, in Korean, starts no run",
+        "dag ulw 멈춰",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "korean-dag-ulw-enough-does-not-start-a-run",
+        "Telling dag ulw to quit, in Korean, starts no run",
+        "dag ulw 그만해",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "korean-dag-ulw-cancel-does-not-start-a-run",
+        "Cancelling dag ulw, in Korean, starts no run",
+        "dag ulw 취소",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "korean-dag-ulw-halt-does-not-start-a-run",
+        "Asking dag ulw to halt, in Korean, starts no run",
+        "dag ulw 중지해줘",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "korean-cancel-the-dag-ulw-that-ran-does-not-start-one",
+        "Cancelling the dag ulw run already going, in Korean, starts no new one",
+        "dag ulw 돌린 거 취소해줘",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "dag-ulw-status-does-not-start-a-run",
+        "Asking for dag ulw's status is about the run in progress, not a new one",
+        "dag ulw status",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "korean-dag-ulw-status-does-not-start-a-run",
+        "Asking to see dag ulw's status, in Korean, starts no run",
+        "dag ulw 상태 보여줘",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "korean-dag-ulw-progress-does-not-start-a-run",
+        "Asking for dag ulw's progress, in Korean, starts no run",
+        "dag ulw 진행 상황",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "korean-dag-ulw-log-does-not-start-a-run",
+        "Asking to see dag ulw's log, in Korean, starts no run",
+        "dag ulw 로그 보여줘",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "function-fan-out-is-not-a-dag-ulw-run",
+        "A function's fan-out is a metric to fix, not work to fan out",
+        "the fan out of this function is too high, fix it",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "block-quoted-dag-ulw-does-not-dispatch",
+        "A block-quoted dag ulw request is quoted text, not a request to run it",
+        "> dag ulw migrate the billing service",
+        "answer_directly",
+        "direct_answer",
+        "dag-ulw",
+    ),
 )
 
 
@@ -10506,27 +10666,29 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "forward_plan_to_selected_workflow",
         "plan",
     ),
+    # Parallel lanes are big work by intent: since dag-ulw (2026-10-21) the request runs as a graph.
     RoutingInterventionCase(
         "disjoint-lanes-reaches-existing-path",
-        "Disjoint parallel lanes still reach ultrawork's existing lane path",
+        "Disjoint parallel lanes reach dag-ulw's graph run",
         "split this into parallel work lanes with disjoint ownership",
         "dispatch",
-        "ultrawork",
-        "forward_plan_to_selected_workflow",
-        "plan",
+        "dag-ulw",
+        "start_dag_run",
+        "dag_run",
     ),
     # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
     # tokens or a context-only guard, so the route asks; the declined winner, ultrawork, leads
-    # the shortlist.
+    # the shortlist. Re-pinned to dispatch dag-ulw (2026-10-21, big work by intent): ultrawork's
+    # score is still held as weak, but "then integrate" is the request's own phrase for parts
+    # joined afterwards, and that phrase is the evidence dag-ulw dispatches on.
     RoutingInterventionCase(
         "dependency-topology-parallel-then-integrate",
-        "Dependency-shaped parallel work reaches ultrawork's topology decision",
+        "Dependency-shaped parallel work reaches dag-ulw's graph run",
         "analyze API and UI in parallel, then integrate the results and verify",
-        "clarify",
-        "oh-my-hermes",
-        "answer_clarification",
-        "clarification",
-        "ultrawork",
+        "dispatch",
+        "dag-ulw",
+        "start_dag_run",
+        "dag_run",
     ),
     RoutingInterventionCase(
         "negated-finance-then-product-brief",
@@ -15766,6 +15928,186 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "automation-blueprint",
         "prepare_scheduled_ops_blueprint",
         "automation_blueprint",
+    ),
+    # `dag-ulw` by name, the way people type it: with a space, either way round, as a slash command, after
+    # `with`, and with a Korean verb glued on. `ulw dag` must not be read as the bare `ulw` alias.
+    RoutingInterventionCase(
+        "dag-ulw-name-opening-the-request-dispatches",
+        "dag ulw opening a request starts a dag-ulw run",
+        "dag ulw add the export API, its UI button and the docs page, then verify with the test suite",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "dag-ulw-with-a-korean-ending-dispatches",
+        "dag ulw with a Korean verb glued on starts a dag-ulw run",
+        "dag ulw해줘 결제 모듈이랑 알림 모듈 같이 리팩터링하고 테스트 돌려줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "ulw-dag-is-not-the-bare-ulw-alias",
+        "ulw dag names dag-ulw, not ultrawork's bare alias",
+        "ulw dag split the auth refactor across the service",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "dag-ulw-slash-command-dispatches",
+        "The /dag-ulw slash form starts a dag-ulw run",
+        "/dag-ulw build the search feature end to end",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "work-with-dag-ulw-dispatches",
+        "Asking for work with dag ulw starts a dag-ulw run",
+        "refactor the billing and invoicing modules with dag ulw",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    # Big work by intent: an ultrawork-shaped request whose words say it runs in parallel or across modules
+    # reaches dag-ulw without the person knowing the name.
+    RoutingInterventionCase(
+        "parallel-feature-work-reaches-dag-ulw-by-intent",
+        "Parallel feature work across modules reaches dag-ulw without naming it",
+        "implement the export feature in parallel across the api and ui modules, then integrate",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "codebase-wide-parallel-refactor-reaches-dag-ulw",
+        "A refactor across the codebase reaches dag-ulw without naming it",
+        "refactor the error handling across the codebase in parallel and run the full test suite",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "parts-integrated-afterwards-reach-dag-ulw",
+        "Three parts built in parallel and integrated afterwards reach dag-ulw",
+        "build the export api, the ui button and the docs page in parallel, then integrate and verify",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "fan-out-across-all-modules-reaches-dag-ulw",
+        "Fanning work out across all modules reaches dag-ulw",
+        "fan out the type annotation work across all modules and then integrate",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "every-module-in-parallel-lanes-reaches-dag-ulw",
+        "A feature across every module in parallel lanes reaches dag-ulw",
+        "implement dark mode across every module of the web app in parallel lanes",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-modules-implemented-in-parallel-reach-dag-ulw",
+        "Korean: a feature implemented across two named modules in parallel reaches dag-ulw",
+        "api 모듈과 cli 모듈에 내보내기 기능을 병렬로 구현하고 전체 테스트로 검증해줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-two-modules-built-at-once-reach-dag-ulw",
+        "Korean: two modules built at the same time reach dag-ulw",
+        "api 모듈과 ui 모듈을 동시에 구현하고 통합 테스트로 확인해줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-work-split-in-parallel-reaches-dag-ulw",
+        "Korean: work split into parallel parts reaches dag-ulw",
+        "api, ui, docs 작업을 병렬로 나눠서 만들어줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    # And what stays: a concurrency word that names the bug or the feature is not the work's shape, `dag` in a
+    # pipeline is a pipeline, ultrawork's coordinated workers stay its own, and ultrawork named stays ultrawork.
+    RoutingInterventionCase(
+        "parallel-upload-bug-stays-on-ultrawork",
+        "A bug about uploads running in parallel is one fix, not a dag-ulw run",
+        "fix the bug where uploads run in parallel and corrupt the file",
+        "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "parallel-test-runner-feature-stays-on-ultrawork",
+        "Making tests run in parallel is one change, not a dag-ulw run",
+        "make the test runner execute tests in parallel",
+        "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "concurrent-worker-deadlock-stays-on-ultrawork",
+        "A deadlock between concurrent workers is one fix, not a dag-ulw run",
+        "fix the deadlock when workers run concurrently in the queue module",
+        "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "korean-parallel-processing-bug-stays-on-ultrawork",
+        "Korean: a parallel-processing bug is one fix, not a dag-ulw run",
+        "병렬 처리 버그 고쳐줘",
+        "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "korean-simultaneous-upload-bug-stays-on-ultrawork",
+        "Korean: a bug when uploads run at once is one fix, not a dag-ulw run",
+        "업로드가 동시에 실행될 때 생기는 버그 고쳐줘",
+        "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "korean-simultaneous-requests-cache-bug-stays-on-ultrawork",
+        "Korean: a cache bug when two requests arrive at once is one fix, not a dag-ulw run",
+        "동시에 두 요청이 오면 캐시가 깨지는 버그 고쳐줘",
+        "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "parallel-work-queue-bug-stays-on-ultrawork",
+        "A bug in a queue named for parallel work is one fix, not a dag-ulw run",
+        "the parallel work queue drops jobs, fix it",
+        "dispatch", "ultrawork", "present_plan", "plan",
+    ),
+    RoutingInterventionCase(
+        "slow-parallel-implementation-stays-on-ultrawork",
+        "A slow parallel implementation of one function is one fix, not a dag-ulw run",
+        "the parallel implementation of sort is slow, fix it",
+        "dispatch", "ultrawork", "present_plan", "plan",
+    ),
+    RoutingInterventionCase(
+        "airflow-dag-backfill-in-parallel-stays-on-data-pipelines",
+        "An Airflow DAG backfill run in parallel stays a pipeline job",
+        "run the airflow dag backfill in parallel for last week",
+        "dispatch", "data-pipelines", "prepare_pipeline_plan", "pipeline_plan",
+    ),
+    RoutingInterventionCase(
+        "airflow-dag-concurrency-question-stays-on-data-pipelines",
+        "Limiting an Airflow DAG's parallel tasks stays a pipeline question",
+        "the airflow dag tasks run in parallel, how do I limit concurrency?",
+        "dispatch", "data-pipelines", "prepare_pipeline_plan", "pipeline_plan",
+    ),
+    RoutingInterventionCase(
+        "coordinated-workers-in-parallel-stay-on-ultrawork",
+        "Coordinated workers on one task list stay ultrawork's own capability",
+        "run three coordinated workers on one shared task list in parallel",
+        "dispatch", "ultrawork", "forward_plan_to_selected_workflow", "plan",
+    ),
+    RoutingInterventionCase(
+        "ulw-named-parallel-work-stays-on-ultrawork",
+        "Parallel work that names ulw stays ultrawork",
+        "ulw implement the export in parallel across the api and ui modules",
+        "dispatch", "ultrawork", "present_plan", "plan",
+    ),
+    RoutingInterventionCase(
+        "ulw-work-named-parallel-work-stays-on-ultrawork",
+        "Parallel work that names ulw-work stays ultrawork",
+        "use ulw-work to implement the export in parallel across the api and ui modules",
+        "dispatch", "ultrawork", "present_plan", "plan",
+    ),
+    RoutingInterventionCase(
+        "ulw-named-mid-sentence-stays-with-ultrawork",
+        "Parallel module work that names ulw at its end still asks about ultrawork, not dag-ulw",
+        "fix the auth and billing modules in parallel with ulw",
+        "clarify", "oh-my-hermes", "answer_clarification", "clarification", "ultrawork",
+    ),
+    RoutingInterventionCase(
+        "korean-ulw-named-mid-sentence-stays-with-ultrawork",
+        "Korean: parallel module work that names ulw mid-sentence still asks about ultrawork, not dag-ulw",
+        "auth와 billing 모듈을 ulw로 병렬로 구현해줘",
+        "clarify", "oh-my-hermes", "answer_clarification", "clarification", "ultrawork",
+    ),
+    RoutingInterventionCase(
+        "ultrawork-named-module-sweep-stays-on-ultrawork",
+        "A module sweep that names ultrawork stays ultrawork",
+        "ultrawork: build the export across every module in parallel",
+        "dispatch", "ultrawork", "forward_plan_to_selected_workflow", "plan",
     ),
 )
 

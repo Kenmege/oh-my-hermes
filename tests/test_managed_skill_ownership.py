@@ -2438,7 +2438,8 @@ class CompanionNameTests(unittest.TestCase):
     def test_no_installed_label_gets_a_suggestion_that_reads_as_omh_s(self) -> None:
         prefixes = (OMH_SKILL_NAME_PREFIX, ULW_SKILL_NAME_PREFIX)
         labels = [omh_skill_display_name(template.name) for template in builtin_skill_templates()]
-        self.assertEqual({label.split("-", 1)[0] + "-" for label in labels}, set(prefixes))
+        # `dag-ulw` is the one label that is its own canonical name (people type `/dag-ulw`); it carries no prefix.
+        self.assertEqual({label.split("-", 1)[0] + "-" for label in labels if label != "dag-ulw"}, set(prefixes))
         for label in labels:
             message = skill_ownership.managed_skill_edit_message(label, "patch")
             companion = message.split("such as '", 1)[1].split("'", 1)[0]

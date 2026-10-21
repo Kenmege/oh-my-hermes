@@ -6,6 +6,9 @@ The structure comes from records, never from timing guesses:
   `delegate_task` call started, under which parent and in which turn;
 * an `omh_team/v1` record for the conversation: parts, their titles and
   their recorded `depends_on`;
+* an `omh_dag/v1` run (`dag_run.py`): its nodes, labels, planned
+  categories and recorded `depends_on`, and the children the delegation
+  ledger bound to its nodes by their goal marker;
 * for the opt-in fanout lane, the frozen `fanout_contract/v2` and its roster
   (passed in, already verified, by the HUD reader).
 
@@ -21,17 +24,20 @@ Every field without evidence is ``?``:
 * **category** is the route OMH recorded for the parent session when the child
   started, and only while the child's observed model matches that route.
   Otherwise ``inherit`` when the child's observed model equals its parent's
-  recorded model, otherwise ``?``. The mixture-chain projection the HUD rows
-  use is not consulted.
+  recorded model, otherwise ``?``. A dag node no child has taken yet shows the
+  category its run planned. The mixture-chain projection the HUD rows use is
+  not consulted.
 * **model** is what Hermes recorded for the child, never the configured route.
 * **state** comes from `subagent_stop`, a recorded model call, or the team's
   own lifecycle. A child whose session closed for compaction without a stop
   this ledger could join is ``unknown``, never done and never running.
 
-An edge is either a dispatch (a parent started this child) or a recorded
-`depends_on`. Dispatch waves of one parent (the children one turn started)
-are grouped as ``wave N · HH:MM``; that is order, not dependency, and no edge
-is drawn for it.
+An edge is a dispatch (a parent started this child), a recorded `depends_on`,
+or, in a dag run, where a node added mid-run came from: a repair (from the
+node it repairs) or an extend (from the node whose check found the work
+missing). Dispatch waves of one parent (the children one turn started) are
+grouped as ``wave N · HH:MM``; that is order, not dependency, and no edge is
+drawn for it.
 """
 
 from __future__ import annotations
@@ -45,7 +51,10 @@ import time
 from typing import Any, Final
 from urllib.parse import quote
 
+from .dag_core import layer_of
+from .dag_run import ADDED_ORIGIN_KINDS, derive, run_state, session_runs
 from .delegation_ledger import child_title, ledger_key, read_ledger, title_from_goal
+from .kanban_board_reader import conversation_session_ids
 from .subagent_graph import _roster_progress_fields as roster_progress_fields
 
 GRAPH_SCHEMA_VERSION: Final = "delegation_graph/v1"
@@ -60,8 +69,8 @@ OPENER_CHARS: Final = 400
 COMPACTION_END_REASON: Final = "compression"
 GRAPH_CLAIM_BOUNDARY: Final = (
     "Delegation structure and states as Hermes' hooks, state.db and OMH's own records reported them. A category is "
-    "OMH's recorded route, shown only where the child's observed model matches it. Not execution, verification, "
-    "review, CI or merge evidence."
+    "OMH's recorded route, shown only where the child's observed model matches it, or a dag node's planned category "
+    "before any child took it. Not execution, verification, review, CI or merge evidence."
 )
 SETTLED_STATES: Final = frozenset({"done", "failed", "interrupted", "unknown"})
 _FAILED_STOPS: Final = frozenset({"failed", "error", "timeout"})
@@ -407,7 +416,11 @@ def _build(
     ledger = read_ledger(Path(omh_home), session_id)
     team = _team_record(Path(omh_home), session_id)
     children = list(ledger["children"]) if ledger else []
-    if not children and team is None:
+    dag = _dag_run(Path(omh_home), Path(hermes_home), session_id, now)
+    if dag is not None:
+        known = {child["child_session_id"] for child in children}
+        children += [child for child in dag["children"] if child["child_session_id"] not in known]
+    if not children and team is None and dag is None:
         return inactive_graph("no_delegation", scope=scope)
     sessions = [session_id] + [child["child_session_id"] for child in children]
     if team is not None:
@@ -446,12 +459,14 @@ def _build(
             if isinstance(dispatch.get("child_session_id"), str):
                 team_bound[dispatch["child_session_id"]] = str(unit["unit_id"])
 
+    dag_bound = {child["child_session_id"] for child in dag["children"]} if dag is not None else set()
     by_session = {child["child_session_id"]: child for child in children}
     ordered = sorted(children, key=lambda child: child["started_at"])
     waves: dict[tuple[str, str], int] = {}
     wave_start: dict[tuple[str, str], float] = {}
     for child in ordered:
-        if child["parent_session_id"] != session_id or child["child_session_id"] in team_bound:
+        if (child["parent_session_id"] != session_id or child["child_session_id"] in team_bound
+                or child["child_session_id"] in dag_bound):
             continue
         key = (child["parent_session_id"], child["parent_turn_id"] or child.get("call_id", ""))
         if key not in waves:
@@ -495,6 +510,8 @@ def _build(
         states = {str(unit["unit_id"]): team_unit_state(unit) for unit in units}
         depth: dict[str, int] = {}
 
+        # Kept on its own walk, not the DAG core's layers: a team record is read without a cycle check, and on a
+        # hand-edited cyclic record this recursion's stages are not the core's (which leaves cyclic parts unplaced).
         def stage(unit_id: str, seen: frozenset[str] = frozenset()) -> int:
             if unit_id in depth:
                 return depth[unit_id]
@@ -543,6 +560,9 @@ def _build(
             else:
                 edges.append({"from": "root", "to": node_id, "kind": "dispatch"})
 
+    if dag is not None:
+        order = _dag_nodes(dag, nodes, edges, order, facts_for, model_of_node, node_of_subagent, node_of_session)
+
     def parent_of(child: Mapping[str, Any]) -> str:
         parent_id = node_of_subagent.get(child["parent_subagent_id"], "") if child["parent_subagent_id"] else ""
         if not parent_id:
@@ -553,7 +573,8 @@ def _build(
 
     # A child is placed once its parent is: passes repeat until none places, so a child whose parent this graph
     # does not hold is left out (never drawn hanging from the wrong node), and so is everything under it.
-    pending = [child for child in ordered if child["child_session_id"] not in team_bound]
+    pending = [child for child in ordered
+               if child["child_session_id"] not in team_bound and child["child_session_id"] not in dag_bound]
     while True:
         placeable = [child for child in pending if parent_of(child)]
         if not placeable:
@@ -581,17 +602,192 @@ def _build(
     lanes = [node for node in nodes if node["kind"] != "root"]
     if not lanes:
         return inactive_graph("no_delegation", scope=scope)
-    settled = all(node["state"] in SETTLED_STATES for node in lanes)
+    dag_open = dag is not None and dag["state"] in DAG_OPEN_STATES
+    settled = all(node["state"] in SETTLED_STATES for node in lanes) and not dag_open
     newest = max([child["started_at"] for child in children]
                  + [float(child["stop"]["observed_at"]) for child in children if isinstance(child.get("stop"), dict)]
-                 + ([team[1]] if team is not None else []))
+                 + ([team[1]] if team is not None else [])
+                 + ([float(dag["record"].get("updated_at") or 0.0)] if dag is not None else []))
     if settled and linger is not None and now - newest > linger:
         return inactive_graph("settled", scope=scope)
-    name = f"team {_text(team[0].get('team_id'), 48)}" if team is not None and team[0].get("team_id") else "delegation"
+    if dag is not None:
+        name = dag_graph_name(dag["record"])
+    elif team is not None and team[0].get("team_id"):
+        name = f"team {_text(team[0].get('team_id'), 48)}"
+    else:
+        name = "delegation"
     graph = _finish(name, nodes, edges, scope)
     graph["chat"] = _chat_record(ledger)
-    graph["changed_at"] = newest  # the last start, stop or team-record write: when this graph last moved
+    graph["changed_at"] = newest  # the last start, stop, team-record or dag-record write: when this graph last moved
+    if dag is not None:
+        # A dag run is not over while a node is out or ready, even when every drawn lane settled. A run that waits
+        # on a repair is over for the chat: the reply that did not repair it ends the turn, and a repair added later
+        # reopens the run (`delegation_snapshot`).
+        graph["dag_open"] = dag_open
+        graph["dag_topology"] = _dag_topology(dag["record"])
     return graph
+
+
+def _dag_topology(record: Mapping[str, Any]) -> dict[str, Any]:
+    """The run's critical path and bottlenecks (`dag_run.topology`), by node label, for `/dag`."""
+    labels = {str(node["id"]): _text(node.get("label"), TITLE_LIMIT) or str(node["id"]) for node in record["nodes"]}
+    topology = record.get("topology") if isinstance(record.get("topology"), Mapping) else {}
+    path = [labels.get(str(node), str(node)) for node in topology.get("critical_path") or []]
+    bottlenecks = [[labels.get(str(item.get("node")), str(item.get("node"))), int(item.get("blocks") or 0)]
+                   for item in topology.get("bottlenecks") or [] if isinstance(item, Mapping)]
+    return {"critical_path": path, "bottlenecks": bottlenecks}
+
+
+# ── omh_dag, read-only ───────────────────────────────────────────────────
+
+
+DAG_OPEN_STATES: Final = frozenset({"running"})
+# A dag node's derived state (`dag_run.derive`) as a graph state and status word; superseded nodes are not drawn.
+_DAG_VIEW: Final = {
+    "accepted": ("done", "accepted"),
+    "repaired": ("done", "repaired"),
+    "failed": ("failed", "failed"),
+    "blocked": ("failed", "blocked"),
+    "handed_out": ("dispatched", "handed out"),
+    "running": ("running", "running"),
+    "returned": ("dispatched", "returned"),
+    "ready": ("waiting", "ready"),
+    "waiting": ("waiting", "waiting"),
+    "held": ("waiting", "held"),
+    "cancelled": ("interrupted", "cancelled"),
+}
+
+
+def dag_graph_name(record: Mapping[str, Any]) -> str:
+    """The name a dag run's graph is drawn and posted under."""
+    return _text(record.get("name"), 48) or "dag"
+
+
+def dag_node_id(run: str, node: str) -> str:
+    """A dag node's id in the graph."""
+    return f"d:{run}:{node}"
+
+
+def dag_origin(node: Mapping[str, Any]) -> tuple[str, str]:
+    """(kind, the node it came from) for a node a repair or an extend round added; ("", "") for a defined one.
+
+    A repair node came from the node it repairs, an extend node from the node
+    whose check found the work missing (``found_by``, "" when none was named).
+    """
+    kind = str(node.get("origin") or "").partition(":")[0]
+    if kind not in ADDED_ORIGIN_KINDS:
+        return "", ""
+    if kind == "repair":
+        return kind, str(node.get("repairs") or "")
+    return kind, str(node.get("found_by") or "")
+
+
+def _dag_run(omh_home: Path, hermes_home: Path, session_id: str, now: float) -> dict[str, Any] | None:
+    """The conversation's newest `omh_dag/v1` run with its bound children and derived states, or None.
+
+    The run is stored under the segment that defined it; when this segment
+    holds none, the conversation's other segments are read
+    (`conversation_session_ids`, the #2176 lineage), so a compacted parent
+    still finds its run.
+    """
+    segments = [session_id]
+    runs = session_runs(omh_home, session_id)
+    if not runs:
+        segments = sorted({session_id, *conversation_session_ids(hermes_home, session_id)})
+        runs = [item for segment in segments for item in session_runs(omh_home, segment)]
+    if not runs:
+        return None
+    record = max(runs, key=lambda item: float(item[0].get("updated_at") or 0.0))[0]
+    run = str(record["run"])
+    children = [
+        child for segment in segments for child in ((read_ledger(omh_home, segment) or {}).get("children") or [])
+        if isinstance(child.get("dag"), Mapping) and child["dag"].get("run") == run
+    ]
+    derived = derive(record, children, now)
+    return {"record": record, "children": children, "derived": derived, "state": run_state(record, derived)}
+
+
+def _dag_nodes(
+    dag: Mapping[str, Any], nodes: list[dict[str, Any]], edges: list[dict[str, str]], order: int,
+    facts_for: Callable[[Mapping[str, Any], str], dict[str, Any]], model_of_node: dict[str, str],
+    node_of_subagent: dict[str, str], node_of_session: dict[str, str],
+) -> int:
+    """Add a dag run's nodes and its recorded edges; returns the next drawing order.
+
+    A node a repair or an extend round added also gets an edge from where it
+    came from (`dag_origin`) when nothing else of its own group leads to it,
+    so the drawing shows it below that node.
+    """
+    record, derived = dag["record"], dag["derived"]
+    run = str(record["run"])
+    # A held node of a run that is not moving (stopped, cancelled, or waiting on a repair) will not run on its own.
+    stopped = dag["state"] not in DAG_OPEN_STATES
+    drawn = {str(node["id"]) for node in record["nodes"] if derived[str(node["id"])]["state"] != "superseded"}
+    for node_id, layer in _dag_layers(record, drawn).items():
+        node = next(item for item in record["nodes"] if item["id"] == node_id)
+        info = derived[node_id]
+        state, status = _DAG_VIEW.get(info["state"], ("unknown", info["state"]))
+        if info["state"] == "held" and stopped:
+            state = "interrupted"
+        graph_id = dag_node_id(run, node_id)
+        origin = str(node.get("origin") or "define")
+        # An extend round is its own group: its first nodes hang under the node that found the gap, so its layers
+        # would otherwise be numbered past ones the tree never shows.
+        group = f"extend {origin.partition(':')[2]}" if origin.startswith("extend:") else f"layer {layer + 1}"
+        entry: dict[str, Any] = {
+            "id": graph_id, "kind": "lane", "title": _text(node.get("label"), TITLE_LIMIT) or node_id,
+            "category": _text(node.get("category"), 40) or "?", "category_source": "dag_plan", "model": "?",
+            "effort": "", "state": state, "status": status, "elapsed_seconds": None, "order": order,
+            "group": group, "waits_on": len(info["waits_on"]) if info["state"] == "waiting" else 0,
+            "dag_node": node_id, "dag_origin": origin,
+        }
+        order += 1
+        child = info["child"]
+        if isinstance(child, Mapping):
+            facts = facts_for(child, model_of_node["root"])
+            # Once a child exists its category is the recorded route's, shown only where its model matches.
+            entry.update({key: facts[key] for key in ("model", "effort", "category", "category_source",
+                                                       "output_tokens")})
+            entry["session_tail"] = session_tail(child["child_session_id"])
+            if info["state"] == "running":
+                # The record says the node is out; only the child's own records say it is moving.
+                entry.update(state=facts["state"], status=facts["status"])
+            entry.update(elapsed_seconds=facts["elapsed_seconds"], ended_at=facts["ended_at"])
+            node_of_subagent[child["subagent_id"]] = graph_id
+            node_of_session[child["child_session_id"]] = graph_id
+            model_of_node[graph_id] = facts["model"] if facts["model"] != "?" else ""
+        nodes.append(entry)
+        parents = [parent for parent in node["depends_on"] if parent in drawn]
+        edges.extend({"from": dag_node_id(run, parent), "to": graph_id, "kind": "depends_on"} for parent in parents)
+        origin = _origin_parent(node, record, drawn)
+        if origin:
+            edges.append({"from": dag_node_id(run, origin), "to": graph_id, "kind": dag_origin(node)[0]})
+        elif not parents:
+            edges.append({"from": "root", "to": graph_id, "kind": "dispatch"})
+    return order
+
+
+def _origin_parent(node: Mapping[str, Any], record: Mapping[str, Any], drawn: set[str]) -> str:
+    """The drawn node an added node hangs below, or "": none when a node of its own group already leads to it."""
+    kind, origin = dag_origin(node)
+    if not kind or origin not in drawn or origin in node["depends_on"]:
+        return ""
+    group = {str(other["id"]) for other in record["nodes"]
+             if (other.get("origin"), other.get("cycle")) == (node.get("origin"), node.get("cycle"))}
+    return "" if any(parent in group for parent in node["depends_on"]) else origin
+
+
+def _dag_layers(record: Mapping[str, Any], drawn: set[str]) -> dict[str, int]:
+    """The drawn nodes in layer order, each with its layer, an added node counted below the node it came from."""
+    parents: dict[str, list[str]] = {}
+    for node in record["nodes"]:
+        node_id = str(node["id"])
+        if node_id in drawn:
+            origin = _origin_parent(node, record, drawn)
+            parents[node_id] = [parent for parent in node["depends_on"] if parent in drawn] + ([origin] if origin else [])
+    ids = [str(node["id"]) for node in record["nodes"] if str(node["id"]) in drawn]
+    placed, _stuck = layer_of(ids, parents)
+    return dict(sorted(placed.items(), key=lambda item: (item[1], ids.index(item[0]))))
 
 
 def _without_old_waves(
@@ -713,6 +909,8 @@ def fanout_graph(record: Mapping[str, Any]) -> dict[str, Any]:
     return _finish(f"fanout {fanout_id}" if fanout_id else "fanout", nodes, edges, "global", "fanout")
 
 
+# Kept on its own walk, not the DAG core's `layers`: given a repeated node id this walk answers no layers or
+# lists the id twice, where the core reads the id once, and its readers do not drop repeats first.
 def _layers(nodes: Sequence[Mapping[str, Any]], edges: Sequence[Mapping[str, str]]) -> list[list[str]]:
     ids = [str(node["id"]) for node in nodes]
     incoming = {node_id: 0 for node_id in ids}

@@ -131,9 +131,10 @@ conversation: what Hermes' own `subagent_start`, `post_tool_call` (for
 `delegate_task`) and `subagent_stop` hooks said about delegated children.
 Session and subagent ids, parent, turn, task index, delegation id, times,
 status words, and the route OMH had recorded for the session when a child
-started. No goal, summary, prompt or tool history. It is the only record that
-ties a child session to the call and task that made it; `state.db`, the
-delegation manifests and the live logs do not.
+started, and, for a child whose goal opens with `[dag:<run>/<node>]`, those
+two ids (**Dag-ulw run**). No goal, summary, prompt or tool history. It is the
+only record that ties a child session to the call and task that made it;
+`state.db`, the delegation manifests and the live logs do not.
 _Avoid_: evidence that a lane succeeded (a stop status is Hermes' report),
 reading a goal from it
 
@@ -341,7 +342,8 @@ nodes, edges, layers): frontiers of boxes (title,
 category and model, status, parents), one connector per frontier gap, the
 recorded edges listed exactly under `Dependencies`, and a `Node details` card
 per running or stuck node and for `/dag`'s highlighted one; or a compact tree
-when no box fits or the edges loop. The
+when no box fits or the edges loop; the tree nests a node a dag-ulw run added
+(a repair or an extend) under where it came from. The
 OMH TUI draws it as its tree in the agent view under the info line, and
 `/dag` opens the boxes full screen, live and keyboard-driven (highlight, fold,
 details), sending nothing anywhere; `omh hud --graph` prints the boxes. A
@@ -356,18 +358,60 @@ stands in the category column where neither is recorded; nothing in it reads
 current config. Colour is the TUI theme's (a box by its node's state, the
 tree's edges by `dag_edges`), never part of the text: a chat post is plain.
 _Avoid_: a message OMH sends (Hermes delivers the reply), a plan (it shows
-dispatched work, not intended work), reading a wave as a dependency
+dispatched work and the nodes a dag-ulw run declared, never a plan it
+inferred), reading a wave as a dependency
 
 **Delegated run**:
 The lanes of a conversation's delegation graph that no chat end post has
 closed yet. It starts on the first reply that finds one of them not settled,
 and ends on the first reply after all of them have settled (done, failed,
-interrupted, or `unknown`), or after nothing has been in flight or changed
-for 15 minutes (`stalled`; the parts not moving stay open). The ledger's
-`posted` record keeps its phase, its last counts and the keys of the lanes
-earlier runs closed. A later wave's lanes form the next run.
+interrupted, or `unknown`) and, for a dag-ulw run, nothing in it is out or
+ready (done, cancelled, out of repair cycles, or waiting on a repair the reply
+did not make), or after nothing has been in
+flight or changed for 15 minutes (`stalled`; the parts not moving stay
+open). The ledger's `posted` record keeps its phase, its last counts, the
+keys of the lanes earlier runs closed, and the keys of the lanes a post has
+shown. A later wave's lanes form the next run, except nodes a dag-ulw run
+adds after its end post: they reopen that run, with a count line naming
+them, not a second start block.
 _Avoid_: a single `delegate_task` call (a run can span several waves), a
 Hermes session
+
+**Dag-ulw run**:
+`omh_dag/v1` at `$OMH_HOME/runtime/dag/<session key>/<run>.json`: the plan a
+parent agent declared for one dag-ulw run (node ids, labels, categories,
+prompts, `depends_on`, write scopes) and the outcome it settled for each
+attempt. It holds each node's prompt, the instructions the parent wrote for
+that child (at most 3,000 characters a node and 256 KiB a record, created
+mode 0600), so `ready` can hand a node out after the parent's own context
+was compacted. That is the one difference from the **Delegation ledger**,
+which holds no goal text: the run record keeps what the parent planned, never
+what a child returned (no output, summary or tool history). The `omh_dag`
+tool is its only writer, and a session keeps at most 16 runs (a new one
+drops the oldest finished one); the delegation graph reads it under every
+segment of the conversation, so a compacted parent still finds its run.
+Hermes runs every node as the parent's own `delegate_task` child; the child
+of a node is the one whose goal opens with `[dag:<run>/<node>]`. Node and
+run states are derived on every read. `accepted` is the parent's judgement
+after it read the node's handoff file, refused while that file is missing
+or Hermes reported the child failed; a failed or blocked node blocks only
+its dependents. Repair nodes stand in for a failed producer once all are
+accepted, and the nodes after it read the repair's handoff files; a failed
+verification node runs again instead, and only its own accepted re-run
+satisfies it; at most two repair cycles a node. When every node passed but
+the goal check finds work missing, `extend` adds a round of nodes to the
+same run (at most two rounds a run), under the same refusals as the first
+plan. Each node records where it came from: `define`, `repair:<root>` or
+`extend:<round>`. With a coding owner the person chose (the router's
+explicit-choice record, read exactly as the router reads it, and no older
+than a day: an external CLI spends the person's money and quota, so a stale
+choice starts nothing), the ready coding nodes go to that owner's fanout
+(`export`) and never to `delegate_task`; verification and review nodes stay
+native. Hermes chat records no such choice; `omh chat` and `omh coding` do.
+Graph topology is decided once, in `plugin_bundle/omh/dag_core.py`, which
+`omh_team` and the fanout contract share.
+_Avoid_: reading `accepted` as verification, a child's `completed` as
+acceptance, a second graph engine
 
 **HUD payload**:
 The metadata-only JSON projection built by `read_omh_hud()` from OMH home and
