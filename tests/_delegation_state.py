@@ -2,7 +2,8 @@
 
 `state.db` holds the tables and columns the delegation graph reads, in the
 shape Hermes writes them (`hermes_state_common.py`): `sessions` with the
-`_delegate_from` marker and reasoning effort in `model_config`,
+`_delegate_from` marker and reasoning effort in `model_config` and the
+`output_tokens` Hermes adds each API call's count to,
 `session_model_usage`, `messages`, and `async_delegations` with `task_json`.
 The hook payloads are the ones Hermes passes: `subagent_start` and
 `subagent_stop` as `tools/delegate_tool.py` and `delegate_tool_results.py`
@@ -25,7 +26,7 @@ PARENT = "20261020_140200_parent"
 SCHEMA = """
 CREATE TABLE sessions (
     id TEXT PRIMARY KEY, source TEXT, model TEXT, model_config TEXT, started_at REAL,
-    ended_at REAL, end_reason TEXT, parent_session_id TEXT
+    ended_at REAL, end_reason TEXT, parent_session_id TEXT, output_tokens INTEGER DEFAULT 0
 );
 CREATE TABLE session_model_usage (
     session_id TEXT NOT NULL, model TEXT NOT NULL, billing_provider TEXT NOT NULL DEFAULT '',
@@ -67,6 +68,10 @@ class Homes:
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (session_id, "subagent" if parent else "discord", model, json.dumps(config), started, ended, end_reason),
         )
+
+    def tokens(self, session_id: str, count: int) -> None:
+        """The output tokens a session's row has counted, as Hermes' per-call deltas leave it."""
+        self.execute("UPDATE sessions SET output_tokens = ? WHERE id = ?", (count, session_id))
 
     def usage(self, session_id: str, model: str, *, last_seen: float) -> None:
         self.execute(

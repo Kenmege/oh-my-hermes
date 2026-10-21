@@ -11,8 +11,10 @@ The structure comes from records, never from timing guesses:
 
 Facts about a child are read from Hermes' own `state.db`, read-only: the model
 its session row recorded (or the one model its usage rows observed), its
-reasoning effort, whether it has made a model call, and the goal Hermes stored
-for its task. Nothing reads current config.
+reasoning effort, whether it has made a model call, the goal Hermes stored
+for its task, and the output tokens its row has counted so far (Hermes adds
+each API call's to the child's own row as the call returns; ``None`` while
+the row says 0 or was not read). Nothing reads current config.
 
 Every field without evidence is ``?``:
 
@@ -150,8 +152,10 @@ def state_facts(
                 columns = {str(row[1]) for row in connection.execute('PRAGMA table_info("sessions")')}
                 ended = "ended_at" if "ended_at" in columns else "NULL"
                 reason = "end_reason" if "end_reason" in columns else "NULL"
+                written = "output_tokens" if "output_tokens" in columns else "NULL"
                 for row in connection.execute(
-                    f"SELECT id, model, model_config, {ended}, {reason} FROM sessions WHERE id IN ({marks})", ids
+                    f"SELECT id, model, model_config, {ended}, {reason}, {written} FROM sessions WHERE id IN ({marks})",
+                    ids,
                 ):
                     try:
                         config = json.loads(row[2]) if isinstance(row[2], str) else {}
@@ -163,6 +167,7 @@ def state_facts(
                         "effort": _effort(config),
                         "ended_at": row[3] if isinstance(row[3], (int, float)) else None,
                         "end_reason": _text(row[4], 40),
+                        "output_tokens": row[5] if isinstance(row[5], int) and row[5] > 0 else None,
                     }
                 facts["read"] = True
             except sqlite3.Error:
@@ -470,6 +475,7 @@ def _build(
             "elapsed_seconds": elapsed,
             # When Hermes reported the child stopped, so "first failure" can mean first in time.
             "ended_at": float(stop["observed_at"]) if isinstance(stop, Mapping) else None,
+            "output_tokens": (facts["sessions"].get(session) or {}).get("output_tokens"),
         }
 
     def title_for(child: Mapping[str, Any]) -> str:
@@ -516,7 +522,8 @@ def _build(
                 node.update(state="dispatched", status="repair dispatched")
             if child is not None:
                 derived = facts_for(child, model_of_node["root"])
-                node.update({key: derived[key] for key in ("model", "effort", "category", "category_source")})
+                node.update({key: derived[key] for key in ("model", "effort", "category", "category_source",
+                                                           "output_tokens")})
                 node["session_tail"] = session_tail(child_session)
                 if states[unit_id] in ("dispatched", "repairing"):
                     # The team record says the attempt was sent; only the child's own records say it is moving.

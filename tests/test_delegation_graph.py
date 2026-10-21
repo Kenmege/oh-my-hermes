@@ -392,6 +392,76 @@ class FanoutTests(unittest.TestCase):
             self.assertEqual(built(home, fanout=record)["source"], "native")
 
 
+class OutputTokenTests(unittest.TestCase):
+    """Each native lane's `output_tokens`: what its child's state.db row has counted, or None without a count."""
+
+    def test_a_lane_carries_what_its_childs_row_has_counted(self) -> None:
+        with homes() as home:
+            three_lanes(home)
+            home.usage("child-0", "claude-opus-5-5", last_seen=NOW + 90)
+            home.tokens("child-0", 1234)
+            home.tokens("child-1", 0)  # the column's default before the child's first call
+            graph = built(home)
+            self.assertEqual([item.get("output_tokens") for item in graph["nodes"][1:]], [1234, None, None])
+            self.assertNotIn("output_tokens", graph["nodes"][0], "the root is the conversation, not a lane")
+            home.tokens("child-0", 2500)
+            self.assertEqual(node(built(home), "Refresh HUD docs")["output_tokens"], 2500)
+
+    def test_a_finished_lane_keeps_its_childs_final_count(self) -> None:
+        with homes() as home:
+            three_lanes(home)
+            home.usage("child-1", "glm-5.3-flash", last_seen=NOW + 60)
+            home.tokens("child-1", 4900)
+            stop(home, "child-1", now=NOW + 62)
+            stop(home, "child-2", "error", now=NOW + 70)
+            home.tokens("child-2", 750)  # the failure path's stop carries no count; the row does
+            graph = built(home)
+            self.assertEqual((node(graph, "Polish HUD CLI")["state"], node(graph, "Polish HUD CLI")["output_tokens"]),
+                             ("done", 4900))
+            self.assertEqual((node(graph, "Update HUD tests")["state"], node(graph, "Update HUD tests")["output_tokens"]),
+                             ("failed", 750))
+
+    def test_a_team_part_carries_its_bound_childs_count_and_an_unbound_one_none(self) -> None:
+        with homes() as home:
+            home.session(PARENT, "claude-opus-5-5")
+            start(home, "child-0", "sa-0", "[omh-team:hud-graph/docs/attempt-1] Refresh docs", now=NOW)
+            home.session("child-0", "claude-opus-5-5", parent=PARENT)
+            home.usage("child-0", "claude-opus-5-5", last_seen=NOW + 90)
+            home.tokens("child-0", 640)
+            sent = {"n": 1, "dispatch": {"child_session_id": "child-0", "subagent_id": "sa-0"}}
+            TeamOverlayTests().write_team(home, [unit("docs", "Refresh docs", [], [sent]), unit("cli", "Polish CLI", [])])
+            graph = built(home)
+            self.assertEqual(node(graph, "Refresh docs")["output_tokens"], 640)
+            self.assertIsNone(node(graph, "Polish CLI").get("output_tokens"))
+
+    def test_a_state_db_without_the_column_or_unreadable_gives_no_count_and_the_rest_stands(self) -> None:
+        with homes() as home:
+            three_lanes(home)
+            home.tokens("child-0", 1234)
+            home.execute("ALTER TABLE sessions DROP COLUMN output_tokens")
+            graph = built(home)
+            self.assertEqual([item.get("output_tokens") for item in graph["nodes"][1:]], [None, None, None])
+            self.assertEqual(node(graph, "Refresh HUD docs")["category"], "writing", "the other facts are still read")
+            (home.hermes / "state.db").write_bytes(b"not a database")
+            self.assertIsNone(node(built(home), "Refresh HUD docs")["output_tokens"])
+
+    def test_a_count_that_moves_does_not_move_the_fingerprint(self) -> None:
+        # The chat posts are keyed on the fingerprint: a growing count must not make a new one.
+        with homes() as home:
+            three_lanes(home)
+            home.usage("child-0", "claude-opus-5-5", last_seen=NOW + 90)
+            home.tokens("child-0", 100)
+            first = built(home)
+            home.tokens("child-0", 90_000)
+            self.assertEqual(graph_fingerprint(first), graph_fingerprint(built(home)))
+
+    def test_a_fanout_unit_has_no_count(self) -> None:
+        record = {"contract": {"fanout_id": "fanout-0123456789ab", "units": [
+            {"unit_id": "core", "title": "Core", "owner": "codex", "depends_on": []}]},
+            "roster": {"units": [{"unit_id": "core", "status": "running"}]}}
+        self.assertNotIn("output_tokens", node(fanout_graph(record), "Core"))
+
+
 class NoRaiseTests(unittest.TestCase):
     def test_a_broken_database_or_record_leaves_the_graph_smaller_never_an_exception(self) -> None:
         with homes() as home:
