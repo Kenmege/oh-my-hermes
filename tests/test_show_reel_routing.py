@@ -68,9 +68,11 @@ class ShowReelRoutingTests(unittest.TestCase):
                     self.assertNotIn("prepare_show_reel", str(pre_llm_call(omh_home=str(paths.omh_home), hermes_home=str(paths.hermes_home), user_message=message, is_first_turn=False)))
 
     def test_korean_courtesy_after_action_noun_is_still_a_production_request(self):
-        self._assert_production_surfaces((
-            "show-reel 스킬 사용 부탁해",
-            "show-reel 워크플로우 실행 부탁드립니다",
+        self._assert_production_surfaces(tuple(
+            f"show-reel {marker} {action} {ending}"
+            for marker in ("스킬", "워크플로우")
+            for action in ("사용", "실행")
+            for ending in ("부탁해", "부탁해요", "부탁드립니다", "부탁드려요", "부탁합니다", "해줘", "해주세요", "합시다")
         ))
 
     def test_imperatives_keep_arguments_even_when_inputs_describe_documentation_or_history(self):
