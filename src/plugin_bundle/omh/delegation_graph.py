@@ -184,8 +184,9 @@ def state_facts(
                 pass
             try:
                 usage_columns = {str(row[1]) for row in connection.execute('PRAGMA table_info("session_model_usage")')}
-                # An auxiliary call (compression, title generation, ...) is a row under its task name on the aux
-                # route's model: a call, but not the model that answered the child. `hermes_delegation` reads it alike.
+                # An auxiliary call (compression, vision, ...) is a row under its task name on the aux route's model:
+                # a call, so it counts and dates the child's activity, but not the model that answered the child.
+                # `hermes_delegation` reads it alike.
                 answering = (
                     "GROUP_CONCAT(DISTINCT CASE WHEN COALESCE(task, '') = '' THEN NULLIF(model, '') END)"
                     if "task" in usage_columns

@@ -2424,16 +2424,18 @@ def _query_state_db(
                 if "billing_provider" in columns
                 else "NULL"
             )
-            # Hermes records each auxiliary call (compression, title
-            # generation, vision, ...) in this table under its task name and
-            # the aux route's model (`record_auxiliary_usage`); the child's
-            # own turns write an empty task. Those calls are real spend, so
-            # the sums keep them, but they do not say which model answered
+            # Hermes records each auxiliary call (compression, vision, web
+            # extraction, ...) in this table under its task name and the aux
+            # route's model (`record_auxiliary_usage`); the child's own turns
+            # write an empty task. Those calls are real spend, so the sums
+            # keep them, and so does the model that prices a child whose
+            # only calls were auxiliary. They do not say which model answered
             # the child.
+            every_model = "GROUP_CONCAT(DISTINCT NULLIF(model, ''))"
             answering_model = (
                 "GROUP_CONCAT(DISTINCT CASE WHEN COALESCE(task, '') = '' THEN NULLIF(model, '') END)"
                 if "task" in columns
-                else "GROUP_CONCAT(DISTINCT NULLIF(model, ''))"
+                else every_model
             )
             cursor = connection.execute(
                 f"""
@@ -2444,7 +2446,7 @@ def _query_state_db(
                        MIN(first_seen), MAX(last_seen),
                        SUM(CASE WHEN {informative} THEN 1 ELSE 0 END),
                        {billing_provider},
-                       {answering_model}
+                       {answering_model}, {every_model}
                 FROM session_model_usage
                 WHERE session_id IN ({placeholders})
                 GROUP BY session_id
@@ -2472,6 +2474,9 @@ def _query_state_db(
                     # usage row at all both leave `model` empty, and the
                     # attestation verdict has to tell them apart.
                     "model_count": _distinct_value_count(row[13]),
+                    # The one model every row names, auxiliary calls
+                    # included: what prices a child with no answering model.
+                    "spend_model": _sole_distinct_value(row[14]),
                 }
             for child in children:
                 child["usage"] = usage.get(child["session_id"], {})
@@ -2744,10 +2749,15 @@ def read_hermes_native_subagents(
         # our shipped ballpark are both approximations, but they are not
         # equally arguable: only the first is a number the operator chose.
         # The row says which, so a surface can tell them apart.
-        cost_override = bool(_model_price_override_key(wire_model, price_overrides))
+        #
+        # The tokens priced here include auxiliary calls. A child whose only
+        # calls were auxiliary has no answering model, so those tokens are
+        # priced at the one model they ran on.
+        priced_model = wire_model or _text(usage.get("spend_model"))
+        cost_override = bool(_model_price_override_key(priced_model, price_overrides))
         if not cost and not informative_cost_rows:
             approx = _approximate_cost_usd(
-                wire_model, input_tokens, output_tokens, cache_read, price_overrides
+                priced_model, input_tokens, output_tokens, cache_read, price_overrides
             )
             if approx is not None:
                 cost = approx

@@ -128,8 +128,8 @@ def _build_state_db(
     if include_end_columns:
         connection.execute("ALTER TABLE sessions ADD COLUMN ended_at REAL")
         connection.execute("ALTER TABLE sessions ADD COLUMN end_reason TEXT")
-    # Hermes names an auxiliary call's kind in `task` (`title_generation`,
-    # `compression`, ...) and leaves it empty for the agent's own turns.
+    # Hermes names an auxiliary call's kind in `task` (`compression`,
+    # `vision`, ...) and leaves it empty for the agent's own turns.
     if include_usage_task:
         connection.execute("ALTER TABLE session_model_usage ADD COLUMN task TEXT NOT NULL DEFAULT ''")
     connection.execute(
@@ -2267,9 +2267,9 @@ class ServedModelAttestationTest(unittest.TestCase):
         self.assertNotIn("requested", attestation)
 
     def test_an_auxiliary_call_on_another_model_leaves_the_answer_standing(self):
-        # Hermes records a title or compression call under its task name on
-        # the aux route's model. It is spend, so the tokens keep it, but it
-        # did not answer the child.
+        # Hermes records a compression call under its task name on the aux
+        # route's model. It is spend, so the tokens keep it, but it did not
+        # answer the child.
         _build_state_db(
             self.home,
             [
@@ -2282,7 +2282,7 @@ class ServedModelAttestationTest(unittest.TestCase):
                         {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 5},
                         {
                             "model": "gemini-3-flash",
-                            "task": "title_generation",
+                            "task": "compression",
                             "output_tokens": 3,
                             "last_seen": NOW - 4,
                         },
@@ -2298,6 +2298,8 @@ class ServedModelAttestationTest(unittest.TestCase):
         self.assertEqual(row["tokens"], 13)
 
     def test_a_child_whose_only_call_is_auxiliary_has_no_answering_model(self):
+        # Read as the answer, the vision call's model disagreed with the
+        # attested request: a false alarm about a call the child never made.
         attestation = self._attestation(
             {
                 "id": "20260818_100100_auxonly",
@@ -2306,7 +2308,7 @@ class ServedModelAttestationTest(unittest.TestCase):
                 "started_at": NOW - 60,
                 "usage": {
                     "model": "gemini-3-flash",
-                    "task": "title_generation",
+                    "task": "vision",
                     "output_tokens": 3,
                     "last_seen": NOW - 4,
                 },
@@ -2316,6 +2318,82 @@ class ServedModelAttestationTest(unittest.TestCase):
         self.assertEqual(attestation["verdict"], "unknown")
         self.assertEqual(attestation["basis"], "no_usage_observation")
         self.assertNotIn("answering", attestation)
+
+    def test_an_auxiliary_only_child_is_priced_at_the_model_its_calls_ran_on(self):
+        # No answering model names the row, but the tokens are real spend:
+        # the approximation prices them at the one model they ran on, at the
+        # operator's own rate for it when there is one.
+        price_path = self.home / ".omh" / "routing" / "model-prices.json"
+        price_path.parent.mkdir(parents=True)
+        price_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "model_price_overrides/v1",
+                    "models": {"deepseek-v4.1-flash": {"input_per_mtok": 1.0, "output_per_mtok": 2.0}},
+                }
+            ),
+            encoding="utf-8",
+        )
+        _build_state_db(
+            self.home,
+            [
+                {
+                    "id": "20260818_100100_auxcost",
+                    "model": "",
+                    "started_at": NOW - 60,
+                    "usage": {
+                        "model": "deepseek-v4.1-flash",
+                        "task": "compression",
+                        "input_tokens": 500,
+                        "output_tokens": 50,
+                        "last_seen": NOW - 4,
+                    },
+                }
+            ],
+            include_usage_task=True,
+        )
+        row = read_hermes_native_subagents(self.home, now=NOW, omh_home=self.home / ".omh")["rows"][0]
+        self.assertEqual(row["model"], "")
+        self.assertEqual(row["model_attestation"]["basis"], "no_usage_observation")
+        self.assertTrue(row["cost_approximate"])
+        self.assertTrue(row["cost_override"])
+        self.assertAlmostEqual(row["cost_usd"], (500 * 1.0 + 50 * 2.0) / 1_000_000)
+
+    def test_an_empty_session_model_prices_like_the_answering_model_it_names(self):
+        # Hermes leaves `sessions.model` empty on some children. Once the
+        # answering model fills it, the row prices like one whose session row
+        # named that model: every token, auxiliary calls included.
+        usages = [
+            {"model": "claude-opus-5-5", "input_tokens": 1000, "output_tokens": 200, "last_seen": NOW - 20},
+            {
+                "model": "deepseek-v4.1-flash",
+                "task": "compression",
+                "input_tokens": 500,
+                "output_tokens": 50,
+                "last_seen": NOW - 10,
+            },
+        ]
+        _build_state_db(
+            self.home,
+            [
+                {"id": "20260818_100100_emptym1", "model": "", "started_at": NOW - 60, "usages": usages},
+                {"id": "20260818_100100_namedm1", "model": "claude-opus-5-5", "started_at": NOW - 60, "usages": usages},
+            ],
+            include_usage_task=True,
+        )
+        rows = {
+            row["task_id"]: row
+            for row in read_hermes_native_subagents(self.home, now=NOW, omh_home=self.home / ".omh")["rows"]
+        }
+        empty, named = rows["emptym1"], rows["namedm1"]
+        self.assertEqual(empty["model"], "claude-opus-5-5")
+        self.assertEqual((empty["tokens"], empty["category"]), (named["tokens"], named["category"]))
+        self.assertTrue(empty["cost_approximate"])
+        self.assertAlmostEqual(empty["cost_usd"], named["cost_usd"])
+        self.assertAlmostEqual(
+            empty["cost_usd"],
+            hermes_delegation_module._approximate_cost_usd("claude-opus-5-5", 1500, 250, 0),
+        )
 
     def test_a_switch_between_the_childs_own_calls_still_reads_as_a_switch(self):
         # The task filter drops auxiliary rows only: two models on the

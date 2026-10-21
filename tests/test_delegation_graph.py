@@ -74,8 +74,8 @@ class FieldEvidenceTests(unittest.TestCase):
                              ("?", "route_model_mismatch", "gpt-6.1-sol"))
 
     def test_an_auxiliary_call_does_not_name_the_childs_model(self) -> None:
-        # Hermes left the child row's model empty, so the usage rows name it. A title call on the aux route's model
-        # is a call (the child is running), but not the model that answered.
+        # Hermes left the child row's model empty, so the usage rows name it. A compression call on the aux route's
+        # model is a call (the child is running), but not the model that answered.
         for has_task, expected in ((True, ("claude-opus-5-5", "deep", "route_provenance")),
                                    (False, ("?", "?", "model_not_observed"))):
             with self.subTest(task_column=has_task), homes() as home:
@@ -87,7 +87,7 @@ class FieldEvidenceTests(unittest.TestCase):
                 if has_task:
                     home.execute("ALTER TABLE session_model_usage ADD COLUMN task TEXT NOT NULL DEFAULT ''")
                     home.execute("INSERT INTO session_model_usage (session_id, model, task, api_call_count, last_seen) "
-                                 "VALUES ('child-0', 'gemini-3-flash', 'title_generation', 1, ?)", (NOW + 95,))
+                                 "VALUES ('child-0', 'gemini-3-flash', 'compression', 1, ?)", (NOW + 95,))
                 else:  # a state.db before Hermes split auxiliary calls out cannot tell one, so both rows count
                     home.usage("child-0", "gemini-3-flash", last_seen=NOW + 95)
                 lane = node(built(home), "Lane")
@@ -177,6 +177,20 @@ class StateTests(unittest.TestCase):
             start(home, "child-1", "sa-1", "Fresh", now=later - 10)  # keeps the graph from settling
             lane = node(built(home, now=later), "Quiet")
             self.assertEqual((lane["state"], lane["status"]), ("unknown", "no news"))
+
+    def test_a_recent_auxiliary_call_keeps_a_child_running(self) -> None:
+        # The child's own last call is older than the stale window, but it has compressed its context since: an
+        # auxiliary call is still the child at work.
+        later = NOW + CHILD_STALE_SECONDS + 600
+        with homes() as home:
+            start(home, "child-0", "sa-0", "Long lane", now=NOW)
+            home.session("child-0", "claude-opus-5-5", parent=PARENT, started=NOW)
+            home.usage("child-0", "claude-opus-5-5", last_seen=NOW + 90)
+            home.execute("ALTER TABLE session_model_usage ADD COLUMN task TEXT NOT NULL DEFAULT ''")
+            home.execute("INSERT INTO session_model_usage (session_id, model, task, api_call_count, last_seen) "
+                         "VALUES ('child-0', 'gemini-3-flash', 'compression', 1, ?)", (later - 60,))
+            lane = node(built(home, now=later), "Long lane")
+            self.assertEqual((lane["state"], lane["status"], lane["model"]), ("running", "running", "claude-opus-5-5"))
 
     def test_a_segment_closed_for_compaction_is_unknown_never_done(self) -> None:
         with homes() as home:
