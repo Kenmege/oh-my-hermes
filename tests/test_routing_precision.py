@@ -24,7 +24,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # The Indonesian trigger pack adds six negatives and eleven interventions.
         # The Vietnamese trigger pack adds eight negatives and eleven interventions.
         # dag-ulw adds twenty-one negatives and twenty-nine interventions.
-        self.assertEqual(payload["summary"]["case_count"], 921)
+        # A complaint, a question or a stop after a skill's bare name adds fifteen negatives and eight interventions.
+        # Its review adds nine negatives and ten interventions.
+        self.assertEqual(payload["summary"]["case_count"], 945)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -68,12 +70,16 @@ class RoutingPrecisionTests(unittest.TestCase):
         # whether cancel was pressed, each answered directly (+3).
         # The last review patch adds 멈춤 said to dag ulw and two status checks
         # of a past stop, each answered directly (+3).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 270)
+        # A complaint, a question or a stop that opens with a skill's bare
+        # name is answered directly (+12). Its review adds a yes-or-no question,
+        # a stop with a reason or said twice, and questions that ask for no plan
+        # or about the skill itself, each answered directly (+9).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 291)
         self.assertEqual(payload["summary"]["file_lookup_count"], 10)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
         self.assertEqual(payload["summary"]["catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["intervention_case_count"], 947)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 965)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

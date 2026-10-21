@@ -40,7 +40,12 @@ from .domain_signals import (
 )
 from .display_names import canonical_display_mentions
 from .input_language import routing_input_language
-from ..plugin_bundle.omh.dag_ulw_cues import asks_about_dag_ulw, big_work_for_dag_ulw, dag_ulw_control
+from ..plugin_bundle.omh.dag_ulw_cues import (
+    asks_about_dag_ulw,
+    big_work_for_dag_ulw,
+    dag_ulw_control,
+    reports_or_asks_after_the_name,
+)
 from ..plugin_bundle.omh.hermes_session_commands import (
     LOOP_TIMER_GOAL,
     LOOP_TIMER_NATIVE,
@@ -83,6 +88,7 @@ from .policy import (
 from .policy import _doctor_health_guard_applies
 from .policy import asks_to_produce_materials, command_request_is_failure_or_agent_question, guard_label_dispatch_trust
 from .policy import _explicit_skill_candidate_is_negated
+from .policy import bare_name_reports_or_asks
 from .policy import _greenfield_project_bootstrap_requested
 from .policy import _hermes_setup_guide_requested
 from .policy import _github_event_ops_guard_applies
@@ -102,7 +108,7 @@ from .route_plan import (
     with_public_skill_names,
 )
 from .task_cards import classify_task, task_card_recommendation
-from .ulw_alias import resolve_codex_owner_choice_cue, resolve_ulw_alias
+from .ulw_alias import _retired_name_and_alias_index, resolve_codex_owner_choice_cue, resolve_ulw_alias
 from .visual_qa_cues import (
     BROWSER_VISUAL_QA_COMMAND_PHRASES,
     BROWSER_VISUAL_QA_PHRASES,
@@ -1810,9 +1816,12 @@ def _enriched_route(
         # shortlist's first entry, so the one skill a clarify names is the one
         # the question offers first.
         lexical_rows = candidate_handoff.get("candidates")
+        # A dag-ulw stop-or-run question keeps its own wording and candidate: an English one ("dag ulw cancel
+        # order") gets a lexical shortlist like any English clarify, and the shortlist asks a different question.
         if (
             candidate_handoff.get("shortlist_source") == SHORTLIST_LEXICAL
             and not _is_heavy_lane_vagueness_reason(str(route.get("reason") or ""))
+            and str(route.get("reason") or "") != DAG_ULW_CANCEL_OR_RUN_REASON
             and isinstance(lexical_rows, list)
             and lexical_rows
             and isinstance(lexical_rows[0], dict)
@@ -2152,6 +2161,14 @@ def _route_chat_message_cached(
     executable_message = executable_routing_text(message)
     routing_message = _with_canonical_display_names(scrub_diagnostic_status_text(executable_message))
     if not routing_message.strip():
+        return _direct_answer_decision(message, source=source, min_confidence=min_confidence).to_dict()
+    # A complaint or a question that opens with a skill's bare name ("ultrawork broke my build", "code-review 결과가
+    # 이상해", "ralph broke my build", "ultrawork 이거 어떻게 써") is about that skill, not a request to run it. It is
+    # answered, as a question about dag-ulw is, before a fast path or the scorer reads the name as the skill's own
+    # phrase. The route hint reads the same functions (`awareness._opens_with_a_report_on_a_name`).
+    if bare_name_reports_or_asks(
+        routing_message.strip(), _names_a_message_may_open_with()
+    ) or reports_or_asks_after_the_name(routing_message):
         return _direct_answer_decision(message, source=source, min_confidence=min_confidence).to_dict()
     # The same text and the same function the route hint reads, so the two
     # surfaces reach one verdict on a loop beside a timer. A skill the person
@@ -6927,6 +6944,12 @@ def _bounded_direct_blocker_scope(routing_message: str, query: RoutingQuery) -> 
         return routing_message
     scoped = normalized_phrase(routing_message).replace(normalized_phrase(invoked), " ")
     return scoped
+
+
+@lru_cache(maxsize=1)
+def _names_a_message_may_open_with() -> frozenset[str]:
+    """Every routable skill's name, and the retired engine names `ulw_alias` still resolves ("team", "ralph")."""
+    return frozenset({definition.name for definition in routable_definitions()} | set(_retired_name_and_alias_index()))
 
 
 def _direct_answer_decision(
