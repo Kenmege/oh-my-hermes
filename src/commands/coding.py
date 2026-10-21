@@ -1799,10 +1799,13 @@ def cmd_coding_composition_guide(args: argparse.Namespace) -> int:
         "prompt_cache": PROMPT_CACHE_COMPOSITION_PROTOCOL,
         "applies_to": (
             "EVERY delegated or reviewer prompt the main agent composes, not only bridge-dispatched "
-            "fanout units. On Hermes `delegate_task` the OMH plugin puts goal_echo, verification_stop "
-            "and review_cap in each child's system prompt, so do not paste them into the goal; still "
-            "write the numbered done criteria there. For Codex, Claude Code, and other runtime-native "
-            "spawns, embed them in the prompt yourself."
+            "fanout units. verification_stop binds a task that changes files or other state, and "
+            "review_cap one that reviews work against stated success criteria. On Hermes "
+            "`delegate_task` the OMH plugin puts goal_echo, verification_stop and review_cap in each "
+            "child's system prompt, its goal_echo asking for the numbered criteria only if the goal has "
+            "them, so do not paste them into the goal; still write the numbered done "
+            "criteria there. For Codex, Claude Code, and other runtime-native spawns, embed them in the "
+            "prompt yourself."
         ),
     }
 
@@ -1826,13 +1829,13 @@ def cmd_coding_composition_guide(args: argparse.Namespace) -> int:
         if effort_policy is not None:
             print(f"Effort policy ({effort_policy['mode']}): {effort_policy['mechanism']}")
         print(
-            "Delegation protocol (the OMH plugin adds the first three lines to each Hermes `delegate_task` "
-            "child, so do not paste them there; embed them for Codex, Claude Code, and other runtime-native "
-            "spawns):"
+            "Delegation protocol (the OMH plugin adds the next three lines to each Hermes `delegate_task` "
+            "child, so do not paste them there; its goal echo asks for the numbered criteria only if the "
+            "goal has them; embed them for Codex, Claude Code, and other runtime-native spawns):"
         )
         print(f"- {GOAL_ECHO_PROTOCOL}")
-        print(f"- {VERIFICATION_STOP_PROTOCOL}")
-        print(f"- {REVIEW_ROLE_PROTOCOL}")
+        print(f"- When your task changes files or other state: {VERIFICATION_STOP_PROTOCOL}")
+        print(f"- When you review work against stated success criteria: {REVIEW_ROLE_PROTOCOL}")
         print(f"- {PROMPT_CACHE_COMPOSITION_PROTOCOL}")
         return 0
     payload = {

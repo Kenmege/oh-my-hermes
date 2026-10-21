@@ -25,7 +25,7 @@ import re
 
 HERMES_INSTALL_DIRNAME = "hermes-agent"
 
-# Reading cap: `main_tui_launch.py`, the largest file read here, is ~23KB today.
+# Reading cap: `tools/delegate_tool.py`, the largest file read here, is ~46KB today.
 MAX_BOUNDED_READ_BYTES = 512_000
 
 # The module Hermes keeps `__version__` in, named in `HERMES_COMPAT_MATRIX`'s

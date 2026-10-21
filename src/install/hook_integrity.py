@@ -165,9 +165,9 @@ HOOK_REVIEWS: dict[str, dict[str, Any]] = {
         "capability": (
             "user-authored toolcall-rule block directives, the refusal of a "
             "skill_manage edit to an OMH-managed skill, the OMH "
-            "repeat-call guard and its human-approval escalation, the "
-            "human approval of an omh_team start's exact check commands, and the "
-            "OMH unknown-role warning before a Hermes tool call"
+            "repeat-call guard and its human-approval escalation, and the "
+            "human approval of an omh_team start's exact check commands, before "
+            "a Hermes tool call"
         ),
     },
     "post_tool_call": {

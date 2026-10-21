@@ -492,6 +492,7 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
     checks.append(_flat_skill_layout_check(paths))
     checks.append(_plugin_ulw_lifecycle_check(paths))
     checks.append(_omh_tui_check(paths))
+    checks.append(_delegation_protocol_platform_check(paths))
     checks.append(_hermes_model_routing_check(paths))
     checks.append(_provider_entitlements_check(paths))
     checks.append(_jev_sidekick_check(paths))
@@ -681,6 +682,56 @@ def _omh_tui_check(paths: OmhPaths) -> Check:
         "omh_tui_support", True,
         "bare `omh` can open the OMH TUI: shim installed, Hermes launcher hook and gateway present, Node found"
         + versions,
+    )
+
+
+def _delegation_protocol_platform_check(paths: OmhPaths) -> Check:
+    """Does the installed Hermes still mark a `delegate_task` child the way the protocol section expects?
+
+    The `omh.delegation-protocol` system prompt section renders only for the
+    platform Hermes builds a child with (`delegation_protocol.CHILD_PLATFORM`).
+    Hermes is not importable in tests, so that match is pinned on OMH's side
+    only, and a rename would leave every child without the protocol while
+    nothing said so. This reads the literal from `tools/delegate_tool.py`.
+    Read-only and static: a source literal is what the installation declares,
+    not what a running host did. A miss warns and never fails, as for the other
+    optional surfaces; without an install there is nothing to read.
+    """
+    from ..plugin_bundle.omh.delegation_protocol import CHILD_PLATFORM
+    from ..system.hermes_install import hermes_install_dir, read_bounded_text
+
+    install_dir = hermes_install_dir(paths.hermes_home)
+    if not install_dir.is_dir():
+        return Check(
+            "plugin_delegation_protocol", True,
+            f"Hermes install not found at {install_dir}; delegate child platform check skipped",
+            observed=False,
+        )
+    source = install_dir / "tools" / "delegate_tool.py"
+    literal = f'platform="{CHILD_PLATFORM}"'
+    reach = "the only platform the OMH delegation protocol section renders for"
+    next_action = (
+        "until OMH matches this Hermes, paste the protocol lines from "
+        "`omh coding composition-guide --model <your model>` into each delegate_task goal that needs them"
+    )
+    text = read_bounded_text(source)
+    if text is None:
+        return Check(
+            "plugin_delegation_protocol", True,
+            f"could not read {source}, so whether Hermes still builds a delegate_task child with {literal}, "
+            f"{reach}, is not established",
+            severity="warning", next_action=next_action, observed=False,
+        )
+    if literal not in text:
+        return Check(
+            "plugin_delegation_protocol", True,
+            f"{source} no longer builds a delegate_task child with {literal}, {reach}, "
+            "so Hermes children may run without the protocol",
+            severity="warning", next_action=next_action,
+        )
+    return Check(
+        "plugin_delegation_protocol", True,
+        f"Hermes builds a delegate_task child with {literal} ({source}), {reach}",
     )
 
 
