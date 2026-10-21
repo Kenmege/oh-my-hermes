@@ -17,6 +17,53 @@ All notable changes will be documented here.
   summary line in the agents block's budget. The docs say what the DAG tree
   takes: up to a third of the rows (8 of 24, 13 of 40), and no more rows than
   the tree has, so a five-lane run's seven-row tree takes 7 at 24 and at 40.
+- **A conversation keeps its delegation graph across Hermes' rotating
+  compaction.** With `compression.in_place: false`, Hermes moves a
+  conversation to a new session id mid-run. The HUD graph, the TUI's agent
+  tree and `omh hud --graph` then read only the new session: its lanes
+  vanished, and a child that stopped afterwards (Hermes names the new
+  session as its parent) never read done. The graph now reads the ledger,
+  the `omh_team` record and the `omh_dag` run under every session of the
+  conversation, as the compaction links in `state.db` join them. A stop the
+  ledger could not join is matched to its child, and `omh_dag` reads it the
+  same way: a dag-ulw node whose child came back before a Hermes restart
+  reads `returned` instead of being offered, and run, again. A chat post
+  goes on from the last post any of those sessions recorded, so the run is
+  not announced again. A child whose own session rotated is read through its
+  continuation, so it shows running while its continuation runs, instead of
+  `unknown (compacted)`, which also posted it as Stopped mid-run. Its output
+  tokens (the agent view and the graph) add up over every session it wrote
+  in, instead of stopping at the rotation. Hermes' default in-place
+  compaction keeps one session id, and its graphs are unchanged.
+- **A Hermes restart no longer leaves a team part waiting four hours.** A
+  helper runs inside the Hermes process that started it, and a restart ends
+  it without the `subagent_stop` callback, so `omh_team` held the part as
+  out until its four-hour bound blocked it as `delegation_not_returned`.
+  The dispatch now records that process (pid and start-time fingerprint,
+  through Hermes' own `gateway.status` probes, imported when called, and
+  where the pid was read: on Linux the boot id and pid namespace, on macOS
+  the hardware UUID, on Windows the `MachineGuid`), and the first
+  `team_start` after a restart hands back each part whose process is gone:
+  same attempt, no try spent, said as "Hermes restarted while 1 part was
+  out; it starts again." A part with no recorded process, one recorded on
+  another machine or in another container, or one whose process cannot be
+  told alive or gone, waits for the bound as before.
+  On Linux the boot is part of where the pid was read, so a reboot,
+  `wsl --shutdown`, `docker restart` or a recreated container also reads as
+  unknown: the team part waits the four-hour bound, and a dag node stays
+  running with no bound, as before. Where that id cannot be read, or on
+  another platform, nothing is recorded and the hand-back is off: the team
+  part waits the four-hour bound and a dag node stays running, as before.
+  Hand-backs are counted apart from re-emits for a slow start: after three,
+  a part blocks as `helper_lost` ("Hermes kept restarting while its helper
+  was out"). A dag-ulw node whose
+  child a restart ended no longer stays `running` with no bound: its ledger
+  entry records the same process, and `omh_dag ready` offers the node again
+  at once, at most three times per attempt, then says on every `omh_dag`
+  reply to settle it. The delegation graph no longer draws an ended team
+  helper as a lane of its own. Start lines name how many parts start:
+  "Started 1 part", "1 starts now and the rest wait for the parts they
+  depend on", and no line says "1 parts".
 - **The delegation graph keeps a long duration whole, draws no `?` title, and
   puts a repair above what waits on it.** A duration of 100 hours or more
   (`111h 06m`) is measured as it reads, so a box widens by one cell at the

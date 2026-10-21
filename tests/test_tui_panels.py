@@ -886,6 +886,30 @@ class ReadOutputTokensTests(unittest.TestCase):
             state_db(home, {"child-a": 1200})
             self.assertEqual(read_output_tokens(str(home), ("child-a",)), {"child-a": 1200})
 
+    def test_a_child_hermes_rotated_counts_every_segment_it_wrote_in(self) -> None:
+        # The frames keep naming the child's first session; Hermes' rotating compaction (`in_place: false`) goes on in a
+        # new row that counts from 0, so the read follows the continuation. A delegate the child started is its own
+        # conversation and is not counted.
+        from _hermes_session_rows import compacted, row, write_sessions
+
+        with TemporaryDirectory() as home:
+            child = {"parent": "parent", "source": "subagent", "delegate_from": "parent"}
+            path = write_sessions(
+                Path(home),
+                row("parent"),
+                compacted("child-a", at=1050.0, **child),
+                compacted("child-a2", at=1100.0, started_at=1050.0, **{**child, "parent": "child-a"}),
+                row("child-a3", started_at=1100.0, **{**child, "parent": "child-a2"}),
+                row("grandchild", parent="child-a", source="subagent", delegate_from="child-a"),
+                row("child-b", **child),
+            )
+            with sqlite3.connect(path) as connection:
+                connection.execute("ALTER TABLE sessions ADD COLUMN output_tokens INTEGER DEFAULT 0")
+                connection.executemany("UPDATE sessions SET output_tokens = ? WHERE id = ?", [
+                    (1200, "child-a"), (700, "child-a2"), (300, "child-a3"), (5000, "grandchild"), (40, "child-b")])
+            connection.close()
+            self.assertEqual(read_output_tokens(home, ("child-a", "child-b")), {"child-a": 2200, "child-b": 40})
+
     def test_it_never_creates_or_changes_the_database(self) -> None:
         with TemporaryDirectory() as home:
             self.assertEqual(read_output_tokens(home, ("child-a",)), {})

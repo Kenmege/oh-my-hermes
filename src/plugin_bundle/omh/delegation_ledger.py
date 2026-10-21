@@ -11,6 +11,8 @@ writes what they say, metadata only, into one record per conversation
   subagent (set when the parent is itself a child), the turn that dispatched
   it, and the route OMH itself had prepared for that session at that moment
   (`delegation_route_provenance/v1`, the record `omh_delegate_route` writes).
+  A dag-ulw node's child also gets the Hermes process it runs in
+  (`host_process.this_process`).
 * `post_tool_call` for `delegate_task`: the host's own result. A background
   dispatch lists ``subagent_ids`` in task order with its ``delegation_id``,
   which gives each child its task index and the delegation Hermes recorded
@@ -48,6 +50,7 @@ from typing import Any, Final
 from . import runtime_paths
 from .awareness_delivery import _awareness_delivery_lock
 from .hermes_delegation import load_delegation_route_provenance
+from .host_process import recorded_process, this_process
 
 LEDGER_SCHEMA_VERSION: Final = "delegation_ledger/v1"
 LEDGER_DIRNAME: Final = "delegation"
@@ -263,6 +266,8 @@ def _valid_child(value: object) -> dict[str, Any] | None:
     dag = value.get("dag")
     if isinstance(dag, dict) and dag_binding(f"[dag:{dag.get('run')}/{dag.get('node')}]"):
         entry["dag"] = {"run": str(dag["run"]), "node": str(dag["node"])}
+    if (process := recorded_process(value.get("host"))) is not None:
+        entry["host"] = process
     index = value.get("task_index")
     if isinstance(index, int) and not isinstance(index, bool) and 0 <= index < 1024:
         entry["task_index"] = index
@@ -502,6 +507,10 @@ def observe_subagent_start(kwargs: dict[str, object], *, now: float | None = Non
     binding = dag_binding(kwargs.get("child_goal"))
     if binding:
         entry["dag"] = binding
+        # The Hermes process the child runs in and ends with: a restart fires no `subagent_stop`, so `omh_dag`
+        # tells a node whose child it ended from one still running by this.
+        if (process := this_process()) is not None:
+            entry["host"] = process
 
     def add(record: dict[str, Any]) -> bool:
         if any(item["subagent_id"] == subagent_id for item in record["children"]):
@@ -620,6 +629,28 @@ def observe_subagent_stop(kwargs: dict[str, object], *, now: float | None = None
     return _update(omh_home, root, close, now=moment)
 
 
+def with_unjoined_stop(
+    child: dict[str, Any], stops: Sequence[dict[str, Any]], later: Sequence[str] = ()
+) -> dict[str, Any]:
+    """``child`` with the newest unjoined stop naming it, or one of ``later`` (its continuations), if it has no stop.
+
+    Hermes names the sessions as they are when a child stops: a parent its
+    rotating compaction moved since the start files the stop under the new
+    segment, whose record holds no start for the child, and a child rotated
+    since then is named by its continuation. ``stops`` are the
+    ``unjoined_stops`` of every segment of the conversation; the delegation
+    graph and `omh_dag` read a child's stop through this one rule.
+    """
+    if isinstance(child.get("stop"), dict):
+        return child
+    names = {child["child_session_id"], *later}
+    found = [stop for stop in stops if stop["child_session_id"] in names]
+    if not found:
+        return child
+    stop = max(found, key=lambda item: item["observed_at"])
+    return {**child, "stop": {"status": stop["status"], "observed_at": stop["observed_at"], "duration_ms": None}}
+
+
 def posted_fingerprint(omh_home: Path, session_id: str) -> str:
     return str(posted_record(omh_home, session_id).get("fingerprint", ""))
 
@@ -628,6 +659,16 @@ def posted_record(omh_home: Path, session_id: str) -> dict[str, Any]:
     """What the last chat post recorded (fingerprint, moment, run phase, counts, closed and seen lanes), or {}."""
     record = read_ledger(omh_home, session_id)
     return dict(record["posted"]) if record else {}
+
+
+def conversation_posted(omh_home: Path, segments: Sequence[str]) -> dict[str, Any]:
+    """The newest `posted_record` among a conversation's segments, the first segment's on a tie, or {}.
+
+    Hermes' rotating compaction moves a conversation to a new session id mid-run;
+    what an earlier segment posted speaks for the run until the new one posts.
+    """
+    return max((posted_record(omh_home, segment) for segment in segments),
+               key=lambda posted: posted.get("observed_at") or 0.0, default={})
 
 
 def note_posted(

@@ -290,7 +290,9 @@ What it shows, and what it leaves as `?`:
   (`sessions.output_tokens`, to which Hermes adds each model call's output as
   the call returns), read with the child's other facts, so a running lane's
   count grows from one HUD read to the next and a finished one keeps its
-  final count. A team part or a dag node takes its bound child's count. A
+  final count. A child Hermes' rotating compaction moved to a new session
+  counts every session it wrote in. A team part or a dag node takes its bound
+  child's count. A
   lane has none while that row says 0 or was not read, and a team part or
   dag node no child took, a fanout unit and main have none. Once a lane
   carries a count, the boxes make room for one: a lane bound to a child
@@ -311,13 +313,20 @@ What it shows, and what it leaves as `?`:
     `failed` (`no model call`). If the usage table could not be read, it reads
     `done`, never `failed`.
   - A native child is shown running only while a model call is recorded for
-    it. With no news for 30 minutes, or once its session closed for compaction
-    without a stop OMH could join, it is `unknown`, never shown running or
+    it. With no news for 30 minutes it is `unknown`, never shown running or
     done.
+  - A child whose session Hermes' rotating compaction closed
+    (`compression.in_place: false`) is read through the session it went on
+    in: its state, model calls and output tokens are those of every segment
+    it ran in, and its stop, which Hermes files under the new id, is its
+    own (`omh_dag` reads it so too, so a dag-ulw node whose child came back
+    is not offered again after a Hermes restart). Only when Hermes recorded
+    no continuation is it `unknown` (`compacted`).
   - An `omh_team` part takes the state of the child its latest attempt
     dispatched, so a repair is `repairing` only while that child runs. A
     repair the team reserved but has not sent is `waiting` (`repair
-    prepared`).
+    prepared`). A helper a Hermes restart ended is not drawn: its part is
+    `waiting` until the helper sent in its place starts.
   - A fanout unit whose dispatcher reports it stalled is `stuck`, with how
     long it has been stuck.
   - A dag-ulw node takes the state its `omh_dag/v1` run derives: accepted or
@@ -365,6 +374,20 @@ none, a team part reads its unit id and a child `session <tail>`, its short
 session id, and a drawing reads `untitled`, never `?`. A conversation's
 record that no hook has written for a day is removed, under its lock; the
 lock file stays.
+
+A conversation keeps its graph across Hermes' rotating compaction
+(`compression.in_place: false`), which moves it to a new session id mid-run.
+The ledger record, the `omh_team` record and the `omh_dag` run stay under the
+session that wrote them, and Hermes names the new session as the parent when
+a child stops later. The graph reads every session of the conversation, as
+the compaction links in `state.db` join them, and a stop filed under the new
+session joins the child it names; `omh_dag` reads that stop the same way,
+so a dag-ulw node whose child came back reads `returned` there too, and a
+Hermes restart after it does not offer the node again. Its chat posts go on
+from the last post any of those sessions recorded, so the run is not
+announced again. Hermes'
+default in-place compaction keeps one session id, and the graph reads that
+session alone.
 
 The boxes draw no edge, so no shape can be drawn wrong: one connector joins
 each frontier to the next whatever its edges, and the edges are exact in

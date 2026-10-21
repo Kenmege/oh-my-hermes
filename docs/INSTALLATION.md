@@ -454,7 +454,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   count is read from the subagent's own Hermes session in state.db while it
   runs, so it grows a poll behind each model call, and is Hermes' own count
   once the agent finishes; there is no token part until there is a count,
-  and a narrow row drops it before the tool count.
+  and a narrow row drops it before the tool count. A subagent whose session
+  Hermes' rotating compaction (`compression.in_place: false`) replaced with a
+  new one counts every session it wrote in.
   The info line counts them (`2 agents · ↓ agents`; the count alone where
   the line is too narrow for both, or where Down would not open the list:
   while you type, while a question or a picker is open). The view stays

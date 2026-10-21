@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from _local_package import load_local_package
 
@@ -20,6 +21,7 @@ from omh.plugin_bundle.omh.delegation_graph import (  # noqa: E402
     build_delegation_graph,
     fanout_graph,
     graph_fingerprint,
+    graph_segments,
     team_unit_state,
 )
 from omh.plugin_bundle.omh.delegation_ledger import ledger_key  # noqa: E402
@@ -403,6 +405,22 @@ class TeamOverlayTests(unittest.TestCase):
             unseen = node(built(home), "Fix the parser")
             self.assertEqual((unseen["state"], unseen["status"]), ("dispatched", "repair dispatched"))
 
+    def test_a_helper_a_restart_ended_is_drawn_nowhere(self) -> None:
+        """Mutation: drop `team_lost` from either free-child filter."""
+        with homes() as home:
+            home.session(PARENT, "claude-opus-5-5")
+            start(home, "child-0", "sa-0", "[omh-team:hud-graph/docs/attempt-1] Refresh docs", now=NOW)
+            home.session("child-0", "claude-opus-5-5", parent=PARENT)
+            start(home, "child-1", "sa-1", "Read the logs", turn="turn-4", now=NOW + 10)
+            lost = {"n": 1, "dispatch": None, "lost": [{"child_session_id": "child-0", "subagent_id": "sa-0",
+                                                        "lost_at": "t"}], "inconclusive": []}
+            self.write_team(home, [unit("docs", "Refresh docs", [], [lost])])
+            graph = built(home)
+        self.assertEqual(sorted(item["title"] for item in graph["nodes"] if item["id"] != "root"),
+                         ["Read the logs", "Refresh docs"], "the ended helper is not a lane of its own")
+        self.assertEqual(node(graph, "Refresh docs")["status"], "prepared")
+        self.assertTrue(node(graph, "Read the logs")["group"].startswith("wave 1 "), "nor does it take a wave")
+
 
 class FanoutTests(unittest.TestCase):
     def test_a_fanout_draws_its_units_owners_models_and_dependencies(self) -> None:
@@ -434,6 +452,113 @@ class FanoutTests(unittest.TestCase):
             self.assertEqual(built(home, fanout=record)["source"], "fanout")
             start(home, "child-0", "sa-0", "Native", now=NOW)
             self.assertEqual(built(home, fanout=record)["source"], "native")
+
+
+LATER = "20261020_150000_later"
+
+
+class RotatingCompactionTests(unittest.TestCase):
+    """Hermes' rotating compaction (`compression.in_place: false`) moves a conversation, or one child, to a new id.
+
+    Hermes names the sessions as they are when a child stops
+    (`delegate_tool_results._fire_subagent_stop_hooks`): the parent's current
+    segment and the child's current segment, so the stop reaches the ledger
+    unjoined (`delegation_ledger.observe_subagent_stop`).
+    """
+
+    def test_a_rotated_parent_keeps_its_lanes_and_joins_the_stop_filed_under_its_new_segment(self) -> None:
+        with homes() as home:
+            three_lanes(home)
+            home.usage("child-0", "claude-opus-5-5", last_seen=NOW + 90)
+            home.usage("child-1", "glm-5.3-flash", last_seen=NOW + 60)
+            home.rotate(PARENT, LATER, at=NOW + 40)
+            stop(home, "child-1", parent=LATER, now=NOW + 62)
+            graph = build_delegation_graph(home.omh, home.hermes, LATER, now=NOW + 100)
+            earlier = built(home)
+        lanes = graph["nodes"][1:]
+        self.assertEqual([(item["title"], item["state"]) for item in lanes],
+                         [("Refresh HUD docs", "running"), ("Polish HUD CLI", "done"), ("Update HUD tests", "dispatched")])
+        groups = {item["group"] for item in lanes}
+        self.assertTrue(len(groups) == 1 and groups.pop().startswith("wave 1 · "), lanes)
+        self.assertAlmostEqual(node(graph, "Polish HUD CLI")["elapsed_seconds"], 61.0)
+        self.assertEqual(graph_fingerprint(earlier), graph_fingerprint(graph), "every segment reads one graph")
+
+    def test_a_team_record_under_an_earlier_segment_is_read(self) -> None:
+        with homes() as home:
+            home.session(PARENT, "claude-opus-5-5")
+            directory = home.omh / "runtime" / "teams" / ledger_key(PARENT)
+            directory.mkdir(parents=True)
+            (directory / "hud-graph.json").write_text(json.dumps(team_record([unit("docs", "Refresh docs", [])])),
+                                                      encoding="utf-8")
+            home.rotate(PARENT, LATER, at=NOW + 40)
+            graph = build_delegation_graph(home.omh, home.hermes, LATER, now=NOW + 100)
+            # A team started after the rotation is under the new segment, and the newest record is the one drawn.
+            os.utime(directory / "hud-graph.json", (1_700_000_000, 1_700_000_000))
+            newer = home.omh / "runtime" / "teams" / ledger_key(LATER)
+            newer.mkdir(parents=True)
+            (newer / "second.json").write_text(
+                json.dumps({**team_record([unit("cli", "Polish CLI", [])]), "team_id": "second"}), encoding="utf-8")
+            second = build_delegation_graph(home.omh, home.hermes, LATER, now=NOW + 100)
+        self.assertEqual((graph["name"], node(graph, "Refresh docs")["state"]), ("team hud-graph", "waiting"))
+        self.assertEqual(second["name"], "team second")
+
+    def test_a_rotated_child_is_read_through_its_continuation(self) -> None:
+        late = NOW + CHILD_STALE_SECONDS + 100  # the first segment's last call alone would read `no news` by now
+        with homes() as home:
+            start(home, "child-0", "sa-0", "Long lane", now=NOW)
+            home.session("child-0", "glm-5.3-flash", parent=PARENT, started=NOW)
+            home.usage("child-0", "glm-5.3-flash", last_seen=NOW + 20)
+            home.tokens("child-0", 1_200)
+            home.rotate("child-0", "child-0b", at=NOW + 30)
+            home.usage("child-0b", "glm-5.3-flash", last_seen=late - 10)
+            home.tokens("child-0b", 700)
+            running = node(built(home, now=late), "Long lane")
+            stop(home, "child-0b", now=late - 5)
+            done = node(built(home, now=late), "Long lane")
+        self.assertEqual((running["state"], running["status"], running["output_tokens"]), ("running", "running", 1_900))
+        self.assertEqual((done["state"], done["status"], done["output_tokens"], done["elapsed_seconds"]),
+                         ("done", "done", 1_900, late - 5 - NOW))
+
+    def test_a_stale_sibling_beside_a_rotated_childs_continuation_does_not_end_it(self) -> None:
+        # A reconnect can leave a second row under the closed segment (`get_compression_chain`); the child is open
+        # while any of them is.
+        with homes() as home:
+            start(home, "child-0", "sa-0", "Long lane", now=NOW)
+            home.session("child-0", "glm-5.3-flash", parent=PARENT, started=NOW)
+            home.rotate("child-0", "child-0b", at=NOW + 30)
+            home.rotate("child-0", "child-0a", at=NOW + 30)
+            home.execute("UPDATE sessions SET ended_at = ?, end_reason = 'ws_orphan_reap' WHERE id = 'child-0a'",
+                         (NOW + 31,))
+            home.usage("child-0b", "glm-5.3-flash", last_seen=NOW + 90)
+            lane = node(built(home), "Long lane")
+        self.assertEqual((lane["state"], lane["status"]), ("running", "running"))
+
+    def test_a_rotated_child_whose_continuation_ended_without_a_stop_is_unknown(self) -> None:
+        with homes() as home:
+            start(home, "child-0", "sa-0", "Long lane", now=NOW)
+            home.session("child-0", "glm-5.3-flash", parent=PARENT, started=NOW)
+            home.rotate("child-0", "child-0b", at=NOW + 30)
+            home.execute("UPDATE sessions SET ended_at = ?, end_reason = 'agent_close' WHERE id = 'child-0b'",
+                         (NOW + 60,))
+            lane = node(built(home), "Long lane")
+        self.assertEqual((lane["state"], lane["status"]), ("unknown", "ended"))
+
+    def test_a_fork_of_the_conversation_is_not_one_of_its_segments(self) -> None:
+        # A reset beside the continuation is a chat of its own: neither reads the other's lanes or stops.
+        with homes() as home:
+            three_lanes(home)
+            home.rotate(PARENT, LATER, at=NOW + 40)
+            home.execute("INSERT INTO sessions (id, source, model, model_config, started_at, parent_session_id) "
+                         "VALUES ('reset-1', 'discord', 'claude-opus-5-5', ?, ?, ?)",
+                         (json.dumps({"_reset_from": PARENT}), NOW + 50, PARENT))
+            start(home, "child-r", "sa-r", "Other chat", parent="reset-1", now=NOW + 55)
+            stop(home, "child-1", parent="reset-1", now=NOW + 62)  # a stop no segment of PARENT's filed
+            ours = build_delegation_graph(home.omh, home.hermes, LATER, now=NOW + 100)
+            theirs = build_delegation_graph(home.omh, home.hermes, "reset-1", now=NOW + 100)
+        self.assertEqual([item["title"] for item in ours["nodes"][1:]],
+                         ["Refresh HUD docs", "Polish HUD CLI", "Update HUD tests"])
+        self.assertNotEqual(node(ours, "Polish HUD CLI")["state"], "done")
+        self.assertEqual([item["title"] for item in theirs["nodes"][1:]], ["Other chat"])
 
 
 class OutputTokenTests(unittest.TestCase):
@@ -549,6 +674,25 @@ class NoRaiseTests(unittest.TestCase):
         for session in ("", "no-such-session"):
             graph = build_delegation_graph(Path("/nonexistent/omh"), Path("/nonexistent/hermes"), session, now=NOW)
             self.assertEqual(graph["status"], "inactive")
+
+    def test_a_hermes_home_that_cannot_be_searched_never_raises(self) -> None:
+        # Python 3.11's `Path.is_file` raises PermissionError under a directory it cannot search; 3.14 answers False.
+        # Patched, so every version takes 3.11's path: the graph is unreadable (main's answer), the lineage one id.
+        with homes() as home:
+            start(home, "child-0", "sa-0", "Lane", now=NOW)
+            with patch.object(Path, "is_file", side_effect=PermissionError(13, "Permission denied")):
+                graph = built(home)
+                segments = graph_segments(home.hermes, PARENT)
+            self.assertEqual((graph["status"], graph["reason"]), ("inactive", "unreadable:PermissionError"))
+            self.assertEqual(segments, [PARENT])
+            if os.name != "nt" and os.geteuid() != 0:  # a real unsearchable home, wherever permissions bind
+                home.hermes.chmod(0)
+                try:
+                    graph, segments = built(home), graph_segments(home.hermes, PARENT)
+                finally:
+                    home.hermes.chmod(0o700)
+                self.assertIn(graph["status"], ("active", "inactive"))
+                self.assertEqual(segments, [PARENT])
 
 
 if __name__ == "__main__":

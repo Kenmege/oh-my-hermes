@@ -10,6 +10,8 @@ saying so:
   only an attempt the team record already holds, still undispatched, binds to
   the child's session id. The child's subagent id is kept beside it: with
   Hermes' worktree isolation on, it names the branch the helper's work is on.
+  So is this Hermes process (`host_process.this_process`), which the helper
+  runs in and ends with: a restart fires no `subagent_stop`.
 * `subagent_stop` carries that child session id; the attempt it bound is
   marked returned, which is what lets `team_reconcile` check it. Hermes
   reads the id off the child at stop time, so a helper its rotating
@@ -30,6 +32,7 @@ from __future__ import annotations
 import time
 
 from . import runtime_paths
+from .host_process import this_process
 from .live_session import compaction_ancestors
 
 _MARKER_PREFIX = "[omh-team:"
@@ -47,7 +50,7 @@ def observe_team_dispatch(kwargs: dict[str, object]) -> bool:
             return False
         return team.observe_dispatch(home, parent, child_session_id=kwargs.get("child_session_id"),
                                      goal=goal, now=time.time(), subagent_id=kwargs.get("child_subagent_id"),
-                                     earlier=lambda: _earlier_segments(hermes, parent))
+                                     earlier=lambda: _earlier_segments(hermes, parent), host=this_process())
     except (ImportError, OSError, ValueError, RuntimeError):
         return False
 
