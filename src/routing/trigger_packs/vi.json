@@ -4,7 +4,6 @@
   "skills": {
     "accessibility-audit": [
       "kiểm tra khả năng tiếp cận",
-      "hãy xem trang web này có chuẩn WCAG không",
       "kiểm tra tuân thủ WCAG",
       "kiểm tra điều hướng bằng bàn phím",
       "kiểm tra thứ tự tiêu điểm",
@@ -89,11 +88,9 @@
     ],
     "long-document-reading": [
       "đọc toàn bộ tài liệu này",
-      "tóm tắt tài liệu PDF dài này",
       "hãy đọc báo cáo này đến hết",
       "tóm tắt tài liệu này không bỏ sót phần nào",
-      "đọc tài liệu hướng dẫn này từ đầu đến cuối",
-      "giúp tóm tắt toàn bộ nội dung PDF này"
+      "đọc tài liệu hướng dẫn này từ đầu đến cuối"
     ],
     "maestro": [
       "chuẩn bị bàn giao coding",

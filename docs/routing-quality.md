@@ -103,13 +103,12 @@ have to list those words, and must not: an ASCII `whole_phrase_only_tokens`
 entry that none of the pack's own Hangul, Kana or Han phrases for the skill
 carries can only remove the skill's English words. A phrase with any letter
 outside Latin script, such as Hangul, Kana or Han, scores as before, word by
-word too. Latin-script pack
-phrases also merge after every other pack phrase, so where a surface shows
-only a skill's first triggers (the `SKILL.md` description, the capability
-row), a Latin-script pack phrase takes none of the places the Hangul, Kana or
-Han phrases had. This covers shipped packs only: a user pack's phrases also
-score word by word, so hold a word back with `whole_phrase_only_tokens` where
-it should count only inside its phrase.
+word too. Latin-script pack phrases also merge after every other pack phrase,
+so where a surface shows only a skill's first triggers (the `SKILL.md`
+description, the capability row), a Latin-script pack phrase takes none of the
+places the Hangul, Kana or Han phrases had. This covers shipped packs only: a
+user pack's phrases also score word by word, so hold a word back with
+`whole_phrase_only_tokens` where it should count only inside its phrase.
 
 Two gates hold the mechanism together. `tests/test_trigger_language_packs.py`
 proves every shipped phrase is live in its skill's scored surface, that every

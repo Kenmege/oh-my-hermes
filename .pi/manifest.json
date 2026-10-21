@@ -3,7 +3,7 @@
   "digest_format": "sha256(sorted '<file-sha256>  <relative-posix-path>\\n' UTF-8 inventory)",
   "evidence": "docs/AGENT-SKILLS.md#host-support-matrix",
   "files": {
-    "omh-accessibility-audit/SKILL.md": "51cb30f8313295d13cc8de5b1d6549f1a5292c4b071081546e088dc7123d6730",
+    "omh-accessibility-audit/SKILL.md": "0be02c4e7af447857f365dc3bff58e7fefae8a1df12adcd0ca793bc363c17ccb",
     "omh-accessibility-audit/references/a11y-rules.md": "cd7e0404576923cfd3bcec9e055b1de7a78f3fc55971fd033598aac1043e4469",
     "omh-adversarial-consensus/SKILL.md": "59b605cacea6cb21597a1b4d22d1de7cbc9e12457c737660ae24449e21e0f3da",
     "omh-adversarial-consensus/references/consensus-protocol.md": "e2337062d98214abc440d3909d7c076db284c817dc45c9b67a292003a6b51a89",
@@ -324,7 +324,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "8b36cc7be7ec1061b22ba5d3201088e881fe0a1e5cc2c298d14b52368566e964",
+  "source_digest": "f25c22b4ed77eded8959a361a74e7cb6f544d393a12ca8f788d6ed4456b720a5",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

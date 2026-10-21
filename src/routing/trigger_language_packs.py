@@ -332,8 +332,17 @@ def is_latin_script(phrase: str) -> bool:
     keep its words apart from English ones. A phrase with any Hangul, Kana or
     Han letter is not Latin script. Digits, spaces, punctuation and combining
     marks are not letters and do not decide.
+
+    The letters are read after NFKC, because the router folds by NFKD: a
+    fullwidth `ｂｕｇ` or the ordinal `º` folds to an ASCII word, so it must
+    count as Latin here too. Modifier letters (`ʼ`, `ʻ`, category Lm) mark a
+    neighbouring letter rather than spell a word, and do not decide either.
     """
-    return all(unicodedata.name(character, "").startswith("LATIN") for character in phrase if character.isalpha())
+    return all(
+        unicodedata.name(character, "").startswith("LATIN")
+        for character in unicodedata.normalize("NFKC", phrase)
+        if character.isalpha() and unicodedata.category(character) != "Lm"
+    )
 
 
 def merged_holdback_tokens(packs: tuple[TriggerLanguagePack, ...]) -> dict[str, frozenset[str]]:

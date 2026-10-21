@@ -1926,7 +1926,9 @@ STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # to 1,325,789, where `test_one_more_ordinary_lane_member_fits_every_body_budget`
 # found that the largest lane-mate copy (`ultrawork`, +26,506) no longer fits.
 # 1,325,789 plus 10%, rounded up to the next 50,000, is 1,500,000.
-FULL_PROFILE_SKILL_BODY_MEASURED_CHARS = 1325789
+# 1325789 -> 1325671 (measured; the ceiling stays 1500000): the #2187 review
+# drops three `vi` phrases that another skill wins on main too, 118 chars.
+FULL_PROFILE_SKILL_BODY_MEASURED_CHARS = 1325671
 FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT = 10
 FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS = 50000
 FULL_PROFILE_SKILL_BODY_CHAR_LIMIT = 1500000

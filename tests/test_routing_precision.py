@@ -22,6 +22,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # assertion compares against this producer instead of a literal.
         # omh-docs contributes four measured negatives and five measured interventions.
         # The Indonesian trigger pack adds six negatives and eleven interventions.
+        # The Vietnamese trigger pack adds eight negatives and eleven interventions.
         self.assertEqual(payload["summary"]["case_count"], 846)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])

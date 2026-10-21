@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import unicodedata
 import unittest
 from copy import copy
 from pathlib import Path
@@ -415,6 +416,35 @@ class LanguageParityTests(unittest.TestCase):
         # cheap and additive; translating every message is not, so a community
         # pack must not be blocked on a full output localization.
         self.assertIsInstance(shipped_trigger_pack_languages(), tuple)
+
+
+class LatinScriptPredicateTests(unittest.TestCase):
+    """`is_latin_script` decides which shipped phrases score only whole.
+
+    It reads letters the way the router folds them, so a phrase whose words
+    fold to ASCII tokens is Latin however it was typed.
+    """
+
+    def test_vietnamese_is_latin_composed_or_decomposed(self) -> None:
+        phrase = "kiểm tra lỗi"
+
+        self.assertTrue(is_latin_script(unicodedata.normalize("NFC", phrase)))
+        self.assertTrue(is_latin_script(unicodedata.normalize("NFD", phrase)))
+
+    def test_letters_that_fold_to_ascii_are_latin(self) -> None:
+        self.assertTrue(is_latin_script("1º"))
+        self.assertTrue(is_latin_script("ｂｕｇ"))
+        self.assertTrue(is_latin_script("ʻokina"))
+
+    def test_a_letter_of_another_script_is_not_latin(self) -> None:
+        self.assertFalse(is_latin_script("review 代码"))
+        self.assertFalse(is_latin_script("빌드 failed"))
+        self.assertFalse(is_latin_script("ελληνικά"))
+        self.assertFalse(is_latin_script("проверка"))
+
+    def test_a_phrase_with_no_letter_has_nothing_to_decide(self) -> None:
+        # Validation refuses such a phrase before it reaches a pack.
+        self.assertTrue(is_latin_script("!!! --- 123"))
 
 
 class TriggerLanguagePackShapeTests(unittest.TestCase):
