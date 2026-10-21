@@ -1,54 +1,59 @@
-"""Draw a `delegation_graph/v1` as text: a layered box DAG, or a compact tree when boxes do not fit.
+"""Draw a `delegation_graph/v1` as text: frontiers of boxes, or a compact tree when boxes do not fit.
 
 Pure: no I/O, no clock, nothing imported from `omh`. The OMH TUI draws the
 lines with its own styles (every piece of text carries a role), and `omh hud
 --graph` joins them as text. A chat reply never carries this drawing
 (`delegation_snapshot.py` writes its own short text).
 
-The box layout draws an edge only where the graph records one: a dispatch from
-a parent to a child, or a `depends_on`. Nodes are layered by their longest
-path from the root, so every edge it draws goes one layer down. It draws
-three shapes and nothing else, because each is unambiguous when read:
+The boxes stand in frontiers under a header that names the task count,
+the run and its state (``Running · Done 1/5``). Every node but the root is a
+box of four lines: its title, its category and model, its status with its
+glyph and duration, and its parents (``← Export API``) or ``Start node``. The
+root is no box: what it dispatched starts a frontier, and its model is named
+in the header. A node's frontier is the longest path of recorded edges (a
+dispatch, a `depends_on`, a repair or an extend) from a node with none. The
+nodes of one frontier sit side by side with a ``· Same frontier`` label
+under them, and one connector (``│`` then ``▼``) joins one frontier to the
+next, whatever its edges. So the drawing implies no edge: the edges are
+exact in each box's parents line and in the ``Dependencies`` section under
+the boxes, which lists every edge between two lanes. ``Node details`` then
+gives a card to each running or stuck node, and in `/dag` to the highlighted
+one: its whole title, category and model, status, group and session. A box
+draws no ``?``: a field with no record is left out (a blank line where
+neither category nor model is), and an unknown state's glyph is ``◇``.
 
-* a fan-out or fan-in, where one bus joins every upper node to every lower
-  node of the band and that band is the only one between the two layers
-  (the bus says "all of these to all of those", which is then true);
-* several fan-outs side by side, one per parent, each kept under its own
-  parent so no two buses touch;
-* a layer too wide for one row, wrapped into more rows that a trunk on the
-  left feeds (and, when the layer feeds a fan-in, a trunk on the right
-  collects). Dispatch waves of one parent also start a new row each.
-
-Anything else (an edge that skips a layer, a band that is not all-to-all
-within a component, buses that would cross) is drawn as the compact tree,
-which never draws an edge at all. So is a graph whose boxes do not fit the
-width, the line budget or the character budget. Widths are terminal cells: a
-wide (CJK) character counts 2, and text is folded first so that what is
-counted is what is painted.
-
-A box holds four lines: its title, category, model and effort, and status.
-Where four do not fit the line budget and the caller allows it (``compact``),
-the same layout is tried with two-line boxes first, title then category and
-model, before the tree: the glyph and, in the TUI, the border colour say the
-state. A box is as wide as its widest line, with a duration counted at
+Every box is one width: as wide as the widest node needs, narrowed to put
+each frontier on one row (every line is cut to it with ``…``), and a
+frontier that does not fit even then wraps. Under a line or character
+budget the boxes give up Node details, then Dependencies; then the tree is
+drawn, which nests a node under its dispatcher and draws no edge. So is a
+graph whose edges loop, or one too narrow for a box. Widths are terminal
+cells: a wide (CJK) character counts 2, and text is folded first so that
+what is counted is what is painted. A duration is counted at
 `DURATION_CELLS` whatever it reads, so a ticking clock never resizes a box.
 
-Choosing a layout tries many widths. The choice is kept per structure (node
-ids, labels, states and edges, never elapsed time) and size, so a redraw of
-the same graph with new durations lays it out once (`_DECISIONS`).
+Every part of a box carries its node's state as its role (``node:running``),
+so a painter colours border, title and status by state; the drawing is
+the same text without colour. `/dag` passes a `Focus`: each box then opens
+with a fold marker, the highlighted one with ``>``, and its role is
+``node:selected``.
+
+Choosing a layout tries several drawings. The choice is kept per structure
+(node ids, labels, states and edges, never elapsed time) and size, so a
+redraw of the same graph with new durations lays it out once (`_DECISIONS`).
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Final
 import unicodedata
 
 from .hud_text import elapsed_text
 
-VIEW_LAYOUTS: Final = ("box", "compact", "tree", "header")
+VIEW_LAYOUTS: Final = ("box", "tree", "header")
 NODE_STATES: Final = (
     "root", "waiting", "dispatched", "running", "stuck", "done", "failed", "interrupted", "unknown",
 )
@@ -58,20 +63,16 @@ DURATION_CELLS: Final = 7  # a duration's width when a box is measured: `59m 59s
 DECISION_LIMIT: Final = 64
 
 GAP: Final = 2  # cells between two boxes of a row
-GUTTER: Final = 3  # cells a trunk takes beside wrapped rows; the trunk runs in the middle one
-INNER_MIN: Final = 14
-INNER_COMFORT: Final = 16
-INNER_MAX: Final = 26
-ROOT_INNER_MAX: Final = 30
+BOX_INNER_MIN: Final = 22  # a box's lines are cut down to this many cells, and no further: below it, the tree
+BOX_INNER_MAX: Final = 30  # and never drawn wider: `unspecified-high · glm-5.3:low` whole
+BOX_MIN_WIDTH: Final = BOX_INNER_MIN + 4
+SECTION_INDENT: Final = "  "
 TREE_WIDE_MIN: Final = 72  # below this a tree node takes two lines
-# Below this many cells boxes are not drawn at all. The owner's mock-up as one column of boxes with both
-# trunks takes 39 cells; narrower, a box's title keeps only a few characters and the tree reads better.
-BOX_MIN_WIDTH: Final = 36
 TREE_TITLE_MAX: Final = 40
-TREE_CATEGORY_MAX: Final = 12
+TREE_CATEGORY_MAX: Final = 12  # the category column's width before it grows, with room no status needs, past it
 TREE_MODEL_MAX: Final = 24
+TREE_MODEL_MIN: Final = 8  # the model column gives way to a wide category down to this, then the title does
 TREE_LEAD_ROOM: Final = 16  # cells a tree row keeps past its lead: the branch, the glyph and the start of a title
-LABEL_MIN: Final = 6
 
 _L, _R, _U, _D = 1, 2, 4, 8
 
@@ -82,6 +83,13 @@ class Charset:
     lines: Mapping[int, str]
     arrow: str
     glyphs: Mapping[str, str]
+    pending: str  # a box's glyph for a waiting node
+    unrecorded: str  # a box's glyph for a node whose state has no record (the tree draws `?`)
+    left: str  # before a box's parents
+    right: str  # between the two ends of a dependency
+    dot: str  # before a frontier's label
+    repair: str  # before the title of a node added to repair another
+    extend: str  # before the title of a node added to extend the run
     separator: str
     ellipsis: str
     tee: str
@@ -102,6 +110,13 @@ UNICODE: Final = Charset(
         "root": "◆", "waiting": "·", "dispatched": "◌", "running": "●", "stuck": "!", "done": "✓",
         "failed": "✗", "interrupted": "▪", "unknown": "?",
     },
+    pending="○",
+    unrecorded="◇",
+    left="←",
+    right="→",
+    dot="·",
+    repair="↻",
+    extend="+",
     separator=" · ",
     ellipsis="…",
     tee="├─ ",
@@ -126,6 +141,13 @@ ASCII: Final = Charset(
         "root": "#", "waiting": ".", "dispatched": "o", "running": "*", "stuck": "!", "done": "+",
         "failed": "x", "interrupted": "-", "unknown": "?",
     },
+    pending=".",
+    unrecorded="<>",
+    left="<-",
+    right="->",
+    dot="-",
+    repair="~",
+    extend="+",
     separator=" - ",
     ellipsis="...",
     tee="+- ",
@@ -152,6 +174,7 @@ class View:
     layout: str
     hidden_nodes: int = 0
     levels: int = 1  # how many edge levels the drawing has: one more than its deepest edge's level
+    boxes: tuple[tuple[str, int, int], ...] = ()  # (node id, first line, last line) per box, in reading order
 
     def text_lines(self) -> list[str]:
         return ["".join(segment.text for segment in line) for line in self.lines]
@@ -366,137 +389,23 @@ def _order(node: Mapping[str, Any]) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
-# ── the canvas ───────────────────────────────────────────────────────────
-
-
-@dataclass
-class _Canvas:
-    charset: Charset
-    lines: dict[tuple[int, int], int] = field(default_factory=dict)
-    line_roles: dict[tuple[int, int], str] = field(default_factory=dict)
-    text: dict[tuple[int, int], tuple[str, str]] = field(default_factory=dict)
-    arrows: dict[tuple[int, int], int] = field(default_factory=dict)
-    joins: dict[tuple[int, int], int] = field(default_factory=dict)  # arrows drawn into a box's top border
-    levels: dict[tuple[int, int], int] = field(default_factory=dict)
-    level: int = 0  # the band the connectors drawn now belong to
-
-    def hline(self, y: int, x1: int, x2: int, role: str = "edge") -> None:
-        left, right = min(x1, x2), max(x1, x2)
-        for x in range(left, right + 1):
-            bits = (_L if x > left else 0) | (_R if x < right else 0)
-            self._add(x, y, bits, role)
-
-    def vline(self, x: int, y1: int, y2: int, role: str = "edge") -> None:
-        top, bottom = min(y1, y2), max(y1, y2)
-        for y in range(top, bottom + 1):
-            bits = (_U if y > top else 0) | (_D if y < bottom else 0)
-            self._add(x, y, bits, role)
-
-    def mark(self, x: int, y: int, bits: int, role: str = "edge") -> None:
-        self._add(x, y, bits, role)
-
-    def arrow(self, x: int, y: int) -> None:
-        key = (y, x)
-        if key in self.text or key in self.lines or key in self.arrows:
-            raise _Collision
-        self.arrows[key] = self.level
-
-    def join(self, x: int, y: int, level: int) -> None:
-        """An arrow where an edge enters a two-line box: drawn in the box's top border, a line saving a row."""
-        key = (y, x)
-        if self.lines.get(key) != _L | _R or key in self.joins:
-            raise _Collision
-        self.joins[key] = level
-
-    def _add(self, x: int, y: int, bits: int, role: str) -> None:
-        key = (y, x)
-        if key in self.text or key in self.arrows:
-            raise _Collision
-        self.lines[key] = self.lines.get(key, 0) | bits
-        self.line_roles.setdefault(key, role)
-        if role == "edge":
-            self.levels.setdefault(key, self.level)
-
-    def put(self, x: int, y: int, text: str, role: str) -> None:
-        for ch in text:
-            key = (y, x)
-            if key in self.lines or key in self.text or key in self.arrows:
-                raise _Collision
-            self.text[key] = (ch, role)
-            if char_cells(ch) == 2:
-                if (y, x + 1) in self.lines or (y, x + 1) in self.text or (y, x + 1) in self.arrows:
-                    raise _Collision
-                self.text[(y, x + 1)] = ("", role)
-                x += 2
-            else:
-                x += 1
-
-    def box(self, x: int, y: int, inner: int, content: Sequence[Sequence[tuple[str, str]]], role: str) -> None:
-        height = len(content) + 2
-        right = x + inner + 3
-        self.hline(y, x, right, role)
-        self.hline(y + height - 1, x, right, role)
-        self.vline(x, y, y + height - 1, role)
-        self.vline(right, y, y + height - 1, role)
-        for row, pieces in enumerate(content):
-            column = x + 2
-            for piece, piece_role in pieces:
-                self.put(column, y + 1 + row, piece, piece_role)
-                column += cells(piece)
-
-    def render(self) -> list[tuple[Segment, ...]]:
-        keys = set(self.lines) | set(self.text) | set(self.arrows)
-        if not keys:
-            return []
-        height = max(y for y, _ in keys) + 1
-        width = max(x for _, x in keys) + 1
-        rendered: list[tuple[Segment, ...]] = []
-        for y in range(height):
-            segments: list[Segment] = []
-            run, run_key = "", ("", 0)
-            for x in range(width):
-                key = (y, x)
-                level = 0
-                if key in self.joins:
-                    ch, role, level = self.charset.arrow, "edge", self.joins[key]
-                elif key in self.text:
-                    ch, role = self.text[key]
-                elif key in self.lines:
-                    ch, role = self.charset.lines.get(self.lines[key], " "), self.line_roles[key]
-                    level = self.levels.get(key, 0)
-                elif key in self.arrows:
-                    ch, role, level = self.charset.arrow, "edge", self.arrows[key]
-                else:
-                    ch, role = " ", ""
-                if (role, level) != run_key and run:
-                    segments.append(Segment(run, *run_key))
-                    run = ""
-                run_key = (role, level)
-                run += ch
-            if run:
-                segments.append(Segment(run, *run_key))
-            while segments and not segments[-1].text.strip():
-                segments.pop()
-            if segments:
-                last = segments[-1]
-                segments[-1] = Segment(last.text.rstrip(), last.role, last.level)
-            rendered.append(tuple(segments))
-        return rendered
-
-
-class _Collision(Exception):
-    """Two drawn things wanted one cell: the box layout gives up and the tree is drawn instead."""
-
-
 # ── the box layout ───────────────────────────────────────────────────────
 
 
-@dataclass
-class _Band:
-    kind: str  # "none", "single", "forest"
-    uppers: list[str]
-    lowers: list[str]
-    children: dict[str, list[str]]
+@dataclass(frozen=True)
+class Focus:
+    """What `/dag` adds to the boxes: the highlighted node, the folded ones, and whether Node details are drawn.
+
+    With a focus every box opens with its fold marker (``[-]``; ``[+]`` for a
+    folded box, which is its title line alone) and the highlighted box has
+    ``>`` before its title and the accent border. Without one (the
+    transcript, `omh hud --graph`) no key acts on the drawing, so it draws
+    neither.
+    """
+
+    node: str = ""
+    folded: frozenset[str] = frozenset()
+    details: bool = True
 
 
 def _layers(ids: list[str], edges: list[tuple[str, str]]) -> dict[str, int] | None:
@@ -519,59 +428,52 @@ def _layers(ids: list[str], edges: list[tuple[str, str]]) -> dict[str, int] | No
     return layer if visited == len(ids) else None
 
 
-def _bands(
-    rows: list[list[str]], edges: list[tuple[str, str]], layer: Mapping[str, int]
-) -> list[_Band] | None:
-    bands: list[_Band] = []
-    for index in range(len(rows) - 1):
-        band_edges = [(u, d) for u, d in edges if layer[u] == index]
-        if not band_edges:
-            bands.append(_Band("none", [], [], {}))
-            continue
-        parent = {node: node for pair in band_edges for node in pair}
-
-        def find(node: str) -> str:
-            while parent[node] != node:
-                parent[node] = parent[parent[node]]
-                node = parent[node]
-            return node
-
-        for upper, lower in band_edges:
-            parent[find(upper)] = find(lower)
-        groups: dict[str, tuple[set[str], set[str], int]] = {}
-        for upper, lower in band_edges:
-            uppers, lowers, count = groups.get(find(upper), (set(), set(), 0))
-            uppers.add(upper)
-            lowers.add(lower)
-            groups[find(upper)] = (uppers, lowers, count + 1)
-        if any(count != len(uppers) * len(lowers) for uppers, lowers, count in groups.values()):
-            return None
-        position = {node: at for at, node in enumerate(rows[index])}
-        lower_position = {node: at for at, node in enumerate(rows[index + 1])}
-        uppers_all = sorted({u for u, _ in band_edges}, key=position.__getitem__)
-        lowers_all = sorted({d for _, d in band_edges}, key=lower_position.__getitem__)
-        children = {
-            upper: sorted([d for u, d in band_edges if u == upper], key=lower_position.__getitem__)
-            for upper in uppers_all
-        }
-        if len(groups) == 1:
-            bands.append(_Band("single", uppers_all, lowers_all, children))
-        elif all(len(uppers) == 1 for uppers, _lowers, _count in groups.values()):
-            bands.append(_Band("forest", uppers_all, lowers_all, children))
-        else:
-            return None
-    return bands
+@dataclass(frozen=True)
+class _Frontiers:
+    lanes: Mapping[str, Mapping[str, Any]]  # every node but the root, by id
+    rows: list[list[str]]  # the frontiers, first to last, each in drawing order
+    layer: Mapping[str, int]
+    parents: Mapping[str, list[str]]  # per lane, the lanes it has an edge from, in frontier and drawing order
+    edges: list[tuple[str, str, str]]  # (from, to, kind) between lanes, in reading order
+    origin: Mapping[str, str]  # a lane added mid-run: "repair" or "extend", from the kind of the edge into it
 
 
-@dataclass
-class _Placement:
-    x: dict[str, int]
-    width: dict[str, int]
-    inner: dict[str, int]
-    rows: list[list[list[str]]]  # per layer, its rows
-    trunk_left: dict[int, int]  # layer -> x of the left trunk feeding its rows
-    trunk_right: dict[int, int]  # layer -> x of the right trunk collecting its rows
-    labels: dict[tuple[int, int], str]  # (layer, row) -> wave label
+def _frontiers(graph: Mapping[str, Any]) -> _Frontiers | None:
+    """The lanes by frontier: a lane's frontier is its longest path of recorded edges from a lane with none.
+
+    The root is not a box: what it dispatched has no parent lane and reads
+    ``Start node``, and its model is named in the header. None when there is
+    no lane, or the edges between lanes loop.
+    """
+    lanes = {str(node["id"]): node for node in _nodes(graph) if node.get("kind") != "root"}
+    if not lanes:
+        return None
+    ids = list(lanes)
+    pairs = _edges(graph, set(ids))
+    layer = _layers(ids, pairs)
+    if layer is None:
+        return None
+    rows = [
+        sorted((node_id for node_id in ids if layer[node_id] == index), key=lambda i: (_order(lanes[i]), i))
+        for index in range(max(layer.values()) + 1)
+    ]
+    rank = {node_id: (layer[node_id], at) for row in rows for at, node_id in enumerate(row)}
+    kinds: dict[tuple[str, str], str] = {}
+    for edge in graph.get("edges") if isinstance(graph.get("edges"), list) else []:
+        if isinstance(edge, Mapping):
+            kinds.setdefault((str(edge.get("from")), str(edge.get("to"))), clean_text(edge.get("kind")))
+    parents: dict[str, list[str]] = {node_id: [] for node_id in ids}
+    for upper, lower in pairs:
+        parents[lower].append(upper)
+    for listed in parents.values():
+        listed.sort(key=rank.__getitem__)
+    edges = sorted(((upper, lower, kinds.get((upper, lower), "")) for upper, lower in pairs),
+                   key=lambda edge: (rank[edge[0]], rank[edge[1]]))
+    origin: dict[str, str] = {}
+    for _upper, lower, kind in edges:
+        if kind == "repair" or (kind == "extend" and lower not in origin):
+            origin[lower] = kind
+    return _Frontiers(lanes, rows, layer, parents, edges, origin)
 
 
 def _glyph(node: Mapping[str, Any], charset: Charset, spinner: str | None) -> str:
@@ -581,59 +483,17 @@ def _glyph(node: Mapping[str, Any], charset: Charset, spinner: str | None) -> st
     return charset.glyphs.get(state, charset.glyphs["unknown"])
 
 
-def _box_title(node: Mapping[str, Any], charset: Charset) -> str:
-    title = _title(node)
-    return f"{title}{charset.separator}orchestrator" if node.get("orchestrates") else title
-
-
-def _content(
-    node: Mapping[str, Any], charset: Charset, inner: int, spinner: str | None = None, compact: bool = False
-) -> list[list[tuple[str, str]]]:
+def _box_glyph(node: Mapping[str, Any], charset: Charset, spinner: str | None) -> str:
+    """The tree's glyph, but a waiting node's is the hollow ``○`` a box draws for a node not handed out, and an
+    unknown one's ``◇``: a box draws no ``?``."""
     state = _state(node)
-    glyph = _glyph(node, charset, spinner)
-    title = fit(_box_title(node, charset), max(1, inner - cells(glyph) - 1), charset.ellipsis)
-    first = [(glyph, f"glyph:{state}"), (" " + title, _field_role(title, "title"))]
-    model = fit(_model_text(node, charset.separator), inner, charset.ellipsis)
-    if node.get("kind") == "root":
-        if compact:
-            return [_compact_root(node, charset, inner, glyph)]
-        # A root that names no model at all (an operator's fanout) is one line; an unknown one shows "?".
-        return [first, [(model, _field_role(model, "model"))]] if clean_text(node.get("model")) else [first]
-    category = fit(_category(node), inner, charset.ellipsis)
-    if compact:
-        return [first, _compact_facts(node, charset, inner)]
-    return [
-        first,
-        [(category, _field_role(category, "category"))],
-        [(model, _field_role(model, "model"))],
-        [(fit(_status_text(node), inner, charset.ellipsis), f"status:{state}")],
-    ]
+    if state in ("waiting", "unknown"):
+        return charset.pending if state == "waiting" else charset.unrecorded
+    return _glyph(node, charset, spinner)
 
 
-def _compact_root(node: Mapping[str, Any], charset: Charset, inner: int, glyph: str) -> list[tuple[str, str]]:
-    """A two-line drawing's root on one line: its title, then its model and effort where they fit."""
-    sep = charset.separator
-    title = fit(_title(node), max(1, inner - cells(glyph) - 1), charset.ellipsis)
-    line = [(glyph, "glyph:root"), (" " + title, _field_role(title, "title"))]
-    room = inner - cells(glyph) - 1 - cells(title) - cells(sep)
-    if clean_text(node.get("model")) and room >= cells(charset.ellipsis) + 1:
-        model = fit(_model_text(node, sep), room, charset.ellipsis)
-        line += [(sep, "model"), (model, _field_role(model, "model"))]
-    return line
-
-
-def _compact_facts(node: Mapping[str, Any], charset: Charset, inner: int) -> list[tuple[str, str]]:
-    """A two-line box's second line: category, then the model, with its effort only where that fits."""
-    sep = charset.separator
-    category = fit(_category(node), inner, charset.ellipsis)
-    facts = [(category, _field_role(category, "category"))]
-    room = inner - cells(category) - cells(sep)
-    with_effort = _model_text(node, sep)
-    model = with_effort if cells(with_effort) <= room else short_model(node.get("model"))
-    if room >= cells(charset.ellipsis) + 1:
-        model = fit(model, room, charset.ellipsis)
-        facts += [(sep, "model"), (model, _field_role(model, "model"))]
-    return facts
+def _capital(text: str) -> str:
+    return text[:1].upper() + text[1:]
 
 
 def _field_role(text: str, role: str) -> str:
@@ -641,328 +501,340 @@ def _field_role(text: str, role: str) -> str:
     return "unknown" if text == UNKNOWN_FIELD else role
 
 
-def _natural_inner(node: Mapping[str, Any], charset: Charset, compact: bool = False) -> int:
-    glyph = charset.glyphs.get(_state(node), "?")
-    model = cells(_model_text(node, charset.separator))
-    if compact and node.get("kind") == "root":
-        title = cells(glyph) + 1 + cells(_title(node))
-        return title + (cells(charset.separator) + model if clean_text(node.get("model")) else 0)
-    widths = [cells(glyph) + 1 + cells(_box_title(node, charset))]
-    if node.get("kind") != "root" or clean_text(node.get("model")):
-        widths.append(model)
-    if node.get("kind") != "root":
-        if compact:
-            widths.append(cells(_category(node)) + cells(charset.separator) + model)
+def _facts(node: Mapping[str, Any], charset: Charset) -> list[Segment]:
+    """``quick · glm-5.3-flash:low``: the category, then the model and its effort; a field with no record yet is
+    left out (``writing`` for a node no child has taken), and with neither known the line is empty."""
+    known = [(text, role) for text, role in ((_category(node), "category"), (_model_text(node, ":"), "model"))
+             if text != UNKNOWN_FIELD]
+    if not known:
+        return []
+    pieces = [Segment(known[0][0], known[0][1])]
+    for text, role in known[1:]:
+        pieces += [Segment(charset.separator, "model"), Segment(text, role)]
+    return pieces
+
+
+def _origin_mark(node_id: str, shape: _Frontiers, charset: Charset) -> str:
+    """``↻ `` before a repair's title, ``+ `` before an extend's: where the node came from, in the colour of its state."""
+    kind = shape.origin.get(node_id, "")
+    return f"{charset.repair} " if kind == "repair" else f"{charset.extend} " if kind == "extend" else ""
+
+
+def _box_natural(node_id: str, shape: _Frontiers, charset: Charset, focus: Focus | None) -> int:
+    """The inner width a box needs for its title, facts and status, whatever its duration reads; the parents line
+    is cut to the box (the Dependencies section holds every edge whole). A folded box's one line holds its glyph
+    and its status word too."""
+    node = shape.lanes[node_id]
+    glyph = cells(_box_glyph(node, charset, None)) + 1
+    lead = 0
+    if focus is not None:
+        lead = cells("[-] > ")
+        if node_id in focus.folded:
+            lead += glyph + cells(charset.separator) + cells(_capital(_status_parts(node)[0]))
+    status = glyph + _status_cells(node)
+    facts = sum(cells(segment.text) for segment in _facts(node, charset))
+    return max(lead + cells(_origin_mark(node_id, shape, charset)) + cells(_title(node)), status, facts)
+
+
+def _box_content(
+    node_id: str, shape: _Frontiers, charset: Charset, inner: int, focus: Focus | None, spinner: str | None,
+) -> list[tuple[Segment, ...]]:
+    """A box's lines: its title; category and model; its status; its parents."""
+    node = shape.lanes[node_id]
+    state = _state(node)
+    glyph = _box_glyph(node, charset, spinner)
+    folded = focus is not None and node_id in focus.folded
+    selected = focus is not None and focus.node == node_id
+    title = _title(node)
+    named = "selected" if selected else state
+    head: list[Segment] = []
+    if focus is not None:
+        head += [Segment("[+] " if folded else "[-] ", "fold")]
+        if selected:
+            head += [Segment(">", "node:selected"), Segment(" ", "")]
+    if folded:
+        head += [Segment(glyph, f"node:{state}"), Segment(" ", "")]
+    head.append(Segment(_origin_mark(node_id, shape, charset), f"node-title:{named}"))
+    title_role = "unknown" if title == UNKNOWN_FIELD else f"node-title:{named}"
+    if folded:
+        # One line: the title gives way so the status word (`Accepted`) stays, as every state keeps its word.
+        word = [Segment(charset.separator, "parents"), Segment(_capital(_status_parts(node)[0]), f"node-word:{state}")]
+        room = inner - sum(cells(segment.text) for segment in (*head, *word))
+        head.append(Segment(fit(title, max(room, cells(charset.ellipsis) + 1), charset.ellipsis), title_role))
+        return [_fit_pieces([*head, *word], inner, charset)]
+    head.append(Segment(title, title_role))
+    lines = [head, _facts(node, charset)]
+    lines.append([Segment(glyph, f"node:{state}"), Segment(" " + _capital(_status_text(node)), f"node-word:{state}")])
+    parents = [_title(shape.lanes[upper]) for upper in shape.parents[node_id]]
+    if parents:
+        lines.append([Segment(f"{charset.left} ", "parents"), Segment(", ".join(parents), "parents")])
+    else:
+        lines.append([Segment("Start node", "parents")])
+    return [_fit_pieces(line, inner, charset) for line in lines]
+
+
+def _framed(content: list[tuple[Segment, ...]], inner: int, border: str, charset: Charset) -> list[list[Segment]]:
+    """``content`` in a box ``inner + 4`` cells wide: a border, a space each side, the lines padded to ``inner``."""
+    lines, rule = charset.lines, charset.lines[_L | _R] * (inner + 2)
+    rows = [[Segment(lines[_R | _D] + rule + lines[_L | _D], border)]]
+    for line in content:
+        used = sum(cells(segment.text) for segment in line)
+        rows.append([
+            Segment(lines[_U | _D], border), Segment(" ", ""), *line, Segment(" " * (inner - used + 1), ""),
+            Segment(lines[_U | _D], border),
+        ])
+    rows.append([Segment(lines[_R | _U] + rule + lines[_L | _U], border)])
+    return rows
+
+
+def _fit_pieces(pieces: Sequence[Segment], width: int, charset: Charset) -> tuple[Segment, ...]:
+    """``pieces`` cut to ``width`` cells, a cut line always ending in the ellipsis: the first piece that does not
+    fit is cut to it (or is it alone), and where too little room is left even for that, the pieces kept before it
+    give way, so a line never ends on a separator or an arrow with nothing after it."""
+    kept: list[Segment] = []
+    used = 0
+    for piece in pieces:
+        size = cells(piece.text)
+        if used + size <= width:
+            kept.append(piece)
+            used += size
+            continue
+        room = width - used
+        if room >= cells(charset.ellipsis):
+            kept.append(Segment(fit(piece.text, room, charset.ellipsis), piece.role, piece.level))
+        while kept and room < cells(charset.ellipsis):
+            last = kept.pop()
+            room += cells(last.text)
+            if room >= cells(charset.ellipsis):
+                kept.append(Segment(_ending(last.text, room, charset.ellipsis), last.role, last.level))
+        break
+    return _tidy(kept)
+
+
+def _ending(text: str, width: int, ellipsis: str) -> str:
+    """``text`` cut to end in ``ellipsis`` within ``width`` cells, whether or not it would fit whole."""
+    kept, used = [], 0
+    for ch in text:
+        if used + char_cells(ch) > width - cells(ellipsis):
+            break
+        kept.append(ch)
+        used += char_cells(ch)
+    return "".join(kept).rstrip() + ellipsis
+
+
+def _tidy(pieces: Sequence[Segment]) -> tuple[Segment, ...]:
+    """One line: neighbouring pieces of one role and level joined, nothing painted after its last character."""
+    joined: list[Segment] = []
+    for piece in pieces:
+        if not piece.text:
+            continue
+        if joined and (joined[-1].role, joined[-1].level) == (piece.role, piece.level):
+            joined[-1] = Segment(joined[-1].text + piece.text, piece.role, piece.level)
         else:
-            widths += [cells(_category(node)), _status_cells(node)]
-    return max(widths)
+            joined.append(piece)
+    while joined and not joined[-1].text.strip():
+        joined.pop()
+    if joined:
+        joined[-1] = Segment(joined[-1].text.rstrip(), joined[-1].role, joined[-1].level)
+    return tuple(joined)
+
+
+def _run_state(lanes: Sequence[Mapping[str, Any]]) -> tuple[str, str]:
+    """The run's word and the state it is painted as: running while a lane is out, else waiting, else settled.
+
+    A run whose unsettled lanes only lost their news (unknown) ended without a failure or a cancel, so it is
+    painted as unknown, never in the error colour.
+    """
+    states = {_state(node) for node in lanes}
+    if states & {"running", "stuck", "dispatched"}:
+        return "Running", "running"
+    if "waiting" in states:
+        return "Waiting", "waiting"
+    if "failed" in states:
+        return "Failed", "failed"
+    if states <= {"done"}:
+        return "Completed", "done"
+    return ("Ended", "interrupted") if "interrupted" in states else ("Ended", "unknown")
+
+
+def _box_header(graph: Mapping[str, Any], shape: _Frontiers, width: int, charset: Charset) -> list[tuple[Segment, ...]]:
+    """``OMH / DAG · 5 tasks``; the run's name, ``1/1`` and main's model; ``Running · Done 1/5``."""
+    sep = charset.separator
+    lanes = list(shape.lanes.values())
+    hidden = graph.get("hidden_nodes")
+    hidden = hidden if isinstance(hidden, int) and not isinstance(hidden, bool) and hidden > 0 else 0
+    total = len(lanes) + hidden
+    first = [Segment(f"OMH / DAG{sep}{total} task{'' if total == 1 else 's'}", "header")]
+    second = [Segment(clean_text(graph.get("name")) or "delegation", "title"), Segment(f"{sep}1/1", "header")]
+    root = next((node for node in _nodes(graph) if node.get("kind") == "root"), None)
+    model = _model_text(root, ":") if root is not None and clean_text(root.get("model")) else UNKNOWN_FIELD
+    if model != UNKNOWN_FIELD:
+        second += [Segment(f"{sep}main ", "header"), Segment(model, "model")]
+    word, state = _run_state(lanes)
+    done = sum(1 for node in lanes if _state(node) == "done")
+    third = [Segment(word, f"node-word:{state}"), Segment(f"{sep}Done {done}/{len(lanes)}", "header")]
+    for alarm in ("failed", "stuck"):
+        count = sum(1 for node in lanes if _state(node) == alarm)
+        if count:
+            third += [Segment(sep, "header"), Segment(f"{count} {alarm}", f"node-word:{alarm}")]
+    if hidden:
+        third.append(Segment(f"{sep}+{hidden} more node{'' if hidden == 1 else 's'}", "more"))
+    return [_fit_pieces(line, width, charset) for line in (first, second, third)]
+
+
+def _dependencies(shape: _Frontiers, width: int, charset: Charset) -> list[tuple[Segment, ...]]:
+    """Every edge between lanes as text, ``Export API → Export button``, its kind named unless it is a
+    `depends_on`: the boxes draw one connector per frontier gap, so this is where the edges are exact."""
+    lines: list[tuple[Segment, ...]] = [(), (Segment("Dependencies", "header"),)]
+    arrow = f" {charset.right} "
+    for upper, lower, kind in shape.edges:
+        source, target = _title(shape.lanes[upper]), _title(shape.lanes[lower])
+        suffix = f" ({kind})" if kind and kind != "depends_on" else ""
+        room = width - cells(SECTION_INDENT) - cells(arrow) - cells(suffix)
+        if cells(source) + cells(target) > room:
+            # The kind stays whole and the titles give way, the target first, each keeping a few cells.
+            keep = cells(charset.ellipsis) + 3
+            target_room = min(cells(target), max(min(cells(target), keep), room - cells(source)))
+            source = fit(source, max(min(cells(source), keep), room - target_room), charset.ellipsis)
+            target = fit(target, max(min(cells(target), keep), room - cells(source)), charset.ellipsis)
+        pieces = [
+            Segment(SECTION_INDENT, ""), Segment(source, "dependency"), Segment(arrow, "connector"),
+            Segment(target, "dependency"),
+        ]
+        if suffix:
+            pieces.append(Segment(suffix, "parents"))
+        lines.append(_fit_pieces(pieces, width, charset))
+    return lines
+
+
+def _wrap(text: str, width: int, limit: int, charset: Charset) -> list[str]:
+    """``text`` in lines of at most ``width`` cells, broken between words; past ``limit`` lines the last is cut."""
+    lines: list[str] = []
+    for word in text.split(" "):
+        if lines and cells(f"{lines[-1]} {word}") <= width:
+            lines[-1] = f"{lines[-1]} {word}"
+        else:
+            lines.append(word)
+    if len(lines) > limit:
+        lines = [*lines[:limit - 1], " ".join(lines[limit - 1:])]
+    return [fit(line, width, charset.ellipsis) for line in lines]
+
+
+def _details(
+    shape: _Frontiers, order: Sequence[str], width: int, charset: Charset, focus: Focus | None, spinner: str | None
+) -> list[tuple[Segment, ...]]:
+    """One card per running or stuck node, and the highlighted one: its whole title, category and model, status,
+    and the group and session the graph names for it. The graph holds no reply text and no turn or tool counts,
+    so a card shows none."""
+    shown = [
+        node_id for node_id in order
+        if _state(shape.lanes[node_id]) in ("running", "stuck") or (focus is not None and focus.node == node_id)
+    ]
+    if not shown:
+        return []
+    lines: list[tuple[Segment, ...]] = [(), (Segment("Node details", "header"),)]
+    deeper = SECTION_INDENT * 2
+    for node_id in shown:
+        node = shape.lanes[node_id]
+        state = _state(node)
+        glyph = _box_glyph(node, charset, spinner)
+        lead = SECTION_INDENT + glyph + " "
+        title = _title(node)
+        for at, text in enumerate(_wrap(title, max(1, width - cells(lead)), 3, charset)):
+            pieces = [Segment(SECTION_INDENT, ""), Segment(glyph, f"node:{state}"), Segment(" ", "")] if at == 0 else [
+                Segment(" " * cells(lead), "")]
+            role = "unknown" if title == UNKNOWN_FIELD else f"node-title:{state}"
+            lines.append(_fit_pieces([*pieces, Segment(text, role)], width, charset))
+        facts = _facts(node, charset)
+        if facts:
+            lines.append(_fit_pieces([Segment(deeper, ""), *facts], width, charset))
+        where = [Segment(_capital(_status_text(node)), f"node-word:{state}")]
+        group = _group_label(node.get("group"), charset)
+        if group:
+            where.append(Segment(f"{charset.separator}{group}", "more"))
+        tail = clean_text(node.get("session_tail"))
+        if tail:
+            where.append(Segment(f"{charset.separator}session {tail}", "more"))
+        lines.append(_fit_pieces([Segment(deeper, ""), *where], width, charset))
+    return lines
+
+
+@dataclass(frozen=True)
+class _Boxes:
+    lines: list[tuple[Segment, ...]]
+    boxes: tuple[tuple[str, int, int], ...]
 
 
 def _box_view(
-    graph: Mapping[str, Any], width: int, charset: Charset, lane_inner: int, spinner: str | None = None,
-    compact: bool = False,
-) -> tuple[list[tuple[Segment, ...]], int] | None:
-    nodes = _nodes(graph)
-    if not nodes:
+    graph: Mapping[str, Any], width: int, charset: Charset, *, sections: int = 2, focus: Focus | None = None,
+    spinner: str | None = None,
+) -> _Boxes | None:
+    """The header, the frontiers of boxes, then (``sections`` 1 and up) Dependencies and (2) Node details.
+
+    Every box is one width: as wide as the widest lane needs, up to
+    `BOX_INNER_MAX`, and narrower where that puts a frontier on one row,
+    down to `BOX_INNER_MIN` (each line cut to it with the ellipsis). A
+    frontier that does not fit one row even then wraps, at that same width.
+    Where one box does not fit `BOX_INNER_MIN`, None, and the tree is drawn.
+    """
+    shape = _frontiers(graph)
+    if shape is None:
         return None
-    by_id = {str(node["id"]): node for node in nodes}
-    ids = list(by_id)
-    edges = _edges(graph, set(ids))
-    layer = _layers(ids, edges)
-    if layer is None or any(layer[d] != layer[u] + 1 for u, d in edges):
+    natural = max(_box_natural(node_id, shape, charset, focus) for node_id in shape.lanes)
+    one_row = [(width - (len(row) - 1) * GAP) // len(row) - 4 for row in shape.rows]
+    inner = min([max(natural, BOX_INNER_MIN), BOX_INNER_MAX, width - 4,
+                 *(fit for fit in one_row if fit >= BOX_INNER_MIN)])
+    if inner < BOX_INNER_MIN:
         return None
-    depth = max(layer.values()) + 1
-    predecessors: dict[str, list[str]] = {node_id: [] for node_id in ids}
-    for upper, lower in edges:
-        predecessors[lower].append(upper)
-    rows: list[list[str]] = [[] for _ in range(depth)]
-    rows[0] = sorted((i for i in ids if layer[i] == 0), key=lambda i: (_order(by_id[i]), i))
-    for index in range(1, depth):
-        position = {node: at for at, node in enumerate(rows[index - 1])}
-        members = [i for i in ids if layer[i] == index]
-        rows[index] = sorted(
-            members,
-            key=lambda i: (min(position[u] for u in predecessors[i]), _order(by_id[i]), i),
-        )
-    bands = _bands(rows, edges, layer)
-    if bands is None:
-        return None
-    orchestrating = {upper for upper, _lower in edges}
-    by_id = {
-        node_id: {**node, "orchestrates": node.get("kind") == "root" and node_id in orchestrating}
-        for node_id, node in by_id.items()
-    }
-    inner = {
-        node_id: min(
-            ROOT_INNER_MAX if by_id[node_id].get("kind") == "root" else lane_inner,
-            max(INNER_MIN, _natural_inner(by_id[node_id], charset, compact)),
-        )
-        for node_id in ids
-    }
-    lanes = [node_id for node_id in ids if by_id[node_id].get("kind") != "root"]
-    lane_width = max((inner[node_id] for node_id in lanes), default=lane_inner)
-    for node_id in lanes:
-        inner[node_id] = lane_width  # every lane box of one drawing is one size
-    box_width = {node_id: inner[node_id] + 4 for node_id in ids}
-    placement = _place(rows, bands, by_id, box_width, inner, width)
-    if placement is None:
-        return None
-    canvas = _Canvas(charset)
-    try:
-        _draw(canvas, placement, bands, by_id, charset, spinner, compact)
-    except _Collision:
-        return None
-    lines = canvas.render()
+    box_width = inner + 4
+    per_row = max(1, (width + GAP) // (box_width + GAP))
+    widest = min(per_row, max(len(row) for row in shape.rows))
+    span = widest * box_width + (widest - 1) * GAP
+    connector = (span - box_width) // 2 + box_width // 2  # under a lone box's middle, and every row is centred
+    lines = [*_box_header(graph, shape, width, charset), ()]
+    boxes: list[tuple[str, int, int]] = []
+    order: list[str] = []
+    for index, frontier in enumerate(shape.rows):
+        # A frontier is centred; one that wraps keeps the column its first row starts at, so it reads as one grid.
+        offset = (span - min(per_row, len(frontier)) * (box_width + GAP) + GAP) // 2
+        for start in range(0, len(frontier), per_row):
+            row = frontier[start:start + per_row]
+            drawn = [
+                _framed(_box_content(node_id, shape, charset, inner, focus, spinner), inner,
+                        "node:selected" if focus is not None and focus.node == node_id
+                        else f"node:{_state(shape.lanes[node_id])}", charset)
+                for node_id in row
+            ]
+            top = len(lines)
+            for node_id, box in zip(row, drawn):
+                boxes.append((node_id, top, top + len(box) - 1))
+                order.append(node_id)
+            for at in range(max(len(box) for box in drawn)):
+                pieces = [Segment(" " * offset, "")]
+                for column, box in enumerate(drawn):
+                    pieces += [Segment(" " * GAP, "")] if column else []
+                    pieces += box[at] if at < len(box) else [Segment(" " * box_width, "")]
+                lines.append(_tidy(pieces))
+        if len(frontier) > 1:
+            lines.append(_tidy([Segment(" " * offset, ""), Segment(f"{charset.dot} Same frontier", "frontier")]))
+        if index < len(shape.rows) - 1:
+            # Dim, and blue where it leads into a frontier with a node running.
+            below = {_state(shape.lanes[node_id]) for node_id in shape.rows[index + 1]}
+            role = "connector:running" if "running" in below else "connector"
+            for mark in (charset.lines[_U | _D], charset.arrow):
+                lines.append(_tidy([Segment(" " * connector, ""), Segment(mark, role)]))
+    if sections >= 1 and shape.edges:
+        lines += _dependencies(shape, width, charset)
+    if sections >= 2 and (focus is None or focus.details):
+        lines += _details(shape, order, width, charset, focus, spinner)
     if any(cells("".join(segment.text for segment in line)) > width for line in lines):
         return None
-    return lines, max(1, len(bands))
-
-
-def _place(
-    rows: list[list[str]],
-    bands: list[_Band],
-    by_id: Mapping[str, Mapping[str, Any]],
-    box_width: Mapping[str, int],
-    inner: Mapping[str, int],
-    width: int,
-) -> _Placement | None:
-    depth = len(rows)
-    required = dict(box_width)
-    for index in range(depth - 2, -1, -1):
-        band = bands[index]
-        if band.kind == "forest":
-            for upper in band.uppers:
-                kids = band.children[upper]
-                span = sum(required[kid] for kid in kids) + GAP * (len(kids) - 1)
-                required[upper] = max(required[upper], span)
-    x: dict[str, int] = {}
-    slot: dict[str, int] = {}
-    layer_rows: list[list[list[str]]] = [[rows[0]]]
-    trunk_left: dict[int, int] = {}
-    trunk_right: dict[int, int] = {}
-    labels: dict[tuple[int, int], str] = {}
-    cursor = 0
-    for node in rows[0]:
-        slot[node] = cursor
-        x[node] = cursor + (required[node] - box_width[node]) // 2
-        cursor += required[node] + GAP
-    for index, band in enumerate(bands):
-        lowers = rows[index + 1]
-        if band.kind == "forest":
-            for upper in band.uppers:
-                kids = band.children[upper]
-                span = sum(required[kid] for kid in kids) + GAP * (len(kids) - 1)
-                start = slot[upper] + (required[upper] - span) // 2
-                for kid in kids:
-                    slot[kid] = start
-                    x[kid] = start + (required[kid] - box_width[kid]) // 2
-                    start += required[kid] + GAP
-            layer_rows.append([lowers])
-            continue
-        if band.kind != "single":
-            return None
-        centers = [x[u] + box_width[u] // 2 for u in band.uppers]
-        middle = (min(centers) + max(centers)) // 2
-        below = bands[index + 1] if index + 1 < len(bands) else _Band("none", [], [], {})
-        can_wrap = below.kind in ("none", "single")
-        groups = _wave_groups(band, lowers, by_id)
-        total = sum(required[node] for node in lowers) + GAP * (len(lowers) - 1)
-        if total <= width and not (groups and can_wrap):
-            start = middle - total // 2
-            for node in lowers:
-                slot[node] = start
-                x[node] = start + (required[node] - box_width[node]) // 2
-                start += required[node] + GAP
-            layer_rows.append([lowers])
-            continue
-        if not can_wrap:
-            return None
-        collects = below.kind == "single"
-        room = width - GUTTER - (GUTTER if collects else 0)
-        size = max(box_width[node] for node in lowers)
-        per_row = (room + GAP) // (size + GAP)
-        if per_row < 1:
-            return None
-        wrapped: list[list[str]] = []
-        for label, members in groups or [("", lowers)]:
-            for start_at in range(0, len(members), per_row):
-                wrapped.append(members[start_at:start_at + per_row])
-                if label and start_at == 0:
-                    labels[(index + 1, len(wrapped) - 1)] = label
-        row_width = max(len(row) * (size + GAP) - GAP for row in wrapped)
-        # The boxes, not the gutters, are centred under the parent, so a one-box row sits straight below it.
-        block_start = middle - row_width // 2 - GUTTER
-        trunk_left[index + 1] = block_start + 1
-        if collects:
-            trunk_right[index + 1] = block_start + GUTTER + row_width + 1
-        for row in wrapped:
-            start = block_start + GUTTER
-            for node in row:
-                slot[node] = start
-                x[node] = start + (size - box_width[node]) // 2
-                start += size + GAP
-        layer_rows.append(wrapped)
-    shift = -min(
-        [x[node] for node in x] + list(trunk_left.values()) + list(trunk_right.values())
-    )
-    x = {node: value + shift for node, value in x.items()}
-    trunk_left = {key: value + shift for key, value in trunk_left.items()}
-    trunk_right = {key: value + shift for key, value in trunk_right.items()}
-    right_edge = max(
-        [x[node] + box_width[node] for node in x] + [value + 1 for value in trunk_right.values()]
-    )
-    if right_edge > width:
-        return None
-    return _Placement(dict(x), dict(box_width), dict(inner), layer_rows, trunk_left, trunk_right, labels)
-
-
-def _wave_groups(
-    band: _Band, lowers: list[str], by_id: Mapping[str, Mapping[str, Any]]
-) -> list[tuple[str, list[str]]]:
-    """Dispatch waves of one root, in order, when there is more than one: each starts its own row."""
-    if len(band.uppers) != 1 or by_id[band.uppers[0]].get("kind") != "root":
-        return []
-    groups: list[tuple[str, list[str]]] = []
-    for node in lowers:
-        label = clean_text(by_id[node].get("group"))
-        if not label.startswith("wave "):
-            return []
-        if groups and groups[-1][0] == label:
-            groups[-1][1].append(node)
-        else:
-            groups.append((label, [node]))
-    labels = [label for label, _members in groups]
-    return groups if len(groups) > 1 and len(set(labels)) == len(labels) else []
-
-
-def _draw(
-    canvas: _Canvas,
-    placement: _Placement,
-    bands: list[_Band],
-    by_id: Mapping[str, Mapping[str, Any]],
-    charset: Charset,
-    spinner: str | None = None,
-    compact: bool = False,
-) -> None:
-    """Rows top to bottom; between two rows, the connector rows the bands above and below need.
-
-    A trunk is drawn as one vertical line from the junction where it last met
-    a bus to the next one, so it passes every box row and label line between
-    them in its gutter, where nothing else is drawn.
-    """
-    x, box_width = placement.x, placement.width
-    content = {node: _content(by_id[node], charset, placement.inner[node], spinner, compact) for node in x}
-    height = {node: len(content[node]) + 2 for node in x}
-    center = {node: x[node] + box_width[node] // 2 for node in x}
-    bottom: dict[str, int] = {}
-    joins: list[tuple[int, int, int]] = []  # two-line boxes take their arrows into their top border
-    step = 1 if compact else 2  # rows from a bus to the boxes it feeds
-    y = 0
-    previous_row: list[str] = []
-    left_open: tuple[int, int] | None = None  # the left trunk feeding this layer: (x, y of its last junction)
-    right_open: tuple[int, int] | None = None  # the right trunk collecting this layer: (x, y of its last junction)
-    for index, layer_rows in enumerate(placement.rows):
-        wrapped = len(layer_rows) > 1
-        for row_index, row in enumerate(layer_rows):
-            if index > 0 and row_index == 0:
-                band = bands[index - 1]
-                canvas.level = index - 1
-                uppers = [node for node in previous_row if node in band.uppers]
-                blocked = [center[node] for node in uppers] + ([right_open[0]] if right_open else [])
-                label = placement.labels.get((index, 0))
-                if label:
-                    y = _label(canvas, placement.trunk_left[index], y, label, blocked)
-                bus = y
-                for upper in uppers:
-                    canvas.vline(center[upper], bottom[upper], bus)
-                lowers = [node for node in row if node in band.lowers]
-                if band.kind == "single":
-                    points = [center[node] for node in uppers + lowers]
-                    if right_open is not None:
-                        canvas.vline(right_open[0], right_open[1], bus)
-                        points.append(right_open[0])
-                    if wrapped:
-                        points.append(placement.trunk_left[index])
-                    canvas.hline(bus, min(points), max(points))
-                else:
-                    for upper in uppers:
-                        kids = [center[kid] for kid in band.children[upper] if kid in row]
-                        canvas.hline(bus, min([center[upper], *kids]), max([center[upper], *kids]))
-                right_open = None
-                for node in lowers:
-                    canvas.mark(center[node], bus, _D)
-                    if compact:
-                        joins.append((center[node], bus + 1, canvas.level))
-                    else:
-                        canvas.arrow(center[node], bus + 1)
-                if wrapped:
-                    canvas.mark(placement.trunk_left[index], bus, _D)
-                    left_open = (placement.trunk_left[index], bus)
-                y = bus + step
-            elif row_index > 0:
-                below = bands[index] if index < len(bands) else None
-                if below is not None and below.kind == "single" and index in placement.trunk_right:
-                    uppers = [node for node in previous_row if node in below.uppers]
-                    canvas.level = index  # the right trunk collects for the band below this layer
-                    if uppers:
-                        trunk = placement.trunk_right[index]
-                        for upper in uppers:
-                            canvas.vline(center[upper], bottom[upper], y)
-                        canvas.hline(y, min(center[node] for node in uppers), trunk)
-                        if right_open is not None:
-                            canvas.vline(trunk, right_open[1], y)
-                        canvas.mark(trunk, y, _D)
-                        right_open = (trunk, y)
-                        y += 1
-                trunk = placement.trunk_left[index]
-                canvas.level = index - 1  # the left trunk feeds this layer from the band above
-                label = placement.labels.get((index, row_index))
-                if label:
-                    y = _label(canvas, trunk, y, label, [right_open[0]] if right_open else [])
-                if left_open is None:
-                    raise _Collision
-                canvas.vline(trunk, left_open[1], y)
-                canvas.hline(y, trunk, max(center[node] for node in row))
-                for node in row:
-                    canvas.mark(center[node], y, _D)
-                    if compact:
-                        joins.append((center[node], y + 1, canvas.level))
-                    else:
-                        canvas.arrow(center[node], y + 1)
-                if row_index < len(layer_rows) - 1:
-                    canvas.mark(trunk, y, _D)
-                    left_open = (trunk, y)
-                else:
-                    left_open = None
-                y += step
-            for node in row:
-                state = _state(by_id[node])
-                inner = placement.inner[node]
-                canvas.box(x[node], y, inner, content[node], "border" if state == "root" else f"border:{state}")
-                bottom[node] = y + height[node] - 1
-            for column, row_y, level in joins:
-                canvas.join(column, row_y, level)
-            joins.clear()
-            y += max(height[node] for node in row)
-            previous_row = row
-    if right_open is not None:
-        raise _Collision
+    return _Boxes(lines, tuple(boxes))
 
 
 def _group_label(label: object, charset: Charset) -> str:
     """A group label in this charset: the builder writes ``wave 1 · 14:02``; ASCII draws ``wave 1 - 14:02``."""
     return clean_text(label).replace(UNICODE.separator, charset.separator)
-
-
-def _label(canvas: _Canvas, trunk: int, y: int, label: str, blocked: list[int]) -> int:
-    """A wave's label on its own line, right of the trunk and left of any line that crosses it."""
-    start = trunk + 2
-    limit = min([column for column in blocked if column > start] or [start + 64]) - 1
-    text = fit(_group_label(label, canvas.charset), limit - start, canvas.charset.ellipsis)
-    if cells(text) >= LABEL_MIN:
-        canvas.put(start, y, text, "group")
-        return y + 1
-    return y
 
 
 # ── the tree ─────────────────────────────────────────────────────────────
@@ -1030,9 +902,11 @@ def _tree_lines(
     visible_groups = [(label, members) for label, members in visible_groups if members]
     labelled = len(visible_groups) > 1 or any(label for label, _members in visible_groups)
     shown = [node for node in by_id if node not in hidden and (root is None or node != str(root["id"]))]
+    fields = {node: _tree_fields(by_id[node]) for node in shown}
     title_width = min(TREE_TITLE_MAX, max([cells(_title(by_id[n])) for n in shown] or [12]))
-    category_width = min(TREE_CATEGORY_MAX, max([cells(_category(by_id[n])) for n in shown] or [1]))
-    model_width = min(TREE_MODEL_MAX, max([cells(_model_text(by_id[n], ":")) for n in shown] or [1]))
+    widest_category = max([cells(category) for category, _model in fields.values()] or [1])
+    category_width = min(TREE_CATEGORY_MAX, widest_category)
+    model_width = min(TREE_MODEL_MAX, max([cells(model) for _category, model in fields.values()] or [1]))
     deepest = max([_depth(n, nested) for n in shown] or [0])
     base = (cells(charset.tee) if labelled else 0) + cells(charset.tee)
     # Where the title column ends, the same for every depth, so the columns after it line up.
@@ -1040,6 +914,21 @@ def _tree_lines(
     room_after = width - title_end - category_width - model_width - 6
     if room_after < 12:
         title_end -= 12 - room_after
+        room_after = 12
+    # Then the category column grows to the widest category (`unspecified-high` cut to `unspecified…` reads as
+    # another category), paid for by room the statuses do not need, then by the model column down to
+    # TREE_MODEL_MIN, then by the title column down to 8 cells; never by a status's room, so no status is cut that
+    # would have been whole without the widening.
+    extra = widest_category - category_width
+    if extra:
+        needed = max(_status_cells(by_id[node]) for node in shown)
+        paid = min(extra, max(0, room_after - needed))
+        from_model = min(extra - paid, max(0, model_width - TREE_MODEL_MIN))
+        model_width -= from_model
+        title_floor = base + cells(charset.bar) * deepest + 2 + 8
+        from_title = min(extra - paid - from_model, max(0, title_end - title_floor))
+        title_end -= from_title
+        category_width += paid + from_model + from_title
     step, offset = len(charset.bar), 1 if labelled else 0
     deepest_shown = max(2, (width - TREE_LEAD_ROOM) // step)
 
@@ -1065,8 +954,9 @@ def _tree_lines(
             title_room = max(8, title_end - cells(prefix) - cells(glyph) - 1)
             title = fit(_title(node), title_room, charset.ellipsis)
             pad = " " * (title_room - cells(title))
-            category = fit(_category(node), category_width, charset.ellipsis)
-            model = fit(_model_text(node, ":"), model_width, charset.ellipsis)
+            category, model = _tree_fields(node)
+            category = fit(category, category_width, charset.ellipsis)
+            model = fit(model, model_width, charset.ellipsis)
             pieces = [
                 *lead_segments(lead),
                 Segment(branch, "edge", depth),
@@ -1085,41 +975,68 @@ def _tree_lines(
             ))
             shown_under = clamped(under, depth)
             indent = shown_under + "  "
-            category, status = _category(node), _status_text(node)
+            (category, model), status = _tree_fields(node), _status_text(node)
             # The status is what a reader came for: the model gives way first when the line is full.
             model_room = width - cells(indent) - cells(category) - cells(status) - 2 * cells(sep)
-            model = fit(_model_text(node, ":"), max(cells(charset.ellipsis) + 3, model_room), charset.ellipsis)
-            facts = [
-                *lead_segments(shown_under),
-                Segment("  ", "edge", depth),
-                Segment(category, _field_role(category, "category")),
-                Segment(sep, "edge", depth),
-                Segment(model, _field_role(model, "model")),
-                Segment(sep, "edge", depth),
-                Segment(status, f"status:{state}"),
-            ]
+            model = fit(model, max(cells(charset.ellipsis) + 3, model_room), charset.ellipsis) if model else ""
+            facts = [*lead_segments(shown_under), Segment("  ", "edge", depth)]
+            for text, role in ((category, "category"), (model, "model")):
+                if text:  # a field with no record yet is left out with its separator
+                    facts += [Segment(text, _field_role(text, role)), Segment(sep, "edge", depth)]
+            facts.append(Segment(status, f"status:{state}"))
             lines.append(_cut_line(facts, width, charset))
         kids = [kid for kid in nested.get(node_id, []) if kid not in hidden]
         for at, kid in enumerate(kids):
             node_lines(kid, under, at == len(kids) - 1, depth + 1)
 
+    # A cut that hid nodes of the last group drawn, and nothing else, is counted under that group; one that hid
+    # anything else (a whole group, or part of an earlier one) is counted at the root, after the last group.
+    under_last = False
+    if hidden and labelled and visible_groups:
+        last_members = next(members for label, members in groups if label == visible_groups[-1][0])
+        under_last = hidden <= _descendants(last_members, nested)
     for group_at, (label, members) in enumerate(visible_groups):
         group_last = group_at == len(visible_groups) - 1
+        cut_here = bool(hidden) and group_last and (under_last or not labelled)
         if labelled:
-            prefix = charset.end if group_last else charset.tee
+            label_last = group_last and not (hidden and not under_last)
+            prefix = charset.end if label_last else charset.tee
             text = fit(_group_label(label, charset) or "lanes", width - cells(prefix), charset.ellipsis)
             lines.append((Segment(prefix, "edge"), Segment(text, "group")))
-            lead = charset.gap if group_last else charset.bar
+            lead = charset.gap if label_last else charset.bar
         else:
             lead = ""
         for at, member in enumerate(members):
-            node_lines(member, lead, at == len(members) - 1 and not (group_last and hidden), 0)
+            node_lines(member, lead, at == len(members) - 1 and not cut_here, 0)
     if hidden:
         done = sum(1 for node in hidden if _state(by_id[node]) == "done")
         tail = f" ({done} done)" if done else ""
         text = f"+{len(hidden)} more node{'' if len(hidden) == 1 else 's'}{tail}"
-        lines.append((Segment(charset.end, "edge"), Segment(fit(text, width - cells(charset.end), charset.ellipsis), "more")))
+        lead = [Segment(charset.gap, "edge")] if under_last else []
+        room = width - cells(charset.end) - (cells(charset.gap) if under_last else 0)
+        lines.append((*lead, Segment(charset.end, "edge"), Segment(fit(text, room, charset.ellipsis), "more")))
     return lines
+
+
+def _descendants(members: Sequence[str], nested: Mapping[str, list[str]]) -> set[str]:
+    """``members`` and every node nested under them."""
+    found: set[str] = set()
+    pending = list(members)
+    while pending:
+        node = pending.pop()
+        if node not in found:
+            found.add(node)
+            pending += nested.get(node, [])
+    return found
+
+
+def _tree_fields(node: Mapping[str, Any]) -> tuple[str, str]:
+    """The tree's category and model columns: a field with no record yet is blank, and ``?`` stands in the category
+    column only when neither is known, as in a box."""
+    category, model = _category(node), _model_text(node, ":")
+    if category == UNKNOWN_FIELD and model == UNKNOWN_FIELD:
+        return UNKNOWN_FIELD, ""
+    return ("" if category == UNKNOWN_FIELD else category), ("" if model == UNKNOWN_FIELD else model)
 
 
 def _depth(node_id: str, nested: Mapping[str, list[str]]) -> int:
@@ -1185,24 +1102,24 @@ def render_delegation_view(
     charset: str = "unicode",
     layout: str = "auto",
     spinner: str | None = None,
-    compact: bool = False,
+    focus: Focus | None = None,
 ) -> View:
-    """The best drawing of ``graph`` that fits: boxes, else (with ``compact``) two-line boxes, else the tree, else
-    the header alone.
+    """The best drawing of ``graph`` that fits: boxes with their Dependencies and Node details, else boxes with fewer
+    sections, else the tree, else the header alone.
 
-    ``layout`` narrows the choice: ``box`` tries four-line boxes, ``compact``
-    two-line ones, and ``tree`` only the tree; each still falls back to the
-    tree and the header. ``max_chars`` counts the joined text, newlines
-    included. Never raises on a malformed graph: what cannot be read is left
-    out, and what cannot be laid out is drawn as the tree. A graph with no nodes
-    draws nothing.
+    ``layout`` narrows the choice: ``box`` tries the boxes and ``tree`` only
+    the tree; each still falls back to the tree and the header. ``focus`` is `/dag`'s
+    highlight, folds and details switch. ``max_chars`` counts the joined text,
+    newlines included. Never raises on a malformed graph: what cannot be read
+    is left out, and what cannot be laid out is drawn as the tree. A graph
+    with no nodes draws nothing.
     """
     chosen = CHARSETS.get(charset, UNICODE)
     safe_width = max(8, int(width)) if isinstance(width, int) and not isinstance(width, bool) else 80
     if not isinstance(graph, Mapping) or not _nodes(graph):
         return View((), "header")
     header = _header_lines(graph, safe_width, chosen)
-    key = (_structure(graph), safe_width, max_lines, max_chars, chosen.name, layout, spinner, compact)
+    key = (_structure(graph), safe_width, max_lines, max_chars, chosen.name, layout, spinner, focus)
 
     def fits(lines: Sequence[tuple[Segment, ...]]) -> bool:
         if max_lines is not None and len(lines) > max_lines:
@@ -1213,11 +1130,11 @@ def render_delegation_view(
                 return False
         return True
 
-    def boxes(compact_boxes: bool, lane_inner: int) -> View | None:
-        drawn = _box_view(graph, safe_width, chosen, lane_inner, spinner, compact_boxes)
-        if drawn is None or not fits((*header, *drawn[0])):
+    def boxes(sections: int) -> View | None:
+        drawn = _box_view(graph, safe_width, chosen, sections=sections, focus=focus, spinner=spinner)
+        if drawn is None or not fits(drawn.lines):
             return None
-        return View((*header, *drawn[0]), "compact" if compact_boxes else "box", levels=drawn[1])
+        return View(tuple(drawn.lines), "box", boxes=drawn.boxes)
 
     def tree(hidden: set[str]) -> View | None:
         body = _tree_lines(graph, safe_width, chosen, hidden, spinner)
@@ -1229,11 +1146,10 @@ def render_delegation_view(
     decided = _DECISIONS.get(key)
     if decided is not None:
         kind, detail = decided
-        replayed = boxes(kind == "compact", detail) if kind in ("box", "compact") else tree(set(detail)) if (
-            kind == "tree") else None
+        replayed = boxes(detail) if kind == "box" else tree(set(detail)) if kind == "tree" else None
         if replayed is not None:
             return replayed
-    view, decision = _choose(graph, safe_width, chosen, header, layout, compact, max_lines, boxes, tree, fits)
+    view, decision = _choose(graph, safe_width, chosen, header, layout, boxes, tree, fits)
     if len(_DECISIONS) >= DECISION_LIMIT:
         _DECISIONS.pop(next(iter(_DECISIONS)))
     _DECISIONS[key] = decision
@@ -1249,38 +1165,20 @@ def _choose(
     charset: Charset,
     header: tuple[tuple[Segment, ...], ...],
     layout: str,
-    compact: bool,
-    max_lines: int | None,
     boxes: Any,
     tree: Any,
     fits: Any,
 ) -> tuple[View, tuple[str, Any]]:
-    """The drawing `render_delegation_view` returns, and the decision that redraws it."""
-    tiers = {"auto": (False, True) if compact else (False,), "box": (False,), "compact": (True,)}.get(layout, ())
-    if width >= BOX_MIN_WIDTH:
-        for compact_boxes in tiers:
-            if max_lines is not None and len(header) + _fewest_box_lines(graph, compact_boxes) > max_lines:
-                continue  # even unwrapped, these boxes are taller than the budget
-            # The fewest lines wins, then the widest boxes: three lanes cut to fit one row read better than the same
-            # three wrapped into three. Boxes narrower than INNER_COMFORT are a last resort. A width past the widest
-            # box's own draws what that width draws, so the search starts there.
-            # Narrower boxes never take more lines (more fit a row) and never fit worse, so the narrowest width of a
-            # floor draws the fewest lines any width can, and the widest width that draws as few is found by halving.
-            kind = "compact" if compact_boxes else "box"
-            top = min(INNER_MAX, max(_widest_lane(graph, charset, compact_boxes), INNER_COMFORT))
-            for floor, ceiling in ((INNER_COMFORT, top), (INNER_MIN, INNER_COMFORT - 1)):
-                narrowest = boxes(compact_boxes, floor)
-                if narrowest is None:
-                    continue
-                best, low, high = (narrowest, floor), floor + 1, ceiling
-                while low <= high:
-                    middle = (low + high) // 2
-                    drawn = boxes(compact_boxes, middle)
-                    if drawn is not None and len(drawn.lines) == len(narrowest.lines):
-                        best, low = (drawn, middle), middle + 1
-                    else:
-                        high = middle - 1
-                return best[0], (kind, best[1])
+    """The drawing `render_delegation_view` returns, and the decision that redraws it.
+
+    Under a budget the boxes give up Node details first, then Dependencies
+    (each box still names its parents).
+    """
+    if width >= BOX_MIN_WIDTH and layout in ("auto", "box"):
+        for sections in (2, 1, 0):
+            drawn = boxes(sections)
+            if drawn is not None:
+                return drawn, ("box", sections)
     order = _hide_order(graph)
     whole = tree(set())
     if whole is not None:
@@ -1315,29 +1213,6 @@ def _hide_order(graph: Mapping[str, Any]) -> list[str]:
             return hidden
         hidden.append(remaining[0])
         gone.add(remaining[0])
-
-
-def _fewest_box_lines(graph: Mapping[str, Any], compact: bool) -> int:
-    """The lines boxes take with no layer wrapped: the root's box, then per layer a bus, an arrow and a box."""
-    nodes = _nodes(graph)
-    ids = [str(node["id"]) for node in nodes]
-    layer = _layers(ids, _edges(graph, set(ids)))
-    if layer is None:
-        return 0  # no layering: `_box_view` says why it cannot draw
-    depth = max(layer.values()) + 1
-    root = next((node for node in nodes if node.get("kind") == "root"), None)
-    if compact:
-        return 3 + (depth - 1) * (1 + 4)  # a one-line root; per layer a bus, then boxes with the arrow in the border
-    root_lines = 2 + (2 if root is None or clean_text(root.get("model")) else 1)
-    return root_lines + (depth - 1) * (2 + 2 + 4)
-
-
-def _widest_lane(graph: Mapping[str, Any], charset: Charset, compact: bool) -> int:
-    """The widest lane box's natural inner width: every lane box of a drawing is that wide, or `lane_inner`."""
-    return max(
-        [max(INNER_MIN, _natural_inner(node, charset, compact)) for node in _nodes(graph) if node.get("kind") != "root"]
-        or [INNER_MIN]
-    )
 
 
 def _structure(graph: Mapping[str, Any]) -> tuple[Any, ...]:

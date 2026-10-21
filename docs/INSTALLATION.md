@@ -815,7 +815,8 @@ Esc closes it):
 | x, s | In the agent list, on an agent: x twice interrupts it; s steers it with the next line you send (Esc cancels) |
 | Click | On a row of the agent list, opens that agent's log (on main, only leaves the list) |
 | ← / →, q or Esc | In an agent's log, show the agent before or after, or go back; the pager's keys scroll it |
-| j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, `/dag`, an agent's log, this list), move a line, a page, or to either end, or leave |
+| Tab / n, Shift+Tab / p, Space / Enter, d | In `/dag`, highlight the next or the previous box, fold or unfold the highlighted one, or show or hide Node details; ↑ / ↓, PageUp / PageDown and g / G scroll, q or Esc leaves |
+| j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, an agent's log, this list), move a line, a page, or to either end, or leave |
 
 Ctrl+Enter and Shift+Enter reach the OMH TUI as keys of their own only where
 the terminal reports them. On start it asks iTerm2, kitty, WezTerm, tmux, VS
@@ -916,9 +917,11 @@ words, any skill whose name a built-in command takes, such as Hermes' own
 `/sessions`, `/redraw`, `/history` (an in-memory pager over this session),
 `/details` (show or hide thinking and tool detail on the live block),
 `/queue`, `/steer <text>`, `/effort <level>`, `/logs` (the gateway's recent
-stderr, kept in memory only), `/dag` (the session's delegation graph as the
-HUD last read it, whole and with four-line boxes, in the pager; q or Esc
-closes it), `/copy`, `/image`, `/paste` (the clipboard
+stderr, kept in memory only), `/dag` (the session's delegation graph as
+boxes, full screen in the pager and redrawn from the HUD's newest read: Tab
+and Shift+Tab move the highlight, Space folds a box, d shows or hides Node
+details; it sends nothing anywhere; q or Esc closes it), `/copy`, `/image`,
+`/paste` (the clipboard
 image), `/theme`, `/omh-model`, `/rewind`, `/todos` (the session's whole
 plan), `/model` (alone, a picker of the models Hermes offers this session,
 from Hermes' `model.options`, opened on the session's model, marked `●`, which

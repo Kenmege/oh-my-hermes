@@ -337,17 +337,24 @@ _Avoid_: a second write path, a subprocess from the plugin into the CLI
 
 **Delegation view**:
 A conversation's delegated work drawn as a graph (`delegation_graph/v1`:
-nodes, edges, layers): a layered box DAG with recorded edges only (a
-dispatch, or a recorded `depends_on`), or a compact tree when boxes do not fit
-or the shape cannot be drawn without implying an edge. The OMH TUI draws it
-in its panel, with two-line boxes where four-line ones do not fit, and `/dag`
-opens it whole; `omh hud --graph` prints it. A chat reply never carries the
-boxes: on Slack, Discord, Telegram, Mattermost and Matrix,
+nodes, edges, layers): frontiers of boxes (title,
+category and model, status, parents), one connector per frontier gap, the
+recorded edges listed exactly under `Dependencies`, and a `Node details` card
+per running or stuck node and for `/dag`'s highlighted one; or a compact tree
+when no box fits or the edges loop. The
+OMH TUI draws it as its tree in the agent view under the info line, and
+`/dag` opens the boxes full screen, live and keyboard-driven (highlight, fold,
+details), sending nothing anywhere; `omh hud --graph` prints the boxes. A
+chat reply never carries the boxes: on Slack, Discord, Telegram, Mattermost
+and Matrix,
 `transform_llm_output` appends to the reply Hermes is sending a run's start
 block once, a count line on a turn its counts changed, and its end block once
-(**Delegated run**). A field with no record is `?`, and nothing in it reads
-current config. Colour is the TUI theme's (`dag_edges` and the state roles),
-never part of the text: a chat post is plain.
+(**Delegated run**). A box draws no `?`: it leaves a field with no record out
+(a blank line where neither category nor model is recorded) and draws an
+unknown state as `◇`. In the tree a model not recorded yet is blank, and `?`
+stands in the category column where neither is recorded; nothing in it reads
+current config. Colour is the TUI theme's (a box by its node's state, the
+tree's edges by `dag_edges`), never part of the text: a chat post is plain.
 _Avoid_: a message OMH sends (Hermes delivers the reply), a plan (it shows
 dispatched work, not intended work), reading a wave as a dependency
 
