@@ -24,6 +24,7 @@ from functools import lru_cache
 from typing import TypedDict
 
 from ..routing.trigger_language_packs import (
+    is_latin_script,
     merged_trigger_phrases,
     shipped_trigger_language_packs,
 )
@@ -1235,13 +1236,13 @@ def _with_shipped_trigger_packs(definitions: tuple[SkillDefinition, ...]) -> tup
             for phrase in phrases_by_skill.get(definition.name, ())
             if phrase not in definition.triggers
         )
-        # Packs merge in language-code order, and `id` sorts before `ja`. The
-        # SKILL.md description and the capability row show only a skill's
-        # first triggers, so a phrase written wholly in ASCII goes after every
-        # pack phrase that is not: a Latin-script pack then takes none of the
-        # slots the Hangul, Kana and Han phrases already had.
-        extra = tuple(phrase for phrase in added if not phrase.isascii()) + tuple(
-            phrase for phrase in added if phrase.isascii()
+        # Packs merge in language-code order: `id` sorts before `ja`, and `vi`
+        # before `zh`. The SKILL.md description and the capability row show
+        # only a skill's first triggers, so a phrase written wholly in Latin
+        # script goes after every pack phrase that is not: a Latin-script pack
+        # then takes none of the slots the Hangul, Kana and Han phrases had.
+        extra = tuple(phrase for phrase in added if not is_latin_script(phrase)) + tuple(
+            phrase for phrase in added if is_latin_script(phrase)
         )
         if not extra:
             merged.append(definition)
