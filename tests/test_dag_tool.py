@@ -13,10 +13,12 @@ import os
 from pathlib import Path
 import sqlite3
 import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from _local_package import load_local_package
+from _module_patch import patch_modules
 
 load_local_package()
 
@@ -25,6 +27,7 @@ from omh.coding.fanout import build_fanout_contract  # noqa: E402
 from omh.coding.fanout_contracts import FANOUT_SPAWN_PLAN_FIELDS, FANOUT_SPAWN_PLAN_THRESHOLD  # noqa: E402
 from omh.coding.executors import EXTERNAL_CLI_PROFILES  # noqa: E402
 from omh.plugin_bundle.omh import dag_run  # noqa: E402
+from omh.plugin_bundle.omh import host_process  # noqa: E402
 from omh.plugin_bundle.omh.delegation_ledger import dag_binding, read_ledger  # noqa: E402
 from omh.plugin_bundle.omh.tools import dag_tool  # noqa: E402
 from omh.routing import owner_preference  # noqa: E402
@@ -456,6 +459,145 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(children["sa-api"]["dag"], {"run": "feat", "node": "api"})
         self.assertNotIn("dag", children["sa-x"])
         self.assertNotIn("dag", children["sa-y"])
+
+
+NO_HERMES = {"gateway": None, "gateway.status": None}
+
+
+def hermes_process(started: int) -> dict:
+    """Hermes' `gateway.status` liveness probes in a Hermes process that started at ``started``.
+
+    Every pid exists, so the test's own pid stands for each process; a recorded start time other than
+    ``started`` is another process, as Hermes' own comparator reads a reused pid.
+    """
+    status = SimpleNamespace(_pid_exists=lambda pid: True, get_process_start_time=lambda pid: started,
+                             start_time_fingerprints_match=lambda recorded, current: abs(current - recorded) <= 200)
+    return {"gateway": SimpleNamespace(status=status), "gateway.status": status}
+
+
+class RestartTests(unittest.TestCase):
+    """A Hermes restart ends a node's child and fires no `subagent_stop`.
+
+    Mutation: drop the `lost` mark in `dag_tool._children` or in `derive`, offer a lost node only once it is ten
+    minutes stale, or offer it past `MAX_LOST_REOFFERS`.
+    """
+
+    def out(self, home, moment: float, *, probes: dict) -> None:
+        """Define a one-node run at ``moment`` and start its child in the process ``probes`` stands for."""
+        slots_table(home)
+        with patch.object(dag_tool.time, "time", return_value=moment), patch_modules(probes):
+            call(action="define", run="feat", nodes=[node("api")])
+            child_started(home, "feat", "api", now=moment + 1)
+
+    def test_a_node_whose_child_a_restart_ended_is_offered_again_at_once(self) -> None:
+        moment = time.time()
+        with homes() as home:
+            self.out(home, moment, probes=hermes_process(1000))
+            self.assertEqual(read_ledger(home.omh, PARENT)["children"][0]["host"],
+                             {"pid": os.getpid(), "started": 1000, "machine": host_process.machine()})
+            with patch.object(dag_tool.time, "time", return_value=moment + 60), patch_modules(hermes_process(5000)):
+                status = call(action="status", run="feat")
+                ready = call(action="ready", run="feat")
+                start(home, "child-api-2", "sa-api-2", "[dag:feat/api] Node api", now=moment + 61)
+                again = call(action="status", run="feat")
+            attempts = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))["nodes"][0]["attempts"]
+        self.assertEqual(status["nodes"][0]["state"], "handed_out")
+        self.assertEqual([c["nodes"] for c in ready["calls"]], [["api"]])
+        self.assertEqual(ready["calls"][0]["tasks"][0]["goal"], "[dag:feat/api] Node api")
+        self.assertEqual(again["nodes"][0]["state"], "running")
+        self.assertEqual([(attempt["n"], attempt["lost"]) for attempt in attempts], [(1, 1)])
+
+    def test_a_child_that_came_back_before_the_restart_is_not_offered_again(self) -> None:
+        """Mutation: drop the `"stop" in child` skip in `dag_tool._children`."""
+        moment = time.time()
+        with homes() as home:
+            self.out(home, moment, probes=hermes_process(1000))
+            stop(home, "child-api", now=moment + 30)
+            with patch.object(dag_tool.time, "time", return_value=moment + 60), patch_modules(hermes_process(5000)):
+                ready = call(action="ready", run="feat")
+        self.assertEqual((ready["nodes"][0]["state"], ready["calls"]), ("returned", []))
+
+    def test_two_children_under_one_pid_are_asked_about_apart_by_where_it_was_read(self) -> None:
+        """Mutation: key the per-call answer by pid and start time only."""
+        moment = time.time()
+        with homes() as home:
+            with patch_modules(hermes_process(1000)):
+                with patch.object(host_process, "machine", return_value="linux:other-boot:pid:[4026532999]"):
+                    start(home, "child-there", "sa-there", "[dag:feat/api] There", now=moment)
+                start(home, "child-here", "sa-here", "[dag:feat/ui] Here", now=moment + 1)
+            with patch_modules(hermes_process(5000)):
+                lost = {child["child_session_id"]: bool(child.get("lost")) for child in dag_tool._children(home.omh, [PARENT])}
+        self.assertEqual(lost, {"child-there": False, "child-here": True})
+
+    def test_a_running_child_and_one_with_no_recorded_process_stay_running(self) -> None:
+        moment = time.time()
+        for name, started_in, later in (("still running", hermes_process(1000), hermes_process(1000)),
+                                        ("started outside Hermes", NO_HERMES, hermes_process(5000))):
+            with self.subTest(case=name), homes() as home:
+                self.out(home, moment, probes=started_in)
+                with patch.object(dag_tool.time, "time", return_value=moment + 6 * 3600), patch_modules(later):
+                    ready = call(action="ready", run="feat")
+                self.assertEqual((ready["nodes"][0]["state"], ready["calls"]), ("running", []))
+
+    LINE = (f"Hermes restarted while node api ran, {dag_run.MAX_LOST_REOFFERS + 1} times, so it is not offered "
+            "again: settle it failed or blocked.")
+
+    def lose_until_spent(self, home, moment: float) -> None:
+        """Hermes restarts while each child the node is offered to runs, until the node is not offered again."""
+        self.out(home, moment, probes=hermes_process(1000))
+        for n in range(dag_run.MAX_LOST_REOFFERS):
+            at = moment + 1000 * (n + 1)
+            with patch.object(dag_tool.time, "time", return_value=at), patch_modules(hermes_process(5000 * (n + 2))):
+                self.assertEqual([c["nodes"] for c in call(action="ready", run="feat")["calls"]], [["api"]])
+                start(home, f"child-api-{n}", f"sa-api-{n}", "[dag:feat/api] Node api", now=at + 1)
+
+    def test_past_the_bound_the_parent_settles_a_node_that_keeps_losing_its_child(self) -> None:
+        moment = time.time()
+        with homes() as home:
+            self.lose_until_spent(home, moment)
+            with patch.object(dag_tool.time, "time", return_value=moment + 10_000), patch_modules(hermes_process(99_000)):
+                spent = call(action="ready", run="feat")
+                status = call(action="status", run="feat")
+                settled = call(action="settle", run="feat", node="api", outcome="failed", reason="lost to restarts")
+        self.assertEqual(spent["calls"], [])
+        # Said on every action, `status` included, beside anything else the reply says.
+        self.assertEqual((spent["say"], status["say"]), (self.LINE, self.LINE))
+        self.assertEqual(settled["nodes"][0]["state"], "failed")
+        self.assertNotIn(self.LINE, settled["say"])
+
+    def test_the_settle_line_is_added_to_what_else_the_reply_says(self) -> None:
+        """Mutation: let the settle line replace another say (a retry, an export, a full pool)."""
+        moment = time.time()
+        with homes() as home:
+            self.lose_until_spent(home, moment)
+            with patch.object(dag_tool.time, "time", return_value=moment + 10_000), patch_modules(hermes_process(99_000)):
+                record = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))
+                derived = dag_run.derive(record, dag_tool._children(home.omh, [PARENT]), moment + 10_000)
+                said = json.loads(dag_tool._result("ready", record, derived, None, say="Another line."))["say"]
+        self.assertEqual(said, f"Another line. {self.LINE}")
+
+    def test_a_cancelled_run_does_not_ask_to_settle_its_lost_node(self) -> None:
+        """Mutation: drop the `handed_out` state check from `lost_for_good`."""
+        moment = time.time()
+        with homes() as home:
+            self.lose_until_spent(home, moment)
+            with patch.object(dag_tool.time, "time", return_value=moment + 10_000), patch_modules(hermes_process(99_000)):
+                cancelled = call(action="cancel", run="feat")
+        self.assertEqual(cancelled["nodes"][0]["state"], "cancelled")
+        self.assertNotIn(self.LINE, cancelled["say"])
+
+    def test_a_lost_node_waiting_for_a_slot_is_told_to_wait_not_to_settle(self) -> None:
+        """Mutation: say a node is not offered again before its losses reach the bound."""
+        moment = time.time()
+        with homes() as home:
+            self.out(home, moment, probes=hermes_process(1000))
+            slots_table(home, running=[("busy", os.getpid())])
+            home.hermes.joinpath("config.yaml").write_text("delegation:\n  max_concurrent_children: 1\n")
+            with patch.object(dag_tool.time, "time", return_value=moment + 60), patch_modules(hermes_process(5000)):
+                ready = call(action="ready", run="feat")
+        self.assertEqual((ready["calls"], ready["held_for_slots"]), ([], ["api"]))
+        self.assertEqual(ready["say"], "No delegate_task slot is free; end the turn and call ready again after a "
+                                       "completion.")
 
 
 CODING = [

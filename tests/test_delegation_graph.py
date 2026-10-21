@@ -403,6 +403,22 @@ class TeamOverlayTests(unittest.TestCase):
             unseen = node(built(home), "Fix the parser")
             self.assertEqual((unseen["state"], unseen["status"]), ("dispatched", "repair dispatched"))
 
+    def test_a_helper_a_restart_ended_is_drawn_nowhere(self) -> None:
+        """Mutation: drop `team_lost` from either free-child filter."""
+        with homes() as home:
+            home.session(PARENT, "claude-opus-5-5")
+            start(home, "child-0", "sa-0", "[omh-team:hud-graph/docs/attempt-1] Refresh docs", now=NOW)
+            home.session("child-0", "claude-opus-5-5", parent=PARENT)
+            start(home, "child-1", "sa-1", "Read the logs", turn="turn-4", now=NOW + 10)
+            lost = {"n": 1, "dispatch": None, "lost": [{"child_session_id": "child-0", "subagent_id": "sa-0",
+                                                        "lost_at": "t"}], "inconclusive": []}
+            self.write_team(home, [unit("docs", "Refresh docs", [], [lost])])
+            graph = built(home)
+        self.assertEqual(sorted(item["title"] for item in graph["nodes"] if item["id"] != "root"),
+                         ["Read the logs", "Refresh docs"], "the ended helper is not a lane of its own")
+        self.assertEqual(node(graph, "Refresh docs")["status"], "prepared")
+        self.assertTrue(node(graph, "Read the logs")["group"].startswith("wave 1 "), "nor does it take a wave")
+
 
 class FanoutTests(unittest.TestCase):
     def test_a_fanout_draws_its_units_owners_models_and_dependencies(self) -> None:

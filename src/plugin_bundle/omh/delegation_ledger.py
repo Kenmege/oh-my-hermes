@@ -11,6 +11,8 @@ writes what they say, metadata only, into one record per conversation
   subagent (set when the parent is itself a child), the turn that dispatched
   it, and the route OMH itself had prepared for that session at that moment
   (`delegation_route_provenance/v1`, the record `omh_delegate_route` writes).
+  A dag-ulw node's child also gets the Hermes process it runs in
+  (`host_process.this_process`).
 * `post_tool_call` for `delegate_task`: the host's own result. A background
   dispatch lists ``subagent_ids`` in task order with its ``delegation_id``,
   which gives each child its task index and the delegation Hermes recorded
@@ -48,6 +50,7 @@ from typing import Any, Final
 from . import runtime_paths
 from .awareness_delivery import _awareness_delivery_lock
 from .hermes_delegation import load_delegation_route_provenance
+from .host_process import recorded_process, this_process
 
 LEDGER_SCHEMA_VERSION: Final = "delegation_ledger/v1"
 LEDGER_DIRNAME: Final = "delegation"
@@ -263,6 +266,8 @@ def _valid_child(value: object) -> dict[str, Any] | None:
     dag = value.get("dag")
     if isinstance(dag, dict) and dag_binding(f"[dag:{dag.get('run')}/{dag.get('node')}]"):
         entry["dag"] = {"run": str(dag["run"]), "node": str(dag["node"])}
+    if (process := recorded_process(value.get("host"))) is not None:
+        entry["host"] = process
     index = value.get("task_index")
     if isinstance(index, int) and not isinstance(index, bool) and 0 <= index < 1024:
         entry["task_index"] = index
@@ -502,6 +507,10 @@ def observe_subagent_start(kwargs: dict[str, object], *, now: float | None = Non
     binding = dag_binding(kwargs.get("child_goal"))
     if binding:
         entry["dag"] = binding
+        # The Hermes process the child runs in and ends with: a restart fires no `subagent_stop`, so `omh_dag`
+        # tells a node whose child it ended from one still running by this.
+        if (process := this_process()) is not None:
+            entry["host"] = process
 
     def add(record: dict[str, Any]) -> bool:
         if any(item["subagent_id"] == subagent_id for item in record["children"]):

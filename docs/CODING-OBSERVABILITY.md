@@ -322,7 +322,8 @@ What it shows, and what it leaves as `?`:
   - An `omh_team` part takes the state of the child its latest attempt
     dispatched, so a repair is `repairing` only while that child runs. A
     repair the team reserved but has not sent is `waiting` (`repair
-    prepared`).
+    prepared`). A helper a Hermes restart ended is not drawn: its part is
+    `waiting` until the helper sent in its place starts.
   - A fanout unit whose dispatcher reports it stalled is `stuck`, with how
     long it has been stuck.
   - A dag-ulw node takes the state its `omh_dag/v1` run derives: accepted or
