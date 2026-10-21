@@ -12,15 +12,16 @@ Top to bottom the region holds:
     bottom rule     the composer box's bottom edge
     menu below      the completion menu, where the app draws it under the composer instead of in the slot
     info line       the input mode or the keys that matter now, then model, context and effort
+    agent view      the subagents (or the delegation tree) while there are any, always expanded
 
 The budget is a pure function of the terminal size, the content sizes and
 `min_height`. With `min_height` 0 the region is exactly as tall as its
 content, so the region (drawn right under the output, `screen.LiveRegion`)
-follows the content and the composer moves with what is above it. The app
-passes the region's height as `min_height` once the region's last row is the
-screen's last row: content that shrinks there becomes pad rows at the top of
-the region, so the composer and the rows under it stay on the bottom rows,
-and the next flushed lines cover the pad rows.
+follows the content and the composer moves with what is above and below it.
+The app passes the region's height as `min_height` once the region's last row
+is the screen's last row: content that shrinks there becomes pad rows at the
+top of the region, so the composer never moves up (it moves down as the agent
+view under it shrinks), and the next flushed lines cover the pad rows.
 
 - The region is never taller than `rows - 1`. `LiveRegion` moves only
   relative to its own top and cursor-up stops at the top of the screen, so a
@@ -33,19 +34,25 @@ and the next flushed lines cover the pad rows.
   `BOTTOM_RULE_MIN_ROWS` rows, so a slot still gets its full cap on a shorter
   terminal.
 - Then the top rule, then the menu below (at most `rows // 3`), then the
-  slot (at most `rows // 3` less the menu below's rows), then the sticky
-  prompt (only when asked and a row is left), and the tail takes whatever
-  remains, keeping its last rows.
+  slot (at most `rows // 3` less the menu below's rows), then the agent view
+  (its producer sizes it to `agent_view_cap`), then the sticky prompt (only
+  when asked and a row is left), and the tail takes whatever remains, keeping
+  its last rows. So a question or a picker keeps its whole cap beside the
+  agent view, and the tail gives way first.
 - Below `MIN_ROWS` rows or `MIN_COLS` columns only composer and info line are
   drawn, and, while a question answered with text is open (`text_question`),
-  one slot row above them for its label when a row is left.
+  one slot row above them for its label when a row is left. No agent view.
 - Pad rows fill the region up to `min_height`, never past `rows - 1`, and
   only where the content needs fewer rows.
 - With the composer hidden (`composer_hidden`: the person picks from a list,
   so nothing is typed) the region draws no top rule, no input rows and no
   bottom rule, and the slot stands right above the info line, taking up to
   `choice_cap` rows: its own cap and the rows a one-row composer frame takes
-  at that size. The info line keeps its row.
+  at that size. The info line keeps its row, and the agent view its rows.
+- While the agent list under the info line has the keys the composer frame
+  keeps its rows and the frame draws them blank (`frame.build_frame`'s
+  `composer_blank`), so nothing above or below it moves while the list is
+  open.
 """
 
 from __future__ import annotations
@@ -59,6 +66,8 @@ MIN_ROWS = 6
 MIN_COLS = 20
 # The bottom rule under the composer, kept only where the slot still gets its full cap beside it.
 BOTTOM_RULE_MIN_ROWS = 7
+# The agent view's usual most rows: main and six agents (or main, five and a `+N` row), as the agent list had.
+AGENT_VIEW_ROWS = 7
 
 BLANK: Line = ()
 
@@ -74,6 +83,7 @@ class Budget:
     info: int
     pad: int = 0
     below: int = 0  # the menu below: between the bottom rule and the info line
+    agents: int = 0  # the agent view: under the info line, the region's last rows
 
     @property
     def total(self) -> int:
@@ -87,6 +97,7 @@ class Budget:
             + self.bottom_rule
             + self.below
             + self.info
+            + self.agents
         )
 
     @property
@@ -137,6 +148,22 @@ def choice_cap(rows: int, cols: int) -> int:
     return slot_cap(rows, cols) + frame
 
 
+def agent_view_cap(rows: int, cols: int, keep: int = 0) -> int:
+    """The most rows the agent view under the info line may take; its producer sizes the view to this.
+
+    `min(AGENT_VIEW_ROWS, rows // 4)`, so on the bottom rows, with the view
+    at that cap, a one-row composer's input row is row 16 of 24, 21 of 30 and
+    31 of 40 (the owner's complaint about Ink, 2026-10-13, was that the
+    prompt went too far up).
+    `keep` is the rows the view needs to show every running agent (with its
+    header and `+N` row): it raises the cap to that, never past `rows // 3`.
+    None on a tiny terminal.
+    """
+    if is_tiny(rows, cols):
+        return 0
+    return max(min(AGENT_VIEW_ROWS, rows // 4), min(keep, rows // 3))
+
+
 def allocate(
     rows: int,
     cols: int,
@@ -149,6 +176,7 @@ def allocate(
     composer_hidden: bool = False,
     text_question: bool = False,
     below_rows: int = 0,
+    agents_rows: int = 0,
 ) -> Budget:
     """Rows for each part of the region (see the module docstring for the rules)."""
     room = max_height(rows)
@@ -158,7 +186,7 @@ def allocate(
     if composer_hidden:
         composer = bottom_rule = 0  # their rows, and the top rule's, go to the slot (`choice_cap`)
     left = room - composer - info - bottom_rule
-    rule = slot = sticky_rows = tail = below = 0
+    rule = slot = sticky_rows = tail = below = agents = 0
     if composer_hidden:
         slot = min(max(slot_rows, 0), choice_cap(rows, cols), left)
         left -= slot
@@ -173,10 +201,12 @@ def allocate(
             left -= below
             slot = min(max(slot_rows, 0), slot_cap(rows, cols) - below, left)
             left -= slot
+        agents = min(max(agents_rows, 0), left)
+        left -= agents
         sticky_rows = 1 if sticky and left > 0 else 0
         left -= sticky_rows
         tail = min(max(tail_rows, 0), left)
-    content = sticky_rows + tail + slot + rule + composer + bottom_rule + below + info
+    content = sticky_rows + tail + slot + rule + composer + bottom_rule + below + info + agents
     return Budget(
         pad=min(max(min_height - content, 0), room - content),
         sticky=sticky_rows,
@@ -187,6 +217,7 @@ def allocate(
         bottom_rule=bottom_rule,
         info=info,
         below=below,
+        agents=agents,
     )
 
 
@@ -213,11 +244,13 @@ def compose(
     bottom_rule: Line,
     info: Line,
     below: Sequence[Line] = (),
+    agents: Sequence[Line] = (),
 ) -> list[Line]:
     """The region's rows, exactly `budget.total` of them, top to bottom.
 
-    The tail keeps its last rows; the slot and the composer keep their first
-    rows (their producers size them to `slot_cap` and `composer_cap`).
+    The tail keeps its last rows; the slot, the composer and the agent view
+    keep their first rows (their producers size them to `slot_cap`,
+    `composer_cap` and `agent_view_cap`).
     """
     region: list[Line] = [BLANK] * budget.pad
     if budget.sticky:
@@ -233,6 +266,7 @@ def compose(
     region.extend(list(below)[: budget.below])
     if budget.info:
         region.append(info)
+    region.extend(list(agents)[: budget.agents])
     return region
 
 

@@ -110,8 +110,12 @@ DAG · ulw-work hud-graph · 5 nodes · 6 edges
 
 Where it shows:
 
-- **The OMH TUI** draws it live in its panel, above the plan, and keeps it
-  while the info line shows the agents. The `[Agents]` block leaves out the
+- **The OMH TUI** draws it live, as its tree, in the agent view under the
+  info line (the owner's call of 2026-10-21: the subagent view goes under the
+  prompt, always expanded): in place of the live agent list while the graph
+  is a DAG run (a `depends_on` edge, or a lane that delegates), and under the
+  HUD's agents block while no live agent is listed. The agents block (its
+  header `● main │ …`) leaves out the
   activity row of each Hermes-native child the graph draws, matched by the
   child's session id, so that lane is drawn once. A row whose child the graph
   does not hold stays. While the graph draws some of the lanes, the header
@@ -120,14 +124,14 @@ Where it shows:
   eight) are counted the same way: the HUD reports how many of them the graph
   draws (`subagents.hidden_in_graph`), and those are not other agents. The
   lanes are then counted once, on the graph's own header line, and the
-  `[Agents]` header keeps the session's cost and tokens.
-  The panel gets a third of the terminal's rows. Where four-line boxes do not
-  fit, two-line boxes are drawn instead: the title, then the category and
-  model, with each arrow drawn into the box it enters. Where those do not fit
-  either, the tree is drawn. Three lanes get two-line boxes from 30 rows and
-  four-line boxes from 50; the owner's five-node mock-up gets two-line boxes
-  at 50 rows. `/dag` opens the graph as the HUD last read it in the pager,
-  whole and with four-line boxes, in the same colours; q or Esc closes it.
+  agents block's header keeps the session's cost and tokens.
+  The view takes at most a quarter of the terminal's rows, seven from 28
+  rows, raised only to show every running lane and never past a third of the
+  screen; boxes do not fit there (two-line boxes take nine rows for one layer
+  under main), so the tree is drawn, its done lanes giving way first to a
+  `+N more nodes` row. `/dag` opens the graph as the HUD last read it in the
+  pager, whole and with four-line boxes, in the same colours; q or Esc
+  closes it.
 - **Slack, Discord, Telegram, Mattermost and Matrix** never get the box
   drawing. They see a delegated run, the conversation's lanes that no end
   post has closed yet, at three moments. Each is appended to the reply Hermes

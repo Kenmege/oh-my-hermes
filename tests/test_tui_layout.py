@@ -12,7 +12,10 @@ exact row count. A hidden composer (a question answered by picking, a picker,
 the agent list) is checked over the same grid: no box edges or input rows, the
 info line exactly where the composer leaves it, and the slot given its
 `choice_cap`, at least one row wherever the composer had one. The frame draws
-the composer as a rounded box that never changes with the mode.
+the composer as a rounded box that never changes with the mode. The agent
+view under the info line takes its rows after the slot and before the tail,
+none on a tiny terminal, and its cap (`agent_view_cap`) is checked against
+the rows it leaves the composer.
 """
 
 from __future__ import annotations
@@ -25,11 +28,13 @@ from omh.tui.composer import Composer
 from omh.tui.frame import BOX_BOTTOM, BOX_TOP, box_edge, build_frame, sticky_line
 from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_PLAN, MODE_SHELL
 from omh.tui.layout import (
+    AGENT_VIEW_ROWS,
     BLANK,
     BOTTOM_RULE_MIN_ROWS,
     MIN_COLS,
     MIN_ROWS,
     Budget,
+    agent_view_cap,
     allocate,
     caret_row,
     choice_cap,
@@ -129,6 +134,61 @@ class AllocateGridTests(unittest.TestCase):
             # the sticky row is never taken while the slot is short of its cap
             if budget.sticky:
                 self.assertEqual(budget.slot, min(slot_rows, rows // 3), where)
+
+
+class AgentViewBudgetTests(unittest.TestCase):
+    """The agent view under the info line: after the slot, before the tail, and none on a tiny terminal."""
+
+    def test_the_view_takes_its_rows_after_the_slot_and_before_the_tail_over_the_grid(self) -> None:
+        for rows, cols, tail_rows, slot_rows, composer_rows, agents_rows in itertools.product(
+            range(1, 60), COLS, (0, 5, 200), (0, 9, 60), (1, 12), (0, 3, 7, 30)
+        ):
+            plain_budget = allocate(rows, cols, sticky=False, tail_rows=tail_rows, slot_rows=slot_rows,
+                                    composer_rows=composer_rows)
+            with_view = allocate(rows, cols, sticky=False, tail_rows=tail_rows, slot_rows=slot_rows,
+                                 composer_rows=composer_rows, agents_rows=agents_rows)
+            where = (rows, cols, tail_rows, slot_rows, composer_rows, agents_rows, with_view)
+            self.assertLessEqual(with_view.total, max(rows - 1, 0), where)
+            # everything from the composer up to the slot keeps what it had without the view
+            for part in ("composer", "info", "rule", "bottom_rule", "slot", "below"):
+                self.assertEqual(getattr(with_view, part), getattr(plain_budget, part), (part, where))
+            if rows < MIN_ROWS or cols < MIN_COLS:
+                self.assertEqual(with_view.agents, 0, where)
+                continue
+            left = max(rows - 1, 0) - (plain_budget.total - plain_budget.tail)
+            self.assertEqual(with_view.agents, min(agents_rows, left), where)
+            self.assertEqual(with_view.tail, min(tail_rows, left - with_view.agents), where)
+
+    def test_the_view_is_the_regions_last_rows_under_the_info_line(self) -> None:
+        parts = Budget(sticky=0, tail=1, slot=1, rule=1, composer=1, bottom_rule=1, info=1, agents=2)
+        region = compose(
+            parts, sticky=None, tail=plain("t1"), slot=plain("[Plan]"), rule=plain("──")[0], composer=plain("> a"),
+            bottom_rule=plain("__")[0], info=plain("info")[0], agents=plain("● main", "⠋ agent", "cut"),
+        )
+        self.assertEqual(lines_text(region), ["t1", "[Plan]", "──", "> a", "__", "info", "● main", "⠋ agent"])
+        self.assertEqual(len(region), parts.total)
+
+    def test_the_cap_is_a_quarter_up_to_seven_and_running_agents_raise_it_up_to_a_third(self) -> None:
+        self.assertEqual(AGENT_VIEW_ROWS, 7)
+        usual = {6: 1, 8: 2, 10: 2, 12: 3, 16: 4, 20: 5, 24: 6, 28: 7, 40: 7, 80: 7}
+        for rows, cap in usual.items():
+            with self.subTest(rows=rows):
+                self.assertEqual(agent_view_cap(rows, 80), cap)
+                self.assertEqual(agent_view_cap(rows, 80, cap - 1), cap, "fewer to keep never lowers it")
+                self.assertEqual(agent_view_cap(rows, 80, 99), max(cap, rows // 3))
+        self.assertEqual(agent_view_cap(24, 80, 7), 7)
+        for rows, cols in ((5, 80), (24, MIN_COLS - 1)):
+            self.assertEqual(agent_view_cap(rows, cols, 99), 0)
+
+    def test_a_frame_with_the_composer_blank_keeps_its_rows_and_shows_no_caret(self) -> None:
+        composer = Composer(text="", caret=0)
+        info, agents = (Span("keys"),), plain("● main", "▸ ⠋ agent")
+        shown = build_frame(cols=40, rows=24, composer=composer, info=info, agents=agents)
+        blank = build_frame(cols=40, rows=24, composer=composer, info=info, agents=agents, composer_blank=True)
+        self.assertEqual(blank.height, shown.height)
+        self.assertEqual(lines_text(list(blank.lines)), ["", "", "", "keys", "● main", "▸ ⠋ agent"])
+        self.assertIsNone(blank.cursor)
+        self.assertEqual(lines_text(list(shown.lines))[3:], ["keys", "● main", "▸ ⠋ agent"])
 
 
 def budget(**rows: int) -> Budget:

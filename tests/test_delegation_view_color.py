@@ -242,7 +242,7 @@ class PaintTests(unittest.TestCase):
                                        "received_at": None})()
             with self.subTest(environ=environ):
                 self.assertEqual(app.color_depth, expected)
-                spans = graph_spans(app._menu_or_panel_lines(100, 40))
+                spans = graph_spans(app._agent_view(100, 40))  # the agent view under the info line draws it
                 self.assertTrue(any("Refresh HUD docs" in span.text for span in spans))
                 self.assertTrue(all(span.style.depth == expected for span in spans))
 

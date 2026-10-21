@@ -101,8 +101,9 @@ def style_of(line: Line, text: str) -> Style:
 
 
 def every_row(roster: Roster, width: int = 60, now: float = 50.0) -> list[Line]:
-    """Every row the roster can draw at `width`: the strip, the list, and each agent's log view."""
-    rows: list[Line] = [roster.strip_line(width, THEME, 0)]
+    """Every row the roster can draw at `width`: the agent view, collapsed and whole, the list, and each agent's log
+    view."""
+    rows: list[Line] = roster.view_lines(width, THEME, 0, 3, now) + roster.view_lines(width, THEME, 0, ROSTER_CAP + 1, now)
     rows.extend(roster.list_lines(width, THEME, MAIN_ID, 0, ROSTER_CAP + 1, now)[0])
     for subagent_id in roster.agents:
         rows.extend(roster.log_lines(subagent_id, width, THEME, now))
@@ -172,7 +173,14 @@ class RelayFixtureTests(unittest.TestCase):
 
     def test_replay_renders(self) -> None:
         roster = replayed()
-        self.assertEqual(line_text(roster.strip_line(80, THEME, 0)), "● main  ○ find usages of  ✗ read the diff  ↓ agents")
+        self.assertEqual(
+            lines_text(roster.view_lines(60, THEME, 0, 7, 500.0)),
+            [
+                "  ● main",
+                "  ○ find usages of old_api in src/ and list …  12s · 6 tools",
+                "  ✗ read the diff for risks                    30s · 0 tools",
+            ],
+        )
         rows, ids = roster.list_lines(60, THEME, SECOND, 0, 6, 500.0)
         self.assertEqual(
             lines_text(rows),
@@ -331,91 +339,6 @@ class NameTests(unittest.TestCase):
         for goal, name in cases.items():
             with self.subTest(goal=goal):
                 self.assertEqual(Agent(FIRST, "running", 0.0, goal=goal).name, name)
-
-
-def strip_names(*goals: str) -> list[str]:
-    roster = Roster()
-    for index, goal in enumerate(goals):
-        feed(roster, "start", 0.0, f"sa-{index}", goal=goal)
-    names = roster.strip_names()
-    return [names[f"sa-{index}"] for index in range(len(goals))]
-
-
-class StripNameTests(unittest.TestCase):
-    """Two goals that start alike are told apart on the strip by the words where they part (r3 smoke s27)."""
-
-    def test_goals_that_start_alike_are_named_by_the_word_where_they_part(self) -> None:
-        self.assertEqual(
-            strip_names("Run the shell command `echo alpha` and report", "Run the shell command `echo beta` and report"),
-            ["…alpha", "…beta"],  # the parting word alone, out of its backticks: no stray mark, no dangling word
-        )
-        self.assertEqual(
-            strip_names("Summarize the module and list every exported function in alpha",
-                        "Summarize the module and list every exported function in beta."),
-            ["…alpha", "…beta"],
-        )
-
-    def test_quotes_backticks_and_escapes_around_the_parting_word_are_not_shown(self) -> None:
-        # Live review B: `…./tmp-d1' with` and `…beta\` in the` read as broken text.
-        self.assertEqual(
-            strip_names("Run the shell command 'rm -rf ./tmp-d1' with the terminal tool",
-                        "Run the shell command 'rm -rf ./tmp-d2' with the terminal tool"),
-            ["…./tmp-d1", "…./tmp-d2"],
-        )
-        self.assertEqual(
-            strip_names("Run the shell command `echo alpha\\` in the scratch directory",
-                        "Run the shell command (echo \"beta\") in the scratch directory"),
-            ["…alpha", "…beta"],
-        )
-
-    def test_a_parting_word_that_would_leave_the_name_hanging_takes_the_next_word(self) -> None:
-        self.assertEqual(
-            strip_names("Run the shell tests in src now", "Run the shell tests on src now"), ["…in src", "…on src"]
-        )
-
-    def test_three_alike_each_part_where_it_leaves_its_nearest_one(self) -> None:
-        self.assertEqual(
-            strip_names("find usages of old_api in src", "find usages of old_api in tests", "find usages of new_api"),
-            ["…src", "…tests", "…new_api"],
-        )
-
-    def test_parting_words_that_read_the_same_fall_back_to_numbers(self) -> None:
-        goals = ("Run the shell command a x end", "Run the shell command b x end",
-                 "Run the shell command a y end", "Run the shell command b y end")
-        self.assertEqual(strip_names(*goals), [f"{n}·Run the shell" for n in range(1, 5)])
-
-    def test_a_name_of_its_own_stays_beside_a_pair(self) -> None:
-        self.assertEqual(
-            strip_names("read the diff for risks", "Run the shell command one", "Run the shell command two"),
-            ["read the diff", "…one", "…two"],
-        )
-
-    def test_the_same_goal_twice_is_numbered(self) -> None:
-        self.assertEqual(
-            strip_names("find usages of old_api", "find usages of old_api"), ["1·find usages of", "2·find usages of"]
-        )
-
-    def test_parts_that_still_read_the_same_fall_back_to_numbers(self) -> None:
-        # Past the shared word both goals go on with one long word, cut to the same cells.
-        self.assertEqual(
-            strip_names("Check thoroughlyverylongidentifier_alpha", "Check thoroughlyverylongidentifier_beta"),
-            ["1·Check", "2·Check"],
-        )
-        # One goal ends where the other goes on: the shorter has no words of its own to show.
-        self.assertEqual(strip_names("Run the tests", "Run the tests again"), ["1·Run the tests", "2·Run the tests"])
-
-    def test_first_words_cut_alike_are_numbered(self) -> None:
-        # The names match only because a long first word was cut: no leading word is shared, so nothing is skipped.
-        self.assertEqual(
-            strip_names("supercalifragilisticexpialidocious one", "supercalifragilisticexpialidocious_two"),
-            ["1·supercalifragil…", "2·supercalifragil…"],
-        )
-
-    def test_a_part_never_reads_as_another_agents_own_name(self) -> None:
-        self.assertEqual(
-            strip_names("…two", "Run the shell command one", "Run the shell command two"),
-            ["…two", "2·Run the shell", "3·Run the shell"],
-        )
 
 
 class OutOfOrderTests(unittest.TestCase):
@@ -652,15 +575,15 @@ class RosterCapTests(unittest.TestCase):
         feed(roster, "tool", subagent_id="sa-63")
         self.assertEqual((len(roster.agents), roster.evicted), (64, 0))
 
-    def test_the_collapsed_strip_says_when_the_cap_pushed_agents_out_until_clear(self) -> None:
+    def test_the_count_says_when_the_cap_pushed_agents_out_until_clear(self) -> None:
         roster = self._full()
-        self.assertEqual(line_text(roster.strip_line(200, THEME, 0)), "● 64 agents ↓")
+        self.assertEqual(roster.count_text(), "64 agents")
         feed(roster, "start", subagent_id="sa-new")
-        self.assertEqual(line_text(roster.strip_line(200, THEME, 0)), "● 64+ agents ↓")
+        self.assertEqual(roster.count_text(), "64+ agents")
         roster.clear()
-        self.assertEqual(roster.evicted, 0)
+        self.assertEqual((roster.evicted, roster.count_text()), (0, ""))
         feed(roster, "start", goal="a " * 200)
-        self.assertEqual(line_text(roster.strip_line(10, THEME, 0)), "● 1 agent…")
+        self.assertEqual(roster.count_text(), "1 agent")
 
 
 class CleaningTests(unittest.TestCase):
@@ -714,9 +637,14 @@ class CleaningTests(unittest.TestCase):
         self.assertEqual(roster.agents[FIRST].goal, "fix the parser and test")
 
 
-class StripTests(unittest.TestCase):
-    def test_there_is_no_strip_without_an_agent(self) -> None:
-        self.assertEqual(Roster().strip_line(80, THEME, 0), ())
+class ViewTests(unittest.TestCase):
+    """The agent view under the info line: the list's rows with none highlighted, collapsed into one last row when
+    more agents than it has rows for."""
+
+    def test_there_is_no_view_without_an_agent_or_without_rows(self) -> None:
+        self.assertEqual(Roster().view_lines(80, THEME, 0, 7, 0.0), [])
+        for max_rows in (0, -1):
+            self.assertEqual(started(FIRST).view_lines(80, THEME, 0, max_rows, 0.0), [])
 
     def test_each_status_has_its_glyph_and_colour(self) -> None:
         roster = Roster()
@@ -727,71 +655,73 @@ class StripTests(unittest.TestCase):
         for status in ("failed", "error", "timeout", "interrupted"):
             feed(roster, "start", subagent_id=f"sa-{status}", goal=status)
             feed(roster, "complete", subagent_id=f"sa-{status}", status=status)
-        line = roster.strip_line(200, THEME, 2)
-        self.assertEqual(
-            line_text(line), "● main  ⠹ explore  ○ review  ◌ wait  ✗ failed  ✗ error  ✗ timeout  ▪ interrupted  ↓ agents"
-        )
-        self.assertEqual(style_of(line, "●"), THEME.accent)
-        self.assertEqual(style_of(line, "main"), THEME.hint)
-        self.assertEqual(style_of(line, "⠹"), THEME.accent)
-        self.assertEqual(style_of(line, " explore"), THEME.hint)
-        self.assertEqual(style_of(line, "○"), THEME.muted)
-        self.assertEqual(style_of(line, " review"), THEME.muted)
-        self.assertEqual(style_of(line, "◌"), THEME.muted)
-        self.assertEqual(style_of(line, " wait"), THEME.hint)
-        self.assertEqual(style_of(line, "✗"), THEME.error)
-        self.assertEqual(style_of(line, " failed"), THEME.muted)
-        self.assertEqual(style_of(line, "▪"), THEME.muted)
-        self.assertEqual(style_of(line, "↓"), THEME.hint)
+        rows = roster.view_lines(40, THEME, 2, 20, 0.0)
+        self.assertEqual([line_text(row)[:4] for row in rows],
+                         ["  ● ", "  ⠹ ", "  ○ ", "  ◌ ", "  ✗ ", "  ✗ ", "  ✗ ", "  ▪ "])
+        for row, glyph, style in zip(rows, "●⠹○◌✗✗✗▪", (THEME.accent, THEME.accent, THEME.muted, THEME.muted,
+                                                       THEME.error, THEME.error, THEME.error, THEME.muted)):
+            with self.subTest(glyph=glyph):
+                self.assertEqual(style_of(row, glyph), style)
 
     def test_the_spinner_frame_picks_the_running_glyph(self) -> None:
         self.assertEqual(SPINNER_FRAMES, "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
         roster = started(FIRST)
         for frame, glyph in ((0, "⠋"), (4, "⠼"), (9, "⠏"), (10, "⠋"), (23, "⠸")):
             with self.subTest(frame=frame):
-                self.assertEqual(line_text(roster.strip_line(80, THEME, frame)), f"● main  {glyph} find usages of  ↓ agents")
+                self.assertEqual(line_text(roster.view_lines(40, THEME, frame, 7, 0.0)[1])[:4], f"  {glyph} ")
 
-    def test_wide_names_sit_on_the_strip_with_the_gap_between_them(self) -> None:
+    def test_the_view_is_the_lists_rows_with_none_highlighted(self) -> None:
+        roster = started("sa-a", "sa-b", now=3.0)
+        view = lines_text(roster.view_lines(56, THEME, 0, 7, 20.0))
+        listed = lines_text(roster.list_lines(56, THEME, "sa-a", 0, 7, 20.0)[0])
+        self.assertEqual(view[0], "  ● main")
+        self.assertEqual(len(view), len(listed), "Down highlights a row and moves none")
+        self.assertEqual([row[2:] for row in view], [row[2:] for row in listed])
+        self.assertEqual([row[:2] for row in listed], ["  ", "▸ ", "  "])
+
+    def test_an_agent_waiting_for_a_worker_shows_the_wait_on_its_clock(self) -> None:
         roster = Roster()
-        goals = {
-            "sa-a": "explore",
-            "sa-b": "한글 검색 에이전트 실행",
-            "sa-c": "🚀 deploy the release",
-            "sa-d": "가나다라마바사아자차카",
-            "sa-e": "review",
+        feed(roster, "spawn_requested", 10.0, "sa-wait", goal="wait for a worker")
+        row = line_text(roster.view_lines(50, THEME, 0, 7, 45.0)[1])
+        self.assertEqual(row, "  ◌ wait for a worker" + " " * 18 + "waiting 35s")
+        feed(roster, "start", 50.0, "sa-wait")
+        self.assertTrue(line_text(roster.view_lines(50, THEME, 0, 7, 52.0)[1]).endswith("2s · 0 tools"))
+
+    def test_more_agents_than_rows_keep_the_running_ones_and_count_the_rest_on_the_last_row(self) -> None:
+        roster = Roster()
+        for index, status in enumerate(("completed", "running", "failed", "completed", "running", "queued")):
+            subagent_id = f"sa-{index}"
+            feed(roster, "spawn_requested" if status == "queued" else "start", subagent_id=subagent_id,
+                 goal=f"task {index} {status}")
+            if status in ("completed", "failed"):
+                feed(roster, "complete", subagent_id=subagent_id, status=status)
+        cases = {
+            7: ["● main", "task 0 completed", "task 1 running", "task 2 failed", "task 3 completed", "task 4 running",
+                "task 5 queued"],
+            6: ["● main", "task 1 running", "task 2 failed", "task 4 running", "task 5 queued", "○ 2 done"],
+            5: ["● main", "task 1 running", "task 4 running", "task 5 queued", "+3 more · 1 failed · 2 done"],
+            4: ["● main", "task 1 running", "task 4 running", "+4 more · 1 waiting · 1 failed · 2 done"],
+            3: ["● main", "task 1 running", "+5 more · 1 running · 1 waiting · 1 failed · 2 done"],
+            2: ["● main", "+6 more · 2 running · 1 waiting · 1 failed · 2 done"],
+            1: ["+6 more · 2 running · 1 waiting · 1 failed · 2 done"],
         }
-        for subagent_id, goal in goals.items():
-            feed(roster, "start", subagent_id=subagent_id, goal=goal)
-        feed(roster, "complete", subagent_id="sa-e", status="failed")
-        line = roster.strip_line(200, THEME, 0)
-        self.assertEqual(
-            line_text(line), "● main  ⠋ explore  ⠋ 한글 검색  ⠋ 🚀 deploy the  ⠋ 가나다라마바사…  ✗ review  ↓ agents"
-        )
+        for max_rows, expected in cases.items():
+            with self.subTest(max_rows=max_rows):
+                rows = lines_text(roster.view_lines(80, THEME, 0, max_rows, 0.0))
+                self.assertEqual(len(rows), min(max_rows, 7))
+                shown = [row[2:].split("  ")[0].replace("⠋ ", "").replace("○ task", "task").replace("✗ ", "")
+                         .replace("◌ ", "") for row in rows]
+                self.assertEqual(shown, expected)
 
-    def test_the_strip_collapses_the_moment_it_does_not_fit(self) -> None:
-        roster = started("sa-a", "sa-b")
-        full = "● main  ⠋ 1·find usages of  ⠋ 2·find usages of  ↓ agents"  # one goal twice: numbered
-        self.assertEqual(line_width(roster.strip_line(200, THEME, 0)), 56)
-        self.assertEqual(line_text(roster.strip_line(56, THEME, 0)), full)
-        line = roster.strip_line(55, THEME, 0)
-        self.assertEqual(line_text(line), "● 2 agents ↓")
-        self.assertEqual(style_of(line, "●"), THEME.accent)
-        self.assertEqual(style_of(line, "2 agents"), THEME.hint)
-
-    def test_the_collapsed_strip_is_cut_to_the_width(self) -> None:
-        roster = started("sa-a", "sa-b")
-        cases = {12: "● 2 agents ↓", 11: "● 2 agents…", 4: "● 2…", 1: "…", 0: "", -3: ""}
-        for width, text in cases.items():
-            with self.subTest(width=width):
-                self.assertEqual(line_text(roster.strip_line(width, THEME, 0)), text)
-
-    def test_one_agent_is_singular(self) -> None:
-        self.assertEqual(line_text(started(FIRST).strip_line(12, THEME, 0)), "● 1 agent ↓")
-
-    def test_the_strip_never_exceeds_its_width(self) -> None:
-        roster = started("sa-a", "sa-b", "sa-c")
-        for width in range(0, 90):
-            self.assertLessEqual(line_width(roster.strip_line(width, THEME, 0)), width)
+    def test_the_collapsed_row_is_muted_and_no_row_exceeds_its_width(self) -> None:
+        roster = started(*[f"sa-{index}" for index in range(9)])
+        for width in range(1, 90):
+            for max_rows in (1, 3, 7):
+                for row in roster.view_lines(width, THEME, 0, max_rows, 0.0):
+                    self.assertLessEqual(line_width(row), width)
+        last = roster.view_lines(80, THEME, 0, 3, 0.0)[-1]
+        self.assertEqual(line_text(last), "  +8 more · 8 running")
+        self.assertEqual(style_of(last, "+8 more"), THEME.muted)
 
 
 class ListTests(unittest.TestCase):
@@ -906,7 +836,7 @@ class ListTests(unittest.TestCase):
         roster = Roster()
         feed(roster, "start", goal="")
         self.assertEqual(line_text(roster.list_lines(40, THEME, MAIN_ID, 0, 6, 0.0)[0][1])[:9], "  ⠋ agent")
-        self.assertEqual(line_text(roster.strip_line(40, THEME, 0)), "● main  ⠋ agent  ↓ agents")
+        self.assertEqual(line_text(roster.view_lines(40, THEME, 0, 6, 0.0)[1])[:9], "  ⠋ agent")
         self.assertEqual(lines_text(roster.log_lines(FIRST, 40, THEME, 0.0))[0], "agent")
 
 

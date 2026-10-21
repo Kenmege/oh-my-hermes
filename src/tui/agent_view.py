@@ -1,11 +1,15 @@
-"""The OMH TUI's subagent views over `subagents.Roster`: the strip, the agent list, one agent's log, mixed into `App`.
+"""The OMH TUI's subagent views over `subagents.Roster`: the agent view, the agent list, one agent's log, mixed into `App`.
 
 Subagents: every `subagent.*` event of the live session is folded into one
-`subagents.Roster`, which a new turn and a new session empty. While it holds
-an agent the info line carries a strip of them, Down on an empty composer
-gives the keys to a list of them, a list the person picks from as from a
-picker: the composer is hidden while it is open, the list stands where the
-composer was, and the info line says its keys. Every key goes to the list
+`subagents.Roster`, which a new turn and a new session empty. The agent view
+stands under the info line, always expanded, while there are agents (the
+owner's call of 2026-10-21, after Claude Code's agent list): `● main` and one
+row per agent, or the delegation tree while the conversation's delegation
+graph is a DAG run, or, with no roster, the HUD's agents block (`panels`). The
+info line counts them (`3 agents · ↓ agents`). Down on an empty composer gives
+the keys to the view's rows, which become a list the person picks from as
+from a picker: the composer's rows are drawn blank while it is open (so
+nothing moves), and the info line says its keys. Every key goes to the list
 then; a key it does not bind does nothing. Enter or a click opens one
 agent's log in the pager. The log is
 read-only: `subagent.tail` is asked for the open agent while it runs, at most
@@ -34,14 +38,16 @@ from typing import Any
 
 from . import gateway_contract as contract
 from .keys import BUTTON_LEFT, CHAR, DOWN, ENTER, ESCAPE, LEFT, UP, Key, Mouse, Paste
-from .layout import Budget, is_tiny
-from .modes import strip_column
-from .style import Line, Style
-from .subagents import FINISHED_STATUSES, MAIN_ID, RUNNING, Hit
+from .layout import Budget, agent_view_cap, is_tiny
+from .panels import agent_view_count, agent_view_keep, graph_is_dag, panel_lines
+from .style import Line, Span, Style
+from .subagents import FINISHED_STATUSES, MAIN_ID, OPEN_MARK, RUNNING, Hit
+from .width import cell_width
 from .transcript import NOTICE_WARN, STEER_QUEUED, STEER_REFUSED, NoticeBlock, SteerBlock, as_text
 
-# The list Down opens, and one agent's log in the pager.
-AGENT_LIST_ROWS = 7  # main and six agents; a longer roster scrolls
+# The list Down opens (the agent view's rows, `layout.agent_view_cap` of them; a longer roster scrolls), and one
+# agent's log in the pager.
+CHIP_SEPARATOR = " · "  # between the agent count and what Down opens, on the info line
 # Its keys, on the info line while it is open, longest first: each keeps the two action keys and the way back.
 AGENT_LIST_HINT = "↑↓ select · ⏎ log · x interrupt · s steer · esc back"
 AGENT_LIST_HINTS = (AGENT_LIST_HINT, "⏎ log · x interrupt · s steer · esc back", "x interrupt · s steer · esc back")
@@ -85,26 +91,70 @@ TAIL_ANSWER_SECONDS = 10.0
 
 
 class AgentViewMixin:
-    """`App`'s subagent strip, list and log.
+    """`App`'s subagent view, list and log.
 
     The state it reads and writes is set in `App.__init__`, `mode` is
     `ModesMixin`'s, and the methods it calls without defining them are `App`'s.
     """
 
-    def _agent_strip(self, cols: int) -> Line:
-        """The roster's strip for an info line `cols` wide: the room after the line's inset (`_info_inset`) and the
-        mode's label."""
-        start = self._info_inset() + strip_column(self.mode, self.theme)
-        return self.roster.strip_line(cols - start, self.theme, self._spinner_frame())
+    def _agent_view_parts(self, payload: Any) -> tuple[bool, bool, bool]:
+        """(roster rows, agents block, delegation tree): what the agent view draws for `payload` now.
 
-    def _agent_list(self, cols: int, room: int) -> tuple[list[Line], tuple[str, ...]]:
-        """The open agent list in `room` rows (at most `AGENT_LIST_ROWS`), scrolled to the highlight, and the id of
-        each row; nothing while it is closed."""
-        if self.list_selected is None:
-            return [], ()
-        return self.roster.list_lines(
-            cols, self.theme, self.list_selected, self._spinner_frame(), min(AGENT_LIST_ROWS, room), self.clock()
+        The roster's rows while it holds agents, unless the delegation graph
+        is a DAG run, whose tree takes their place until Down gives the list
+        the keys (the tree's nodes name no agent the list could act on). With
+        no roster, the HUD's agents block and the delegation tree.
+        """
+        dag = graph_is_dag(payload)
+        roster = bool(self.roster.agents) and (not dag or self.list_selected is not None)
+        return roster, not self.roster.agents, not roster
+
+    def _agent_view(self, cols: int, rows: int, room: int | None = None) -> list[Line]:
+        """The agent view under the info line, at most `layout.agent_view_cap` rows (and `room`, when given); the
+        open agent list in the same rows, noting each row's agent id in `listed`."""
+        self.listed = ()
+        payload = self.hud.payload if self.hud is not None else None
+        roster, show_agents, show_graph = self._agent_view_parts(payload)
+        if roster:
+            running = self.roster.running_count()
+            keep = 1 + running + int(len(self.roster.agents) > running)
+        else:
+            keep = agent_view_keep(payload, cols, show_agents=show_agents, show_graph=show_graph)
+        cap = agent_view_cap(rows, cols, keep)
+        if room is not None:
+            cap = min(cap, room)
+        if cap <= 0:
+            return []
+        frame, now = self._spinner_frame(), self.clock()
+        if self.list_selected is not None:
+            lines, self.listed = self.roster.list_lines(cols, self.theme, self.list_selected, frame, cap, now)
+            return lines
+        if roster:
+            return self.roster.view_lines(cols, self.theme, frame, cap, now)
+        if not isinstance(payload, Mapping) or payload.get("error"):
+            return []  # the slot above the composer says the reader failed
+        return panel_lines(
+            payload, cols, cap, self.theme, self.wall_clock(), received_at=self.hud.received_at,
+            show_plan=False, show_agents=show_agents, show_graph=show_graph, agents_inset=self._info_inset(),
+            motion=self.motion, color_depth=self.color_depth,
         )
+
+    def _agent_chip(self, room: int) -> Line:
+        """The info line's count of the agents the view under it stands for, in `room` cells: `3 agents · ↓ agents`
+        where Down opens their list, else the count alone; nothing with no agent, or no room for the count."""
+        payload = self.hud.payload if self.hud is not None else None
+        count = self.roster.count_text()
+        if not count:
+            _roster, show_agents, show_graph = self._agent_view_parts(payload)
+            number = agent_view_count(payload, show_agents=show_agents, show_graph=show_graph)
+            count = f"{number} agent{'' if number == 1 else 's'}" if number else ""
+        if not count:
+            return ()
+        cols, rows = self.size
+        opens = bool(self.roster.agents) and not is_tiny(rows, cols)
+        forms = [f"{count}{CHIP_SEPARATOR}{OPEN_MARK}", count] if opens else [count]
+        shown = next((form for form in forms if cell_width(form) <= room), "")
+        return (Span(shown, self.theme.hint),) if shown else ()
 
     def _agent_list_say(self) -> tuple[tuple[str, ...], Style]:
         """What the info line says while the list is open: its keys, or, once `x` asked, the confirmation in warn."""
@@ -116,20 +166,20 @@ class AgentViewMixin:
     def _take_clickable(self, budget: Budget, listed: Sequence[str]) -> None:
         """Note the agent list's rows a click opens in the frame just drawn, and ask for mouse reports only while it is open.
 
-        The list is the slot's rows, from its first, with the composer hidden,
-        so its first row is the slot's, the info line's row above the region's
-        last. A list row is clickable from edge to edge; nothing else
-        is, the strip included. Reports stay off while the region's place on
-        the screen is not certain, since no click could be read then.
+        The list is the agent view's rows, from its first, under the info
+        line: the region's last rows. A list row is clickable from edge to
+        edge; nothing else is, the info line's count included. Reports stay
+        off while the region's place on the screen is not certain, since no
+        click could be read then.
         """
         cols, rows = self.size
-        top = budget.slot + budget.info - 1  # rows above the region's last row of the slot's first row
-        self.clickable = {top - index: (Hit(0, cols, row_id),) for index, row_id in enumerate(listed[: budget.slot])}
+        shown = listed[: budget.agents]
+        self.clickable = {budget.agents - 1 - index: (Hit(0, cols, row_id),) for index, row_id in enumerate(shown)}
         self._set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
 
     def _list_available(self) -> bool:
-        """Whether the agent list can be shown: agents to list, a terminal with room for a slot (the info line says
-        its keys), and nothing else holding the keys (a question, a picker, the history search)."""
+        """Whether the agent list can be shown: agents to list, a terminal with room for the agent view (the info
+        line says its keys), and nothing else holding the keys (a question, a picker, the history search)."""
         cols, rows = self.size
         return (
             bool(self.roster.agents) and not is_tiny(rows, cols) and self.slot is None and self.picker is None

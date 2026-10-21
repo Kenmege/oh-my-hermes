@@ -1,4 +1,4 @@
-"""The OMH panels the TUI draws between the streaming tail and the composer.
+"""The OMH panels the TUI draws above the composer (the plan) and under the info line (the agent view).
 
 Two halves. `HudPoller` reads `read_omh_hud` IN PROCESS on a background thread
 -- the retired Hermes status widget had to spawn a Python child every two
@@ -7,14 +7,16 @@ read rather than with this module, and hands each new payload to the UI thread
 through a latest-value slot it can poll without blocking. `panel_lines` turns
 one payload into styled rows: the agents block (header, activity rows,
 `+N more`), then the delegation block (the conversation's delegation graph,
-drawn by `delegation_view`: boxes and the edges they record, or a tree when
-boxes do not fit), above the plan block (`[Plan]` header and its checklist),
-so the plan stays directly above the composer where it always sat. While the
+drawn by `delegation_view` as its tree; the boxes are `/dag`'s), then the plan
+block (`[Plan]` header and its checklist). The app asks for the plan block
+alone for the slot above the composer, where the plan always sat, and for the
+agents and delegation blocks alone for the agent view under the info line
+(the owner's call of 2026-10-21: the subagent view goes under the prompt,
+always expanded, as Claude Code's agent list does). While the
 delegation block holds native lanes, the agents block leaves out their
-activity rows, so no lane is drawn twice; its header keeps the session's cost
-and tokens. The delegation block is drawn even while the app's own roster
-shows the agents on the info line. It is the one block painted at the
-terminal's colour depth (`dag_style`); the rest of the panel is 24-bit.
+activity rows, so no lane is drawn twice; its header (`● main │ …`) keeps the
+session's cost and tokens. The delegation block is the one block painted at
+the terminal's colour depth (`dag_style`); the rest of the panel is 24-bit.
 
 The information design is that widget's, which this module took over when
 it was deleted: the same glyphs, labels, colour roles, column grid and shed
@@ -23,16 +25,16 @@ to the ones the widget drew (`tests/fixtures/tui_panel_rows.json`). The widget's
 `⚚ [OMH] vX` brand is not drawn (the version stays in the banner); its
 session-wide chips (repeat guard, in-flight tool calls) move to the right of
 the info line under the composer through `hud_chips`, but not its yolo chip
-(see there); the agents block opens with `[Agents]` the way the plan block
-opens with `[Plan]`.
+(see there); the agents block opens with `● main`, as the agent list does.
 
-The panel never draws more than the rows it is given. Under pressure the
-delegation block first steps down from boxes to its tree, then activity rows
-go (always disclosed on a `+N more` row), then the delegation tree shrinks to
-a few rows (the cut disclosed on its own `+N more nodes` row), then plan items
-(the window shrinks around the active item, the header always stays), then
-the agents header, then the delegation block down to its header and then
-that header, then the plan header.
+The panel never draws more than the rows it is given. Under pressure
+activity rows go first, done ones first and running ones last (always
+disclosed on a `+N more` row, `+N done` when every row it stands for
+finished), then the delegation tree shrinks to a few rows (its renderer hides
+done lanes first and running ones last, disclosed on a `+N more nodes` row),
+then plan items (the window shrinks around the active item, the header always
+stays), then the agents header, then the delegation block down to its header
+and then that header, then the plan header.
 """
 
 from __future__ import annotations
@@ -77,6 +79,9 @@ VOLATILE_KEYS = frozenset(
 )
 
 SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+# The agent view's first row, the agents block's header and the agent list's main row alike.
+MAIN_MARK = "●"
+MAIN_NAME = "main"
 # The host's shimmer clock ticks every 90 ms; the spinner and the active
 # item's colour wave read their frame from it.
 FRAME_MILLISECONDS = 90
@@ -689,13 +694,15 @@ def _delegation_graph(payload: Mapping[str, Any]) -> Mapping[str, Any] | None:
     return graph if graph.get("status") == "active" and _rows(graph.get("nodes")) else None
 
 
-def _agents_view(payload: Mapping[str, Any]) -> _Agents | None:
+def _agents_view(payload: Mapping[str, Any], with_graph: bool = True) -> _Agents | None:
+    """The agents block's rows; `with_graph` False when the delegation block is not drawn beside it, so no native row
+    is left out for a lane nothing draws."""
     active = bool(payload.get("active"))
     agents = _mapping(payload.get("subagents"))
     main = _rows(_mapping(payload.get("maestro")).get("rows"))[:1] if active else []
     rows = _rows(agents.get("rows")) if active else []
     hidden = _count(agents.get("hidden_rows")) if active else 0
-    graph = _delegation_graph(payload)
+    graph = _delegation_graph(payload) if with_graph else None
     drawn = _graph_sessions(graph)
     listed = rows
     hidden_in_graph = 0
@@ -709,12 +716,13 @@ def _agents_view(payload: Mapping[str, Any]) -> _Agents | None:
         # The rows the reader did not list are counted the same way: the ones the graph draws are its lanes.
         hidden_in_graph = min(hidden, max(0, _count(agents.get("hidden_in_graph")))) if active else 0
         hidden -= hidden_in_graph
-    if not (main or listed or hidden or graph is not None):
+    in_graph = len(rows) - len(listed) + hidden_in_graph
+    # With no row of its own and no lane in the graph, a header would only say `ready` over the tree's own `◆ main`.
+    if not (main or listed or hidden or in_graph):
         return None
     running = sum(1 for row in listed if _is_running(row))
     wanted = len(main) + min(len(listed), max(max(DEFAULT_AGENT_ROWS - len(main), 1), running))
-    return _Agents(rows=tuple(main + listed), main_count=len(main), wanted=wanted, hidden=hidden,
-                   in_graph=len(rows) - len(listed) + hidden_in_graph)
+    return _Agents(rows=tuple(main + listed), main_count=len(main), wanted=wanted, hidden=hidden, in_graph=in_graph)
 
 
 def _graph_sessions(graph: Mapping[str, Any] | None) -> frozenset[str]:
@@ -810,7 +818,8 @@ def _agents_header(payload: Mapping[str, Any], columns: int, theme: Theme, view:
         else ""
     )
     return _line(
-        Span("[Agents]", theme.heading),
+        Span(f"{MAIN_MARK} ", theme.accent),
+        Span(MAIN_NAME, theme.heading),
         Span(SEPARATOR, theme.rule),
         Span(f"{'[global] ' if outside else ''}{label}", theme.muted if label == GRAPH_HOLDS_ALL else
              theme.warn if active else theme.ok),
@@ -1032,50 +1041,45 @@ class _DagCache:
     """Views already laid out for one graph object: a repaint (the spinner's every frame) reuses them."""
 
     graph: Mapping[str, Any] | None = None
-    views: dict[tuple[int, int | None, str], Any] = field(default_factory=dict)
+    views: dict[tuple[int, int | None], Any] = field(default_factory=dict)
 
 
 _dag_cache = _DagCache()
 
 
-def _dag_view(graph: Mapping[str, Any], columns: int, budget: int | None, layout: str = "auto") -> Any:
-    """The view for this graph object at this size, laid out once; a new payload with the same structure reuses
-    the renderer's own layout decision, so only its durations are drawn again."""
+def graph_is_dag(payload: Any) -> bool:
+    """Whether the payload's active delegation graph is a DAG run: a `depends_on` edge, or a dispatch from a lane
+    (a layer under a layer), rather than one fan-out from main."""
+    graph = _delegation_graph(payload) if isinstance(payload, Mapping) else None
+    if graph is None:
+        return False
+    roots = {_safe_text(node.get("id")) for node in _rows(graph.get("nodes")) if node.get("kind") == "root"}
+    return any(
+        edge.get("kind") == "depends_on" or _safe_text(edge.get("from")) not in roots
+        for edge in _rows(graph.get("edges"))
+    )
+
+
+def _dag_view(graph: Mapping[str, Any], columns: int, budget: int | None) -> Any:
+    """The tree for this graph object at this size, laid out once; a new payload with the same structure reuses
+    the renderer's own layout decision, so only its durations are drawn again.
+
+    Always the tree: the panel is the agent view under the info line, whose
+    cap (`layout.agent_view_cap`, 7 rows on most terminals) is under the 9
+    rows that even two-line boxes need for one layer under main. The boxes
+    are `/dag`'s (`dag_page_lines`).
+    """
     from ..plugin_bundle.omh.delegation_view import render_delegation_view
 
     if _dag_cache.graph is not graph:
         _dag_cache.graph, _dag_cache.views = graph, {}
-    key = (columns, budget, layout)
+    key = (columns, budget)
     if key not in _dag_cache.views:
         if len(_dag_cache.views) > 32:
             _dag_cache.views.clear()
         width = max(8, columns - len(DAG_INDENT))
-        _dag_cache.views[key] = render_delegation_view(
-            graph, width=width, max_lines=budget, layout=layout, compact=True
-        )
+        _dag_cache.views[key] = render_delegation_view(graph, width=width, max_lines=budget, layout="tree")
     return _dag_cache.views[key]
-
-
-def _dag_heights(graph: Mapping[str, Any], columns: int) -> tuple[int, tuple[int, ...], int]:
-    """(lines with no limit, the two-line boxes' heights tallest first, lines of the uncapped tree).
-
-    Two-line boxes come in up to two heights under the four-line ones: as wide
-    as they read comfortably, and, where those wrap, narrower ones that fit
-    more to a row in fewer lines.
-    """
-    natural = _dag_view(graph, columns, None)
-    if natural.layout != "box":
-        return len(natural.lines), (), len(natural.lines)
-    steps: list[int] = []
-    budget = len(natural.lines) - 1
-    while len(steps) < 2 and budget > 0:
-        compact = _dag_view(graph, columns, budget, "compact")
-        if compact.layout != "compact":
-            break
-        steps.append(len(compact.lines))
-        budget = len(compact.lines) - 1
-    tree = _dag_view(graph, columns, None, "tree")
-    return len(natural.lines), tuple(steps), max(len(tree.lines), DAG_HEADER_ROWS)
 
 
 def dag_line(row: Sequence[Any], levels: int, theme: Theme, depth: str = TRUECOLOR) -> Line:
@@ -1113,15 +1117,36 @@ def _agents_lines(
     motion: bool = True,
 ) -> list[Line]:
     lines = [_agents_header(payload, columns, theme, agents)]
-    shown = agents.rows[: layout.rows_shown]
+    kept = _kept_rows(agents, layout.rows_shown)
+    shown = [agents.rows[index] for index in kept]
     grid = _grid(shown)
     frame = _frame(now) if motion else 0
-    for index, row in enumerate(shown):
+    for index in kept:
+        row = agents.rows[index]
         lines.append(_activity_row(row, index < agents.main_count, grid, columns, frame, extra_seconds, theme))
     hidden = _hidden_rows(agents, layout.rows_shown)
     if shown and hidden:
-        lines.append(_line(Span(f"  +{hidden} more", theme.muted)))
+        cut = [row for index, row in enumerate(agents.rows) if index not in kept]
+        done = not agents.hidden and all(row.get("state") == "done" for row in cut)
+        lines.append(_line(Span(f"  +{hidden} {'done' if done else 'more'}", theme.muted)))
     return lines
+
+
+# The order activity rows are kept in when the block has no room for all: running first, finished last.
+ROW_KEEP_RANK = {"running": 0, "queued": 1, "scheduled": 1, "blocked": 2, "failed": 2, "stale": 2, "review": 3}
+DONE_ROW_RANK = 4
+
+
+def _kept_rows(agents: _Agents, count: int) -> list[int]:
+    """The indexes of the `count` rows to draw, in their own order: main rows first, then running ones, then those
+    waiting or stuck, and done ones last."""
+    def rank(index: int) -> int:
+        if index < agents.main_count:
+            return -1
+        row = agents.rows[index]
+        return 0 if _is_running(row) else ROW_KEEP_RANK.get(_safe_text(row.get("state")), DONE_ROW_RANK)
+
+    return sorted(sorted(range(len(agents.rows)), key=rank)[: max(count, 0)])
 
 
 # ── layout under a row budget ──────────────────────────────────────────────
@@ -1137,8 +1162,6 @@ class _Layout:
     rows_shown: int
     dag_on: bool = False
     dag_budget: int = 0
-    dag_steps: tuple[int, ...] = ()  # two-line boxes' heights, tallest first: the steps down from four-line boxes
-    dag_tree: int = 0  # the uncapped tree's height: the next step down
 
 
 def _hidden_rows(agents: _Agents, rows_shown: int) -> int:
@@ -1165,18 +1188,9 @@ def _height(layout: _Layout, plan: _Plan | None, agents: _Agents | None) -> int:
 def _shed(layout: _Layout, plan: _Plan | None, agents: _Agents | None) -> bool:
     """Take away the least valuable row; False when nothing is left to take.
 
-    The delegation block steps down first from boxes to two-line boxes, then
-    to its tree (the same lanes in far fewer rows), then gives way to agent
-    rows, then shrinks to a few tree rows before the plan does. The plan header
-    still goes last.
+    Agent rows go first, then the delegation tree shrinks to a few rows
+    before the plan does. The plan header still goes last.
     """
-    for step in layout.dag_steps if layout.dag_on else ():
-        if step < layout.dag_budget:
-            layout.dag_budget = step
-            return True
-    if layout.dag_on and layout.dag_budget > layout.dag_tree:
-        layout.dag_budget = layout.dag_tree
-        return True
     if agents is not None and layout.agents_on:
         if layout.rows_shown:
             layout.rows_shown -= 1
@@ -1207,6 +1221,55 @@ def _shed(layout: _Layout, plan: _Plan | None, agents: _Agents | None) -> bool:
     return False
 
 
+RUNNING_NODE_STATES = frozenset({"running", "stuck"})
+
+
+def agent_view_keep(payload: Any, width: int, *, show_agents: bool = True, show_graph: bool = True) -> int:
+    """The rows the agent view needs to draw every running agent of `payload`, for `layout.agent_view_cap`.
+
+    The agents block's header, its main and running rows and a `+N` row for
+    the rest; the delegation tree's rows at the smallest height that hides no
+    running lane (its renderer hides done lanes first and running ones last).
+    0 for a payload with no running agent, so the cap stays the usual one.
+    """
+    if not _valid(payload):
+        return 0
+    keep = 0
+    agents = _agents_view(payload, show_graph) if show_agents else None
+    if agents is not None:
+        running = agents.main_count + sum(1 for row in agents.rows[agents.main_count:] if _is_running(row))
+        if running:
+            keep += 1 + running + int(len(agents.rows) + agents.hidden > running)
+    dag = _delegation_graph(payload) if show_graph else None
+    if dag is not None:
+        lanes = [node for node in _rows(dag.get("nodes")) if node.get("kind") != "root"]
+        idle = sum(1 for node in lanes if node.get("state") not in RUNNING_NODE_STATES)
+        if idle < len(lanes):
+            columns = max(20, width)
+            low, high = 1, len(_dag_view(dag, columns, None).lines)
+            while low < high:  # the smallest height whose tree hides no running lane
+                middle = (low + high) // 2
+                if _dag_view(dag, columns, middle).hidden_nodes <= idle:
+                    high = middle
+                else:
+                    low = middle + 1
+            keep += high
+    return keep
+
+
+def agent_view_count(payload: Any, *, show_agents: bool = True, show_graph: bool = True) -> int:
+    """How many agents the agent view stands for: the agents block's rows (main's aside) and the ones the reader did
+    not list, and the delegation graph's lanes. 0 without a valid payload."""
+    if not _valid(payload):
+        return 0
+    agents = _agents_view(payload, show_graph) if show_agents else None
+    count = len(agents.rows) - agents.main_count + agents.hidden if agents is not None else 0
+    dag = _delegation_graph(payload) if show_graph else None
+    if dag is not None:
+        count += sum(1 for node in _rows(dag.get("nodes")) if node.get("kind") != "root")
+    return count
+
+
 def _notice(payload: Mapping[str, Any], theme: Theme) -> Line:
     return _line(Span(f"⚚ OMH HUD unavailable: {_safe_text(payload.get('error')) or 'reader error'}", theme.muted))
 
@@ -1221,6 +1284,8 @@ def panel_lines(
     received_at: float | None = None,
     show_agents: bool = True,
     show_plan: bool = True,
+    show_graph: bool = True,
+    agents_inset: int = 0,
     motion: bool = True,
     color_depth: str = TRUECOLOR,
 ) -> list[Line]:
@@ -1229,12 +1294,16 @@ def panel_lines(
     `now` is wall-clock seconds; it drives the spinner, the active item's
     colour wave, and the age of a finished parallel shot. `received_at` (the
     snapshot's) lets a running agent's elapsed figure tick between polls.
-    Without `show_agents` the agents block (and its graph) is left out: the
-    app passes that while its own roster shows the agents, so they are drawn
-    once, from one source. Without `show_plan` the plan block is left out:
-    the app passes that for a finished plan it has retired. Without `motion`
-    (reduced motion) the spinner holds its first frame and the plan does not
-    wave. `color_depth` is the depth the delegation graph is painted at
+    Without `show_agents` the agents block is left out: the app passes that
+    while its own roster shows the agents, so they are drawn once, from one
+    source. Without `show_graph` the delegation block is left out. Without
+    `show_plan` the plan block is left out: the app passes that for a
+    finished plan it has retired, and for the agent view under the info line.
+    `agents_inset` cells go before each row of the agents block, drawn that
+    much narrower (the agent view's rows start under the info line's text,
+    as the delegation tree's `DAG_INDENT` does). Without `motion` (reduced
+    motion) the spinner holds its first frame and the plan does not wave.
+    `color_depth` is the depth the delegation graph is painted at
     (`style.color_depth`).
     """
     if max_rows <= 0 or width <= 0 or not isinstance(payload, Mapping):
@@ -1245,9 +1314,9 @@ def panel_lines(
         return []
     columns = max(20, width)
     plan = _plan_view(payload) if show_plan else None
-    agents = _agents_view(payload) if show_agents else None
-    dag = _delegation_graph(payload)
-    natural, steps, tree = _dag_heights(dag, columns) if dag is not None else (0, (), 0)
+    agents = _agents_view(payload, show_graph) if show_agents else None
+    dag = _delegation_graph(payload) if show_graph else None
+    natural = len(_dag_view(dag, columns, None).lines) if dag is not None else 0
     start, end = _initial_window(plan) if plan is not None and plan.status == "established" else (0, 0)
     layout = _Layout(
         plan_on=plan is not None,
@@ -1258,15 +1327,15 @@ def panel_lines(
         rows_shown=agents.wanted if agents is not None else 0,
         dag_on=dag is not None and natural > 0,
         dag_budget=natural,
-        dag_steps=steps,
-        dag_tree=min(tree, natural),
     )
     while _height(layout, plan, agents) > max_rows and _shed(layout, plan, agents):
         pass
     extra = max(0.0, now - received_at) if received_at is not None and _finite(now) and _finite(received_at) else 0.0
     lines: list[Line] = []
     if agents is not None and layout.agents_on:
-        lines += _agents_lines(payload, agents, layout, columns, now, extra, theme, motion)
+        inset = (Span(" " * agents_inset),) if agents_inset > 0 else ()
+        rows = _agents_lines(payload, agents, layout, max(20, columns - agents_inset), now, extra, theme, motion)
+        lines += [_line(*inset, *row) for row in rows]
     if dag is not None and layout.dag_on and layout.dag_budget > 0:
         lines += _dag_lines(dag, layout.dag_budget, columns, theme, color_depth)
     if plan is not None and layout.plan_on:

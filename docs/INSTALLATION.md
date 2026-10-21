@@ -319,18 +319,20 @@ run and approval decision stays Hermes'; the screen is OMH's.
   turn runs, once the prompt itself has scrolled off, as `↳ you: …`, the
   `↳ you:` in the accent and your words dim, with no band behind them and a
   dim `…` where they are cut), the tail of the reply that is still streaming, one slot for the
-  OMH plan and agents panel (or a question Hermes asked, or the slash-command
+  OMH plan (or a question Hermes asked, or the slash-command
   menu when it does not open under the composer), the prompts queued behind
   the running turn (`⧗`, up to three named and the rest counted), the
-  composer in a rounded box (`╭─╮`, then `│ > … │` rows, then `╰─╯`), and
-  one dim info line under it. On a terminal 6 rows tall the box keeps its
+  composer in a rounded box (`╭─╮`, then `│ > … │` rows, then `╰─╯`),
+  one dim info line under it, and, while there are subagents, the agent view
+  under that, always expanded (below). On a terminal 6 rows tall the box keeps its
   top edge and drops its bottom one, so the slot above it still gets its
   two rows; from 7 rows the box is closed, and under 6 rows (or 20
   columns) the composer is a bare `> …` row with no box. While you pick from a
-  list (a question answered by picking, the `/sessions`, `/rewind` or bare
-  `/model` picker, or the agent list) or search the history with Ctrl+R, the
+  list (a question answered by picking, or the `/sessions`, `/rewind` or bare
+  `/model` picker) or search the history with Ctrl+R, the
   composer and its box are not drawn and the list or the search stands in
-  their place, right above the info line. A question and the agent list show
+  their place, right above the info line. While the agent list has the keys
+  the composer's rows are drawn blank instead, so nothing moves. A question and the agent list show
   no caret; a picker shows it at the end of its filter row and the search at
   the end of its query, where what you type (an input method's composition
   too) appears. The banner above the
@@ -384,7 +386,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   the shorter left side leaves. The
   info line is on every terminal of 3 rows or more, so the mode is never
   hidden.
-- The plan in that panel changes the moment Hermes' todo tool changes it
+- The plan in that slot changes the moment Hermes' todo tool changes it
   (Hermes' `todo.updated` has the HUD read again at once, instead of at its
   next poll two to eight seconds later), and a subtask keeps its place under
   its parent. Once every item is done it shows `✓ 3/3` until the turn ends,
@@ -396,8 +398,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   stays on the bottom rows. A fresh session shows it right under the banner,
   and after a turn it sits under the turn's last line with one blank row
   between, the spacer every block opens with. Until the screen is full, the
-  panel or a question above the composer moves it down as it grows and up as
-  it shrinks or closes. The `/` and `@` menus open under the composer
+  plan or a question above the composer moves it down as it grows and up as
+  it shrinks or closes, and the agent view under the info line follows it. The `/` and `@` menus open under the composer
   instead wherever they fit there short of the bottom rows, as in Claude
   Code, so the composer and the caret do not move; on the bottom rows, close
   to them, or before the TUI knows its place on the screen, they open above
@@ -406,7 +408,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   there moves nothing. Once the composer has reached the bottom
   rows it stays there: what grows above it scrolls the transcript up, and a
   list or question closing there does not pull it up, its rows staying blank
-  above the composer until more is printed into them. A resize or a redraw
+  above the composer until more is printed into them. The agent view under
+  it takes at most a quarter of the screen, seven rows on a terminal of 28
+  rows or more (so a one-row composer's input row is row 16 of 24 or 31 of
+  40), raised only to show every running agent and never past a third of the
+  screen; as it shrinks, the composer moves down, never up. A resize or a redraw
   starts again under the output. Hidden while you pick from a list or search
   the history with Ctrl+R (the search's row stands where the composer was,
   the caret at the end of what you typed), it comes back as you left it.
@@ -432,20 +438,27 @@ run and approval decision stays Hermes'; the screen is OMH's.
   turn keeps each reference model's answer as a collapsed row
   (`▸ ◇ Reference 1/3 — <model>`, its text in Ctrl+O's details), and the
   working row adds `MoA: refs 2/3`, then `MoA: aggregating…`.
-- While a turn has delegated work, the info line carries a strip of its
-  subagents, each named by the first words of its goal; when two goals start
-  alike, by the word where each parts, out of any quotes or backticks
-  (`…alpha` and `…beta` for two goals that end `in alpha` and `in beta`,
-  `…in src` and `…on src` where they part at `in` and `on`), and numbered
-  (`1·`, `2·`) when even those read the same
-  (`● main  ⠹ find usages of  ○ read the diff  ↓ agents`, or
-  `● 2 agents ↓` where the names do not fit), and it stays there while
-  agents outlive the turn, each one's mark saying whether it still runs. The strip and the
-  list are the one place agents show while they hold any: the HUD panel's
-  `[Agents]` block steps aside for them and the plan keeps its rows. Down on an empty composer
-  opens them as a list you pick from, as from a picker: the composer is hidden
-  while it is open, the list stands where the composer was and scrolls when
-  there are more agents than rows, and the info line says its keys (`↑↓ select
+- While a turn has delegated work, the agent view under the info line lists
+  its subagents as Claude Code's agent list does: `● main`, then one row per
+  agent, its mark (a spinner while it runs, `○` done, `✗` failed, `▪`
+  interrupted, `◌` waiting for a worker), its goal, and on the right how long
+  it has run and how many tools it called (`waiting 35s` while it waits).
+  The info line counts them (`2 agents · ↓ agents`, the count alone where
+  the line is too narrow for both). The view stays while agents outlive the
+  turn, each one's mark saying whether it still runs. With more agents than
+  the view has rows, the running ones keep theirs and the rest are counted
+  on its last row (`○ 3 done`, or `+4 more · 1 waiting · 3 done`). While the
+  conversation's delegation graph is a DAG run (a lane waits on another, or a
+  lane delegates), the view draws its tree instead (`DAG · <name> · N nodes
+  · …`, `◆ main`, one row per lane with its category, model and state,
+  `+N more nodes` where they do not fit), and `/dag` shows it with boxes.
+  With no live subagent the view shows the HUD's agents block (`● main │ 3
+  agents · 1 running`, then its rows). On a terminal under 6 rows or 20
+  columns there is no view, and the info line keeps the count. Down on an empty composer
+  gives the view's rows the keys as a list you pick from, as from a picker:
+  the composer's rows are drawn blank while it is open, so nothing on the
+  screen moves, the list scrolls when there are more agents than rows, and
+  the info line says its keys (`↑↓ select
   · ⏎ log · x interrupt · s steer · esc back`). Esc, Left, `q` or Ctrl+C closes it and
   the composer comes back on its row as you left it; any other key does
   nothing while the list is open, so nothing typed there lands in the
@@ -468,8 +481,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   so neither cuts that call off nor splits a reply.
 - The OMH TUI asks the terminal for click reports only while the agent list
   is open, so during a turn the wheel scrolls and a drag selects as in any
-  shell, and the strip is reached with Down; nothing on the strip is
-  clickable. While the list is open a plain drag no longer selects text in
+  shell, and the agent view is reached with Down; nothing in it, and
+  nothing on the info line, is clickable while the list is closed. While the list is open a plain drag no longer selects text in
   most terminals and the wheel does not scroll. To select anyway, hold Fn
   while dragging in Terminal.app (or turn off View → Allow Mouse Reporting),
   Option in iTerm2, Shift in most other terminals. Selection and the wheel
@@ -769,7 +782,7 @@ Esc closes it):
 | Ctrl+R | Searches the input history; Ctrl+R again finds an older match, Enter puts it in the composer, Esc leaves the composer as it was |
 | Ctrl+X | Opens the `/sessions` picker |
 | ↑ | On an empty composer with prompts queued, takes them back into the composer to edit; a queued shell line comes back on its own |
-| ↓ | On an empty composer while the info line shows subagents, opens the agent list in the composer's place |
+| ↓ | On an empty composer while the agent view under the info line shows subagents, gives its rows the keys as the agent list |
 | ← / → | Move by a character; with Ctrl or Alt, by a word (Alt+B and Alt+F too) |
 | Home / End, Ctrl+A / Ctrl+E | Go to the start or the end of the line |
 | Backspace / Delete | Delete a character, or a paste chip whole; Backspace on an empty composer removes the last attached image |
@@ -945,7 +958,7 @@ own TUI gives one before it reports a slow start (or what
 `HERMES_TUI_STARTUP_TIMEOUT_MS` sets, at least 5 s, as there). A question it had asked closes
 unanswered, a turn that was running is reported lost and is not sent again,
 a steer it had not answered, and what you were typing in an approval's tell
-field, come back to the composer at once (never sent), the subagents on the strip stay there (those still running marked
+field, come back to the composer at once (never sent), the subagents in the agent view stay there (those still running marked
 interrupted, `▪`), and what you queued comes back to the composer as after an interrupt. It
 does this at most three times in a minute, and a new gateway that exits
 before it resumed the session counts as one of them; after that, or when the
@@ -2470,8 +2483,8 @@ JSON.
 The HUD payload also carries a metadata-only plan todo list. When a todo is
 declared — by Hermes through the `omh_todo` plugin tool, or by an agent or
 operator through `omh runtime todo set` — the OMH TUI that bare `omh` opens
-renders it as a compact checklist above the composer, under the agent rows,
-and the Hermes Desktop pane draws the same payload. Bare `hermes` draws
+renders it as a compact checklist above the composer (its agent view stands
+under the info line), and the Hermes Desktop pane draws the same payload. Bare `hermes` draws
 neither.
 `omh runtime todo show` prints the todo projection the HUD payload carries
 (`todo` plus `display.todo_lines`), and `omh runtime todo clear` removes it. Todo items are plan declarations, never execution, review, CI, or

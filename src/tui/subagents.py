@@ -100,21 +100,12 @@ DONE_MARK = "○"
 FAILED_MARK = "✗"
 QUEUED_MARK = "◌"
 INTERRUPTED_MARK = "▪"
-OPEN_MARK = "↓ agents"  # what Down opens, at the end of the strip
-COLLAPSED_OPEN_MARK = "↓"  # after `2 agents`, which already says it
-NUMBER_MARK = "·"  # between the number and the name of agents the strip cannot tell apart by their goals' words
-# A goal word's quotes, backticks, escapes and brackets, and the punctuation after it, which a strip name that shows
-# the word alone leaves out (`'rm -rf ./tmp-d1'` parts at `./tmp-d1`).
-WORD_EDGES = "'\"`‘’“”\\()[]{}<>"
-WORD_ENDS = ",;:.!?"
-# Words that leave a strip name hanging: a goal that parts at one of them is named by it and the word after it.
-DANGLING_WORDS = frozenset({
-    "a", "an", "the", "and", "or", "but", "of", "in", "on", "at", "to", "for", "with", "by", "from", "into", "onto",
-    "as", "via", "about", "than", "that", "which", "is", "are",
-})
+OPEN_MARK = "↓ agents"  # what Down opens, after the count on the info line
+WAITING = "waiting"  # a queued agent's figure: how long it has waited for a worker
+# The order the agent view keeps rows in when it has no room for all: running first, done last.
+KEEP_RANK = {RUNNING: 0, QUEUED: 1, **{status: 2 for status in FAILED_STATUSES}, INTERRUPTED: 3, COMPLETED: 4}
 SELECTED_MARK = "▸ "
 UNSELECTED_MARK = "  "
-STRIP_GAP = "  "
 COLUMN_GAP = "  "
 FACT_SEPARATOR = " · "
 CUT_MARK = "…"
@@ -193,20 +184,6 @@ def _first_words(words: list[str], cells: int) -> str:
     return truncate(name, cells)
 
 
-def _goal_words(goal: str) -> list[str]:
-    """`goal`'s words without the quotes, backticks, escapes and brackets around them or the punctuation after them."""
-    words = (word.lstrip(WORD_EDGES).rstrip(WORD_EDGES + WORD_ENDS) for word in goal.split())
-    return [word for word in words if word]
-
-
-def _shared_words(first: list[str], second: list[str]) -> int:
-    """How many leading words `first` and `second` have in common."""
-    shared = 0
-    while shared < min(len(first), len(second)) and first[shared] == second[shared]:
-        shared += 1
-    return shared
-
-
 def _text(value: object) -> str:
     return value if isinstance(value, str) else ""
 
@@ -273,6 +250,21 @@ def _mark(agent: Agent, theme: Theme, spinner_frame: int) -> Span:
 
 def _tools_text(count: int) -> str:
     return f"{count} tool{'' if count == 1 else 's'}"
+
+
+def _collapsed_row(cut: list[Agent], theme: Theme) -> Line:
+    """The agent view's last row, for the agents it has no room for: `○ 3 done`, else `+4 more · 1 waiting · 3 done`
+    (running, waiting, failed and done ones counted, in that order)."""
+    if all(agent.status in (COMPLETED, INTERRUPTED) for agent in cut):
+        return (Span(UNSELECTED_MARK), Span(DONE_MARK, theme.muted), Span(f" {len(cut)} done", theme.muted))
+    counts = [
+        (sum(1 for agent in cut if agent.status == RUNNING), "running"),
+        (sum(1 for agent in cut if agent.status == QUEUED), WAITING),
+        (sum(1 for agent in cut if agent.status in FAILED_STATUSES), "failed"),
+        (sum(1 for agent in cut if agent.status in (COMPLETED, INTERRUPTED)), "done"),
+    ]
+    said = "".join(f"{FACT_SEPARATOR}{count} {word}" for count, word in counts if count)
+    return (Span(UNSELECTED_MARK), Span(f"+{len(cut)} more{said}", theme.muted))
 
 
 def _dropped_text(agent: Agent) -> str:
@@ -442,70 +434,36 @@ class Roster:
         """How many agents are still running."""
         return sum(1 for agent in self.agents.values() if agent.status == RUNNING)
 
-    def strip_names(self) -> dict[str, str]:
-        """Each agent's name on the strip: its own, or, where two or more share it, the word where its goal parts.
-
-        Each agent sharing a name drops the leading words its goal has in
-        common with the goal nearest it and shows the next word behind
-        `CUT_MARK` (`…alpha`), with the word after it when that one would leave
-        the name hanging (`…in src`), in `NAME_CELLS`. The words are read
-        without the quotes, backticks and brackets around them
-        (`_goal_words`). Where that still leaves one with no word, two alike,
-        or one reading as another agent's own name, each of them is `n·` and
-        the name instead (n from 1, roster order).
-        """
-        names = {subagent_id: agent.name for subagent_id, agent in self.agents.items()}
-        numbers = {subagent_id: number for number, subagent_id in enumerate(names, start=1)}
-        shown = dict(names)
-        for name in {name for name in names.values() if list(names.values()).count(name) > 1}:
-            group = [subagent_id for subagent_id, own in names.items() if own == name]
-            goals = [_goal_words(self.agents[subagent_id].goal) for subagent_id in group]
-            parts = []
-            for index, words in enumerate(goals):
-                shared = max(_shared_words(words, other) for at, other in enumerate(goals) if at != index)
-                rest = words[shared:]
-                taken = 2 if rest and rest[0].lower() in DANGLING_WORDS else 1
-                parts.append(CUT_MARK + truncate(" ".join(rest[:taken]), NAME_CELLS - cell_width(CUT_MARK)))
-            told_apart = (
-                all(part != CUT_MARK for part in parts) and len(set(parts)) == len(parts)
-                and not set(parts) & set(names.values())
-            )
-            for subagent_id, part in zip(group, parts, strict=True):
-                shown[subagent_id] = part if told_apart else f"{numbers[subagent_id]}{NUMBER_MARK}{name}"
-        return shown
-
-    def strip_line(self, width: int, theme: Theme, spinner_frame: int) -> Line:
-        """`● main  ⠹ explore  ○ review  ↓ agents`.
-
-        A running agent shows frame `spinner_frame` of the spinner, a finished
-        one `○`, a failed one `✗`. Agents whose names match are told apart
-        (`strip_names`), so no two entries read the same. When that row is wider than `width` it
-        becomes `● 2 agents ↓` (cut to `width`), which names no agent;
-        `64+ agents` when the cap pushed some out. With no agent there is no
-        strip.
-        """
-        if not self.agents:
-            return ()
-        spans = [Span(f"{MAIN_MARK} ", theme.accent), Span(MAIN_NAME, theme.hint)]
-        column = cell_width(f"{MAIN_MARK} {MAIN_NAME}")
-        tail = f"{STRIP_GAP}{OPEN_MARK}"
-        names = self.strip_names()
-        for agent in self.agents.values():
-            mark = _mark(agent, theme, spinner_frame)
-            name = names[agent.subagent_id]
-            column += cell_width(STRIP_GAP) + cell_width(f"{mark.text} {name}")
-            if column + cell_width(tail) > width:
-                return self._collapsed_strip(width, theme)
-            style = theme.muted if agent.status in FINISHED_STATUSES else theme.hint
-            spans += [Span(STRIP_GAP), mark, Span(f" {name}", style)]
-        spans.append(Span(tail, theme.hint))
-        return tuple(spans)
-
-    def _collapsed_strip(self, width: int, theme: Theme) -> Line:
+    def count_text(self) -> str:
+        """`2 agents`, `1 agent`, or `64+ agents` once the cap pushed some out; "" with no agent."""
         count = len(self.agents)
-        more = "+" if self.evicted else ""
-        label = f"{count}{more} agent{'' if count == 1 else 's'} {COLLAPSED_OPEN_MARK}"
-        return truncate_line((Span(f"{MAIN_MARK} ", theme.accent), Span(label, theme.hint)), width)
+        if not count:
+            return ""
+        return f"{count}{'+' if self.evicted else ''} agent{'' if count == 1 else 's'}"
+
+    def view_lines(self, width: int, theme: Theme, spinner_frame: int, max_rows: int, now: float) -> list[Line]:
+        """The agent view under the info line while no key is the list's: the list's own rows, none highlighted.
+
+        `● main`, then each agent in roster order, as `list_lines` draws them,
+        so Down highlights a row without moving one. More agents than
+        `max_rows` holds collapse into one last row: running agents are kept
+        first, then those waiting for a worker, then failed, interrupted and
+        done ones, and the last row counts the rest, `○ 3 done` when every one
+        of them finished, else `+4 more · 1 waiting · 3 done`. The rows kept
+        stay in roster order. With no agent there is no view.
+        """
+        if not self.agents or max_rows <= 0:
+            return []
+        ids = self.ids()
+        if len(ids) <= max_rows:
+            return [self._list_row(row_id, False, width, theme, spinner_frame, now) for row_id in ids]
+        room = max(max_rows - 2, 0)  # main and the last row
+        ranked = sorted(self.agents, key=lambda key: KEEP_RANK.get(self.agents[key].status, len(KEEP_RANK)))
+        kept = set(ranked[:room])
+        shown = [MAIN_ID, *(key for key in self.agents if key in kept)][: max(max_rows - 1, 0)]
+        rows = [self._list_row(row_id, False, width, theme, spinner_frame, now) for row_id in shown]
+        cut = [agent for key, agent in self.agents.items() if key not in kept]
+        return [*rows, truncate_line(_collapsed_row(cut, theme), width)]
 
     def list_lines(
         self, width: int, theme: Theme, selected: str, spinner_frame: int, max_rows: int, now: float
@@ -513,7 +471,8 @@ class Roster:
         """One row for main and one per agent, and the id each row is for (`MAIN_ID` for main).
 
         A row is its selection marker, status glyph and goal, with
-        `elapsed · N tools` at the right edge; the `selected` row is one
+        `elapsed · N tools` at the right edge (`waiting <elapsed>` for an
+        agent still waiting for a worker); the `selected` row is one
         `menu_current` bar across `width`. More rows than `max_rows` scroll
         just far enough to keep the selected one on screen. Where the goal
         would be left less than `MIN_GOAL_CELLS`, the tool count goes first,
@@ -537,7 +496,10 @@ class Roster:
         else:
             elapsed = elapsed_text(agent.elapsed(now))
             mark, label = _mark(agent, theme, spinner_frame), agent.goal or UNNAMED
-            figures = [f"{elapsed}{FACT_SEPARATOR}{_tools_text(agent.tool_count)}", elapsed, ""]
+            if agent.status == QUEUED:  # its clock is the wait: a row that never changes reads as a dead one
+                figures = [f"{WAITING} {elapsed}", elapsed, ""]
+            else:
+                figures = [f"{elapsed}{FACT_SEPARATOR}{_tools_text(agent.tool_count)}", elapsed, ""]
         lead = SELECTED_MARK if current else UNSELECTED_MARK
         fixed = cell_width(f"{lead}{mark.text} ")
         for figure in figures:  # ends on "", which always stays
