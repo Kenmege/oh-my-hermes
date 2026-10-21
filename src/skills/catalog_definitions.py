@@ -59,6 +59,7 @@ from .lifecycle_growth_skill import DEFINITION as LIFECYCLE_GROWTH_DEFINITION
 from .llm_app_references import LLM_APP_DEV_CONDITIONAL_CONTRACTS, LLM_APP_DEV_STATEFUL_CONTRACTS_REFERENCE_PATH
 from .product_discovery_skill import DEFINITION as PRODUCT_DISCOVERY_DEFINITION
 from .sales_pipeline_skill import DEFINITION as SALES_PIPELINE_DEFINITION
+from .show_reel_skill import DEFINITION as SHOW_REEL_DEFINITION
 
 from .catalog_types import (
     ADVERSARIAL_CONSENSUS_BUCKETS,
@@ -11761,6 +11762,7 @@ _DEFINITIONS.extend(
         LIFECYCLE_GROWTH_DEFINITION,
         PRODUCT_DISCOVERY_DEFINITION,
         SALES_PIPELINE_DEFINITION,
+        SHOW_REEL_DEFINITION,
         *JEV_DEFINITIONS,
     )
 )

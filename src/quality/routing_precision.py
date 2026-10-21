@@ -58,6 +58,12 @@ class RoutingInterventionCase:
 # helpful but should not hijack the answer into workflow selection, catalog
 # pickers, coding handoffs, or generic workflow acknowledgements.
 ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
+    RoutingPrecisionCase("show-reel-fishing", "Fishing equipment is not motion production", "Which fishing reel should I buy?", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-tape", "Tape storage is not motion production", "The tape reel is damaged.", "answer_clarification", ""),
+    RoutingPrecisionCase("show-reel-film-plot", "A film plot question is not a production brief", "What is the plot of this film?", "answer_directly", "direct_answer", "show-reel"),
+    RoutingPrecisionCase("show-reel-ko-file-question", "Korean file question is not production", "제품 영상 파일 용량은 얼마야?", "answer_clarification", ""),
+    RoutingPrecisionCase("show-reel-ja-file-question", "Japanese file question is not production", "この動画ファイルの容量は？", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-zh-file-question", "Chinese file question is not production", "这个视频文件多大？", "answer_clarification", "", "show-reel"),
     # Engine-entry approvals (#1638). Accepting something is the most common
     # thing a person says in the seconds after a planning workflow finishes,
     # and the corpus had no sentence of this shape at all -- 235 negative
@@ -7764,6 +7770,10 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
 # Positive-intervention corpus. These are real OMH-shaped turns where the router
 # should still step in after the direct-answer fallback was added.
 ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
+    RoutingInterventionCase("show-reel-en-production", "An unnamed authored motion brief reaches production", "Create a product showcase video for a Japanese audience.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-ko-production", "Korean motion-production phrase", "제품 쇼케이스 영상 만들어줘", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-ja-production", "Japanese motion-production phrase", "製品ショーケース動画を作って", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-zh-production", "Chinese motion-production phrase", "制作产品展示短片", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     # `docs/INSTALLATION.md` tells users to type `ulw work …`, and only the
     # hyphenated label routed: `ulw` alone is an `ultrawork` trigger at score
     # 12, so it took the whole request and the second word was never read.

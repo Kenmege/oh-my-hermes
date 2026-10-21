@@ -1379,6 +1379,11 @@ _SKILL_POLICIES = {
             "contrast_and_reflow_review/v1, and a remediation or visual-qa route when evidence is missing."
         ),
     ),
+    "show-reel": RecommendationPolicy(
+        next_action="prepare_show_reel",
+        evidence_boundary="A brief, storyboard or renderer handoff is not a rendered video, locale/font/voice review, export QA, attachment, receipt or publication. Missing required production evidence keeps HOLD.",
+        wrapper_guidance="Prepare audience and language tracks, source/brand rights, three concepts and segment direction, measured timing, selected renderer capability, revision budget, export/QA and source delivery with honest gaps.",
+    ),
     "visual-qa": RecommendationPolicy(
         next_action="prepare_visual_qa",
         evidence_boundary=(
@@ -2803,6 +2808,8 @@ _SIBLING_POINTER_METADATA_TOKENS = {
 # phrases. Crediting them separately made unrelated sentences containing
 # `models` and `work` look like observed-work inventory requests.
 _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
+    # Product/video/reel words alone must not acquire a motion-production owner.
+    "show-reel": frozenset({"show", "reel", "product", "showcase", "video", "animated", "film", "motion", "portfolio", "launch", "teaser"}),
     # The Jev skills are reached through `routing/jev_addressing.py` only:
     # every word their triggers are built from is held back, `jev` included,
     # so a sentence that merely mentions Jev or a review, a failure, or a
@@ -4531,6 +4538,10 @@ def _score_definition(
     ):
         score += 30
         matched.add("direct:specialist_language_pack_trigger")
+
+    if definition.name == "show-reel" and contains_cue_phrase(normalized_query, prepared.plain_trigger_phrases):
+        score += 30
+        matched.add("direct:show_reel_phrase")
 
     if definition.name == "apple-design" and _apple_design_offers_itself(normalized_query, query_tokens):
         score += 30

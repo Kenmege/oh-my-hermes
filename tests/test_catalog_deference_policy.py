@@ -301,9 +301,9 @@ NON_SKILL_BACKTICKS = frozenset(
 # `dag-ulw` defers a small change and coordinated lanes to `ultrawork` and an
 # undecided plan to `ralplan`; no sibling gains a statement pointing back.
 # Three cases, two pairs, one owner.
-EXPECTED_DEFERENCE_CASES = 387
-EXPECTED_DEFERENCE_PAIRS = 401
-EXPECTED_DEFERRING_OWNERS = 113
+EXPECTED_DEFERENCE_CASES = 392
+EXPECTED_DEFERENCE_PAIRS = 406
+EXPECTED_DEFERRING_OWNERS = 114
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.

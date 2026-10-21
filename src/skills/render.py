@@ -2805,8 +2805,17 @@ def _workflow_full_body(
 
 def _progressive_workflow_full_contract(definition: SkillDefinition, name: str) -> str:
     """Render skill-specific detail without copying the compact body's shared rails."""
+    if name == "show-reel":
+        # The compact production body owns these canonical opening actions.
+        definition = replace(definition, opening_steps=())
     title = name.replace("-", " ").title()
     triggers = _shipped_triggers(definition)
+    rubric = _quality_rubric_sections(definition)
+    routing_section = f"## When to Use\n\n{definition.use_when}\n\nRouting signals: {triggers}"
+    if name == "show-reel":
+        # These are canonical in the compact body, not repeated in a reference.
+        rubric = rubric[rubric.index("## Do Not Use When"):]
+        routing_section = ""
     return f"""# {title}
 
 Load this on-demand contract after the compact `{name}` body identifies the
@@ -2814,13 +2823,9 @@ workflow. The main body owns routing signals, shared rules, the runtime
 operation, delegation fallback, and completion/recovery pointers; this file
 holds the workflow-specific detail without copying those shared rails.
 
-{_quality_rubric_sections(definition)}
+{rubric}
 
-## When to Use
-
-{definition.use_when}
-
-Routing signals: {triggers}
+{routing_section}
 
 ## Workflow Contract
 
@@ -2860,6 +2865,44 @@ Detailed procedure steps: `references/procedure.md`.
 
 def _progressive_workflow_body(definition: SkillDefinition, name: str) -> str:
     """Keep the routing and action boundary in the always-loaded workflow body."""
+    if name == "show-reel":
+        return f"""# Show Reel
+
+## Why This Exists
+
+{definition.why_this_exists}
+{_opening_steps_block(definition)}
+## Production Method
+
+Read `references/procedure.md` for the ordered brief → source verification → concept selection → segment direction → measured timing → authored motion → critique/revision → export → QA → delivery method. `references/full-contract.md` owns boundaries, quality and completion criteria; read it before production, not after export.
+
+Require actual style frames and moving draft playback, keep/fix/rebuild critique and a weakest-scene revision budget. Inspect the final encoded artifact at delivery-size; no tiny crowded labels or PASS from full-resolution stills alone. Requested video, codec/color/filesize, cut/motion, localization and source-package checks need observed receipts or remain HOLD.
+
+Required: objective/audience/channel, explicit duration/format/budget, source/brand rights and available tools. Outputs: brief, source register, concept selection, storyboard, timing map, renderer handoff, preview review, export, QA and delivery manifests. These are authored contracts, not new executable schemas or core runtime operations. Missing renderer permits useful preparation, never a completed video claim.
+
+## When to Use
+
+{definition.use_when}
+
+## Catalog Metadata
+
+Category: `{definition.category}`. Phase: `{definition.phase}`. Hermes role: `{definition.hermes_role}`. Quality tier: `{definition.quality_tier}`. Detailed quality and authority checks: `references/full-contract.md`.
+
+## Completion Checklist
+
+- Load the full-contract checklist and `references/render-qa-delivery.md` before claiming completion; separate generated, attached, received and published.
+- Preserve the user's stop conditions, language choices and literal tokens. Keep the host's reply language and persona independent of content language.
+- Report actual files, source package, observed checks and every missing required check; publication and spending need separate exact-target approval.
+
+## Recovery Notes
+
+- If source rights, audience facts or explicit requirements conflict, HOLD and ask only the decision-changing question. Label reversible creative assumptions instead of blocking on them.
+- Missing renderer/font/voice or failed/partial exports remain visible; do not install tools, call APIs or fabricate receipts.
+
+{awareness_workflow_context_markdown(name)}
+
+{_common_rail_sections(definition, declared_primary_harness(name))}
+"""
     operation = _PROGRESSIVE_WORKFLOW_OPERATIONS[name]
     title = name.replace("-", " ").title()
     compact_contracts = {

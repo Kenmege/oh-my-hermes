@@ -603,6 +603,10 @@ CHAT_CARD_COVERAGE_CASES: tuple[ChatCardCoverageCase, ...] = (
         "prepare_visual_qa",
     ),
     ChatCardCoverageCase(
+        "show-reel", "Show reel", "Create a product showcase video for a Japanese audience.",
+        "show-reel", "show_reel", "prepare_show_reel",
+    ),
+    ChatCardCoverageCase(
         "workspace-audit",
         "Workspace Audit",
         "workspace audit",

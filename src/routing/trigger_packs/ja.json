@@ -2,6 +2,7 @@
   "schema_version": "trigger_language_pack/v1",
   "language": "ja",
   "skills": {
+    "show-reel": ["製品ショーケース動画"],
     "accessibility-audit": [
       "アクセシビリティ監査",
       "アクセシビリティ確認",

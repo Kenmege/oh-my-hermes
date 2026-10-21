@@ -380,7 +380,7 @@
 }
 },
 {
-"anchors":"checklist consistency copy fit glossary i18n japanes korean launch localization market string translation",
+"anchors":"checklist consistency copy fit glossary i18n japanes korean localization market string translation",
 "hangul":"검토 번역 어집 용어 지화 현지",
 "hangul_anchors":"검토 번역 어집 용어 지화 현지",
 "label":"omh-localization-review",
@@ -659,7 +659,7 @@
 }
 },
 {
-"anchors":"400 a11y aa accessibility accessibl ada appearanc architect aria background blind color complianc contrast focus hard keyboard launch name navigation ratio reader reflow role screen screenreader size tab target touch trap usabl valu wcag websit zoom",
+"anchors":"400 a11y aa accessibility accessibl ada appearanc architect aria background blind color complianc contrast focus hard keyboard name navigation ratio reader reflow role screen screenreader size tab target touch trap usabl valu wcag websit zoom",
 "hangul":"감사 검사 검토 게이 근성 내비 대비 리더 린리 명도 보드 비게 순서 스크 이션 접근 커스 크기 크린 키보 타깃 터치 포커 표시",
 "hangul_anchors":"감사 검사 검토 게이 근성 내비 대비 리더 린리 명도 보드 비게 순서 스크 이션 접근 커스 크기 크린 키보 타깃 터치 포커 표시",
 "label":"omh-accessibility-audit",
@@ -726,7 +726,7 @@
 }
 },
 {
-"anchors":"checklist launch live operational pre preflight prod rollback",
+"anchors":"checklist live operational pre preflight prod rollback",
 "hangul":"덕션 로덕 롤백 리즈 릴리 운영 준비 출시 프로",
 "hangul_anchors":"덕션 로덕 롤백 리즈 릴리 운영 출시",
 "label":"omh-production-audit",
@@ -905,7 +905,7 @@
 }
 },
 {
-"anchors":"bootstrap complet deployment empty idea launch mvp scaffold scratch take",
+"anchors":"bootstrap complet deployment empty idea mvp scaffold scratch take",
 "hangul":"가보 기획 까지 디어 루프 배포 보자 부터 비스 서비 스로 시까 아이 어를 어부 완제 운영 이디 제품 출시 포까 획부",
 "hangul_anchors":"가보 기획 까지 디어 루프 배포 보자 부터 비스 서비 스로 시까 아이 어를 어부 완제 운영 이디 제품 출시 포까 획부",
 "label":"omh-idea-to-deploy",
@@ -940,7 +940,7 @@
 }
 },
 {
-"anchors":"act cto dev engineer launch lead leadership operat ops pm risky roadmap security several tech technical together tradeoff",
+"anchors":"act cto dev engineer lead leadership operat ops pm risky roadmap security several tech technical together tradeoff",
 "hangul":"구조 기술 더십 드맵 드오 레이 로드 리더 아키 오프 이드 준비 출시 키텍 텍처 트레",
 "hangul_anchors":"구조 기술 더십 드맵 드오 로드 리더 아키 오프 이드 출시 키텍 텍처 트레",
 "label":"omh-cto-loop",
@@ -1582,7 +1582,7 @@
 }
 },
 {
-"anchors":"appl bad beta boot cert creat devic everyon expir fastlan fifty know launch misbehav month nobody older privacyinfo reach reject replacement resubmit stop tester testflight today xcprivacy",
+"anchors":"appl bad beta boot cert creat devic everyon expir fastlan fifty know misbehav month nobody older privacyinfo reach reject replacement resubmit stop tester testflight today xcprivacy",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-mobile-release",
@@ -1747,6 +1747,22 @@
 "6":"forecast",
 "7":"sale",
 "9":"pipelin review"
+}
+},
+{
+"anchors":"audienc captur compell different instead introduction movement narrativ reproducibl rhythm script short showreel slid static timed",
+"hangul":"쇼케 영상 이스 제품 케이",
+"hangul_anchors":"쇼케 영상 이스 제품 케이",
+"label":"omh-show-reel",
+"name":"show-reel",
+"situation":"Motion showcase to make",
+"terms":{
+"1":"based concept direction evidenc fram ground inspection local localiz measur produc qa render segment specific time user variant",
+"2":"animat approv author captur compell delivery different export instead introduction launch movement narrativ read rhythm script short showreel slid static timed turn video",
+"3":"film reproducibl work",
+"4":"audienc motion portfolio showcas sourc teaser",
+"5":"reel",
+"6":"product"
 }
 },
 {
@@ -2120,7 +2136,7 @@
 }
 },
 {
-"anchors":"announcement audienc changelog content copy customer draft email executiv guid land launch linkedin newsletter plain post publish rewrit social tone voic word",
+"anchors":"announcement audienc changelog content copy customer draft email executiv guid land linkedin newsletter plain post publish rewrit social tone voic word",
 "hangul":"가이 객용 고객 공지 글쓰 널별 노트 뉴스 레이 레터 리즈 릴리 메일 문체 스레 쓰기 오퍼 요약 워크 이드 이메 이터 즈노 지문 채널 초안 콘텐 크플 텐츠 퍼레 플로",
 "hangul_anchors":"가이 객용 고객 공지 글쓰 널별 노트 뉴스 레터 리즈 릴리 메일 문체 스레 쓰기 오퍼 워크 이드 이메 이터 즈노 지문 채널 초안 콘텐 크플 텐츠 퍼레 플로",
 "label":"omh-content-operator",

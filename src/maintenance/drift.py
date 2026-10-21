@@ -328,7 +328,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             name="chat_card_case_count",
             describe="Chat card coverage cases",
             live=_chat_card_case_count,
-            expected=90,
+            # show-reel adds one dedicated production card.
+            expected=91,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",
@@ -339,7 +340,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             name="route_hint_case_count",
             describe="Route hint alignment cases",
             live=_route_hint_case_count,
-            expected=210,
+            # show-reel adds one aligned workflow route hint.
+            expected=211,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",
@@ -761,7 +763,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # (3); what is going on after ralplan and a factual question
             # after it (2); what app-debugging is (1); and a build broken
             # after using ultrawork, still a report (1) (9).
-            expected=945,
+            # show-reel adds six non-production controls across EN/KO/JA/ZH.
+            expected=951,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1137,7 +1140,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # a report then one more time, or 다시 (2); a status question
             # to app-debugging and running-work-board, whose work it is (2);
             # and a kill switch for flags with dag ulw (1) (10).
-            expected=965,
+            # show-reel adds four named-script production interventions.
+            expected=969,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1148,7 +1152,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             live=_installable_skill_count,
             # The current workflow additions are part of the installable catalog.
             # `data-share-review` adds one. `spend-gate` adds one. `dag-ulw` adds one.
-            expected=145,
+            # show-reel adds one installable motion-production method.
+            expected=146,
             sites=(
                 "docs/README.md",
                 # The docs index quotes the count in prose and

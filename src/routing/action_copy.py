@@ -4,6 +4,7 @@ from ..coding.orchestration_vocabulary import CHOOSE_EXECUTOR_REASON
 
 
 NEXT_ACTION_LABELS: dict[str, str] = {
+    "prepare_show_reel": "prepare a show reel",
     "answer_clarification": "asking the needed clarification",
     "answer_directly": "answering directly in chat",
     "answer_file_lookup": "answering as a file or text lookup",

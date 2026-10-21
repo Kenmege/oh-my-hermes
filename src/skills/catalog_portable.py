@@ -239,6 +239,8 @@ _PORTABILITY: dict[str, str] = {
     'omh-product-discovery-validation': PORTABILITY_PORTABLE,
     # required_inputs: pipeline snapshot; expected_outputs: sales_pipeline_scope/v1; final_checklist requires evidence/approval, not a native runtime.
     'omh-sales-pipeline-review': PORTABILITY_PORTABLE,
+    # Host-neutral production method; tools are selected and observed, never required OMH RPCs.
+    'omh-show-reel': PORTABILITY_PORTABLE,
     # required_inputs: user request; expected_outputs: github-event-ops/v1 card or guidance; final_checklist requires evidence/approval, not a native runtime.
     'omh-github-event-ops': PORTABILITY_PORTABLE,
     # expected_outputs require omh_agent_board RPC; final_checklist invokes Hermes native_action.
@@ -355,6 +357,13 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'lifecycle-growth/references/procedure.md',
     'product-discovery-validation/references/procedure.md',
     'sales-pipeline-review/references/procedure.md',
+    'show-reel/references/procedure.md',
+    'show-reel/references/brief-and-locales.md',
+    'show-reel/references/storyboard-and-evidence.md',
+    'show-reel/references/renderer-adapter.md',
+    'show-reel/references/assets-and-rights.md',
+    'show-reel/references/render-qa-delivery.md',
+    'show-reel/references/source-package.md',
     'research/references/briefing-format.md',
     'frontend/references/design-system-contract.md',
     'frontend/references/taste-foundations.md',

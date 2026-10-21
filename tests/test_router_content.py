@@ -1688,6 +1688,7 @@ class RouterContentTests(unittest.TestCase):
                 "accessibility-audit",
                 "visual-qa",
                 "browser-operator",
+                "show-reel",
                 "workspace-file-operator",
                 "command-operator",
                 "connector-operator",
@@ -4242,7 +4243,7 @@ class RouterContentTests(unittest.TestCase):
         # Retired engines must not be presented as current planning skills.
         self.assertNotIn("`ultragoal`", docs_readme)
         # omh-docs and github-issue-intake raise the measured catalog to 119.
-        self.assertIn("**145 installable skills**", docs_readme)
+        self.assertIn("**146 installable skills**", docs_readme)
         self.assertIn("**Retain knowledge**", docs_readme)
         # The unit suite runs through the deterministic sharding tools (issue
         # #1294): plan once, run per shard plus the serial quarantine, then
