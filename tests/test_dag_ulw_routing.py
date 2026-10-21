@@ -210,7 +210,8 @@ class RouterTests(unittest.TestCase):
                         "dag ulw 결과 보고 취소 여부 결정할게",
                         # A status check before a past stop asks whether it stopped; it is no re-run.
                         "dag ulw 확인해줘, 취소됐는지", "dag ulw 보여줘, 취소된 거", "dag ulw 봐줘, 아까 취소한 거 끝났는지",
-                        "dag ulw 살펴봐줘, 중단된 거",
+                        "dag ulw 살펴봐줘, 중단된 거", "dag ulw 체크해줘 아까 멈춘 거", "dag ulw 확인해줘 아까 멈춘 거",
+                        "dag ulw 취소 눌렀어?",
                         # A sigil before a question is a question.
                         "/dag-ulw 취소 어떻게 해", "$dag-ulw 취소 방법 알려줘"):
             with self.subTest(message=message):
@@ -341,6 +342,8 @@ class RouterTests(unittest.TestCase):
                         "dag ulw 결제 취소 처리해줘", "dag ulw 취소 처리 로직 만들어줘", "dag ulw 취소 요청 큐 리팩터링해줘",
                         "dag ulw 다시 돌려줘, 아까 취소한 거", "dag ulw 다시 실행해줘. 어제 중단된 거",
                         "dag ulw 재시작해줘 취소했던 거", "dag ulw 다시 돌려줘 아까 취소한 거", "dag ulw 다시 해줘, 아까 취소한 거 말고",
+                        "dag ulw 이어서 해줘 중단된 거", "dag ulw 계속 해줘, 아까 중단된 거", "dag ulw 마저 해줘 중단된 거",
+                        "dag ulw 이어서 해줘, 아까 멈춘 거", "dag ulw 마저 해줘, 아까 멈춘 거",
                         "dag ulw 취소했는데 계속 돌아가는 버그 고쳐줘"):
             with self.subTest(message=message):
                 self.assertTrue(invokes_dag_ulw(message))

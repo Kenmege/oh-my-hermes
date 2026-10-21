@@ -739,7 +739,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # checks before a past stop (check, show, look over, whether it
             # ended), answered; and cancel pressed while the run still goes,
             # which cancels it again (5).
-            expected=912,
+            # The seventh review adds three, answered: two status checks of a
+            # run that stopped (멈춘), which main ran, and whether cancel was
+            # pressed, answered on main too (3).
+            expected=915,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1097,7 +1100,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # main too: a restart and a re-run of the cancelled run with no
             # comma, a redo that is not the cancelled run, and a sigil question
             # with a request after the question mark (4).
-            expected=943,
+            # The seventh review adds three resume requests for a halted run
+            # (이어서, 계속, 마저 해줘), each dispatched on main too (3).
+            expected=946,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

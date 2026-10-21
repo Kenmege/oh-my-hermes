@@ -7396,6 +7396,27 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
     ),
     RoutingPrecisionCase(
+        "korean-check-the-run-that-stopped-is-answered",
+        "Asking to check the dag ulw run that stopped earlier gets an answer, not a run",
+        "dag ulw 체크해줘 아까 멈춘 거",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "korean-verify-the-run-that-stopped-is-answered",
+        "Asking to verify the dag ulw run that stopped earlier gets an answer, not a run",
+        "dag ulw 확인해줘 아까 멈춘 거",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "korean-was-cancel-pressed-is-answered",
+        "Asking whether cancel was pressed for dag ulw gets an answer, not a clarification",
+        "dag ulw 취소 눌렀어?",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
         "korean-dag-ulw-order-cancel-asks-which",
         "dag ulw beside an order cancel with no verb asks whether to stop the run or build the order cancel",
         "dag ulw 주문 취소",
@@ -16323,6 +16344,24 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "sigil-question-then-fix-it-dispatches",
         "A sigil question followed by a request after the question mark is still a command",
         "/dag-ulw how do I fix the auth bug? fix it",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-dag-ulw-continue-the-halted-one-dispatches",
+        "Korean: continuing the halted run with 이어서 해줘 starts a run",
+        "dag ulw 이어서 해줘 중단된 거",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-dag-ulw-keep-going-on-the-halted-one-dispatches",
+        "Korean: keeping on with the run halted earlier with 계속 해줘 starts a run",
+        "dag ulw 계속 해줘, 아까 중단된 거",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-dag-ulw-finish-the-halted-one-dispatches",
+        "Korean: finishing the halted run with 마저 해줘 starts a run",
+        "dag ulw 마저 해줘 중단된 거",
         "dispatch", "dag-ulw", "start_dag_run", "dag_run",
     ),
     RoutingInterventionCase(

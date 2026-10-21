@@ -125,7 +125,7 @@ _STOP: Final = re.compile(
 # A how word after it asks about stopping, and so does a past or passive form ("dag ulw 취소됐어?", "dag ulw
 # 멈췄어?") or 여부: those are answered (`asks_about_dag_ulw`).
 _STOP_AFTER_NAME: Final = re.compile(
-    rf"{_NAME}(?P<before>.*)(?P<stem>{_KOREAN_STOP_NOUN}|멈추|멈춰|멈출|멈췄|그만(?!큼)|꺼\s*(?:줘|주세요|라))(?P<after>.*)$",
+    rf"{_NAME}(?P<before>.*)(?P<stem>{_KOREAN_STOP_NOUN}|멈추|멈춰|멈출|멈췄|멈춘|그만(?!큼)|꺼\s*(?:줘|주세요|라))(?P<after>.*)$",
     re.DOTALL,
 )
 _KOREAN_WORK_WORD: Final = re.compile(
@@ -144,7 +144,7 @@ _KOREAN_NOT_A_VERB_STEM: Final = frozenset(
      "게", "되게", "하게", "도록", "되도록"}
 )
 _KOREAN_HOW: Final = re.compile(r"어떻게|방법|뭐|왜|가능|(?:^|[할될])\s*수\s*있|되나|될까|돼\s*요?\s*[?？]")
-_KOREAN_PAST: Final = re.compile(r"^\s*(?:완료\s*)?(?:됐|되었|됨|된|했|하였|한\s*거|뒀)|여부")
+_KOREAN_PAST: Final = re.compile(r"^\s*(?:완료\s*)?(?:됐|되었|됨|된|했|하였|한\s*거|뒀|눌렀)|여부")
 # A sigil before a question is a question, not a command ("/dag-ulw what is it?", "/dag-ulw how do I cancel it?"),
 # unless a request for work follows it ("/dag-ulw explain the plan, then run the migration", "/dag-ulw is the auth
 # refactor done? if not, finish it").
@@ -158,7 +158,7 @@ _SIGIL_QUESTION: Final = re.compile(
 # A stop the person already made, said while the run still goes ("dag ulw 취소했는데 계속 돌아가", "dag ulw 취소
 # 눌렀는데 계속 돌아가"): stop it again.
 _KOREAN_PRESSED: Final = re.compile(r"\s*눌렀")
-_REQUEST_BEFORE_STOP: Final = re.compile(r"(?:^|\s)(?:다시\s*)?(?!해|하|좀)\S+?(?:해)?(?:줘|주세요)(?=[\s,.]|$)|다시\s*해\s*(?:줘|주세요)")
+_REQUEST_BEFORE_STOP: Final = re.compile(r"(?:^|\s)(?:다시\s*)?(?!해|하|좀)\S+?(?:해)?(?:줘|주세요)(?=[\s,.]|$)|(?:다시|이어서|계속|마저)\s*해\s*(?:줘|주세요)")
 _STATUS_REQUEST: Final = re.compile(r"(?:확인|체크|봐|보여|알려|살펴|점검|조회)\S*?(?:해)?(?:줘|주세요)")
 _KOREAN_STILL_RUNNING: Final = re.compile(r"(?:계속|아직|여전히)\s*(?:돌아|돌고|실행|진행|안\s*멈)|안\s*(?:멈춰|멈추|꺼져|꺼지)")
 # A stop of the run right after the name, then more work ("dag ulw 지금 거 취소하고 결제 모듈부터 다시 해줘",
@@ -222,7 +222,8 @@ def _stop_names_work(stop: re.Match[str]) -> bool:
         return False  # a question about stopping (`_asks_about_stopping`), even after …하면 ("중단하면 어떻게 돼")
     if _KOREAN_WORK_CONDITION.search(after) or _KOREAN_CONDITION_BEFORE.search(before):
         return True
-    if _KOREAN_PAST.search(after) and _REQUEST_BEFORE_STOP.search(before) and not _STATUS_REQUEST.search(before):
+    past = bool(_KOREAN_PAST.search(after)) or stem in ("멈췄", "멈춘")
+    if past and _REQUEST_BEFORE_STOP.search(before) and not _STATUS_REQUEST.search(before):
         return True  # a request of its own, then the stop it names: "dag ulw 다시 돌려줘, 아까 취소한 거"
     return _ends_in_its_own_request(after)
 
@@ -232,7 +233,7 @@ def _asks_about_stopping(stop: re.Match[str] | None) -> bool:
     if stop is None or _stop_names_work(stop):
         return False
     after = stop.group("after")
-    return bool(_KOREAN_HOW.search(after) or _KOREAN_PAST.search(after) or stop.group("stem") == "멈췄")
+    return bool(_KOREAN_HOW.search(after) or _KOREAN_PAST.search(after) or stop.group("stem") in ("멈췄", "멈춘"))
 
 
 def asks_about_dag_ulw(text: str) -> bool:
