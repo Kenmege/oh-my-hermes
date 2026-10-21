@@ -46,6 +46,7 @@ from functools import lru_cache
 from typing import Any, Final
 import unicodedata
 
+from .dag_core import layer_of
 from .hud_text import elapsed_text
 
 VIEW_LAYOUTS: Final = ("box", "compact", "tree", "header")
@@ -500,23 +501,11 @@ class _Band:
 
 
 def _layers(ids: list[str], edges: list[tuple[str, str]]) -> dict[str, int] | None:
-    incoming = {node_id: 0 for node_id in ids}
-    successors: dict[str, list[str]] = {node_id: [] for node_id in ids}
+    parents: dict[str, list[str]] = {}
     for upper, lower in edges:
-        incoming[lower] += 1
-        successors[upper].append(lower)
-    layer = {node_id: 0 for node_id in ids}
-    ready = [node_id for node_id in ids if incoming[node_id] == 0]
-    visited = 0
-    while ready:
-        current = ready.pop(0)
-        visited += 1
-        for lower in successors[current]:
-            layer[lower] = max(layer[lower], layer[current] + 1)
-            incoming[lower] -= 1
-            if incoming[lower] == 0:
-                ready.append(lower)
-    return layer if visited == len(ids) else None
+        parents.setdefault(lower, []).append(upper)
+    layer, cyclic = layer_of(ids, parents)
+    return None if cyclic else layer
 
 
 def _bands(

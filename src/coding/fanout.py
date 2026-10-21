@@ -6,6 +6,7 @@ import re
 from typing import Mapping, Sequence
 
 from ..ingress import compact_source_metadata
+from ..plugin_bundle.omh import dag_core
 from .fanout_contracts import (
     FANOUT_CLAIM_BOUNDARY,
     FANOUT_CONTRACT_SCHEMA_VERSION,
@@ -231,11 +232,11 @@ def validate_fanout_units(units: Sequence[Mapping[str, object]]) -> None:
             raise FanoutContractError(
                 f"unit {unit_id} category {category!r} is not one of {', '.join(MODEL_CATEGORIES)}"
             )
-        for dependency in unit.get("depends_on", []) or []:
-            if str(dependency) not in known:
-                raise FanoutContractError(f"unit {unit_id} depends on unknown unit {dependency!r}")
-            if str(dependency) == unit_id:
-                raise FanoutContractError(f"unit {unit_id} cannot depend on itself")
+        problem = dag_core.edge_problem(unit_id, [str(dep) for dep in unit.get("depends_on", []) or []], known)
+        if problem is not None and problem[0] == dag_core.UNKNOWN_DEPENDENCY:
+            raise FanoutContractError(f"unit {unit_id} depends on unknown unit {problem[1]!r}")
+        if problem is not None:
+            raise FanoutContractError(f"unit {unit_id} cannot depend on itself")
     _require_reproduction_hold_edges(units)
 
 
@@ -363,49 +364,33 @@ def require_spawn_plan(
 
 def detect_boundary_overlaps(units: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
     notes: list[dict[str, object]] = []
-    indexed = [(str(unit["unit_id"]), {str(path) for path in unit.get("file_scope", [])}) for unit in units]
-    edges = {
-        (str(unit["unit_id"]), str(dependency))
-        for unit in units
-        for dependency in unit.get("depends_on", []) or []
-    }
-    for position, (first_id, first_scope) in enumerate(indexed):
-        for second_id, second_scope in indexed[position + 1 :]:
-            shared = sorted(first_scope & second_scope)
-            if not shared:
-                continue
-            if (first_id, second_id) not in edges and (second_id, first_id) not in edges:
-                raise FanoutContractError(
-                    f"units {first_id} and {second_id} share files {shared} without a depends_on edge; "
-                    "make one depend on the other or split the boundary"
-                )
-            notes.append(
-                {
-                    "units": sorted((first_id, second_id)),
-                    "shared_files": shared,
-                    "resolution": "ordered by depends_on edge; merge strictly in merge_order",
-                }
+    scopes = [(str(unit["unit_id"]), [str(path) for path in unit.get("file_scope", [])]) for unit in units]
+    for first_id, second_id, shared, joined in dag_core.shared_scope_pairs(scopes, _parents(units)):
+        if not joined:
+            raise FanoutContractError(
+                f"units {first_id} and {second_id} share files {shared} without a depends_on edge; "
+                "make one depend on the other or split the boundary"
             )
+        notes.append(
+            {
+                "units": sorted((first_id, second_id)),
+                "shared_files": shared,
+                "resolution": "ordered by depends_on edge; merge strictly in merge_order",
+            }
+        )
     return notes
 
 
+def _parents(units: Sequence[Mapping[str, object]]) -> dict[str, list[str]]:
+    return {str(unit["unit_id"]): [str(dep) for dep in unit.get("depends_on", []) or []] for unit in units}
+
+
 def merge_order(units: Sequence[Mapping[str, object]]) -> list[str]:
-    remaining = {
-        str(unit["unit_id"]): {str(dependency) for dependency in unit.get("depends_on", []) or []}
-        for unit in units
-    }
-    order: list[str] = []
-    while remaining:
-        ready = sorted(unit_id for unit_id, deps in remaining.items() if not deps)
-        if not ready:
-            cycle = ", ".join(sorted(remaining))
-            raise FanoutContractError(f"depends_on contains a cycle among units: {cycle}")
-        for unit_id in ready:
-            order.append(unit_id)
-            del remaining[unit_id]
-        for deps in remaining.values():
-            deps.difference_update(ready)
-    return order
+    placed, stuck = dag_core.layer_of([str(unit["unit_id"]) for unit in units], _parents(units))
+    if stuck:
+        cycle = ", ".join(sorted(stuck))
+        raise FanoutContractError(f"depends_on contains a cycle among units: {cycle}")
+    return sorted(placed, key=lambda unit_id: (placed[unit_id], unit_id))
 
 
 def is_degenerate_single_unit(units: Sequence[Mapping[str, object]]) -> bool:
@@ -821,17 +806,11 @@ def _require_acyclic_check_edges(checks: list[dict[str, object]], index: int) ->
                 raise FanoutContractError(
                     f"unit at index {index} verification_checks {dep!r} depends on itself"
                 )
-    remaining = {str(check["id"]): set(str(dep) for dep in check["depends_on"]) for check in checks}
-    while remaining:
-        ready = [check_id for check_id, deps in remaining.items() if not deps]
-        if not ready:
-            raise FanoutContractError(
-                f"unit at index {index} verification_checks depends_on forms a cycle"
-            )
-        for check_id in ready:
-            del remaining[check_id]
-        for deps in remaining.values():
-            deps.difference_update(ready)
+    parents = {str(check["id"]): [str(dep) for dep in check["depends_on"]] for check in checks}
+    if dag_core.layers(list(parents), parents) is None:
+        raise FanoutContractError(
+            f"unit at index {index} verification_checks depends_on forms a cycle"
+        )
 
 
 def _sibling_scopes(units: Sequence[Mapping[str, object]], unit_id: str) -> list[str]:
