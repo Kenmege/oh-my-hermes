@@ -102,9 +102,10 @@ class AgentViewMixin:
         same rows, noting each row's agent id in `listed`.
 
         While the conversation's delegation graph is a DAG run its tree is
-        the view, in a third of the screen from the start (the owner wants
-        the graph in sight while it runs), with the HUD's agents block above
-        it while the roster is empty. Down then gives the keys to the
+        the view, in up to a third of the screen from the start and no more
+        rows than the tree has (the owner wants the graph in sight while it
+        runs), with the HUD's agents block above it while the roster is
+        empty. Down then gives the keys to the
         roster's list in the tree's own rows, a shorter list padded with blank
         rows and a longer one scrolled, so opening and closing it moves
         nothing (the tree's nodes name no agent the list could act on).
@@ -137,6 +138,26 @@ class AgentViewMixin:
         """`layout.agent_view_cap` for `keep` rows, and no more than `room` when given."""
         cap = agent_view_cap(rows, cols, keep)
         return cap if room is None else min(cap, room)
+
+    def _held_view_rows(self, wanted: int) -> int:
+        """The most rows the view takes, wanting `wanted`, once a turn has ended and while the region is on the
+        screen's last row: the rows the turn's last frame gave it, unless it now wants more than it wanted then (an
+        agent that starts, a tree that grows) or the terminal changed size.
+
+        While a turn runs the tail keeps its working row (`layout.allocate`'s
+        `tail_floor`), and on the bottom rows the composer stands right above
+        the view: a view that took that row once the turn ended pulled the
+        composer up, and gave the row back at the next turn. The row stays
+        blank above the composer instead, as rows the content gives up do
+        (`layout`). A view that wants fewer rows still gives them up at once,
+        and emptying the roster (a new turn, another session) drops the hold.
+        """
+        if self.view_hold is None:
+            return wanted
+        size, last_wanted, last_given = self.view_hold
+        if size != self.size or wanted > last_wanted:
+            return wanted
+        return last_given
 
     def _hud_view(self, payload: Mapping[str, Any], cols: int, cap: int, show_agents: bool = True) -> list[Line]:
         """The HUD's agents block (unless `show_agents` is False) and the delegation tree, in `cap` rows."""
@@ -418,8 +439,10 @@ class AgentViewMixin:
         )
 
     def _clear_roster(self) -> None:
-        """Drop the agents and every piece of tail bookkeeping and pending action that names them."""
+        """Drop the agents and every piece of tail bookkeeping and pending action that names them, and the view's
+        hold (`_held_view_rows`)."""
         self.roster.clear()
+        self.view_hold = None
         self._drop_agent_actions()
 
     def _lose_roster(self) -> None:

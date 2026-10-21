@@ -4,6 +4,19 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The OMH TUI's composer stays still when a turn ends with agents listed
+  under it.** On the bottom rows the agent view took the working row's place
+  once the turn ended, so at 12 rows with the plan and seven agents the
+  composer's box moved up a row and came back down when the next turn
+  started. Once a turn ends, the view now keeps the rows the turn's last
+  frame gave it, unless it wants more rows than it did then (an agent that
+  starts, a tree that grows) or the terminal changed size, and the freed row
+  stays blank above the composer until output fills it. A view that wants
+  fewer rows still gives them up at once, and a new turn or another session
+  drops the hold. A test now pins that a finished DAG run counts at its one
+  summary line in the agents block's budget. The docs say what the DAG tree
+  takes: up to a third of the rows (8 of 24, 13 of 40), and no more rows than
+  the tree has, so a five-lane run's seven-row tree takes 7 at 24 and at 40.
 - **The delegation graph keeps a long duration whole, draws no `?` title, and
   puts a repair above what waits on it.** A duration of 100 hours or more
   (`111h 06m`) is measured as it reads, so a box widens by one cell at the

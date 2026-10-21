@@ -502,6 +502,15 @@ class AgentViewPartTests(unittest.TestCase):
                                         show_plan=False))
         self.assertEqual(hidden[4], "  +3 more", "a row the reader did not list may be anything")
 
+    def test_a_finished_run_counts_at_its_one_line_so_the_agents_block_keeps_its_running_rows(self) -> None:
+        # Counted at its tree's full height (seven rows), the settled run left the block only its header at six rows.
+        rows = [agent_row(0), agent_row(1), *(agent_row(index, state="done") for index in range(2, 6))]
+        payload = with_delegation(with_agents(hud_payload(), rows), [{"state": "done", "status": "done"}] * 5)
+        kept = lines_text(panel_lines(payload, 100, 6, THEME, 0.0, show_plan=False))
+        self.assertEqual(len(kept), 6, kept)
+        self.assertEqual([row.split()[2] for row in kept[1:3]], ["worker0", "worker1"], kept)
+        self.assertEqual(kept[-2:], ["  +3 done", "  DAG · delegation · done 5/5"])
+
     def test_the_inset_shifts_the_agents_block_and_the_tree_keeps_its_own(self) -> None:
         payload = with_delegation(with_agents(hud_payload(), [agent_row(0, dispatch_lane="maestro")]), [{}])
         flush = lines_text(panel_lines(payload, 80, 20, THEME, 0.0, show_plan=False))

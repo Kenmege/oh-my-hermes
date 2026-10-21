@@ -162,9 +162,11 @@ Where it shows:
   draws (`subagents.hidden_in_graph`), and those are not other agents. The
   lanes are then counted once, on the graph's own header line, and the
   agents block's header keeps the session's cost and tokens.
-  The tree of a DAG run takes a third of the terminal's rows from the start
-  (8 of 24, 13 of 40); other views take at most a quarter, seven from 28
-  rows, raised only to show every running lane. Boxes do not fit there, so
+  The tree of a DAG run takes up to a third of the terminal's rows from the
+  start (8 of 24, 13 of 40), and no more rows than it has: a five-lane run's
+  seven-row tree takes 7 at 24 rows and at 40, and the same run with a row
+  per stage (ten rows) takes 8 at 24 and 10 at 40. Other views take at most
+  a quarter, seven from 28 rows, raised only to show every running lane. Boxes do not fit there, so
   the tree is drawn, its done lanes giving way first to a `+N more nodes` row and its
   running lanes kept. Once every lane has settled (done, failed, interrupted
   or unknown, and no lane left out by the reader) and a dag-ulw run is over

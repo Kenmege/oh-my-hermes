@@ -27,7 +27,7 @@ from omh.tui.layout import AGENT_VIEW_ROWS, agent_view_cap
 from omh.tui.modes import chip_column, info_line, mode_label
 from omh.tui.frame import BOX_INSET, MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, ServerRequest
-from omh.tui.keys import CHAR, ENTER, Key
+from omh.tui.keys import BACKSPACE, CHAR, ENTER, Key
 from omh.tui.panels import SPINNER_FRAMES
 from omh.tui.style import Span
 from omh.tui.subagents import Roster
@@ -649,3 +649,103 @@ class RoomTests(unittest.TestCase):
         self.assertEqual(shown[1], "  +6 more · 2 running · 4 done")
         self.assertTrue([row for row in screen if row.startswith("✻ Working")], "the working row stays")
         self.assertTrue([row for row in screen if row.startswith("[Plan]")], "and so does the plan")
+
+    PLAN = [{"text": "Build", "state": "done"}, {"text": "Test", "state": "active"},
+            {"text": "Ship", "state": "pending"}]
+
+    def small_app(self, running: int, done: int, *, plan: bool = True, graph: dict | None = None,
+                  cols: int = 80) -> App:
+        """12 rows and a turn running: `running` agents running and `done` done, the plan in the slot (four rows)
+        unless `plan` is False, and `graph` as the conversation's delegation graph."""
+        app, _client = make_app(busy=True, rows=12, cols=cols, clock=lambda: 0.0)
+        with_graph(app, graph, self.PLAN if plan else None)
+        for number in range(running + done):
+            agent_event(app, "start", f"sa-{number}", goal=f"task {number}")
+            if number >= running:
+                agent_event(app, "complete", f"sa-{number}", goal=f"task {number}", status="completed")
+        return app
+
+    def test_on_the_bottom_rows_the_view_keeps_its_rows_when_the_turn_ends_so_the_composer_stays(self) -> None:
+        # The #2188 review's case: once the turn ends the working row leaves, and the view (two rows of the four it
+        # wants) took that row, pulling the composer's box up one row until the next turn gave it back.
+        app = self.small_app(running=3, done=4)
+        busy = pinned(app)
+        top = box_top(busy)
+        self.assertEqual(app.frame_budget.agents, 2)
+        self.assertTrue(busy[top - 5].startswith("✻ Working"), busy)
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        idle = drawn(app)
+        self.assertEqual((box_top(idle), app.frame_budget.agents), (top, 2))
+        self.assertEqual(idle[top - 5], "", "the working row's place stays blank above the plan")
+        self.assertEqual(idle[top - 4 : top], busy[top - 4 : top], "the plan has not moved")
+        app.turn_pending = True  # a turn runs again, the agents still listed: the working row takes its place back
+        again = drawn(app)
+        self.assertEqual((box_top(again), app.frame_budget.agents), (top, 2))
+        self.assertTrue(again[top - 5].startswith("✻ Working"), again)
+
+    def test_a_dag_trees_rows_stay_through_the_turns_end_and_the_next_prompt(self) -> None:
+        from _delegation_graphs import export_run
+
+        app = self.small_app(running=0, done=0, graph=export_run(), cols=120)
+        top = box_top(pinned(app))
+        rows = app.frame_budget.agents
+        self.assertGreater(rows, 0)
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, rows))
+        type_text(app, "next")
+        app._on_input(Key(ENTER))  # a new turn: the tree stays, the working row comes back
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, rows))
+
+    def test_a_menu_that_squeezed_the_view_during_the_turn_is_not_what_the_view_keeps_after_it(self) -> None:
+        # 16 rows: the `/` menu above the composer takes a row of the view's five and the composer goes down one;
+        # closing it while the turn runs gives the row back, as before. The turn's last frame, not the menu's, is
+        # what the view keeps once the turn ends.
+        app, _client = make_app(busy=True, rows=16, cols=80, clock=lambda: 0.0)
+        for number in range(7):
+            agent_event(app, "start", f"sa-{number}", goal=f"task {number}")
+            if number >= 3:
+                agent_event(app, "complete", f"sa-{number}", goal=f"task {number}", status="completed")
+        top = box_top(pinned(app))
+        self.assertEqual(app.frame_budget.agents, 5)
+        type_text(app, "/")
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top + 1, 4))
+        app._on_input(Key(BACKSPACE))
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, 5))
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, 5))
+
+    def test_a_view_that_wants_more_rows_takes_them_and_one_that_wants_fewer_gives_them_up(self) -> None:
+        # One agent running: the view wants three rows and gets two while the turn runs, and keeps two after it.
+        app = self.small_app(running=1, done=4)
+        top = box_top(pinned(app))
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, 2))
+        # A second running agent wants a fourth row: the view takes the free row, so the composer goes up for it.
+        agent_event(app, "start", "sa-new", goal="task new")
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top - 1, 3))
+        # The next prompt empties the roster: the view gives every row up, none left blank under the info line.
+        type_text(app, "next")
+        app._on_input(Key(ENTER))
+        emptied = drawn(app)
+        self.assertEqual(app.frame_budget.agents, 0)
+        self.assertEqual(app.region.last_row(12), 11)
+        self.assertIn("steers", emptied[11], "the info line is the screen's last row")
+        # An agent of the new turn wants rows again, and gets them: no hold of an emptied view is kept.
+        agent_event(app, "start", "sb-0", goal="task b0")
+        self.assertEqual([row[:12] for row in view_text(app)], ["  ● main", "  ⠋ task b0 "])
+
+    def test_another_session_does_not_keep_the_last_ones_hold(self) -> None:
+        from _delegation_graphs import export_run
+
+        app = self.small_app(running=3, done=4)
+        pinned(app)
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertEqual(view_rows(app), 2)  # held at the turn's two rows
+        type_text(app, "/new")
+        app._on_input(Key(ENTER))
+        answer(app, app.client, {"session_id": "live-2", "stored_session_id": "stored-2", "info": {}})
+        # The new session's tree (a third of 12 rows is four) gets the three rows the plan leaves it, not the two
+        # the last session's turn left the view.
+        with_graph(app, export_run(), self.PLAN)
+        pinned(app)
+        self.assertEqual(view_rows(app), 3)
