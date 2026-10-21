@@ -351,7 +351,7 @@ class UnansweredSteerTests(unittest.TestCase):
         self.assertEqual(rows, [self.BACK])
 
     def agent_steered(self, clock: Clock) -> tuple[object, object, int]:
-        from test_tui_agent_strip import STARTS, agent_app, relay
+        from test_tui_agent_view import STARTS, agent_app, relay
         from omh.tui.keys import DOWN
 
         app, client = agent_app(busy=True, frames=[], clock=clock)

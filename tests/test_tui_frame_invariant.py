@@ -66,7 +66,7 @@ from _tui_lines import box_edges
 from omh.tui.composer import PROMPT, SUBMIT, Composer
 from omh.tui.frame import BOX_INSET, MODE_ACCEPT, MODE_NORMAL, MODE_PLAN, box_row, build_frame, sticky_line
 from omh.tui.keys import BACKSPACE, CHAR, ENTER, ESCAPE, Key, Paste
-from omh.tui.layout import choice_cap, composer_cap, slot_cap
+from omh.tui.layout import AGENT_VIEW_ROWS, agent_view_cap, choice_cap, composer_cap, slot_cap
 from omh.tui.modes import info_line
 from omh.tui.screen import LiveRegion
 from omh.tui.style import Line, Span
@@ -557,12 +557,12 @@ class AppBottomRowsTests(unittest.TestCase):
         return next(count for count in range(rule + 1) if screen[rule - count - 1])
 
     def where(self, screen: list[str]) -> tuple[int, int]:
-        """(the box's top edge, the info line): screen rows."""
+        """(the box's top edge, the region's last row: the info line, or the agent view's last row under it)."""
         rule = next(index for index, row in enumerate(screen) if row.startswith("╭"))
         return rule, info_row_of(screen)
 
     def test_a_picker_a_menu_a_question_and_the_agent_list_closing_leave_the_composer_on_the_bottom_rows(self) -> None:
-        from test_tui_agent_strip import agent_app
+        from test_tui_agent_view import agent_app
         from test_tui_choice_ui import SESSIONS
         from test_tui_modes import drawn, type_text
 
@@ -596,7 +596,7 @@ class AppBottomRowsTests(unittest.TestCase):
                 app, before = self.at_the_bottom(maker)
                 opens_and_closes(app)
                 after = drawn(app)
-                self.assertEqual(self.where(after), self.where(before))  # the composer and the info line stayed
+                self.assertEqual(self.where(after), self.where(before))  # the composer and the rows under it stayed
                 self.assertEqual(self.where(after)[1], 23)
                 # The freed rows stay above the composer; the approval's withdrawal notice is printed into them, and
                 # the agent list's rows came out of the turn's tail, so neither leaves more blank rows than before.
@@ -826,6 +826,100 @@ class AppBottomRowsTests(unittest.TestCase):
         self.assertEqual(self.where(after), self.where(before))  # back right under the output, no rows held
         self.assertLess(self.where(after)[1], 23)
         self.assertEqual(after, before)
+
+
+class AgentViewBelowTests(unittest.TestCase):
+    """The agent view under the info line (the owner's call of 2026-10-21) and the round-3 composer rule.
+
+    On the bottom rows the view is never taller than `layout.agent_view_cap`, so the box's top edge is never more
+    than that plus the box and the info line above the screen's last row, and as the view shrinks the composer moves
+    down, never up. Short of the bottom rows the region still follows the content: the composer right under the
+    output, the view right under the info line.
+    """
+
+    def agents(self, rows: int, cols: int, running: int, done: int) -> object:
+        from test_tui_agent_view import agent_event
+        from test_tui_modes import make_app
+
+        app = make_app(busy=True, rows=rows, cols=cols, clock=lambda: 0.0)[0]
+        for number in range(running + done):
+            agent_event(app, "start", f"sa-{number}", goal=f"task {number}")
+            if number >= running:
+                agent_event(app, "complete", f"sa-{number}", goal=f"task {number}", status="completed")
+        return app
+
+    def pinned(self, app: object) -> list[str]:
+        from test_tui_modes import drawn
+
+        app._on_input(Key(CHAR, "l", ctrl=True))  # a full redraw homes the cursor: the region knows its place
+        drawn(app)
+        app.transcript.add_notice("\n".join(f"line {n}" for n in range(80)))
+        screen = drawn(app)
+        self.assertEqual(app.region.last_row(app.size[1]), app.size[1] - 1)
+        return screen
+
+    def test_on_the_bottom_rows_the_view_never_pushes_the_composer_above_its_cap(self) -> None:
+        from test_tui_agent_view import view_rows
+
+        for rows in (10, 12, 16, 24, 30, 40, 50):
+            for cols in (40, 80, 120):
+                for running, done in ((2, 0), (3, 9), (14, 0)):
+                    with self.subTest(rows=rows, cols=cols, running=running, done=done):
+                        app = self.agents(rows, cols, running, done)
+                        screen = self.pinned(app)
+                        keep = 1 + running + int(done > 0)
+                        cap = agent_view_cap(rows, cols, keep)
+                        shown = view_rows(app)
+                        self.assertEqual(shown, min(cap, running + done + 1))
+                        top = next(index for index, row in enumerate(screen) if row.startswith("╭"))
+                        # The box's top edge, one input row, its bottom edge, the info line, then the view.
+                        self.assertEqual(top, rows - 1 - shown - 3)
+                        self.assertGreaterEqual(top, rows - 1 - cap - 3)
+                        self.assertGreaterEqual(top, rows - 1 - max(min(AGENT_VIEW_ROWS, rows // 4), rows // 3) - 3)
+                        self.assertTrue(screen[top + 3].startswith("  "), screen)  # the info line, under the box
+                        self.assertTrue(screen[rows - 1], "the view ends on the screen's last row")
+
+    def test_the_usual_cap_measured(self) -> None:
+        # A one-row composer's input row on the bottom rows, with a view at its usual cap, 1-based as a person
+        # counts rows: 16 of 24, 21 of 30, 31 of 40, 41 of 50; with no agent, the screen's third-last row.
+        for rows, input_row in ((24, 16), (30, 21), (40, 31), (50, 41)):
+            with self.subTest(rows=rows):
+                self.assertEqual(rows - 1 - agent_view_cap(rows, 80) - 2 + 1, input_row)
+
+    def test_on_the_bottom_rows_the_view_shrinking_moves_the_composer_down_never_up(self) -> None:
+        from test_tui_agent_view import agent_event, view_rows
+        from test_tui_modes import drawn
+
+        app = self.agents(24, 80, 10, 0)  # ten running: the view at a third of the screen
+        screen = self.pinned(app)
+        tops = [next(index for index, row in enumerate(screen) if row.startswith("╭"))]
+        sizes = [view_rows(app)]
+        for number in range(10):
+            agent_event(app, "complete", f"sa-{number}", goal=f"task {number}", status="completed")
+            screen = drawn(app)
+            tops.append(next(index for index, row in enumerate(screen) if row.startswith("╭")))
+            sizes.append(view_rows(app))
+        self.assertEqual((sizes[0], sizes[-1]), (8, 6))
+        self.assertEqual(tops, sorted(tops), f"the composer moved up: {tops}")
+        self.assertEqual(tops[-1] - tops[0], 2)
+        self.assertEqual(app.region.last_row(24), 23)
+
+    def test_short_of_the_bottom_rows_the_composer_sits_under_the_output_and_the_view_under_the_info_line(self) -> None:
+        from test_tui_agent_view import VIEW, agent_app, screen_info_index
+        from test_tui_modes import drawn
+
+        app = agent_app()[0]
+        app._on_input(Key(CHAR, "l", ctrl=True))
+        app.transcript.add_notice("a short output")
+        screen = drawn(app)
+        top = next(index for index, row in enumerate(screen) if row.startswith("╭"))
+        info = screen_info_index(app, screen)
+        self.assertLess(info + len(VIEW), 23)
+        self.assertEqual(screen[info + 1 : info + 1 + len(VIEW)], VIEW)
+        self.assertEqual(screen[info + 1 + len(VIEW) :], [""] * (24 - info - 1 - len(VIEW)))  # nothing padded under it
+        self.assertEqual(info, top + 3)
+        output = max(index for index, row in enumerate(screen[:top]) if "a short output" in row)
+        self.assertLessEqual(top - output, 4, "the composer follows the output, no pad rows above it")
 
 
 if __name__ == "__main__":

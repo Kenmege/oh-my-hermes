@@ -50,9 +50,9 @@ All notable changes will be documented here.
     over. Nodes added mid-run hang from where they came from in the drawing,
     and the next status line names them once (`+1 added (repair: Docs
     body)`). A delegated child's own turn never gets a post. In the TUI the
-    plan holds the run's layers, the graph its nodes, and `[Agents]` only the
-    children the graph does not draw; the agent strip and a `delegate_task`
-    tool row name a node's child by its label. The transcript keeps the
+    plan holds the run's layers, the graph its nodes, and the agents block
+    only the children the graph does not draw; the agent view and a
+    `delegate_task` tool row name a node's child by its label. The transcript keeps the
     run's graph as boxes (the tree where boxes cannot be drawn) at define,
     at each repair and extend with the added nodes marked, and once at the
     end, when the turn that ended the run is over; a chat never gets the

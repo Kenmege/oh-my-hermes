@@ -83,7 +83,7 @@ class AppSuspendTests(unittest.TestCase):
         self.assertIn(app_module.TITLE_SET.format(f"{app_module.TITLE_DEFAULT} · idle"), after)
 
     def test_mouse_reports_go_off_before_the_shell_gets_the_terminal(self) -> None:
-        from test_tui_agent_strip import agent_app
+        from test_tui_agent_view import agent_app
 
         app, _client = agent_app()
         app._on_input(Key(CHAR, "l", ctrl=True))  # the region's row known, so the list asks for reports

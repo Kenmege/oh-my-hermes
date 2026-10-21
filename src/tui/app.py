@@ -57,7 +57,7 @@ person's quit, an attach hand-off, or a crash past the limit ends the TUI as
 described above.
 
 The input modes and the reasoning effort are `modes.ModesMixin`'s, and the
-subagent strip, list and log are `agent_view.AgentViewMixin`'s; each
+subagent view, list and log are `agent_view.AgentViewMixin`'s; each
 module's docstring holds their rules. `App` mixes both in.
 
 The transcript, attachments, secrets, server-request frames and the
@@ -149,14 +149,15 @@ from .keys import (
 )
 from .launch import request_fallback
 from .agent_view import AGENT_STEER_LEFT_UNANSWERED_NOTICE, STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
-from .layout import choice_cap, is_tiny, slot_cap
+from .layout import Budget, choice_cap, is_tiny, slot_cap
 from .markdown import clean_text
 from .modes import (
     HERMES_OWN_CYCLE,
     INFO_SEPARATOR,
+    LABEL_SEPARATOR,
     NO_SESSION_NOTICE,
-    STRIP_SEPARATOR,
     ModesMixin,
+    chip_column,
     configured_effort,
     effort_words,
     info_line,
@@ -1215,13 +1216,14 @@ class App(ModesMixin, AgentViewMixin):
         self.connection_ops: set[str] = set()  # `connection.request` operations already named in a notice
         self.roster = Roster()  # the running turn's subagents
         self.list_selected: str | None = None  # the agent list's highlighted row while the list has the keys
-        self.listed: tuple[str, ...] = ()  # the agent id of each list row as the slot last drew them, top to bottom
+        self.listed: tuple[str, ...] = ()  # the agent id of each list row as the agent view last drew them, top first
         self.log_agent = ""  # the agent whose log the pager shows; "" for every other pager
         self.tail_asked_at: float | None = None  # when the last `subagent.tail` went out
         self.tail_open = False  # that call has no answer yet
         self.tail_misses: dict[str, int] = {}  # agent id -> answers in a row without a tail
-        # The cells a click opens, as last drawn: rows above the info line → the entries on that row.
+        # The cells a click opens, as last drawn: rows above the region's last row → the entries on that row.
         self.clickable: dict[int, tuple[Hit, ...]] = {}
+        self.frame_budget: Budget | None = None  # the rows the last frame gave each part of the region
         self.mouse_off_at: float | None = None  # when `_set_mouse` last turned reports off; None before that
         self.wake: int | None = None  # the gateway client's wake descriptor, which `run` selects on with the input
         self.input_at = 0.0  # when input last arrived, on `clock`
@@ -1798,7 +1800,7 @@ class App(ModesMixin, AgentViewMixin):
         if self._busy():
             self.transcript.fail_turn(TURN_LOST_NOTICE)
         self.turn_pending = self.interrupting = False
-        self._lose_roster()  # they stay on the strip, so the HUD's [Agents] block does not take them up instead
+        self._lose_roster()  # they stay in the agent view, so the HUD's agents block does not take them up instead
         self.list_selected = None
         first_id = max(self.pending, default=0) + 1
         self._settle_lost_calls()
@@ -3759,7 +3761,7 @@ class App(ModesMixin, AgentViewMixin):
         for the person either way.
         """
         before = self.size
-        self._set_mouse(False)  # the strip is not on the picker's screen; the next frame asks again
+        self._set_mouse(False)  # the agent list is not on the picker's screen; the next frame asks again
         self.terminal.write(ALT_SCREEN_ON + CURSOR_HOME + HIDE_CURSOR)
         self.chains_open, self.chains_closing = True, False
         try:
@@ -3971,10 +3973,13 @@ class App(ModesMixin, AgentViewMixin):
             rows=rows,
             min_height=max(self.region.height - len(stable), 0) if pinned else 0,
             composer=None if self._composer_hidden() else self.composer,
+            composer_blank=self.list_selected is not None,  # the list under the info line has the keys
             info=self._info_line(cols),
             tail=self._tail(cols),
             slot=self._slot_lines(cols, rows),
             below=self.menu_under,  # read after `_slot_lines` made it
+            agents=self._agent_view(cols, rows),
+            tail_floor=self._working_rows(),
             text_question=self.slot is not None and not self.slot.picking,
             slot_caret=self._slot_caret(),  # read after `_slot_lines` drew the picker it comes from
             theme=self.theme,
@@ -3990,6 +3995,11 @@ class App(ModesMixin, AgentViewMixin):
         if self._place_menu(rows, len(stable), frame):
             build = partial(build, slot=self._slot_lines(cols, rows), below=self.menu_under)
             frame = build()
+        if frame.budget.agents < len(build.keywords["agents"]):
+            # A full slot and a tall composer left the view fewer rows than its cap: drawn again to fit them, so its
+            # last row (the count of what it cannot show) is never the one cut.
+            build = partial(build, agents=self._agent_view(cols, rows, frame.budget.agents))
+            frame = build()
         # The rows above the region once the flush below and this frame are drawn: transcript rows.
         if self._sticky_needed(self.region.rows_above(rows, len(stable), frame.height)):
             frame = build(sticky=sticky_line(self.sticky, cols, self.theme))
@@ -3997,6 +4007,7 @@ class App(ModesMixin, AgentViewMixin):
         # the tail were drawn (a settled tool group is those same rows, moved above the region), and
         # the frame is drawn under them. Flush and frame are one write, so no screen between them shows.
         self.region.render(frame.lines, frame.cursor, cols, flush=stable, screen_rows=rows)
+        self.frame_budget = frame.budget
         self._take_clickable(frame.budget, self.listed)
 
     def _place_menu(self, rows: int, flushed: int, frame: Frame) -> bool:
@@ -4045,30 +4056,30 @@ class App(ModesMixin, AgentViewMixin):
         """Whether the frame draws no composer: the person picks from a list, so nothing is typed into it.
 
         A question answered by picking (`PromptSlot.picking`), the session,
-        rewind and model pickers, whose filter is a row of their own, the
-        history search, whose query row is, and the agent list. The
-        completion menus keep it.
+        rewind and model pickers, whose filter is a row of their own, and the
+        history search, whose query row is. The completion menus keep it, and
+        the agent list keeps its rows, drawn blank (`build_frame`'s
+        `composer_blank`).
         """
         if self.slot is not None:
             return self.slot.picking
         return (
             self.picker is not None or self.rewind_picker is not None or self.model_picker is not None
-            or self.search is not None or self.list_selected is not None
+            or self.search is not None
         )
 
     def _info_line(self, cols: int) -> Line:
         """The info line, saying what the next key does when that is not the usual (a rewind, Esc's or Ctrl+C's second press).
 
         A picked steer or rewind keeps room for its last form but one, the shortest that still names what it
-        acts on: the strip collapses (`● 2 agents ↓`) before that would be cut. The mode's label keeps its room
-        too (`_agent_strip` starts after it). The right side (`_info_right`) gives way before either. A terminal
-        too small for a slot draws no strip: the agent list its `↓ agents` offers cannot open there. The line
-        starts `_info_inset()` cells in.
+        acts on: the agent count (`_agent_chip`, after the mode's label) drops its `↓ agents`, then goes, before
+        that would be cut. The right side (`_info_right`) gives way before either. A terminal too small for the
+        agent view counts the agents without `↓ agents`: the list cannot open there. While the list is open it
+        shows the agents itself, and the line says its keys. The line starts `_info_inset()` cells in.
         """
         inset = self._info_inset()
         say: str | tuple[str, ...] = ""
         say_style = None
-        strip: Line | None = None
         armed = self.escape_armed
         steered = self.roster.agents.get(self.agent_steer or "")
         picker_keys = self._picker_keys()
@@ -4090,10 +4101,10 @@ class App(ModesMixin, AgentViewMixin):
             say = ESCAPE_AGAIN.format(armed[0])
         elif self._newline_keys_due():
             say = NEWLINE_KEYS
+        room = cols - inset - chip_column(self._display_mode(), self.theme)
         if isinstance(say, tuple):
-            strip = self._agent_strip(cols - cell_width(STRIP_SEPARATOR + say[max(len(say) - 2, 0)]))
-        if (self.list_selected is not None and self.slot is None) or is_tiny(self.size[1], cols):
-            strip = ()  # the open list shows the agents itself; a tiny terminal has no room for it
+            room -= cell_width(LABEL_SEPARATOR + say[max(len(say) - 2, 0)])
+        chip = self._agent_chip(room) if self.list_selected is None or self.slot is not None else ()
         line = info_line(
             mode=self._display_mode(),
             busy=self._busy(),
@@ -4102,7 +4113,7 @@ class App(ModesMixin, AgentViewMixin):
             width=cols - inset,
             theme=self.theme,
             right=self._info_right(),
-            strip=self._agent_strip(cols) if strip is None else strip,
+            chip=chip,
             say=say,
             say_style=say_style,
             # While Hermes has approvals off on its own, Shift+Tab turns plan on and off and nothing else.
@@ -4240,12 +4251,20 @@ class App(ModesMixin, AgentViewMixin):
                 lines.append(tip)
         return lines
 
+    def _working_rows(self) -> int:
+        """The tail's last rows that say a turn runs, as `_tail` draws them: the working (or waiting, or
+        interrupting) row, and the tip under the working row from TIP_MIN_ROWS rows. The agent view leaves the tail
+        these (`layout.allocate`'s `tail_floor`), so a short terminal never loses the row saying a turn runs."""
+        if not self._busy():
+            return 0
+        return 1 + int(self.size[1] >= TIP_MIN_ROWS and self.waiting_since is None and not self.interrupting)
+
     def _tip_line(self, cols: int) -> Line | None:
         """The working row's tip, `  ⎿  Tip: …`, the same all turn and the next one in TIPS the turn after; None on a
         terminal under TIP_MIN_ROWS rows. CYCLE_TIP reads HERMES_OWN_CYCLE_TIP while Hermes has approvals off on its own.
 
         It is the tail's last row, and the region gives the slot (a question, a
-        picker, the agent list, a menu, the panel) its rows before the tail's,
+        picker, a menu, the plan) and the agent view their rows before the tail's,
         so the tip takes a row from the transcript above it, never from them;
         and it stays while they open, so the rows under it do not move.
         """
@@ -4263,7 +4282,6 @@ class App(ModesMixin, AgentViewMixin):
     def _slot_lines(self, cols: int, rows: int) -> list[Line]:
         """The slot's rows; with the composer hidden it has the composer frame's rows too (`layout.choice_cap`)."""
         cap = choice_cap(rows, cols) if self._composer_hidden() else slot_cap(rows, cols)
-        self.listed = ()
         self.menu_under = []
         if self.slot is not None:
             cap = max(cap, 1)  # on a tiny terminal a question answered with text keeps a row for its label (`allocate`)
@@ -4280,13 +4298,10 @@ class App(ModesMixin, AgentViewMixin):
             return self.rewind_picker.lines(cols, self.theme, cap, self.wall_clock())
         if self.model_picker is not None:
             return self.model_picker.lines(cols, self.theme, cap)
-        if self.list_selected is not None:
-            lines, self.listed = self._agent_list(cols, cap)
-            return lines
-        # Nothing has the keys: the queued prompts take the slot's last rows, right above the composer's
-        # top rule, Hermes' notification the row above them, Hermes' standing goal the row above that, and the
-        # menu or the panel gets the rows left. A question or the picker hides them, since Up then does not edit
-        # the queue.
+        # Nothing has the keys, or the agent list under the info line has them (the slot keeps its rows then, so
+        # nothing moves): the queued prompts take the slot's last rows, right above the composer's top rule,
+        # Hermes' notification the row above them, Hermes' standing goal the row above that, and the menu or the
+        # plan gets the rows left. A question or the picker hides them, since Up then does not edit the queue.
         hint = QUEUE_HELD_HINT if self.queue_held else QUEUE_EDIT_HINT
         queue = queue_lines([line.shown or line.text for line in self.queued], cols, cap, self.theme, hint)
         notice = [self.notification.line(cols, self.theme)] if self.notification and cap > len(queue) else []
@@ -4308,7 +4323,7 @@ class App(ModesMixin, AgentViewMixin):
             return []
         return panel_lines(
             payload, cols, cap, self.theme, self.wall_clock(), received_at=self.hud.received_at,
-            show_agents=not self.roster.agents,  # the strip and the list show them while the roster holds any
+            show_agents=False, show_graph=False,  # the agent view under the info line draws them
             show_plan=not self.retired_plan or plan_text(payload) != self.retired_plan,
             motion=self.motion,
             color_depth=self.color_depth,

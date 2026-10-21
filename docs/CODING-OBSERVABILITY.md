@@ -110,8 +110,12 @@ DAG · ulw-work hud-graph · 5 nodes · 6 edges
 
 Where it shows:
 
-- **The OMH TUI** draws it live in its panel, above the plan, and keeps it
-  while the info line shows the agents. The `[Agents]` block leaves out the
+- **The OMH TUI** draws it live, as its tree, in the agent view under the
+  info line (the owner's call of 2026-10-21: the subagent view goes under the
+  prompt, always expanded): in place of the live agent list while the graph
+  is a DAG run (a `depends_on` edge, or a lane that delegates), and under the
+  HUD's agents block while no live agent is listed. The agents block (its
+  header `● main │ …`) leaves out the
   activity row of each Hermes-native child the graph draws, matched by the
   child's session id, so that lane is drawn once. A row whose child the graph
   does not hold stays. While the graph draws some of the lanes, the header
@@ -120,16 +124,20 @@ Where it shows:
   eight) are counted the same way: the HUD reports how many of them the graph
   draws (`subagents.hidden_in_graph`), and those are not other agents. The
   lanes are then counted once, on the graph's own header line, and the
-  `[Agents]` header keeps the session's cost and tokens.
-  The panel gets a third of the terminal's rows. Where four-line boxes do not
-  fit, two-line boxes are drawn instead: the title, then the category and
-  model, with each arrow drawn into the box it enters. Where those do not fit
-  either, the tree is drawn. Three lanes get two-line boxes from 30 rows and
-  four-line boxes from 50; the owner's five-node mock-up gets two-line boxes
-  at 50 rows. `/dag` opens the graph as the HUD last read it in the pager,
-  whole and with four-line boxes, in the same colours; q or Esc closes it.
-  For a dag-ulw run the page ends with the run's critical path and its
-  bottlenecks, the nodes the most others wait on (`dag_core`).
+  agents block's header keeps the session's cost and tokens.
+  The tree of a DAG run takes a third of the terminal's rows from the start
+  (8 of 24, 13 of 40); other views take at most a quarter, seven from 28
+  rows, raised only to show every running lane. Boxes do not fit there
+  (two-line boxes take nine rows for one layer under main), so the tree is
+  drawn, its done lanes giving way first to a `+N more nodes` row and its
+  running lanes kept. Once every lane has settled (done, failed, interrupted
+  or unknown, and no lane left out by the reader) and a dag-ulw run is over
+  as a run, the tree is one line, `DAG · <name> · done 5/6 · 1 failed`,
+  until the graph lingers out of the HUD. `/dag` opens the graph as the HUD
+  last read it in the pager, whole and with four-line boxes, in the same
+  colours; q or Esc closes it. For a dag-ulw run the page ends with the
+  run's critical path and its bottlenecks, the nodes the most others wait
+  on (`dag_core`).
 - **Slack, Discord, Telegram, Mattermost and Matrix** never get the box
   drawing. They see a delegated run, the conversation's lanes that no end
   post has closed yet, at three moments. Each is appended to the reply Hermes
@@ -251,12 +259,12 @@ What it shows, and what it leaves as `?`:
     and then `+N more`); a line that would not fit the platform's cap goes
     without them, and nodes added after the end post reopen the run with
     that line instead of a second start block.
-  - In the TUI panel each block says one thing: `[Plan]` holds the run's
-    layers (the skill keeps one todo item per layer), the delegation block
-    draws the nodes and edges, and `[Agents]` lists only the children the
-    graph does not draw. The agent strip and the transcript's
-    `delegate_task` rows name a node's child by the node's label, without
-    its `[dag:<run>/<node>]` marker. The panel collapses a
+  - In the TUI each block says one thing: `[Plan]` holds the run's layers
+    (the skill keeps one todo item per layer), the delegation tree in the
+    agent view draws the nodes and edges, and the agents block lists only
+    the children the tree does not draw. The agent view and the
+    transcript's `delegate_task` rows name a node's child by the node's
+    label, without its `[dag:<run>/<node>]` marker. The tree collapses a
     finished run to its one summary line. The transcript keeps the run's
     graph as boxes at define, at each repair and extend with the added nodes
     marked `+`, and once at the end, when the turn that ended the run is

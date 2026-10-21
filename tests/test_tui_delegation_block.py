@@ -1,10 +1,11 @@
-"""The delegation block in the OMH TUI at the heights people have, the layout kept per structure, and `/dag`.
+"""The delegation block in the OMH TUI: the tree under the info line at the heights people have, and `/dag`.
 
-The panel gets a third of the terminal's rows (`layout.slot_cap`), so the
-block is drawn with four-line boxes, two-line boxes or the tree depending on
-that height. `TIERS` is what each common size gets, read off the drawing:
-two-line boxes take their arrows into their top border (`─▼─`), four-line
-boxes draw them on a row of their own, and the tree has branches and no box.
+The agent view under the info line gets `layout.agent_view_cap` rows (seven
+at most unless running lanes raise it), under the nine rows even two-line
+boxes take for one layer under main, so the panel draws the delegation graph
+as its tree at every size (the owner's call of 2026-10-21: the agent view goes
+under the prompt). `/dag` draws the four-line boxes in a pager. The layout
+cache cases drive `delegation_view` itself.
 """
 
 from __future__ import annotations
@@ -22,77 +23,23 @@ from _tui_lines import lines_text  # noqa: E402
 from omh.plugin_bundle.omh import delegation_view  # noqa: E402
 from omh.plugin_bundle.omh.delegation_view import render_delegation_view  # noqa: E402
 from omh.tui.keys import CHAR, ESCAPE, Key  # noqa: E402
-from omh.tui.layout import slot_cap  # noqa: E402
-from omh.tui.panels import panel_lines  # noqa: E402
+from omh.tui.layout import AGENT_VIEW_ROWS, agent_view_cap, slot_cap  # noqa: E402
+from omh.tui.panels import agent_view_keep, panel_lines  # noqa: E402
 from omh.tui.style import NO_COLOR, TRUECOLOR  # noqa: E402
 from omh.tui.theme import DEFAULT_THEME  # noqa: E402
 from test_tui_modes import make_app  # noqa: E402
 from test_tui_muscle_memory import send  # noqa: E402
 
-SIZES = [(rows, cols) for rows in (24, 30, 40, 50) for cols in (80, 100, 120)]
-# (rows, columns) -> the tier each graph gets in the panel's third of the screen.
-TIERS = {
-    "three lanes": {
-        (24, 80): "tree", (24, 100): "tree", (24, 120): "tree",
-        (30, 80): "compact", (30, 100): "compact", (30, 120): "compact",
-        (40, 80): "compact", (40, 100): "compact", (40, 120): "compact",
-        (50, 80): "box", (50, 100): "box", (50, 120): "box",
-    },
-    "owner mock-up": {
-        **{size: "tree" for size in SIZES if size[0] < 50},
-        (50, 80): "compact", (50, 100): "compact", (50, 120): "compact",
-    },
-    "six lanes": {
-        **{size: "tree" for size in SIZES if size[0] == 24},
-        (30, 80): "tree", (30, 100): "tree", (30, 120): "compact",
-        (40, 80): "tree", (40, 100): "tree", (40, 120): "compact",
-        (50, 80): "compact", (50, 100): "compact", (50, 120): "box",
-    },
-}
-GRAPHS = {"three lanes": parallel(3), "owner mock-up": owner_mock(), "six lanes": parallel(6)}
+SIZES = [(rows, cols) for rows in (12, 24, 30, 40, 50) for cols in (40, 80, 100, 120)]
+GRAPHS = {"three lanes": parallel(3), "owner mock-up": owner_mock(), "six lanes": parallel(6), "twelve": parallel(12)}
 
-THREE_30x100 = """\
-[Agents] │ ready
-  DAG · delegation · 4 nodes · 3 edges · 3 running
-                                   ┌──────────────────────────┐
-                                   │ ◆ main · opus-5-5 · high │
-                                   └─────────────┬────────────┘
-                 ┌───────────────────────────────┼───────────────────────────────┐
-  ┌──────────────▼─────────────┐  ┌──────────────▼─────────────┐  ┌──────────────▼─────────────┐
-  │ ● Lane 0 migrate           │  │ ● Lane 1 migrate           │  │ ● Lane 2 migrate           │
-  │ quick · glm-5.3-flash      │  │ quick · glm-5.3-flash      │  │ quick · glm-5.3-flash      │
-  └────────────────────────────┘  └────────────────────────────┘  └────────────────────────────┘
-"""
-
-MOCK_50x100 = """\
-[Agents] │ ready
+MOCK_24x80 = """\
   DAG · ulw-work hud-graph · 5 nodes · 6 edges · 2 running · 1 waiting · 1 done
-                                   ┌──────────────────────────┐
-                                   │ ◆ main · opus-5-5 · high │
-                                   └─────────────┬────────────┘
-                 ┌───────────────────────────────┼───────────────────────────────┐
-  ┌──────────────▼─────────────┐  ┌──────────────▼─────────────┐  ┌──────────────▼─────────────┐
-  │ ● Refresh HUD docs         │  │ ✓ Polish HUD CLI           │  │ ● Update HUD tests         │
-  │ writing · opus-5-5         │  │ quick · glm-5.3-flash      │  │ deep · opus-5-5 · high     │
-  └──────────────┬─────────────┘  └──────────────┬─────────────┘  └──────────────┬─────────────┘
-                 └───────────────────────────────┼───────────────────────────────┘
-                                  ┌──────────────▼─────────────┐
-                                  │ · Integration verify       │
-                                  │ inherit · opus-5-5         │
-                                  └────────────────────────────┘
-"""
-
-SIX_40x120 = """\
-[Agents] │ ready
-  DAG · delegation · 7 nodes · 6 edges · 6 running
-                                               ┌──────────────────────────┐
-                                               │ ◆ main · opus-5-5 · high │
-                                               └─────────────┬────────────┘
-           ┌───────────────────┬───────────────────┬─────────┴─────────┬───────────────────┬───────────────────┐
-  ┌────────▼───────┐  ┌────────▼───────┐  ┌────────▼───────┐  ┌────────▼───────┐  ┌────────▼───────┐  ┌────────▼───────┐
-  │ ● Lane 0 migr… │  │ ● Lane 1 migr… │  │ ● Lane 2 migr… │  │ ● Lane 3 migr… │  │ ● Lane 4 migr… │  │ ● Lane 5 migr… │
-  │ quick · glm-5… │  │ quick · glm-5… │  │ quick · glm-5… │  │ quick · glm-5… │  │ quick · glm-5… │  │ quick · glm-5… │
-  └────────────────┘  └────────────────┘  └────────────────┘  └────────────────┘  └────────────────┘  └────────────────┘
+  ◆ main · opus-5-5:high
+  ├─ ● Refresh HUD docs    writing  opus-5-5:medium    running 2m 10s
+  ├─ ✓ Polish HUD CLI      quick    glm-5.3-flash:low  done 1m 2s
+  ├─ ● Update HUD tests    deep     opus-5-5:high      running 2m 8s
+  └─ · Integration verify  inherit  opus-5-5           waits on 3 lanes
 """
 
 
@@ -106,28 +53,44 @@ def tier(rows: list[str]) -> str:
     return "header"
 
 
+def payload_of(graph: dict) -> dict:
+    return {"privacy": "metadata_only", "delegation_graph": graph}
+
+
 def panel(graph: dict, rows: int, cols: int) -> list[str]:
-    payload = {"privacy": "metadata_only", "delegation_graph": graph}
-    return lines_text(panel_lines(payload, cols, slot_cap(rows, cols), DEFAULT_THEME, 0.0))
+    """The block as the agent view draws it at this size: in its cap, raised for the running lanes."""
+    cap = agent_view_cap(rows, cols, agent_view_keep(payload_of(graph), cols))
+    return lines_text(panel_lines(payload_of(graph), cols, cap, DEFAULT_THEME, 0.0))
 
 
-class TierTests(unittest.TestCase):
-    def test_each_common_size_gets_its_tier(self) -> None:
+class TreeTests(unittest.TestCase):
+    def test_every_common_size_gets_the_tree_and_never_a_box(self) -> None:
         for name, graph in GRAPHS.items():
-            for size in SIZES:
-                with self.subTest(graph=name, size=size):
-                    self.assertEqual(tier(panel(graph, *size)), TIERS[name][size])
+            for rows, cols in SIZES:
+                with self.subTest(graph=name, size=(rows, cols)):
+                    drawn = panel(graph, rows, cols)
+                    self.assertEqual(tier(drawn), "tree")
+                    self.assertLessEqual(len(drawn), agent_view_cap(rows, cols, 99))
 
-    def test_two_line_boxes_at_30_40_and_50_rows(self) -> None:
-        for snapshot, graph, size in ((THREE_30x100, parallel(3), (30, 100)), (MOCK_50x100, owner_mock(), (50, 100)),
-                                      (SIX_40x120, parallel(6), (40, 120))):
-            with self.subTest(size=size):
-                self.assertEqual("\n".join(row.rstrip() for row in panel(graph, *size)) + "\n", snapshot)
+    def test_the_owner_mock_up_under_the_info_line(self) -> None:
+        self.assertEqual("\n".join(row.rstrip() for row in panel(owner_mock(), 24, 80)) + "\n", MOCK_24x80)
 
-    def test_the_tree_stays_the_last_fallback(self) -> None:
-        rows = panel(owner_mock(), 24, 80)
-        self.assertEqual(tier(rows), "tree")
-        self.assertLessEqual(len(rows), slot_cap(24, 80))
+    def test_running_lanes_raise_the_cap_up_to_a_third_of_the_screen_then_the_tree_says_how_many_more(self) -> None:
+        twelve = panel(parallel(12), 24, 100)  # twelve running lanes: more than a third of 24 rows holds
+        self.assertEqual(len(twelve), 24 // 3)
+        self.assertTrue(twelve[-1].strip().startswith("└─ +"), twelve)
+        self.assertIn("more nodes", twelve[-1])
+        three = panel(parallel(3), 24, 100)
+        self.assertEqual(len(three), 5, "the header, main and three lanes: the usual cap holds them")
+        self.assertFalse([row for row in three if "more nodes" in row])
+
+    def test_two_line_boxes_take_more_rows_than_the_view_usually_has(self) -> None:
+        for name, graph in GRAPHS.items():
+            with self.subTest(graph=name):
+                compact = render_delegation_view(graph, width=118, layout="compact")
+                self.assertEqual(compact.layout, "compact")
+                self.assertGreaterEqual(len(compact.lines), 9)
+                self.assertGreater(len(compact.lines), AGENT_VIEW_ROWS)
 
     def test_two_line_boxes_keep_the_same_edges_and_rules(self) -> None:
         for name, graph in GRAPHS.items():

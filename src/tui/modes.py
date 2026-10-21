@@ -20,7 +20,7 @@ Ctrl+T and `/effort <level>` set the session's reasoning effort the same way
 confirmed or reports in `session.info`.
 
 The info line under the composer is drawn here too (`info_line`), since its
-left side starts with the mode's label and the agent strip starts after it.
+left side starts with the mode's label and the agent count starts after it.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ from .width import cell_width, line_width, truncate_line
 # says it too, and `app` imports this module.
 NO_SESSION_NOTICE = "No session is open yet; try again in a moment."
 
-# The info line under the composer. Its left side is the mode's label, the agent strip and the keys that matter now;
+# The info line under the composer. Its left side is the mode's label, the agent count and the keys that matter now;
 # its right side is what `App._info_right` gives (model, context, effort), cut down first when the line is narrow.
 IDLE_HINT = "? for shortcuts"
 # After accept's or plan's label: what Shift+Tab does next. `{cycle}` is CYCLE_WORDS while the key walks normal, accept
@@ -63,7 +63,7 @@ PLAN_LABELS = (PLAN_LABEL, "⏸ plan", "⏸")
 SHELL_LABELS = (SHELL_LABEL, "! shell", "!")
 SHELL_HINT = " · enter runs it in Hermes' shell, 30 s at most"
 INFO_GAP = 3  # the fewest blank cells between the left side and the right side
-STRIP_SEPARATOR = " · "  # between the mode's label, the agent strip and the hint on the info line
+LABEL_SEPARATOR = " · "  # between the mode's label, the agent count and the hint on the info line
 INFO_SEPARATOR = " · "  # between the right side's fields
 
 # Accept mode is Hermes' per-session yolo. The TUI sends these words; Hermes answers "1" or "0".
@@ -110,16 +110,16 @@ def mode_label(mode: str, theme: Theme, form: int = 0) -> Line:
     accept: Line = (Span(ACCEPT_LABELS[form], replace(theme.mode_accept, bold=True)),)
     plan: Line = (Span(PLAN_LABELS[form], replace(theme.mode_plan, bold=True)),)
     if mode == MODE_ACCEPT_PLAN:
-        return (*accept, Span(STRIP_SEPARATOR, theme.hint), *plan)
+        return (*accept, Span(LABEL_SEPARATOR, theme.hint), *plan)
     if mode == MODE_SHELL:
         return (Span(SHELL_LABELS[form], replace(theme.accent, bold=True)),)
     return {MODE_ACCEPT: accept, MODE_PLAN: plan}.get(mode, ())
 
 
-def strip_column(mode: str, theme: Theme) -> int:
-    """The info line cell the agent strip starts on: after the mode's label and a separator, or the line's first."""
+def chip_column(mode: str, theme: Theme) -> int:
+    """The info line cell the agent count starts on: after the mode's label and a separator, or the line's first."""
     label = mode_label(mode, theme)
-    return line_width(label) + cell_width(STRIP_SEPARATOR) if label else 0
+    return line_width(label) + cell_width(LABEL_SEPARATOR) if label else 0
 
 
 def configured_effort(config_result: Mapping[str, Any]) -> str:
@@ -185,21 +185,21 @@ def info_line(
     width: int,
     theme: Theme,
     right: Sequence[Line] = (),
-    strip: Line = (),
+    chip: Line = (),
     say: str | tuple[str, ...] = "",
     say_style: Style | None = None,
     cycle: str = "",
     drafting: bool = False,
 ) -> Line:
-    """The line under the composer: the mode's label (accept, plan, a shell line), the agent strip, the keys that
+    """The line under the composer: the mode's label (accept, plan, a shell line), the agent count, the keys that
     matter now, and on the right the first of `right` (forms, longest first) that leaves room for the left side whole.
 
-    `strip` is the roster's strip while it holds an agent, drawn from cell
-    `strip_column(mode, theme)` on. `say`, when given, is what the next key
+    `chip` is the count of the agents in the view under the line while there
+    are any, drawn from cell `chip_column(mode, theme)` on. `say`, when given, is what the next key
     will do (a rewind waiting to be sent, Esc's second press, a question's
     keys) and stands in for the hint, in `say_style`; given as forms, longest
     first. The right side shrinks first: it is the longest of `right` beside
-    which the label, the strip and the hint's longest form fit. When none
+    which the label, the count and the hint's longest form fit. When none
     leaves room the left side shortens alone: the first `say` form that fits
     whole is said, so a narrow line keeps the point rather than the start of
     the long one, and when none fits beside the label's words the label takes
@@ -209,7 +209,7 @@ def info_line(
     when its own words do not fit. The right side then takes the longest of `right` that fits in what
     the shortened left side leaves. During a turn the hint names the steer
     keys, not Esc: the working row offers the interrupt. The label always survives,
-    in some form, and the strip after it. Accept and plan say where Shift+Tab
+    in some form, and the count after it. Accept and plan say where Shift+Tab
     goes next (`cycle`; CYCLE_WORDS when not given). `drafting` (the composer
     holds text) takes the idle hint away.
     """
@@ -226,14 +226,14 @@ def info_line(
 
     def label_of(form: int) -> Line:
         own = mode_label(mode, theme, form)
-        return (*own, Span(STRIP_SEPARATOR, theme.hint), *strip) if strip and own else strip or own
+        return (*own, Span(LABEL_SEPARATOR, theme.hint), *chip) if chip and own else chip or own
 
     def placed(texts: Sequence[str], label: Line) -> list[str]:
         """The hint's forms as drawn after `label`: what the next key does after a separator, the rest glued on."""
         if any(forms):
-            return [text if not label else STRIP_SEPARATOR + text for text in texts]
-        if strip:
-            return [STRIP_SEPARATOR + text.removeprefix(STRIP_SEPARATOR).strip() if text else "" for text in texts]
+            return [text if not label else LABEL_SEPARATOR + text for text in texts]
+        if chip:
+            return [LABEL_SEPARATOR + text.removeprefix(LABEL_SEPARATOR).strip() if text else "" for text in texts]
         return list(texts)
 
     longest = line_width(label_of(0)) + (cell_width(placed(hints, label_of(0))[0]) if hints else 0)

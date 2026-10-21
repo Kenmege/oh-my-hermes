@@ -6,10 +6,12 @@ The split the panel keeps for a dag run:
   the parent to declare them (`todo_list`, which OMH mirrors, or `omh_todo`);
 * the delegation block draws the nodes and their edges, with each bound
   child's model and state on its node;
-* `[Agents]` lists only the children the graph does not draw (here one with no
-  ledger row, which started before the hooks were registered), and says so;
-* the agent strip names a node's child by the node's label, not by the
-  `[dag:<run>/<node>]` marker that binds it;
+* the agents block (`● main │ …`) lists only the children the graph does not
+  draw (here one with no ledger row, which started before the hooks were
+  registered), and says so;
+* the app's roster, which names the agents under the composer, names a node's
+  child by the node's label, not by the `[dag:<run>/<node>]` marker that binds
+  it;
 * once the run is over the graph block collapses to its one summary line,
   and `/dag` still opens the whole graph.
 
@@ -84,16 +86,16 @@ class DagPanelSplitTests(unittest.TestCase):
             child(home, "20261021_095959_early", now=now - 9)  # no ledger row: the graph cannot draw it
             lines = panel(home)
         text = "\n".join(lines)
-        agents = next(index for index, line in enumerate(lines) if line.startswith("[Agents]"))
+        agents = next(index for index, line in enumerate(lines) if line.startswith("● main │"))
         dag = next(index for index, line in enumerate(lines) if line.lstrip().startswith("DAG · export feature"))
         plan = next(index for index, line in enumerate(lines) if line.startswith("[Plan]"))
         self.assertLess(agents, dag)
         self.assertLess(dag, plan)
-        # [Agents] counts and lists only the child outside the graph.
+        # The agents block counts and lists only the child outside the graph.
         self.assertIn("1 other agent", lines[agents])
         agent_rows = lines[agents + 1:dag]
         self.assertEqual(len([row for row in agent_rows if row.strip()]), 1, agent_rows)
-        # Each node is drawn once, in the graph block, and never as an [Agents] row or a plan item.
+        # Each node is drawn once, in the graph block, and never as an agent row or a plan item.
         for label in ("Export API", "Export button", "Verify export"):
             self.assertEqual(text.count(label), 1, (label, text))
             self.assertTrue(any(label in line for line in lines[dag:plan]), label)
@@ -121,9 +123,18 @@ class DagPanelSplitTests(unittest.TestCase):
             page = ["".join(span.text for span in line) for line in dag_page_lines(payload, 120, THEME)]
         dag = [line for line in lines if "export feature" in line]
         self.assertEqual(len(dag), 1, lines)
-        self.assertIn("3 done", dag[0])
+        self.assertIn("done 3/3", dag[0])
         self.assertFalse([line for line in lines if "Verify export" in line])
         self.assertTrue(any("Verify export" in line for line in page))
+
+    def test_a_run_that_is_not_over_keeps_its_tree_though_every_lane_settled(self) -> None:
+        from omh.tui.panels import dag_run_summary
+
+        # The node's child went quiet: its lane reads `unknown`, but the run still has it out.
+        graph = {"name": "export feature", "dag_open": True,
+                 "nodes": [{"id": "root", "kind": "root"}, {"id": "d:export:api", "kind": "lane", "state": "unknown"}]}
+        self.assertEqual(dag_run_summary(graph), "")
+        self.assertEqual(dag_run_summary({**graph, "dag_open": False}), "DAG · export feature · done 0/1 · 1 unknown")
 
     def test_the_agent_strip_names_a_nodes_child_by_its_label(self) -> None:
         roster = Roster()
