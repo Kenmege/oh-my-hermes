@@ -70,7 +70,7 @@ BOX_MIN_WIDTH: Final = BOX_INNER_MIN + 4
 SECTION_INDENT: Final = "  "
 TREE_WIDE_MIN: Final = 72  # below this a tree node takes two lines
 TREE_TITLE_MAX: Final = 40
-TREE_CATEGORY_MAX: Final = 12  # a category wider than this takes its cells from the model column first
+TREE_CATEGORY_MAX: Final = 12  # the category column's width before it grows, with room no status needs, past it
 TREE_MODEL_MAX: Final = 24
 TREE_MODEL_MIN: Final = 8  # the model column gives way to a wide category down to this, then the title does
 TREE_LEAD_ROOM: Final = 16  # cells a tree row keeps past its lead: the branch, the glyph and the start of a title
@@ -910,22 +910,31 @@ def _tree_lines(
     shown = [node for node in by_id if node not in hidden and (root is None or node != str(root["id"]))]
     fields = {node: _tree_fields(by_id[node]) for node in shown}
     title_width = min(TREE_TITLE_MAX, max([cells(_title(by_id[n])) for n in shown] or [12]))
-    # The category column is as wide as the widest category: `unspecified-high` cut to `unspecified…` reads as
-    # another category. What it takes past TREE_CATEGORY_MAX comes from the model column first.
-    category_width = max([cells(category) for category, _model in fields.values()] or [1])
+    widest_category = max([cells(category) for category, _model in fields.values()] or [1])
+    category_width = min(TREE_CATEGORY_MAX, widest_category)
     model_width = min(TREE_MODEL_MAX, max([cells(model) for _category, model in fields.values()] or [1]))
     deepest = max([_depth(n, nested) for n in shown] or [0])
     base = (cells(charset.tee) if labelled else 0) + cells(charset.tee)
     # Where the title column ends, the same for every depth, so the columns after it line up.
     title_end = base + cells(charset.bar) * deepest + 2 + title_width
     room_after = width - title_end - category_width - model_width - 6
-    widened = max(0, category_width - TREE_CATEGORY_MAX)
-    if room_after < 12 and widened:
-        given = min(12 - room_after, widened, max(0, model_width - TREE_MODEL_MIN))
-        model_width -= given
-        room_after += given
     if room_after < 12:
         title_end -= 12 - room_after
+        room_after = 12
+    # Then the category column grows to the widest category (`unspecified-high` cut to `unspecified…` reads as
+    # another category), paid for by room the statuses do not need, then by the model column down to
+    # TREE_MODEL_MIN, then by the title column down to 8 cells; never by a status's room, so no status is cut that
+    # would have been whole without the widening.
+    extra = widest_category - category_width
+    if extra:
+        needed = max(_status_cells(by_id[node]) for node in shown)
+        paid = min(extra, max(0, room_after - needed))
+        from_model = min(extra - paid, max(0, model_width - TREE_MODEL_MIN))
+        model_width -= from_model
+        title_floor = base + cells(charset.bar) * deepest + 2 + 8
+        from_title = min(extra - paid - from_model, max(0, title_end - title_floor))
+        title_end -= from_title
+        category_width += paid + from_model + from_title
     step, offset = len(charset.bar), 1 if labelled else 0
     deepest_shown = max(2, (width - TREE_LEAD_ROOM) // step)
 

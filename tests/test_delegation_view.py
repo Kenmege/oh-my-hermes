@@ -542,7 +542,47 @@ class TreeTests(unittest.TestCase):
                 self.assertIn(" unspecified-high ", button, "never cut to `unspecified…`")
                 self.assertTrue(all(cells(row) <= width for row in rows))
         tight = next(row for row in text(export_run(), width=72, layout="tree").splitlines() if "Export API" in row)
-        self.assertIn("quick             glm-5.3-flash:…", tight, "the model is cut, not the category")
+        self.assertIn("quick             glm-5.3-flas…  accepted 12s", tight, "the model is cut, not the category")
+
+    def test_the_widened_category_never_takes_a_statuss_room(self) -> None:
+        """The cells a long category takes come from room no status needs, then the model, then the title: a
+        status main drew whole stays whole, and one main cut is cut no further."""
+        late = export_repair_run()
+        late["nodes"][2]["elapsed_seconds"] = 3_725
+        button = next(row for row in text(late, width=90, layout="tree").splitlines() if "Export button" in row)
+        self.assertTrue(button.endswith("unspecified-high  glm-5.3:low    accepted 1h 02m"), button)
+        verify = next(row for row in text(export_run(), width=72, layout="tree").splitlines() if "Verify export" in row)
+        self.assertTrue(verify.endswith("waits on 3 la…"), f"cut where main cut it, no further: {verify!r}")
+        self.assertTrue(next(row for row in text(export_run(), width=74, layout="tree").splitlines()
+                             if "Verify export" in row).endswith("waits on 3 lanes"))
+
+    def test_the_model_gives_way_down_to_its_floor_and_then_the_title(self) -> None:
+        wide = graph([root(), lane("v", "Render the landing page hero", "visual-engineering", "glm-5.3-flash", "",
+                                   "running", elapsed=5)], [("root", "v", "dispatch")])
+        row = next(line for line in text(wide, width=72, layout="tree").splitlines() if "Render" in line)
+        self.assertEqual(row, "└─ ● Render the landing pag…  visual-engineering  glm-5.3…  running 5s",
+                         "the model keeps TREE_MODEL_MIN (8) cells; the title gives the rest")
+
+    def test_a_cut_that_hides_only_nested_children_of_the_last_group_is_counted_under_it(self) -> None:
+        nested_cut = graph(
+            [root(),
+             lane("x", "Schema", "deep", "claude-opus-5-5", "high", "running", elapsed=30, group="layer 1", order=1),
+             lane("y", "Migrate", "quick", "glm-5.3-flash", "low", "running", elapsed=20, group="layer 2", order=2),
+             lane("y1", "Table one", "quick", "glm-5.3-flash", "low", "waiting", order=3),
+             lane("y2", "Table two", "quick", "glm-5.3-flash", "low", "waiting", order=4)],
+            [("root", "x", "dispatch"), ("root", "y", "dispatch"), ("y", "y1", "dispatch"), ("y", "y2", "dispatch")],
+        )
+        lines = text(nested_cut, width=100, layout="tree", max_lines=7).splitlines()
+        self.assertEqual(lines[-3:], ["└─ layer 2", "   ├─ ● Migrate   quick  glm-5.3-flash:low  running 20s",
+                                      "   └─ +2 more nodes"], "the hidden children sit under layer 2")
+
+    def test_a_known_model_with_no_category_record_shows_no_question_mark(self) -> None:
+        unrouted = graph([root(), lane("a", "Port it", "?", "glm-5.3-flash", "low", "running", elapsed=5)],
+                         [("root", "a", "dispatch")])
+        self.assertEqual(text(unrouted, width=100, layout="tree").splitlines()[-1],
+                         "└─ ● Port it     glm-5.3-flash:low  running 5s", "the category column is blank")
+        self.assertIn("     glm-5.3-flash:low · running 5s", text(unrouted, width=50, layout="tree"))
+        self.assertEqual(box_lines(render_delegation_view(unrouted, width=80))["a"][1], "glm-5.3-flash:low")
 
 
 class ReviewTests(unittest.TestCase):
