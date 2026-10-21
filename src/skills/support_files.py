@@ -70,4 +70,3 @@ def agent_skill_support_templates():
 
     return [replace(t, skill_name=omh_skill_display_name(t.skill_name)) for t in builtin_skill_support_templates()
             if f"{t.skill_name}/{t.relative_path}" in PORTABLE_SUPPORT_PATHS]
-

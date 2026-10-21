@@ -28,6 +28,10 @@ def checked(root, relative):
     for component in (target, *target.parents):
         if component.is_symlink():
             raise ValueError(f"generated output refuses symlink: {component}")
+        if component.exists() and component != target and not component.is_dir():
+            raise ValueError(f"generated parent is not a directory: {component}")
+    if target.exists() and not target.is_file():
+        raise ValueError(f"generated destination is not a file: {target}")
     return target
 
 

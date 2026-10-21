@@ -77,6 +77,7 @@ printf '%s\n' "$$paths" '$receipt_name' | while IFS= read -r path; do
         [ ! -L "$$current" ] || fail "Symlink destination: $$current"
         current=$${current%/*}
         [ -n "$$current" ] || current=/
+        [ ! -e "$$current" ] || [ -d "$$current" ] || fail "Not a directory: $$current"
     done
     [ ! -e "$$target/$$path" ] || [ -f "$$target/$$path" ] || fail "Not a file: $$target/$$path"
 done
@@ -158,6 +159,16 @@ function Assert-NoLink([string]$$Path, [string]$$Boundary) {
         $$current = Split-Path -Parent $$current
     }
 }
+function Assert-DirectoryParents([string]$$Path, [string]$$Boundary) {
+    $$current = Split-Path -Parent $$Path
+    while ($$current) {
+        if ((Test-Path -LiteralPath $$current) -and -not (Test-Path -LiteralPath $$current -PathType Container)) {
+            throw "Not a directory: $$current"
+        }
+        if ($$current -eq $$Boundary) { break }
+        $$current = Split-Path -Parent $$current
+    }
+}
 Assert-NoLink $$source (Split-Path -Parent $$source)
 $$items = @(Get-ChildItem -Force -Recurse -LiteralPath $$source)
 foreach ($$item in $$items) {
@@ -187,6 +198,7 @@ Assert-Digests $$source
 foreach ($$relative in (@($$entries.Path) + '$receipt_name')) {
     $$path = Join-Path $$target $$relative
     Assert-NoLink $$path $$base
+    Assert-DirectoryParents $$path $$base
     if ((Test-Path -LiteralPath $$path) -and -not (Test-Path -LiteralPath $$path -PathType Leaf)) {
         throw "Not a file: $$path"
     }

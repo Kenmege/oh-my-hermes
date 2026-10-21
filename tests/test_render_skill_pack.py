@@ -12,6 +12,35 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RenderSkillPackTests(unittest.TestCase):
+    def test_all_target_parent_and_leaf_types_are_checked_before_any_write(self):
+        from unittest.mock import patch
+
+        tool = self.tool()
+        for conflict in ("root", "parent", "nested_parent", "leaf"):
+            with self.subTest(conflict=conflict), tempfile.TemporaryDirectory() as td:
+                root = Path(td) / "skills"
+                if conflict == "root":
+                    root.write_bytes(b"BLOCKING ROOT")
+                else:
+                    (root / "a").mkdir(parents=True)
+                    (root / "a/SKILL.md").write_bytes(b"ORIGINAL BODY")
+                    block = root / ("z/nested" if conflict == "nested_parent" else "z/SKILL.md" if conflict == "leaf" else "z")
+                    block.parent.mkdir(parents=True, exist_ok=True)
+                    if conflict == "leaf":
+                        block.mkdir()
+                    else:
+                        block.write_bytes(b"BLOCKING USER FILE")
+                def snapshot():
+                    return {p.relative_to(Path(td)).as_posix(): None if p.is_dir() else p.read_bytes() for p in Path(td).rglob("*")}
+                before = snapshot()
+                expected = {"a/SKILL.md": "replacement body", "z/nested/SKILL.md" if conflict == "nested_parent" else "z/SKILL.md": "new body"}
+                for write in (False, True):
+                    with self.subTest(write=write), patch.object(tool, "tap_files", return_value=expected):
+                        with self.assertRaises((OSError, ValueError)) as refused:
+                            tool.materialize(root, write=write)
+                        self.assertEqual(snapshot(), before)
+                        self.assertIsInstance(refused.exception, ValueError)
+
     def tool(self):
         path = ROOT / "tools/render_skill_pack.py"
         self.assertTrue(path.is_file(), "missing checked canonical pack producer")

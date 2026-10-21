@@ -66,6 +66,7 @@ printf '%s\n' "$paths" '.omh-agent-skills-manifest.json' | while IFS= read -r pa
         [ ! -L "$current" ] || fail "Symlink destination: $current"
         current=${current%/*}
         [ -n "$current" ] || current=/
+        [ ! -e "$current" ] || [ -d "$current" ] || fail "Not a directory: $current"
     done
     [ ! -e "$target/$path" ] || [ -f "$target/$path" ] || fail "Not a file: $target/$path"
 done

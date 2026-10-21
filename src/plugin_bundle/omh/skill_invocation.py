@@ -30,8 +30,15 @@ def invocation_token(word):
 
 
 def contains_run_cue(message, normalize=fold):
-    normalized = normalize(message)
-    return any(normalize(cue) in normalized for cue in INVOCATION_RUN_CUES)
+    # Restore composed Hangul after the shared fold, then match whole lexical
+    # commands. Korean stems accept imperative endings, not arbitrary nouns.
+    normalized = unicodedata.normalize("NFC", normalize(message))
+    return any(re.fullmatch(
+        r"(?<![\w-])(?:use|run|execute|invoke|start|써(?:줘|주세요)?|쓰자|"
+        r"(?:사용|실행)(?:해(?:줘|요|주세요)?|하(?:자|세요|라)|합시다)?|"
+        r"돌려(?:줘|주세요)?|해줘|해주세요|부탁(?:해(?:줘|요)?|드립니다|드려요|합니다)?)"
+        r"(?![\w-])", token.strip(":,.!?~…'\"()[];*‘’“”"),
+    ) for token in normalized.split())
 
 
 def marker_candidates(words, names, aliases=None):
@@ -78,7 +85,7 @@ def affirmative_marked_request(message, name, names):
         suffix = words[position+1:]
         if suffix and invocation_token(suffix[0]) in SKILL_INVOCATION_MARKERS:
             suffix = suffix[1:]
-        if not suffix or not any(fold(suffix[0]).startswith(fold(cue)) for cue in INVOCATION_RUN_CUES):
+        if not suffix or not contains_run_cue(suffix[0]):
             return False
     candidates = marker_candidates(words, names)
     if candidates != [name]:

@@ -49,6 +49,16 @@ function Assert-NoLink([string]$Path, [string]$Boundary) {
         $current = Split-Path -Parent $current
     }
 }
+function Assert-DirectoryParents([string]$Path, [string]$Boundary) {
+    $current = Split-Path -Parent $Path
+    while ($current) {
+        if ((Test-Path -LiteralPath $current) -and -not (Test-Path -LiteralPath $current -PathType Container)) {
+            throw "Not a directory: $current"
+        }
+        if ($current -eq $Boundary) { break }
+        $current = Split-Path -Parent $current
+    }
+}
 Assert-NoLink $source (Split-Path -Parent $source)
 $items = @(Get-ChildItem -Force -Recurse -LiteralPath $source)
 foreach ($item in $items) {
@@ -78,6 +88,7 @@ Assert-Digests $source
 foreach ($relative in (@($entries.Path) + '.omh-agent-skills-manifest.json')) {
     $path = Join-Path $target $relative
     Assert-NoLink $path $base
+    Assert-DirectoryParents $path $base
     if ((Test-Path -LiteralPath $path) -and -not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Not a file: $path"
     }

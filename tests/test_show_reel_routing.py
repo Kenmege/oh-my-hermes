@@ -21,10 +21,39 @@ from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
 
 
 class ShowReelRoutingTests(unittest.TestCase):
+    def test_invocation_cues_are_lexical_commands_not_noun_prefixes(self):
+        from omh.plugin_bundle.omh.skill_invocation import contains_run_cue
+
+        for noun in ("user", "users", "runtime", "runbook", "runner", "starter", "invoker", "execution", "run.py", "/usr/bin/run", "start.sh", "user/run", "사용법", "사용자", "실행기", "부탁말"):
+            with self.subTest(noun=noun):
+                self.assertFalse(contains_run_cue(noun))
+        for command in ("use", "run", "run.", "run,", "**run**", "“run”", "execute", "invoke", "start", "써줘", "써", "쓰자", "사용해", "사용해주세요", "실행해줘", "실행해 주세요", "돌려줘", "해줘", "해주세요", "부탁해요"):
+            with self.subTest(command=command):
+                self.assertTrue(contains_run_cue(command))
+
+    def test_noun_prefixes_are_not_invocations_on_any_surface(self):
+        from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
+
+        messages = ("show-reel skill user manual", "show-reel workflow runtime documentation", "show-reel workflow starter guide") + tuple(
+            f"show-reel {marker} {noun} documentation" for marker in ("skill", "workflow")
+            for noun in ("user", "runtime", "starter", "runbook", "invoker", "run.py", "/usr/bin/run", "start.sh", "user/run", "사용법", "사용자", "실행기"))
+        with TemporaryDirectory() as td:
+            paths = resolve_paths(Path(td)/"omh", Path(td)/"hermes")
+            for message in messages:
+                with self.subTest(message=message):
+                    self.assertFalse(show_reel_request_admitted(message))
+                    self.assertNotEqual(route_chat_message(message).get("selected_skill"), "show-reel")
+                    self.assertNotIn("show-reel", [r["skill"] for r in recommend_skills(message, limit=200)])
+                    self.assertNotEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
+                    self.assertNotEqual(build_chat_interaction_payload(message, source="discord", paths=paths)["chat_response"]["kind"], "show_reel")
+                    payload = pre_llm_call(omh_home=str(paths.omh_home), hermes_home=str(paths.hermes_home), user_message=message, is_first_turn=False)
+                    self.assertNotIn("prepare_show_reel", str(payload))
+
     def test_explicit_marker_word_order_matches_cli_recommend_card_hint_and_mid_session(self):
         messages = (
             "use the show-reel skill", "omh show-reel 써줘", "omh로 show-reel 해줘", "show-reel 스킬 실행해줘",
             "Please execute the show-reel workflow", "show-reel workflow start", "omh show-reel 사용해 주세요",
+            "show-reel workflow run.", "show-reel workflow run,",
         )
         self._assert_production_surfaces(messages)
         with TemporaryDirectory() as td:
