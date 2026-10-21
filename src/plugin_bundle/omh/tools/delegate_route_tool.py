@@ -627,7 +627,7 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
         wire_model = model
     else:
         wire_model, provider = resolve_provider_model(alias, routes=provider_routes)
-    if not provider and not (read_child_endpoint(hermes_home) or {}).get("host"):
+    if not provider:
         # With no provider the child inherits the session's own, and nothing
         # checked that it can serve the model being pinned. Observed live: a
         # Fable alias inherited an `openai-codex` session and every dispatch
@@ -636,29 +636,47 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
         # Refuse only what is known wrong -- an unrecorded provider, an alias
         # the catalog never described, or a multi-vendor account all answer
         # "unknown" and dispatch unchanged -- and refuse it beside the answer.
-        # A direct `delegation.base_url` inherits nothing: Hermes builds the
-        # child against that endpoint, so the check is skipped when it names
-        # a host, and kept when the scan cannot read one.
+        # A direct `delegation.base_url` takes the session's place: Hermes
+        # builds the child against that endpoint and names its provider by
+        # the URL. A named one (`anthropic`, `openai-codex`) is checked
+        # instead, `custom` serves whatever the endpoint serves and is not,
+        # and an endpoint the scan cannot read (host "") keeps the session's.
+        endpoint = read_child_endpoint(hermes_home) or {}
+        on_endpoint = bool(endpoint.get("host"))
+        serving = endpoint["provider"] if on_endpoint else read_session_provider(hermes_home)
         entitlements, _status, _providers = effective_provider_entitlements(omh_home, hermes_home)
-        session_provider = read_session_provider(hermes_home)
-        if provider_serves_alias(alias, session_provider, entitlements) is False:
+        if not (on_endpoint and serving == "custom") and provider_serves_alias(alias, serving, entitlements) is False:
             candidates = providers_serving_alias(alias, entitlements)
             remedy = (
                 f"pin one of your providers that can: {', '.join(candidates)}"
                 if candidates
                 else "record which provider serves it in routing/model-providers.json"
             )
-            payload = {
-                "status": "error",
-                "error": (
-                    f"{alias} would inherit this session's provider {session_provider!r}, "
-                    f"which does not serve it. Pass an explicit provider with its wire model, "
-                    f"or {remedy}."
-                ),
-                "alias": alias,
-                "inherited_provider": session_provider,
-                "providers_serving_alias": list(candidates),
-            }
+            if on_endpoint:
+                payload = {
+                    "status": "error",
+                    "error": (
+                        f"{alias} would run on delegation.base_url ({endpoint['host']}), which Hermes builds "
+                        f"as provider {serving!r}, and that provider does not serve it. Route a model it "
+                        "serves, or remove delegation.base_url yourself "
+                        f"(`hermes config unset delegation.base_url`) and {remedy}."
+                    ),
+                    "alias": alias,
+                    "endpoint_provider": serving,
+                    "providers_serving_alias": list(candidates),
+                }
+            else:
+                payload = {
+                    "status": "error",
+                    "error": (
+                        f"{alias} would inherit this session's provider {serving!r}, "
+                        f"which does not serve it. Pass an explicit provider with its wire model, "
+                        f"or {remedy}."
+                    ),
+                    "alias": alias,
+                    "inherited_provider": serving,
+                    "providers_serving_alias": list(candidates),
+                }
             return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
     if "/" in wire_model and not provider:
         payload = {

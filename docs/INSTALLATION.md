@@ -1836,28 +1836,33 @@ which Hermes applies over it. It refuses in these cases:
   replaces the whole section.
 - OMH cannot read one of the two files safely. That covers a repeated key
   (Hermes' loader rejects one), a merge key, a value continued past its line,
-  and a block, tagged, escaped or `${VAR}` value. It also covers an alias
-  (`*name`) or `<<` given as a value in `model` or `delegation`, or in a root
-  `base_url`, `api_base` or `provider`: Hermes' loader fails on an alias whose
-  anchor is not defined and on `<<` as a value, and OMH does not follow
-  anchors, so it refuses a defined alias too. A `model:` or `delegation:`
-  whose whole value sits on its line counts too when it is an alias, `<<`, an
-  anchor, a tag or a `${VAR}`. OMH reads a one-line flow mapping there
+  and a block, tagged, escaped or `${VAR}` value. A `model:` or `delegation:`
+  whose whole value sits on its line counts too when it is an anchor, a tag
+  or a `${VAR}`. OMH reads a one-line flow mapping there
   (`model: {default: llama3, base_url: ...}`, the shape Hermes keeps when it
   saves such a section). That mapping is unreadable when it has a comment, a
-  `?`, a repeated key, a `key:` with no space after the colon, or an alias or
-  `<<` value. In the `delegation` section it also covers any line that is not
-  a plain `key: value`, a comment, or a nested line under a key with no
-  value. A value Hermes reads as unset (`''`, `~`, `null`, `false`, `no`,
-  `off`, zero) counts as unset. For `model.provider` that holds only up to
-  Hermes v0.21.3: from v0.21.4 Hermes keeps `false`, `no`, `off` and zero
-  there as the text `False` or `0`, a set provider, and the local-endpoint
-  fallback above no longer applies. OMH still counts them as unset and
-  refuses, which is what the older versions need. `''`, `~` and `null` read
-  as unset on every supported Hermes. A spelling Hermes versions read
-  differently is undecidable, like a value OMH cannot read: Hermes 0.21
-  reads `n` and `0e0` as text, and later versions read them as false and
-  zero.
+  `?`, a repeated key, or a `key:` with no space after the colon. In the
+  `delegation` section it also covers any line that is not a plain
+  `key: value`, a comment, or a nested line under a key with no value. A
+  value Hermes reads as unset (`''`, `~`, `null`, `false`, `no`, `off`, zero)
+  counts as unset. For `model.provider` that holds only up to Hermes v0.21.3:
+  from v0.21.4 Hermes keeps `false`, `no`, `off` and zero there as their text
+  (`False`, `0`, `0.0`), a set provider, and the local-endpoint fallback above
+  no longer applies. OMH still counts them as unset and refuses, which is
+  what the older versions need. `''`, `~` and `null` read as unset on every
+  supported Hermes. A spelling Hermes versions read differently is
+  undecidable, like a value OMH cannot read: Hermes 0.21 reads `n` and `0e0`
+  as text, and later versions read them as false and zero.
+- `config.yaml` gives an alias (`*name`) or `<<` as a value in the `model` or
+  `delegation` section, on its header line, on a nested line or inside a flow
+  collection, or in a root `base_url`, `api_base` or `provider`. Hermes'
+  loader fails on an alias whose anchor is not defined and on `<<` as a
+  value, then uses its last good copy of the file, so every route is refused
+  here, with or without a provider. OMH does not follow anchors, so it
+  refuses a defined alias too. In the managed config the same values make
+  their section unreadable and refuse as above: Hermes skips a managed file
+  it cannot load, but OMH cannot tell that file from one whose aliases are
+  defined.
 
 Each refusal names the keys to change and changes none of them, in either
 file. Restoring the person's own values is never refused.
