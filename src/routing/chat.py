@@ -204,20 +204,25 @@ _HEAVY_LANE_TRIGGER_TOKEN_STEMS: dict[str, tuple[str, ...]] = {
     "dag-ulw": ("ultrawork", "ulw", "dag"),
 }
 # Big work by intent (owner direction 2026-10-21): an `ultrawork` route nobody named, for a request whose own
-# words say it has several parts to run in parallel or across the codebase, goes to `dag-ulw`, which plans it as
-# a graph and runs it to a verified goal. A single change, a delivery cycle for one change, and workers that
-# share one task list keep `ultrawork`: those are its own capabilities, and a graph adds nothing to them.
+# words say it has several parts, goes to `dag-ulw`, which plans it as a graph and runs it to a verified goal
+# (`_ultrawork_sized`). They are read only on a route the router already gave `ultrawork`, so a small change
+# (which also routes there) moves only when it says one of them.
+#
+# Each phrase says how the WORK is split (lanes, a fan-out, parts integrated afterwards) or how wide it reaches
+# (every module, the whole codebase). A bare concurrency word is not one: "in parallel", "concurrently", "병렬"
+# and "동시에" name the bug or the feature as often as the work's shape -- with them in this list, six of seven
+# single-change probes moved ("fix the bug where uploads run in parallel", "병렬 처리 버그 고쳐줘") -- and nor
+# is "then integrate" alone ("add the field to the form, then integrate it with the api" moved), or a lane
+# phrase that is also a thing's name ("the parallel lanes renderer"). The Korean entries keep a concurrency
+# word only where a work verb follows it ("병렬로 구현", "동시에 진행").
 _DAG_ULW_SIZE_CUES: tuple[str, ...] = (
-    "in parallel",
     "parallel work",
-    "parallel lanes",
-    "work lanes",
+    "in parallel lanes",
     "parallel implementation",
     "parallel then integrate",
-    "then integrate",
     "fan out",
-    "fan-out",
-    "concurrently",
+    "split into parallel",
+    "split it into parallel",
     "across the codebase",
     "across every module",
     "across all modules",
@@ -226,20 +231,24 @@ _DAG_ULW_SIZE_CUES: tuple[str, ...] = (
     "all modules",
     "whole codebase",
     "entire codebase",
-    "병렬",
-    "동시에",
+    "병렬로 나눠",
+    "나눠서 병렬로",
+    "병렬로 구현",
+    "동시에 구현",
+    "병렬로 진행",
+    "동시에 진행",
+    "병렬 작업으로",
     "여러 모듈",
     "모든 모듈",
+    "전체 모듈",
     "코드베이스 전체",
 )
-_DAG_ULW_KEEP_ULTRAWORK_CUES: tuple[str, ...] = (
-    "shared task list",
-    "coordinated workers",
-    "coding team",
-    "one cycle",
-    "one-cycle",
-    "single cycle",
-    "single-cycle",
+# A concurrency word does count when the request also names its parts in the plural ("in parallel across the
+# api and ui modules", "port the auth, billing and search services concurrently"): then it is the work that
+# runs in parallel, not the thing being fixed.
+_DAG_ULW_CONCURRENCY_CUES: tuple[str, ...] = ("in parallel", "concurrently", "simultaneously", "at the same time")
+_DAG_ULW_PART_TOKENS = frozenset(
+    {"modules", "services", "packages", "components", "apps", "repos", "repositories", "microservices", "libraries"}
 )
 _HEAVY_LANE_VAGUENESS_MAX_WORDS = 8
 # Generic filler and unresolved deictic references ("this", "it", "그거") in
@@ -2647,8 +2656,12 @@ def _route_chat_message_cached(
     ):
         candidate_skill = "dag-ulw"
         candidate_harness = primary_harness_for_skill(candidate_skill)
-        if action == "dispatch":
+        # A confident `ultrawork` score held back only because everyday words carried it is dispatched too: the
+        # several-parts phrase is the request's own word for the job, which is the evidence the hold asked for.
+        if action == "dispatch" or reason == WEAK_DISPATCH_EVIDENCE_REASON:
             selected_skill = candidate_skill
+            action = "dispatch"
+            ambiguity_kind = ""
             reason = "Several parts to run in parallel or across the codebase: plan and run them as a dag-ulw graph."
 
     # Vagueness gate on heavy-mode routing (P2-12): an `ultrawork`/`maestro`
@@ -7808,10 +7821,26 @@ def _is_engine_entry_approval_reason(reason: str) -> bool:
 
 
 def _ultrawork_sized(message: str) -> bool:
-    """Whether an `ultrawork` request is the big, many-part kind `dag-ulw` runs (`_DAG_ULW_SIZE_CUES`)."""
+    """Whether an `ultrawork` route is the big, many-part kind `dag-ulw` runs.
+
+    Two readings, each through the routing helpers: the person did not name
+    ultrawork anywhere in the request (no `routing_tokens` token holds one of
+    its trigger stems; a leading or `use` invocation is already
+    `explicit_skill`), and the request says it has several parts (a
+    `_DAG_ULW_SIZE_CUES` phrase, or a concurrency phrase beside a plural part
+    such as ``modules``, both by `contains_cue_phrase`). A request for one of
+    the capabilities only ultrawork has (coordinated workers, one delivery
+    cycle, one owner persisting, a durable goal) never gets here: the
+    retired-engine alias route answers it before scoring. The heavy-lane
+    vagueness gate then asks for the parts when the request names none.
+    """
     normalized = normalized_phrase(message)
-    return contains_cue_phrase(normalized, _DAG_ULW_SIZE_CUES) and not contains_cue_phrase(
-        normalized, _DAG_ULW_KEEP_ULTRAWORK_CUES
+    tokens = routing_tokens(normalized)
+    stems = _HEAVY_LANE_TRIGGER_TOKEN_STEMS["ultrawork"]
+    if any(stem in token for token in tokens for stem in stems):
+        return False
+    return contains_cue_phrase(normalized, _DAG_ULW_SIZE_CUES) or (
+        contains_cue_phrase(normalized, _DAG_ULW_CONCURRENCY_CUES) and not tokens.isdisjoint(_DAG_ULW_PART_TOKENS)
     )
 
 

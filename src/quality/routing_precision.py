@@ -10487,16 +10487,17 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     ),
     # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
     # tokens or a context-only guard, so the route asks; the declined winner, ultrawork, leads
-    # the shortlist.
+    # the shortlist. Re-pinned to dispatch dag-ulw (2026-10-21, big work by intent): ultrawork's
+    # score is still held as weak, but "then integrate" is the request's own phrase for parts
+    # joined afterwards, and that phrase is the evidence dag-ulw dispatches on.
     RoutingInterventionCase(
         "dependency-topology-parallel-then-integrate",
-        "Dependency-shaped parallel work reaches ultrawork's topology decision",
+        "Dependency-shaped parallel work reaches dag-ulw's graph run",
         "analyze API and UI in parallel, then integrate the results and verify",
-        "clarify",
-        "oh-my-hermes",
-        "answer_clarification",
-        "clarification",
-        "ultrawork",
+        "dispatch",
+        "dag-ulw",
+        "start_dag_run",
+        "dag_run",
     ),
     RoutingInterventionCase(
         "negated-finance-then-product-brief",
@@ -15660,6 +15661,128 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "Parallel feature work across modules reaches dag-ulw without naming it",
         "implement the export feature in parallel across the api and ui modules, then integrate",
         "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "codebase-wide-parallel-refactor-reaches-dag-ulw",
+        "A refactor across the codebase reaches dag-ulw without naming it",
+        "refactor the error handling across the codebase in parallel and run the full test suite",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "parts-integrated-afterwards-reach-dag-ulw",
+        "Three parts built in parallel and integrated afterwards reach dag-ulw",
+        "build the export api, the ui button and the docs page in parallel, then integrate and verify",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "fan-out-across-all-modules-reaches-dag-ulw",
+        "Fanning work out across all modules reaches dag-ulw",
+        "fan out the type annotation work across all modules and then integrate",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "every-module-in-parallel-lanes-reaches-dag-ulw",
+        "A feature across every module in parallel lanes reaches dag-ulw",
+        "implement dark mode across every module of the web app in parallel lanes",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-modules-implemented-in-parallel-reach-dag-ulw",
+        "Korean: a feature implemented across three modules in parallel reaches dag-ulw",
+        "내보내기 기능을 api, ui, cli 모듈에 병렬로 구현하고 전체 테스트로 검증해줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-two-modules-built-at-once-reach-dag-ulw",
+        "Korean: two modules built at the same time reach dag-ulw",
+        "api 모듈과 ui 모듈을 동시에 구현하고 통합 테스트로 확인해줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-work-split-in-parallel-reaches-dag-ulw",
+        "Korean: work split into parallel parts reaches dag-ulw",
+        "api, ui, docs 작업을 병렬로 나눠서 만들어줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    # And what stays: a concurrency word that names the bug or the feature is not the work's shape, `dag` in a
+    # pipeline is a pipeline, ultrawork's coordinated workers stay its own, and ultrawork named stays ultrawork.
+    RoutingInterventionCase(
+        "parallel-upload-bug-stays-on-ultrawork",
+        "A bug about uploads running in parallel is one fix, not a dag-ulw run",
+        "fix the bug where uploads run in parallel and corrupt the file",
+        "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "parallel-test-runner-feature-stays-on-ultrawork",
+        "Making tests run in parallel is one change, not a dag-ulw run",
+        "make the test runner execute tests in parallel",
+        "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "concurrent-worker-deadlock-stays-on-ultrawork",
+        "A deadlock between concurrent workers is one fix, not a dag-ulw run",
+        "fix the deadlock when workers run concurrently in the queue module",
+        "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "korean-parallel-processing-bug-stays-on-ultrawork",
+        "Korean: a parallel-processing bug is one fix, not a dag-ulw run",
+        "병렬 처리 버그 고쳐줘",
+        "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "korean-simultaneous-upload-bug-stays-on-ultrawork",
+        "Korean: a bug when uploads run at once is one fix, not a dag-ulw run",
+        "업로드가 동시에 실행될 때 생기는 버그 고쳐줘",
+        "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "airflow-dag-backfill-in-parallel-stays-on-data-pipelines",
+        "An Airflow DAG backfill run in parallel stays a pipeline job",
+        "run the airflow dag backfill in parallel for last week",
+        "dispatch", "data-pipelines", "prepare_pipeline_plan", "pipeline_plan",
+    ),
+    RoutingInterventionCase(
+        "airflow-dag-concurrency-question-stays-on-data-pipelines",
+        "Limiting an Airflow DAG's parallel tasks stays a pipeline question",
+        "the airflow dag tasks run in parallel, how do I limit concurrency?",
+        "dispatch", "data-pipelines", "prepare_pipeline_plan", "pipeline_plan",
+    ),
+    RoutingInterventionCase(
+        "coordinated-workers-in-parallel-stay-on-ultrawork",
+        "Coordinated workers on one task list stay ultrawork's own capability",
+        "run three coordinated workers on one shared task list in parallel",
+        "dispatch", "ultrawork", "forward_plan_to_selected_workflow", "plan",
+    ),
+    RoutingInterventionCase(
+        "ulw-named-parallel-work-stays-on-ultrawork",
+        "Parallel work that names ulw stays ultrawork",
+        "ulw implement the export in parallel across the api and ui modules",
+        "dispatch", "ultrawork", "present_plan", "plan",
+    ),
+    RoutingInterventionCase(
+        "ulw-work-named-parallel-work-stays-on-ultrawork",
+        "Parallel work that names ulw-work stays ultrawork",
+        "use ulw-work to implement the export in parallel across the api and ui modules",
+        "dispatch", "ultrawork", "present_plan", "plan",
+    ),
+    RoutingInterventionCase(
+        "ulw-named-mid-sentence-stays-with-ultrawork",
+        "Parallel module work that names ulw at its end still asks about ultrawork, not dag-ulw",
+        "fix the auth and billing modules in parallel with ulw",
+        "clarify", "oh-my-hermes", "answer_clarification", "clarification", "ultrawork",
+    ),
+    RoutingInterventionCase(
+        "korean-ulw-named-mid-sentence-stays-with-ultrawork",
+        "Korean: parallel module work that names ulw mid-sentence still asks about ultrawork, not dag-ulw",
+        "auth와 billing 모듈을 ulw로 병렬로 구현해줘",
+        "clarify", "oh-my-hermes", "answer_clarification", "clarification", "ultrawork",
+    ),
+    RoutingInterventionCase(
+        "ultrawork-named-module-sweep-stays-on-ultrawork",
+        "A module sweep that names ultrawork stays ultrawork",
+        "ultrawork: build the export across every module in parallel",
+        "dispatch", "ultrawork", "forward_plan_to_selected_workflow", "plan",
     ),
 )
 

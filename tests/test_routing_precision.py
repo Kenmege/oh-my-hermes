@@ -47,7 +47,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["overroute_count"], 0)
         self.assertEqual(payload["summary"]["catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["intervention_case_count"], 887)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 907)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )
@@ -268,11 +268,14 @@ class RoutingPrecisionTests(unittest.TestCase):
         self.assertEqual(interventions["loopable-project"]["observed"]["route_workflow"], "loop")
         self.assertEqual(interventions["one-cycle-delivery"]["observed"]["route_workflow"], "ultrawork")
         # Re-pinned by the dispatch-evidence gate: `parallel`, `integrate`, and
-        # `then` lead by 1, so the route asks with ultrawork as its candidate.
+        # `then` lead by 1, so the route asked with ultrawork as its candidate.
+        # Re-pinned again with dag-ulw (2026-10-21): the score is still weak,
+        # but "parallel, then integrate" is the request's own phrase for parts
+        # joined afterwards, so it dispatches dag-ulw.
         self.assertTrue(interventions["dependency-topology-parallel-then-integrate"]["passed"])
         self.assertEqual(
-            interventions["dependency-topology-parallel-then-integrate"]["expected"]["candidate"],
-            "ultrawork",
+            interventions["dependency-topology-parallel-then-integrate"]["observed"]["route_workflow"],
+            "dag-ulw",
         )
         self.assertEqual(
             interventions["owner-learning-ulw-delivery"]["observed"]["next_action"],

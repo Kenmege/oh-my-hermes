@@ -993,7 +993,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # with a Korean ending, in reverse order (`ulw dag`), as a slash
             # command and after `with`, and parallel feature work across
             # modules that never names it (6).
-            expected=887,
+            # Big work by intent, measured against main: seven requests that
+            # reach `dag-ulw` without naming it, four English and three Korean
+            # (7), and thirteen that must not move to it: five single fixes or
+            # features whose concurrency word names the subject, two Airflow
+            # DAG requests that stay with data-pipelines, coordinated workers,
+            # ultrawork named as `ulw`, `ulw-work` and `ultrawork`, and `ulw`
+            # named mid-sentence in English and in Korean (13).
+            expected=907,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

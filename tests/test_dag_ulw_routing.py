@@ -83,15 +83,25 @@ class RouterTests(unittest.TestCase):
                 route = route_chat_message(message)
                 self.assertNotEqual(route["candidate_skill"], "dag-ulw")
 
-    def test_size_evidence_reads_parallel_and_breadth_words(self) -> None:
-        self.assertTrue(_ultrawork_sized("implement the export feature in parallel across the api and ui modules"))
-        self.assertTrue(_ultrawork_sized("결제 모듈과 알림 모듈을 병렬로 고쳐줘"))
-        self.assertTrue(_ultrawork_sized("migrate every module from requests to httpx"))
-        self.assertFalse(_ultrawork_sized("fix the flaky checkout test"))
-        self.assertFalse(_ultrawork_sized("README 오타 고쳐줘"))
-        # Ultrawork's own capabilities stay with it even when the words are parallel.
-        self.assertFalse(_ultrawork_sized("run three coordinated workers in parallel on one shared task list"))
-        self.assertFalse(_ultrawork_sized("research, plan and implement this change in parallel in one cycle"))
+    def test_size_evidence_reads_how_the_work_splits_or_how_wide_it_reaches(self) -> None:
+        for message in ("implement the export feature in parallel across the api and ui modules",
+                        "api, ui, docs 작업을 병렬로 나눠서 만들어줘", "migrate every module from requests to httpx",
+                        "fan out the type annotation work and then integrate"):
+            with self.subTest(message=message):
+                self.assertTrue(_ultrawork_sized(message))
+        for message in ("fix the flaky checkout test", "README 오타 고쳐줘",
+                        # A concurrency word or a second step that names the subject, not the work's shape.
+                        "fix the bug where uploads run in parallel and corrupt the file", "병렬 처리 버그 고쳐줘",
+                        "add the field to the form, then integrate it with the api",
+                        # Ultrawork named anywhere stays ultrawork's.
+                        "fix the auth and billing modules in parallel with ulw"):
+            with self.subTest(message=message):
+                self.assertFalse(_ultrawork_sized(message))
+
+    def test_ultrawork_capabilities_answer_before_the_size_reading(self) -> None:
+        # The retired-engine alias route answers coordinated workers before scoring, lanes phrase or not.
+        route = route_chat_message("run three coordinated workers on one shared task list in parallel lanes")
+        self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "ultrawork"))
 
     def test_small_coding_work_stays_on_ultrawork(self) -> None:
         for message in ("rename the helper function in the parser module", "fix the flaky checkout test",
