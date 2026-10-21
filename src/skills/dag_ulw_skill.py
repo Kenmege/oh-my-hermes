@@ -185,6 +185,8 @@ def run_loop_reference() -> str:
 4. End the turn with one status line. Each completion re-enters as a new turn.
 5. On a completion, read the node's handoff file, then `omh_dag action=settle node=<id> outcome=<...>`.
    `accepted` is refused while the handoff file is missing or when Hermes reported the child failed.
+   On a Docker or SSH terminal OMH looks for the file inside that terminal; when it cannot reach it,
+   `accepted` stands with `handoff_checked: false`, and every view says `handoff not checked`.
    The result carries the next `calls`; dispatch them in the same turn.
 6. `omh_dag action=status` at any time; it survives compaction.
 

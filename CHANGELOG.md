@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **dag-ulw works on a Docker or SSH terminal.** There a child's
+  `write_file` lands inside the backend, so OMH's host-side check refused
+  every node with `handoff_missing`. `omh_dag` now records the terminal
+  backend Hermes resolves for the profile when a run is defined, and on a
+  Docker or SSH backend `settle` reads a handoff the host does not have
+  inside that backend, through Hermes' own live environment for the child,
+  under the same rule as on the host: a regular file and no link, so a
+  missing file, a directory or a link is still refused. When that terminal
+  cannot be reached (its environment is gone, or Hermes' registry cannot be
+  read), the node is accepted with `handoff_checked: false` and the reason,
+  and every view says `handoff not checked`: `omh_dag status`, the boxes
+  and the tree, `omh hud --graph`, the TUI's transcript block and its
+  one-line summary, and the chat end post. A local terminal, or a backend
+  OMH does not read (`modal`, `daytona`, `singularity`), keeps the host
+  check as before.
 - **A delegated goal ends with its run marker, so a preview shows the task.**
   Hermes previews each `delegate_task` goal by its first 40 characters on a
   Discord tool-progress post, the CLI and the TUI, so a dag-ulw node's

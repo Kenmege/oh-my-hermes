@@ -18,7 +18,10 @@ scopes, and each node's prompt, kept so ``ready`` can hand a node out after
 the parent's own context was compacted. It holds no child output, summary or
 tool history. Data between nodes moves through handoff files whose paths
 this module names (`handoff_path`); it never reads them beyond asking
-whether one exists.
+whether one exists. On a Docker or SSH terminal the child wrote its file
+there, so `dag_tool` asks there (the run records its ``backend`` at define);
+when nothing can reach that terminal, an accepted node keeps
+``handoff_checked: false`` and every view says `HANDOFF_NOT_CHECKED`.
 
 State is derived on every read, never stored
 --------------------------------------------
@@ -90,6 +93,8 @@ ADDED_ORIGIN_KINDS: Final = ("repair", "extend")
 PROMPT_MARKERS: Final = ("TASK", "DELIVERABLE", "SCOPE", "VERIFY", "STOP WHEN")
 # Hermes' `subagent_stop` words that say the child did not finish (`delegation_graph._FAILED_STOPS` plus interrupted).
 CHILD_FAILURE_STOPS: Final = frozenset({"failed", "error", "timeout", "interrupted"})
+# What every view says for a node accepted while its handoff could not be read where the child wrote it.
+HANDOFF_NOT_CHECKED: Final = "handoff not checked"
 NODE_FIELDS: Final = frozenset({"id", "label", "category", "prompt", "depends_on", "write_scope"})
 DAG_CLAIM_BOUNDARY: Final = (
     "The plan a parent agent declared for a dag-ulw run and the outcomes it settled. A settled outcome is the "
@@ -724,9 +729,14 @@ def calls_for(
 
 def settle(
     record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], node_id: str, outcome: object, reason: object,
-    provider_error: bool, *, handoff_exists: bool, now: float,
+    provider_error: bool, *, handoff_exists: bool, now: float, handoff_unread: str = "",
 ) -> str:
-    """Close the node's open attempt. Returns what happened: the outcome, or ``retry`` (a provider error's one retry)."""
+    """Close the node's open attempt. Returns what happened: the outcome, or ``retry`` (a provider error's one retry).
+
+    ``handoff_unread`` names why the handoff could not be read where the child
+    wrote it (`dag_tool.backend_handoff`): ``accepted`` then stands, and the
+    attempt records ``handoff_checked: false`` with that reason.
+    """
     nodes = {str(node["id"]): node for node in record["nodes"]}
     if node_id not in nodes:
         raise DagRefusal("unknown_node", f"Node {node_id} is not in run {record['run']}.")
@@ -744,7 +754,7 @@ def settle(
             "child_reported_failure",
             f"Hermes reported node {node_id}'s child {stop.get('status')}; settle it failed or blocked, not accepted.",
         )
-    if outcome == "accepted" and not handoff_exists:
+    if outcome == "accepted" and not handoff_exists and not handoff_unread:
         raise DagRefusal(
             "handoff_missing",
             f"Node {node_id} has no handoff file, and the nodes after it read one. Write it from the child's result, "
@@ -758,7 +768,15 @@ def settle(
         attempt["outcome"] = "retry"
         return "retry"
     attempt["outcome"] = outcome
+    if outcome == "accepted" and handoff_unread:
+        attempt.update(handoff_checked=False, handoff_unread=handoff_unread)
     return str(outcome)
+
+
+def handoff_unchecked(node: Mapping[str, Any]) -> bool:
+    """True when the node's last attempt was accepted without its handoff read (``handoff_checked: false``)."""
+    attempts = node.get("attempts") or []
+    return bool(attempts) and isinstance(attempts[-1], Mapping) and attempts[-1].get("handoff_checked") is False
 
 
 def repair(
@@ -897,6 +915,8 @@ def node_rows(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]
             row["found_by"] = node["found_by"]
         if attempts and attempts[-1].get("reason"):
             row["reason"] = attempts[-1]["reason"]
+        if info["state"] == "accepted" and handoff_unchecked(node):
+            row.update(handoff_checked=False, handoff_unread=str(attempts[-1].get("handoff_unread") or ""))
         if info["state"] in ("failed", "blocked"):
             row["repair_cycles_left"] = cycles_left(record, node_id)
         rows.append(row)

@@ -8,10 +8,16 @@ so the goal marker binding is exercised end to end.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 import json
 import os
 from pathlib import Path
+import shlex
 import sqlite3
+import subprocess
+import sys
+from tempfile import TemporaryDirectory
 import time
 from types import SimpleNamespace
 import unittest
@@ -74,6 +80,86 @@ def slots_table(home, *, running: list[tuple[str, int]] = ()) -> None:
     for delegation_id, pid in running:
         home.execute("INSERT INTO async_delegations VALUES (?, ?, 'running', 0, '{}', ?)",
                      (delegation_id, PARENT, pid))
+
+
+class Terminal:
+    """Hermes' terminal modules as `omh_dag` imports them at call time.
+
+    `tools.terminal_tool._get_env_config` names the backend (or raises it);
+    `tools.terminal_tool_lifecycle.get_active_env` returns ``environment`` for
+    every task id it is asked about, as Hermes resolves a delegated child's to
+    its parent's (or raises it). Without ``lifecycle`` that module cannot be
+    imported.
+    """
+
+    def __init__(self, backend: object, environment: object = None, *, lifecycle: bool = True) -> None:
+        self.backend, self.environment, self.lifecycle = backend, environment, lifecycle
+        self.asked: list[str] = []
+
+    def modules(self) -> patch_modules:
+        terminal = SimpleNamespace(_get_env_config=self._config)
+        lifecycle = SimpleNamespace(get_active_env=self._active) if self.lifecycle else None
+        return patch_modules({"tools": SimpleNamespace(terminal_tool=terminal), "tools.terminal_tool": terminal,
+                              "tools.terminal_tool_lifecycle": lifecycle})
+
+    def _config(self) -> dict:
+        if isinstance(self.backend, Exception):
+            raise self.backend
+        return {"env_type": self.backend}
+
+    def _active(self, task_id: str) -> object:
+        self.asked.append(task_id)
+        if isinstance(self.environment, Exception):
+            raise self.environment
+        return self.environment
+
+
+class Sandbox:
+    """A Docker or SSH terminal's filesystem: each file at its own absolute path, kept under ``root`` here.
+
+    `execute` is the environment's own call (`tools/environments/base.py`): the
+    command runs in `sh` with the path it names moved under ``root``, so a real
+    shell judges the file.
+    """
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.commands: list[tuple[str, object]] = []
+
+    def path(self, host: Path) -> Path:
+        return self.root / os.path.realpath(host).lstrip("/")
+
+    def execute(self, command: str, cwd: str = "", *, timeout: object = None) -> dict:
+        self.commands.append((command, timeout))
+        tokens = shlex.split(command)
+        named = tokens[tokens.index("-L") + 1]
+        moved = command.replace(shlex.quote(named), shlex.quote(str(self.path(Path(named)))))
+        done = subprocess.run(["sh", "-c", moved], capture_output=True, text=True, timeout=30, check=False)
+        return {"output": done.stdout + done.stderr, "returncode": done.returncode}
+
+
+class Answers:
+    """An environment that answers every command with ``answer``, or raises it."""
+
+    def __init__(self, answer: object) -> None:
+        self.answer = answer
+        self.commands: list[str] = []
+
+    def execute(self, command: str, cwd: str = "", *, timeout: object = None) -> object:
+        self.commands.append(command)
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+@contextmanager
+def terminal_env(value: str | None = None) -> Iterator[None]:
+    """``TERMINAL_ENV`` as given, or unset: the variable `terminal_backend` falls back to."""
+    with patch.dict(os.environ):
+        os.environ.pop("TERMINAL_ENV", None)
+        if value is not None:
+            os.environ["TERMINAL_ENV"] = value
+        yield
 
 
 class DefineTests(unittest.TestCase):
@@ -254,6 +340,167 @@ class SettleTests(unittest.TestCase):
             self._run(home)
             result = call(action="settle", run="feat", node="docs", outcome="accepted")
         self.assertEqual(result["reason"], "node_not_out")
+
+
+FILE_ANSWER = {"output": "OMH_HANDOFF_FILE\n", "returncode": 0}
+
+
+class RemoteBackendTests(unittest.TestCase):
+    """On a Docker or SSH terminal a child's `write_file` lands in that backend, so `settle` reads its handoff there.
+
+    Hermes' modules are the ones `omh_dag` imports at call time (`Terminal`),
+    and the backend is a directory a real `sh` reads (`Sandbox`).
+    """
+
+    def _returned(self, home) -> None:
+        """The run defined under whatever terminal is patched, and node api's child (`sa-api`) back."""
+        slots_table(home)
+        call(action="define", run="feat", nodes=FEATURE)
+        child_started(home, "feat", "api")
+        stop(home, "child-api", now=time.time())
+
+    def _settle(self) -> dict:
+        return call(action="settle", run="feat", node="api", outcome="accepted")
+
+    def test_define_records_a_docker_or_ssh_backend_and_nothing_else(self) -> None:
+        """Mutation: record every backend, skip `TERMINAL_ENV`, or let the variable beat Hermes' own resolver."""
+        cases = [
+            ("docker", None, "docker"), ("ssh", None, "ssh"), (" SSH ", None, "ssh"),
+            ("local", "docker", None),  # Hermes' resolver, which reads the profile, wins over the variable
+            ("modal", None, None), ("", None, None),
+            (None, None, None),  # not Hermes, and the variable unset
+            (None, "ssh", "ssh"), (None, "local", None),
+            (ValueError("TERMINAL_DOCKER_VOLUMES is not valid JSON"), "docker", "docker"),
+            (KeyError("env_type"), None, None),
+        ]
+        for backend, variable, recorded in cases:
+            with self.subTest(backend=backend, variable=variable), homes() as home, terminal_env(variable), (
+                    Terminal(backend).modules() if backend is not None else nullcontext()):
+                call(action="define", run="feat", nodes=FEATURE)
+                record = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))
+                self.assertEqual(record.get("backend"), recorded, record)
+                self.assertEqual("backend" in record, recorded is not None)
+
+    @unittest.skipIf(sys.platform == "win32", "a Docker or SSH terminal runs a POSIX shell over POSIX paths")
+    def test_a_handoff_inside_the_terminal_is_read_there_under_the_host_checks_rule(self) -> None:
+        """Mutation: follow a link, take a directory, read the host only, or ask with the parent's task id."""
+        with homes() as home, terminal_env():
+            self._returned(home)
+            host_refusal = self._settle()  # the same run on a local terminal: the file missing on the host
+        self.assertEqual(host_refusal["reason"], "handoff_missing")
+        for backend in dag_tool.REMOTE_BACKENDS:
+            with self.subTest(backend=backend), homes() as home, terminal_env(), TemporaryDirectory() as root:
+                sandbox = Sandbox(Path(root))
+                terminal = Terminal(backend, sandbox)
+                with terminal.modules():
+                    self._returned(home)
+                    host = dag_run.handoff_path(home.omh, PARENT, "feat", "api")
+                    inside = sandbox.path(host)
+                    missing = self._settle()
+                    inside.mkdir(parents=True)
+                    directory = self._settle()
+                    inside.rmdir()
+                    inside.with_name("elsewhere.md").write_text("done", encoding="utf-8")
+                    inside.symlink_to(inside.with_name("elsewhere.md"))
+                    link = self._settle()
+                    inside.unlink()
+                    inside.write_text("done", encoding="utf-8")
+                    accepted = self._settle()
+                    on_host = host.exists()
+                self.assertEqual([missing, directory, link], [host_refusal] * 3)
+                self.assertEqual(accepted["status"], "ok", accepted)
+                self.assertEqual(accepted["settled"], {"node": "api", "outcome": "accepted"})
+                row = next(item for item in accepted["nodes"] if item["id"] == "api")
+                self.assertEqual(row["state"], "accepted")
+                self.assertNotIn("handoff_checked", row)
+                self.assertNotIn("say", accepted)
+                self.assertFalse(on_host)  # read only inside the terminal
+                # The child's own task id, which Hermes resolves to the environment it wrote in; one bounded `test`.
+                self.assertEqual(terminal.asked, ["sa-api"] * 4)
+                self.assertEqual({timeout for _command, timeout in sandbox.commands}, {dag_tool.BACKEND_READ_SECONDS})
+
+    def test_an_unreadable_terminal_accepts_the_node_with_its_handoff_not_checked(self) -> None:
+        """Mutation: refuse instead, treat a shell that printed no verdict as a missing file, or drop the reason."""
+        cases = {
+            "environment_gone": Terminal("docker", None),
+            "no_read_path": Terminal("ssh", Answers(FILE_ANSWER), lifecycle=False),
+            "no_read_path ": Terminal("docker", RuntimeError("environment registry moved")),
+            "backend_unanswered": Terminal("ssh", Answers(ConnectionError("ssh: connect to host port 22"))),
+            "backend_unanswered ": Terminal("docker", Answers({"output": "[Command timed out after 10s]",
+                                                               "returncode": 124})),
+            "backend_unanswered  ": Terminal("docker", Answers(None)),
+        }
+        for reason, terminal in cases.items():
+            with self.subTest(reason=reason), homes() as home, terminal_env(), terminal.modules():
+                self._returned(home)
+                settled = self._settle()
+                status = call(action="status", run="feat")
+                attempt = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))["nodes"][0]["attempts"][-1]
+            self.assertEqual(settled["status"], "ok", settled)
+            self.assertEqual(settled["settled"], {"node": "api", "outcome": "accepted"})
+            self.assertIn("its handoff was not checked", settled["say"])
+            self.assertIn(f"({reason.strip()})", settled["say"])
+            for result in (settled, status):
+                row = next(item for item in result["nodes"] if item["id"] == "api")
+                self.assertEqual((row["state"], row["handoff_checked"], row["handoff_unread"]),
+                                 ("accepted", False, reason.strip()))
+            self.assertEqual((attempt["handoff_checked"], attempt["handoff_unread"]), (False, reason.strip()))
+            # Accepted counts: the node after it is handed out.
+            self.assertEqual([c["nodes"] for c in settled["calls"]], [["docs"]])
+
+    def test_a_local_or_unread_backend_keeps_the_host_check_and_asks_no_terminal(self) -> None:
+        """Mutation: read the backend for a run with no recorded backend, before the host, or for failed."""
+        for terminal in (Terminal("local", Answers(FILE_ANSWER)), Terminal("modal", Answers(FILE_ANSWER)), None):
+            with self.subTest(backend=terminal and terminal.backend), homes() as home, terminal_env(), (
+                    terminal.modules() if terminal else nullcontext()):
+                self._returned(home)
+                refused = self._settle()
+            self.assertEqual(refused["reason"], "handoff_missing")
+            if terminal:
+                self.assertEqual(terminal.asked, [])
+        # Defined before Hermes could be read: the run keeps the host check after the terminal turns readable.
+        answers = Answers(FILE_ANSWER)
+        with homes() as home, terminal_env():
+            self._returned(home)
+            with Terminal("docker", answers).modules():
+                refused = self._settle()
+        self.assertEqual((refused["reason"], answers.commands), ("handoff_missing", []))
+        # On a Docker terminal a handoff the host has (a mounted OMH home) is enough, and a failed node asks nothing.
+        docker = Terminal("docker", Answers(FILE_ANSWER))
+        with homes() as home, terminal_env(), docker.modules():
+            self._returned(home)
+            failed = call(action="settle", run="feat", node="ui", outcome="failed", reason="tests red")
+            handoff(home, "feat", "api")
+            accepted = self._settle()
+        self.assertEqual((failed["status"], accepted["status"], docker.asked), ("ok", "ok", []))
+
+    def test_local_unset_and_unimportable_write_the_same_bytes(self) -> None:
+        """Every way the host check stays: the same results and the same record, byte for byte."""
+        def run(terminal: Terminal | None) -> tuple[list[str], bytes]:
+            with homes() as home, terminal_env(), (terminal.modules() if terminal else nullcontext()), \
+                    patch.object(dag_tool.time, "time", return_value=1_800_000_000.0):
+                slots_table(home)
+                said = [dag_tool.omh_dag_handler({"action": "define", "run": "feat", "nodes": FEATURE},
+                                                 session_id=PARENT)]
+                child_started(home, "feat", "api")
+                said.append(dag_tool.omh_dag_handler(
+                    {"action": "settle", "run": "feat", "node": "api", "outcome": "accepted"}, session_id=PARENT))
+                handoff(home, "feat", "api")
+                stop(home, "child-api", now=time.time())
+                for arguments in ({"action": "settle", "run": "feat", "node": "api", "outcome": "accepted"},
+                                  {"action": "settle", "run": "feat", "node": "ui", "outcome": "failed"},
+                                  {"action": "status", "run": "feat"}):
+                    said.append(dag_tool.omh_dag_handler(arguments, session_id=PARENT))
+                record = dag_run.record_path(home.omh, PARENT, "feat").read_bytes()
+                root = str(home.omh.parent)
+            return [text.replace(os.path.realpath(root), "<home>").replace(root, "<home>") for text in said], record
+
+        unset = run(None)
+        self.assertIn("handoff_missing", unset[0][1])
+        for terminal in (Terminal("local", Answers(FILE_ANSWER)), Terminal(ValueError("bad config")),
+                         Terminal(""), Terminal("modal", Answers(FILE_ANSWER))):
+            with self.subTest(backend=terminal.backend):
+                self.assertEqual(run(terminal), unset)
 
 
 class RepairTests(unittest.TestCase):

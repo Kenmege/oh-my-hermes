@@ -336,7 +336,11 @@ What it shows, and what it leaves as `?`:
     model, effort and time. A node no child has taken shows the category
     its run planned. Nodes of an earlier repair group that were never
     accepted leave the drawing. Each node carries where it came from
-    (`dag_origin`: `define`, `repair:<root>`, `extend:<round>`). The graph
+    (`dag_origin`: `define`, `repair:<root>`, `extend:<round>`). A node
+    accepted while its handoff could not be read in the Docker or SSH
+    terminal its child wrote it in is `done` with the status `handoff not
+    checked` (`handoff_checked: false`), and the chat end post and the TUI's
+    one-line summary count it. The graph
     takes the run's name, and a chat end post waits until the run itself is
     over: done, cancelled, or out of repair cycles. On a completion turn
     whose reply is already the run's status line, no second count line is

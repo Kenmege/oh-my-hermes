@@ -599,13 +599,30 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "recorded. Only a probe's own answer that the process ended hands work out again, so a "
         "raise never re-runs a live helper.",
     ),
+    ClassifiedSite(
+        "src/plugin_bundle/omh/tools/dag_tool.py",
+        "terminal_backend",
+        INTENTIONAL,
+        "Hermes' terminal resolver failing to import or raising (a bad TERMINAL_* value) falls back "
+        "to TERMINAL_ENV, the variable it reads; a backend not named docker or ssh records nothing, "
+        "so the run keeps the host's handoff check exactly as before. Define never fails on it.",
+    ),
+    ClassifiedSite(
+        "src/plugin_bundle/omh/tools/dag_tool.py",
+        "backend_handoff",
+        INTENTIONAL,
+        "Two handlers. Hermes' environment registry failing to import or raising is `no_read_path`, "
+        "and the backend's execute raising is `backend_unanswered`. Neither is read as a handoff "
+        "that exists or one that is missing: the node is accepted with handoff_checked false and "
+        "that reason on the attempt, its row and its say, and every view shows `handoff not checked`.",
+    ),
 )
 
 # Ruff reports one hit per handler; the inventory is keyed per enclosing
 # function. `_write_candidate_batch`, `_is_catalog_question`, `pre_llm_call`,
-# `_resume_unlocked`, `_execute_cell`, `host_process.this_process` and
-# `host_process.process_alive` each hold two handlers, so the handler count is
-# seven above the anchor count.
+# `_resume_unlocked`, `_execute_cell`, `host_process.this_process`,
+# `host_process.process_alive` and `dag_tool.backend_handoff` each hold two
+# handlers, so the handler count is eight above the anchor count.
 # 45 -> 46 / 50 -> 51: `recommend_tool._route_summary`, the additive route beside
 # the ranking (#2005 review: a route failure must not empty the ranking or
 # relabel the source).
@@ -636,8 +653,12 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # never "gone", so it never hands a live helper's work out again).
 # 63 -> 65 / 58 -> 58: the same two functions guard Hermes' import against any
 # failure, as Hermes' own call sites do (#2198 review L2).
-EXPECTED_HANDLER_COUNT = 65
-EXPECTED_ANCHOR_COUNT = 58
+# 65 -> 68 / 58 -> 60: `dag_tool.terminal_backend` and `backend_handoff`, a
+# dag-ulw handoff read inside a Docker or SSH terminal (a failure keeps the host
+# check at define, and at settle accepts with the handoff not checked, never
+# a refusal and never a file taken as there).
+EXPECTED_HANDLER_COUNT = 68
+EXPECTED_ANCHOR_COUNT = 60
 
 
 class DerivedSite(NamedTuple):

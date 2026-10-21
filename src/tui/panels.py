@@ -1245,6 +1245,10 @@ def dag_run_summary(graph: Mapping[str, Any]) -> str:
     counts = {state: sum(1 for node in lanes if node.get("state") == state) for state in SETTLED_NODE_STATES}
     said = [f"done {counts['done']}/{len(lanes)}"]
     said += [f"{counts[state]} {state}" for state in ("failed", "interrupted", "unknown") if counts[state]]
+    # A dag-ulw node accepted while its handoff could not be read where its child wrote it (`dag_run.settle`).
+    unchecked = sum(1 for node in lanes if node.get("handoff_checked") is False)
+    if unchecked:
+        said.append(f"{unchecked} handoff not checked")
     return " · ".join(["DAG", _safe_text(graph.get("name")) or "delegation", *said])
 
 

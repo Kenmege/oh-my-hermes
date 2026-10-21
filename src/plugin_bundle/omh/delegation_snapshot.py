@@ -22,14 +22,16 @@ the conversation's lanes that no end post has closed yet:
   post reopen the run: they get this line, not a second start block;
 * **end**, once: a short block that puts each lane under Done, Failed or
   Stopped (and Working, only while one is in flight), names the lane that
-  failed first, and gives the totals. It goes on the first reply after
-  every lane has settled (for a dag-ulw run, once nothing in it is out or
-  ready: done, cancelled, out of repair cycles, or left waiting on a repair
-  the reply did not make), or, for a run a start opened, once nothing has
-  been in flight and nothing has changed for `STALL_SECONDS` (a team part
-  waiting on work that will not come). Such a ``stalled`` end lists the
-  parts not moving under Stopped with their status, and leaves them out of
-  the closed lanes, so a part that moves again opens a run of its own.
+  failed first, and gives the totals; a dag-ulw node accepted with its
+  handoff not checked says so under Done and in the totals. It goes on the
+  first reply after every lane has settled (for a dag-ulw run, once nothing
+  in it is out or ready: done, cancelled, out of repair cycles, or left
+  waiting on a repair the reply did not make), or, for a run a start
+  opened, once nothing has been in flight and nothing has changed for
+  `STALL_SECONDS` (a team part waiting on work that will not come). Such a
+  ``stalled`` end lists the parts not moving under Stopped with their
+  status, and leaves them out of the closed lanes, so a part that moves
+  again opens a run of its own.
 
 A run whose first reply finds it already settled (a synchronous call) gets the
 end post alone. A conversation Hermes' rotating compaction moved to a new
@@ -71,7 +73,7 @@ import time
 from typing import Any, Final
 
 from . import runtime_paths
-from .dag_run import ADDED_ORIGIN_KINDS
+from .dag_run import ADDED_ORIGIN_KINDS, HANDOFF_NOT_CHECKED
 from .delegation_graph import (
     GRAPH_LINGER_SECONDS,
     SETTLED_STATES,
@@ -369,13 +371,19 @@ def end_block(graph: Mapping[str, Any], lanes: Sequence[Mapping[str, Any]]) -> s
         members = [node for node in lanes if collapse(node) == word]
         if members:
             lead = f"{UNICODE.glyphs[glyph_state]} {word.ljust(width)}  "
-            lines.append(_listing(lead, [_label(node, with_status=word != "Done") for node in members]))
+            # A Done lane says its status only when its handoff was not checked (`dag_run.HANDOFF_NOT_CHECKED`).
+            labels = [_label(node, with_status=word != "Done" or node.get("handoff_checked") is False)
+                      for node in members]
+            lines.append(_listing(lead, labels))
     if counts["first_failure"]:
         lines.append(f"first failure: {counts['first_failure']}")
     totals = [_plural(counts["total"], "task"), f"{counts['done']} done", f"{counts['failed']} failed",
               f"{counts['stopped']} stopped"]
     if counts["working"]:
         totals.append(f"{counts['working']} working")
+    unchecked = sum(1 for node in lanes if node.get("handoff_checked") is False)
+    if unchecked:  # said in the totals too, for a lane the listing counted as `+N`
+        totals.append(f"{unchecked} {HANDOFF_NOT_CHECKED}")
     lines.append(sep.join(totals))
     return _fenced(lines)
 

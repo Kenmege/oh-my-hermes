@@ -16,6 +16,14 @@ Export to an external coding owner (`export`) is only for a person who has
 already chosen one: it reads the explicit-choice record the router writes
 (`coding_owner_preference/v1`), and without one every node stays on
 `delegate_task`.
+
+On a Docker or SSH terminal a child's `write_file` lands inside that
+backend, not on this host. `define` records the backend Hermes resolves
+(`terminal_backend`), and `settle` reads a handoff the host does not have
+through Hermes' own live environment for the child (`backend_handoff`),
+under the host check's rule. When that environment is gone or cannot be
+reached, the node is accepted with ``handoff_checked: false``. A local
+backend, or one this cannot read, keeps the host check alone.
 """
 from __future__ import annotations
 
@@ -25,6 +33,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import sqlite3
 import time
 from typing import Any
@@ -59,6 +68,12 @@ EXTERNAL_OWNERS = ("claude-code", "codex")
 OWNER_CHOICE_MAX_AGE_SECONDS = 24 * 3600
 SPAWN_PLAN_THRESHOLD = 4  # `fanout_contracts.FANOUT_SPAWN_PLAN_THRESHOLD`, held by the same test
 SPAWN_PLAN_FIELDS = ("why_parallel", "why_not_single_unit", "independence", "expected_evidence_shape")
+# Hermes terminal backends where a child's files land out of this host's sight: a container, or another machine.
+REMOTE_BACKENDS = ("docker", "ssh")
+BACKEND_READ_SECONDS = 10  # the one `test` a settle runs there; a backend that has not answered by then is unread
+# One line per verdict, as Hermes' own probe echoes them (`ShellFileOperations._probe_regular_file`): a shell that did
+# not run prints none of them, so it is never taken for a missing file.
+_HANDOFF_FILE, _HANDOFF_LINK, _HANDOFF_NONE = "OMH_HANDOFF_FILE", "OMH_HANDOFF_LINK", "OMH_HANDOFF_NONE"
 
 _ACTIONS = ("define", "ready", "settle", "repair", "extend", "status", "cancel", "export")
 
@@ -168,15 +183,27 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
             if action == "settle":
                 node = dag_run.valid_id(args.get("node"), "invalid_node_id", "Name the node to settle.")
                 handoff = dag_run.handoff_path(omh_home, str(record["session_id"]), str(record["run"]), node)
+                found, unread = handoff.is_file() and not handoff.is_symlink(), ""
+                backend = record.get("backend")
+                if not found and backend in REMOTE_BACKENDS and args.get("outcome") == "accepted":
+                    # The child wrote it under its own task id, which is its subagent id; with no child bound, the
+                    # parent's task id, since its children share its environment.
+                    child = derived.get(node, {}).get("child") or {}
+                    task = child.get("subagent_id") or kwargs.get("task_id") or "default"
+                    found, unread = backend_handoff(handoff, str(task))
                 happened = dag_run.settle(
                     record, derived, node, args.get("outcome"), args.get("reason"), _flag(args.get("provider_error")),
-                    handoff_exists=handoff.is_file() and not handoff.is_symlink(), now=now,
+                    handoff_exists=found, handoff_unread=unread, now=now,
                 )
                 record["updated_at"] = now
                 dag_run.write_run(path, record)
                 derived = dag_run.derive(record, children, now)
                 say = ("The child hit a provider error: its node is offered once more on the route's fallback."
                        if happened == "retry" else "")
+                if happened == "accepted" and unread:
+                    say = (f"Node {node} is accepted, but its handoff was not checked: OMH could not read the {backend} "
+                           f"terminal the child wrote it in ({unread}). The nodes after it read that file; if it is "
+                           "not there, they stop and say so.")
                 return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown, say=say,
                               settled={"node": node, "outcome": happened})
             if action == "repair":
@@ -226,6 +253,9 @@ def _define(args: Mapping[str, object], omh_home: Path, hermes_home: Path, durab
         if dag_run.read_run(path) is not None:
             raise dag_run.DagRefusal("run_exists", f"Run {run} was just defined by another call.")
         (path.parent / run).mkdir(parents=True, exist_ok=True, mode=0o700)
+        backend = terminal_backend()
+        if backend:
+            record["backend"] = backend  # where the children's handoff files land; `settle` reads them there
         dag_run.write_run(path, record)
         derived = dag_run.derive(record, [], now)
         return _ready("define", record, path, derived, [], omh_home, hermes_home, now, shown)
@@ -321,6 +351,65 @@ def _cap(configured: object) -> int:
         except ValueError:
             continue
     return DEFAULT_MAX_CONCURRENT_CHILDREN
+
+
+def terminal_backend() -> str:
+    """``docker`` or ``ssh`` when Hermes runs this profile's terminal there, else "".
+
+    The backend comes from Hermes' own resolver
+    (`tools.terminal_tool._get_env_config`, which reads the profile's
+    settings), imported at call time; when it cannot be imported or raises,
+    from ``TERMINAL_ENV``, the variable it reads. ``local``, a backend not in
+    `REMOTE_BACKENDS`, and nothing readable give "": the host check alone, as
+    before.
+    """
+    try:
+        from tools.terminal_tool import _get_env_config
+
+        backend = _get_env_config()["env_type"]
+    except Exception:
+        # Not Hermes (ImportError), or a resolver that moved or raised on a bad TERMINAL_* value: the variable it reads.
+        backend = os.environ.get("TERMINAL_ENV", "")
+    name = str(backend or "").strip().casefold()
+    return name if name in REMOTE_BACKENDS else ""
+
+
+def backend_handoff(path: Path, task_id: str) -> tuple[bool, str]:
+    """Whether a handoff is a regular file and no link inside the terminal backend a child wrote it in: (found, unread).
+
+    It asks Hermes' live environment for ``task_id`` (`get_active_env`, which
+    follows a delegated child to its parent's environment, the one the child's
+    `write_file` ran in) and never starts one. ``unread`` names why there is no
+    answer, and ``found`` is then False: ``no_read_path`` (Hermes' environment
+    registry is not importable here, or raised), ``environment_gone`` (no live
+    environment for the task: its idle reaper or a close ended it, or this is
+    another process), ``backend_unanswered`` (the command printed no verdict:
+    a timeout, a lost connection, a working directory the backend lacks).
+    """
+    try:
+        from tools.terminal_tool_lifecycle import get_active_env
+
+        environment = get_active_env(task_id)
+    except Exception:
+        # Not Hermes, or a Hermes whose environment registry moved or raised: nothing reaches the file.
+        return False, "no_read_path"
+    if environment is None:
+        return False, "environment_gone"
+    quoted = shlex.quote(str(path))
+    command = (f"if [ -L {quoted} ]; then echo {_HANDOFF_LINK}; elif [ -f {quoted} ]; then echo {_HANDOFF_FILE}; "
+               f"else echo {_HANDOFF_NONE}; fi")
+    try:
+        answer = environment.execute(command, timeout=BACKEND_READ_SECONDS)
+    except Exception:
+        # The backend raised (a dropped connection, a removed container): no verdict, so unread, never missing.
+        return False, "backend_unanswered"
+    output = answer.get("output") if isinstance(answer, Mapping) else None
+    lines = {line.strip() for line in output.splitlines()} if isinstance(output, str) else set()
+    if _HANDOFF_FILE in lines:
+        return True, ""
+    if _HANDOFF_LINK in lines or _HANDOFF_NONE in lines:
+        return False, ""
+    return False, "backend_unanswered"
 
 
 def _ready(
