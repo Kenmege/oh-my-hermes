@@ -6533,8 +6533,9 @@ def _active_routing_guard_rules_cached(
         # Boost an analysis predicate bound to the domain method, not a method
         # noun used as input to a brief, feedback triage, translation or send.
         and contains_cue_phrase(normalized_query, tuple(
-            f"{action} {method}"
+            f"{action} {determiner}{method}"
             for action in ("prepare", "build", "create", "research", "analyze", "compare", "conduct", "perform", "run")
+            for determiner in ("", "a ", "an ", "the ")
             for method in ("competitor pricing profiles", "competitive pricing analysis")
         ))
     ):

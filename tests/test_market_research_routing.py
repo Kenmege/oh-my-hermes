@@ -81,6 +81,16 @@ class MarketResearchRoutingTests(unittest.TestCase):
                 self.assertEqual(route_owner(route_chat_message(prompt)), "market-research")
                 self.assertEqual(build_chat_interaction_payload(prompt)["chat_response"]["kind"], "market_research")
 
+    def test_analysis_predicates_allow_normal_determiners(self) -> None:
+        for prompt in (
+            "Perform a competitive pricing analysis for three SaaS vendors",
+            "Conduct a competitive pricing analysis for dental SaaS vendors",
+            "Prepare the competitor pricing profiles for three dental SaaS vendors",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertEqual(route_owner(route_chat_message(prompt)), "market-research")
+                self.assertEqual(build_chat_interaction_payload(prompt)["chat_response"]["kind"], "market_research")
+
     def test_generic_market_word_does_not_trigger_a_method(self) -> None:
         prompt = "the market stall is closing; price the used monitor"
         rows = recommend_skills(prompt, limit=100)
