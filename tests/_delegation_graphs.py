@@ -121,6 +121,24 @@ def dag_export_run() -> dict:
     )
 
 
+def dag_export_button_repair_run() -> dict:
+    """The export run after the button failed: the repair added for it, on the API, and the verification that still
+    depends on the button, which the repair runs before."""
+    run = dag_export_run()
+    for node in run["nodes"][1:]:
+        node.update(state="done", status="accepted", elapsed_seconds=node.get("elapsed_seconds") or 3, waits_on=0)
+    by_id = {node["id"]: node for node in run["nodes"]}
+    by_id["d:r1:button"].update(state="failed", status="blocked")
+    by_id["d:r1:verify"].update(state="waiting", status="held")
+    run["nodes"].append({
+        **lane("d:r1:button-fix", "Export button, with the key", "unspecified-high", "glm-5.3", "low", "running",
+               status="running", order=6, group="layer 2"), "elapsed_seconds": 14, "session_tail": "e5a1c093",
+    })
+    run["edges"] += [{"from": "d:r1:api", "to": "d:r1:button-fix", "kind": "depends_on"},
+                     {"from": "d:r1:button", "to": "d:r1:button-fix", "kind": "repair"}]
+    return run
+
+
 def dag_export_repair_run() -> dict:
     """The export run later: all five accepted, an extend node that failed, and the repair added for it."""
     run = dag_export_run()

@@ -12,7 +12,9 @@ glyph and duration (and the output tokens its child wrote, ``· ↓1.2k``, while
 the line still fits the box whole), and its parents (``← Export API``) or ``Start node``. The
 root is no box: what it dispatched starts a frontier, and its model is named
 in the header. A node's frontier is the longest path of recorded edges (a
-dispatch, a `depends_on`, a repair or an extend) from a node with none. The
+dispatch, a `depends_on`, a repair or an extend) from a node with none, and
+what comes after a repaired node (a node that depends on it, or an extend its
+check added) sits below that node's repair, which ran first. The
 nodes of one frontier sit side by side with a ``· Same frontier`` label
 under them, and one connector (``│`` then ``▼``) joins one frontier to the
 next, whatever its edges. So the drawing implies no edge: the edges are
@@ -23,7 +25,8 @@ one: its whole title, category and model, status and output tokens, group and
 session. The tree's status column takes the token count too where the row has
 room for it. A box
 draws no ``?``: a field with no record is left out (a blank line where
-neither category nor model is), and an unknown state's glyph is ``◇``.
+neither category nor model is), a node with no title reads ``untitled``, and
+an unknown state's glyph is ``◇``.
 
 Every box is one width: as wide as the widest node needs, narrowed to put
 each frontier on one row (every line is cut to it with ``…``), and a
@@ -33,7 +36,9 @@ drawn, which nests a node under its dispatcher and draws no edge. So is a
 graph whose edges loop, or one too narrow for a box. Widths are terminal
 cells: a wide (CJK) character counts 2, and text is folded first so that
 what is counted is what is painted. A duration is counted at
-`DURATION_CELLS` whatever it reads, so a ticking clock never resizes a box.
+`DURATION_CELLS` until it reads wider, so a ticking clock resizes a box only
+when its hours gain a digit, one cell from 100 hours (``100h 00m``), and the
+duration stays whole.
 A box's count is measured as it reads, beside the status as it reads, so it
 shows while the line fits and drops out, whole, once a longer duration or
 count would not. Once any lane carries a count, a box makes room for one: a
@@ -50,8 +55,9 @@ with a fold marker, the highlighted one with ``>``, and its role is
 ``node:selected``.
 
 Choosing a layout tries several drawings. The choice is kept per structure
-(node ids, labels, states and edges, never elapsed time) and size, so a
-redraw of the same graph with new durations lays it out once (`_DECISIONS`).
+(node ids, labels, states and edges, never elapsed time but the cells a
+status is counted at) and size, so a redraw of the same graph with new
+durations lays it out once (`_DECISIONS`).
 """
 
 from __future__ import annotations
@@ -70,10 +76,13 @@ NODE_STATES: Final = (
     "root", "waiting", "dispatched", "running", "stuck", "done", "failed", "interrupted", "unknown",
 )
 UNKNOWN_FIELD: Final = "?"
+UNTITLED: Final = "untitled"  # a node's title where the graph records none
 # The edges the tree draws as nesting: a child under its dispatcher, an added dag node under where it came from.
 NESTING_KINDS: Final = frozenset({"dispatch", "repair", "extend"})
 ELAPSED_LIMIT: Final = 10**9  # seconds, about 31 years: a figure past it (or not finite) is not drawn
-DURATION_CELLS: Final = 7  # a duration's width when a box is measured: `59m 59s`, the widest under 100 hours
+# The least a duration counts when a line is measured: `59m 59s`, the widest under 100 hours. A wider one counts as
+# it reads (`100h 00m`), so a box widens a cell at the 100-hour mark rather than cut it.
+DURATION_CELLS: Final = 7
 TOKEN_LIMIT: Final = 10**9  # output tokens: a count past it (or not a whole number) is not drawn
 TOKEN_CELLS: Final = 6  # a count's width when a line is measured: `999.9M`, the widest under TOKEN_LIMIT
 # The realistic widest a box makes room for once a lane carries a count: `● Running 59m 59s · ↓999.9k`.
@@ -333,29 +342,25 @@ def _tokens_room(charset: Charset) -> int:
     return cells(charset.separator) + cells(charset.written) + TOKEN_CELLS
 
 
-def _status_room(node: Mapping[str, Any]) -> int:
-    """The cells a status takes before a count: `_status_cells`, or the status as drawn where that is wider (a
-    duration past 100 hours, `100h 59m`, is wider than `DURATION_CELLS`), so a count is never cut after it."""
-    return max(_status_cells(node), cells(_status_text(node)))
-
-
 def _stuck_reason(word: str) -> str:
     return word.removeprefix("stuck").lstrip(":").strip()
 
 
 def _status_cells(node: Mapping[str, Any]) -> int:
-    """The status line's width for measuring a box: its duration counted at `DURATION_CELLS`."""
+    """The status line's width for measuring: its duration counted at `DURATION_CELLS`, or as it reads where that is
+    wider (100 hours and past, `100h 00m`), so neither the status nor a count after it is cut."""
     word, elapsed = _status_parts(node)
     if elapsed is None:
         return cells(word)
+    duration = max(DURATION_CELLS, cells(elapsed_text(elapsed)))
     if _state(node) == "stuck":
         reason = _stuck_reason(word)
-        return cells("stuck ") + DURATION_CELLS + (2 + cells(reason) if reason else 0)
-    return cells(word) + 1 + DURATION_CELLS
+        return cells("stuck ") + duration + (2 + cells(reason) if reason else 0)
+    return cells(word) + 1 + duration
 
 
 def _title(node: Mapping[str, Any]) -> str:
-    return clean_text(node.get("title")) or UNKNOWN_FIELD
+    return clean_text(node.get("title")) or UNTITLED
 
 
 def _category(node: Mapping[str, Any]) -> str:
@@ -473,8 +478,36 @@ class _Frontiers:
     origin: Mapping[str, str]  # a lane added mid-run: "repair" or "extend", from the kind of the edge into it
 
 
+def _repair_order(
+    lanes: Mapping[str, Mapping[str, Any]], pairs: list[tuple[str, str]], kinds: Mapping[tuple[str, str], str],
+) -> list[tuple[str, str]]:
+    """Edges that only place lanes and are drawn nowhere: what comes after a repaired lane (a lane that depends on it,
+    or an extend round its check added) goes below every lane of that lane's repair, which ran first
+    (`dag_run.repair`). A lane it dispatched ran during the attempt that failed, and keeps its place. The repair is
+    what a repair edge leads to and the lanes under it, up to a lane another repair or an extend added: one a repair
+    or extend edge leads to, or an extend round's (`dag_origin`), which has no such edge where it depends on the
+    lane that found it."""
+    added = {lower for upper, lower in pairs if kinds.get((upper, lower)) in ("repair", "extend")}
+    added |= {lane_id for lane_id, lane in lanes.items() if str(lane.get("dag_origin") or "").startswith("extend:")}
+    below: dict[str, list[str]] = {}
+    for upper, lower in pairs:
+        below.setdefault(upper, []).append(lower)
+    groups: dict[str, set[str]] = {}
+    for upper, lower in pairs:
+        if kinds.get((upper, lower)) == "repair":
+            group, pending = groups.setdefault(upper, set()), [lower]
+            while pending:
+                node_id = pending.pop()
+                if node_id not in group:
+                    group.add(node_id)
+                    pending += [kid for kid in below.get(node_id, []) if kid not in added]
+    return [(member, dependent) for repaired, group in groups.items() for dependent in below.get(repaired, [])
+            if dependent not in group and kinds.get((repaired, dependent)) != "dispatch" for member in sorted(group)]
+
+
 def _frontiers(graph: Mapping[str, Any]) -> _Frontiers | None:
-    """The lanes by frontier: a lane's frontier is its longest path of recorded edges from a lane with none.
+    """The lanes by frontier: a lane's frontier is its longest path of recorded edges from a lane with none, and a
+    lane that comes after a repaired lane sits below that lane's repair (`_repair_order`).
 
     The root is not a box: what it dispatched has no parent lane and reads
     ``Start node``, and its model is named in the header. None when there is
@@ -485,7 +518,14 @@ def _frontiers(graph: Mapping[str, Any]) -> _Frontiers | None:
         return None
     ids = list(lanes)
     pairs = _edges(graph, set(ids))
-    layer = _layers(ids, pairs)
+    kinds: dict[tuple[str, str], str] = {}
+    for edge in graph.get("edges") if isinstance(graph.get("edges"), list) else []:
+        if isinstance(edge, Mapping):
+            kinds.setdefault((str(edge.get("from")), str(edge.get("to"))), clean_text(edge.get("kind")))
+    order = _repair_order(lanes, pairs, kinds)
+    layer = _layers(ids, [*pairs, *order]) if order else None
+    if layer is None:  # no repair to place, or placing it would loop: the recorded edges alone
+        layer = _layers(ids, pairs)
     if layer is None:
         return None
     rows = [
@@ -493,10 +533,6 @@ def _frontiers(graph: Mapping[str, Any]) -> _Frontiers | None:
         for index in range(max(layer.values()) + 1)
     ]
     rank = {node_id: (layer[node_id], at) for row in rows for at, node_id in enumerate(row)}
-    kinds: dict[tuple[str, str], str] = {}
-    for edge in graph.get("edges") if isinstance(graph.get("edges"), list) else []:
-        if isinstance(edge, Mapping):
-            kinds.setdefault((str(edge.get("from")), str(edge.get("to"))), clean_text(edge.get("kind")))
     parents: dict[str, list[str]] = {node_id: [] for node_id in ids}
     for upper, lower in pairs:
         parents[lower].append(upper)
@@ -566,7 +602,7 @@ def _counted_status_cells(node: Mapping[str, Any], charset: Charset) -> int:
 def _box_natural(
     node_id: str, shape: _Frontiers, charset: Charset, focus: Focus | None, counted: bool = False,
 ) -> int:
-    """The inner width a box needs for its title, facts and status, whatever its duration reads; the parents line
+    """The inner width a box needs for its title, facts and status (`_status_cells`); the parents line
     is cut to the box (the Dependencies section holds every edge whole). A folded box's one line holds its glyph
     and its status word too. With ``counted`` (some lane carries a count), a lane bound to a child also needs its
     status with a count at its widest (`_counted_status_cells`)."""
@@ -603,7 +639,7 @@ def _box_content(
     if folded:
         head += [Segment(glyph, f"node:{state}"), Segment(" ", "")]
     head.append(Segment(_origin_mark(node_id, shape, charset), f"node-title:{named}"))
-    title_role = "unknown" if title == UNKNOWN_FIELD else f"node-title:{named}"
+    title_role = "unknown" if title == UNTITLED else f"node-title:{named}"
     if folded:
         # One line: the title gives way so the status word (`Accepted`) stays, as every state keeps its word.
         word = [Segment(charset.separator, "parents"), Segment(_capital(_status_parts(node)[0]), f"node-word:{state}")]
@@ -797,7 +833,7 @@ def _details(
         for at, text in enumerate(_wrap(title, max(1, width - cells(lead)), 3, charset)):
             pieces = [Segment(SECTION_INDENT, ""), Segment(glyph, f"node:{state}"), Segment(" ", "")] if at == 0 else [
                 Segment(" " * cells(lead), "")]
-            role = "unknown" if title == UNKNOWN_FIELD else f"node-title:{state}"
+            role = "unknown" if title == UNTITLED else f"node-title:{state}"
             lines.append(_fit_pieces([*pieces, Segment(text, role)], width, charset))
         facts = _facts(node, charset)
         if facts:
@@ -810,7 +846,7 @@ def _details(
         # them after it, the room keeps a cell for the ellipsis their cut ends in, which `_fit_pieces` would
         # otherwise take from the count's own unit (`↓999.9k token…`).
         after = cells(charset.ellipsis) if group or tail else 0
-        if tokens and cells(deeper) + _status_room(node) + _tokens_room(charset) + cells(" tokens") + after <= width:
+        if tokens and cells(deeper) + _status_cells(node) + _tokens_room(charset) + cells(" tokens") + after <= width:
             where.append(Segment(f"{charset.separator}{tokens} tokens", "more"))
         if group:
             where.append(Segment(f"{charset.separator}{group}", "more"))
@@ -1035,21 +1071,21 @@ def _tree_lines(
                 *lead_segments(lead),
                 Segment(branch, "edge", depth),
                 Segment(glyph, f"glyph:{state}"),
-                Segment(f" {title}{pad}  ", _field_role(title, "title")),
+                Segment(f" {title}{pad}  ", "unknown" if _title(node) == UNTITLED else "title"),
                 Segment(_pad(category, category_width) + "  ", _field_role(category, "category")),
                 Segment(_pad(model, model_width) + "  ", _field_role(model, "model")),
             ]
             used = sum(cells(piece.text) for piece in pieces)
             pieces.append(Segment(_status_text(node), f"status:{state}"))
             tokens = _tokens_text(node, charset)
-            if tokens and used + _status_room(node) + _tokens_room(charset) <= width:  # never at a status's cost
+            if tokens and used + _status_cells(node) + _tokens_room(charset) <= width:  # never at a status's cost
                 pieces.append(Segment(f"{sep}{tokens}", "more"))
             lines.append(_cut_line(pieces, width, charset))
         else:
             title = fit(_title(node), width - cells(prefix) - cells(glyph) - 1, charset.ellipsis)
             lines.append((
                 *lead_segments(lead), Segment(branch, "edge", depth), Segment(glyph, f"glyph:{state}"),
-                Segment(f" {title}", _field_role(title, "title")),
+                Segment(f" {title}", "unknown" if _title(node) == UNTITLED else "title"),
             ))
             shown_under = clamped(under, depth)
             indent = shown_under + "  "
@@ -1064,7 +1100,7 @@ def _tree_lines(
                     facts += [Segment(text, _field_role(text, role)), Segment(sep, "edge", depth)]
             facts.append(Segment(status, f"status:{state}"))
             tokens = _tokens_text(node, charset)
-            if tokens and whole + _status_room(node) + _tokens_room(charset) <= width:  # the model whole first
+            if tokens and whole + _status_cells(node) + _tokens_room(charset) <= width:  # the model whole first
                 facts.append(Segment(f"{sep}{tokens}", "more"))
             lines.append(_cut_line(facts, width, charset))
         kids = [kid for kid in nested.get(node_id, []) if kid not in hidden]
@@ -1301,13 +1337,14 @@ def _hide_order(graph: Mapping[str, Any]) -> list[str]:
 
 
 def _structure(graph: Mapping[str, Any]) -> tuple[Any, ...]:
-    """What a layout depends on: every node's labels and state, the edges, the name; never a duration's value."""
+    """What a layout depends on: every node's labels and state, the edges, the name; never a duration's value, only
+    the cells its status is counted at (`_status_cells`), which move only when a duration's hours gain a digit."""
     nodes = _nodes(graph)
     shape = tuple(
         (
             str(node.get("id")), str(node.get("kind")), clean_text(node.get("title")), clean_text(node.get("category")),
             clean_text(node.get("model")), clean_text(node.get("effort")), _state(node), _status_parts(node)[0],
-            _status_parts(node)[1] is not None, clean_text(node.get("group")), _order(node),
+            _status_parts(node)[1] is not None, _status_cells(node), clean_text(node.get("group")), _order(node),
         )
         for node in nodes
     )
