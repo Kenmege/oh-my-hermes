@@ -1920,10 +1920,18 @@ STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # review commits added +1,749 and +940, so its merge (d56aa8e7a) reads
 # 1,227,898, above this measurement; the measurement was not re-taken there,
 # because a floor the producer reads above fires neither re-derive signal.
-FULL_PROFILE_SKILL_BODY_MEASURED_CHARS = 1225209
+# 1225209 -> 1325789 (measured; the ceiling 1350000 -> 1500000): main
+# 32878e25d reads 1,321,653, and the Vietnamese trigger pack (#2182) adds
+# 4,136 across the twenty routing-signal lines it joins, which took the pack
+# to 1,325,789, where `test_one_more_ordinary_lane_member_fits_every_body_budget`
+# found that the largest lane-mate copy (`ultrawork`, +26,506) no longer fits.
+# 1,325,789 plus 10%, rounded up to the next 50,000, is 1,500,000.
+# 1325789 -> 1325671 (measured; the ceiling stays 1500000): the #2187 review
+# drops three `vi` phrases that another skill wins on main too, 118 chars.
+FULL_PROFILE_SKILL_BODY_MEASURED_CHARS = 1325671
 FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT = 10
 FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS = 50000
-FULL_PROFILE_SKILL_BODY_CHAR_LIMIT = 1350000
+FULL_PROFILE_SKILL_BODY_CHAR_LIMIT = 1500000
 FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # Repeated bytes: characters of full-profile SKILL.md `##` sections that are
 # byte-identical to the same section in another skill -- the second and later

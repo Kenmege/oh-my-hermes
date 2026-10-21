@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import unicodedata
 import unittest
 from copy import copy
 from pathlib import Path
@@ -36,6 +37,7 @@ from omh.routing.trigger_language_packs import (
     ORIGIN_SHIPPED,
     TRIGGER_LANGUAGE_PACK_SCHEMA_VERSION,
     TriggerLanguagePack,
+    is_latin_script,
     load_user_trigger_language_packs,
     merged_trigger_phrases,
     parse_trigger_language_pack,
@@ -218,36 +220,42 @@ class ShippedTriggerPackTests(unittest.TestCase):
         )
 
     def test_a_latin_script_pack_adds_whole_phrases_and_nothing_else(self) -> None:
-        """An ASCII pack phrase scores as a phrase; its words never score alone.
+        """A Latin-script pack phrase scores as a phrase; its words never score alone.
 
         `ja`, `zh` and `ko` phrases carry Hangul, Kana or Han, so their words
         never meet an English message. A pack in a Latin-script language shares
         the English token space: the first `id` draft's phrases borrowed `bug`,
         `crash`, `error` and `file`, and with those words scoring on their own,
         or in the lexical index, English routes and shortlists moved (#2154).
-        So each skill's scored tokens, lexical-index document and shortlist
-        anchors must equal the view with that skill's shipped ASCII pack
-        phrases taken out of its triggers. The view is built here from the
-        packs, not from `shipped_ascii_pack_phrases`, so a fault in that
-        function shows up as a difference. That the phrase itself still scores
-        is held by `test_every_shipped_pack_phrase_is_live_in_its_skills_scored_surface`;
+        A diacritic does not keep a word apart: the router folds the `vi`
+        words `cần`, `bạn` and `thêm` to `can`, `ban` and `them`, and with the
+        rule keyed on ASCII the first `vi` draft's words scored alone and moved
+        English routes again (#2182). So each skill's scored tokens,
+        lexical-index document and shortlist anchors must equal the view with
+        that skill's shipped Latin-script pack phrases taken out of its
+        triggers. The view is built here from the packs, not from
+        `shipped_latin_pack_phrases`, so a fault in that function shows up as
+        a difference. That the phrase itself still scores is held by
+        `test_every_shipped_pack_phrase_is_live_in_its_skills_scored_surface`;
         that a pack's hold-backs remove no English word is held by
         `test_a_pack_holds_back_only_words_its_own_scored_phrases_carry`.
 
-        An ASCII pack phrase that repeats one of the skill's authored triggers
-        stays in the view, so it fails here: the rule would take that trigger's
-        words out of scoring.
+        A Latin-script pack phrase that repeats one of the skill's authored
+        triggers stays in the view, so it fails here: the rule would take that
+        trigger's words out of scoring.
         """
-        ascii_phrases: dict[str, set[str]] = {}
+        latin_phrases: dict[str, set[str]] = {}
         for pack in shipped_trigger_language_packs(_known_skills()):
             for skill, phrases in pack.skills:
-                ascii_phrases.setdefault(skill, set()).update(phrase for phrase in phrases if phrase.isascii())
-        # Without an ASCII pack phrase this compares the catalog with itself.
-        self.assertTrue(any(ascii_phrases.values()))
+                latin_phrases.setdefault(skill, set()).update(phrase for phrase in phrases if is_latin_script(phrase))
+        # Without a Latin-script pack phrase, and one with a diacritic, this
+        # compares the catalog with itself or misses the `vi` case.
+        self.assertTrue(any(latin_phrases.values()))
+        self.assertTrue(any(not phrase.isascii() for phrases in latin_phrases.values() for phrase in phrases))
         authored = {definition.name: set(definition.triggers) for definition in catalog._DEFINITIONS}
         without = {}
         for definition in builtin_definitions():
-            taken_out = ascii_phrases.get(definition.name, set()) - authored.get(definition.name, set())
+            taken_out = latin_phrases.get(definition.name, set()) - authored.get(definition.name, set())
             view = copy(definition)
             object.__setattr__(view, "triggers", tuple(t for t in definition.triggers if t not in taken_out))
             without[definition.name] = view
@@ -274,41 +282,45 @@ class ShippedTriggerPackTests(unittest.TestCase):
             moved,
             [],
             "A Latin-script pack moved what its words score on their own; its phrases "
-            "must count only as whole phrases (`shipped_ascii_pack_phrases`): " + "; ".join(moved[:20]),
+            "must count only as whole phrases (`shipped_latin_pack_phrases`): " + "; ".join(moved[:20]),
         )
 
-    def test_ascii_pack_phrases_come_after_every_other_trigger(self) -> None:
+    def test_latin_script_pack_phrases_come_after_every_other_trigger(self) -> None:
         """A Latin-script pack takes none of the first places in a trigger list.
 
         The SKILL.md description and the capability row show only a skill's
         first triggers, and packs merge in language-code order, where `id`
-        sorts before `ja`. With the `id` phrases in front, the description of
-        `design-orchestration` lost three Japanese cues, `deep-interview` two
-        and `ultraqa` one. So every shipped ASCII pack phrase that the
-        authored triggers do not already carry sits after every other trigger.
+        sorts before `ja` and `vi` before `zh`. With the `id` phrases in front,
+        the description of `design-orchestration` lost three Japanese cues,
+        `deep-interview` two and `ultraqa` one. So every shipped Latin-script
+        pack phrase that the authored triggers do not already carry sits after
+        every other trigger.
         """
-        ascii_phrases: dict[str, set[str]] = {}
+        latin_phrases: dict[str, set[str]] = {}
         for pack in shipped_trigger_language_packs(_known_skills()):
             for skill, phrases in pack.skills:
-                ascii_phrases.setdefault(skill, set()).update(phrase for phrase in phrases if phrase.isascii())
+                latin_phrases.setdefault(skill, set()).update(phrase for phrase in phrases if is_latin_script(phrase))
         authored = {definition.name: set(definition.triggers) for definition in catalog._DEFINITIONS}
         misplaced: list[str] = []
         for definition in builtin_definitions():
-            latin = ascii_phrases.get(definition.name, set()) - authored.get(definition.name, set())
+            latin = latin_phrases.get(definition.name, set()) - authored.get(definition.name, set())
             if latin and set(definition.triggers[len(definition.triggers) - len(latin):]) != latin:
                 misplaced.append(definition.name)
 
-        self.assertEqual(misplaced, [], "ASCII pack phrases ahead of another trigger in: " + ", ".join(misplaced))
+        self.assertEqual(
+            misplaced, [], "Latin-script pack phrases ahead of another trigger in: " + ", ".join(misplaced)
+        )
 
     def test_a_pack_holds_back_only_words_its_own_scored_phrases_carry(self) -> None:
-        """An ASCII hold-back word must come from one of the pack's non-ASCII phrases.
+        """An ASCII hold-back word must come from one of the pack's Hangul, Kana or Han phrases.
 
         A `whole_phrase_only_tokens` entry stops a word scoring for the skill on
         its own, which is what a pack needs for the words of its own phrases. A
-        phrase written wholly in ASCII already scores only as a whole phrase,
-        so its words need no entry. An ASCII entry that none of the pack's
-        non-ASCII phrases for the skill carries can then only take the skill's
-        English words away: its English trigger tokens and shortlist anchors.
+        phrase written wholly in Latin script already scores only as a whole
+        phrase, so its words need no entry. An ASCII entry that none of the
+        pack's other phrases for the skill carries can then only take the
+        skill's English words away: its English trigger tokens and shortlist
+        anchors.
         The first `id` draft's list did that (`codex`, `chatbot`, `debug`), and
         the parity test above cannot see it, because both sides of its
         comparison read the same hold-backs.
@@ -319,7 +331,7 @@ class ShippedTriggerPackTests(unittest.TestCase):
             for skill, entries in pack.whole_phrase_only_tokens:
                 scored: set[str] = set()
                 for phrase in phrases.get(skill, ()):
-                    if not phrase.isascii():
+                    if not is_latin_script(phrase):
                         scored |= set(_tokens(phrase))
                 for entry in entries:
                     if {token for token in _tokens(entry) if token.isascii()} - scored:
@@ -328,7 +340,7 @@ class ShippedTriggerPackTests(unittest.TestCase):
         self.assertEqual(
             stray,
             [],
-            "Hold-back entries whose ASCII words none of the pack's own non-ASCII phrases "
+            "Hold-back entries whose ASCII words none of the pack's own non-Latin phrases "
             "carry, so they can only remove the skill's English words: " + "; ".join(stray[:20]),
         )
 
@@ -348,6 +360,11 @@ class ShippedTriggerPackTests(unittest.TestCase):
             ("id", "review kode ini", "code-review"),
             ("id", "audit aksesibilitas", "accessibility-audit"),
             ("id", "build gagal", "build-failure-triage"),
+            ("vi", "lập kế hoạch thực hiện", "plan"),
+            ("vi", "rà soát mã nguồn", "code-review"),
+            ("vi", "kiểm tra khả năng tiếp cận", "accessibility-audit"),
+            ("vi", "build thất bại", "build-failure-triage"),
+            ("vi", "tiến hành nghiên cứu chuyên sâu", "research"),
         )
 
         for language, message, expected in probes:
@@ -399,6 +416,35 @@ class LanguageParityTests(unittest.TestCase):
         # cheap and additive; translating every message is not, so a community
         # pack must not be blocked on a full output localization.
         self.assertIsInstance(shipped_trigger_pack_languages(), tuple)
+
+
+class LatinScriptPredicateTests(unittest.TestCase):
+    """`is_latin_script` decides which shipped phrases score only whole.
+
+    It reads letters the way the router folds them, so a phrase whose words
+    fold to ASCII tokens is Latin however it was typed.
+    """
+
+    def test_vietnamese_is_latin_composed_or_decomposed(self) -> None:
+        phrase = "kiểm tra lỗi"
+
+        self.assertTrue(is_latin_script(unicodedata.normalize("NFC", phrase)))
+        self.assertTrue(is_latin_script(unicodedata.normalize("NFD", phrase)))
+
+    def test_letters_that_fold_to_ascii_are_latin(self) -> None:
+        self.assertTrue(is_latin_script("1º"))
+        self.assertTrue(is_latin_script("ｂｕｇ"))
+        self.assertTrue(is_latin_script("ʻokina"))
+
+    def test_a_letter_of_another_script_is_not_latin(self) -> None:
+        self.assertFalse(is_latin_script("review 代码"))
+        self.assertFalse(is_latin_script("빌드 failed"))
+        self.assertFalse(is_latin_script("ελληνικά"))
+        self.assertFalse(is_latin_script("проверка"))
+
+    def test_a_phrase_with_no_letter_has_nothing_to_decide(self) -> None:
+        # Validation refuses such a phrase before it reaches a pack.
+        self.assertTrue(is_latin_script("!!! --- 123"))
 
 
 class TriggerLanguagePackShapeTests(unittest.TestCase):
