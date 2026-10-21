@@ -37,7 +37,8 @@ top of the drawing to the bottom): the palette's `dag_edge_start`,
 `dag_edge_mid` and `dag_edge_end` when it names them, else the violet, indigo
 and blue of `DAG_EDGE_STOPS`. Each step is a graphical mark, so it is lifted to
 3:1 like `dim`: toward black on a light background, toward the palette's light
-ink on a dark one, never the other way.
+ink on a dark one, never the other way. `dag_words` are the same steps lifted
+to 4.5:1, for the words a box draws in its state's hue (its title and status).
 
 The pager's footer sits on a bar of its own (`status`): the palette's
 status-bar background on a dark terminal or one that reported none, and on
@@ -129,6 +130,7 @@ class Theme:
     ok_band: Style  # behind what the person allowed (an approval)
     error_band: Style  # behind a denial or a failure: a denied approval, a failed tool row and its lines, an error notice
     dag_edges: tuple[Style, ...]  # the delegation view's edges, top layer to bottom (`DAG_EDGE_STEPS` of them)
+    dag_words: tuple[Style, ...]  # the same steps lifted to TEXT_CONTRAST: a box's title and status words
 
 
 def _channel(value: int) -> float:
@@ -267,6 +269,10 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         error_band=error_band,
         dag_edges=tuple(
             Style(fg=_lifted(colour, ink, surface, EDGE_CONTRAST))
+            for colour in _gradient([c[key] for key in DAG_EDGE_STOPS], DAG_EDGE_STEPS)
+        ),
+        dag_words=tuple(
+            Style(fg=_lifted(colour, ink, surface, TEXT_CONTRAST))
             for colour in _gradient([c[key] for key in DAG_EDGE_STOPS], DAG_EDGE_STEPS)
         ),
     )

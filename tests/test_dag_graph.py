@@ -90,8 +90,8 @@ class GraphTests(unittest.TestCase):
                                  ("d:export:ui", "d:export:verify", "depends_on")})
         # The bound child is the node, never a second lane beside it.
         self.assertFalse([node for node in graph["nodes"] if node["id"].startswith("s:")])
-        header = render_delegation_view(graph, width=100).text_lines()[0]
-        self.assertIn("export feature", header)
+        header = render_delegation_view(graph, width=100).text_lines()[:2]  # the task count, then the run's name
+        self.assertIn("export feature", header[1])
 
     def test_a_repair_hangs_below_the_node_it_repairs_and_superseded_nodes_go(self) -> None:
         with homes() as home:
@@ -170,7 +170,8 @@ class GraphTests(unittest.TestCase):
                     ["--omh-home", str(home.omh), "--hermes-home", str(home.hermes), "hud", "--graph"],
                     output_json=False)
         self.assertEqual(code, 0, stderr)
-        self.assertIn("DAG · export feature", stdout)
+        self.assertIn("\nexport feature · ", stdout)
+        self.assertIn("Export API", stdout)
 
 
 class MessengerTests(unittest.TestCase):

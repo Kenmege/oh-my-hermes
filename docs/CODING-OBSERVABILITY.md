@@ -79,33 +79,66 @@ knows its reader's language can pass it today.
 
 ## The delegation graph
 
-What the delegated work of one conversation looks like as a graph: who
-started whom, and, for parts with recorded dependencies, what waits on what.
-Each node shows its title, category, model and effort, and its state.
+What the delegated work of one conversation looks like as a graph: who started
+whom, and, for parts with recorded dependencies, what waits on what. A header
+names the task count, the run and its state; then the nodes stand in
+frontiers, a node's frontier being the longest path of recorded edges that
+leads to it. Each node is a box of four lines: its title, its category and
+model with effort, its status with its glyph and duration, and its parents
+(`← Export API`) or `Start node`. The nodes of one frontier sit side by side
+over a `· Same frontier` label, and one connector joins a frontier to the
+next. Under the boxes, `Dependencies` lists every edge between two nodes, its
+kind named unless it is a `depends_on`, and `Node details` gives a card to
+each running or stuck node, and in `/dag` to the highlighted one: its whole
+title, category and model, status, group and session. Main, the parent
+session, is no box: the nodes it dispatched read `Start node`, and its model
+is on the header's second line. A node added mid-run carries `↻ ` (a repair)
+or `+ ` (an extend) before its title. A dag run of five nodes, at 100 columns,
+as `omh hud --graph` prints it, and as a dark terminal paints it:
 
-```
-DAG · ulw-work hud-graph · 5 nodes · 6 edges
-2 running · 1 waiting · 1 done
-                        ┌───────────────────────┐
-                        │ ◆ main · orchestrator │
-                        │ opus-5-5 · high       │
-                        └───────────┬───────────┘
-           ┌────────────────────────┼────────────────────────┐
-           ▼                        ▼                        ▼
-┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
-│ ● Refresh HUD docs  │  │ ✓ Polish HUD CLI    │  │ ● Update HUD tests  │
-│ writing             │  │ quick               │  │ deep                │
-│ opus-5-5 · medium   │  │ glm-5.3-flash · low │  │ opus-5-5 · high     │
-│ running 2m 10s      │  │ done 1m 2s          │  │ running 2m 8s       │
-└──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘
-           └────────────────────────┼────────────────────────┘
-                                    ▼
-                         ┌─────────────────────┐
-                         │ · Integration veri… │
-                         │ inherit             │
-                         │ opus-5-5            │
-                         │ waits on 3 lanes    │
-                         └─────────────────────┘
+![The dag run's boxes in a dark terminal, coloured by state](../assets/omh-dag-box-view.png)
+
+```text
+OMH / DAG · 5 tasks
+export feature · 1/1 · main opus-5-5:high
+Running · Done 1/5 · 1 failed
+
+                                  ┌──────────────────────────────┐
+                                  │ Export API                   │
+                                  │ quick · glm-5.3-flash:low    │
+                                  │ ✓ Accepted 12s               │
+                                  │ Start node                   │
+                                  └──────────────────────────────┘
+                                                  │
+                                                  ▼
+┌──────────────────────────────┐  ┌──────────────────────────────┐  ┌──────────────────────────────┐
+│ Export button                │  │ Export docs                  │  │ Export CLI flag              │
+│ unspecified-high · glm-5.3:… │  │ writing                      │  │ quick · glm-5.3-flash:low    │
+│ ● Running 21s                │  │ ◌ Handed out                 │  │ ✗ Failed 8s                  │
+│ ← Export API                 │  │ ← Export API                 │  │ ← Export API                 │
+└──────────────────────────────┘  └──────────────────────────────┘  └──────────────────────────────┘
+· Same frontier
+                                                  │
+                                                  ▼
+                                  ┌──────────────────────────────┐
+                                  │ Verify export                │
+                                  │ unspecified-high             │
+                                  │ ○ Waits on 3 lanes           │
+                                  │ ← Export button, Export doc… │
+                                  └──────────────────────────────┘
+
+Dependencies
+  Export API → Export button
+  Export API → Export docs
+  Export API → Export CLI flag
+  Export button → Verify export
+  Export docs → Verify export
+  Export CLI flag → Verify export
+
+Node details
+  ● Export button
+    unspecified-high · glm-5.3:low
+    Running 21s · layer 2 · session 7c41e9a2
 ```
 
 Where it shows:
@@ -127,17 +160,33 @@ Where it shows:
   agents block's header keeps the session's cost and tokens.
   The tree of a DAG run takes a third of the terminal's rows from the start
   (8 of 24, 13 of 40); other views take at most a quarter, seven from 28
-  rows, raised only to show every running lane. Boxes do not fit there
-  (two-line boxes take nine rows for one layer under main), so the tree is
-  drawn, its done lanes giving way first to a `+N more nodes` row and its
+  rows, raised only to show every running lane. Boxes do not fit there, so
+  the tree is drawn, its done lanes giving way first to a `+N more nodes` row and its
   running lanes kept. Once every lane has settled (done, failed, interrupted
   or unknown, and no lane left out by the reader) and a dag-ulw run is over
   as a run, the tree is one line, `DAG · <name> · done 5/6 · 1 failed`,
-  until the graph lingers out of the HUD. `/dag` opens the graph as the HUD
-  last read it in the pager, whole and with four-line boxes, in the same
-  colours; q or Esc closes it. For a dag-ulw run the page ends with the
-  run's critical path and its bottlenecks, the nodes the most others wait
-  on (`dag_core`).
+  until the graph lingers out of the HUD.
+- **`/dag`** opens the graph full screen in the pager, as boxes with their
+  Dependencies and Node details, redrawn from the HUD's newest read on every
+  frame, so a node that starts, finishes or fails while it is open changes on
+  the screen. Each box opens with a fold marker (`[-]`), and one is
+  highlighted (`>`, its border and title in the violet the edge gradient
+  starts at); it opens on the first running node. Tab or n highlights the
+  next box in reading order, Shift+Tab or p the one before; Space or Enter
+  folds the highlighted box to one line (`[+]`, its glyph, title and status
+  word) and back; d shows or hides Node details, whose cards are the running
+  and stuck nodes and the highlighted one; ↑ ↓, PageUp, PageDown and g / G
+  scroll; q or Esc closes it. The two rows under it name these keys and the
+  rows shown. When the HUD's newest read holds no active graph (it settled
+  and aged out, or reading stopped), the last drawing stays under a
+  `not live · last update 12s ago` line, the age of the data it shows (from
+  the HUD's read, not from the last redraw). It sends nothing anywhere: no key
+  there reaches the gateway, a child or a chat. One conversation has one
+  graph, so it offers no other run to switch to. For a dag-ulw run the page
+  ends with the run's critical path and its bottlenecks, the nodes the most
+  others wait on (`dag_core`).
+
+  ![/dag in a dark terminal: Export API folded, Verify export highlighted, Node details for the running node and the highlighted one](../assets/omh-dag-pager.png)
 - **Slack, Discord, Telegram, Mattermost and Matrix** never get the box
   drawing. They see a delegated run, the conversation's lanes that no end
   post has closed yet, at three moments. Each is appended to the reply Hermes
@@ -222,10 +271,15 @@ What it shows, and what it leaves as `?`:
 - **Category** is the route `omh_delegate_route` recorded for the session when
   the child started, shown only while the child's observed model matches it.
   A child on its parent's own recorded model with no route is `inherit`.
-  Anything else is `?`.
+  Anything else is `?` in the graph's record; how the drawings show it is
+  below.
 - **Model** is what Hermes recorded for the child: its session row, the one
   model its usage rows observed, or the model the dispatch was pinned to. It
   is never read from the current `delegation.model`.
+- A category or model with no record yet (a node no child has taken) is left
+  out of a box and blank in the tree's column, so `writing` reads alone. A
+  box draws no `?` at all: where neither is recorded its line is blank, and
+  an unknown state is `◇`; the tree keeps `?` in its category column there.
 - **State** comes from Hermes' `subagent_stop`, a recorded model call, or the
   team's own record.
   - A child Hermes reported completed with no model call at all reads
@@ -266,13 +320,12 @@ What it shows, and what it leaves as `?`:
     transcript's `delegate_task` rows name a node's child by the node's
     label, without its `[dag:<run>/<node>]` marker. The tree collapses a
     finished run to its one summary line. The transcript keeps the run's
-    graph as boxes at define, at each repair and extend with the added nodes
+    graph as boxes, as `omh hud --graph` draws them (with Dependencies and
+    Node details), at define, at each repair and extend with the added nodes
     marked `+`, and once at the end, when the turn that ended the run is
-    over and the run still is; where the boxes cannot be drawn (too wide, or
-    an edge that skips a layer, as added nodes' edges often do) it is the
-    tree.
+    over and the run still is; where no box fits the width it is the tree.
 
-    ![The dag-ulw plan block in the OMH TUI transcript: the orchestrator, Export API handed out, the button, docs and CLI flag waiting on it, and the verification node waiting on all three](../assets/omh-tui-dag-ulw-plan-block.png)
+    ![The dag-ulw plan block in the OMH TUI transcript: Export API handed out as the start node, the button, the docs and the CLI flag waiting on it in the next frontier, and the verification node waiting on all three, with the Dependencies list under them](../assets/omh-tui-dag-ulw-plan-block.png)
 
     ![A dag-ulw run in the OMH TUI mid-run: five defined nodes accepted, an extend round hanging under the verification node that found CSV export missing, the CSV node blocked with its repair running beneath it, and the plan holding one item per layer](../assets/omh-tui-dag-ulw-run.png)
 
@@ -285,25 +338,48 @@ title is read from Hermes' records when the graph is drawn. A conversation's
 record that no hook has written for a day is removed, under its lock; the
 lock file stays.
 
-Boxes are drawn for three shapes only, each unambiguous: one bus joining a
-layer to the next (a fan-out or a fan-in), several fan-outs side by side
-under their own parents, and a layer wrapped into rows a trunk feeds. A graph
-with an edge that skips a layer, or two components a single bus would merge,
-is drawn as the tree, which draws no edge at all.
+The boxes draw no edge, so no shape can be drawn wrong: one connector joins
+each frontier to the next whatever its edges, and the edges are exact in
+each box's parents line and in `Dependencies`. Every box of a drawing is one
+width, as wide as its widest node needs and narrowed to put each frontier on
+one row, down to 22 cells (every line is cut to that width with `…`, and
+the category and model line, usually the widest, is the one that shows it); a
+frontier that does not fit one row even then wraps, under the same label.
+Narrower than a 22-cell box, or where the edges loop, the graph is the tree,
+which nests a node under its dispatcher and draws no edge at all. Its
+category column is as wide as the longest category. The cells it needs past
+12 come from room no status needs, then from the model column (down to 8
+cells), then from the title; never from a status, so a status is cut no
+further than it would be with the column at 12. Where a line budget cuts
+the tree, the last node shown under a branch closes it (`└─`), and
+`+N more nodes` sits under the group it cut, or at the root when whole
+groups were cut.
 
-In the OMH TUI the graph is in the theme's colours. Its edges step from violet
-through indigo to blue down the drawing's layers (down its depth in the tree);
-a box's border shows its state: running in the accent, done muted, failed in
-the error colour, not started yet dim. Titles are bold and a `?` is dim. The
-gradient's stops are theme tokens: a palette that names `dag_edge_start`,
-`dag_edge_mid` or `dag_edge_end` replaces them. Every colour is measured
-against the terminal's background like the rest of the TUI's, so a line is
-lighter than a dark background and darker than a light one. The depth follows
-the terminal: 24-bit where `COLORTERM` says `truecolor` or `24bit`, the
-nearest of 256 colours where `TERM` names a 256-colour terminal, the nearest
-of 16 otherwise, and none with `NO_COLOR` or a dumb terminal. Colour is only
-ever escape codes around the same text, so it changes no character and no
-width. `omh hud --graph` paints the same colours where `COLORFGBG` names the
+In the OMH TUI the graph is in the theme's colours. A box's border, title and
+status line take its node's state: running in the blue the edge gradient
+ends at, handed out in its middle step, failed and cancelled in the error
+colour, stuck in the warning colour, done in the terminal's own foreground,
+waiting dim, and the box `/dag` highlights in the violet the gradient starts
+at. The connector between two frontiers is dim, and blue where it leads into
+a frontier with a node running. Every state keeps its glyph and its word, so
+nothing is told by colour alone. The tree's edges step from violet through
+indigo to blue down its depth. The gradient's stops are theme tokens: a
+palette that names `dag_edge_start`, `dag_edge_mid` or `dag_edge_end`
+replaces them, and with them the colours of selected, handed out and running.
+Titles are bold and a `?` is dim. A box's lines and glyphs are marks and
+reach 3:1 against the background; its title and status words take the same
+hue lifted to the 4.5:1 every word in the TUI reaches (`dag_words`), and a
+waiting node's words take `muted`, since words never go on `dim`. Every
+colour is measured against the terminal's background like the rest of the
+TUI's, so a line is lighter than a dark background and darker than a light
+one. The depth follows the terminal:
+24-bit where `COLORTERM` says `truecolor` or `24bit`, the nearest of 256
+colours where `TERM` names a 256-colour terminal, the nearest of 16 otherwise
+(where selected, running and handed out all reach bright blue, and the glyph,
+the word and the `>` say which is which), and none with `NO_COLOR` or a dumb
+terminal. Colour is only ever
+escape codes around the same text, so it changes no character and no width.
+`omh hud --graph` paints the same colours where `COLORFGBG` names the
 terminal's background; a printed command cannot ask the terminal for it as
 the TUI does, so with no name, in a pipe, with `NO_COLOR` and with `--json` it
 prints plain text. A chat post is always plain text.

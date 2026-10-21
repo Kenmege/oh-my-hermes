@@ -120,7 +120,7 @@ class DagPanelSplitTests(unittest.TestCase):
             self.assertEqual(settled["state"], "done", settled)
             lines = panel(home)
             payload = read_omh_hud(home.omh, home.hermes, session_ref=PARENT, status={"runs": []})
-            page = ["".join(span.text for span in line) for line in dag_page_lines(payload, 120, THEME)]
+            page = ["".join(span.text for span in line) for line in dag_page_lines(payload, 120, THEME)[0]]
         dag = [line for line in lines if "export feature" in line]
         self.assertEqual(len(dag), 1, lines)
         self.assertIn("done 3/3", dag[0])

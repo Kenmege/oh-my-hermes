@@ -169,6 +169,7 @@ from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows
 from . import dag_block
 from .panels import HudPoller, HudSnapshot, dag_page_lines, hud_chips, panel_lines, plan_state, plan_text
+from .dag_pager import DagPager
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
 from .screen import CARRIAGE_RETURN, CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion, cursor_up
 from .session_picker import KEYS as SESSION_PICKER_KEYS
@@ -3689,17 +3690,17 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_aside(NoticeBlock("The gateway has written nothing to stderr."))
 
     def _dag(self, arg: str) -> None:
-        """The session's delegation graph as the HUD last read it, whole, with four-line boxes, in the pager."""
-        payload = self.hud.payload if self.hud is not None else None
-        lines = dag_page_lines(payload, self.size[0], self.theme, self.color_depth)
-        graph = payload.get("delegation_graph") if isinstance(payload, Mapping) else None
-        topology = graph.get("dag_topology") if isinstance(graph, Mapping) else None
-        if lines and isinstance(topology, Mapping):  # a dag-ulw run: its critical path and bottlenecks close the page
-            lines = [*lines, (), *dag_block.topology_lines(topology, self.size[0], self.theme)]
-        if lines:
-            self._open_pager("delegation graph", lines)
-        else:  # /dag has no echo: during a turn this waits under what runs
+        """The session's delegation graph as boxes in the pager (`DagPager`), drawn from the HUD's newest read at
+        every frame; it sends nothing anywhere."""
+        if dag_page_lines(self.hud.payload if self.hud is not None else None, self.size[0], self.theme) is None:
+            # /dag has no echo: during a turn this waits under what runs
             self.transcript.add_aside(NoticeBlock("No delegation graph: this session has no recent delegated work."))
+            return
+        self._show_pager(DagPager(
+            "delegation graph", payload=lambda: self.hud.payload if self.hud is not None else None,
+            read_at=lambda: self.hud.received_at if self.hud is not None else None, depth=self.color_depth,
+            clock=self.wall_clock,  # the HUD poller stamps its reads with the wall clock
+        ))
 
     def _copy(self, arg: str) -> None:
         last = next((block for block in reversed(self.transcript.blocks) if isinstance(block, AssistantBlock)), None)

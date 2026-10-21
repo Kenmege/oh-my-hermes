@@ -103,20 +103,25 @@ class BlockTests(unittest.TestCase):
     def test_boxes_where_they_fit_the_tree_where_they_do_not(self) -> None:
         plan, _repaired = self._graphs()
         wide = self._text(dag_block.DagBlock("plan", plan), 140)
-        narrow = self._text(dag_block.DagBlock("plan", plan), 30)
+        narrow = self._text(dag_block.DagBlock("plan", plan), 24)  # under one box's width
         self.assertEqual(wide[0].strip(), "dag-ulw plan")
         self.assertTrue(any("┌" in line for line in wide), wide)
         self.assertFalse(any("┌" in line for line in narrow), narrow)
         self.assertTrue(any("├─" in line or "└─" in line for line in narrow), narrow)
-        self.assertTrue(all(len(line) <= 30 for line in narrow), narrow)
+        self.assertTrue(all(len(line) <= 24 for line in narrow), narrow)
 
     def test_added_nodes_are_marked_and_hang_from_where_they_came_from(self) -> None:
         _plan, repaired = self._graphs()
-        text = self._text(dag_block.DagBlock("repair · +1 node", dag_block.marked(repaired, "export", ["ui-fix"])), 140)
-        self.assertEqual(text[0].strip(), "dag-ulw repair · +1 node")
-        failed = next(index for index, line in enumerate(text) if "Export button" in line)
-        added = next(index for index, line in enumerate(text) if "+ Fix the button" in line)
-        self.assertEqual(added, failed + 1)  # nested under the node it repairs
+        block = dag_block.DagBlock("repair · +1 node", dag_block.marked(repaired, "export", ["ui-fix"]))
+        boxes, tree = self._text(block, 140), self._text(block, 24)
+        self.assertEqual(boxes[0].strip(), "dag-ulw repair · +1 node")
+        # As boxes: the added node's box names where it came from, and Dependencies lists the repair edge.
+        added = next(index for index, line in enumerate(boxes) if "+ Fix the button" in line)
+        self.assertIn("← Export button", boxes[added + 3])
+        self.assertIn("Export button → + Fix the button (repair)", "\n".join(boxes))
+        # As the tree: nested under the node it repairs.
+        failed = next(index for index, line in enumerate(tree) if "Export bu" in line)
+        self.assertTrue(any("+ Fix" in line for line in tree[failed + 1:failed + 4]), tree)
 
 
 def turn_ended() -> Event:
@@ -205,6 +210,7 @@ class PagerTests(unittest.TestCase):
         app.hud = type("Hud", (), {"payload": {"privacy": "metadata_only", "delegation_graph": graph},
                                    "received_at": None})()
         send(app, "/dag")
+        app._render()  # the pager draws the HUD's newest read at each frame
         rows = lines_text(app.pager.lines)
         self.assertTrue(any("┌" in row for row in rows), rows)
         self.assertEqual(rows[-3:], ["", "critical path: Export API → Verify export",
@@ -217,7 +223,9 @@ class PagerTests(unittest.TestCase):
         app.hud = type("Hud", (), {"payload": {"privacy": "metadata_only", "delegation_graph": owner_mock()},
                                    "received_at": None})()
         send(app, "/dag")
+        app._render()
         rows = lines_text(app.pager.lines)
+        self.assertTrue(rows)
         self.assertFalse([row for row in rows if row.startswith(("critical path", "bottlenecks"))], rows)
 
 

@@ -1,4 +1,4 @@
-"""The delegation view in colour: the theme's edge gradient, node borders by state, and the depth it is painted at.
+"""The delegation view in colour: boxes by their node's state, the tree's edge gradient, and the depth they are painted at.
 
 Colour is only ever SGR parameters around the same text, so every test that
 paints compares the painted row, with its escapes taken out, against the
@@ -23,17 +23,17 @@ from _local_package import load_local_package
 load_local_package()
 
 from _cli_harness import run_cli  # noqa: E402
-from _delegation_graphs import nested, owner_mock, parallel  # noqa: E402
+from _delegation_graphs import dag_export_repair_run, dag_export_run, nested, owner_mock, parallel  # noqa: E402
 from _delegation_state import PARENT, dispatched, homes, route, start  # noqa: E402
 from _tui_lines import line_text  # noqa: E402
 from omh.cli import main  # noqa: E402
 from omh.plugin_bundle.omh.delegation_snapshot import messenger_snapshot  # noqa: E402
-from omh.plugin_bundle.omh.delegation_view import cells, render_delegation_view  # noqa: E402
+from omh.plugin_bundle.omh.delegation_view import Focus, cells, render_delegation_view  # noqa: E402
 from omh.skin_pack import SKIN_THEMES, default_theme, hex_to_rgb, skin_colors  # noqa: E402
 from omh.tui import style as style_module  # noqa: E402
 from omh.tui.app import App  # noqa: E402
 from omh.tui.escapes import strip_escapes  # noqa: E402
-from omh.tui.panels import dag_line, dag_style, panel_lines  # noqa: E402
+from omh.tui.panels import dag_line, dag_style, node_style, panel_lines  # noqa: E402
 from omh.tui.screen import paint_line  # noqa: E402
 from omh.tui.style import (  # noqa: E402
     COLOR_16,
@@ -48,6 +48,7 @@ from omh.tui.style import (  # noqa: E402
 )
 from omh.tui.theme import (  # noqa: E402
     BLACK,
+    TEXT_CONTRAST,
     DAG_EDGE_STEPS,
     DAG_EDGE_STOPS,
     EDGE_CONTRAST,
@@ -66,15 +67,19 @@ STATES = ("root", "waiting", "dispatched", "running", "stuck", "done", "failed",
 
 
 def drawings():
-    """(name, view) for every shape: boxes over two and three bands, one band, the tree, ASCII, two-line boxes."""
+    """(name, view) for every shape: boxes in every state and selected, a wrapped frontier, the tree, ASCII,
+    boxes under a line budget."""
+    yield "export", render_delegation_view(dag_export_run(), width=100)
+    yield "export-dag", render_delegation_view(dag_export_run(), width=100, focus=Focus(node="d:r1:verify"))
+    yield "repair", render_delegation_view(dag_export_repair_run(), width=80)
     yield "mock", render_delegation_view(owner_mock(), width=73)
     yield "nested", render_delegation_view(nested(), width=120)
     yield "six", render_delegation_view(parallel(6), width=80)
     yield "tree", render_delegation_view(nested(), width=34)
     yield "wide-tree", render_delegation_view(nested(), width=90, layout="tree")
     yield "ascii", render_delegation_view(owner_mock(), width=73, charset="ascii")
-    yield "compact", render_delegation_view(owner_mock(), width=98, layout="compact")
-    yield "compact-wrapped", render_delegation_view(parallel(8), width=98, layout="compact")
+    yield "budgeted", render_delegation_view(owner_mock(), width=98, max_lines=24)
+    yield "wrapped", render_delegation_view(parallel(8), width=98)
 
 
 def painted(view, theme, depth: str) -> list[str]:
@@ -156,7 +161,6 @@ class GradientTests(unittest.TestCase):
         self.assertEqual([dag_style("edge", theme, level, 3) for level in range(3)], [steps[0], steps[4], steps[8]])
         self.assertEqual([dag_style("edge", theme, level, 2) for level in range(2)], [steps[0], steps[8]])
         self.assertEqual(dag_style("edge", theme, 0, 1), steps[0], "one band is the top of the gradient")
-        self.assertEqual(dag_style("border", theme), steps[0], "the root's box is where the gradient starts")
         self.assertEqual(dag_style("edge", theme, 9, 3), steps[8], "a level past the last is the last")
 
     def test_the_stops_are_theme_tokens_a_palette_can_name(self) -> None:
@@ -167,21 +171,84 @@ class GradientTests(unittest.TestCase):
         self.assertEqual((theme.dag_edges[0].fg, theme.dag_edges[-1].fg), ("#FF00FF", "#00FFFF"))
         self.assertEqual(theme.dag_edges[4].fg, DAG_EDGE_STOPS["dag_edge_mid"], "a stop it does not name stays")
 
-    def test_borders_follow_the_state(self) -> None:
-        theme = build_theme(default_theme(), "#1E1E1E")
-        expected = {
-            "running": theme.accent, "done": theme.muted, "failed": theme.error, "waiting": theme.dim,
-            "dispatched": theme.dim, "unknown": theme.dim, "stuck": theme.warn, "interrupted": theme.warn,
-        }
-        for state, style in expected.items():
-            with self.subTest(state=state):
-                self.assertEqual(dag_style(f"border:{state}", theme), style)
+    def test_a_box_takes_its_nodes_state_colour_from_the_theme(self) -> None:
+        for background in (None, "#1E1E1E", "#FFFFFF"):
+            theme = build_theme(default_theme(), background)
+            middle = DAG_EDGE_STEPS // 2
+            self.assertEqual(theme.dag_edges[middle].fg, DAG_EDGE_STOPS["dag_edge_mid"], "handed out is the middle stop")
+            marks = {
+                "selected": theme.dag_edges[0], "running": theme.dag_edges[-1], "dispatched": theme.dag_edges[middle],
+                "failed": theme.error, "interrupted": theme.error, "stuck": theme.warn, "done": theme.text,
+                "waiting": theme.dim, "unknown": theme.dim,
+            }
+            words = {
+                **marks, "selected": theme.dag_words[0], "running": theme.dag_words[-1],
+                "dispatched": theme.dag_words[middle], "waiting": theme.muted, "unknown": theme.muted,
+            }
+            for state in marks:
+                with self.subTest(background=background, state=state):
+                    self.assertEqual(dag_style(f"node:{state}", theme), marks[state], "a border or a glyph")
+                    self.assertEqual(node_style(state, theme), marks[state])
+                    self.assertEqual(dag_style(f"node-word:{state}", theme), words[state], "a status word")
+                    self.assertEqual(dag_style(f"node-title:{state}", theme), Style(**{**vars(words[state]), "bold": True}))
+            self.assertIsNone(dag_style("node:done", theme).fg, "done is the terminal's own foreground, light or dark")
+            self.assertEqual((dag_style("connector", theme), dag_style("connector:running", theme)),
+                             (theme.dim, theme.dag_edges[-1]))
         self.assertTrue(dag_style("title", theme).bold)
         self.assertEqual(dag_style("unknown", theme), theme.dim)
         self.assertEqual((dag_style("category", theme), dag_style("model", theme)), (theme.label, theme.hint))
 
+    def test_a_boxs_words_read_at_text_contrast_and_its_lines_at_mark_contrast(self) -> None:
+        """The owner's coloured lines stay at the 3:1 a mark needs; the title and status words in the same hue
+        reach the 4.5:1 every word in the TUI does (`TEXT_ROLES`), on every palette, light or dark."""
+        states = ("selected", "running", "dispatched", "failed", "interrupted", "stuck", "waiting", "unknown")
+        for skin in SKIN_THEMES:
+            for background in (*DARK, *LIGHT, None):
+                theme = build_theme(skin, background)
+                surface = surface_for(skin, background)
+                for state in states:
+                    with self.subTest(skin=skin.short_name, background=background, state=state):
+                        for role in (f"node-word:{state}", f"node-title:{state}"):
+                            self.assertGreaterEqual(contrast_ratio(dag_style(role, theme).fg, surface), TEXT_CONTRAST)
+                        self.assertGreaterEqual(contrast_ratio(dag_style(f"node:{state}", theme).fg, surface),
+                                                EDGE_CONTRAST - 0.01)
+        # The default palette, measured: (word, mark) against its dark stand-in and against white.
+        expected = {
+            None: {"running": (4.78, 4.48), "dispatched": (4.67, 3.69), "selected": (4.51, 3.89), "waiting": (4.56, 3.5)},
+            "#FFFFFF": {"running": (4.9, 3.68), "dispatched": (4.86, 4.47), "selected": (4.63, 4.23),
+                        "waiting": (4.71, 4.71)},
+        }
+        for background, ratios in expected.items():
+            theme = build_theme(default_theme(), background)
+            surface = surface_for(default_theme(), background)
+            for state, (word, mark) in ratios.items():
+                with self.subTest(background=background, state=state):
+                    self.assertEqual((round(contrast_ratio(dag_style(f"node-word:{state}", theme).fg, surface), 2),
+                                      round(contrast_ratio(dag_style(f"node:{state}", theme).fg, surface), 2)),
+                                     (word, mark))
+
+    def test_each_depth_downgrades_a_state_colour_to_its_own_parameters(self) -> None:
+        theme = build_theme(default_theme(), "#1E1E1E")
+        expected = {
+            "running": ("\x1b[38;2;59;130;246m", "\x1b[38;5;69m", "\x1b[94m", ""),
+            "selected": ("\x1b[38;2;139;92;246m", "\x1b[38;5;99m", "\x1b[94m", ""),
+            "dispatched": ("\x1b[38;2;99;102;241m", "\x1b[38;5;63m", "\x1b[94m", ""),
+            "failed": ("\x1b[38;2;239;83;80m", "\x1b[38;5;203m", "\x1b[91m", ""),
+            "waiting": ("\x1b[38;2;62;124;138m", "\x1b[38;5;66m", "\x1b[90m", ""),
+            "done": ("", "", "", ""),
+        }
+        for state, sequences in expected.items():
+            with self.subTest(state=state):
+                self.assertEqual(tuple(dag_style(f"node:{state}", theme, depth=depth).sgr()
+                                       for depth in (TRUECOLOR, COLOR_256, COLOR_16, NO_COLOR)), sequences)
+        # At 16 colours selected and running both reach bright blue: the `>` before the title still says which.
+        selected = render_delegation_view(dag_export_run(), width=100, focus=Focus(node="d:r1:button"))
+        self.assertIn("[-] > Export button", selected.text())
+
     def test_no_line_is_ever_dark_on_a_dark_background_or_light_on_a_light_one(self) -> None:
-        roles = ["edge", "border", *(f"border:{state}" for state in STATES)]
+        # Done is the terminal's own foreground, which no palette can set too dark or too light: it is not measured.
+        roles = ["edge", "connector", "connector:running", "node:selected",
+                 *(f"node:{state}" for state in STATES if state != "done")]
         for skin in SKIN_THEMES:
             for background in (*DARK, *LIGHT, None):
                 theme = build_theme(skin, background)

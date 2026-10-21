@@ -63,6 +63,20 @@ class PagerFrameTests(unittest.TestCase):
                 with self.subTest(trial=trial, step=_step):
                     self.assertEqual(screen.lines(), fresh_screen(pager, 24, 8))
 
+    def test_a_one_row_screen_shows_the_footer_as_it_always_did(self) -> None:
+        """The footer hook (`Pager.footer`, for `/dag`'s two rows) changes no other pager: on a screen of one row
+        the footer is painted over the page's only row, last."""
+        pager = Pager("title", [(Span("body row"),), (Span("second"),)])
+        screen = VTScreen(1, 80)
+        screen.feed(pager.frame(80, 1, THEME))
+        self.assertTrue(screen.line(0).startswith(" title · 1-1/2 · j/k line"), screen.line(0))
+        for height in (2, 5, 24):
+            screen = VTScreen(height, 80)
+            screen.feed(Pager("title", [(Span("body row"),)]).frame(80, height, THEME))
+            with self.subTest(rows=height):
+                self.assertEqual(screen.line(0).rstrip(), "body row")
+                self.assertTrue(screen.line(height - 1).startswith(" title · 1-1/1 · j/k line"))
+
 
 def key(char: str) -> Key:
     return Key(CHAR, char=char)
