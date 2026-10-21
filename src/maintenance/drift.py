@@ -713,7 +713,13 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # two polite questions that weigh dag ulw against another way (2,
             # main clarified); and "show me how to split" work (1, main
             # dispatched dag-ulw).
-            expected=886,
+            # The delta review adds seven: Korean cancels said as 취소해줘요,
+            # 정지해줘 and 지금 바로 취소 (3; main started a run on the first
+            # two and cancelled the third); a cancel request said as a noun
+            # and an order cancel with only 요 after it, which ask (2, main
+            # started a run on both); a split weighed against overkill and a
+            # request to stop using dag ulw (2, main dispatched dag-ulw).
+            expected=893,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1054,7 +1060,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # on main too: broken tests in two Korean modules fixed 병렬로
             # 각각, a split proposed as "can we ...?", a Korean split asked
             # with 해줄 수 있어?, and a split beside a README paragraph fix (4).
-            expected=930,
+            # The delta review adds two: a Korean cache that breaks when two
+            # named modules process at once, which stays one ultrawork fix (1,
+            # main dispatched dag-ulw); and a polite request naming two targets
+            # with "or", which starts a run (1, main clarified).
+            expected=932,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

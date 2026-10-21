@@ -23,18 +23,23 @@ All notable changes will be documented here.
   services is too high`) and a split whose object is one paragraph or
   sentence (`split the paragraph into parallel parts for the translation`)
   no longer start a run or hint "Start at once" either.
-  A Korean stop noun after words that may name the work (`dag ulw 주문
-  취소`, `dag ulw 업로드 중단`) no longer cancels the run in progress, and a
-  verb-form cancel after more than three words no longer starts one. Both
-  start nothing: the router clarifies and the hint asks one question naming
-  both readings (owner decision O7). These cancel; the polite and casual
-  endings and `그만 돌려` started a run on main, and `can you stop dag ulw`
+  A Korean stop word after the name no longer starts a run unless a work
+  noun or verb follows it (`… 취소 기능 구현해줘`, `… 취소 시 환불되게
+  해줘`). With none, a stop noun after words that may name the work
+  (`dag ulw 주문 취소`, `dag ulw 주문 취소요`, `dag ulw 취소 요청`, or a
+  verb-form cancel after more than three words) neither cancels the run in
+  progress nor starts one: the router clarifies and the hint asks one
+  question naming both readings (owner decision O7). These cancel. On main
+  the polite endings, `그만 돌려`, `멈춰라`, `취소요`, `정지`, `스톱` and `꺼줘`
+  started a run, `취소해줄 수 있어?` was answered, and `can you stop dag ulw`
   clarified:
-  - a verb ending, plain or polite (`주문 취소해줘`, `취소하세요`,
-    `취소 부탁해`, `취소 좀 해줘`, `그만 돌려`);
-  - the bare noun or a stop adverb (`취소`, `바로 취소`, `즉시 중단`);
+  - a verb ending, plain or polite, after up to three words (`주문
+    취소해줘`, `취소해줘요`, `취소하세요`, `취소 부탁해`, `취소해줄 수
+    있어?`, `그만 돌려`, `멈춰라`);
+  - the bare stop word, with a bare `요`, `좀` or `ㄱ` or after stop adverbs
+    (`취소`, `취소요`, `정지`, `스톱`, `꺼줘`, `지금 바로 취소`);
   - a word for the run, with or without a modifier (`작업 취소`,
-    `진행 중인 작업 취소`, `아까 그거 취소`);
+    `진행 중인 작업 취소`, `그것도 취소`);
   - an English stop after `can you` (`can you stop dag ulw`).
 
   `dag ulw 주문 취소 기능 구현해줘` still runs.

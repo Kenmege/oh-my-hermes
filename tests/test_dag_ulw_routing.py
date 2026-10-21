@@ -45,6 +45,8 @@ INVOKES = (
     "can you dag ulw the migration?",
     "could you please dag ulw the billing refactor",
     "could you run dag ulw on the billing refactor?",
+    # An `or` between two targets weighs nothing.
+    "can you dag ulw the auth or billing refactor?",
 )
 DOES_NOT_INVOKE = (
     "don't use dag ulw for this, just fix the typo",
@@ -75,6 +77,9 @@ DOES_NOT_INVOKE = (
     "would you dag ulw this or not?",
     "can you dag ulw the migration? or is that overkill",
     "would you dag ulw it, if you were me?",
+    "can you dag ulw the migration 아니면 그냥 ultrawork로 할까?",
+    # Asking to stop using it declines it.
+    "can you stop using dag ulw for small fixes?",
     "ulw dagger",
     "ulw로 다 고쳐줘",
     "ultrawork the auth refactor",
@@ -140,6 +145,14 @@ class RouterTests(unittest.TestCase):
                         "show me how to split the work into parallel lanes", "is it possible to split the work into parallel lanes",
                         # Only the question mark says it: a question, not a request put as one.
                         "should we split the api, ui and docs work into parallel lanes?",
+                        "i'd like to know how to split the work into parallel lanes",
+                        "why not just explain how to split the work into parallel lanes",
+                        # Talking it over, or a split weighed against another way.
+                        "can we talk about how to split the work into parallel lanes?",
+                        "could we split the work into parallel lanes, or is it overkill?",
+                        # A condition clause, not a request, after the concurrency word.
+                        "api 모듈과 ui 모듈이 동시에 처리해서 캐시가 깨져, 고쳐줘",
+                        "api 모듈과 ui 모듈이 동시에 진행해서 데드락이 걸려 고쳐줘",
                         # Ultrawork named anywhere stays ultrawork's.
                         "fix the auth and billing modules in parallel with ulw"):
             with self.subTest(message=message):
@@ -163,7 +176,10 @@ class RouterTests(unittest.TestCase):
                         # A paragraph or sentence that is not what the split's object is.
                         "split the api, ui and docs work into parallel lanes and fix the paragraph in the README",
                         "split the paragraph parser and the sentence splitter work into parallel lanes",
-                        "api, ui, docs 작업을 병렬로 나눠서 구현하고 README 한 문단 추가해줘"):
+                        "api, ui, docs 작업을 병렬로 나눠서 구현하고 README 한 문단 추가해줘",
+                        "what i want is to split the api, ui and docs work into parallel lanes",
+                        "그냥 병렬로 나눠서 하지 뭐", "api, ui, docs 작업을 병렬로 나눠서 진행해주고 다 됐는지 알려줘",
+                        "api, ui, docs 작업을 병렬로 나눠서 구현하면 어때?"):
             with self.subTest(message=message):
                 # Fixes said to run in parallel, a split asked for after a remark, a polite request, and many paragraphs.
                 self.assertTrue(big_work_for_dag_ulw(message))
@@ -177,13 +193,19 @@ class RouterTests(unittest.TestCase):
         for message in ("dag ulw는 뭐야?", "dag ulw 설명해줘", "how does dag-ulw handle repairs?", "tell me about dag-ulw",
                         "dag ulw 결과 알려줘", "dag ulw 쓰면 비용이 얼마나 나와?", "dag ulw 문서 보여줘", "dag ulw 어떻게 써?",
                         "dag ulw is broken, it never settles the verify node", "can you explain dag ulw?",
-                        "can you dag ulw this or should I just fix it myself?", "would you dag ulw it, if you were me?"):
+                        "can you dag ulw this or should I just fix it myself?", "would you dag ulw it, if you were me?",
+                        "can you dag ulw the migration 아니면 그냥 ultrawork로 할까?"):
             with self.subTest(message=message):
                 self.assertTrue(asks_about_dag_ulw(message))
                 route = route_chat_message(message, source="discord")
                 self.assertEqual((route["action"], route["selected_skill"]), ("fallback", "oh-my-hermes"))
                 self.assertFalse([hint for hint in awareness_route_hint(message)["hints"]
                                   if hint.get("workflow") == "dag-ulw"])
+        for message in ("dag ulw는 취소 어떻게 해?", "dag ulw 취소할 수 있어?"):
+            with self.subTest(message=message):
+                # Asking how to cancel, or whether one can, is a question about the skill, not a stop.
+                self.assertEqual(dag_ulw_control(message), "")
+                self.assertEqual(route_chat_message(message, source="discord")["action"], "fallback")
         self.assertFalse(asks_about_dag_ulw("dag ulw add the export API and its docs"))
         self.assertFalse(asks_about_dag_ulw("can you dag ulw the migration?"))
 
@@ -232,7 +254,14 @@ class RouterTests(unittest.TestCase):
                   # A modified word for the run, or a stop adverb.
                   "dag ulw 진행 중인 작업 취소", "dag ulw 현재 작업 취소", "dag ulw 이번 실행 취소", "dag ulw 방금 거 취소",
                   "dag ulw 아까 그거 취소", "dag ulw 모든 작업 취소", "dag ulw 전체 취소", "dag ulw 바로 취소", "dag ulw 즉시 중단",
-                  "dag ulw 지금 진행 중인 작업 바로 취소해줘",
+                  "dag ulw 지금 진행 중인 작업 바로 취소해줘", "dag ulw 지금 바로 취소", "dag ulw 그것도 취소",
+                  "dag ulw 이전 거 취소", "dag ulw 취소요",
+                  # The commonest polite ending and other plain stops, and stop words beyond 취소/중지/중단.
+                  "dag ulw 취소해줘요", "dag ulw 중단해줘요", "dag ulw 멈춰줘요", "dag ulw 그만해줘요", "dag ulw 작업 취소해줘요",
+                  "dag ulw 주문 취소해줘요", "dag ulw 취소시켜줘요", "dag ulw 취소해줄래요", "dag ulw 그만둬요", "dag ulw 그만 돌리자",
+                  "dag ulw 멈춰라", "dag ulw 취소해봐", "dag ulw 취소 ㄱㄱ", "dag ulw 취소하고 싶어", "dag ulw 취소해야 해",
+                  "dag ulw 정지해줘", "dag ulw 종료해줘", "dag ulw 스톱", "dag ulw 꺼줘", "dag ulw 취소해줄 수 있어?",
+                  "dag ulw 취소해 주시겠어요?", "dag ulw 취소해주실래요",
                   # A polite opener or a trailing please before an English stop word.
                   "can you stop dag ulw", "could you cancel the dag ulw run", "can you please cancel dag ulw?",
                   "would you stop the dag ulw run now", "stop dag ulw please")
@@ -251,7 +280,12 @@ class RouterTests(unittest.TestCase):
         # Work that names a cancel button, a status page or a log-in is still work.
         for message in ("dag ulw add a cancel button to the checkout", "dag ulw build the status page",
                         "dag ulw stop words in the search index", "dag ulw 결제 취소 기능 구현해줘",
-                        "dag ulw 상태 관리 모듈 리팩터링해줘", "dag ulw 로그인 기능 구현해줘", "dag ulw 주문 취소 기능 구현해줘"):
+                        "dag ulw 상태 관리 모듈 리팩터링해줘", "dag ulw 로그인 기능 구현해줘", "dag ulw 주문 취소 기능 구현해줘",
+                        # A work noun or verb after the stop word, or a clause that makes it a condition of the work.
+                        "dag ulw 주문 취소 로직 좀 정리해줘요", "dag ulw 결제 취소 플로우 리팩터링 ㄱ",
+                        "dag ulw 주문 취소 시 환불되게 해줘", "dag ulw 종료 조건 정리해줘",
+                        # 그만큼 ("that much") holds no stop word.
+                        "dag ulw 그만큼 빠르게 해줘"):
             with self.subTest(message=message):
                 self.assertTrue(invokes_dag_ulw(message))
                 self.assertEqual(route_chat_message(message, source="discord")["selected_skill"], "dag-ulw")
@@ -262,7 +296,10 @@ class RouterTests(unittest.TestCase):
         for message in ("dag ulw 주문 취소", "dag ulw 결제 취소", "dag ulw 예약 취소", "dag ulw 구독 취소",
                         "dag ulw 장바구니 주문 취소", "dag ulw 업로드 중단", "dag ulw 주문취소", "dag ulw 주문을 취소",
                         # Past three words a verb ending asks too: the words may still name the work.
-                        "dag ulw 지금 돌리는 결제 모듈 작업 취소해줘", "dag ulw 아까 내가 시작한 결제 작업 좀 취소해줘"):
+                        "dag ulw 지금 돌리는 결제 모듈 작업 취소해줘", "dag ulw 아까 내가 시작한 결제 작업 좀 취소해줘",
+                        # After other words a bare 요, 좀 or ㄱ is no verb; and any other stop with no work after it.
+                        "dag ulw 주문 취소요", "dag ulw 결제 취소 좀", "dag ulw 주문 취소 ㄱ", "dag ulw 취소 요청",
+                        "dag ulw 취소 바람", "dag ulw로 취소해줘", "dag ulw 이 주문 취소", "dag ulw 결과 취소"):
             with self.subTest(message=message):
                 self.assertEqual(dag_ulw_control(message), "cancel_or_run")
                 self.assertFalse(invokes_dag_ulw(message))
