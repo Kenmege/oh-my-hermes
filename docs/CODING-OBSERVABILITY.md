@@ -79,23 +79,22 @@ knows its reader's language can pass it today.
 
 ## The delegation graph
 
-What the delegated work of one conversation looks like as a graph: who
-started whom, and, for parts with recorded dependencies, what waits on what.
-The look follows oh-my-openagent's DAG view. A header names the task count,
-the run and its state; then the nodes stand in frontiers, a node's frontier
-being the longest path of recorded edges that leads to it. Each node is a
-box of four lines: its title, its category and model with effort, its status
-with its glyph and duration, and its parents (`← Export API`) or `Start node`.
-The nodes of one frontier sit side by side over a `· Same frontier` label,
-and one connector joins a frontier to the next. Under the boxes,
-`Dependencies` lists every edge between two nodes, its kind named unless it
-is a `depends_on`, and `Node details` gives a card to each running or stuck
-node, and in `/dag` to the highlighted one: its whole title, category and
-model, status, group and session. Main, the
-parent session, is no box: the nodes it dispatched read `Start node`, and its
-model is on the header's second line. A node added mid-run carries `↻ ` (a
-repair) or `+ ` (an extend) before its title. A dag run of five nodes, at
-100 columns, as `omh hud --graph` prints it, and as a dark terminal paints it:
+What the delegated work of one conversation looks like as a graph: who started
+whom, and, for parts with recorded dependencies, what waits on what. A header
+names the task count, the run and its state; then the nodes stand in
+frontiers, a node's frontier being the longest path of recorded edges that
+leads to it. Each node is a box of four lines: its title, its category and
+model with effort, its status with its glyph and duration, and its parents
+(`← Export API`) or `Start node`. The nodes of one frontier sit side by side
+over a `· Same frontier` label, and one connector joins a frontier to the
+next. Under the boxes, `Dependencies` lists every edge between two nodes, its
+kind named unless it is a `depends_on`, and `Node details` gives a card to
+each running or stuck node, and in `/dag` to the highlighted one: its whole
+title, category and model, status, group and session. Main, the parent
+session, is no box: the nodes it dispatched read `Start node`, and its model
+is on the header's second line. A node added mid-run carries `↻ ` (a repair)
+or `+ ` (an extend) before its title. A dag run of five nodes, at 100 columns,
+as `omh hud --graph` prints it, and as a dark terminal paints it:
 
 ![The dag run's boxes in a dark terminal, coloured by state](../assets/omh-dag-box-view.png)
 

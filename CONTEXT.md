@@ -337,7 +337,7 @@ _Avoid_: a second write path, a subprocess from the plugin into the CLI
 
 **Delegation view**:
 A conversation's delegated work drawn as a graph (`delegation_graph/v1`:
-nodes, edges, layers), in oh-my-openagent's look: frontiers of boxes (title,
+nodes, edges, layers): frontiers of boxes (title,
 category and model, status, parents), one connector per frontier gap, the
 recorded edges listed exactly under `Dependencies`, and a `Node details` card
 per running or stuck node and for `/dag`'s highlighted one; or a compact tree

@@ -4,8 +4,8 @@ All notable changes will be documented here.
 
 ## Unreleased
 
-- **The delegation graph's boxes follow oh-my-openagent's DAG view, and `/dag`
-  is interactive.** The boxes stand in frontiers (a node's longest path of
+- **The delegation graph is drawn as frontiers of boxes, and `/dag` is
+  interactive.** The boxes stand in frontiers (a node's longest path of
   recorded edges), side by side over a `· Same frontier` label, with one
   connector from each frontier to the next; each box holds the title, the
   category and model, the status and the parents (`← Export API`, or `Start

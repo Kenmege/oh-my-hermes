@@ -5,7 +5,7 @@ lines with its own styles (every piece of text carries a role), and `omh hud
 --graph` joins them as text. A chat reply never carries this drawing
 (`delegation_snapshot.py` writes its own short text).
 
-The boxes follow oh-my-openagent's DAG view. A header names the task count,
+The boxes stand in frontiers under a header that names the task count,
 the run and its state (``Running · Done 1/5``). Every node but the root is a
 box of four lines: its title, its category and model, its status with its
 glyph and duration, and its parents (``← Export API``) or ``Start node``. The
