@@ -905,6 +905,43 @@ class BoxTokenRoomTests(unittest.TestCase):
             with self.subTest(elapsed=elapsed):
                 self.assertEqual(box_lines(render_delegation_view(counted, width=100))["l0"][2], line)
 
+    def test_the_ascii_room_holds_its_longer_count_mark(self) -> None:
+        # ASCII writes `out ` where Unicode writes `↓`: its room is measured in its own charset, three cells wider.
+        counted = bound(parallel(2), 45_600)
+        for node in counted["nodes"][1:]:
+            node["elapsed_seconds"] = 3599
+        view = render_delegation_view(counted, width=100, charset="ascii")
+        self.assertEqual({len(edge) - 4 for edge in re.findall(r"\+-+\+", view.text())}, {30})
+        self.assertIn("| * Running 59m 59s - out 45.6k  |", view.text())
+
+    def test_a_layout_decided_before_a_count_is_not_replayed_after_it(self) -> None:
+        # The kept layout decision is keyed on whether any lane carries a count, which changes the boxes' widths:
+        # under a line budget a graph reached through a warm cache draws exactly as it does cold, either way round.
+        from omh.plugin_bundle.omh import delegation_view
+
+        cases = [(owner_mock, 62, 30), (lambda: parallel(3), 62, 20), (lambda: parallel(5), 62, 30),
+                 (export_run, 62, 45)]
+        for make, width, budget in cases:
+            plain, counted = make(), make()
+            for payload in (plain, counted):
+                for node in payload["nodes"][1:]:
+                    node["elapsed_seconds"] = 724
+            for node in counted["nodes"][1:]:
+                if node.get("state") in ("running", "stuck", "done", "failed", "interrupted"):
+                    node["output_tokens"] = 45_600
+            options = {"width": width, "max_lines": budget}
+            cold = {}
+            for name, payload in (("plain", plain), ("counted", counted)):
+                delegation_view._DECISIONS.clear()
+                cold[name] = render_delegation_view(payload, **options).text()
+            for first, then in (("plain", "counted"), ("counted", "plain")):
+                delegation_view._DECISIONS.clear()
+                render_delegation_view(plain if first == "plain" else counted, **options)
+                warm = render_delegation_view(plain if then == "plain" else counted, **options).text()
+                with self.subTest(graph=make().get("name"), width=width, budget=budget, order=f"{first} then {then}"):
+                    self.assertEqual(warm, cold[then])
+        delegation_view._DECISIONS.clear()
+
     def test_three_boxes_still_share_a_row_at_100_columns(self) -> None:
         counted = with_tokens(dag_export_run(), {"d:r1:button": 1234, "d:r1:docs": 900, "d:r1:cli": 800})
         for payload in (dag_export_run(), counted):

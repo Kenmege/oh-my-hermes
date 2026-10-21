@@ -56,7 +56,7 @@ redraw of the same graph with new durations lays it out once (`_DECISIONS`).
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Final
@@ -321,6 +321,11 @@ def _tokens_text(node: Mapping[str, Any], charset: Charset) -> str:
     if not isinstance(count, int) or isinstance(count, bool) or not 0 < count < TOKEN_LIMIT:
         return ""
     return f"{charset.written}{compact_count(count)}"
+
+
+def _any_count(nodes: Iterable[Mapping[str, Any]]) -> bool:
+    """Whether any of ``nodes`` carries a count a drawing would show; boxes make room for one only then."""
+    return any(_tokens_text(node, UNICODE) for node in nodes)
 
 
 def _tokens_room(charset: Charset) -> int:
@@ -837,7 +842,7 @@ def _box_view(
     shape = _frontiers(graph)
     if shape is None:
         return None
-    counted = any(_tokens_text(node, charset) for node in shape.lanes.values())
+    counted = _any_count(shape.lanes.values())
     natural = max(_box_natural(node_id, shape, charset, focus, counted) for node_id in shape.lanes)
     one_row = [(width - (len(row) - 1) * GAP) // len(row) - 4 for row in shape.rows]
     inner = min([max(natural, BOX_INNER_MIN), BOX_INNER_MAX, width - 4,
@@ -1196,7 +1201,10 @@ def render_delegation_view(
     if not isinstance(graph, Mapping) or not _nodes(graph):
         return View((), "header")
     header = _header_lines(graph, safe_width, chosen)
-    key = (_structure(graph), safe_width, max_lines, max_chars, chosen.name, layout, spinner, focus)
+    # Whether any lane carries a count is part of the key: it changes the boxes' widths (`_box_natural`), so a
+    # decision made for a graph before its first count must not be replayed for it after, nor the other way round.
+    counted = _any_count(_nodes(graph))
+    key = (_structure(graph), counted, safe_width, max_lines, max_chars, chosen.name, layout, spinner, focus)
 
     def fits(lines: Sequence[tuple[Segment, ...]]) -> bool:
         if max_lines is not None and len(lines) > max_lines:
