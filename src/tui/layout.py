@@ -21,7 +21,10 @@ follows the content and the composer moves with what is above and below it.
 The app passes the region's height as `min_height` once the region's last row
 is the screen's last row: content that shrinks there becomes pad rows at the
 top of the region, so the composer never moves up (it moves down as the agent
-view under it shrinks), and the next flushed lines cover the pad rows.
+view under it shrinks), and the next flushed lines cover the pad rows. There
+the app gives the agent view a row that comes free (the working row's, once a
+turn ends) only when the view wants more rows than it did
+(`agent_view.AgentViewMixin._held_view_rows`).
 
 - The region is never taller than `rows - 1`. `LiveRegion` moves only
   relative to its own top and cursor-up stops at the top of the screen, so a
