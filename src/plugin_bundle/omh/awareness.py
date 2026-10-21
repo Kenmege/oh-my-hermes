@@ -7716,6 +7716,10 @@ def _direct_workflow_invocation_hint(
 ) -> dict[str, object]:
     mentioned = [str(item) for item in getattr(intent, "mentioned_workflows", ()) if str(item)]
     direct_prefix_workflow = _direct_workflow_prefix(routing_normalized)
+    # The generic intent reader can withhold mentions on source-reference
+    # vocabulary. Domain admission still proves a requested production owner.
+    if not direct_prefix_workflow and show_reel_request_admitted(message):
+        direct_prefix_workflow = "show-reel"
     if not mentioned and not direct_prefix_workflow:
         return {}
     structural = {str(item) for item in getattr(intent, "structural_cues", ())}
@@ -7738,7 +7742,7 @@ def _direct_workflow_invocation_hint(
         "workflow": workflow,
         "lane": lane,
         "next_action": next_action,
-        "reason": "The user explicitly invoked an OMH workflow, so the hint should not be overridden by broad content keywords.",
+        "reason": "The user requested this OMH workflow; admitted production is not overridden by source vocabulary.",
         "fallback_action": "run_the_named_workflow_or_show_picker_if_unavailable",
         "matched_cues": ["direct workflow invocation"],
         "adjacent_workflows": [],

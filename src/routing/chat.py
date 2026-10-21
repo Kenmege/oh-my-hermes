@@ -55,6 +55,7 @@ from ..plugin_bundle.omh.hermes_session_commands import (
     person_request_text,
     typed_loop_sets_goal,
 )
+from ..plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
 from ..plugin_bundle.omh.route_question_mode import ROUTE_QUESTION_MODE_OFF, route_question_mode_fields
 from ..plugin_bundle.omh.spend_signals import SPEND_GATE_PHRASES, spend_request_clause
 from .intent import classify_workflow_intent, scrub_diagnostic_status_text
@@ -3175,11 +3176,18 @@ def _explicit_skill_fast_path_decision(
 ) -> ChatRouteDecision | None:
     definitions = routable_definitions()
     selected_skill = explicit_skill_invocation(routing_message, definitions, query)
+    explicit = selected_skill is not None
+    # An admitted action/object owns production; source vocabulary is not a
+    # competing request to inspect media or learn from workflow logs. Never
+    # displace an explicitly selected sibling owner.
+    if selected_skill is None and show_reel_request_admitted(routing_message):
+        selected_skill = "show-reel"
     if not selected_skill or selected_skill == _ROUTER_SKILL:
         return None
     if selected_skill == "meta-router" and _meta_router_remainder_is_catalog_question(routing_message):
         return None
-    if not _has_explicit_invocation_prefix(routing_message) and is_missed_route_feedback(routing_message):
+    admitted_production = selected_skill == "show-reel" and show_reel_request_admitted(routing_message)
+    if not admitted_production and not _has_explicit_invocation_prefix(routing_message) and is_missed_route_feedback(routing_message):
         return None
     # Same shape, same reason, for an approval that happens to open with the
     # skill's own name (#1638). `plan is fine, ship it` reaches leading-position
@@ -3192,7 +3200,7 @@ def _explicit_skill_fast_path_decision(
     ):
         return None
     task_card = classify_task(routing_message)
-    if _task_card_overrides_explicit_invocation(
+    if not admitted_production and _task_card_overrides_explicit_invocation(
         task_card,
         explicit_prefix=_has_explicit_invocation_prefix(routing_message),
     ):
@@ -3200,11 +3208,14 @@ def _explicit_skill_fast_path_decision(
 
     definition = _skill_definition_by_name(selected_skill)
     selected_harness = primary_harness_for_skill(selected_skill)
-    reason = "Explicit workflow invocation wins over heuristic routing."
+    reason = (
+        "Explicit workflow invocation wins over heuristic routing." if explicit
+        else "Affirmative motion-production operation/object wins over vocabulary in supplied source material."
+    )
     recommendation = recommendation_for_definition(
         definition,
         message,
-        matched=("explicit_invocation", f"name:{selected_skill}"),
+        matched=("explicit_invocation" if explicit else "direct:show_reel_phrase", f"name:{selected_skill}"),
         score=12,
         why=reason,
     )
@@ -3225,7 +3236,7 @@ def _explicit_skill_fast_path_decision(
         confidence="high",
         score=12,
         threshold=min_confidence,
-        explicit=True,
+        explicit=explicit,
         ambiguous=False,
         reason=reason,
         clarification="",
@@ -3474,6 +3485,12 @@ def _specific_capability_fast_path_result(
     why: str,
     catalog_question: bool,
 ) -> _CatalogFastPathResult:
+    # Exact IDs and aliases are discovery evidence, not production admission.
+    # The wrapper prepares the selected workflow's card, so rejecting only in
+    # the scorer leaves this route capable of preparing an unrequested film.
+    if skill == "show-reel" and not show_reel_request_admitted(message):
+        skill = _ROUTER_SKILL
+        why = "Show-reel capability information requested; offer workflow discovery without preparing production."
     definition = _skill_definition_by_name(skill)
     matched = _specific_capability_fast_path_markers(skill, matched)
     recommendation = recommendation_for_definition(

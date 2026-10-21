@@ -2427,8 +2427,9 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                     decision = route_chat_message(f"what can OMH do for {phrase}?", source="discord")
 
                     self.assertEqual(decision["action"], "dispatch")
-                    self.assertEqual(decision["selected_skill"], skill)
-                    self.assertEqual(decision["selected_harness"], primary_harness_for_skill(skill))
+                    expected = "oh-my-hermes" if skill == "show-reel" else skill
+                    self.assertEqual(decision["selected_skill"], expected)
+                    self.assertEqual(decision["selected_harness"], primary_harness_for_skill(expected))
 
     def test_exact_skill_id_capability_questions_use_fast_path_without_full_scoring(self) -> None:
         chat_router_impl._route_chat_message_cached.cache_clear()

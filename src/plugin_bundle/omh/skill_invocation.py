@@ -54,7 +54,16 @@ def marker_candidates(words, names, aliases=None):
     return candidates
 
 
-_EN_COMMAND_ADJUNCTS = frozenset({"please", "pls", "plz", "kindly", "now", "again", "once", "twice", "immediately"})
+# Functional operators compose at the command edge. Do not infer adverbhood
+# from an arbitrary -ly suffix: family/reply/assembly and unknown nouns remain
+# nominal, even when a later preposition or courtesy would make them tempting.
+_EN_COMMAND_ADJUNCTS = frozenset({
+    "please", "pls", "plz", "kindly", "now", "again", "once", "twice",
+    "immediately", "today", "tomorrow", "tonight", "later", "soon", "then",
+    "first", "next", "finally", "only", "just", "also", "even", "still",
+    "quietly", "silently", "carefully", "slowly", "quickly", "deliberately",
+    "automatically", "manually", "locally", "separately", "together",
+})
 _EN_DIAGNOSTIC_OPTIONS = frozenset({"-h", "--help", "--version"})
 
 
@@ -77,7 +86,7 @@ def _english_command_arguments(words):
     head = words[0]
     if head in _EN_DIAGNOSTIC_OPTIONS:
         return False
-    if head in {"with", "from", "using", "to", "for", "in", "on", "at", "by", "into", "the", "a", "an", "this", "that", "these", "those", "my", "your", "our", "their", "his", "her", "its"}:
+    if head in {"with", "without", "after", "before", "until", "following", "from", "using", "to", "for", "in", "on", "at", "by", "into", "the", "a", "an", "this", "that", "these", "those", "my", "your", "our", "their", "his", "her", "its"}:
         return len(words) > 1
     # Explicit CLI options, input paths/files and quantity+unit arguments.
     if re.fullmatch(r"--?[a-z][a-z0-9-]*(?:=\S+)?", head):

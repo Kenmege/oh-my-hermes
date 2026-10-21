@@ -21,6 +21,89 @@ from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
 
 
 class ShowReelRoutingTests(unittest.TestCase):
+    def test_natural_production_object_outranks_source_media_vocabulary(self):
+        self._assert_production_surfaces((
+            "Could you please produce a gently luminous 45-second English product showcase video from our research notes?",
+            "Create an unusually restrained animated product film from the research notes",
+            "Produce a launch film with a transcript as source material",
+        ), first_recommendation=False)
+        self._assert_nonproduction_surfaces((
+            "Summarize the attached video transcript",
+            "Transcribe this product showcase video",
+            "Write a transcript for this existing launch film",
+        ))
+        self.assertEqual(route_chat_message("Summarize the attached video transcript")["selected_skill"], "media-input-operator")
+
+    def test_named_production_source_feedback_does_not_replace_the_awareness_owner(self):
+        self._assert_production_surfaces((
+            "Use the show-reel skill with missed route feedback as source material",
+        ), first_recommendation=False)
+        self.assertEqual(awareness_route_hint("Record a missed route and learn from the run logs")["primary_workflow"], "workflow-learning")
+
+    def test_named_production_input_logs_do_not_become_workflow_feedback(self):
+        self._assert_production_surfaces((
+            "show-reel skill run please now with the run logs as source material",
+            "show-reel workflow run please now with the run logs as source material",
+        ))
+        self.assertEqual(route_chat_message("Record a missed route and learn from the run logs")["selected_skill"], "workflow-learning")
+        self._assert_nonproduction_surfaces(("Learn why the show-reel workflow missed this route",))
+
+    def test_show_reel_capability_discovery_cannot_prepare_production(self):
+        messages = tuple(
+            f"{name} {marker} run {tail}"
+            for name in ("show-reel", "show reel", "showreel")
+            for marker in ("skill", "workflow")
+            for tail in ("reference catalog please", "capability catalog", "reference index with notes")
+        ) + tuple(
+            f"what can OMH do for {name}?"
+            for name in ("show-reel", "show reel", "showreel", "product showcase video")
+        ) + (
+            "Explain the show-reel workflow", "show-reel skill run --help",
+            "What OMH workflows are available?",
+        )
+        self._assert_nonproduction_surfaces(messages)
+        for message in messages[-7:]:
+            route = route_chat_message(message)
+            self.assertEqual(route["selected_skill"], "oh-my-hermes")
+            self.assertNotIn("prepare_show_reel", str(route))
+
+    def test_english_operational_adjuncts_compose_before_freeform_arguments(self):
+        self._assert_production_surfaces(tuple(
+            f"show-reel {marker} {verb} {tail}"
+            for marker in ("skill", "workflow")
+            for verb in ("run", "execute")
+            for tail in (
+                "without a voiceover", "without narration using the research report",
+                "after reading the attached brief", "before presenting the approved cut",
+                "tomorrow with approved assets", "quietly with interview notes",
+                "only with approved assets", "again only after checking the capability documentation",
+                "carefully without subtitles", "later from the customer history archive",
+            )
+        ))
+        self._assert_nonproduction_surfaces(tuple(
+            f"show-reel {marker} run {noun} {tail}"
+            for marker in ("skill", "workflow")
+            for noun in ("family", "reply", "assembly", "supply", "quuxly", "ledger", "reference")
+            for tail in ("please", "with approved assets", "only after reading notes")
+        ) + (
+            "Do not run the show-reel workflow without narration",
+            "show-reel workflow run without show-reel",
+            'Translate "show-reel workflow run quietly with notes" into Korean',
+        ))
+
+    def _assert_nonproduction_surfaces(self, messages):
+        from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
+        with TemporaryDirectory() as temp:
+            paths = resolve_paths(Path(temp) / "omh", Path(temp) / "hermes")
+            for message in messages:
+                with self.subTest(message=message):
+                    self.assertFalse(show_reel_request_admitted(message))
+                    self.assertNotEqual(route_chat_message(message).get("selected_skill"), "show-reel")
+                    self.assertNotIn("show-reel", [r["skill"] for r in recommend_skills(message, limit=200)])
+                    self.assertNotEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
+                    self.assertNotEqual(build_chat_interaction_payload(message, source="discord", paths=paths)["chat_response"]["kind"], "show_reel")
+                    self.assertNotIn("prepare_show_reel", str(pre_llm_call(omh_home=temp, hermes_home=temp, user_message=message, is_first_turn=False)))
+
     def test_korean_action_object_particle_requires_a_predicate(self):
         from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
 
@@ -364,12 +447,17 @@ class ShowReelRoutingTests(unittest.TestCase):
         ]
         self._assert_production_surfaces(messages)
 
-    def _assert_production_surfaces(self, messages):
+    def _assert_production_surfaces(self, messages, *, first_recommendation=True):
         with TemporaryDirectory() as temp:
             paths = resolve_paths(Path(temp) / "omh", Path(temp) / "hermes")
             for message in messages:
                 with self.subTest(message=message):
-                    self.assertEqual(recommend_skills(message, limit=1)[0]["skill"], "show-reel")
+                    from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
+                    self.assertTrue(show_reel_request_admitted(message))
+                    recommendations = recommend_skills(message, limit=200)
+                    if first_recommendation:
+                        self.assertEqual(recommendations[0]["skill"], "show-reel")
+                    self.assertIn("show-reel", [item["skill"] for item in recommendations])
                     self.assertEqual(route_chat_message(message, source="discord")["selected_skill"], "show-reel")
                     self.assertEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
                     self.assertEqual(build_chat_interaction_payload(message, source="discord", paths=paths)["chat_response"]["kind"], "show_reel")
