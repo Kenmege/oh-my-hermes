@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The delegation graph's boxes follow oh-my-openagent's DAG view, and `/dag`
+  is interactive.** The boxes stand in frontiers (a node's longest path of
+  recorded edges), side by side over a `· Same frontier` label, with one
+  connector from each frontier to the next; each box holds the title, the
+  category and model, the status and the parents (`← Export API`, or `Start
+  node`). The drawing implies no edge: under the boxes, `Dependencies` lists
+  every recorded edge exactly, and `Node details` gives each running node a
+  card. A frontier goes on one row while its boxes can narrow to fit, and
+  wraps only past that. In the OMH TUI a box's border, title and status take
+  its node's state: running blue, handed out indigo, failed red, done the
+  terminal's foreground, waiting dim, selected violet; every state keeps its
+  glyph and word. `/dag` opens the graph full screen and redraws it from the
+  HUD's newest read: Tab and Shift+Tab move the highlight, Space folds a box,
+  d shows or hides Node details, and nothing is sent anywhere. This replaces
+  the #2179 boxes in `/dag`, `omh hud --graph` and the panel; the tree and the
+  chat posts are unchanged.
+
 - **Vietnamese ships as a trigger language pack.** `src/routing/trigger_packs/vi.json`,
   contributed by @PhucNguyen-Dev (#2182), covers 20 of the 21 skills the `id`
   pack covers, with phrases such as `rà soát mã nguồn`, `kiểm tra khả năng
