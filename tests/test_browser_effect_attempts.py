@@ -3,6 +3,7 @@ from copy import deepcopy
 from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 import json
+import re
 import sqlite3
 import unittest
 from threading import Event, Thread
@@ -44,6 +45,38 @@ def run_on_second_thread(call):
     if disposition == 'raised':
         raise payload
     return payload
+
+
+# A sha256 digest as these stores keep it: 64 hex characters, or its 32 bytes as
+# unpadded base64url, 43 characters. The base64url alphabet spells every short raw
+# word, so a random digest holds `dom` in about one of 262,144 three-letter windows.
+_DIGEST_SHAPES = (re.compile(r'[0-9a-f]{64}'), re.compile(r'[A-Za-z0-9_-]{43}'))
+
+
+def stored_text(value):
+    """Every key and every non-digest string in a stored value, JSON text decoded.
+
+    A digest is what a store keeps in place of a raw value, so a search for raw values
+    leaves it out: inside one it can only find the words its random characters spell.
+    """
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield str(key)
+            yield from stored_text(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from stored_text(item)
+    elif isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except ValueError:
+            decoded = None
+        if isinstance(decoded, (dict, list)):
+            yield from stored_text(decoded)
+        elif not any(shape.fullmatch(value) for shape in _DIGEST_SHAPES):
+            yield value
+    elif value is not None:
+        yield str(value)
 
 
 class EffectAdapter:
@@ -430,9 +463,12 @@ class BrowserEffectAttemptsTests(unittest.TestCase):
                                          ('receipts', 'attempt_id', 'attempt')):
                 plan = db.execute(f'EXPLAIN QUERY PLAN SELECT * FROM {table} WHERE {column}=?', (value,)).fetchall()
                 self.assertTrue(all('SEARCH' in row[3] for row in plan))
-            content = json.dumps(db.execute('SELECT * FROM bindings').fetchall())
-            content += json.dumps(db.execute('SELECT * FROM receipts').fetchall())
-        content += json.dumps(self.engine.attempts.public_rows(limit=200))
+            stored = [db.execute('SELECT * FROM bindings').fetchall(), db.execute('SELECT * FROM receipts').fetchall()]
+        stored.append(self.engine.attempts.public_rows(limit=200))
+        # Keys and every non-digest value, one per line: the search covers what a leak
+        # would write, and no random digest can spell a raw word by chance.
+        content = '\n'.join(stored_text(stored))
+        self.assertIn('attempt_id', content)
         for raw in ('PRIVATE', 'credential form content', 'tab-1', 'secret=', 'cookies', 'dom', 'headers'):
             self.assertNotIn(raw, content)
 
