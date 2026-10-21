@@ -4,6 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A skill body edit no longer rewrites the six host installer directories.**
+  Every `.<host>/install.sh`, `install.ps1` and `manifest.json` embedded the
+  full per-file SHA256 list, the installers twice, so a one-line `SKILL.md`
+  change moved all 18 files. The per-file digests now live once, in
+  `agent-skills/.omh-agent-skills-manifest.json`: the exact receipt
+  `omh install --target agents` writes, generated beside the pack and pinned
+  by `docs agent-skills --check` as a canonical file. The installers are
+  static per host and read that inventory. As before, they refuse a symlink,
+  an extra file or a missing file in the source and verify every digest
+  before the first write, then copy the inventory verbatim as the target
+  receipt. They accept only the exact layout the producer emits, sorted and
+  unique, with no row outside the `files` block. Without that, a row one
+  reader skipped could make the copied receipt own a user's own skill, which
+  `omh install --target agents` would later delete as retired. Each host
+  `manifest.json`, and the `host_adapter` block of
+  `omh install --target agents --host <host> --json`, drops `files`,
+  `source_digest` and `digest_format` and names the inventory in a new
+  `inventory` field; the schema stays `omh_host_adapter/v1`.
+  `omh quality-evidence agent-skills` compares scan paths with that inventory,
+  and the `source_digest` its receipts record keeps its definition and value,
+  so stored receipts still compare.
 - **The OMH TUI shows each subagent's output tokens.** A row in the agent
   view under the composer ends `12s · 3 tools · ↓1.2k tokens`, and the
   agent's log header carries the same count. While a subagent runs, the

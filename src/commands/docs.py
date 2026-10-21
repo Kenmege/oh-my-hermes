@@ -19,12 +19,14 @@ from .common import _paths, _print_json
 
 
 def cmd_docs_agent_skills(args: argparse.Namespace) -> int:
-    from ..install.agent_skills_projection import agent_skill_files
+    from ..install.agent_skills_projection import MANIFEST_NAME, agent_skill_files, agent_skills_manifest
     from ..skills.host_adapter_render import host_adapter_files
 
     root = Path(args.output or "agent-skills").expanduser().absolute()
-    files = agent_skill_files()
-    adapters = host_adapter_files(files)
+    skill_files = agent_skill_files()
+    adapters = host_adapter_files(skill_files)
+    # The pack's one digest inventory: the exact receipt every installer copies.
+    files = {**skill_files, MANIFEST_NAME: json.dumps(agent_skills_manifest(skill_files), indent=2, sort_keys=True) + "\n"}
     try:
         if args.check:
             actual = {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file() or path.is_symlink()}

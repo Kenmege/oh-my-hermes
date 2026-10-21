@@ -10,6 +10,8 @@ from dataclasses import dataclass
 import hashlib
 from typing import TypedDict
 
+from ..install.agent_skills_projection import MANIFEST_NAME
+
 
 @dataclass(frozen=True)
 class HostAdapter:
@@ -52,9 +54,7 @@ class HostAdapterManifest(TypedDict):
     evidence: str
     caveat: str
     source: str
-    source_digest: str
-    digest_format: str
-    files: dict[str, str]
+    inventory: str
     skills: list[str]
 
 
@@ -63,10 +63,15 @@ def checksum_inventory(hashes: dict[str, str]) -> str:
     return "".join(f"{digest}  {path}\n" for path, digest in sorted(hashes.items()))
 
 
+def source_digest(hashes: dict[str, str]) -> str:
+    """sha256 of ``checksum_inventory``; one value for every host, since all copy the same pack."""
+    return hashlib.sha256(checksum_inventory(hashes).encode("utf-8")).hexdigest()
+
+
 def host_adapter_manifest(host: str, files: dict[str, str]) -> HostAdapterManifest:
+    """Static per-host row. File digests live once, in the ``inventory`` receipt under ``source``,
+    so a skill body edit moves that one file instead of every host's adapter."""
     adapter = host_adapter(host)
-    hashes = {path: hashlib.sha256(content.encode("utf-8")).hexdigest()
-              for path, content in sorted(files.items())}
     return {
         "schema_version": "omh_host_adapter/v1",
         "host": adapter.host,
@@ -75,8 +80,6 @@ def host_adapter_manifest(host: str, files: dict[str, str]) -> HostAdapterManife
         "evidence": adapter.evidence,
         "caveat": adapter.caveat,
         "source": "agent-skills",
-        "source_digest": hashlib.sha256(checksum_inventory(hashes).encode("utf-8")).hexdigest(),
-        "digest_format": "sha256(sorted '<file-sha256>  <relative-posix-path>\\n' UTF-8 inventory)",
-        "files": hashes,
+        "inventory": MANIFEST_NAME,
         "skills": sorted({path.split("/")[0] for path in files}),
     }
