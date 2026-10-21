@@ -62,7 +62,7 @@ def handoff(home, run: str, node_id: str, text: str = "done") -> Path:
 
 
 def child_started(home, run: str, node_id: str, *, now: float | None = None) -> None:
-    start(home, f"child-{node_id}", f"sa-{node_id}", f"[dag:{run}/{node_id}] Node {node_id}",
+    start(home, f"child-{node_id}", f"sa-{node_id}", f"Node {node_id} [dag:{run}/{node_id}]",
           now=time.time() if now is None else now)
 
 
@@ -90,7 +90,8 @@ class DefineTests(unittest.TestCase):
         self.assertEqual([(c["category"], c["nodes"], c["route"]["action"]) for c in result["calls"]],
                          [("quick", ["api"], "set"), ("unspecified-low", ["ui"], "set")])
         task = result["calls"][0]["tasks"][0]
-        self.assertTrue(task["goal"].startswith("[dag:feat/api] "))
+        # The marker ends the goal, on its line: Hermes previews a goal by its first 40 characters.
+        self.assertEqual(task["goal"], "Node api [dag:feat/api]")
         self.assertIn("Handoff: before you stop, write your report to", task["context"])
         self.assertEqual(dag_binding(task["goal"]), {"run": "feat", "node": "api"})
 
@@ -104,11 +105,19 @@ class DefineTests(unittest.TestCase):
             "empty_graph": [],
             "duplicate_node_id": [node("a"), node("a")],
             "invalid_category": [node("a", category="fastest")],
+            "invalid_label": [node("a", label="Fix [dag:feat/b] first")],
         }
         for reason, nodes in cases.items():
             with self.subTest(reason=reason), homes():
                 result = call(action="define", run="feat", nodes=nodes)
                 self.assertEqual((result["status"], result["reason"]), ("refused", reason), result)
+
+    def test_a_label_holding_either_lanes_marker_is_refused(self) -> None:
+        """Mutation: refuse only `[dag:`; a leading team key would bind this node's child to a team part."""
+        for label in ("[omh-team:t1/a/attempt-1] Fix the parser", "Fix the parser [dag:feat/b]"):
+            with self.subTest(label=label), homes():
+                result = call(action="define", run="feat", nodes=[node("a", label=label)])
+                self.assertEqual((result["status"], result["reason"]), ("refused", "invalid_label"), result)
 
     def test_an_edge_lets_two_nodes_share_a_write_scope(self) -> None:
         with homes():
@@ -301,6 +310,13 @@ class RepairTests(unittest.TestCase):
             result = call(action="repair", run="feat", node="api", nodes=[node("fix", depends_on=("ui",))])
         self.assertEqual(result["reason"], "repair_depends_on_open_node")
 
+    def test_a_repair_label_holding_a_marker_is_refused(self) -> None:
+        for label in ("[dag:feat/api] Fix", "Fix [omh-team:t1/a/attempt-1]"):
+            with self.subTest(label=label), homes() as home:
+                self._failed_verify(home)
+                result = call(action="repair", run="feat", node="verify", nodes=[node("fix", label=label)])
+                self.assertEqual((result["status"], result["reason"]), ("refused", "invalid_label"), result)
+
     def test_only_a_failed_node_is_repaired(self) -> None:
         with homes() as home:
             slots_table(home)
@@ -354,6 +370,7 @@ class ExtendTests(unittest.TestCase):
             "too_many_nodes": [node(f"n{index}") for index in range(dag_run.MAX_NODES - 1)],
             "empty_graph": [],
             "unknown_node": None,
+            "invalid_label": [node("x", label="[omh-team:t1/a/attempt-1] More")],
         }
         with homes() as home:
             self._done(home)
@@ -450,15 +467,54 @@ class LifecycleTests(unittest.TestCase):
             text = dag_run.record_path(home.omh, PARENT, "feat").read_text(encoding="utf-8")
         self.assertNotIn("SECRET SUMMARY TEXT", text)
 
-    def test_the_ledger_binds_a_child_by_its_goal_marker_only(self) -> None:
+    def test_the_ledger_binds_a_child_by_the_last_whole_marker_in_its_goal(self) -> None:
+        """Mutation: read only the end or only the start of the goal, or bind on a marker that is not whole."""
         with homes() as home:
             child_started(home, "feat", "api")
-            start(home, "child-x", "sa-x", "[dag:feat/API] wrong case", now=time.time())
-            start(home, "child-y", "sa-y", "please [dag:feat/api] not first", now=time.time())
+            start(home, "child-old", "sa-old", "[dag:feat/ui] Node ui", now=time.time())  # before an update
+            start(home, "child-x", "sa-x", "wrong case [dag:feat/API]", now=time.time())
+            start(home, "child-c", "sa-c", "Node docs [dag:feat/docs", now=time.time())  # not a whole marker
+            # A model that adds text after the marker leaves the binding as it was.
+            start(home, "child-y", "sa-y", "Node docs [dag:feat/docs]. Please hurry", now=time.time())
+            start(home, "child-z", "sa-z", "Node verify [dag:feat/verify]\n\nExtra instructions from the model",
+                  now=time.time())
             children = {child["subagent_id"]: child for child in read_ledger(home.omh, PARENT)["children"]}
-        self.assertEqual(children["sa-api"]["dag"], {"run": "feat", "node": "api"})
-        self.assertNotIn("dag", children["sa-x"])
-        self.assertNotIn("dag", children["sa-y"])
+        self.assertEqual({subagent_id: children[subagent_id].get("dag") for subagent_id in children}, {
+            "sa-api": {"run": "feat", "node": "api"},
+            "sa-old": {"run": "feat", "node": "ui"},
+            "sa-x": None,
+            "sa-c": None,
+            "sa-y": {"run": "feat", "node": "docs"},
+            "sa-z": {"run": "feat", "node": "verify"},
+        })
+
+    def test_a_goal_with_more_than_one_marker_binds_to_the_last(self) -> None:
+        """Mutation: take the first marker in `dag_binding`."""
+        self.assertEqual(dag_binding("[dag:feat/ui] the button, after [dag:feat/docs] [dag:feat/api]"),
+                         {"run": "feat", "node": "api"})
+        # A goal from before an update whose label ended with a marker binds to that one, as the end marker did.
+        self.assertEqual(dag_binding("[dag:feat/ui] Node ui [dag:feat/api]"), {"run": "feat", "node": "api"})
+        self.assertEqual(dag_binding("Node api [dag:feat/api]\n"), {"run": "feat", "node": "api"})
+        # Text before and after the marker: both were unbound while only an end or a leading marker counted.
+        self.assertEqual(dag_binding("please [dag:feat/api] neither first nor last"), {"run": "feat", "node": "api"})
+        self.assertEqual(dag_binding("Node docs [dag:feat/docs] and more"), {"run": "feat", "node": "docs"})
+        self.assertEqual(dag_binding("Node api [dag:feat/api"), {})
+        # Every line counts: the last marker of the goal, not of its first line.
+        self.assertEqual(dag_binding("Node api [dag:feat/api]\nsecond line\nthen [dag:feat/ui]"),
+                         {"run": "feat", "node": "ui"})
+
+    def test_a_goal_whose_last_marker_is_a_team_key_binds_no_node(self) -> None:
+        """Mutation: read dag markers only, so a team title from before an update that quoted one binds a node."""
+        for goal in ("Fix the parser [dag:feat/api] [omh-team:t1/a/attempt-1]",
+                     "Fix the parser [dag:feat/api] [omh-team:t1/a/attempt-1]. Please hurry"):
+            with self.subTest(goal=goal):
+                self.assertEqual(dag_binding(goal), {})
+        # A team key before the node's own marker does not hide it, with or without text after the marker.
+        self.assertEqual(dag_binding("[omh-team:t1/a/attempt-1] Fix [dag:feat/api]"), {"run": "feat", "node": "api"})
+        self.assertEqual(dag_binding("[omh-team:t1/a/attempt-1] Label [dag:feat/x]. Please hurry"),
+                         {"run": "feat", "node": "x"})
+        # Title from before an update quoting a dag marker, then text after the team key: still the helper's.
+        self.assertEqual(dag_binding("Title [dag:feat/api] [omh-team:t1/a/attempt-1]. Please hurry"), {})
 
 
 NO_HERMES = {"gateway": None, "gateway.status": None}
@@ -498,12 +554,12 @@ class RestartTests(unittest.TestCase):
             with patch.object(dag_tool.time, "time", return_value=moment + 60), patch_modules(hermes_process(5000)):
                 status = call(action="status", run="feat")
                 ready = call(action="ready", run="feat")
-                start(home, "child-api-2", "sa-api-2", "[dag:feat/api] Node api", now=moment + 61)
+                start(home, "child-api-2", "sa-api-2", "Node api [dag:feat/api]", now=moment + 61)
                 again = call(action="status", run="feat")
             attempts = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))["nodes"][0]["attempts"]
         self.assertEqual(status["nodes"][0]["state"], "handed_out")
         self.assertEqual([c["nodes"] for c in ready["calls"]], [["api"]])
-        self.assertEqual(ready["calls"][0]["tasks"][0]["goal"], "[dag:feat/api] Node api")
+        self.assertEqual(ready["calls"][0]["tasks"][0]["goal"], "Node api [dag:feat/api]")
         self.assertEqual(again["nodes"][0]["state"], "running")
         self.assertEqual([(attempt["n"], attempt["lost"]) for attempt in attempts], [(1, 1)])
 
@@ -590,8 +646,8 @@ class RestartTests(unittest.TestCase):
         with homes() as home:
             with patch_modules(hermes_process(1000)):
                 with patch.object(host_process, "machine", return_value="linux:other-boot:pid:[4026532999]"):
-                    start(home, "child-there", "sa-there", "[dag:feat/api] There", now=moment)
-                start(home, "child-here", "sa-here", "[dag:feat/ui] Here", now=moment + 1)
+                    start(home, "child-there", "sa-there", "There [dag:feat/api]", now=moment)
+                start(home, "child-here", "sa-here", "Here [dag:feat/ui]", now=moment + 1)
             with patch_modules(hermes_process(5000)):
                 lost = {child["child_session_id"]: bool(child.get("lost")) for child in dag_tool._children(home.omh, [PARENT])}
         self.assertEqual(lost, {"child-there": False, "child-here": True})
@@ -616,7 +672,7 @@ class RestartTests(unittest.TestCase):
             at = moment + 1000 * (n + 1)
             with patch.object(dag_tool.time, "time", return_value=at), patch_modules(hermes_process(5000 * (n + 2))):
                 self.assertEqual([c["nodes"] for c in call(action="ready", run="feat")["calls"]], [["api"]])
-                start(home, f"child-api-{n}", f"sa-api-{n}", "[dag:feat/api] Node api", now=at + 1)
+                start(home, f"child-api-{n}", f"sa-api-{n}", "Node api [dag:feat/api]", now=at + 1)
 
     def test_past_the_bound_the_parent_settles_a_node_that_keeps_losing_its_child(self) -> None:
         moment = time.time()

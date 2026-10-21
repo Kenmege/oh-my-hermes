@@ -204,7 +204,7 @@ HOOK_REVIEWS: dict[str, dict[str, Any]] = {
             "reserved attempt key to that attempt in the team record, and "
             "adding the child to the conversation's delegation ledger (ids, "
             "role, turn, time and the route OMH had recorded, and the dag run "
-            "and node ids a leading [dag:<run>/<node>] goal marker names; its "
+            "and node ids the last [dag:<run>/<node>] marker in its goal names; its "
             "goal only as a title held in process memory, never written); never "
             "blocks a spawn"
         ),

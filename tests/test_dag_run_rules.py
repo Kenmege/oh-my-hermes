@@ -88,7 +88,7 @@ class ReVerificationTests(unittest.TestCase):
         self.assertNotIn("verification_misses:fix", repaired["lint"])
         self.assertEqual(fixed["state"], "running")
         self.assertIsNotNone(rerun, fixed)
-        self.assertTrue(rerun["goal"].startswith("[dag:feat/verify] "))
+        self.assertTrue(rerun["goal"].endswith(" [dag:feat/verify]"))
         self.assertEqual(states(fixed)["verify"], "handed_out")
         self.assertEqual(done["state"], "done")
         self.assertEqual(states(done)["verify"], "accepted")

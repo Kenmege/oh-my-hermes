@@ -251,8 +251,13 @@ _HIDDEN_CHARACTERS: Final = re.compile(
 _CHECK_FIELD: Final = re.compile(r"check:\s*`([^`\n]+)`", re.IGNORECASE)
 _TEAM_ID: Final = re.compile(r"[a-z0-9][a-z0-9-]{0,47}")
 _UNIT_ID: Final = re.compile(r"[a-z0-9][a-z0-9_-]{0,47}")
+# The attempt key a helper's goal ends with, so Hermes' 40-character previews show the part's title first. The last
+# whole key in a goal binds: a goal handed out before an update opens with it, and a model may add text after it. A
+# goal whose last marker is a dag node's is that node's child, even when an older title quoted a key before it
+# (`delegation_ledger.dag_binding` reads the mirror).
 _MARKER: Final = re.compile(
-    r"\A\[omh-team:([a-z0-9][a-z0-9-]{0,47})/([a-z0-9][a-z0-9_-]{0,47})/attempt-([1-9][0-9]?)\]"
+    r"\[(?:omh-team:([a-z0-9][a-z0-9-]{0,47})/([a-z0-9][a-z0-9_-]{0,47})/attempt-([1-9][0-9]?)"
+    r"|dag:[a-z0-9][a-z0-9-]{0,31}/[a-z0-9][a-z0-9-]{0,31})\]"
 )
 _CONTROL: Final = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 # The subagent id Hermes hands `subagent_start` (`sa-<index>-<hex>` at v2026.9.7)
@@ -664,7 +669,7 @@ def _delegate_entry(team_id: str, unit: Mapping[str, Any], attempt: Mapping[str,
         lines.append("The previous try failed its check: " + json.dumps(
             {"command": failing.get("command"), "exit_code": failing.get("exit_code")}, sort_keys=True))
         lines.append("Fix the cause and stop when that command would exit 0.")
-    return {"goal": f"[omh-team:{key}] {unit['title']}", "context": "\n".join(lines)}
+    return {"goal": f"{unit['title']} [omh-team:{key}]", "context": "\n".join(lines)}
 
 
 def _reserve(unit: dict[str, Any], now: float, *, repairs_check: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -760,9 +765,15 @@ def _validated_units(raw_units: object) -> list[dict[str, Any]]:
             raise TeamRefusal("invalid_depends_on", "depends_on must list other parts by id.")
         command = raw.get("verification_command")
         validate_team_command(command)
+        title = _plain(raw.get("title"), MAX_TITLE_CHARS, "invalid_title", "Each part needs a short title.")
+        # Either lane's reader also takes a marker that opens a goal (one handed out before an update), so a title
+        # holding either marker could bind a helper to another part or dag node.
+        if "[omh-team:" in title or "[dag:" in title:
+            raise TeamRefusal("invalid_title",
+                              "A part's title cannot hold an [omh-team:...] key or a [dag:...] marker; OMH adds its own.")
         units.append({
             "unit_id": unit_id,
-            "title": _plain(raw.get("title"), MAX_TITLE_CHARS, "invalid_title", "Each part needs a short title."),
+            "title": title,
             "depends_on": sorted(set(depends_on)),
             "verification_command": str(command).strip(),
         })
@@ -1415,10 +1426,11 @@ def observe_dispatch(
     (see `owning_session`). ``host`` is the Hermes process the helper runs in
     (`host_process.this_process`), kept so a restart that ended it is seen.
     """
-    match = _MARKER.match(goal) if isinstance(goal, str) else None
-    if match is None or not isinstance(child_session_id, str) or not child_session_id.strip():
+    found = _MARKER.findall(goal) if isinstance(goal, str) else []
+    if not found or not found[-1][0] or not isinstance(child_session_id, str) or not child_session_id.strip():
         return False
-    team_id, unit_id, n = match.group(1), match.group(2), int(match.group(3))
+    team_id, unit_id, number = found[-1]
+    n = int(number)
     owner = owning_session(omh_home, session_ref, team_id)
     if not owner and earlier is not None:
         owner = owning_session(omh_home, session_ref, team_id, earlier())
