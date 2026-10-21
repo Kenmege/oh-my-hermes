@@ -447,7 +447,11 @@ def backend_root(task_id: str) -> tuple[str | None, str]:
     at. It is taken only as a directory that user can write and that no other
     user can (neither group- nor world-writable), at a plain absolute path
     outside the shared temp directories; the shell refuses a ``$HOME`` with
-    whitespace in it or a relative one, and exactly one home line must come back. A child's
+    whitespace in it or a relative one, and exactly one home line must come back.
+    The check fails closed: ``cd``, ``pwd`` and ``find`` run as ``command``
+    (Hermes' snapshot carries the login shell's functions and aliases), and
+    the home qualifies only when `find` itself prints it back as neither
+    group- nor world-writable; a `find` that prints nothing refuses it. A child's
     `write_file` takes the absolute path as it is in the backend; ``~`` would
     not do, since on Docker Hermes expands it on this host.
 
@@ -458,10 +462,11 @@ def backend_root(task_id: str) -> tuple[str | None, str]:
     """
     lines, unread = _backend_lines(task_id, (
         'if case "$HOME" in *[[:space:]]*) false ;; /*) true ;; *) false ;; esac '
-        '&& home="$(cd -P -- "$HOME" 2>/dev/null && pwd -P)" && case "$home" in /*[[:space:]]*|"") false ;; '
-        '/*) true ;; *) false ;; esac && [ -d "$home" ] && [ -w "$home" ] && command -v find >/dev/null 2>&1 '
-        '&& [ -z "$(find "$home" -prune \\( -perm -0002 -o -perm -0020 \\) 2>/dev/null)" ]; '
-        f"then printf '%s%s\\n' {_HOME_LINE} \"$home\"; else echo {_HOME_UNUSABLE}; fi"))
+        '&& home="$(command cd -P -- "$HOME" 2>/dev/null && command pwd -P)" '
+        '&& case "$home" in /*[[:space:]]*|"") false ;; /*) true ;; *) false ;; esac '
+        '&& [ -d "$home" ] && [ -w "$home" ] '
+        '&& [ "$(command find "$home" -prune ! -perm -0002 ! -perm -0020 -print 2>/dev/null)" = "$home" ]; '
+        f"then command printf '%s%s\\n' {_HOME_LINE} \"$home\"; else echo {_HOME_UNUSABLE}; fi"))
     if unread in ("environment_gone", "interrupted"):
         return None, unread
     homes = [line[len(_HOME_LINE):] for line in lines if line.startswith(_HOME_LINE)]

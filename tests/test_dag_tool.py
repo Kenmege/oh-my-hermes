@@ -140,15 +140,17 @@ class Terminal:
 class Sandbox(Base):
     """A Docker or SSH terminal's filesystem: each file at its own absolute path, kept under ``root`` here.
 
-    The command runs in `sh`: the handoff path it names is moved under
-    ``root``, and ``$HOME`` is ``home`` (made with ``mode``, or as a link to
-    ``target`` made so), moved likewise and read back as the backend sees it,
-    so a real shell judges both.
+    The command runs in `bash`, as Hermes runs it, after ``prelude`` (what the
+    login shell's snapshot carries, such as a function or an alias): the
+    handoff path it names is moved under ``root``, and ``$HOME`` is ``home``
+    (made with ``mode``, or as a link to ``target`` made so), moved likewise
+    and read back as the backend sees it, so a real shell judges both.
     """
 
-    def __init__(self, root: Path, home: str = "/sandbox-home/dev", mode: int = 0o700, target: str = "") -> None:
+    def __init__(self, root: Path, home: str = "/sandbox-home/dev", mode: int = 0o700, target: str = "",
+                 prelude: str = "") -> None:
         super().__init__()
-        self.root, self.home = root, home
+        self.root, self.home, self.prelude = root, home, prelude
         made = self.path(Path(target or home))
         made.mkdir(parents=True)
         made.chmod(mode)
@@ -168,8 +170,8 @@ class Sandbox(Base):
         if "-L" in tokens:
             named = tokens[tokens.index("-L") + 1]
             command = command.replace(shlex.quote(named), shlex.quote(str(self.path(Path(named)))))
-        done = subprocess.run(["sh", "-c", command], capture_output=True, text=True, timeout=30, check=False,
-                              env={**os.environ, "HOME": str(self.path(Path(self.home)))})
+        done = subprocess.run(["bash", "-c", self.prelude + command], capture_output=True, text=True, timeout=30,
+                              check=False, env={**os.environ, "HOME": str(self.path(Path(self.home)))})
         output = (done.stdout + done.stderr).replace(os.path.realpath(self.root), "").replace(str(self.root), "")
         return {"output": output, "returncode": done.returncode}
 
@@ -479,7 +481,10 @@ class RemoteBackendTests(unittest.TestCase):
         """Mutation: take any home, judge a linked home by the link, or let a `$HOME` with a space through."""
         cases = {"0777": {"mode": 0o777}, "0770": {"mode": 0o770}, "1777": {"mode": 0o1777},
                  "link to 1777": {"mode": 0o1777, "target": "/shared/scratch"},
-                 "trailing space": {"home": "/sandbox-home/dev "}}
+                 "trailing space": {"home": "/sandbox-home/dev "},
+                 # The login shell's snapshot can override `find`; a find that prints nothing must not pass a home.
+                 "0775, find a function": {"mode": 0o775, "prelude": "find() { :; }\n"},
+                 "0775, find an alias": {"mode": 0o775, "prelude": "shopt -s expand_aliases\nalias find=true\n"}}
         for name, made in cases.items():
             with self.subTest(home=name), homes() as home, terminal_env(), TemporaryDirectory() as root:
                 sandbox = Sandbox(Path(root), **made)
@@ -493,6 +498,13 @@ class RemoteBackendTests(unittest.TestCase):
             self.assertEqual(record["handoff_root"], "")
             self.assertEqual(dag_run.node_handoff(record, home.omh, "api"), str(host))
             self.assertEqual(accepted["settled"], {"node": "api", "outcome": "accepted"})
+        # The same overrides leave a home only its user can write qualifying: the check runs the real `find`.
+        for prelude in ("find() { :; }\n", "shopt -s expand_aliases\nalias find=true\n"):
+            with self.subTest(prelude=prelude), homes() as home, terminal_env(), TemporaryDirectory() as root, \
+                    Terminal("ssh", Sandbox(Path(root), prelude=prelude)).modules():
+                call(action="define", run="feat", nodes=FEATURE)
+                pinned = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))["handoff_root"]
+            self.assertEqual(pinned, "/sandbox-home/dev/.omh/dag")
         # A home that is a link to a directory only its user can write is pinned as that directory.
         with homes() as home, terminal_env(), TemporaryDirectory() as root, Terminal(
                 "docker", Sandbox(Path(root), target="/data/users/dev")).modules():
