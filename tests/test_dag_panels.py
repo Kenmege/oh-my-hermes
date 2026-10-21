@@ -81,8 +81,8 @@ class DagPanelSplitTests(unittest.TestCase):
                 session_id=PARENT))
             self.assertEqual(written["status"], "written", written)
             now = time.time()  # after define handed api and ui out: their children start now
-            child(home, "20261021_100001_api", now=now, goal="[dag:export/api] Export API")
-            child(home, "20261021_100002_ui", now=now, goal="[dag:export/ui] Export button")
+            child(home, "20261021_100001_api", now=now, goal="Export API [dag:export/api]")
+            child(home, "20261021_100002_ui", now=now, goal="Export button [dag:export/ui]")
             child(home, "20261021_095959_early", now=now - 9)  # no ledger row: the graph cannot draw it
             lines = panel(home)
         text = "\n".join(lines)
@@ -138,10 +138,18 @@ class DagPanelSplitTests(unittest.TestCase):
 
     def test_the_agent_strip_names_a_nodes_child_by_its_label(self) -> None:
         roster = Roster()
-        roster.apply("subagent.start", {"subagent_id": "sa-api", "goal": "[dag:export/api] Export API"}, 0.0)
-        roster.apply("subagent.start", {"subagent_id": "sa-plain", "goal": "[dag: not a marker] Look"}, 0.0)
+        roster.apply("subagent.start", {"subagent_id": "sa-api", "goal": "Export API [dag:export/api]"}, 0.0)
+        roster.apply("subagent.start", {"subagent_id": "sa-old", "goal": "[dag:export/ui] Export button"}, 0.0)
+        roster.apply("subagent.start", {"subagent_id": "sa-team", "goal": "Refresh docs [omh-team:hud/docs/attempt-1]"},
+                     0.0)
+        roster.apply("subagent.start", {"subagent_id": "sa-more", "goal": "Export docs [dag:export/docs]. Please hurry"},
+                     0.0)
+        roster.apply("subagent.start", {"subagent_id": "sa-plain", "goal": "Look [dag: not a marker]"}, 0.0)
         self.assertEqual(roster.agents["sa-api"].goal, "Export API")
-        self.assertEqual(roster.agents["sa-plain"].goal, "[dag: not a marker] Look")
+        self.assertEqual(roster.agents["sa-old"].goal, "Export button")  # handed out before an update
+        self.assertEqual(roster.agents["sa-team"].goal, "Refresh docs")
+        self.assertEqual(roster.agents["sa-more"].goal, "Export docs. Please hurry")
+        self.assertEqual(roster.agents["sa-plain"].goal, "Look [dag: not a marker]")
 
 
 if __name__ == "__main__":
