@@ -68,8 +68,9 @@ BOX_MIN_WIDTH: Final = BOX_INNER_MIN + 4
 SECTION_INDENT: Final = "  "
 TREE_WIDE_MIN: Final = 72  # below this a tree node takes two lines
 TREE_TITLE_MAX: Final = 40
-TREE_CATEGORY_MAX: Final = 12
+TREE_CATEGORY_MAX: Final = 12  # a category wider than this takes its cells from the model column first
 TREE_MODEL_MAX: Final = 24
+TREE_MODEL_MIN: Final = 8  # the model column gives way to a wide category down to this, then the title does
 TREE_LEAD_ROOM: Final = 16  # cells a tree row keeps past its lead: the branch, the glyph and the start of a title
 
 _L, _R, _U, _D = 1, 2, 4, 8
@@ -850,14 +851,22 @@ def _tree_lines(
     visible_groups = [(label, members) for label, members in visible_groups if members]
     labelled = len(visible_groups) > 1 or any(label for label, _members in visible_groups)
     shown = [node for node in by_id if node not in hidden and (root is None or node != str(root["id"]))]
+    fields = {node: _tree_fields(by_id[node]) for node in shown}
     title_width = min(TREE_TITLE_MAX, max([cells(_title(by_id[n])) for n in shown] or [12]))
-    category_width = min(TREE_CATEGORY_MAX, max([cells(_category(by_id[n])) for n in shown] or [1]))
-    model_width = min(TREE_MODEL_MAX, max([cells(_model_text(by_id[n], ":")) for n in shown] or [1]))
+    # The category column is as wide as the widest category: `unspecified-high` cut to `unspecified…` reads as
+    # another category. What it takes past TREE_CATEGORY_MAX comes from the model column first.
+    category_width = max([cells(category) for category, _model in fields.values()] or [1])
+    model_width = min(TREE_MODEL_MAX, max([cells(model) for _category, model in fields.values()] or [1]))
     deepest = max([_depth(n, nested) for n in shown] or [0])
     base = (cells(charset.tee) if labelled else 0) + cells(charset.tee)
     # Where the title column ends, the same for every depth, so the columns after it line up.
     title_end = base + cells(charset.bar) * deepest + 2 + title_width
     room_after = width - title_end - category_width - model_width - 6
+    widened = max(0, category_width - TREE_CATEGORY_MAX)
+    if room_after < 12 and widened:
+        given = min(12 - room_after, widened, max(0, model_width - TREE_MODEL_MIN))
+        model_width -= given
+        room_after += given
     if room_after < 12:
         title_end -= 12 - room_after
     step, offset = len(charset.bar), 1 if labelled else 0
@@ -885,8 +894,9 @@ def _tree_lines(
             title_room = max(8, title_end - cells(prefix) - cells(glyph) - 1)
             title = fit(_title(node), title_room, charset.ellipsis)
             pad = " " * (title_room - cells(title))
-            category = fit(_category(node), category_width, charset.ellipsis)
-            model = fit(_model_text(node, ":"), model_width, charset.ellipsis)
+            category, model = _tree_fields(node)
+            category = fit(category, category_width, charset.ellipsis)
+            model = fit(model, model_width, charset.ellipsis)
             pieces = [
                 *lead_segments(lead),
                 Segment(branch, "edge", depth),
@@ -905,41 +915,68 @@ def _tree_lines(
             ))
             shown_under = clamped(under, depth)
             indent = shown_under + "  "
-            category, status = _category(node), _status_text(node)
+            (category, model), status = _tree_fields(node), _status_text(node)
             # The status is what a reader came for: the model gives way first when the line is full.
             model_room = width - cells(indent) - cells(category) - cells(status) - 2 * cells(sep)
-            model = fit(_model_text(node, ":"), max(cells(charset.ellipsis) + 3, model_room), charset.ellipsis)
-            facts = [
-                *lead_segments(shown_under),
-                Segment("  ", "edge", depth),
-                Segment(category, _field_role(category, "category")),
-                Segment(sep, "edge", depth),
-                Segment(model, _field_role(model, "model")),
-                Segment(sep, "edge", depth),
-                Segment(status, f"status:{state}"),
-            ]
+            model = fit(model, max(cells(charset.ellipsis) + 3, model_room), charset.ellipsis) if model else ""
+            facts = [*lead_segments(shown_under), Segment("  ", "edge", depth)]
+            for text, role in ((category, "category"), (model, "model")):
+                if text:  # a field with no record yet is left out with its separator
+                    facts += [Segment(text, _field_role(text, role)), Segment(sep, "edge", depth)]
+            facts.append(Segment(status, f"status:{state}"))
             lines.append(_cut_line(facts, width, charset))
         kids = [kid for kid in nested.get(node_id, []) if kid not in hidden]
         for at, kid in enumerate(kids):
             node_lines(kid, under, at == len(kids) - 1, depth + 1)
 
+    # A cut that hid nodes of the last group drawn, and nothing else, is counted under that group; one that hid
+    # anything else (a whole group, or part of an earlier one) is counted at the root, after the last group.
+    under_last = False
+    if hidden and labelled and visible_groups:
+        last_members = next(members for label, members in groups if label == visible_groups[-1][0])
+        under_last = hidden <= _descendants(last_members, nested)
     for group_at, (label, members) in enumerate(visible_groups):
         group_last = group_at == len(visible_groups) - 1
+        cut_here = bool(hidden) and group_last and (under_last or not labelled)
         if labelled:
-            prefix = charset.end if group_last else charset.tee
+            label_last = group_last and not (hidden and not under_last)
+            prefix = charset.end if label_last else charset.tee
             text = fit(_group_label(label, charset) or "lanes", width - cells(prefix), charset.ellipsis)
             lines.append((Segment(prefix, "edge"), Segment(text, "group")))
-            lead = charset.gap if group_last else charset.bar
+            lead = charset.gap if label_last else charset.bar
         else:
             lead = ""
         for at, member in enumerate(members):
-            node_lines(member, lead, at == len(members) - 1 and not (group_last and hidden), 0)
+            node_lines(member, lead, at == len(members) - 1 and not cut_here, 0)
     if hidden:
         done = sum(1 for node in hidden if _state(by_id[node]) == "done")
         tail = f" ({done} done)" if done else ""
         text = f"+{len(hidden)} more node{'' if len(hidden) == 1 else 's'}{tail}"
-        lines.append((Segment(charset.end, "edge"), Segment(fit(text, width - cells(charset.end), charset.ellipsis), "more")))
+        lead = [Segment(charset.gap, "edge")] if under_last else []
+        room = width - cells(charset.end) - (cells(charset.gap) if under_last else 0)
+        lines.append((*lead, Segment(charset.end, "edge"), Segment(fit(text, room, charset.ellipsis), "more")))
     return lines
+
+
+def _descendants(members: Sequence[str], nested: Mapping[str, list[str]]) -> set[str]:
+    """``members`` and every node nested under them."""
+    found: set[str] = set()
+    pending = list(members)
+    while pending:
+        node = pending.pop()
+        if node not in found:
+            found.add(node)
+            pending += nested.get(node, [])
+    return found
+
+
+def _tree_fields(node: Mapping[str, Any]) -> tuple[str, str]:
+    """The tree's category and model columns: a field with no record yet is blank, and ``?`` stands in the category
+    column only when neither is known, as in a box."""
+    category, model = _category(node), _model_text(node, ":")
+    if category == UNKNOWN_FIELD and model == UNKNOWN_FIELD:
+        return UNKNOWN_FIELD, ""
+    return ("" if category == UNKNOWN_FIELD else category), ("" if model == UNKNOWN_FIELD else model)
 
 
 def _depth(node_id: str, nested: Mapping[str, list[str]]) -> int:

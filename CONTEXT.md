@@ -348,7 +348,9 @@ chat reply never carries the boxes: on Slack, Discord, Telegram, Mattermost
 and Matrix,
 `transform_llm_output` appends to the reply Hermes is sending a run's start
 block once, a count line on a turn its counts changed, and its end block once
-(**Delegated run**). A field with no record is `?`, and nothing in it reads
+(**Delegated run**). A field with no record is `?`, except that the boxes and
+the tree leave out a category or model not recorded yet and keep `?` for a
+node where neither is; nothing in it reads
 current config. Colour is the TUI theme's (a box by its node's state, the
 tree's edges by `dag_edges`), never part of the text: a chat post is plain.
 _Avoid_: a message OMH sends (Hermes delivers the reply), a plan (it shows

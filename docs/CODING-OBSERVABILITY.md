@@ -260,6 +260,9 @@ What it shows, and what it leaves as `?`:
 - **Model** is what Hermes recorded for the child: its session row, the one
   model its usage rows observed, or the model the dispatch was pinned to. It
   is never read from the current `delegation.model`.
+- A category or model with no record yet (a node no child has taken) is left
+  out of a box and blank in the tree's column, so `writing` reads alone; `?`
+  stands only where neither is recorded.
 - **State** comes from Hermes' `subagent_stop`, a recorded model call, or the
   team's own record.
   - A child Hermes reported completed with no model call at all reads
@@ -292,7 +295,12 @@ width, as wide as its widest node needs and narrowed to put each frontier on
 one row (the category and model line is cut first, down to 22 cells); a
 frontier that does not fit one row even then wraps, under the same label.
 Narrower than a 22-cell box, or where the edges loop, the graph is the tree,
-which nests a node under its dispatcher and draws no edge at all.
+which nests a node under its dispatcher and draws no edge at all. Its
+category column is as wide as the longest category; on a narrow terminal the
+model column gives way before the category is cut. Where a line budget cuts
+the tree, the last node shown under a branch closes it (`└─`), and
+`+N more nodes` sits under the group it cut, or at the root when whole
+groups were cut.
 
 In the OMH TUI the graph is in the theme's colours. A box's border, title and
 status line take its node's state: running in the blue the edge gradient

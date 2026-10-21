@@ -143,9 +143,9 @@ DAG · delegation · 7 nodes · 6 ed…
 │  └─ ● Sub-orchestrate refresh
 │       inherit · opu… · running…
 │     ├─ ◌ Refresh tokens
-│     │    ? · ? · dispatched
+│     │    ? · dispatched
 │     └─ ◌ Rotate keys
-│          ? · ? · dispatched
+│          ? · dispatched
 └─ ● 인증 모듈 문서 정리
      writing · opu… · running 5m…
 """
@@ -161,11 +161,40 @@ DAG · delegation · 7 nodes · 6 edges
 │  └─ ● Sub-orchestrate refresh
 │       inherit · opus-… · running 3m 2s
 │     ├─ ◌ Refresh tokens
-│     │    ? · ? · dispatched
+│     │    ? · dispatched
 │     └─ ◌ Rotate keys
-│          ? · ? · dispatched
+│          ? · dispatched
 └─ ● 인증 모듈 문서 정리
      writing · opus-5-… · running 5m 55s
+"""
+
+EXPORT_TREE_CUT_8 = """\
+DAG · export feature · 6 nodes · 7 edges · 1 running · 1 failed · 1 dispatched · 1 waiting · 1 done
+◆ main · opus-5-5:high
+├─ layer 2
+│  ├─ ● Export button    unspecified-high  glm-5.3:low        running 21s
+│  ├─ ◌ Export docs      writing                              handed out
+│  └─ ✗ Export CLI flag  quick             glm-5.3-flash:low  failed 8s
+└─ +2 more nodes (1 done)
+"""
+
+EXPORT_TREE_CUT_6 = """\
+DAG · export feature · 6 nodes · 7 edges · 1 running · 1 failed · 1 dispatched · 1 waiting · 1 done
+◆ main · opus-5-5:high
+├─ layer 2
+│  ├─ ● Export button    unspecified-high  glm-5.3:low        running 21s
+│  └─ ✗ Export CLI flag  quick             glm-5.3-flash:low  failed 8s
+└─ +3 more nodes (1 done)
+"""
+
+LAYER_CUT_7 = """\
+DAG · delegation · 7 nodes · 6 edges · 1 running · 5 waiting
+◆ main · opus-5-5:high
+├─ layer 1
+│  └─ ● Schema           deep   opus-5-5:high      running 30s
+└─ layer 2
+   ├─ · Migrate table 4  quick  glm-5.3-flash:low  waiting
+   └─ +4 more nodes
 """
 
 BUDGET = dict(width=40, max_chars=1782, max_lines=42)
@@ -226,6 +255,29 @@ def section(view, heading: str) -> list[str]:
 def cards(view) -> list[str]:
     """The titles of the Node details cards, in order."""
     return [line[4:] for line in section(view, "Node details") if line.startswith("  ") and not line.startswith("    ")]
+
+
+def branch_problems(drawing: str) -> list[str]:
+    """Where a tree's branches lie: a `├─` with no sibling after it, or a `└─` that one follows."""
+    rows = [row for row in drawing.splitlines() if row[:1] in "├└│ "]
+    found = []
+    for at, row in enumerate(rows):
+        column = next((index for index, char in enumerate(row) if char in "├└"), None)
+        if column is None:
+            continue
+        sibling = False
+        for later in rows[at + 1:]:
+            cell = later[column] if column < len(later) else " "
+            if cell in "├└":
+                sibling = True
+                break
+            if cell != "│" and (cell != " " or later[:column].strip(" │")):
+                break
+        if row[column] == "├" and not sibling:
+            found.append(f"a ├─ with nothing after it: {row!r}")
+        if row[column] == "└" and sibling:
+            found.append(f"a └─ with a sibling after it: {row!r}")
+    return found
 
 
 def lane_edges(payload: dict) -> set[tuple[str, str, str]]:
@@ -428,6 +480,68 @@ class BoxTests(unittest.TestCase):
                                    CLI: {"node:selected"}, "d:r1:verify": {"node:waiting"}})
         self.assertEqual([node_id for node_id, _top, _bottom in view.boxes],
                          ["d:r1:api", BUTTON, DOCS, CLI, "d:r1:verify"], "reading order")
+
+
+class TreeTests(unittest.TestCase):
+    maxDiff = None
+
+    def test_a_cut_tree_closes_its_branches_and_counts_the_cut_where_it_was_made(self) -> None:
+        for budget, snapshot in ((8, EXPORT_TREE_CUT_8), (6, EXPORT_TREE_CUT_6)):
+            view = render_delegation_view(export_run(), width=120, layout="tree", max_lines=budget)
+            with self.subTest(budget=budget):
+                self.assertEqual(view.text() + "\n", snapshot, "whole layers were cut: the count is at the root")
+                self.assertEqual(branch_problems(view.text()), [])
+        wide = graph(
+            [root(), lane("a", "Schema", "deep", "claude-opus-5-5", "high", "running", elapsed=30, group="layer 1",
+                          order=1),
+             *(lane(f"b{index}", f"Migrate table {index}", "quick", "glm-5.3-flash", "low", "waiting",
+                    group="layer 2", order=2 + index) for index in range(5))],
+            [("root", "a", "dispatch"), *(("a", f"b{index}", "depends_on") for index in range(5))],
+        )
+        view = render_delegation_view(wide, width=100, layout="tree", max_lines=7)
+        self.assertEqual(view.text() + "\n", LAYER_CUT_7, "only the last layer was cut: the count is under it")
+        segments = [segment for line in view.lines for segment in line]
+        self.assertEqual([segment.role for segment in segments if "more" in segment.text], ["more"])
+
+    def test_every_cut_tree_is_well_formed(self) -> None:
+        generator = random.Random(2026_10_21)
+        for trial in range(80):
+            nodes, edges = [root()], []
+            for index in range(generator.randint(2, 12)):
+                parent = generator.choice(["root"] + [node["id"] for node in nodes[1:]])
+                nodes.append(lane(f"n{index}", f"Task {index}", "quick", "glm-5.3-flash", "",
+                                  generator.choice(["running", "done", "failed", "waiting"]), order=index,
+                                  group=generator.choice(["", "wave 1 · 14:02", "wave 2 · 14:09", "layer 3"])))
+                edges.append((parent, f"n{index}", "dispatch"))
+            case = graph(nodes, edges)
+            for width in (34, 100):
+                for budget in (4, 6, 9):
+                    view = render_delegation_view(case, width=width, layout="tree", max_lines=budget)
+                    with self.subTest(trial=trial, width=width, budget=budget):
+                        self.assertEqual(branch_problems(view.text()), [], view.text())
+
+    def test_a_field_not_recorded_yet_is_blank_in_the_tree(self) -> None:
+        drawn = text(export_run(), width=120, layout="tree").splitlines()
+        docs = next(row for row in drawn if "Export docs" in row)
+        self.assertEqual(docs.split()[-3:], ["writing", "handed", "out"], "no `?` where the model is not known yet")
+        self.assertNotIn("?", text(export_run(), width=120, layout="tree"))
+        narrow = text(export_run(), width=60, layout="tree")
+        self.assertIn("writing · handed out", narrow)
+        self.assertIn("unspecified-high · waits on 3 lanes", narrow)
+        bare = graph([root(model="", effort=""), {"id": "x", "kind": "lane", "state": "dispatched"}],
+                     [("root", "x", "dispatch")])
+        self.assertIn("? · dispatched", text(bare, width=60, layout="tree"), "one `?` where neither is known")
+        self.assertEqual(text(bare, width=100, layout="tree").count("?"), 2, "the title's and the category column's")
+
+    def test_the_category_column_holds_the_longest_category_and_the_model_gives_way(self) -> None:
+        for width in (120, 74, 72):
+            rows = text(export_run(), width=width, layout="tree").splitlines()
+            button = next(row for row in rows if "Export button" in row)
+            with self.subTest(width=width):
+                self.assertIn(" unspecified-high ", button, "never cut to `unspecified…`")
+                self.assertTrue(all(cells(row) <= width for row in rows))
+        tight = next(row for row in text(export_run(), width=72, layout="tree").splitlines() if "Export API" in row)
+        self.assertIn("quick             glm-5.3-flash:…", tight, "the model is cut, not the category")
 
 
 class FieldTests(unittest.TestCase):
