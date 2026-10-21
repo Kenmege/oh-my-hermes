@@ -21,6 +21,27 @@ from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
 
 
 class ShowReelRoutingTests(unittest.TestCase):
+    def test_named_operation_accepts_deictic_inputs_and_temporal_clauses(self):
+        from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
+
+        self._assert_production_surfaces((
+            "show-reel workflow run it",
+            "show-reel workflow run this",
+            "show-reel workflow run those",
+            "show-reel workflow run while keeping the original narration",
+            "show-reel workflow run when the approved assets arrive",
+            "show-reel workflow run if the assets are approved",
+            "show-reel workflow run once I approve the assets",
+        ))
+        for message in (
+            "show-reel workflow run this_identifier please",
+            "show-reel workflow run once count please",
+            "show-reel workflow run reference catalog while explaining the method",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(show_reel_request_admitted(message))
+                self.assertNotEqual(route_chat_message(message).get("selected_skill"), "show-reel")
+
     def test_natural_production_object_outranks_source_media_vocabulary(self):
         self._assert_production_surfaces((
             "Could you please produce a gently luminous 45-second English product showcase video from our research notes?",

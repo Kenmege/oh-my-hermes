@@ -65,11 +65,15 @@ _EN_COMMAND_ADJUNCTS = frozenset({
     "automatically", "manually", "locally", "separately", "together",
 })
 _EN_DIAGNOSTIC_OPTIONS = frozenset({"-h", "--help", "--version"})
+_EN_ARGUMENT_PRONOUNS = frozenset({"it", "them", "this", "that", "these", "those"})
+_EN_CLAUSE_SUBJECTS = frozenset({"i", "you", "we", "they", "he", "she", "it"})
 
 
 def _after_command_adjuncts(words):
     position = 0
     while position < len(words) and words[position] in _EN_COMMAND_ADJUNCTS:
+        if words[position] == "once" and position + 1 < len(words) and words[position + 1] in _EN_CLAUSE_SUBJECTS:
+            break
         position += 1
     return words[position:]
 
@@ -86,7 +90,9 @@ def _english_command_arguments(words):
     head = words[0]
     if head in _EN_DIAGNOSTIC_OPTIONS:
         return False
-    if head in {"with", "without", "after", "before", "until", "following", "from", "using", "to", "for", "in", "on", "at", "by", "into", "the", "a", "an", "this", "that", "these", "those", "my", "your", "our", "their", "his", "her", "its"}:
+    if head in _EN_ARGUMENT_PRONOUNS:
+        return True
+    if head in {"with", "without", "after", "before", "until", "following", "while", "when", "if", "once", "from", "using", "to", "for", "in", "on", "at", "by", "into", "the", "a", "an", "my", "your", "our", "their", "his", "her", "its"}:
         return len(words) > 1
     # Explicit CLI options, input paths/files and quantity+unit arguments.
     if re.fullmatch(r"--?[a-z][a-z0-9-]*(?:=\S+)?", head):
