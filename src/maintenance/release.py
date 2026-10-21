@@ -170,7 +170,9 @@ CONCEPTUAL_AWARENESS_SURFACES = ("request-to-handoff", "executor selection", "co
 # name and the visible description window. Re-derived from the producer.
 # 12554 -> 12637: one index line for the new `spend-gate` skill; the name and
 # the visible description window. Re-derived from the producer.
-SKILL_INDEX_CHAR_LIMIT = 12637
+# 12637 -> 12713: one index line for the new `dag-ulw` skill; the name and the
+# visible description window. Re-derived from the producer.
+SKILL_INDEX_CHAR_LIMIT = 12713
 # The longest single skill line in that index. Every description is already cut
 # to 60 characters, so what moves this is a longer skill name.
 SKILL_INDEX_LINE_CHAR_LIMIT = 100
@@ -283,7 +285,15 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # 64654 -> 64651: `omh_hud` names the OMH TUI, not Hermes', as the surface its
 # payload is for (-3): bare `hermes` no longer draws the HUD. Re-derived from
 # the producer.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64651
+# 64651 -> 66952: the `omh_dag` schema (2301), the tool that keeps a dag-ulw run
+# (define, ready, settle, repair, status, cancel, export). A new tool rather
+# than more actions on `omh_team`, whose description promises that a part is
+# done only when OMH runs its check; a dag node is settled by the parent from
+# its handoff file. The description carries the run loop (route then
+# delegate_task per returned call, settle after each completion, repair at
+# most twice) so no per-turn primer line is added for it; deferrable under
+# the default tool search. Re-derived from the producer.
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 66952
 # PRE_LLM_CALL_CONTEXT_CHAR_LIMIT, PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT: moved with
 # their history to src/plugin_bundle/omh/turn_budget.py; imported at the top of this file.
 # 340000 -> 349637: three capability-skill sections were added by the domain
@@ -759,7 +769,10 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64651
 # `design-orchestration` grows: `+8 more triggers` becomes `+13 more
 # triggers` (+1). The other 20 change their count at the same width.
 # Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 501991
+# 501991 -> 505556: one capability row for the new `dag-ulw` skill, and the
+# `intent_to_plan` lane it joins gains its name in the rows that list the
+# lane. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 505556
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -851,7 +864,9 @@ FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # Re-derived from the producer.
 # 135119 -> 136056: one standalone capability row for the new `spend-gate`
 # skill; no sibling row moved. Re-derived from the producer.
-STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 136056
+# 136056 -> 136955: one standalone capability row for the new `dag-ulw` skill;
+# no sibling row moved. Re-derived from the producer.
+STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 136955
 STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # ULW fold context ceiling (issue #954, PR D). The limit is the pre-D measured
 # value of the full profile's `skill_body` chars on `main` @ acb9a060, in the
@@ -1920,10 +1935,16 @@ STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # review commits added +1,749 and +940, so its merge (d56aa8e7a) reads
 # 1,227,898, above this measurement; the measurement was not re-taken there,
 # because a floor the producer reads above fires neither re-derive signal.
-FULL_PROFILE_SKILL_BODY_MEASURED_CHARS = 1225209
+# 1225209 -> 1332345 (measured; the ceiling 1350000 -> 1500000): the new
+# `dag-ulw` body (+10,692 over origin/main 32878e25d, which read 1,321,653)
+# took the pack to 1,332,345, where
+# `test_one_more_ordinary_lane_member_fits_every_body_budget` found that the
+# largest lane-mate copy (`ultrawork`, +26,506) no longer fits. 1,332,345 plus
+# 10%, rounded up to the next 50,000, is 1,500,000.
+FULL_PROFILE_SKILL_BODY_MEASURED_CHARS = 1332345
 FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT = 10
 FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS = 50000
-FULL_PROFILE_SKILL_BODY_CHAR_LIMIT = 1350000
+FULL_PROFILE_SKILL_BODY_CHAR_LIMIT = 1500000
 FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # Repeated bytes: characters of full-profile SKILL.md `##` sections that are
 # byte-identical to the same section in another skill -- the second and later

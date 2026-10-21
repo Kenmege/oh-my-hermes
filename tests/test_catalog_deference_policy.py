@@ -298,9 +298,12 @@ NON_SKILL_BACKTICKS = frozenset(
 # `spend-gate`, and `loop`'s unattended-schedule statement points at
 # `automation-blueprint` instead of naming Hermes' cron tool. Three cases,
 # three pairs, no new owner.
-EXPECTED_DEFERENCE_CASES = 384
-EXPECTED_DEFERENCE_PAIRS = 399
-EXPECTED_DEFERRING_OWNERS = 112
+# `dag-ulw` defers a small change and coordinated lanes to `ultrawork` and an
+# undecided plan to `ralplan`; no sibling gains a statement pointing back.
+# Three cases, two pairs, one owner.
+EXPECTED_DEFERENCE_CASES = 387
+EXPECTED_DEFERENCE_PAIRS = 401
+EXPECTED_DEFERRING_OWNERS = 113
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.

@@ -197,11 +197,50 @@ _ROUTER_SKILL = "oh-my-hermes"
 # `loop` and the coding-delegation bridge (choose_executor/present_plan/...)
 # stay out of scope -- their own review step already requires an owner choice
 # before anything runs.
-_HEAVY_LANE_ROUTE_SKILLS = frozenset({"ultrawork", "maestro"})
+_HEAVY_LANE_ROUTE_SKILLS = frozenset({"ultrawork", "maestro", "dag-ulw"})
 _HEAVY_LANE_TRIGGER_TOKEN_STEMS: dict[str, tuple[str, ...]] = {
     "ultrawork": ("ultrawork", "ulw"),
     "maestro": ("maestro",),
+    "dag-ulw": ("ultrawork", "ulw", "dag"),
 }
+# Big work by intent (owner direction 2026-10-21): an `ultrawork` route nobody named, for a request whose own
+# words say it has several parts to run in parallel or across the codebase, goes to `dag-ulw`, which plans it as
+# a graph and runs it to a verified goal. A single change, a delivery cycle for one change, and workers that
+# share one task list keep `ultrawork`: those are its own capabilities, and a graph adds nothing to them.
+_DAG_ULW_SIZE_CUES: tuple[str, ...] = (
+    "in parallel",
+    "parallel work",
+    "parallel lanes",
+    "work lanes",
+    "parallel implementation",
+    "parallel then integrate",
+    "then integrate",
+    "fan out",
+    "fan-out",
+    "concurrently",
+    "across the codebase",
+    "across every module",
+    "across all modules",
+    "across modules",
+    "every module",
+    "all modules",
+    "whole codebase",
+    "entire codebase",
+    "병렬",
+    "동시에",
+    "여러 모듈",
+    "모든 모듈",
+    "코드베이스 전체",
+)
+_DAG_ULW_KEEP_ULTRAWORK_CUES: tuple[str, ...] = (
+    "shared task list",
+    "coordinated workers",
+    "coding team",
+    "one cycle",
+    "one-cycle",
+    "single cycle",
+    "single-cycle",
+)
 _HEAVY_LANE_VAGUENESS_MAX_WORDS = 8
 # Generic filler and unresolved deictic references ("this", "it", "그거") in
 # the languages the trigger-language packs already cover. None of these name
@@ -325,6 +364,10 @@ _HEAVY_LANE_VAGUENESS_CLARIFICATION_TEMPLATES: dict[str, str] = {
         "Before preparing a `maestro` handoff, name the concrete target (file, "
         "module, or component), the scope of the handoff, and the success "
         "criterion the executor should verify against."
+    ),
+    "dag-ulw": (
+        "Before starting a `dag-ulw` run, name the goal, the parts it covers "
+        "(files, modules, or components), and the check that proves it is done."
     ),
 }
 _SPECIFIC_CAPABILITY_CATALOG_MIN_SCORE = 6
@@ -2595,6 +2638,18 @@ def _route_chat_message_cached(
         selected_skill = _ROUTER_SKILL
         action = "clarify"
         reason = f"Best match confidence {candidate_confidence} is below {min_confidence}; clarify before dispatch."
+
+    if (
+        candidate_skill == "ultrawork"
+        and action in {"dispatch", "clarify"}
+        and not explicit_skill
+        and _ultrawork_sized(routing_message)
+    ):
+        candidate_skill = "dag-ulw"
+        candidate_harness = primary_harness_for_skill(candidate_skill)
+        if action == "dispatch":
+            selected_skill = candidate_skill
+            reason = "Several parts to run in parallel or across the codebase: plan and run them as a dag-ulw graph."
 
     # Vagueness gate on heavy-mode routing (P2-12): an `ultrawork`/`maestro`
     # match that names no concrete target asks one specific question instead
@@ -7750,6 +7805,14 @@ def _skill_case_rests_on_its_own_name(message: str, skill: str) -> bool:
 
 def _is_engine_entry_approval_reason(reason: str) -> bool:
     return reason.startswith(_ENGINE_ENTRY_APPROVAL_REASON_PREFIX)
+
+
+def _ultrawork_sized(message: str) -> bool:
+    """Whether an `ultrawork` request is the big, many-part kind `dag-ulw` runs (`_DAG_ULW_SIZE_CUES`)."""
+    normalized = normalized_phrase(message)
+    return contains_cue_phrase(normalized, _DAG_ULW_SIZE_CUES) and not contains_cue_phrase(
+        normalized, _DAG_ULW_KEEP_ULTRAWORK_CUES
+    )
 
 
 def _heavy_lane_vagueness_reason(message: str, skill: str) -> str:

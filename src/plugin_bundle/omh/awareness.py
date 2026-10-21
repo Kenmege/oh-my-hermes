@@ -7,6 +7,7 @@ import re
 import unicodedata
 
 from .boundary_phrase import contains_boundary_phrase as _contains_boundary_phrase
+from .dag_ulw_cues import invokes_dag_ulw
 from .data_share_cues import DATA_SHARE_REVIEW_PHRASES, data_share_phrases_said, data_share_request_admitted
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES as _CODING_DELIVERY_REQUEST_PHRASES,
@@ -1248,6 +1249,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "ralplan": "intent_to_plan",
     "adversarial-consensus": "intent_to_plan",
     "loop": "intent_to_plan",
+    "dag-ulw": "intent_to_plan",
     "ultraperf": "intent_to_plan",
     "codebase-onboarding": "intent_to_plan",
     "codegraph-refresh": "intent_to_plan",
@@ -7014,6 +7016,7 @@ def awareness_primer_payload() -> dict[str, object]:
                 "codebase-uml",
                 "refactor-plan",
                 "loop",
+                "dag-ulw",
                 "ultraperf",
                 "product-brief",
                 "decision-prototype",
@@ -7531,6 +7534,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "ralplan": "present_plan",
     "ultragoal": "start_goal",
     "loop": "start_loop_cycle",
+    "dag-ulw": "start_dag_run",
     "ultraprocess": _CODING_ROUTE_LANE_NEXT_ACTION,
     "workflow-learning": "audit_learning_readiness",
     "data-analysis": "prepare_data_analysis_card",
@@ -7708,6 +7712,7 @@ def _workflow_not_evidence_yet(
 _ULW_ENGINE_WORKFLOWS = frozenset(
     {
         "context",
+        "dag-ulw",
         "deep-interview",
         "loop",
         "maestro",
@@ -7732,6 +7737,7 @@ _ULW_ENGINE_WORKFLOWS = frozenset(
 # has to be classified on one side.
 _ULW_ORCHESTRATING_ENGINES = frozenset(
     {
+        "dag-ulw",
         "loop",
         "maestro",
         "ralph",
@@ -7751,6 +7757,7 @@ _ULW_ORCHESTRATING_ENGINES = frozenset(
 # commit that flips the catalog row.
 _ULW_ENGINE_LIFECYCLE_STAGES = {
     "context": "canonical",
+    "dag-ulw": "canonical",
     "deep-interview": "canonical",
     "loop": "canonical",
     "maestro": "canonical",
@@ -7844,6 +7851,7 @@ def _canonical_workflow_by_display_name() -> dict[str, str]:
         ("omh-media-input", "media-input-operator"),
         ("omh-voice-input", "voice-operator"),
         ("omh-image-cards", "img-summary"),
+        ("dag-ulw", "dag-ulw"),
     ):
         if workflow in workflows:
             mapping[display] = workflow
@@ -7886,8 +7894,11 @@ def _public_workflow_names_by_catalog_key() -> dict[str, str]:
     the shortest current `ulw-` label wins to keep the emitted name stable.
     """
     public_names: dict[str, str] = {}
-    for display, workflow in _canonical_workflow_by_display_name().items():
-        if not display.startswith("ulw-") or display == workflow:
+    mapping = _canonical_workflow_by_display_name()
+    # A workflow whose label is its own name (`dag-ulw`) keeps it; its `ulw-` historical alias is not a name.
+    self_labeled = {workflow for display, workflow in mapping.items() if display == workflow}
+    for display, workflow in mapping.items():
+        if not display.startswith("ulw-") or display == workflow or workflow in self_labeled:
             continue
         current = public_names.get(workflow)
         if current is None or len(display) < len(current):
@@ -7980,6 +7991,10 @@ _ADMISSION_HELD_WORKFLOWS = frozenset({"spend-gate", "data-share-review"})
 
 def _direct_workflow_prefix(routing_normalized: str) -> str:
     normalized = routing_normalized.strip()
+    # The router's own reading of the two-word name (`routing/policy.py` reads the same function), so
+    # `dag ulw해줘`, `ulw dag ...` and `/dag-ulw` hint what the router dispatches.
+    if "dag-ulw" in _DIRECT_WORKFLOW_NEXT_ACTIONS and invokes_dag_ulw(normalized):
+        return "dag-ulw"
     for workflow in sorted(_DIRECT_WORKFLOW_NEXT_ACTIONS, key=len, reverse=True):
         aliases = (workflow,) if workflow in _ADMISSION_HELD_WORKFLOWS else (workflow, workflow.replace("-", " "))
         if any(_starts_with_direct_workflow_alias(normalized, alias) for alias in aliases):

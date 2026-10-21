@@ -12,11 +12,14 @@ the conversation's lanes that no end post has closed yet:
   of them and then ``+N more``;
 * **during**, no graph: on a turn where the counts changed since the last
   post, one plain line, ``DAG <name> · <done>/<total> done · <running>
-  running``, and the failures with the first one's title when there are any;
+  running``, and the failures with the first one's title when there are any,
+  unless the reply already has a line opening ``DAG <name> ·`` (a dag-ulw
+  completion turn answers with the run's own status line);
 * **end**, once: a short block that puts each lane under Done, Failed or
   Stopped (and Working, only while one is in flight), names the lane that
   failed first, and gives the totals. It goes on the first reply after
-  every lane has settled, or, for a run a start opened, once nothing has
+  every lane has settled (for a dag-ulw run, once the run itself is over:
+  done, cancelled, or out of repair cycles), or, for a run a start opened, once nothing has
   been in flight and nothing has changed for `STALL_SECONDS` (a team part
   waiting on work that will not come). Such a ``stalled`` end lists the
   parts not moving under Stopped with their status, and leaves them out of
@@ -30,8 +33,10 @@ Nothing is appended:
 
 * with ``OMH_SUBAGENT_GRAPH=off`` in Hermes' environment, the switch that
   already turns the HUD's graphs off;
-* on a delegated child's own turn, with no active graph, or for a run no
-  start opened that is not moving;
+* on a delegated child's own turn (Hermes passes it as platform
+  ``subagent``, which is no chat platform, and its session is not the
+  conversation's root), with no active graph, or for a run no start opened
+  that is not moving;
 * when the graph's fingerprint (structure, states and labels, never elapsed
   time) equals the one the last post recorded, unless time alone has
   brought a stalled end, or a running run's counts did not change;
@@ -216,6 +221,12 @@ def count_line(name: str, counts: Mapping[str, Any]) -> str:
     return " · ".join(parts)
 
 
+def carries_count_line(reply: str, name: str) -> bool:
+    """Whether the reply already has a line that opens like the count line, ``DAG <name> ·``."""
+    lead = f"DAG {name} ·"
+    return any(line.strip().startswith(lead) for line in reply.splitlines())
+
+
 def _listing(lead: str, labels: Sequence[str]) -> str:
     """``lead`` and the labels joined by `` · `` within `LINE_CELLS`; the ones that do not fit are counted (``+2``)."""
     shown = lead
@@ -332,7 +343,9 @@ def messenger_snapshot(
     fingerprint = graph_fingerprint(graph)
     if fingerprint == posted.get("fingerprint") and not (run_open and stalled):
         return ""  # the graph the last post showed; only time can still bring a stalled end
-    if counts["settled"] or (run_open and stalled):
+    # A dag run its parent can still dispatch or repair is not over even when every drawn lane settled.
+    ended = counts["settled"] and not graph.get("dag_open")
+    if ended or (run_open and stalled):
         moment_name, block = "end", end_block(graph, lanes)
     elif stalled:
         return ""  # a run no start opened that is not moving is not news
@@ -341,6 +354,12 @@ def messenger_snapshot(
     elif counts_key(counts) != posted.get("counts"):
         moment_name, block = "count", ""
     else:
+        return ""
+    if moment_name == "count" and carries_count_line(reply, name):
+        # The reply already says where the run stands (a dag-ulw completion turn answers with its status line):
+        # record the counts and add nothing, so the person reads one status line, not two.
+        note_posted(omh_home, session, fingerprint, moment_name=moment_name, phase="open",
+                    counts=counts_key(counts), closed=closed, now=moment)
         return ""
     if ends_in_open_fence(reply):
         note_skipped(omh_home, session, fingerprint, SKIPPED_OPEN_FENCE, now=moment)

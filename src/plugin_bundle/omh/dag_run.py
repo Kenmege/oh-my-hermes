@@ -1,0 +1,703 @@
+"""`omh_dag/v1`: one dag-ulw run, its nodes, attempts and repair cycles, and what is ready next.
+
+The `omh_dag` tool (`tools/dag_tool.py`) is the only writer; the delegation
+graph (`delegation_graph.py`) reads it. Hermes runs every node: the parent
+agent dispatches the ready nodes with its own `delegate_task`, and nothing
+here executes, delegates or calls a model.
+
+The record
+----------
+One JSON file per run under ``<omh_home>/runtime/dag/<session key>/``, keyed
+by the durable session that defined it. A reader looks under every segment
+of the conversation (`dag_tool.conversation_keys`), so a run survives
+Hermes' compaction in either direction. Writes are a temp file and
+``os.replace`` under the record's lock.
+
+It holds the plan the parent declared: ids, labels, categories, edges, write
+scopes, and each node's prompt, kept so ``ready`` can hand a node out after
+the parent's own context was compacted. It holds no child output, summary or
+tool history. Data between nodes moves through handoff files whose paths
+this module names (`handoff_path`); it never reads them beyond asking
+whether one exists.
+
+State is derived on every read, never stored
+--------------------------------------------
+A node is ``accepted`` only by the parent's ``settle``. Its child, bound
+through the ``[dag:<run>/<node>]`` goal marker the delegation ledger reads at
+``subagent_start``, says whether it is running or has returned; a child's own
+status is a report, and a returned node waits for ``settle``. A failed or
+blocked node blocks its dependents and nothing else. ``repair`` adds a group
+of repair nodes for a failed or blocked node, at most `MAX_REPAIR_CYCLES` per
+original node; the original counts as satisfied once its latest group is all
+accepted, and nodes of an earlier group that never got accepted are
+superseded.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping, Sequence
+from contextlib import AbstractContextManager
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+from typing import Any, Final
+
+from . import dag_core
+from .awareness_delivery import _awareness_delivery_lock
+from .delegation_ledger import ledger_key
+from .hermes_delegation import HERMES_MIXTURE_CATEGORY_CHAINS
+
+DAG_SCHEMA_VERSION: Final = "omh_dag/v1"
+DAG_RESULT_SCHEMA_VERSION: Final = "omh_dag_result/v1"
+DAG_DIRNAME: Final = "dag"
+MAX_NODES: Final = 48
+MAX_RUNS_PER_SESSION: Final = 16
+MAX_PROMPT_CHARS: Final = 3_000
+MAX_LABEL_CHARS: Final = 80
+MAX_NAME_CHARS: Final = 48
+MAX_GOAL_CHARS: Final = 240
+MAX_SCOPE_ENTRIES: Final = 16
+MAX_SCOPE_CHARS: Final = 200
+MAX_REASON_CHARS: Final = 200
+MAX_REPAIR_CYCLES: Final = 2
+MAX_PROVIDER_RETRIES: Final = 1
+MAX_RECORD_BYTES: Final = 262_144
+LOCK_SECONDS: Final = 5.0
+# A node handed out that no child has bound to for this long was not dispatched; `ready` offers it again.
+HANDOUT_STALE_SECONDS: Final = 600.0
+# A child counts for an attempt when it started no earlier than this before the attempt was handed out.
+BIND_SLACK_SECONDS: Final = 2.0
+CATEGORIES: Final = tuple(HERMES_MIXTURE_CATEGORY_CHAINS)
+DEEP_CATEGORIES: Final = frozenset({"deep", "deep-work"})
+OUTCOMES: Final = ("accepted", "failed", "blocked")
+PROMPT_MARKERS: Final = ("TASK", "DELIVERABLE", "SCOPE", "VERIFY", "STOP WHEN")
+# Hermes' `subagent_stop` words that say the child did not finish (`delegation_graph._FAILED_STOPS` plus interrupted).
+CHILD_FAILURE_STOPS: Final = frozenset({"failed", "error", "timeout", "interrupted"})
+NODE_FIELDS: Final = frozenset({"id", "label", "category", "prompt", "depends_on", "write_scope"})
+DAG_CLAIM_BOUNDARY: Final = (
+    "The plan a parent agent declared for a dag-ulw run and the outcomes it settled. A settled outcome is the "
+    "parent's judgement; a child's status is Hermes' report. Not execution, verification, review, CI or merge "
+    "evidence."
+)
+
+_ID: Final = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
+MARKER: Final = re.compile(r"^\[dag:([a-z0-9][a-z0-9-]{0,31})/([a-z0-9][a-z0-9-]{0,31})\]")
+_CONTROL: Final = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+_VERIFY_WORDS: Final = re.compile(r"(?<![a-z])(verif|audit|validat|qa(?![a-z]))")
+_MARKER_PATTERNS: Final = {
+    marker: re.compile(r"(?<![A-Za-z])" + r"\s+".join(marker.split()) + r"\s*:", re.IGNORECASE)
+    for marker in PROMPT_MARKERS
+}
+
+# Node states the derivation produces.
+SATISFIED: Final = frozenset({"accepted", "repaired"})
+OPEN: Final = frozenset({"handed_out", "running", "returned"})
+
+
+class DagRefusal(Exception):
+    def __init__(self, reason: str, say: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.say = say
+
+
+# ── paths and the record ─────────────────────────────────────────────────
+
+
+def session_dir(omh_home: Path, session_id: str) -> Path:
+    return Path(omh_home) / "runtime" / DAG_DIRNAME / ledger_key(session_id)
+
+
+def record_path(omh_home: Path, session_id: str, run: str) -> Path:
+    return session_dir(omh_home, session_id) / f"{run}.json"
+
+
+def handoff_path(omh_home: Path, session_id: str, run: str, node: str) -> Path:
+    """Where a node's child writes its report and its dependents read it."""
+    return session_dir(omh_home, session_id) / run / f"{node}.md"
+
+
+def _number(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if number == number and abs(number) != float("inf") else None
+
+
+def read_run(path: Path) -> dict[str, Any] | None:
+    """One stored run, or None when it is missing, too large, or not a run this module wrote."""
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_RECORD_BYTES:
+            return None
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError):
+        return None
+    return raw if _record_shape_ok(raw) else None
+
+
+def _record_shape_ok(raw: object) -> bool:
+    if not isinstance(raw, dict) or raw.get("schema_version") != DAG_SCHEMA_VERSION:
+        return False
+    if not isinstance(raw.get("run"), str) or not _ID.fullmatch(raw["run"]):
+        return False
+    nodes = raw.get("nodes")
+    if not isinstance(nodes, list) or not 1 <= len(nodes) <= MAX_NODES:
+        return False
+    ids = [node.get("id") for node in nodes if isinstance(node, dict)]
+    if len(ids) != len(nodes) or len(set(ids)) != len(ids) or not all(isinstance(i, str) and _ID.fullmatch(i) for i in ids):
+        return False
+    known = set(ids)
+    for node in nodes:
+        if not isinstance(node.get("depends_on"), list) or not set(node["depends_on"]) <= known:
+            return False
+        if not isinstance(node.get("attempts"), list) or not all(isinstance(item, dict) for item in node["attempts"]):
+            return False
+        if not isinstance(node.get("prompt"), str) or node.get("category") not in CATEGORIES:
+            return False
+    if dag_core.layers(ids, {node["id"]: node["depends_on"] for node in nodes}) is None:
+        return False
+    repairs = raw.get("repairs")
+    return isinstance(repairs, dict) and all(
+        isinstance(groups, list) and all(isinstance(group, list) and set(group) <= known for group in groups)
+        for groups in repairs.values()
+    )
+
+
+def write_run(path: Path, record: Mapping[str, Any]) -> None:
+    data = json.dumps(record, sort_keys=True).encode("utf-8")
+    if len(data) > MAX_RECORD_BYTES:
+        raise DagRefusal("record_too_large", "This run's plan is too large to keep; use fewer or shorter nodes.")
+    if path.is_symlink():
+        raise DagRefusal("record_unwritable", "The run's record is a link, so OMH will not write through it.")
+    temporary = path.with_name(f".{path.name}.{os.getpid()}-{secrets.token_hex(6)}.tmp")
+    try:
+        with temporary.open("xb") as handle:
+            handle.write(data + b"\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists() and not temporary.is_symlink():
+            temporary.unlink()
+
+
+def locked(path: Path) -> AbstractContextManager[str]:
+    """The run record's own lock, held for one read-modify-write."""
+    return _awareness_delivery_lock(path, timeout_seconds=LOCK_SECONDS)
+
+
+def session_runs(omh_home: Path, session_id: str) -> list[tuple[dict[str, Any], Path]]:
+    """Every readable run stored under one session, newest change first."""
+    directory = session_dir(omh_home, session_id)
+    try:
+        paths = [path for path in directory.iterdir()
+                 if path.suffix == ".json" and not path.name.startswith(".") and not path.is_symlink()]
+    except OSError:
+        return []
+    runs = [(record, path) for path in paths if (record := read_run(path)) is not None]
+    return sorted(runs, key=lambda item: _number(item[0].get("updated_at")) or 0.0, reverse=True)
+
+
+# ── validation ───────────────────────────────────────────────────────────
+
+
+def _plain(value: object, limit: int, reason: str, say: str) -> str:
+    if not isinstance(value, str) or not value.strip() or len(value.strip()) > limit or _CONTROL.search(value):
+        raise DagRefusal(reason, say)
+    return " ".join(value.split())
+
+
+def valid_id(value: object, reason: str, say: str) -> str:
+    if not isinstance(value, str) or not _ID.fullmatch(value):
+        raise DagRefusal(reason, say)
+    return value
+
+
+def _validated_node(raw: object) -> dict[str, Any]:
+    if not isinstance(raw, Mapping) or set(raw) - NODE_FIELDS:
+        raise DagRefusal("invalid_node", "Each node takes only id, label, category, prompt, depends_on and write_scope.")
+    node_id = valid_id(raw.get("id"), "invalid_node_id", "Each node needs a short lowercase id (a-z, 0-9, -).")
+    label = _plain(raw.get("label"), MAX_LABEL_CHARS, "invalid_label", f"Node {node_id} needs a short label.")
+    category = raw.get("category")
+    if category not in CATEGORIES:
+        raise DagRefusal("invalid_category", f"Node {node_id} needs a category: {', '.join(CATEGORIES)}.")
+    prompt = raw.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > MAX_PROMPT_CHARS or "\x00" in prompt:
+        raise DagRefusal("invalid_prompt",
+                         f"Node {node_id} needs a prompt of at most {MAX_PROMPT_CHARS} characters.")
+    depends_on = raw.get("depends_on", [])
+    if not isinstance(depends_on, list) or not all(isinstance(item, str) for item in depends_on):
+        raise DagRefusal("invalid_depends_on", f"Node {node_id}: depends_on lists other nodes by id.")
+    scope = raw.get("write_scope", [])
+    if (not isinstance(scope, list) or len(scope) > MAX_SCOPE_ENTRIES
+            or not all(isinstance(item, str) and item.strip() and len(item) <= MAX_SCOPE_CHARS
+                       and not _CONTROL.search(item) for item in scope)):
+        raise DagRefusal("invalid_write_scope",
+                         f"Node {node_id}: write_scope lists at most {MAX_SCOPE_ENTRIES} paths it may change.")
+    return {
+        "id": node_id,
+        "label": label,
+        "category": category,
+        "prompt": prompt.strip(),
+        "depends_on": sorted(set(depends_on)),
+        "write_scope": sorted({item.strip() for item in scope}),
+        "repairs": "",
+        "cycle": 0,
+        "attempts": [],
+    }
+
+
+def _require_graph(nodes: Sequence[Mapping[str, Any]], *, editable: Iterable[str] | None = None) -> None:
+    """The hard rejects over a whole graph: references, cycles, and write scopes shared without an edge.
+
+    ``editable`` limits the scope check to pairs of those nodes: a repair is
+    checked against the nodes that can still run, not against finished ones.
+    """
+    ids = [str(node["id"]) for node in nodes]
+    if len(set(ids)) != len(ids):
+        raise DagRefusal("duplicate_node_id", "Each node id must be unique in the run.")
+    known = set(ids)
+    parents = {str(node["id"]): list(node["depends_on"]) for node in nodes}
+    for node in nodes:
+        problem = dag_core.edge_problem(str(node["id"]), node["depends_on"], known)
+        if problem is not None and problem[0] == dag_core.UNKNOWN_DEPENDENCY:
+            raise DagRefusal("unknown_dependency", f"Node {node['id']} depends on {problem[1]}, which is not in the run.")
+        if problem is not None:
+            raise DagRefusal("self_dependency", f"Node {node['id']} cannot depend on itself.")
+    _placed, stuck = dag_core.layer_of(ids, parents)
+    if stuck:
+        raise DagRefusal("dependency_cycle", f"These nodes depend on each other in a circle: {', '.join(stuck)}.")
+    checked = set(editable) if editable is not None else known
+    scopes = [(str(node["id"]), node["write_scope"]) for node in nodes]
+    for first, second, shared, joined in dag_core.shared_scope_pairs(scopes, parents):
+        if not joined and first in checked and second in checked:
+            raise DagRefusal(
+                "write_scope_overlap",
+                f"Nodes {first} and {second} both write {', '.join(shared)} with no edge between them; "
+                "make one depend on the other or split the scope.",
+            )
+
+
+def lint(nodes: Sequence[Mapping[str, Any]]) -> list[str]:
+    """Advisory findings: they never reject a run, and the run records them."""
+    findings: list[str] = []
+    for node in nodes:
+        missing = [marker for marker in PROMPT_MARKERS if not _MARKER_PATTERNS[marker].search(str(node["prompt"]))]
+        if missing:
+            findings.append(f"missing_markers:{node['id']}:{','.join(marker.replace(' ', '_') for marker in missing)}")
+    verifiers = [node for node in nodes if is_verification(node)]
+    if len(nodes) > 1 and not verifiers:
+        findings.append("no_verification_node")
+    if verifiers:
+        parents = {str(node["id"]): node["depends_on"] for node in nodes}
+        covered: set[str] = set()
+        for verifier in verifiers:
+            covered |= ancestors(str(verifier["id"]), parents)
+        producers = sorted(str(node["id"]) for node in nodes if node["write_scope"] and not is_verification(node))
+        unchecked = [node_id for node_id in producers if node_id not in covered]
+        if unchecked:
+            findings.append(f"verification_misses:{','.join(unchecked)}")
+    if len(nodes) > 1 and all(node["category"] in DEEP_CATEGORIES for node in nodes):
+        findings.append("all_nodes_deep")
+    if sum(1 for node in nodes if node["category"] == "ultrabrain") > 1:
+        findings.append("ultrabrain_more_than_once")
+    return findings
+
+
+def is_verification(node: Mapping[str, Any]) -> bool:
+    return bool(_VERIFY_WORDS.search(f"{node['id']} {str(node['label']).casefold()}"))
+
+
+def ancestors(node_id: str, parents: Mapping[str, Iterable[str]]) -> set[str]:
+    seen: set[str] = set()
+    frontier = list(parents.get(node_id, ()))
+    while frontier:
+        current = frontier.pop()
+        if current not in seen:
+            seen.add(current)
+            frontier.extend(parents.get(current, ()))
+    return seen
+
+
+def topology(nodes: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    ids = [str(node["id"]) for node in nodes]
+    parents = {str(node["id"]): node["depends_on"] for node in nodes}
+    return {
+        "layers": dag_core.layers(ids, parents) or [],
+        "critical_path": dag_core.critical_path(ids, parents),
+        "bottlenecks": [{"node": node, "blocks": count} for node, count in dag_core.bottlenecks(ids, parents)],
+    }
+
+
+def definition_digest(nodes: Sequence[Mapping[str, Any]]) -> str:
+    shape = [{key: node[key] for key in sorted(NODE_FIELDS)} for node in nodes]
+    return hashlib.sha256(json.dumps(shape, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+
+
+def new_record(session_id: str, run: str, name: object, goal: object, raw_nodes: object, now: float) -> dict[str, Any]:
+    if not isinstance(raw_nodes, list) or not raw_nodes:
+        raise DagRefusal("empty_graph", "A run needs at least one node.")
+    if len(raw_nodes) > MAX_NODES:
+        raise DagRefusal("too_many_nodes", f"A run holds at most {MAX_NODES} nodes; split the goal into phases.")
+    nodes = [_validated_node(raw) for raw in raw_nodes]
+    _require_graph(nodes)
+    title = _plain(name, MAX_NAME_CHARS, "invalid_name", "The run needs a short name.") if name else run
+    stated = _plain(goal, MAX_GOAL_CHARS, "invalid_goal", "The goal is one line.") if goal else ""
+    return {
+        "schema_version": DAG_SCHEMA_VERSION,
+        "session_id": session_id,
+        "run": run,
+        "name": title,
+        "goal": stated,
+        "digest": definition_digest(nodes),
+        "defined_at": now,
+        "updated_at": now,
+        "cancelled_at": None,
+        "nodes": nodes,
+        "repairs": {},
+        "topology": topology(nodes),
+        "lint": lint(nodes),
+        "claim_boundary": DAG_CLAIM_BOUNDARY,
+    }
+
+
+# ── derivation ───────────────────────────────────────────────────────────
+
+
+def bound_children(children: Sequence[Mapping[str, Any]], run: str) -> dict[str, list[Mapping[str, Any]]]:
+    """The ledger's children bound to this run, per node, oldest start first."""
+    by_node: dict[str, list[Mapping[str, Any]]] = {}
+    for child in children:
+        dag = child.get("dag")
+        if isinstance(dag, Mapping) and dag.get("run") == run and isinstance(dag.get("node"), str):
+            by_node.setdefault(dag["node"], []).append(child)
+    for listed in by_node.values():
+        listed.sort(key=lambda child: _number(child.get("started_at")) or 0.0)
+    return by_node
+
+
+def attempt_child(attempt: Mapping[str, Any], children: Sequence[Mapping[str, Any]]) -> Mapping[str, Any] | None:
+    """The newest child that started for this attempt, if one did."""
+    out = _number(attempt.get("handed_out_at")) or 0.0
+    matched = [child for child in children if (_number(child.get("started_at")) or 0.0) >= out - BIND_SLACK_SECONDS]
+    return matched[-1] if matched else None
+
+
+def _root(node: Mapping[str, Any]) -> str:
+    return str(node.get("repairs") or node["id"])
+
+
+def derive(record: Mapping[str, Any], children: Sequence[Mapping[str, Any]], now: float) -> dict[str, dict[str, Any]]:
+    """Each node's state, what it waits on, and its bound child. Never stored; recomputed on every read."""
+    nodes = {str(node["id"]): node for node in record["nodes"]}
+    bound = bound_children(children, str(record["run"]))
+    groups: Mapping[str, list[list[str]]] = record.get("repairs") or {}
+    base: dict[str, dict[str, Any]] = {}
+    for node_id, node in nodes.items():
+        attempts = node.get("attempts") or []
+        last = attempts[-1] if attempts else None
+        info: dict[str, Any] = {"child": None, "attempts": len(attempts), "waits_on": [], "held_by": []}
+        if last is None or last.get("outcome") == "retry":
+            info["state"] = "pending"
+        elif last.get("outcome") in OUTCOMES:
+            info["state"] = str(last["outcome"])
+            info["child"] = attempt_child(last, bound.get(node_id, []))
+        else:
+            child = attempt_child(last, bound.get(node_id, []))
+            info["child"] = child
+            if child is None:
+                info["state"] = "handed_out"
+            elif isinstance(child.get("stop"), Mapping):
+                info["state"] = "returned"
+            else:
+                info["state"] = "running"
+        base[node_id] = info
+    # A root's latest repair group, all accepted, stands in for it; older groups' unaccepted nodes are superseded.
+    for root, root_groups in groups.items():
+        if root not in base or not root_groups:
+            continue
+        latest = root_groups[-1]
+        if base[root]["state"] in ("failed", "blocked") and latest and all(
+            base.get(member, {}).get("state") == "accepted" for member in latest
+        ):
+            base[root]["state"] = "repaired"
+        for older in root_groups[:-1]:
+            for member in older:
+                if member in base and base[member]["state"] != "accepted":
+                    base[member]["state"] = "superseded"
+    cancelled = record.get("cancelled_at") is not None
+    satisfied = {node_id for node_id, info in base.items() if info["state"] in SATISFIED}
+    dead = {node_id for node_id, info in base.items() if info["state"] in ("failed", "blocked")}
+    for node_id, info in base.items():
+        if info["state"] != "pending":
+            if cancelled and info["state"] in OPEN:
+                info["state"] = "cancelled"
+            continue
+        parents = nodes[node_id]["depends_on"]
+        info["waits_on"] = [parent for parent in parents if parent not in satisfied]
+        info["held_by"] = sorted(ancestor for ancestor in ancestors(node_id, {k: v["depends_on"] for k, v in nodes.items()})
+                                 if ancestor in dead)
+        if cancelled:
+            info["state"] = "cancelled"
+        elif info["waits_on"]:
+            info["state"] = "held" if info["held_by"] else "waiting"
+        else:
+            info["state"] = "ready"
+    return base
+
+
+def cycles_left(record: Mapping[str, Any], node_id: str) -> int:
+    nodes = {str(node["id"]): node for node in record["nodes"]}
+    root = _root(nodes[node_id]) if node_id in nodes else node_id
+    return MAX_REPAIR_CYCLES - len((record.get("repairs") or {}).get(root, []))
+
+
+def open_failures(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """Failed or blocked nodes no accepted repair resolves, in record order."""
+    return [str(node["id"]) for node in record["nodes"] if derived[str(node["id"])]["state"] in ("failed", "blocked")]
+
+
+def run_state(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]]) -> str:
+    """``done``, ``cancelled``, ``running``, ``needs_repair`` (failures, a cycle left) or ``stopped`` (none left)."""
+    if record.get("cancelled_at") is not None:
+        return "cancelled"
+    live = [info for info in derived.values() if info["state"] != "superseded"]
+    if all(info["state"] in SATISFIED for info in live):
+        return "done"
+    if any(info["state"] in OPEN or info["state"] == "ready" for info in live):
+        return "running"
+    failures = open_failures(record, derived)
+    if any(cycles_left(record, node_id) > 0 for node_id in failures):
+        return "needs_repair"
+    return "stopped"
+
+
+def counts(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    live = {node_id: info for node_id, info in derived.items() if info["state"] != "superseded"}
+    failures = open_failures(record, derived)
+    labels = {str(node["id"]): str(node["label"]) for node in record["nodes"]}
+    return {
+        "total": len(live),
+        "done": sum(1 for info in live.values() if info["state"] in SATISFIED),
+        "running": sum(1 for info in live.values() if info["state"] in OPEN),
+        "failed": len(failures),
+        "first_failure": labels[failures[0]] if failures else "",
+    }
+
+
+def status_line(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]]) -> str:
+    """The one line a messenger reply carries on a completion turn: ``DAG <name> · 3/6 done · 2 running``."""
+    tally = counts(record, derived)
+    parts = [f"DAG {record['name']}", f"{tally['done']}/{tally['total']} done", f"{tally['running']} running"]
+    if tally["failed"]:
+        parts.append(f"{tally['failed']} failed ({tally['first_failure']})")
+    return " · ".join(parts)
+
+
+# ── handing nodes out ────────────────────────────────────────────────────
+
+
+def _layer_index(record: Mapping[str, Any]) -> dict[str, int]:
+    nodes = record["nodes"]
+    placed, _stuck = dag_core.layer_of([str(node["id"]) for node in nodes], {str(n["id"]): n["depends_on"] for n in nodes})
+    return placed
+
+
+def offerable(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]], now: float) -> list[str]:
+    """Nodes to hand out now: ready ones, and ones handed out so long ago that no child ever took them."""
+    order = _layer_index(record)
+    nodes = []
+    for node in record["nodes"]:
+        node_id = str(node["id"])
+        state = derived[node_id]["state"]
+        if state == "ready":
+            nodes.append(node_id)
+        elif state == "handed_out":
+            last = node["attempts"][-1]
+            if now - (_number(last.get("handed_out_at")) or 0.0) > HANDOUT_STALE_SECONDS:
+                nodes.append(node_id)
+    return sorted(nodes, key=lambda node_id: (order.get(node_id, 0), node_id))
+
+
+def hand_out(node: dict[str, Any], derived_state: str, now: float) -> dict[str, Any]:
+    """Write-ahead: the attempt exists before its goal leaves this tool, so a marker always finds it."""
+    attempts = node.setdefault("attempts", [])
+    if derived_state == "handed_out" and attempts:
+        attempts[-1]["handed_out_at"] = now
+        attempts[-1]["reoffered"] = int(attempts[-1].get("reoffered", 0)) + 1
+        return attempts[-1]
+    fallback = bool(attempts) and attempts[-1].get("outcome") == "retry"
+    attempt = {"n": len(attempts) + 1, "handed_out_at": now, "fallback": fallback,
+               "settled_at": None, "outcome": "", "reason": "", "provider_error": False}
+    attempts.append(attempt)
+    return attempt
+
+
+def task_for(record: Mapping[str, Any], node: Mapping[str, Any], omh_home: Path) -> dict[str, str]:
+    """One `delegate_task` task: the marked goal, and the node's prompt with where to write and read handoffs."""
+    session = str(record["session_id"])
+    run = str(record["run"])
+    lines = [
+        str(node["prompt"]),
+        "",
+        f"Handoff: before you stop, write your report to {handoff_path(omh_home, session, run, str(node['id']))}: "
+        "what you did, the files you changed, what VERIFY showed, and anything still open. The parent reads that "
+        "file and your final message.",
+    ]
+    if node["depends_on"]:
+        reads = ", ".join(str(handoff_path(omh_home, session, run, parent)) for parent in node["depends_on"])
+        lines.append(f"Read first: {reads}. A missing file means that part did not finish: stop and say so.")
+    lines.append("Stay inside your SCOPE: other parts of this run work at the same time. If you cannot finish, "
+                 "say plainly that you are blocked and why; do not report blocked work as done.")
+    return {"goal": f"[dag:{run}/{node['id']}] {node['label']}", "context": "\n".join(lines)}
+
+
+def calls_for(
+    record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], *, free_slots: int, per_call: int,
+    omh_home: Path, now: float,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Ready nodes as `delegate_task` calls, one per category (and route fallback), at most ``free_slots`` calls.
+
+    Returns the calls, whose nodes are now handed out in ``record``, and the
+    ready nodes left for a later call because no slot was free.
+    """
+    nodes = {str(node["id"]): node for node in record["nodes"]}
+    groups: dict[tuple[str, bool], list[str]] = {}
+    for node_id in offerable(record, derived, now):
+        node = nodes[node_id]
+        attempts = node.get("attempts") or []
+        fallback = bool(attempts) and attempts[-1].get("outcome") == "retry"
+        groups.setdefault((str(node["category"]), fallback), []).append(node_id)
+    calls: list[dict[str, Any]] = []
+    held: list[str] = []
+    size = max(1, per_call)
+    for (category, fallback), members in groups.items():
+        for start in range(0, len(members), size):
+            chunk = members[start:start + size]
+            if len(calls) >= free_slots:
+                held.extend(chunk)
+                continue
+            for node_id in chunk:
+                hand_out(nodes[node_id], derived[node_id]["state"], now)
+            calls.append({
+                "category": category,
+                "route": {"tool": "omh_delegate_route", "action": "fallback" if fallback else "set",
+                          "category": category},
+                "nodes": chunk,
+                "tasks": [task_for(record, nodes[node_id], omh_home) for node_id in chunk],
+            })
+    return calls, held
+
+
+# ── settling and repairing ───────────────────────────────────────────────
+
+
+def settle(
+    record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], node_id: str, outcome: object, reason: object,
+    provider_error: bool, *, handoff_exists: bool, now: float,
+) -> str:
+    """Close the node's open attempt. Returns what happened: the outcome, or ``retry`` (a provider error's one retry)."""
+    nodes = {str(node["id"]): node for node in record["nodes"]}
+    if node_id not in nodes:
+        raise DagRefusal("unknown_node", f"Node {node_id} is not in run {record['run']}.")
+    if record.get("cancelled_at") is not None:
+        raise DagRefusal("run_cancelled", "The run was cancelled; nothing in it settles now.")
+    if outcome not in OUTCOMES:
+        raise DagRefusal("invalid_outcome", "Settle a node as accepted, failed or blocked.")
+    info = derived[node_id]
+    if info["state"] not in OPEN:
+        raise DagRefusal("node_not_out", f"Node {node_id} is {info['state']}, not out with a child; nothing to settle.")
+    child = info["child"]
+    stop = child.get("stop") if isinstance(child, Mapping) else None
+    if outcome == "accepted" and isinstance(stop, Mapping) and stop.get("status") in CHILD_FAILURE_STOPS:
+        raise DagRefusal(
+            "child_reported_failure",
+            f"Hermes reported node {node_id}'s child {stop.get('status')}; settle it failed or blocked, not accepted.",
+        )
+    if outcome == "accepted" and not handoff_exists:
+        raise DagRefusal(
+            "handoff_missing",
+            f"Node {node_id} has no handoff file, and the nodes after it read one. Write it from the child's result, "
+            "or settle the node failed.",
+        )
+    attempt = nodes[node_id]["attempts"][-1]
+    retries = sum(1 for item in nodes[node_id]["attempts"] if item.get("outcome") == "retry")
+    note = _plain(reason, MAX_REASON_CHARS, "invalid_reason", "The reason is one short line.") if reason else ""
+    attempt.update(settled_at=now, reason=note, provider_error=bool(provider_error))
+    if outcome == "failed" and provider_error and retries < MAX_PROVIDER_RETRIES:
+        attempt["outcome"] = "retry"
+        return "retry"
+    attempt["outcome"] = outcome
+    return str(outcome)
+
+
+def repair(
+    record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], node_id: str, raw_nodes: object, now: float
+) -> list[str]:
+    """Add a group of repair nodes for a failed or blocked node. Returns the new ids."""
+    nodes = {str(node["id"]): node for node in record["nodes"]}
+    if node_id not in nodes:
+        raise DagRefusal("unknown_node", f"Node {node_id} is not in run {record['run']}.")
+    if record.get("cancelled_at") is not None:
+        raise DagRefusal("run_cancelled", "The run was cancelled; start a new run instead.")
+    if derived[node_id]["state"] not in ("failed", "blocked"):
+        raise DagRefusal("not_failed", f"Node {node_id} is {derived[node_id]['state']}; only a failed or blocked node is repaired.")
+    root = _root(nodes[node_id])
+    groups = record.setdefault("repairs", {}).setdefault(root, [])
+    if len(groups) >= MAX_REPAIR_CYCLES:
+        raise DagRefusal(
+            "repair_limit_reached",
+            f"{root} has had {MAX_REPAIR_CYCLES} repair cycles; report what is still open instead of repairing again.",
+        )
+    if not isinstance(raw_nodes, list) or not raw_nodes:
+        raise DagRefusal("empty_graph", "A repair needs at least one node.")
+    added = [_validated_node(raw) for raw in raw_nodes]
+    if len(nodes) + len(added) > MAX_NODES:
+        raise DagRefusal("too_many_nodes", f"A run holds at most {MAX_NODES} nodes.")
+    group = {str(node["id"]) for node in added}
+    accepted = {key for key, info in derived.items() if info["state"] in SATISFIED}
+    for node in added:
+        outside = [parent for parent in node["depends_on"] if parent not in group and parent not in accepted]
+        if outside:
+            raise DagRefusal(
+                "repair_depends_on_open_node",
+                f"Repair node {node['id']} may depend only on accepted nodes or its own group, not {', '.join(outside)}.",
+            )
+        node.update(repairs=root, cycle=len(groups) + 1)
+    runnable = {key for key, info in derived.items() if info["state"] in OPEN | {"ready", "waiting", "held"}}
+    _require_graph(list(record["nodes"]) + added, editable=group | runnable)
+    record["nodes"].extend(added)
+    groups.append([str(node["id"]) for node in added])
+    record["topology"] = topology(record["nodes"])
+    record["lint"] = lint(record["nodes"])
+    record["updated_at"] = now
+    return [str(node["id"]) for node in added]
+
+
+def node_rows(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """What `status` says per node: no prompt, no child output."""
+    rows = []
+    for node in record["nodes"]:
+        node_id = str(node["id"])
+        info = derived[node_id]
+        attempts = node.get("attempts") or []
+        row: dict[str, Any] = {
+            "id": node_id, "label": node["label"], "category": node["category"], "state": info["state"],
+            "attempts": len(attempts), "depends_on": list(node["depends_on"]),
+        }
+        if info["waits_on"]:
+            row["waits_on"] = list(info["waits_on"])
+        if info["held_by"]:
+            row["held_by"] = list(info["held_by"])
+        if node.get("repairs"):
+            row["repairs"] = node["repairs"]
+        if attempts and attempts[-1].get("reason"):
+            row["reason"] = attempts[-1]["reason"]
+        if info["state"] in ("failed", "blocked"):
+            row["repair_cycles_left"] = cycles_left(record, node_id)
+        rows.append(row)
+    return rows

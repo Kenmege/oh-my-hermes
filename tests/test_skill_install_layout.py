@@ -87,7 +87,8 @@ class HermesSkillCategoryTests(unittest.TestCase):
         self.assertEqual(ulw, set(installable_skill_names()) & set(ULW_ENGINE_SKILL_NAMES))
         self.assertTrue(ulw)
         for name in ulw:
-            self.assertTrue(omh_skill_display_name(name).startswith("ulw-"), name)
+            # `dag-ulw` is the one engine whose label is its own name: people type `dag ulw` and `/dag-ulw`.
+            self.assertTrue(omh_skill_display_name(name).startswith("ulw-") or name == "dag-ulw", name)
 
     def test_a_category_name_never_shadows_a_skill_label(self) -> None:
         """A category dir and a skill leaf dir must not want the same path.

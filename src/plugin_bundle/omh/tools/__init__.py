@@ -10,6 +10,7 @@ BUILTIN_TOOL_NAMES: tuple[str, ...] = (
     "omh_agent_board",
     "omh_capabilities",
     "omh_context",
+    "omh_dag",
     "omh_delegate_route",
     "omh_decision_gate",
     "omh_document_plan",
@@ -43,6 +44,7 @@ def builtin_tool_schemas() -> tuple[dict[str, Any], ...]:
     from .capability_tool import OMH_CAPABILITIES_SCHEMA
     from .chat_tool import OMH_INTERACT_SCHEMA
     from .context_tool import OMH_CONTEXT_SCHEMA
+    from .dag_tool import OMH_DAG_SCHEMA
     from .delegate_route_tool import OMH_DELEGATE_ROUTE_SCHEMA
     from .decision_gate_tool import OMH_DECISION_GATE_SCHEMA
     from .document_plan_tool import OMH_DOCUMENT_PLAN_SCHEMA
@@ -66,6 +68,7 @@ def builtin_tool_schemas() -> tuple[dict[str, Any], ...]:
         OMH_AGENT_BOARD_SCHEMA,
         OMH_CAPABILITIES_SCHEMA,
         OMH_CONTEXT_SCHEMA,
+        OMH_DAG_SCHEMA,
         OMH_DELEGATE_ROUTE_SCHEMA,
         OMH_DECISION_GATE_SCHEMA,
         OMH_DOCUMENT_PLAN_SCHEMA,

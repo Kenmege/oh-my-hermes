@@ -66,6 +66,37 @@ def read_delegation_route(hermes_home: str | Path | None = None) -> dict[str, st
     return _read_delegation_route_text(text)
 
 
+def read_delegation_settings(hermes_home: str | Path | None, keys: tuple[str, ...]) -> dict[str, str]:
+    """Other `delegation.*` scalars (`max_concurrent_children`, ...) as written, quotes and comments dropped.
+
+    The same section scan as the routable keys, read-only and last occurrence
+    wins; a value that is not a one-line scalar is left out, so a caller falls
+    back to Hermes' own default for it.
+    """
+    text, _, error = _read_config_snapshot(_config_path(hermes_home))
+    if error:
+        return {}
+    lines = text.removeprefix(BOM).splitlines()
+    child_indents = _delegation_child_indents(lines)
+    values: dict[str, str] = {}
+    in_section = False
+    child_indent = 2
+    for index, line in enumerate(lines):
+        if _SECTION_RE.match(line):
+            in_section, child_indent = True, child_indents.get(index, 2)
+            continue
+        if in_section and _top_level_key(line) is not None:
+            in_section = False
+        key = _mapping_key(line, child_indent) if in_section else None
+        if key in keys and _managed_key_re(key, child_indent).match(line):
+            raw = line.partition(":")[2].split("#", 1)[0].strip().strip("'\"")
+            if raw and not _continuation_follows(lines, index, child_indent):
+                values[key] = raw
+            else:
+                values.pop(key, None)
+    return values
+
+
 def read_child_endpoint(hermes_home: str | Path | None = None) -> dict[str, str] | None:
     """Where Hermes builds a delegated child while `delegation.base_url` is set.
 

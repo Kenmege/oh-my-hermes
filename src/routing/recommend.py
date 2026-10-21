@@ -2822,6 +2822,10 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # data-analysis clarify to a `plan` one, which is the widening this table
     # exists to prevent.
     "plan": frozenset({"make", "write"}),
+    # `dag-ulw` is reached through its complete phrases ("dag ulw", "ulw dag", ...) and by intent through the
+    # heavy-lane redirect in `routing/chat.py`. Its words are held back: `dag` alone is data-pipelines'
+    # ("airflow dag"), and `ulw` / `ultrawork` alone are `ultrawork`'s own names.
+    "dag-ulw": frozenset({"dag", "ulw", "ultrawork"}),
     # `research` reaches these two only through "research before spec",
     # "research before planning", and "compare open source implementations".
     # As bare tokens they are two of the most ordinary words in a coding

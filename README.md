@@ -505,7 +505,7 @@ Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appr
 </p>
 
 <!-- omh:ulw-inventory:begin (generated: uv run python -m omh.cli docs ulw-inventory; source: src/skills/catalog.py) -->
-Nine `ulw-` workflows. Say the trigger in chat — Hermes routes the
+Ten `ulw-` workflows. Say the trigger in chat — Hermes routes the
 rest. Full catalog: [Workflow Reference](docs/WORKFLOWS.md).
 
 | Workflow&nbsp;command | What it does |
@@ -515,6 +515,7 @@ rest. Full catalog: [Workflow Reference](docs/WORKFLOWS.md).
 | ⚡ `ulw-research` | Digs through real code and the live web, keeps sources, and verifies anything doubtful. |
 | ⚡ `ulw-plan` | Builds a reviewed plan: options compared, risks named, done-criteria agreed. |
 | ⚡ `ulw-work` | Runs an accepted plan in parallel lanes that never touch the same file. |
+| ⚡ `dag-ulw` | Runs a big job as a graph of small parallel nodes, verifies the goal with a separate node, and repairs what failed. |
 | ⚡ `ulw-maestro` | Runs a delegated task on Claude Code or Codex — prompt composed from the CLI's own installed skills, spawned live with a dock row and a steerable session. |
 | ⚡ `ulw-loop` | Cycles plan → build → review until the goal actually passes. |
 | ⚡ `ulw-qa` | Attacks the build with hostile scenarios and fixes what breaks. |

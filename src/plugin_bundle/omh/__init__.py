@@ -213,6 +213,7 @@ def register(ctx: _PluginContext) -> None:
     from .tools.capability_tool import OMH_CAPABILITIES_SCHEMA, omh_capabilities_handler
     from .tools.chat_tool import OMH_INTERACT_SCHEMA, omh_interact_handler
     from .tools.context_tool import OMH_CONTEXT_SCHEMA, omh_context_handler
+    from .tools.dag_tool import OMH_DAG_SCHEMA, omh_dag_handler
     from .tools.delegate_route_tool import OMH_DELEGATE_ROUTE_SCHEMA, omh_delegate_route_handler
     from .tools.decision_gate_tool import OMH_DECISION_GATE_SCHEMA, omh_decision_gate_handler
     from .tools.document_plan_tool import OMH_DOCUMENT_PLAN_SCHEMA, omh_document_plan_handler
@@ -252,6 +253,13 @@ def register(ctx: _PluginContext) -> None:
         OMH_CONTEXT_SCHEMA,
         omh_context_handler,
         description=OMH_CONTEXT_SCHEMA["description"],
+    )
+    _ = ctx.register_tool(
+        "omh_dag",
+        _TOOLSET,
+        OMH_DAG_SCHEMA,
+        omh_dag_handler,
+        description=OMH_DAG_SCHEMA["description"],
     )
     _ = ctx.register_tool(
         "omh_delegate_route",

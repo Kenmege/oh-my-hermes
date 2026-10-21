@@ -401,7 +401,7 @@ Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appr
   <img src="assets/omh-character-badge.png" alt="Oh My Hermes character mark" width="170">
 </p>
 
-9 個の `ulw-` workflow。チャットでトリガーを言えば Hermes がルーティング —
+10 個の `ulw-` workflow。チャットでトリガーを言えば Hermes がルーティング —
 全カタログは [Workflow Reference](docs/WORKFLOWS.md)。
 
 | Skill | 何をするか |
@@ -411,6 +411,7 @@ Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appr
 | ⚡ `ulw-research` | 実際のコードとウェブを調べ、出典を残し、怪しければ裏取りします。 |
 | ⚡ `ulw-plan` | 選択肢の比較、リスク、完了基準まで合意したレビュー済み計画を作ります。 |
 | ⚡ `ulw-work` | 承認済み計画を、同じファイルに触れない並列レーンで実行します。 |
+| ⚡ `dag-ulw` | 大きな作業を小さな並列ノードのグラフとして実行し、別ノードで目標を検証して、失敗した部分を修復します。 |
 | ⚡ `ulw-maestro` | Claude Code または Codex に委任したタスクを実行 — そのCLI自身のインストール済みスキルから組み立てたプロンプトで、ライブに起動し、ドック行とスティアリング可能なセッションを持ちます。 |
 | ⚡ `ulw-loop` | 計画 → 実装 → レビューを、ゴールが本当に通るまで回します。 |
 | ⚡ `ulw-qa` | わざと過酷なシナリオで攻撃し、壊れた所を直します。 |

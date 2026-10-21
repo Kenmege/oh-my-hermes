@@ -678,7 +678,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # (a work plan, two ask-first instructions, a medicine reminder, a
             # parent's blood pressure) and a question about what a cron request
             # means, which must not dispatch (6).
-            expected=838,
+            # `dag-ulw` adds five that must not name it: an Airflow DAG, a file
+            # called dag, a declined dag ulw, a relayed dag ulw report and a
+            # block-quoted dag ulw request (5).
+            expected=843,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -986,7 +989,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # sentence), accessibility audit (bare and a WCAG sentence), build
             # failure (bare and a sentence), a RAG pipeline, parallel
             # implementation, verify-before-merge and a screenshot check (11).
-            expected=881,
+            # `dag-ulw` adds six that start it: the name opening a request,
+            # with a Korean ending, in reverse order (`ulw dag`), as a slash
+            # command and after `with`, and parallel feature work across
+            # modules that never names it (6).
+            expected=887,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -996,8 +1003,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             describe="Installable workflow skills quoted in reference surfaces",
             live=_installable_skill_count,
             # The current workflow additions are part of the installable catalog.
-            # `data-share-review` adds one. `spend-gate` adds one.
-            expected=144,
+            # `data-share-review` adds one. `spend-gate` adds one. `dag-ulw` adds one.
+            expected=145,
             sites=(
                 "docs/README.md",
                 # The docs index quotes the count in prose and
@@ -1022,7 +1029,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             name="ulw_canonical_engine_count",
             describe="ULW engines in the canonical lifecycle stage",
             live=_ulw_canonical_engine_count,
-            expected=9,
+            # `dag-ulw` joins the canonical engines (2026-10-21).
+            expected=10,
             sites=(
                 "README.ko.md",
                 "README.ja.md",

@@ -264,6 +264,7 @@ VISIBLE_ACTIONS = (
     "record_layout_qa",
     "record_surface_quality_matrix",
     "prepare_finance_analysis",
+    "start_dag_run",
     "prepare_people_ops_brief",
     "prepare_legal_compliance_review",
     "prepare_support_operations",
@@ -672,6 +673,9 @@ _RETAINED_DELEGATION_SKILLS = set(retained_delegation_skill_names())
 _DIRECT_WORKFLOW_SKILLS = {
     "research",
     "ultraqa",
+    # A big job the person asked for runs at once (owner decision D1); only scope, spend or an irreversible step
+    # stops it, so it gets its own card rather than a plan-first one.
+    "dag-ulw",
     "code-review",
     "web-research",
     "source-finder",
@@ -1119,6 +1123,7 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "prepare_design_quality_gate": ("prepare_design_quality_gate", "Prepare design gate"),
     "prepare_design_orchestration": ("prepare_design_orchestration", "Prepare design direction"),
     "prepare_finance_analysis": ("prepare_finance_analysis", "Prepare finance analysis"),
+    "start_dag_run": ("start_dag_run", "Start graph run"),
     "prepare_people_ops_brief": ("prepare_people_ops_brief", "Prepare people ops"),
     "prepare_legal_compliance_review": ("prepare_legal_compliance_review", "Prepare legal review"),
     "prepare_support_operations": ("prepare_support_operations", "Prepare support guidance"),
@@ -4437,6 +4442,29 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS.update(
             ],
             "recommended_flow": ["record_baseline_and_evaluator_command", "profile_and_rank_hot_path_hypotheses", "hand_off_the_smallest_reversible_fix", "re_measure_and_set_the_regression_budget"],
             "evidence_not_observed": ["baseline measurement", "profile", "benchmark execution", "code change", "regression gate", "merge"],
+        },
+    }
+)
+_WORKFLOW_OPERATIONS_CHAT_CARDS.update(
+    {
+        "dag-ulw": {
+            "kind": "dag_run",
+            "headline": "I can run this as a graph of small parts, in parallel where they allow, and check it against the goal.",
+            "body": (
+                "I will plan the work as a graph, hand the ready parts to Hermes subagents, settle each part from its handoff, "
+                "verify the goal with a separate check, and repair what fails before I report. A planned graph is not execution, "
+                "verification, review, CI, or merge evidence."
+            ),
+            "phase": "dag_run_prepared",
+            "next_action": "start_dag_run",
+            "artifact_schema": "omh_dag/v1",
+            "claim_boundary_suffix": "It is not execution, verification, review, CI, or merge evidence.",
+            "actions": [
+                {"id": "start_dag_run", "label": "Start graph run", "style": "primary"},
+                {"id": "show_status", "label": "Show status", "style": "secondary"},
+            ],
+            "recommended_flow": ["define_graph", "dispatch_ready_nodes", "settle_from_handoffs", "verify_goal_and_repair"],
+            "evidence_not_observed": ["dispatch", "execution", "verification", "review", "CI", "merge"],
         },
     }
 )

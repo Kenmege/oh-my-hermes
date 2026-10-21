@@ -100,7 +100,7 @@
 }
 },
 {
-"anchors":"accept big coordinat cycl end fan finish green high implement integrat job lane modul multi multipl parallel part persistent process red refactor several singl split throughput ultrawork ulw until worker",
+"anchors":"accept big coordinat cycl fan finish green high implement integrat job lane modul multi multipl parallel part persistent process red refactor several singl split throughput ultrawork ulw until worker",
 "hangul":"",
 "hangul_anchors":"",
 "label":"ulw-work",
@@ -300,7 +300,7 @@
 }
 },
 {
-"anchors":"actual budget burn cash cfo end expens explain financ forecast month quarter rate runway varianc vs",
+"anchors":"actual budget burn cash cfo expens explain financ forecast month quarter rate runway varianc vs",
 "hangul":"대비 마감 분석 실적 예산 월마 재무",
 "hangul_anchors":"대비 마감 분석 실적 예산 월마 재무",
 "label":"omh-finance-analysis",
@@ -527,7 +527,7 @@
 }
 },
 {
-"anchors":"direction don end figur handl know orchestration ownership take",
+"anchors":"direction don figur handl know orchestration ownership take",
 "hangul":"덕트 디자 로덕 맡겨 자인 전체 프로",
 "hangul_anchors":"덕트 디자 로덕 맡겨 자인 전체",
 "label":"omh-design-orchestration",
@@ -576,7 +576,7 @@
 }
 },
 {
-"anchors":"accessibility ai animation beautiful broken brutalism component core end front frontend generic land layout library lighthous market motion neobrutalism neobrutalist parallax polish premium react responsiv shadcn slop styl system terminal tooltip tui ui ux visual vital wcag",
+"anchors":"accessibility ai animation beautiful broken brutalism component core front frontend generic land layout library lighthous market motion neobrutalism neobrutalist parallax polish premium react responsiv shadcn slop styl system terminal tooltip tui ui ux visual vital wcag",
 "hangul":"고급 근성 급스 깨짐 네오 니메 드러 드럽 디자 딩페 랙스 랜딩 러운 럴랙 럽게 레이 려하 로고 론트 루탈 리즘 마키 메이 반응 부드 브루 스러 스럽 스크 스타 스트 스플 아웃 애니 엔드 연스 오브 응형 이션 이아 이지 일링 자연 자인 접근 차트 크롤 타일 탈리 테마 텍스 트엔 패럴 페이 푸터 프론 플릿 하게 화려 화면",
 "hangul_anchors":"고급 근성 급스 깨짐 네오 니메 드러 드럽 디자 딩페 랙스 랜딩 러운 럴랙 럽게 려하 로고 론트 루탈 리즘 마키 메이 반응 부드 브루 스러 스럽 스크 스타 스플 아웃 애니 엔드 연스 오브 응형 이션 이아 이지 일링 자연 자인 접근 차트 크롤 타일 탈리 테마 텍스 트엔 패럴 페이 푸터 프론 플릿 하게 화려 화면",
 "label":"omh-frontend",
@@ -609,7 +609,7 @@
 }
 },
 {
-"anchors":"auth authentication authorization backend connection databas db deprecat deprecation end endpoint flow graphql grpc handler idempotency messag migration old openapi orm pagination pool postgr queu receiver respons rest retir rule schedul schema server side sunset tabl webhook",
+"anchors":"auth authentication authorization backend connection databas db deprecat deprecation endpoint flow graphql grpc handler idempotency messag migration old openapi orm pagination pool postgr queu receiver respons rest retir rule schedul schema server side sunset tabl webhook",
 "hangul":"개발 권한 그레 드포 디비 레이 마이 백엔 서버 설계 스키 엔드 이그 이션 인증 인트 체크 키마 포인 흐름",
 "hangul_anchors":"개발 권한 그레 드포 디비 마이 백엔 서버 설계 스키 엔드 이그 이션 인증 인트 체크 키마 포인 흐름",
 "label":"omh-backend",
@@ -659,7 +659,7 @@
 }
 },
 {
-"anchors":"400 a11y aa accessibility accessibl ada appearanc architect aria background blind color complianc contrast focus hard keyboard launch name navigation order ratio reader reflow role screen screenreader size tab target touch trap usabl valu wcag websit zoom",
+"anchors":"400 a11y aa accessibility accessibl ada appearanc architect aria background blind color complianc contrast focus hard keyboard launch name navigation ratio reader reflow role screen screenreader size tab target touch trap usabl valu wcag websit zoom",
 "hangul":"감사 검사 검토 게이 근성 내비 대비 리더 린리 명도 보드 비게 순서 스크 이션 접근 커스 크기 크린 키보 타깃 터치 포커 표시",
 "hangul_anchors":"감사 검사 검토 게이 근성 내비 대비 리더 린리 명도 보드 비게 순서 스크 이션 접근 커스 크기 크린 키보 타깃 터치 포커 표시",
 "label":"omh-accessibility-audit",
@@ -905,7 +905,7 @@
 }
 },
 {
-"anchors":"bootstrap complet deployment empty end idea launch mvp scaffold scratch take",
+"anchors":"bootstrap complet deployment empty idea launch mvp scaffold scratch take",
 "hangul":"가보 기획 까지 디어 루프 배포 보자 부터 비스 서비 스로 시까 아이 어를 어부 완제 운영 이디 제품 출시 포까 획부",
 "hangul_anchors":"가보 기획 까지 디어 루프 배포 보자 부터 비스 서비 스로 시까 아이 어를 어부 완제 운영 이디 제품 출시 포까 획부",
 "label":"omh-idea-to-deploy",
@@ -973,7 +973,7 @@
 }
 },
 {
-"anchors":"adversarial break case e2e edge end flow hostil input installer nasty real scenario throw try ultraqa wizard world",
+"anchors":"adversarial break case e2e edge flow hostil input installer nasty real scenario throw try ultraqa wizard world",
 "hangul":"검증 네티 리스 리즈 릴리 버네 상황 스트 장애 적절 절히 진단 체크 쿠버 크리 티스",
 "hangul_anchors":"검증 네티 리스 리즈 릴리 버네 상황 장애 적절 절히 진단 체크 쿠버 크리 티스",
 "label":"ulw-qa",
@@ -1184,7 +1184,7 @@
 }
 },
 {
-"anchors":"abort cancel current end everyth kill progress stop",
+"anchors":"abort cancel current everyth kill progress stop",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-cancel",
@@ -1484,7 +1484,7 @@
 }
 },
 {
-"anchors":"column db ddl endpoint enough grew hundr hung item million mysql order postgr row slow wait year",
+"anchors":"column db ddl endpoint enough grew hundr hung item million mysql postgr row slow wait year",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-relational-db",
@@ -1663,6 +1663,21 @@
 "5":"gate",
 "6":"card money",
 "7":"spend"
+}
+},
+{
+"anchors":"big job migration modul parallel part several whol",
+"hangul":"",
+"hangul_anchors":"",
+"label":"dag-ulw",
+"name":"dag-ulw",
+"situation":"Large multi-part job to run on its own",
+"terms":{
+"1":"befor broad cleanup delegat fail goal graph herm larg multi node one person plan ready repair report request say separat small task through",
+"2":"big end step ultrawork whol",
+"3":"across build featur migration modul order research several",
+"4":"job parallel part run verify",
+"6":"dag ulw"
 }
 },
 {
