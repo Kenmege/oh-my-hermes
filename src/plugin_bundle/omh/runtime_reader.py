@@ -1715,7 +1715,7 @@ def _hud_metadata_mtime(path: Path) -> float:
 
 
 def _hud_graph_preference(override: str) -> str:
-    environment = str(os.environ.get("OMH_SUBAGENT_GRAPH", "")).strip()
+    environment = str(os.environ.get("OMH_SUBAGENT_GRAPH", "")).strip().lower()
     requested = {override, environment}
     if "off" in requested:
         return "off"
