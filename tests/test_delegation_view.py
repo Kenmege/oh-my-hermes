@@ -23,6 +23,7 @@ from _local_package import load_local_package
 load_local_package()
 
 from _delegation_graphs import (  # noqa: E402
+    dag_export_button_repair_run,
     dag_export_repair_run,
     dag_export_run,
     export_run,
@@ -352,6 +353,76 @@ class BoxTests(unittest.TestCase):
         ascii_boxes = box_lines(render_delegation_view(dag_export_repair_run(), width=100, charset="ascii"))
         self.assertEqual((ascii_boxes["d:r1:csv"][0], ascii_boxes["d:r1:csv-fix"][0][:4]), ("+ CSV export", "~ CS"))
 
+    def test_a_repair_stands_above_the_nodes_that_wait_on_what_it_repairs(self) -> None:
+        fix, verify = "d:r1:button-fix", "d:r1:verify"
+        for width in (60, 100, 120):
+            view = render_delegation_view(dag_export_button_repair_run(), width=width)
+            rows = {node_id: (top, bottom) for node_id, top, bottom in view.boxes}
+            with self.subTest(width=width):
+                self.assertEqual(view.layout, "box")
+                self.assertLess(rows[BUTTON][1], rows[fix][0], "below the node it repairs")
+                self.assertLess(rows[fix][1], rows[verify][0], "above the check that waits on that node, which it "
+                                                               "runs before; never on the check's frontier")
+        boxes = box_lines(render_delegation_view(dag_export_button_repair_run(), width=120))
+        self.assertEqual(boxes[verify][3], "← Export button, Export docs,…", "parents stay the recorded edges")
+        self.assertEqual(boxes[fix][3], "← Export API, Export button")
+        # An extend round the check found missing, built on the repair, is not part of the repair: it stays below the
+        # check that found it.
+        later = dag_export_button_repair_run()
+        later["nodes"].append(lane("d:r1:csv", "CSV export", "quick", "glm-5.3-flash", "low", "running", elapsed=4,
+                                   order=7, group="extend 1"))
+        later["edges"] += [{"from": fix, "to": "d:r1:csv", "kind": "depends_on"},
+                           {"from": verify, "to": "d:r1:csv", "kind": "extend"}]
+        order = [node_id for node_id, _top, _bottom in render_delegation_view(later, width=120).boxes]
+        self.assertLess(order.index(fix), order.index(verify))
+        self.assertLess(order.index(verify), order.index("d:r1:csv"))
+        # A repair of two nodes, one on the other: the check waits on both.
+        two = dag_export_button_repair_run()
+        two["nodes"].append(lane("d:r1:button-check", "Check the button", "quick", "glm-5.3-flash", "low", "waiting",
+                                 order=7, group="layer 3"))
+        two["edges"].append({"from": fix, "to": "d:r1:button-check", "kind": "depends_on"})
+        rows = {node_id: (top, bottom) for node_id, top, bottom in render_delegation_view(two, width=120).boxes}
+        self.assertLess(rows[fix][1], rows["d:r1:button-check"][0])
+        self.assertLess(rows["d:r1:button-check"][1], rows[verify][0])
+        # An extend round the repaired node's own check added came after its repair too.
+        found = dag_export_button_repair_run()
+        found["nodes"].append(lane("d:r1:key", "Export key rotation", "quick", "glm-5.3-flash", "low", "waiting",
+                                   order=7, group="extend 1"))
+        found["edges"].append({"from": BUTTON, "to": "d:r1:key", "kind": "extend"})
+        view = render_delegation_view(found, width=120)
+        rows = {node_id: (top, bottom) for node_id, top, bottom in view.boxes}
+        self.assertLess(rows[fix][1], rows["d:r1:key"][0])
+        self.assertIn("  Export button → Export key rotation (extend)", section(view, "Dependencies"))
+
+    def test_a_repair_order_that_would_loop_is_dropped_and_the_recorded_edges_place_the_lanes(self) -> None:
+        # The repair depends on the lane that waits on what it repairs: placing the repair above that lane would loop.
+        looped = graph(
+            [root(), lane("x", "Export button", "quick", "glm-5.3", "low", "failed", elapsed=8, order=1),
+             lane("d", "Verify export", "deep", "glm-5.3", "low", "waiting", order=2, waits=1),
+             lane("r", "Fix the button", "quick", "glm-5.3", "low", "running", elapsed=5, order=3)],
+            [("root", "x", "dispatch"), ("x", "d", "depends_on"), ("x", "r", "repair"), ("d", "r", "depends_on")],
+        )
+        view = render_delegation_view(looped, width=100)
+        self.assertEqual(view.layout, "box")
+        self.assertEqual([node_id for node_id, _top, _bottom in view.boxes], ["x", "d", "r"])
+
+    def test_a_duration_past_100_hours_stays_whole_and_widens_the_box_by_a_cell(self) -> None:
+        def drawn(seconds: int):
+            fix = graph([root(), lane("f", "Fix", "", "", "", "failed", elapsed=seconds, status="failed: timeout")],
+                        [("root", "f", "dispatch")])
+            return render_delegation_view(fix, width=100)
+
+        widths = {}
+        for seconds, status in ((3_599, "59m 59s"), (99 * 3600 + 59 * 60, "99h 59m"), (100 * 3600, "100h 00m"),
+                                (400_000, "111h 06m")):
+            view = drawn(seconds)
+            with self.subTest(seconds=seconds):
+                self.assertEqual(box_lines(view)["f"][2], f"✗ Failed: timeout {status}")
+            widths[seconds] = box_inner(view)
+        self.assertEqual(widths[3_599], widths[99 * 3600 + 59 * 60], "a ticking clock under 100 hours resizes nothing")
+        self.assertEqual(widths[100 * 3600], {inner + 1 for inner in widths[3_599]}, "one cell wider at 100 hours")
+        self.assertEqual(widths[400_000], widths[100 * 3600])
+
     def test_the_header_names_the_run_its_size_and_its_state(self) -> None:
         lines = text(dag_export_run(), width=100).splitlines()[:3]
         self.assertEqual(lines, ["OMH / DAG · 5 tasks", "export feature · 1/1 · main opus-5-5:high",
@@ -391,7 +462,8 @@ class BoxTests(unittest.TestCase):
                          "a wrapped row starts where the first one does")
 
     def test_one_connector_per_frontier_gap(self) -> None:
-        for case, frontiers in ((dag_export_run(), 3), (dag_export_repair_run(), 5), (nested(), 3), (parallel(6), 1)):
+        for case, frontiers in ((dag_export_run(), 3), (dag_export_repair_run(), 5), (dag_export_button_repair_run(), 4),
+                                (nested(), 3), (parallel(6), 1)):
             for width in (40, 80, 120):
                 view = render_delegation_view(case, width=width)
                 with self.subTest(name=case["name"], nodes=len(case["nodes"]), width=width):
@@ -406,7 +478,7 @@ class BoxTests(unittest.TestCase):
                         self.assertTrue(lines[at + 1].lstrip().startswith("┌"), "it ends at the next frontier")
 
     def test_dependencies_are_the_graph_edges_exactly(self) -> None:
-        for case in (dag_export_run(), dag_export_repair_run(), nested(), owner_mock()):
+        for case in (dag_export_run(), dag_export_repair_run(), dag_export_button_repair_run(), nested(), owner_mock()):
             view = render_delegation_view(case, width=120)
             drawn = set()
             for line in section(view, "Dependencies"):
@@ -534,7 +606,7 @@ class TreeTests(unittest.TestCase):
         bare = graph([root(model="", effort=""), {"id": "x", "kind": "lane", "state": "dispatched"}],
                      [("root", "x", "dispatch")])
         self.assertIn("? · dispatched", text(bare, width=60, layout="tree"), "one `?` where neither is known")
-        self.assertEqual(text(bare, width=100, layout="tree").count("?"), 2, "the title's and the category column's")
+        self.assertEqual(text(bare, width=100, layout="tree").count("?"), 1, "the category column's; a title has none")
 
     def test_the_category_column_holds_the_longest_category_and_the_model_gives_way(self) -> None:
         for width in (120, 74, 72):
@@ -545,6 +617,27 @@ class TreeTests(unittest.TestCase):
                 self.assertTrue(all(cells(row) <= width for row in rows))
         tight = next(row for row in text(dag_export_run(), width=72, layout="tree").splitlines() if "Export API" in row)
         self.assertIn("quick             glm-5.3-flas…  accepted 12s", tight, "the model is cut, not the category")
+
+    def test_a_duration_past_100_hours_keeps_its_room_in_the_tree(self) -> None:
+        def lone(index: int, title: str, state: str, status: str, elapsed, category: str = "quick") -> dict:
+            return lane(f"n{index}", title, category, "glm-5.3-flash", "low", state, elapsed=elapsed, order=index,
+                        status=status)
+
+        # The category column's widening and the spare cells a nested repair's title takes back both measure the
+        # status as it reads, so `111h 06m` is never the cell they take.
+        wide = graph([root(), lone(1, "Verify the whole feature end to end", "running", "running", 400_000,
+                                   "unspecified-high"),
+                      lone(2, "Export docs", "waiting", "waiting", None, "writing")],
+                     [("root", "n1", "dispatch"), ("root", "n2", "dispatch")])
+        row = text(wide, width=91, layout="tree").splitlines()[2]
+        self.assertTrue(row.endswith("unspecified-high  glm-5.3-flas…  running 111h 06m"), row)
+        nested_repair = graph([root(), lone(1, "Fix", "running", "running", 400_000),
+                               lone(2, "Export button, with the key and the long header row", "dispatched",
+                                    "handed out", None)],
+                              [("root", "n1", "dispatch"), ("n1", "n2", "repair")])
+        rows = text(nested_repair, width=89, layout="tree").splitlines()
+        self.assertTrue(rows[2].endswith("running 111h 06m"), rows[2])
+        self.assertTrue(all(cells(line) <= 89 for line in rows))
 
     def test_the_widened_category_never_takes_a_statuss_room(self) -> None:
         """The cells a long category takes come from room no status needs, then the model, then the title: a
@@ -942,6 +1035,29 @@ class BoxTokenRoomTests(unittest.TestCase):
                     self.assertEqual(warm, cold[then])
         delegation_view._DECISIONS.clear()
 
+    def test_a_layout_decided_past_100_hours_is_not_replayed_under_them(self) -> None:
+        # A status counted as it reads widens its box at 100 hours, so the kept decision is keyed on the cells each
+        # status is counted at: three timed-out lanes that wrap to a tree past the mark draw as boxes again under it.
+        from omh.plugin_bundle.omh import delegation_view
+
+        def timeouts(seconds: int) -> dict:
+            payload = parallel(3)
+            for node in payload["nodes"][1:]:
+                node.update(title="Fix", category="", model="", effort="", state="failed", status="failed: timeout",
+                            elapsed_seconds=seconds)
+            return payload
+
+        options = {"width": 60, "max_lines": 17}
+        under, over = timeouts(99 * 3600 + 59 * 60), timeouts(100 * 3600)
+        delegation_view._DECISIONS.clear()
+        cold = render_delegation_view(under, **options)
+        delegation_view._DECISIONS.clear()
+        self.assertEqual(render_delegation_view(over, **options).layout, "tree")
+        warm = render_delegation_view(under, **options)
+        self.assertEqual((warm.layout, warm.text()), (cold.layout, cold.text()))
+        self.assertEqual(cold.layout, "box")
+        delegation_view._DECISIONS.clear()
+
     def test_three_boxes_still_share_a_row_at_100_columns(self) -> None:
         counted = with_tokens(dag_export_run(), {"d:r1:button": 1234, "d:r1:docs": 900, "d:r1:cli": 800})
         for payload in (dag_export_run(), counted):
@@ -975,17 +1091,21 @@ class FieldTests(unittest.TestCase):
         bare = graph([root(model="", effort=""), {"id": "x", "kind": "lane", "state": "dispatched"}],
                      [("root", "x", "dispatch")])
         self.assertEqual(box_lines(render_delegation_view(bare, width=80))["x"],
-                         ["?", "", "◌ Dispatched", "Start node"], "neither category nor model known: the line is blank")
+                         ["untitled", "", "◌ Dispatched", "Start node"],
+                         "neither category nor model known: the line is blank; no title: `untitled`, never `?`")
         self.assertIn("?  ", text(bare, width=80, layout="tree"))
+        self.assertIn("◌ untitled", text(bare, width=80, layout="tree"))
 
     def test_a_question_mark_is_marked_unknown_for_the_painter(self) -> None:
         bare = graph([root(model="", effort=""), {"id": "x", "kind": "lane", "state": "dispatched"}],
                      [("root", "x", "dispatch")])
-        for layout, width in (("box", 80), ("tree", 80), ("tree", 40)):
+        # The box leaves out a category and model with no record; the tree's category column keeps its `?`.
+        for layout, width, unknown in (("box", 80, {"untitled"}), ("tree", 80, {"untitled", "?"}),
+                                       ("tree", 40, {"untitled", "?"})):
             view = render_delegation_view(bare, width=width, layout=layout)
             segments = [segment for line in view.lines for segment in line]
             with self.subTest(layout=layout, width=width):
-                self.assertEqual({segment.text.strip() for segment in segments if segment.role == "unknown"}, {"?"})
+                self.assertEqual({segment.text.strip() for segment in segments if segment.role == "unknown"}, unknown)
                 self.assertFalse(any(segment.text.strip() == "?" and segment.role != "unknown" for segment in segments))
         known = render_delegation_view(owner_mock(), width=73)
         self.assertFalse(any(segment.role == "unknown" for line in known.lines for segment in line))
