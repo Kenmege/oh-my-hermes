@@ -156,7 +156,10 @@ def graph_segments(hermes_home: Path, session_id: str) -> list[str]:
     Hermes' default in-place compaction keeps one id and writes no second row,
     so this is ``[session_id]`` there, and wherever the lineage cannot be read.
     """
-    connection = _connect(hermes_home)
+    try:
+        connection = _connect(hermes_home)
+    except OSError:  # Python 3.11's `Path.is_file` raises where the home cannot be searched
+        return [session_id]
     try:
         return _segments(connection, session_id)
     finally:
@@ -497,9 +500,11 @@ def build_delegation_graph(
     smaller or inactive, and a field it cannot evidence ``?``.
     """
     moment = time.time() if now is None else now
-    # One state.db connection per build: the lineage and every fact are read on it.
-    connection = _connect(Path(hermes_home)) if session_id else None
+    connection = None
     try:
+        # One state.db connection per build: the lineage and every fact are read on it. Opened in here: Python 3.11's
+        # `Path.is_file` raises PermissionError where the Hermes home cannot be searched.
+        connection = _connect(Path(hermes_home)) if session_id else None
         if session_id and not segments:
             segments = _segments(connection, session_id)
         graph = _build(omh_home, hermes_home, session_id, moment, root_model, titles, scope, linger, segments or [],

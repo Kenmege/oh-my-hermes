@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from _local_package import load_local_package
 
@@ -20,6 +21,7 @@ from omh.plugin_bundle.omh.delegation_graph import (  # noqa: E402
     build_delegation_graph,
     fanout_graph,
     graph_fingerprint,
+    graph_segments,
     team_unit_state,
 )
 from omh.plugin_bundle.omh.delegation_ledger import ledger_key  # noqa: E402
@@ -672,6 +674,25 @@ class NoRaiseTests(unittest.TestCase):
         for session in ("", "no-such-session"):
             graph = build_delegation_graph(Path("/nonexistent/omh"), Path("/nonexistent/hermes"), session, now=NOW)
             self.assertEqual(graph["status"], "inactive")
+
+    def test_a_hermes_home_that_cannot_be_searched_never_raises(self) -> None:
+        # Python 3.11's `Path.is_file` raises PermissionError under a directory it cannot search; 3.14 answers False.
+        # Patched, so every version takes 3.11's path: the graph is unreadable (main's answer), the lineage one id.
+        with homes() as home:
+            start(home, "child-0", "sa-0", "Lane", now=NOW)
+            with patch.object(Path, "is_file", side_effect=PermissionError(13, "Permission denied")):
+                graph = built(home)
+                segments = graph_segments(home.hermes, PARENT)
+            self.assertEqual((graph["status"], graph["reason"]), ("inactive", "unreadable:PermissionError"))
+            self.assertEqual(segments, [PARENT])
+            if os.name != "nt" and os.geteuid() != 0:  # a real unsearchable home, wherever permissions bind
+                home.hermes.chmod(0)
+                try:
+                    graph, segments = built(home), graph_segments(home.hermes, PARENT)
+                finally:
+                    home.hermes.chmod(0o700)
+                self.assertIn(graph["status"], ("active", "inactive"))
+                self.assertEqual(segments, [PARENT])
 
 
 if __name__ == "__main__":
