@@ -65,7 +65,7 @@ from typing import Any, Final
 from urllib.parse import quote
 
 from .dag_core import layer_of
-from .dag_run import ADDED_ORIGIN_KINDS, derive, run_state, session_runs
+from .dag_run import ADDED_ORIGIN_KINDS, HANDOFF_NOT_CHECKED, derive, handoff_unchecked, run_state, session_runs
 from .delegation_ledger import child_title, ledger_key, read_ledger, title_from_goal, with_unjoined_stop
 from .live_session import conversation_segments
 from .subagent_graph import _roster_progress_fields as roster_progress_fields
@@ -876,6 +876,10 @@ def _dag_nodes(
         state, status = _DAG_VIEW.get(info["state"], ("unknown", info["state"]))
         if info["state"] == "held" and stopped:
             state = "interrupted"
+        # Accepted, though nothing could read its handoff where the child wrote it: the word every view shows says so.
+        unchecked = info["state"] == "accepted" and handoff_unchecked(node)
+        if unchecked:
+            status = HANDOFF_NOT_CHECKED
         graph_id = dag_node_id(run, node_id)
         origin = str(node.get("origin") or "define")
         # An extend round is its own group: its first nodes hang under the node that found the gap, so its layers
@@ -888,6 +892,8 @@ def _dag_nodes(
             "group": group, "waits_on": len(info["waits_on"]) if info["state"] == "waiting" else 0,
             "dag_node": node_id, "dag_origin": origin,
         }
+        if unchecked:
+            entry["handoff_checked"] = False
         order += 1
         child = info["child"]
         if isinstance(child, Mapping):

@@ -12,7 +12,8 @@ the conversation's lanes that no end post has closed yet:
   of them and then ``+N more``;
 * **during**, no graph: on a turn where the counts changed since the last
   post, one plain line, ``DAG <name> · <done>/<total> done · <running>
-  running``, and the failures with the first one's title when there are any,
+  running``, and the failures with the first one's title when there are any
+  (and the dag-ulw nodes accepted with their handoff not checked),
   unless the reply already has a line opening ``DAG <name> ·`` (a dag-ulw
   completion turn answers with the run's own status line). Nodes a dag run
   added since the last post (a repair, or an extend round) are named once at
@@ -22,14 +23,16 @@ the conversation's lanes that no end post has closed yet:
   post reopen the run: they get this line, not a second start block;
 * **end**, once: a short block that puts each lane under Done, Failed or
   Stopped (and Working, only while one is in flight), names the lane that
-  failed first, and gives the totals. It goes on the first reply after
-  every lane has settled (for a dag-ulw run, once nothing in it is out or
-  ready: done, cancelled, out of repair cycles, or left waiting on a repair
-  the reply did not make), or, for a run a start opened, once nothing has
-  been in flight and nothing has changed for `STALL_SECONDS` (a team part
-  waiting on work that will not come). Such a ``stalled`` end lists the
-  parts not moving under Stopped with their status, and leaves them out of
-  the closed lanes, so a part that moves again opens a run of its own.
+  failed first, and gives the totals; a dag-ulw node accepted with its
+  handoff not checked says so under Done and in the totals. It goes on the
+  first reply after every lane has settled (for a dag-ulw run, once nothing
+  in it is out or ready: done, cancelled, out of repair cycles, or left
+  waiting on a repair the reply did not make), or, for a run a start
+  opened, once nothing has been in flight and nothing has changed for
+  `STALL_SECONDS` (a team part waiting on work that will not come). Such a
+  ``stalled`` end lists the parts not moving under Stopped with their
+  status, and leaves them out of the closed lanes, so a part that moves
+  again opens a run of its own.
 
 A run whose first reply finds it already settled (a synchronous call) gets the
 end post alone. A conversation Hermes' rotating compaction moved to a new
@@ -71,7 +74,7 @@ import time
 from typing import Any, Final
 
 from . import runtime_paths
-from .dag_run import ADDED_ORIGIN_KINDS
+from .dag_run import ADDED_ORIGIN_KINDS, HANDOFF_NOT_CHECKED
 from .delegation_graph import (
     GRAPH_LINGER_SECONDS,
     SETTLED_STATES,
@@ -234,6 +237,7 @@ def tally(lanes: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "settled": all(_state(node) in SETTLED_STATES for node in lanes),
         "first_failed": _label(failed[0]) if failed else "",
         "first_failure": _label(failed[0], with_status=True) if failed else "",
+        "unchecked": sum(1 for node in lanes if node.get("handoff_checked") is False),
     }
 
 
@@ -242,10 +246,13 @@ def counts_key(counts: Mapping[str, Any]) -> str:
 
 
 def count_line(name: str, counts: Mapping[str, Any]) -> str:
-    """``DAG <name> · <done>/<total> done · <running> running`` and, when any failed, how many and the first."""
+    """``DAG <name> · <done>/<total> done · <running> running``; when any failed, how many and the first; when a
+    dag-ulw node was accepted with its handoff not checked, how many."""
     parts = [f"DAG {name}", f"{counts['done']}/{counts['total']} done", f"{counts['running']} running"]
     if counts["failed"]:
         parts.append(f"{counts['failed']} failed ({counts['first_failed']})")
+    if counts["unchecked"]:
+        parts.append(f"{counts['unchecked']} {HANDOFF_NOT_CHECKED}")
     return " · ".join(parts)
 
 
@@ -369,13 +376,18 @@ def end_block(graph: Mapping[str, Any], lanes: Sequence[Mapping[str, Any]]) -> s
         members = [node for node in lanes if collapse(node) == word]
         if members:
             lead = f"{UNICODE.glyphs[glyph_state]} {word.ljust(width)}  "
-            lines.append(_listing(lead, [_label(node, with_status=word != "Done") for node in members]))
+            # A Done lane says its status only when its handoff was not checked (`dag_run.HANDOFF_NOT_CHECKED`).
+            labels = [_label(node, with_status=word != "Done" or node.get("handoff_checked") is False)
+                      for node in members]
+            lines.append(_listing(lead, labels))
     if counts["first_failure"]:
         lines.append(f"first failure: {counts['first_failure']}")
     totals = [_plural(counts["total"], "task"), f"{counts['done']} done", f"{counts['failed']} failed",
               f"{counts['stopped']} stopped"]
     if counts["working"]:
         totals.append(f"{counts['working']} working")
+    if counts["unchecked"]:  # said in the totals too, for a lane the listing counted as `+N`
+        totals.append(f"{counts['unchecked']} {HANDOFF_NOT_CHECKED}")
     lines.append(sep.join(totals))
     return _fenced(lines)
 

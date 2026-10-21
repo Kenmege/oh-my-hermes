@@ -4,6 +4,32 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **dag-ulw works on a Docker or SSH terminal whose user has a writable
+  home.** There a child's `write_file` lands inside the backend, so OMH's
+  host-side check refused every node with `handoff_missing`, and on SSH a
+  child often could not even create the host's OMH path on the remote.
+  `omh_dag` now records the terminal backend Hermes resolves for the
+  profile when a run is defined. Before the run's first node goes out, it
+  reads the terminal user's `$HOME` once through Hermes' live environment
+  and pins `<home>/.omh/dag` on the run, where every node writes its
+  handoff and its dependents read it; with no terminal environment up yet,
+  nothing goes out and the result says to run one terminal command first,
+  in the same turn (OMH never starts one). A home that is a link is judged,
+  and pinned, as the directory it points at. A home another user can write,
+  one in a shared temp directory, one with whitespace in it, or one OMH
+  cannot read keeps this host's path, as before. `settle` reads the handoff inside the backend under the host's
+  rule: a regular file and no link, so a missing file, a directory or a
+  link is still refused. When the terminal cannot be reached (its
+  environment is gone, Hermes' registry cannot be read, or no answer
+  comes), the node is accepted with `handoff_checked: false` and the
+  reason, and every view says `handoff not checked`: `omh_dag status` and
+  the run's status line, the boxes and the tree, `omh hud --graph`, the
+  TUI's transcript block and its one-line summary, and the chat count line
+  and end post. A read the parent's interrupt stopped settles nothing. The
+  read runs only once every other check of the settle passed, through
+  Hermes' base `execute`, so it never enters Docker's recovery of a gone
+  container. A local terminal, or a backend OMH does not read (`modal`,
+  `daytona`, `singularity`), keeps the host check as before.
 - **dag-ulw routing reads remarks, bug reports, questions and polite requests
   as what they are.** The router and Hermes' route hint read the same
   `dag_ulw_cues`, so each change holds on both paths. `can you dag ulw the
