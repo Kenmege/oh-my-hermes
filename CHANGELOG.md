@@ -15,7 +15,9 @@ All notable changes will be documented here.
   and adds the work the goal check finds missing to the same run (two rounds)
   before it reports. It starts at once and asks only for scope, spend or an
   irreversible step. A question about it ("dag ulw는 뭐야?", "how does dag-ulw
-  handle repairs?") is answered, not run.
+  handle repairs?") is answered, not run, and a stop, cancel or status word
+  said to it ("dag ulw stop", "dag ulw 상태 보여줘") starts nothing: Hermes'
+  route hint points that turn at the run's own `omh_dag` cancel or status.
   - The new `dag-ulw` skill carries the run loop and the planning doctrine;
     the new `omh_dag` tool keeps the run (`omh_dag/v1`), refuses cycles,
     unknown or self edges, shared write scopes without an edge and more than

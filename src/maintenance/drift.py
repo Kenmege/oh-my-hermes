@@ -691,7 +691,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # are answered rather than run (what it is, explain it, how it
             # repairs, a run's result) and a function's fan-out, which is a
             # metric and not work to fan out (5).
-            expected=856,
+            # The delta review adds eleven: a stop, cancel, status, progress or
+            # log word said to dag ulw, in English and Korean, is about the run
+            # in progress and starts no new one (11).
+            expected=867,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

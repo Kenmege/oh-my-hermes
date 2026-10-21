@@ -40,7 +40,7 @@ from .domain_signals import (
 )
 from .display_names import canonical_display_mentions
 from .input_language import routing_input_language
-from ..plugin_bundle.omh.dag_ulw_cues import asks_about_dag_ulw, big_work_for_dag_ulw
+from ..plugin_bundle.omh.dag_ulw_cues import asks_about_dag_ulw, big_work_for_dag_ulw, dag_ulw_control
 from ..plugin_bundle.omh.hermes_session_commands import (
     LOOP_TIMER_GOAL,
     LOOP_TIMER_NATIVE,
@@ -2623,8 +2623,13 @@ def _route_chat_message_cached(
 
     # A question about dag-ulw is answered, the way a question about any other skill is: its two triggers score
     # its name high in the catalog, and `ulw` inside the name scores ultrawork, but asking what it is, what it
-    # costs or how it went is no request to run either.
-    if action in {"dispatch", "clarify"} and not explicit_skill and asks_about_dag_ulw(routing_message):
+    # costs or how it went is no request to run either. Nor is a stop or status word for the run in progress
+    # ("dag ulw stop", "dag ulw 상태 보여줘"): Hermes' route hint points that turn at the run's own cancel or status.
+    if (
+        action in {"dispatch", "clarify"}
+        and not explicit_skill
+        and (asks_about_dag_ulw(routing_message) or dag_ulw_control(routing_message))
+    ):
         selected_skill = _ROUTER_SKILL
         candidate_skill = selected_skill
         candidate_harness = primary_harness_for_skill(candidate_skill)

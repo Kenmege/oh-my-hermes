@@ -156,6 +156,30 @@ class RouterTests(unittest.TestCase):
                 self.assertFalse([hint for hint in awareness_route_hint(message)["hints"]
                                   if hint.get("workflow") == "dag-ulw"])
 
+    def test_a_stop_or_status_word_for_the_run_starts_nothing_and_points_at_the_run(self) -> None:
+        # The delta review's sentences: a person stopping or checking a paid run must not be steered into another.
+        cancel = ("dag ulw stop", "dag ulw cancel the run", "dag ulw 멈춰", "dag ulw 그만해", "dag ulw 취소",
+                  "dag ulw 중지해줘", "dag ulw 돌린 거 취소해줘", "/dag-ulw stop", "cancel dag ulw")
+        status = ("dag ulw status", "dag ulw 상태 보여줘", "dag ulw 진행 상황", "dag ulw 로그 보여줘")
+        for message, action in [*((m, "cancel") for m in cancel), *((m, "show_status") for m in status)]:
+            with self.subTest(message=message):
+                self.assertFalse(invokes_dag_ulw(message))
+                self.assertEqual(route_chat_message(message, source="discord")["action"], "fallback")
+                payload = awareness_route_hint(message)
+                self.assertEqual([(hint["workflow"], hint["next_action"]) for hint in payload["hints"]],
+                                 [("dag-ulw", action)])
+                context = awareness_route_hint_context_from_payload(payload)
+                self.assertIn("call omh_dag action=cancel to stop the run in progress, or action=status", context)
+                self.assertNotIn("Start at once", context)
+                self.assertNotIn("plan_todo=", context)
+        # Work that names a cancel button, a status page or a log-in is still work.
+        for message in ("dag ulw add a cancel button to the checkout", "dag ulw build the status page",
+                        "dag ulw stop words in the search index", "dag ulw 결제 취소 기능 구현해줘",
+                        "dag ulw 상태 관리 모듈 리팩터링해줘", "dag ulw 로그인 기능 구현해줘"):
+            with self.subTest(message=message):
+                self.assertTrue(invokes_dag_ulw(message))
+                self.assertEqual(route_chat_message(message, source="discord")["selected_skill"], "dag-ulw")
+
     def test_a_dag_ulw_hint_asks_the_first_response_to_start_at_once(self) -> None:
         # Its lane's card says to plan first and ask; dag-ulw starts at once (owner decision D1), by name or by size.
         for message in ("dag ulw add the export API, its UI button and docs, then verify with the test suite",

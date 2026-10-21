@@ -6,7 +6,8 @@ verb glued to it ("dag ulw해줘"). A message invokes the skill when the name op
 or when a Korean run ending follows it ("결제 모듈 dag ulw로 고쳐줘"). A negated mention never does
 ("don't use dag ulw", "dag ulw 말고"), and neither does a question about the skill ("dag ulw는 뭐야?",
 "dag ulw 설명해줘", "dag ulw 결과 알려줘", "how does dag-ulw handle repairs?"): those are answered, the
-way a question about any other skill is.
+way a question about any other skill is. A word for the run in progress ("dag ulw stop", "dag ulw 취소",
+"dag ulw 상태 보여줘") never does either: it points at that run's `omh_dag` cancel or status.
 
 By size. A request that says how the work splits or how wide it reaches (`work_has_several_parts`) and does
 not name ultrawork is big work for `dag-ulw`; the router reads it only on a route it already gave
@@ -51,10 +52,35 @@ _ASKED_ABOUT: Final = re.compile(
 )
 # A request put politely as a question ("can you dag ulw the migration?") still asks to run it.
 _POLITE_REQUEST: Final = re.compile(r"^(?:(?:please|pls)\s+)?(?:can|could|would|will)\s+you\b")
+# A word for the run a person already has, said to the name: stop or cancel it ("dag ulw stop", "dag ulw 멈춰",
+# "dag ulw 돌린 거 취소해줘", "cancel dag ulw"), or show how it stands ("dag ulw status", "dag ulw 상태 보여줘",
+# "dag ulw 진행 상황"). The words must end the request, or be all it asks about, so a thing named for them stays work
+# ("dag ulw add a cancel button", "dag ulw 결제 취소 기능 구현해줘", "dag ulw 상태 관리 모듈 리팩터링해줘").
+_RUN_OBJECT: Final = r"(?:\s+(?:it|this|that|now|please|everything|all|the\s+(?:run|dag|graph|job)))*"
+_KOREAN_TAIL: Final = r"\s*(?:해|하자|시켜|둬|해라)?\s*(?:줘|주세요)?"
+_STOP: Final = re.compile(
+    rf"{_NAME}[\s,:]*(?:please\s+)?(?:stop|cancel|abort|halt|kill){_RUN_OBJECT}\s*[.!?]*$"
+    rf"|^(?:please\s+)?(?:stop|cancel|abort|halt|kill)\s+(?:the\s+|this\s+|that\s+|my\s+)?(?:current\s+|running\s+)?"
+    rf"(?:\$|/)?{_NAME}(?:\s+(?:run|job|graph))?\s*[.!?]*$"
+    rf"|{_NAME}[\s,:]*(?!으?로\s)(?:의\s*)?(?:\S+\s+){{0,3}}?(?:멈춰|멈추|그만|취소|중지|중단){_KOREAN_TAIL}\s*[.!?~]*$"
+)
+_STATUS: Final = re.compile(
+    rf"{_NAME}[\s,:]*(?:status|progress|logs?)(?:\s+(?:please|now|of\s+the\s+(?:run|dag|graph)))*\s*[.!?]*$"
+    rf"|{_NAME}[\s,:]*(?:의\s*)?(?:상태|진행\s*상황|진행\s*상태|진행도|로그)\s*(?:좀\s*)?"
+    rf"(?:보여|알려|확인|어때|어떻게|는\s*[?？]|[?？]|$)"
+)
 
 
 def _folded(text: str) -> str:
     return unicodedata.normalize("NFKC", text).casefold().strip()
+
+
+def dag_ulw_control(text: str) -> str:
+    """``cancel`` or ``status`` when ``text`` says that word to dag-ulw about the run in progress, else ""."""
+    folded = _folded(text)
+    if _STOP.search(folded):
+        return "cancel"
+    return "status" if _STATUS.search(folded) else ""
 
 
 def asks_about_dag_ulw(text: str) -> bool:
@@ -73,10 +99,11 @@ _SIGIL_LEAD: Final = re.compile(rf"^(?:\$|\./|/){_NAME}")
 def invokes_dag_ulw(text: str) -> bool:
     """Whether ``text`` (the executable part of a message) asks to run `dag-ulw`.
 
-    A sigil (``/dag-ulw``, ``$dag-ulw``) is a command whatever follows it, as it is for every skill.
+    A sigil (``/dag-ulw``, ``$dag-ulw``) is a command whatever follows it, as it is for every skill, except a word
+    for the run in progress (`dag_ulw_control`): stopping or checking a run never starts another.
     """
     folded = _folded(text)
-    if not folded or _NEGATED.search(folded):
+    if not folded or _NEGATED.search(folded) or dag_ulw_control(folded):
         return False
     if _SIGIL_LEAD.match(folded):
         return True
