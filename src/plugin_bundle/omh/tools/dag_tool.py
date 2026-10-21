@@ -150,7 +150,7 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
         record, path = found
         with dag_run.locked(path):
             record = dag_run.read_run(path) or record
-            children = _children(omh_home, segments)
+            children = _children(omh_home, segments, hermes_home)
             derived = dag_run.derive(record, children, now)
             if action == "status":
                 return _result(action, record, derived, shown)
@@ -214,11 +214,11 @@ def _define(args: Mapping[str, object], omh_home: Path, hermes_home: Path, durab
             raise dag_run.DagRefusal(
                 "run_exists",
                 f"Run {run} already exists with other nodes; use repair or extend to add nodes, or a new run id.")
-        children = _children(omh_home, segments)
+        children = _children(omh_home, segments, hermes_home)
         derived = dag_run.derive(existing, children, now)
         return _result("define", existing, derived, shown, say="This run was already defined; nothing changed.",
                        extra={"reused": True})
-    if not dag_run.make_room(omh_home, durable, _children(omh_home, segments), now):
+    if not dag_run.make_room(omh_home, durable, _children(omh_home, segments, hermes_home), now):
         raise dag_run.DagRefusal(
             "too_many_runs", "This conversation already keeps the most dag runs it can; cancel one that is not needed.")
     path = dag_run.record_path(omh_home, durable, run)
@@ -240,7 +240,7 @@ def _find(omh_home: Path, segments: list[str], run: object) -> tuple[dict[str, A
     return runs[0] if runs else None
 
 
-def _children(omh_home: Path, segments: list[str]) -> list[dict[str, Any]]:
+def _children(omh_home: Path, segments: list[str], hermes_home: Path | None = None) -> list[dict[str, Any]]:
     """Every child the delegation ledgers of this conversation's segments hold.
 
     A stop Hermes filed under another segment (a parent its rotating
@@ -249,7 +249,11 @@ def _children(omh_home: Path, segments: list[str]) -> list[dict[str, Any]]:
     taken for one a restart ended. One with no stop whose Hermes process is
     gone is marked ``lost``: a restart ended it, and Hermes fires no
     `subagent_stop` for it. Only a process Hermes' own probes say ended
-    counts (`host_process.process_alive`).
+    counts (`host_process.process_alive`). Before that mark, with
+    ``hermes_home``, a child's own lineage is read: a child Hermes rotated
+    since it started stops under its continuation's id, and a stop naming a
+    later segment of it is its own. That is the only state.db read here,
+    and only for a child about to be marked lost while a stop is unjoined.
     """
     children: list[dict[str, Any]] = []
     stops: list[dict[str, Any]] = []
@@ -261,15 +265,23 @@ def _children(omh_home: Path, segments: list[str]) -> list[dict[str, Any]]:
     if stops:
         children = [with_unjoined_stop(child, stops) for child in children]
     alive: dict[tuple[int, int | None, str], bool | None] = {}
-    for child in children:
+    for index, child in enumerate(children):
         host = child.get("host")
         if "stop" in child or host is None:
             continue
         key = (host["pid"], host["started"], host["machine"])
         if key not in alive:
             alive[key] = process_alive(host)
-        if alive[key] is False:
-            child["lost"] = True
+        if alive[key] is not False:
+            continue
+        if stops and hermes_home is not None:
+            session = child["child_session_id"]
+            later = sorted(_kanban_board_reader.conversation_session_ids(hermes_home, session) - {session})
+            returned = with_unjoined_stop(child, stops, later) if later else child
+            if "stop" in returned:
+                children[index] = returned
+                continue
+        child["lost"] = True
     return children
 
 

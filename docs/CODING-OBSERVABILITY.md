@@ -317,8 +317,9 @@ What it shows, and what it leaves as `?`:
     (`compression.in_place: false`) is read through the session it went on
     in: its state, model calls and output tokens are those of every segment
     it ran in, and its stop, which Hermes files under the new id, is its
-    own. Only when Hermes recorded no continuation is it `unknown`
-    (`compacted`).
+    own (`omh_dag` reads it so too, so a dag-ulw node whose child came back
+    is not offered again after a Hermes restart). Only when Hermes recorded
+    no continuation is it `unknown` (`compacted`).
   - An `omh_team` part takes the state of the child its latest attempt
     dispatched, so a repair is `repairing` only while that child runs. A
     repair the team reserved but has not sent is `waiting` (`repair
