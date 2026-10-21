@@ -46,7 +46,13 @@ continues from Hermes' own compaction links, and the attempt that recorded
 one of them is the one back. Nothing looser counts: not the same parent, not
 the time. A return whose lineage cannot be read is not matched; it is kept in
 the record as an unlinked return, said in `team_reconcile` while a part is
-still out, and named when that part stops as `return_not_linked`. The parent
+still out, and named when that part stops as `return_not_linked`. A helper
+runs inside the Hermes process that started it, and a restart ends it with no
+`subagent_stop`. So the dispatch also records that process (`host`), and the
+first `team_start` after a restart hands back each part whose process is gone
+(`TeamContext.dispatcher_alive`) instead of holding it for
+DELEGATION_STALE_SECONDS. A part with no recorded process, or one whose
+process cannot be told alive or gone, waits for that bound as before. The parent
 compacts too: its tool calls and its `subagent_stop` then name a later
 segment, and the team is found under the segment that started it through the
 same links (`owning_session`), or refused as `team_lineage_unverified` when
@@ -116,6 +122,7 @@ import shlex
 from typing import Any, Final
 
 from ..plugin_bundle.omh import dag_core
+from ..plugin_bundle.omh.host_process import recorded_process
 from ..system.local_store import _with_windows_retry, ensure_dir, file_lock
 
 TEAM_SCHEMA_VERSION: Final = "omh_team/v1"
@@ -136,7 +143,9 @@ MAX_TEAMS_PER_SESSION: Final = 16
 # Three inconclusive checks on one attempt block the unit with that reason.
 MAX_INCONCLUSIVE_PER_ATTEMPT: Final = 3
 # A reserved attempt the host never reported dispatching is handed back at
-# most this many times before the unit blocks as `dispatch_not_observed`.
+# most this many times before the unit blocks as `dispatch_not_observed`; one
+# whose helper a Hermes restart ended, as many times again, counted apart,
+# before it blocks as `helper_lost`.
 MAX_REEMITS: Final = 3
 # A dispatched helper the host never reported returning is treated as lost
 # after this long; the unit blocks rather than holding the barrier forever.
@@ -166,7 +175,7 @@ EVIDENCE_KIND: Final = "team_check"
 # `seq`; only the newest MAX_TEAM_EVENTS are kept (the oldest drop first), so
 # a record's event history is bounded at 64 entries. Metadata only: no helper
 # summary and no command output is ever an event.
-TEAM_EVENTS: Final = ("started", "finished", "check_passed", "check_failed", "repairing", "blocked", "done")
+TEAM_EVENTS: Final = ("started", "finished", "lost", "check_passed", "check_failed", "repairing", "blocked", "done")
 MAX_TEAM_EVENTS: Final = 64
 TEAM_CAVEAT: Final = (
     "Helpers run under this same Hermes profile, and each check runs the code they wrote as your own "
@@ -290,6 +299,8 @@ Fingerprint = Callable[[Path], tuple[str, str | None]]
 HostGuard = Callable[[str], str | None]
 # Where one helper branch stands against this workspace: one of HELPER_WORK_STATES.
 HelperWork = Callable[[Path, str], str]
+# Whether the Hermes process a dispatch recorded still runs: True, False (gone), or None (cannot tell).
+DispatcherAlive = Callable[[Mapping[str, Any]], bool | None]
 
 
 @dataclass(frozen=True)
@@ -302,7 +313,9 @@ class TeamContext:
     nonce of every check this process ran. Neither is ever read from disk, so a
     record written by anyone else can neither run a command nor carry a pass.
     ``helper_work`` reads, through git, whether a helper's branch is merged
-    into the workspace (`HELPER_WORK_STATES`).
+    into the workspace (`HELPER_WORK_STATES`). ``dispatcher_alive`` asks the
+    host whether the process a dispatch recorded still runs; only False hands
+    a part back.
     """
 
     omh_home: Path
@@ -314,6 +327,7 @@ class TeamContext:
     helper_work: HelperWork
     approved: set[tuple[str, str, str]]
     observed_checks: set[str]
+    dispatcher_alive: DispatcherAlive
 
 
 # --------------------------------------------------------------------------
@@ -507,7 +521,11 @@ def _unit_shape_ok(unit: object, ids: list[object]) -> bool:
             return False
         dispatch = attempt.get("dispatch")
         if dispatch is not None and not (isinstance(dispatch, dict) and isinstance(dispatch.get("child_session_id"), str)
-                                         and isinstance(dispatch.get("subagent_id", ""), str)):
+                                         and isinstance(dispatch.get("subagent_id", ""), str)
+                                         and (dispatch.get("host") is None or recorded_process(dispatch["host"]))):
+            return False
+        lost = attempt.get("lost", [])
+        if not isinstance(lost, list) or not all(isinstance(item, dict) for item in lost):
             return False
         check = attempt.get("check")
         if check is not None and not (isinstance(check, dict) and check.get("outcome") in ("passed", "failed")
@@ -842,11 +860,15 @@ def team_start(
             # A resume in the process that already approved this team is a
             # repeat call: entries still inside their grace are in flight and
             # are not handed out again. The first approval after a restart
-            # hands back every undispatched entry, since no helper survived it.
+            # hands back every undispatched entry, since no helper survived it,
+            # and every dispatched one whose Hermes process is gone.
             same_process = (ctx.session_ref, tid, digest) in ctx.approved
-            entries = _reemit(record, now, respect_grace=same_process)
+            lost = frozenset() if same_process else _hand_back_lost(ctx, record, now)
+            entries = _reemit(record, now, respect_grace=same_process, lost_now=lost)
             write_team(path, record)
-            return _result(record, "team_start", entries=entries, say=_say(record, resumed=True),
+            again = sum(1 for unit in record["units"] if not unit.get("blocked")
+                        and attempt_key(tid, str(unit["unit_id"]), len(unit["attempts"])) in lost)
+            return _result(record, "team_start", entries=entries, say=_say(record, resumed=True, restarted=again),
                            commands_digest=digest)
         if sum(1 for _ in path.parent.glob("*.json")) >= MAX_TEAMS_PER_SESSION:
             raise TeamRefusal("too_many_teams", "This session already has as many teams as it can keep.")
@@ -869,14 +891,21 @@ def team_start(
             if not unit["depends_on"]:
                 entries.append(_hand_out(tid, unit, _reserve(unit, now), now))
         write_team(path, record)
-    started = len(entries)
-    say = (f"Split into {len(validated)} parts; {started} start now in parallel, and each part is done "
-           f"only when its check passes.")
+    started, total = len(entries), len(validated)
+    if total == 1:
+        say = "Started 1 part; it is done only when its check passes."
+    elif started == total:
+        say = f"Split into {total} parts; {total} start now in parallel, and each part is done only when its check passes."
+    else:
+        now_line = "1 starts now" if started == 1 else f"{started} start now in parallel"
+        say = (f"Split into {total} parts; {now_line} and the rest wait for the parts they depend on, and each part "
+               "is done only when its check passes.")
     return _result(record, "team_start", entries=entries, say=say, commands_digest=digest)
 
 
 def _reemit(
     record: dict[str, Any], now: float, *, reserved_now: frozenset[str] = frozenset(), respect_grace: bool = True,
+    lost_now: frozenset[str] = frozenset(),
 ) -> list[dict[str, str]]:
     """Hand back every reserved attempt the host has not reported dispatching (H5.1).
 
@@ -884,7 +913,11 @@ def _reemit(
     handed out once as new entries, not counted as a repeat of themselves. An
     entry handed out less than EMIT_GRACE_SECONDS ago is in flight, not lost,
     and is skipped unless ``respect_grace`` is False (the first start after a
-    restart, when no helper can still be on its way).
+    restart, when no helper can still be on its way). ``lost_now`` names the
+    attempts `_hand_back_lost` just took back. Those are counted by their
+    ``lost`` list, not by ``reemits``, so a part re-emitted earlier for a slow
+    start is not stopped by fewer restarts; one past the bound blocks as
+    `helper_lost`, since its helper was seen starting.
     """
     entries = []
     for unit in record["units"]:
@@ -893,16 +926,52 @@ def _reemit(
             continue
         if attempt.get("check"):
             continue
-        if attempt_key(str(record["team_id"]), str(unit["unit_id"]), int(attempt["n"])) in reserved_now:
+        key = attempt_key(str(record["team_id"]), str(unit["unit_id"]), int(attempt["n"]))
+        if key in reserved_now:
             continue
         if respect_grace and _emit_pending(attempt, now):
             continue
-        attempt["reemits"] = int(attempt.get("reemits", 0)) + 1
-        if attempt["reemits"] > MAX_REEMITS:
-            _block(record, unit, now, {"reason": "dispatch_not_observed", "observed_at": _iso(now)})
+        if key in lost_now:
+            reason, over = "helper_lost", len(attempt.get("lost") or []) > MAX_REEMITS
+        else:
+            attempt["reemits"] = int(attempt.get("reemits", 0)) + 1
+            reason, over = "dispatch_not_observed", attempt["reemits"] > MAX_REEMITS
+        if over:
+            _block(record, unit, now, {"reason": reason, "observed_at": _iso(now)})
             continue
         entries.append(_hand_out(str(record["team_id"]), unit, attempt, now))
     return entries
+
+
+def _hand_back_lost(ctx: TeamContext, record: dict[str, Any], now: float) -> frozenset[str]:
+    """Undispatch every out attempt whose Hermes process is gone, so `_reemit` hands it back; their keys.
+
+    A restart ends every helper the old process ran, and Hermes fires no
+    `subagent_stop` for them, so without this each would hold the barrier for
+    DELEGATION_STALE_SECONDS. Only a recorded process ``dispatcher_alive``
+    says is gone counts. No attempt is spent: the hand-back is a re-emit,
+    bounded by MAX_REEMITS hand-backs of its own (the ``lost`` list). The
+    dispatch moves to ``lost``, so a stop that names its child later matches
+    nothing.
+    """
+    lost = set()
+    for unit in record["units"]:
+        attempt = _latest(unit)
+        if unit.get("blocked") or attempt is None or attempt.get("returned_at") or attempt.get("check"):
+            continue
+        dispatch = attempt.get("dispatch")
+        if not dispatch or dispatch.get("host") is None or ctx.dispatcher_alive(dispatch["host"]) is not False:
+            continue
+        key = attempt_key(str(record["team_id"]), str(unit["unit_id"]), int(attempt["n"]))
+        attempt["dispatch"] = None
+        attempt.pop("emitted_at", None)
+        gone = attempt.setdefault("lost", [])
+        gone.append({**dispatch, "lost_at": _iso(now)})
+        # Its length is the hand-back count `_reemit` bounds; the unit blocks at MAX_REEMITS + 1.
+        del gone[:-(MAX_REEMITS + 1)]
+        _emit(record, now, unit=unit, event="lost", summary="Its helper ended when Hermes restarted.", detail_ref=key)
+        lost.add(key)
+    return frozenset(lost)
 
 
 def _hand_out(team_id: str, unit: Mapping[str, Any], attempt: dict[str, Any], now: float) -> dict[str, str]:
@@ -1104,8 +1173,7 @@ def team_reconcile(ctx: TeamContext, *, team_id: object, since_seq: object = 0) 
         )
         entries.extend(_reemit(record, now, reserved_now=reserved_now))
         if team_state(record) == "done" and not any(item["event"] == "done" for item in record.get("events", [])):
-            _emit(record, now, unit=None, event="done",
-                  summary=f"All {len(record['units'])} parts passed their checks.", detail_ref=tid)
+            _emit(record, now, unit=None, event="done", summary=_all_passed(len(record["units"])), detail_ref=tid)
         write_team(path, record)
     reason = ""
     if pending:
@@ -1296,6 +1364,7 @@ _BLOCKED_SAY: Final[dict[str, str]] = {
     "repair_budget_exhausted": "it still fails its check after every allowed fix",
     "check_inconclusive": "its check never gave a clear answer",
     "dispatch_not_observed": "its helper was never seen starting",
+    "helper_lost": "Hermes kept restarting while its helper was out",
     "delegation_not_returned": "its helper never came back",
     "return_not_linked": "a helper came back that OMH could not link to it",
     "command_refused_by_host": "Hermes' own command rules refuse its check",
@@ -1336,14 +1405,15 @@ def lineage_refusal(reason: str) -> TeamRefusal:
 
 def observe_dispatch(
     omh_home: Path, session_ref: str, *, child_session_id: object, goal: object, now: float,
-    subagent_id: object = None, earlier: Callable[[], Sequence[str]] | None = None,
+    subagent_id: object = None, earlier: Callable[[], Sequence[str]] | None = None, host: object = None,
 ) -> bool:
     """`subagent_start` saw a goal carrying a team marker: bind that attempt to the child.
 
     ``subagent_id`` is the host's id for the child, kept so `team_reconcile`
     can find the branch a worktree-isolated helper left its work on.
     ``earlier`` is read only when this session holds no record of the team
-    (see `owning_session`).
+    (see `owning_session`). ``host`` is the Hermes process the helper runs in
+    (`host_process.this_process`), kept so a restart that ended it is seen.
     """
     match = _MARKER.match(goal) if isinstance(goal, str) else None
     if match is None or not isinstance(child_session_id, str) or not child_session_id.strip():
@@ -1365,6 +1435,8 @@ def observe_dispatch(
         attempt["dispatch"] = {"child_session_id": child_session_id.strip()[:160], "dispatched_at": _iso(now)}
         if isinstance(subagent_id, str) and _SUBAGENT_ID.fullmatch(subagent_id):
             attempt["dispatch"]["subagent_id"] = subagent_id
+        if (process := recorded_process(host)) is not None:
+            attempt["dispatch"]["host"] = process
         _emit(record, now, unit=unit, event="started",
               summary="Started a fix for this part." if n > 1 else "Started working on this part.",
               detail_ref=attempt_key(team_id, unit_id, n))
@@ -1562,11 +1634,12 @@ def _events_since(record: Mapping[str, Any], since_seq: object) -> dict[str, Any
     }
 
 
-def _say(record: Mapping[str, Any], *, events: list[str] | None = None, resumed: bool = False) -> str:
+def _say(record: Mapping[str, Any], *, events: list[str] | None = None, resumed: bool = False,
+         restarted: int = 0) -> str:
     state = team_state(record)
     units = list(record["units"])
     if state == "done":
-        return f"All {len(units)} parts passed their checks."
+        return _all_passed(len(units))
     if events:
         return " ".join(events)
     if state == "blocked":
@@ -1575,9 +1648,18 @@ def _say(record: Mapping[str, Any], *, events: list[str] | None = None, resumed:
         why = _BLOCKED_SAY.get(str(first["blocked"].get("reason")), "it cannot continue")
         return f"Stopped: '{first['title']}' is blocked because {why}."
     accepted = sum(1 for unit in units if unit_state(unit) == "accepted")
+    passed = (f"{accepted} of 1 part has passed its check" if len(units) == 1
+              else f"{accepted} of {len(units)} parts have passed their checks")
+    if restarted:
+        out = "1 part was out; it starts" if restarted == 1 else f"{restarted} parts were out; they start"
+        return f"Hermes restarted while {out} again. {passed} so far."
     if resumed:
-        return f"This team is already running: {accepted} of {len(units)} parts have passed their checks."
-    return f"{accepted} of {len(units)} parts have passed their checks so far."
+        return f"This team is already running: {passed}."
+    return f"{passed} so far."
+
+
+def _all_passed(count: int) -> str:
+    return "The one part passed its check." if count == 1 else f"All {count} parts passed their checks."
 
 
 def refusal_result(action: str, refusal: TeamRefusal) -> dict[str, Any]:
