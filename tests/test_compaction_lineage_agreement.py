@@ -17,7 +17,7 @@ Rows are in the shape Hermes' own `SessionDB` writes (`_hermes_session_rows`).
 Mutations: put back the presence-only marker rule or the one-candidate rule in
 the identity; let a reset fork count as a continuation; stop a walker at an
 inherited `_branched_from`; skip a pre-seeded segment's expansion; drop the
-expansion guard on a cycle.
+expansion guard on a cycle; drop the identity's row bound.
 """
 from __future__ import annotations
 
@@ -27,7 +27,11 @@ from pathlib import Path
 
 from _hermes_session_rows import compacted, row, within_seconds, write_sessions
 from omh.plugin_bundle.omh.kanban_board_reader import conversation_session_ids
-from omh.plugin_bundle.omh.live_session import compaction_ancestors, compaction_continuations
+from omh.plugin_bundle.omh.live_session import (
+    COMPACTION_LINEAGE_ROW_LIMIT,
+    compaction_ancestors,
+    compaction_continuations,
+)
 
 
 class LineageAgreementTest(unittest.TestCase):
@@ -163,6 +167,18 @@ class LineageAgreementTest(unittest.TestCase):
         )
         self.assertEqual((self.identity("A"), self.identity("A2")), ({"A"}, {"A2"}))
         self.assertEqual(self.ancestors("A2"), [])
+
+    def test_a_chain_past_the_bound_stops_at_it_from_its_first_segment(self) -> None:
+        # #2176 T2: with the bound gone the identity named all 70 segments. It
+        # keeps what it verified, so from the first segment that is the first
+        # `COMPACTION_LINEAGE_ROW_LIMIT + 1` of them.
+        chain = [f"S{index:03d}" for index in range(COMPACTION_LINEAGE_ROW_LIMIT + 6)]
+        write_sessions(self.hermes, *(
+            compacted(session, at=1010.0 + 10 * index, parent=chain[index - 1] if index else None,
+                      started_at=1000.0 + 10 * index)
+            for index, session in enumerate(chain[:-1])
+        ), row(chain[-1], parent=chain[-2], started_at=1000.0 + 10 * (len(chain) - 1)))
+        self.assertEqual(self.identity(chain[0]), set(chain[:COMPACTION_LINEAGE_ROW_LIMIT + 1]))
 
     def test_a_reset_fork_that_is_the_only_child_is_not_a_continuation(self) -> None:
         # #2177: the identity included it, which put a new chat's rows in the
