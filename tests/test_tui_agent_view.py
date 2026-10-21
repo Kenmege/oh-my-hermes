@@ -27,7 +27,7 @@ from omh.tui.layout import AGENT_VIEW_ROWS, agent_view_cap
 from omh.tui.modes import chip_column, info_line, mode_label
 from omh.tui.frame import BOX_INSET, MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, ServerRequest
-from omh.tui.keys import CHAR, ENTER, Key
+from omh.tui.keys import BACKSPACE, CHAR, ENTER, Key
 from omh.tui.panels import SPINNER_FRAMES
 from omh.tui.style import Span
 from omh.tui.subagents import Roster
@@ -649,3 +649,207 @@ class RoomTests(unittest.TestCase):
         self.assertEqual(shown[1], "  +6 more · 2 running · 4 done")
         self.assertTrue([row for row in screen if row.startswith("✻ Working")], "the working row stays")
         self.assertTrue([row for row in screen if row.startswith("[Plan]")], "and so does the plan")
+
+    PLAN = [{"text": "Build", "state": "done"}, {"text": "Test", "state": "active"},
+            {"text": "Ship", "state": "pending"}]
+
+    def small_app(self, running: int, done: int, *, plan: bool = True, graph: dict | None = None,
+                  cols: int = 80, rows: int = 12) -> App:
+        """`rows` rows (12) and a turn running: `running` agents running and `done` done, the plan in the slot (four
+        rows) unless `plan` is False, and `graph` as the conversation's delegation graph."""
+        app, _client = make_app(busy=True, rows=rows, cols=cols, clock=lambda: 0.0)
+        with_graph(app, graph, self.PLAN if plan else None)
+        for number in range(running + done):
+            agent_event(app, "start", f"sa-{number}", goal=f"task {number}")
+            if number >= running:
+                agent_event(app, "complete", f"sa-{number}", goal=f"task {number}", status="completed")
+        return app
+
+    def test_on_the_bottom_rows_the_view_keeps_its_rows_when_the_turn_ends_so_the_composer_stays(self) -> None:
+        # The #2188 review's case: once the turn ends the working row leaves, and the view (two rows of the four it
+        # wants) took that row, pulling the composer's box up one row until the next turn gave it back.
+        app = self.small_app(running=3, done=4)
+        busy = pinned(app)
+        top = box_top(busy)
+        self.assertEqual(app.frame_budget.agents, 2)
+        self.assertTrue(busy[top - 5].startswith("✻ Working"), busy)
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        idle = drawn(app)
+        self.assertEqual((box_top(idle), app.frame_budget.agents), (top, 2))
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, 2), "and so does the next frame")
+        self.assertEqual(idle[top - 5], "", "the working row's place stays blank above the plan")
+        self.assertEqual(idle[top - 4 : top], busy[top - 4 : top], "the plan has not moved")
+        app.turn_pending = True  # a turn runs again, the agents still listed: the working row takes its place back
+        again = drawn(app)
+        self.assertEqual((box_top(again), app.frame_budget.agents), (top, 2))
+        self.assertTrue(again[top - 5].startswith("✻ Working"), again)
+
+    def test_a_dag_trees_rows_stay_through_the_turns_end_and_the_next_prompt(self) -> None:
+        from _delegation_graphs import export_run
+
+        app = self.small_app(running=0, done=0, graph=export_run(), cols=120)
+        top = box_top(pinned(app))
+        rows = app.frame_budget.agents
+        self.assertGreater(rows, 0)
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, rows))
+        type_text(app, "next")
+        app._on_input(Key(ENTER))  # a new turn: the tree stays, the working row comes back
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, rows))
+
+    def test_a_menu_that_squeezed_the_view_during_the_turn_is_not_what_the_view_keeps_after_it(self) -> None:
+        # 16 rows: the `/` menu above the composer takes a row of the view's five and the composer goes down one;
+        # closing it while the turn runs gives the row back, as before. The turn's last frame, not the menu's, is
+        # what the view keeps once the turn ends.
+        app = self.small_app(running=3, done=4, plan=False, rows=16)
+        top = box_top(pinned(app))
+        self.assertEqual(app.frame_budget.agents, 5)
+        type_text(app, "/")
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top + 1, 4))
+        app._on_input(Key(BACKSPACE))
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, 5))
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, 5))
+
+    def test_a_squeeze_open_as_the_turn_ends_is_not_held_once_it_closes(self) -> None:
+        # Only the working row's place is held. A draft, the `/` menu or an approval that squeezed the view as the
+        # turn ended gives the view its rows back once it is cleared, closed or answered.
+        with self.subTest("a three-line draft, 12 rows and the plan"):
+            app = self.small_app(running=3, done=4)
+            top = box_top(pinned(app))
+            type_text(app, "a")
+            for char in "bc":
+                app._on_input(Key(ENTER, alt=True))
+                type_text(app, char)
+            self.assertEqual(view_rows(app), 0, "the draft's rows leave the view none")
+            app._on_event(Event("message.complete", SID, {"text": "done"}))
+            drawn(app)
+            for _ in range(5):
+                app._on_input(Key(BACKSPACE))
+            self.assertEqual(app.composer.text, "")
+            self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, 2), "as the turn left it")
+        with self.subTest("the `/` menu, 16 rows"):
+            app = self.small_app(running=3, done=4, plan=False, rows=16)
+            top = box_top(pinned(app))
+            type_text(app, "/")
+            self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top + 1, 4))
+            app._on_event(Event("message.complete", SID, {"text": "done"}))
+            self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top + 1, 4))
+            app._on_input(Key(BACKSPACE))
+            self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, 5))
+        with self.subTest("an approval, 12 rows"):
+            app = self.small_app(running=3, done=4, plan=False)
+            top = box_top(pinned(app))
+            self.assertEqual(app.frame_budget.agents, 4)
+            app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+            self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (None, 3))
+            app._on_event(Event("message.complete", SID, {"text": "done"}))
+            self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (None, 3))
+            app.slot_opened_at = app.clock() - 10.0  # past the delay that drops keys pressed as it opened
+            app._on_input(Key(ENTER))
+            self.assertIsNone(app.slot)
+            self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, 4))
+
+    def test_a_menu_opened_after_the_turn_squeezes_the_view_no_more_than_it_did_before(self) -> None:
+        # 12 rows, no plan: the view had its four rows while the turn ran. A `/` menu opened once it ended takes the
+        # one row the view must give up, as on a terminal with nothing held, not that row and the working row's.
+        app = self.small_app(running=3, done=4, plan=False)
+        top = box_top(pinned(app))
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, 4))
+        type_text(app, "/")
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top + 1, 3))
+        app._on_input(Key(BACKSPACE))
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, 4))
+
+    def test_working_rows_that_drop_mid_turn_go_to_the_view_at_once(self) -> None:
+        # Nothing is held while the turn runs. 16 rows, the plan and a four-line draft leave the view two rows beside
+        # the working row and its tip; the interrupt takes the tip away, and the very next frame gives that row to
+        # the view, as `layout.allocate`'s tail_floor says. A hold applied there would keep it out for one frame.
+        app = self.small_app(running=3, done=4, rows=16)
+        pinned(app)
+        type_text(app, "a")
+        for char in "bcd":
+            app._on_input(Key(ENTER, alt=True))
+            type_text(app, char)
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents, app._working_rows()), (7, 2, 2))
+        app._interrupt()  # what the interrupt keys reach while a turn runs
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents, app._working_rows()), (6, 3, 1))
+
+    def test_a_turn_drawn_above_the_bottom_rows_holds_nothing_when_its_answer_brings_them_down(self) -> None:
+        # Above the bottom rows the composer follows the content, so a turn drawn there keeps no rows: the answer
+        # that brings the region down to the bottom rows must not shrink the view one frame later.
+        app = self.small_app(running=3, done=4)
+        app._on_input(Key(CHAR, "l", ctrl=True))
+        drawn(app)
+        self.assertNotEqual(app.region.last_row(12), 11)
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        app.transcript.add_notice("\n".join(f"answer line {number}" for number in range(40)))
+        first = (box_top(drawn(app)), app.frame_budget.agents)
+        self.assertEqual(app.region.last_row(12), 11)
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), first)
+
+    def test_a_region_that_leaves_the_bottom_rows_drops_the_hold(self) -> None:
+        # Ctrl+L, and the full redraw a resize ends in, start the region on a clean screen's top rows: there the view
+        # takes the rows it wants, and output that brings it back down does not bring the old hold back.
+        for name, leave in (
+            ("ctrl+l", lambda app: app._on_input(Key(CHAR, "l", ctrl=True))),
+            ("a resize and back", self.resize_and_back),
+        ):
+            with self.subTest(name):
+                app = self.small_app(running=3, done=4)
+                pinned(app)
+                app._on_event(Event("message.complete", SID, {"text": "done"}))
+                self.assertEqual(view_rows(app), 2)
+                leave(app)
+                self.assertEqual(view_rows(app), 3)
+                app.transcript.add_notice("\n".join(f"more {number}" for number in range(40)))
+                self.assertEqual(view_rows(app), 3)
+                self.assertEqual(app.region.last_row(12), 11)
+
+    @staticmethod
+    def resize_and_back(app: App) -> None:
+        for rows in (13, 12):
+            app.terminal.screen.resize(rows, 80)  # type: ignore[attr-defined]
+            app._on_resize()
+            app._full_redraw()
+            drawn(app)
+
+    def test_a_view_that_wants_more_rows_takes_them_and_one_that_wants_fewer_gives_them_up(self) -> None:
+        # One agent running: the view wants three rows and gets two while the turn runs, and keeps two after it.
+        app = self.small_app(running=1, done=4)
+        top = box_top(pinned(app))
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top, 2))
+        # A second running agent wants a fourth row: the view takes the free row, so the composer goes up for it.
+        agent_event(app, "start", "sa-new", goal="task new")
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top - 1, 3))
+        # That drops the hold: when the agent finishes the view does not snap back, so the composer stays.
+        agent_event(app, "complete", "sa-new", goal="task new", status="completed")
+        self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (top - 1, 3))
+        # The next prompt empties the roster: the view gives every row up, none left blank under the info line.
+        type_text(app, "next")
+        app._on_input(Key(ENTER))
+        emptied = drawn(app)
+        self.assertEqual(app.frame_budget.agents, 0)
+        self.assertEqual(app.region.last_row(12), 11)
+        self.assertIn("steers", emptied[11], "the info line is the screen's last row")
+        # An agent of the new turn wants rows again, and gets them: no hold of an emptied view is kept.
+        agent_event(app, "start", "sb-0", goal="task b0")
+        self.assertEqual([row[:12] for row in view_text(app)], ["  ● main", "  ⠋ task b0 "])
+
+    def test_another_session_does_not_keep_the_last_ones_hold(self) -> None:
+        from _delegation_graphs import export_run
+
+        app = self.small_app(running=3, done=4)
+        pinned(app)
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertEqual(view_rows(app), 2)  # held at the turn's two rows
+        type_text(app, "/new")
+        app._on_input(Key(ENTER))
+        answer(app, app.client, {"session_id": "live-2", "stored_session_id": "stored-2", "info": {}})
+        # `/new` redraws nothing, so the region is still on the bottom rows. The new session's tree (a third of 12
+        # rows is four) gets the three rows the plan leaves it, not what the last session's turn left the view.
+        with_graph(app, export_run(), self.PLAN)
+        self.assertEqual(view_rows(app), 3)
+        self.assertEqual(app.region.last_row(12), 11)

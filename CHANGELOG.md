@@ -25,6 +25,25 @@ All notable changes will be documented here.
   now says that `false`, `no`, `off` and zero for `model.provider` read as
   unset only up to Hermes v0.21.3 and as set from v0.21.4, and why OMH still
   refuses on them.
+- **The OMH TUI's composer stays still when a turn ends with agents listed
+  under it.** On the bottom rows the agent view took the working row's place
+  once the turn ended, so at 12 rows with the plan and seven agents the
+  composer's box moved up a row and came back down when the next turn
+  started. Once a turn ends there, the view no longer takes the working
+  row's place: it gets the rows the slot, the menu and the composer leave
+  it, less the working rows, and never fewer than the turn's last frame gave
+  it. That place stays blank above the composer until output fills it. A
+  draft, a menu or a question that squeezed the view as the turn ended
+  gives the rows back when it closes. A view that wants more rows than it
+  did drops the hold, so it does not snap back when it wants fewer again,
+  and so does a frame drawn above the bottom rows. The cost, measured over
+  1,287 cases: at 8, 9, 12 and 13 rows with the plan, 54 idle views keep 1
+  or 2 fewer rows than before, the same 54 where the composer used to jump,
+  and each keeps at least one row (a header, a running agent or the `+N`
+  count). A test now pins that a finished DAG run counts at its one summary
+  line in the agents block's budget. The docs say what the DAG tree takes:
+  up to a third of the rows (8 of 24, 13 of 40), and no more rows than the
+  tree has, so a five-lane run's seven-row tree takes 7 at 24 and at 40.
 - **A delegated goal ends with its run marker, so a preview shows the task.**
   Hermes previews each `delegate_task` goal by its first 40 characters on a
   Discord tool-progress post, the CLI and the TUI, so a dag-ulw node's
