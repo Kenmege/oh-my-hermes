@@ -339,9 +339,10 @@ _Avoid_: a second write path, a subprocess from the plugin into the CLI
 **Delegation view**:
 A conversation's delegated work drawn as a graph (`delegation_graph/v1`:
 nodes, edges, layers): a layered box DAG with recorded edges only (a
-dispatch, a recorded `depends_on`, or a dag-ulw repair), or a compact tree
-when boxes do not fit
-or the shape cannot be drawn without implying an edge. The OMH TUI draws it
+dispatch, a recorded `depends_on`, or where a node a dag-ulw run added came
+from: a repair or an extend), or a compact tree when boxes do not fit or the
+shape cannot be drawn without implying an edge; the tree nests an added node
+under where it came from. The OMH TUI draws it
 in its panel, with two-line boxes where four-line ones do not fit, and `/dag`
 opens it whole; `omh hud --graph` prints it. A chat reply never carries the
 boxes: on Slack, Discord, Telegram, Mattermost and Matrix,
@@ -351,8 +352,8 @@ block once, a count line on a turn its counts changed, and its end block once
 current config. Colour is the TUI theme's (`dag_edges` and the state roles),
 never part of the text: a chat post is plain.
 _Avoid_: a message OMH sends (Hermes delivers the reply), a plan (it shows
-dispatched work and the nodes a dag-ulw run declared, never a plan it inferred), reading a wave as a
-dependency
+dispatched work and the nodes a dag-ulw run declared, never a plan it
+inferred), reading a wave as a dependency
 
 **Delegated run**:
 The lanes of a conversation's delegation graph that no chat end post has
@@ -360,9 +361,12 @@ closed yet. It starts on the first reply that finds one of them not settled,
 and ends on the first reply after all of them have settled (done, failed,
 interrupted, or `unknown`) and, for a dag-ulw run, the run itself is over
 (done, cancelled, or out of repair cycles), or after nothing has been in
-flight or changed for 15 minutes (`stalled`; the parts not moving stay open). The ledger's
-`posted` record keeps its phase, its last counts and the keys of the lanes
-earlier runs closed. A later wave's lanes form the next run.
+flight or changed for 15 minutes (`stalled`; the parts not moving stay
+open). The ledger's `posted` record keeps its phase, its last counts, the
+keys of the lanes earlier runs closed, and the keys of the lanes a post has
+shown. A later wave's lanes form the next run, except nodes a dag-ulw run
+adds after its end post: they reopen that run, with a count line naming
+them, not a second start block.
 _Avoid_: a single `delegate_task` call (a run can span several waves), a
 Hermes session
 
@@ -370,17 +374,25 @@ Hermes session
 `omh_dag/v1` at `$OMH_HOME/runtime/dag/<session key>/<run>.json`: the plan a
 parent agent declared for one dag-ulw run (node ids, labels, categories,
 prompts, `depends_on`, write scopes) and the outcome it settled for each
-attempt. The `omh_dag` tool is its only writer; the delegation graph reads
-it under every segment of the conversation, so a compacted parent still
-finds its run. Hermes runs every node as the parent's own `delegate_task`
+attempt. It holds each node's prompt, the instructions the parent wrote for
+that child (at most 3,000 characters a node and 256 KiB a record, written
+mode 0600), so `ready` can hand a node out after the parent's own context
+was compacted. That is the one difference from the **Delegation ledger**,
+which holds no goal text: the run record keeps what the parent planned, never
+what a child returned (no output, summary or tool history). The `omh_dag`
+tool is its only writer; the delegation graph reads it under every segment
+of the conversation, so a compacted parent still finds its run. Hermes runs every node as the parent's own `delegate_task`
 child; the child of a node is the one whose goal opens with
 `[dag:<run>/<node>]`. Node and run states are derived on every read.
 `accepted` is the parent's judgement after it read the node's handoff file,
 refused while that file is missing or Hermes reported the child failed; a
 failed node blocks only its dependents; repair nodes stand in for a failed
-node, at most two cycles each. Graph topology is decided once, in
-`plugin_bundle/omh/dag_core.py`, which `omh_team` and the fanout contract
-share.
+node, at most two cycles each. When every node passed but the goal check
+finds work missing, `extend` adds a round of nodes to the same run (at most
+two rounds a run), under the same refusals as the first plan. Each node
+records where it came from: `define`, `repair:<root>` or `extend:<round>`.
+Graph topology is decided once, in `plugin_bundle/omh/dag_core.py`, which
+`omh_team` and the fanout contract share.
 _Avoid_: reading `accepted` as verification, a child's `completed` as
 acceptance, a second graph engine
 

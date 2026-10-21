@@ -5,14 +5,15 @@ plugin tool keeps it (validation, readiness, settled outcomes), and every node
 runs as Hermes' own `delegate_task` child. Nothing here executes.
 
 The body is deliberately small: the run loop and the doctrine a planner needs
-while writing nodes. Messenger behaviour, repair, and the external-owner
-export live in `references/run-loop.md`, read when they apply.
+while writing nodes. Messenger behaviour, repair and extend, and the
+external-owner export live in `references/run-loop.md`, read when they apply.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ..plugin_bundle.omh.native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
 from .catalog_types import (
     ENGINE_CLOSING_BRIEF_RULE,
     ENGINE_FOLLOW_UP_AUTHORITY_RULE,
@@ -84,11 +85,12 @@ DEFINITION = SkillDefinition(
         "never the node that built the work.",
         "Completion is a claim: before reporting the goal met, check each node against its SCOPE in both "
         "directions, nothing owed missing and nothing beyond it done.",
-        "Goal loop: when a check fails, add repair nodes with `omh_dag action=repair`; after two repair cycles "
-        "for a node, stop and report what is still open.",
+        "Goal loop: verify, repair, extend, verify. A failed check gets repair nodes (`omh_dag action=repair`, two "
+        "cycles per node); when every node passed but the goal check finds work missing, add it to the same run "
+        "(`omh_dag action=extend`, two rounds per run). Past either limit, report what is still open.",
         "On a messenger, each completion turn's reply is the run's one status line, and dispatch goes one call "
         "per layer and category so the posts stay bounded; load "
-        f"`{DAG_ULW_RUN_LOOP_REFERENCE}` for the messenger, repair and export details.",
+        f"`{DAG_ULW_RUN_LOOP_REFERENCE}` for the messenger, repair, extend and export details.",
         ENGINE_INTERJECTION_RESUME_RULE,
         ENGINE_FOLLOW_UP_AUTHORITY_RULE,
         ENGINE_CLOSING_BRIEF_RULE,
@@ -104,12 +106,17 @@ DEFINITION = SkillDefinition(
         "Start at once; there is no plan approval. Write the goal criteria in one line.",
         "Plan the graph and call `omh_dag action=define` with each node's id, label, category, prompt, "
         "depends_on and write_scope; fix every refusal and read the lint before going on.",
+        f"Keep the plan todo as the run's layers in ONE tool: `{NATIVE_TODO_TOOL}` when "
+        f"{native_tool_presence_clause(NATIVE_TODO_TOOL, code=True)} (OMH mirrors it), else `omh_todo`. One item per "
+        "layer, named for what it delivers, never a list of its nodes (the panel draws those); advance it as each "
+        "layer settles.",
         "For each call `omh_dag` returns, run its route (`omh_delegate_route`, set or fallback as given), then "
         "`delegate_task` with the tasks unchanged; never more calls than it returned. Then end the turn with "
         "one status line; never wait or poll.",
         "On each completion read the node's handoff file and call `omh_dag action=settle` (accepted, failed, or "
         "blocked; a provider error is failed with provider_error). Dispatch what it returns in the same turn.",
-        "When the run reports done, check each node against its SCOPE, then report.",
+        "When the run reports done, check each node against its SCOPE and the goal criteria: extend the run when "
+        "work is missing, otherwise report.",
     ),
     do_not_use_when=(
         "One small change with one owner and one check: run it directly, or use `ultrawork` when the person "
@@ -133,7 +140,8 @@ DEFINITION = SkillDefinition(
         "The run was defined in `omh_dag` before the first dispatch, and every dispatched node was settled.",
         "No two concurrently runnable nodes shared a write scope without an edge.",
         "A separate verification node ran the real command after every producer.",
-        "Every accepted node was checked against its SCOPE; repairs stayed within two cycles per node.",
+        "Every accepted node was checked against its SCOPE; repairs stayed within two cycles per node and extend "
+        "rounds within two per run.",
         "The report names what is still open and ends with the observed run summary.",
     ),
     recovery_notes=(
@@ -180,15 +188,25 @@ def run_loop_reference() -> str:
 
 ## Goal loop
 
-The verification node runs the real command. When it, or any node, fails:
+Verify, repair, extend, verify. The verification node runs the real command. When it, or any node, fails:
 
 - read why, then `omh_dag action=repair node=<failed id> nodes=[...]`. Repair nodes may depend only on
   accepted nodes or on each other. The failed node counts as done once its latest repair group is all
   accepted.
 - a node gets at most two repair cycles. After that the run state is `stopped`: report what is still
   open, and do not repair again.
-- to stop early, `omh_dag action=cancel`; children already running finish on their own unless you stop
-  them with `delegate_task action=stop`.
+
+When every node passed (`state: done`), check each node against its SCOPE and the goal criteria. When
+work is missing:
+
+- `omh_dag action=extend node=<the node whose check found the gap> nodes=[...]` adds the missing work to
+  the same run, with its own verification node. New nodes may depend on the run's accepted nodes and on
+  each other; the whole run passes the same refusals as define (cycles, unknown or self edges, a write
+  scope shared with any node of the run without an edge, 48 nodes in all).
+- a run gets at most two extend rounds (`extend_rounds_left`). After that, report what is still open.
+
+To stop early, `omh_dag action=cancel`; children already running finish on their own unless you stop
+them with `delegate_task action=stop`.
 
 ## Messengers
 
@@ -196,7 +214,8 @@ On Discord, Slack, Telegram, Mattermost and Matrix every completion turn is a bo
 
 - Keep `delegation.independent_completions` off (Hermes' default): one completion per call, not per node.
 - Dispatch one call per layer and category, as `ready` groups them.
-- On an intermediate completion turn, reply with the run's `status_line` only.
+- On an intermediate completion turn, reply with the run's `status_line` only. After a repair or an
+  extend it names the added nodes once (`+1 added (repair: Docs body)`); copy it as it is.
 - OMH appends the start block, a count line when counts change, and the end block itself; never paste
   the graph into a reply.
 

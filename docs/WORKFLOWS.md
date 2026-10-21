@@ -7727,9 +7727,10 @@ These surfaces are generated command references, not installed Hermes workflow s
 - First steps:
   - Start at once; there is no plan approval. Write the goal criteria in one line.
   - Plan the graph and call `omh_dag action=define` with each node's id, label, category, prompt, depends_on and write_scope; fix every refusal and read the lint before going on.
+  - Keep the plan todo as the run's layers in ONE tool: `todo_list` when `todo_list` is in your tool list or tool_search finds it (OMH mirrors it), else `omh_todo`. One item per layer, named for what it delivers, never a list of its nodes (the panel draws those); advance it as each layer settles.
   - For each call `omh_dag` returns, run its route (`omh_delegate_route`, set or fallback as given), then `delegate_task` with the tasks unchanged; never more calls than it returned. Then end the turn with one status line; never wait or poll.
   - On each completion read the node's handoff file and call `omh_dag action=settle` (accepted, failed, or blocked; a provider error is failed with provider_error). Dispatch what it returns in the same turn.
-  - When the run reports done, check each node against its SCOPE, then report.
+  - When the run reports done, check each node against its SCOPE and the goal criteria: extend the run when work is missing, otherwise report.
 - Use when: Use when the request is a job of several parts that can run in parallel or in an order (a feature across modules, a migration, a broad cleanup, research then build then verify), or when the person says dag ulw.
 - Do not use when:
   - One small change with one owner and one check: run it directly, or use `ultrawork` when the person named it.
@@ -7751,8 +7752,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - `depends_on` only orders nodes; data moves through the handoff files `omh_dag` names, never through the parent's memory.
   - End every run with a verification node that depends on every producer, runs the real command, and is never the node that built the work.
   - Completion is a claim: before reporting the goal met, check each node against its SCOPE in both directions, nothing owed missing and nothing beyond it done.
-  - Goal loop: when a check fails, add repair nodes with `omh_dag action=repair`; after two repair cycles for a node, stop and report what is still open.
-  - On a messenger, each completion turn's reply is the run's one status line, and dispatch goes one call per layer and category so the posts stay bounded; load `references/run-loop.md` for the messenger, repair and export details.
+  - Goal loop: verify, repair, extend, verify. A failed check gets repair nodes (`omh_dag action=repair`, two cycles per node); when every node passed but the goal check finds work missing, add it to the same run (`omh_dag action=extend`, two rounds per run). Past either limit, report what is still open.
+  - On a messenger, each completion turn's reply is the run's one status line, and dispatch goes one call per layer and category so the posts stay bounded; load `references/run-loop.md` for the messenger, repair, extend and export details.
   - A mid-run user message is an interjection, not a stop: answer it briefly and, in the same reply, continue the run — re-read the phase todo when one is active and dispatch or advance the next pending step, or name the armed wait it is waiting on -- handle, bound completion signal, deadline -- instead of re-reading status. Only the user's explicit stop or cancel, or the engine's own completion gate, ends the run; when the interjection changes scope, say so and update the declared plan or todo instead of silently abandoning it. A mid-run message is the latest steering for the active task, not automatically a replacement objective: it replaces the objective when the user says so and steers the current one otherwise.
   - A follow-up that needs new authority, materially expands the scope, or changes external state not already authorized is described first and started only on the user's approval: the turn ends by naming that next action and asking whether to take it, as one question carrying the choices the user has, never by declaring what will not be done; persistence never broadens the authorized scope. A refused escalation is answered the same way, with a safer alternative inside the boundary or the authorization the boundary asks for — never a workaround or an indirect execution.
   - The closing brief scales to the change: one or two sentences plus the observed validation for a simple change, more only when the complexity earns it. Lead with the result or decision, in the user's words; omit abandoned approaches unless they explain a tradeoff the reader needs; narrate no internal bookkeeping (todo transitions, waits). When the work stops at a boundary or at a decision the user owns, end with the next action offered as a question, and state what was left undone as the option it leaves open, never as a refusal. Required closing lines stay outside this scaling: the observed run summary, and any prepared-not-observed or unmerged work, are stated whatever the brief's length.
@@ -7761,7 +7762,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The run was defined in `omh_dag` before the first dispatch, and every dispatched node was settled.
   - No two concurrently runnable nodes shared a write scope without an edge.
   - A separate verification node ran the real command after every producer.
-  - Every accepted node was checked against its SCOPE; repairs stayed within two cycles per node.
+  - Every accepted node was checked against its SCOPE; repairs stayed within two cycles per node and extend rounds within two per run.
   - The report names what is still open and ends with the observed run summary.
 - Recovery notes:
   - A node whose child returned blocked or failed blocks only its dependents: repair it, or report it.

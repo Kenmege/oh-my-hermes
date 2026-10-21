@@ -201,8 +201,9 @@ What it shows, and what it leaves as `?`:
 
 - **Edges** are recorded, never inferred: a dispatch (a parent started this
   child), a `depends_on` from an `omh_team` part, a dag-ulw node or a fanout
-  unit, or a dag-ulw repair (from a failed node to the nodes added to repair
-  it). Lanes one
+  unit, or where a node a dag-ulw run added came from: a repair (from the
+  node it repairs) or an extend (from the node whose check found the work
+  missing). The tree layout nests an added node under that node. Lanes one
   turn dispatched form a `wave N · HH:MM`; a later wave is later, not
   dependent, and no edge says otherwise. Hermes' `group` field orders delivery,
   not execution, and draws nothing. A wave whose lanes all settled more than
@@ -238,12 +239,23 @@ What it shows, and what it leaves as `?`:
     Its child, bound by the `[dag:<run>/<node>]` goal marker, gives it a
     model, effort and time. A node no child has taken shows the category
     its run planned. Nodes of an earlier repair group that were never
-    accepted leave the drawing. The graph takes the run's name, and a chat
-    end post waits until the run itself is over: done, cancelled, or out of
-    repair cycles. On a completion turn whose reply is already the run's
-    status line, no second count line is added.
+    accepted leave the drawing. Each node carries where it came from
+    (`dag_origin`: `define`, `repair:<root>`, `extend:<round>`). The graph
+    takes the run's name, and a chat end post waits until the run itself is
+    over: done, cancelled, or out of repair cycles. On a completion turn
+    whose reply is already the run's status line, no second count line is
+    added. Nodes a repair or an extend round added are named once, at the
+    end of the next status line (`+1 added (repair: Docs body)`, two names
+    and then `+N more`); a line that would not fit the platform's cap goes
+    without them, and nodes added after the end post reopen the run with
+    that line instead of a second start block.
+  - In the TUI panel each block says one thing: `[Plan]` holds the run's
+    layers (the skill keeps one todo item per layer), the delegation block
+    draws the nodes and edges, and `[Agents]` lists only the children the
+    graph does not draw. The agent strip names a node's child by the node's
+    label, without its `[dag:<run>/<node>]` marker.
 
-    ![A dag-ulw run in the OMH TUI: the export API accepted, docs and CLI running, the button dispatched, and the verification node waiting on three lanes](../assets/omh-tui-dag-ulw-run.png)
+    ![A dag-ulw run in the OMH TUI mid-run: five defined nodes accepted, an extend round hanging under the verification node that found CSV export missing, the CSV node blocked with its repair running beneath it, and the plan holding one item per layer](../assets/omh-tui-dag-ulw-run.png)
 
 The structure comes from a metadata-only record, `delegation_ledger/v1` under
 `<omh_home>/runtime/delegation/`, that OMH writes from Hermes' own

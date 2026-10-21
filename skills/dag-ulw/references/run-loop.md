@@ -19,15 +19,25 @@
 
 ## Goal loop
 
-The verification node runs the real command. When it, or any node, fails:
+Verify, repair, extend, verify. The verification node runs the real command. When it, or any node, fails:
 
 - read why, then `omh_dag action=repair node=<failed id> nodes=[...]`. Repair nodes may depend only on
   accepted nodes or on each other. The failed node counts as done once its latest repair group is all
   accepted.
 - a node gets at most two repair cycles. After that the run state is `stopped`: report what is still
   open, and do not repair again.
-- to stop early, `omh_dag action=cancel`; children already running finish on their own unless you stop
-  them with `delegate_task action=stop`.
+
+When every node passed (`state: done`), check each node against its SCOPE and the goal criteria. When
+work is missing:
+
+- `omh_dag action=extend node=<the node whose check found the gap> nodes=[...]` adds the missing work to
+  the same run, with its own verification node. New nodes may depend on the run's accepted nodes and on
+  each other; the whole run passes the same refusals as define (cycles, unknown or self edges, a write
+  scope shared with any node of the run without an edge, 48 nodes in all).
+- a run gets at most two extend rounds (`extend_rounds_left`). After that, report what is still open.
+
+To stop early, `omh_dag action=cancel`; children already running finish on their own unless you stop
+them with `delegate_task action=stop`.
 
 ## Messengers
 
@@ -35,7 +45,8 @@ On Discord, Slack, Telegram, Mattermost and Matrix every completion turn is a bo
 
 - Keep `delegation.independent_completions` off (Hermes' default): one completion per call, not per node.
 - Dispatch one call per layer and category, as `ready` groups them.
-- On an intermediate completion turn, reply with the run's `status_line` only.
+- On an intermediate completion turn, reply with the run's `status_line` only. After a repair or an
+  extend it names the added nodes once (`+1 added (repair: Docs body)`); copy it as it is.
 - OMH appends the start block, a count line when counts change, and the end block itself; never paste
   the graph into a reply.
 
