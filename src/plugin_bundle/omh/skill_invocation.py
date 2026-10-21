@@ -92,8 +92,8 @@ def affirmative_marked_request(message, name, names):
             # These are adjacent nominal compounds, not a veto on words in
             # genuine command arguments ("run with history as input" stays valid).
             nominal_complements = {
-                "use": {"case", "cases"},
-                "run": {"history", "count", "counts", "log", "logs", "status", "result", "results", "time", "times", "duration"},
+                "use": {"case", "cases", "example", "examples"},
+                "run": {"history", "count", "counts", "log", "logs", "status", "result", "results", "time", "times", "duration", "date", "dates", "statistic", "statistics", "metadata", "metrics"},
                 "start": {"date", "dates", "time", "times"},
             }
             if complement in nominal_complements.get(command, set()):
