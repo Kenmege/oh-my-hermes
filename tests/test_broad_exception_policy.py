@@ -581,8 +581,9 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "this_process",
         INTENTIONAL,
         "Two handlers. A failing import of Hermes' `gateway.status` (not only ImportError, as "
-        "Hermes' own `_persist_dispatch` guards it) records no process, which every caller reads "
-        "as the path with nothing recorded: the four-hour bound. Hermes' start-time reader raising "
+        "Hermes' own `_persist_dispatch` guards it) records no process, the path a record from "
+        "before this change takes: `omh_team` keeps the part out under its four-hour bound, and "
+        "`omh_dag` keeps the node running with no bound, as on main. Hermes' start-time reader raising "
         "records the process with `started` None, the shape its own async-delegation record keeps "
         "for an unread time; `process_alive` then answers None (unknown) while that pid exists and "
         "False (gone) once it does not, never True. Either way the `subagent_start` observers that "

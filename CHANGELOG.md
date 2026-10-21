@@ -9,24 +9,24 @@ All notable changes will be documented here.
   it without the `subagent_stop` callback, so `omh_team` held the part as
   out until its four-hour bound blocked it as `delegation_not_returned`.
   The dispatch now records that process (pid and start-time fingerprint,
-  through Hermes' own `gateway.status` probes, imported when called; where
-  the pid was read: on Linux the machine id and pid namespace, elsewhere
-  the platform; and Linux's boot id), and the first `team_start` after a
-  restart hands back each part whose process is gone, or whose machine has
-  rebooted since: same attempt, no try spent, said as "Hermes restarted
-  while 1 part was out; it starts again." A part with no recorded process,
-  one recorded on another machine or in another container, or one whose
-  process cannot be told alive or gone, waits for the bound as before. That
-  includes a restarted or recreated container, which gets a new pid
-  namespace.
-  Hand-backs are counted apart from re-emits for a slow start: after three,
-  a part blocks as `helper_lost` ("Hermes kept restarting while its helper
-  was out"). A
-  dag-ulw node whose child a restart ended no longer stays `running` with no
-  bound: its ledger entry records the same process, and `omh_dag ready`
-  offers the node again at once, at most three times per attempt, then says
-  on every `omh_dag` reply to settle it. The delegation graph no longer draws an ended
-  team helper as a lane of its own. Start lines name how many parts start:
+  through Hermes' own `gateway.status` probes, imported when called, and
+  where the pid was read: on Linux the boot id and pid namespace, elsewhere
+  the platform), and the first `team_start` after a restart hands back each
+  part whose process is gone: same attempt, no try spent, said as "Hermes
+  restarted while 1 part was out; it starts again." A part with no recorded
+  process, one recorded on another machine or in another container, or one
+  whose process cannot be told alive or gone, waits for the bound as before.
+  On Linux the boot is part of where the pid was read, so a reboot,
+  `wsl --shutdown`, `docker restart` or a recreated container also reads as
+  unknown: the team part waits the four-hour bound, and a dag node stays
+  running with no bound, as before. Hand-backs are counted apart from
+  re-emits for a slow start: after three, a part blocks as `helper_lost`
+  ("Hermes kept restarting while its helper was out"). A dag-ulw node whose
+  child a restart ended no longer stays `running` with no bound: its ledger
+  entry records the same process, and `omh_dag ready` offers the node again
+  at once, at most three times per attempt, then says on every `omh_dag`
+  reply to settle it. The delegation graph no longer draws an ended team
+  helper as a lane of its own. Start lines name how many parts start:
   "Started 1 part", "1 starts now and the rest wait for the parts they
   depend on", and no line says "1 parts".
 - **A child's answering model is judged on its own calls, not Hermes'

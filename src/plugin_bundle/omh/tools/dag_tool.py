@@ -252,12 +252,12 @@ def _children(omh_home: Path, segments: list[str]) -> list[dict[str, Any]]:
         ledger = read_ledger(omh_home, segment)
         if ledger:
             children.extend(ledger["children"])
-    alive: dict[tuple[int, int | None, str, str | None], bool | None] = {}
+    alive: dict[tuple[int, int | None, str], bool | None] = {}
     for child in children:
         host = child.get("host")
         if "stop" in child or host is None:
             continue
-        key = (host["pid"], host["started"], host["machine"], host["boot"])
+        key = (host["pid"], host["started"], host["machine"])
         if key not in alive:
             alive[key] = process_alive(host)
         if alive[key] is False:

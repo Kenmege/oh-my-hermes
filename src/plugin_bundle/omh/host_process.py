@@ -21,21 +21,20 @@ A pid means something only on the machine, and in the pid namespace, that
 read it: a Hermes gateway in a container and a CLI on its host can share one
 OMH home, and the host has no such pid. So the record also names where the
 pid was read (`machine`), and a record from anywhere else is unknown, never
-gone. Beside it is the boot the pid was read in (`boot`): on the same
-machine another boot means the machine restarted, which ended every process
-of the old one.
+gone. On Linux that includes the boot, so a reboot, `wsl --shutdown`, or a
+restarted or recreated container reads as unknown too: a false "gone" would
+be a paid duplicate run, and "same machine" cannot be proven across a boot
+(machine ids are baked into images, and every host's own pid namespace is
+the same constant).
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
-import platform
 import sys
 from typing import Any, Final
 
-# Linux: the machine's own id (systemd's, kept across boots), its id for this boot, and this process's pid namespace
-# (a container has its own).
-_MACHINE_ID = Path("/etc/machine-id")
+# Linux: a random id per boot, and this process's pid namespace (a container has its own).
 _BOOT_ID = Path("/proc/sys/kernel/random/boot_id")
 _PID_NAMESPACE = "/proc/self/ns/pid"
 _PLATFORM: Final = sys.platform
@@ -43,11 +42,11 @@ _MACHINE_CHARS = 300
 
 
 def this_process() -> dict[str, Any] | None:
-    """``{"pid", "started", "machine", "boot"}`` for this process, or None when Hermes' probes are not here.
+    """``{"pid", "started", "machine"}`` for this process, or None when Hermes' probes are not here or `machine`
+    cannot be read.
 
     ``started`` is Hermes' start-time fingerprint, None when it could not be
-    read; ``machine`` is where the pid was read (`machine`), and ``boot``
-    the boot it was read in (`boot`), None where none is read.
+    read; ``machine`` is where the pid was read (`machine`).
     """
     try:
         from gateway.status import get_process_start_time
@@ -55,58 +54,49 @@ def this_process() -> dict[str, Any] | None:
         # Not Hermes (ImportError), or a Hermes whose module fails to load: nothing is recorded either way,
         # and the `subagent_start` observers calling this never raise.
         return None
+    where = machine()
+    if not where:
+        return None
     pid = os.getpid()
     try:
         started = get_process_start_time(pid)
     except Exception:
         # Hermes' reader answers None itself for every failure it knows; any other is the same unread time.
         started = None
-    return {"pid": pid, "started": started if _is_int(started) else None, "machine": machine(), "boot": boot()}
+    return {"pid": pid, "started": started if _is_int(started) else None, "machine": where}
 
 
 def machine() -> str:
     """Where a pid of this process means what it says.
 
-    On Linux, the machine id (the host name where there is none) and the pid
-    namespace: another host has another id, and a container has its own
-    namespace. Elsewhere only the platform: a host name there follows the
-    network (macOS renames itself on a DHCP or reverse-DNS change, or on a
-    Bonjour conflict), so it would turn every record unknown. Two non-Linux
-    machines sharing one OMH home are not told apart.
+    On Linux, the boot id and the pid namespace: another host, and another
+    boot of this one, has another boot id, and a container has its own
+    namespace. "" when either cannot be read: nothing is recorded then, and
+    no record reads as here. Elsewhere only the platform: a host name there
+    follows the network (macOS renames itself on a DHCP or reverse-DNS
+    change, or on a Bonjour conflict), so it would turn every record
+    unknown. Two non-Linux machines sharing one OMH home are not told apart.
     """
     if not _PLATFORM.startswith("linux"):
         return f"host:{_PLATFORM}"[:_MACHINE_CHARS]
     try:
-        identity = _MACHINE_ID.read_text(encoding="ascii").strip()
-    except (OSError, ValueError):
-        identity = ""
-    try:
+        boot = _BOOT_ID.read_text(encoding="ascii").strip()
         namespace = os.readlink(_PID_NAMESPACE)
-    except OSError:
-        namespace = ""
-    return f"linux:{identity or platform.node()}:{namespace}"[:_MACHINE_CHARS]
-
-
-def boot() -> str | None:
-    """This boot of the machine: Linux's boot id, None where none is read (a reboot then cannot be told)."""
-    try:
-        return _BOOT_ID.read_text(encoding="ascii").strip()[:_MACHINE_CHARS] or None
     except (OSError, ValueError):
-        return None
+        return ""
+    return f"linux:{boot}:{namespace}"[:_MACHINE_CHARS] if boot and namespace else ""
 
 
 def recorded_process(value: object) -> dict[str, Any] | None:
     """A process in the shape `this_process` writes, or None."""
     if not isinstance(value, dict) or not _is_int(value.get("pid")) or value["pid"] <= 0:
         return None
-    started, where, booted = value.get("started"), value.get("machine"), value.get("boot")
+    started, where = value.get("started"), value.get("machine")
     if started is not None and not _is_int(started):
         return None
     if not isinstance(where, str) or not where or len(where) > _MACHINE_CHARS:
         return None
-    if booted is not None and (not isinstance(booted, str) or not booted or len(booted) > _MACHINE_CHARS):
-        return None
-    return {"pid": value["pid"], "started": started, "machine": where, "boot": booted}
+    return {"pid": value["pid"], "started": started, "machine": where}
 
 
 def process_alive(value: object) -> bool | None:
@@ -115,16 +105,11 @@ def process_alive(value: object) -> bool | None:
     None: nothing recorded, a pid read on another machine or in another pid
     namespace, no Hermes probes, a pid that exists with no start time to
     compare it by, or a probe that raised. Only False says the process
-    ended, so only False may hand its helper's work out again: a probe's own
-    answer, or another boot of this same machine.
+    ended, so only False may hand its helper's work out again.
     """
     recorded = recorded_process(value)
     if recorded is None or recorded["machine"] != machine():
         return None
-    here = boot()
-    if recorded["boot"] is not None and here is not None and recorded["boot"] != here:
-        # The machine restarted since the pid was read, which ended every process it ran.
-        return False
     try:
         from gateway.status import _pid_exists, get_process_start_time, start_time_fingerprints_match
     except Exception:
