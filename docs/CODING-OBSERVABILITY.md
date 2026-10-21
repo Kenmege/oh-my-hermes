@@ -89,8 +89,9 @@ with its glyph and duration, and its parents (`← Export API`) or `Start node`.
 The nodes of one frontier sit side by side over a `· Same frontier` label,
 and one connector joins a frontier to the next. Under the boxes,
 `Dependencies` lists every edge between two nodes, its kind named unless it
-is a `depends_on`, and `Node details` gives each running node a card: its
-whole title, category and model, status, group and session. Main, the
+is a `depends_on`, and `Node details` gives a card to each running or stuck
+node, and in `/dag` to the highlighted one: its whole title, category and
+model, status, group and session. Main, the
 parent session, is no box: the nodes it dispatched read `Start node`, and its
 model is on the header's second line. A node added mid-run carries `↻ ` (a
 repair) or `+ ` (an extend) before its title. A dag run of five nodes, at
@@ -167,12 +168,15 @@ Where it shows:
   highlighted (`>`, its border and title in the violet the edge gradient
   starts at); it opens on the first running node. Tab or n highlights the
   next box in reading order, Shift+Tab or p the one before; Space or Enter
-  folds the highlighted box to its title line (`[+]`) and back; d shows or
-  hides Node details, whose cards are the running nodes and the highlighted
-  one; ↑ ↓, PageUp, PageDown and g / G scroll; q or Esc closes it. The two
-  rows under it name these keys and the rows shown. It sends nothing
-  anywhere: no key there reaches the gateway, a child or a chat. One
-  conversation has one graph, so it offers no other run to switch to.
+  folds the highlighted box to one line (`[+]`, its glyph, title and status
+  word) and back; d shows or hides Node details, whose cards are the running
+  and stuck nodes and the highlighted one; ↑ ↓, PageUp, PageDown and g / G
+  scroll; q or Esc closes it. The two rows under it name these keys and the
+  rows shown. When the HUD's newest read holds no active graph (it settled
+  and aged out, or reading stopped), the last drawing stays under a
+  `not live · last update 12s ago` line. It sends nothing anywhere: no key
+  there reaches the gateway, a child or a chat. One conversation has one
+  graph, so it offers no other run to switch to.
 
   ![/dag in a dark terminal: Export API folded, Verify export highlighted, Node details for the running node and the highlighted one](../assets/omh-dag-pager.png)
 - **Slack, Discord, Telegram, Mattermost and Matrix** never get the box
@@ -261,8 +265,9 @@ What it shows, and what it leaves as `?`:
   model its usage rows observed, or the model the dispatch was pinned to. It
   is never read from the current `delegation.model`.
 - A category or model with no record yet (a node no child has taken) is left
-  out of a box and blank in the tree's column, so `writing` reads alone; `?`
-  stands only where neither is recorded.
+  out of a box and blank in the tree's column, so `writing` reads alone. A
+  box draws no `?` at all: where neither is recorded its line is blank, and
+  an unknown state is `◇`; the tree keeps `?` in its category column there.
 - **State** comes from Hermes' `subagent_stop`, a recorded model call, or the
   team's own record.
   - A child Hermes reported completed with no model call at all reads
@@ -292,7 +297,8 @@ The boxes draw no edge, so no shape can be drawn wrong: one connector joins
 each frontier to the next whatever its edges, and the edges are exact in
 each box's parents line and in `Dependencies`. Every box of a drawing is one
 width, as wide as its widest node needs and narrowed to put each frontier on
-one row (the category and model line is cut first, down to 22 cells); a
+one row, down to 22 cells (every line is cut to that width with `…`, and
+the category and model line, usually the widest, is the one that shows it); a
 frontier that does not fit one row even then wraps, under the same label.
 Narrower than a 22-cell box, or where the edges loop, the graph is the tree,
 which nests a node under its dispatcher and draws no edge at all. Its
@@ -313,13 +319,18 @@ nothing is told by colour alone. The tree's edges step from violet through
 indigo to blue down its depth. The gradient's stops are theme tokens: a
 palette that names `dag_edge_start`, `dag_edge_mid` or `dag_edge_end`
 replaces them, and with them the colours of selected, handed out and running.
-Titles are bold and a `?` is dim. Every colour is measured against the
-terminal's background like the rest of the TUI's, so a line is lighter than a
-dark background and darker than a light one. The depth follows the terminal:
+Titles are bold and a `?` is dim. A box's lines and glyphs are marks and
+reach 3:1 against the background; its title and status words take the same
+hue lifted to the 4.5:1 every word in the TUI reaches (`dag_words`), and a
+waiting node's words take `muted`, since words never go on `dim`. Every
+colour is measured against the terminal's background like the rest of the
+TUI's, so a line is lighter than a dark background and darker than a light
+one. The depth follows the terminal:
 24-bit where `COLORTERM` says `truecolor` or `24bit`, the nearest of 256
 colours where `TERM` names a 256-colour terminal, the nearest of 16 otherwise
-(where selected and running both reach bright blue, and the `>` says which is
-selected), and none with `NO_COLOR` or a dumb terminal. Colour is only ever
+(where selected, running and handed out all reach bright blue, and the glyph,
+the word and the `>` say which is which), and none with `NO_COLOR` or a dumb
+terminal. Colour is only ever
 escape codes around the same text, so it changes no character and no width.
 `omh hud --graph` paints the same colours where `COLORFGBG` names the
 terminal's background; a printed command cannot ask the terminal for it as

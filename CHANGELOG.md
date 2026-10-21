@@ -10,8 +10,8 @@ All notable changes will be documented here.
   connector from each frontier to the next; each box holds the title, the
   category and model, the status and the parents (`← Export API`, or `Start
   node`). The drawing implies no edge: under the boxes, `Dependencies` lists
-  every recorded edge exactly, and `Node details` gives each running node a
-  card. A frontier goes on one row while its boxes can narrow to fit, and
+  every recorded edge exactly, and `Node details` gives a card to each
+  running or stuck node and, in `/dag`, to the highlighted one. A frontier goes on one row while its boxes can narrow to fit, and
   wraps only past that. In the OMH TUI a box's border, title and status take
   its node's state: running blue, handed out indigo, failed red, done the
   terminal's foreground, waiting dim, selected violet; every state keeps its
