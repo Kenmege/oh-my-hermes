@@ -792,6 +792,21 @@ class OutputTokenTests(unittest.TestCase):
                 self.assertEqual(view.layout, "box")
                 self.assertEqual(section(view, "Node details")[-1], line)
 
+    def test_a_count_after_a_status_past_a_hundred_hours_is_whole_or_absent(self) -> None:
+        # `100h 59m` is eight cells, one more than a duration is measured at (`DURATION_CELLS`): the room for a count
+        # is measured on the status as drawn there, so the count is never cut to `↓999.…`.
+        for make in (dag_export_run, nested, owner_mock):
+            long = make()
+            for node in long["nodes"][1:]:
+                node.update(state="running", status="running", elapsed_seconds=100 * 3600 + 59 * 60, waits_on=0)
+                node["output_tokens"] = 999_900
+            for width in range(8, 201):
+                for layout in ("box", "tree"):
+                    for charset in ("unicode", "ascii"):
+                        drawn = text(long, width=width, layout=layout, charset=charset)
+                        with self.subTest(case=make.__name__, width=width, layout=layout, charset=charset):
+                            self.assertIsNone(re.search(r"(↓|out )[0-9.]*[kM]?(…|\.\.\.)", drawn), drawn)
+
     def test_no_count_draws_nothing(self) -> None:
         plain = render_delegation_view(dag_export_run(), width=100).text()
         for count in (None, 0, -5, True, "1200", 1.5, 10**9):

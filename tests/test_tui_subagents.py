@@ -201,7 +201,7 @@ class RelayFixtureTests(unittest.TestCase):
             lines_text(roster.log_lines(FIRST, 70, THEME, 500.0))[:5],
             [
                 "find usages of old_api in src/ and list every call site",
-                "completed · 12s · 6 tools · ↓340 tokens · deepseek-v4.1-flash",
+                "completed · 12s · 6 tools · ↓340\N{NO-BREAK SPACE}tokens · deepseek-v4.1-flash",
                 "",
                 "▸ I will grep for old_api first",
                 "⏺ search_files  old_api",
@@ -885,7 +885,7 @@ class TokenTests(unittest.TestCase):
         self.assertEqual(lines_text(roster.view_lines(70, THEME, 0, 6, 20.0))[1], self.row(roster, 1))
         self.assertEqual(
             lines_text(roster.log_lines("sa-a", 80, THEME, 20.0))[1],
-            "running · 10s · 3 tools · ↓1.2k tokens · deepseek-v4.1-flash",
+            "running · 10s · 3 tools · ↓1.2k\N{NO-BREAK SPACE}tokens · deepseek-v4.1-flash",
         )
         self.assertEqual(lines_text(roster.log_lines("sa-b", 80, THEME, 20.0))[1], "running · 4s · 0 tools · deepseek-v4.1-flash")
         roster.ingest_tokens({"child-a": 2500, "child-b": 80})
@@ -941,6 +941,21 @@ class TokenTests(unittest.TestCase):
         feed(roster, "complete", 30.0, "sa-a", status="completed", output_tokens=0)  # a child that made no call
         self.assertEqual(roster.token_sessions(30.0), ("child-b",))
         self.assertNotIn("↓", self.row(roster, 1))
+
+    def test_the_log_header_never_parts_a_count_from_its_unit(self) -> None:
+        roster = self._roster()
+        roster.ingest_tokens({"child-a": 1234})
+        def facts(width: int) -> list[str]:  # the status rows: from `running` to the blank row under them
+            rows = lines_text(roster.log_lines("sa-a", width, THEME, 20.0))
+            start = next(at for at, row in enumerate(rows) if row.startswith("running"))
+            return rows[start : rows.index("", start)]
+
+        for width in range(12, 81):
+            with self.subTest(width=width):
+                self.assertNotIn("↓1.2k\n", "\n".join(facts(width)))
+                self.assertFalse([row for row in facts(width) if row.startswith("tokens")], facts(width))
+        self.assertEqual(facts(32)[:2], ["running · 10s · 3 tools ·", "↓1.2k\N{NO-BREAK SPACE}tokens ·"])
+        self.assertIn("· ↓1.2k tokens", self.row(roster, 1), "a row is cut, never wrapped: a plain space there")
 
     def test_counts_are_compact(self) -> None:
         roster = self._roster()

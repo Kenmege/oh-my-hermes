@@ -43,6 +43,7 @@ from pathlib import Path
 import sqlite3
 import time
 from typing import Any, Final
+from urllib.parse import quote
 
 from .delegation_ledger import child_title, ledger_key, read_ledger, title_from_goal
 from .subagent_graph import _roster_progress_fields as roster_progress_fields
@@ -122,7 +123,7 @@ def _connect(hermes_home: Path) -> sqlite3.Connection | None:
     if not state_db.is_file():
         return None
     try:
-        return sqlite3.connect(f"file:{state_db}?mode=ro", uri=True, timeout=0.25)
+        return sqlite3.connect(f"file:{quote(str(state_db))}?mode=ro", uri=True, timeout=0.25)
     except sqlite3.Error:
         return None
 

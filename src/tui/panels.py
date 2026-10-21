@@ -53,6 +53,7 @@ import threading
 import time
 from typing import Any
 import unicodedata
+from urllib.parse import quote
 
 from ..plugin_bundle.omh.hud_text import elapsed_text, todo_unchanged_text
 from ..version import __version__
@@ -225,9 +226,21 @@ class HudPoller:
         self._wake.set()
 
     def watch_tokens(self, session_ids: Sequence[str]) -> None:
-        """Name the child sessions each read takes output tokens for (`Roster.token_sessions`); none stops it."""
+        """Name the child sessions each read takes output tokens for (`Roster.token_sessions`); none stops it.
+
+        A session not watched before (a subagent that just started) wakes the
+        thread and starts the back-off over, so its first count does not wait
+        out an eight-second interval. Naming the same sessions again, or
+        fewer, wakes nothing.
+        """
+        watched = tuple(session_ids)[:TOKEN_WATCH_CAP]
         with self._lock:
-            self._watched = tuple(session_ids)[:TOKEN_WATCH_CAP]
+            new = not set(watched) <= set(self._watched)
+            self._watched = watched
+            if new:
+                self._interval = HUD_POLL_MIN_SECONDS
+        if new:
+            self._wake.set()
 
     def refresh(self) -> None:
         """Read again now rather than at the next poll, and start the back-off over (Hermes' plan just changed)."""
@@ -299,7 +312,8 @@ def read_output_tokens(hermes_home: object, session_ids: Sequence[str]) -> dict[
     """`sessions.output_tokens` for each of `session_ids` the state.db under `hermes_home` holds, in one query.
 
     Read-only: the file is opened as the HUD reader opens it (`mode=ro`, a
-    quarter-second busy wait), never created, and closed before this returns.
+    quarter-second busy wait, the path quoted so a `#` or `?` in it is not
+    read as the URI's), never created, and closed before this returns.
     Hermes adds each API call's output tokens to a child's own row as the
     call returns, so a running child's count grows here. No ids, no home, no
     file, and any SQLite failure (a locked or half-written database, one
@@ -314,7 +328,7 @@ def read_output_tokens(hermes_home: object, session_ids: Sequence[str]) -> dict[
     except (OSError, ValueError):
         return {}
     try:
-        connection = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True, timeout=0.25)
+        connection = sqlite3.connect(f"file:{quote(str(state_db))}?mode=ro", uri=True, timeout=0.25)
     except sqlite3.Error:
         return {}
     try:

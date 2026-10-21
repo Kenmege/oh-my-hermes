@@ -130,6 +130,7 @@ THINKING_MARK = "▸ "
 LOG_INDENT = "  "
 NO_OUTPUT = "no output yet"
 TOKENS_MARK = "↓"  # output tokens, as the turn's working row and its done line say them
+NO_BREAK_SPACE = "\N{NO-BREAK SPACE}"  # `wrap_line` breaks on spaces only
 TAIL_CUT_NOTICE = "… earlier output not shown"
 
 LOG_TEXT = "text"
@@ -595,9 +596,10 @@ class Roster:
         agent = self.agents.get(subagent_id)
         if agent is None:
             return []
+        # A no-break space holds the count to its unit, so a wrap never leaves `tokens` alone on the next row.
         facts = [
-            elapsed_text(agent.elapsed(now)), _tools_text(agent.tool_count), _tokens_text(agent.output_tokens),
-            agent.model,
+            elapsed_text(agent.elapsed(now)), _tools_text(agent.tool_count),
+            _tokens_text(agent.output_tokens).replace(" ", NO_BREAK_SPACE), agent.model,
         ]
         status = Span(agent.status, _mark(agent, theme, 0).style)
         rest = Span("".join(f"{FACT_SEPARATOR}{fact}" for fact in facts if fact), theme.muted)

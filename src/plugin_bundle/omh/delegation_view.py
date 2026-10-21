@@ -315,6 +315,12 @@ def _tokens_room(charset: Charset) -> int:
     return cells(charset.separator) + cells(charset.written) + TOKEN_CELLS
 
 
+def _status_room(node: Mapping[str, Any]) -> int:
+    """The cells a status takes before a count: `_status_cells`, or the status as drawn where that is wider (a
+    duration past 100 hours, `100h 59m`, is wider than `DURATION_CELLS`), so a count is never cut after it."""
+    return max(_status_cells(node), cells(_status_text(node)))
+
+
 def _stuck_reason(word: str) -> str:
     return word.removeprefix("stuck").lstrip(":").strip()
 
@@ -591,7 +597,7 @@ def _box_content(
     tokens = _tokens_text(node, charset)
     # Only where the box has room for a count at its widest: the box is never widened for it, and it never comes
     # and goes as the clock or the count grows.
-    if tokens and cells(_box_glyph(node, charset, None)) + 1 + _status_cells(node) + _tokens_room(charset) <= inner:
+    if tokens and cells(_box_glyph(node, charset, None)) + 1 + _status_room(node) + _tokens_room(charset) <= inner:
         status.append(Segment(f"{charset.separator}{tokens}", "more"))
     lines.append(status)
     parents = [_title(shape.lanes[upper]) for upper in shape.parents[node_id]]
@@ -780,7 +786,7 @@ def _details(
         where = [Segment(_capital(_status_text(node)), f"node-word:{state}")]
         tokens = _tokens_text(node, charset)
         # Whole or not at all, after the status and before the group and session, which give way first.
-        if tokens and cells(deeper) + _status_cells(node) + _tokens_room(charset) + cells(" tokens") <= width:
+        if tokens and cells(deeper) + _status_room(node) + _tokens_room(charset) + cells(" tokens") <= width:
             where.append(Segment(f"{charset.separator}{tokens} tokens", "more"))
         group = _group_label(node.get("group"), charset)
         if group:
@@ -1001,7 +1007,7 @@ def _tree_lines(
             used = sum(cells(piece.text) for piece in pieces)
             pieces.append(Segment(_status_text(node), f"status:{state}"))
             tokens = _tokens_text(node, charset)
-            if tokens and used + _status_cells(node) + _tokens_room(charset) <= width:  # never at a status's cost
+            if tokens and used + _status_room(node) + _tokens_room(charset) <= width:  # never at a status's cost
                 pieces.append(Segment(f"{sep}{tokens}", "more"))
             lines.append(_cut_line(pieces, width, charset))
         else:
@@ -1023,7 +1029,7 @@ def _tree_lines(
                     facts += [Segment(text, _field_role(text, role)), Segment(sep, "edge", depth)]
             facts.append(Segment(status, f"status:{state}"))
             tokens = _tokens_text(node, charset)
-            if tokens and whole + _status_cells(node) + _tokens_room(charset) <= width:  # the model whole first
+            if tokens and whole + _status_room(node) + _tokens_room(charset) <= width:  # the model whole first
                 facts.append(Segment(f"{sep}{tokens}", "more"))
             lines.append(_cut_line(facts, width, charset))
         kids = [kid for kid in nested.get(node_id, []) if kid not in hidden]

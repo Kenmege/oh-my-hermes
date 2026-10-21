@@ -455,6 +455,31 @@ class OutputTokenTests(unittest.TestCase):
             home.tokens("child-0", 90_000)
             self.assertEqual(graph_fingerprint(first), graph_fingerprint(built(home)))
 
+    def test_a_home_whose_path_holds_a_hash_or_a_question_mark_is_read(self) -> None:
+        # A URI reads `#` as the start of a fragment and `?` as the start of the query: the path is quoted.
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+
+        from _delegation_state import Homes
+        from omh.plugin_bundle.omh import delegation_ledger
+
+        name = "odd#home" if os.name == "nt" else "odd#home?x"  # Windows allows no `?` in a file name
+        with TemporaryDirectory() as tmp:
+            (Path(tmp) / name).mkdir()
+            home = Homes(Path(tmp) / name)
+            with patch.dict(os.environ, {"OMH_HOME": str(home.omh), "HERMES_HOME": str(home.hermes)}):
+                delegation_ledger._roots.clear()
+                delegation_ledger._titles.clear()
+                try:
+                    three_lanes(home)
+                    home.usage("child-0", "claude-opus-5-5", last_seen=NOW + 90)
+                    home.tokens("child-0", 1234)
+                    lane = node(built(home), "Refresh HUD docs")
+                    self.assertEqual((lane["model"], lane["output_tokens"]), ("claude-opus-5-5", 1234))
+                finally:
+                    delegation_ledger._roots.clear()
+                    delegation_ledger._titles.clear()
+
     def test_a_fanout_unit_has_no_count(self) -> None:
         record = {"contract": {"fanout_id": "fanout-0123456789ab", "units": [
             {"unit_id": "core", "title": "Core", "owner": "codex", "depends_on": []}]},
