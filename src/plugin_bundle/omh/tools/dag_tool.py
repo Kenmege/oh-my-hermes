@@ -30,7 +30,7 @@ import time
 from typing import Any
 
 from .. import dag_run, runtime_paths
-from ..delegation_ledger import read_ledger
+from ..delegation_ledger import read_ledger, with_unjoined_stop
 from ..delegation_snapshot import dag_added_clause, shown_lanes
 from ..owner_preference_record import (
     OWNER_PREFERENCE_EXPLICIT_CHOICE_PROVENANCES,
@@ -243,15 +243,23 @@ def _find(omh_home: Path, segments: list[str], run: object) -> tuple[dict[str, A
 def _children(omh_home: Path, segments: list[str]) -> list[dict[str, Any]]:
     """Every child the delegation ledgers of this conversation's segments hold.
 
-    One with no stop whose Hermes process is gone is marked ``lost``: a
-    restart ended it, and Hermes fires no `subagent_stop` for it. Only a
-    process Hermes' own probes say ended counts (`host_process.process_alive`).
+    A stop Hermes filed under another segment (a parent its rotating
+    compaction moved since the child started) is joined to the child it
+    names first (`with_unjoined_stop`), so a child that came back is not
+    taken for one a restart ended. One with no stop whose Hermes process is
+    gone is marked ``lost``: a restart ended it, and Hermes fires no
+    `subagent_stop` for it. Only a process Hermes' own probes say ended
+    counts (`host_process.process_alive`).
     """
     children: list[dict[str, Any]] = []
+    stops: list[dict[str, Any]] = []
     for segment in segments:
         ledger = read_ledger(omh_home, segment)
         if ledger:
             children.extend(ledger["children"])
+            stops.extend(ledger["unjoined_stops"])
+    if stops:
+        children = [with_unjoined_stop(child, stops) for child in children]
     alive: dict[tuple[int, int | None, str], bool | None] = {}
     for child in children:
         host = child.get("host")

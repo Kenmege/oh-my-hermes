@@ -378,8 +378,11 @@ The ledger record, the `omh_team` record and the `omh_dag` run stay under the
 session that wrote them, and Hermes names the new session as the parent when
 a child stops later. The graph reads every session of the conversation, as
 the compaction links in `state.db` join them, and a stop filed under the new
-session joins the child it names. Its chat posts go on from the last post
-any of those sessions recorded, so the run is not announced again. Hermes'
+session joins the child it names; `omh_dag` reads that stop the same way,
+so a dag-ulw node whose child came back reads `returned` there too, and a
+Hermes restart after it does not offer the node again. Its chat posts go on
+from the last post any of those sessions recorded, so the run is not
+announced again. Hermes'
 default in-place compaction keeps one session id, and the graph reads that
 session alone.
 

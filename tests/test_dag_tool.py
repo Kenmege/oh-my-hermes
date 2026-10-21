@@ -517,6 +517,33 @@ class RestartTests(unittest.TestCase):
                 ready = call(action="ready", run="feat")
         self.assertEqual((ready["nodes"][0]["state"], ready["calls"]), ("returned", []))
 
+    def test_a_child_that_came_back_under_a_rotated_parent_is_not_offered_again(self) -> None:
+        """Hermes files the stop under the parent's current segment, which a rotating compaction made after the start.
+
+        Mutation: drop the stop join in `dag_tool._children` (the node is offered, and its child runs twice).
+        """
+        from omh.plugin_bundle.omh.delegation_graph import build_delegation_graph
+
+        moment = time.time()
+        later = "20261020_160000_later"
+
+        def call_in(session: str, **arguments: object) -> dict:
+            return json.loads(dag_tool.omh_dag_handler(arguments, session_id=session))
+
+        with homes() as home:
+            self.out(home, moment, probes=hermes_process(1000))
+            home.session(PARENT, "claude-opus-5-5")
+            home.rotate(PARENT, later, at=moment + 10)
+            stop(home, "child-api", parent=later, now=moment + 30)  # it came back before the restart
+            with patch.object(dag_tool.time, "time", return_value=moment + 60), patch_modules(hermes_process(5000)):
+                ready = call_in(later, action="ready", run="feat")
+                status = call_in(later, action="status", run="feat")
+            graph = build_delegation_graph(home.omh, home.hermes, later, now=moment + 60)
+        self.assertEqual((ready["nodes"][0]["state"], ready["calls"]), ("returned", []))
+        self.assertEqual(status["nodes"][0]["state"], "returned")
+        self.assertEqual(next(node["status"] for node in graph["nodes"] if node.get("dag_node") == "api"), "returned",
+                         "omh_dag and the graph read one stop")
+
     def test_two_children_under_one_pid_are_asked_about_apart_by_where_it_was_read(self) -> None:
         """Mutation: key the per-call answer by pid and start time only."""
         moment = time.time()

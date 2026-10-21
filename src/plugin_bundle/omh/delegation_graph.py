@@ -66,7 +66,7 @@ from urllib.parse import quote
 
 from .dag_core import layer_of
 from .dag_run import ADDED_ORIGIN_KINDS, derive, run_state, session_runs
-from .delegation_ledger import child_title, ledger_key, read_ledger, title_from_goal
+from .delegation_ledger import child_title, ledger_key, read_ledger, title_from_goal, with_unjoined_stop
 from .live_session import conversation_segments
 from .subagent_graph import _roster_progress_fields as roster_progress_fields
 
@@ -157,40 +157,46 @@ def graph_segments(hermes_home: Path, session_id: str) -> list[str]:
     so this is ``[session_id]`` there, and wherever the lineage cannot be read.
     """
     connection = _connect(hermes_home)
+    try:
+        return _segments(connection, session_id)
+    finally:
+        if connection is not None:
+            connection.close()
+
+
+def _segments(connection: sqlite3.Connection | None, session_id: str) -> list[str]:
+    """`graph_segments` on a connection the caller owns."""
     if connection is None:
         return [session_id]
     try:
         others = conversation_segments(connection, session_id) - {session_id}
     except sqlite3.Error:
         return [session_id]
-    finally:
-        connection.close()
     return [session_id, *sorted(others)]
 
 
-def _continuations(hermes_home: Path, facts: Mapping[str, Any], sessions: Sequence[str]) -> dict[str, list[str]]:
+def _continuations(
+    connection: sqlite3.Connection | None, facts: Mapping[str, Any], sessions: Sequence[str]
+) -> dict[str, list[str]]:
     """Each of ``sessions`` whose row Hermes closed for compaction, with the later segments its conversation ran in.
 
-    Reads ``state.db`` only when such a row exists, which Hermes' default
-    in-place compaction never writes.
+    Reads only when such a row exists, which Hermes' default in-place
+    compaction never writes.
     """
     compacted = [session for session in dict.fromkeys(sessions)
                  if (facts["sessions"].get(session) or {}).get("end_reason") == COMPACTION_END_REASON]
-    if not compacted:
-        return {}
-    connection = _connect(hermes_home)
-    if connection is None:
+    if not compacted or connection is None:
         return {}
     try:
         later = {session: sorted(conversation_segments(connection, session) - {session}) for session in compacted}
     except sqlite3.Error:
         return {}
-    finally:
-        connection.close()
     return {session: segments for session, segments in later.items() if segments}
 
 
-def _carry_on(hermes_home: Path, facts: dict[str, Any], later: Mapping[str, Sequence[str]]) -> None:
+def _carry_on(
+    hermes_home: Path, connection: sqlite3.Connection, facts: dict[str, Any], later: Mapping[str, Sequence[str]]
+) -> None:
     """Read each compacted session as the conversation it went on in: the facts of its tips, with its segments summed.
 
     A tip is a later segment Hermes did not close for compaction; the session
@@ -199,7 +205,8 @@ def _carry_on(hermes_home: Path, facts: dict[str, Any], later: Mapping[str, Sequ
     segments, the way Hermes' own per-agent count does. A session whose later
     rows cannot be read keeps its own facts, so it stays ``compacted``.
     """
-    extra = state_facts(hermes_home, [segment for segments in later.values() for segment in segments], [])
+    extra = state_facts(hermes_home, [segment for segments in later.values() for segment in segments], [],
+                        connection=connection)
     for session, segments in later.items():
         rows = [extra["sessions"][segment] for segment in segments if segment in extra["sessions"]]
         tips = [row for row in rows if row["end_reason"] != COMPACTION_END_REASON]
@@ -228,14 +235,20 @@ def _effort(config: Mapping[str, Any]) -> str:
 
 
 def state_facts(
-    hermes_home: Path, session_ids: Sequence[str], delegation_ids: Sequence[str]
+    hermes_home: Path, session_ids: Sequence[str], delegation_ids: Sequence[str],
+    *, connection: sqlite3.Connection | None = None,
 ) -> dict[str, Any]:
-    """What Hermes recorded about these sessions and delegations. Each read is on its own: one that fails is absent."""
+    """What Hermes recorded about these sessions and delegations. Each read is on its own: one that fails is absent.
+
+    ``connection``: the build's own, which the caller closes; without it one
+    is opened under ``hermes_home`` for this read.
+    """
     facts: dict[str, Any] = {
         "read": False, "usage_read": False, "sessions": {}, "usage": {}, "openers": {}, "delegations": {},
     }
     ids = [item for item in dict.fromkeys(session_ids) if item][:160]
-    connection = _connect(hermes_home)
+    own = connection is None
+    connection = _connect(hermes_home) if own else connection
     if connection is None:
         return facts
     try:
@@ -321,7 +334,8 @@ def state_facts(
             except sqlite3.Error:
                 pass
     finally:
-        connection.close()
+        if own:
+            connection.close()
     return facts
 
 
@@ -483,12 +497,18 @@ def build_delegation_graph(
     smaller or inactive, and a field it cannot evidence ``?``.
     """
     moment = time.time() if now is None else now
+    # One state.db connection per build: the lineage and every fact are read on it.
+    connection = _connect(Path(hermes_home)) if session_id else None
     try:
         if session_id and not segments:
-            segments = graph_segments(Path(hermes_home), session_id)
-        graph = _build(omh_home, hermes_home, session_id, moment, root_model, titles, scope, linger, segments or [])
+            segments = _segments(connection, session_id)
+        graph = _build(omh_home, hermes_home, session_id, moment, root_model, titles, scope, linger, segments or [],
+                       connection)
     except (OSError, ValueError, TypeError, KeyError, sqlite3.Error) as error:
         graph = inactive_graph(f"unreadable:{type(error).__name__}", scope=scope)
+    finally:
+        if connection is not None:
+            connection.close()
     if graph["status"] != "active" and fanout:
         try:
             graph = fanout_graph(fanout)
@@ -507,6 +527,7 @@ def _build(
     scope: str,
     linger: float | None,
     segments: Sequence[str],
+    connection: sqlite3.Connection | None,
 ) -> dict[str, Any]:
     if not session_id:
         return inactive_graph("no_session", scope=scope)
@@ -528,15 +549,16 @@ def _build(
                 if isinstance(dispatch, dict) and isinstance(dispatch.get("child_session_id"), str):
                     sessions.append(dispatch["child_session_id"])
     delegations = [child.get("delegation_id", "") for child in children]
-    facts = state_facts(Path(hermes_home), sessions, delegations)
-    later = _continuations(Path(hermes_home), facts, sessions[1:])
-    if later:
-        _carry_on(Path(hermes_home), facts, later)
+    facts = state_facts(Path(hermes_home), sessions, delegations, connection=connection)
+    later = _continuations(connection, facts, sessions[1:])
+    if later and connection is not None:
+        _carry_on(Path(hermes_home), connection, facts, later)
     stops = [stop for ledger in ledgers.values() if ledger for stop in ledger["unjoined_stops"]]
     if stops:
-        children = [_with_stop(child, stops, later) for child in children]
+        children = [with_unjoined_stop(child, stops, later.get(child["child_session_id"], ())) for child in children]
     if dag is not None:
-        dag_children = [_with_stop(child, stops, later) for child in dag["children"]] if stops else dag["children"]
+        dag_children = ([with_unjoined_stop(child, stops, later.get(child["child_session_id"], ()))
+                         for child in dag["children"]] if stops else dag["children"])
         derived = derive(dag["record"], dag_children, now)
         dag = {"record": dag["record"], "children": dag_children, "derived": derived,
                "state": run_state(dag["record"], derived)}
@@ -825,24 +847,6 @@ def _dag_run(
     ]
     return {"record": record, "children": children}
 
-
-def _with_stop(
-    child: Mapping[str, Any], stops: Sequence[Mapping[str, Any]], later: Mapping[str, Sequence[str]]
-) -> Mapping[str, Any]:
-    """``child`` with the newest stop the ledger left unjoined that names it or a later segment of it, if it has none.
-
-    Hermes names the sessions as they are when the child stops: a parent
-    rotated since the start files the stop under its new segment, and a child
-    rotated since then is named by its continuation.
-    """
-    if isinstance(child.get("stop"), Mapping):
-        return child
-    names = {child["child_session_id"], *later.get(child["child_session_id"], ())}
-    found = [stop for stop in stops if stop["child_session_id"] in names]
-    if not found:
-        return child
-    stop = max(found, key=lambda item: item["observed_at"])
-    return {**child, "stop": {"status": stop["status"], "observed_at": stop["observed_at"], "duration_ms": None}}
 
 
 def _dag_nodes(

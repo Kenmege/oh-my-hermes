@@ -629,6 +629,28 @@ def observe_subagent_stop(kwargs: dict[str, object], *, now: float | None = None
     return _update(omh_home, root, close, now=moment)
 
 
+def with_unjoined_stop(
+    child: dict[str, Any], stops: Sequence[dict[str, Any]], later: Sequence[str] = ()
+) -> dict[str, Any]:
+    """``child`` with the newest unjoined stop naming it, or one of ``later`` (its continuations), if it has no stop.
+
+    Hermes names the sessions as they are when a child stops: a parent its
+    rotating compaction moved since the start files the stop under the new
+    segment, whose record holds no start for the child, and a child rotated
+    since then is named by its continuation. ``stops`` are the
+    ``unjoined_stops`` of every segment of the conversation; the delegation
+    graph and `omh_dag` read a child's stop through this one rule.
+    """
+    if isinstance(child.get("stop"), dict):
+        return child
+    names = {child["child_session_id"], *later}
+    found = [stop for stop in stops if stop["child_session_id"] in names]
+    if not found:
+        return child
+    stop = max(found, key=lambda item: item["observed_at"])
+    return {**child, "stop": {"status": stop["status"], "observed_at": stop["observed_at"], "duration_ms": None}}
+
+
 def posted_fingerprint(omh_home: Path, session_id: str) -> str:
     return str(posted_record(omh_home, session_id).get("fingerprint", ""))
 
