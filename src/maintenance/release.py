@@ -293,7 +293,11 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # delegate_task per returned call, settle after each completion, repair at
 # most twice) so no per-turn primer line is added for it; deferrable under
 # the default tool search. Re-derived from the producer.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 66952
+# 66952 -> 67130: `omh_dag` gains `extend` (+178): the action in the enum, one
+# sentence saying when (every node passed, the goal check finds work missing)
+# and its two-round limit, and what `node` names for it. Re-derived from the
+# producer.
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 67130
 # PRE_LLM_CALL_CONTEXT_CHAR_LIMIT, PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT: moved with
 # their history to src/plugin_bundle/omh/turn_budget.py; imported at the top of this file.
 # 340000 -> 349637: three capability-skill sections were added by the domain

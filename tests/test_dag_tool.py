@@ -202,7 +202,9 @@ class SettleTests(unittest.TestCase):
         self.assertEqual(missing["reason"], "handoff_missing")
         self.assertEqual([c["nodes"] for c in accepted["calls"]], [["docs"]])
         self.assertEqual(accepted["counts"]["done"], 1)
-        self.assertEqual(accepted["status_line"], "DAG feat · 1/4 done · 2 running")
+        # Two nodes are out (ui, and docs just now) but no child of theirs runs yet: the line counts running children.
+        self.assertEqual((accepted["counts"]["out"], accepted["counts"]["running"]), (2, 0))
+        self.assertEqual(accepted["status_line"], "DAG feat · 1/4 done · 0 running")
 
     def test_a_child_hermes_reported_failed_is_never_accepted(self) -> None:
         with homes() as home:
@@ -262,6 +264,8 @@ class RepairTests(unittest.TestCase):
             handoff(home, "feat", "verify2")
             done = call(action="settle", run="feat", node="verify2", outcome="accepted")
         self.assertEqual(repaired["settled"]["repair_nodes"], ["fix", "verify2"])
+        # No chat post was ever recorded (a TUI session): the line names no added node, the drawing shows them.
+        self.assertNotIn("added", repaired["status_line"])
         self.assertEqual([c["nodes"] for c in repaired["calls"]], [["fix"]])
         self.assertEqual(done["state"], "done")
         self.assertEqual({row["id"]: row["state"] for row in done["nodes"]}["verify"], "repaired")
@@ -296,6 +300,116 @@ class RepairTests(unittest.TestCase):
             call(action="define", run="feat", nodes=FEATURE)
             result = call(action="repair", run="feat", node="docs", nodes=[node("fix")])
         self.assertEqual(result["reason"], "not_failed")
+
+
+class ExtendTests(unittest.TestCase):
+    """Work found missing after every node passed: an extend round on the same run, at most two per run."""
+
+    def _done(self, home) -> dict:
+        slots_table(home)
+        call(action="define", run="feat", nodes=[node("api", scope=("a.py",)),
+                                                 node("verify", depends_on=("api",), label="Verify the feature")])
+        handoff(home, "feat", "api")
+        call(action="settle", run="feat", node="api", outcome="accepted")
+        handoff(home, "feat", "verify")
+        return call(action="settle", run="feat", node="verify", outcome="accepted")
+
+    def test_extend_adds_a_round_to_the_same_run_and_records_where_each_node_came_from(self) -> None:
+        with homes() as home:
+            done = self._done(home)
+            extended = call(action="extend", run="feat", nodes=[
+                node("csv", scope=("a.py",), depends_on=("api",)), node("verify2", depends_on=("csv",),
+                                                                        label="Verify CSV")])
+            record = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))
+        self.assertEqual((done["state"], done["extend_rounds_left"]), ("done", 2))
+        self.assertIn("extend the run (2 rounds left)", done["say"])
+        self.assertEqual(extended["status"], "ok", extended)
+        self.assertEqual(extended["state"], "running")
+        self.assertEqual(extended["settled"],
+                         {"extend_round": 1, "extend_nodes": ["csv", "verify2"], "found_by": "verify"})
+        self.assertEqual([c["nodes"] for c in extended["calls"]], [["csv"]])
+        self.assertEqual(extended["topology"]["layers"], [["api"], ["verify", "csv"], ["verify2"]])
+        self.assertEqual({n["id"]: n["origin"] for n in record["nodes"]},
+                         {"api": "define", "verify": "define", "csv": "extend:1", "verify2": "extend:1"})
+        self.assertEqual(record["extends"], [["csv", "verify2"]])
+        rows = {row["id"]: row for row in extended["nodes"]}
+        self.assertEqual((rows["csv"]["origin"], rows["csv"]["found_by"]), ("extend:1", "verify"))
+        self.assertNotIn("origin", rows["api"])
+
+    def test_the_whole_run_passes_the_hard_rejects_of_define(self) -> None:
+        cases = {
+            "unknown_dependency": [node("x", depends_on=("ghost",))],
+            "self_dependency": [node("x", depends_on=("x",))],
+            "dependency_cycle": [node("x", depends_on=("y",)), node("y", depends_on=("x",))],
+            "duplicate_node_id": [node("api")],
+            # A finished node's file still needs an edge: the new node then reads that node's handoff.
+            "write_scope_overlap": [node("x", scope=("a.py",))],
+            "too_many_nodes": [node(f"n{index}") for index in range(dag_run.MAX_NODES - 1)],
+            "empty_graph": [],
+            "unknown_node": None,
+        }
+        with homes() as home:
+            self._done(home)
+            results = {
+                reason: call(action="extend", run="feat", nodes=nodes) if nodes is not None
+                else call(action="extend", run="feat", node="ghost", nodes=[node("x")])
+                for reason, nodes in cases.items()
+            }
+            unchanged = call(action="status", run="feat")
+        for reason, result in results.items():
+            self.assertEqual(result.get("reason"), reason, result)
+        self.assertEqual((unchanged["state"], len(unchanged["nodes"])), ("done", 2))
+
+    def test_the_new_nodes_are_linted(self) -> None:
+        with homes() as home:
+            self._done(home)
+            extended = call(action="extend", run="feat", nodes=[node("csv", scope=("b.py",), prompt="just do it")])
+        self.assertIn("missing_markers:csv:TASK,DELIVERABLE,SCOPE,VERIFY,STOP_WHEN", extended["lint"])
+        self.assertIn("verification_misses:csv", extended["lint"])
+
+    def test_two_rounds_then_the_parent_reports_what_is_open(self) -> None:
+        with homes() as home:
+            self._done(home)
+            for number in (1, 2):
+                call(action="extend", run="feat", nodes=[node(f"more{number}")])
+                handoff(home, "feat", f"more{number}")
+                last = call(action="settle", run="feat", node=f"more{number}", outcome="accepted")
+            third = call(action="extend", run="feat", nodes=[node("more3")])
+        self.assertEqual((last["state"], last["extend_rounds_left"]), ("done", 0))
+        self.assertIn("the extend rounds are spent", last["say"])
+        self.assertEqual(third["reason"], "extend_limit_reached")
+        self.assertIn("report what is still open", third["say"])
+
+    def test_extend_waits_until_every_node_passed(self) -> None:
+        with homes() as home:
+            slots_table(home)
+            call(action="define", run="feat", nodes=FEATURE)
+            running = call(action="extend", run="feat", nodes=[node("x")])
+        self.assertEqual(running["reason"], "run_not_done")
+        self.assertIn("repair the failed node", running["say"])
+
+    def test_a_new_node_may_wait_only_on_accepted_nodes(self) -> None:
+        with homes() as home:
+            self._done_after_a_superseded_repair(home)
+            refused = call(action="extend", run="feat", nodes=[node("x", depends_on=("v2",))])
+            # A superseded repair node's file needs no edge: it never runs again.
+            accepted = call(action="extend", run="feat", nodes=[node("y", scope=("b.py",), depends_on=("v3",))])
+        self.assertEqual(refused["reason"], "extend_depends_on_open_node")
+        self.assertEqual(accepted["status"], "ok", accepted)
+
+    def _done_after_a_superseded_repair(self, home) -> None:
+        slots_table(home)
+        call(action="define", run="feat", nodes=[node("api", scope=("a.py",)), node("verify", depends_on=("api",))])
+        handoff(home, "feat", "api")
+        call(action="settle", run="feat", node="api", outcome="accepted")
+        call(action="settle", run="feat", node="verify", outcome="failed")
+        call(action="repair", run="feat", node="verify", nodes=[node("v2", scope=("b.py",), depends_on=("api",))])
+        call(action="settle", run="feat", node="v2", outcome="failed")
+        call(action="repair", run="feat", node="v2", nodes=[node("v3", scope=("b.py",), depends_on=("api",))])
+        handoff(home, "feat", "v3")
+        done = call(action="settle", run="feat", node="v3", outcome="accepted")
+        self.assertEqual(done["state"], "done", done)
+        self.assertEqual({row["id"]: row["state"] for row in done["nodes"]}["v2"], "superseded")
 
 
 class LifecycleTests(unittest.TestCase):

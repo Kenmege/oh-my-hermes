@@ -12,7 +12,7 @@ boxes do not fit), above the plan block (`[Plan]` header and its checklist),
 so the plan stays directly above the composer where it always sat. While the
 delegation block holds native lanes, the agents block leaves out their
 activity rows, so no lane is drawn twice; its header keeps the session's cost
-and tokens. The delegation block is drawn even while the app's own roster
+and tokens. A dag-ulw run that is over collapses to its header line. The delegation block is drawn even while the app's own roster
 shows the agents on the info line. It is the one block painted at the
 terminal's colour depth (`dag_style`); the rest of the panel is 24-bit.
 
@@ -1056,13 +1056,25 @@ def _dag_view(graph: Mapping[str, Any], columns: int, budget: int | None, layout
     return _dag_cache.views[key]
 
 
+def dag_run_over(graph: Mapping[str, Any]) -> bool:
+    """Whether the graph is a dag-ulw run that is over (`dag_open` false) with every lane settled."""
+    from ..plugin_bundle.omh.delegation_graph import SETTLED_STATES
+
+    lanes = [node for node in _rows(graph.get("nodes")) if node.get("kind") != "root"]
+    return graph.get("dag_open") is False and all(node.get("state") in SETTLED_STATES for node in lanes)
+
+
 def _dag_heights(graph: Mapping[str, Any], columns: int) -> tuple[int, tuple[int, ...], int]:
     """(lines with no limit, the two-line boxes' heights tallest first, lines of the uncapped tree).
 
     Two-line boxes come in up to two heights under the four-line ones: as wide
     as they read comfortably, and, where those wrap, narrower ones that fit
-    more to a row in fewer lines.
+    more to a row in fewer lines. A dag-ulw run that is over takes its header
+    line alone: the panel collapses to one summary line, and `/dag` still
+    opens the whole graph.
     """
+    if dag_run_over(graph):
+        return DAG_HEADER_ROWS, (), DAG_HEADER_ROWS
     natural = _dag_view(graph, columns, None)
     if natural.layout != "box":
         return len(natural.lines), (), len(natural.lines)

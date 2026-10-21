@@ -30,7 +30,10 @@ blocked node blocks its dependents and nothing else. ``repair`` adds a group
 of repair nodes for a failed or blocked node, at most `MAX_REPAIR_CYCLES` per
 original node; the original counts as satisfied once its latest group is all
 accepted, and nodes of an earlier group that never got accepted are
-superseded.
+superseded. ``extend`` adds a round of nodes to a run whose every node passed
+when the goal check finds work missing, at most `MAX_EXTEND_ROUNDS` per run.
+Each node records where it came from (``origin``): ``define``,
+``repair:<root>`` or ``extend:<round>``.
 """
 
 from __future__ import annotations
@@ -63,6 +66,7 @@ MAX_SCOPE_ENTRIES: Final = 16
 MAX_SCOPE_CHARS: Final = 200
 MAX_REASON_CHARS: Final = 200
 MAX_REPAIR_CYCLES: Final = 2
+MAX_EXTEND_ROUNDS: Final = 2
 MAX_PROVIDER_RETRIES: Final = 1
 MAX_RECORD_BYTES: Final = 262_144
 LOCK_SECONDS: Final = 5.0
@@ -73,6 +77,8 @@ BIND_SLACK_SECONDS: Final = 2.0
 CATEGORIES: Final = tuple(HERMES_MIXTURE_CATEGORY_CHAINS)
 DEEP_CATEGORIES: Final = frozenset({"deep", "deep-work"})
 OUTCOMES: Final = ("accepted", "failed", "blocked")
+# The ``origin`` kinds of a node added after define: ``repair:<root>`` and ``extend:<round>``.
+ADDED_ORIGIN_KINDS: Final = ("repair", "extend")
 PROMPT_MARKERS: Final = ("TASK", "DELIVERABLE", "SCOPE", "VERIFY", "STOP WHEN")
 # Hermes' `subagent_stop` words that say the child did not finish (`delegation_graph._FAILED_STOPS` plus interrupted).
 CHILD_FAILURE_STOPS: Final = frozenset({"failed", "error", "timeout", "interrupted"})
@@ -160,10 +166,11 @@ def _record_shape_ok(raw: object) -> bool:
     if dag_core.layers(ids, {node["id"]: node["depends_on"] for node in nodes}) is None:
         return False
     repairs = raw.get("repairs")
+    extends = raw.get("extends", [])
     return isinstance(repairs, dict) and all(
         isinstance(groups, list) and all(isinstance(group, list) and set(group) <= known for group in groups)
         for groups in repairs.values()
-    )
+    ) and isinstance(extends, list) and all(isinstance(group, list) and set(group) <= known for group in extends)
 
 
 def write_run(path: Path, record: Mapping[str, Any]) -> None:
@@ -247,15 +254,22 @@ def _validated_node(raw: object) -> dict[str, Any]:
         "write_scope": sorted({item.strip() for item in scope}),
         "repairs": "",
         "cycle": 0,
+        "origin": "define",
+        "found_by": "",
         "attempts": [],
     }
 
 
-def _require_graph(nodes: Sequence[Mapping[str, Any]], *, editable: Iterable[str] | None = None) -> None:
+def _require_graph(
+    nodes: Sequence[Mapping[str, Any]], *, editable: Iterable[str] | None = None, involving: Iterable[str] = ()
+) -> None:
     """The hard rejects over a whole graph: references, cycles, and write scopes shared without an edge.
 
     ``editable`` limits the scope check to pairs of those nodes: a repair is
     checked against the nodes that can still run, not against finished ones.
+    ``involving`` limits it further to pairs with one of those nodes in them:
+    an extend round is checked against the run's earlier nodes, not the run
+    against itself again.
     """
     ids = [str(node["id"]) for node in nodes]
     if len(set(ids)) != len(ids):
@@ -272,9 +286,10 @@ def _require_graph(nodes: Sequence[Mapping[str, Any]], *, editable: Iterable[str
     if stuck:
         raise DagRefusal("dependency_cycle", f"These nodes depend on each other in a circle: {', '.join(stuck)}.")
     checked = set(editable) if editable is not None else known
+    new = set(involving)
     scopes = [(str(node["id"]), node["write_scope"]) for node in nodes]
     for first, second, shared, joined in dag_core.shared_scope_pairs(scopes, parents):
-        if not joined and first in checked and second in checked:
+        if not joined and first in checked and second in checked and (not new or first in new or second in new):
             raise DagRefusal(
                 "write_scope_overlap",
                 f"Nodes {first} and {second} both write {', '.join(shared)} with no edge between them; "
@@ -477,24 +492,33 @@ def run_state(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]
 
 
 def counts(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    """The run's tallies. ``running`` counts nodes whose child is running, as the graph and its chat line do;
+    ``out`` every node handed out and not settled (no child yet, running, or returned)."""
     live = {node_id: info for node_id, info in derived.items() if info["state"] != "superseded"}
     failures = open_failures(record, derived)
     labels = {str(node["id"]): str(node["label"]) for node in record["nodes"]}
     return {
         "total": len(live),
         "done": sum(1 for info in live.values() if info["state"] in SATISFIED),
-        "running": sum(1 for info in live.values() if info["state"] in OPEN),
+        "running": sum(1 for info in live.values() if info["state"] == "running"),
+        "out": sum(1 for info in live.values() if info["state"] in OPEN),
         "failed": len(failures),
         "first_failure": labels[failures[0]] if failures else "",
     }
 
 
-def status_line(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]]) -> str:
-    """The one line a messenger reply carries on a completion turn: ``DAG <name> · 3/6 done · 2 running``."""
+def status_line(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]], *, added: str = "") -> str:
+    """The one line a messenger reply carries on a completion turn: ``DAG <name> · 3/6 done · 2 running``.
+
+    ``added`` is the clause naming nodes a repair or an extend round added
+    since the chat last showed the run (`delegation_snapshot.added_clause`).
+    """
     tally = counts(record, derived)
     parts = [f"DAG {record['name']}", f"{tally['done']}/{tally['total']} done", f"{tally['running']} running"]
     if tally["failed"]:
         parts.append(f"{tally['failed']} failed ({tally['first_failure']})")
+    if added:
+        parts.append(added)
     return " · ".join(parts)
 
 
@@ -667,11 +691,77 @@ def repair(
                 "repair_depends_on_open_node",
                 f"Repair node {node['id']} may depend only on accepted nodes or its own group, not {', '.join(outside)}.",
             )
-        node.update(repairs=root, cycle=len(groups) + 1)
+        node.update(repairs=root, cycle=len(groups) + 1, origin=f"repair:{root}")
     runnable = {key for key, info in derived.items() if info["state"] in OPEN | {"ready", "waiting", "held"}}
     _require_graph(list(record["nodes"]) + added, editable=group | runnable)
     record["nodes"].extend(added)
     groups.append([str(node["id"]) for node in added])
+    record["topology"] = topology(record["nodes"])
+    record["lint"] = lint(record["nodes"])
+    record["updated_at"] = now
+    return [str(node["id"]) for node in added]
+
+
+def extend_rounds_left(record: Mapping[str, Any]) -> int:
+    return MAX_EXTEND_ROUNDS - len(record.get("extends") or [])
+
+
+def extend(
+    record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], raw_nodes: object, found_by: object, now: float
+) -> list[str]:
+    """Add a round of nodes to a run whose every node passed but whose goal check found work missing.
+
+    The new nodes may depend on the run's accepted nodes and on each other.
+    The whole run then passes define's hard rejects: unknown or self edges, a
+    cycle, `MAX_NODES` over every round, and a write scope a new node shares
+    without an edge with any node of the run, finished ones included (a
+    superseded repair node excepted). ``found_by`` names the node whose check
+    found the gap; without it, the run's last accepted verification node.
+    Returns the new ids.
+    """
+    nodes = {str(node["id"]): node for node in record["nodes"]}
+    if record.get("cancelled_at") is not None:
+        raise DagRefusal("run_cancelled", "The run was cancelled; start a new run instead.")
+    state = run_state(record, derived)
+    if state != "done":
+        raise DagRefusal(
+            "run_not_done",
+            f"The run is {state.replace('_', ' ')}: extend adds work only once every node is accepted. Finish the "
+            "run, or repair the failed node.",
+        )
+    rounds = record.setdefault("extends", [])
+    if len(rounds) >= MAX_EXTEND_ROUNDS:
+        raise DagRefusal(
+            "extend_limit_reached",
+            f"This run has had {MAX_EXTEND_ROUNDS} extend rounds; report what is still open instead of extending again.",
+        )
+    if found_by not in (None, ""):
+        origin = valid_id(found_by, "invalid_node_id", "Name the node whose check found the missing work.")
+        if origin not in nodes:
+            raise DagRefusal("unknown_node", f"Node {origin} is not in run {record['run']}.")
+    else:
+        checks = [key for key, node in nodes.items() if is_verification(node) and derived[key]["state"] in SATISFIED]
+        origin = checks[-1] if checks else ""
+    if not isinstance(raw_nodes, list) or not raw_nodes:
+        raise DagRefusal("empty_graph", "An extend round needs at least one node.")
+    added = [_validated_node(raw) for raw in raw_nodes]
+    if len(nodes) + len(added) > MAX_NODES:
+        raise DagRefusal(
+            "too_many_nodes", f"A run holds at most {MAX_NODES} nodes, extend rounds included; report what is open.")
+    group = {str(node["id"]) for node in added}
+    live = {key for key, info in derived.items() if info["state"] != "superseded"}
+    _require_graph(list(record["nodes"]) + added, editable=live | group, involving=group)
+    for node in added:
+        outside = [parent for parent in node["depends_on"]
+                   if parent not in group and derived[parent]["state"] not in SATISFIED]
+        if outside:
+            raise DagRefusal(
+                "extend_depends_on_open_node",
+                f"Node {node['id']} may depend only on accepted nodes or on this round's own, not {', '.join(outside)}.",
+            )
+        node.update(origin=f"extend:{len(rounds) + 1}", found_by=origin)
+    record["nodes"].extend(added)
+    rounds.append([str(node["id"]) for node in added])
     record["topology"] = topology(record["nodes"])
     record["lint"] = lint(record["nodes"])
     record["updated_at"] = now
@@ -695,6 +785,10 @@ def node_rows(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]
             row["held_by"] = list(info["held_by"])
         if node.get("repairs"):
             row["repairs"] = node["repairs"]
+        if node.get("origin", "define") != "define":
+            row["origin"] = node["origin"]
+        if node.get("found_by"):
+            row["found_by"] = node["found_by"]
         if attempts and attempts[-1].get("reason"):
             row["reason"] = attempts[-1]["reason"]
         if info["state"] in ("failed", "blocked"):

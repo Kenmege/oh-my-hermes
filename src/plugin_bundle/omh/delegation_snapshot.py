@@ -14,7 +14,12 @@ the conversation's lanes that no end post has closed yet:
   post, one plain line, ``DAG <name> · <done>/<total> done · <running>
   running``, and the failures with the first one's title when there are any,
   unless the reply already has a line opening ``DAG <name> ·`` (a dag-ulw
-  completion turn answers with the run's own status line);
+  completion turn answers with the run's own status line). Nodes a dag run
+  added since the last post (a repair, or an extend round) are named once at
+  its end, ``+1 added (repair: Docs body)``, at most `ADDED_LABELS` of them
+  and then ``+N more``; when the line with them does not fit, the line goes
+  without them and they are named on a later one. Nodes added after the end
+  post reopen the run: they get this line, not a second start block;
 * **end**, once: a short block that puts each lane under Done, Failed or
   Stopped (and Working, only while one is in flight), names the lane that
   failed first, and gives the totals. It goes on the first reply after
@@ -58,11 +63,21 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 import hashlib
 import os
+from pathlib import Path
 import time
 from typing import Any, Final
 
 from . import runtime_paths
-from .delegation_graph import GRAPH_LINGER_SECONDS, SETTLED_STATES, build_delegation_graph, graph_fingerprint
+from .dag_run import ADDED_ORIGIN_KINDS
+from .delegation_graph import (
+    GRAPH_LINGER_SECONDS,
+    SETTLED_STATES,
+    build_delegation_graph,
+    dag_graph_name,
+    dag_node_id,
+    dag_origin,
+    graph_fingerprint,
+)
 from .delegation_ledger import note_posted, note_skipped, posted_record, root_session
 from .delegation_view import UNICODE, cells, clean_text, fit
 
@@ -73,6 +88,7 @@ MOMENT_LINES: Final = 8  # a start block's layer lines; past them, `+N more`
 LINE_CELLS: Final = 72  # one listing line; titles that do not fit are counted as `+N`
 LABEL_CELLS: Final = 28  # one title in a listing
 STATUS_CELLS: Final = 20
+ADDED_LABELS: Final = 2  # the added nodes a count line names; past them, `+N more`
 # One message's cap on each platform and the unit its Hermes adapter counts, at v0.22.2 (d923a5eb48) and on main
 # (8b9ac5773e) alike, in plugins/platforms/<platform>/adapter.py: Discord's and Slack's MAX_MESSAGE_LENGTH (2,000;
 # 39,000), Telegram's 4,096 counted by `utf16_len`, Mattermost's MAX_POST_LENGTH (4,000), and Matrix's
@@ -221,6 +237,62 @@ def count_line(name: str, counts: Mapping[str, Any]) -> str:
     return " · ".join(parts)
 
 
+def added_kind(node: Mapping[str, Any]) -> str:
+    """``repair`` or ``extend`` for a dag lane a run added after define (its ``dag_origin``), else ""."""
+    kind = str(node.get("dag_origin") or "").partition(":")[0]
+    return kind if kind in ADDED_ORIGIN_KINDS else ""
+
+
+def added_clause(items: Sequence[tuple[str, str]]) -> str:
+    """``+N added (repair: <title>, extend: <title>, +M more)``: (kind, title) pairs, at most `ADDED_LABELS` named.
+
+    A kind is said once for the titles that follow it: ``extend: CSV export, CSV docs``.
+    """
+    if not items:
+        return ""
+    named: list[str] = []
+    said = ""
+    for kind, title in items[:ADDED_LABELS]:
+        label = fit(clean_text(title) or "?", LABEL_CELLS)
+        named.append(label if kind == said else f"{kind}: {label}")
+        said = kind
+    if len(items) > ADDED_LABELS:
+        named.append(f"+{len(items) - ADDED_LABELS} more")
+    return f"+{len(items)} added ({', '.join(named)})"
+
+
+def dag_lane_key(record: Mapping[str, Any], node_id: str) -> str:
+    """A dag node's lane key, as a post of its graph records it."""
+    return lane_key(clean_text(dag_graph_name(record)) or "delegation", dag_node_id(str(record["run"]), node_id))
+
+
+def shown_lanes(omh_home: Path, sessions: Sequence[str]) -> set[str] | None:
+    """The lane keys the conversation's chat posts showed or closed, or None when it never had a chat post."""
+    keys: set[str] | None = None
+    for session in sessions:
+        posted = posted_record(omh_home, session)
+        if posted.get("fingerprint"):
+            keys = (keys or set()) | set(posted.get("seen") or []) | set(posted.get("closed") or [])
+    return keys
+
+
+def dag_added_clause(
+    record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]], shown: set[str] | None
+) -> str:
+    """The clause `omh_dag` puts on a run's status line: the added nodes no chat post showed yet; "" off a chat.
+
+    It names the nodes the next count line would name, so a reply that is
+    the run's own status line says what the post would have said.
+    """
+    if shown is None:
+        return ""
+    return added_clause([
+        (dag_origin(node)[0], str(node["label"])) for node in record["nodes"]
+        if dag_origin(node)[0] and derived[str(node["id"])]["state"] != "superseded"
+        and dag_lane_key(record, str(node["id"])) not in shown
+    ])
+
+
 def carries_count_line(reply: str, name: str) -> bool:
     """Whether the reply already has a line that opens like the count line, ``DAG <name> ·``."""
     lead = f"DAG {name} ·"
@@ -331,9 +403,21 @@ def messenger_snapshot(
         return ""
     name = graph_name(graph)
     closed = list(posted.get("closed") or [])
-    lanes = [node for node in lanes_of(graph) if lane_key(name, str(node["id"])) not in set(closed)]
+    seen = list(posted.get("seen") or [])
+    every = lanes_of(graph)
+    lanes = [node for node in every if lane_key(name, str(node["id"])) not in set(closed)]
     if not lanes:
         return ""
+    run_keys = {lane_key(name, str(node["id"])) for node in every if node.get("dag_node")}
+    if not run_open and graph.get("dag_open") and run_keys & set(closed) and all(added_kind(node) for node in lanes):
+        # A repair or an extend round after the end post: the same run goes on, so it gets a count line naming
+        # what was added, not a second start block, and its earlier lanes count in it again.
+        seen += [key for key in closed if key in run_keys]
+        closed = [key for key in closed if key not in run_keys]
+        lanes = [node for node in every if lane_key(name, str(node["id"])) not in set(closed)]
+        run_open = True
+    added = [node for node in lanes if added_kind(node) and lane_key(name, str(node["id"])) not in set(seen)]
+    keys = [lane_key(name, str(node["id"])) for node in lanes]
     counts = tally(lanes)
     changed_at = graph.get("changed_at")
     # Nothing in flight and no start, stop or team write for `STALL_SECONDS`: a team part that waits on a part that
@@ -351,33 +435,35 @@ def messenger_snapshot(
         return ""  # a run no start opened that is not moving is not news
     elif not run_open:
         moment_name, block = "start", start_block(graph, lanes)
-    elif counts_key(counts) != posted.get("counts"):
+    elif counts_key(counts) != posted.get("counts") or added:
         moment_name, block = "count", ""
     else:
         return ""
     if moment_name == "count" and carries_count_line(reply, name):
-        # The reply already says where the run stands (a dag-ulw completion turn answers with its status line):
-        # record the counts and add nothing, so the person reads one status line, not two.
+        # The reply already says where the run stands (a dag-ulw completion turn answers with its status line, which
+        # names the added nodes as this line would): record it and add nothing, so the person reads one line, not two.
         note_posted(omh_home, session, fingerprint, moment_name=moment_name, phase="open",
-                    counts=counts_key(counts), closed=closed, now=moment)
+                    counts=counts_key(counts), closed=closed, seen=list(dict.fromkeys(seen + keys)), now=moment)
         return ""
     if ends_in_open_fence(reply):
         note_skipped(omh_home, session, fingerprint, SKIPPED_OPEN_FENCE, now=moment)
         return ""
     line = count_line(name, counts)
-    if block and measured(appended(reply, block), unit) <= cap * CAP_SHARE:
-        post = block
-    elif measured(appended(reply, line), unit) <= cap * CAP_SHARE:
-        post = line
-    else:
+    clause = added_clause([(added_kind(node), str(node.get("title") or "")) for node in added])
+    candidates = [block] if block else ([f"{line} · {clause}"] if clause else [])
+    post = next((text for text in [*candidates, line] if measured(appended(reply, text), unit) <= cap * CAP_SHARE), "")
+    if not post:
         note_skipped(omh_home, session, fingerprint, SKIPPED_CAP, now=moment)
         return ""
+    if post == line and clause:
+        # The added nodes did not fit: the line goes without them, and a later line names them.
+        keys = [key for key, node in zip(keys, lanes) if not added_kind(node) or key in set(seen)]
     if moment_name == "end":
         # A lane that settled is closed; one left not moving at a stalled end stays, so it opens a run if it moves.
         closed += [lane_key(name, str(node["id"])) for node in lanes if _state(node) in SETTLED_STATES]
     if not note_posted(
         omh_home, session, fingerprint, moment_name=moment_name, phase="closed" if moment_name == "end" else "open",
-        counts=counts_key(counts), closed=closed, now=moment,
+        counts=counts_key(counts), closed=closed, seen=list(dict.fromkeys(seen + keys)), now=moment,
     ):
         return ""
     return post

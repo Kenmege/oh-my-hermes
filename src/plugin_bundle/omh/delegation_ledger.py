@@ -68,6 +68,7 @@ TITLE_CACHE_LIMIT: Final = 512
 DURATION_MS_LIMIT: Final = 10**12  # about 31 years: a duration past it is not a duration
 ROOT_CACHE_LIMIT: Final = 1024
 CLOSED_LIMIT: Final = 256  # lane keys a chat end post closed: ledger children and team parts alike
+SEEN_LIMIT: Final = 256  # lane keys a chat post already showed, so a dag run names the nodes it added once
 PRUNE_INTERVAL_SECONDS: Final = 3600.0  # how often one process looks for records that aged out
 PRUNE_LOCK_SECONDS: Final = 0.1
 LEDGER_CLAIM_BOUNDARY: Final = (
@@ -116,6 +117,11 @@ def title_from_goal(goal: object) -> str:
         if text:
             return " ".join(text.split())[:TITLE_LIMIT]
     return ""
+
+
+def without_dag_marker(goal: str) -> str:
+    """``goal`` without the leading ``[dag:<run>/<node>]`` marker: the marker binds the child, a person reads the rest."""
+    return _DAG_MARKER_TEXT.sub("", goal, count=1)
 
 
 def dag_binding(goal: object) -> dict[str, str]:
@@ -321,7 +327,7 @@ def parse_ledger(raw: object) -> dict[str, Any] | None:
     ][-LEDGER_STOP_LIMIT:]
     posted = raw.get("posted")
     if isinstance(posted, dict) and isinstance(posted.get("fingerprint"), str):
-        closed = posted.get("closed")
+        closed, seen = posted.get("closed"), posted.get("seen")
         record["posted"] = {
             "fingerprint": posted["fingerprint"][:64],
             "observed_at": _number(posted.get("observed_at")),
@@ -330,6 +336,9 @@ def parse_ledger(raw: object) -> dict[str, Any] | None:
             "counts": _text(posted.get("counts"), 64),
             "closed": [_text(item, 16) for item in (closed if isinstance(closed, list) else []) if _text(item, 16)][
                 -CLOSED_LIMIT:
+            ],
+            "seen": [_text(item, 16) for item in (seen if isinstance(seen, list) else []) if _text(item, 16)][
+                -SEEN_LIMIT:
             ],
         }
     skipped = raw.get("skipped")
@@ -616,7 +625,7 @@ def posted_fingerprint(omh_home: Path, session_id: str) -> str:
 
 
 def posted_record(omh_home: Path, session_id: str) -> dict[str, Any]:
-    """What the last chat post recorded (fingerprint, moment, run phase, counts, closed lanes), or {}."""
+    """What the last chat post recorded (fingerprint, moment, run phase, counts, closed and seen lanes), or {}."""
     record = read_ledger(omh_home, session_id)
     return dict(record["posted"]) if record else {}
 
@@ -630,12 +639,14 @@ def note_posted(
     phase: str = "",
     counts: str = "",
     closed: Sequence[str] = (),
+    seen: Sequence[str] = (),
     now: float | None = None,
 ) -> bool:
     """Record what a reply just carried, so the same graph, or the same counts in a run, is not posted again.
 
     ``closed`` holds the keys of the lanes whose run an end post closed; a
-    later run is made of the lanes not in it.
+    later run is made of the lanes not in it. ``seen`` holds the keys of the
+    lanes a post has shown, so a node added mid-run is named once.
     """
     moment = time.time() if now is None else now
 
@@ -647,6 +658,7 @@ def note_posted(
             "phase": phase if phase in RUN_PHASES else "",
             "counts": _text(counts, 64),
             "closed": [_text(item, 16) for item in closed if _text(item, 16)][-CLOSED_LIMIT:],
+            "seen": [_text(item, 16) for item in seen if _text(item, 16)][-SEEN_LIMIT:],
         }
         record["skipped"] = {}
         return True

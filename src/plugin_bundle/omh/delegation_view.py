@@ -6,7 +6,8 @@ lines with its own styles (every piece of text carries a role), and `omh hud
 (`delegation_snapshot.py` writes its own short text).
 
 The box layout draws an edge only where the graph records one: a dispatch from
-a parent to a child, or a `depends_on`. Nodes are layered by their longest
+a parent to a child, a `depends_on`, or a dag node added mid-run hanging from
+where it came from (a repair or an extend). Nodes are layered by their longest
 path from the root, so every edge it draws goes one layer down. It draws
 three shapes and nothing else, because each is unambiguous when read:
 
@@ -21,10 +22,11 @@ three shapes and nothing else, because each is unambiguous when read:
 
 Anything else (an edge that skips a layer, a band that is not all-to-all
 within a component, buses that would cross) is drawn as the compact tree,
-which never draws an edge at all. So is a graph whose boxes do not fit the
-width, the line budget or the character budget. Widths are terminal cells: a
-wide (CJK) character counts 2, and text is folded first so that what is
-counted is what is painted.
+which draws no edge but nests a node under the one that dispatched it, or
+under the one a repair or an extend added it for. So is a graph whose boxes
+do not fit the width, the line budget or the character budget. Widths are
+terminal cells: a wide (CJK) character counts 2, and text is folded first so
+that what is counted is what is painted.
 
 A box holds four lines: its title, category, model and effort, and status.
 Where four do not fit the line budget and the caller allows it (``compact``),
@@ -54,6 +56,8 @@ NODE_STATES: Final = (
     "root", "waiting", "dispatched", "running", "stuck", "done", "failed", "interrupted", "unknown",
 )
 UNKNOWN_FIELD: Final = "?"
+# The edges the tree draws as nesting: a child under its dispatcher, an added dag node under where it came from.
+NESTING_KINDS: Final = frozenset({"dispatch", "repair", "extend"})
 ELAPSED_LIMIT: Final = 10**9  # seconds, about 31 years: a figure past it (or not finite) is not drawn
 DURATION_CELLS: Final = 7  # a duration's width when a box is measured: `59m 59s`, the widest under 100 hours
 DECISION_LIMIT: Final = 64
@@ -968,12 +972,12 @@ def _tree_structure(graph: Mapping[str, Any]) -> tuple[
     nested: dict[str, list[str]] = {}
     parent_of: dict[str, str] = {}
     for edge in raw_edges:
-        if not isinstance(edge, Mapping) or edge.get("kind") != "dispatch":
+        if not isinstance(edge, Mapping) or edge.get("kind") not in NESTING_KINDS:
             continue
         upper, lower = edge.get("from"), edge.get("to")
         if upper in by_id and lower in by_id and upper != root_id and lower not in parent_of and upper != lower:
             parent_of[str(lower)] = str(upper)
-    # A dispatch parent chain that loops is not drawn as nesting.
+    # A parent chain that loops is not drawn as nesting.
     for lower in list(parent_of):
         seen, current = {lower}, parent_of.get(lower)
         while current is not None:

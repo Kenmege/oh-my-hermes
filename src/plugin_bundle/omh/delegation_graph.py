@@ -31,9 +31,11 @@ Every field without evidence is ``?``:
   this ledger could join is ``unknown``, never done and never running.
 
 An edge is a dispatch (a parent started this child), a recorded `depends_on`,
-or, in a dag run, a repair (from a failed node to the nodes added to repair it). Dispatch waves of one parent (the children one turn started)
-are grouped as ``wave N · HH:MM``; that is order, not dependency, and no edge
-is drawn for it.
+or, in a dag run, where a node added mid-run came from: a repair (from the
+node it repairs) or an extend (from the node whose check found the work
+missing). Dispatch waves of one parent (the children one turn started) are
+grouped as ``wave N · HH:MM``; that is order, not dependency, and no edge is
+drawn for it.
 """
 
 from __future__ import annotations
@@ -47,7 +49,7 @@ import time
 from typing import Any, Final
 
 from .dag_core import layer_of
-from .dag_run import derive, run_state, session_runs
+from .dag_run import ADDED_ORIGIN_KINDS, derive, run_state, session_runs
 from .delegation_ledger import child_title, ledger_key, read_ledger, title_from_goal
 from .kanban_board_reader import conversation_session_ids
 from .subagent_graph import _roster_progress_fields as roster_progress_fields
@@ -601,7 +603,7 @@ def _build(
     if settled and linger is not None and now - newest > linger:
         return inactive_graph("settled", scope=scope)
     if dag is not None:
-        name = _text(dag["record"].get("name"), 48) or "dag"
+        name = dag_graph_name(dag["record"])
     elif team is not None and team[0].get("team_id"):
         name = f"team {_text(team[0].get('team_id'), 48)}"
     else:
@@ -635,6 +637,30 @@ _DAG_VIEW: Final = {
 }
 
 
+def dag_graph_name(record: Mapping[str, Any]) -> str:
+    """The name a dag run's graph is drawn and posted under."""
+    return _text(record.get("name"), 48) or "dag"
+
+
+def dag_node_id(run: str, node: str) -> str:
+    """A dag node's id in the graph."""
+    return f"d:{run}:{node}"
+
+
+def dag_origin(node: Mapping[str, Any]) -> tuple[str, str]:
+    """(kind, the node it came from) for a node a repair or an extend round added; ("", "") for a defined one.
+
+    A repair node came from the node it repairs, an extend node from the node
+    whose check found the work missing (``found_by``, "" when none was named).
+    """
+    kind = str(node.get("origin") or "").partition(":")[0]
+    if kind not in ADDED_ORIGIN_KINDS:
+        return "", ""
+    if kind == "repair":
+        return kind, str(node.get("repairs") or "")
+    return kind, str(node.get("found_by") or "")
+
+
 def _dag_run(omh_home: Path, hermes_home: Path, session_id: str, now: float) -> dict[str, Any] | None:
     """The conversation's newest `omh_dag/v1` run with its bound children and derived states, or None.
 
@@ -665,7 +691,12 @@ def _dag_nodes(
     facts_for: Callable[[Mapping[str, Any], str], dict[str, Any]], model_of_node: dict[str, str],
     node_of_subagent: dict[str, str], node_of_session: dict[str, str],
 ) -> int:
-    """Add a dag run's nodes and its recorded edges; returns the next drawing order."""
+    """Add a dag run's nodes and its recorded edges; returns the next drawing order.
+
+    A node a repair or an extend round added also gets an edge from where it
+    came from (`dag_origin`) when nothing else of its own group leads to it,
+    so the drawing shows it below that node.
+    """
     record, derived = dag["record"], dag["derived"]
     run = str(record["run"])
     stopped = dag["state"] in ("stopped", "cancelled")
@@ -676,13 +707,17 @@ def _dag_nodes(
         state, status = _DAG_VIEW.get(info["state"], ("unknown", info["state"]))
         if info["state"] == "held" and stopped:
             state = "interrupted"
-        graph_id = f"d:{run}:{node_id}"
+        graph_id = dag_node_id(run, node_id)
+        origin = str(node.get("origin") or "define")
+        # An extend round is its own group: its first nodes hang under the node that found the gap, so its layers
+        # would otherwise be numbered past ones the tree never shows.
+        group = f"extend {origin.partition(':')[2]}" if origin.startswith("extend:") else f"layer {layer + 1}"
         entry: dict[str, Any] = {
             "id": graph_id, "kind": "lane", "title": _text(node.get("label"), TITLE_LIMIT) or node_id,
             "category": _text(node.get("category"), 40) or "?", "category_source": "dag_plan", "model": "?",
             "effort": "", "state": state, "status": status, "elapsed_seconds": None, "order": order,
-            "group": f"layer {layer + 1}", "waits_on": len(info["waits_on"]) if info["state"] == "waiting" else 0,
-            "dag_node": node_id,
+            "group": group, "waits_on": len(info["waits_on"]) if info["state"] == "waiting" else 0,
+            "dag_node": node_id, "dag_origin": origin,
         }
         order += 1
         child = info["child"]
@@ -700,24 +735,33 @@ def _dag_nodes(
             model_of_node[graph_id] = facts["model"] if facts["model"] != "?" else ""
         nodes.append(entry)
         parents = [parent for parent in node["depends_on"] if parent in drawn]
-        edges.extend({"from": f"d:{run}:{parent}", "to": graph_id, "kind": "depends_on"} for parent in parents)
-        repaired = str(node.get("repairs") or "")
-        if not parents and repaired in drawn:
-            edges.append({"from": f"d:{run}:{repaired}", "to": graph_id, "kind": "repair"})
+        edges.extend({"from": dag_node_id(run, parent), "to": graph_id, "kind": "depends_on"} for parent in parents)
+        origin = _origin_parent(node, record, drawn)
+        if origin:
+            edges.append({"from": dag_node_id(run, origin), "to": graph_id, "kind": dag_origin(node)[0]})
         elif not parents:
             edges.append({"from": "root", "to": graph_id, "kind": "dispatch"})
     return order
 
 
+def _origin_parent(node: Mapping[str, Any], record: Mapping[str, Any], drawn: set[str]) -> str:
+    """The drawn node an added node hangs below, or "": none when a node of its own group already leads to it."""
+    kind, origin = dag_origin(node)
+    if not kind or origin not in drawn or origin in node["depends_on"]:
+        return ""
+    group = {str(other["id"]) for other in record["nodes"]
+             if (other.get("origin"), other.get("cycle")) == (node.get("origin"), node.get("cycle"))}
+    return "" if any(parent in group for parent in node["depends_on"]) else origin
+
+
 def _dag_layers(record: Mapping[str, Any], drawn: set[str]) -> dict[str, int]:
-    """The drawn nodes in layer order, each with its layer, a repair counted below the node it repairs."""
+    """The drawn nodes in layer order, each with its layer, an added node counted below the node it came from."""
     parents: dict[str, list[str]] = {}
     for node in record["nodes"]:
         node_id = str(node["id"])
         if node_id in drawn:
-            listed = [parent for parent in node["depends_on"] if parent in drawn]
-            repaired = str(node.get("repairs") or "")
-            parents[node_id] = listed or ([repaired] if repaired in drawn else [])
+            origin = _origin_parent(node, record, drawn)
+            parents[node_id] = [parent for parent in node["depends_on"] if parent in drawn] + ([origin] if origin else [])
     ids = [str(node["id"]) for node in record["nodes"] if str(node["id"]) in drawn]
     placed, _stuck = layer_of(ids, parents)
     return dict(sorted(placed.items(), key=lambda item: (item[1], ids.index(item[0]))))

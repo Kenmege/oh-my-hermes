@@ -31,6 +31,7 @@ from typing import Any
 
 from .. import dag_run, runtime_paths
 from ..delegation_ledger import read_ledger
+from ..delegation_snapshot import dag_added_clause, shown_lanes
 from ..delegation_routing import read_delegation_settings
 from ..host_observation import host_session_id
 
@@ -50,7 +51,7 @@ OWNER_CHOICE_MAX_AGE_SECONDS = 24 * 3600
 SPAWN_PLAN_THRESHOLD = 4  # `fanout_contracts.FANOUT_SPAWN_PLAN_THRESHOLD`, held by the same test
 SPAWN_PLAN_FIELDS = ("why_parallel", "why_not_single_unit", "independence", "expected_evidence_shape")
 
-_ACTIONS = ("define", "ready", "settle", "repair", "status", "cancel", "export")
+_ACTIONS = ("define", "ready", "settle", "repair", "extend", "status", "cancel", "export")
 
 OMH_DAG_SCHEMA = {
     "name": "omh_dag",
@@ -62,7 +63,8 @@ OMH_DAG_SCHEMA = {
         "than the free slots: per call, run its route with omh_delegate_route, then delegate_task with the tasks "
         "unchanged. After each completion read the node's handoff file and settle it accepted, failed or blocked; "
         "a child that says it is blocked is blocked, never accepted. settle returns what is ready next. repair adds "
-        "nodes for a failed node, at most two cycles, then report what is open. Relay any `say` once."
+        "nodes for a failed node, at most two cycles. extend adds nodes to a run whose nodes all passed when the goal "
+        "check finds work missing, at most two rounds. Past either limit, report what is open. Relay any `say` once."
     ),
     "parameters": {
         "type": "object",
@@ -86,7 +88,8 @@ OMH_DAG_SCHEMA = {
                     "required": ["id", "label", "category", "prompt"],
                 },
             },
-            "node": {"type": "string", "description": "settle / repair: the node id."},
+            "node": {"type": "string",
+                     "description": "settle / repair: the node id. extend: the node whose check found the gap."},
             "outcome": {"type": "string", "enum": list(dag_run.OUTCOMES)},
             "reason": {"type": "string"},
             "provider_error": {
@@ -128,8 +131,10 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
             return _refused(action, "session_required", "A dag run needs a named chat session.")
         segments = sorted({durable, *conversation_session_ids(hermes_home, durable)})
         now = time.time()
+        # The lanes this conversation's chat posts showed, so a status line names a node added since then once.
+        shown = shown_lanes(omh_home, segments)
         if action == "define":
-            return _define(args, omh_home, hermes_home, durable, segments, now)
+            return _define(args, omh_home, hermes_home, durable, segments, now, shown)
         found = _find(omh_home, segments, args.get("run"))
         if found is None:
             return _refused(action, "run_not_found", "No dag run by that id in this conversation; define it first.")
@@ -139,18 +144,18 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
             children = _children(omh_home, segments)
             derived = dag_run.derive(record, children, now)
             if action == "status":
-                return _result(action, record, derived)
+                return _result(action, record, derived, shown)
             if action == "cancel":
                 if record.get("cancelled_at") is None:
                     record["cancelled_at"] = now
                     record["updated_at"] = now
                     dag_run.write_run(path, record)
                 derived = dag_run.derive(record, children, now)
-                return _result(action, record, derived, say=(
+                return _result(action, record, derived, shown, say=(
                     "The run is cancelled. Children already running keep running; stop them with "
                     "delegate_task action=stop if they should not finish."))
             if action == "ready":
-                return _ready(action, record, path, derived, children, omh_home, hermes_home, now)
+                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown)
             if action == "settle":
                 node = dag_run.valid_id(args.get("node"), "invalid_node_id", "Name the node to settle.")
                 handoff = dag_run.handoff_path(omh_home, str(record["session_id"]), str(record["run"]), node)
@@ -163,16 +168,23 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
                 derived = dag_run.derive(record, children, now)
                 say = ("The child hit a provider error: its node is offered once more on the route's fallback."
                        if happened == "retry" else "")
-                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, say=say,
+                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown, say=say,
                               settled={"node": node, "outcome": happened})
             if action == "repair":
                 node = dag_run.valid_id(args.get("node"), "invalid_node_id", "Name the failed node to repair.")
                 added = dag_run.repair(record, derived, node, args.get("nodes"), now)
                 dag_run.write_run(path, record)
                 derived = dag_run.derive(record, children, now)
-                return _ready(action, record, path, derived, children, omh_home, hermes_home, now,
+                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown,
                               settled={"node": node, "repair_nodes": added})
-            return _export(args, record, path, derived, children, omh_home, now)
+            if action == "extend":
+                added = dag_run.extend(record, derived, args.get("nodes"), args.get("node"), now)
+                dag_run.write_run(path, record)
+                derived = dag_run.derive(record, children, now)
+                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown, settled={
+                    "extend_round": len(record["extends"]), "extend_nodes": added,
+                    "found_by": record["nodes"][-1]["found_by"]})
+            return _export(args, record, path, derived, children, omh_home, now, shown)
     except dag_run.DagRefusal as refusal:
         return _refused(action, refusal.reason, refusal.say)
     except (runtime_paths.RuntimeBindingError, OSError, ValueError):
@@ -183,7 +195,7 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
 
 
 def _define(args: Mapping[str, object], omh_home: Path, hermes_home: Path, durable: str, segments: list[str],
-            now: float) -> str:
+            now: float, shown: set[str] | None) -> str:
     run = dag_run.valid_id(args.get("run"), "invalid_run_id", "Give the run a short lowercase id (a-z, 0-9, -).")
     record = dag_run.new_record(durable, run, args.get("name"), args.get("goal"), args.get("nodes"), now)
     found = _find(omh_home, segments, run)
@@ -191,10 +203,11 @@ def _define(args: Mapping[str, object], omh_home: Path, hermes_home: Path, durab
         existing, path = found
         if existing.get("digest") != record["digest"]:
             raise dag_run.DagRefusal(
-                "run_exists", f"Run {run} already exists with other nodes; use repair to add nodes, or a new run id.")
+                "run_exists",
+                f"Run {run} already exists with other nodes; use repair or extend to add nodes, or a new run id.")
         children = _children(omh_home, segments)
         derived = dag_run.derive(existing, children, now)
-        return _result("define", existing, derived, say="This run was already defined; nothing changed.",
+        return _result("define", existing, derived, shown, say="This run was already defined; nothing changed.",
                        extra={"reused": True})
     if len(dag_run.session_runs(omh_home, durable)) >= dag_run.MAX_RUNS_PER_SESSION:
         raise dag_run.DagRefusal("too_many_runs", "This conversation already keeps the most dag runs it can.")
@@ -205,7 +218,7 @@ def _define(args: Mapping[str, object], omh_home: Path, hermes_home: Path, durab
         (path.parent / run).mkdir(parents=True, exist_ok=True, mode=0o700)
         dag_run.write_run(path, record)
         derived = dag_run.derive(record, [], now)
-        return _ready("define", record, path, derived, [], omh_home, hermes_home, now)
+        return _ready("define", record, path, derived, [], omh_home, hermes_home, now, shown)
 
 
 def _find(omh_home: Path, segments: list[str], run: object) -> tuple[dict[str, Any], Path] | None:
@@ -267,8 +280,8 @@ def _cap(configured: object) -> int:
 
 def _ready(
     action: str, record: dict[str, Any], path: Path, derived: Mapping[str, Mapping[str, Any]],
-    children: list[dict[str, Any]], omh_home: Path, hermes_home: Path, now: float, *, say: str = "",
-    settled: Mapping[str, Any] | None = None,
+    children: list[dict[str, Any]], omh_home: Path, hermes_home: Path, now: float, shown: set[str] | None, *,
+    say: str = "", settled: Mapping[str, Any] | None = None,
 ) -> str:
     slots = free_slots(hermes_home)
     calls, held = dag_run.calls_for(record, derived, free_slots=slots["free"], per_call=slots["cap"],
@@ -282,16 +295,16 @@ def _ready(
         extra["held_for_slots"] = held
     if settled:
         extra["settled"] = dict(settled)
-    if action == "define":
+    if action in ("define", "extend"):
         extra["topology"] = record["topology"]
         extra["lint"] = record["lint"]
     if not say and held and not calls:
         say = "No delegate_task slot is free; end the turn and call ready again after a completion."
-    return _result(action, record, derived, say=say, extra=extra)
+    return _result(action, record, derived, shown, say=say, extra=extra)
 
 
-def _result(action: str, record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]], *, say: str = "",
-            extra: Mapping[str, Any] | None = None) -> str:
+def _result(action: str, record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]],
+            shown: set[str] | None, *, say: str = "", extra: Mapping[str, Any] | None = None) -> str:
     state = dag_run.run_state(record, derived)
     payload: dict[str, Any] = {
         "schema_version": dag_run.DAG_RESULT_SCHEMA_VERSION,
@@ -302,7 +315,7 @@ def _result(action: str, record: Mapping[str, Any], derived: Mapping[str, Mappin
         "goal": record.get("goal", ""),
         "state": state,
         "counts": dag_run.counts(record, derived),
-        "status_line": dag_run.status_line(record, derived),
+        "status_line": dag_run.status_line(record, derived, added=dag_added_clause(record, derived, shown)),
         "nodes": dag_run.node_rows(record, derived),
         "claim_boundary": dag_run.DAG_CLAIM_BOUNDARY,
     }
@@ -313,7 +326,14 @@ def _result(action: str, record: Mapping[str, Any], derived: Mapping[str, Mappin
         payload["open"] = dag_run.open_failures(record, derived)
         say = say or "The repair cycles are spent: report what is still open, and do not repair again."
     elif state == "done":
-        say = say or "Every node is accepted. Check each one against its SCOPE before you report the goal met."
+        left = dag_run.extend_rounds_left(record)
+        payload["extend_rounds_left"] = left
+        say = say or (
+            "Every node is accepted. Check each one against its SCOPE and the goal criteria: when work is missing, "
+            f"extend the run ({left} round{'' if left == 1 else 's'} left); otherwise report the goal met."
+            if left else
+            "Every node is accepted and the extend rounds are spent. Check each one against its SCOPE and the goal "
+            "criteria, then report the goal met or what is still open.")
     if extra:
         payload.update(extra)
     if say:
@@ -392,7 +412,7 @@ def export_goal(record: Mapping[str, Any], units: list[dict[str, Any]]) -> str:
 
 def _export(args: Mapping[str, object], record: dict[str, Any], path: Path,
             derived: Mapping[str, Mapping[str, Any]], children: list[dict[str, Any]], omh_home: Path,
-            now: float) -> str:
+            now: float, shown: set[str] | None) -> str:
     owner = args.get("owner")
     if owner not in EXTERNAL_OWNERS:
         raise dag_run.DagRefusal("invalid_owner", f"Name the coding owner: {', '.join(EXTERNAL_OWNERS)}.")
@@ -423,7 +443,7 @@ def _export(args: Mapping[str, object], record: dict[str, Any], path: Path,
         attempt["lane"] = "fanout"
     record["updated_at"] = now
     dag_run.write_run(path, record)
-    return _result("export", record, dag_run.derive(record, children, now), say=(
+    return _result("export", record, dag_run.derive(record, children, now), shown, say=(
         f"These nodes go to {owner} through the fanout bridge; run the two commands, then settle each node from "
         "the fanout result."), extra={
         "fanout": {
