@@ -42,6 +42,7 @@ from importlib.resources import files
 import json
 from pathlib import Path
 import re
+import unicodedata
 
 from .localization import routing_terms, routing_tokens
 
@@ -321,6 +322,27 @@ def merged_trigger_phrases(packs: tuple[TriggerLanguagePack, ...]) -> dict[str, 
                 known.add(phrase)
                 bucket.append(phrase)
     return {skill: tuple(phrases) for skill, phrases in merged.items()}
+
+
+def is_latin_script(phrase: str) -> bool:
+    """True when every letter of `phrase` is a Latin letter, ASCII or not.
+
+    A pack phrase in a Latin-script language shares the English token space:
+    the router folds `lỗi` to `loi` and `cần` to `can`, so a diacritic does not
+    keep its words apart from English ones. A phrase with any Hangul, Kana or
+    Han letter is not Latin script. Digits, spaces, punctuation and combining
+    marks are not letters and do not decide.
+
+    The letters are read after NFKC, because the router folds by NFKD: a
+    fullwidth `ｂｕｇ` or the ordinal `º` folds to an ASCII word, so it must
+    count as Latin here too. Modifier letters (`ʼ`, `ʻ`, category Lm) mark a
+    neighbouring letter rather than spell a word, and do not decide either.
+    """
+    return all(
+        unicodedata.name(character, "").startswith("LATIN")
+        for character in unicodedata.normalize("NFKC", phrase)
+        if character.isalpha() and unicodedata.category(character) != "Lm"
+    )
 
 
 def merged_holdback_tokens(packs: tuple[TriggerLanguagePack, ...]) -> dict[str, frozenset[str]]:

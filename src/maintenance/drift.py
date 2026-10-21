@@ -678,10 +678,16 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # (a work plan, two ask-first instructions, a medicine reminder, a
             # parent's blood pressure) and a question about what a cron request
             # means, which must not dispatch (6).
+            # The Vietnamese trigger pack adds eight: five English sentences
+            # whose words fold to `vi` words (`can`, `ban`, `them`, `song`,
+            # `chat`) and named a pack lane while the pack rule keyed on ASCII
+            # (5); and three Vietnamese chat turns that carry a phrase's words
+            # without the phrase, a family trip, a marketing plan question and
+            # a slide layout, two of which dispatched under that rule (3).
             # `dag-ulw` adds five that must not name it: an Airflow DAG, a file
             # called dag, a declined dag ulw, a relayed dag ulw report and a
             # block-quoted dag ulw request (5).
-            expected=843,
+            expected=851,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -989,6 +995,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # sentence), accessibility audit (bare and a WCAG sentence), build
             # failure (bare and a sentence), a RAG pipeline, parallel
             # implementation, verify-before-merge and a screenshot check (11).
+            # The Vietnamese trigger pack adds eleven requests that route
+            # differently without it: code review (bare phrase, a request, and
+            # a PR sentence), accessibility audit (bare and a WCAG sentence),
+            # build failure (bare and with a compile error), an implementation
+            # plan, deep research, verify-before-merge and a rendered-page
+            # check (11).
             # `dag-ulw` adds six that start it: the name opening a request,
             # with a Korean ending, in reverse order (`ulw dag`), as a slash
             # command and after `with`, and parallel feature work across
@@ -1000,7 +1012,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # DAG requests that stay with data-pipelines, coordinated workers,
             # ultrawork named as `ulw`, `ulw-work` and `ultrawork`, and `ulw`
             # named mid-sentence in English and in Korean (13).
-            expected=907,
+            expected=918,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

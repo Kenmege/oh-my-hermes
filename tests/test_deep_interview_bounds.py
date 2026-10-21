@@ -45,7 +45,10 @@ SKILL_MD = REPO_ROOT / "skills" / "ulw-interview" / "SKILL.md"
 # `related_skills`, `license` and `author`, its trigger heading reads
 # `## When to Use`, and its two shared-rail pointers are the `skill_view`
 # call that loads the rail. Same headroom rule.
-DEEP_INTERVIEW_SKILL_CHAR_CEILING = 11_700
+# 11_700 -> 12_000: main measures 11,597, and the Vietnamese trigger pack's
+# four `deep-interview` phrases join its routing-signal line; the body
+# measures 11,763. Same headroom rule.
+DEEP_INTERVIEW_SKILL_CHAR_CEILING = 12_000
 
 
 def _skill_body() -> str:

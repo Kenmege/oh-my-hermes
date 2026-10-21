@@ -27,6 +27,7 @@ from .omh_help import is_omh_docs_question
 from .trigger_language_packs import (
     ORIGIN_USER,
     TriggerLanguagePack,
+    is_latin_script,
     load_user_trigger_language_packs,
     merged_holdback_tokens,
     merged_trigger_phrases,
@@ -4175,26 +4176,27 @@ def _trigger_token_holdback_for(name: str) -> frozenset[str]:
 
 
 @lru_cache(maxsize=1)
-def _shipped_ascii_pack_phrases() -> dict[str, frozenset[str]]:
-    """Shipped pack phrases written wholly in ASCII, by skill.
+def _shipped_latin_pack_phrases() -> dict[str, frozenset[str]]:
+    """Shipped pack phrases written wholly in Latin script, by skill.
 
     A pack in a Latin-script language shares the English token space. Its
-    phrases borrow English words (`bug`, `crash`, `error`, `file`), so if their
-    tokens entered `trigger_tokens` each would score for the skill on an
-    unrelated English message. Such a phrase therefore scores only as a whole
-    phrase. A phrase with any Hangul, Kana or Han character is not ASCII and
-    keeps scoring as before.
+    phrases borrow English words (`bug`, `crash`, `error`, `file`), and its own
+    words fold to English ones once diacritics are dropped (`cần` to `can`,
+    `bạn` to `ban`, `thêm` to `them`). If their tokens entered `trigger_tokens`
+    each would score for the skill on an unrelated English message, so such a
+    phrase scores only as a whole phrase. A phrase with any Hangul, Kana or Han
+    letter is not Latin script and keeps scoring as before.
     """
     known_skills = frozenset(definition.name for definition in builtin_definitions())
     return {
-        skill: frozenset(phrase for phrase in phrases if phrase.isascii())
+        skill: frozenset(phrase for phrase in phrases if is_latin_script(phrase))
         for skill, phrases in merged_trigger_phrases(shipped_trigger_language_packs(known_skills)).items()
     }
 
 
-def shipped_ascii_pack_phrases(skill: str) -> frozenset[str]:
+def shipped_latin_pack_phrases(skill: str) -> frozenset[str]:
     """`skill`'s shipped pack phrases that score only as whole phrases."""
-    return _shipped_ascii_pack_phrases().get(skill, frozenset())
+    return _shipped_latin_pack_phrases().get(skill, frozenset())
 
 
 # A one-word name preceded by one of these is a noun phrase headed by the
@@ -4321,7 +4323,7 @@ def _prepare_definition(definition: SkillDefinition) -> _PreparedDefinition:
         if phrase not in definition.triggers
     )
     trigger_phrases = tuple(normalized_phrase(trigger) for trigger in triggers)
-    phrase_only = shipped_ascii_pack_phrases(definition.name)
+    phrase_only = shipped_latin_pack_phrases(definition.name)
     metadata_tokens = frozenset(
         _tokens(" ".join((definition.name, definition.description, definition.use_when)))
     ) - _SIBLING_POINTER_METADATA_TOKENS.get(definition.name, frozenset())

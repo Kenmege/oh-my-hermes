@@ -51,6 +51,26 @@ All notable changes will be documented here.
     when the person already chose that owner (`omh_dag action=export`);
     otherwise every node runs on `delegate_task`.
 
+- **Vietnamese ships as a trigger language pack.** `src/routing/trigger_packs/vi.json`,
+  contributed by @PhucNguyen-Dev (#2182), covers 20 of the 21 skills the `id`
+  pack covers, with phrases such as `rà soát mã nguồn`, `kiểm tra khả năng
+  tiếp cận`, `build thất bại` and `lập kế hoạch thực hiện`. The rule that
+  makes a shipped pack phrase count only as a whole phrase now keys on script
+  rather than on ASCII. The router folds diacritics, so `cần`, `bạn` and
+  `thêm` score as `can`, `ban` and `them`; keyed on ASCII, no Vietnamese phrase
+  was phrase-only, its words scored alone, and English sentences such as "can
+  I ban this user from the chat" named a pack lane. A pack phrase whose letters
+  are all Latin, with or without diacritics, now scores only as a whole phrase
+  and merges after the `ja`, `ko` and `zh` phrases; Indonesian routes as
+  before. With its words out of scoring, the pack can use the loanword
+  Vietnamese developers say: `merge` replaces `hòa nhập`, and the backend
+  phrase becomes `thiết kế contract cho endpoint`. A bare phrase clarifies
+  with its skill named and dispatches where an English word the skill carries
+  comes with it. `ultrawork` carries no Vietnamese phrase: its always-loaded
+  body has 3 bytes left under the ceiling. The phrases have not been reviewed
+  by a native speaker. `vi` is an input language only: it is not a
+  `--language` / `OMH_LANG` output choice.
+
 - **A delegation route is refused when Hermes would not send the child where
   it says.** `omh_delegate_route` wrote model, provider and effort, and
   answered `routed` even when Hermes would build the child elsewhere. That
