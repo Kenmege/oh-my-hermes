@@ -14,9 +14,12 @@ All notable changes will be documented here.
   missing file, a directory or a link is still refused. When that terminal
   cannot be reached (its environment is gone, or Hermes' registry cannot be
   read), the node is accepted with `handoff_checked: false` and the reason,
-  and every view says `handoff not checked`: `omh_dag status`, the boxes
-  and the tree, `omh hud --graph`, the TUI's transcript block and its
-  one-line summary, and the chat end post. A local terminal, or a backend
+  and every view says `handoff not checked`: `omh_dag status` and the run's
+  status line, the boxes and the tree, `omh hud --graph`, the TUI's
+  transcript block and its one-line summary, and the chat count line and
+  end post. The read runs only once every other check of the settle
+  passed, through Hermes' base `execute`, so it never enters Docker's
+  recovery of a gone container. A local terminal, or a backend
   OMH does not read (`modal`, `daytona`, `singularity`), keeps the host
   check as before.
 - **The OMH TUI's composer stays still when a turn ends with agents listed

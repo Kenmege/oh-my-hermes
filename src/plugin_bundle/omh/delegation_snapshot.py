@@ -12,7 +12,8 @@ the conversation's lanes that no end post has closed yet:
   of them and then ``+N more``;
 * **during**, no graph: on a turn where the counts changed since the last
   post, one plain line, ``DAG <name> · <done>/<total> done · <running>
-  running``, and the failures with the first one's title when there are any,
+  running``, and the failures with the first one's title when there are any
+  (and the dag-ulw nodes accepted with their handoff not checked),
   unless the reply already has a line opening ``DAG <name> ·`` (a dag-ulw
   completion turn answers with the run's own status line). Nodes a dag run
   added since the last post (a repair, or an extend round) are named once at
@@ -236,6 +237,7 @@ def tally(lanes: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "settled": all(_state(node) in SETTLED_STATES for node in lanes),
         "first_failed": _label(failed[0]) if failed else "",
         "first_failure": _label(failed[0], with_status=True) if failed else "",
+        "unchecked": sum(1 for node in lanes if node.get("handoff_checked") is False),
     }
 
 
@@ -244,10 +246,13 @@ def counts_key(counts: Mapping[str, Any]) -> str:
 
 
 def count_line(name: str, counts: Mapping[str, Any]) -> str:
-    """``DAG <name> · <done>/<total> done · <running> running`` and, when any failed, how many and the first."""
+    """``DAG <name> · <done>/<total> done · <running> running``; when any failed, how many and the first; when a
+    dag-ulw node was accepted with its handoff not checked, how many."""
     parts = [f"DAG {name}", f"{counts['done']}/{counts['total']} done", f"{counts['running']} running"]
     if counts["failed"]:
         parts.append(f"{counts['failed']} failed ({counts['first_failed']})")
+    if counts["unchecked"]:
+        parts.append(f"{counts['unchecked']} {HANDOFF_NOT_CHECKED}")
     return " · ".join(parts)
 
 
@@ -381,9 +386,8 @@ def end_block(graph: Mapping[str, Any], lanes: Sequence[Mapping[str, Any]]) -> s
               f"{counts['stopped']} stopped"]
     if counts["working"]:
         totals.append(f"{counts['working']} working")
-    unchecked = sum(1 for node in lanes if node.get("handoff_checked") is False)
-    if unchecked:  # said in the totals too, for a lane the listing counted as `+N`
-        totals.append(f"{unchecked} {HANDOFF_NOT_CHECKED}")
+    if counts["unchecked"]:  # said in the totals too, for a lane the listing counted as `+N`
+        totals.append(f"{counts['unchecked']} {HANDOFF_NOT_CHECKED}")
     lines.append(sep.join(totals))
     return _fenced(lines)
 

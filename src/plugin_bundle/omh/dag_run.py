@@ -46,7 +46,7 @@ Each node records where it came from (``origin``): ``define``,
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import AbstractContextManager
 import hashlib
 import json
@@ -587,6 +587,10 @@ def status_line(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, An
     parts = [f"DAG {record['name']}", f"{tally['done']}/{tally['total']} done", f"{tally['running']} running"]
     if tally["failed"]:
         parts.append(f"{tally['failed']} failed ({tally['first_failure']})")
+    unchecked = sum(1 for node in record["nodes"]
+                    if derived[str(node["id"])]["state"] == "accepted" and handoff_unchecked(node))
+    if unchecked:
+        parts.append(f"{unchecked} {HANDOFF_NOT_CHECKED}")
     if added:
         parts.append(added)
     return " · ".join(parts)
@@ -729,13 +733,16 @@ def calls_for(
 
 def settle(
     record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], node_id: str, outcome: object, reason: object,
-    provider_error: bool, *, handoff_exists: bool, now: float, handoff_unread: str = "",
+    provider_error: bool, *, read_handoff: Callable[[], tuple[bool, str]], now: float,
 ) -> str:
     """Close the node's open attempt. Returns what happened: the outcome, or ``retry`` (a provider error's one retry).
 
-    ``handoff_unread`` names why the handoff could not be read where the child
-    wrote it (`dag_tool.backend_handoff`): ``accepted`` then stands, and the
-    attempt records ``handoff_checked: false`` with that reason.
+    ``read_handoff`` answers (found, unread) and is called only for an
+    ``accepted`` settle that every other check let through, so a settle
+    refused for another reason reads nothing. ``unread`` names why the
+    handoff could not be read where the child wrote it
+    (`dag_tool.backend_handoff`): ``accepted`` then stands, and the attempt
+    records ``handoff_checked: false`` with that reason.
     """
     nodes = {str(node["id"]): node for node in record["nodes"]}
     if node_id not in nodes:
@@ -754,12 +761,15 @@ def settle(
             "child_reported_failure",
             f"Hermes reported node {node_id}'s child {stop.get('status')}; settle it failed or blocked, not accepted.",
         )
-    if outcome == "accepted" and not handoff_exists and not handoff_unread:
-        raise DagRefusal(
-            "handoff_missing",
-            f"Node {node_id} has no handoff file, and the nodes after it read one. Write it from the child's result, "
-            "or settle the node failed.",
-        )
+    unread = ""
+    if outcome == "accepted":
+        found, unread = read_handoff()
+        if not found and not unread:
+            raise DagRefusal(
+                "handoff_missing",
+                f"Node {node_id} has no handoff file, and the nodes after it read one. Write it from the child's "
+                "result, or settle the node failed.",
+            )
     attempt = nodes[node_id]["attempts"][-1]
     retries = sum(1 for item in nodes[node_id]["attempts"] if item.get("outcome") == "retry")
     note = _plain(reason, MAX_REASON_CHARS, "invalid_reason", "The reason is one short line.") if reason else ""
@@ -768,8 +778,8 @@ def settle(
         attempt["outcome"] = "retry"
         return "retry"
     attempt["outcome"] = outcome
-    if outcome == "accepted" and handoff_unread:
-        attempt.update(handoff_checked=False, handoff_unread=handoff_unread)
+    if outcome == "accepted" and unread:
+        attempt.update(handoff_checked=False, handoff_unread=unread)
     return str(outcome)
 
 

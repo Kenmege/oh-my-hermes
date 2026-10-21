@@ -523,6 +523,7 @@ class HandoffNotCheckedTests(unittest.TestCase):
             for node in ("api", "ui"):
                 stop(home, f"child-{node}", now=now + 5)
             settled = call(action="settle", run="export", node="api", outcome="accepted")
+            mid = reply("API is in.", turn="t1b")
             for node in ("ui", "verify"):
                 write_handoff(home, node)
                 call(action="settle", run="export", node=node, outcome="accepted")
@@ -543,6 +544,9 @@ class HandoffNotCheckedTests(unittest.TestCase):
         self.assertIn("handoff not checked", render_delegation_view(graph, width=120, layout="tree").text())
         self.assertEqual(code, 0, stderr)
         self.assertIn("Handoff not checked", stdout)
+        # The count line while the run goes on, and the run's own status line the parent replies with.
+        self.assertTrue(mid.endswith("\n\nDAG export feature · 1/3 done · 0 running · 1 handoff not checked"), mid)
+        self.assertEqual(settled["status_line"], "DAG export feature · 1/3 done · 0 running · 1 handoff not checked")
         # The chat end post: under Done with its word, and in the totals, which still say it for a lane the listing
         # counts as `+N`.
         self.assertIn("\n✓ Done     Export API (handoff not checked) · Export button +1\n", end)

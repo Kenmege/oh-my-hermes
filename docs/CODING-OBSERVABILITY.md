@@ -342,8 +342,8 @@ What it shows, and what it leaves as `?`:
     (`dag_origin`: `define`, `repair:<root>`, `extend:<round>`). A node
     accepted while its handoff could not be read in the Docker or SSH
     terminal its child wrote it in is `done` with the status `handoff not
-    checked` (`handoff_checked: false`), and the chat end post and the TUI's
-    one-line summary count it. The graph
+    checked` (`handoff_checked: false`), and the run's status line, the chat
+    count line and end post, and the TUI's one-line summary count it. The graph
     takes the run's name, and a chat end post waits until the run itself is
     over: done, cancelled, or out of repair cycles. On a completion turn
     whose reply is already the run's status line, no second count line is
