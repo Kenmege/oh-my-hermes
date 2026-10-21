@@ -723,7 +723,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # work on a cancel feature, read by its last stop word, and a
             # cancel followed by a restart, which ask (2); and asking how to
             # cancel dag ulw and whether it can be stopped, answered (2).
-            expected=897,
+            # The fourth review adds seven: whether dag ulw was cancelled and
+            # a cancel decided later, answered (2, answered on main too); the
+            # work turned off with 꺼줘 after a word for the run, which asks
+            # (1, main started a run); the other run cancelled (1, cancelled
+            # on main too); and a sigil before a question about dag-ulw or
+            # about cancelling it, in English and in Korean, which starts no
+            # run (3, main dispatched dag-ulw).
+            expected=904,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1070,7 +1077,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # with "or", which starts a run (1, main clarified).
             # The third review adds two that still start a run, as on main:
             # resolving a payment-cancel issue and turning off dark mode (2).
-            expected=934,
+            # The fourth review adds three that still start a run, as on main:
+            # checking a cancel history and registering a shutdown hook, whose
+            # verbs no word list names, and a refactor that stops if it fails
+            # (3).
+            expected=937,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

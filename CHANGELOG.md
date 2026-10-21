@@ -23,10 +23,12 @@ All notable changes will be documented here.
   services is too high`) and a split whose object is one paragraph or
   sentence (`split the paragraph into parallel parts for the translation`)
   no longer start a run or hint "Start at once" either.
-  A Korean stop word after the name no longer starts a run unless a work
-  noun or verb follows the last stop word (`… 취소 기능 구현해줘`, `… 취소
-  이슈 해결해줘`, `… 취소 시 환불되게 해줘`) or is the object of `꺼줘`
-  (`다크모드 꺼줘`). With none, a stop noun after words that may name the
+  A Korean stop word after the name no longer starts a run unless the words
+  around the last stop word make it work: a work noun or verb after it
+  (`… 취소 기능 구현해줘`), a request verb of its own ending the message
+  (`… 취소 내역 확인해줘`, `… 종료 훅 등록해줘`), a condition before or after
+  it (`… 실패하면 중단해줘`, `… 취소 시 환불되게 해줘`), or a work word as the
+  object of `꺼줘` (`다크모드 꺼줘`, not `… 작업 꺼줘`). With none, a stop noun after words that may name the
   work (`dag ulw 주문 취소`, `dag ulw 주문 취소요`, `dag ulw 취소 요청`, a
   verb-form cancel after more than three words, or a stop of the work on a
   cancel feature such as `… 취소 기능 만드는 거 그만해줘`) neither cancels
@@ -34,7 +36,10 @@ All notable changes will be documented here.
   a restart (`… 지금 거 취소하고 결제 모듈부터 다시 해줘`): the router
   clarifies and the hint asks one question naming both readings (owner
   decision O7). A question about stopping (`dag ulw 취소 어떻게 해`,
-  `dag ulw 멈출 수 있어`, `dag ulw 중단하면 어떻게 돼`) is answered. These cancel. On main
+  `dag ulw 멈출 수 있어`, `dag ulw 중단하면 어떻게 돼`), or whether it stopped
+  (`dag ulw 취소됐어?`, `dag ulw 멈췄어`), is answered, and so is a sigil
+  before a question (`/dag-ulw what is it?`, `/dag-ulw how do I cancel the
+  run?`). These cancel. On main
   the polite endings, `그만 돌려`, `멈춰라`, `취소요`, `정지`, `스톱` and `꺼줘`
   started a run, `취소해줄 수 있어?` was answered, and `can you stop dag ulw`
   clarified:
@@ -44,7 +49,8 @@ All notable changes will be documented here.
   - the bare stop word, with a bare `요`, `좀` or `ㄱ` or after stop adverbs
     (`취소`, `취소요`, `정지`, `스톱`, `꺼줘`, `지금 바로 취소`);
   - a word for the run, with or without a modifier (`작업 취소`,
-    `진행 중인 작업 취소`, `그것도 취소`);
+    `진행 중인 작업 취소`, `그것도 취소`, `다른 거 취소`, `저거 말고 이거
+    취소`);
   - an English stop after `can you` (`can you stop dag ulw`).
 
   `dag ulw 주문 취소 기능 구현해줘` still runs.
