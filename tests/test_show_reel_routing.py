@@ -21,6 +21,66 @@ from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
 
 
 class ShowReelRoutingTests(unittest.TestCase):
+    def test_korean_action_object_particle_requires_a_predicate(self):
+        from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
+
+        for message in (
+            "show-reel 스킬 사용을",
+            "show-reel 워크플로우 실행을",
+            "show-reel 스킬 사용법을 부탁드립니다",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(show_reel_request_admitted(message))
+                self.assertNotEqual(route_chat_message(message).get("selected_skill"), "show-reel")
+
+    def test_korean_adjacent_adverb_and_request_morphology_families(self):
+        from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
+
+        messages = tuple(
+            f"show-reel 스킬 실행 {adverb} {predicate}"
+            for adverb in ("바로", "꼭", "먼저", "우선", "부디", "조금", "다시", "지금", "정중히", "빠르게")
+            for predicate in ("부탁드립니다", "부탁드릴게요")
+        ) + (
+            "show-reel 스킬 실행 좀 요청드립니다",
+            "show-reel 스킬 사용 우선 요청드릴게요",
+            "show-reel 스킬 사용해 마케팅 자료로",
+            "show-reel 스킬 사용 부탁해 말레이시아 자료로",
+            "show-reel 스킬 실행 부탁할게",
+            "show-reel 스킬 실행 해 주실 수 있나요",
+            "show-reel 스킬 실행 좀 부탁드릴 수 있을까요",
+            "show-reel 스킬 부탁드릴게요",
+            "show-reel 스킬 사용을 부탁드립니다",
+            "show-reel 워크플로우 실행해 주실 수 있나요",
+        )
+        self._assert_production_surfaces(messages)
+        for message in (
+            "show-reel 스킬 사용해 꼭 주지 마세요",
+            "show-reel 스킬 사용 부탁해 우선 하지 마세요",
+            "show-reel 스킬 실행 바로 기록 정리해주세요",
+            "show-reel 스킬 실행 어떻게 부탁드릴까요",
+            "show-reel 스킬 사용 예시를 정중히 부탁드립니다",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(show_reel_request_admitted(message))
+                self.assertNotEqual(route_chat_message(message).get("selected_skill"), "show-reel")
+
+    def test_english_adjacent_courtesy_arguments_and_diagnostic_queries(self):
+        from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
+
+        self._assert_production_surfaces((
+            "show-reel workflow run now",
+            "show-reel workflow run please with the research report as input",
+            "show-reel workflow run with --help examples as input",
+        ))
+        for message in (
+            "show-reel workflow run --help",
+            "Use the show-reel skill --help",
+            "show-reel workflow run details please",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(show_reel_request_admitted(message))
+                self.assertNotEqual(route_chat_message(message).get("selected_skill"), "show-reel")
+
     def test_named_english_command_requires_positive_argument_structure(self):
         from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
 

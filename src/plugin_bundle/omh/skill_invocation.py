@@ -54,17 +54,29 @@ def marker_candidates(words, names, aliases=None):
     return candidates
 
 
+_EN_COMMAND_ADJUNCTS = frozenset({"please", "pls", "plz", "kindly", "now", "again", "once", "twice", "immediately"})
+_EN_DIAGNOSTIC_OPTIONS = frozenset({"-h", "--help", "--version"})
+
+
+def _after_command_adjuncts(words):
+    position = 0
+    while position < len(words) and words[position] in _EN_COMMAND_ADJUNCTS:
+        position += 1
+    return words[position:]
+
+
 def _english_command_arguments(words):
     """An operation has arguments; a bare unknown noun may instead name metadata.
 
     Recognize argument structure, never a vocabulary of metadata or styles. A
     trailing courtesy cannot promote an otherwise ambiguous nominal compound.
     """
+    words = _after_command_adjuncts(words)
     if not words:
         return True
-    if all(word in {"please", "pls", "plz", "kindly"} for word in words):
-        return True
     head = words[0]
+    if head in _EN_DIAGNOSTIC_OPTIONS:
+        return False
     if head in {"with", "from", "using", "to", "for", "in", "on", "at", "by", "into", "the", "a", "an", "this", "that", "these", "those", "my", "your", "our", "their", "his", "her", "its"}:
         return len(words) > 1
     # Explicit CLI options, input paths/files and quantity+unit arguments.
@@ -78,14 +90,26 @@ def _english_command_arguments(words):
 # Predicate pieces compose with the action noun and optional adjacent fillers.
 # The formal/future branches belong to verb stems, not whole request phrases.
 _KO_FUTURE = r"겠(?:습니다|어요|습니까)"
-_KO_DO = r"(?:해(?:요)?|하(?:자|라|세요|십시오|" + _KO_FUTURE + r")|할(?:게요|까요)|합(?:시다|니다))"
-_KO_GIVE = r"주(?:세요|십시오|시" + _KO_FUTURE + r"|실(?:래요|까요))|줘(?:요)?"
-_KO_DEFER = r"드(?:려(?:요)?|리겠(?:습니다|어요|습니까)|립(?:니다|시다)|릴(?:게요|까요))"
+_KO_MODAL = r"\s+수\s+있(?:나요|을까요|겠어요)"
+_KO_DO = r"(?:해(?:요)?|하(?:자|라|세요|십시오|" + _KO_FUTURE + r")|할(?:게(?:요)?|까요)|합(?:시다|니다))"
+_KO_GIVE = r"주(?:세요|십시오|시" + _KO_FUTURE + r"|실(?:래요|까요|" + _KO_MODAL + r"))|줘(?:요)?"
+_KO_DEFER = r"드(?:려(?:요)?|리겠(?:습니다|어요|습니까)|립(?:니다|시다)|릴(?:게(?:요)?|까요|" + _KO_MODAL + r"))"
+_KO_ADJUNCT = (
+    r"(?:좀|조금|꼭|바로|먼저|우선|다시|지금|부디|제발|한\s*번|"
+    r"(?!어떻게(?=$|\s))[가-힣]{1,24}(?:히|게))"
+)
+_KO_ADJUNCTS = r"(?:" + _KO_ADJUNCT + r"\s+)*"
+_KO_NEGATIVE_WORD = (
+    r"(?:(?:주지|드리지|하지)(?:는|도)?|"
+    r"말(?:아(?:줘(?:요)?|주(?:세요|십시오|시겠어요|실래요|실까요))?|자|라|고(?:요)?)?|"
+    r"않(?:아(?:요)?|도록|게)?|마(?:세요|십시오|요|라)?)(?=$|\s)"
+)
+_KO_NEGATIVE_AFTER_ADJUNCTS = re.compile(r"^" + _KO_ADJUNCTS + _KO_NEGATIVE_WORD)
 _KO_REQUEST = re.compile(
-    r"^(?:(?:좀|한\s*번|제발)\s+){0,3}"
-    r"(?:부탁\s*(?:" + _KO_DEFER + r"|" + _KO_DO + r"(?:\s*(?:" + _KO_GIVE + r"))?)"
+    r"^" + _KO_ADJUNCTS
+    + r"(?:(?:부탁|요청)\s*(?:" + _KO_DEFER + r"|" + _KO_DO + r"(?:\s*(?:" + _KO_GIVE + r"))?)"
     r"|" + _KO_DO + r"(?:\s*(?:" + _KO_GIVE + r"))?)"
-    r"(?=$|\s)(?!\s*(?:주지|드리지|하지|말|않|마))"
+    r"(?=$|\s)(?!\s*" + _KO_ADJUNCTS + _KO_NEGATIVE_WORD + r")"
 )
 
 
@@ -107,7 +131,7 @@ def affirmative_marked_request(message, name, names):
         if not count:
             break
         words = words[count:]
-    if not words or not contains_run_cue(text):
+    if not words:
         return False
     tokens = [invocation_token(word) for word in words]
     first = tokens[0]
@@ -125,22 +149,38 @@ def affirmative_marked_request(message, name, names):
         suffix = words[position+1:]
         if suffix and invocation_token(suffix[0]) in SKILL_INVOCATION_MARKERS:
             suffix = suffix[1:]
-        if not suffix or not contains_run_cue(suffix[0]):
+        if not suffix:
             return False
-        if len(suffix) > 1:
-            command = suffix[0].strip(":,.!?~…'\"()[];*‘’“”")
-            arguments = [word.strip(":,.!?~…'\"()[];*‘’“”") for word in suffix[1:]]
-            # Method-first English is ambiguous without an argument structure;
-            # action-first named invocations above are already imperative.
-            if command in verbs and not _english_command_arguments(arguments):
+        command = suffix[0].strip(":,.!?~…'\"()[];*‘’“”")
+        arguments = [word.strip(":,.!?~…'\"()[];*‘’“”") for word in suffix[1:]]
+        if command in verbs:
+            if not _english_command_arguments(arguments):
                 return False
-            if command in {"사용", "실행", "부탁"} and not _korean_noun_request(arguments):
+        elif command.startswith(("사용", "실행")):
+            predicate = command[2:]
+            if predicate in {"을", "를"}:
+                if not arguments:
+                    return False
+                predicate = ""
+            if predicate or arguments:
+                if not _korean_noun_request(([predicate] if predicate else []) + arguments):
+                    return False
+        elif command == "부탁" and arguments:
+            if not _korean_noun_request([command] + arguments):
                 return False
-            # A split negative auxiliary modifies this adjacent action too.
-            if re.match(r"^(?:사용|실행|부탁|해|돌려|써)", command) and re.match(
-                r"^(?:주지|드리지|하지|말|않|마)", arguments[0],
-            ):
+        elif not _korean_noun_request([command] + arguments) and not contains_run_cue(command):
+            return False
+        # Only adjacent negative auxiliaries negate the command; a content word
+        # such as 마케팅 or 말레이시아 must not be rejected by a stem prefix.
+        if re.match(r"^(?:사용|실행|부탁|해|돌려|써)", command):
+            if _KO_NEGATIVE_AFTER_ADJUNCTS.match(" ".join(arguments)):
                 return False
+    request_tail = [word.strip(":,.!?~…'\"()[];*‘’“”") for word in words[position+1:]]
+    if request_tail and invocation_token(request_tail[0]) in SKILL_INVOCATION_MARKERS:
+        request_tail = request_tail[1:]
+    request_tail = _after_command_adjuncts(request_tail)
+    if request_tail and request_tail[0] in _EN_DIAGNOSTIC_OPTIONS:
+        return False
     candidates = marker_candidates(words, names)
     if candidates != [name]:
         return False
