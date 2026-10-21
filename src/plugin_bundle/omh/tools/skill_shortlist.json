@@ -200,7 +200,7 @@
 }
 },
 {
-"anchors":"business comparison competitiv competitor customer feedback landscap market pric say scan search sizing trend vendor",
+"anchors":"comparison competitiv competitor feedback landscap market pric say scan search sizing trend vendor",
 "hangul":"고객 근거 데이 드백 서치 이터 자료 조사 추세 피드",
 "hangul_anchors":"고객 근거 데이 드백 서치 이터 자료 조사 추세 피드",
 "label":"omh-research-brief",
@@ -283,7 +283,7 @@
 }
 },
 {
-"anchors":"bug cluster complain complaint customer feedback group payment prioritiz sort stor them trend",
+"anchors":"bug cluster complain complaint feedback group payment prioritiz sort stor them trend",
 "hangul":"결제 고객 기능 드백 모아 백을 버그 분류 불만 실패 오류 요청 이슈 제보 피드",
 "hangul_anchors":"결제 고객 기능 드백 모아 백을 버그 분류 불만 실패 오류 요청 이슈 제보 피드",
 "label":"omh-feedback-triage",
@@ -349,7 +349,7 @@
 }
 },
 {
-"anchors":"angry cannot customer draft email engineer escalation refund reply respons ticket urgent",
+"anchors":"angry cannot draft email engineer escalation refund reply respons ticket urgent",
 "hangul":"고객 답변 레이 분류 스컬 에스 이션 지원 초안 컬레 티켓",
 "hangul_anchors":"고객 답변 분류 스컬 에스 이션 지원 초안 컬레 티켓",
 "label":"omh-support-operations",
@@ -460,7 +460,7 @@
 }
 },
 {
-"anchors":"board business deck exec executiv leadership month monthly outlin ppt presentation quarterly slid upload weekly",
+"anchors":"board deck exec executiv leadership month monthly outlin ppt presentation quarterly slid upload weekly",
 "hangul":"경영 고서 더십 라이 로드 리더 발표 보고 슬라 업로 영진 월간 이드 자료 주간 키지 패키 표자 피티 피피",
 "hangul_anchors":"경영 고서 더십 라이 로드 리더 발표 보고 슬라 업로 영진 월간 이드 자료 주간 키지 패키 표자 피티 피피",
 "label":"omh-report-package",
@@ -1416,7 +1416,7 @@
 }
 },
 {
-"anchors":"cannot customer during mitigat progress sev1 sev2 sev3",
+"anchors":"cannot during mitigat progress sev1 sev2 sev3",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-live-incident-response",
@@ -1615,7 +1615,7 @@
 }
 },
 {
-"anchors":"asked attach bug chat contractor copy customer de deidentify email export number phon pseudonymis pseudonymisation pseudonymiz pseudonymization researcher server spreadsheet still train usag vendor",
+"anchors":"asked attach bug chat contractor copy de deidentify email export number phon pseudonymis pseudonymisation pseudonymiz pseudonymization researcher server spreadsheet still train usag vendor",
 "hangul":"가명 감정 개인 객정 거래 계좌 고객 구기 구자 기관 너사 대행 드번 등록 락처 래처 력사 록번 메일 명처 명화 민감 민등 민번 번호 벤더 별자 별정 비식 식별 실명 업체 에이 연구 연락 외부 외주 이메 이전 익명 인정 전시 전화 정보 좌번 주민 주소 처리 카드 트너 파트 행사 협력 화번",
 "hangul_anchors":"가명 감정 개인 객정 거래 계좌 고객 구기 구자 기관 너사 대행 드번 등록 락처 래처 력사 록번 메일 명처 명화 민감 민등 민번 번호 벤더 별자 별정 비식 식별 실명 업체 에이 연구 연락 외부 외주 이메 이전 익명 인정 전시 전화 정보 좌번 주민 주소 처리 카드 트너 파트 행사 협력 화번",
 "label":"omh-data-share-review",
@@ -1700,7 +1700,24 @@
 }
 },
 {
-"anchors":"assumption business customer demand discovery guid hypothesis idea interview kill pay peopl persever pivot portfolio prd riskiest solution startup validat validation willingness worth zero",
+"anchors":"assumption comparabl job pain purchas trigger",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-market-research",
+"name":"market-research",
+"situation":"Market sizing or customer/competitive analysis",
+"terms":{
+"1":"addressabl attribut demand generic investigat list merely scop specific task",
+"2":"assumption bottom brief business jtbd matrix model purchas trigger",
+"3":"befor competitiv decision job pain sourc",
+"4":"analysis comparabl size",
+"5":"profil research sam sensitivity sizing som tam",
+"6":"competitor customer evidenc pric",
+"9":"market"
+}
+},
+{
+"anchors":"assumption demand discovery guid hypothesis idea interview kill pay peopl persever pivot portfolio prd riskiest solution startup validat validation willingness worth zero",
 "hangul":"가정 검증 결정 고객 발견 스트 지속 테스 피벗",
 "hangul_anchors":"가정 검증 결정 고객 발견 지속 테스 피벗",
 "label":"omh-product-discovery-validation",
@@ -2020,7 +2037,7 @@
 }
 },
 {
-"anchors":"calendar channel creat crm customer discord dm draft edit email event gmail googl hubspot invit jira linear meet notion post saa salesforc send slack ticket",
+"anchors":"calendar channel creat crm discord dm draft edit email event gmail googl hubspot invit jira linear meet notion post saa salesforc send slack ticket",
 "hangul":"넥터 노션 린더 메일 발송 보내 액션 외부 이메 이슈 이지 초대 초안 캘린 커넥 티켓 페이",
 "hangul_anchors":"넥터 노션 린더 메일 발송 보내 액션 외부 이메 이슈 이지 초대 초안 캘린 커넥 티켓 페이",
 "label":"omh-apps",
@@ -2105,7 +2122,7 @@
 }
 },
 {
-"anchors":"announcement audienc changelog content copy customer draft email executiv guid land launch linkedin newsletter plain post publish rewrit social tone voic word",
+"anchors":"announcement audienc changelog content copy draft email executiv guid land launch linkedin newsletter plain post publish rewrit social tone voic word",
 "hangul":"가이 객용 고객 공지 글쓰 널별 노트 뉴스 레이 레터 리즈 릴리 메일 문체 스레 쓰기 오퍼 요약 워크 이드 이메 이터 즈노 지문 채널 초안 콘텐 크플 텐츠 퍼레 플로",
 "hangul_anchors":"가이 객용 고객 공지 글쓰 널별 노트 뉴스 레터 리즈 릴리 메일 문체 스레 쓰기 오퍼 워크 이드 이메 이터 즈노 지문 채널 초안 콘텐 크플 텐츠 퍼레 플로",
 "label":"omh-content-operator",

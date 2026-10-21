@@ -39,7 +39,7 @@ from ..plugin_bundle.omh.spend_signals import (
 )
 from .missed_route import has_normalized_missed_omh_workflow_context
 from .omh_help import is_omh_docs_question
-from .visual_qa_cues import BROWSER_VISUAL_QA_PHRASES, CUSTOMER_SYMPTOM_REPORT_PHRASES
+from .visual_qa_cues import BROWSER_VISUAL_QA_PHRASES, CUSTOMER_SYMPTOM_REPORT_PHRASES, contains_cue_phrase
 
 if TYPE_CHECKING:
     from .query import RoutingQuery
@@ -5373,6 +5373,15 @@ PERSISTENT_COMPLETION_GUARD = RoutingGuardRule(
     why="Matched completion-loop language with a concrete pass/block stop condition.",
     activation_status="active",
 )
+MARKET_COMPARISON_GUARD = RoutingGuardRule(
+    id="market_profiles_before_generic_connector",
+    rule="Comparable competitor pricing profiles need domain analysis rather than a generic SaaS connector action.",
+    matched_label="guard:market_comparison",
+    preferred_skills=("market-research",),
+    score_boost=56,
+    why="Matched a whole-phrase competitor/pricing method request; preserve comparable units and source coverage.",
+    activation_status="active",
+)
 RESEARCH_BRIEF_GUARD = RoutingGuardRule(
     id="research_brief_before_wiki",
     rule="Comparison and evidence-gap research synthesis should route to research-brief before durable wiki capture.",
@@ -5907,6 +5916,7 @@ ROUTING_GUARD_RULES = (
     PRODUCT_SHAPING_GUARD,
     DEEP_INTERVIEW_GUARD,
     PERSISTENT_COMPLETION_GUARD,
+    MARKET_COMPARISON_GUARD,
     RESEARCH_BRIEF_GUARD,
     STRATEGY_BRIEF_GUARD,
     APP_DELIVERY_LOOP_GUARD,
@@ -5985,6 +5995,7 @@ ROUTING_GUARD_RULES = (
 GUARD_TRUSTED = "trusted"
 GUARD_CONTEXT_ONLY = "context_only"
 GUARD_DISPATCH_TRUST: dict[str, tuple[str, str]] = {
+    "market_profiles_before_generic_connector": (GUARD_TRUSTED, "a complete competitor/pricing method phrase names the requested analysis; no measured tuning-set record, keeps its intent-shape label"),
     "adversarial_qa_before_generic_help": (GUARD_TRUSTED, "hostile/missing-path testing named as the task; no measured record as a winner, keeps its shape label"),
     "agent_board_before_generic_clarification": (GUARD_TRUSTED, "an imperative to coordinate named agents or a board; no measured record as a winner, keeps its shape label"),
     "app_delivery_loop_before_generic_plan": (GUARD_TRUSTED, "an explicit idea-to-release path; no measured record as a winner, keeps its shape label"),
@@ -6513,6 +6524,16 @@ def _active_routing_guard_rules_cached(
     )
     if research_department_applies:
         rules.append(RESEARCH_DEPARTMENT_GUARD)
+    if (
+        not research_department_applies
+        and not paper_learning_applies
+        and not point_in_time_web_applies
+        and not direct_coding_task_applies
+        and contains_cue_phrase(normalized_query, (
+            "competitor pricing profiles", "competitive pricing analysis",
+        ))
+    ):
+        rules.append(MARKET_COMPARISON_GUARD)
     if (
         scheduled_ops_blueprint_applies
         and (explicit_scheduled_ops_blueprint or not research_department_applies)

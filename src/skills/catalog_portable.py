@@ -49,6 +49,8 @@ _PORTABILITY: dict[str, str] = {
     'omh-source-finder': PORTABILITY_PORTABLE,
     # required_inputs: business question; expected_outputs: evidence table; final_checklist requires evidence/approval, not a native runtime.
     'omh-research-brief': PORTABILITY_PORTABLE,
+    # Inputs, method worksheets and evidence boundaries are host-neutral; no connector required.
+    'omh-market-research': PORTABILITY_PORTABLE,
     # why_this_exists composes Hermes profiles, cron, knowledge storage, and delivery glue.
     'omh-research-department': PORTABILITY_HERMES_ONLY,
     # required_inputs: paper identity or attachment reference; expected_outputs: paper_learning_card/v1; final_checklist requires evidence/approval, not a native runtime.
@@ -325,6 +327,11 @@ def portable_skill_names() -> tuple[str, ...]:
 # native campaign/TDD RPC guidance, route-capacity host injection, ecosystem
 # installation recipes, and progressive full-contracts (inlined for this target).
 PORTABLE_REFERENCE_PATHS = frozenset({
+    'market-research/references/procedure.md',
+    'market-research/references/market-sizing.md',
+    'market-research/references/customer-evidence.md',
+    'market-research/references/competitive-pricing.md',
+    'market-research/references/findings-template.md',
     'wiki/references/wiki-blueprint.md',
     'wiki/references/wiki-patterns.md',
     'wiki/references/wiki-operations.md',

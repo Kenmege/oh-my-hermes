@@ -170,7 +170,9 @@ CONCEPTUAL_AWARENESS_SURFACES = ("request-to-handoff", "executor selection", "co
 # name and the visible description window. Re-derived from the producer.
 # 12554 -> 12637: one index line for the new `spend-gate` skill; the name and
 # the visible description window. Re-derived from the producer.
-SKILL_INDEX_CHAR_LIMIT = 12637
+# 12637 -> 12725: one original `market-research` name-and-description line,
+# measured from the full-profile index producer.
+SKILL_INDEX_CHAR_LIMIT = 12725
 # The longest single skill line in that index. Every description is already cut
 # to 60 characters, so what moves this is a longer skill name.
 SKILL_INDEX_LINE_CHAR_LIMIT = 100
@@ -759,7 +761,9 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64651
 # `design-orchestration` grows: `+8 more triggers` becomes `+13 more
 # triggers` (+1). The other 20 change their count at the same width.
 # Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 501991
+# 501991 -> 505477: one source-gated `market-research` capability row;
+# method references stay on demand, and sibling bodies keep their prior rows.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 505477
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -851,7 +855,9 @@ FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # Re-derived from the producer.
 # 135119 -> 136056: one standalone capability row for the new `spend-gate`
 # skill; no sibling row moved. Re-derived from the producer.
-STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 136056
+# 136056 -> 136997: one standalone `market-research` capability row,
+# measured from the existing bounded projection.
+STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 136997
 STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # ULW fold context ceiling (issue #954, PR D). The limit is the pre-D measured
 # value of the full profile's `skill_body` chars on `main` @ acb9a060, in the

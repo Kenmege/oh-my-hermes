@@ -23,7 +23,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # omh-docs contributes four measured negatives and five measured interventions.
         # The Indonesian trigger pack adds six negatives and eleven interventions.
         # The Vietnamese trigger pack adds eight negatives and eleven interventions.
-        self.assertEqual(payload["summary"]["case_count"], 846)
+        # Market research adds one negative and three intervention cases.
+        self.assertEqual(payload["summary"]["case_count"], 847)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -48,7 +49,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["overroute_count"], 0)
         self.assertEqual(payload["summary"]["catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["intervention_case_count"], 892)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 895)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

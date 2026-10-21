@@ -1118,6 +1118,9 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Separate observed sources, source quality, source diversity, inferred trends, and unresolved uncertainty.
   - When Hermes' bundled `grounded-citations` skill is available, load it and register each source in its ledger when it is retrieved (`scripts/sources.py add`), and carry two more fields on every evidence row: the ledger id written as `[n]` - a bare number in a cell is not a citation to `verify`, so that row would go unchecked - and the verbatim quote attached with `sources.py quote <id> --text <quote> --from <page text file>`, which rejects wording that file does not contain. Keep the run's ledger in a file of its own, passed as `--ledger <path>` before the subcommand on every call: the default ledger is shared by the whole profile, and another run's reset rebinds its ids. A row whose quote could not be attached says so, and a claim that rests on model knowledge is marked `[unverified]` and listed as unresolved, never entered as evidence. Run `sources.py verify <draft> --evidence`, since every evidence row is meant to carry its quote, and report the citation check from that run, or as `not_observed`: the exit status of `sources.py verify <draft>` is the observed check - `0` is a pass and any other status is not - and `verify --evidence` also fails a draft whose cited source carries no verbatim quote. An exit `0` whose `info: stats:` line reads `0 distinct source(s) cited` checked nothing and is reported as `not_observed`; it is a citation check, not fact verification. Without the skill, keep the source and its quoted wording in the row and report the citation check as `not_observed`.
   - Use the brief to feed strategy or meeting work without calling it execution evidence.
+  - For a market question, fix the decision audience, buyer/segment/geography, source cutoff, period/currency/base year, units and denominator before synthesis; leave missing values unknown. Use `market-research` for scoped TAM/SAM/SOM, customer/JTBD evidence, and comparable competitor/pricing methods instead of improvising a market model inside the brief.
+  - Write each finding with source IDs and dates, observed, vendor-asserted, or inferred status, assumptions, decision implication, contrary evidence, confidence limit, and next verification owner. Keep failed-source coverage visible, not a claim that no evidence exists; lead with what changes the decision and attach only relevant method worksheets.
+  - A market brief is not customer validation or an investment approval; `product-discovery-validation` retains the kill/pivot/persevere gate, and outreach, participant recruitment, payments, or scheduling each need separate explicit approval.
 - Completion checklist:
   - The research question, source boundaries, recency assumptions, and confidence level are named.
   - Observed sources, inference, synthesis, and unresolved retrieval gaps are separated.
@@ -1186,6 +1189,10 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Report coverage source by source on every run. A source the run could not read is unknown coverage for that period and is named as a gap; it is never reported as a quiet period or as nothing new.
   - Keep one cutoff per source and move it only for a source the run covered. A source that failed keeps its earlier cutoff, so the next run reads the missed window instead of skipping it.
   - Count by the underlying event, not by article or URL: reprints, rewrites, and link variants of one announcement are one finding, and an independent second source stays attached to it as corroboration.
+  - For market watches, keep a dated competitor/pricing snapshot per covered entity with source IDs, observation/effective dates, original packaging and normalized comparison units. Reuse a stable period, currency, units, source cutoff, and materiality threshold; record scope changes and distinguish a real change from changed source coverage.
+  - Classify market findings as observed, vendor-asserted, or inferred and preserve contrary evidence. When coverage fails, retain the failed source's previous cutoff and name the uncovered window; do not turn a failed read into unchanged pricing or no new activity.
+  - When a material event needs sizing, customer/JTBD, or comparable pricing work, hand the bounded analysis to `market-research` with snapshot IDs, source dates, cutoff, gaps and budget; return findings to `research-brief` before Briefer delivery. A prepared handoff does not prove any analysis ran.
+  - Outreach, paid sources, and schedule creation require separate explicit approval; research-operation setup is not permission to contact customers, buy data, schedule a watch, or approve a product investment.
 - Completion checklist:
   - The research question, source boundaries, recency assumptions, and confidence level are named.
   - Observed sources, inference, synthesis, and unresolved retrieval gaps are separated.
@@ -7994,6 +8001,142 @@ These surfaces are generated command references, not installed Hermes workflow s
     - Output refs: `growth_handoff_disposition/v1`
     - Check IDs: `lifecycle_target_behavior_check`, `lifecycle_audience_eligibility_check`, `lifecycle_safety_eligibility_check`, `lifecycle_experiment_validity_check`, `lifecycle_readout_evidence_check`, `lifecycle_handoff_boundary_check`
     - Instruction: Propose connector, content, analytics, product, or implementation actions with owner, approver, evidence refs, timing, and stop conditions; prepare any cancellation or status-reconciliation request against the exact named run and leave it `prepared_not_observed` until a provider result is observed; return HOLD readiness while any check holds, approval is missing, or the latest analysis run is still in flight, route validated product changes to `product-brief`, and never report a send, display, action, outcome, cancellation, or causal effect that was not observed.
+
+### market-research
+
+[omh] Market sizing or customer/competitive analysis: investigate a scoped market with TAM/SAM/SOM sensitivity, attributed customer evidence, and comparable competitor/pricing profiles before a decision brief.
+
+- Category: `research`
+- Phase: `market-analysis`
+- Hermes role: `researcher`
+- Quality tier: `source-gated`
+- Reasoning demand: `standard`
+- Exposure: `direct_skill`
+- Install visibility: `true`
+- Docs visibility: `primary_workflow_skill`
+- Compatibility alias: `false`
+- Lifecycle stage: `canonical`
+- Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
+- Handoff policy: Keep scoping, source-backed analysis, calculations, and uncertainty reporting in Hermes. Use `research-brief` for the audience's final synthesis and `research-department` for recurring operations. Product investment, kill/pivot/persevere, and customer-validation gates remain owned by `product-discovery-validation`; market findings are not customer validation or permission to build.
+- Why this exists: `market-research` turns a broad market question into bounded sizing, customer evidence, and comparable competitive analysis that a decision owner can inspect without mistaking secondary research for validation.
+- First steps:
+  - Confirm the decision, buyer/segment, geography, period, currency/base year, units/denominator, source cutoff, budget, and stop condition before retrieval. Mark missing inputs unknown; ask the one that changes the analysis first.
+  - Read `references/findings-template.md` to open the ledger, then load only the needed methods: `references/market-sizing.md`, `references/customer-evidence.md`, or `references/competitive-pricing.md`. Do not manufacture empty analysis lanes for an out-of-scope question.
+- Use when: Use when the task needs market-specific analysis of addressable demand, customer jobs and pains, or comparable competitor and pricing evidence, not merely a generic brief or source list.
+- Do not use when:
+  - A kill, pivot, or persevere gate before a PRD is needed; use `product-discovery-validation`.
+  - A recurring source inbox with Scout, Analyst, and Briefer operations is needed; use `research-department`.
+  - Supplied tickets need clustering and investigation priorities; use `feedback-triage`.
+  - A supplied spreadsheet needs cleaning, descriptive statistics, or anomaly analysis; use `data-analysis`.
+  - A supplied academic PDF needs section-by-section explanation; use `paper-learning`.
+  - A general business question needs an audience-ready synthesis rather than a domain model; use `research-brief`.
+- Strong routing signals: `market-research`, `market sizing`, `tam sam som`, `bottom up market sizing`, `market size sensitivity`, `customer evidence analysis`, `jtbd evidence matrix`, `competitor pricing profiles`, `competitive pricing analysis`
+- Good example:
+  - Prompt: Estimate TAM SAM SOM for US independent dental clinics with sourced counts and sensitivity, not a guessed capture percentage.
+  - Expected behavior: Fix scope and units, build a source/assumption ledger, calculate addressable scenarios with tools, and expose confidence limits and missing inputs.
+  - Why: The task needs an addressable-market model, not only a narrative brief.
+- Bad example:
+  - Prompt: Approve our startup for investment because a large total market proves demand.
+  - Expected behavior: Keep the size estimate separate from a discovery decision; require target-customer evidence and the decision owner's gate.
+  - Why: Market scale is not customer validation or permission to build.
+- Quality bar:
+  - Require source IDs, dates/cutoffs, observed/vendor-asserted/inferred labels, assumptions and units on material claims.
+  - Keep failed retrieval, contrary evidence, sample bias, scope mismatch and confidence limits visible; a citation alone does not verify a claim.
+  - Load method and output templates on demand; calculations need real tool receipts, and absent evidence cannot be synthesized into certainty.
+- Completion checklist:
+  - The scope, units, source cutoff and stop reason are explicit, and every material finding links sources or labeled assumptions.
+  - Requested methods include source coverage, contrary evidence and confidence limits; unrequested lanes are marked not requested, not completed.
+  - Calculation receipts, unresolved retrieval gaps and customer sample limitations are attached; unknowns remain unknown.
+  - Decision implications name verification needs and an owner, never an automatic discovery, outreach, payment, scheduling or coding action.
+- Recovery notes:
+  - If retrieval fails, record the source ID, attempted date, failure and uncovered period; seek an allowed alternative once within budget or leave the finding unresolved.
+  - If sources disagree, compare definitions, geography, units and dates before choosing; preserve both ranges when they cannot be reconciled.
+  - If customer evidence is absent, prepare a consent-aware evidence request and leave the JTBD hypothesis unvalidated, never generate participant answers.
+- Required inputs:
+  - decision and audience
+  - buyer segment and geography
+  - period currency units and source cutoff
+  - available evidence and source boundary
+  - research budget and stop condition
+- Expert clarification questions:
+  - `decision and audience`
+    - English: Which decision must this inform, for which audience and decision owner?
+    - Korean: Which decision must this inform, for which audience and decision owner?
+  - `buyer segment and geography`
+    - English: Which buyer versus user segment, geography, alternatives, and exclusions define the market?
+    - Korean: Which buyer versus user segment, geography, alternatives, and exclusions define the market?
+  - `period currency units and source cutoff`
+    - English: Which observation period, currency/base year, units/denominator, and source cutoff apply?
+    - Korean: Which observation period, currency/base year, units/denominator, and source cutoff apply?
+  - `available evidence and source boundary`
+    - English: Which evidence is supplied, which sources may be retrieved, and which access/privacy limits apply?
+    - Korean: Which evidence is supplied, which sources may be retrieved, and which access/privacy limits apply?
+  - `research budget and stop condition`
+    - English: What time/source/cost budget and stop condition bound the work?
+    - Korean: What time/source/cost budget and stop condition bound the work?
+- Expected outputs:
+  - market scope and source ledger
+  - TAM SAM SOM model and sensitivity
+  - customer evidence and JTBD matrix
+  - comparable competitor and pricing profiles
+  - decision-ready market findings
+- Artifact expectations:
+  - prepared market analysis with source IDs, assumptions, failed retrieval gaps, and tool calculation receipts when captured
+- Safety rules:
+  - Never invent figures or quotes, customer participants, market shares, traffic/revenue estimates, source IDs, or tool results. Label unsupported inputs unknown rather than borrowing a generic industry ratio.
+  - Outreach, participant recruitment, payments, and scheduling each require separate explicit approval; research approval is not permission to contact people, buy reports, run surveys, or create jobs.
+  - Keep contact details, raw recordings, private transcripts, and sensitive customer data outside durable artifacts; use consented bounded summaries and pseudonymous IDs with access-controlled source pointers.
+  - A prepared analysis is not retrieval, interviews, willingness to pay, customer validation, product-market fit, or an approved investment decision. No external tool, paid dataset, or MCP integration is mandatory.
+- Procedure checks:
+  - `market_scope_check`
+    - Required result fields: `decision`, `segment`, `geography`, `period`, `currency_base_year`, `units_denominator`, `source_cutoff`, `budget`, `stop_condition`
+    - Criterion: PASS only when scope is supplied or explicitly unknown; HOLD numeric estimates when a missing denominator or period makes them uninterpretable.
+  - `market_source_check`
+    - Required result fields: `source_id`, `source_date`, `retrieved_at`, `coverage`, `evidence_class`, `claim_ids`, `failed_retrieval`, `contrary_evidence`
+    - Criterion: Require observed, vendor-asserted, or inferred per claim, not per document; preserve source dates and access failures, and do not count copied press coverage as independent evidence.
+  - `market_size_check`
+    - Required result fields: `input_refs`, `assumptions`, `formula_units`, `tool_receipt`, `tam`, `sam`, `som`, `reconciliation`, `sensitivity`
+    - Criterion: Use tools for calculations; enforce nested scope and consistent units. Unknown operands yield unknown results, not zeros; test bounded scenarios and reconcile top-down with bottom-up or explain why one is unavailable.
+  - `market_customer_check`
+    - Required result fields: `evidence_ids`, `quote_ids`, `segment`, `sample_frame`, `jtbd`, `past_behavior`, `bias`, `contrary_evidence`, `privacy`
+    - Criterion: Keep observed behavior separate from stated intent and analyst inference. Attribute quotations exactly or omit them; sample counts are not population prevalence or willingness-to-pay evidence.
+  - `market_comparability_check`
+    - Required result fields: `competitor`, `source_ids`, `as_of`, `coverage`, `segment`, `packaging`, `normalized_price`, `limits`, `evidence_class`
+    - Criterion: Require comparable buyer/use-case and billing units before ranking. A missing feature or price is not observed, never absent or free; vendor claims are not verified outcomes.
+  - `market_findings_check`
+    - Required result fields: `finding_ids`, `source_refs`, `assumption_refs`, `contrary_evidence`, `confidence_limits`, `decision_implications`, `verification_needs`, `stop_reason`
+    - Criterion: Every finding must link evidence or explicit assumptions, state uncertainty and a falsifier, and name a next verification owner without making the product investment decision.
+- Procedure steps:
+  - `frame_market` (`analysis`)
+    - Input refs: `decision and audience`, `buyer segment and geography`, `period currency units and source cutoff`, `available evidence and source boundary`, `research budget and stop condition`
+    - Output refs: `market scope and source ledger`
+    - Check IDs: `market_scope_check`
+    - Instruction: Record the bounded market contract and exclusions; choose only the relevant method references and precommit what evidence would change the decision.
+  - `register_market_evidence` (`analysis`)
+    - Input refs: `period currency units and source cutoff`, `available evidence and source boundary`, `research budget and stop condition`
+    - Output refs: `market scope and source ledger`
+    - Check IDs: `market_source_check`
+    - Instruction: Register sources at retrieval with IDs, dates, cutoff coverage, access failures and claim classes; seek contrary evidence within the budget, preserving gaps rather than filling them from recall.
+  - `size_addressable_market` (`production`)
+    - Input refs: `buyer segment and geography`, `period currency units and source cutoff`, `available evidence and source boundary`
+    - Output refs: `TAM SAM SOM model and sensitivity`
+    - Check IDs: `market_size_check`
+    - Instruction: When in scope, use references/market-sizing.md to construct sourced TAM/SAM/SOM boundaries, calculate top-down and bottom-up scenarios with tools, reconcile disagreement, and report sensitivity; otherwise mark this lane not requested.
+  - `analyze_customer_evidence` (`analysis`)
+    - Input refs: `buyer segment and geography`, `available evidence and source boundary`
+    - Output refs: `customer evidence and JTBD matrix`
+    - Check IDs: `market_customer_check`
+    - Instruction: When in scope, use references/customer-evidence.md to code attributed jobs, pains, triggers, alternatives and behavior; retain sample frame, selection bias and contrary cases. An interview plan is not an interview.
+  - `compare_competitors_and_pricing` (`analysis`)
+    - Input refs: `buyer segment and geography`, `period currency units and source cutoff`, `available evidence and source boundary`
+    - Output refs: `comparable competitor and pricing profiles`
+    - Check IDs: `market_comparability_check`
+    - Instruction: When in scope, use references/competitive-pricing.md to build dated comparable profiles and normalize price/packaging with tool calculations; separate observation, assertion and inference and keep unavailable metrics unavailable.
+  - `deliver_market_findings` (`validation`)
+    - Input refs: `decision and audience`, `buyer segment and geography`, `period currency units and source cutoff`, `available evidence and source boundary`, `research budget and stop condition`
+    - Output refs: `decision-ready market findings`
+    - Check IDs: `market_source_check`, `market_findings_check`
+    - Instruction: Use references/findings-template.md to deliver findings, calculations, assumptions, contrary evidence and unresolved retrieval gaps; record optional lanes as not requested, stop at the agreed budget, and hand decision implications to the decision owner.
 
 ### product-discovery-validation
 

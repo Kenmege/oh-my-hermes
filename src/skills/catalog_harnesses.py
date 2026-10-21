@@ -3311,6 +3311,7 @@ _PRIMARY_HARNESSES = {
     "research": "research",
     "web-research": "research",
     "research-brief": "business-research",
+    "market-research": "business-research",
     "strategy-brief": "strategy-synthesis",
     "meeting-brief": "meeting-facilitation",
     "feedback-triage": "customer-insight-triage",

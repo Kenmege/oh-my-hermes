@@ -314,7 +314,9 @@ class RouterContentTests(unittest.TestCase):
         # 30,300 -> 31,300: `model-finetuning`, `mobile-release`, and
         # `internal-audit` (#1567, #1568, #1569) add three more lines (30,459
         # measured); one line per new skill, ~2.7% headroom kept.
-        self.assertLess(len(rendered.encode("utf-8")), 31_300)
+        # 31,300 -> 32,300: the original `market-research` method adds one
+        # name-and-hook line (31,415 measured); retain bounded index headroom.
+        self.assertLess(len(rendered.encode("utf-8")), 32_300)
         for line in rendered.splitlines():
             self.assertLess(len(line.encode("utf-8")), 400, line)
 
@@ -4238,7 +4240,7 @@ class RouterContentTests(unittest.TestCase):
         # Retired engines must not be presented as current planning skills.
         self.assertNotIn("`ultragoal`", docs_readme)
         # omh-docs and github-issue-intake raise the measured catalog to 119.
-        self.assertIn("**144 installable skills**", docs_readme)
+        self.assertIn("**145 installable skills**", docs_readme)
         self.assertIn("**Retain knowledge**", docs_readme)
         # The unit suite runs through the deterministic sharding tools (issue
         # #1294): plan once, run per shard plus the serial quarantine, then

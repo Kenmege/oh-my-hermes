@@ -684,7 +684,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # (5); and three Vietnamese chat turns that carry a phrase's words
             # without the phrase, a family trip, a marketing plan question and
             # a slide layout, two of which dispatched under that rule (3).
-            expected=846,
+            # Market research adds one ordinary-market negative control.
+            expected=847,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -998,7 +999,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # build failure (bare and with a compile error), an implementation
             # plan, deep research, verify-before-merge and a rendered-page
             # check (11).
-            expected=892,
+            # Market research adds three sizing, customer and pricing cases.
+            expected=895,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1009,7 +1011,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             live=_installable_skill_count,
             # The current workflow additions are part of the installable catalog.
             # `data-share-review` adds one. `spend-gate` adds one.
-            expected=144,
+            expected=145,
             sites=(
                 "docs/README.md",
                 # The docs index quotes the count in prose and

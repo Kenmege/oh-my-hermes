@@ -1626,6 +1626,11 @@ _SKILL_POLICIES = {
             "copy; ask for missing runtime/delivery decisions and record observed evidence only when Hermes or the host runtime provides it."
         ),
     ),
+    "market-research": RecommendationPolicy(
+        next_action="prepare_market_research",
+        evidence_boundary="A market analysis plan is not source retrieval, a calculation result, customer validation, outreach, payment, scheduling, or investment approval evidence.",
+        wrapper_guidance="Frame scope, source cutoff and budget; load market sizing, customer evidence or comparable pricing methods as needed, then preserve source IDs, assumptions, contrary evidence and verification gaps.",
+    ),
     "research-department": RecommendationPolicy(
         next_action="prepare_research_department_plan",
         evidence_boundary=(
@@ -2803,6 +2808,9 @@ _SIBLING_POINTER_METADATA_TOKENS = {
 # phrases. Crediting them separately made unrelated sentences containing
 # `models` and `work` look like observed-work inventory requests.
 _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
+    # Only complete domain phrases may score; their ordinary component words
+    # must not turn unrelated market, customer or profile mentions into work.
+    "market-research": frozenset({"market", "research", "sizing", "tam", "sam", "som", "bottom", "up", "size", "sensitivity", "customer", "evidence", "analysis", "jtbd", "matrix", "competitor", "pricing", "profiles", "competitive"}),
     # The Jev skills are reached through `routing/jev_addressing.py` only:
     # every word their triggers are built from is held back, `jev` included,
     # so a sentence that merely mentions Jev or a review, a failure, or a

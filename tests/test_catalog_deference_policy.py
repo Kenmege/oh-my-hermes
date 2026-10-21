@@ -298,9 +298,10 @@ NON_SKILL_BACKTICKS = frozenset(
 # `spend-gate`, and `loop`'s unattended-schedule statement points at
 # `automation-blueprint` instead of naming Hermes' cron tool. Three cases,
 # three pairs, no new owner.
-EXPECTED_DEFERENCE_CASES = 384
-EXPECTED_DEFERENCE_PAIRS = 399
-EXPECTED_DEFERRING_OWNERS = 112
+# The original market method defers to six existing decision/adjacent owners.
+EXPECTED_DEFERENCE_CASES = 390
+EXPECTED_DEFERENCE_PAIRS = 405
+EXPECTED_DEFERRING_OWNERS = 113
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.

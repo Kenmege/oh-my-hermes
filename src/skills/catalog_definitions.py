@@ -55,6 +55,7 @@ from ..source_finder import (
 from .decision_prototype_skill import DEFINITION as DECISION_PROTOTYPE_DEFINITION
 from .jev_skills import JEV_DEFINITIONS
 from .lifecycle_growth_skill import DEFINITION as LIFECYCLE_GROWTH_DEFINITION
+from .market_research_skill import DEFINITION as MARKET_RESEARCH_DEFINITION
 from .llm_app_references import LLM_APP_DEV_CONDITIONAL_CONTRACTS, LLM_APP_DEV_STATEFUL_CONTRACTS_REFERENCE_PATH
 from .product_discovery_skill import DEFINITION as PRODUCT_DISCOVERY_DEFINITION
 from .sales_pipeline_skill import DEFINITION as SALES_PIPELINE_DEFINITION
@@ -2212,6 +2213,9 @@ _DEFINITIONS = [
             "Separate observed sources, source quality, source diversity, inferred trends, and unresolved uncertainty.",
             f"{_GROUNDED_CITATIONS_REGISTER_RULE}, and carry two more fields on every evidence row: the ledger id written as `[n]` - a bare number in a cell is not a citation to `verify`, so that row would go unchecked - and the verbatim quote attached with `sources.py quote <id> --text <quote> --from <page text file>`, which rejects wording that file does not contain. {_GROUNDED_CITATIONS_LEDGER_FILE_RULE} A row whose quote could not be attached says so, and a claim that rests on model knowledge is marked `[unverified]` and listed as unresolved, never entered as evidence. Run `sources.py verify <draft> --evidence`, since every evidence row is meant to carry its quote, and report the citation check from that run, or as `not_observed`: {_GROUNDED_CITATIONS_VERIFY_RULE}; it is a citation check, not fact verification. Without the skill, keep the source and its quoted wording in the row and report the citation check as `not_observed`.",
             "Use the brief to feed strategy or meeting work without calling it execution evidence.",
+            "For a market question, fix the decision audience, buyer/segment/geography, source cutoff, period/currency/base year, units and denominator before synthesis; leave missing values unknown. Use `market-research` for scoped TAM/SAM/SOM, customer/JTBD evidence, and comparable competitor/pricing methods instead of improvising a market model inside the brief.",
+            "Write each finding with source IDs and dates, observed, vendor-asserted, or inferred status, assumptions, decision implication, contrary evidence, confidence limit, and next verification owner. Keep failed-source coverage visible, not a claim that no evidence exists; lead with what changes the decision and attach only relevant method worksheets.",
+            "A market brief is not customer validation or an investment approval; `product-discovery-validation` retains the kill/pivot/persevere gate, and outreach, participant recruitment, payments, or scheduling each need separate explicit approval.",
         ),
         do_not_use_when=(
             "The user needs to decide whether a customer problem deserves product investment with evidence typing and customer re-entry; use `product-discovery-validation`.",
@@ -2305,6 +2309,10 @@ _DEFINITIONS = [
             "Report coverage source by source on every run. A source the run could not read is unknown coverage for that period and is named as a gap; it is never reported as a quiet period or as nothing new.",
             "Keep one cutoff per source and move it only for a source the run covered. A source that failed keeps its earlier cutoff, so the next run reads the missed window instead of skipping it.",
             "Count by the underlying event, not by article or URL: reprints, rewrites, and link variants of one announcement are one finding, and an independent second source stays attached to it as corroboration.",
+            "For market watches, keep a dated competitor/pricing snapshot per covered entity with source IDs, observation/effective dates, original packaging and normalized comparison units. Reuse a stable period, currency, units, source cutoff, and materiality threshold; record scope changes and distinguish a real change from changed source coverage.",
+            "Classify market findings as observed, vendor-asserted, or inferred and preserve contrary evidence. When coverage fails, retain the failed source's previous cutoff and name the uncovered window; do not turn a failed read into unchanged pricing or no new activity.",
+            "When a material event needs sizing, customer/JTBD, or comparable pricing work, hand the bounded analysis to `market-research` with snapshot IDs, source dates, cutoff, gaps and budget; return findings to `research-brief` before Briefer delivery. A prepared handoff does not prove any analysis ran.",
+            "Outreach, paid sources, and schedule creation require separate explicit approval; research-operation setup is not permission to contact customers, buy data, schedule a watch, or approve a product investment.",
         ),
         why_this_exists=(
             "`research-department` exists so Hermes users can start complex research-ops patterns without manually designing "
@@ -11757,6 +11765,7 @@ _DEFINITIONS.extend(
     (
         DECISION_PROTOTYPE_DEFINITION,
         LIFECYCLE_GROWTH_DEFINITION,
+        MARKET_RESEARCH_DEFINITION,
         PRODUCT_DISCOVERY_DEFINITION,
         SALES_PIPELINE_DEFINITION,
         *JEV_DEFINITIONS,

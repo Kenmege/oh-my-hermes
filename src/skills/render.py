@@ -2860,6 +2860,53 @@ Detailed procedure steps: `references/procedure.md`.
 
 def _progressive_workflow_body(definition: SkillDefinition, name: str) -> str:
     """Keep the routing and action boundary in the always-loaded workflow body."""
+    if name == "market-research":
+        return f"""# Market Research
+
+Scope a market question, then analyze only the requested sizing, customer, or
+competitive/pricing evidence. Required: decision/audience, buyer and geography,
+period/currency/units/cutoff, source boundaries, budget and stop condition.
+Output: source ledger, requested method worksheets, and decision-ready findings.
+
+## Why This Exists
+
+{definition.why_this_exists}
+
+## First Steps
+
+{_tuple_list(definition.opening_steps)}
+
+Load `references/full-contract.md` before analysis and
+`references/procedure.md` for the ordered checks. These are working methods,
+not a core OMH execution command. Keep unknowns unknown and use tools for math.
+Market findings never establish customer validation or authorize investment.
+Outreach, payments and scheduling need separate explicit approval.
+
+## When to Use
+
+{definition.use_when}
+
+Strong routing signals: {_shipped_triggers(definition)}
+
+## Catalog Metadata
+
+Category: `{definition.category}`
+Phase: `{definition.phase}`
+Hermes role: `{definition.hermes_role}`
+Quality tier: `{definition.quality_tier}`
+
+## Completion Checklist
+
+{_tuple_list(definition.final_checklist)}
+
+## Recovery Notes
+
+{_tuple_list(definition.recovery_notes)}
+
+{awareness_workflow_context_markdown(name)}
+
+{_common_rail_sections(definition, declared_primary_harness(name))}
+"""
     operation = _PROGRESSIVE_WORKFLOW_OPERATIONS[name]
     title = name.replace("-", " ").title()
     compact_contracts = {
