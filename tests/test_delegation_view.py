@@ -394,6 +394,38 @@ class BoxTests(unittest.TestCase):
         self.assertLess(rows[fix][1], rows["d:r1:key"][0])
         self.assertIn("  Export button → Export key rotation (extend)", section(view, "Dependencies"))
 
+    def test_what_a_repaired_lane_dispatched_keeps_its_place(self) -> None:
+        # The button's own child delegated during the attempt that failed: that grandchild ran before the repair, so
+        # it stays on the frontier under the button, beside the repair, and only the check waits below it.
+        fix, verify = "d:r1:button-fix", "d:r1:verify"
+        run = dag_export_button_repair_run()
+        run["nodes"].append({**lane("s:sa-spec", "Read the button spec", "quick", "glm-5.3-flash", "low", "done",
+                                    elapsed=4, order=7), "session_tail": "a1b2c3d4"})
+        run["edges"].append({"from": BUTTON, "to": "s:sa-spec", "kind": "dispatch"})
+        rows = {node_id: (top, bottom) for node_id, top, bottom in render_delegation_view(run, width=120).boxes}
+        self.assertEqual(rows["s:sa-spec"][0], rows[fix][0])
+        self.assertLess(rows[fix][1], rows[verify][0])
+
+    def test_an_extend_round_built_on_the_repair_is_not_part_of_it(self) -> None:
+        # An extend node whose finder is among its parents gets no extend edge (`_origin_parent`); its `dag_origin`
+        # still says an extend round added it, so it never joins the repair it depends on.
+        fix, verify = "d:r1:button-fix", "d:r1:verify"
+
+        def extended(finder: str) -> dict:
+            run = dag_export_button_repair_run()
+            run["nodes"].append({**lane("d:r1:csv", "CSV export", "quick", "glm-5.3-flash", "low", "running",
+                                        elapsed=4, order=7, group="extend 1"), "dag_origin": "extend:1"})
+            run["edges"] += [{"from": finder, "to": "d:r1:csv", "kind": "depends_on"},
+                             {"from": fix, "to": "d:r1:csv", "kind": "depends_on"}]
+            return {node_id: (top, bottom) for node_id, top, bottom in render_delegation_view(run, width=120).boxes}
+
+        rows = extended(verify)  # found by the check: the repair's order is kept, not dropped as a loop
+        self.assertLess(rows[fix][1], rows[verify][0])
+        self.assertLess(rows[verify][1], rows["d:r1:csv"][0])
+        rows = extended(BUTTON)  # found by the repaired node: the check is not drawn below the extend
+        self.assertLess(rows[fix][1], rows[verify][0])
+        self.assertEqual(rows[verify][0], rows["d:r1:csv"][0])
+
     def test_a_repair_order_that_would_loop_is_dropped_and_the_recorded_edges_place_the_lanes(self) -> None:
         # The repair depends on the lane that waits on what it repairs: placing the repair above that lane would loop.
         looped = graph(
@@ -422,6 +454,10 @@ class BoxTests(unittest.TestCase):
         self.assertEqual(widths[3_599], widths[99 * 3600 + 59 * 60], "a ticking clock under 100 hours resizes nothing")
         self.assertEqual(widths[100 * 3600], {inner + 1 for inner in widths[3_599]}, "one cell wider at 100 hours")
         self.assertEqual(widths[400_000], widths[100 * 3600])
+        stuck = graph([root(), lane("s", "Fix", "", "", "", "stuck", elapsed=400_000, status="stuck: same error")],
+                      [("root", "s", "dispatch")])
+        self.assertEqual(box_lines(render_delegation_view(stuck, width=100))["s"][2], "! Stuck 111h 06m: same error",
+                         "a stuck lane's duration is measured as it reads too")
 
     def test_the_header_names_the_run_its_size_and_its_state(self) -> None:
         lines = text(dag_export_run(), width=100).splitlines()[:3]
@@ -1109,6 +1145,11 @@ class FieldTests(unittest.TestCase):
                 self.assertFalse(any(segment.text.strip() == "?" and segment.role != "unknown" for segment in segments))
         known = render_delegation_view(owner_mock(), width=73)
         self.assertFalse(any(segment.role == "unknown" for line in known.lines for segment in line))
+        running = graph([root(model="", effort=""), {"id": "x", "kind": "lane", "state": "running", "elapsed_seconds": 5}],
+                        [("root", "x", "dispatch")])
+        view = render_delegation_view(running, width=80, layout="box")
+        self.assertEqual([segment.role for line in view.lines for segment in line if segment.text.strip() == "untitled"],
+                         ["unknown", "unknown"], "the box's title and its Node details card's")
 
     def test_waits_on_names_how_many_recorded_dependencies_are_unmet(self) -> None:
         self.assertIn("○ Waits on 3 lanes", text(owner_mock(), width=73))

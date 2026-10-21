@@ -478,12 +478,17 @@ class _Frontiers:
     origin: Mapping[str, str]  # a lane added mid-run: "repair" or "extend", from the kind of the edge into it
 
 
-def _repair_order(pairs: list[tuple[str, str]], kinds: Mapping[tuple[str, str], str]) -> list[tuple[str, str]]:
+def _repair_order(
+    lanes: Mapping[str, Mapping[str, Any]], pairs: list[tuple[str, str]], kinds: Mapping[tuple[str, str], str],
+) -> list[tuple[str, str]]:
     """Edges that only place lanes and are drawn nowhere: what comes after a repaired lane (a lane that depends on it,
     or an extend round its check added) goes below every lane of that lane's repair, which ran first
-    (`dag_run.repair`). The repair is what a repair edge leads to and the lanes under it, up to a lane another
-    repair or an extend added."""
+    (`dag_run.repair`). A lane it dispatched ran during the attempt that failed, and keeps its place. The repair is
+    what a repair edge leads to and the lanes under it, up to a lane another repair or an extend added: one a repair
+    or extend edge leads to, or an extend round's (`dag_origin`), which has no such edge where it depends on the
+    lane that found it."""
     added = {lower for upper, lower in pairs if kinds.get((upper, lower)) in ("repair", "extend")}
+    added |= {lane_id for lane_id, lane in lanes.items() if str(lane.get("dag_origin") or "").startswith("extend:")}
     below: dict[str, list[str]] = {}
     for upper, lower in pairs:
         below.setdefault(upper, []).append(lower)
@@ -497,7 +502,7 @@ def _repair_order(pairs: list[tuple[str, str]], kinds: Mapping[tuple[str, str], 
                     group.add(node_id)
                     pending += [kid for kid in below.get(node_id, []) if kid not in added]
     return [(member, dependent) for repaired, group in groups.items() for dependent in below.get(repaired, [])
-            if dependent not in group for member in sorted(group)]
+            if dependent not in group and kinds.get((repaired, dependent)) != "dispatch" for member in sorted(group)]
 
 
 def _frontiers(graph: Mapping[str, Any]) -> _Frontiers | None:
@@ -517,7 +522,7 @@ def _frontiers(graph: Mapping[str, Any]) -> _Frontiers | None:
     for edge in graph.get("edges") if isinstance(graph.get("edges"), list) else []:
         if isinstance(edge, Mapping):
             kinds.setdefault((str(edge.get("from")), str(edge.get("to"))), clean_text(edge.get("kind")))
-    order = _repair_order(pairs, kinds)
+    order = _repair_order(lanes, pairs, kinds)
     layer = _layers(ids, [*pairs, *order]) if order else None
     if layer is None:  # no repair to place, or placing it would loop: the recorded edges alone
         layer = _layers(ids, pairs)
