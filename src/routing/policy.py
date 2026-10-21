@@ -6149,12 +6149,13 @@ def _ordinary_explicit_skill_invocation(
     stripped: str, names: set[str], query: RoutingQuery | None = None
 ) -> str | None:
     # A two-word name read before any one-word form, so `ulw dag ...` is not taken for `ulw` alone. A question
-    # about dag-ulw ("dag-ulw 결과 알려줘") names it without invoking it, unless a sigil makes it a command.
+    # about dag-ulw ("dag-ulw 결과 알려줘") names it without invoking it. A sigil makes the rest a command, so a sigil
+    # message gets here only when `invokes_dag_ulw` read it as a question ("/dag-ulw what is it?").
     if DAG_ULW in names and dag_ulw_control(stripped):
         return None  # stop or status for the run in progress, sigil or not: never a new run
     if DAG_ULW in names and invokes_dag_ulw(stripped):
         return DAG_ULW
-    if DAG_ULW in names and asks_about_dag_ulw(stripped) and not stripped.startswith(("$", "/", "./")):
+    if DAG_ULW in names and asks_about_dag_ulw(stripped):
         return None
     words = [word.strip(":,").lower() for word in stripped.split()]
     if len(words) >= 3 and words[0] == "use" and words[1] in {

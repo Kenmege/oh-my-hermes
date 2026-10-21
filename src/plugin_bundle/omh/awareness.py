@@ -6374,7 +6374,8 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
     control = dag_ulw_control(matching_message)
     if control:
         # A stop or status word for the dag-ulw run in progress: that run's own action, and no other hint, so
-        # nothing reads as a request to start one (the router answers the same message directly).
+        # nothing reads as a request to start one (the router answers the same message directly). A stop noun that
+        # may name the work instead ("dag ulw 주문 취소") asks which, as the router does.
         hints = [_dag_ulw_control_hint(control)] if hint_limit else []
     hints = [_route_hint_with_coding_route_decision(hint, routing_normalized) for hint in hints]
     hints = [_route_hint_with_action_labels(hint) for hint in hints]
@@ -6918,8 +6919,12 @@ def awareness_route_hint_context_from_payload(payload: dict[str, object]) -> str
         if isinstance(context_card, dict):
             first_response_shape = str(context_card.get("first_response_shape") or "").strip()
             if hint.get("workflow") == "dag-ulw":
-                control = hint.get("id") == _DAG_ULW_CONTROL_HINT_ID
-                first_response_shape = _DAG_ULW_CONTROL_RESPONSE if control else _DAG_ULW_FIRST_RESPONSE
+                if hint.get("id") != _DAG_ULW_CONTROL_HINT_ID:
+                    first_response_shape = _DAG_ULW_FIRST_RESPONSE
+                elif hint.get("next_action") == _DAG_ULW_CONTROL_NEXT_ACTIONS["cancel_or_run"]:
+                    first_response_shape = _DAG_ULW_CANCEL_OR_RUN_RESPONSE
+                else:
+                    first_response_shape = _DAG_ULW_CONTROL_RESPONSE
             if first_response_shape:
                 lines.append(f"  first_response_shape={first_response_shape}")
         if workflow_declares_plan_todo(str(hint.get("workflow", ""))) and hint.get("id") != _DAG_ULW_CONTROL_HINT_ID:
@@ -8027,6 +8032,17 @@ _DAG_ULW_CONTROL_RESPONSE = (
     "Do not define a new run: call omh_dag action=cancel to stop the run in progress, or action=status to report "
     "how it stands, and say what it showed."
 )
+# A Korean stop noun after other words ("dag ulw 주문 취소"): the run's stop or the name of the work (owner decision O7).
+_DAG_ULW_CANCEL_OR_RUN_REASON = (
+    "The request may stop the dag-ulw run in progress or name the work for a new run; it does neither until the "
+    "user says which."
+)
+_DAG_ULW_CANCEL_OR_RUN_RESPONSE = (
+    "Neither define a run nor cancel one yet: ask one short question that names both readings, stop the dag-ulw "
+    "run in progress (omh_dag action=cancel) or start a dag-ulw run on the work those words name, then do what "
+    "the answer says."
+)
+_DAG_ULW_CONTROL_NEXT_ACTIONS = {"cancel": "cancel", "status": "show_status", "cancel_or_run": "ask_one_clarification"}
 
 
 def _dag_ulw_control_hint(control: str) -> dict[str, object]:
@@ -8035,8 +8051,8 @@ def _dag_ulw_control_hint(control: str) -> dict[str, object]:
         "id": _DAG_ULW_CONTROL_HINT_ID,
         "workflow": "dag-ulw",
         "lane": str(context_card.get("id") or "intent_to_plan"),
-        "next_action": "cancel" if control == "cancel" else "show_status",
-        "reason": _DAG_ULW_CONTROL_REASON,
+        "next_action": _DAG_ULW_CONTROL_NEXT_ACTIONS[control],
+        "reason": _DAG_ULW_CANCEL_OR_RUN_REASON if control == "cancel_or_run" else _DAG_ULW_CONTROL_REASON,
         "fallback_action": "show_status",
         "matched_cues": [control],
         "adjacent_workflows": [],
