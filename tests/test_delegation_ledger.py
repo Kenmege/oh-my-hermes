@@ -155,7 +155,12 @@ class RecordTests(unittest.TestCase):
         with homes() as home:
             start(home, "child-2", "sa-2-x", GOALS[2], now=NOW)
             self.assertEqual(child_title("sa-2-x"), "Update HUD tests")
+        self.assertEqual(title_from_goal("Refresh docs [omh-team:hud/docs/attempt-1]\nmore"), "Refresh docs")
+        self.assertEqual(title_from_goal("Export API [dag:export/api]"), "Export API")
+        self.assertEqual(title_from_goal("Export API [dag:export/api]. Please hurry"), "Export API. Please hurry")
+        # Goals handed out before an update open with their marker.
         self.assertEqual(title_from_goal("[omh-team:hud/docs/attempt-1] Refresh docs\nmore"), "Refresh docs")
+        self.assertEqual(title_from_goal("[dag:export/api] Export API"), "Export API")
         self.assertEqual(title_from_goal("\n\n  TASK:  Port   the module  "), "Port the module")
         self.assertEqual(title_from_goal(7), "")
 
@@ -245,6 +250,19 @@ class RecordTests(unittest.TestCase):
             posted = posted_record(home.omh, PARENT)
             self.assertEqual((posted["moment"], posted["phase"]), ("", ""))
             self.assertEqual(posted["closed"], ["c" * 16] * CLOSED_LIMIT)
+
+    def test_a_stored_dag_binding_keeps_only_ids_omh_mints(self) -> None:
+        """Mutation: check a stored binding through the goal reader, by a prefix match, or not at all."""
+        with homes() as home:
+            for index, node in enumerate(("api", "ui", "docs")):
+                start(home, f"child-{index}", f"sa-{index}-x", f"Node {node} [dag:feat/{node}]", now=NOW + index)
+            path = ledger_path(home.omh, PARENT)
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw["children"][1]["dag"] = {"run": "feat", "node": "api] x [dag:feat/ui"}
+            raw["children"][2]["dag"] = {"run": "feat", "node": "Docs"}
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            bound = [child.get("dag") for child in read_ledger(home.omh, PARENT)["children"]]
+        self.assertEqual(bound, [{"run": "feat", "node": "api"}, None, None])
 
     def test_records_no_hook_wrote_for_a_day_are_removed_and_their_locks_stay(self) -> None:
         with homes() as home:

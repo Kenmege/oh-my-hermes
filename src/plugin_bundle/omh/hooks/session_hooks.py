@@ -63,7 +63,7 @@ def subagent_start(**kwargs) -> None:
         record_engagement_observer_failure(type(exc).__name__)
         return None
     # A checked-team helper is bound to the attempt its goal names; any other
-    # goal leaves on a prefix test (`team_observer`). Never raises.
+    # goal leaves on a substring test (`team_observer`). Never raises.
     observe_team_dispatch(kwargs)
     # The delegation graph's record of who started whom (`delegation_ledger`):
     # ids, turn and OMH's own route, never the goal. Never raises.
