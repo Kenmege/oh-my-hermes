@@ -616,7 +616,18 @@ def _build(
         # on a repair is over for the chat: the reply that did not repair it ends the turn, and a repair added later
         # reopens the run (`delegation_snapshot`).
         graph["dag_open"] = dag_open
+        graph["dag_topology"] = _dag_topology(dag["record"])
     return graph
+
+
+def _dag_topology(record: Mapping[str, Any]) -> dict[str, Any]:
+    """The run's critical path and bottlenecks (`dag_run.topology`), by node label, for `/dag`."""
+    labels = {str(node["id"]): _text(node.get("label"), TITLE_LIMIT) or str(node["id"]) for node in record["nodes"]}
+    topology = record.get("topology") if isinstance(record.get("topology"), Mapping) else {}
+    path = [labels.get(str(node), str(node)) for node in topology.get("critical_path") or []]
+    bottlenecks = [[labels.get(str(item.get("node")), str(item.get("node"))), int(item.get("blocks") or 0)]
+                   for item in topology.get("bottlenecks") or [] if isinstance(item, Mapping)]
+    return {"critical_path": path, "bottlenecks": bottlenecks}
 
 
 # ── omh_dag, read-only ───────────────────────────────────────────────────
