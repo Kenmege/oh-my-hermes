@@ -547,6 +547,32 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(rows["api"], "handed_out")
         self.assertEqual(rows["verify"], "waiting")
 
+    def test_a_second_export_in_one_run_keeps_the_first_exports_files(self) -> None:
+        # api goes first; ui waits on a native node, so it goes in a second export once that node passed. The first
+        # export's prepare or dispatch may not have run yet: its goal file must still be the one its id was made from.
+        nodes = [node("api", scope=("src/api.py",)), node("notes", depends_on=("api",), label="Write the notes"),
+                 node("ui", depends_on=("notes",), scope=("src/ui.py",)), node("verify", depends_on=("ui",))]
+        with homes() as home:
+            slots_table(home)
+            choose(home, "codex")
+            call(action="define", run="feat", goal="ship the export feature", nodes=nodes)
+            first = call(action="export", run="feat", owner="codex")
+            for node_id in ("api", "notes"):
+                handoff(home, "feat", node_id)
+                call(action="settle", run="feat", node=node_id, outcome="accepted")
+            second = call(action="export", run="feat", owner="codex")
+            exports = [
+                (result["fanout"], json.loads(Path(result["fanout"]["units_file"]).read_text(encoding="utf-8"))["units"],
+                 Path(result["fanout"]["goal_file"]).read_text(encoding="utf-8"))
+                for result in (first, second)
+            ]
+        self.assertEqual([[unit["unit_id"] for unit in units] for _fanout, units, _goal in exports], [["api"], ["ui"]])
+        self.assertNotEqual(exports[0][0]["units_file"], exports[1][0]["units_file"])
+        self.assertNotEqual(exports[0][0]["goal_file"], exports[1][0]["goal_file"])
+        for fanout, units, goal in exports:
+            self.assertEqual(build_fanout_contract(goal, units)["fanout_id"], fanout["fanout_id"])
+            self.assertIn(fanout["fanout_id"], fanout["units_file"])
+
     def test_an_exported_node_is_never_handed_to_delegate_task(self) -> None:
         with homes() as home:
             choose(home, "codex")

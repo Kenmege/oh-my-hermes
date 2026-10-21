@@ -472,12 +472,13 @@ def _export(args: Mapping[str, object], record: dict[str, Any], path: Path,
                 f"{len(units)} units need a spawn_plan answering {', '.join(SPAWN_PLAN_FIELDS)}.")
         payload["spawn_plan"] = {field: str(plan[field]) for field in SPAWN_PLAN_FIELDS}
     goal = export_goal(record, units)
+    fanout_id = "fanout-" + hashlib.sha256(" ".join(goal.split()).encode("utf-8")).hexdigest()[:12]
     folder = dag_run.handoff_path(omh_home, str(record["session_id"]), str(record["run"]), "x").parent
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
-    units_file, goal_file = folder / "fanout-units.json", folder / "fanout-goal.txt"
+    # Named for the fanout: a later export of the same run must not overwrite one whose commands have not run yet.
+    units_file, goal_file = folder / f"{fanout_id}-units.json", folder / f"{fanout_id}-goal.txt"
     units_file.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     goal_file.write_text(goal + "\n", encoding="utf-8")
-    fanout_id = "fanout-" + hashlib.sha256(" ".join(goal.split()).encode("utf-8")).hexdigest()[:12]
     for unit in units:
         node = next(item for item in record["nodes"] if item["id"] == unit["unit_id"])
         attempt = dag_run.hand_out(node, derived[unit["unit_id"]]["state"], now)
