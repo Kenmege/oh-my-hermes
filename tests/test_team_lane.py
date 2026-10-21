@@ -664,17 +664,25 @@ class TeamToolHandler(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.workdir = Path(temporary.name)
         self.team_tool = team_tool
-        record = build_todo_record("Team plan", [{"text": f"Build it; check: `{CHECK_A}`", "state": "active"}],
-                                   source="omh_todo", session_ref=self.SESSION, plan_stage="accepted")
-        write_todo(runtime_paths.default_omh_home(), record)
-        self.args = {"action": "team_start", "team_id": "handler", "units": [unit("a", CHECK_A)],
-                     "plan_ref": todo_items_digest(record["items"])}
-        env = mock.patch.dict(os.environ, {"HERMES_KANBAN_TASK": "", "HERMES_CRON_SESSION": ""})
+        # Homes of this test's own. The handler resolves both through the env,
+        # and the process-wide ones `_local_package` sets outlive every test:
+        # with the session and team ids fixed above, a later test resumed the
+        # team an earlier one started instead of starting its own.
+        homes = tempfile.TemporaryDirectory()
+        self.addCleanup(homes.cleanup)
+        env = mock.patch.dict(os.environ, {"HERMES_KANBAN_TASK": "", "HERMES_CRON_SESSION": "",
+                                           "OMH_HOME": str(Path(homes.name) / "omh"),
+                                           "HERMES_HOME": str(Path(homes.name) / "hermes")})
         cwd = mock.patch.object(runtime_paths, "runtime_cwd", return_value=self.workdir)
         env.start()
         cwd.start()
         self.addCleanup(env.stop)
         self.addCleanup(cwd.stop)
+        record = build_todo_record("Team plan", [{"text": f"Build it; check: `{CHECK_A}`", "state": "active"}],
+                                   source="omh_todo", session_ref=self.SESSION, plan_stage="accepted")
+        write_todo(runtime_paths.default_omh_home(), record)
+        self.args = {"action": "team_start", "team_id": "handler", "units": [unit("a", CHECK_A)],
+                     "plan_ref": todo_items_digest(record["items"])}
 
     def call(self, args: dict[str, object], hermes: dict[str, object] | None = None,
              session: str = "") -> dict[str, object]:
@@ -687,6 +695,9 @@ class TeamToolHandler(unittest.TestCase):
         started = self.call({**self.args, "plan_ref": refused["plan_ref"]})
         self.assertEqual(started["status"], "ok")
         self.assertEqual(started["team_state"], "running")
+        # A start, not a resume of a team another test left in a shared home.
+        self.assertEqual(started["say"], "Split into 1 parts; 1 start now in parallel, and each part is done "
+                                         "only when its check passes.")
         self.assertEqual(len(started["delegate_task"]["arguments"]["tasks"]), 1)
 
     def test_no_reachable_hermes_floor_refuses_every_start(self) -> None:
@@ -710,17 +721,19 @@ class TeamToolHandler(unittest.TestCase):
     def test_only_a_start_in_this_process_approves_a_reconcile(self) -> None:
         """H2. Mutation: add to `_APPROVED_TEAMS` anywhere but after a successful start, or not at all."""
         reconcile = {"action": "team_reconcile", "team_id": "handler"}
-        self.assertEqual(self.call(self.args)["status"], "ok")
+        started = self.call(self.args)
+        self.assertEqual((started["status"], started["team_state"]), ("ok", "running"))
         self.assertEqual(self.call(reconcile)["reason"], "delegations_in_flight")
         self.team_tool._APPROVED_TEAMS.clear()  # a Hermes restart
         self.assertEqual(self.call(reconcile)["reason"], "team_not_approved_here")
-        self.assertEqual(self.call(self.args)["status"], "ok")
+        resumed = self.call(self.args)
+        self.assertEqual((resumed["status"], resumed["team_state"]), ("ok", "running"))
         self.assertEqual(self.call(reconcile)["status"], "ok")
 
     LATER = "20260928_140000_handler"
 
     def hermes_rows(self, *rows: dict[str, object], unreadable: bool = False) -> None:
-        """This process's Hermes home gets a `state.db`, removed again after the test."""
+        """This test's Hermes home gets a `state.db`, removed again after the test."""
         from omh.plugin_bundle.omh import runtime_paths
 
         hermes = runtime_paths.default_hermes_home()
