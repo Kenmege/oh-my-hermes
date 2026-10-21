@@ -8,7 +8,7 @@
    verification node does not depend on, every node `deep`, more than one `ultrabrain`.
 2. The result carries `calls`. Each call is one category (and route: a node retried after a provider error
    goes in a call of its own): run its `route` with `omh_delegate_route` (`set`, or `fallback`), then one
-   `delegate_task` with its `tasks` unchanged. The goal starts with `[dag:<run>/<node>]`; that marker is how
+   `delegate_task` with its `tasks` unchanged. The goal ends with `[dag:<run>/<node>]`; that marker is how
    OMH ties the child to its node. A node after a repaired one is told to read the repair's handoff files.
 3. `calls` never exceeds the free background slots (`slots.free`): a call past them would run blocking.
    `held_for_slots` lists ready nodes left for the next turn.

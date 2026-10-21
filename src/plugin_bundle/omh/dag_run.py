@@ -98,7 +98,6 @@ DAG_CLAIM_BOUNDARY: Final = (
 )
 
 _ID: Final = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
-MARKER: Final = re.compile(r"^\[dag:([a-z0-9][a-z0-9-]{0,31})/([a-z0-9][a-z0-9-]{0,31})\]")
 _CONTROL: Final = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _VERIFY_WORDS: Final = re.compile(r"(?<![a-z])(verif|audit|validat|qa(?![a-z]))")
 _REVIEW_WORDS: Final = re.compile(r"(?<![a-z])review")
@@ -264,6 +263,11 @@ def _validated_node(raw: object) -> dict[str, Any]:
         raise DagRefusal("invalid_node", "Each node takes only id, label, category, prompt, depends_on and write_scope.")
     node_id = valid_id(raw.get("id"), "invalid_node_id", "Each node needs a short lowercase id (a-z, 0-9, -).")
     label = _plain(raw.get("label"), MAX_LABEL_CHARS, "invalid_label", f"Node {node_id} needs a short label.")
+    # Either lane's reader also takes a marker that opens a goal (one handed out before an update), so a label holding
+    # either marker could bind a child to another node or team part.
+    if "[dag:" in label or "[omh-team:" in label:
+        raise DagRefusal("invalid_label",
+                         f"Node {node_id}: a label cannot hold a [dag:...] or [omh-team:...] marker; OMH adds its own.")
     category = raw.get("category")
     if category not in CATEGORIES:
         raise DagRefusal("invalid_category", f"Node {node_id} needs a category: {', '.join(CATEGORIES)}.")
@@ -669,7 +673,9 @@ def task_for(
         lines.append(f"Read first: {reads}. A missing file means that part did not finish: stop and say so.")
     lines.append("Stay inside your SCOPE: other parts of this run work at the same time. If you cannot finish, "
                  "say plainly that you are blocked and why; do not report blocked work as done.")
-    return {"goal": f"[dag:{run}/{node['id']}] {node['label']}", "context": "\n".join(lines)}
+    # The marker ends the goal: Hermes previews each goal by its first 40 characters, and a person reads the label
+    # there. It stays on the label's line, since Hermes prints `goal[:40]` as a one-line completion label.
+    return {"goal": f"{node['label']} [dag:{run}/{node['id']}]", "context": "\n".join(lines)}
 
 
 def calls_for(

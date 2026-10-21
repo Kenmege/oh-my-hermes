@@ -23,6 +23,27 @@ All notable changes will be documented here.
   line in the agents block's budget. The docs say what the DAG tree takes:
   up to a third of the rows (8 of 24, 13 of 40), and no more rows than the
   tree has, so a five-lane run's seven-row tree takes 7 at 24 and at 40.
+- **A delegated goal ends with its run marker, so a preview shows the task.**
+  Hermes previews each `delegate_task` goal by its first 40 characters on a
+  Discord tool-progress post, the CLI and the TUI, so a dag-ulw node's
+  leading `[dag:<run>/<node>]` marker and an `omh_team` helper's leading
+  `[omh-team:<team>/<unit>/attempt-<n>]` key took the whole preview
+  (`🔀 Delegating 1 tasks: [dag:billing-refactor/invoic...`). `omh_dag` and
+  `omh_team` now write the marker at the end of the goal, on the label's
+  line (`Render invoice PDFs from the new template [dag:billing-refactor/invoice-pdf]`),
+  and the binding reads the last whole marker in the goal, on any line, and
+  binds only when it is its own lane's: a goal handed out before the update
+  still opens with it and still binds, and text a model adds after the
+  marker no longer leaves the child unbound and its node offered again. A
+  node label or a part title that holds either `[dag:` or `[omh-team:` is
+  refused, so a label cannot name another node or team part. The OMH TUI
+  drops a whole marker wherever it is from a `delegate_task` row and an
+  agent row, also a marker head Hermes' cut left at the end of a goal
+  (`… to API [dag:ex...`), even where Hermes' cut of the whole row follows
+  it; a head too short to name its kind (`[`, `[d`, `[o`) only after a
+  space. Hermes' own lines (the Discord post, its completion line) keep
+  what its cut leaves: after a short label, the marker or its head
+  (`2 tasks: Export API [dag:export/api] ...`).
 - **A conversation keeps its delegation graph across Hermes' rotating
   compaction.** With `compression.in_place: false`, Hermes moves a
   conversation to a new session id mid-run. The HUD graph, the TUI's agent
