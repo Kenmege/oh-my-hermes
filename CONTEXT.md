@@ -131,9 +131,10 @@ conversation: what Hermes' own `subagent_start`, `post_tool_call` (for
 `delegate_task`) and `subagent_stop` hooks said about delegated children.
 Session and subagent ids, parent, turn, task index, delegation id, times,
 status words, and the route OMH had recorded for the session when a child
-started. No goal, summary, prompt or tool history. It is the only record that
-ties a child session to the call and task that made it; `state.db`, the
-delegation manifests and the live logs do not.
+started, and, for a child whose goal opens with `[dag:<run>/<node>]`, those
+two ids (**Dag-ulw run**). No goal, summary, prompt or tool history. It is the
+only record that ties a child session to the call and task that made it;
+`state.db`, the delegation manifests and the live logs do not.
 _Avoid_: evidence that a lane succeeded (a stop status is Hermes' report),
 reading a goal from it
 
@@ -338,7 +339,8 @@ _Avoid_: a second write path, a subprocess from the plugin into the CLI
 **Delegation view**:
 A conversation's delegated work drawn as a graph (`delegation_graph/v1`:
 nodes, edges, layers): a layered box DAG with recorded edges only (a
-dispatch, or a recorded `depends_on`), or a compact tree when boxes do not fit
+dispatch, a recorded `depends_on`, or a dag-ulw repair), or a compact tree
+when boxes do not fit
 or the shape cannot be drawn without implying an edge. The OMH TUI draws it
 in its panel, with two-line boxes where four-line ones do not fit, and `/dag`
 opens it whole; `omh hud --graph` prints it. A chat reply never carries the
@@ -349,18 +351,38 @@ block once, a count line on a turn its counts changed, and its end block once
 current config. Colour is the TUI theme's (`dag_edges` and the state roles),
 never part of the text: a chat post is plain.
 _Avoid_: a message OMH sends (Hermes delivers the reply), a plan (it shows
-dispatched work, not intended work), reading a wave as a dependency
+dispatched work and the nodes a dag-ulw run declared, never a plan it inferred), reading a wave as a
+dependency
 
 **Delegated run**:
 The lanes of a conversation's delegation graph that no chat end post has
 closed yet. It starts on the first reply that finds one of them not settled,
 and ends on the first reply after all of them have settled (done, failed,
-interrupted, or `unknown`), or after nothing has been in flight or changed
-for 15 minutes (`stalled`; the parts not moving stay open). The ledger's
+interrupted, or `unknown`) and, for a dag-ulw run, the run itself is over
+(done, cancelled, or out of repair cycles), or after nothing has been in
+flight or changed for 15 minutes (`stalled`; the parts not moving stay open). The ledger's
 `posted` record keeps its phase, its last counts and the keys of the lanes
 earlier runs closed. A later wave's lanes form the next run.
 _Avoid_: a single `delegate_task` call (a run can span several waves), a
 Hermes session
+
+**Dag-ulw run**:
+`omh_dag/v1` at `$OMH_HOME/runtime/dag/<session key>/<run>.json`: the plan a
+parent agent declared for one dag-ulw run (node ids, labels, categories,
+prompts, `depends_on`, write scopes) and the outcome it settled for each
+attempt. The `omh_dag` tool is its only writer; the delegation graph reads
+it under every segment of the conversation, so a compacted parent still
+finds its run. Hermes runs every node as the parent's own `delegate_task`
+child; the child of a node is the one whose goal opens with
+`[dag:<run>/<node>]`. Node and run states are derived on every read.
+`accepted` is the parent's judgement after it read the node's handoff file,
+refused while that file is missing or Hermes reported the child failed; a
+failed node blocks only its dependents; repair nodes stand in for a failed
+node, at most two cycles each. Graph topology is decided once, in
+`plugin_bundle/omh/dag_core.py`, which `omh_team` and the fanout contract
+share.
+_Avoid_: reading `accepted` as verification, a child's `completed` as
+acceptance, a second graph engine
 
 **HUD payload**:
 The metadata-only JSON projection built by `read_omh_hud()` from OMH home and

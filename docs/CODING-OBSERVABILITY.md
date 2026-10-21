@@ -200,7 +200,9 @@ it.
 What it shows, and what it leaves as `?`:
 
 - **Edges** are recorded, never inferred: a dispatch (a parent started this
-  child) or a `depends_on` from an `omh_team` part or a fanout unit. Lanes one
+  child), a `depends_on` from an `omh_team` part, a dag-ulw node or a fanout
+  unit, or a dag-ulw repair (from a failed node to the nodes added to repair
+  it). Lanes one
   turn dispatched form a `wave N · HH:MM`; a later wave is later, not
   dependent, and no edge says otherwise. Hermes' `group` field orders delivery,
   not execution, and draws nothing. A wave whose lanes all settled more than
@@ -228,6 +230,20 @@ What it shows, and what it leaves as `?`:
     prepared`).
   - A fanout unit whose dispatcher reports it stalled is `stuck`, with how
     long it has been stuck.
+  - A dag-ulw node takes the state its `omh_dag/v1` run derives: accepted or
+    repaired is `done`, failed or blocked is `failed`, a node handed out
+    with no child yet is `dispatched`, a node whose child returned and that
+    the parent has not settled is `dispatched` (`returned`), and a node
+    waiting on its parents is `waiting` (`held` when one of them failed).
+    Its child, bound by the `[dag:<run>/<node>]` goal marker, gives it a
+    model, effort and time. A node no child has taken shows the category
+    its run planned. Nodes of an earlier repair group that were never
+    accepted leave the drawing. The graph takes the run's name, and a chat
+    end post waits until the run itself is over: done, cancelled, or out of
+    repair cycles. On a completion turn whose reply is already the run's
+    status line, no second count line is added.
+
+    ![A dag-ulw run in the OMH TUI: the export API accepted, docs and CLI running, the button dispatched, and the verification node waiting on three lanes](../assets/omh-tui-dag-ulw-run.png)
 
 The structure comes from a metadata-only record, `delegation_ledger/v1` under
 `<omh_home>/runtime/delegation/`, that OMH writes from Hermes' own

@@ -4,6 +4,32 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`dag ulw`: a big job runs on its own as a graph.** Say `dag ulw <goal>`
+  (also `dag ulw해줘`, `ulw dag`, `/dag-ulw`), or ask for a big job whose words
+  say it runs in parallel or across modules, and Hermes plans it as a graph of
+  small nodes, runs the ready ones in parallel on its own `delegate_task`
+  children, settles each from its handoff file, verifies the goal with a
+  separate node, and repairs failed nodes (two cycles each) before it
+  reports. It starts at once and asks only for scope, spend or an
+  irreversible step.
+  - The new `dag-ulw` skill carries the run loop and the planning doctrine;
+    the new `omh_dag` tool keeps the run (`omh_dag/v1`), refuses cycles,
+    unknown or self edges, shared write scopes without an edge and more than
+    48 nodes, and never hands out more `delegate_task` calls than Hermes'
+    background pool has free (read from `delegation.max_concurrent_children`
+    and this process's running units in `state.db`).
+  - Graph topology is decided once, in `plugin_bundle/omh/dag_core.py`;
+    `omh_team`, the fanout contract and the delegation graph and view read it
+    there, with their refusals unchanged.
+  - The TUI panel, `/dag` and `omh hud --graph` draw the run under its name;
+    on Discord, Slack, Telegram, Mattermost and Matrix a reply carries the
+    start block once, one status line when counts change (none added when
+    the parent's reply already is one), and the end block once the run is
+    over. A delegated child's own turn never gets a post.
+  - Coding nodes go to Codex or Claude Code through the fanout bridge only
+    when the person already chose that owner (`omh_dag action=export`);
+    otherwise every node runs on `delegate_task`.
+
 - **A delegation route is refused when Hermes would not send the child where
   it says.** `omh_delegate_route` wrote model, provider and effort, and
   answered `routed` even when Hermes would build the child elsewhere. That
