@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -41,7 +42,7 @@ class HostAdapterTests(unittest.TestCase):
     def _install_equality(self, shell):
         from omh.install.agent_skills_projection import MANIFEST_NAME, agent_skill_files, agent_skills_manifest
         expected = tree(ROOT / "agent-skills")
-        skills = {p.split("/")[0] for p in expected}
+        skills = {p.split("/")[0] for p in expected if p != MANIFEST_NAME}
         expected[MANIFEST_NAME] = (json.dumps(agent_skills_manifest(agent_skill_files()), indent=2, sort_keys=True) + "\n").encode()
         for host in HOSTS:
             for user in (False, True):
@@ -119,20 +120,27 @@ class HostAdapterTests(unittest.TestCase):
             self.assertEqual(install_agent_skills(target)["projection"], "fresh")
             self.assertEqual(receipt.read_bytes(), expected)
 
-    def test_manifest_source_digest_and_cli_lockstep(self):
+    def test_inventory_digest_and_cli_lockstep(self):
         from contextlib import chdir
         import hashlib
         from unittest.mock import patch
         from omh.install.agent_skills_projection import MANIFEST_NAME
-        from omh.skills.host_adapters import HOST_ADAPTERS, checksum_inventory
+        from omh.skills.host_adapters import HOST_ADAPTERS, checksum_inventory, source_digest
         self.assertEqual(tuple(adapter.host for adapter in HOST_ADAPTERS), HOSTS)
         expected = tree(ROOT / "agent-skills")
+        receipt = expected.pop(MANIFEST_NAME)
         hashes = {path: hashlib.sha256(content).hexdigest() for path, content in expected.items()}
-        digest = hashlib.sha256(checksum_inventory(hashes).encode()).hexdigest()
+        # The committed inventory lists exactly the pack's bytes, and its digest
+        # keeps the pre-inventory definition so stored discovery receipts compare.
+        self.assertEqual(json.loads(receipt)["files"], hashes)
+        self.assertEqual(source_digest(hashes), hashlib.sha256(checksum_inventory(hashes).encode()).hexdigest())
         for host in HOSTS:
             manifest = json.loads((ROOT / f".{host}/manifest.json").read_bytes())
-            self.assertEqual(manifest["files"], hashes)
-            self.assertEqual(manifest["source_digest"], digest)
+            # Nothing per-host moves when a skill body changes.
+            self.assertEqual(manifest["inventory"], MANIFEST_NAME)
+            self.assertFalse({"files", "source_digest", "digest_format"} & manifest.keys())
+            for name in ("install.sh", "install.ps1", "manifest.json"):
+                self.assertIsNone(re.search(rb"[0-9a-f]{64}", (ROOT / f".{host}" / name).read_bytes()), name)
             self.assertEqual(manifest["transform"], "copy-only")
             self.assertEqual(manifest["evidence"], "docs/AGENT-SKILLS.md#host-support-matrix")
             for scope in ("repo", "user"):
@@ -159,7 +167,7 @@ class HostAdapterTests(unittest.TestCase):
                             self.assertEqual(payload["host_adapter"], manifest)
                             self.assertEqual(payload["projection"], "fresh")
                             installed = tree(target)
-                            installed.pop(MANIFEST_NAME)
+                            self.assertEqual(installed.pop(MANIFEST_NAME), receipt)
                             self.assertEqual(installed, expected)
                         self.assertFalse((home / ".hermes").exists())
                         self.assertFalse((home / ".omh").exists())
@@ -194,12 +202,25 @@ class HostAdapterTests(unittest.TestCase):
                             key = "adapter_missing" if content is None else "adapter_stale"
                             self.assertEqual(json.loads(output)[key], [relative])
                         path.write_bytes(original)
+            inventory = root / "agent-skills/.omh-agent-skills-manifest.json"
+            original = inventory.read_bytes()
+            for content in (None, original.replace(b"\n", b"\r\n")):
+                with self.subTest(path="inventory", content=content is None):
+                    if content is None:
+                        inventory.unlink()
+                    else:
+                        inventory.write_bytes(content)
+                    code, output, error = run_cli(command + ["--check"])
+                    self.assertEqual(code, 1, error)
+                    key = "missing" if content is None else "stale"
+                    self.assertEqual(json.loads(output)[key], [inventory.name])
             self.assertEqual(run_cli(command)[0], 0)
             self.assertEqual(run_cli(command + ["--check"])[0], 0)
             self.assertEqual(custom.read_bytes(), b"custom skill\n")
 
     def test_git_attributes_pin_all_generated_bytes(self):
         paths = [f".{host}/{name}" for host in HOSTS for name in ("install.sh", "install.ps1", "manifest.json")]
+        paths.append("agent-skills/.omh-agent-skills-manifest.json")
         result = subprocess.run(["git", "-c", "core.autocrlf=true", "check-attr", "eol", "--", *paths],
                                 cwd=ROOT, text=True, capture_output=True, check=True, timeout=10)
         self.assertEqual(result.stdout.splitlines(), [f"{path}: eol: lf" for path in paths])
@@ -207,7 +228,7 @@ class HostAdapterTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("sh"), "POSIX shell unavailable")
     def test_source_tampering_fails_before_writes(self):
         for host in HOSTS:
-            for mutation in ("modified", "missing", "extra"):
+            for mutation in ("modified", "missing", "extra", "inventory_missing", "inventory_row_dropped"):
                 with self.subTest(host=host, mutation=mutation), tempfile.TemporaryDirectory() as tmp:
                     root = Path(tmp).resolve()
                     clone, repo = root / "clone", root / "project"
@@ -215,7 +236,16 @@ class HostAdapterTests(unittest.TestCase):
                     shutil.copytree(ROOT / "agent-skills", clone / "agent-skills")
                     shutil.copytree(ROOT / f".{host}", clone / f".{host}", ignore=shutil.ignore_patterns("skills"))
                     path = clone / "agent-skills/ulw-work/SKILL.md"
-                    if mutation == "modified":
+                    inventory = clone / "agent-skills/.omh-agent-skills-manifest.json"
+                    if mutation == "inventory_missing":
+                        inventory.unlink()
+                    elif mutation == "inventory_row_dropped":
+                        # A row the installer cannot read leaves its file unlisted.
+                        lines = inventory.read_bytes().splitlines(keepends=True)
+                        kept = [line for line in lines if b'"ulw-work/SKILL.md"' not in line]
+                        self.assertEqual(len(kept), len(lines) - 1)
+                        inventory.write_bytes(b"".join(kept))
+                    elif mutation == "modified":
                         path.write_bytes(path.read_bytes() + b"tampered")
                     elif mutation == "missing":
                         path.unlink()
@@ -240,7 +270,7 @@ class HostAdapterTests(unittest.TestCase):
                 binaries, repo = root / "bin", root / "project"
                 binaries.mkdir()
                 repo.mkdir()
-                for name in (hasher, "cat", "dirname", "find", "sort", "mkdir", "cp"):
+                for name in (hasher, "cat", "dirname", "find", "sort", "mkdir", "cp", "sed"):
                     (binaries / name).symlink_to(shutil.which(name))
                 custom = repo / ".claude/skills/triage-sweep/SKILL.md"
                 custom.parent.mkdir(parents=True)

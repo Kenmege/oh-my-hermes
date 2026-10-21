@@ -4,7 +4,7 @@ Evidence layer for the host-adapter surface (#1525). For every host in
 ``HOST_ADAPTERS`` and both scopes it records five stages -- installed,
 discovered, nominated, loaded, executed -- and never infers one stage from
 another. A receipt binds what it saw to the host version, the operating
-system, the scan path, the adapter manifest's ``source_digest``, and the pack
+system, the scan path, the pack inventory's ``source_digest``, and the pack
 ``catalog_revision``. ``parse_receipt`` raises on a receipt that fails any check
 it makes (field set, enumerations, host-version agreement, stage order and
 reasons, credential-like text) instead of passing it; it cannot check free-text
@@ -12,12 +12,13 @@ details against the disk.
 
 OMH observes ``installed`` itself, with no subprocess: it reads the host's
 scan path under the project root (repo scope) or under the home it is given
-(user scope) and compares every file with the ``omh_host_adapter/v1``
-manifest. OMH writes nothing. OMH has verified no credential-free,
-non-interactive command in any supported host that lists the skills the host
-discovered, and it makes no model call, so the four later stages are
-``not_observed`` and the receipt carries the host's ``probe_unsupported``
-reason. That reason is not a claim that the host cannot discover Agent Skills.
+(user scope) and compares every file with the pack inventory
+(``agent-skills/.omh-agent-skills-manifest.json``). OMH writes nothing. OMH
+has verified no credential-free, non-interactive command in any supported host
+that lists the skills the host discovered, and it makes no model call, so the
+four later stages are ``not_observed`` and the receipt carries the host's
+``probe_unsupported`` reason. That reason is not a claim that the host cannot
+discover Agent Skills.
 
 The host version comes from the readiness module's approved
 ``<cli> --version`` probe, and only for a CLI in that probe's set; that
@@ -42,7 +43,7 @@ from typing import Final
 
 from ..install.agent_skills_projection import _checked_path, agent_skill_files, agent_skills_manifest
 from ..plugin_bundle.omh._governance_safety import contains_credential_like_material
-from ..skills.host_adapters import HOST_ADAPTERS, host_adapter_manifest
+from ..skills.host_adapters import HOST_ADAPTERS, host_adapter_manifest, source_digest as pack_source_digest
 from ..system.hashutil import sha256_file
 
 
@@ -82,11 +83,11 @@ HOST_VERSION_STATUSES: Final = (
 )
 MAX_TEXT: Final = 240
 OBSERVED_CLAIM_BOUNDARY: Final = (
-    "OMH read each host scan path and compared its bytes with the adapter manifest, writing nothing itself. "
+    "OMH read each host scan path and compared its bytes with the pack inventory, writing nothing itself. "
     "It started no host session and made no model call; the only host process it ran is `<cli> --version`, "
     "for a CLI in the readiness probe's set. `installed` is the only stage this command observes. "
     "Discovered, nominated, loaded and executed stay not_observed (probe_unsupported) and are never inferred "
-    "from installation. A receipt holds only for the host version, OS, scan path, adapter digest and catalog "
+    "from installation. A receipt holds only for the host version, OS, scan path, source digest and catalog "
     "revision it recorded."
 )
 STORED_CLAIM_BOUNDARY: Final = (
@@ -263,7 +264,7 @@ class StageRecord:
 
 @dataclass(frozen=True, slots=True)
 class ProbeReceipt:
-    """One host and scope, bound to host version and adapter digest.
+    """One host and scope, bound to host version and source digest.
 
     The dataclass validates nothing itself; ``parse_receipt`` is the only
     validation, so construct receipts through it.
@@ -430,7 +431,7 @@ def _kind(path: Path) -> str:
 
 
 def _installed_stage(root: Path, target_path: str, expected: Mapping[str, str]) -> StageRecord:
-    """Compare the scan path's bytes with the adapter manifest; read-only.
+    """Compare the scan path's bytes with the pack inventory; read-only.
 
     Files beside the pack, including ones a newer pack retired, are not
     checked: ``match`` means every pack file is present and byte-identical.
@@ -476,7 +477,7 @@ def _installed_stage(root: Path, target_path: str, expected: Mapping[str, str]) 
             f"{total - missing - differ} of {total} pack files match at {target_path}; {missing} missing, {differ} differ",
         )
     return StageRecord(
-        "installed", "observed", "match", f"all {total} pack files match the adapter manifest at {target_path}"
+        "installed", "observed", "match", f"all {total} pack files match the pack inventory at {target_path}"
     )
 
 
@@ -498,12 +499,12 @@ InstalledRead = tuple[StageRecord, datetime, datetime]
 
 
 def read_installed(
-    root: Path, target_path: str, adapter_manifest: Mapping[str, object], clock: Callable[[], datetime] = _utc_now
+    root: Path, target_path: str, files: Mapping[str, str], clock: Callable[[], datetime] = _utc_now
 ) -> InstalledRead:
-    """The ``installed`` stage under ``root`` with the window that bracketed the read."""
-    files = adapter_manifest["files"]
-    if not isinstance(files, Mapping):
-        raise DiscoveryEvidenceError("adapter manifest has no file inventory")
+    """The ``installed`` stage under ``root`` against the pack inventory's ``files``.
+
+    Returned with the window that bracketed the read.
+    """
     started = clock().astimezone(timezone.utc)
     installed = _installed_stage(root, target_path, files)
     # A wall-clock step backwards between the two reads must not void the run.
@@ -516,7 +517,7 @@ def observe_receipt(
     *,
     root: Path,
     adapter_manifest: Mapping[str, object],
-    catalog_revision: str,
+    inventory: Mapping[str, object],
     host_version: tuple[str, str | None],
     clock: Callable[[], datetime] = _utc_now,
     read: InstalledRead | None = None,
@@ -527,7 +528,10 @@ def observe_receipt(
     is the window that bracketed the read it reports.
     """
     if read is None:
-        read = read_installed(root, descriptor.target_path, adapter_manifest, clock)
+        files = inventory["files"]
+        if not isinstance(files, Mapping):
+            raise DiscoveryEvidenceError("pack inventory has no file digests")
+        read = read_installed(root, descriptor.target_path, files, clock)
     installed, started, ended = read
     status, version = host_version
     later = [
@@ -542,8 +546,8 @@ def observe_receipt(
         "target_path": descriptor.target_path,
         "adapter_schema_version": adapter_manifest["schema_version"],
         "transform": adapter_manifest["transform"],
-        "source_digest": adapter_manifest["source_digest"],
-        "catalog_revision": catalog_revision,
+        "source_digest": inventory["source_digest"],
+        "catalog_revision": inventory["catalog_revision"],
         "host_version": version,
         "host_version_status": status,
         "version_command": list(descriptor.version_command or ()),
@@ -731,7 +735,11 @@ def build_agent_skills_evidence(
 
         version_probe = agent_cli_version
     files = agent_skill_files()
-    catalog_revision = agent_skills_manifest(files)["catalog_revision"]
+    # One inventory for every host: all six copy the same pack, so the digest a
+    # receipt binds is the pack's, not a per-host adapter's.
+    receipt = agent_skills_manifest(files)
+    inventory = {**receipt, "source_digest": pack_source_digest(receipt["files"])}
+    catalog_revision = receipt["catalog_revision"]
     manifests = {host: host_adapter_manifest(host, files) for host in HOSTS}
     all_descriptors = probe_descriptors()
     probed = {descriptor.host for descriptor in all_descriptors if descriptor.version_command}
@@ -739,7 +747,7 @@ def build_agent_skills_evidence(
     descriptors = tuple(descriptor for descriptor in all_descriptors if descriptor.scope in wanted)
     current = CurrentPack(
         catalog_revision=catalog_revision,
-        source_digests={host: manifests[host]["source_digest"] for host in HOSTS},
+        source_digests={host: inventory["source_digest"] for host in HOSTS},
         target_paths={(descriptor.host, descriptor.scope): descriptor.target_path for descriptor in descriptors},
         os=_os_name(),
         host_versions={host: version for host, (_status, version) in versions.items()},
@@ -753,13 +761,13 @@ def build_agent_skills_evidence(
             root = project_root if descriptor.scope == "repo" else user_home
             key = (descriptor.scope, descriptor.target_path)
             if key not in reads:
-                reads[key] = read_installed(root, descriptor.target_path, manifests[descriptor.host], clock)
+                reads[key] = read_installed(root, descriptor.target_path, receipt["files"], clock)
             receipts_list.append(
                 observe_receipt(
                     descriptor,
                     root=root,
                     adapter_manifest=manifests[descriptor.host],
-                    catalog_revision=catalog_revision,
+                    inventory=inventory,
                     host_version=versions[descriptor.host],
                     read=reads[key],
                 )
@@ -777,7 +785,7 @@ def build_agent_skills_evidence(
             "os": current.os,
             "hosts": {
                 host: {
-                    "source_digest": manifests[host]["source_digest"],
+                    "source_digest": inventory["source_digest"],
                     "host_version": versions[host][1],
                     "host_version_status": versions[host][0],
                 }

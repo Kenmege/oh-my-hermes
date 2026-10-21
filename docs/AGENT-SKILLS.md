@@ -41,8 +41,10 @@ not invented vendor-specific directories. In particular, `.openclaw/` and
 `.pi/` contain installers, **not** new host skill scan paths. OpenClaw's custom
 `OPENCLAW_STATE_DIR` caveat below still applies; no alternative path is guessed.
 
-Both installers verify the complete source file inventory and SHA256s before
-writing, copy only listed files, verify the installed bytes, and print the
+Both installers read the pack's one inventory,
+`agent-skills/.omh-agent-skills-manifest.json`, verify the complete source file
+list and SHA256s against it before writing, copy only listed files, verify the
+installed bytes, copy that inventory verbatim as the receipt, and print the
 installed skill names. Re-running is idempotent. An explicit reinstall replaces
 listed files, so review/back up local edits first. Other files and skills
 (including existing `.claude/skills/triage-sweep`, `review-sweep`, and
@@ -283,9 +285,9 @@ described below.
 
 - **installed** is observed by OMH itself. It reads the host's scan path, repo
   scope under `--project-root` and user scope under `--user-home` (default:
-  your home), and compares every file's bytes with that host's
-  `omh_host_adapter/v1` manifest. The read writes nothing and runs no host
-  process. `--project-root` defaults to the current directory, as the
+  your home), and compares every file's bytes with the pack inventory,
+  `agent-skills/.omh-agent-skills-manifest.json`. The read writes nothing and
+  runs no host process. `--project-root` defaults to the current directory, as the
   host-selected installers use; an install made without `--host` writes at
   the repository root, so pass that root when running from a subdirectory.
   The outcome carries a closed `reason`: `observed` / `match` when every pack
@@ -315,7 +317,7 @@ described below.
 
 Each `omh_agent_skills_discovery/v1` receipt records the host, scope, operating
 system, scan path relative to its root, adapter schema version, transform, the
-manifest's own `source_digest`, the pack `catalog_revision`, the host version
+pack inventory's `source_digest`, the pack `catalog_revision`, the host version
 and its status, the version command, `credential_required` (OMH's conservative
 assumption that discovery would need credentials, `true` for every host),
 `probe_unsupported`, observation timestamps, cleanup (`nothing_created`: OMH
@@ -396,14 +398,24 @@ files alone. `--output /tmp/stage/agent-skills` stages the tree and its sibling
 adapter directories without modifying the checkout.
 
 The gate detects missing, stale, and extra canonical files, including
-references, and missing/stale adapter files. Catalog host rows live in
-`src/skills/host_adapters.py`; `host_adapter_render.py` produces both scripts
-from the same manifest, with `transform: copy-only`. `source_digest` is SHA256
-of the UTF-8, LF-terminated inventory sorted by relative POSIX path, one
-`<file-sha256>  <path>` per line. Both scripts embed and verify those file
-hashes; the gate pins the inventory to the canonical producer. `.gitattributes`
-forces LF for generated Markdown, shell, PowerShell, and JSON so Windows
-`core.autocrlf` cannot invalidate checksums or byte comparisons.
+references and the inventory, and missing/stale adapter files. Catalog host rows
+live in `src/skills/host_adapters.py`; `host_adapter_render.py` produces both
+scripts and each host's `manifest.json` from those rows alone, with
+`transform: copy-only`. No adapter file carries a file digest or path list:
+the per-file SHA256s live once, in `agent-skills/.omh-agent-skills-manifest.json`
+(the exact receipt the CLI writes, named by each host manifest's `inventory`
+field), so a skill body edit moves that body and the inventory and nothing
+under the six host directories. The installers run from the same checkout as
+that inventory, so embedding the hashes in the scripts would verify nothing the
+committed, byte-gated inventory does not. The POSIX script reads its `files`
+rows with `sed`; a row it failed to read would leave its file unlisted, which
+the source-inventory comparison refuses, and the producer refuses a pack path
+outside `[A-Za-z0-9._-]` segments, which JSON would escape. `source_digest`
+(recorded by discovery receipts) is SHA256 of the UTF-8, LF-terminated
+inventory sorted by relative POSIX path, one `<file-sha256>  <path>` per line,
+computed from that inventory's `files`. `.gitattributes` forces LF for
+generated Markdown, shell, PowerShell, and JSON, including the inventory, so
+Windows `core.autocrlf` cannot invalidate checksums or byte comparisons.
 
 Edit catalog/portable overrides or the appropriate producer, regenerate, and
 commit source plus projection together. Never hand-edit adapter outputs,

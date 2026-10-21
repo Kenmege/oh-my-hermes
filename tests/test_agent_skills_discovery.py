@@ -45,7 +45,7 @@ from omh.quality.agent_skills_discovery import (
     probe_descriptors,
     summarize_receipts,
 )
-from omh.skills.host_adapters import HOST_ADAPTERS, host_adapter, host_adapter_manifest
+from omh.skills.host_adapters import HOST_ADAPTERS, host_adapter, source_digest
 
 ROOT = Path(__file__).resolve().parents[1]
 T0 = datetime(2026, 10, 14, 3, 0, 0, tzinfo=timezone.utc)
@@ -365,16 +365,19 @@ class ObservationTests(Roots):
         self.assertEqual([stage["outcome"] for stage in receipt["stages"][1:]], ["not_observed"] * 4)
         self.assertEqual(receipt["probe_unsupported"], PROBE_UNSUPPORTED["claude"])
 
-    def test_receipt_binds_the_manifest_digest_and_the_pack_revision(self):
+    def test_receipt_binds_the_inventory_digest_and_the_pack_revision(self):
         files = agent_skill_files()
         payload = evidence(self.project, self.home)
         for host in HOSTS:
             committed = json.loads((ROOT / f".{host}" / "manifest.json").read_text(encoding="utf-8"))
             with self.subTest(host=host):
-                self.assertEqual(committed["source_digest"], host_adapter_manifest(host, files)["source_digest"])
+                # The adapter points at the pack's one inventory; the digest a
+                # receipt binds is that inventory's, identical for every host.
+                inventory = json.loads((ROOT / committed["source"] / committed["inventory"]).read_bytes())
+                self.assertEqual(inventory["files"], agent_skills_manifest(files)["files"])
                 for scope in SCOPES:
                     receipt = receipt_of(payload, host, scope)
-                    self.assertEqual(receipt["source_digest"], committed["source_digest"])
+                    self.assertEqual(receipt["source_digest"], source_digest(inventory["files"]))
                     self.assertEqual(receipt["transform"], committed["transform"])
                     self.assertEqual(receipt["adapter_schema_version"], committed["schema_version"])
                     self.assertEqual(receipt["target_path"], committed["targets"][scope])
@@ -453,7 +456,7 @@ class ObservationTests(Roots):
         elsewhere = self.home / "elsewhere"
         install_agent_skills(elsewhere / "skills")
         (self.project / ".claude").symlink_to(elsewhere, target_is_directory=True)
-        files = host_adapter_manifest("claude", agent_skill_files())["files"]
+        files = agent_skills_manifest(agent_skill_files())["files"]
         with contextlib.chdir(self.project.parent):
             stage = _installed_stage(Path(self.project.name), ".claude/skills", files)
         self.assertEqual((stage.outcome, stage.reason), ("hold", "symlink"))
@@ -504,7 +507,7 @@ class MatrixTests(Roots):
         files = agent_skill_files()
         self.current = CurrentPack(
             catalog_revision=agent_skills_manifest(files)["catalog_revision"],
-            source_digests={host: host_adapter_manifest(host, files)["source_digest"] for host in HOSTS},
+            source_digests={host: source_digest(agent_skills_manifest(files)["files"]) for host in HOSTS},
             target_paths={(d.host, d.scope): d.target_path for d in probe_descriptors(version_probed=())},
             os=self.payload["current"]["os"],
             host_versions={"claude": "9.8.7"},

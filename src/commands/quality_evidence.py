@@ -384,7 +384,7 @@ def cmd_quality_evidence_cost_receipt(args: argparse.Namespace) -> int:
 def cmd_quality_evidence_agent_skills(args: argparse.Namespace) -> int:
     """Print the Agent Skills host evidence matrix: five stages per host and scope.
 
-    OMH reads each host's scan path and compares it with the adapter manifest.
+    OMH reads each host's scan path and compares it with the pack inventory.
     It starts no host session and makes no model call; the only host process
     is the approved ``<cli> --version`` readiness probe. So only ``installed``
     can be observed. The payload is printed either way; the exit status is
@@ -729,11 +729,11 @@ def _add_quality_evidence_commands(sub: argparse._SubParsersAction[argparse.Argu
         help="Report Agent Skills host evidence per host and scope: installed, discovered, nominated, loaded, executed.",
         description=(
             "For every Agent Skills host adapter and scope, read the host's scan path (repo scope under "
-            "--project-root, user scope under --user-home) and compare its bytes with the omh_host_adapter/v1 "
-            "manifest. OMH writes nothing and starts no host session; the only host process is the approved "
-            "`<cli> --version` readiness probe, for a host version. Discovered, nominated, loaded and executed "
-            "stay not_observed with each host's probe_unsupported reason. Exit 3 when a scan path could not be "
-            "read. Not execution, review, CI, or merge evidence."
+            "--project-root, user scope under --user-home) and compare its bytes with the pack inventory "
+            "(agent-skills/.omh-agent-skills-manifest.json). OMH writes nothing and starts no host session; "
+            "the only host process is the approved `<cli> --version` readiness probe, for a host version. "
+            "Discovered, nominated, loaded and executed stay not_observed with each host's probe_unsupported "
+            "reason. Exit 3 when a scan path could not be read. Not execution, review, CI, or merge evidence."
         ),
     )
     agent_skills.add_argument("--scope", choices=("repo", "user"), default=None, help="One scope only (default: both).")

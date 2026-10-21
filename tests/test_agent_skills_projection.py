@@ -676,10 +676,10 @@ class AgentSkillsProjectionTests(unittest.TestCase):
 
     def test_projection_references_resolve_and_shipped_bytes_match(self):
         import re
-        from omh.install.agent_skills_projection import agent_skill_files
+        from omh.install.agent_skills_projection import MANIFEST_NAME, agent_skill_files
         root = Path(__file__).resolve().parents[1] / "agent-skills"
         files = agent_skill_files()
-        self.assertEqual({p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()}, set(files))
+        self.assertEqual({p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()}, {*files, MANIFEST_NAME})
         for relative, content in files.items():
             self.assertEqual((root / relative).read_bytes(), content.encode("utf-8"), relative)
             for ref in re.findall(r"`((?:omh-[\w-]+/|ulw-[\w-]+/)?references/[\w./-]+)`", content):

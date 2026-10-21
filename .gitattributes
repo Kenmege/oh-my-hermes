@@ -10,6 +10,8 @@ install.ps1 text eol=lf
 # line endings must be identical on every checkout.
 skills/**/*.md text eol=lf
 agent-skills/**/*.md text eol=lf
+# The pack's digest inventory, copied verbatim as every installer's receipt.
+agent-skills/.omh-agent-skills-manifest.json text eol=lf
 
 # Generated clone adapters are byte-gated on POSIX and Windows. Keep scripts
 # (PowerShell 5.1/7 accept LF) AND JSON inventories independent of autocrlf.
