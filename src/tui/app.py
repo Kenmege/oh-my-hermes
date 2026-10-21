@@ -3661,8 +3661,11 @@ class App(ModesMixin, AgentViewMixin):
             # /dag has no echo: during a turn this waits under what runs
             self.transcript.add_aside(NoticeBlock("No delegation graph: this session has no recent delegated work."))
             return
-        self._show_pager(DagPager("delegation graph", payload=lambda: self.hud.payload if self.hud is not None else None,
-                                  depth=self.color_depth, clock=self.clock))
+        self._show_pager(DagPager(
+            "delegation graph", payload=lambda: self.hud.payload if self.hud is not None else None,
+            read_at=lambda: self.hud.received_at if self.hud is not None else None, depth=self.color_depth,
+            clock=self.wall_clock,  # the HUD poller stamps its reads with the wall clock
+        ))
 
     def _copy(self, arg: str) -> None:
         last = next((block for block in reversed(self.transcript.blocks) if isinstance(block, AssistantBlock)), None)

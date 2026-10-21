@@ -179,7 +179,8 @@ Where it shows:
   scroll; q or Esc closes it. The two rows under it name these keys and the
   rows shown. When the HUD's newest read holds no active graph (it settled
   and aged out, or reading stopped), the last drawing stays under a
-  `not live · last update 12s ago` line. It sends nothing anywhere: no key
+  `not live · last update 12s ago` line, the age of the data it shows (from
+  the HUD's read, not from the last redraw). It sends nothing anywhere: no key
   there reaches the gateway, a child or a chat. One conversation has one
   graph, so it offers no other run to switch to.
 

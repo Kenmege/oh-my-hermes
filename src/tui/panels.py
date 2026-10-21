@@ -1088,9 +1088,9 @@ def _dag_view(graph: Mapping[str, Any], columns: int, budget: int | None) -> Any
     the renderer's own layout decision, so only its durations are drawn again.
 
     Always the tree: the panel is the agent view under the info line, whose
-    cap (`layout.agent_view_cap`, 7 rows on most terminals) is under the 9
-    rows that even two-line boxes need for one layer under main. The boxes
-    are `/dag`'s (`dag_page_lines`).
+    cap (`layout.agent_view_cap`, 7 rows on most terminals) is under the 10
+    rows that even one lane's box takes with its header and no sections. The
+    boxes are `/dag`'s (`dag_page_lines`).
     """
     from ..plugin_bundle.omh.delegation_view import render_delegation_view
 

@@ -139,15 +139,6 @@ def with_graph(payload: dict, node_count: int) -> dict:
     return payload
 
 
-# The delegation block's first row: the boxes' header, or the tree's.
-DAG_HEADS = ("  OMH / DAG ·", "  DAG ·")
-
-
-def agent_rows(rows: list[str]) -> list[str]:
-    """The rows above the delegation block: the agents block's."""
-    return rows[:next((at for at, row in enumerate(rows) if row.startswith(DAG_HEADS)), len(rows))]
-
-
 def item_rows(rows: list[str]) -> list[str]:
     return [row for row in rows if any(mark in row for mark in ("[•]", "[✓]", "[ ]"))]
 
@@ -402,7 +393,7 @@ class AgentsBlockTests(unittest.TestCase):
             with self.subTest(budget=budget):
                 rows = lines_text(panel_lines(payload, 120, budget, THEME, 0.0))
                 self.assertLessEqual(len(rows), budget)
-                top = next((at for at, row in enumerate(rows) if row.startswith(DAG_HEADS)), None)
+                top = next((at for at, row in enumerate(rows) if row.startswith("  DAG ·")), None)
                 end = next((at for at, row in enumerate(rows) if row.startswith("[Plan]")), len(rows))
                 dag = rows[top:end] if top is not None else []
                 agents = [row for row in rows if "maestro" in row]
@@ -420,7 +411,7 @@ class AgentsBlockTests(unittest.TestCase):
                 if budget >= 1:
                     self.assertTrue(any(row.startswith("[Plan]") for row in rows), "the plan header is the last to go")
                 if budget >= 2:
-                    self.assertTrue(any(row.startswith(DAG_HEADS) for row in rows), "then the block's own header")
+                    self.assertTrue(any(row.startswith("  DAG ·") for row in rows), "then the block's own header")
 
     def test_a_stuck_fanout_unit_is_never_drawn_running(self) -> None:
         payload = with_delegation(
@@ -438,7 +429,7 @@ class AgentsBlockTests(unittest.TestCase):
         native = agent_row(0, role="hermes-native")
         maestro = agent_row(1, dispatch_lane="maestro", executor_profile="codex")
         payload = with_delegation(with_agents(hud_payload(), [native, maestro]), [{"session_tail": "worker0"}])
-        rows = agent_rows(lines_text(panel_lines(payload, 120, 40, THEME, 0.0)))
+        rows = lines_text(panel_lines(payload, 120, 40, THEME, 0.0))
         self.assertFalse(any("worker0" in row for row in rows), "the native row is in the delegation block")
         self.assertTrue(any("worker1" in row for row in rows), "a Maestro row is not a native lane")
         fanout = with_delegation(with_agents(hud_payload(), [native, maestro]), [{"session_tail": "worker0"}],
@@ -449,7 +440,7 @@ class AgentsBlockTests(unittest.TestCase):
     def test_a_native_row_the_graph_does_not_draw_stays(self) -> None:
         natives = [agent_row(index, role="hermes-native") for index in range(3)]
         payload = with_delegation(with_agents(hud_payload(), natives), [{"session_tail": "worker1"}])
-        rows = agent_rows(lines_text(panel_lines(payload, 120, 40, THEME, 0.0)))
+        rows = lines_text(panel_lines(payload, 120, 40, THEME, 0.0))
         self.assertEqual([index for index in range(3) if any(f"worker{index}" in row for row in rows)], [0, 2],
                          "only the lane the graph draws leaves the agents block")
         team_only = with_delegation(with_agents(hud_payload(), natives), [{}])  # no ledger lane, no session_tail
@@ -466,10 +457,9 @@ class AgentsBlockTests(unittest.TestCase):
         self.assertTrue(header.startswith("● main │ lanes in the graph below"), header)
         for word in ("running", "blocked", "failed", "done", "agent"):
             self.assertNotIn(f" {word}", header.split("•")[0].replace("lanes in the graph below", ""), header)
-        # The tree's header counts `1 running · 1 failed · 1 done`; the boxes' status line `Running · Done 1/3`.
-        counts = [row for row in rows if ("running ·" in row or " · Done " in row) and "│" not in row]
+        counts = [row for row in rows if "running" in row and ("·" in row) and not row.lstrip().startswith(("│", "┌"))]
         self.assertEqual(len(counts), 1, f"one line counts the lanes: {counts}")
-        self.assertNotIn("[Agents]", counts[0])
+        self.assertIn("DAG · delegation", counts[0])
 
     def test_the_agents_header_counts_only_the_rows_it_still_lists(self) -> None:
         natives = [agent_row(index, role="hermes-native") for index in range(3)]

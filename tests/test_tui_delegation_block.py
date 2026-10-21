@@ -122,11 +122,11 @@ class LayoutCacheTests(unittest.TestCase):
         self.assertEqual(widths[0], widths[1])
 
 
-def with_hud(app, graph: dict | None) -> None:
+def with_hud(app, graph: dict | None, received_at: float | None = None) -> None:
     payload = {"privacy": "metadata_only"}
     if graph is not None:
         payload["delegation_graph"] = graph
-    app.hud = type("Hud", (), {"payload": payload, "received_at": None})()
+    app.hud = type("Hud", (), {"payload": payload, "received_at": received_at})()
 
 
 def screen(app) -> list[str]:
@@ -245,7 +245,7 @@ class DagCommandTests(unittest.TestCase):
 
     def test_a_drawing_kept_after_the_graph_is_gone_says_it_is_not_live(self) -> None:
         now = [100.0]
-        app, _client = make_app(rows=60, cols=100, clock=lambda: now[0])
+        app, _client = make_app(rows=60, cols=100, wall_clock=lambda: now[0])
         with_hud(app, dag_export_run())
         send(app, "/dag")
         rows = screen(app)
@@ -262,6 +262,29 @@ class DagCommandTests(unittest.TestCase):
         self.assertTrue(any("[-] > " in row for row in screen(app)), "the kept boxes still take the keys")
         with_hud(app, dag_export_run())
         self.assertEqual(screen(app)[0], "OMH / DAG · 5 tasks", "live again: the note goes")
+
+    def test_the_not_live_age_is_the_datas_not_the_last_redraws(self) -> None:
+        """Read at t=100, a Tab at t=200 redraws the same payload, the graph is gone at t=210: the data is 110 s old,
+        and the note says so, not 10 s (the redraw)."""
+        now = [100.0]
+        app, _client = make_app(rows=60, cols=100, wall_clock=lambda: now[0])
+        with_hud(app, dag_export_run())
+        send(app, "/dag")
+        screen(app)
+        now[0] = 200.0
+        press(app, Key(TAB_KEY))
+        now[0] = 210.0
+        with_hud(app, None)
+        self.assertEqual(screen(app)[0], "not live · last update 1m 50s ago")
+        # The HUD's own read time, where it gives one, is the age's start: read at 90, opened at 100.
+        now[0] = 100.0
+        app, _client = make_app(rows=60, cols=100, wall_clock=lambda: now[0])
+        with_hud(app, dag_export_run(), received_at=90.0)
+        send(app, "/dag")
+        screen(app)
+        now[0] = 130.0
+        with_hud(app, None)
+        self.assertEqual(screen(app)[0], "not live · last update 40s ago")
 
     def test_dag_follows_the_terminals_depth(self) -> None:
         app, _client = make_app(rows=24, cols=100, environ={"NO_COLOR": "1"})

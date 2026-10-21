@@ -4,7 +4,9 @@ The pager reads the HUD's newest payload at every frame (`payload`), so a
 node that starts, finishes or fails while it is open is drawn as it changes.
 When the newest payload holds no active graph (it settled and aged out, or
 the HUD stopped reading), the last drawing stays, under a line saying it is
-not live and how long ago it was last read.
+not live and how long ago its payload was read (`read_at`, the HUD's own read
+time; failing that, when the pager first drew that payload), never how long
+ago it was last redrawn.
 It draws what `panels.dag_page_lines` draws (the boxes, Dependencies, Node
 details) at its own `Focus`: the highlighted node, the folded ones and
 whether Node details are shown. Nothing it does is sent anywhere: no key
@@ -39,22 +41,27 @@ def _no_payload() -> Any:
     return None
 
 
+def _no_read_time() -> float | None:
+    return None
+
+
 @dataclass
 class DagPager(Pager):
     FOOTER_ROWS: ClassVar[int] = 2
 
     lines: list[Line] = field(default_factory=list)
     payload: Callable[[], Any] = _no_payload
+    read_at: Callable[[], float | None] = _no_read_time  # when the newest payload was read, on `clock`'s timeline
     depth: str = TRUECOLOR
-    clock: Callable[[], float] = time.monotonic
+    clock: Callable[[], float] = time.time
     node: str = ""  # the highlighted box's node id; "" until the first frame picks one
     folded: frozenset[str] = frozenset()
     details: bool = True
     # The boxes of the last drawing, (node id, first line, last line) in reading order, and what it was drawn for.
     _boxes: tuple[tuple[str, int, int], ...] = field(default=(), init=False, repr=False, compare=False)
     _drawn: tuple[Any, ...] | None = field(default=None, init=False, repr=False, compare=False)
-    # The last drawing of an active graph and when it was read: kept on screen once the graph is gone.
-    _live: tuple[list[Line], tuple[tuple[str, int, int], ...], float] | None = field(
+    # The last drawing of an active graph, when its payload was read, and that payload: kept once the graph is gone.
+    _live: tuple[list[Line], tuple[tuple[str, int, int], ...], float, Any] | None = field(
         default=None, init=False, repr=False, compare=False)
     _follow: bool = field(default=True, init=False, repr=False, compare=False)  # scroll to the highlight next frame
 
@@ -127,7 +134,7 @@ class DagPager(Pager):
         drawn = dag_page_lines(payload, cols, theme, self.depth, Focus(self.node, self.folded, self.details))
         if drawn is None:
             if self._live is not None:
-                lines, boxes, read_at = self._live
+                lines, boxes, read_at, _payload = self._live
                 note = f"not live · last update {elapsed_text(self.clock() - read_at)} ago"
                 self.lines = [(Span(note, theme.muted),), *lines]
                 self._boxes = tuple((node_id, top + 1, bottom + 1) for node_id, top, bottom in boxes)
@@ -145,7 +152,13 @@ class DagPager(Pager):
             boxes = tuple(view.boxes)
         self.lines, self._boxes = lines, boxes
         self._drawn = (payload, cols, theme, self.depth, self.node, self.folded, self.details)
-        self._live = (lines, boxes, self.clock())
+        # A redraw of the same payload (a key, a resize) keeps its read time: the note says how old the data is.
+        if self._live is not None and self._live[3] is payload:
+            read_at = self._live[2]
+        else:
+            stamp = self.read_at()
+            read_at = stamp if isinstance(stamp, (int, float)) else self.clock()
+        self._live = (lines, boxes, read_at, payload)
 
     def footer(self, position: str, theme: Theme) -> list[Line]:
         """The keys, then the title and the rows the page shows."""
