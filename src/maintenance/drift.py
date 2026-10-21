@@ -704,7 +704,16 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # for a translation (2, main clarified, but Hermes' hint started
             # a run); and an explain request and a question about splitting
             # work into parallel lanes (2, main dispatched dag-ulw).
-            expected=876,
+            # Their review adds ten: Korean cancels said politely (취소하세요),
+            # with 부탁해, as 그만 돌려, after a modified word for the run
+            # (진행 중인 작업) and after a stop adverb (즉시), and an English
+            # stop after "can you" (6; main started a run on the first three,
+            # cancelled the next two and clarified the last); a cancel with a
+            # verb ending after six words, which asks (1, main started a run);
+            # two polite questions that weigh dag ulw against another way (2,
+            # main clarified); and "show me how to split" work (1, main
+            # dispatched dag-ulw).
+            expected=886,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1041,7 +1050,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # stays one ultrawork fix (1, main dispatched dag-ulw); and failing
             # tests in two Korean modules fixed in parallel, which still reach
             # dag-ulw (1, dispatched on main too).
-            expected=926,
+            # Their review adds four that still reach dag-ulw, each dispatched
+            # on main too: broken tests in two Korean modules fixed 병렬로
+            # 각각, a split proposed as "can we ...?", a Korean split asked
+            # with 해줄 수 있어?, and a split beside a README paragraph fix (4).
+            expected=930,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

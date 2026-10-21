@@ -68,6 +68,13 @@ DOES_NOT_INVOKE = (
     "can you explain dag ulw?",
     "could you describe dag ulw",
     "can you not dag ulw this?",
+    # A polite question that weighs the run against another way, or asks what you would do.
+    "can you dag ulw this or should I just fix it myself?",
+    "would you dag ulw, or just ultrawork, the auth refactor?",
+    "could you dag ulw this, or is that overkill?",
+    "would you dag ulw this or not?",
+    "can you dag ulw the migration? or is that overkill",
+    "would you dag ulw it, if you were me?",
     "ulw dagger",
     "ulw로 다 고쳐줘",
     "ultrawork the auth refactor",
@@ -129,6 +136,10 @@ class RouterTests(unittest.TestCase):
                         # A question or an explain request about how work splits.
                         "explain how to split the work into parallel lanes", "how do I split the work into parallel lanes?",
                         "what does it mean to fan out across services", "병렬로 나눠서 하는 방법 설명해줘",
+                        "병렬로 나눠서 하는 방법 알려줘", "병렬로 나눠서 작업하는 방법이 뭐야",
+                        "show me how to split the work into parallel lanes", "is it possible to split the work into parallel lanes",
+                        # Only the question mark says it: a question, not a request put as one.
+                        "should we split the api, ui and docs work into parallel lanes?",
                         # Ultrawork named anywhere stays ultrawork's.
                         "fix the auth and billing modules in parallel with ulw"):
             with self.subTest(message=message):
@@ -136,7 +147,23 @@ class RouterTests(unittest.TestCase):
         for message in ("api 모듈과 ui 모듈 테스트가 실패하는데 병렬로 고쳐줘", "the migration is big, split it into parallel lanes",
                         "can you split the api, ui and docs work into parallel lanes?",
                         "split the paragraphs of the manual into parallel parts for translation",
-                        "api, ui, docs 작업을 병렬로 나눠서 구현하고 변경 내용 설명해줘"):
+                        "api, ui, docs 작업을 병렬로 나눠서 구현하고 변경 내용 설명해줘",
+                        # Fixes said to run in parallel a word or two on, or the work said to run at once.
+                        "api 모듈과 ui 모듈 테스트가 깨졌어, 병렬로 각각 고쳐줘",
+                        "api 모듈과 ui 모듈 작업을 동시에 진행해줘, 실패하는 테스트도 고쳐줘",
+                        # Openers that propose the work, requests put as questions, and an explain clause after the work.
+                        "how about we split the api, ui and docs work into parallel lanes",
+                        "why don't we split the api, ui and docs work into parallel lanes",
+                        "what we need is to split the api, ui and docs work into parallel lanes",
+                        "tell me when done: split the api, ui and docs work into parallel lanes",
+                        "can we split the api, ui and docs work into parallel lanes?",
+                        "split the api, ui and docs work into parallel lanes, ok?",
+                        "api, ui, docs 작업을 병렬로 나눠서 구현해줄 수 있어?",
+                        "api, ui, docs 작업을 병렬로 나눠서 구현하고 나눈 방법 설명해줘",
+                        # A paragraph or sentence that is not what the split's object is.
+                        "split the api, ui and docs work into parallel lanes and fix the paragraph in the README",
+                        "split the paragraph parser and the sentence splitter work into parallel lanes",
+                        "api, ui, docs 작업을 병렬로 나눠서 구현하고 README 한 문단 추가해줘"):
             with self.subTest(message=message):
                 # Fixes said to run in parallel, a split asked for after a remark, a polite request, and many paragraphs.
                 self.assertTrue(big_work_for_dag_ulw(message))
@@ -149,7 +176,8 @@ class RouterTests(unittest.TestCase):
     def test_a_question_about_dag_ulw_is_answered_whichever_skill_scored(self) -> None:
         for message in ("dag ulw는 뭐야?", "dag ulw 설명해줘", "how does dag-ulw handle repairs?", "tell me about dag-ulw",
                         "dag ulw 결과 알려줘", "dag ulw 쓰면 비용이 얼마나 나와?", "dag ulw 문서 보여줘", "dag ulw 어떻게 써?",
-                        "dag ulw is broken, it never settles the verify node", "can you explain dag ulw?"):
+                        "dag ulw is broken, it never settles the verify node", "can you explain dag ulw?",
+                        "can you dag ulw this or should I just fix it myself?", "would you dag ulw it, if you were me?"):
             with self.subTest(message=message):
                 self.assertTrue(asks_about_dag_ulw(message))
                 route = route_chat_message(message, source="discord")
@@ -196,7 +224,18 @@ class RouterTests(unittest.TestCase):
                   "dag ulw 중지해줘", "dag ulw 돌린 거 취소해줘", "/dag-ulw stop", "cancel dag ulw",
                   # A verb ending after any words, or a word for the run before the stop noun (owner decision O7).
                   "dag ulw 주문 취소해줘", "dag ulw 주문취소해줘", "dag ulw 작업 취소", "dag ulw 실행 중단", "dag ulw 런 취소",
-                  "dag ulw 지금 거 취소", "dag ulw 지금 돌리는 거 취소", "dag ulw의 실행 취소")
+                  "dag ulw 지금 거 취소", "dag ulw 지금 돌리는 거 취소", "dag ulw의 실행 취소",
+                  # Polite and casual verb endings, and 그만 돌려.
+                  "dag ulw 취소하세요", "dag ulw 취소해요", "dag ulw 취소할게", "dag ulw 취소합니다", "dag ulw 취소 부탁해",
+                  "dag ulw 취소 부탁드려요", "dag ulw 취소 좀 해줘", "dag ulw 취소요", "dag ulw 취소좀", "dag ulw 취소 ㄱ",
+                  "dag ulw 주문 취소하세요", "dag ulw 그거 취소해요", "dag ulw 그만 돌려", "dag ulw 멈춰요", "dag ulw 그만하세요",
+                  # A modified word for the run, or a stop adverb.
+                  "dag ulw 진행 중인 작업 취소", "dag ulw 현재 작업 취소", "dag ulw 이번 실행 취소", "dag ulw 방금 거 취소",
+                  "dag ulw 아까 그거 취소", "dag ulw 모든 작업 취소", "dag ulw 전체 취소", "dag ulw 바로 취소", "dag ulw 즉시 중단",
+                  "dag ulw 지금 진행 중인 작업 바로 취소해줘",
+                  # A polite opener or a trailing please before an English stop word.
+                  "can you stop dag ulw", "could you cancel the dag ulw run", "can you please cancel dag ulw?",
+                  "would you stop the dag ulw run now", "stop dag ulw please")
         status = ("dag ulw status", "dag ulw 상태 보여줘", "dag ulw 진행 상황", "dag ulw 로그 보여줘")
         for message, action in [*((m, "cancel") for m in cancel), *((m, "show_status") for m in status)]:
             with self.subTest(message=message):
@@ -221,7 +260,9 @@ class RouterTests(unittest.TestCase):
         # Owner decision O7: "주문 취소" names an order cancel as easily as a cancel of the run, so with no verb ending
         # it neither cancels the run nor starts one; both paths ask, naming both readings.
         for message in ("dag ulw 주문 취소", "dag ulw 결제 취소", "dag ulw 예약 취소", "dag ulw 구독 취소",
-                        "dag ulw 장바구니 주문 취소", "dag ulw 업로드 중단", "dag ulw 주문취소", "dag ulw 주문을 취소"):
+                        "dag ulw 장바구니 주문 취소", "dag ulw 업로드 중단", "dag ulw 주문취소", "dag ulw 주문을 취소",
+                        # Past three words a verb ending asks too: the words may still name the work.
+                        "dag ulw 지금 돌리는 결제 모듈 작업 취소해줘", "dag ulw 아까 내가 시작한 결제 작업 좀 취소해줘"):
             with self.subTest(message=message):
                 self.assertEqual(dag_ulw_control(message), "cancel_or_run")
                 self.assertFalse(invokes_dag_ulw(message))
@@ -232,6 +273,7 @@ class RouterTests(unittest.TestCase):
                 payload = awareness_route_hint(message)
                 self.assertEqual([(hint["workflow"], hint["next_action"]) for hint in payload["hints"]],
                                  [("dag-ulw", "ask_one_clarification")])
+                self.assertIn("it does neither until the user says which", payload["hints"][0]["reason"])
                 context = awareness_route_hint_context_from_payload(payload)
                 self.assertIn("Neither define a run nor cancel one yet: ask one short question", context)
                 self.assertNotIn("Start at once", context)

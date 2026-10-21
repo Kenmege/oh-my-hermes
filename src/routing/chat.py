@@ -189,8 +189,8 @@ WEAK_DISPATCH_EVIDENCE_REASON = (
     "phrase; offer the shortlist and let the user or Hermes choose before dispatch."
 )
 DAG_ULW_CANCEL_OR_RUN_REASON = (
-    "A stop word ends the words after dag-ulw's name with no verb: it may stop the run in progress or name the "
-    "work for a new run; ask which before doing either."
+    "A stop word ends words after dag-ulw's name that may name the work: it may stop the run in progress or name "
+    "the work for a new run; ask which before doing either."
 )
 _DAG_ULW_CANCEL_OR_RUN_CLARIFICATION = (
     "Ask one short question that names both readings: stop the dag-ulw run in progress, or start a dag-ulw run on "
@@ -2633,7 +2633,8 @@ def _route_chat_message_cached(
     # its name high in the catalog, and `ulw` inside the name scores ultrawork, but asking what it is, what it
     # costs or how it went is no request to run either. Nor is a stop or status word for the run in progress
     # ("dag ulw stop", "dag ulw 상태 보여줘"): Hermes' route hint points that turn at the run's own cancel or status.
-    # A Korean stop noun after other words ("dag ulw 주문 취소") may stop the run or name the work, so it asks which.
+    # A Korean stop noun after words that may name the work ("dag ulw 주문 취소") may stop the run or name the work,
+    # so it asks which.
     dag_ulw_control_word = dag_ulw_control(routing_message)
     if action in {"dispatch", "clarify"} and not explicit_skill and dag_ulw_control_word == "cancel_or_run":
         selected_skill = _ROUTER_SKILL
