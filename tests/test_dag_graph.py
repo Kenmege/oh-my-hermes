@@ -145,12 +145,43 @@ class GraphTests(unittest.TestCase):
         self.assertEqual((by_id["d:export:csv"]["group"], by_id["d:export:verify2"]["group"]), ("extend 1", "extend 1"))
         self.assertEqual(by_id["d:export:fix-ui"]["group"], "layer 2")
         lines = render_delegation_view(graph, width=100, layout="tree").text_lines()
-        # In the tree an added node sits under the node it came from.
+        # In the tree an added node sits under the node it came from. Its title is matched by a prefix: a deep added
+        # row's title gives way before any status does, so how much of it shows depends on the room the statuses
+        # leave.
         verify_row = next(index for index, line in enumerate(lines) if "Verify export" in line)
-        csv_row = next(index for index, line in enumerate(lines) if "Add CSV export" in line)
+        csv_row = next(index for index, line in enumerate(lines) if "Add CSV" in line)
         lead = len(lines[verify_row]) - len(lines[verify_row].lstrip(" │├└─"))
         self.assertEqual(csv_row, verify_row + 1)
         self.assertGreater(len(lines[csv_row]) - len(lines[csv_row].lstrip(" │├└─")), lead)
+
+    def test_the_nesting_never_cuts_a_flat_rows_status(self) -> None:
+        # A repair nested under its node and an extend under its check deepen the tree by two levels. Those rows pay
+        # the indent from their own titles; the flat rows beside them keep the status room a flat tree gives them.
+        with homes() as home:
+            defined(home)
+            write_handoff(home, "api")
+            call(action="settle", run="export", node="api", outcome="accepted")
+            call(action="settle", run="export", node="ui", outcome="failed")
+            call(action="repair", run="export", node="ui", nodes=[
+                {"id": "fix-ui", "label": "Fix the button, with its hotkey", "category": "quick", "prompt": PROMPT,
+                 "depends_on": ["api"], "write_scope": ["src/ui.py"]}])
+            for node in ("fix-ui", "verify"):
+                write_handoff(home, node)
+                call(action="settle", run="export", node=node, outcome="accepted")
+            call(action="extend", run="export", nodes=[
+                {"id": "csv", "label": "Add CSV export", "category": "quick", "prompt": PROMPT, "depends_on": ["api"],
+                 "write_scope": ["src/api.py"]}])
+            graph = build_delegation_graph(home.omh, home.hermes, PARENT)
+        lanes = [dict(node, model="glm-5.3-flash", effort="low") for node in graph["nodes"] if node["kind"] != "root"]
+        api = next(node for node in lanes if node["id"] == "d:export:api")
+        api.update(status="accepted", elapsed_seconds=3_725)
+        late = dict(graph, nodes=[node for node in graph["nodes"] if node["kind"] == "root"] + lanes)
+        rows = render_delegation_view(late, width=90, layout="tree").text_lines()
+        self.assertTrue(next(row for row in rows if "Export API" in row).endswith("accepted 1h 02m"), rows)
+        # Where the statuses leave room it goes back to the nested titles: at 120 they are whole.
+        wide = "\n".join(render_delegation_view(late, width=120, layout="tree").text_lines())
+        self.assertIn("Fix the button, with its hotkey ", wide)
+        self.assertIn("Add CSV export ", wide)
 
     def test_a_compacted_parent_still_finds_its_run(self) -> None:
         with homes() as home:

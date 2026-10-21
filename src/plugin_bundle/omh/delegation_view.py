@@ -900,8 +900,16 @@ def _tree_lines(
     model_width = min(TREE_MODEL_MAX, max([cells(model) for _category, model in fields.values()] or [1]))
     deepest = max([_depth(n, nested) for n in shown] or [0])
     base = (cells(charset.tee) if labelled else 0) + cells(charset.tee)
-    # Where the title column ends, the same for every depth, so the columns after it line up.
-    title_end = base + cells(charset.bar) * deepest + 2 + title_width
+    # Where the title column ends, the same for every depth, so the columns after it line up. Dispatch nesting widens
+    # it; a repair or extend row nested deeper pays its indent from its own title, down to 8 cells, so that nesting
+    # never takes a status's room on the rows beside it.
+    raw_edges = graph.get("edges") if isinstance(graph.get("edges"), list) else []
+    dispatched = {(str(edge.get("from")), str(edge.get("to"))) for edge in raw_edges
+                  if isinstance(edge, Mapping) and edge.get("kind") == "dispatch"}
+    by_dispatch = {upper: [kid for kid in kids if (upper, kid) in dispatched] for upper, kids in nested.items()}
+    dispatch_deepest = max([_depth(n, by_dispatch) for n in shown] or [0])
+    title_end = max(base + cells(charset.bar) * dispatch_deepest + 2 + title_width,
+                    base + cells(charset.bar) * deepest + 2 + 8)
     room_after = width - title_end - category_width - model_width - 6
     if room_after < 12:
         title_end -= 12 - room_after
@@ -920,6 +928,9 @@ def _tree_lines(
         from_title = min(extra - paid - from_model, max(0, title_end - title_floor))
         title_end -= from_title
         category_width += paid + from_model + from_title
+    # Room the widest status does not need goes back to the nested repair and extend titles, up to their full width.
+    spare = width - title_end - category_width - model_width - 6 - max([12, *(_status_cells(by_id[n]) for n in shown)])
+    title_end += max(0, min(spare, base + cells(charset.bar) * deepest + 2 + title_width - title_end))
     step, offset = len(charset.bar), 1 if labelled else 0
     deepest_shown = max(2, (width - TREE_LEAD_ROOM) // step)
 

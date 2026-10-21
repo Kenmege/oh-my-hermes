@@ -549,9 +549,7 @@ class TreeTests(unittest.TestCase):
         status main drew whole stays whole, and one main cut is cut no further."""
         late = dag_export_repair_run()
         late["nodes"][2]["elapsed_seconds"] = 3_725
-        # The tree nests the extend node under the check that found it and the repair under the node it repairs
-        # (#2185): two levels, six cells more title column than a flat tree, so the same room needs six more.
-        button = next(row for row in text(late, width=96, layout="tree").splitlines() if "Export button" in row)
+        button = next(row for row in text(late, width=90, layout="tree").splitlines() if "Export button" in row)
         self.assertTrue(button.endswith("unspecified-high  glm-5.3:low    accepted 1h 02m"), button)
         verify = next(row for row in text(dag_export_run(), width=72, layout="tree").splitlines() if "Verify export" in row)
         self.assertTrue(verify.endswith("waits on 3 la…"), f"cut where main cut it, no further: {verify!r}")
