@@ -235,6 +235,19 @@ class RecordTests(unittest.TestCase):
             self.assertEqual((posted["moment"], posted["phase"]), ("", ""))
             self.assertEqual(posted["closed"], ["c" * 16] * CLOSED_LIMIT)
 
+    def test_a_stored_dag_binding_keeps_only_ids_omh_mints(self) -> None:
+        """Mutation: check a stored binding through the goal reader, by a prefix match, or not at all."""
+        with homes() as home:
+            for index, node in enumerate(("api", "ui", "docs")):
+                start(home, f"child-{index}", f"sa-{index}-x", f"Node {node} [dag:feat/{node}]", now=NOW + index)
+            path = ledger_path(home.omh, PARENT)
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw["children"][1]["dag"] = {"run": "feat", "node": "api] x [dag:feat/ui"}
+            raw["children"][2]["dag"] = {"run": "feat", "node": "Docs"}
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            bound = [child.get("dag") for child in read_ledger(home.omh, PARENT)["children"]]
+        self.assertEqual(bound, [{"run": "feat", "node": "api"}, None, None])
+
     def test_records_no_hook_wrote_for_a_day_are_removed_and_their_locks_stay(self) -> None:
         with homes() as home:
             start(home, "child-0", "sa-0-x", "goal", now=NOW)

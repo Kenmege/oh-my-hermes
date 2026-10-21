@@ -263,8 +263,11 @@ def _validated_node(raw: object) -> dict[str, Any]:
         raise DagRefusal("invalid_node", "Each node takes only id, label, category, prompt, depends_on and write_scope.")
     node_id = valid_id(raw.get("id"), "invalid_node_id", "Each node needs a short lowercase id (a-z, 0-9, -).")
     label = _plain(raw.get("label"), MAX_LABEL_CHARS, "invalid_label", f"Node {node_id} needs a short label.")
-    if "[dag:" in label:
-        raise DagRefusal("invalid_label", f"Node {node_id}: a label cannot hold a [dag:...] marker; OMH adds its own.")
+    # Either lane's reader also takes a marker that opens a goal (one handed out before an update), so a label holding
+    # either marker could bind a child to another node or team part.
+    if "[dag:" in label or "[omh-team:" in label:
+        raise DagRefusal("invalid_label",
+                         f"Node {node_id}: a label cannot hold a [dag:...] or [omh-team:...] marker; OMH adds its own.")
     category = raw.get("category")
     if category not in CATEGORIES:
         raise DagRefusal("invalid_category", f"Node {node_id} needs a category: {', '.join(CATEGORIES)}.")

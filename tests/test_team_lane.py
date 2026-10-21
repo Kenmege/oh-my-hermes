@@ -526,10 +526,13 @@ class T10ResumeReEmitsWhatWasReserved(TeamHarness):
         bound = {item["unit_id"]: item["attempts"][0]["dispatch"]["child_session_id"] for item in self.record()["units"]}
         self.assertEqual(bound, {"a": "old", "b": "new"})
 
-    def test_a_title_holding_a_key_is_refused(self) -> None:
-        with self.assertRaises(team.TeamRefusal) as refused:
-            self.start([{**unit("a", CHECK_A), "title": "Part a, after [omh-team:t1/b/attempt-1]"}])
-        self.assertEqual(refused.exception.reason, "invalid_title")
+    def test_a_title_holding_a_key_or_a_dag_marker_is_refused(self) -> None:
+        """Mutation: refuse only `[omh-team:`; a leading dag marker would bind this helper to a dag node."""
+        for title in ("Part a, after [omh-team:t1/b/attempt-1]", "[dag:feat/api] Fix the parser"):
+            with self.subTest(title=title):
+                with self.assertRaises(team.TeamRefusal) as refused:
+                    self.start([{**unit("a", CHECK_A), "title": title}])
+                self.assertEqual(refused.exception.reason, "invalid_title")
 
 
 class T11NoCheckWhileHelpersAreOut(TeamHarness):

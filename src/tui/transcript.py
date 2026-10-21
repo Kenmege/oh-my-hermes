@@ -383,11 +383,12 @@ LABEL_SEPARATOR = " · "
 # A dag-ulw node's goal and an omh_team helper's goal end with the marker that binds the child (`delegation_ledger`;
 # a goal from before an update opens with it). Hermes' preview of a `delegate_task` call joins the goals, each cut to
 # 40 characters (`2 tasks: Export API [dag:export/api] | Wire the export button to API [dag:ex...`), and a person
-# reads the label: a whole marker goes, and so does one the cut left a head of, up to and including its `...`.
+# reads the label: a whole marker goes, and so does one the cut left a head of, up to and including its `...`. A head
+# too short to name its kind (`[`, `[d`, `[omh`) goes only after the space OMH writes before a marker.
 _GOAL_MARKERS = re.compile(
     r"\s?\[(?:dag:[a-z0-9][a-z0-9-]{0,31}/[a-z0-9][a-z0-9-]{0,31}|omh-team:[^\]|]{1,200})\]"
-    r"|\s?\[(?:dag:[a-z0-9/-]*|omh-team:[a-z0-9/_-]*|omh-team|omh-tea|omh-te|omh-t|omh-|omh|om|o|dag|da|d)?"
-    r"\.\.\.(?=\s*\||\s*\Z)"
+    r"|\s?\[(?:dag:[a-z0-9/-]*|omh-team:[a-z0-9/_-]*)\.\.\.(?=\s*\||\s*\Z)"
+    r"|\s\[(?:omh-team|omh-tea|omh-te|omh-t|omh-|omh|om|o|dag|da|d)?\.\.\.(?=\s*\||\s*\Z)"
 )
 
 

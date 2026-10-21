@@ -763,8 +763,11 @@ def _validated_units(raw_units: object) -> list[dict[str, Any]]:
         command = raw.get("verification_command")
         validate_team_command(command)
         title = _plain(raw.get("title"), MAX_TITLE_CHARS, "invalid_title", "Each part needs a short title.")
-        if "[omh-team:" in title:
-            raise TeamRefusal("invalid_title", "A part's title cannot hold an [omh-team:...] key; OMH adds its own.")
+        # Either lane's reader also takes a marker that opens a goal (one handed out before an update), so a title
+        # holding either marker could bind a helper to another part or dag node.
+        if "[omh-team:" in title or "[dag:" in title:
+            raise TeamRefusal("invalid_title",
+                              "A part's title cannot hold an [omh-team:...] key or a [dag:...] marker; OMH adds its own.")
         units.append({
             "unit_id": unit_id,
             "title": title,

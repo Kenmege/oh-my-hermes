@@ -112,6 +112,13 @@ class DefineTests(unittest.TestCase):
                 result = call(action="define", run="feat", nodes=nodes)
                 self.assertEqual((result["status"], result["reason"]), ("refused", reason), result)
 
+    def test_a_label_holding_either_lanes_marker_is_refused(self) -> None:
+        """Mutation: refuse only `[dag:`; a leading team key would bind this node's child to a team part."""
+        for label in ("[omh-team:t1/a/attempt-1] Fix the parser", "Fix the parser [dag:feat/b]"):
+            with self.subTest(label=label), homes():
+                result = call(action="define", run="feat", nodes=[node("a", label=label)])
+                self.assertEqual((result["status"], result["reason"]), ("refused", "invalid_label"), result)
+
     def test_an_edge_lets_two_nodes_share_a_write_scope(self) -> None:
         with homes():
             result = call(action="define", run="feat",
@@ -303,6 +310,13 @@ class RepairTests(unittest.TestCase):
             result = call(action="repair", run="feat", node="api", nodes=[node("fix", depends_on=("ui",))])
         self.assertEqual(result["reason"], "repair_depends_on_open_node")
 
+    def test_a_repair_label_holding_a_marker_is_refused(self) -> None:
+        for label in ("[dag:feat/api] Fix", "Fix [omh-team:t1/a/attempt-1]"):
+            with self.subTest(label=label), homes() as home:
+                self._failed_verify(home)
+                result = call(action="repair", run="feat", node="verify", nodes=[node("fix", label=label)])
+                self.assertEqual((result["status"], result["reason"]), ("refused", "invalid_label"), result)
+
     def test_only_a_failed_node_is_repaired(self) -> None:
         with homes() as home:
             slots_table(home)
@@ -356,6 +370,7 @@ class ExtendTests(unittest.TestCase):
             "too_many_nodes": [node(f"n{index}") for index in range(dag_run.MAX_NODES - 1)],
             "empty_graph": [],
             "unknown_node": None,
+            "invalid_label": [node("x", label="[omh-team:t1/a/attempt-1] More")],
         }
         with homes() as home:
             self._done(home)
