@@ -4,15 +4,16 @@ All notable changes will be documented here.
 
 ## Unreleased
 
-- **The delegate route tool answers right at its edges.** An alias (`*name`)
-  or `<<` given as a value in `config.yaml`'s `model` or `delegation`
-  section, on a nested line or inside a flow collection too, or in a root
-  `base_url`, `api_base` or `provider`, now refuses every route, with or
-  without a provider (`config_unloadable`). Hermes cannot load the file when
-  an alias has no anchor or a value is `<<`, so a route written there never
-  took effect while OMH answered `routed`; a defined alias refuses too,
-  because the check does not follow anchors. In the managed config the same
-  values make their section unreadable. A route that names no provider over
+- **The delegate route tool answers right at its edges.** An alias (`*name`),
+  `<<`, or a tag Hermes cannot build (`!!merge`) given as a value in
+  `config.yaml`'s `model` or `delegation` section, on a nested line or inside
+  a flow collection too, or in a root `base_url`, `api_base` or `provider`,
+  now refuses every route, with or without a provider (`config_unloadable`).
+  Hermes cannot load the file when an alias has no anchor, a value is `<<`,
+  or a tag is not one it builds, so a route written there never took effect
+  while OMH answered `routed`; a defined alias refuses too, because the
+  check does not follow anchors. In the managed config the same values make
+  their section unreadable. A route that names no provider over
   a direct `delegation.base_url` is checked against the provider Hermes
   names that endpoint (`anthropic`, `openai-codex`) instead of the main
   session's, since Hermes builds the child there; a `custom` endpoint is not

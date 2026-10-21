@@ -349,6 +349,11 @@ class UnloadableConfigTest(GuardTestCase):
         "delegation endpoint and key beside a flow alias": (
             f"{MODEL_BLOCK}delegation:\n  base_url: {ENDPOINT}\n  api_key: k\n  extra: [*ep]\n"
         ),
+        # a tag neither loader builds
+        "delegation !!merge tag": f"{MODEL_BLOCK}delegation:\n  api_mode: !!merge x\n",
+        "delegation local tag": f"{MODEL_BLOCK}delegation:\n  api_mode: !custom x\n",
+        "delegation tag in a flow list": f"{MODEL_BLOCK}delegation:\n  extra: [!!python/str x]\n",
+        "model verbatim tag": "model:\n  default: x\n  provider: !<tag:yaml.org,2002:merge> x\n",
     }
 
     def test_every_route_is_refused(self) -> None:
@@ -377,13 +382,19 @@ class UnloadableConfigTest(GuardTestCase):
                 before = self.config.read_bytes()
                 self.assert_refused(self.set_route(), before, "config_unloadable", keys)
 
-    def test_text_that_only_looks_like_an_alias_routes(self) -> None:
+    def test_values_hermes_loads_route(self) -> None:
+        # Text that only looks like an alias, `<<` or a tag, and the tags
+        # both loaders build.
         for shape in (
             "  note: a*b\n",
             "  note: see *this*\n",
             "  extra: ['*ep', \"<<\"]\n",
             "  extra: [a, '<< x']\n",
             '  note: "a, *b"\n',
+            "  note: a !b\n",
+            "  max_iterations: !!int 5\n",
+            "  extra: !!seq [a, !!str b]\n",
+            "  note: ! text\n",
         ):
             with self.subTest(shape=shape):
                 self.write_config(shape)

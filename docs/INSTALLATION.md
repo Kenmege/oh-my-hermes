@@ -1853,12 +1853,14 @@ which Hermes applies over it. It refuses in these cases:
   supported Hermes. A spelling Hermes versions read differently is
   undecidable, like a value OMH cannot read: Hermes 0.21 reads `n` and `0e0`
   as text, and later versions read them as false and zero.
-- `config.yaml` gives an alias (`*name`) or `<<` as a value in the `model` or
-  `delegation` section, on its header line, on a nested line or inside a flow
-  collection, or in a root `base_url`, `api_base` or `provider`. Hermes'
-  loader fails on an alias whose anchor is not defined and on `<<` as a
-  value, then uses its last good copy of the file, so every route is refused
-  here, with or without a provider. OMH does not follow anchors, so it
+- `config.yaml` gives an alias (`*name`), `<<`, or a tag Hermes' loader
+  cannot build (`!!merge`, a local `!name`, a verbatim `!<...>`; it builds
+  `!!str`, `!!int`, `!!map` and the other standard tags) as a value in the
+  `model` or `delegation` section, on its header line, on a nested line or
+  inside a flow collection, or in a root `base_url`, `api_base` or
+  `provider`. Hermes' loader fails on each of them, then uses its last good
+  copy of the file, so every route is refused here, with or without a
+  provider. OMH does not follow anchors, so it
   refuses a defined alias too. In the managed config the same values make
   their section unreadable and refuse as above: Hermes skips a managed file
   it cannot load, but OMH cannot tell that file from one whose aliases are

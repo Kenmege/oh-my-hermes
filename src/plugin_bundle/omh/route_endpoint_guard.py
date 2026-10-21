@@ -35,17 +35,19 @@ line number without a revision is the same at main and v0.22.2.
    given there as one scalar replaces the user's whole section; only a null
    one is ignored.
 4. Unparseable file. Hermes' loader raises on a repeated key, an alias
-   whose anchor is not defined, or `<<` given as a value, and then uses its
-   last good copy of the file, or else its defaults
+   whose anchor is not defined, `<<` given as a value, or a tag it cannot
+   build (`!!merge`), and then uses its last good copy of the file, or else
+   its defaults
    (hermes_cli/config.py:2250-2275 at main), so a route written to that file
    does not take effect.
 
 OMH reads YAML with line scans, not a parser, and Hermes' loader reads more
 shapes than these scans do. Any line this module does not model makes its
 section unreadable, and the route is refused. Reading a value as "unset" by
-mistake is the unsafe answer here; refusing is the safe one. An alias or a
-`<<` given as a value in `config.yaml`'s `model` or `delegation` section, or
-in a root key Hermes reads as a model key, refuses every route (rung 4);
+mistake is the unsafe answer here; refusing is the safe one. An alias, a
+`<<` or such a tag given as a value in `config.yaml`'s `model` or
+`delegation` section, or in a root key Hermes reads as a model key, refuses
+every route (rung 4);
 these scans do not follow anchors, so a defined alias is refused as well. In
 the managed config it makes its section unreadable. Hermes 0.21.x
 loads YAML with PyYAML (utils.py:389-391 at v0.21.1); 0.22 and later use
@@ -108,6 +110,13 @@ _YAML_INDICATORS = frozenset("[]{}|>&*!%@`-?:,")
 _TRACKED_SECTIONS = ("delegation", "model")
 # Top-level keys Hermes reads as `model` keys (`_normalize_root_model_keys`).
 _ROOT_MODEL_KEYS = ("base_url", "api_base", "provider")
+# The tags both loaders build (`!` is the non-specific one). Any other,
+# `!!merge`, a local `!name` or a verbatim `!<...>`, raises ConstructorError
+# at v0.21.1, v0.22.2 and main.
+_LOADABLE_TAGS = frozenset({
+    "!", "!!str", "!!int", "!!float", "!!bool", "!!null", "!!binary", "!!timestamp",
+    "!!map", "!!seq", "!!set", "!!omap", "!!pairs",
+})
 _MISSING = object()
 
 
@@ -121,8 +130,8 @@ class Layer:
     # Tracked keys given one non-null scalar on their own line.
     scalar_sections: set[str] = field(default_factory=set)
     unreadable_top_level: bool = False
-    # Tracked sections and root model keys that give an alias or `<<` as a
-    # value, which Hermes may not load at all (`_unloadable`).
+    # Tracked sections and root model keys that give an alias, `<<` or a tag
+    # the loaders cannot build, which Hermes may not load at all (`_unloadable`).
     unloadable: list[str] = field(default_factory=list)
 
 
@@ -347,14 +356,17 @@ def _strip_comment(value: str) -> str:
 
 
 def _unloadable(raw: str) -> bool:
-    """True when a line gives an alias (`*a`) or `<<` as a value, also inside a flow collection.
+    """True when a line gives an alias (`*a`), `<<` or a tag the loaders cannot build, also in a flow collection.
 
-    Hermes' loaders fail on an alias whose anchor is not defined and on `<<`
-    as a value; these scans do not follow anchors, so any alias counts. A
-    `<<` key is a merge key, which the key scans refuse on their own.
+    Hermes' loaders fail on an alias whose anchor is not defined, on `<<` as
+    a value, and on a tag outside `_LOADABLE_TAGS`; these scans do not
+    follow anchors, so any alias counts. A `<<` key is a merge key, which
+    the key scans refuse on their own.
     """
     return any(
-        token[:1] == "*" or (token == "<<" and not is_key)
+        token[:1] == "*"
+        or (token == "<<" and not is_key)
+        or (token[:1] == "!" and token.split(" ", 1)[0] not in _LOADABLE_TAGS)
         for token, is_key in _plain_tokens(_strip_comment(raw))
     )
 
@@ -509,10 +521,11 @@ def route_endpoint_refusal(
         where = list(dict.fromkeys(user.unloadable))
         return _refusal(
             "config_unloadable", where,
-            f"config.yaml gives an alias (`*name`) or `<<` as a value in {', '.join(where)}. Hermes' loader "
-            "fails on an alias whose anchor is not defined and on `<<` as a value, and then uses its last good "
-            "copy of the file, or else its defaults, so a route written there would not take effect. This check "
-            "does not follow anchors, so a defined alias counts too.",
+            f"config.yaml gives an alias (`*name`), `<<` or a tag such as `!!merge` as a value in "
+            f"{', '.join(where)}. Hermes' loader fails on an alias whose anchor is not defined, on `<<` as a "
+            "value and on a tag it cannot build, and then uses its last good copy of the file, or else its "
+            "defaults, so a route written there would not take effect. This check does not follow anchors, so "
+            "a defined alias counts too.",
             "Write those values out in full yourself, then route again.",
         )
     managed_path, managed_text, managed_error = managed
