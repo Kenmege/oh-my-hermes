@@ -183,8 +183,16 @@ def state_facts(
             except sqlite3.Error:
                 pass
             try:
+                usage_columns = {str(row[1]) for row in connection.execute('PRAGMA table_info("session_model_usage")')}
+                # An auxiliary call (compression, title generation, ...) is a row under its task name on the aux
+                # route's model: a call, but not the model that answered the child. `hermes_delegation` reads it alike.
+                answering = (
+                    "GROUP_CONCAT(DISTINCT CASE WHEN COALESCE(task, '') = '' THEN NULLIF(model, '') END)"
+                    if "task" in usage_columns
+                    else "GROUP_CONCAT(DISTINCT NULLIF(model, ''))"
+                )
                 for row in connection.execute(
-                    "SELECT session_id, COUNT(*), GROUP_CONCAT(DISTINCT NULLIF(model, '')), MAX(last_seen) "
+                    f"SELECT session_id, COUNT(*), {answering}, MAX(last_seen) "
                     f"FROM session_model_usage WHERE session_id IN ({marks}) GROUP BY session_id",
                     ids,
                 ):

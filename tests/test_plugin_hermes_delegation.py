@@ -78,6 +78,7 @@ def _build_state_db(
     include_cost_provenance: bool = True,
     include_end_columns: bool = False,
     include_prompt_columns: bool = False,
+    include_usage_task: bool = False,
 ) -> None:
     connection = sqlite3.connect(home / "state.db")
     # `parent_session_id` and the stored system prompt are what attest a
@@ -127,6 +128,10 @@ def _build_state_db(
     if include_end_columns:
         connection.execute("ALTER TABLE sessions ADD COLUMN ended_at REAL")
         connection.execute("ALTER TABLE sessions ADD COLUMN end_reason TEXT")
+    # Hermes names an auxiliary call's kind in `task` (`title_generation`,
+    # `compression`, ...) and leaves it empty for the agent's own turns.
+    if include_usage_task:
+        connection.execute("ALTER TABLE session_model_usage ADD COLUMN task TEXT NOT NULL DEFAULT ''")
     connection.execute(
         "INSERT INTO sessions (id, model, model_config, started_at) VALUES (?, ?, ?, ?)",
         (PARENT_ID, "gpt-5.6-sol", "", NOW - 4000),
@@ -206,6 +211,8 @@ def _build_state_db(
             if include_cost_provenance:
                 values["cost_status"] = usage.get("cost_status")
                 values["cost_source"] = usage.get("cost_source")
+            if include_usage_task:
+                values["task"] = usage.get("task", "")
             connection.execute(
                 "INSERT INTO session_model_usage ({}) VALUES ({})".format(
                     ", ".join(values), ", ".join("?" for _ in values)
@@ -2060,6 +2067,22 @@ class ServedModelAttestationTest(unittest.TestCase):
         self.assertEqual(attestation["requested"], "gpt-6-astra")
         self.assertEqual(attestation["requested_source"], "session_model")
 
+    def test_a_child_with_no_stored_prompt_is_not_attested_even_when_compacted(self):
+        # No prompt is stored, so there is nothing Hermes could have rebuilt:
+        # the basis is the missing request, whatever the archive holds.
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_nullarc",
+                "model": "claude-fable-5-1",
+                "archived_messages": [("user", "the delegated goal")],
+                "messages": [("assistant", "[compaction summary]")],
+                "started_at": NOW - 60,
+                "usage": {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 5},
+            }
+        )
+        self.assertEqual(attestation["verdict"], "unknown")
+        self.assertEqual(attestation["basis"], "requested_model_not_attested")
+
     def test_a_schema_without_message_activity_attests_nothing(self):
         # Without `messages.active` an in-place compaction cannot be seen, so
         # no stored prompt is read as a request.
@@ -2242,6 +2265,94 @@ class ServedModelAttestationTest(unittest.TestCase):
         self.assertNotIn("answering", attestation)
         # An unattested session row is not named the request either.
         self.assertNotIn("requested", attestation)
+
+    def test_an_auxiliary_call_on_another_model_leaves_the_answer_standing(self):
+        # Hermes records a title or compression call under its task name on
+        # the aux route's model. It is spend, so the tokens keep it, but it
+        # did not answer the child.
+        _build_state_db(
+            self.home,
+            [
+                {
+                    "id": "20260818_100100_auxrow1",
+                    "model": "claude-fable-5-1",
+                    "prompt_model": "claude-fable-5-1",
+                    "started_at": NOW - 60,
+                    "usages": [
+                        {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 5},
+                        {
+                            "model": "gemini-3-flash",
+                            "task": "title_generation",
+                            "output_tokens": 3,
+                            "last_seen": NOW - 4,
+                        },
+                    ],
+                }
+            ],
+            include_prompt_columns=True,
+            include_usage_task=True,
+        )
+        row = read_hermes_native_subagents(self.home, now=NOW, omh_home=self.home / ".omh")["rows"][0]
+        self.assertEqual(row["model_attestation"]["verdict"], "agreement")
+        self.assertEqual(row["model_attestation"]["answering"], "claude-fable-5-1")
+        self.assertEqual(row["tokens"], 13)
+
+    def test_a_child_whose_only_call_is_auxiliary_has_no_answering_model(self):
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_auxonly",
+                "model": "claude-fable-5-1",
+                "prompt_model": "claude-fable-5-1",
+                "started_at": NOW - 60,
+                "usage": {
+                    "model": "gemini-3-flash",
+                    "task": "title_generation",
+                    "output_tokens": 3,
+                    "last_seen": NOW - 4,
+                },
+            },
+            include_usage_task=True,
+        )
+        self.assertEqual(attestation["verdict"], "unknown")
+        self.assertEqual(attestation["basis"], "no_usage_observation")
+        self.assertNotIn("answering", attestation)
+
+    def test_a_switch_between_the_childs_own_calls_still_reads_as_a_switch(self):
+        # The task filter drops auxiliary rows only: two models on the
+        # child's own turns are still a mid-run switch.
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_ownswch",
+                "model": "claude-fable-5-1",
+                "prompt_model": "claude-fable-5-1",
+                "started_at": NOW - 60,
+                "usages": [
+                    {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 20},
+                    {"model": "gpt-6-astra", "output_tokens": 10, "last_seen": NOW - 5},
+                ],
+            },
+            include_usage_task=True,
+        )
+        self.assertEqual(attestation["verdict"], "unknown")
+        self.assertEqual(attestation["basis"], "multiple_usage_models")
+
+    def test_a_usage_table_without_a_task_column_reads_every_row_as_before(self):
+        # A state.db from before Hermes split auxiliary calls out has no way
+        # to tell one, so every row still counts toward the answer.
+        attestation = self._attestation(
+            {
+                "id": "20260818_100100_notask1",
+                "model": "claude-fable-5-1",
+                "prompt_model": "claude-fable-5-1",
+                "started_at": NOW - 60,
+                "usages": [
+                    {"model": "claude-fable-5-1", "output_tokens": 10, "last_seen": NOW - 5},
+                    {"model": "gemini-3-flash", "output_tokens": 3, "last_seen": NOW - 4},
+                ],
+            }
+        )
+        self.assertEqual(attestation["verdict"], "unknown")
+        self.assertEqual(attestation["basis"], "multiple_usage_models")
 
     def test_a_vendor_pointer_answered_by_its_exact_contract_id_agrees(self):
         # `deepseek-flash` is DeepSeek's served pointer for the exact contract

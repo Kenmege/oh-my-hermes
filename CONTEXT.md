@@ -685,12 +685,17 @@ Without an attested request no agreement is reported. These cases read
 In the first two cases, a `sessions.model` that disagrees with the sole model
 the usage rows name reads `disagreement`. The answering side is judged before
 any of the three: no usage row (`no_usage_observation`) or more than one usage
-model (`multiple_usage_models`) also reads `unknown`.
+model (`multiple_usage_models`) also reads `unknown`. It reads only the
+child's own calls. Hermes records an auxiliary call (compression, title
+generation, vision, ...) in the same table under a non-empty `task`, on the
+aux route's model, so such a row counts toward the child's tokens and cost but
+never names the answering model. A usage table without `task` cannot tell the
+two apart, and every row counts.
 
 This is a read-only coupling to a Hermes-private shape, the same class as
 the lease registry above: widening `requires_hermes` includes checking the
-trailer lines, the runtime-block markers, the two storage columns and
-`messages.active`. If the shape moves, the read goes quiet, unless the new
+trailer lines, the runtime-block markers, the two storage columns,
+`messages.active` and `session_model_usage.task`. If the shape moves, the read goes quiet, unless the new
 last paragraph is itself made only of trailer lines, in which case it is read
 as the trailer, as Hermes' own `identity_line_value` would read it. A quiet
 read attests no request, so the cases above apply.

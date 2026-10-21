@@ -2424,6 +2424,17 @@ def _query_state_db(
                 if "billing_provider" in columns
                 else "NULL"
             )
+            # Hermes records each auxiliary call (compression, title
+            # generation, vision, ...) in this table under its task name and
+            # the aux route's model (`record_auxiliary_usage`); the child's
+            # own turns write an empty task. Those calls are real spend, so
+            # the sums keep them, but they do not say which model answered
+            # the child.
+            answering_model = (
+                "GROUP_CONCAT(DISTINCT CASE WHEN COALESCE(task, '') = '' THEN NULLIF(model, '') END)"
+                if "task" in columns
+                else "GROUP_CONCAT(DISTINCT NULLIF(model, ''))"
+            )
             cursor = connection.execute(
                 f"""
                 SELECT session_id, SUM(api_call_count), SUM(input_tokens),
@@ -2433,7 +2444,7 @@ def _query_state_db(
                        MIN(first_seen), MAX(last_seen),
                        SUM(CASE WHEN {informative} THEN 1 ELSE 0 END),
                        {billing_provider},
-                       GROUP_CONCAT(DISTINCT NULLIF(model, ''))
+                       {answering_model}
                 FROM session_model_usage
                 WHERE session_id IN ({placeholders})
                 GROUP BY session_id

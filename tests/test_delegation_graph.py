@@ -73,6 +73,27 @@ class FieldEvidenceTests(unittest.TestCase):
             self.assertEqual((lane["category"], lane["category_source"], lane["model"]),
                              ("?", "route_model_mismatch", "gpt-6.1-sol"))
 
+    def test_an_auxiliary_call_does_not_name_the_childs_model(self) -> None:
+        # Hermes left the child row's model empty, so the usage rows name it. A title call on the aux route's model
+        # is a call (the child is running), but not the model that answered.
+        for has_task, expected in ((True, ("claude-opus-5-5", "deep", "route_provenance")),
+                                   (False, ("?", "?", "model_not_observed"))):
+            with self.subTest(task_column=has_task), homes() as home:
+                home.session(PARENT, "claude-opus-5-5")
+                route(home, "deep", "claude-opus-5-5", "high", written_at=NOW - 1)
+                start(home, "child-0", "sa-0", "Lane", now=NOW)
+                home.session("child-0", "", parent=PARENT, started=NOW)
+                home.usage("child-0", "claude-opus-5-5", last_seen=NOW + 90)
+                if has_task:
+                    home.execute("ALTER TABLE session_model_usage ADD COLUMN task TEXT NOT NULL DEFAULT ''")
+                    home.execute("INSERT INTO session_model_usage (session_id, model, task, api_call_count, last_seen) "
+                                 "VALUES ('child-0', 'gemini-3-flash', 'title_generation', 1, ?)", (NOW + 95,))
+                else:  # a state.db before Hermes split auxiliary calls out cannot tell one, so both rows count
+                    home.usage("child-0", "gemini-3-flash", last_seen=NOW + 95)
+                lane = node(built(home), "Lane")
+                self.assertEqual((lane["model"], lane["category"], lane["category_source"]), expected)
+                self.assertEqual(lane["state"], "running")
+
     def test_inherit_only_by_equality_with_the_parents_recorded_model(self) -> None:
         with homes() as home:
             home.session(PARENT, "claude-opus-5-5")
