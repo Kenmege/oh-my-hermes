@@ -118,9 +118,11 @@ class CallerTests(unittest.TestCase):
                                                                             "depends_on": ["zz"]}])
         with self.assertRaisesRegex(FanoutContractError, r"^unit b cannot depend on itself$"):
             validate_fanout_units([{"unit_id": "b", "file_scope": ["b"], "depends_on": ["b"]}])
-        # The raw value is named, not its text: an int dependency reads 5, not '5'.
-        with self.assertRaisesRegex(FanoutContractError, r"^unit b depends on unknown unit 5$"):
-            validate_fanout_units([{"unit_id": "b", "file_scope": ["b"], "depends_on": [5]}])
+        # The raw value is named, not its text: an int dependency reads 5, not '5'; None and a list read as on main.
+        for raw, shown in ((5, "5"), (None, "None"), (["api"], "['api']")):
+            with self.subTest(raw=raw), self.assertRaises(FanoutContractError) as caught:
+                validate_fanout_units([{"unit_id": "b", "file_scope": ["b"], "depends_on": [raw]}])
+            self.assertEqual(str(caught.exception), f"unit b depends on unknown unit {shown}")
         # An unknown dependency holds the unit out of the merge order, so it is reported as stuck in a cycle.
         with self.assertRaisesRegex(FanoutContractError, r"^depends_on contains a cycle among units: b, c$"):
             merge_order([{"unit_id": "a"}, {"unit_id": "b", "depends_on": ["ghost"]}, {"unit_id": "c", "depends_on": ["b"]}])

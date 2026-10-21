@@ -32,6 +32,12 @@ from typing import Any
 from .. import dag_run, runtime_paths
 from ..delegation_ledger import read_ledger
 from ..delegation_snapshot import dag_added_clause, shown_lanes
+from ..owner_preference_record import (
+    OWNER_PREFERENCE_EXPLICIT_CHOICE_PROVENANCES,
+    OWNER_PREFERENCE_PATH_SEGMENTS,
+    OWNER_PREFERENCE_SCHEMA_VERSION,
+    explicit_choice,
+)
 from ..delegation_routing import read_delegation_settings
 from ..host_observation import host_session_id
 
@@ -40,13 +46,15 @@ MAX_CONCURRENT_ENV = "DELEGATION_MAX_CONCURRENT_CHILDREN"
 UNREAD_SLOTS = 1  # when Hermes' state cannot be read: one call at a time, never a guessed wider wave
 ACTIVE_UNIT_STATES = ("running", "stalling")
 _UNIT_SUFFIX = re.compile(r"-\d+$")
-# The explicit-choice record (`omh.routing.owner_preference`); duplicated because the bundle cannot import it,
-# held against the router's constants by `tests/test_dag_tool.py`.
-OWNER_PREFERENCE_FILE = ("routing", "owner-preference.json")
-OWNER_PREFERENCE_SCHEMA = "coding_owner_preference/v1"
+# The explicit-choice record, read through the one validator the router uses (`owner_preference_record`). The route
+# family and the owners are the router's and the executor table's, held equal by `tests/test_dag_tool.py`.
+OWNER_PREFERENCE_FILE = OWNER_PREFERENCE_PATH_SEGMENTS
+OWNER_PREFERENCE_SCHEMA = OWNER_PREFERENCE_SCHEMA_VERSION
 OWNER_ROUTE_FAMILY = "ulw-coding-delivery"
-OWNER_PROVENANCES = ("accepted_explicit_choice", "in_message_naming")
+OWNER_PROVENANCES = OWNER_PREFERENCE_EXPLICIT_CHOICE_PROVENANCES
 EXTERNAL_OWNERS = ("claude-code", "codex")
+# dag-ulw's own rule, not the record's: an external coding CLI spends the person's money and quota, so a choice
+# older than a day (or dated in the future) does not start one; the person names the owner again.
 OWNER_CHOICE_MAX_AGE_SECONDS = 24 * 3600
 SPAWN_PLAN_THRESHOLD = 4  # `fanout_contracts.FANOUT_SPAWN_PLAN_THRESHOLD`, held by the same test
 SPAWN_PLAN_FIELDS = ("why_parallel", "why_not_single_unit", "independence", "expected_evidence_shape")
@@ -160,7 +168,7 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
                 node = dag_run.valid_id(args.get("node"), "invalid_node_id", "Name the node to settle.")
                 handoff = dag_run.handoff_path(omh_home, str(record["session_id"]), str(record["run"]), node)
                 happened = dag_run.settle(
-                    record, derived, node, args.get("outcome"), args.get("reason"), bool(args.get("provider_error")),
+                    record, derived, node, args.get("outcome"), args.get("reason"), _flag(args.get("provider_error")),
                     handoff_exists=handoff.is_file() and not handoff.is_symlink(), now=now,
                 )
                 record["updated_at"] = now
@@ -209,8 +217,9 @@ def _define(args: Mapping[str, object], omh_home: Path, hermes_home: Path, durab
         derived = dag_run.derive(existing, children, now)
         return _result("define", existing, derived, shown, say="This run was already defined; nothing changed.",
                        extra={"reused": True})
-    if len(dag_run.session_runs(omh_home, durable)) >= dag_run.MAX_RUNS_PER_SESSION:
-        raise dag_run.DagRefusal("too_many_runs", "This conversation already keeps the most dag runs it can.")
+    if not dag_run.make_room(omh_home, durable, _children(omh_home, segments), now):
+        raise dag_run.DagRefusal(
+            "too_many_runs", "This conversation already keeps the most dag runs it can; cancel one that is not needed.")
     path = dag_run.record_path(omh_home, durable, run)
     with dag_run.locked(path):
         if dag_run.read_run(path) is not None:
@@ -284,8 +293,14 @@ def _ready(
     say: str = "", settled: Mapping[str, Any] | None = None,
 ) -> str:
     slots = free_slots(hermes_home)
+    owner = owner_choice(omh_home, now=now)
+    nodes = {str(node["id"]): node for node in record["nodes"]}
+    # With a coding owner the person chose, the ready coding nodes go to that owner's fanout, never to delegate_task;
+    # verification and review nodes, and every node without a write scope, stay native.
+    coding = [node_id for node_id in dag_run.offerable(record, derived, now)
+              if derived[node_id]["state"] == "ready" and dag_run.is_coding(nodes[node_id])] if owner else []
     calls, held = dag_run.calls_for(record, derived, free_slots=slots["free"], per_call=slots["cap"],
-                                    omh_home=omh_home, now=now)
+                                    omh_home=omh_home, now=now, skip=coding)
     if calls:
         record["updated_at"] = now
         dag_run.write_run(path, record)
@@ -295,7 +310,14 @@ def _ready(
         extra["held_for_slots"] = held
     if settled:
         extra["settled"] = dict(settled)
-    if action in ("define", "extend"):
+    if coding:
+        extra["export"] = {"owner": owner, "nodes": coding, "next": {"tool": "omh_dag", "action": "export",
+                                                                     "owner": owner}}
+        say = say or (
+            f"Coding nodes {', '.join(coding)} go to {owner}, the coding owner the person chose: call omh_dag "
+            f"action=export owner={owner} and run the two commands it returns. The calls go to delegate_task as usual."
+        )
+    if action in ("define", "repair", "extend"):
         extra["topology"] = record["topology"]
         extra["lint"] = record["lint"]
     if not say and held and not calls:
@@ -321,7 +343,8 @@ def _result(action: str, record: Mapping[str, Any], derived: Mapping[str, Mappin
     }
     if state == "needs_repair":
         payload["open"] = dag_run.open_failures(record, derived)
-        say = say or "A node failed: repair it (two cycles per node at most) or report what is open."
+        say = say or ("A node failed: repair it (two cycles per node at most), or report what is open and cancel "
+                      "the run.")
     elif state == "stopped":
         payload["open"] = dag_run.open_failures(record, derived)
         say = say or "The repair cycles are spent: report what is still open, and do not repair again."
@@ -342,7 +365,12 @@ def _result(action: str, record: Mapping[str, Any], derived: Mapping[str, Mappin
 
 
 def owner_choice(omh_home: Path, *, now: float) -> str:
-    """The external coding owner the person explicitly chose within the last day, or ""."""
+    """The external coding owner the person explicitly chose within the last day, or "".
+
+    The record is read the way the router reads it (`explicit_choice`): a
+    missing, malformed, reset or hand-written record names no owner. The day
+    is dag-ulw's own rule (`OWNER_CHOICE_MAX_AGE_SECONDS`).
+    """
     path = Path(omh_home).joinpath(*OWNER_PREFERENCE_FILE)
     try:
         if path.is_symlink() or not path.is_file() or path.stat().st_size > 65_536:
@@ -350,16 +378,22 @@ def owner_choice(omh_home: Path, *, now: float) -> str:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, ValueError, RecursionError):
         return ""
-    if not isinstance(raw, dict) or raw.get("schema_version") != OWNER_PREFERENCE_SCHEMA:
+    _provenance, owner = explicit_choice(raw, route_family=OWNER_ROUTE_FAMILY)
+    if owner not in EXTERNAL_OWNERS:
         return ""
-    route = (raw.get("routes") or {}).get(OWNER_ROUTE_FAMILY) if isinstance(raw.get("routes"), dict) else None
-    if not isinstance(route, dict) or route.get("provenance") not in OWNER_PROVENANCES:
+    chosen = _timestamp(raw["routes"][OWNER_ROUTE_FAMILY]["last_choice_at"])
+    if chosen is None or not 0 <= now - chosen <= OWNER_CHOICE_MAX_AGE_SECONDS:
         return ""
-    owner = route.get("selected_owner")
-    chosen = _timestamp(route.get("last_choice_at"))
-    if owner not in EXTERNAL_OWNERS or chosen is None or not 0 <= now - chosen <= OWNER_CHOICE_MAX_AGE_SECONDS:
-        return ""
-    return str(owner)
+    return owner
+
+
+def _flag(value: object) -> bool:
+    """`provider_error` as given: a bool, or the words true and false; nothing else is read as either."""
+    if value is None or isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, str) and value.strip().casefold() in ("true", "false"):
+        return value.strip().casefold() == "true"
+    raise dag_run.DagRefusal("invalid_provider_error", "provider_error is true or false.")
 
 
 def _timestamp(value: object) -> float | None:
@@ -374,21 +408,28 @@ def _timestamp(value: object) -> float | None:
 
 
 def export_units(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]], owner: str) -> list[dict[str, Any]]:
-    """The coding nodes not yet run, as `fanout_contract/v2` units for ``owner``; refuses an order it would lose."""
-    exportable = [node for node in record["nodes"]
-                  if node["write_scope"] and derived[str(node["id"])]["state"] in ("ready", "waiting")]
-    chosen = {str(node["id"]) for node in exportable}
-    if not chosen:
-        raise dag_run.DagRefusal("nothing_to_export", "No coding node with a write scope is waiting to run.")
+    """The coding nodes that can go to ``owner`` now, as `fanout_contract/v2` units.
+
+    The ready coding nodes, and the waiting ones whose every open parent goes
+    in the same batch (the contract keeps their order). A coding node that
+    waits on a native node goes in a later batch, once that node settled.
+    """
+    candidates = {str(node["id"]): node for node in record["nodes"]
+                  if dag_run.is_coding(node) and derived[str(node["id"])]["state"] in ("ready", "waiting")}
+    chosen: set[str] = set()
+    grew = True
+    while grew:
+        grew = False
+        for node_id, node in candidates.items():
+            if node_id not in chosen and all(parent in chosen or derived[parent]["state"] in dag_run.SATISFIED
+                                             for parent in node["depends_on"]):
+                chosen.add(node_id)
+                grew = True
+    exportable = [node for node in record["nodes"] if str(node["id"]) in chosen]
+    if not exportable:
+        raise dag_run.DagRefusal("nothing_to_export", "No coding node is ready for the coding owner yet.")
     units = []
     for node in exportable:
-        outside = [parent for parent in node["depends_on"]
-                   if parent not in chosen and derived[parent]["state"] not in dag_run.SATISFIED]
-        if outside:
-            raise dag_run.DagRefusal(
-                "export_waits_on_native_nodes",
-                f"Node {node['id']} waits on {', '.join(outside)}; settle those on delegate_task first, then export.",
-            )
         units.append({
             "unit_id": str(node["id"]),
             "title": str(node["label"]),

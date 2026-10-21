@@ -28,9 +28,10 @@ through the ``[dag:<run>/<node>]`` goal marker the delegation ledger reads at
 status is a report, and a returned node waits for ``settle``. A failed or
 blocked node blocks its dependents and nothing else. ``repair`` adds a group
 of repair nodes for a failed or blocked node, at most `MAX_REPAIR_CYCLES` per
-original node; the original counts as satisfied once its latest group is all
-accepted, and nodes of an earlier group that never got accepted are
-superseded. ``extend`` adds a round of nodes to a run whose every node passed
+original node. Once its latest group is all accepted the original counts as
+satisfied and the nodes after it read the group's handoff files, except a
+verification node: it runs again, and only its own accepted re-run satisfies
+it. Nodes of an earlier group that never got accepted are superseded. ``extend`` adds a round of nodes to a run whose every node passed
 when the goal check finds work missing, at most `MAX_EXTEND_ROUNDS` per run.
 Each node records where it came from (``origin``): ``define``,
 ``repair:<root>`` or ``extend:<round>``.
@@ -46,6 +47,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 from typing import Any, Final
 
 from . import dag_core
@@ -93,6 +95,7 @@ _ID: Final = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 MARKER: Final = re.compile(r"^\[dag:([a-z0-9][a-z0-9-]{0,31})/([a-z0-9][a-z0-9-]{0,31})\]")
 _CONTROL: Final = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _VERIFY_WORDS: Final = re.compile(r"(?<![a-z])(verif|audit|validat|qa(?![a-z]))")
+_REVIEW_WORDS: Final = re.compile(r"(?<![a-z])review")
 _MARKER_PATTERNS: Final = {
     marker: re.compile(r"(?<![A-Za-z])" + r"\s+".join(marker.split()) + r"\s*:", re.IGNORECASE)
     for marker in PROMPT_MARKERS
@@ -181,11 +184,12 @@ def write_run(path: Path, record: Mapping[str, Any]) -> None:
         raise DagRefusal("record_unwritable", "The run's record is a link, so OMH will not write through it.")
     temporary = path.with_name(f".{path.name}.{os.getpid()}-{secrets.token_hex(6)}.tmp")
     try:
-        with temporary.open("xb") as handle:
+        # Created 0600: the record holds the node prompts, so it is never readable to others, not even briefly.
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
+        with os.fdopen(descriptor, "wb") as handle:
             handle.write(data + b"\n")
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(temporary, 0o600)
         os.replace(temporary, path)
     finally:
         if temporary.exists() and not temporary.is_symlink():
@@ -207,6 +211,31 @@ def session_runs(omh_home: Path, session_id: str) -> list[tuple[dict[str, Any], 
         return []
     runs = [(record, path) for path in paths if (record := read_run(path)) is not None]
     return sorted(runs, key=lambda item: _number(item[0].get("updated_at")) or 0.0, reverse=True)
+
+
+FINISHED_STATES: Final = frozenset({"done", "cancelled", "stopped"})
+
+
+def make_room(omh_home: Path, session_id: str, children: Sequence[Mapping[str, Any]], now: float) -> bool:
+    """Drop one session's oldest finished runs until a new run fits under `MAX_RUNS_PER_SESSION`.
+
+    A finished run is done, cancelled or out of repair cycles; its record and
+    its handoff folder go together. False when the session is full of runs
+    that can still move, which a new run must not push out.
+    """
+    runs = session_runs(omh_home, session_id)  # newest first
+    while len(runs) >= MAX_RUNS_PER_SESSION:
+        finished = [item for item in runs if run_state(item[0], derive(item[0], children, now)) in FINISHED_STATES]
+        if not finished:
+            return False
+        _record, path = finished[-1]
+        with locked(path):
+            path.unlink(missing_ok=True)
+        folder = path.with_suffix("")
+        if folder.is_dir() and not folder.is_symlink():
+            shutil.rmtree(folder)
+        runs = [item for item in runs if item[1] != path]
+    return True
 
 
 # ── validation ───────────────────────────────────────────────────────────
@@ -261,7 +290,8 @@ def _validated_node(raw: object) -> dict[str, Any]:
 
 
 def _require_graph(
-    nodes: Sequence[Mapping[str, Any]], *, editable: Iterable[str] | None = None, involving: Iterable[str] = ()
+    nodes: Sequence[Mapping[str, Any]], *, editable: Iterable[str] | None = None, involving: Iterable[str] = (),
+    before: Mapping[str, Iterable[str]] | None = None,
 ) -> None:
     """The hard rejects over a whole graph: references, cycles, and write scopes shared without an edge.
 
@@ -269,7 +299,9 @@ def _require_graph(
     checked against the nodes that can still run, not against finished ones.
     ``involving`` limits it further to pairs with one of those nodes in them:
     an extend round is checked against the run's earlier nodes, not the run
-    against itself again.
+    against itself again. ``before`` adds orderings the scope check counts as
+    edges, {node: nodes ordered before it}: a repair group runs before every
+    node that waits on the node it repairs.
     """
     ids = [str(node["id"]) for node in nodes]
     if len(set(ids)) != len(ids):
@@ -288,7 +320,8 @@ def _require_graph(
     checked = set(editable) if editable is not None else known
     new = set(involving)
     scopes = [(str(node["id"]), node["write_scope"]) for node in nodes]
-    for first, second, shared, joined in dag_core.shared_scope_pairs(scopes, parents):
+    ordered = {node: [*listed, *(before or {}).get(node, ())] for node, listed in parents.items()}
+    for first, second, shared, joined in dag_core.shared_scope_pairs(scopes, ordered):
         if not joined and first in checked and second in checked and (not new or first in new or second in new):
             raise DagRefusal(
                 "write_scope_overlap",
@@ -312,6 +345,9 @@ def lint(nodes: Sequence[Mapping[str, Any]]) -> list[str]:
         covered: set[str] = set()
         for verifier in verifiers:
             covered |= ancestors(str(verifier["id"]), parents)
+        # A repair node stands in for the node it repairs; a verification node's repair is checked by its re-run.
+        checks = {str(verifier["id"]) for verifier in verifiers}
+        covered |= {str(node["id"]) for node in nodes if node.get("repairs") and node["repairs"] in covered | checks}
         producers = sorted(str(node["id"]) for node in nodes if node["write_scope"] and not is_verification(node))
         unchecked = [node_id for node_id in producers if node_id not in covered]
         if unchecked:
@@ -325,6 +361,15 @@ def lint(nodes: Sequence[Mapping[str, Any]]) -> list[str]:
 
 def is_verification(node: Mapping[str, Any]) -> bool:
     return bool(_VERIFY_WORDS.search(f"{node['id']} {str(node['label']).casefold()}"))
+
+
+def is_coding(node: Mapping[str, Any]) -> bool:
+    """A node an external coding owner may take: it writes files, and it is no verification or review node.
+
+    Verification and review stay on `delegate_task` whoever builds: the builder never approves itself.
+    """
+    text = f"{node['id']} {str(node['label']).casefold()}"
+    return bool(node["write_scope"]) and not is_verification(node) and not _REVIEW_WORDS.search(text)
 
 
 def ancestors(node_id: str, parents: Mapping[str, Iterable[str]]) -> set[str]:
@@ -432,6 +477,9 @@ def derive(record: Mapping[str, Any], children: Sequence[Mapping[str, Any]], now
                 info["state"] = "running"
         base[node_id] = info
     # A root's latest repair group, all accepted, stands in for it; older groups' unaccepted nodes are superseded.
+    # A verification root is the exception: the group fixed what it found, and only the root running again says
+    # the goal holds. Each failure of the root is answered by one group, so the re-run is due while the failures
+    # number no more than the groups.
     for root, root_groups in groups.items():
         if root not in base or not root_groups:
             continue
@@ -439,7 +487,11 @@ def derive(record: Mapping[str, Any], children: Sequence[Mapping[str, Any]], now
         if base[root]["state"] in ("failed", "blocked") and latest and all(
             base.get(member, {}).get("state") == "accepted" for member in latest
         ):
-            base[root]["state"] = "repaired"
+            failures = sum(1 for attempt in nodes[root].get("attempts") or [] if attempt.get("outcome") in ("failed", "blocked"))
+            if not is_verification(nodes[root]):
+                base[root]["state"] = "repaired"
+            elif failures <= len(root_groups):
+                base[root].update(state="pending", child=None)
         for older in root_groups[:-1]:
             for member in older:
                 if member in base and base[member]["state"] != "accepted":
@@ -542,6 +594,8 @@ def offerable(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]
             nodes.append(node_id)
         elif state == "handed_out":
             last = node["attempts"][-1]
+            if last.get("lane") == "fanout":
+                continue  # exported to a coding owner: settled from the fanout result, never handed to delegate_task
             if now - (_number(last.get("handed_out_at")) or 0.0) > HANDOUT_STALE_SECONDS:
                 nodes.append(node_id)
     return sorted(nodes, key=lambda node_id: (order.get(node_id, 0), node_id))
@@ -561,7 +615,21 @@ def hand_out(node: dict[str, Any], derived_state: str, now: float) -> dict[str, 
     return attempt
 
 
-def task_for(record: Mapping[str, Any], node: Mapping[str, Any], omh_home: Path) -> dict[str, str]:
+def reads_for(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]], node: Mapping[str, Any]) -> list[str]:
+    """The nodes whose handoff files ``node`` reads: its parents, a repaired parent replaced by its latest repair group."""
+    groups = record.get("repairs") or {}
+    reads: list[str] = []
+    for parent in node["depends_on"]:
+        if derived.get(parent, {}).get("state") == "repaired" and groups.get(parent):
+            reads.extend(groups[parent][-1])
+        else:
+            reads.append(parent)
+    return reads
+
+
+def task_for(
+    record: Mapping[str, Any], node: Mapping[str, Any], omh_home: Path, derived: Mapping[str, Mapping[str, Any]]
+) -> dict[str, str]:
     """One `delegate_task` task: the marked goal, and the node's prompt with where to write and read handoffs."""
     session = str(record["session_id"])
     run = str(record["run"])
@@ -573,7 +641,7 @@ def task_for(record: Mapping[str, Any], node: Mapping[str, Any], omh_home: Path)
         "file and your final message.",
     ]
     if node["depends_on"]:
-        reads = ", ".join(str(handoff_path(omh_home, session, run, parent)) for parent in node["depends_on"])
+        reads = ", ".join(str(handoff_path(omh_home, session, run, parent)) for parent in reads_for(record, derived, node))
         lines.append(f"Read first: {reads}. A missing file means that part did not finish: stop and say so.")
     lines.append("Stay inside your SCOPE: other parts of this run work at the same time. If you cannot finish, "
                  "say plainly that you are blocked and why; do not report blocked work as done.")
@@ -582,16 +650,20 @@ def task_for(record: Mapping[str, Any], node: Mapping[str, Any], omh_home: Path)
 
 def calls_for(
     record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], *, free_slots: int, per_call: int,
-    omh_home: Path, now: float,
+    omh_home: Path, now: float, skip: Iterable[str] = (),
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Ready nodes as `delegate_task` calls, one per category (and route fallback), at most ``free_slots`` calls.
 
     Returns the calls, whose nodes are now handed out in ``record``, and the
-    ready nodes left for a later call because no slot was free.
+    ready nodes left for a later call because no slot was free. ``skip`` are
+    nodes that go elsewhere (an external coding owner's export).
     """
     nodes = {str(node["id"]): node for node in record["nodes"]}
     groups: dict[tuple[str, bool], list[str]] = {}
+    skipped = set(skip)
     for node_id in offerable(record, derived, now):
+        if node_id in skipped:
+            continue
         node = nodes[node_id]
         attempts = node.get("attempts") or []
         fallback = bool(attempts) and attempts[-1].get("outcome") == "retry"
@@ -612,7 +684,7 @@ def calls_for(
                 "route": {"tool": "omh_delegate_route", "action": "fallback" if fallback else "set",
                           "category": category},
                 "nodes": chunk,
-                "tasks": [task_for(record, nodes[node_id], omh_home) for node_id in chunk],
+                "tasks": [task_for(record, nodes[node_id], omh_home, derived) for node_id in chunk],
             })
     return calls, held
 
@@ -693,7 +765,11 @@ def repair(
             )
         node.update(repairs=root, cycle=len(groups) + 1, origin=f"repair:{root}")
     runnable = {key for key, info in derived.items() if info["state"] in OPEN | {"ready", "waiting", "held"}}
-    _require_graph(list(record["nodes"]) + added, editable=group | runnable)
+    # The group runs before every node that waits on the root (they wait on the root, the root on the group), so a
+    # dependent writing what the group writes is ordered, not an overlap.
+    every = {str(node["id"]): node["depends_on"] for node in record["nodes"]}
+    below = {key: sorted(group) for key in every if root in ancestors(key, every)}
+    _require_graph(list(record["nodes"]) + added, editable=group | runnable, before=below)
     record["nodes"].extend(added)
     groups.append([str(node["id"]) for node in added])
     record["topology"] = topology(record["nodes"])

@@ -612,7 +612,9 @@ def _build(
     graph["chat"] = _chat_record(ledger)
     graph["changed_at"] = newest  # the last start, stop, team-record or dag-record write: when this graph last moved
     if dag is not None:
-        # A dag run is not over while its parent can still dispatch or repair, even when every drawn lane settled.
+        # A dag run is not over while a node is out or ready, even when every drawn lane settled. A run that waits
+        # on a repair is over for the chat: the reply that did not repair it ends the turn, and a repair added later
+        # reopens the run (`delegation_snapshot`).
         graph["dag_open"] = dag_open
     return graph
 
@@ -620,7 +622,7 @@ def _build(
 # ── omh_dag, read-only ───────────────────────────────────────────────────
 
 
-DAG_OPEN_STATES: Final = frozenset({"running", "needs_repair"})
+DAG_OPEN_STATES: Final = frozenset({"running"})
 # A dag node's derived state (`dag_run.derive`) as a graph state and status word; superseded nodes are not drawn.
 _DAG_VIEW: Final = {
     "accepted": ("done", "accepted"),
@@ -699,7 +701,8 @@ def _dag_nodes(
     """
     record, derived = dag["record"], dag["derived"]
     run = str(record["run"])
-    stopped = dag["state"] in ("stopped", "cancelled")
+    # A held node of a run that is not moving (stopped, cancelled, or waiting on a repair) will not run on its own.
+    stopped = dag["state"] not in DAG_OPEN_STATES
     drawn = {str(node["id"]) for node in record["nodes"] if derived[str(node["id"])]["state"] != "superseded"}
     for node_id, layer in _dag_layers(record, drawn).items():
         node = next(item for item in record["nodes"] if item["id"] == node_id)

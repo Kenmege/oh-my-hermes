@@ -189,21 +189,85 @@ class MessengerTests(unittest.TestCase):
             # counts are recorded, so the next reply with nothing new adds nothing either.
             second = reply("DAG export feature · 2/3 done · 0 running", turn="t2")
             quiet = reply("Waiting on verification.", turn="t2b")
+            # The verification fails and the parent repairs it in the same turn.
             call(action="settle", run="export", node="verify", outcome="failed", reason="1 test red")
-            third = reply("Verification failed; repairing.", turn="t3")
             call(action="repair", run="export", node="verify", nodes=[
                 {"id": "fix", "label": "Fix the red test", "category": "quick", "prompt": PROMPT}])
+            third = reply("Verification failed; repairing.", turn="t3")
             write_handoff(home, "fix")
-            call(action="settle", run="export", node="fix", outcome="accepted")
-            fourth = reply("Repaired.", turn="t4")
-            fifth = reply("Anything else?", turn="t5")
+            rerun = call(action="settle", run="export", node="fix", outcome="accepted")
+            # The fix is in, and the verification runs again: the run is not over until that run passes.
+            fourth = reply("Fixed; verifying again.", turn="t4")
+            write_handoff(home, "verify")
+            call(action="settle", run="export", node="verify", outcome="accepted")
+            fifth = reply("Verified.", turn="t5")
+            sixth = reply("Anything else?", turn="t6")
         self.assertIn("DAG · export feature · 3 tasks · 2 layers", first)
         self.assertIsNone(second)
         self.assertIsNone(quiet)
-        # Every drawn lane has settled, but the run can still repair: a count line, never the end block.
-        self.assertTrue(third.endswith("DAG export feature · 2/3 done · 0 running · 1 failed (Verify export)"), third)
-        self.assertIn("DAG · export feature · ended", fourth)
-        self.assertIsNone(fifth)
+        self.assertTrue(third.endswith("DAG export feature · 2/4 done · 0 running · 1 failed (Verify export) · "
+                                       "+1 added (repair: Fix the red test)"), third)
+        self.assertEqual([c["nodes"] for c in rerun["calls"]], [["verify"]])
+        self.assertTrue(fourth.endswith("DAG export feature · 3/4 done · 0 running"), fourth)
+        self.assertIn("DAG · export feature · ended", fifth)
+        self.assertIn("4 tasks · 4 done", fifth)
+        self.assertIsNone(sixth)
+
+    def test_a_reply_that_only_mentions_the_run_still_gets_its_count_line(self) -> None:
+        with homes() as home:
+            defined(home)
+            now = time.time()
+            started(home, "api", now=now)
+            reply("Dispatched.", turn="t1")
+            stop(home, "child-api", now=now + 5)
+            write_handoff(home, "api")
+            call(action="settle", run="export", node="api", outcome="accepted")
+            mentioned = reply("The DAG export feature run is moving.", turn="t2")
+        self.assertTrue(mentioned.endswith("\n\nDAG export feature · 1/3 done · 0 running"), mentioned)
+
+    def test_a_run_whose_children_went_quiet_is_not_over_until_it_says_so(self) -> None:
+        # Both children's sessions ended with no stop recorded: every drawn lane reads settled ("ended"), but the
+        # parent has settled neither node, so the run is still running and no end block goes out.
+        with homes() as home:
+            home.execute("ALTER TABLE async_delegations ADD COLUMN owner_pid INTEGER")
+            home.session(PARENT, "claude-opus-5-5", effort="high")
+            home.hermes.joinpath("config.yaml").write_text("delegation:\n  max_concurrent_children: 10\n")
+            call(action="define", run="export", name="export feature", nodes=NODES[:2])
+            now = time.time()
+            for node in ("api", "ui"):
+                started(home, node, now=now)
+            reply("Dispatched.", turn="t1")
+            for node in ("api", "ui"):
+                home.session(f"child-{node}", "glm-5.3-flash", parent=PARENT, effort="low", ended=now + 5)
+            quiet = reply("Still waiting on both parts.", turn="t2")
+            graph = build_delegation_graph(home.omh, home.hermes, PARENT)
+        lanes = [node for node in graph["nodes"] if node["kind"] != "root"]
+        self.assertEqual({node["status"] for node in lanes}, {"ended"}, lanes)
+        self.assertTrue(graph["dag_open"])
+        self.assertNotIn("ended", quiet or "")
+
+    def test_a_run_left_waiting_on_a_repair_ends_on_that_reply(self) -> None:
+        # The parent reports instead of repairing: nothing will move, so the end block goes now, not after the
+        # 15-minute stall; a repair made later reopens the run with a count line.
+        with homes() as home:
+            defined(home)
+            now = time.time()
+            started(home, "api", now=now)
+            reply("Dispatched.", turn="t1")
+            stop(home, "child-api", now=now + 5)
+            call(action="settle", run="export", node="api", outcome="failed", reason="no key")
+            call(action="settle", run="export", node="ui", outcome="accepted")  # refused: no handoff, still out
+            call(action="settle", run="export", node="ui", outcome="failed")
+            status = call(action="status", run="export")
+            reported = reply("Both parts failed; here is what is open.", turn="t2")
+            call(action="repair", run="export", node="api", nodes=[
+                {"id": "api-fix", "label": "Fix the API", "category": "quick", "prompt": PROMPT}])
+            reopened = reply("Repairing the API after all.", turn="t3")
+        self.assertEqual(status["state"], "needs_repair")
+        self.assertIn("cancel", status["say"])
+        self.assertIn("DAG · export feature · ended", reported)
+        self.assertNotIn("```", reopened)
+        self.assertIn("+1 added (repair: Fix the API)", reopened)
 
     def test_a_node_added_mid_run_is_named_once_on_the_count_line(self) -> None:
         with homes() as home:

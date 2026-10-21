@@ -262,13 +262,17 @@ class RepairTests(unittest.TestCase):
             handoff(home, "feat", "fix")
             call(action="settle", run="feat", node="fix", outcome="accepted")
             handoff(home, "feat", "verify2")
-            done = call(action="settle", run="feat", node="verify2", outcome="accepted")
+            fixed = call(action="settle", run="feat", node="verify2", outcome="accepted")
+            # A failed verification runs again once its repair is in; only that run satisfies it.
+            handoff(home, "feat", "verify")
+            done = call(action="settle", run="feat", node="verify", outcome="accepted")
+        self.assertEqual([c["nodes"] for c in fixed["calls"]], [["verify"]])
         self.assertEqual(repaired["settled"]["repair_nodes"], ["fix", "verify2"])
         # No chat post was ever recorded (a TUI session): the line names no added node, the drawing shows them.
         self.assertNotIn("added", repaired["status_line"])
         self.assertEqual([c["nodes"] for c in repaired["calls"]], [["fix"]])
         self.assertEqual(done["state"], "done")
-        self.assertEqual({row["id"]: row["state"] for row in done["nodes"]}["verify"], "repaired")
+        self.assertEqual({row["id"]: row["state"] for row in done["nodes"]}["verify"], "accepted")
 
     def test_two_cycles_then_the_run_stops_and_reports(self) -> None:
         with homes() as home:
@@ -407,7 +411,9 @@ class ExtendTests(unittest.TestCase):
         call(action="settle", run="feat", node="v2", outcome="failed")
         call(action="repair", run="feat", node="v2", nodes=[node("v3", scope=("b.py",), depends_on=("api",))])
         handoff(home, "feat", "v3")
-        done = call(action="settle", run="feat", node="v3", outcome="accepted")
+        call(action="settle", run="feat", node="v3", outcome="accepted")
+        handoff(home, "feat", "verify")
+        done = call(action="settle", run="feat", node="verify", outcome="accepted")
         self.assertEqual(done["state"], "done", done)
         self.assertEqual({row["id"]: row["state"] for row in done["nodes"]}["v2"], "superseded")
 
@@ -452,40 +458,85 @@ class LifecycleTests(unittest.TestCase):
         self.assertNotIn("dag", children["sa-y"])
 
 
+CODING = [
+    node("plan", category="unspecified-low", label="Plan the change"),
+    node("api", depends_on=("plan",), scope=("src/api.py",)),
+    node("ui", depends_on=("plan",), scope=("src/ui.py",)),
+    node("review", depends_on=("plan",), scope=("docs/review.md",), label="Review the plan"),
+    node("verify", category="unspecified-high", depends_on=("api", "ui", "review"), label="Verify the feature"),
+]
+
+
+def choose(home, owner: str, *, age: float = 0.0) -> dict:
+    """The record the router writes when the person names ``owner``, dated ``age`` seconds ago."""
+    from datetime import datetime, timedelta, timezone
+
+    moment = (datetime.now(timezone.utc) - timedelta(seconds=age)).isoformat()
+    state = owner_preference.record_in_message_explicit_naming(
+        None, route_family=OWNER_PREFERENCE_ROUTE_FAMILY, selected_owner=owner,
+        naming_cue=f"named_executor:{owner}", occurred_at=moment)
+    put_record(home, state)
+    return state
+
+
+def put_record(home, state: object) -> None:
+    path = home.omh.joinpath(*dag_tool.OWNER_PREFERENCE_FILE)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state), encoding="utf-8")
+
+
 class ExportTests(unittest.TestCase):
-    def _choose(self, home, owner: str, *, hours_ago: float = 0.0) -> None:
-        from datetime import datetime, timedelta, timezone
+    """The coding owner the person already chose takes the coding nodes; everything else stays on delegate_task."""
 
-        moment = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
-        state = owner_preference.record_in_message_explicit_naming(
-            None, route_family=OWNER_PREFERENCE_ROUTE_FAMILY, selected_owner=owner,
-            naming_cue=f"named_executor:{owner}", occurred_at=moment)
-        path = home.omh.joinpath(*dag_tool.OWNER_PREFERENCE_FILE)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(state), encoding="utf-8")
+    def _planned(self, home) -> dict:
+        slots_table(home)  # ten free slots: the pool has room, and the coding nodes still go to the owner
+        call(action="define", run="feat", goal="ship the export feature", nodes=CODING)
+        handoff(home, "feat", "plan")
+        return call(action="settle", run="feat", node="plan", outcome="accepted")
 
-    def test_without_a_chosen_owner_nothing_is_exported(self) -> None:
+    def test_with_a_chosen_owner_coding_nodes_go_to_export_and_the_rest_to_delegate_task(self) -> None:
         with homes() as home:
-            slots_table(home)
-            call(action="define", run="feat", nodes=FEATURE)
-            result = call(action="export", run="feat", owner="codex")
-            self._choose(home, "codex", hours_ago=30)
-            stale = call(action="export", run="feat", owner="codex")
-        self.assertEqual(result["reason"], "owner_not_chosen")
-        self.assertEqual(stale["reason"], "owner_not_chosen")
+            choose(home, "codex")
+            ready = self._planned(home)
+            exported = call(action="export", run="feat", owner="codex")
+            payload = json.loads(Path(exported["fanout"]["units_file"]).read_text(encoding="utf-8"))
+        self.assertEqual([c["nodes"] for c in ready["calls"]], [["review"]])
+        self.assertEqual(ready["export"], {"owner": "codex", "nodes": ["api", "ui"],
+                                           "next": {"tool": "omh_dag", "action": "export", "owner": "codex"}})
+        self.assertIn("omh_dag action=export owner=codex", ready["say"])
+        self.assertEqual(exported["status"], "ok", exported)
+        self.assertEqual([unit["unit_id"] for unit in payload["units"]], ["api", "ui"])
+        rows = {row["id"]: row["state"] for row in exported["nodes"]}
+        self.assertEqual((rows["api"], rows["ui"], rows["verify"]), ("handed_out", "handed_out", "waiting"))
+
+    def test_without_a_record_every_node_runs_on_delegate_task_and_nothing_spawns(self) -> None:
+        with homes() as home, patch("subprocess.Popen") as popen, patch("subprocess.run") as run:
+            ready = self._planned(home)
+            refused = call(action="export", run="feat", owner="codex")
+            folder = dag_run.handoff_path(home.omh, PARENT, "feat", "x").parent
+            files = sorted(path.name for path in folder.iterdir())
+        self.assertEqual(sorted(node_id for c in ready["calls"] for node_id in c["nodes"]), ["api", "review", "ui"])
+        self.assertNotIn("export", ready)
+        self.assertEqual(refused["reason"], "owner_not_chosen")
+        self.assertEqual(files, ["plan.md"])
+        popen.assert_not_called()
+        run.assert_not_called()
 
     def test_export_round_trips_into_a_fanout_contract(self) -> None:
         nodes = [node("api", scope=("src/api.py",)), node("ui", scope=("src/ui.py",)),
                  node("docs", depends_on=("api",), scope=("docs/api.md",)),
                  node("verify", depends_on=("api", "ui", "docs"))]
         with homes() as home:
-            slots_table(home, running=[(f"d{index}", os.getpid()) for index in range(10)])  # no slot: nothing out
-            call(action="define", run="feat", goal="ship the export feature", nodes=nodes)
-            self._choose(home, "codex")
+            slots_table(home)
+            choose(home, "codex")
+            defined = call(action="define", run="feat", goal="ship the export feature", nodes=nodes)
             result = call(action="export", run="feat", owner="codex")
             payload = json.loads(Path(result["fanout"]["units_file"]).read_text(encoding="utf-8"))
             goal = Path(result["fanout"]["goal_file"]).read_text(encoding="utf-8")
+        self.assertEqual(defined["calls"], [])
+        self.assertEqual(defined["export"]["nodes"], ["api", "ui"])
         self.assertEqual(result["status"], "ok", result)
+        # docs waits only on api, which goes in the same batch: the contract keeps the order.
         self.assertEqual([unit["unit_id"] for unit in payload["units"]], ["api", "ui", "docs"])
         contract = build_fanout_contract(goal, payload["units"])
         self.assertEqual(contract["fanout_id"], result["fanout"]["fanout_id"])
@@ -495,6 +546,92 @@ class ExportTests(unittest.TestCase):
         rows = {row["id"]: row["state"] for row in result["nodes"]}
         self.assertEqual(rows["api"], "handed_out")
         self.assertEqual(rows["verify"], "waiting")
+
+    def test_an_exported_node_is_never_handed_to_delegate_task(self) -> None:
+        with homes() as home:
+            choose(home, "codex")
+            self._planned(home)
+            moment = time.time()
+            with patch.object(dag_tool.time, "time", return_value=moment):
+                call(action="export", run="feat", owner="codex")
+            # Past the ten minutes after which a node no child took is offered again: an exported node is not.
+            with patch.object(dag_tool.time, "time", return_value=moment + dag_run.HANDOUT_STALE_SECONDS + 1):
+                later = call(action="ready", run="feat")
+        offered = {node_id for c in later["calls"] for node_id in c["nodes"]}
+        self.assertFalse(offered & {"api", "ui"}, later["calls"])
+        self.assertNotIn("export", later)
+
+    def test_the_choice_counts_for_a_day_and_never_from_the_future(self) -> None:
+        for age, expected in ((23 * 3600 + 59 * 60, "codex"), (24 * 3600 + 60, ""), (-60, "")):
+            with self.subTest(age=age), homes() as home:
+                choose(home, "codex", age=age)
+                self.assertEqual(dag_tool.owner_choice(home.omh, now=time.time()), expected)
+
+    def test_export_reads_the_record_exactly_as_the_router_does(self) -> None:
+        from datetime import datetime, timezone
+
+        moment = datetime.now(timezone.utc).isoformat()
+        valid = owner_preference.record_in_message_explicit_naming(
+            None, route_family=OWNER_PREFERENCE_ROUTE_FAMILY, selected_owner="codex",
+            naming_cue="named_executor:codex", occurred_at=moment)
+        accepted = owner_preference.record_accepted_explicit_choice(
+            None, route_family=OWNER_PREFERENCE_ROUTE_FAMILY, selected_owner="claude-code", occurred_at=moment)
+
+        def changed(state: dict, path: tuple[str, ...], value: object) -> dict:
+            copy = json.loads(json.dumps(state))
+            target = copy
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = value
+            return copy
+
+        route = ("routes", OWNER_PREFERENCE_ROUTE_FAMILY)
+        states = {
+            "valid in_message_naming": valid,
+            "valid accepted choice": accepted,
+            # The review's four (owner_seam_probe): records the router reads as no choice.
+            "raw minimal record": {"schema_version": "coding_owner_preference/v1", "routes": {
+                OWNER_PREFERENCE_ROUTE_FAMILY: {"provenance": "in_message_naming", "selected_owner": "codex",
+                                                "last_choice_at": moment}}},
+            "in_message_naming without a naming cue": changed(valid, (*route, "naming_cue"), ""),
+            "owner with a zero count": changed(valid, (*route, "consecutive_accepted_explicit_choices"), 0),
+            "privacy boundary broken": changed(valid, ("privacy", "mode"), "full"),
+            "no provenance": changed(changed(valid, (*route, "provenance"), ""), (*route, "naming_cue"), ""),
+            "secret-shaped owner": changed(valid, (*route, "selected_owner"), "token-codex"),
+            "not a mapping": ["codex"],
+        }
+        for label, state in states.items():
+            with self.subTest(label), homes() as home:
+                put_record(home, state)
+                provenance = owner_preference.explicit_choice_provenance(
+                    state if isinstance(state, dict) else None, route_family=OWNER_PREFERENCE_ROUTE_FAMILY)
+                router_owner = (state["routes"][OWNER_PREFERENCE_ROUTE_FAMILY]["selected_owner"]
+                                if provenance else "")
+                self.assertEqual(dag_tool.owner_choice(home.omh, now=time.time()), router_owner)
+        self.assertEqual(sum(1 for state in states.values() if owner_preference.explicit_choice_provenance(
+            state if isinstance(state, dict) else None, route_family=OWNER_PREFERENCE_ROUTE_FAMILY)), 2)
+
+    def test_the_opaque_reference_check_is_the_routers(self) -> None:
+        from omh.plugin_bundle.omh import owner_preference_record as bundle
+        from omh.system import metadata_safety as core
+
+        self.assertEqual(bundle.OPAQUE_REFERENCE.pattern, core._OPAQUE_REFERENCE.pattern)
+        self.assertEqual(bundle.SENSITIVE_MARKERS, core._SENSITIVE_MARKERS)
+        self.assertEqual([(p.pattern, p.flags) for p in bundle.SECRET_VALUE_PATTERNS],
+                         [(p.pattern, p.flags) for p in (core._COMMON_SECRET_PREFIX, core._PLATFORM_SECRET_PREFIX,
+                                                         core._AWS_ACCESS_KEY, core._GOOGLE_API_KEY)])
+
+    def test_more_than_four_units_need_a_spawn_plan(self) -> None:
+        nodes = [node(f"part{index}", scope=(f"src/part{index}.py",)) for index in range(5)]
+        plan = {field: "five disjoint files" for field in dag_tool.SPAWN_PLAN_FIELDS}
+        with homes() as home:
+            slots_table(home)
+            choose(home, "codex")
+            call(action="define", run="feat", nodes=nodes)
+            refused = call(action="export", run="feat", owner="codex")
+            exported = call(action="export", run="feat", owner="codex", spawn_plan=plan)
+        self.assertEqual(refused["reason"], "spawn_plan_required")
+        self.assertEqual(exported["status"], "ok", exported)
 
     def test_constants_held_against_the_router_and_the_fanout_contract(self) -> None:
         self.assertEqual(dag_tool.OWNER_PREFERENCE_FILE, owner_preference.OWNER_PREFERENCE_PATH_SEGMENTS)

@@ -23,8 +23,9 @@ the conversation's lanes that no end post has closed yet:
 * **end**, once: a short block that puts each lane under Done, Failed or
   Stopped (and Working, only while one is in flight), names the lane that
   failed first, and gives the totals. It goes on the first reply after
-  every lane has settled (for a dag-ulw run, once the run itself is over:
-  done, cancelled, or out of repair cycles), or, for a run a start opened, once nothing has
+  every lane has settled (for a dag-ulw run, once nothing in it is out or
+  ready: done, cancelled, out of repair cycles, or left waiting on a repair
+  the reply did not make), or, for a run a start opened, once nothing has
   been in flight and nothing has changed for `STALL_SECONDS` (a team part
   waiting on work that will not come). Such a ``stalled`` end lists the
   parts not moving under Stopped with their status, and leaves them out of
@@ -427,7 +428,7 @@ def messenger_snapshot(
     fingerprint = graph_fingerprint(graph)
     if fingerprint == posted.get("fingerprint") and not (run_open and stalled):
         return ""  # the graph the last post showed; only time can still bring a stalled end
-    # A dag run its parent can still dispatch or repair is not over even when every drawn lane settled.
+    # A dag run is over when the run says so: a node whose child went quiet is still out, though its lane reads settled.
     ended = counts["settled"] and not graph.get("dag_open")
     if ended or (run_open and stalled):
         moment_name, block = "end", end_block(graph, lanes)
