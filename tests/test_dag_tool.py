@@ -527,22 +527,65 @@ class RestartTests(unittest.TestCase):
                     ready = call(action="ready", run="feat")
                 self.assertEqual((ready["nodes"][0]["state"], ready["calls"]), ("running", []))
 
+    LINE = (f"Hermes restarted while node api ran, {dag_run.MAX_LOST_REOFFERS + 1} times, so it is not offered "
+            "again: settle it failed or blocked.")
+
+    def lose_until_spent(self, home, moment: float) -> None:
+        """Hermes restarts while each child the node is offered to runs, until the node is not offered again."""
+        self.out(home, moment, probes=hermes_process(1000))
+        for n in range(dag_run.MAX_LOST_REOFFERS):
+            at = moment + 1000 * (n + 1)
+            with patch.object(dag_tool.time, "time", return_value=at), patch_modules(hermes_process(5000 * (n + 2))):
+                self.assertEqual([c["nodes"] for c in call(action="ready", run="feat")["calls"]], [["api"]])
+                start(home, f"child-api-{n}", f"sa-api-{n}", "[dag:feat/api] Node api", now=at + 1)
+
     def test_past_the_bound_the_parent_settles_a_node_that_keeps_losing_its_child(self) -> None:
         moment = time.time()
         with homes() as home:
-            self.out(home, moment, probes=hermes_process(1000))
-            for n in range(dag_run.MAX_LOST_REOFFERS):
-                at = moment + 1000 * (n + 1)
-                with patch.object(dag_tool.time, "time", return_value=at), patch_modules(hermes_process(5000 * (n + 2))):
-                    self.assertEqual([c["nodes"] for c in call(action="ready", run="feat")["calls"]], [["api"]])
-                    start(home, f"child-api-{n}", f"sa-api-{n}", "[dag:feat/api] Node api", now=at + 1)
+            self.lose_until_spent(home, moment)
             with patch.object(dag_tool.time, "time", return_value=moment + 10_000), patch_modules(hermes_process(99_000)):
                 spent = call(action="ready", run="feat")
+                status = call(action="status", run="feat")
                 settled = call(action="settle", run="feat", node="api", outcome="failed", reason="lost to restarts")
         self.assertEqual(spent["calls"], [])
-        self.assertEqual(spent["say"], f"Hermes restarted while node api ran, {dag_run.MAX_LOST_REOFFERS + 1} times, "
-                                       "so it is not offered again: settle it failed or blocked.")
+        # Said on every action, `status` included, beside anything else the reply says.
+        self.assertEqual((spent["say"], status["say"]), (self.LINE, self.LINE))
         self.assertEqual(settled["nodes"][0]["state"], "failed")
+        self.assertNotIn(self.LINE, settled["say"])
+
+    def test_the_settle_line_is_added_to_what_else_the_reply_says(self) -> None:
+        """Mutation: let the settle line replace another say (a retry, an export, a full pool)."""
+        moment = time.time()
+        with homes() as home:
+            self.lose_until_spent(home, moment)
+            with patch.object(dag_tool.time, "time", return_value=moment + 10_000), patch_modules(hermes_process(99_000)):
+                record = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))
+                derived = dag_run.derive(record, dag_tool._children(home.omh, [PARENT]), moment + 10_000)
+                said = json.loads(dag_tool._result("ready", record, derived, None, say="Another line."))["say"]
+        self.assertEqual(said, f"Another line. {self.LINE}")
+
+    def test_a_cancelled_run_does_not_ask_to_settle_its_lost_node(self) -> None:
+        """Mutation: drop the `handed_out` state check from `lost_for_good`."""
+        moment = time.time()
+        with homes() as home:
+            self.lose_until_spent(home, moment)
+            with patch.object(dag_tool.time, "time", return_value=moment + 10_000), patch_modules(hermes_process(99_000)):
+                cancelled = call(action="cancel", run="feat")
+        self.assertEqual(cancelled["nodes"][0]["state"], "cancelled")
+        self.assertNotIn(self.LINE, cancelled["say"])
+
+    def test_a_lost_node_waiting_for_a_slot_is_told_to_wait_not_to_settle(self) -> None:
+        """Mutation: say a node is not offered again before its losses reach the bound."""
+        moment = time.time()
+        with homes() as home:
+            self.out(home, moment, probes=hermes_process(1000))
+            slots_table(home, running=[("busy", os.getpid())])
+            home.hermes.joinpath("config.yaml").write_text("delegation:\n  max_concurrent_children: 1\n")
+            with patch.object(dag_tool.time, "time", return_value=moment + 60), patch_modules(hermes_process(5000)):
+                ready = call(action="ready", run="feat")
+        self.assertEqual((ready["calls"], ready["held_for_slots"]), ([], ["api"]))
+        self.assertEqual(ready["say"], "No delegate_task slot is free; end the turn and call ready again after a "
+                                       "completion.")
 
 
 CODING = [

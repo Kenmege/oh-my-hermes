@@ -336,12 +336,6 @@ def _ready(
     if action in ("define", "repair", "extend"):
         extra["topology"] = record["topology"]
         extra["lint"] = record["lint"]
-    lost = dag_run.lost_for_good(record, derived)
-    if not say and lost:
-        one = len(lost) == 1
-        say = (f"Hermes restarted while {'node' if one else 'nodes'} {', '.join(lost)} ran, "
-               f"{dag_run.MAX_LOST_REOFFERS + 1} times, so {'it is' if one else 'they are'} not offered again: "
-               f"settle {'it' if one else 'each'} failed or blocked.")
     if not say and held and not calls:
         say = "No delegate_task slot is free; end the turn and call ready again after a completion."
     return _result(action, record, derived, shown, say=say, extra=extra)
@@ -379,6 +373,14 @@ def _result(action: str, record: Mapping[str, Any], derived: Mapping[str, Mappin
             if left else
             "Every node is accepted and the extend rounds are spent. Check each one against its SCOPE and the goal "
             "criteria, then report the goal met or what is still open.")
+    lost = dag_run.lost_for_good(record, derived)
+    if lost:
+        # Added to whatever else the reply says, on every action: nothing offers these nodes again.
+        one = len(lost) == 1
+        say = " ".join(part for part in (say, (
+            f"Hermes restarted while {'node' if one else 'nodes'} {', '.join(lost)} ran, "
+            f"{dag_run.MAX_LOST_REOFFERS + 1} times, so {'it is' if one else 'they are'} not offered again: "
+            f"settle {'it' if one else 'each'} failed or blocked.")) if part)
     if extra:
         payload.update(extra)
     if say:

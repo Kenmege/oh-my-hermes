@@ -142,9 +142,10 @@ MAX_TEAM_UNITS: Final = 8
 MAX_TEAMS_PER_SESSION: Final = 16
 # Three inconclusive checks on one attempt block the unit with that reason.
 MAX_INCONCLUSIVE_PER_ATTEMPT: Final = 3
-# A reserved attempt the host never reported dispatching, or one whose helper
-# a Hermes restart ended, is handed back at most this many times before the
-# unit blocks as `dispatch_not_observed` or `helper_lost`.
+# A reserved attempt the host never reported dispatching is handed back at
+# most this many times before the unit blocks as `dispatch_not_observed`; one
+# whose helper a Hermes restart ended, as many times again, counted apart,
+# before it blocks as `helper_lost`.
 MAX_REEMITS: Final = 3
 # A dispatched helper the host never reported returning is treated as lost
 # after this long; the unit blocks rather than holding the barrier forever.
@@ -913,7 +914,9 @@ def _reemit(
     entry handed out less than EMIT_GRACE_SECONDS ago is in flight, not lost,
     and is skipped unless ``respect_grace`` is False (the first start after a
     restart, when no helper can still be on its way). ``lost_now`` names the
-    attempts `_hand_back_lost` just took back; one past the bound blocks as
+    attempts `_hand_back_lost` just took back. Those are counted by their
+    ``lost`` list, not by ``reemits``, so a part re-emitted earlier for a slow
+    start is not stopped by fewer restarts; one past the bound blocks as
     `helper_lost`, since its helper was seen starting.
     """
     entries = []
@@ -928,9 +931,12 @@ def _reemit(
             continue
         if respect_grace and _emit_pending(attempt, now):
             continue
-        attempt["reemits"] = int(attempt.get("reemits", 0)) + 1
-        if attempt["reemits"] > MAX_REEMITS:
-            reason = "helper_lost" if key in lost_now else "dispatch_not_observed"
+        if key in lost_now:
+            reason, over = "helper_lost", len(attempt.get("lost") or []) > MAX_REEMITS
+        else:
+            attempt["reemits"] = int(attempt.get("reemits", 0)) + 1
+            reason, over = "dispatch_not_observed", attempt["reemits"] > MAX_REEMITS
+        if over:
             _block(record, unit, now, {"reason": reason, "observed_at": _iso(now)})
             continue
         entries.append(_hand_out(str(record["team_id"]), unit, attempt, now))
@@ -944,8 +950,9 @@ def _hand_back_lost(ctx: TeamContext, record: dict[str, Any], now: float) -> fro
     `subagent_stop` for them, so without this each would hold the barrier for
     DELEGATION_STALE_SECONDS. Only a recorded process ``dispatcher_alive``
     says is gone counts. No attempt is spent: the hand-back is a re-emit,
-    bounded by MAX_REEMITS. The dispatch moves to ``lost``, so a stop that
-    names its child later matches nothing.
+    bounded by MAX_REEMITS hand-backs of its own (the ``lost`` list). The
+    dispatch moves to ``lost``, so a stop that names its child later matches
+    nothing.
     """
     lost = set()
     for unit in record["units"]:
@@ -960,7 +967,7 @@ def _hand_back_lost(ctx: TeamContext, record: dict[str, Any], now: float) -> fro
         attempt.pop("emitted_at", None)
         gone = attempt.setdefault("lost", [])
         gone.append({**dispatch, "lost_at": _iso(now)})
-        # Every hand-back is one re-emit, so this keeps each one the bound lets through.
+        # Its length is the hand-back count `_reemit` bounds; the unit blocks at MAX_REEMITS + 1.
         del gone[:-(MAX_REEMITS + 1)]
         _emit(record, now, unit=unit, event="lost", summary="Its helper ended when Hermes restarted.", detail_ref=key)
         lost.add(key)

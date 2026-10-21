@@ -23,6 +23,16 @@ from omh.plugin_bundle.omh import host_process  # noqa: E402
 NO_HERMES = {"gateway": None, "gateway.status": None}
 
 
+class _Broken:
+    """A Hermes `gateway.status` that fails to load its names with something other than an ImportError."""
+
+    def __getattr__(self, name: str) -> object:
+        raise RuntimeError("half-initialized module")
+
+
+BROKEN_HERMES = {"gateway": SimpleNamespace(status=_Broken()), "gateway.status": _Broken()}
+
+
 def hermes(*, exists: bool = True, started: object = 777, raises: bool = False) -> dict[str, object]:
     def start_time(pid: int) -> object:
         if raises:
@@ -36,8 +46,9 @@ def hermes(*, exists: bool = True, started: object = 777, raises: bool = False) 
 
 class ThisProcess(unittest.TestCase):
     def test_outside_hermes_nothing_is_recorded(self) -> None:
-        with patch_modules(NO_HERMES):
-            self.assertIsNone(host_process.this_process())
+        for probes in (NO_HERMES, BROKEN_HERMES):
+            with self.subTest(broken=probes is BROKEN_HERMES), patch_modules(probes):
+                self.assertIsNone(host_process.this_process())
 
     def test_the_pid_and_hermes_start_time_or_none_when_unread(self) -> None:
         for probes, started in ((hermes(started=777), 777), (hermes(started=None), None),
@@ -97,6 +108,7 @@ class ProcessAlive(unittest.TestCase):
         here = host_process.machine()
         cases = {
             "outside Hermes": (NO_HERMES, None),
+            "a Hermes whose probes fail to load": (BROKEN_HERMES, None),
             "a pid read on another machine": (hermes(exists=False), {"pid": 4242, "started": 777,
                                                                    "machine": "host:another-host"}),
             "a pid read in another pid namespace": (hermes(exists=False), {

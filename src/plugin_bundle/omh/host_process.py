@@ -14,7 +14,8 @@ fingerprint with its drift tolerance, so a pid the OS gave to another process
 is not read as the recorded one. The import is at call time and guarded
 (#1623): outside Hermes, or on a Hermes without these probes, nothing is
 recorded and every answer is unknown, which leaves each caller's own time
-bound in charge.
+bound in charge. The guard catches any failure, as Hermes' own call sites
+do, so a Hermes module that fails to load reads the same as no Hermes.
 
 A pid means something only on the machine, and in the pid namespace, that
 read it: a Hermes gateway in a container and a CLI on its host can share one
@@ -43,7 +44,9 @@ def this_process() -> dict[str, Any] | None:
     """
     try:
         from gateway.status import get_process_start_time
-    except ImportError:
+    except Exception:
+        # Not Hermes (ImportError), or a Hermes whose module fails to load: nothing is recorded either way,
+        # and the `subagent_start` observers calling this never raise.
         return None
     pid = os.getpid()
     try:
@@ -93,7 +96,8 @@ def process_alive(value: object) -> bool | None:
         return None
     try:
         from gateway.status import _pid_exists, get_process_start_time, start_time_fingerprints_match
-    except ImportError:
+    except Exception:
+        # Hermes' own call sites guard this import the same way (`_owner_liveness`, `_persist_dispatch`).
         return None
     try:
         if not _pid_exists(recorded["pid"]):

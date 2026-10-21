@@ -16,12 +16,13 @@ All notable changes will be documented here.
   restarted while 1 part was out; it starts again." A part with no recorded
   process, one recorded on another machine or in another container, or one
   whose process cannot be told alive or gone, waits for the bound as before.
-  Each hand-back counts as a re-emit, so after three a part blocks as
-  `helper_lost` ("Hermes kept restarting while its helper was out"). A
+  Hand-backs are counted apart from re-emits for a slow start: after three,
+  a part blocks as `helper_lost` ("Hermes kept restarting while its helper
+  was out"). A
   dag-ulw node whose child a restart ended no longer stays `running` with no
   bound: its ledger entry records the same process, and `omh_dag ready`
-  offers the node again at once, at most three times per attempt, then asks
-  the parent to settle it. The delegation graph no longer draws an ended
+  offers the node again at once, at most three times per attempt, then says
+  on every `omh_dag` reply to settle it. The delegation graph no longer draws an ended
   team helper as a lane of its own. Start lines name how many parts start:
   "Started 1 part", "1 starts now and the rest wait for the parts they
   depend on", and no line says "1 parts".

@@ -616,6 +616,7 @@ def offerable(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]
 def lost_for_good(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]]) -> list[str]:
     """Nodes whose child a restart ended after `MAX_LOST_REOFFERS` offers: not offered again; the parent settles them."""
     return [str(node["id"]) for node in record["nodes"] if derived[str(node["id"])].get("lost")
+            and derived[str(node["id"])]["state"] == "handed_out"
             and int(node["attempts"][-1].get("lost", 0)) >= MAX_LOST_REOFFERS]
 
 

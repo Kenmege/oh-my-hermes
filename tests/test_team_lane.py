@@ -570,8 +570,9 @@ class ARestartHandsBackTheHelpersItEnded(TeamHarness):
                                        "0 of 1 part has passed its check so far.")
         self.assertEqual(self.states(again), {"a": "prepared"})
         attempt = self.record()["units"][0]["attempts"][0]
-        self.assertEqual((attempt["dispatch"], attempt["lost"][0]["child_session_id"], attempt["reemits"]),
-                         (None, "child-a", 1))
+        # A hand-back is counted by the `lost` list, never as a re-emit.
+        self.assertEqual((attempt["dispatch"], [item["child_session_id"] for item in attempt["lost"]],
+                          attempt["reemits"]), (None, ["child-a"], 0))
         lost = again["events"][-1]
         self.assertEqual((lost["event"], lost["summary"], lost["detail_ref"]),
                          ("lost", "Its helper ended when Hermes restarted.", "t1/a/attempt-1"))
@@ -650,6 +651,52 @@ class ARestartHandsBackTheHelpersItEnded(TeamHarness):
                          "Stopped: 'Part a' is blocked because Hermes kept restarting while its helper was out.")
         attempts = self.record()["units"][0]["attempts"]
         self.assertEqual((len(attempts), len(attempts[0]["lost"])), (1, team.MAX_REEMITS + 1))
+
+    def test_earlier_re_emits_do_not_shorten_the_restart_bound(self) -> None:
+        """L1. Mutation: count a restart's hand-back in `reemits`, the counter of re-emits for a slow start."""
+        result = self.start([unit("a", CHECK_A)])
+        for _ in range(team.MAX_REEMITS):
+            self.clock += team.EMIT_GRACE_SECONDS
+            result = self.reconcile()
+            self.assertEqual(len(self.entries(result)), 1)
+        self.dispatchers[self.PID] = False
+        for n in range(team.MAX_REEMITS + 1):
+            self.assertTrue(team.observe_dispatch(self.home, SESSION, child_session_id=f"child-{n}",
+                                                  goal=self.entries(result)[0]["goal"], now=self.now(),
+                                                  host=self.HOST))
+            self.restart()
+            result = self.start([unit("a", CHECK_A)])
+            if n < team.MAX_REEMITS:
+                self.assertEqual((len(self.entries(result)), self.states(result)), (1, {"a": "prepared"}))
+        self.assertEqual(result["units"][0]["blocked"]["reason"], "helper_lost")
+
+    def test_a_part_already_blocked_is_not_handed_back(self) -> None:
+        """Mutation: drop the `blocked` skip in `_hand_back_lost`."""
+        self.out([unit("a", CHECK_A)], {"a": self.HOST})
+        self.clock += team.DELEGATION_STALE_SECONDS + 10
+        self.assertEqual(self.reconcile()["units"][0]["blocked"]["reason"], "delegation_not_returned")
+        self.restart()
+        self.dispatchers[self.PID] = False
+        again = self.start([unit("a", CHECK_A)])
+        self.assertEqual(again["say"], "Stopped: 'Part a' is blocked because its helper never came back.")
+        self.assertNotIn("lost", [item["event"] for item in again["events"]])
+        self.assertEqual(self.record()["units"][0]["attempts"][0]["dispatch"]["child_session_id"], "child-a")
+
+    def test_the_restart_line_counts_only_the_parts_that_go_out_again(self) -> None:
+        """Mutation: count a part that blocked at the bound in the restart line."""
+        self.dispatchers[self.PID] = False
+        result = self.start([unit("a", CHECK_A), unit("b", CHECK_B)])
+        for n in range(team.MAX_REEMITS + 1):
+            goals = {entry["goal"].split("/")[1]: entry["goal"] for entry in self.entries(result)}
+            ids = ["a", "b"] if n == team.MAX_REEMITS else ["a"]
+            for unit_id in ids:
+                self.assertTrue(team.observe_dispatch(self.home, SESSION, child_session_id=f"{unit_id}-{n}",
+                                                      goal=goals[unit_id], now=self.now(), host=self.HOST))
+            self.restart()
+            result = self.start([unit("a", CHECK_A), unit("b", CHECK_B)])
+        self.assertEqual(self.states(result), {"a": "blocked", "b": "prepared"})
+        self.assertEqual(result["say"], "Hermes restarted while 1 part was out; it starts again. "
+                                        "0 of 2 parts have passed their checks so far.")
 
 
 class StartSaysHowManyPartsStartNow(TeamHarness):
