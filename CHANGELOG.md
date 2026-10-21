@@ -60,6 +60,27 @@ All notable changes will be documented here.
   - an English stop after `can you` (`can you stop dag ulw`).
 
   `dag ulw 주문 취소 기능 구현해줘` still runs.
+- **The delegate route tool answers right at its edges.** An alias (`*name`),
+  `<<`, or a tag Hermes cannot build (`!!merge`) given as a value in
+  `config.yaml`'s `model` or `delegation` section, on a nested line or inside
+  a flow collection too, or in a root `base_url`, `api_base` or `provider`,
+  now refuses every route, with or without a provider (`config_unloadable`).
+  Hermes cannot load the file when an alias has no anchor, a value is `<<`,
+  or a tag is not one it builds, so a route written there never took effect
+  while OMH answered `routed`; a defined alias refuses too, because the
+  check does not follow anchors. In the managed config the same values make
+  their section unreadable. A route that names no provider over
+  a direct `delegation.base_url` is checked against the provider Hermes
+  names that endpoint (`anthropic`, `openai-codex`) instead of the main
+  session's, since Hermes builds the child there; a `custom` endpoint is not
+  checked, and one the check cannot read keeps the session's check.
+  `fallback` with no category now continues the category this
+  conversation's own route was set under, so a model in two chains no longer
+  fails as ambiguous. It refuses when the model is not in that chain, and a
+  route set by model alone still needs the category. `docs/INSTALLATION.md`
+  now says that `false`, `no`, `off` and zero for `model.provider` read as
+  unset only up to Hermes v0.21.3 and as set from v0.21.4, and why OMH still
+  refuses on them.
 - **The OMH TUI's composer stays still when a turn ends with agents listed
   under it.** On the bottom rows the agent view took the working row's place
   once the turn ended, so at 12 rows with the plan and seven agents the

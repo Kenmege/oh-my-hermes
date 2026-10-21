@@ -1106,8 +1106,14 @@ def load_delegation_route_provenance(
 ) -> list[dict[str, Any]]:
     """Read prepared-route records, oldest first; absent or invalid is empty.
 
-    Provenance only ever upgrades a HUD label — it never gates routing — so
-    every failure mode reads as "no provenance" rather than an error.
+    Provenance upgrades a HUD label, and it also gates two routing answers:
+    `fallback` takes a conversation's chain position and category from it
+    (`delegate_route_tool._fallback_position`), and the leftover check asks it
+    whether the keys in the file are OMH's
+    (`delegation_route_restore.leftover_verdict`). Every failure mode reads as
+    "no provenance" rather than an error, and both answers then take the safe
+    side: a fallback has no position, and the keys in the file are kept as
+    the person's (`person_provenance_unavailable`).
     """
     path = delegation_route_provenance_path(omh_home)
     try:

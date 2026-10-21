@@ -37,6 +37,7 @@ from omh.plugin_bundle.omh.delegation_route_restore import (
 from omh.plugin_bundle.omh.delegation_routing import read_delegation_route
 from omh.plugin_bundle.omh.hermes_delegation import (
     append_delegation_route_provenance,
+    delegation_route_provenance_path,
     load_delegation_route_provenance,
 )
 from omh.plugin_bundle.omh.hooks.session_hooks import on_session_end
@@ -314,6 +315,129 @@ class FallbackOwnershipTest(FallbackPositionTestCase):
         routed = self.call("A", "A-turn", action="set", category="deep")
 
         self.assertEqual(routed["route_restore"], "baseline_captured_over_omh_leftover")
+
+
+SHARED_HEAD_CHAINS = {
+    "schema_version": "mixture_chain_overrides/v1",
+    "categories": {
+        "deep": [
+            {"model": "shared-head", "reasoning_effort": "high"},
+            {"model": "deep-next", "reasoning_effort": "high"},
+        ],
+        "quick": [
+            {"model": "shared-head", "reasoning_effort": "low"},
+            {"model": "quick-next", "reasoning_effort": "low"},
+        ],
+    },
+}
+AMBIGUOUS = "current route model 'shared-head' has ambiguous origins across deep, quick; pass category explicitly"
+
+
+class FallbackCategoryTest(FallbackPositionTestCase):
+    """With no category passed, the one this conversation's route was set under decides.
+
+    A model in two chains used to fail as ambiguous although the
+    conversation's own provenance record names its category (#2177 LOW-5).
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        (self.omh_home / "routing" / "model-chains.json").write_text(
+            json.dumps(SHARED_HEAD_CHAINS), encoding="utf-8"
+        )
+
+    def test_a_shared_model_falls_back_inside_the_category_this_conversation_set(self) -> None:
+        self.route("A", category="deep")
+        self.route("B", category="quick")
+
+        result = self.fallback("A")
+
+        self.assertEqual(result["status"], "fell_back", result)
+        self.assertEqual(result["position_source"], "provenance")
+        self.assertEqual((result["category"], result["from"]), ("deep", "shared-head"))
+        self.assertEqual(result["applied"]["alias"], "deep-next")
+
+    def test_a_live_route_carries_the_category_it_was_set_under(self) -> None:
+        self.route("A", category="quick", end_turn=False)
+
+        result = self.fallback("A")
+
+        self.assertEqual(result["status"], "fell_back", result)
+        self.assertEqual(result["position_source"], "live_route")
+        self.assertEqual(result["applied"]["alias"], "quick-next")
+
+    def test_a_category_passed_wins_over_the_recorded_one(self) -> None:
+        self.route("A", category="deep")
+
+        result = self.fallback("A", category="quick")
+
+        self.assertEqual(result["status"], "fell_back", result)
+        self.assertEqual(result["applied"]["alias"], "quick-next")
+
+    def test_a_route_set_without_a_category_is_still_ambiguous(self) -> None:
+        # Nothing records which chain an explicit model came from, and
+        # another conversation's category is not this one's.
+        self.route("A", model="shared-head", reasoning_effort="high")
+        self.route("B", category="deep")
+        keys = self.current()
+
+        result = self.fallback("A")
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error"], AMBIGUOUS)
+        self.assertEqual(self.current(), keys)
+
+    def test_a_model_outside_the_recorded_category_is_refused(self) -> None:
+        # A lane labelled deep that pinned a quick model: the recorded
+        # category is used, and the model is not in its chain.
+        self.route("A", category="deep", model="quick-next", reasoning_effort="low", end_turn=False)
+        keys = self.current()
+
+        result = self.fallback("A")
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(
+            result["error"],
+            "current route model 'quick-next' does not match category 'deep', the one this "
+            "conversation routed it under",
+        )
+        self.assertEqual(self.current(), keys)
+
+    def test_a_record_that_did_not_write_the_live_route_lends_it_no_category(self) -> None:
+        # The provenance append is unlocked and can be lost. A's deep route
+        # is live but its record is gone, so A's newest record is the earlier
+        # quick one, which does not describe the live route.
+        self.route("A", category="quick")
+        self.route("A", category="deep", end_turn=False)
+        path = delegation_route_provenance_path(self.omh_home)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["records"].pop()
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        result = self.fallback("A")
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error"], AMBIGUOUS)
+
+    def test_a_recorded_category_no_chain_has_is_not_used(self) -> None:
+        append_delegation_route_provenance(
+            {
+                "origin": "head",
+                "category": "retired-category",
+                "alias": "deep-next",
+                "wire_model": "deep-next",
+                "provider": "",
+                "reasoning_effort": "high",
+                "session_id": "A",
+                "written_at": 1.0,
+            },
+            self.omh_home,
+        )
+
+        result = self.fallback("A")
+
+        self.assertEqual(result["status"], "exhausted_to_inherit", result)
+        self.assertEqual(result["category"], "deep")
 
 
 class FallbackAcrossCompressionTest(FallbackPositionTestCase):
