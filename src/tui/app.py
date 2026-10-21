@@ -149,7 +149,7 @@ from .keys import (
 )
 from .launch import request_fallback
 from .agent_view import AGENT_STEER_LEFT_UNANSWERED_NOTICE, STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
-from .layout import choice_cap, is_tiny, slot_cap
+from .layout import Budget, choice_cap, is_tiny, slot_cap
 from .markdown import clean_text
 from .modes import (
     HERMES_OWN_CYCLE,
@@ -1212,13 +1212,14 @@ class App(ModesMixin, AgentViewMixin):
         self.connection_ops: set[str] = set()  # `connection.request` operations already named in a notice
         self.roster = Roster()  # the running turn's subagents
         self.list_selected: str | None = None  # the agent list's highlighted row while the list has the keys
-        self.listed: tuple[str, ...] = ()  # the agent id of each list row as the slot last drew them, top to bottom
+        self.listed: tuple[str, ...] = ()  # the agent id of each list row as the agent view last drew them, top first
         self.log_agent = ""  # the agent whose log the pager shows; "" for every other pager
         self.tail_asked_at: float | None = None  # when the last `subagent.tail` went out
         self.tail_open = False  # that call has no answer yet
         self.tail_misses: dict[str, int] = {}  # agent id -> answers in a row without a tail
-        # The cells a click opens, as last drawn: rows above the info line → the entries on that row.
+        # The cells a click opens, as last drawn: rows above the region's last row → the entries on that row.
         self.clickable: dict[int, tuple[Hit, ...]] = {}
+        self.frame_budget: Budget | None = None  # the rows the last frame gave each part of the region
         self.mouse_off_at: float | None = None  # when `_set_mouse` last turned reports off; None before that
         self.wake: int | None = None  # the gateway client's wake descriptor, which `run` selects on with the input
         self.input_at = 0.0  # when input last arrived, on `clock`
@@ -3939,6 +3940,7 @@ class App(ModesMixin, AgentViewMixin):
             slot=self._slot_lines(cols, rows),
             below=self.menu_under,  # read after `_slot_lines` made it
             agents=self._agent_view(cols, rows),
+            tail_floor=self._working_rows(),
             text_question=self.slot is not None and not self.slot.picking,
             slot_caret=self._slot_caret(),  # read after `_slot_lines` drew the picker it comes from
             theme=self.theme,
@@ -3966,6 +3968,7 @@ class App(ModesMixin, AgentViewMixin):
         # the tail were drawn (a settled tool group is those same rows, moved above the region), and
         # the frame is drawn under them. Flush and frame are one write, so no screen between them shows.
         self.region.render(frame.lines, frame.cursor, cols, flush=stable, screen_rows=rows)
+        self.frame_budget = frame.budget
         self._take_clickable(frame.budget, self.listed)
 
     def _place_menu(self, rows: int, flushed: int, frame: Frame) -> bool:
@@ -4208,6 +4211,14 @@ class App(ModesMixin, AgentViewMixin):
             if tip is not None:
                 lines.append(tip)
         return lines
+
+    def _working_rows(self) -> int:
+        """The tail's last rows that say a turn runs, as `_tail` draws them: the working (or waiting, or
+        interrupting) row, and the tip under the working row from TIP_MIN_ROWS rows. The agent view leaves the tail
+        these (`layout.allocate`'s `tail_floor`), so a short terminal never loses the row saying a turn runs."""
+        if not self._busy():
+            return 0
+        return 1 + int(self.size[1] >= TIP_MIN_ROWS and self.waiting_since is None and not self.interrupting)
 
     def _tip_line(self, cols: int) -> Line | None:
         """The working row's tip, `  ⎿  Tip: …`, the same all turn and the next one in TIPS the turn after; None on a

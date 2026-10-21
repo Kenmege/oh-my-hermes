@@ -705,7 +705,7 @@ class ViewTests(unittest.TestCase):
             5: ["● main", "task 1 running", "task 4 running", "task 5 queued", "+3 more · 1 failed · 2 done"],
             4: ["● main", "task 1 running", "task 4 running", "+4 more · 1 waiting · 1 failed · 2 done"],
             3: ["● main", "task 1 running", "+5 more · 1 running · 1 waiting · 1 failed · 2 done"],
-            2: ["● main", "+6 more · 2 running · 1 waiting · 1 failed · 2 done"],
+            2: ["task 1 running", "+5 more · 1 running · 1 waiting · 1 failed · 2 done"],  # main gives its row up
             1: ["+6 more · 2 running · 1 waiting · 1 failed · 2 done"],
         }
         for max_rows, expected in cases.items():

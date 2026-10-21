@@ -528,6 +528,12 @@ class AgentViewPartTests(unittest.TestCase):
         for payload in (hud_payload(), None, {"error": "x"}, {"delegation_graph": {"status": "inactive"}}):
             self.assertFalse(graph_is_dag(payload))
 
+    def test_a_settled_lane_is_what_the_graph_builder_calls_settled(self) -> None:
+        from omh.plugin_bundle.omh.delegation_graph import SETTLED_STATES
+        from omh.tui.panels import SETTLED_NODE_STATES
+
+        self.assertEqual(SETTLED_NODE_STATES, SETTLED_STATES)
+
     def test_keep_is_the_rows_every_running_agent_needs_and_count_is_every_agent(self) -> None:
         rows = [agent_row(0), agent_row(1, state="done"), agent_row(2)]
         payload = with_agents(hud_payload(), rows, hidden=2)

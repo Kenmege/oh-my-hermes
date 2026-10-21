@@ -66,14 +66,18 @@ def agent_app(*, busy: bool = True, frames: list[tuple[str, dict[str, object]]] 
 
 
 def view_rows(app: App) -> int:
-    """How many rows the agent view under the info line takes now (none on a terminal too small for it)."""
-    cols, rows = app.size
-    return len(app._agent_view(cols, rows))
+    """How many rows the agent view under the info line takes now, as a fresh frame gives them (none on a terminal
+    too small for it)."""
+    drawn(app)
+    return app.frame_budget.agents
 
 
 def screen_info_index(app: App, screen: list[str]) -> int:
-    """The info line's row on `screen`: the last that is not blank, less the agent view's rows under it."""
-    return info_index(screen) - view_rows(app)
+    """The info line's row on `screen`: the region's last row (where the region knows it, else the screen's last row
+    that is not blank), less the agent view's rows under it, blank ones included."""
+    rows = view_rows(app)
+    last = app.region.last_row(app.size[1])
+    return (info_index(screen) if last is None else last) - rows
 
 
 def mode_row(app: App) -> str:
@@ -358,12 +362,14 @@ class ViewTests(unittest.TestCase):
 
     def test_the_view_is_under_the_info_line_wherever_the_agent_list_can_open(self) -> None:
         # Two rows from 6 rows (a quarter, raised by the running agents up to a third), the whole view from 9.
-        collapsed = ["  ● main", "  +2 more · 2 running"]
+        # A turn runs, so the tail keeps its working row: from 6 and 7 rows that leaves the view one row, the count;
+        # from 9 rows the whole view.
+        collapsed = ["  +2 more · 2 running"]
         for rows, view in ((6, collapsed), (7, collapsed), (9, VIEW), (10, VIEW), (24, VIEW)):
             with self.subTest(rows=rows):
                 app, _client = agent_app(rows=rows)
-                self.assertEqual(min(agent_view_cap(rows, 80, 3), 3), len(view))
                 self.assertEqual(view_text(app), view)
+                self.assertTrue([row for row in drawn(app) if "Working" in row], "the working row stays")
                 self.assertTrue(app._list_available())
         for rows, cols in ((5, 80), (24, 19)):  # too small: no view, and no list to open; the count stays
             with self.subTest(rows=rows, cols=cols):
@@ -378,18 +384,29 @@ class ViewTests(unittest.TestCase):
 
         app, _client = agent_app(cols=80)
         app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
-        self.assertTrue(info_text(app).startswith(f"{CHIP} · ↑↓ pick · enter confirms"), info_text(app))
+        # Down moves the approval's choice there, so the count does not offer the list.
+        self.assertTrue(info_text(app).startswith("2 agents · ↑↓ pick · enter confirms"), info_text(app))
         self.assertEqual(view_text(app), VIEW)
+        for kind, frame in (("clarify", {"questions": [{"qid": "q1", "question": "Which file?"}]}), ("vault.code", {})):
+            with self.subTest(question=kind):
+                asked, _client = agent_app(cols=80)
+                asked._on_server_request(ServerRequest("srq-2", kind, frame))
+                self.assertFalse(asked._list_available())
+                self.assertNotIn("↓ agents", info_text(asked))
 
-    def test_typing_never_changes_the_count_or_the_view(self) -> None:
-        # The hint after it may change (a draft takes Esc from the interrupt); the count and the view do not.
+    def test_typing_keeps_the_count_and_the_view_and_takes_away_what_down_would_not_open(self) -> None:
+        # The hint after it may change (a draft takes Esc from the interrupt); the count and the view do not. Down
+        # walks the input history while the composer holds text, so `↓ agents` goes until it is empty again.
         app, _client = agent_app()
         view = view_text(app)
         self.assertTrue(info_text(app).startswith(CHIP), info_text(app))
         for char in "what are they doing":
             app._on_input(Key(CHAR, char))
-        self.assertTrue(info_text(app).startswith(CHIP), info_text(app))
+        self.assertTrue(info_text(app).startswith("2 agents · "), info_text(app))
+        self.assertNotIn("↓ agents", info_text(app))
         self.assertEqual(view_text(app), view)
+        app._set_composer("")
+        self.assertTrue(info_text(app).startswith(CHIP), info_text(app))
 
 
 if __name__ == "__main__":
@@ -451,3 +468,127 @@ class OneAgentSurfaceTests(unittest.TestCase):
                 self.assertEqual(len(shown), agent_view_cap(rows, 80, 16))
                 self.assertFalse([row for row in shown if "task " in row], "a done agent never takes a running one's row")
                 self.assertTrue(shown[-1].endswith(" running · 12 done"), shown[-1])
+
+
+def with_graph(app: App, graph: dict | None, plan: list[dict] | None = None) -> None:
+    """A HUD snapshot holding `graph` as the conversation's delegation graph (and `plan` as its plan)."""
+    from test_tui_panels import hud_payload
+    from omh.tui.panels import HudSnapshot
+
+    payload = hud_payload(plan)
+    if graph is not None:
+        payload["delegation_graph"] = graph
+    app.hud = HudSnapshot(app.stored_id, payload, 0.0)
+
+
+def pinned(app: App) -> list[str]:
+    """Ctrl+L, then output past the screen: the region on the screen's last row, its place certain."""
+    app._on_input(Key(CHAR, "l", ctrl=True))
+    drawn(app)
+    app.transcript.add_notice("\n".join(f"line {number}" for number in range(80)))
+    return drawn(app)
+
+
+def box_top(screen: list[str]) -> int | None:
+    return next((index for index, row in enumerate(screen) if row.startswith("╭")), None)
+
+
+class DagViewTests(unittest.TestCase):
+    """A DAG run's tree under the info line: a third of the screen from the start, one line once the run is over, and
+    the list Down opens in the tree's own rows."""
+
+    def tree_app(self, rows: int, graph: dict, **options: object) -> App:
+        app, _client = make_app(busy=True, rows=rows, cols=120, clock=lambda: 0.0, **options)
+        with_graph(app, graph)
+        return app
+
+    def test_the_staged_export_tree_is_whole_at_40_rows_and_cut_at_24_keeping_its_running_lane(self) -> None:
+        from _delegation_graphs import export_run
+
+        whole = view_text(self.tree_app(40, export_run(staged=True)))
+        self.assertEqual(len(whole), 10, whole)  # header, main, three stages, five lanes: under 40 // 3
+        self.assertFalse([row for row in whole if "more nodes" in row])
+        self.assertEqual([row.strip()[:12] for row in whole[:2]], ["DAG · export", "◆ main · opu"])
+        cut = view_text(self.tree_app(24, export_run(staged=True)))
+        self.assertEqual(len(cut), 24 // 3)
+        self.assertIn("+2 more nodes (1 done)", cut[-1])
+        self.assertTrue([row for row in cut if "● Export button" in row and "running" in row], cut)
+
+    def test_the_cap_is_a_third_of_the_screen_whatever_runs(self) -> None:
+        from _delegation_graphs import export_run
+
+        # Nothing running: the non-DAG cap would be min(7, rows // 4), 6 at 24 rows; the tree still gets 8.
+        idle = export_run({"ui": "waiting"}, staged=True)
+        self.assertEqual(len(view_text(self.tree_app(24, idle))), 8)
+        self.assertEqual(len(view_text(self.tree_app(40, idle))), 10)
+        # The seven-row tree of the same run without stages fits whole at 24 rows.
+        flat = view_text(self.tree_app(24, export_run()))
+        self.assertEqual(len(flat), 7)
+        self.assertFalse([row for row in flat if "more nodes" in row])
+
+    def test_a_run_whose_every_lane_settled_is_one_summary_line(self) -> None:
+        from _delegation_graphs import export_run
+
+        done = {"api": "done", "ui": "done", "docs": "done", "cli": "done", "verify": "done"}
+        for rows in (24, 40):
+            with self.subTest(rows=rows):
+                self.assertEqual(view_text(self.tree_app(rows, export_run(done, staged=True))),
+                                 ["  DAG · export feature · done 5/5"])
+                failed = export_run({**done, "docs": "failed", "verify": "interrupted"}, staged=True)
+                self.assertEqual(view_text(self.tree_app(rows, failed)),
+                                 ["  DAG · export feature · done 3/5 · 1 failed · 1 interrupted"])
+        one_left = export_run({**done, "verify": "running"}, staged=True)
+        self.assertGreater(len(view_text(self.tree_app(40, one_left))), 1, "a lane still running keeps the tree")
+        unread = export_run(done, staged=True)
+        unread["hidden_nodes"] = 2  # lanes the reader left out may still run
+        self.assertGreater(len(view_text(self.tree_app(40, unread))), 1)
+
+    def test_down_in_a_dag_run_opens_the_list_in_the_trees_rows_and_nothing_moves(self) -> None:
+        from _delegation_graphs import parallel
+        from omh.tui.keys import DOWN, ESCAPE
+
+        # The reviewer's two cases: a tree taller than the roster's list, and one shorter.
+        for lanes, agents in ((8, 2), (3, 9)):
+            with self.subTest(lanes=lanes, agents=agents):
+                graph = parallel(lanes)
+                graph["edges"].append({"from": "l0", "to": "l1", "kind": "depends_on"})
+                app = self.tree_app(24, graph)
+                for number in range(agents):
+                    agent_event(app, "start", f"sa-{number}", goal=f"task {number}")
+                before = pinned(app)
+                info, height = screen_info_index(app, before), view_rows(app)
+                self.assertEqual(before[info + 1].strip()[:5], "DAG ·")
+                app._on_input(Key(DOWN))
+                during = drawn(app)
+                self.assertEqual((screen_info_index(app, during), view_rows(app)), (info, height))
+                self.assertEqual(box_top(during), None)
+                self.assertEqual(during[info - 3 : info], ["", "", ""], "the composer's rows, blank")
+                listed = during[info + 1 : info + 1 + height]
+                self.assertEqual(len(app.listed), min(agents + 1, height))
+                self.assertTrue(listed[1].startswith("▸ "), listed)
+                self.assertEqual(listed[len(app.listed) :], [""] * (height - len(app.listed)), "padded with blanks")
+                app._on_input(Key(DOWN))
+                app._on_input(Key(ESCAPE))
+                after = drawn(app)
+                self.assertEqual((screen_info_index(app, after), box_top(after)), (info, box_top(before)))
+                self.assertEqual(after[info + 1].strip()[:5], "DAG ·", "the tree is back in the same rows")
+
+
+class RoomTests(unittest.TestCase):
+    def test_a_view_given_fewer_rows_than_its_cap_ends_on_its_count_row(self) -> None:
+        # 12 rows, a plan in the slot and a turn running: the tail keeps its working row and the view gets two rows,
+        # under its cap of four. Drawn again in those two rows, its last row still counts what it cannot show.
+        app, _client = make_app(busy=True, rows=12, cols=80, clock=lambda: 0.0)
+        with_graph(app, None, [{"text": "Build", "state": "done"}, {"text": "Test", "state": "active"},
+                               {"text": "Ship", "state": "pending"}])
+        for number in range(7):
+            agent_event(app, "start", f"sa-{number}", goal=f"task {number}")
+            if number >= 3:
+                agent_event(app, "complete", f"sa-{number}", goal=f"task {number}", status="completed")
+        screen = drawn(app)
+        self.assertEqual(app.frame_budget.agents, 2)
+        shown = view_text(app)
+        self.assertTrue(shown[0].startswith("  ⠋ task 0  ") and shown[0].endswith("0s · 0 tools"), shown)
+        self.assertEqual(shown[1], "  +6 more · 2 running · 4 done")
+        self.assertTrue([row for row in screen if row.startswith("✻ Working")], "the working row stays")
+        self.assertTrue([row for row in screen if row.startswith("[Plan]")], "and so does the plan")

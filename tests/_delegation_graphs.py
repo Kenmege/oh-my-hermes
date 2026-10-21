@@ -60,3 +60,24 @@ def nested() -> dict:
         [("root", "o", "dispatch"), ("root", "k", "dispatch"), ("o", "o1", "dispatch"), ("o", "o2", "dispatch"),
          ("o2", "o21", "dispatch"), ("o2", "o22", "dispatch")],
     )
+
+
+def export_run(states: dict[str, str] | None = None, *, staged: bool = False) -> dict:
+    """A dag-ulw style run: Export API, then the button, the docs and the CLI flag on it, then a verification on all
+    three. `staged` puts each layer in its own group (`stage N`, as a team record does), which the tree draws as a
+    row of its own: ten rows then, seven without."""
+    states = {"api": "done", "ui": "running", "docs": "waiting", "cli": "waiting", "verify": "waiting", **(states or {})}
+    stage = (lambda number: f"stage {number}") if staged else (lambda number: "")
+    nodes = [
+        root(),
+        lane("api", "Export API", "quick", "glm-5.3-flash", "low", states["api"], elapsed=12, order=1, group=stage(1)),
+        lane("ui", "Export button", "quick", "glm-5.3", "low", states["ui"], elapsed=9, order=2, group=stage(2)),
+        lane("docs", "Export docs", "writing", "claude-opus-5-5", "medium", states["docs"], order=3, group=stage(2)),
+        lane("cli", "Export CLI flag", "quick", "glm-5.3-flash", "low", states["cli"], order=4, group=stage(2)),
+        lane("verify", "Verify export", "deep", "claude-opus-5-5", "high", states["verify"], order=5, group=stage(3),
+             waits=3),
+    ]
+    edges = [("root", "api", "dispatch"), ("api", "ui", "depends_on"), ("api", "docs", "depends_on"),
+             ("api", "cli", "depends_on"), ("ui", "verify", "depends_on"), ("docs", "verify", "depends_on"),
+             ("cli", "verify", "depends_on")]
+    return graph(nodes, edges, name="export feature")

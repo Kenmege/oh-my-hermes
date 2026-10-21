@@ -103,6 +103,7 @@ def build_frame(
     below: Sequence[Line] = (),
     agents: Sequence[Line] = (),
     composer_blank: bool = False,
+    tail_floor: int = 0,
 ) -> Frame:
     """The region for one repaint; `min_height` rows at least, pad rows at the top making up the rest.
 
@@ -121,6 +122,8 @@ def build_frame(
     `layout.agent_view_cap`. `composer_blank` draws the composer's rows, its
     box's included, as blank rows of the same count, with no caret: the agent
     list under them has the keys, and nothing moves as it opens or closes.
+    `tail_floor` is the tail's last rows the agent view leaves it
+    (`layout.allocate`): the working row while a turn runs.
     """
     cap = composer_cap(rows)
     boxed = not is_tiny(rows, cols)
@@ -150,6 +153,7 @@ def build_frame(
         text_question=text_question,
         below_rows=len(below),
         agents_rows=len(agents),
+        tail_floor=tail_floor,
     )
     lines = compose(
         budget,

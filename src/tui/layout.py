@@ -35,10 +35,12 @@ view under it shrinks), and the next flushed lines cover the pad rows.
   terminal.
 - Then the top rule, then the menu below (at most `rows // 3`), then the
   slot (at most `rows // 3` less the menu below's rows), then the agent view
-  (its producer sizes it to `agent_view_cap`), then the sticky prompt (only
-  when asked and a row is left), and the tail takes whatever remains, keeping
-  its last rows. So a question or a picker keeps its whole cap beside the
-  agent view, and the tail gives way first.
+  (its producer sizes it to `agent_view_cap`), leaving the tail its last
+  `tail_floor` rows (the working row while a turn runs), then the sticky
+  prompt (only when asked and a row is left), and the tail takes whatever
+  remains, keeping its last rows. So a question or a picker keeps its whole
+  cap beside the agent view, and the tail gives way first, never below its
+  floor.
 - Below `MIN_ROWS` rows or `MIN_COLS` columns only composer and info line are
   drawn, and, while a question answered with text is open (`text_question`),
   one slot row above them for its label when a row is left. No agent view.
@@ -177,6 +179,7 @@ def allocate(
     text_question: bool = False,
     below_rows: int = 0,
     agents_rows: int = 0,
+    tail_floor: int = 0,
 ) -> Budget:
     """Rows for each part of the region (see the module docstring for the rules)."""
     room = max_height(rows)
@@ -201,7 +204,7 @@ def allocate(
             left -= below
             slot = min(max(slot_rows, 0), slot_cap(rows, cols) - below, left)
             left -= slot
-        agents = min(max(agents_rows, 0), left)
+        agents = min(max(agents_rows, 0), max(left - min(max(tail_floor, 0), tail_rows), 0))
         left -= agents
         sticky_rows = 1 if sticky and left > 0 else 0
         left -= sticky_rows

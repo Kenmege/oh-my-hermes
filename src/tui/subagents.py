@@ -450,17 +450,20 @@ class Roster:
         first, then those waiting for a worker, then failed, interrupted and
         done ones, and the last row counts the rest, `○ 3 done` when every one
         of them finished, else `+4 more · 1 waiting · 3 done`. The rows kept
-        stay in roster order. With no agent there is no view.
+        stay in roster order. In two rows or fewer `● main` gives its row up
+        first, so a running agent is still named. With no agent there is no
+        view.
         """
         if not self.agents or max_rows <= 0:
             return []
         ids = self.ids()
         if len(ids) <= max_rows:
             return [self._list_row(row_id, False, width, theme, spinner_frame, now) for row_id in ids]
-        room = max(max_rows - 2, 0)  # main and the last row
+        main = [MAIN_ID] if max_rows > 2 else []
+        room = max(max_rows - 1 - len(main), 0)  # main, when it keeps its row, and the last row
         ranked = sorted(self.agents, key=lambda key: KEEP_RANK.get(self.agents[key].status, len(KEEP_RANK)))
         kept = set(ranked[:room])
-        shown = [MAIN_ID, *(key for key in self.agents if key in kept)][: max(max_rows - 1, 0)]
+        shown = [*main, *(key for key in self.agents if key in kept)]
         rows = [self._list_row(row_id, False, width, theme, spinner_frame, now) for row_id in shown]
         cut = [agent for key, agent in self.agents.items() if key not in kept]
         return [*rows, truncate_line(_collapsed_row(cut, theme), width)]

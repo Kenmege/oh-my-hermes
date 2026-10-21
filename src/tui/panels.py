@@ -7,7 +7,8 @@ read rather than with this module, and hands each new payload to the UI thread
 through a latest-value slot it can poll without blocking. `panel_lines` turns
 one payload into styled rows: the agents block (header, activity rows,
 `+N more`), then the delegation block (the conversation's delegation graph,
-drawn by `delegation_view` as its tree; the boxes are `/dag`'s), then the plan
+drawn by `delegation_view` as its tree, the boxes being `/dag`'s, and once
+every lane has settled one summary line, `dag_run_summary`), then the plan
 block (`[Plan]` header and its checklist). The app asks for the plan block
 alone for the slot above the composer, where the plan always sat, and for the
 agents and delegation blocks alone for the agent view under the info line
@@ -1101,7 +1102,36 @@ def dag_page_lines(payload: Any, width: int, theme: Theme, depth: str = TRUECOLO
     return [dag_line(row, view.levels, theme, depth) for row in view.lines]
 
 
+# A lane in one of these states has finished: `delegation_graph.SETTLED_STATES` (the bundle module the panel does
+# not import at load).
+SETTLED_NODE_STATES = frozenset({"done", "failed", "interrupted", "unknown"})
+
+
+def dag_run_summary(graph: Mapping[str, Any]) -> str:
+    """`DAG · export feature · done 5/6 · 1 failed` once every lane of `graph` has settled; "" while one has not.
+
+    A finished run holds no rows under the composer: its tree collapses to
+    this one line, until the graph lingers out of the HUD
+    (`delegation_graph.GRAPH_LINGER_SECONDS`) as the whole block did. The
+    counts are the lanes' recorded states; lanes the reader left out
+    (`hidden_nodes`) leave the run unread, so it stays a tree. `/dag` still
+    draws the whole graph.
+    """
+    lanes = [node for node in _rows(graph.get("nodes")) if node.get("kind") != "root"]
+    if not lanes or _count(graph.get("hidden_nodes")) or any(
+        node.get("state") not in SETTLED_NODE_STATES for node in lanes
+    ):
+        return ""
+    counts = {state: sum(1 for node in lanes if node.get("state") == state) for state in SETTLED_NODE_STATES}
+    said = [f"done {counts['done']}/{len(lanes)}"]
+    said += [f"{counts[state]} {state}" for state in ("failed", "interrupted", "unknown") if counts[state]]
+    return " · ".join(["DAG", _safe_text(graph.get("name")) or "delegation", *said])
+
+
 def _dag_lines(graph: Mapping[str, Any], budget: int, columns: int, theme: Theme, depth: str) -> list[Line]:
+    summary = dag_run_summary(graph)
+    if summary:
+        return [_line(Span(DAG_INDENT), Span(summary, dag_style("header", theme, depth=depth)))]
     view = _dag_view(graph, columns, budget)
     return [_line(Span(DAG_INDENT), *dag_line(row, view.levels, theme, depth)) for row in view.lines[:budget]]
 
@@ -1316,7 +1346,8 @@ def panel_lines(
     plan = _plan_view(payload) if show_plan else None
     agents = _agents_view(payload, show_graph) if show_agents else None
     dag = _delegation_graph(payload) if show_graph else None
-    natural = len(_dag_view(dag, columns, None).lines) if dag is not None else 0
+    # A finished run is its one summary line (`dag_run_summary`), else its tree at full height.
+    natural = (1 if dag_run_summary(dag) else len(_dag_view(dag, columns, None).lines)) if dag is not None else 0
     start, end = _initial_window(plan) if plan is not None and plan.status == "established" else (0, 0)
     layout = _Layout(
         plan_on=plan is not None,

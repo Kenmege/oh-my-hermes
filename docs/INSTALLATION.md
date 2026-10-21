@@ -412,7 +412,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   it takes at most a quarter of the screen, seven rows on a terminal of 28
   rows or more (so a one-row composer's input row is row 16 of 24 or 31 of
   40), raised only to show every running agent and never past a third of the
-  screen; as it shrinks, the composer moves down, never up. A resize or a redraw
+  screen; a DAG run's tree takes a third of the screen from the start. While
+  a turn runs the view leaves the working row its place above the composer.
+  As the view shrinks, the composer moves down, never up. A resize or a redraw
   starts again under the output. Hidden while you pick from a list or search
   the history with Ctrl+R (the search's row stands where the composer was,
   the caret at the end of what you typed), it comes back as you left it.
@@ -443,21 +445,27 @@ run and approval decision stays Hermes'; the screen is OMH's.
   agent, its mark (a spinner while it runs, `○` done, `✗` failed, `▪`
   interrupted, `◌` waiting for a worker), its goal, and on the right how long
   it has run and how many tools it called (`waiting 35s` while it waits).
-  The info line counts them (`2 agents · ↓ agents`, the count alone where
-  the line is too narrow for both). The view stays while agents outlive the
-  turn, each one's mark saying whether it still runs. With more agents than
-  the view has rows, the running ones keep theirs and the rest are counted
-  on its last row (`○ 3 done`, or `+4 more · 1 waiting · 3 done`). While the
-  conversation's delegation graph is a DAG run (a lane waits on another, or a
-  lane delegates), the view draws its tree instead (`DAG · <name> · N nodes
-  · …`, `◆ main`, one row per lane with its category, model and state,
-  `+N more nodes` where they do not fit), and `/dag` shows it with boxes.
+  The info line counts them (`2 agents · ↓ agents`; the count alone where
+  the line is too narrow for both, or where Down would not open the list:
+  while you type, while a question or a picker is open). The view stays
+  while agents outlive the turn, each one's mark saying whether it still
+  runs. With more agents than the view has rows, the running ones keep
+  theirs and the rest are counted on its last row (`○ 3 done`, or `+4 more ·
+  1 waiting · 3 done`); in two rows or fewer `● main` gives its row up
+  first. While the conversation's delegation graph is a DAG run (a lane
+  waits on another, or a lane delegates), the view draws its tree instead
+  (`DAG · <name> · N nodes · …`, `◆ main`, one row per lane with its
+  category, model and state, `+N more nodes` where they do not fit, the
+  running lanes kept), and `/dag` shows it with boxes. Once every lane has
+  settled the tree is one line (`DAG · <name> · done 5/6 · 1 failed`).
   With no live subagent the view shows the HUD's agents block (`● main │ 3
   agents · 1 running`, then its rows). On a terminal under 6 rows or 20
   columns there is no view, and the info line keeps the count. Down on an empty composer
   gives the view's rows the keys as a list you pick from, as from a picker:
   the composer's rows are drawn blank while it is open, so nothing on the
-  screen moves, the list scrolls when there are more agents than rows, and
+  screen moves; the list scrolls when there are more agents than rows, and in
+  a DAG run it takes the tree's own rows (padded with blank rows, or
+  scrolled) until Esc brings the tree back; and
   the info line says its keys (`↑↓ select
   · ⏎ log · x interrupt · s steer · esc back`). Esc, Left, `q` or Ctrl+C closes it and
   the composer comes back on its row as you left it; any other key does

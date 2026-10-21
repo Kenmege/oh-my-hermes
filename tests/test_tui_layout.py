@@ -159,6 +159,18 @@ class AgentViewBudgetTests(unittest.TestCase):
             self.assertEqual(with_view.agents, min(agents_rows, left), where)
             self.assertEqual(with_view.tail, min(tail_rows, left - with_view.agents), where)
 
+    def test_the_view_leaves_the_tail_its_floor_and_takes_the_rest(self) -> None:
+        # 12 rows, a full slot: seven rows after the composer frame and the info line, four of them the slot's.
+        free = allocate(12, 80, sticky=False, tail_rows=5, slot_rows=9, composer_rows=1, agents_rows=4)
+        floored = allocate(12, 80, sticky=False, tail_rows=5, slot_rows=9, composer_rows=1, agents_rows=4, tail_floor=1)
+        self.assertEqual((free.slot, free.agents, free.tail), (4, 3, 0))
+        self.assertEqual((floored.slot, floored.agents, floored.tail), (4, 2, 1))
+        # A floor past the tail's own rows asks for nothing more, and room enough leaves the view whole.
+        self.assertEqual(allocate(12, 80, sticky=False, tail_rows=0, slot_rows=9, composer_rows=1, agents_rows=4,
+                                  tail_floor=2).agents, 3)
+        self.assertEqual(allocate(40, 80, sticky=False, tail_rows=5, slot_rows=9, composer_rows=1, agents_rows=7,
+                                  tail_floor=2).agents, 7)
+
     def test_the_view_is_the_regions_last_rows_under_the_info_line(self) -> None:
         parts = Budget(sticky=0, tail=1, slot=1, rule=1, composer=1, bottom_rule=1, info=1, agents=2)
         region = compose(

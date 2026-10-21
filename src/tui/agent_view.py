@@ -97,61 +97,68 @@ class AgentViewMixin:
     `ModesMixin`'s, and the methods it calls without defining them are `App`'s.
     """
 
-    def _agent_view_parts(self, payload: Any) -> tuple[bool, bool, bool]:
-        """(roster rows, agents block, delegation tree): what the agent view draws for `payload` now.
-
-        The roster's rows while it holds agents, unless the delegation graph
-        is a DAG run, whose tree takes their place until Down gives the list
-        the keys (the tree's nodes name no agent the list could act on). With
-        no roster, the HUD's agents block and the delegation tree.
-        """
-        dag = graph_is_dag(payload)
-        roster = bool(self.roster.agents) and (not dag or self.list_selected is not None)
-        return roster, not self.roster.agents, not roster
-
     def _agent_view(self, cols: int, rows: int, room: int | None = None) -> list[Line]:
-        """The agent view under the info line, at most `layout.agent_view_cap` rows (and `room`, when given); the
-        open agent list in the same rows, noting each row's agent id in `listed`."""
+        """The agent view under the info line (and in `room` rows at most, when given); the open agent list in the
+        same rows, noting each row's agent id in `listed`.
+
+        While the conversation's delegation graph is a DAG run its tree is
+        the view, in a third of the screen from the start (the owner wants
+        the graph in sight while it runs), with the HUD's agents block above
+        it while the roster is empty. Down then gives the keys to the
+        roster's list in the tree's own rows, a shorter list padded with blank
+        rows and a longer one scrolled, so opening and closing it moves
+        nothing (the tree's nodes name no agent the list could act on).
+        Otherwise the roster's rows while it holds agents, else the HUD's
+        agents block and the tree, each in `layout.agent_view_cap`.
+        """
         self.listed = ()
         payload = self.hud.payload if self.hud is not None else None
-        roster, show_agents, show_graph = self._agent_view_parts(payload)
-        if roster:
+        valid = isinstance(payload, Mapping) and not payload.get("error")  # else the slot says the reader failed
+        frame, now = self._spinner_frame(), self.clock()
+        if valid and graph_is_dag(payload):
+            cap = self._view_cap(rows, cols, rows // 3, room)
+            lines = self._hud_view(payload, cols, cap, show_agents=not self.roster.agents)
+            if self.list_selected is None:
+                return lines
+            listed, self.listed = self.roster.list_lines(cols, self.theme, self.list_selected, frame, len(lines), now)
+            return listed + [()] * (len(lines) - len(listed))
+        if self.roster.agents:
             running = self.roster.running_count()
-            keep = 1 + running + int(len(self.roster.agents) > running)
-        else:
-            keep = agent_view_keep(payload, cols, show_agents=show_agents, show_graph=show_graph)
+            cap = self._view_cap(rows, cols, 1 + running + int(len(self.roster.agents) > running), room)
+            if self.list_selected is not None:
+                lines, self.listed = self.roster.list_lines(cols, self.theme, self.list_selected, frame, cap, now)
+                return lines
+            return self.roster.view_lines(cols, self.theme, frame, cap, now)
+        if not valid:
+            return []
+        return self._hud_view(payload, cols, self._view_cap(rows, cols, agent_view_keep(payload, cols), room))
+
+    def _view_cap(self, rows: int, cols: int, keep: int, room: int | None) -> int:
+        """`layout.agent_view_cap` for `keep` rows, and no more than `room` when given."""
         cap = agent_view_cap(rows, cols, keep)
-        if room is not None:
-            cap = min(cap, room)
+        return cap if room is None else min(cap, room)
+
+    def _hud_view(self, payload: Mapping[str, Any], cols: int, cap: int, show_agents: bool = True) -> list[Line]:
+        """The HUD's agents block (unless `show_agents` is False) and the delegation tree, in `cap` rows."""
         if cap <= 0:
             return []
-        frame, now = self._spinner_frame(), self.clock()
-        if self.list_selected is not None:
-            lines, self.listed = self.roster.list_lines(cols, self.theme, self.list_selected, frame, cap, now)
-            return lines
-        if roster:
-            return self.roster.view_lines(cols, self.theme, frame, cap, now)
-        if not isinstance(payload, Mapping) or payload.get("error"):
-            return []  # the slot above the composer says the reader failed
         return panel_lines(
             payload, cols, cap, self.theme, self.wall_clock(), received_at=self.hud.received_at,
-            show_plan=False, show_agents=show_agents, show_graph=show_graph, agents_inset=self._info_inset(),
+            show_plan=False, show_agents=show_agents, agents_inset=self._info_inset(),
             motion=self.motion, color_depth=self.color_depth,
         )
 
     def _agent_chip(self, room: int) -> Line:
         """The info line's count of the agents the view under it stands for, in `room` cells: `3 agents · ↓ agents`
-        where Down opens their list, else the count alone; nothing with no agent, or no room for the count."""
+        while Down would open their list, else the count alone; nothing with no agent, or no room for the count."""
         payload = self.hud.payload if self.hud is not None else None
         count = self.roster.count_text()
         if not count:
-            _roster, show_agents, show_graph = self._agent_view_parts(payload)
-            number = agent_view_count(payload, show_agents=show_agents, show_graph=show_graph)
+            number = agent_view_count(payload)
             count = f"{number} agent{'' if number == 1 else 's'}" if number else ""
         if not count:
             return ()
-        cols, rows = self.size
-        opens = bool(self.roster.agents) and not is_tiny(rows, cols)
+        opens = self._list_available() and not self.composer.text and not self._menu_rows()  # `_agent_list_key`'s
         forms = [f"{count}{CHIP_SEPARATOR}{OPEN_MARK}", count] if opens else [count]
         shown = next((form for form in forms if cell_width(form) <= room), "")
         return (Span(shown, self.theme.hint),) if shown else ()
