@@ -24,7 +24,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # The Indonesian trigger pack adds six negatives and eleven interventions.
         # The Vietnamese trigger pack adds eight negatives and eleven interventions.
         # dag-ulw adds twenty-one negatives and twenty-nine interventions.
-        self.assertEqual(payload["summary"]["case_count"], 867)
+        self.assertEqual(payload["summary"]["case_count"], 921)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -46,12 +46,34 @@ class RoutingPrecisionTests(unittest.TestCase):
         # "the users'", answered directly as a reference (+1).
         # Four questions about dag-ulw are answered directly (+4), and so are
         # eleven stop, cancel or status words for its run in progress (+11).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 234)
+        # The dag-ulw routing follow-ups add two Korean cancels, one with a
+        # verb ending after other words and one after a word for the run, and
+        # a polite request to explain dag ulw, each answered directly (+3).
+        # Their review adds six cancels (Korean polite, 부탁해, 그만 돌려,
+        # a modified word for the run, a stop adverb, and "can you stop") and
+        # two polite questions that weigh dag ulw, each answered directly (+8).
+        # The delta review adds three cancels (취소해줘요, 정지해줘, and
+        # 지금 바로 취소), each answered directly (+3).
+        # The third review adds two questions about stopping dag ulw (how to
+        # cancel it, whether it can be stopped), each answered directly (+2).
+        # The fourth review adds whether it was cancelled, a cancel decided
+        # later, the other run cancelled, and two sigils before an English
+        # question, each answered directly (+5).
+        # The fifth review makes a cancel request said as a noun a cancel, and
+        # adds a processed cancel, a halt request sent, and a cancelled run
+        # that keeps going, each answered directly (+4).
+        # The sixth review adds four status checks before a past stop and a
+        # cancel pressed while the run still goes, each answered directly (+5).
+        # The seventh review adds two status checks of a run that stopped and
+        # whether cancel was pressed, each answered directly (+3).
+        # The last review patch adds 멈춤 said to dag ulw and two status checks
+        # of a past stop, each answered directly (+3).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 270)
         self.assertEqual(payload["summary"]["file_lookup_count"], 10)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
         self.assertEqual(payload["summary"]["catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["intervention_case_count"], 921)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 947)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

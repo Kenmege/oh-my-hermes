@@ -29,6 +29,83 @@ All notable changes will be documented here.
   Hermes' base `execute`, so it never enters Docker's recovery of a gone
   container. A local terminal, or a backend OMH does not read (`modal`,
   `daytona`, `singularity`), keeps the host check as before.
+- **dag-ulw routing reads remarks, bug reports, questions and polite requests
+  as what they are.** The router and Hermes' route hint read the same
+  `dag_ulw_cues`, so each change holds on both paths. `can you dag ulw the
+  migration?` and `could you please dag ulw …` now start a run. A polite
+  question about it (`can you explain dag ulw?`), or one that weighs it
+  against another way (`can you dag ulw this or should I just fix it
+  myself?`, `would you dag ulw it, if you were me?`), is answered. A cache
+  that breaks when two named modules request at once (`api 모듈과 ui 모듈이
+  동시에 요청하면 캐시가 깨져, 고쳐줘`) stays one ultrawork fix, while
+  failing tests fixed `병렬로 (각각)` still reach dag-ulw. A question or
+  explain request about splitting work (`explain how to split …`, `show me
+  how to split …`, `is it possible to split …`, `how do I split …?`,
+  `병렬로 나눠서 하는 방법 설명해줘` / `알려줘` / `방법이 뭐야`) no longer
+  starts a run or hints "Start at once". A proposal such as `how about we
+  split …`, `can we split …?` or `… 구현해줄 수 있어?` still asks for the
+  work. A remark whose subject holds the split (`the fan out across the
+  services is too high`) and a split whose object is one paragraph or
+  sentence (`split the paragraph into parallel parts for the translation`)
+  no longer start a run or hint "Start at once" either.
+  A Korean stop word after the name no longer starts a run unless the words
+  around the last stop word make it work: a work noun or verb after it
+  (`… 취소 기능 구현해줘`), a request verb of its own ending the message
+  (`… 취소 내역 확인해줘`, `… 종료 훅 등록해줘`), a condition before or after
+  it (`… 실패하면 중단해줘`, `… 취소 시 환불되게 해줘`), or a work word as the
+  object of `꺼줘` (`다크모드 꺼줘`, not `… 작업 꺼줘`). With none, a stop noun after words that may name the
+  work (`dag ulw 주문 취소`, `dag ulw 주문 취소요`, `dag ulw 취소 요청`, a
+  verb-form cancel after more than three words, or a stop of the work on a
+  cancel feature such as `… 취소 기능 만드는 거 그만해줘`) neither cancels
+  the run in progress nor starts one, and neither does a cancel followed by
+  a restart (`… 지금 거 취소하고 결제 모듈부터 다시 해줘`): the router
+  clarifies and the hint asks one question naming both readings (owner
+  decision O7). A question about stopping (`dag ulw 취소 어떻게 해`,
+  `dag ulw 멈출 수 있어`, `dag ulw 중단하면 어떻게 돼`), or whether it stopped
+  (`dag ulw 취소됐어?`, `dag ulw 멈췄어`, `dag ulw 확인해줘, 취소됐는지`), is
+  answered, unless a re-run request comes first (`dag ulw 다시 돌려줘, 아까
+  취소한 거` runs). So is a sigil
+  before a question (`/dag-ulw what is it?`, `/dag-ulw how do I cancel the
+  run?`), unless it goes on to ask for work (`/dag-ulw explain the plan, then
+  run the migration` runs). These cancel. On main
+  the polite endings, `그만 돌려`, `멈춰라`, `취소요`, `정지`, `스톱` and `꺼줘`
+  started a run, `취소해줄 수 있어?` was answered, and `can you stop dag ulw`
+  clarified:
+  - a verb ending, plain or polite, after up to three words (`주문
+    취소해줘`, `취소해줘요`, `취소하세요`, `취소 부탁해`, `취소해줄 수
+    있어?`, `그만 돌려`, `멈춰라`);
+  - the bare stop word, with a bare `요`, `좀` or `ㄱ` or after stop adverbs
+    (`취소`, `취소요`, `정지`, `스톱`, `꺼줘`, `지금 바로 취소`);
+  - a word for the run, with or without a modifier (`작업 취소`,
+    `진행 중인 작업 취소`, `그것도 취소`, `다른 거 취소`, `저거 말고 이거
+    취소`);
+  - the act of stopping after those (`작업 취소 처리해줘`, `런 중단 요청
+    보내줘`, `취소 눌러줘`), and a stop that did not take (`취소했는데 계속
+    돌아가`, `취소 눌렀는데 계속 돌아가`);
+  - an English stop after `can you` (`can you stop dag ulw`).
+
+  `dag ulw 주문 취소 기능 구현해줘` still runs.
+- **The delegate route tool answers right at its edges.** An alias (`*name`),
+  `<<`, or a tag Hermes cannot build (`!!merge`) given as a value in
+  `config.yaml`'s `model` or `delegation` section, on a nested line or inside
+  a flow collection too, or in a root `base_url`, `api_base` or `provider`,
+  now refuses every route, with or without a provider (`config_unloadable`).
+  Hermes cannot load the file when an alias has no anchor, a value is `<<`,
+  or a tag is not one it builds, so a route written there never took effect
+  while OMH answered `routed`; a defined alias refuses too, because the
+  check does not follow anchors. In the managed config the same values make
+  their section unreadable. A route that names no provider over
+  a direct `delegation.base_url` is checked against the provider Hermes
+  names that endpoint (`anthropic`, `openai-codex`) instead of the main
+  session's, since Hermes builds the child there; a `custom` endpoint is not
+  checked, and one the check cannot read keeps the session's check.
+  `fallback` with no category now continues the category this
+  conversation's own route was set under, so a model in two chains no longer
+  fails as ambiguous. It refuses when the model is not in that chain, and a
+  route set by model alone still needs the category. `docs/INSTALLATION.md`
+  now says that `false`, `no`, `off` and zero for `model.provider` read as
+  unset only up to Hermes v0.21.3 and as set from v0.21.4, and why OMH still
+  refuses on them.
 - **The OMH TUI's composer stays still when a turn ends with agents listed
   under it.** On the bottom rows the agent view took the working row's place
   once the turn ended, so at 12 rows with the plan and seven agents the

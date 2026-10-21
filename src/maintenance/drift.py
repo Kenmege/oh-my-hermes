@@ -694,7 +694,60 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The delta review adds eleven: a stop, cancel, status, progress or
             # log word said to dag ulw, in English and Korean, is about the run
             # in progress and starts no new one (11).
-            expected=867,
+            # The dag-ulw routing follow-ups add nine: a Korean cancel with a
+            # verb ending after other words and one after a word for the run
+            # (2, both cancelled on main too); an order cancel and an upload
+            # halt with no verb, which ask whether to stop the run or build
+            # the thing (2, main cancelled the run); a polite request to
+            # explain dag ulw (1, main clarified); a remark that the fan out
+            # across the services is too high and a split of one paragraph
+            # for a translation (2, main clarified, but Hermes' hint started
+            # a run); and an explain request and a question about splitting
+            # work into parallel lanes (2, main dispatched dag-ulw).
+            # Their review adds ten: Korean cancels said politely (취소하세요),
+            # with 부탁해, as 그만 돌려, after a modified word for the run
+            # (진행 중인 작업) and after a stop adverb (즉시), and an English
+            # stop after "can you" (6; main started a run on the first three,
+            # cancelled the next two and clarified the last); a cancel with a
+            # verb ending after six words, which asks (1, main started a run);
+            # two polite questions that weigh dag ulw against another way (2,
+            # main clarified); and "show me how to split" work (1, main
+            # dispatched dag-ulw).
+            # The delta review adds seven: Korean cancels said as 취소해줘요,
+            # 정지해줘 and 지금 바로 취소 (3; main started a run on the first
+            # two and cancelled the third); a cancel request said as a noun
+            # and an order cancel with only 요 after it (2, main started a run
+            # on both; the first cancels since the fifth review, the second
+            # asks); a split weighed against overkill and a
+            # request to stop using dag ulw (2, main dispatched dag-ulw).
+            # The third review adds four, each a run on main: a stop of the
+            # work on a cancel feature, read by its last stop word, and a
+            # cancel followed by a restart, which ask (2); and asking how to
+            # cancel dag ulw and whether it can be stopped, answered (2).
+            # The fourth review adds seven: whether dag ulw was cancelled and
+            # a cancel decided later, answered (2, answered on main too); the
+            # work turned off with 꺼줘 after a word for the run, which asks
+            # (1, main started a run); the other run cancelled (1, cancelled
+            # on main too); and a sigil before a question about dag-ulw or
+            # about cancelling it, in English and in Korean, which starts no
+            # run (3, main dispatched dag-ulw).
+            # The fifth review adds three, each a run on main: the cancel of
+            # the work processed and a halt request sent for the run, which
+            # cancel (2); and a cancelled run that keeps going, which cancels
+            # it again (1).
+            # The sixth review adds five, each a run on main: four status
+            # checks before a past stop (check, show, look over, whether it
+            # ended), answered; and cancel pressed while the run still goes,
+            # which cancels it again (5).
+            # The seventh review adds three, answered: two status checks of a
+            # run that stopped (멈춘), which main ran, and whether cancel was
+            # pressed, answered on main too (3).
+            # The last review patch adds six, each a run on main: 멈춤 said to
+            # dag ulw, which cancels; a status check of a run that stopped and
+            # of whether it was cancelled, answered; "a halt is enough", which
+            # asks; and help understanding a fan out and an explanation of how
+            # to split, which are asked to be told (6).
+            expected=921,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1023,7 +1076,40 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # on ultrawork: a Korean cache bug when two requests arrive at
             # once, a queue named for parallel work, and a slow parallel
             # implementation of one function (3).
-            expected=921,
+            # The dag-ulw routing follow-ups add five: two polite requests
+            # that put the name after "can you" and "could you please" (2,
+            # main clarified); a Korean order-cancel feature to build, which
+            # runs rather than cancels (1, dispatched on main too); a Korean
+            # cache that breaks when two named modules request at once, which
+            # stays one ultrawork fix (1, main dispatched dag-ulw); and failing
+            # tests in two Korean modules fixed in parallel, which still reach
+            # dag-ulw (1, dispatched on main too).
+            # Their review adds four that still reach dag-ulw, each dispatched
+            # on main too: broken tests in two Korean modules fixed 병렬로
+            # 각각, a split proposed as "can we ...?", a Korean split asked
+            # with 해줄 수 있어?, and a split beside a README paragraph fix (4).
+            # The delta review adds two: a Korean cache that breaks when two
+            # named modules process at once, which stays one ultrawork fix (1,
+            # main dispatched dag-ulw); and a polite request naming two targets
+            # with "or", which starts a run (1, main clarified).
+            # The third review adds two that still start a run, as on main:
+            # resolving a payment-cancel issue and turning off dark mode (2).
+            # The fourth review adds three that still start a run, as on main:
+            # checking a cancel history and registering a shutdown hook, whose
+            # verbs no word list names, and a refactor that stops if it fails
+            # (3).
+            # The fifth review adds two: a re-run of the run cancelled earlier
+            # (1, dispatched on main too); and a sigil question followed by a
+            # request for work, still a command (1, dispatched on main too).
+            # The sixth review adds four that start a run, each dispatched on
+            # main too: a restart and a re-run of the cancelled run with no
+            # comma, a redo that is not the cancelled run, and a sigil question
+            # with a request after the question mark (4).
+            # The seventh review adds three resume requests for a halted run
+            # (이어서, 계속, 마저 해줘), each dispatched on main too (3).
+            # The last review patch adds a 멈춤 button to build, which still
+            # starts a run, as on main (1).
+            expected=947,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

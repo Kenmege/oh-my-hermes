@@ -239,13 +239,17 @@ class StrictReadingTest(GuardTestCase):
                 self.assertIn("cannot read safely", result["error"])
 
     def test_a_merge_key_from_an_anchor_elsewhere_refuses(self) -> None:
-        before = self.write_config("  <<: *ep\n", head=f"x-ep: &ep\n  base_url: {ENDPOINT}\n{MODEL_BLOCK}")
+        before = self.write_config(
+            "  <<: {max_iterations: 5}\n", head=f"x-ep: &ep\n  base_url: {ENDPOINT}\n{MODEL_BLOCK}"
+        )
         self.assert_refused(self.set_route(), before, "delegation_unreadable")
+        # Merged from an alias, it is a file Hermes may not load at all.
+        before = self.write_config("  <<: *ep\n", head=f"x-ep: &ep\n  base_url: {ENDPOINT}\n{MODEL_BLOCK}")
+        self.assert_refused(self.set_route(), before, "config_unloadable", ["delegation"])
 
     def test_a_value_the_scan_cannot_decide_counts_as_set(self) -> None:
         for shape in (
             "  base_url:\n    url: http://nested.test\n",
-            "  base_url: *endpoint\n",
             f"  base_url: !!str {ENDPOINT}\n",
             f"  base_url: [{ENDPOINT}]\n",
             "  base_url: 'it''s'\n",
@@ -304,6 +308,105 @@ class StrictReadingTest(GuardTestCase):
             with self.subTest(shape=shape):
                 before = self.write_config(shape)
                 self.assert_refused(self.set_route(), before, "direct_endpoint_overrides_provider")
+
+
+class UnloadableConfigTest(GuardTestCase):
+    """An alias or `<<` given as a value in what the guard reads refuses every route.
+
+    Hermes' loader fails on an alias whose anchor is not defined and on `<<`
+    as a value (PyYAML at v0.21.1, ruamel at v0.22.2 and main), then uses its
+    last good copy of the file, so no route written there takes effect,
+    whatever provider it names. The scan does not follow anchors, so a
+    defined alias refuses too.
+    """
+
+    SHAPES = {
+        # model, with its provider pinned or with nothing the bypass reads
+        "model flow alias, pinned": "model: {base_url: *a, provider: custom}\n",
+        "model block alias, pinned": "model:\n  base_url: *a\n  provider: custom\n",
+        "model defined alias, pinned": f"x-local: &a {LOCAL_MAIN}\nmodel:\n  base_url: *a\n  provider: custom\n",
+        "model provider alias": "model:\n  default: x\n  provider: *p\n",
+        "model flow <<": f"model: {{base_url: {LOCAL_MAIN}, provider: <<}}\n",
+        "model block <<": f"model:\n  base_url: {LOCAL_MAIN}\n  provider: <<\n",
+        "model header <<": "model: <<\n",
+        "model header alias": f"x-local: &local\n  base_url: {LOCAL_MAIN}\nmodel: *local\n",
+        "model merge key from an alias": f"x-m: &m\n  base_url: {LOCAL_MAIN}\nmodel:\n  <<: *m\n",
+        "model flow list beside a pin": "model:\n  default: x\n  provider: openrouter\n  extra: [*a]\n",
+        "model flow mapping holding a list": f"model: {{base_url: '{LOCAL_MAIN}', provider: custom, extra: [*a]}}\n",
+        # root keys Hermes reads as model keys
+        "root provider <<": f"provider: <<\nmodel:\n  base_url: {LOCAL_MAIN}\n",
+        "root base_url alias": "base_url: *a\nmodel:\n  provider: custom\n",
+        "root api_base alias": "api_base: *a\nmodel:\n  default: x\n  provider: openrouter\n",
+        # delegation
+        "delegation alias": f"{MODEL_BLOCK}delegation:\n  base_url: *endpoint\n",
+        "delegation << after a comment": f"{MODEL_BLOCK}delegation:\n  api_mode: <<  # x\n",
+        "delegation nested list alias": f"{MODEL_BLOCK}delegation:\n  extra:\n    - *endpoint\n",
+        "delegation nested mapping alias": f"{MODEL_BLOCK}delegation:\n  extra:\n    k: *endpoint\n",
+        "delegation flow list alias": f"{MODEL_BLOCK}delegation:\n  extra: [*ep]\n",
+        "delegation flow mapping alias": f"{MODEL_BLOCK}delegation:\n  extra: {{k: *ep}}\n",
+        "delegation flow list <<": f"{MODEL_BLOCK}delegation:\n  extra: [<<]\n",
+        "delegation nested flow alias": f"{MODEL_BLOCK}delegation:\n  extra:\n    k: [*ep]\n",
+        "delegation endpoint and key beside a flow alias": (
+            f"{MODEL_BLOCK}delegation:\n  base_url: {ENDPOINT}\n  api_key: k\n  extra: [*ep]\n"
+        ),
+        # a tag neither loader builds
+        "delegation !!merge tag": f"{MODEL_BLOCK}delegation:\n  api_mode: !!merge x\n",
+        "delegation local tag": f"{MODEL_BLOCK}delegation:\n  api_mode: !custom x\n",
+        "delegation tag in a flow list": f"{MODEL_BLOCK}delegation:\n  extra: [!!python/str x]\n",
+        "model verbatim tag": "model:\n  default: x\n  provider: !<tag:yaml.org,2002:merge> x\n",
+    }
+
+    def test_every_route_is_refused(self) -> None:
+        for name, text in self.SHAPES.items():
+            for provider in ("anthropic", "openrouter", "custom", ""):
+                with self.subTest(shape=name, provider=provider):
+                    self.config.write_text(text, encoding="utf-8")
+                    before = self.config.read_bytes()
+                    result = (
+                        self.set_route(model="some-model", provider=provider)
+                        if provider
+                        else self.call(action="set", model="local-llama")
+                    )
+                    self.assert_refused(result, before, "config_unloadable")
+                    self.assertIn("would not take effect", result["error"])
+
+    def test_the_refusal_names_where_the_value_is(self) -> None:
+        for text, keys in (
+            ("model:\n  provider: <<\n", ["model"]),
+            ("api_base: *a\nmodel:\n  default: x\n", ["api_base"]),
+            (f"{MODEL_BLOCK}delegation:\n  extra: [*ep]\n", ["delegation"]),
+            (f"provider: *p\n{MODEL_BLOCK}delegation:\n  base_url: *ep\n", ["provider", "delegation"]),
+        ):
+            with self.subTest(text=text):
+                self.config.write_text(text, encoding="utf-8")
+                before = self.config.read_bytes()
+                self.assert_refused(self.set_route(), before, "config_unloadable", keys)
+
+    def test_values_hermes_loads_route(self) -> None:
+        # Text that only looks like an alias, `<<` or a tag, and the tags
+        # both loaders build.
+        for shape in (
+            "  note: a*b\n",
+            "  note: see *this*\n",
+            "  extra: ['*ep', \"<<\"]\n",
+            "  extra: [a, '<< x']\n",
+            '  note: "a, *b"\n',
+            "  note: a !b\n",
+            "  max_iterations: !!int 5\n",
+            "  extra: !!seq [a, !!str b]\n",
+            "  note: ! text\n",
+        ):
+            with self.subTest(shape=shape):
+                self.write_config(shape)
+                self.assert_routed(self.set_route(), "anthropic")
+
+    def test_a_managed_alias_makes_its_section_unreadable(self) -> None:
+        # Hermes skips a managed file it cannot load, but the scan cannot
+        # tell that file from one whose aliases are defined.
+        self.write_config("  max_iterations: 5\n")
+        self.write_managed("delegation:\n  base_url: *ep\n")
+        result = self.call(action="set", model="local-llama")
+        self.assertEqual(result["reason"], "managed_config_unreadable", result)
 
 
 class LeftToHermesTest(GuardTestCase):
@@ -411,6 +514,79 @@ class RouteWithoutProviderTest(GuardTestCase):
                 self.assertEqual(result["status"], "routed", result)
                 self.assertEqual(read_delegation_route(self.home), {"model": "local-llama"})
 
+    def test_a_direct_endpoint_does_not_inherit_the_sessions_provider(self) -> None:
+        # Hermes builds the child against delegation.base_url, so the main
+        # model's provider, which cannot serve this model, is not checked.
+        session = "model:\n  default: gpt-5.6-sol\n  provider: openai-codex\n"
+        for name, delegation, managed in (
+            ("config.yaml", f"  base_url: {ENDPOINT}\n", None),
+            ("managed config", None, f"delegation:\n  base_url: {ENDPOINT}\n"),
+        ):
+            with self.subTest(endpoint=name):
+                if managed:
+                    self.write_managed(managed)
+                self.write_config(delegation, head=session)
+                result = self.call(action="set", model="claude-fable-5-1")
+                self.assertEqual(result["status"], "routed", result)
+                self.assertEqual(read_delegation_route(self.home), {"model": "claude-fable-5-1"})
+
+    def test_a_named_endpoint_is_checked_in_the_sessions_place(self) -> None:
+        # Hermes names the child's provider by the endpoint's URL, so that
+        # provider is checked, not the session's: each session here serves
+        # the model and the endpoint does not.
+        for url, session, model, endpoint_provider in (
+            ("https://api.anthropic.com", "openai-codex", "gpt-6.1-sol", "anthropic"),
+            ("https://chatgpt.com/backend-api/codex", "anthropic", "claude-fable-5-1", "openai-codex"),
+        ):
+            with self.subTest(url=url):
+                before = self.write_config(f"  base_url: {url}\n", head=f"model:\n  provider: {session}\n")
+                result = self.call(action="set", model=model)
+                self.assertEqual(result["status"], "error", result)
+                self.assertEqual(result["endpoint_provider"], endpoint_provider)
+                self.assertNotIn("inherited_provider", result)
+                self.assertIn("hermes config unset delegation.base_url", result["error"])
+                self.assertEqual(self.config.read_bytes(), before)
+
+    def test_a_named_endpoint_that_serves_the_model_routes(self) -> None:
+        # The session's provider cannot serve Fable; the endpoint's can.
+        self.write_config("  base_url: https://api.anthropic.com\n", head="model:\n  provider: openai-codex\n")
+        result = self.call(action="set", model="claude-fable-5-1")
+        self.assertEqual(result["status"], "routed", result)
+        self.assertEqual(read_delegation_route(self.home), {"model": "claude-fable-5-1"})
+
+    def test_a_custom_endpoint_is_not_checked_against_a_recorded_custom_provider(self) -> None:
+        # Hermes names every other URL `custom`; a family recorded for the
+        # person's `custom` provider says nothing about this endpoint.
+        routing = self.omh_home / "routing"
+        routing.mkdir(parents=True)
+        (routing / "providers.json").write_text(
+            json.dumps({
+                "schema_version": "provider_entitlements/v1",
+                "providers": {"custom": "openai-codex"},
+                "subscription_clis": [],
+            }),
+            encoding="utf-8",
+        )
+        self.write_config(f"  base_url: {ENDPOINT}\n", head="model:\n  provider: openrouter\n")
+        result = self.call(action="set", model="claude-fable-5-1")
+        self.assertEqual(result["status"], "routed", result)
+
+    def test_an_endpoint_the_scan_cannot_read_keeps_the_inherited_provider_check(self) -> None:
+        session = "model:\n  default: gpt-5.6-sol\n  provider: openai-codex\n"
+        for delegation in (
+            None,
+            "  max_iterations: 5\n",
+            "  base_url: ${DELEGATION_BASE_URL}\n",
+            f"  base_url: >\n    {ENDPOINT}\n",
+            "  base_url: *endpoint\n",
+        ):
+            with self.subTest(delegation=delegation):
+                before = self.write_config(delegation, head=session)
+                result = self.call(action="set", model="claude-fable-5-1")
+                self.assertEqual(result["status"], "error", result)
+                self.assertEqual(result["inherited_provider"], "openai-codex")
+                self.assertEqual(self.config.read_bytes(), before)
+
 
 class LocalEndpointBypassTest(GuardTestCase):
     def test_a_local_main_endpoint_with_no_provider_refuses_a_provider_route(self) -> None:
@@ -418,6 +594,9 @@ class LocalEndpointBypassTest(GuardTestCase):
             "model.base_url": f"model:\n  default: llama3\n  base_url: {LOCAL_MAIN}\n",
             "provider auto": f"model:\n  base_url: {LOCAL_MAIN}\n  provider: auto\n",
             "provider null": f"model:\n  base_url: {LOCAL_MAIN}\n  provider: ~\n",
+            # Unset up to Hermes v0.21.3; from v0.21.4 the text `False`, which
+            # lifts the bypass. Refused for the older versions.
+            "provider false": f"model:\n  base_url: {LOCAL_MAIN}\n  provider: false\n",
             "LAN host": "model:\n  base_url: http://192.168.1.20:8000/v1\n",
             "non-cloud host": "model:\n  base_url: https://llm.example.internal/v1\n",
             "cloud lookalike": "model:\n  base_url: https://openrouter.ai.example.test/v1\n",
@@ -453,10 +632,9 @@ class LocalEndpointBypassTest(GuardTestCase):
             # Lines that hide a local base_url from the scan unless the whole
             # section counts as unreadable.
             f'model:\n  note: "line one\nx: y"\n  base_url: {LOCAL_MAIN}\n',
-            f"x-m: &m\n  base_url: {LOCAL_MAIN}\nmodel:\n  <<: *m\n",
+            f"model:\n  <<: {{base_url: '{LOCAL_MAIN}'}}\n",
             # A whole value on the header line that is not a plain scalar or a
             # flow mapping this scan reads.
-            f"x-local: &local\n  base_url: {LOCAL_MAIN}\nmodel: *local\n",
             f"model: &m {{base_url: '{LOCAL_MAIN}'}}\n",
             f"model: !!map {{base_url: '{LOCAL_MAIN}'}}\n",
             "model: ${MAIN_MODEL}\n",
@@ -470,6 +648,8 @@ class LocalEndpointBypassTest(GuardTestCase):
             f"model: {{provider: custom, base_url: '{LOCAL_MAIN}', default:}}\n",
             # A collection counts as set: Hermes reads its text as the URL.
             f"model: {{default: llama3, base_url: [{LOCAL_MAIN}]}}\n",
+            # A plain value holding `: `, which no Hermes loader parses.
+            f"model: {{provider: custom: x, base_url: '{LOCAL_MAIN}'}}\n",
         ):
             with self.subTest(head=head):
                 before = self.write_config(head=head)
@@ -487,6 +667,9 @@ class LocalEndpointBypassTest(GuardTestCase):
             "no base_url": "model:\n  default: llama3\n",
             "unset base_url": "model:\n  base_url: ''\n",
             "model.base_url over root": f"base_url: {LOCAL_MAIN}\nmodel:\n  base_url: https://openrouter.ai/api/v1\n",
+            # Text that only opens like `<<` or an alias loads as that text.
+            "provider text opening with <<": f"model:\n  base_url: {LOCAL_MAIN}\n  provider: << x\n",
+            "quoted provider opening with *": f"model:\n  base_url: {LOCAL_MAIN}\n  provider: '*custom'\n",
         }
         for name, head in heads.items():
             with self.subTest(shape=name):

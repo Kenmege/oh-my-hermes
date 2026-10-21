@@ -137,8 +137,8 @@ def _clear_to_baseline(
 
 def _fallback_position(
     route: dict[str, str], hermes_home: Any, omh_home: Any, session_id: str
-) -> tuple[dict[str, str], str]:
-    """The route a fallback is advancing FROM, and where that came from.
+) -> tuple[dict[str, str], str, str]:
+    """The route a fallback is advancing FROM, where that came from, and its category.
 
     Only the CALLING conversation's own route is a position. The live keys,
     the restore record and provenance are each one per profile, shared by
@@ -166,12 +166,22 @@ def _fallback_position(
 
     Provenance records every route OMH wrote, so the position survives the
     restore even though the value does not.
+
+    The category is the one this conversation's newest provenance record
+    names, when that record wrote exactly the position; "" otherwise. A
+    shared model is in several chains, so it is what lets a fallback with no
+    category continue the chain this conversation routed instead of failing
+    as ambiguous. It is read here rather than added to
+    `provenance_route_keys`, whose three keys the leftover check compares
+    with the file.
     """
     conversation = (
         {session_id} | conversation_session_ids(hermes_home, session_id)
         if session_id
         else set()
     )
+    newest = newest_written_provenance(omh_home, session_ids=conversation)
+    recovered = provenance_route_keys(newest)
     record = load_route_restore_record(omh_home)
     if (
         route.get("model")
@@ -179,11 +189,13 @@ def _fallback_position(
         and record["writer_session_id"] in conversation
         and dict(route) == record["written"]
     ):
-        return dict(route), "live_route"
-    recovered = provenance_route_keys(
-        newest_written_provenance(omh_home, session_ids=conversation)
-    )
-    return (recovered, "provenance") if recovered.get("model") else ({}, "none")
+        position, source = dict(route), "live_route"
+    elif recovered.get("model"):
+        position, source = recovered, "provenance"
+    else:
+        return {}, "none", ""
+    category = str(newest.get("category", "") or "") if recovered == position else ""
+    return position, source, category
 
 
 OMH_DELEGATE_ROUTE_SCHEMA = {
@@ -206,9 +218,9 @@ OMH_DELEGATE_ROUTE_SCHEMA = {
         "Hermes has NO provider-side fallback: a child whose model the billing account "
         "cannot serve dies on an HTTP 400 yet its delegation still reports completed with "
         "the error text as the result — a completed child with no recorded model usage "
-        "means exactly this. When that happens call action=fallback with the category "
-        "returned by set to advance the route and re-dispatch; shared routes fail "
-        "closed without that origin. An exhausted chain restores what the delegation keys "
+        "means exactly this. When that happens call action=fallback to advance the route "
+        "and re-dispatch; it stays in the category this conversation set, or the one you "
+        "pass. An exhausted chain restores what the delegation keys "
         "held before OMH first wrote them, which is the user's own pinned model when they "
         "had one and parent inheritance when they did not; if it cannot prove OMH wrote "
         "the current value it changes nothing and reports unrecorded_value_not_ours. "
@@ -226,7 +238,7 @@ OMH_DELEGATE_ROUTE_SCHEMA = {
                     "unless the user had pinned their own; status reads the current route; fallback "
                     "advances the current route to the next candidate in its category "
                     "chain (restoring that baseline once the chain is exhausted). "
-                    "Reuse the category returned by set; ambiguous origins fail closed."
+                    "Without a category passed or recorded, a model in several chains fails closed."
                 ),
             },
             "category": {
@@ -381,7 +393,7 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
         # chain position therefore comes from this conversation's provenance
         # when the live keys no longer carry its route; `expected_previous`
         # below still guards against what is actually in the file.
-        position, position_source = _fallback_position(
+        position, position_source, position_category = _fallback_position(
             route, hermes_home, omh_home, session_id
         )
         current_model = str(position.get("model", ""))
@@ -438,6 +450,11 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
                 "error": f"current route {current_model!r} requires an explicit provider",
             }
             return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
+        # With no category passed, the one this conversation routed the
+        # position under decides; the alias must still be in that chain.
+        recorded = not category and position_category in chains
+        if recorded:
+            category = position_category
         matches = [
             (name, index)
             for name, chain in chains.items()
@@ -451,6 +468,7 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
                     f"current route model {current_model!r} does not match "
                     + (
                         f"category {category!r}"
+                        + (", the one this conversation routed it under" if recorded else "")
                         if category
                         else "any mixture chain; pass category explicitly"
                     )
@@ -618,26 +636,47 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
         # Refuse only what is known wrong -- an unrecorded provider, an alias
         # the catalog never described, or a multi-vendor account all answer
         # "unknown" and dispatch unchanged -- and refuse it beside the answer.
+        # A direct `delegation.base_url` takes the session's place: Hermes
+        # builds the child against that endpoint and names its provider by
+        # the URL. A named one (`anthropic`, `openai-codex`) is checked
+        # instead, `custom` serves whatever the endpoint serves and is not,
+        # and an endpoint the scan cannot read (host "") keeps the session's.
+        endpoint = read_child_endpoint(hermes_home) or {}
+        on_endpoint = bool(endpoint.get("host"))
+        serving = endpoint["provider"] if on_endpoint else read_session_provider(hermes_home)
         entitlements, _status, _providers = effective_provider_entitlements(omh_home, hermes_home)
-        session_provider = read_session_provider(hermes_home)
-        if provider_serves_alias(alias, session_provider, entitlements) is False:
+        if not (on_endpoint and serving == "custom") and provider_serves_alias(alias, serving, entitlements) is False:
             candidates = providers_serving_alias(alias, entitlements)
             remedy = (
                 f"pin one of your providers that can: {', '.join(candidates)}"
                 if candidates
                 else "record which provider serves it in routing/model-providers.json"
             )
-            payload = {
-                "status": "error",
-                "error": (
-                    f"{alias} would inherit this session's provider {session_provider!r}, "
-                    f"which does not serve it. Pass an explicit provider with its wire model, "
-                    f"or {remedy}."
-                ),
-                "alias": alias,
-                "inherited_provider": session_provider,
-                "providers_serving_alias": list(candidates),
-            }
+            if on_endpoint:
+                payload = {
+                    "status": "error",
+                    "error": (
+                        f"{alias} would run on delegation.base_url ({endpoint['host']}), which Hermes builds "
+                        f"as provider {serving!r}, and that provider does not serve it. Route a model it "
+                        "serves, or remove delegation.base_url yourself "
+                        f"(`hermes config unset delegation.base_url`) and {remedy}."
+                    ),
+                    "alias": alias,
+                    "endpoint_provider": serving,
+                    "providers_serving_alias": list(candidates),
+                }
+            else:
+                payload = {
+                    "status": "error",
+                    "error": (
+                        f"{alias} would inherit this session's provider {serving!r}, "
+                        f"which does not serve it. Pass an explicit provider with its wire model, "
+                        f"or {remedy}."
+                    ),
+                    "alias": alias,
+                    "inherited_provider": serving,
+                    "providers_serving_alias": list(candidates),
+                }
             return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
     if "/" in wire_model and not provider:
         payload = {
