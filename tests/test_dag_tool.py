@@ -509,8 +509,12 @@ class LifecycleTests(unittest.TestCase):
                      "Fix the parser [dag:feat/api] [omh-team:t1/a/attempt-1]. Please hurry"):
             with self.subTest(goal=goal):
                 self.assertEqual(dag_binding(goal), {})
-        # A team key before the node's own marker does not hide it.
+        # A team key before the node's own marker does not hide it, with or without text after the marker.
         self.assertEqual(dag_binding("[omh-team:t1/a/attempt-1] Fix [dag:feat/api]"), {"run": "feat", "node": "api"})
+        self.assertEqual(dag_binding("[omh-team:t1/a/attempt-1] Label [dag:feat/x]. Please hurry"),
+                         {"run": "feat", "node": "x"})
+        # Title from before an update quoting a dag marker, then text after the team key: still the helper's.
+        self.assertEqual(dag_binding("Title [dag:feat/api] [omh-team:t1/a/attempt-1]. Please hurry"), {})
 
 
 NO_HERMES = {"gateway": None, "gateway.status": None}

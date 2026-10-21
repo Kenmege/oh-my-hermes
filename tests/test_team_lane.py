@@ -545,9 +545,16 @@ class T10ResumeReEmitsWhatWasReserved(TeamHarness):
         self.assertTrue(team.observe_dispatch(
             self.home, SESSION, child_session_id="lines",
             goal="Part a [omh-team:t1/a/attempt-1]\nnotes\nPart b [omh-team:t1/b/attempt-1]", now=self.now()))
+        self.assertFalse(team.observe_dispatch(self.home, SESSION, child_session_id="dag-child",
+                                               goal="[omh-team:t1/a/attempt-1] Label [dag:feat/x]. Please hurry",
+                                               now=self.now()))
+        # A title from before an update that quoted a dag marker, with text after the key: still this helper.
+        self.assertTrue(team.observe_dispatch(self.home, SESSION, child_session_id="old-title",
+                                              goal="Title [dag:feat/api] [omh-team:t1/a/attempt-1]. Please hurry",
+                                              now=self.now()))
         bound = {item["unit_id"]: (item["attempts"][0].get("dispatch") or {}).get("child_session_id")
                  for item in self.record()["units"]}
-        self.assertEqual(bound, {"a": None, "b": "lines"})
+        self.assertEqual(bound, {"a": "old-title", "b": "lines"})
 
     def test_a_title_holding_a_key_or_a_dag_marker_is_refused(self) -> None:
         """Mutation: refuse only `[omh-team:`; a leading dag marker would bind this helper to a dag node."""
