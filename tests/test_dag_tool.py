@@ -569,6 +569,73 @@ class RestartTests(unittest.TestCase):
                 ready = call(action="ready", run="feat")
         self.assertEqual((ready["nodes"][0]["state"], ready["calls"]), ("returned", []))
 
+    def test_a_child_that_came_back_under_a_rotated_parent_is_not_offered_again(self) -> None:
+        """Hermes files the stop under the parent's current segment, which a rotating compaction made after the start.
+
+        Mutation: drop the stop join in `dag_tool._children` (the node is offered, and its child runs twice).
+        """
+        from omh.plugin_bundle.omh.delegation_graph import build_delegation_graph
+
+        moment = time.time()
+        later = "20261020_160000_later"
+
+        def call_in(session: str, **arguments: object) -> dict:
+            return json.loads(dag_tool.omh_dag_handler(arguments, session_id=session))
+
+        with homes() as home:
+            self.out(home, moment, probes=hermes_process(1000))
+            home.session(PARENT, "claude-opus-5-5")
+            home.rotate(PARENT, later, at=moment + 10)
+            stop(home, "child-api", parent=later, now=moment + 30)  # it came back before the restart
+            with patch.object(dag_tool.time, "time", return_value=moment + 60), patch_modules(hermes_process(5000)):
+                ready = call_in(later, action="ready", run="feat")
+                status = call_in(later, action="status", run="feat")
+            graph = build_delegation_graph(home.omh, home.hermes, later, now=moment + 60)
+        self.assertEqual((ready["nodes"][0]["state"], ready["calls"]), ("returned", []))
+        self.assertEqual(status["nodes"][0]["state"], "returned")
+        self.assertEqual(next(node["status"] for node in graph["nodes"] if node.get("dag_node") == "api"), "returned",
+                         "omh_dag and the graph read one stop")
+
+    def test_a_child_that_came_back_in_its_own_continuation_is_not_offered_again(self) -> None:
+        """Hermes rotated the child itself, so its stop names the continuation, not the session that started.
+
+        Mutation: drop the continuation lookup in `dag_tool._children` (the node is offered, and its child runs twice).
+        """
+        from omh.plugin_bundle.omh.delegation_graph import build_delegation_graph
+
+        moment = time.time()
+        with homes() as home:
+            self.out(home, moment, probes=hermes_process(1000))
+            home.session(PARENT, "claude-opus-5-5")
+            home.session("child-api", "glm-5.3-flash", parent=PARENT)
+            home.rotate("child-api", "child-api-b", at=moment + 10)
+            stop(home, "child-api-b", now=moment + 30)  # it came back before the restart
+            with patch.object(dag_tool.time, "time", return_value=moment + 60), patch_modules(hermes_process(5000)):
+                ready = call(action="ready", run="feat")
+                status = call(action="status", run="feat")
+            graph = build_delegation_graph(home.omh, home.hermes, PARENT, now=moment + 60)
+        self.assertEqual((ready["nodes"][0]["state"], ready["calls"]), ("returned", []))
+        self.assertEqual(status["nodes"][0]["state"], "returned")
+        self.assertEqual(next(node["status"] for node in graph["nodes"] if node.get("dag_node") == "api"), "returned",
+                         "omh_dag and the graph read one stop")
+
+    def test_a_childs_lineage_is_read_only_when_it_is_about_to_be_lost_beside_an_unjoined_stop(self) -> None:
+        """Mutation: read it for every child, or for every lost one (a state.db read on the common path)."""
+        moment = time.time()
+        with homes() as home:
+            self.out(home, moment, probes=hermes_process(1000))
+            with patch.object(dag_tool._kanban_board_reader, "conversation_session_ids", return_value=set()) as lineage:
+                with patch_modules(hermes_process(1000)):  # still running
+                    dag_tool._children(home.omh, [PARENT], home.hermes)
+                with patch_modules(hermes_process(5000)):  # a restart ended it, and no stop is unjoined
+                    dag_tool._children(home.omh, [PARENT], home.hermes)
+                quiet = lineage.call_count
+                stop(home, "child-elsewhere", now=moment + 30)  # a stop no start in this ledger names
+                with patch_modules(hermes_process(5000)):
+                    lost = dag_tool._children(home.omh, [PARENT], home.hermes)
+        self.assertEqual((quiet, lineage.call_count), (0, 1))
+        self.assertTrue(lost[0]["lost"])
+
     def test_two_children_under_one_pid_are_asked_about_apart_by_where_it_was_read(self) -> None:
         """Mutation: key the per-call answer by pid and start time only."""
         moment = time.time()

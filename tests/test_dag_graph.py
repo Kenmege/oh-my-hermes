@@ -241,10 +241,21 @@ class GraphTests(unittest.TestCase):
         with homes() as home:
             defined(home)
             later = "20261020_160000_later"
-            with patch("omh.plugin_bundle.omh.delegation_graph.conversation_session_ids",
-                       return_value={PARENT, later}):
-                graph = build_delegation_graph(home.omh, home.hermes, later)
+            home.rotate(PARENT, later)
+            graph = build_delegation_graph(home.omh, home.hermes, later)
         self.assertEqual(graph["name"], "export feature")
+
+    def test_a_node_whose_stop_hermes_filed_under_the_rotated_parent_has_returned(self) -> None:
+        with homes() as home:
+            defined(home)
+            now = time.time()
+            started(home, "api", now=now)
+            later = "20261020_160000_later"
+            home.rotate(PARENT, later)
+            stop(home, "child-api", parent=later, now=now + 1)  # Hermes names the parent's current segment
+            graph = build_delegation_graph(home.omh, home.hermes, later, now=now + 2)
+        api = next(item for item in graph["nodes"] if item["id"] == "d:export:api")
+        self.assertEqual((api["state"], api["status"]), ("dispatched", "returned"))
 
     def test_omh_hud_graph_prints_the_run(self) -> None:
         with homes() as home:

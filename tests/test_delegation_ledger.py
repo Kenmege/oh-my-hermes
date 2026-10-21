@@ -27,6 +27,7 @@ from omh.plugin_bundle.omh.delegation_ledger import (  # noqa: E402
     prune_ledgers,
     read_ledger,
     title_from_goal,
+    with_unjoined_stop,
 )
 
 NOW = 1_800_000_000.0
@@ -85,6 +86,20 @@ class BindingTests(unittest.TestCase):
                     now=NOW + 1,
                 ))
             self.assertEqual(read_ledger(home.omh, PARENT)["calls"], [])
+
+    def test_an_unjoined_stop_joins_a_child_that_has_none_and_the_newest_one_wins(self) -> None:
+        """`with_unjoined_stop`. Mutations: let an unjoined stop replace a child's own; take the oldest stop."""
+        own = {"status": "completed", "observed_at": NOW + 5, "duration_ms": 5_000}
+        child = {"child_session_id": "child-0", "started_at": NOW, "stop": own}
+        stops = [{"child_session_id": "child-0", "status": "failed", "observed_at": NOW + 9},
+                 {"child_session_id": "child-0b", "status": "interrupted", "observed_at": NOW + 8}]
+        self.assertIs(with_unjoined_stop(child, stops, ["child-0b"])["stop"], own, "a child's own stop is kept")
+        open_child = {"child_session_id": "child-0", "started_at": NOW}
+        self.assertEqual(with_unjoined_stop(open_child, stops, ["child-0b"])["stop"],
+                         {"status": "failed", "observed_at": NOW + 9, "duration_ms": None})
+        self.assertEqual(with_unjoined_stop(open_child, list(reversed(stops)), ["child-0b"])["stop"]["status"],
+                         "failed", "the newest, whatever the order")
+        self.assertNotIn("stop", with_unjoined_stop(open_child, stops[1:]), "a continuation is named only by `later`")
 
     def test_a_stop_the_ledger_cannot_join_is_kept_apart_not_guessed_onto_a_child(self) -> None:
         with homes() as home:
