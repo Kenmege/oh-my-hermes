@@ -128,6 +128,8 @@ Where it shows:
   four-line boxes from 50; the owner's five-node mock-up gets two-line boxes
   at 50 rows. `/dag` opens the graph as the HUD last read it in the pager,
   whole and with four-line boxes, in the same colours; q or Esc closes it.
+  For a dag-ulw run the page ends with the run's critical path and its
+  bottlenecks, the nodes the most others wait on (`dag_core`).
 - **Slack, Discord, Telegram, Mattermost and Matrix** never get the box
   drawing. They see a delegated run, the conversation's lanes that no end
   post has closed yet, at three moments. Each is appended to the reply Hermes
@@ -252,8 +254,17 @@ What it shows, and what it leaves as `?`:
   - In the TUI panel each block says one thing: `[Plan]` holds the run's
     layers (the skill keeps one todo item per layer), the delegation block
     draws the nodes and edges, and `[Agents]` lists only the children the
-    graph does not draw. The agent strip names a node's child by the node's
-    label, without its `[dag:<run>/<node>]` marker.
+    graph does not draw. The agent strip and the transcript's
+    `delegate_task` rows name a node's child by the node's label, without
+    its `[dag:<run>/<node>]` marker. The panel collapses a
+    finished run to its one summary line. The transcript keeps the run's
+    graph as boxes at define, at each repair and extend with the added nodes
+    marked `+`, and once at the end, when the turn that ended the run is
+    over and the run still is; where the boxes cannot be drawn (too wide, or
+    an edge that skips a layer, as added nodes' edges often do) it is the
+    tree.
+
+    ![The dag-ulw plan block in the OMH TUI transcript: the orchestrator, Export API handed out, the button, docs and CLI flag waiting on it, and the verification node waiting on all three](../assets/omh-tui-dag-ulw-plan-block.png)
 
     ![A dag-ulw run in the OMH TUI mid-run: five defined nodes accepted, an extend round hanging under the verification node that found CSV export missing, the CSV node blocked with its repair running beneath it, and the plan holding one item per layer](../assets/omh-tui-dag-ulw-run.png)
 

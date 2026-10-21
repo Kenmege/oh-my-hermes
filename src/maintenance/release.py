@@ -776,7 +776,10 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 67130
 # 501991 -> 505556: one capability row for the new `dag-ulw` skill, and the
 # `intent_to_plan` lane it joins gains its name in the rows that list the
 # lane. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 505556
+# 505556 -> 505649: the `dag-ulw` row's handoff policy says where a coding
+# owner's choice comes from (`omh chat` or `omh coding`, within a day) and
+# that Hermes chat records none (+93). Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 505649
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

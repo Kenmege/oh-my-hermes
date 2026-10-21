@@ -359,8 +359,9 @@ inferred), reading a wave as a dependency
 The lanes of a conversation's delegation graph that no chat end post has
 closed yet. It starts on the first reply that finds one of them not settled,
 and ends on the first reply after all of them have settled (done, failed,
-interrupted, or `unknown`) and, for a dag-ulw run, the run itself is over
-(done, cancelled, or out of repair cycles), or after nothing has been in
+interrupted, or `unknown`) and, for a dag-ulw run, nothing in it is out or
+ready (done, cancelled, out of repair cycles, or waiting on a repair the reply
+did not make), or after nothing has been in
 flight or changed for 15 minutes (`stalled`; the parts not moving stay
 open). The ledger's `posted` record keeps its phase, its last counts, the
 keys of the lanes earlier runs closed, and the keys of the lanes a post has
@@ -375,22 +376,32 @@ Hermes session
 parent agent declared for one dag-ulw run (node ids, labels, categories,
 prompts, `depends_on`, write scopes) and the outcome it settled for each
 attempt. It holds each node's prompt, the instructions the parent wrote for
-that child (at most 3,000 characters a node and 256 KiB a record, written
+that child (at most 3,000 characters a node and 256 KiB a record, created
 mode 0600), so `ready` can hand a node out after the parent's own context
 was compacted. That is the one difference from the **Delegation ledger**,
 which holds no goal text: the run record keeps what the parent planned, never
 what a child returned (no output, summary or tool history). The `omh_dag`
-tool is its only writer; the delegation graph reads it under every segment
-of the conversation, so a compacted parent still finds its run. Hermes runs every node as the parent's own `delegate_task`
-child; the child of a node is the one whose goal opens with
-`[dag:<run>/<node>]`. Node and run states are derived on every read.
-`accepted` is the parent's judgement after it read the node's handoff file,
-refused while that file is missing or Hermes reported the child failed; a
-failed node blocks only its dependents; repair nodes stand in for a failed
-node, at most two cycles each. When every node passed but the goal check
-finds work missing, `extend` adds a round of nodes to the same run (at most
-two rounds a run), under the same refusals as the first plan. Each node
-records where it came from: `define`, `repair:<root>` or `extend:<round>`.
+tool is its only writer, and a session keeps at most 16 runs (a new one
+drops the oldest finished one); the delegation graph reads it under every
+segment of the conversation, so a compacted parent still finds its run.
+Hermes runs every node as the parent's own `delegate_task` child; the child
+of a node is the one whose goal opens with `[dag:<run>/<node>]`. Node and
+run states are derived on every read. `accepted` is the parent's judgement
+after it read the node's handoff file, refused while that file is missing
+or Hermes reported the child failed; a failed or blocked node blocks only
+its dependents. Repair nodes stand in for a failed producer once all are
+accepted, and the nodes after it read the repair's handoff files; a failed
+verification node runs again instead, and only its own accepted re-run
+satisfies it; at most two repair cycles a node. When every node passed but
+the goal check finds work missing, `extend` adds a round of nodes to the
+same run (at most two rounds a run), under the same refusals as the first
+plan. Each node records where it came from: `define`, `repair:<root>` or
+`extend:<round>`. With a coding owner the person chose (the router's
+explicit-choice record, read exactly as the router reads it, and no older
+than a day: an external CLI spends the person's money and quota, so a stale
+choice starts nothing), the ready coding nodes go to that owner's fanout
+(`export`) and never to `delegate_task`; verification and review nodes stay
+native. Hermes chat records no such choice; `omh chat` and `omh coding` do.
 Graph topology is decided once, in `plugin_bundle/omh/dag_core.py`, which
 `omh_team` and the fanout contract share.
 _Avoid_: reading `accepted` as verification, a child's `completed` as

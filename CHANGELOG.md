@@ -10,26 +10,32 @@ All notable changes will be documented here.
   or how wide it reaches (every module, the whole codebase), and Hermes plans
   it as a graph of small nodes, runs the ready ones in parallel on its own
   `delegate_task` children, settles each from its handoff file, verifies the
-  goal with a separate node, repairs failed nodes (two cycles each), and adds
-  the work the goal check finds missing to the same run (two rounds) before
-  it reports. It starts at once and asks only for scope, spend or an
-  irreversible step.
+  goal with a separate node, repairs failed nodes (two cycles each; a failed
+  verification runs again after its repair, and only that re-run passes it),
+  and adds the work the goal check finds missing to the same run (two rounds)
+  before it reports. It starts at once and asks only for scope, spend or an
+  irreversible step. A question about it ("dag ulw는 뭐야?", "how does dag-ulw
+  handle repairs?") is answered, not run.
   - The new `dag-ulw` skill carries the run loop and the planning doctrine;
     the new `omh_dag` tool keeps the run (`omh_dag/v1`), refuses cycles,
     unknown or self edges, shared write scopes without an edge and more than
     48 nodes, and never hands out more `delegate_task` calls than Hermes'
     background pool has free (read from `delegation.max_concurrent_children`
     and this process's running units in `state.db`). The run record keeps
-    each node's prompt (at most 3,000 characters a node, mode 0600), so a
-    compacted parent can still hand nodes out; it keeps nothing a child
-    returned. `extend` adds nodes to a run whose nodes all passed, under the
-    same refusals over the whole run, and every node records where it came
-    from (`define`, `repair:<root>`, `extend:<round>`).
-  - Big work reaches it by intent only on a route the router already gave
-    `ultrawork`, never when ultrawork is named (`ulw`, `ulw-work`,
-    `ultrawork`), and never for ultrawork's own coordinated workers or
-    delivery cycle. A concurrency word that names the bug or the feature
-    ("fix the bug where uploads run in parallel", "병렬 처리 버그 고쳐줘")
+    each node's prompt (at most 3,000 characters a node, created mode 0600),
+    so a compacted parent can still hand nodes out; it keeps nothing a child
+    returned. A node after a repaired one reads the repair's handoff files.
+    `extend` adds nodes to a run whose nodes all passed, under the same
+    refusals over the whole run, and every node records where it came from
+    (`define`, `repair:<root>`, `extend:<round>`).
+  - Big work reaches it by intent, in `omh chat` and in Hermes' own per-turn
+    route hint alike (one reading, `plugin_bundle/omh/dag_ulw_cues.py`): on a
+    route the router already gave `ultrawork`, never when ultrawork is named
+    (`ulw`, `ulw-work`, `ultrawork`), and never for ultrawork's own
+    coordinated workers or delivery cycle. In Hermes, a request no hint rule
+    matched reaches it only when it says outright how the work splits. A
+    concurrency word that names the bug or the feature ("fix the bug where
+    uploads run in parallel", "동시에 두 요청이 오면 캐시가 깨지는 버그 고쳐줘")
     keeps the request where it was.
   - Graph topology is decided once, in `plugin_bundle/omh/dag_core.py`.
     `omh_team`, the fanout contract, a dag run in the delegation graph and
@@ -45,11 +51,24 @@ All notable changes will be documented here.
     and the next status line names them once (`+1 added (repair: Docs
     body)`). A delegated child's own turn never gets a post. In the TUI the
     plan holds the run's layers, the graph its nodes, and `[Agents]` only the
-    children the graph does not draw; the agent strip names a node's child
-    by its label.
-  - Coding nodes go to Codex or Claude Code through the fanout bridge only
-    when the person already chose that owner (`omh_dag action=export`);
-    otherwise every node runs on `delegate_task`.
+    children the graph does not draw; the agent strip and a `delegate_task`
+    tool row name a node's child by its label. The transcript keeps the
+    run's graph as boxes (the tree where boxes cannot be drawn) at define,
+    at each repair and extend with the added nodes marked, and once at the
+    end, when the turn that ended the run is over; a chat never gets the
+    boxes. `/dag` closes a run's graph with its critical path and the nodes
+    that block the most others.
+  - Coding nodes go to Codex or Claude Code only when the person chose that
+    owner within the last day through `omh chat` or `omh coding` (the
+    router's explicit-choice record, read exactly as the router reads it).
+    Then `omh_dag` lists the ready coding nodes under `export` instead of
+    handing them to `delegate_task`, and `omh_dag action=export` writes the
+    fanout units and returns the `omh coding fanout` commands; verification
+    and review nodes stay native, and an exported node is never handed to
+    `delegate_task` again. The day is dag-ulw's own rule: an external CLI
+    spends the person's money and quota, so a stale choice starts nothing.
+    Hermes chat on its own records no choice, so there every node runs on
+    `delegate_task`.
 
 - **Vietnamese ships as a trigger language pack.** `src/routing/trigger_packs/vi.json`,
   contributed by @PhucNguyen-Dev (#2182), covers 20 of the 21 skills the `id`

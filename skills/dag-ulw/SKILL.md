@@ -101,7 +101,7 @@ Quality bar:
 
 Handoff policy:
 
-Hermes owns the plan, the dispatch, the settling and the verdict; every node runs as Hermes' own `delegate_task` child, routed per category with `omh_delegate_route`. OMH's `omh_dag` tool only keeps the graph. Hand coding nodes to an external coding CLI only when the person already chose that owner (`omh_dag action=export`); otherwise no external CLI runs.
+Hermes owns the plan, the dispatch, the settling and the verdict; every node runs as Hermes' own `delegate_task` child, routed per category with `omh_delegate_route`. OMH's `omh_dag` tool only keeps the graph. Coding nodes go to an external coding CLI only when the person chose that owner within the last day through `omh chat` or `omh coding` (Hermes chat records no choice); then `omh_dag` lists them under `export`. Otherwise no external CLI runs.
 
 Required inputs:
 
