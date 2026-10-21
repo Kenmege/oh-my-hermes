@@ -443,6 +443,28 @@ class TokenTests(unittest.TestCase):
         self.assertTrue(rows[1].endswith("12s · 6 tools · ↓340 tokens"), rows[1])
         self.assertTrue(rows[2].endswith("30s · 0 tools · ↓75 tokens"), rows[2])
 
+    def test_a_complete_that_comes_before_its_last_calls_tokens_still_settles_on_the_final_count(self) -> None:
+        # Measured against Hermes d923a5eb48: `subagent.complete` can arrive before the delta of the child's last
+        # call lands in its state.db row, so a read taken just after the frame can still miss that call.
+        clock = [0.0]
+        app, _client = agent_app(clock=lambda: clock[0])
+        self.snapshot(app, {"child-session-0": 1000, "child-session-1": 500})
+        # Success: complete's own count is final, whatever a read taken before the last delta landed says.
+        agent_event(app, "complete", FIRST, status="completed", duration_seconds=12.0, output_tokens=1500)
+        self.snapshot(app, {"child-session-0": 1300, "child-session-1": 500})
+        self.assertTrue(view_text(app)[1].endswith("12s · 0 tools · ↓1.5k tokens"), view_text(app)[1])
+        # Hermes' failure path sends no count: the row keeps being read, and the read after the last delta settles it.
+        clock[0] = 20.0
+        agent_event(app, "complete", SECOND, status="error", duration_seconds=20.0, child_session_id="child-session-1")
+        self.assertTrue(view_text(app)[2].endswith("20s · 0 tools · ↓500 tokens"), view_text(app)[2])
+        self.snapshot(app, {"child-session-0": 1500, "child-session-1": 750})
+        self.assertEqual(app.poller.watched, ("child-session-1",))
+        self.assertTrue(view_text(app)[2].endswith("20s · 0 tools · ↓750 tokens"), view_text(app)[2])
+        clock[0] = 31.0  # past the settle window: the finished row is no longer read
+        app._take_hud()
+        self.assertEqual(app.poller.watched, ())
+        self.assertTrue(view_text(app)[2].endswith("20s · 0 tools · ↓750 tokens"))
+
 
 if __name__ == "__main__":
     unittest.main()
