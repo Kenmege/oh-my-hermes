@@ -25,8 +25,7 @@ neither category nor model is), and an unknown state's glyph is ``◇``.
 Every box is one width: as wide as the widest node needs, narrowed to put
 each frontier on one row (every line is cut to it with ``…``), and a
 frontier that does not fit even then wraps. Under a line or character
-budget the boxes give up Node details, then Dependencies, then (where the
-caller allows ``compact``) their category and model line; then the tree is
+budget the boxes give up Node details, then Dependencies; then the tree is
 drawn, which nests a node under its dispatcher and draws no edge. So is a
 graph whose edges loop, or one too narrow for a box. Widths are terminal
 cells: a wide (CJK) character counts 2, and text is folded first so that
@@ -54,7 +53,7 @@ import unicodedata
 
 from .hud_text import elapsed_text
 
-VIEW_LAYOUTS: Final = ("box", "compact", "tree", "header")
+VIEW_LAYOUTS: Final = ("box", "tree", "header")
 NODE_STATES: Final = (
     "root", "waiting", "dispatched", "running", "stuck", "done", "failed", "interrupted", "unknown",
 )
@@ -521,7 +520,7 @@ def _origin_mark(node_id: str, shape: _Frontiers, charset: Charset) -> str:
     return f"{charset.repair} " if kind == "repair" else f"{charset.extend} " if kind == "extend" else ""
 
 
-def _box_natural(node_id: str, shape: _Frontiers, charset: Charset, focus: Focus | None, compact: bool) -> int:
+def _box_natural(node_id: str, shape: _Frontiers, charset: Charset, focus: Focus | None) -> int:
     """The inner width a box needs for its title, facts and status, whatever its duration reads; the parents line
     is cut to the box (the Dependencies section holds every edge whole). A folded box's one line holds its glyph
     and its status word too."""
@@ -533,17 +532,14 @@ def _box_natural(node_id: str, shape: _Frontiers, charset: Charset, focus: Focus
         if node_id in focus.folded:
             lead += glyph + cells(charset.separator) + cells(_capital(_status_parts(node)[0]))
     status = glyph + _status_cells(node)
-    widths = [lead + cells(_origin_mark(node_id, shape, charset)) + cells(_title(node)), status]
-    if not compact:
-        widths.append(sum(cells(segment.text) for segment in _facts(node, charset)))
-    return max(widths)
+    facts = sum(cells(segment.text) for segment in _facts(node, charset))
+    return max(lead + cells(_origin_mark(node_id, shape, charset)) + cells(_title(node)), status, facts)
 
 
 def _box_content(
-    node_id: str, shape: _Frontiers, charset: Charset, inner: int, focus: Focus | None, compact: bool,
-    spinner: str | None,
+    node_id: str, shape: _Frontiers, charset: Charset, inner: int, focus: Focus | None, spinner: str | None,
 ) -> list[tuple[Segment, ...]]:
-    """A box's lines: its title; category and model (not in a compact box); its status; its parents."""
+    """A box's lines: its title; category and model; its status; its parents."""
     node = shape.lanes[node_id]
     state = _state(node)
     glyph = _box_glyph(node, charset, spinner)
@@ -567,9 +563,7 @@ def _box_content(
         head.append(Segment(fit(title, max(room, cells(charset.ellipsis) + 1), charset.ellipsis), title_role))
         return [_fit_pieces([*head, *word], inner, charset)]
     head.append(Segment(title, title_role))
-    lines = [head]
-    if not compact:
-        lines.append(_facts(node, charset))
+    lines = [head, _facts(node, charset)]
     lines.append([Segment(glyph, f"node:{state}"), Segment(" " + _capital(_status_text(node)), f"node-word:{state}")])
     parents = [_title(shape.lanes[upper]) for upper in shape.parents[node_id]]
     if parents:
@@ -772,8 +766,8 @@ class _Boxes:
 
 
 def _box_view(
-    graph: Mapping[str, Any], width: int, charset: Charset, *, compact: bool = False, sections: int = 2,
-    focus: Focus | None = None, spinner: str | None = None,
+    graph: Mapping[str, Any], width: int, charset: Charset, *, sections: int = 2, focus: Focus | None = None,
+    spinner: str | None = None,
 ) -> _Boxes | None:
     """The header, the frontiers of boxes, then (``sections`` 1 and up) Dependencies and (2) Node details.
 
@@ -786,7 +780,7 @@ def _box_view(
     shape = _frontiers(graph)
     if shape is None:
         return None
-    natural = max(_box_natural(node_id, shape, charset, focus, compact) for node_id in shape.lanes)
+    natural = max(_box_natural(node_id, shape, charset, focus) for node_id in shape.lanes)
     one_row = [(width - (len(row) - 1) * GAP) // len(row) - 4 for row in shape.rows]
     inner = min([max(natural, BOX_INNER_MIN), BOX_INNER_MAX, width - 4,
                  *(fit for fit in one_row if fit >= BOX_INNER_MIN)])
@@ -806,7 +800,7 @@ def _box_view(
         for start in range(0, len(frontier), per_row):
             row = frontier[start:start + per_row]
             drawn = [
-                _framed(_box_content(node_id, shape, charset, inner, focus, compact, spinner), inner,
+                _framed(_box_content(node_id, shape, charset, inner, focus, spinner), inner,
                         "node:selected" if focus is not None and focus.node == node_id
                         else f"node:{_state(shape.lanes[node_id])}", charset)
                 for node_id in row
@@ -1108,15 +1102,13 @@ def render_delegation_view(
     charset: str = "unicode",
     layout: str = "auto",
     spinner: str | None = None,
-    compact: bool = False,
     focus: Focus | None = None,
 ) -> View:
     """The best drawing of ``graph`` that fits: boxes with their Dependencies and Node details, else boxes with fewer
-    sections, else (with ``compact``) three-line boxes, else the tree, else the header alone.
+    sections, else the tree, else the header alone.
 
-    ``layout`` narrows the choice: ``box`` tries the boxes, ``compact`` only
-    three-line ones (title, status, parents), and ``tree`` only the tree; each
-    still falls back to the tree and the header. ``focus`` is `/dag`'s
+    ``layout`` narrows the choice: ``box`` tries the boxes and ``tree`` only
+    the tree; each still falls back to the tree and the header. ``focus`` is `/dag`'s
     highlight, folds and details switch. ``max_chars`` counts the joined text,
     newlines included. Never raises on a malformed graph: what cannot be read
     is left out, and what cannot be laid out is drawn as the tree. A graph
@@ -1127,7 +1119,7 @@ def render_delegation_view(
     if not isinstance(graph, Mapping) or not _nodes(graph):
         return View((), "header")
     header = _header_lines(graph, safe_width, chosen)
-    key = (_structure(graph), safe_width, max_lines, max_chars, chosen.name, layout, spinner, compact, focus)
+    key = (_structure(graph), safe_width, max_lines, max_chars, chosen.name, layout, spinner, focus)
 
     def fits(lines: Sequence[tuple[Segment, ...]]) -> bool:
         if max_lines is not None and len(lines) > max_lines:
@@ -1138,12 +1130,11 @@ def render_delegation_view(
                 return False
         return True
 
-    def boxes(compact_boxes: bool, sections: int) -> View | None:
-        drawn = _box_view(graph, safe_width, chosen, compact=compact_boxes, sections=sections, focus=focus,
-                          spinner=spinner)
+    def boxes(sections: int) -> View | None:
+        drawn = _box_view(graph, safe_width, chosen, sections=sections, focus=focus, spinner=spinner)
         if drawn is None or not fits(drawn.lines):
             return None
-        return View(tuple(drawn.lines), "compact" if compact_boxes else "box", boxes=drawn.boxes)
+        return View(tuple(drawn.lines), "box", boxes=drawn.boxes)
 
     def tree(hidden: set[str]) -> View | None:
         body = _tree_lines(graph, safe_width, chosen, hidden, spinner)
@@ -1155,11 +1146,10 @@ def render_delegation_view(
     decided = _DECISIONS.get(key)
     if decided is not None:
         kind, detail = decided
-        replayed = boxes(kind == "compact", detail) if kind in ("box", "compact") else tree(set(detail)) if (
-            kind == "tree") else None
+        replayed = boxes(detail) if kind == "box" else tree(set(detail)) if kind == "tree" else None
         if replayed is not None:
             return replayed
-    view, decision = _choose(graph, safe_width, chosen, header, layout, compact, boxes, tree, fits)
+    view, decision = _choose(graph, safe_width, chosen, header, layout, boxes, tree, fits)
     if len(_DECISIONS) >= DECISION_LIMIT:
         _DECISIONS.pop(next(iter(_DECISIONS)))
     _DECISIONS[key] = decision
@@ -1175,7 +1165,6 @@ def _choose(
     charset: Charset,
     header: tuple[tuple[Segment, ...], ...],
     layout: str,
-    compact: bool,
     boxes: Any,
     tree: Any,
     fits: Any,
@@ -1183,17 +1172,13 @@ def _choose(
     """The drawing `render_delegation_view` returns, and the decision that redraws it.
 
     Under a budget the boxes give up Node details first, then Dependencies
-    (each box still names its parents), then, where the caller allows it,
-    their category and model line.
+    (each box still names its parents).
     """
-    tiers = [(False, sections) for sections in (2, 1, 0)] if layout in ("auto", "box") else []
-    if layout == "compact" or (layout == "auto" and compact):
-        tiers.append((True, 0))
-    if width >= BOX_MIN_WIDTH:
-        for compact_boxes, sections in tiers:
-            drawn = boxes(compact_boxes, sections)
+    if width >= BOX_MIN_WIDTH and layout in ("auto", "box"):
+        for sections in (2, 1, 0):
+            drawn = boxes(sections)
             if drawn is not None:
-                return drawn, ("compact" if compact_boxes else "box", sections)
+                return drawn, ("box", sections)
     order = _hide_order(graph)
     whole = tree(set())
     if whole is not None:

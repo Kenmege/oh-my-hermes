@@ -68,7 +68,7 @@ STATES = ("root", "waiting", "dispatched", "running", "stuck", "done", "failed",
 
 def drawings():
     """(name, view) for every shape: boxes in every state and selected, a wrapped frontier, the tree, ASCII,
-    three-line boxes."""
+    boxes under a line budget."""
     yield "export", render_delegation_view(dag_export_run(), width=100)
     yield "export-dag", render_delegation_view(dag_export_run(), width=100, focus=Focus(node="d:r1:verify"))
     yield "repair", render_delegation_view(dag_export_repair_run(), width=80)
@@ -78,8 +78,8 @@ def drawings():
     yield "tree", render_delegation_view(nested(), width=34)
     yield "wide-tree", render_delegation_view(nested(), width=90, layout="tree")
     yield "ascii", render_delegation_view(owner_mock(), width=73, charset="ascii")
-    yield "compact", render_delegation_view(owner_mock(), width=98, layout="compact")
-    yield "compact-wrapped", render_delegation_view(parallel(8), width=98, layout="compact")
+    yield "budgeted", render_delegation_view(owner_mock(), width=98, max_lines=24)
+    yield "wrapped", render_delegation_view(parallel(8), width=98)
 
 
 def painted(view, theme, depth: str) -> list[str]:
