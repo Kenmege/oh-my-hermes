@@ -726,13 +726,20 @@ class HudPollerTests(unittest.TestCase):
         self.assertEqual(poller._interval, HUD_POLL_MIN_SECONDS)
         for _ in range(3):
             poller.poll_once()
-        for again in (("child-a",), ("child-a",), ()):  # the same sessions, or fewer, wake nothing
-            poller._wake.clear()
-            poller.watch_tokens(again)
-            self.assertFalse(poller._wake.is_set(), again)
-            self.assertEqual(poller._interval, HUD_POLL_MAX_SECONDS)
-        poller.watch_tokens(("child-a", "child-b"))
+        poller._wake.clear()
+        poller.watch_tokens(("child-a",))  # the same sessions wake nothing
+        self.assertFalse(poller._wake.is_set())
+        self.assertEqual(poller._interval, HUD_POLL_MAX_SECONDS)
+        poller.watch_tokens(("child-a", "child-b"))  # a second child starts while the first is still watched
         self.assertTrue(poller._wake.is_set())
+        self.assertEqual(poller._interval, HUD_POLL_MIN_SECONDS)
+        for _ in range(3):
+            poller.poll_once()
+        for fewer in (("child-b",), ()):  # one finished, then both: fewer sessions wake nothing
+            poller._wake.clear()
+            poller.watch_tokens(fewer)
+            self.assertFalse(poller._wake.is_set(), fewer)
+            self.assertEqual(poller._interval, HUD_POLL_MAX_SECONDS)
 
     def test_a_refresh_wakes_the_thread_for_a_read_now_and_restarts_the_back_off(self) -> None:
         payload = {"privacy": "metadata_only", "rows": []}

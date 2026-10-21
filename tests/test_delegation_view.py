@@ -807,6 +807,24 @@ class OutputTokenTests(unittest.TestCase):
                         with self.subTest(case=make.__name__, width=width, layout=layout, charset=charset):
                             self.assertIsNone(re.search(r"(↓|out )[0-9.]*[kM]?(…|\.\.\.)", drawn), drawn)
 
+    def test_a_cards_count_keeps_its_unit_whole_whatever_follows_it(self) -> None:
+        # With a group and a session after it, an exactly full line once lent the ellipsis a cell of `tokens`.
+        whole = re.compile(r"(↓|out )[0-9.]+[kM]? tokens(?![a-z])")
+        for elapsed in (21, 12 * 60 + 34, 100 * 3600 + 59 * 60):
+            for count in (800, 45_600, 999_900):
+                counted = dag_export_run()
+                for node in counted["nodes"]:
+                    if node["id"] == "d:r1:button":
+                        node.update(elapsed_seconds=elapsed, output_tokens=count)
+                for charset in ("unicode", "ascii"):
+                    for width in range(26, 121):
+                        view = render_delegation_view(counted, width=width, layout="box", charset=charset)
+                        written = "↓" if charset == "unicode" else "out "
+                        for line in section(view, "Node details"):
+                            if written in line:
+                                with self.subTest(elapsed=elapsed, count=count, charset=charset, width=width):
+                                    self.assertRegex(line, whole)
+
     def test_no_count_draws_nothing(self) -> None:
         plain = render_delegation_view(dag_export_run(), width=100).text()
         for count in (None, 0, -5, True, "1200", 1.5, 10**9):

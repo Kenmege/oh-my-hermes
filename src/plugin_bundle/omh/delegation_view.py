@@ -776,13 +776,16 @@ def _details(
             lines.append(_fit_pieces([Segment(deeper, ""), *facts], width, charset))
         where = [Segment(_capital(_status_text(node)), f"node-word:{state}")]
         tokens = _tokens_text(node, charset)
-        # Whole or not at all, after the status and before the group and session, which give way first.
-        if tokens and cells(deeper) + _status_room(node) + _tokens_room(charset) + cells(" tokens") <= width:
-            where.append(Segment(f"{charset.separator}{tokens} tokens", "more"))
         group = _group_label(node.get("group"), charset)
+        tail = clean_text(node.get("session_tail"))
+        # Whole or not at all, after the status and before the group and session, which give way first: with one of
+        # them after it, the room keeps a cell for the ellipsis their cut ends in, which `_fit_pieces` would
+        # otherwise take from the count's own unit (`↓999.9k token…`).
+        after = cells(charset.ellipsis) if group or tail else 0
+        if tokens and cells(deeper) + _status_room(node) + _tokens_room(charset) + cells(" tokens") + after <= width:
+            where.append(Segment(f"{charset.separator}{tokens} tokens", "more"))
         if group:
             where.append(Segment(f"{charset.separator}{group}", "more"))
-        tail = clean_text(node.get("session_tail"))
         if tail:
             where.append(Segment(f"{charset.separator}session {tail}", "more"))
         lines.append(_fit_pieces([Segment(deeper, ""), *where], width, charset))
