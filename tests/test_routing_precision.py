@@ -23,8 +23,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # omh-docs contributes four measured negatives and five measured interventions.
         # The Indonesian trigger pack adds six negatives and eleven interventions.
         # The Vietnamese trigger pack adds eight negatives and eleven interventions.
-        # dag-ulw adds five negatives and twenty-six interventions.
-        self.assertEqual(payload["summary"]["case_count"], 851)
+        # dag-ulw adds ten negatives and twenty-nine interventions.
+        self.assertEqual(payload["summary"]["case_count"], 856)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -44,12 +44,13 @@ class RoutingPrecisionTests(unittest.TestCase):
         # to an alert and reprice a price list (+2).
         # The plural-possessive masker fix adds a quoted workflow name after
         # "the users'", answered directly as a reference (+1).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 219)
+        # Four questions about dag-ulw are answered directly (+4).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 223)
         self.assertEqual(payload["summary"]["file_lookup_count"], 10)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
         self.assertEqual(payload["summary"]["catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["intervention_case_count"], 918)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 921)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

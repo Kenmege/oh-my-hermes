@@ -40,6 +40,7 @@ from .domain_signals import (
 )
 from .display_names import canonical_display_mentions
 from .input_language import routing_input_language
+from ..plugin_bundle.omh.dag_ulw_cues import asks_about_dag_ulw, big_work_for_dag_ulw
 from ..plugin_bundle.omh.hermes_session_commands import (
     LOOP_TIMER_GOAL,
     LOOP_TIMER_NATIVE,
@@ -204,52 +205,8 @@ _HEAVY_LANE_TRIGGER_TOKEN_STEMS: dict[str, tuple[str, ...]] = {
     "dag-ulw": ("ultrawork", "ulw", "dag"),
 }
 # Big work by intent (owner direction 2026-10-21): an `ultrawork` route nobody named, for a request whose own
-# words say it has several parts, goes to `dag-ulw`, which plans it as a graph and runs it to a verified goal
-# (`_ultrawork_sized`). They are read only on a route the router already gave `ultrawork`, so a small change
-# (which also routes there) moves only when it says one of them.
-#
-# Each phrase says how the WORK is split (lanes, a fan-out, parts integrated afterwards) or how wide it reaches
-# (every module, the whole codebase). A bare concurrency word is not one: "in parallel", "concurrently", "병렬"
-# and "동시에" name the bug or the feature as often as the work's shape -- with them in this list, six of seven
-# single-change probes moved ("fix the bug where uploads run in parallel", "병렬 처리 버그 고쳐줘") -- and nor
-# is "then integrate" alone ("add the field to the form, then integrate it with the api" moved), or a lane
-# phrase that is also a thing's name ("the parallel lanes renderer"). The Korean entries keep a concurrency
-# word only where a work verb follows it ("병렬로 구현", "동시에 진행").
-_DAG_ULW_SIZE_CUES: tuple[str, ...] = (
-    "parallel work",
-    "in parallel lanes",
-    "parallel implementation",
-    "parallel then integrate",
-    "fan out",
-    "split into parallel",
-    "split it into parallel",
-    "across the codebase",
-    "across every module",
-    "across all modules",
-    "across modules",
-    "every module",
-    "all modules",
-    "whole codebase",
-    "entire codebase",
-    "병렬로 나눠",
-    "나눠서 병렬로",
-    "병렬로 구현",
-    "동시에 구현",
-    "병렬로 진행",
-    "동시에 진행",
-    "병렬 작업으로",
-    "여러 모듈",
-    "모든 모듈",
-    "전체 모듈",
-    "코드베이스 전체",
-)
-# A concurrency word does count when the request also names its parts in the plural ("in parallel across the
-# api and ui modules", "port the auth, billing and search services concurrently"): then it is the work that
-# runs in parallel, not the thing being fixed.
-_DAG_ULW_CONCURRENCY_CUES: tuple[str, ...] = ("in parallel", "concurrently", "simultaneously", "at the same time")
-_DAG_ULW_PART_TOKENS = frozenset(
-    {"modules", "services", "packages", "components", "apps", "repos", "repositories", "microservices", "libraries"}
-)
+# words say it has several parts, goes to `dag-ulw`, which plans it as a graph and runs it to a verified goal. The
+# reading is `dag_ulw_cues.big_work_for_dag_ulw`, which the in-Hermes route hint reads too, so the two agree.
 _HEAVY_LANE_VAGUENESS_MAX_WORDS = 8
 # Generic filler and unresolved deictic references ("this", "it", "그거") in
 # the languages the trigger-language packs already cover. None of these name
@@ -2652,7 +2609,7 @@ def _route_chat_message_cached(
         candidate_skill == "ultrawork"
         and action in {"dispatch", "clarify"}
         and not explicit_skill
-        and _ultrawork_sized(routing_message)
+        and big_work_for_dag_ulw(routing_message)
     ):
         candidate_skill = "dag-ulw"
         candidate_harness = primary_harness_for_skill(candidate_skill)
@@ -2663,6 +2620,21 @@ def _route_chat_message_cached(
             action = "dispatch"
             ambiguity_kind = ""
             reason = "Several parts to run in parallel or across the codebase: plan and run them as a dag-ulw graph."
+
+    # A question about dag-ulw is answered, the way a question about any other skill is: its two triggers score
+    # its name high in the catalog, and `ulw` inside the name scores ultrawork, but asking what it is, what it
+    # costs or how it went is no request to run either.
+    if action in {"dispatch", "clarify"} and not explicit_skill and asks_about_dag_ulw(routing_message):
+        selected_skill = _ROUTER_SKILL
+        candidate_skill = selected_skill
+        candidate_harness = primary_harness_for_skill(candidate_skill)
+        candidate_score = 0
+        candidate_confidence = "low"
+        action = "fallback"
+        reason = DIRECT_ANSWER_REASON
+        reason_code = REASON_CODE_DIRECT_ANSWER
+        ambiguous = False
+        ambiguity_kind = ""
 
     # Vagueness gate on heavy-mode routing (P2-12): an `ultrawork`/`maestro`
     # match that names no concrete target asks one specific question instead
@@ -7818,30 +7790,6 @@ def _skill_case_rests_on_its_own_name(message: str, skill: str) -> bool:
 
 def _is_engine_entry_approval_reason(reason: str) -> bool:
     return reason.startswith(_ENGINE_ENTRY_APPROVAL_REASON_PREFIX)
-
-
-def _ultrawork_sized(message: str) -> bool:
-    """Whether an `ultrawork` route is the big, many-part kind `dag-ulw` runs.
-
-    Two readings, each through the routing helpers: the person did not name
-    ultrawork anywhere in the request (no `routing_tokens` token holds one of
-    its trigger stems; a leading or `use` invocation is already
-    `explicit_skill`), and the request says it has several parts (a
-    `_DAG_ULW_SIZE_CUES` phrase, or a concurrency phrase beside a plural part
-    such as ``modules``, both by `contains_cue_phrase`). A request for one of
-    the capabilities only ultrawork has (coordinated workers, one delivery
-    cycle, one owner persisting, a durable goal) never gets here: the
-    retired-engine alias route answers it before scoring. The heavy-lane
-    vagueness gate then asks for the parts when the request names none.
-    """
-    normalized = normalized_phrase(message)
-    tokens = routing_tokens(normalized)
-    stems = _HEAVY_LANE_TRIGGER_TOKEN_STEMS["ultrawork"]
-    if any(stem in token for token in tokens for stem in stems):
-        return False
-    return contains_cue_phrase(normalized, _DAG_ULW_SIZE_CUES) or (
-        contains_cue_phrase(normalized, _DAG_ULW_CONCURRENCY_CUES) and not tokens.isdisjoint(_DAG_ULW_PART_TOKENS)
-    )
 
 
 def _heavy_lane_vagueness_reason(message: str, skill: str) -> str:

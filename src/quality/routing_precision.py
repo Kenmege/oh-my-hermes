@@ -7052,6 +7052,45 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "dag-ulw",
     ),
+    # A question about dag-ulw is answered, as a question about any other skill is.
+    RoutingPrecisionCase(
+        "what-is-dag-ulw-is-answered",
+        "Asking what dag ulw is gets an answer, not a run",
+        "dag ulw는 뭐야?",
+        "answer_directly",
+        "direct_answer",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "explain-dag-ulw-is-answered",
+        "Asking for dag ulw to be explained gets an answer, not a run",
+        "dag ulw 설명해줘",
+        "answer_directly",
+        "direct_answer",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "how-dag-ulw-repairs-is-answered",
+        "Asking how dag-ulw handles repairs gets an answer, not a run",
+        "how does dag-ulw handle repairs?",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "dag-ulw-result-question-is-answered",
+        "Asking for a dag ulw run's result gets an answer, not a new run",
+        "dag ulw 결과 알려줘",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "function-fan-out-is-not-a-dag-ulw-run",
+        "A function's fan-out is a metric to fix, not work to fan out",
+        "the fan out of this function is too high, fix it",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
     RoutingPrecisionCase(
         "block-quoted-dag-ulw-does-not-dispatch",
         "A block-quoted dag ulw request is quoted text, not a request to run it",
@@ -15877,8 +15916,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     ),
     RoutingInterventionCase(
         "korean-modules-implemented-in-parallel-reach-dag-ulw",
-        "Korean: a feature implemented across three modules in parallel reaches dag-ulw",
-        "내보내기 기능을 api, ui, cli 모듈에 병렬로 구현하고 전체 테스트로 검증해줘",
+        "Korean: a feature implemented across two named modules in parallel reaches dag-ulw",
+        "api 모듈과 cli 모듈에 내보내기 기능을 병렬로 구현하고 전체 테스트로 검증해줘",
         "dispatch", "dag-ulw", "start_dag_run", "dag_run",
     ),
     RoutingInterventionCase(
@@ -15924,6 +15963,24 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "Korean: a bug when uploads run at once is one fix, not a dag-ulw run",
         "업로드가 동시에 실행될 때 생기는 버그 고쳐줘",
         "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "korean-simultaneous-requests-cache-bug-stays-on-ultrawork",
+        "Korean: a cache bug when two requests arrive at once is one fix, not a dag-ulw run",
+        "동시에 두 요청이 오면 캐시가 깨지는 버그 고쳐줘",
+        "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "parallel-work-queue-bug-stays-on-ultrawork",
+        "A bug in a queue named for parallel work is one fix, not a dag-ulw run",
+        "the parallel work queue drops jobs, fix it",
+        "dispatch", "ultrawork", "present_plan", "plan",
+    ),
+    RoutingInterventionCase(
+        "slow-parallel-implementation-stays-on-ultrawork",
+        "A slow parallel implementation of one function is one fix, not a dag-ulw run",
+        "the parallel implementation of sort is slow, fix it",
+        "dispatch", "ultrawork", "present_plan", "plan",
     ),
     RoutingInterventionCase(
         "airflow-dag-backfill-in-parallel-stays-on-data-pipelines",

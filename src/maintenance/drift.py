@@ -687,7 +687,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # `dag-ulw` adds five that must not name it: an Airflow DAG, a file
             # called dag, a declined dag ulw, a relayed dag ulw report and a
             # block-quoted dag ulw request (5).
-            expected=851,
+            # The review of `dag-ulw` adds five: four questions about it that
+            # are answered rather than run (what it is, explain it, how it
+            # repairs, a run's result) and a function's fan-out, which is a
+            # metric and not work to fan out (5).
+            expected=856,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1012,7 +1016,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # DAG requests that stay with data-pipelines, coordinated workers,
             # ultrawork named as `ulw`, `ulw-work` and `ultrawork`, and `ulw`
             # named mid-sentence in English and in Korean (13).
-            expected=918,
+            # The review of `dag-ulw` adds three single fixes that must stay
+            # on ultrawork: a Korean cache bug when two requests arrive at
+            # once, a queue named for parallel work, and a slow parallel
+            # implementation of one function (3).
+            expected=921,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
