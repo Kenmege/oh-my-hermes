@@ -40,6 +40,7 @@ from ..owner_preference_record import (
 )
 from ..delegation_routing import read_delegation_settings
 from ..host_observation import host_session_id
+from ..host_process import process_alive
 
 DEFAULT_MAX_CONCURRENT_CHILDREN = 10  # Hermes' `_DEFAULT_MAX_CONCURRENT_CHILDREN` (tools/delegate_tool_config.py)
 MAX_CONCURRENT_ENV = "DELEGATION_MAX_CONCURRENT_CHILDREN"
@@ -240,12 +241,27 @@ def _find(omh_home: Path, segments: list[str], run: object) -> tuple[dict[str, A
 
 
 def _children(omh_home: Path, segments: list[str]) -> list[dict[str, Any]]:
-    """Every child the delegation ledgers of this conversation's segments hold."""
+    """Every child the delegation ledgers of this conversation's segments hold.
+
+    One with no stop whose Hermes process is gone is marked ``lost``: a
+    restart ended it, and Hermes fires no `subagent_stop` for it. Only a
+    process Hermes' own probes say ended counts (`host_process.process_alive`).
+    """
     children: list[dict[str, Any]] = []
     for segment in segments:
         ledger = read_ledger(omh_home, segment)
         if ledger:
             children.extend(ledger["children"])
+    alive: dict[tuple[int, int | None], bool | None] = {}
+    for child in children:
+        host = child.get("host")
+        if "stop" in child or host is None:
+            continue
+        key = (host["pid"], host["started"])
+        if key not in alive:
+            alive[key] = process_alive(host)
+        if alive[key] is False:
+            child["lost"] = True
     return children
 
 
@@ -320,6 +336,12 @@ def _ready(
     if action in ("define", "repair", "extend"):
         extra["topology"] = record["topology"]
         extra["lint"] = record["lint"]
+    lost = dag_run.lost_for_good(record, derived)
+    if not say and lost:
+        one = len(lost) == 1
+        say = (f"Hermes restarted while {'node' if one else 'nodes'} {', '.join(lost)} ran, "
+               f"{dag_run.MAX_LOST_REOFFERS + 1} times, so {'it is' if one else 'they are'} not offered again: "
+               f"settle {'it' if one else 'each'} failed or blocked.")
     if not say and held and not calls:
         say = "No delegate_task slot is free; end the turn and call ready again after a completion."
     return _result(action, record, derived, shown, say=say, extra=extra)

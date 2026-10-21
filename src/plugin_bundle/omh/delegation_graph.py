@@ -450,6 +450,7 @@ def _build(
     model_of_node: dict[str, str] = {"root": root["model"] if root["model"] != "?" else ""}
 
     team_bound: dict[str, str] = {}
+    team_lost: set[str] = set()  # helpers a Hermes restart ended (`team._hand_back_lost`): drawn nowhere
     if team is not None:
         record, _mtime = team
         for unit in record["units"]:
@@ -458,6 +459,9 @@ def _build(
             dispatch = attempt.get("dispatch") if isinstance(attempt.get("dispatch"), dict) else {}
             if isinstance(dispatch.get("child_session_id"), str):
                 team_bound[dispatch["child_session_id"]] = str(unit["unit_id"])
+            lost = attempt.get("lost") if isinstance(attempt.get("lost"), list) else []
+            team_lost.update(item["child_session_id"] for item in lost
+                             if isinstance(item, dict) and isinstance(item.get("child_session_id"), str))
 
     dag_bound = {child["child_session_id"] for child in dag["children"]} if dag is not None else set()
     by_session = {child["child_session_id"]: child for child in children}
@@ -466,7 +470,7 @@ def _build(
     wave_start: dict[tuple[str, str], float] = {}
     for child in ordered:
         if (child["parent_session_id"] != session_id or child["child_session_id"] in team_bound
-                or child["child_session_id"] in dag_bound):
+                or child["child_session_id"] in dag_bound or child["child_session_id"] in team_lost):
             continue
         key = (child["parent_session_id"], child["parent_turn_id"] or child.get("call_id", ""))
         if key not in waves:
@@ -574,7 +578,8 @@ def _build(
     # A child is placed once its parent is: passes repeat until none places, so a child whose parent this graph
     # does not hold is left out (never drawn hanging from the wrong node), and so is everything under it.
     pending = [child for child in ordered
-               if child["child_session_id"] not in team_bound and child["child_session_id"] not in dag_bound]
+               if child["child_session_id"] not in team_bound and child["child_session_id"] not in dag_bound
+               and child["child_session_id"] not in team_lost]
     while True:
         placeable = [child for child in pending if parent_of(child)]
         if not placeable:

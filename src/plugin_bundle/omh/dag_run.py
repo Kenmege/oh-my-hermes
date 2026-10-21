@@ -25,8 +25,12 @@ State is derived on every read, never stored
 A node is ``accepted`` only by the parent's ``settle``. Its child, bound
 through the ``[dag:<run>/<node>]`` goal marker the delegation ledger reads at
 ``subagent_start``, says whether it is running or has returned; a child's own
-status is a report, and a returned node waits for ``settle``. A failed or
-blocked node blocks its dependents and nothing else. ``repair`` adds a group
+status is a report, and a returned node waits for ``settle``. A child marked
+``lost`` (`dag_tool` found the Hermes process it ran in gone: a restart ends
+a child and fires no stop) does not count, so its node is out with no child
+and is offered again at once, at most `MAX_LOST_REOFFERS` times per attempt;
+past that the parent settles it. A failed or blocked node blocks its
+dependents and nothing else. ``repair`` adds a group
 of repair nodes for a failed or blocked node, at most `MAX_REPAIR_CYCLES` per
 original node. Once its latest group is all accepted the original counts as
 satisfied and the nodes after it read the group's handoff files, except a
@@ -74,6 +78,8 @@ MAX_RECORD_BYTES: Final = 262_144
 LOCK_SECONDS: Final = 5.0
 # A node handed out that no child has bound to for this long was not dispatched; `ready` offers it again.
 HANDOUT_STALE_SECONDS: Final = 600.0
+# A node whose child a Hermes restart ended is offered again at once this many times per attempt, then left to settle.
+MAX_LOST_REOFFERS: Final = 3
 # A child counts for an attempt when it started no earlier than this before the attempt was handed out.
 BIND_SLACK_SECONDS: Final = 2.0
 CATEGORIES: Final = tuple(HERMES_MIXTURE_CATEGORY_CHAINS)
@@ -468,6 +474,9 @@ def derive(record: Mapping[str, Any], children: Sequence[Mapping[str, Any]], now
             info["child"] = attempt_child(last, bound.get(node_id, []))
         else:
             child = attempt_child(last, bound.get(node_id, []))
+            if child is not None and child.get("lost"):
+                child = None
+                info["lost"] = True
             info["child"] = child
             if child is None:
                 info["state"] = "handed_out"
@@ -584,7 +593,7 @@ def _layer_index(record: Mapping[str, Any]) -> dict[str, int]:
 
 
 def offerable(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]], now: float) -> list[str]:
-    """Nodes to hand out now: ready ones, and ones handed out so long ago that no child ever took them."""
+    """Nodes to hand out now: ready ones, ones whose child a restart ended, and ones no child ever took."""
     order = _layer_index(record)
     nodes = []
     for node in record["nodes"]:
@@ -596,17 +605,31 @@ def offerable(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]
             last = node["attempts"][-1]
             if last.get("lane") == "fanout":
                 continue  # exported to a coding owner: settled from the fanout result, never handed to delegate_task
-            if now - (_number(last.get("handed_out_at")) or 0.0) > HANDOUT_STALE_SECONDS:
+            if derived[node_id].get("lost"):
+                if int(last.get("lost", 0)) < MAX_LOST_REOFFERS:
+                    nodes.append(node_id)
+            elif now - (_number(last.get("handed_out_at")) or 0.0) > HANDOUT_STALE_SECONDS:
                 nodes.append(node_id)
     return sorted(nodes, key=lambda node_id: (order.get(node_id, 0), node_id))
 
 
-def hand_out(node: dict[str, Any], derived_state: str, now: float) -> dict[str, Any]:
-    """Write-ahead: the attempt exists before its goal leaves this tool, so a marker always finds it."""
+def lost_for_good(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """Nodes whose child a restart ended after `MAX_LOST_REOFFERS` offers: not offered again; the parent settles them."""
+    return [str(node["id"]) for node in record["nodes"] if derived[str(node["id"])].get("lost")
+            and int(node["attempts"][-1].get("lost", 0)) >= MAX_LOST_REOFFERS]
+
+
+def hand_out(node: dict[str, Any], derived_state: str, now: float, *, lost: bool = False) -> dict[str, Any]:
+    """Write-ahead: the attempt exists before its goal leaves this tool, so a marker always finds it.
+
+    ``lost``: the attempt is offered again because a restart ended its child, which the attempt counts.
+    """
     attempts = node.setdefault("attempts", [])
     if derived_state == "handed_out" and attempts:
         attempts[-1]["handed_out_at"] = now
         attempts[-1]["reoffered"] = int(attempts[-1].get("reoffered", 0)) + 1
+        if lost:
+            attempts[-1]["lost"] = int(attempts[-1].get("lost", 0)) + 1
         return attempts[-1]
     fallback = bool(attempts) and attempts[-1].get("outcome") == "retry"
     attempt = {"n": len(attempts) + 1, "handed_out_at": now, "fallback": fallback,
@@ -678,7 +701,7 @@ def calls_for(
                 held.extend(chunk)
                 continue
             for node_id in chunk:
-                hand_out(nodes[node_id], derived[node_id]["state"], now)
+                hand_out(nodes[node_id], derived[node_id]["state"], now, lost=bool(derived[node_id].get("lost")))
             calls.append({
                 "category": category,
                 "route": {"tool": "omh_delegate_route", "action": "fallback" if fallback else "set",

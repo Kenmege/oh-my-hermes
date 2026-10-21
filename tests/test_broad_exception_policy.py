@@ -576,6 +576,24 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "is never mistaken for an empty or healthy HUD; catching it here is what keeps the thread "
         "alive and keeps a traceback from being printed over the TUI's own screen.",
     ),
+    ClassifiedSite(
+        "src/plugin_bundle/omh/host_process.py",
+        "this_process",
+        INTENTIONAL,
+        "Hermes' start-time reader raising records the process with `started` None, the shape its "
+        "own async-delegation record keeps for an unread time; `process_alive` then answers None "
+        "(unknown) for it, never alive and never gone, and `subagent_start` binding the helper is "
+        "never lost to it.",
+    ),
+    ClassifiedSite(
+        "src/plugin_bundle/omh/host_process.py",
+        "process_alive",
+        INTENTIONAL,
+        "A Hermes liveness probe that raised answers None, which callers keep apart from False "
+        "(gone) and True: `omh_team` keeps the part out under its four-hour bound and `omh_dag` "
+        "keeps the node running, exactly as with no process recorded. Only a probe's own answer "
+        "that the process ended hands work out again, so a raise never re-runs a live helper.",
+    ),
 )
 
 # Ruff reports one hit per handler; the inventory is keyed per enclosing
@@ -607,8 +625,11 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # 60 -> 61 / 55 -> 56: `result_transforms._delegation_snapshot`, the messenger
 # block beside the honest stop (a failure is counted and the reply goes out
 # without a block, never without the honest stop).
-EXPECTED_HANDLER_COUNT = 61
-EXPECTED_ANCHOR_COUNT = 56
+# 61 -> 63 / 56 -> 58: `host_process.this_process` and `process_alive`, Hermes'
+# own liveness probes (a raise is an unread start time or an unknown answer,
+# never "gone", so it never hands a live helper's work out again).
+EXPECTED_HANDLER_COUNT = 63
+EXPECTED_ANCHOR_COUNT = 58
 
 
 class DerivedSite(NamedTuple):

@@ -4,6 +4,25 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A Hermes restart no longer leaves a team part waiting four hours.** A
+  helper runs inside the Hermes process that started it, and a restart ends
+  it without the `subagent_stop` callback, so `omh_team` held the part as
+  out until its four-hour bound blocked it as `delegation_not_returned`.
+  The dispatch now records that process (pid and start-time fingerprint,
+  through Hermes' own `gateway.status` probes, imported when called), and the
+  first `team_start` after a restart hands back each part whose process is
+  gone: same attempt, no try spent, said as "Hermes restarted while 1 part
+  was out; it starts again." A part with no recorded process, or one whose
+  process cannot be told alive or gone, waits for the bound as before. Each
+  hand-back counts as a re-emit, so after three a part blocks as
+  `helper_lost` ("Hermes kept restarting while its helper was out"). A
+  dag-ulw node whose child a restart ended no longer stays `running` with no
+  bound: its ledger entry records the same process, and `omh_dag ready`
+  offers the node again at once, at most three times per attempt, then asks
+  the parent to settle it. The delegation graph no longer draws an ended
+  team helper as a lane of its own. Start lines name how many parts start:
+  "Started 1 part", "1 starts now and the rest wait for the parts they
+  depend on", and no line says "1 parts".
 - **A skill body edit no longer rewrites the six host installer directories.**
   Every `.<host>/install.sh`, `install.ps1` and `manifest.json` embedded the
   full per-file SHA256 list, the installers twice, so a one-line `SKILL.md`

@@ -104,6 +104,11 @@ class TeamHarness(unittest.TestCase):
         # What `helper_work` answers per helper branch; a branch not listed is absent.
         self.helper_states: dict[str, str] = {}
         self.helper_reads: list[str] = []
+        # What `dispatcher_alive` answers per recorded pid; a pid not listed cannot be told (None).
+        self.dispatchers: dict[int, bool | None] = {}
+
+    def dispatcher_alive(self, host: dict[str, object]) -> bool | None:
+        return self.dispatchers.get(int(host["pid"]))
 
     def now(self) -> float:
         self.clock += 1.0
@@ -128,7 +133,8 @@ class TeamHarness(unittest.TestCase):
     def ctx(self) -> team.TeamContext:
         return team.TeamContext(omh_home=self.home, session_ref=SESSION, runner=self.runner,
                                 fingerprint=self.fingerprint, now=self.now, host_guard=self.host_guard,
-                                helper_work=self.helper_work, approved=self.approved, observed_checks=self.observed)
+                                helper_work=self.helper_work, approved=self.approved, observed_checks=self.observed,
+                                dispatcher_alive=self.dispatcher_alive)
 
     def start(self, units: list[dict[str, object]], *, plan: dict[str, object] | None = None,
               **extra: object) -> dict[str, object]:
@@ -189,7 +195,7 @@ class T1AcceptedOnlyOnObservedExitZero(TeamHarness):
         self.assertEqual(self.states(result), {"a": "accepted"})
         self.assertEqual(result["team_state"], "done")
         self.assertEqual(result["units"][0]["evidence"], {"kind": "team_check", "ref": "t1/a/attempt-1/check"})
-        self.assertEqual(result["say"], "All 1 parts passed their checks.")
+        self.assertEqual(result["say"], "The one part passed its check.")
 
     def test_non_zero_exit_is_not_acceptance(self) -> None:
         self.runner = FakeRunner({CHECK_A: [exited(1)]})
@@ -532,6 +538,138 @@ class T11NoCheckWhileHelpersAreOut(TeamHarness):
         self.assertEqual(result["team_state"], "blocked")
 
 
+class ARestartHandsBackTheHelpersItEnded(TeamHarness):
+    """A helper runs in the Hermes process that started it; a restart ends it and fires no `subagent_stop`.
+
+    Mutation: drop `_hand_back_lost` from the resume, hand back on a live or unknown process, or in the same process.
+    """
+
+    PID = 4242
+    HOST = {"pid": PID, "started": 1_700_000_000}
+
+    def out(self, units: list[dict[str, object]], hosts: dict[str, dict[str, int] | None]) -> dict[str, object]:
+        """Start the team and play `subagent_start` for each part, recording the process ``hosts`` names."""
+        started = self.start(units)
+        for entry in self.entries(started):
+            unit_id = entry["goal"].split("/")[1]
+            self.assertTrue(team.observe_dispatch(self.home, SESSION, child_session_id=f"child-{unit_id}",
+                                                  goal=entry["goal"], now=self.now(), host=hosts[unit_id]))
+        return started
+
+    def test_a_helper_whose_process_ended_goes_out_again_at_the_first_start_after_the_restart(self) -> None:
+        first = self.out([unit("a", CHECK_A)], {"a": self.HOST})
+        self.assertEqual(self.record()["units"][0]["attempts"][0]["dispatch"]["host"], self.HOST)
+        self.restart()
+        self.dispatchers[self.PID] = False
+        again = self.start([unit("a", CHECK_A)])
+        # The same attempt, under the same marker: no try was spent.
+        self.assertEqual(self.entries(again), self.entries(first))
+        self.assertEqual(again["say"], "Hermes restarted while 1 part was out; it starts again. "
+                                       "0 of 1 part has passed its check so far.")
+        self.assertEqual(self.states(again), {"a": "prepared"})
+        attempt = self.record()["units"][0]["attempts"][0]
+        self.assertEqual((attempt["dispatch"], attempt["lost"][0]["child_session_id"], attempt["reemits"]),
+                         (None, "child-a", 1))
+        lost = again["events"][-1]
+        self.assertEqual((lost["event"], lost["summary"], lost["detail_ref"]),
+                         ("lost", "Its helper ended when Hermes restarted.", "t1/a/attempt-1"))
+        # A stop naming the ended helper matches no part now.
+        self.assertFalse(team.observe_return(self.home, SESSION, child_session_id="child-a", now=self.now()))
+        self.dispatch_all(again)
+        self.assertEqual(self.reconcile()["team_state"], "done")
+
+    def test_only_the_parts_whose_process_ended_go_out_again(self) -> None:
+        other = {"pid": 5151, "started": 1_700_000_500}
+        self.out([unit("a", CHECK_A), unit("b", CHECK_B)], {"a": self.HOST, "b": other})
+        self.restart()
+        self.dispatchers.update({self.PID: False, 5151: True})
+        again = self.start([unit("a", CHECK_A), unit("b", CHECK_B)])
+        self.assertEqual([entry["goal"] for entry in self.entries(again)], ["[omh-team:t1/a/attempt-1] Part a"])
+        self.assertEqual(self.states(again), {"a": "prepared", "b": "dispatched"})
+        self.assertTrue(again["say"].startswith("Hermes restarted while 1 part was out; it starts again."))
+        self.dispatchers[5151] = False
+        self.restart()
+        both = self.start([unit("a", CHECK_A), unit("b", CHECK_B)])
+        self.assertEqual(both["say"], "Hermes restarted while 1 part was out; it starts again. "
+                                      "0 of 2 parts have passed their checks so far.")
+
+    def waits_for_the_bound(self, host: dict[str, int] | None, answer: bool | None) -> None:
+        self.out([unit("a", CHECK_A)], {"a": host})
+        self.restart()
+        self.dispatchers[self.PID] = answer
+        again = self.start([unit("a", CHECK_A)])
+        self.assertEqual((self.entries(again), self.states(again)), ([], {"a": "dispatched"}))
+        self.assertEqual(again["say"], "This team is already running: 0 of 1 part has passed its check.")
+        self.assertEqual(self.reconcile()["reason"], "delegations_in_flight")
+        self.clock += team.DELEGATION_STALE_SECONDS + 10
+        self.assertEqual(self.reconcile()["units"][0]["blocked"]["reason"], "delegation_not_returned")
+
+    def test_a_live_process_keeps_its_helper_out(self) -> None:
+        self.waits_for_the_bound(self.HOST, True)
+
+    def test_a_process_that_cannot_be_told_keeps_its_helper_out(self) -> None:
+        self.waits_for_the_bound(self.HOST, None)
+
+    def test_a_dispatch_with_no_recorded_process_is_never_asked_about(self) -> None:
+        # The answer would say "gone"; with no process recorded it is never asked.
+        self.waits_for_the_bound(None, False)
+
+    def test_a_repeat_start_in_the_same_process_hands_nothing_back(self) -> None:
+        self.out([unit("a", CHECK_A)], {"a": self.HOST})
+        self.dispatchers[self.PID] = False
+        again = self.start([unit("a", CHECK_A)])
+        self.assertEqual((self.entries(again), self.states(again)), ([], {"a": "dispatched"}))
+
+    def test_restarts_past_the_bound_block_the_part_as_lost(self) -> None:
+        self.dispatchers[self.PID] = False
+        result = self.start([unit("a", CHECK_A)])
+        for n in range(team.MAX_REEMITS + 1):
+            self.assertTrue(team.observe_dispatch(self.home, SESSION, child_session_id=f"child-{n}",
+                                                  goal=self.entries(result)[0]["goal"], now=self.now(),
+                                                  host=self.HOST))
+            self.restart()
+            result = self.start([unit("a", CHECK_A)])
+        self.assertEqual(result["units"][0]["blocked"]["reason"], "helper_lost")
+        self.assertEqual(result["say"],
+                         "Stopped: 'Part a' is blocked because Hermes kept restarting while its helper was out.")
+        attempts = self.record()["units"][0]["attempts"]
+        self.assertEqual((len(attempts), len(attempts[0]["lost"])), (1, team.MAX_REEMITS + 1))
+
+
+class StartSaysHowManyPartsStartNow(TeamHarness):
+    """Mutation: say every part starts in parallel when some wait on others, or write "1 parts"."""
+
+    def say(self, team_id: str, units: list[dict[str, object]]) -> str:
+        plan = plan_for(*[str(item["verification_command"]) for item in units])
+        return team.team_start(self.ctx, team_id=team_id, units=units, plan=plan, plan_ref=plan["items_digest"],
+                               workdir=self.workdir)["say"]
+
+    def test_one_part_some_parts_and_every_part(self) -> None:
+        self.assertEqual(self.say("one", [unit("a", CHECK_A)]), "Started 1 part; it is done only when its check passes.")
+        self.assertEqual(
+            self.say("chain", [unit("a", CHECK_A), unit("b", CHECK_B, ["a"]), unit("c", CHECK_C, ["b"])]),
+            "Split into 3 parts; 1 starts now and the rest wait for the parts they depend on, and each part is done "
+            "only when its check passes.")
+        self.assertEqual(
+            self.say("join", [unit("a", CHECK_A), unit("b", CHECK_B), unit("c", CHECK_C, ["a", "b"])]),
+            "Split into 3 parts; 2 start now in parallel and the rest wait for the parts they depend on, and each "
+            "part is done only when its check passes.")
+        self.assertEqual(self.say("pair", [unit("a", CHECK_A), unit("b", CHECK_B)]),
+                         "Split into 2 parts; 2 start now in parallel, and each part is done only when its check passes.")
+
+    def test_a_one_part_team_never_says_1_parts(self) -> None:
+        says = [self.start([unit("a", CHECK_A)])["say"], team.team_status(self.ctx, team_id="t1")["say"]]
+        self.restart()
+        resumed = self.start([unit("a", CHECK_A)])
+        self.dispatch_all(resumed)
+        says += [resumed["say"], self.reconcile()["say"], *(item["summary"] for item in self.record()["events"])]
+        self.assertEqual(says[1:4], ["0 of 1 part has passed its check so far.",
+                                     "This team is already running: 0 of 1 part has passed its check.",
+                                     "The one part passed its check."])
+        for say in says:
+            self.assertNotIn("1 parts", say)
+
+
 class T12TeamStateIsDerived(TeamHarness):
     """Mutation: store a team state and read it back instead of deriving it."""
 
@@ -645,6 +783,17 @@ def fake_hermes_floor(blocked: frozenset[str] = frozenset(), *, cron: bool = Fal
             "tools.approval": approval, "tools.approval_context": context}
 
 
+def hermes_process(*, started: int) -> dict[str, object]:
+    """Hermes' `gateway.status` liveness probes in a Hermes process that started at ``started``.
+
+    Every pid exists; a recorded start time other than ``started`` is another process, as Hermes' own comparator
+    reads a reused pid.
+    """
+    status = SimpleNamespace(_pid_exists=lambda pid: True, get_process_start_time=lambda pid: started,
+                             start_time_fingerprints_match=lambda recorded, current: abs(current - recorded) <= 200)
+    return {"gateway": SimpleNamespace(status=status), "gateway.status": status}
+
+
 class TeamToolHandler(unittest.TestCase):
     """The plugin handler end to end: plan read, start, the host floor, and process-memory approval."""
 
@@ -696,8 +845,7 @@ class TeamToolHandler(unittest.TestCase):
         self.assertEqual(started["status"], "ok")
         self.assertEqual(started["team_state"], "running")
         # A start, not a resume of a team another test left in a shared home.
-        self.assertEqual(started["say"], "Split into 1 parts; 1 start now in parallel, and each part is done "
-                                         "only when its check passes.")
+        self.assertEqual(started["say"], "Started 1 part; it is done only when its check passes.")
         self.assertEqual(len(started["delegate_task"]["arguments"]["tasks"]), 1)
 
     def test_no_reachable_hermes_floor_refuses_every_start(self) -> None:
@@ -814,6 +962,44 @@ class TeamToolHandler(unittest.TestCase):
         self.assertEqual(self.call(self.reconcile_args("rotated-c"))["reason"], "delegations_in_flight")
         # Starting a new team needs no earlier segment, so an unreadable one refuses nothing.
         self.assertEqual(self.call({**self.args, "team_id": "rotated-d"})["status"], "ok")
+
+    def test_a_resumed_team_is_approved_under_its_owner_after_a_restart(self) -> None:
+        """Mutation N11: record the approval under the calling segment, not the session that owns the team."""
+        args = {**self.args, "team_id": "rotated-r"}
+        self.assertEqual(self.call(args)["status"], "ok")
+        self.rotated()
+        self.team_tool._APPROVED_TEAMS.clear()  # a Hermes restart
+        self.assertEqual(self.call(self.reconcile_args("rotated-r"), session=self.LATER)["reason"],
+                         "team_not_approved_here")
+        self.assertEqual(self.call(args, session=self.LATER)["status"], "ok")
+        self.assertEqual(self.call(self.reconcile_args("rotated-r"), session=self.LATER)["reason"],
+                         "delegations_in_flight")
+
+    def test_a_restart_hands_back_a_helper_whose_hermes_process_ended(self) -> None:
+        """The hooks record this process through Hermes' own probes; the handler asks them after a restart.
+
+        Mutation: drop `host` in `observe_team_dispatch`, or pass the engine a `dispatcher_alive` that never says gone.
+        """
+        from omh.plugin_bundle.omh import runtime_paths
+        from omh.plugin_bundle.omh.hooks.session_hooks import subagent_start
+
+        hooks = {"omh_home": str(runtime_paths.default_omh_home()),
+                 "hermes_home": str(runtime_paths.default_hermes_home()), "parent_session_id": self.SESSION}
+        for team_id, later_start, handed_back in (("restart-a", 5000, True), ("restart-b", 777, False)):
+            with self.subTest(team_id=team_id):
+                started = self.call({**self.args, "team_id": team_id})
+                with patch_modules(hermes_process(started=777)):
+                    subagent_start(child_session_id=f"child-{team_id}",
+                                   child_goal=started["delegate_task"]["arguments"]["tasks"][0]["goal"], **hooks)
+                record = team.read_team(team.team_path(runtime_paths.default_omh_home(), self.SESSION, team_id))
+                self.assertEqual(record["units"][0]["attempts"][0]["dispatch"]["host"],
+                                 {"pid": os.getpid(), "started": 777})
+                self.team_tool._APPROVED_TEAMS.clear()  # a Hermes restart
+                # The process now running started at `later_start`: another start time is another process.
+                resumed = self.call({**self.args, "team_id": team_id},
+                                    hermes={**fake_hermes_floor(), **hermes_process(started=later_start)})
+                self.assertEqual(bool(resumed["delegate_task"]), handed_back)
+                self.assertEqual(resumed["say"].startswith("Hermes restarted while 1 part was out"), handed_back)
 
 
 class HostLifecycleHooksDriveTheBarrier(TeamHarness):
@@ -1599,6 +1785,9 @@ class DamagedRecordsAreRefused(TeamHarness):
             "unlinked returns not a list": lambda r: r.__setitem__("unlinked_returns", "C2"),
             "unlinked return without a reason": lambda r: r.__setitem__(
                 "unlinked_returns", [{"child_session_id": "C2", "observed_at": "2026-10-20T00:00:00Z"}]),
+            "dispatch process without a pid": lambda r: r["units"][0]["attempts"][0]["dispatch"].__setitem__(
+                "host", {"started": 1}),
+            "lost helpers not a list": lambda r: r["units"][0]["attempts"][0].__setitem__("lost", "child-1"),
         }
         for name, damage in damages.items():
             record = json.loads(json.dumps(good))
