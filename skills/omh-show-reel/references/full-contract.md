@@ -53,12 +53,12 @@ Reasoning demand: `standard`
 Quality bar:
 
 - Require at least 3 distinct concept candidates, per-segment art direction and source-grounded motion; never force a fixed palette, visual style, duration or audio track.
-- Use keep/fix/rebuild critique and a weakest-scene revision budget; require actual rendered delivery-size legibility, cut/motion checks, codec/color/filesize measurements and localization evidence before PASS.
+- Use keep/fix/rebuild critique and a weakest-scene revision budget; reject repeated headline/card/rail grammar, require delivery-size moving evidence and both rebuilt cut boundaries. Technical metrics never fill independent artistic, playback or listening verdicts.
 - Read `references/assets-and-rights.md`, `references/render-qa-delivery.md` and `references/source-package.md` before export and delivery; missing required evidence keeps HOLD, never fabricated success.
 
 Handoff policy:
 
-Keep brief, source verification, concept selection, storyboard, critique, and evidence synthesis with the current host. Use only explicitly selected available production tools in an approved workspace. Load `references/procedure.md` for the ordered method and the six production references for working templates. A prepared handoff is not a render, translation review, listening check, attachment, or publication; never add a core render command.
+Keep brief, source verification, concept selection, storyboard, critique, and evidence synthesis with the current host. Use only explicitly selected available production tools in an approved workspace. Load `references/procedure.md` for the ordered method and the production references for working templates; the optional local toolkit is declared data, never automatically executed. A prepared handoff is not a render, translation review, listening check, attachment, or publication; never add a core render command.
 
 Required inputs:
 

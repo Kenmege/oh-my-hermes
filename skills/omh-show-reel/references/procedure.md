@@ -33,16 +33,16 @@ Declared checks:
   - Required result fields: `audio_mode`, `measured_cues`, `reading_time`, `pronunciation_approval`, `voice_rights`, `sync_status`
   - Criterion: Use measured native-script reading and actual utterance timing, not a fixed character-per-minute formula. When narration is needed require pronunciation, supported locale, voice consent and measured word cues before scene locking; music-only uses beat cues, muted channels need no audio or STT.
 - `reel_adapter_check`
-  - Required result fields: `selected_executor`, `capabilities`, `workspace_scope`, `deterministic_time`, `commands_timeout_cancel`, `partial_resume`, `font_readiness`
+  - Required result fields: `selected_executor`, `capabilities`, `workspace_scope`, `deterministic_time`, `commands_timeout_cancel`, `partial_resume`, `font_readiness`, `toolkit_provenance`, `source_bound_run`
   - Criterion: A selected renderer needs observed capability and a bounded reproducible recipe with time-based seek, timeout/cancel and partial/resume policy; HOLD missing capability, pageerror or font readiness, and never install tools, download fonts or call paid APIs implicitly.
 - `reel_preview_check`
-  - Required result fields: `style_frames`, `draft`, `transition_strips`, `keep_fix_rebuild`, `weakest_scene`, `revision_spend`, `delivery_size_review`
+  - Required result fields: `style_frames`, `draft`, `transition_strips`, `keep_fix_rebuild`, `weakest_scene`, `revision_spend`, `delivery_size_review`, `strongest_scene`, `anti_slide_review`, `before_after_and_boundaries`
   - Criterion: Inspect actual style frames then a moving draft and transition strips at delivery-size; assign keep/fix/rebuild and revise the weakest scene within a declared iteration/time budget, then re-render and compare. Stills alone cannot pass motion QA.
 - `reel_export_check`
   - Required result fields: `files_hashes`, `codec_dimensions_fps_duration`, `color_metadata`, `filesize_cap`, `audio_metrics`, `av_sync`
   - Criterion: Record measured hashes, size, duration, fps, codec, color primaries/range and channel constraints; HOLD unsupported codec, oversized output or missing measurements. Audio requires loudness/true peak and A/V sync, with STT only when speech exists; numerical results are not listening evidence.
 - `reel_qa_check`
-  - Required result fields: `content_brand`, `locale_font_bidi`, `cut_motion`, `delivery_size_legibility`, `temporal_audio`, `critical_defects`, `disposition`, `evidence_refs`
+  - Required result fields: `content_brand`, `locale_font_bidi`, `cut_motion`, `delivery_size_legibility`, `temporal_audio`, `critical_defects`, `disposition`, `evidence_refs`, `technical_verdict`, `artistic_verdict`, `playback_verdict`, `listening_verdict`
   - Criterion: Return PASS/REVISE/HOLD per check and overall HOLD on any critical or unobserved required check; inspect actual delivery-size playback, cuts, transitions, frozen frames and flashes, native line breaks, shaping and mixed RTL/LTR runs. No linguistic completeness, accessibility safety or human listening claim follows from automated metrics.
 - `reel_delivery_check`
   - Required result fields: `generated_files`, `attachment_receipt`, `recipient_state`, `publication_approval`, `source_package`, `missing_evidence`
@@ -90,7 +90,7 @@ Select muted, music-only or narration mode only as needed; measure reading, appr
 
 ### `reel_author_motion` (production)
 
-Choose an observed host-tool recipe or optional companion, record safe inputs/cwd, dependency versions, deterministic time, commands, timeout/cancel, chunk/resume and font readiness; author motion and source-grounded visuals without hidden installs or core subprocesses.
+Read the installed `toolkit/README.md` and `references/motion-techniques.md` with ordinary file tools; explicitly select callable helpers or another observed host-tool recipe. Bind toolkit provenance and source-bound run receipts, safe inputs/cwd, versions, deterministic seek, commands, timeout/cancel and font readiness; serial capture has no resume/chunk/blur claim. Author motion without hidden installs or core subprocesses.
 
 - Input refs: `objective audience and channel`, `duration format and budget`, `source brand and asset permissions`, `available production tools`
 - Output refs: `show_reel_renderer_handoff/v1`
@@ -98,7 +98,7 @@ Choose an observed host-tool recipe or optional companion, record safe inputs/cw
 
 ### `reel_review_revise` (validation)
 
-Render style frames, then draft playback and transition strips at delivery-size; record keep/fix/rebuild by scene, identify the weakest scene, spend the declared revision budget there, re-render, and stop at the budget with unresolved defects visible.
+Render style frames, then draft playback and transition strips at delivery-size; record keep/fix/rebuild by scene, identify strongest and weakest scenes, reject repeated headline/card/rail grammar, spend the declared revision budget rebuilding the weakest, compare same-time before/after plus both cut boundaries, re-render, and stop at the budget with unresolved defects visible.
 
 - Input refs: `objective audience and channel`, `duration format and budget`, `available production tools`
 - Output refs: `show_reel_preview_review/v1`
@@ -114,7 +114,7 @@ Export actual master/share variants as requested; measure codec, color, dimensio
 
 ### `reel_validate` (validation)
 
-Inspect actual delivery-size playback, content/brand, localized native line breaks, glyph fallback, Arabic shaping/bidi isolation, cuts, motion and audio; return evidence-linked PASS/REVISE/HOLD, never whole-video PASS from a screenshot or preset.
+Inspect actual delivery-size playback, content/brand, localized native line breaks, glyph fallback, Arabic shaping/bidi isolation, cuts, motion and audio; return evidence-linked PASS/REVISE/HOLD, keep technical, artistic, full-speed playback and listening verdicts independent; never whole-video PASS from a screenshot, score, metric or preset.
 
 - Input refs: `objective audience and channel`, `duration format and budget`, `source brand and asset permissions`, `available production tools`
 - Output refs: `show_reel_qa_report/v1`

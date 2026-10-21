@@ -783,7 +783,9 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 67130
 # that Hermes chat records none (+93). Re-derived from the producer.
 # 505649 -> 509331: only the new `show-reel` capability row (+3682);
 # no existing row changed. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 509331
+# 509331 -> 509458: measured show-reel optional companion guidance (+127),
+# from the full capability producer; no eager toolkit bytes or headroom.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 509458
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

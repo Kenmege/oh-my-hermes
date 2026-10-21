@@ -5,6 +5,7 @@ from functools import lru_cache
 from .catalog import installable_skill_definitions
 from .render import SkillReferenceTemplate, SkillTemplate, router_skill
 from .skill_record import reference_templates_in_producer_order, skill_record
+from .support_files import builtin_skill_support_templates as builtin_skill_support_templates
 
 
 def builtin_skill_templates() -> list[SkillTemplate]:

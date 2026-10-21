@@ -310,6 +310,12 @@ class SkillRecord:
     body: Callable[[], SkillTemplate]
     references: Callable[[], tuple[SkillReferenceTemplate, ...]]
 
+    def support(self):
+        """Optional closed support resources; reading is never runtime execution."""
+        from .support_files import builtin_skill_support_templates
+
+        return tuple(t for t in builtin_skill_support_templates() if t.skill_name == self.name) if self.name == "show-reel" else ()
+
     @property
     def display_name(self) -> str:
         return omh_skill_display_name(self.name)
@@ -413,7 +419,7 @@ def _project_hermes(skill: SkillRecord) -> ProjectedFiles:
     files.update(
         {
             f"{omh_skill_display_name(template.skill_name)}/{template.relative_path}": template.content
-            for template in skill.references()
+            for template in (*skill.references(), *skill.support())
         }
     )
     return files
@@ -421,6 +427,7 @@ def _project_hermes(skill: SkillRecord) -> ProjectedFiles:
 
 def _project_agent_skills(skill: SkillRecord) -> ProjectedFiles:
     from .catalog_portable import portable_skill_names
+    from .support_files import agent_skill_support_templates
 
     if skill.display_name not in portable_skill_names():
         return {}
@@ -432,6 +439,7 @@ def _project_agent_skills(skill: SkillRecord) -> ProjectedFiles:
             for template in portable_reference_templates(skill.references())
         }
     )
+    files.update({f"{t.skill_name}/{t.relative_path}": t.content for t in agent_skill_support_templates() if t.skill_name == skill.display_name})
     return files
 
 

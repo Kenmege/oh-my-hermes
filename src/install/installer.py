@@ -7,7 +7,7 @@ import sys
 from pathlib import Path, PurePosixPath
 
 from ..core.errors import OmhError
-from ..converter import convert_from_dir, convert_references_from_dir
+from ..converter import convert_from_dir, convert_references_from_dir, convert_support_from_dir
 from ..hashutil import sha256_file
 from .curator_ledger import (
     LedgerWrite,
@@ -48,7 +48,9 @@ from ..skill_pack import (
     SkillTemplate,
     builtin_skill_reference_templates,
     builtin_skill_templates,
+    builtin_skill_support_templates,
 )
+from .support_materialization import preflight_support, write_support
 from ..system.approval_tier import TIER_AUTO_ALLOWED, resolve_approval_tier
 from ..system.security_posture import resolve_security_posture
 
@@ -385,7 +387,7 @@ def rendered_skill_files(reference_templates: list[SkillReferenceTemplate] | Non
     """Skill name -> the skill-relative files an install renders for it: SKILL.md and its references."""
     templates = builtin_skill_reference_templates() if reference_templates is None else reference_templates
     rendered: dict[str, set[str]] = {}
-    for template in templates:
+    for template in [*templates, *builtin_skill_support_templates()]:
         rendered.setdefault(template.skill_name, {"SKILL.md"}).add(PurePosixPath(str(template.relative_path)).as_posix())
     return {name: frozenset(files) for name, files in rendered.items()}
 
@@ -595,6 +597,7 @@ def install_skill_pack(
     # depend on whether this install renders that skill.
     rendered = rendered_skill_files(reference_templates)
     all_reference_templates = reference_templates
+    support_templates = convert_support_from_dir(source_dir) if source_dir else builtin_skill_support_templates()
     if source_dir:
         # A retired ULW engine copied from a stale tap or checkout fails with
         # the explicit migration error, never a silent install of a contract
@@ -677,10 +680,12 @@ def install_skill_pack(
     # A Hermes edit is kept and reported, and a removed skill is rendered
     # again; any other change to a managed file still refuses the whole
     # install until `--force` says to replace it.
+    kept_directories = {PurePosixPath(rel).parent.as_posix() + "/" for rel in kept}
     modified = [
         rel
         for rel in local_modifications(manifest, paths.skills_dir)
         if rel not in kept and rel not in missing_paths and rel not in left_behind
+        and not any(rel.startswith(directory) for directory in kept_directories)
     ]
     if modified and not overwrite_allowed:
         raise OmhError("local modifications detected; rerun with --force or resolve: " + ", ".join(modified))
@@ -693,6 +698,8 @@ def install_skill_pack(
     if unreadable_ledgers:
         _mark_partial_loss_lists(hermes_edited)
     kept_names = {str(item["name"]) for item in kept.values()}
+    support_templates = [t for t in support_templates if t.skill_name in install_names - kept_names]
+    support_current = preflight_support(paths.skills_dir, support_templates, manifest, overwrite=overwrite_allowed)
     templates = [template for template in templates if template.name not in kept_names]
     reference_templates = [template for template in reference_templates if template.skill_name not in kept_names]
     context_cost_warning = (
@@ -725,13 +732,25 @@ def install_skill_pack(
     # renders again is cleared, only its render directory, and only in the
     # pack being written; an older generation stays the rollback target it is.
     for target in force_targets:
-        discard_path(target)
+        if target == paths.skills_dir / skill_install_relative_dir("show-reel") and (target / "toolkit").exists():
+            # Existing native --force semantics clear curator additions, but a
+            # companion toolkit may contain foreign files: never recursively delete it.
+            for entry in target.iterdir():
+                if entry.name != "toolkit":
+                    discard_path(entry)
+        else:
+            discard_path(target)
     managed = manifest is not None
     for template in templates:
         _write_skill(paths.skills_dir, template, force=force, managed=managed)
     for template in reference_templates:
         _write_skill_reference(paths.skills_dir, template, force=force, managed=managed)
+    support_hashes = write_support(paths.skills_dir, support_current, manifest, rendered_names={t.name for t in templates})
     _carry_kept_skills(paths.skills_dir, kept.values())
+    if "show-reel" in kept_names:
+        from .support_materialization import support_records
+
+        support_hashes.update(support_records(recorded_manifest))
     # The pruners act only on what the prior manifest records, so leaving a
     # kept skill, and an edit reported as left behind, out of the copy they
     # read is what keeps them off both: "stays" has to be true, with or
@@ -777,6 +796,7 @@ def install_skill_pack(
     _remove_empty_category_directories(paths.skills_dir)
     records = skill_records(paths.skills_dir, source)
     manifest_data = new_manifest(source, paths.skills_dir, records)
+    manifest_data["support_files"] = support_hashes
     for record in manifest_data["skills"]:
         if record["path"] in kept:
             record[HERMES_EDIT_RECORD_KEY] = {key: kept[record["path"]][key] for key in HERMES_EDIT_EVIDENCE_KEYS}
@@ -1563,7 +1583,7 @@ def _catalog_skill_files() -> dict[str, dict[str, str]]:
     files: dict[str, dict[str, str]] = {}
     for template in builtin_skill_templates():
         files.setdefault(template.name, {})["SKILL.md"] = template.content
-    for template in builtin_skill_reference_templates():
+    for template in [*builtin_skill_reference_templates(), *builtin_skill_support_templates()]:
         rel = Path(template.relative_path).as_posix()
         files.setdefault(template.skill_name, {})[rel] = template.content
     return files
@@ -1707,6 +1727,10 @@ def reconcile_skill_profile(
     source = str(manifest.get("source") or "builtin")
     records = skill_records(paths.skills_dir, source)
     manifest_data = new_manifest(source, paths.skills_dir, records)
+    # Reconcile must not adopt edited support or discard retained ownership.
+    from .support_materialization import support_records, support_path
+
+    manifest_data["support_files"] = {rel: digest for rel, digest in support_records(manifest).items() if support_path(paths.skills_dir, rel).is_file()}
     # Reconcile renders nothing, so every mark and every kept-edit record it
     # writes is one the manifest it replaces already held.
     _carry_record_provenance(manifest_data, manifest)

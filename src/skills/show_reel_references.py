@@ -1,4 +1,4 @@
-"""Original, host-neutral production templates for show-reel (no renderer engine)."""
+"""Original host-neutral production guidance; executable companion resources are separate data."""
 from __future__ import annotations
 
 REFERENCE_TEXT = {
@@ -117,22 +117,53 @@ artifacts or supplied data. If code is needed, author only in the approved
 production workspace with the selected host tool; OMH catalog data never launches
 an executor. Load `renderer-adapter.md` for timing and capture choices.
 """,
-    "renderer-adapter": """# Selected host-tool renderer recipe
+    "renderer-adapter": """# Selected host-tool recipe and optional companion
 
 ## Companion decision
 
-This release deliberately ships a host-tool recipe, not vendored upstream engine
-code or a new core execution command. A local browser/Canvas or HTML renderer plus
-FFmpeg can supply deterministic seek, frames and reproducible export without an
-additional maintained renderer dependency. This is narrower than upstream parity:
-parallel chunk scheduling, resumable manifests and automatic QA are not shipped
-engines. The author must implement and verify those only when the project needs
-them, or mark them unavailable. No automatic installs or network API clients.
-The original method was informed conceptually by revfactory/showreel revision
-64521220a2f8e91cb9894400c48c15b7f45205d6 (MIT, Copyright 2026 Minho Hwang
-(revfactory)); no upstream code/templates/prose are included. Retain its MIT
-license/copyright and pin hashes if a later approved adapter reuses substantial
-portions; asset/font licenses are independent.
+This release ships a selected optional local companion, NOT a core render
+command or full upstream runtime. Read `toolkit/README.md` with a file reader
+relative to the loaded skill directory (`skill_dir` on native Hermes); portable
+hosts use their own base directory and ordinary file tools. No companion import,
+process, socket, dependency setup or font download occurs during OMH discovery,
+projection, installation, update, routing or doctor.
+
+The method prose is original. Selected motion/audio/capture helpers are modified
+MIT derivatives of revfactory/showreel revision
+64521220a2f8e91cb9894400c48c15b7f45205d6, Copyright (c) 2026 Minho Hwang
+(revfactory). Every distribution carries `toolkit/LICENSE.upstream`, per-file
+notices and `toolkit/upstream-manifest.json` with original/local hashes and
+modification status. Preserve all of them in the source kit. Asset/font/voice
+rights are independent. This is not vendored wholesale upstream runtime parity.
+
+Explicit operator invocation, after confirming a new output workspace and local
+prerequisites (paths are examples, never auto-run):
+
+```sh
+python toolkit/scripts/new_project.py NEW_PROJECT --font /approved/font.ttf --duration 12 --fps 30 --language en --direction ltr
+python toolkit/scripts/timeline.py NEW_PROJECT/timing.json
+node toolkit/scripts/render.mjs --dir NEW_PROJECT/reel --out NEW_PROJECT/gallery.mp4 --browser /approved/chrome-headless-shell --dependency-root /approved/node_modules --ffmpeg /approved/ffmpeg --ffprobe /approved/ffprobe
+python toolkit/scripts/synth_music.py toolkit/examples/music-spec.json --out NEW_PROJECT/score.wav
+python toolkit/scripts/mix.py NEW_PROJECT/mix-spec.json --out NEW_PROJECT/mix.wav --ffmpeg /approved/ffmpeg
+python toolkit/scripts/qa_check.py NEW_PROJECT/final.mp4 --audio-mode music-only --ffmpeg /approved/ffmpeg --ffprobe /approved/ffprobe
+```
+
+These flags are the companion's tested adapter, not a new OMH command. Initialization
+preserves an existing authored project by refusing it. The exact-frame adapter is
+explicitly Puppeteer (not Playwright), serial-only, allowlisted loopback assets,
+no external requests or range access, no resume/chunks/blur; partial frames are
+never a final success. Tested capture execution is macOS with explicitly supplied
+Chrome headless-shell; Linux/Windows execution is HOLD, while installation of the
+text data stays portable. Full Chrome headless surface capture stalled on the
+observed host; missing tool/font/glyph and untested paths must not be certified.
+
+Use callable examples from `references/motion-techniques.md`, audio/stem contracts
+from `references/audio-production.md`, and actual composition/revision gates from
+`references/art-direction.md`. The initialized four-technique gallery teaches APIs,
+not the film's storyboard, and a small gallery never fulfills a commissioned film.
+Capture receipts bind exact input/font/tool versions, seek times, cleanup, decoded
+frames and converted color. Keep technical versus artistic/playback/listening
+verdicts separate; source code and measurements are not hearing or artistic review.
 
 ## Preflight and scope
 
@@ -313,6 +344,135 @@ an approved substitute fixture labeled concept, never a fabricated actual captur
 The requested artifact and source package may have different delivery permissions.
 """,
 }
+
+
+REFERENCE_TEXT.update({
+    "motion-techniques": """# Callable techniques, not a stock film
+
+Read the local `toolkit/README.md`, then the selected example script with a file
+reader. Helpers are callable parameterized source, not scripts OMH executes.
+`REEL.prog/kf/spring/rand` use absolute time/seed. `__seek(seconds)`, `__ready`,
+`__error`, `__meta` are the local host-capture contract, not a runtime RPC.
+
+## Kinetic type as meaning
+
+`kineticPose(t,{start,duration,stagger,index,rise})` returns mask/position/opacity
+and spring settling. Apply it to intact native-script runs by default; a semantic
+phrase may move as a unit. Use per-run `lang`/`dir` and isolated literal LTR tokens.
+Never split/reverse Arabic to imitate Latin stagger. Anticipation and settling
+should express weight and arrival, not make essential text unreadable. Measure
+reading time from actual delivery-size moving samples, not a character formula.
+
+## Depth, lighting and occlusion
+
+`depthGeometry` parameterizes grid count/seed/projection/center; `FX.project` and
+`FX.light` are independent helpers. Sorted disjoint grid boxes occlude and react
+to a moving light. This painter ordering does not solve arbitrary intersecting
+meshes. Use scale/camera/negative space to expose the meaningful relation, not a
+city/HUD imposed on every brand. An approved image/capture can be the focal plane;
+do not manufacture live product evidence from authored geometry.
+
+## Seeded geometric particles
+
+`particleGeometry` samples a seeded disk and evaluates closed-form drag/gravity
+at absolute time. Change sample geometry, palette and forces for the concept;
+there is no accumulating simulation or frame history. The teaching fixture is not
+a claimed glyph-particle engine. Geometry/density must preserve hierarchy; noisy
+motion does not repair a weak story. Repeated shuffled seeks must yield identical
+decoded pixels at the same times in the pinned environment.
+
+## Semantic match transform
+
+`matchGeometry` carries measured `{x,y,w,h}` from one composition to the next.
+Read a meaningful object's actual authored/DOM bounds, preserve its focal point,
+and decide why it changes scale/role across the cut. A decorative box expansion
+between unrelated headline cards is not continuity. Inspect same-time poses,
+consecutive motion frames and both cut boundaries after rebuilding a segment.
+
+The gallery is a local initialized worked example of four different techniques,
+not a film template or a mandatory effect list. Choosing none is valid if an
+explicitly selected renderer/medium better serves the concept. Pin source/tool/
+font hashes, compare a parameter/seed variant and shuffled seeks, and report the
+actual executed fixture rather than extrapolating to all locales or platforms.
+""",
+    "audio-production": """# Local score, cue-aligned SFX, stems and honest audio gates
+
+Choose muted/music-only/narration/narration+bed/SFX from the brief, not from the
+conversation language. No default voice, provider, STT, download or paid call.
+Read `toolkit/README.md` and `scripts/synth_music.py`, `mix.py`, `qa_check.py`
+relative to that toolkit. The local seeded score is a modest fallback: section
+notes/energy/BPM and tick/boom/whoosh events are parameters, not a musical-quality
+promise. Licensed imported local music is equally valid; record its rights/hash.
+
+Timeline cues are explicit IDs with seconds/frame indices or acyclic after+offset;
+keep imported word timing separate and never derive screen events by substring
+search. Audio events use numeric `at` or an exact cue ID and start/peak/end anchor.
+Measure the PCM event anchor and A/V cue against decoded frames, not a guessed
+hearing result. Unknown cues, missing required tracks, corrupt or wrong-rate audio
+must fail closed before a usable final mix. Muted cannot silently discard tracks.
+
+Mix uses explicit stereo 16-bit PCM WAV in one declared sample rate; host decode/
+resample is a separate observed action. Retain narration/bed/SFX stems, authored
+gain automation, speech-aware bed ducking and recovery outside speech. Compare
+speech/non-speech intervals numerically, then listen to the actual final encoded
+mix if that capability is observed. A sample limiter is not true-peak certification.
+`--ffmpeg` on mix measures loudness, not normalization; master explicitly and
+measure post-AAC LUFS/true peak with the chosen policy. No parse/decode/tool failure
+becomes zero or a PASS. Silent/nonfinite required-audio metrics are HOLD.
+
+Keep synthesis, mastering, final-AAC measurements, STT, pronunciation review and
+listening as different observations. STT only when speech exists and separately
+approved tooling is available; it never proves naturalness, consent or listening.
+A musical accent must support the shot/cut, not mask every change with a boom.
+""",
+    "art-direction": """# Independent artistic acceptance and the weakest-scene rebuild
+
+Before an expensive render, compare three distinct narrative/visual concepts,
+not palette swaps. For each useful reference record exact source/locator, revision
+or inspection date, what composition/motion/sound decision it informs, rights and
+limits. A supplied pinned reference can be enough; do not invent a trend claim or
+seek unrelated references just to fill a quota. Never confuse imitation with
+brand coherence: retain untouched official masters, establish a restrained visual
+language, and select material/effect according to the message.
+
+For every timed segment decide medium, palette, type, texture, composition,
+focal point, movement/weight, sound intent, entry/exit and cut motivation. Render
+style frames at delivery size AND a short moving proof before full production.
+Authentic product captures, material/photographic composition, depth, kinetic
+phrases, seeded geometry and quiet holds are options, not a required effect list.
+
+## Anti-slide evidence, not keyword approval
+
+Record `anti_slide_review` from actual segment and transition evidence. Compare
+adjacent shots' hierarchy, focal geometry, media, pose and rhythm. Reject repeated
+headline/card/rail grammar when every shot is a centered title plus the same
+boxes/rail with only text/color swapped. Do not repair it by sprinkling particles
+or changing a palette. Recompose the narrative around the evidence/semantic object,
+change medium/focal scale/camera purpose, or remove an unnecessary card. A coherent
+recurring motif is valid when it develops meaning; justify that from the output,
+not a checklist keyword or numeric quality score.
+
+Name strongest and weakest scenes, why each succeeds/fails, and keep/fix/rebuild
+for every segment. Reserve actual iteration/time budget to rebuild the weakest.
+`before_after_and_boundaries` requires same-time before/after samples, consecutive
+moving strips and both entry/exit cut boundaries from real renders. Re-render and
+review the final encoded revision; approval of the earlier draft is not approval
+of the new file. Budget exhaustion with unresolved defects means REVISE/HOLD.
+
+## Four independent verdicts
+
+`technical_verdict` binds final hash to decode/frame/color/audio/size observations.
+`artistic_verdict` binds that SAME revision to actual delivery-size style, story,
+material/motion/cut critique, source fidelity, anti-slide decision and rebuilt
+weakest scene. `playback_verdict` needs observed full-speed viewing;
+`listening_verdict` needs observed hearing of final audio, or reasoned not_applicable
+for a muted brief. Missing required observations remain HOLD/not_observed.
+Automated motion/loudness numbers, source inspection and tool names cannot fill
+those fields. Native-language and accessibility review remain separately scoped.
+A technique/locale fixture is never the complete commissioned film or evidence
+that real product actions shown as concepts actually ran.
+""",
+})
 
 
 def show_reel_reference_templates():

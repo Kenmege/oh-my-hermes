@@ -11,6 +11,8 @@ import unicodedata
 
 from .reference_regions import executable_routing_text
 from .request_lead import after_courtesy
+from .skill_invocation import affirmative_marked_request
+from .skill_shortlist import catalog_skill_names
 
 SHOW_REEL_PHRASES = (
     "show-reel", "show reel", "showreel", "product showcase video",
@@ -73,6 +75,9 @@ def show_reel_request_admitted(message: str) -> bool:
     """
     text = _fold(executable_routing_text(message)).strip()
     lead = after_courtesy(text)
+    known_names = catalog_skill_names()
+    if known_names and affirmative_marked_request(text, "show-reel", known_names):
+        return True
     if (
         lead.rstrip(".!?:,") in {"show-reel", "show reel", "showreel"}
         or _INVOCATION.match(lead)

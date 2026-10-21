@@ -23,7 +23,7 @@ This is an OMH `show-reel` workflow skill, projected for Agent Skills hosts (Cla
 
 - Read `references/brief-and-locales.md` and `references/storyboard-and-evidence.md` before proposing visuals. Recover objective, audience, channel, duration, aspect ratio, fps, size cap, source/brand permissions, and tool availability from supplied context; honor explicit format and duration, ask only for irretrievable hard facts, and label reversible creative assumptions.
 - Resolve content language from current explicit user/audience/channel instructions, then applicable stable preferences, then user language. Keep reply_language under host persona and separate content_locale, onscreen_text, subtitle_text, pronunciation_text, voice_policy, font_policy, and direction_policy; never replace literal IDs, commands, URLs, or trademarks.
-- Compare at least 3 genuinely distinct concept candidates before selection; record the rubric, winner, rejected alternatives, and per-segment art direction. Load `references/renderer-adapter.md` before choosing tools; a missing renderer means HOLD on a requested video, not a completed delivery.
+- Compare at least 3 genuinely distinct concept candidates before selection; record the rubric, winner, rejected alternatives, and per-segment art direction. Read `toolkit/README.md` under the loaded skill directory with a file reader, then `references/renderer-adapter.md` before choosing tools; a missing renderer means HOLD on a requested video, not a completed delivery.
 
 ## Do Not Use When
 
@@ -78,7 +78,7 @@ Reasoning demand: `standard`
 Quality bar:
 
 - Require at least 3 distinct concept candidates, per-segment art direction and source-grounded motion; never force a fixed palette, visual style, duration or audio track.
-- Use keep/fix/rebuild critique and a weakest-scene revision budget; require actual rendered delivery-size legibility, cut/motion checks, codec/color/filesize measurements and localization evidence before PASS.
+- Use keep/fix/rebuild critique and a weakest-scene revision budget; reject repeated headline/card/rail grammar, require delivery-size moving evidence and both rebuilt cut boundaries. Technical metrics never fill independent artistic, playback or listening verdicts.
 - Read `references/assets-and-rights.md`, `references/render-qa-delivery.md` and `references/source-package.md` before export and delivery; missing required evidence keeps HOLD, never fabricated success.
 
 Required inputs:

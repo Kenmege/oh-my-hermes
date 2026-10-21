@@ -1,19 +1,50 @@
-# Selected host-tool renderer recipe
+# Selected host-tool recipe and optional companion
 
 ## Companion decision
 
-This release deliberately ships a host-tool recipe, not vendored upstream engine
-code or a new core execution command. A local browser/Canvas or HTML renderer plus
-FFmpeg can supply deterministic seek, frames and reproducible export without an
-additional maintained renderer dependency. This is narrower than upstream parity:
-parallel chunk scheduling, resumable manifests and automatic QA are not shipped
-engines. The author must implement and verify those only when the project needs
-them, or mark them unavailable. No automatic installs or network API clients.
-The original method was informed conceptually by revfactory/showreel revision
-64521220a2f8e91cb9894400c48c15b7f45205d6 (MIT, Copyright 2026 Minho Hwang
-(revfactory)); no upstream code/templates/prose are included. Retain its MIT
-license/copyright and pin hashes if a later approved adapter reuses substantial
-portions; asset/font licenses are independent.
+This release ships a selected optional local companion, NOT a core render
+command or full upstream runtime. Read `toolkit/README.md` with a file reader
+relative to the loaded skill directory (`skill_dir` on native Hermes); portable
+hosts use their own base directory and ordinary file tools. No companion import,
+process, socket, dependency setup or font download occurs during OMH discovery,
+projection, installation, update, routing or doctor.
+
+The method prose is original. Selected motion/audio/capture helpers are modified
+MIT derivatives of revfactory/showreel revision
+64521220a2f8e91cb9894400c48c15b7f45205d6, Copyright (c) 2026 Minho Hwang
+(revfactory). Every distribution carries `toolkit/LICENSE.upstream`, per-file
+notices and `toolkit/upstream-manifest.json` with original/local hashes and
+modification status. Preserve all of them in the source kit. Asset/font/voice
+rights are independent. This is not vendored wholesale upstream runtime parity.
+
+Explicit operator invocation, after confirming a new output workspace and local
+prerequisites (paths are examples, never auto-run):
+
+```sh
+python toolkit/scripts/new_project.py NEW_PROJECT --font /approved/font.ttf --duration 12 --fps 30 --language en --direction ltr
+python toolkit/scripts/timeline.py NEW_PROJECT/timing.json
+node toolkit/scripts/render.mjs --dir NEW_PROJECT/reel --out NEW_PROJECT/gallery.mp4 --browser /approved/chrome-headless-shell --dependency-root /approved/node_modules --ffmpeg /approved/ffmpeg --ffprobe /approved/ffprobe
+python toolkit/scripts/synth_music.py toolkit/examples/music-spec.json --out NEW_PROJECT/score.wav
+python toolkit/scripts/mix.py NEW_PROJECT/mix-spec.json --out NEW_PROJECT/mix.wav --ffmpeg /approved/ffmpeg
+python toolkit/scripts/qa_check.py NEW_PROJECT/final.mp4 --audio-mode music-only --ffmpeg /approved/ffmpeg --ffprobe /approved/ffprobe
+```
+
+These flags are the companion's tested adapter, not a new OMH command. Initialization
+preserves an existing authored project by refusing it. The exact-frame adapter is
+explicitly Puppeteer (not Playwright), serial-only, allowlisted loopback assets,
+no external requests or range access, no resume/chunks/blur; partial frames are
+never a final success. Tested capture execution is macOS with explicitly supplied
+Chrome headless-shell; Linux/Windows execution is HOLD, while installation of the
+text data stays portable. Full Chrome headless surface capture stalled on the
+observed host; missing tool/font/glyph and untested paths must not be certified.
+
+Use callable examples from `references/motion-techniques.md`, audio/stem contracts
+from `references/audio-production.md`, and actual composition/revision gates from
+`references/art-direction.md`. The initialized four-technique gallery teaches APIs,
+not the film's storyboard, and a small gallery never fulfills a commissioned film.
+Capture receipts bind exact input/font/tool versions, seek times, cleanup, decoded
+frames and converted color. Keep technical versus artistic/playback/listening
+verdicts separate; source code and measurements are not hearing or artistic review.
 
 ## Preflight and scope
 

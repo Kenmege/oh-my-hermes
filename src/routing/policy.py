@@ -6067,40 +6067,11 @@ def meets_confidence_threshold(confidence: str, threshold: str) -> bool:
     return _CONFIDENCE_RANK[confidence] >= _CONFIDENCE_RANK[threshold]
 
 
-# Words that mark a message as "I am naming a skill to run", independent of
-# where they sit in the sentence.
-OMH_INVOCATION_MARKERS = frozenset({"omh", "oh-my-hermes", "oh-my-hermes-agent", "ohmyhermes"})
-SKILL_INVOCATION_MARKERS = frozenset({"skill", "workflow", "스킬", "워크플로우", "워크플로"})
-
-# Korean attaches particles to the noun, so a skill named in Korean word order
-# arrives as "wiki를" or "wiki로" rather than as a bare token.
-#
-# Public because the scorer needs the same list for a different question:
-# marker-scoped invocation below also requires a run cue, while
-# `recommend._self_name_is_marked` only asks whether the particle is there.
-# Two lists of Korean particles in one router would drift the first time one
-# of them gained an entry.
-KOREAN_NOUN_PARTICLES = ("으로", "로", "를", "을", "는", "은", "이", "가", "에게", "에", "도", "만")
-
-# A marker alone is not an invocation: "does OMH support skill health
-# dashboards?" and "what is oh-my-hermes?" both name a marker and a skill while
-# asking a question about the catalog. Requiring a cue that means *run it* is
-# what separates the two.
-_INVOCATION_RUN_CUES = (
-    "use",
-    "run",
-    "execute",
-    "invoke",
-    "start",
-    "써줘",
-    "써",
-    "쓰자",
-    "사용",
-    "실행",
-    "돌려",
-    "해줘",
-    "해주세요",
-    "부탁",
+# One marker/particle/cue vocabulary also serves standalone domain admission.
+from ..plugin_bundle.omh.skill_invocation import (
+    OMH_INVOCATION_MARKERS as OMH_INVOCATION_MARKERS,
+    SKILL_INVOCATION_MARKERS as SKILL_INVOCATION_MARKERS, KOREAN_NOUN_PARTICLES,
+    INVOCATION_RUN_CUES as _INVOCATION_RUN_CUES, marker_candidates, invocation_token,
 )
 
 # `context` is an everyday word and also a catalog name, so a message that opens
@@ -6360,21 +6331,9 @@ def _marker_scoped_skill_invocation(stripped: str, words: list[str], names: set[
 
     Two names is ambiguity, not a decision, so the router scores it instead.
     """
-    tokens = [_invocation_token(word) for word in words]
-    marker_positions = {
-        index
-        for index, token in enumerate(tokens)
-        if token in OMH_INVOCATION_MARKERS or token in SKILL_INVOCATION_MARKERS
-    }
-    if not marker_positions or not _contains_run_cue(stripped):
+    if not _contains_run_cue(stripped):
         return None
-    candidates: list[str] = []
-    for index, token in enumerate(tokens):
-        if not {index - 1, index + 1} & marker_positions:
-            continue
-        name = _resolved_skill_name(token, names)
-        if name and name not in candidates:
-            candidates.append(name)
+    candidates = marker_candidates(words, names, _EXPLICIT_SKILL_ALIASES)
     if len(candidates) != 1:
         return None
     candidate = candidates[0]
@@ -6391,11 +6350,7 @@ def _contains_run_cue(message: str) -> bool:
 
 
 def _invocation_token(word: str) -> str:
-    token = word.strip(":,.!?~…'\"()[]").lower()
-    for particle in KOREAN_NOUN_PARTICLES:
-        if token.endswith(particle) and len(token) > len(particle):
-            return token[: -len(particle)]
-    return token
+    return invocation_token(word)
 
 
 def _resolved_skill_name(token: str, names: set[str]) -> str:

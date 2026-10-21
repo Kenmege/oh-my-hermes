@@ -82,6 +82,23 @@ foreach ($relative in (@($entries.Path) + '.omh-agent-skills-manifest.json')) {
         throw "Not a file: $path"
     }
 }
+$previous = @{}
+$receipt = Join-Path $target '.omh-agent-skills-manifest.json'
+if (Test-Path -LiteralPath $receipt -PathType Leaf) {
+    foreach ($match in [regex]::Matches([IO.File]::ReadAllText($receipt), '(?m)^    "([^"]+)": "([0-9a-f]{64})",?$')) {
+        $previous[$match.Groups[1].Value] = $match.Groups[2].Value
+    }
+}
+foreach ($entry in $entries) {
+    $path = Join-Path $target $entry.Path
+    if ($entry.Path.Contains('/toolkit/') -and (Test-Path -LiteralPath $path -PathType Leaf)) {
+        $prior = $entry.Hash
+        if ($previous.ContainsKey($entry.Path)) { $prior = $previous[$entry.Path] }
+        if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $prior) {
+            throw "Foreign/edited support preserved: $path"
+        }
+    }
+}
 foreach ($entry in $entries) {
     $path = Join-Path $target $entry.Path
     [IO.Directory]::CreateDirectory((Split-Path -Parent $path)) | Out-Null

@@ -102,6 +102,17 @@ packages = [
 "omh.wrapper" = "src/wrapper"
 
 [tool.setuptools.package-data]
+# Closed optional companion data, not packages/imported production modules.
+"omh.skills" = [
+  "show_reel_toolkit/README.md", "show_reel_toolkit/LICENSE.upstream", "show_reel_toolkit/upstream-manifest.json",
+  "show_reel_toolkit/assets/engine/engine.js", "show_reel_toolkit/assets/engine/fx.js", "show_reel_toolkit/assets/engine/index.html",
+  "show_reel_toolkit/scripts/new_project.py", "show_reel_toolkit/scripts/render.mjs", "show_reel_toolkit/scripts/font-coverage.mjs",
+  "show_reel_toolkit/scripts/timeline.py", "show_reel_toolkit/scripts/synth_music.py", "show_reel_toolkit/scripts/mix.py",
+  "show_reel_toolkit/scripts/motion_check.py", "show_reel_toolkit/scripts/qa_check.py",
+  "show_reel_toolkit/examples/techniques/kinetic-type.js", "show_reel_toolkit/examples/techniques/depth-light.js",
+  "show_reel_toolkit/examples/techniques/particles.js", "show_reel_toolkit/examples/techniques/match-transform.js", "show_reel_toolkit/examples/techniques/gallery.js",
+  "show_reel_toolkit/examples/timing.json", "show_reel_toolkit/examples/music-spec.json", "show_reel_toolkit/examples/README.md",
+]
 "omh.skins" = ["*.yaml"]
 "omh.tui" = ["frontend/dist/*.js"]
 "omh.catalogs" = ["*.json"]

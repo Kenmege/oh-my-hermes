@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+import os
+import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -17,6 +21,38 @@ from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
 
 
 class ShowReelRoutingTests(unittest.TestCase):
+    def test_explicit_marker_word_order_matches_cli_recommend_card_hint_and_mid_session(self):
+        messages = (
+            "use the show-reel skill", "omh show-reel 써줘", "omh로 show-reel 해줘", "show-reel 스킬 실행해줘",
+            "Please execute the show-reel workflow", "show-reel workflow start", "omh show-reel 사용해 주세요",
+        )
+        self._assert_production_surfaces(messages)
+        with TemporaryDirectory() as td:
+            env = {**os.environ, "HOME": td, "OMH_HOME": str(Path(td)/"omh"), "HERMES_HOME": str(Path(td)/"hermes")}
+            for message in messages:
+                result = subprocess.run([sys.executable, "-I", "-m", "omh.cli", "chat", "route", "--json", message], env=env, cwd=td, capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)["route"]["selected_skill"], "show-reel", message)
+
+    def test_marker_words_do_not_turn_explanation_negation_or_reference_into_invocation(self):
+        messages = (
+            "Explain how to use the show-reel skill", "Translate use the show-reel skill into Japanese",
+            "Do not use the show-reel skill", "omh show-reel 말고 다른 스킬 써줘",
+            "Read use-show-reel-skill.md", 'Translate "omh show-reel 써줘" into English',
+            "Use the show-reel skill as a reference to create a static infographic",
+            "show-reel repository explanation", "show-reel 스킬 설명을 번역해줘",
+        )
+        with TemporaryDirectory() as td:
+            paths = resolve_paths(Path(td)/"omh", Path(td)/"hermes")
+            for message in messages:
+                with self.subTest(message=message):
+                    self.assertNotEqual(route_chat_message(message).get("selected_skill"), "show-reel")
+                    self.assertNotIn("show-reel", [r["skill"] for r in recommend_skills(message, limit=200)])
+                    self.assertNotEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
+                    self.assertNotEqual(build_chat_interaction_payload(message, source="discord", paths=paths)["chat_response"]["kind"], "show_reel")
+                    payload = pre_llm_call(omh_home=str(paths.omh_home), hermes_home=str(paths.hermes_home), user_message=message, is_first_turn=False)
+                    self.assertNotIn("prepare_show_reel", str(payload))
+
     def test_real_messenger_surface_has_dedicated_card_not_generic_plan(self):
         with TemporaryDirectory() as temp:
             paths = resolve_paths(Path(temp) / "omh", Path(temp) / "hermes")

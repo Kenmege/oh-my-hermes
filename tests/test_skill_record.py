@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _tree(root: Path) -> dict[str, str]:
-    files = [*root.glob("*/SKILL.md"), *root.glob("*/references/*.md")]
+    files = [*root.glob("*/SKILL.md"), *root.glob("*/references/*.md"), *[p for p in root.glob("omh-show-reel/toolkit/**/*") if p.is_file()]]
     return {path.relative_to(root).as_posix(): path.read_text(encoding="utf-8") for path in files}
 
 

@@ -8364,12 +8364,12 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Compatibility alias: `false`
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
-- Handoff policy: Keep brief, source verification, concept selection, storyboard, critique, and evidence synthesis with the current host. Use only explicitly selected available production tools in an approved workspace. Load `references/procedure.md` for the ordered method and the six production references for working templates. A prepared handoff is not a render, translation review, listening check, attachment, or publication; never add a core render command.
+- Handoff policy: Keep brief, source verification, concept selection, storyboard, critique, and evidence synthesis with the current host. Use only explicitly selected available production tools in an approved workspace. Load `references/procedure.md` for the ordered method and the production references for working templates; the optional local toolkit is declared data, never automatically executed. A prepared handoff is not a render, translation review, listening check, attachment, or publication; never add a core render command.
 - Why this exists: `show-reel` owns the complete motion-production method so factual claims, visual decisions, locale timing, revision budget, measured exports, and delivery receipts cannot drift apart. It does not render inside OMH core.
 - First steps:
   - Read `references/brief-and-locales.md` and `references/storyboard-and-evidence.md` before proposing visuals. Recover objective, audience, channel, duration, aspect ratio, fps, size cap, source/brand permissions, and tool availability from supplied context; honor explicit format and duration, ask only for irretrievable hard facts, and label reversible creative assumptions.
   - Resolve content language from current explicit user/audience/channel instructions, then applicable stable preferences, then user language. Keep reply_language under host persona and separate content_locale, onscreen_text, subtitle_text, pronunciation_text, voice_policy, font_policy, and direction_policy; never replace literal IDs, commands, URLs, or trademarks.
-  - Compare at least 3 genuinely distinct concept candidates before selection; record the rubric, winner, rejected alternatives, and per-segment art direction. Load `references/renderer-adapter.md` before choosing tools; a missing renderer means HOLD on a requested video, not a completed delivery.
+  - Compare at least 3 genuinely distinct concept candidates before selection; record the rubric, winner, rejected alternatives, and per-segment art direction. Read `toolkit/README.md` under the loaded skill directory with a file reader, then `references/renderer-adapter.md` before choosing tools; a missing renderer means HOLD on a requested video, not a completed delivery.
 - Use when: Use when a user needs an authored time-based product or work showcase, from evidence and audience framing to rendered motion, localized variants, export inspection, and source delivery.
 - Do not use when:
   - Only a static infographic or summary card is needed; use `img-summary`.
@@ -8389,7 +8389,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Why: An existing file conversion is not an authored showcase.
 - Quality bar:
   - Require at least 3 distinct concept candidates, per-segment art direction and source-grounded motion; never force a fixed palette, visual style, duration or audio track.
-  - Use keep/fix/rebuild critique and a weakest-scene revision budget; require actual rendered delivery-size legibility, cut/motion checks, codec/color/filesize measurements and localization evidence before PASS.
+  - Use keep/fix/rebuild critique and a weakest-scene revision budget; reject repeated headline/card/rail grammar, require delivery-size moving evidence and both rebuilt cut boundaries. Technical metrics never fill independent artistic, playback or listening verdicts.
   - Read `references/assets-and-rights.md`, `references/render-qa-delivery.md` and `references/source-package.md` before export and delivery; missing required evidence keeps HOLD, never fabricated success.
 - Completion checklist:
   - Brief, source rights, selected concept and per-segment art direction exist; current explicit audience language beats stable preferences and user language, with reply and each content track kept separate.
@@ -8451,16 +8451,16 @@ These surfaces are generated command references, not installed Hermes workflow s
     - Required result fields: `audio_mode`, `measured_cues`, `reading_time`, `pronunciation_approval`, `voice_rights`, `sync_status`
     - Criterion: Use measured native-script reading and actual utterance timing, not a fixed character-per-minute formula. When narration is needed require pronunciation, supported locale, voice consent and measured word cues before scene locking; music-only uses beat cues, muted channels need no audio or STT.
   - `reel_adapter_check`
-    - Required result fields: `selected_executor`, `capabilities`, `workspace_scope`, `deterministic_time`, `commands_timeout_cancel`, `partial_resume`, `font_readiness`
+    - Required result fields: `selected_executor`, `capabilities`, `workspace_scope`, `deterministic_time`, `commands_timeout_cancel`, `partial_resume`, `font_readiness`, `toolkit_provenance`, `source_bound_run`
     - Criterion: A selected renderer needs observed capability and a bounded reproducible recipe with time-based seek, timeout/cancel and partial/resume policy; HOLD missing capability, pageerror or font readiness, and never install tools, download fonts or call paid APIs implicitly.
   - `reel_preview_check`
-    - Required result fields: `style_frames`, `draft`, `transition_strips`, `keep_fix_rebuild`, `weakest_scene`, `revision_spend`, `delivery_size_review`
+    - Required result fields: `style_frames`, `draft`, `transition_strips`, `keep_fix_rebuild`, `weakest_scene`, `revision_spend`, `delivery_size_review`, `strongest_scene`, `anti_slide_review`, `before_after_and_boundaries`
     - Criterion: Inspect actual style frames then a moving draft and transition strips at delivery-size; assign keep/fix/rebuild and revise the weakest scene within a declared iteration/time budget, then re-render and compare. Stills alone cannot pass motion QA.
   - `reel_export_check`
     - Required result fields: `files_hashes`, `codec_dimensions_fps_duration`, `color_metadata`, `filesize_cap`, `audio_metrics`, `av_sync`
     - Criterion: Record measured hashes, size, duration, fps, codec, color primaries/range and channel constraints; HOLD unsupported codec, oversized output or missing measurements. Audio requires loudness/true peak and A/V sync, with STT only when speech exists; numerical results are not listening evidence.
   - `reel_qa_check`
-    - Required result fields: `content_brand`, `locale_font_bidi`, `cut_motion`, `delivery_size_legibility`, `temporal_audio`, `critical_defects`, `disposition`, `evidence_refs`
+    - Required result fields: `content_brand`, `locale_font_bidi`, `cut_motion`, `delivery_size_legibility`, `temporal_audio`, `critical_defects`, `disposition`, `evidence_refs`, `technical_verdict`, `artistic_verdict`, `playback_verdict`, `listening_verdict`
     - Criterion: Return PASS/REVISE/HOLD per check and overall HOLD on any critical or unobserved required check; inspect actual delivery-size playback, cuts, transitions, frozen frames and flashes, native line breaks, shaping and mixed RTL/LTR runs. No linguistic completeness, accessibility safety or human listening claim follows from automated metrics.
   - `reel_delivery_check`
     - Required result fields: `generated_files`, `attachment_receipt`, `recipient_state`, `publication_approval`, `source_package`, `missing_evidence`
@@ -8495,12 +8495,12 @@ These surfaces are generated command references, not installed Hermes workflow s
     - Input refs: `objective audience and channel`, `duration format and budget`, `source brand and asset permissions`, `available production tools`
     - Output refs: `show_reel_renderer_handoff/v1`
     - Check IDs: `reel_adapter_check`
-    - Instruction: Choose an observed host-tool recipe or optional companion, record safe inputs/cwd, dependency versions, deterministic time, commands, timeout/cancel, chunk/resume and font readiness; author motion and source-grounded visuals without hidden installs or core subprocesses.
+    - Instruction: Read the installed `toolkit/README.md` and `references/motion-techniques.md` with ordinary file tools; explicitly select callable helpers or another observed host-tool recipe. Bind toolkit provenance and source-bound run receipts, safe inputs/cwd, versions, deterministic seek, commands, timeout/cancel and font readiness; serial capture has no resume/chunk/blur claim. Author motion without hidden installs or core subprocesses.
   - `reel_review_revise` (`validation`)
     - Input refs: `objective audience and channel`, `duration format and budget`, `available production tools`
     - Output refs: `show_reel_preview_review/v1`
     - Check IDs: `reel_preview_check`
-    - Instruction: Render style frames, then draft playback and transition strips at delivery-size; record keep/fix/rebuild by scene, identify the weakest scene, spend the declared revision budget there, re-render, and stop at the budget with unresolved defects visible.
+    - Instruction: Render style frames, then draft playback and transition strips at delivery-size; record keep/fix/rebuild by scene, identify strongest and weakest scenes, reject repeated headline/card/rail grammar, spend the declared revision budget rebuilding the weakest, compare same-time before/after plus both cut boundaries, re-render, and stop at the budget with unresolved defects visible.
   - `reel_export` (`production`)
     - Input refs: `duration format and budget`, `available production tools`
     - Output refs: `show_reel_export_manifest/v1`
@@ -8510,7 +8510,7 @@ These surfaces are generated command references, not installed Hermes workflow s
     - Input refs: `objective audience and channel`, `duration format and budget`, `source brand and asset permissions`, `available production tools`
     - Output refs: `show_reel_qa_report/v1`
     - Check IDs: `reel_qa_check`, `reel_export_check`
-    - Instruction: Inspect actual delivery-size playback, content/brand, localized native line breaks, glyph fallback, Arabic shaping/bidi isolation, cuts, motion and audio; return evidence-linked PASS/REVISE/HOLD, never whole-video PASS from a screenshot or preset.
+    - Instruction: Inspect actual delivery-size playback, content/brand, localized native line breaks, glyph fallback, Arabic shaping/bidi isolation, cuts, motion and audio; return evidence-linked PASS/REVISE/HOLD, keep technical, artistic, full-speed playback and listening verdicts independent; never whole-video PASS from a screenshot, score, metric or preset.
   - `reel_deliver` (`validation`)
     - Input refs: `objective audience and channel`, `duration format and budget`, `source brand and asset permissions`, `available production tools`
     - Output refs: `show_reel_delivery_manifest/v1`

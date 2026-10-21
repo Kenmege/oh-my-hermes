@@ -364,6 +364,9 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'show-reel/references/assets-and-rights.md',
     'show-reel/references/render-qa-delivery.md',
     'show-reel/references/source-package.md',
+    'show-reel/references/motion-techniques.md',
+    'show-reel/references/audio-production.md',
+    'show-reel/references/art-direction.md',
     'research/references/briefing-format.md',
     'frontend/references/design-system-contract.md',
     'frontend/references/taste-foundations.md',
@@ -434,6 +437,33 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'code-review/references/review-lenses.md',
     'ai-slop-cleaner/references/prose-lexicon.md',
     'plan/references/project-constitution.md',
+})
+
+
+# Reviewed companion paths, independent of Markdown references and Hermes runtime.
+PORTABLE_SUPPORT_PATHS = frozenset({
+    'show-reel/toolkit/README.md',
+    'show-reel/toolkit/LICENSE.upstream',
+    'show-reel/toolkit/upstream-manifest.json',
+    'show-reel/toolkit/assets/engine/engine.js',
+    'show-reel/toolkit/assets/engine/fx.js',
+    'show-reel/toolkit/assets/engine/index.html',
+    'show-reel/toolkit/scripts/new_project.py',
+    'show-reel/toolkit/scripts/render.mjs',
+    'show-reel/toolkit/scripts/font-coverage.mjs',
+    'show-reel/toolkit/scripts/timeline.py',
+    'show-reel/toolkit/scripts/synth_music.py',
+    'show-reel/toolkit/scripts/mix.py',
+    'show-reel/toolkit/scripts/motion_check.py',
+    'show-reel/toolkit/scripts/qa_check.py',
+    'show-reel/toolkit/examples/techniques/kinetic-type.js',
+    'show-reel/toolkit/examples/techniques/depth-light.js',
+    'show-reel/toolkit/examples/techniques/particles.js',
+    'show-reel/toolkit/examples/techniques/match-transform.js',
+    'show-reel/toolkit/examples/techniques/gallery.js',
+    'show-reel/toolkit/examples/timing.json',
+    'show-reel/toolkit/examples/music-spec.json',
+    'show-reel/toolkit/examples/README.md',
 })
 
 

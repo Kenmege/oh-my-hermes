@@ -1,4 +1,4 @@
-"""PIN core nonexecution and the narrow recipe-only renderer boundary."""
+"""PIN core nonexecution and the optional declared companion boundary."""
 from __future__ import annotations
 
 import unittest
@@ -29,7 +29,7 @@ class ShowReelAdapterContractTests(unittest.TestCase):
                 self.assertNotIn("omh runtime workflow-artifact show-reel", combined)
                 self.assertFalse(record.definition.host_requires_tools)
                 recipe = " ".join(files["omh-show-reel/references/renderer-adapter.md"].split())
-                for marker in ("host-tool recipe", "not vendored", "deterministic", "seek(tSeconds)", "partial", "resume", "timeout", "cancel", "pageerror", "document.fonts.ready", "frame", "FFmpeg", "no upstream code/templates/prose"):
+                for marker in ("host-tool recipe", "optional local companion", "deterministic", "seek(tSeconds)", "partial", "resume", "timeout", "cancel", "pageerror", "document.fonts.ready", "frame", "FFmpeg", "modified", "toolkit/LICENSE.upstream", "toolkit/upstream-manifest.json"):
                     self.assertIn(marker.lower(), recipe.lower())
 
 

@@ -672,6 +672,17 @@
       "reviewed_on": "2026-10-14",
       "rationale": "Adopted the bundled claude-code, codex, and opencode skills for invoking a named CLI advisor only; the run stays advice with no edits, and no CLI is the default.",
       "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-22-show-reel-optional-companion",
+      "candidate_key": "show-reel@github.com/revfactory/showreel",
+      "prior_checkpoint": null,
+      "next_checkpoint": "64521220a2f8e91cb9894400c48c15b7f45205d6",
+      "disposition": "adopted",
+      "decision_ref": "#2195",
+      "reviewed_on": "2026-10-22",
+      "rationale": "Adopted selected MIT-preserving companion data and original production guidance; closed resource inventory and provenance replace the full upstream wrapper, with no automatic execution or dependency bootstrap.",
+      "supersedes": null
     }
   ]
 }
