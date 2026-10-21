@@ -223,6 +223,12 @@ class RouterTests(unittest.TestCase):
                 route = route_chat_message(message, source="discord")
                 self.assertEqual((route["action"], route["selected_skill"]), ("fallback", "oh-my-hermes"))
         self.assertTrue(invokes_dag_ulw("/dag-ulw migrate the billing service"))
+        for message in ("/dag-ulw explain the plan, then run the migration",
+                        "/dag-ulw is the auth refactor done? if not, finish it",
+                        "/dag-ulw what's left of the migration, finish it"):
+            with self.subTest(message=message):
+                # A question that goes on to ask for work is still a command.
+                self.assertTrue(invokes_dag_ulw(message))
         self.assertEqual(dag_ulw_control("dag ulw 그만큼 빠르게"), "")  # 그만큼 ("that much") holds no stop word
         self.assertFalse(asks_about_dag_ulw("dag ulw add the export API and its docs"))
         self.assertFalse(asks_about_dag_ulw("can you dag ulw the migration?"))
@@ -280,6 +286,12 @@ class RouterTests(unittest.TestCase):
                   "dag ulw 멈춰라", "dag ulw 취소해봐", "dag ulw 취소 ㄱㄱ", "dag ulw 취소하고 싶어", "dag ulw 취소해야 해",
                   "dag ulw 정지해줘", "dag ulw 종료해줘", "dag ulw 스톱", "dag ulw 꺼줘", "dag ulw 취소해줄 수 있어?",
                   "dag ulw 다른 거 취소", "dag ulw 저거 말고 이거 취소", "dag ulw 테스트 실패하면 멈춰",
+                  # The act of stopping after the bare stop word or words for the run, and a stop that did not take.
+                  "dag ulw 작업 취소 처리해줘", "dag ulw 지금 돌리는 거 취소 처리해줘", "dag ulw 이번 실행 중단 처리해줘",
+                  "dag ulw 런 종료 처리해줘", "dag ulw 취소 처리해줘", "dag ulw 작업 취소 진행해줘", "dag ulw 취소 요청해줘",
+                  "dag ulw 런 중단 요청 보내줘", "dag ulw 취소 눌러줘", "dag ulw 취소 실행해줘", "dag ulw 중단 명령 내려줘",
+                  "dag ulw 취소 처리", "dag ulw 작업 취소 좀 진행해 주세요", "dag ulw 취소 요청",
+                  "dag ulw 취소했는데 계속 돌아가", "dag ulw 취소했는데 아직 안 멈춰",
                   "dag ulw 취소해 주시겠어요?", "dag ulw 취소해주실래요",
                   # A polite opener or a trailing please before an English stop word.
                   "can you stop dag ulw", "could you cancel the dag ulw run", "can you please cancel dag ulw?",
@@ -320,7 +332,11 @@ class RouterTests(unittest.TestCase):
                         "dag ulw 결제 모듈 리팩터링하고 실패하면 중단해줘", "dag ulw 결제 모듈 리팩터링하다가 실패하면 중단",
                         "dag ulw 취소된 주문 정리해줘", "dag ulw 정지된 사용자 목록 api 만들어줘",
                         # A condition after the stop word with no request verb at the end: the condition alone decides.
-                        "dag ulw 결제 취소 시 쿠폰 복구", "dag ulw 취소하면 쿠폰 복구"):
+                        "dag ulw 결제 취소 시 쿠폰 복구", "dag ulw 취소하면 쿠폰 복구",
+                        # Work on a cancel, not the act of cancelling the run; and a re-run that names a past stop.
+                        "dag ulw 결제 취소 처리해줘", "dag ulw 취소 처리 로직 만들어줘", "dag ulw 취소 요청 큐 리팩터링해줘",
+                        "dag ulw 다시 돌려줘, 아까 취소한 거", "dag ulw 다시 실행해줘. 어제 중단된 거",
+                        "dag ulw 취소했는데 계속 돌아가는 버그 고쳐줘"):
             with self.subTest(message=message):
                 self.assertTrue(invokes_dag_ulw(message))
                 self.assertEqual(route_chat_message(message, source="discord")["selected_skill"], "dag-ulw")
@@ -333,7 +349,7 @@ class RouterTests(unittest.TestCase):
                         # Past three words a verb ending asks too: the words may still name the work.
                         "dag ulw 지금 돌리는 결제 모듈 작업 취소해줘", "dag ulw 아까 내가 시작한 결제 작업 좀 취소해줘",
                         # After other words a bare 요, 좀 or ㄱ is no verb; and any other stop with no work after it.
-                        "dag ulw 주문 취소요", "dag ulw 결제 취소 좀", "dag ulw 주문 취소 ㄱ", "dag ulw 취소 요청",
+                        "dag ulw 주문 취소요", "dag ulw 결제 취소 좀", "dag ulw 주문 취소 ㄱ",
                         "dag ulw 취소 바람", "dag ulw로 취소해줘", "dag ulw 이 주문 취소", "dag ulw 결과 취소",
                         # The last stop word decides: a stop of the work on a cancel feature asks, never runs.
                         "dag ulw 결제 취소 기능 만드는 거 그만해줘", "dag ulw 주문 취소 로직 작업 중단해줘",
@@ -348,6 +364,8 @@ class RouterTests(unittest.TestCase):
                         # 꺼줘 after a word for the run, and a stop left with only its ending past many words.
                         "dag ulw 결제 모듈 작업 꺼줘", "dag ulw 아까 돌린 리팩터링 작업 꺼줘", "dag ulw 테스트 돌리는 거 꺼줘",
                         "dag ulw 결제 작업 취소 좀 빨리 해줘", "dag ulw 아까 그 결제 작업 취소 다시 해줘",
+                        # A request before a present stop: it may stop the run in progress, so it still asks.
+                        "dag ulw 결제 모듈 리팩터링해줘. 기존 런은 취소",
                         # The stop word's own ending is not a request verb of its own (시켜줘, 둬줘).
                         "dag ulw 아까 내가 시작한 결제 작업 중단시켜줘", "dag ulw 아까 내가 시작한 결제 작업 그만둬줘"):
             with self.subTest(message=message):

@@ -716,8 +716,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The delta review adds seven: Korean cancels said as 취소해줘요,
             # 정지해줘 and 지금 바로 취소 (3; main started a run on the first
             # two and cancelled the third); a cancel request said as a noun
-            # and an order cancel with only 요 after it, which ask (2, main
-            # started a run on both); a split weighed against overkill and a
+            # and an order cancel with only 요 after it (2, main started a run
+            # on both; the first cancels since the fifth review, the second
+            # asks); a split weighed against overkill and a
             # request to stop using dag ulw (2, main dispatched dag-ulw).
             # The third review adds four, each a run on main: a stop of the
             # work on a cancel feature, read by its last stop word, and a
@@ -730,7 +731,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # on main too); and a sigil before a question about dag-ulw or
             # about cancelling it, in English and in Korean, which starts no
             # run (3, main dispatched dag-ulw).
-            expected=904,
+            # The fifth review adds three, each a run on main: the cancel of
+            # the work processed and a halt request sent for the run, which
+            # cancel (2); and a cancelled run that keeps going, which cancels
+            # it again (1).
+            expected=907,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1081,7 +1086,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # checking a cancel history and registering a shutdown hook, whose
             # verbs no word list names, and a refactor that stops if it fails
             # (3).
-            expected=937,
+            # The fifth review adds two: a re-run of the run cancelled earlier
+            # (1, dispatched on main too); and a sigil question followed by a
+            # request for work, still a command (1, dispatched on main too).
+            expected=939,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

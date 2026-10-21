@@ -37,9 +37,11 @@ All notable changes will be documented here.
   clarifies and the hint asks one question naming both readings (owner
   decision O7). A question about stopping (`dag ulw 취소 어떻게 해`,
   `dag ulw 멈출 수 있어`, `dag ulw 중단하면 어떻게 돼`), or whether it stopped
-  (`dag ulw 취소됐어?`, `dag ulw 멈췄어`), is answered, and so is a sigil
+  (`dag ulw 취소됐어?`, `dag ulw 멈췄어`), is answered, unless a request of its
+  own comes first (`dag ulw 다시 돌려줘, 아까 취소한 거` runs). So is a sigil
   before a question (`/dag-ulw what is it?`, `/dag-ulw how do I cancel the
-  run?`). These cancel. On main
+  run?`), unless it goes on to ask for work (`/dag-ulw explain the plan, then
+  run the migration` runs). These cancel. On main
   the polite endings, `그만 돌려`, `멈춰라`, `취소요`, `정지`, `스톱` and `꺼줘`
   started a run, `취소해줄 수 있어?` was answered, and `can you stop dag ulw`
   clarified:
@@ -51,6 +53,9 @@ All notable changes will be documented here.
   - a word for the run, with or without a modifier (`작업 취소`,
     `진행 중인 작업 취소`, `그것도 취소`, `다른 거 취소`, `저거 말고 이거
     취소`);
+  - the act of stopping after those (`작업 취소 처리해줘`, `런 중단 요청
+    보내줘`, `취소 눌러줘`), and a stop that did not take (`취소했는데 계속
+    돌아가`);
   - an English stop after `can you` (`can you stop dag ulw`).
 
   `dag ulw 주문 취소 기능 구현해줘` still runs.

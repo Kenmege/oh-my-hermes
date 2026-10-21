@@ -94,6 +94,12 @@ _KOREAN_RUN_NOUN: Final = (
     r"(?:작업|실행|런|run|job|그것도|이것도|그거도|이거도|그거|이거|저거|거|것|전부|모두|다|전체)"
 )
 _KOREAN_STOP_ADVERB: Final = r"(?:바로|당장|즉시|일단|그냥|얼른|빨리|지금)"
+# A stop said as the act of stopping, after the bare stop word or words for the run ("dag ulw 작업 취소 처리해줘",
+# "dag ulw 런 중단 요청 보내줘", "dag ulw 취소 눌러줘"): a stop of the run, not work on one.
+_KOREAN_STOP_ACT: Final = (
+    rf"\s*(?:좀\s*)?(?:(?:처리|진행|요청|실행)(?:{_KOREAN_VERB_TAIL})?|(?:요청|명령)\s*(?:보내|내려)\s*(?:줘|주세요)"
+    r"|눌러\s*(?:줘|주세요))\s*요?"
+)
 _STOP: Final = re.compile(
     rf"{_NAME}[\s,:]*(?:please\s+)?(?:stop|cancel|abort|halt|kill){_RUN_OBJECT}\s*[.!?]*$"
     rf"|^(?:please\s+)?{_POLITE_OPENER}?(?:stop|cancel|abort|halt|kill)\s+(?:the\s+|this\s+|that\s+|my\s+)?"
@@ -103,7 +109,8 @@ _STOP: Final = re.compile(
     rf"|{_NAME}[\s,:]*(?!으?로\s)(?:의\s*)?(?:\S+\s+){{0,3}}?\S*?{_KOREAN_STOP_NOUN}{_KOREAN_VERB_TAIL}\s*[.!?~]*$"
     rf"|{_NAME}[\s,:]*(?:의\s*)?(?:\S+\s+말고\s+)?(?:(?:{_KOREAN_RUN_MODIFIER}\s*){{0,2}}{_KOREAN_RUN_NOUN}\s*)?"
     rf"(?:{_KOREAN_STOP_ADVERB}\s*){{0,2}}"
-    rf"(?:{_KOREAN_STOP_NOUN}(?:{_KOREAN_VERB_TAIL}|{_KOREAN_PARTICLE_TAIL})?|꺼\s*(?:줘|주세요|라)?\s*요?)\s*[.!?~]*$"
+    rf"(?:{_KOREAN_STOP_NOUN}(?:{_KOREAN_VERB_TAIL}|{_KOREAN_PARTICLE_TAIL}|{_KOREAN_STOP_ACT})?"
+    rf"|꺼\s*(?:줘|주세요|라)?\s*요?)\s*[.!?~]*$"
 )
 # Any other Korean stop word after the name is never a run (owner decision O7). The last stop word decides. With
 # nothing after it that names work, it may stop the run or name the work, so it asks which ("dag ulw 주문 취소",
@@ -138,11 +145,18 @@ _KOREAN_NOT_A_VERB_STEM: Final = frozenset(
 )
 _KOREAN_HOW: Final = re.compile(r"어떻게|방법|뭐|왜|가능|(?:^|[할될])\s*수\s*있|되나|될까|돼\s*요?\s*[?？]")
 _KOREAN_PAST: Final = re.compile(r"^\s*(?:완료\s*)?(?:됐|되었|됨|된|했|하였|한\s*거|뒀)|여부")
-# A sigil before a question is a question, not a command ("/dag-ulw what is it?", "/dag-ulw how do I cancel it?").
+# A sigil before a question is a question, not a command ("/dag-ulw what is it?", "/dag-ulw how do I cancel it?"),
+# unless a request for work follows it ("/dag-ulw explain the plan, then run the migration", "/dag-ulw is the auth
+# refactor done? if not, finish it").
 _SIGIL_QUESTION: Final = re.compile(
-    rf"^(?:\$|\./|/){_NAME}[\s,:]+(?:how|what|why|when|where|who|which|is|are|does|do\s+i|can\s+i|should|tell\s+me"
-    r"|explain|describe)\b"
+    r"^(?!.*(?:\b(?:then|and)\s+(?:run|do|start|finish|implement|fix|migrate|build)\b|\bif\s+not\b"
+    r"|,\s*(?:finish|run|do|fix|start|implement)\b))"
+    rf"(?:\$|\./|/){_NAME}[\s,:]+(?:how|what|why|when|where|who|which|is|are|does|do\s+i|can\s+i|should|tell\s+me"
+    r"|explain|describe)\b",
+    re.DOTALL,
 )
+# A stop the person already made, said while the run still goes ("dag ulw 취소했는데 계속 돌아가"): stop it again.
+_KOREAN_STILL_RUNNING: Final = re.compile(r"(?:계속|아직|여전히)\s*(?:돌아|돌고|실행|진행|안\s*멈)|안\s*(?:멈춰|멈추|꺼져|꺼지)")
 # A stop of the run right after the name, then more work ("dag ulw 지금 거 취소하고 결제 모듈부터 다시 해줘",
 # "dag ulw 취소하고 다시 처음부터 구현해줘"): stop and restart, or work on a cancel, so it asks before either.
 _STOP_THEN_WORK: Final = re.compile(
@@ -172,9 +186,11 @@ def dag_ulw_control(text: str) -> str:
     if _STOP_THEN_WORK.search(folded):
         return "cancel_or_run"
     stop = _STOP_AFTER_NAME.search(folded)
-    if not stop or _stop_names_work(stop) or _asks_about_stopping(stop):
+    if not stop or _stop_names_work(stop):
         return ""
-    return "cancel_or_run"
+    if _KOREAN_PAST.search(stop.group("after")) and _KOREAN_STILL_RUNNING.search(stop.group("after")):
+        return "cancel"
+    return "" if _asks_about_stopping(stop) else "cancel_or_run"
 
 
 def _ends_in_its_own_request(after: str) -> bool:
@@ -201,6 +217,9 @@ def _stop_names_work(stop: re.Match[str]) -> bool:
         return False  # a question about stopping (`_asks_about_stopping`), even after …하면 ("중단하면 어떻게 돼")
     if _KOREAN_WORK_CONDITION.search(after) or _KOREAN_CONDITION_BEFORE.search(before):
         return True
+    clauses_before = re.split(r"[,.]", before)[:-1]
+    if _KOREAN_PAST.search(after) and any(_ends_in_its_own_request(clause) for clause in clauses_before):
+        return True  # a request of its own, then the stop it names: "dag ulw 다시 돌려줘, 아까 취소한 거"
     return _ends_in_its_own_request(after)
 
 
