@@ -742,7 +742,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The seventh review adds three, answered: two status checks of a
             # run that stopped (멈춘), which main ran, and whether cancel was
             # pressed, answered on main too (3).
-            expected=915,
+            # The last review patch adds six, each a run on main: 멈춤 said to
+            # dag ulw, which cancels; a status check of a run that stopped and
+            # of whether it was cancelled, answered; "a halt is enough", which
+            # asks; and help understanding a fan out and an explanation of how
+            # to split, which are asked to be told (6).
+            expected=921,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1102,7 +1107,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # with a request after the question mark (4).
             # The seventh review adds three resume requests for a halted run
             # (이어서, 계속, 마저 해줘), each dispatched on main too (3).
-            expected=946,
+            # The last review patch adds a 멈춤 button to build, which still
+            # starts a run, as on main (1).
+            expected=947,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

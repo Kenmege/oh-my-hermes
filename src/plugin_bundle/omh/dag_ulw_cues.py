@@ -79,7 +79,7 @@ _RUN_OBJECT: Final = r"(?:\s+(?:it|this|that|now|please|everything|all|the\s+(?:
 # "dag ulw 진행 중인 작업 취소", "dag ulw 그것도 취소"). After other words a bare 요, 좀 or ㄱ is no verb, so
 # "dag ulw 주문 취소요" stays the noun phrase. The folded text is NFKC, which turns the jamo ㄱ into its conjoining
 # form, so the pattern carries that form.
-_KOREAN_STOP_NOUN: Final = r"(?:취소|중지|중단|정지|종료|스톱|스탑)"
+_KOREAN_STOP_NOUN: Final = r"(?:취소|중지|중단|정지|종료|스톱|스탑|멈춤)"
 _KOREAN_VERB_TAIL: Final = (
     r"\s*(?:좀\s*)?(?:해\s*(?:줘|주세요|줄래|주라|봐|라|버려|줄\s*수\s*있(?:어|나|을까)|주시겠어|주실래|주실\s*수\s*있(?:나|을까))?"
     r"|하자|하세요|할게|할래|합니다|하고\s*싶어"
@@ -134,7 +134,7 @@ _KOREAN_WORK_WORD: Final = re.compile(
     r"|붙여|바꿔|분리|나눠|해결|잡아|버그|이슈|디버깅|디버그|최적화|캐싱|캐시|검토|스펙|문서|써\s*(?:줘|주세요)|정의|쿼리"
     r"|스키마|설정|중단점|모드|로그|\b(?:api|ui|button|page|feature|logic|flow|handler|endpoint|dto|tests?)\b"
 )
-_KOREAN_WORK_CONDITION: Final = re.compile(r"^\s*시\s|[할될]\s*때|[하되]면|\S(?:되게|되도록|하도록)")
+_KOREAN_WORK_CONDITION: Final = re.compile(r"^\s*시\s|[할될]\s*때|[하되]면(?!\s*(?:돼|된다|되잖아))|\S(?:되게|되도록|하도록)")
 _KOREAN_CONDITION_BEFORE: Final = re.compile(r"(?:[하되]면|[할될]\s*때|다가|\s시)\s*$")
 _KOREAN_RUN_OBJECT_BEFORE: Final = re.compile(r"(?:작업|거|것|run|job|그거|이거|저거)\s*$")
 _KOREAN_STOP_ENDING: Final = re.compile(rf"(?:{_KOREAN_VERB_TAIL}|{_KOREAN_PARTICLE_TAIL})")
@@ -225,6 +225,8 @@ def _stop_names_work(stop: re.Match[str]) -> bool:
     past = bool(_KOREAN_PAST.search(after)) or stem in ("멈췄", "멈춘")
     if past and _REQUEST_BEFORE_STOP.search(before) and not _STATUS_REQUEST.search(before):
         return True  # a request of its own, then the stop it names: "dag ulw 다시 돌려줘, 아까 취소한 거"
+    if past and _STATUS_REQUEST.search(after):
+        return False  # a status check of a past stop: "dag ulw 멈춘 거 확인해줘", "dag ulw 취소 여부 확인해줘"
     return _ends_in_its_own_request(after)
 
 
@@ -355,8 +357,8 @@ _PARALLEL_WORK: Final = re.compile(
 # split ..."), not a Korean explain clause after the work it explains ("... 구현하고 나눈 방법 설명해줘"), and not a
 # request put as a question ("can we split ...?", "let's split ...?", "..., ok?", "... 구현해줄 수 있어?").
 _ASKS_TO_BE_TOLD: Final = re.compile(
-    rf"^{_POLITE_OPENER}?(?:how(?!\s+about)|what(?!\s+(?:we|i)\s+(?:need|want)\b)|why\s+not\s+just\s+explain"
-    r"|why(?!\s+(?:don'?t|not)\b)|explain|describe|tell\s+me(?!\s+when)|show\s+me\s+how"
+    rf"^{_POLITE_OPENER}?(?:how(?!\s+about)|what(?!\s+(?:we|i)\s+(?:need|want)(?:\s+is\s+to\b|\s*:))|why\s+not\s+just\s+explain"
+    r"|why(?!\s+(?:don'?t|not)\b)|explain|describe|tell\s+me(?!\s+when)|show\s+me\s+how|help\s+me\s+understand"
     r"|i(?:\s+(?:want|need)|['’]d\s+like|\s+would\s+like)\s+to\s+know|is\s+it\s+possible)\b"
 )
 # Talking it over is not asking for it either ("can we talk about how to split ...", "can we discuss whether to
