@@ -7,7 +7,15 @@ import re
 import unicodedata
 
 from .boundary_phrase import contains_boundary_phrase as _contains_boundary_phrase
-from .dag_ulw_cues import big_work_for_dag_ulw, dag_ulw_control, invokes_dag_ulw, work_is_split
+from .dag_ulw_cues import (
+    asks_about_dag_ulw,
+    big_work_for_dag_ulw,
+    dag_ulw_control,
+    invokes_dag_ulw,
+    reports_or_asks_after_the_name,
+    work_is_split,
+)
+from .name_report_cues import about_the_skill
 from .data_share_cues import DATA_SHARE_REVIEW_PHRASES, data_share_phrases_said, data_share_request_admitted
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES as _CODING_DELIVERY_REQUEST_PHRASES,
@@ -6377,6 +6385,10 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
         # nothing reads as a request to start one (the router answers the same message directly). A stop noun that
         # may name the work instead ("dag ulw 주문 취소") asks which, as the router does.
         hints = [_dag_ulw_control_hint(control)] if hint_limit else []
+    elif _opens_with_a_report_on_a_name(routing_normalized):
+        # A complaint or a question about the skill the message opens with ("ultrawork broke my build", "research
+        # failed again", "code-review 결과가 이상해"): the router answers it, so no hint offers a run either.
+        hints = []
     hints = [_route_hint_with_coding_route_decision(hint, routing_normalized) for hint in hints]
     hints = [_route_hint_with_action_labels(hint) for hint in hints]
     # Emission boundary (#1249): every consumer above keys off the catalog name
@@ -8083,6 +8095,8 @@ def _direct_workflow_prefix(routing_normalized: str) -> str:
     # `dag ulw해줘`, `ulw dag ...` and `/dag-ulw` hint what the router dispatches.
     if "dag-ulw" in _DIRECT_WORKFLOW_NEXT_ACTIONS and invokes_dag_ulw(normalized):
         return "dag-ulw"
+    if asks_about_dag_ulw(normalized):
+        return ""  # "ulw dag ordering looks wrong" is about dag-ulw, not `ulw` invoked
     for workflow in sorted(_DIRECT_WORKFLOW_NEXT_ACTIONS, key=len, reverse=True):
         if workflow == "dag-ulw":
             continue  # read above, by the router's own function: a question about it is not an invocation
@@ -8096,8 +8110,40 @@ def _direct_workflow_prefix(routing_normalized: str) -> str:
     return ""
 
 
+@lru_cache(maxsize=1)
+def _workflow_names_a_message_may_open_with() -> tuple[str, ...]:
+    """Every workflow name the hint knows, written with its hyphens and with spaces, the longest first."""
+    names = {
+        *_DIRECT_WORKFLOW_NEXT_ACTIONS,
+        *_WORKFLOW_CONTEXT_CARD_BY_WORKFLOW,
+        *_WORKFLOW_INVOCATION_ALIASES,
+        *_ULW_ENGINE_WORKFLOWS,
+        *_ULW_RETIRED_WORKFLOWS,
+    }
+    return tuple(sorted({form for name in names for form in (name, name.replace("-", " "))}, key=len, reverse=True))
+
+
+def _opens_with_a_report_on_a_name(normalized: str) -> bool:
+    """Whether the message opens with a workflow's bare name and reports on it or asks about it, the router's
+    `bare_name_reports_or_asks` read on the hint's own names."""
+    if reports_or_asks_after_the_name(normalized):
+        return True  # dag-ulw's own reading, as the router's
+    for name in _workflow_names_a_message_may_open_with():
+        match = re.match(rf"^{re.escape(name)}(?=\s)", normalized.strip())
+        if match:
+            return name.replace(" ", "-") != "dag-ulw" and about_the_skill(name, normalized.strip()[match.end() :])
+    return False
+
+
 def _starts_with_direct_workflow_alias(normalized: str, alias: str) -> bool:
-    return re.match(rf"^(?:use\s+(?:omh\s+)?|run\s+)?{re.escape(alias)}(?:\b|$)", normalized) is not None
+    match = re.match(rf"^(?P<verb>use\s+(?:omh\s+)?|run\s+)?{re.escape(alias)}(?:\b|$)", normalized)
+    return match is not None and not _bare_name_reports_or_asks(match, normalized, alias)
+
+
+def _bare_name_reports_or_asks(match: re.Match[str], normalized: str, alias: str) -> bool:
+    """Whether a name the message opens with, bare, is followed by a report or a question about it ("ultrawork broke
+    my build", "code-review 결과가 이상해"): the router answers those (`routing/policy.py` reads the same functions)."""
+    return not match.group("verb") and about_the_skill(alias, normalized[match.end() :])
 
 
 def _starts_with_invocation_alias(normalized: str, alias: str) -> bool:
@@ -8113,7 +8159,8 @@ def _starts_with_invocation_alias(normalized: str, alias: str) -> bool:
     here while the router, whose alias lookup is keyed on the whole token,
     does not read it as an explicit invocation at all.
     """
-    return re.match(rf"^(?:use\s+(?:omh\s+)?|run\s+)?{re.escape(alias)}\b(?!-)", normalized) is not None
+    match = re.match(rf"^(?P<verb>use\s+(?:omh\s+)?|run\s+)?{re.escape(alias)}\b(?!-)", normalized)
+    return match is not None and not _bare_name_reports_or_asks(match, normalized, alias)
 
 
 def _bounded_matches(matches: list[str]) -> list[str]:

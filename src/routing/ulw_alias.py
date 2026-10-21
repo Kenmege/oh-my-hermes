@@ -24,6 +24,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 from ..coding.orchestration_vocabulary import HERMES_HARNESS_DEFAULT_WORDING
+from ..plugin_bundle.omh.name_report_cues import about_the_skill
 from ..skills.catalog import (
     ULW_RETIRED_CAPABILITIES,
     retired_ulw_engine_definitions,
@@ -206,7 +207,7 @@ def resolve_ulw_alias(message: str, *, allow_containment: bool = False) -> dict[
             for cue_normalized, cue, retired_name in _alias_cue_index():
                 if head_normalized == cue_normalized:
                     return _alias_resolution(head_token, retired_name)
-        elif head_normalized in _retired_name_and_alias_index():
+        elif head_normalized in _retired_name_and_alias_index() and not _head_reports_or_asks(raw):
             return _alias_resolution(
                 head_token, _retired_name_and_alias_index()[head_normalized]
             )
@@ -218,6 +219,15 @@ def resolve_ulw_alias(message: str, *, allow_containment: bool = False) -> dict[
         if contains_cue_phrase(stripped, (cue,)):
             return _alias_resolution(cue, retired_name)
     return None
+
+
+def _head_reports_or_asks(raw: str) -> bool:
+    """Whether the words after a bare leading engine name report on it or ask about it ("team failed again",
+    "ralph broke my build"): about the engine, not a request to run it (`name_report_cues`)."""
+    parts = raw.split(None, 1)
+    if len(parts) < 2 or parts[0].endswith((":", ",")):
+        return False
+    return about_the_skill(parts[0], parts[1])
 
 
 def _alias_resolution(original_invocation: str, retired_name: str) -> dict[str, str]:

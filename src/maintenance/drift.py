@@ -747,7 +747,15 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # of whether it was cancelled, answered; "a halt is enough", which
             # asks; and help understanding a fan out and an explanation of how
             # to split, which are asked to be told (6).
-            expected=921,
+            # A complaint, a question or a stop that opens with a skill's bare
+            # name, each dispatched or run on main, answered (12): dag ulw
+            # broke my build, dag ulw 또 실패했어, dag ulw 때문에 빌드 깨졌어,
+            # and the same for ultrawork, ralplan, maestro, ultraqa,
+            # code-review and the retired ralph; how to use ultrawork; a
+            # question after dag ulw; ultrawork stop. Three stop words beside
+            # other words after dag ulw, each a run on main, ask which (O7):
+            # 결제 취소 처리해줘, 취소 버튼 눌러줘, cancel order (3).
+            expected=936,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1109,7 +1117,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # (이어서, 계속, 마저 해줘), each dispatched on main too (3).
             # The last review patch adds a 멈춤 button to build, which still
             # starts a run, as on main (1).
-            expected=947,
+            # A failure named after a skill's bare name that is still the
+            # work, or a report with a request after it, each dispatched on
+            # main too: ultrawork fix the broken build, dag ulw the build that
+            # broke, ralplan the failed migration, /dag-ulw broke the build,
+            # ultrawork failed again then rerun it, dag ulw 또 실패했어 then
+            # 다시 돌려줘, dag ulw 실패한 테스트 고쳐줘, and ultrawork the
+            # build is broken (8).
+            expected=955,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

@@ -8,7 +8,9 @@ with dag ulw"), or when a Korean run ending follows it ("결제 모듈 dag ulw�
 "dag ulw 설명해줘", "dag ulw 결과 알려줘", "how does dag-ulw handle repairs?"): those are answered, the
 way a question about any other skill is. A word for the run in progress ("dag ulw stop", "dag ulw 취소",
 "dag ulw 상태 보여줘") never does either: it points at that run's `omh_dag` cancel or status. A Korean stop noun
-after other words ("dag ulw 주문 취소") is neither a run nor a cancel until the person says which.
+after other words ("dag ulw 주문 취소"), or an English stop word beside them ("dag ulw cancel order"), is neither a run
+nor a cancel until the person says which. A complaint or a question after the bare name is answered too ("dag ulw
+broke my build", "dag ulw 결제 api 뭐야"): `name_report_cues` reads it, for every skill's name.
 
 By size. A request that says how the work splits or how wide it reaches (`work_has_several_parts`), does not ask
 to be told how, and does not name ultrawork is big work for `dag-ulw`; the router reads it only on a route it
@@ -24,6 +26,8 @@ from __future__ import annotations
 import re
 import unicodedata
 from typing import Final
+
+from .name_report_cues import asks_after_the_name, reports_on_the_name
 
 DAG_ULW: Final = "dag-ulw"
 
@@ -58,6 +62,8 @@ _ASKED_ABOUT: Final = re.compile(
     rf"(?:\s+\S+){{0,6}}?\s+(?:the\s+)?(?:\$|/)?{_NAME}"
 )
 _POLITE_REQUEST: Final = re.compile(rf"^(?:(?:please|pls)\s+)?{_POLITE_OPENER}")
+# The name with nothing before it, as a report or a question opens (`name_report_cues`).
+_BARE_LEAD: Final = re.compile(rf"^{_NAME}")
 # A polite question that weighs the run against another way asks about it, not for it ("can you dag ulw this or
 # should I just fix it myself?", "could you dag ulw this, or is that overkill?", "would you dag ulw it, if you were
 # me?"). An `or` between two targets weighs nothing ("can you dag ulw the auth or billing refactor?").
@@ -98,8 +104,15 @@ _KOREAN_STOP_ADVERB: Final = r"(?:바로|당장|즉시|일단|그냥|얼른|빨�
 # "dag ulw 런 중단 요청 보내줘", "dag ulw 취소 눌러줘"): a stop of the run, not work on one.
 _KOREAN_STOP_ACT: Final = (
     rf"\s*(?:좀\s*)?(?:(?:처리|진행|요청|실행)(?:{_KOREAN_VERB_TAIL})?|(?:요청|명령)\s*(?:보내|내려)\s*(?:줘|주세요)"
-    r"|눌러\s*(?:줘|주세요))\s*요?"
+    r"|(?:눌러|걸어)\s*(?:줘|주세요))\s*요?"
 )
+# The same act after other words, alone after the stop word or with the button it is pressed on ("dag ulw 결제 취소
+# 처리해줘", "dag ulw 결제 작업 중단 걸어줘", "dag ulw 취소 버튼 눌러줘"): it names no work of its own, so the words
+# before the stop word decide, as for a bare stop noun (owner decision O7).
+_KOREAN_STOP_ACT_ALONE: Final = re.compile(rf"^{_KOREAN_STOP_ACT}(?:{_KOREAN_PARTICLE_TAIL})?\s*[.!?~]*$")
+# The button a stop is pressed on is the stop's own ("dag ulw 취소 버튼 눌러줘", "dag ulw 취소 버튼 눌렀는데 계속
+# 돌아가"), not work, unless other work words follow ("… 버튼 눌러도 안 멈추는 버그 고쳐줘").
+_KOREAN_STOP_BUTTON: Final = re.compile(r"^\s*버튼\s*(?:을|를)?(?=\s*눌)")
 _STOP: Final = re.compile(
     rf"{_NAME}[\s,:]*(?:please\s+)?(?:stop|cancel|abort|halt|kill){_RUN_OBJECT}\s*[.!?]*$"
     rf"|^(?:please\s+)?{_POLITE_OPENER}?(?:stop|cancel|abort|halt|kill)\s+(?:the\s+|this\s+|that\s+|my\s+)?"
@@ -109,7 +122,7 @@ _STOP: Final = re.compile(
     rf"|{_NAME}[\s,:]*(?!으?로\s)(?:의\s*)?(?:\S+\s+){{0,3}}?\S*?{_KOREAN_STOP_NOUN}{_KOREAN_VERB_TAIL}\s*[.!?~]*$"
     rf"|{_NAME}[\s,:]*(?:의\s*)?(?:\S+\s+말고\s+)?(?:(?:{_KOREAN_RUN_MODIFIER}\s*){{0,2}}{_KOREAN_RUN_NOUN}\s*)?"
     rf"(?:{_KOREAN_STOP_ADVERB}\s*){{0,2}}"
-    rf"(?:{_KOREAN_STOP_NOUN}(?:{_KOREAN_VERB_TAIL}|{_KOREAN_PARTICLE_TAIL}|{_KOREAN_STOP_ACT})?"
+    rf"(?:{_KOREAN_STOP_NOUN}(?:{_KOREAN_VERB_TAIL}|{_KOREAN_PARTICLE_TAIL}|{_KOREAN_STOP_ACT}(?:{_KOREAN_PARTICLE_TAIL})?)?"
     rf"|꺼\s*(?:줘|주세요|라)?\s*요?)\s*[.!?~]*$"
 )
 # Any other Korean stop word after the name is never a run (owner decision O7). The last stop word decides. With
@@ -167,6 +180,19 @@ _STOP_THEN_WORK: Final = re.compile(
     rf"{_NAME}[\s,:]*(?:의\s*)?(?:(?:{_KOREAN_RUN_MODIFIER}\s*){{0,2}}{_KOREAN_RUN_NOUN}\s*)?"
     rf"(?:{_KOREAN_STOP_ADVERB}\s*){{0,2}}(?:{_KOREAN_STOP_NOUN}|멈추|그만)\s*(?:하|시키)?고(?:서)?\s"
 )
+# An English stop word with other words after the name, none of them the run's own ("dag ulw cancel order", "dag ulw
+# order cancel", "dag ulw cancel the migration"): like a Korean stop noun after other words, it may stop the run or
+# name the work, so it asks which (owner decision O7). A work word makes it work ("dag ulw add a cancel button",
+# "dag ulw cancel order flow", "dag ulw implement order cancel").
+_EN_STOP_WORD: Final = r"(?:stop|cancel|abort|halt|kill)"
+_EN_STOP_AFTER_NAME: Final = re.compile(
+    rf"^{_NAME}[\s,:]+(?:(?:\S+\s+){{1,3}}{_EN_STOP_WORD}|{_EN_STOP_WORD}\s+\S+(?:\s+\S+){{0,3}})\s*[.!?]*$"
+)
+_EN_WORK_WORD: Final = re.compile(
+    r"\b(?:add|implement|build|create|make|write|fix|refactor|support|design|migrate|handle|handling|test|tests"
+    r"|button|feature|flow|endpoint|api|handler|logic|page|ui|function|method|module|service|bug|issue|dto|schema"
+    r"|query|filter|words?|tokens?|signals?|conditions?)\b"
+)
 _STATUS: Final = re.compile(
     rf"{_NAME}[\s,:]*(?:status|progress|logs?)(?:\s+(?:please|now|of\s+the\s+(?:run|dag|graph)))*\s*[.!?]*$"
     rf"|{_NAME}[\s,:]*(?:의\s*)?(?:상태|진행\s*상황|진행\s*상태|진행도|로그)\s*(?:좀\s*)?"
@@ -180,8 +206,9 @@ def _folded(text: str) -> str:
 
 def dag_ulw_control(text: str) -> str:
     """``cancel`` or ``status`` when ``text`` says that word to dag-ulw about the run in progress,
-    ``cancel_or_run`` when another Korean stop word follows the name with no work after it (`_STOP_AFTER_NAME`), or
-    a stop of the run is followed by more work (`_STOP_THEN_WORK`), else ""."""
+    ``cancel_or_run`` when another Korean stop word follows the name with no work after it (`_STOP_AFTER_NAME`), an
+    English stop word comes with other words and no work (`_EN_STOP_AFTER_NAME`), or a stop of the run is followed
+    by more work (`_STOP_THEN_WORK`), else ""."""
     folded = _folded(text)
     if _STOP.search(folded):
         return "cancel"
@@ -189,10 +216,12 @@ def dag_ulw_control(text: str) -> str:
         return "status"
     if _STOP_THEN_WORK.search(folded):
         return "cancel_or_run"
+    if _EN_STOP_AFTER_NAME.match(folded) and not _EN_WORK_WORD.search(folded):
+        return "cancel_or_run"
     stop = _STOP_AFTER_NAME.search(folded)
     if not stop or _stop_names_work(stop):
         return ""
-    after = stop.group("after")
+    after = _after_the_stop(stop)
     if (_KOREAN_PAST.search(after) or _KOREAN_PRESSED.match(after)) and _KOREAN_STILL_RUNNING.search(after):
         return "cancel"
     return "" if _asks_about_stopping(stop) else "cancel_or_run"
@@ -211,11 +240,19 @@ def _ends_in_its_own_request(after: str) -> bool:
     return stem not in _KOREAN_NOT_A_VERB_STEM
 
 
+def _after_the_stop(stop: re.Match[str]) -> str:
+    """The words after the last stop word, without the button it is pressed on (`_KOREAN_STOP_BUTTON`)."""
+    return _KOREAN_STOP_BUTTON.sub("", stop.group("after"), count=1)
+
+
 def _stop_names_work(stop: re.Match[str]) -> bool:
     """Whether the words around the last stop word (`_STOP_AFTER_NAME`) make the message work, not a stop."""
-    before, stem, after = stop.group("before", "stem", "after")
+    before, stem = stop.group("before", "stem")
+    after = _after_the_stop(stop)
     if stem.startswith("꺼"):
         return bool(_KOREAN_WORK_WORD.search(before)) and not _KOREAN_RUN_OBJECT_BEFORE.search(before)
+    if _KOREAN_STOP_ACT_ALONE.match(after):
+        return False  # "dag ulw 결제 취소 처리해줘": the act of stopping, after words that may name the work
     if _KOREAN_WORK_WORD.search(after):
         return True
     if _KOREAN_HOW.search(after):
@@ -234,8 +271,19 @@ def _asks_about_stopping(stop: re.Match[str] | None) -> bool:
     """Whether the last stop word asks how to stop, or whether it stopped, rather than stopping or naming work."""
     if stop is None or _stop_names_work(stop):
         return False
-    after = stop.group("after")
+    after = _after_the_stop(stop)
     return bool(_KOREAN_HOW.search(after) or _KOREAN_PAST.search(after) or stop.group("stem") in ("멈췄", "멈춘"))
+
+
+def reports_or_asks_after_the_name(text: str) -> bool:
+    """Whether ``text`` opens with the bare name and goes on to report on dag-ulw or ask a question
+    (`name_report_cues`), rather than to say a stop or status word for its run (`dag_ulw_control`)."""
+    folded = _folded(text)
+    bare = _BARE_LEAD.match(folded)
+    if not bare or dag_ulw_control(folded):
+        return False
+    rest = folded[bare.end() :]
+    return reports_on_the_name(rest) or asks_after_the_name(rest, about_anything=True)
 
 
 def asks_about_dag_ulw(text: str) -> bool:
@@ -247,6 +295,8 @@ def asks_about_dag_ulw(text: str) -> bool:
         return True
     if _asks_about_stopping(_STOP_AFTER_NAME.search(folded)):
         return True  # "dag ulw 취소 어떻게 해", "dag ulw 멈출 수 있어", "dag ulw 취소됐어?"
+    if reports_or_asks_after_the_name(folded):
+        return True  # "dag ulw broke my build", "dag ulw 또 실패했어", "dag ulw 결제 api 뭐야", "dag ulw run finished, now what"
     if _POLITE_REQUEST.match(folded):
         return bool(_WEIGHED.search(folded))
     return folded.endswith(("?", "？"))

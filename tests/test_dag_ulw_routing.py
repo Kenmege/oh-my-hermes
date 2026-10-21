@@ -106,7 +106,13 @@ class InvocationTests(unittest.TestCase):
 class RouterTests(unittest.TestCase):
     def test_the_explicit_forms_dispatch_dag_ulw(self) -> None:
         for message in ("dag ulw해줘 결제 모듈이랑 알림 모듈 같이 리팩터링해", "ulw dag split the auth refactor across the service",
-                        "refactor the billing and invoicing modules with dag ulw"):
+                        "refactor the billing and invoicing modules with dag ulw",
+                        # A failure that is the work, or a report with a request after it, still runs it.
+                        "dag ulw the build that broke", "dag ulw 실패한 테스트 고쳐줘", "dag ulw 또 실패했어, 다시 돌려줘",
+                        "/dag-ulw broke the build, fix it", "dag ulw failed again, rerun it", "dag ulw why the build is failing",
+                        # Work on a cancel, named as such.
+                        "dag ulw 결제 취소 처리 로직 구현해줘", "dag ulw 취소 버튼 만들어줘", "dag ulw cancel order flow",
+                        "dag ulw add a cancel button", "dag ulw 취소 버튼 눌러도 안 멈추는 버그 고쳐줘"):
             with self.subTest(message=message):
                 route = route_chat_message(message, source="discord")
                 self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "dag-ulw"))
@@ -196,7 +202,14 @@ class RouterTests(unittest.TestCase):
                         "dag ulw 결과 알려줘", "dag ulw 쓰면 비용이 얼마나 나와?", "dag ulw 문서 보여줘", "dag ulw 어떻게 써?",
                         "dag ulw is broken, it never settles the verify node", "can you explain dag ulw?",
                         "can you dag ulw this or should I just fix it myself?", "would you dag ulw it, if you were me?",
-                        "can you dag ulw the migration 아니면 그냥 ultrawork로 할까?"):
+                        "can you dag ulw the migration 아니면 그냥 ultrawork로 할까?",
+                        # A complaint after the name reports a problem (`name_report_cues`).
+                        "dag ulw broke my build", "dag ulw failed again", "dag ulw 너무 느려", "dag ulw 또 실패했어",
+                        "dag ulw 때문에 빌드 깨졌어", "ulw dag ordering looks wrong in the docs", "dag ulw 멈춘 듯",
+                        "dag ulw spawned too many agents", "dag ulw 결과가 이상해",
+                        # So does a question after it, whatever it asks about: dag-ulw only runs work.
+                        "dag ulw run finished, now what", "dag ulw 결제 api 뭐야", "dag ulw 결제 취소 api 뭐야",
+                        "dag ulw 이거 어떻게 써", "dag ulw how does the verify node work"):
             with self.subTest(message=message):
                 self.assertTrue(asks_about_dag_ulw(message))
                 route = route_chat_message(message, source="discord")
@@ -298,6 +311,10 @@ class RouterTests(unittest.TestCase):
                   "dag ulw 런 종료 처리해줘", "dag ulw 취소 처리해줘", "dag ulw 작업 취소 진행해줘", "dag ulw 취소 요청해줘",
                   "dag ulw 런 중단 요청 보내줘", "dag ulw 취소 눌러줘", "dag ulw 취소 실행해줘", "dag ulw 중단 명령 내려줘",
                   "dag ulw 취소 처리", "dag ulw 작업 취소 좀 진행해 주세요", "dag ulw 취소 요청",
+                  # A halt put on the run, a processed cancel with a softener, and a cancel button pressed while the
+                  # run goes on.
+                  "dag ulw 작업 중단 걸어줘", "dag ulw 중단 걸어줘", "dag ulw 작업 취소 처리 좀",
+                  "dag ulw 취소 버튼 눌렀는데 계속 돌아가",
                   "dag ulw 취소했는데 계속 돌아가", "dag ulw 취소했는데 아직 안 멈춰", "dag ulw 취소 눌렀는데 계속 돌아가",
                   "dag ulw 멈춤",
                   "dag ulw 취소해 주시겠어요?", "dag ulw 취소해주실래요",
@@ -342,7 +359,7 @@ class RouterTests(unittest.TestCase):
                         # A condition after the stop word with no request verb at the end: the condition alone decides.
                         "dag ulw 결제 취소 시 쿠폰 복구", "dag ulw 취소하면 쿠폰 복구",
                         # Work on a cancel, not the act of cancelling the run; and a re-run that names a past stop.
-                        "dag ulw 결제 취소 처리해줘", "dag ulw 취소 처리 로직 만들어줘", "dag ulw 취소 요청 큐 리팩터링해줘",
+                        "dag ulw 취소 처리 로직 만들어줘", "dag ulw 취소 요청 큐 리팩터링해줘",
                         "dag ulw 다시 돌려줘, 아까 취소한 거", "dag ulw 다시 실행해줘. 어제 중단된 거",
                         "dag ulw 재시작해줘 취소했던 거", "dag ulw 다시 돌려줘 아까 취소한 거", "dag ulw 다시 해줘, 아까 취소한 거 말고",
                         "dag ulw 이어서 해줘 중단된 거", "dag ulw 계속 해줘, 아까 중단된 거", "dag ulw 마저 해줘 중단된 거",
@@ -378,7 +395,15 @@ class RouterTests(unittest.TestCase):
                         # A request before a present stop: it may stop the run in progress, so it still asks.
                         "dag ulw 결제 모듈 리팩터링해줘. 기존 런은 취소",
                         # The stop word's own ending is not a request verb of its own (시켜줘, 둬줘).
-                        "dag ulw 아까 내가 시작한 결제 작업 중단시켜줘", "dag ulw 아까 내가 시작한 결제 작업 그만둬줘"):
+                        "dag ulw 아까 내가 시작한 결제 작업 중단시켜줘", "dag ulw 아까 내가 시작한 결제 작업 그만둬줘",
+                        # The act of stopping after words that may name the work: processing a cancel, a halt put on
+                        # it, a cancel button pressed. The act names no work of its own.
+                        "dag ulw 결제 취소 처리해줘", "dag ulw 주문 취소 처리해줘", "dag ulw 결제 취소 진행해줘",
+                        "dag ulw 결제 작업 중단 걸어줘", "dag ulw 취소 버튼 눌러줘", "dag ulw 결제 취소 처리 좀",
+                        "dag ulw 결제 취소 요청 보내줘",
+                        # An English stop word beside words that may name the work.
+                        "dag ulw cancel order", "dag ulw order cancel", "dag ulw cancel the migration",
+                        "dag ulw stop the billing job"):
             with self.subTest(message=message):
                 self.assertEqual(dag_ulw_control(message), "cancel_or_run")
                 self.assertFalse(invokes_dag_ulw(message))
