@@ -21,24 +21,29 @@ A pid means something only on the machine, and in the pid namespace, that
 read it: a Hermes gateway in a container and a CLI on its host can share one
 OMH home, and the host has no such pid. So the record also names where the
 pid was read (`machine`), and a record from anywhere else is unknown, never
-gone. On Linux that includes the boot, so a reboot, `wsl --shutdown`, or a
-restarted or recreated container reads as unknown too: a false "gone" would
-be a paid duplicate run, and "same machine" cannot be proven across a boot
-(machine ids are baked into images, and every host's own pid namespace is
-the same constant).
+gone. Two machines must never read as one: a pid the other machine runs
+does not exist here, so it would read as gone, and its work would run and
+be paid for twice. On Linux the identity includes the boot, so a reboot,
+`wsl --shutdown`, or a restarted or recreated container reads as unknown
+too: "same machine" cannot be proven across a boot (machine ids are baked
+into images, and every host's own pid namespace is the same constant).
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
+import platform
 import sys
 from typing import Any, Final
+import uuid
 
 # Linux: a random id per boot, and this process's pid namespace (a container has its own).
 _BOOT_ID = Path("/proc/sys/kernel/random/boot_id")
 _PID_NAMESPACE = "/proc/self/ns/pid"
 _PLATFORM: Final = sys.platform
 _MACHINE_CHARS = 300
+# `gethostuuid` waits this long at most; a zero wait would mean "wait indefinitely" (gethostuuid(2)).
+_UUID_WAIT_SECONDS = 1
 
 
 def this_process() -> dict[str, Any] | None:
@@ -72,19 +77,52 @@ def machine() -> str:
     On Linux, the boot id and the pid namespace: another host, and another
     boot of this one, has another boot id, and a container has its own
     namespace. "" when either cannot be read: nothing is recorded then, and
-    no record reads as here. Elsewhere only the platform: a host name there
-    follows the network (macOS renames itself on a DHCP or reverse-DNS
-    change, or on a Bonjour conflict), so it would turn every record
-    unknown. Two non-Linux machines sharing one OMH home are not told apart.
+    no record reads as here. On macOS the hardware UUID (`gethostuuid`), on
+    Windows the `MachineGuid` the OS keeps in the registry: neither follows
+    the network, as a host name does (macOS renames itself on a DHCP or
+    reverse-DNS change, or on a Bonjour conflict). Where that read fails,
+    and on any other platform, the host name, under its own prefix so it
+    never equals a hardware id; a renamed host then reads as unknown.
     """
     if not _PLATFORM.startswith("linux"):
-        return f"host:{_PLATFORM}"[:_MACHINE_CHARS]
+        hardware = _darwin_uuid() if _PLATFORM == "darwin" else _windows_guid() if _PLATFORM == "win32" else ""
+        return (f"{_PLATFORM}:{hardware}" if hardware else f"host:{platform.node()}")[:_MACHINE_CHARS]
     try:
         boot = _BOOT_ID.read_text(encoding="ascii").strip()
         namespace = os.readlink(_PID_NAMESPACE)
     except (OSError, ValueError):
         return ""
     return f"linux:{boot}:{namespace}"[:_MACHINE_CHARS] if boot and namespace else ""
+
+
+def _darwin_uuid() -> str:
+    """This Mac's hardware UUID from libc's `gethostuuid`, or "" when it cannot be read. No process is spawned."""
+    try:
+        import ctypes
+
+        class _Timespec(ctypes.Structure):
+            _fields_ = [("tv_sec", ctypes.c_long), ("tv_nsec", ctypes.c_long)]
+
+        found = (ctypes.c_ubyte * 16)()
+        wait = _Timespec(_UUID_WAIT_SECONDS, 0)
+        if ctypes.CDLL(None).gethostuuid(found, ctypes.byref(wait)) != 0:
+            return ""
+        return str(uuid.UUID(bytes=bytes(found)))
+    except (ImportError, OSError, AttributeError, ValueError):
+        return ""
+
+
+def _windows_guid() -> str:
+    """Windows' `MachineGuid` (HKLM\\SOFTWARE\\Microsoft\\Cryptography), or "" when it cannot be read."""
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography", 0,
+                            winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+            value, kind = winreg.QueryValueEx(key, "MachineGuid")
+    except (ImportError, OSError):
+        return ""
+    return value.strip() if kind == winreg.REG_SZ and isinstance(value, str) else ""
 
 
 def recorded_process(value: object) -> dict[str, Any] | None:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -83,14 +84,70 @@ class Machine(unittest.TestCase):
         with mock.patch.object(host_process, "machine", return_value=""), patch_modules(hermes()):
             self.assertIsNone(host_process.this_process())
 
-    def test_elsewhere_the_platform_and_never_the_host_name(self) -> None:
-        """A macOS host name follows the network; a record must not turn unknown when it does."""
-        names = []
-        for node in ("MacBook-Pro.local", "MacBook-Pro-2.local"):
-            with mock.patch.object(host_process, "_PLATFORM", "darwin"), \
-                    mock.patch("platform.node", return_value=node):
-                names.append(host_process.machine())
-        self.assertEqual(names, ["host:darwin", "host:darwin"])
+    def on(self, platform_name: str, hardware: str, node: str) -> str:
+        reader = "_darwin_uuid" if platform_name == "darwin" else "_windows_guid"
+        with mock.patch.object(host_process, "_PLATFORM", platform_name), \
+                mock.patch.object(host_process, reader, return_value=hardware), \
+                mock.patch.object(host_process.platform, "node", return_value=node):
+            return host_process.machine()
+
+    def test_off_linux_a_hardware_id_that_does_not_follow_the_network(self) -> None:
+        """Two machines never read as one, and a renamed Mac (DHCP, reverse DNS, Bonjour "-2") stays itself.
+
+        Mutation: use the platform alone, or the host name while a hardware id was read.
+        """
+        mac = self.on("darwin", "11111111-2222-3333-4444-555555555555", "MacBook-Pro.local")
+        self.assertEqual(mac, "darwin:11111111-2222-3333-4444-555555555555")
+        self.assertEqual(self.on("darwin", "11111111-2222-3333-4444-555555555555", "MacBook-Pro-2.local"), mac)
+        self.assertNotEqual(self.on("darwin", "99999999-2222-3333-4444-555555555555", "MacBook-Pro.local"), mac)
+        self.assertEqual(self.on("win32", "6d0e4c2a-guid", "DESKTOP-1"), "win32:6d0e4c2a-guid")
+        self.assertNotEqual(self.on("win32", "7e1f5d3b-guid", "DESKTOP-1"), "win32:6d0e4c2a-guid")
+
+    def test_a_failed_read_falls_back_to_the_host_name_under_its_own_prefix(self) -> None:
+        """Mutation: fall back to the platform alone, or without a prefix of its own."""
+        self.assertEqual(self.on("darwin", "", "MacBook-Pro.local"), "host:MacBook-Pro.local")
+        self.assertEqual(self.on("win32", "", "DESKTOP-1"), "host:DESKTOP-1")
+        self.assertNotEqual(self.on("darwin", "", "MacBook-Air.local"), self.on("darwin", "", "MacBook-Pro.local"))
+        # A host name that happens to read like a hardware id is still another prefix.
+        uuid_like = "11111111-2222-3333-4444-555555555555"
+        self.assertNotEqual(self.on("darwin", "", uuid_like), self.on("darwin", uuid_like, "MacBook-Pro.local"))
+        self.assertTrue(self.on("darwin", "", "darwin:" + uuid_like).startswith("host:"))
+
+    def test_gethostuuid_is_read_through_libc_with_a_bounded_wait(self) -> None:
+        """Mutation: accept a non-zero return, or pass a zero wait (gethostuuid(2): wait indefinitely)."""
+        import ctypes
+
+        calls: list[tuple[int, int]] = []
+
+        class Libc:
+            def __init__(self, result: int) -> None:
+                self.result = result
+
+            def gethostuuid(self, found: object, wait: object) -> int:
+                ctypes.memmove(found, bytes(range(16)), 16)
+                calls.append((wait._obj.tv_sec, wait._obj.tv_nsec))
+                return self.result
+
+        with mock.patch.object(ctypes, "CDLL", return_value=Libc(0)):
+            self.assertEqual(host_process._darwin_uuid(), "00010203-0405-0607-0809-0a0b0c0d0e0f")
+        for result in (-1, 1):
+            with self.subTest(result=result), mock.patch.object(ctypes, "CDLL", return_value=Libc(result)):
+                self.assertEqual(host_process._darwin_uuid(), "")
+        self.assertTrue(all(seconds > 0 or nanoseconds > 0 for seconds, nanoseconds in calls))
+        with mock.patch.object(ctypes, "CDLL", side_effect=OSError("no libc")):
+            self.assertEqual(host_process._darwin_uuid(), "")
+
+    @unittest.skipUnless(sys.platform == "darwin", "reads this Mac's own hardware UUID")
+    def test_this_mac_reads_its_hardware_uuid(self) -> None:
+        self.assertRegex(host_process._darwin_uuid(), r"\A[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z")
+
+    @unittest.skipUnless(sys.platform == "win32", "reads this Windows machine's MachineGuid")
+    def test_this_windows_machine_reads_its_machine_guid(self) -> None:
+        self.assertRegex(host_process._windows_guid(), r"\A\S+\Z")
+
+    def test_no_registry_off_windows(self) -> None:
+        if sys.platform != "win32":
+            self.assertEqual(host_process._windows_guid(), "")
 
 
 class ProcessAlive(unittest.TestCase):
