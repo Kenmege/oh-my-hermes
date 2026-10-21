@@ -694,7 +694,17 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The delta review adds eleven: a stop, cancel, status, progress or
             # log word said to dag ulw, in English and Korean, is about the run
             # in progress and starts no new one (11).
-            expected=867,
+            # The dag-ulw routing follow-ups add nine: a Korean cancel with a
+            # verb ending after other words and one after a word for the run
+            # (2, both cancelled on main too); an order cancel and an upload
+            # halt with no verb, which ask whether to stop the run or build
+            # the thing (2, main cancelled the run); a polite request to
+            # explain dag ulw (1, main clarified); a remark that the fan out
+            # across the services is too high and a split of one paragraph
+            # for a translation (2, main clarified, but Hermes' hint started
+            # a run); and an explain request and a question about splitting
+            # work into parallel lanes (2, main dispatched dag-ulw).
+            expected=876,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1023,7 +1033,15 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # on ultrawork: a Korean cache bug when two requests arrive at
             # once, a queue named for parallel work, and a slow parallel
             # implementation of one function (3).
-            expected=921,
+            # The dag-ulw routing follow-ups add five: two polite requests
+            # that put the name after "can you" and "could you please" (2,
+            # main clarified); a Korean order-cancel feature to build, which
+            # runs rather than cancels (1, dispatched on main too); a Korean
+            # cache that breaks when two named modules request at once, which
+            # stays one ultrawork fix (1, main dispatched dag-ulw); and failing
+            # tests in two Korean modules fixed in parallel, which still reach
+            # dag-ulw (1, dispatched on main too).
+            expected=926,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

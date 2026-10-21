@@ -7162,6 +7162,43 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_directly",
         "direct_answer",
     ),
+    # A verb form of the stop word, or a word for the run before it, still cancels; a stop noun after other words
+    # may name the work as easily as the run (owner decision O7), so the router asks which before either.
+    RoutingPrecisionCase(
+        "korean-dag-ulw-anything-cancel-verb-does-not-start-a-run",
+        "Cancelling with a Korean verb ending after other words stops the run, not starts one",
+        "dag ulw 주문 취소해줘",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "korean-dag-ulw-work-cancel-does-not-start-a-run",
+        "Cancelling dag ulw's work, in Korean, starts no run",
+        "dag ulw 작업 취소",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "korean-dag-ulw-order-cancel-asks-which",
+        "dag ulw beside an order cancel with no verb asks whether to stop the run or build the order cancel",
+        "dag ulw 주문 취소",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "korean-dag-ulw-upload-halt-asks-which",
+        "dag ulw beside an upload halt with no verb asks whether to stop the run or build the upload halt",
+        "dag ulw 업로드 중단",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "polite-explain-dag-ulw-is-answered",
+        "Asking politely for dag ulw to be explained gets an answer, not a run",
+        "can you explain dag ulw?",
+        "answer_directly",
+        "direct_answer",
+    ),
     RoutingPrecisionCase(
         "function-fan-out-is-not-a-dag-ulw-run",
         "A function's fan-out is a metric to fix, not work to fan out",
@@ -7169,6 +7206,38 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
         "dag-ulw",
+    ),
+    # A shape cue counts only where the work is asked for: not in a remark's subject, not for one paragraph, and
+    # not in a question or an explain request about how work splits.
+    RoutingPrecisionCase(
+        "service-fan-out-remark-is-not-a-dag-ulw-run",
+        "Saying the fan out across the services is too high remarks on a measure, it asks for no run",
+        "the fan out across the services is too high",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "paragraph-split-for-translation-is-not-a-dag-ulw-run",
+        "Splitting one paragraph for a translation is a small text task, not a dag-ulw run",
+        "split the paragraph into parallel parts for the translation",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "explain-how-to-split-work-is-not-a-dag-ulw-run",
+        "Asking to be told how to split work into parallel lanes asks for an explanation, not a run",
+        "explain how to split the work into parallel lanes",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "how-to-split-work-question-is-not-a-dag-ulw-run",
+        "A question about how to split work into parallel lanes is not a request to run it",
+        "how do I split the work into parallel lanes?",
+        "answer_clarification",
+        "",
     ),
     RoutingPrecisionCase(
         "block-quoted-dag-ulw-does-not-dispatch",
@@ -15961,6 +16030,24 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "refactor the billing and invoicing modules with dag ulw",
         "dispatch", "dag-ulw", "start_dag_run", "dag_run",
     ),
+    RoutingInterventionCase(
+        "polite-dag-ulw-request-dispatches",
+        "A request put politely as a question still starts a dag-ulw run",
+        "can you dag ulw the migration?",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "could-you-please-dag-ulw-dispatches",
+        "Could you please, before the name, still starts a dag-ulw run",
+        "could you please dag ulw the billing refactor",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-dag-ulw-order-cancel-feature-dispatches",
+        "Korean: an order-cancel feature to build with dag ulw starts a run, not a cancel",
+        "dag ulw 주문 취소 기능 구현해줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
     # Big work by intent: an ultrawork-shaped request whose words say it runs in parallel or across modules
     # reaches dag-ulw without the person knowing the name.
     RoutingInterventionCase(
@@ -16048,6 +16135,18 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "Korean: a cache bug when two requests arrive at once is one fix, not a dag-ulw run",
         "동시에 두 요청이 오면 캐시가 깨지는 버그 고쳐줘",
         "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "korean-two-modules-at-once-cache-bug-stays-on-ultrawork",
+        "Korean: a cache that breaks when two named modules request at once is one fix, not a dag-ulw run",
+        "api 모듈과 ui 모듈이 동시에 요청하면 캐시가 깨져, 고쳐줘",
+        "dispatch", "ultrawork", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "korean-failing-module-tests-fixed-in-parallel-reach-dag-ulw",
+        "Korean: failing tests in two modules fixed in parallel are parallel work, so they reach dag-ulw",
+        "api 모듈과 ui 모듈 테스트가 실패하는데 병렬로 고쳐줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
     ),
     RoutingInterventionCase(
         "parallel-work-queue-bug-stays-on-ultrawork",

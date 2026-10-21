@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **dag-ulw routing reads remarks, bug reports, questions and polite requests
+  as what they are.** The router and Hermes' route hint read the same
+  `dag_ulw_cues`, so each change holds on both paths. `can you dag ulw the
+  migration?` and `could you please dag ulw …` now start a run, while
+  `can you explain dag ulw?` is answered. A cache that breaks when two named
+  modules request at once (`api 모듈과 ui 모듈이 동시에 요청하면 캐시가 깨져,
+  고쳐줘`) stays one ultrawork fix, while failing tests fixed `병렬로` still
+  reach dag-ulw. A question or explain request about splitting work
+  (`explain how to split the work into parallel lanes`), a remark whose
+  subject holds the split (`the fan out across the services is too high`),
+  and a split of one paragraph or sentence no longer start a run or hint
+  "Start at once". A Korean stop noun after other words with no verb ending
+  (`dag ulw 주문 취소`, `dag ulw 업로드 중단`) no longer cancels the run in
+  progress and starts none: the router clarifies and the hint asks one
+  question naming both readings (owner decision O7). A verb ending
+  (`주문 취소해줘`) or a word for the run (`작업 취소`, `지금 거 취소`) still
+  cancels, and `dag ulw 주문 취소 기능 구현해줘` still runs.
 - **A skill body edit no longer rewrites the six host installer directories.**
   Every `.<host>/install.sh`, `install.ps1` and `manifest.json` embedded the
   full per-file SHA256 list, the installers twice, so a one-line `SKILL.md`
