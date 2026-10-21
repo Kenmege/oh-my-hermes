@@ -7,8 +7,9 @@ with the box layout, which steps down to the tree where boxes do not fit the
 width:
 
 * at ``define``: the plan as it starts, its first layer handed out;
-* at ``repair`` and ``extend``: the graph with the added nodes marked ``+``,
-  each hanging from where it came from;
+* at ``repair`` and ``extend``: the graph with the added nodes, each box
+  naming where it came from (its parents line, and the drawing's own marks:
+  ``↻`` before a repair's title, ``+`` before an extend round's);
 * once at the run's end (done, out of repair cycles, or cancelled): the
   final states. The app prints it when the turn ends and only if the run is
   still over then, so an end the same turn's extend moved on prints nothing.
@@ -34,7 +35,6 @@ from .width import truncate_line
 
 DAG_TOOL = "omh_dag"
 END = "end"  # the title an end moment opens with
-ADDED_MARK = "+ "
 END_STATES = ("done", "stopped", "cancelled")
 INDENT = "  "
 
@@ -76,17 +76,6 @@ def moment(payload: Mapping[str, Any], ended: set[tuple[str, int]]) -> tuple[str
         ended.add((run, len(nodes)))
         return f"{END} · {state}", run, []
     return None
-
-
-def marked(graph: Mapping[str, Any], run: str, added: list[str]) -> dict[str, Any]:
-    """A copy of ``graph`` whose nodes ``added`` to ``run`` open their titles with `ADDED_MARK`."""
-    ids = {f"d:{run}:{node}" for node in added}
-    nodes = [
-        {**node, "title": ADDED_MARK + str(node.get("title") or "")} if node.get("id") in ids else node
-        for node in graph.get("nodes") or []
-        if isinstance(node, Mapping)
-    ]
-    return {**graph, "nodes": nodes}
 
 
 def read_graph(omh_home: str | None, hermes_home: str | None, session: str) -> Mapping[str, Any] | None:

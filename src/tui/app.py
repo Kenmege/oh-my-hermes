@@ -2036,7 +2036,7 @@ class App(ModesMixin, AgentViewMixin):
         found = dag_block.moment(payload, self.dag_ends)
         if found is None:
             return
-        title, run, added = found
+        title, run, _added = found
         if title.startswith(dag_block.END):
             # The end waits for the turn's end: a goal check that extends the run in the same turn moves it on, and
             # the extend's block shows that instead of an end the person never saw happen.
@@ -2045,7 +2045,7 @@ class App(ModesMixin, AgentViewMixin):
         self.dag_end_due.pop(run, None)
         graph = self._read_dag_graph()
         if graph is not None:
-            self.transcript.add_aside(dag_block.DagBlock(title, dag_block.marked(graph, run, added)))
+            self.transcript.add_aside(dag_block.DagBlock(title, graph))
 
     def _dag_ends_due(self) -> None:
         """The run ends this turn reached, each printed once if its run is still over as the turn ends."""

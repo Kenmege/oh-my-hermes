@@ -322,8 +322,9 @@ What it shows, and what it leaves as `?`:
     finished run to its one summary line. The transcript keeps the run's
     graph as boxes, as `omh hud --graph` draws them (with Dependencies and
     Node details), at define, at each repair and extend with the added nodes
-    marked `+`, and once at the end, when the turn that ended the run is
-    over and the run still is; where no box fits the width it is the tree.
+    marked (`↻` a repair, `+` an extend round), and once at the end, when the
+    turn that ended the run is over and the run still is; where no box fits
+    the width it is the tree.
 
     ![The dag-ulw plan block in the OMH TUI transcript: Export API handed out as the start node, the button, the docs and the CLI flag waiting on it in the next frontier, and the verification node waiting on all three, with the Dependencies list under them](../assets/omh-tui-dag-ulw-plan-block.png)
 

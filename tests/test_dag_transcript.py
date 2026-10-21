@@ -110,18 +110,20 @@ class BlockTests(unittest.TestCase):
         self.assertTrue(any("├─" in line or "└─" in line for line in narrow), narrow)
         self.assertTrue(all(len(line) <= 24 for line in narrow), narrow)
 
-    def test_added_nodes_are_marked_and_hang_from_where_they_came_from(self) -> None:
+    def test_an_added_node_names_where_it_came_from_once(self) -> None:
         _plan, repaired = self._graphs()
-        block = dag_block.DagBlock("repair · +1 node", dag_block.marked(repaired, "export", ["ui-fix"]))
+        block = dag_block.DagBlock("repair · +1 node", repaired)
         boxes, tree = self._text(block, 140), self._text(block, 24)
         self.assertEqual(boxes[0].strip(), "dag-ulw repair · +1 node")
-        # As boxes: the added node's box names where it came from, and Dependencies lists the repair edge.
-        added = next(index for index, line in enumerate(boxes) if "+ Fix the button" in line)
+        # As boxes: the drawing's own repair mark, a parents line naming the node it repairs, and the repair edge
+        # under Dependencies; the block adds no mark of its own, so none is doubled.
+        added = next(index for index, line in enumerate(boxes) if "↻ Fix the button" in line)
         self.assertIn("← Export button", boxes[added + 3])
-        self.assertIn("Export button → + Fix the button (repair)", "\n".join(boxes))
+        self.assertIn("Export button → Fix the button (repair)", "\n".join(boxes))
+        self.assertFalse([line for line in boxes if "+ " in line and "Fix" in line], boxes)
         # As the tree: nested under the node it repairs.
         failed = next(index for index, line in enumerate(tree) if "Export bu" in line)
-        self.assertTrue(any("+ Fix" in line for line in tree[failed + 1:failed + 4]), tree)
+        self.assertTrue(any("Fix" in line for line in tree[failed + 1:failed + 4]), tree)
 
 
 def turn_ended() -> Event:
