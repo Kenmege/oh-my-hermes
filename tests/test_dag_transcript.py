@@ -20,7 +20,9 @@ from omh.plugin_bundle.omh.delegation_graph import build_delegation_graph  # noq
 from omh.tui import dag_block  # noqa: E402
 from omh.tui.gateway import Event  # noqa: E402
 from omh.tui.transcript import block_rows  # noqa: E402
-from test_dag_tool import call, handoff, node, slots_table  # noqa: E402
+from test_dag_tool import (  # noqa: E402
+    HOME_UNUSABLE, Answers, Terminal, call, handoff, node, slots_table, terminal_env,
+)
 from _tui_lines import lines_text  # noqa: E402
 from test_tui_modes import SID, make_app  # noqa: E402
 from test_tui_muscle_memory import send  # noqa: E402
@@ -124,6 +126,27 @@ class BlockTests(unittest.TestCase):
         # As the tree: nested under the node it repairs.
         failed = next(index for index, line in enumerate(tree) if "Export bu" in line)
         self.assertTrue(any("Fix" in line for line in tree[failed + 1:failed + 4]), tree)
+
+    def test_the_end_block_and_the_collapsed_run_say_a_handoff_was_not_checked(self) -> None:
+        """Mutation: drop the word from the graph's node, or leave the one-line summary as it was."""
+        from omh.tui.panels import dag_run_summary
+
+        # An SSH terminal whose environment is gone when api settles; the others' handoffs are on the host.
+        terminal = Terminal("ssh", Answers(HOME_UNUSABLE))  # this host's path for the run, read there first
+        with homes() as home, terminal_env(), terminal.modules():
+            slots_table(home)
+            call(action="define", run="export", name="export feature", nodes=NODES)
+            terminal.environment = None
+            call(action="settle", run="export", node="api", outcome="accepted")
+            for node_id in ("ui", "verify"):
+                handoff(home, "export", node_id)
+                end = call(action="settle", run="export", node=node_id, outcome="accepted")
+            graph = build_delegation_graph(home.omh, home.hermes, PARENT)
+        self.assertEqual(dag_block.moment({"name": "omh_dag", "result": json.dumps(end)}, set()),
+                         ("end · done", "export", []))
+        text = self._text(dag_block.DagBlock("end · done", graph), 140)
+        self.assertEqual(sum("Handoff not checked" in line for line in text), 1, text)
+        self.assertEqual(dag_run_summary(graph), "DAG · export feature · done 3/3 · 1 handoff not checked")
 
 
 def turn_ended() -> Event:

@@ -18,7 +18,12 @@ scopes, and each node's prompt, kept so ``ready`` can hand a node out after
 the parent's own context was compacted. It holds no child output, summary or
 tool history. Data between nodes moves through handoff files whose paths
 this module names (`handoff_path`); it never reads them beyond asking
-whether one exists.
+whether one exists. On a Docker or SSH terminal the child writes its file
+there, under the ``handoff_root`` the run pins in that terminal user's home
+(`node_handoff`), so `dag_tool` asks there (the run records its
+``backend`` at define); when nothing can reach that terminal, an accepted
+node keeps ``handoff_checked: false`` and every view says
+`HANDOFF_NOT_CHECKED`.
 
 State is derived on every read, never stored
 --------------------------------------------
@@ -43,12 +48,13 @@ Each node records where it came from (``origin``): ``define``,
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import AbstractContextManager
 import hashlib
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
 import secrets
 import shutil
@@ -90,6 +96,8 @@ ADDED_ORIGIN_KINDS: Final = ("repair", "extend")
 PROMPT_MARKERS: Final = ("TASK", "DELIVERABLE", "SCOPE", "VERIFY", "STOP WHEN")
 # Hermes' `subagent_stop` words that say the child did not finish (`delegation_graph._FAILED_STOPS` plus interrupted).
 CHILD_FAILURE_STOPS: Final = frozenset({"failed", "error", "timeout", "interrupted"})
+# What every view says for a node accepted while its handoff could not be read where the child wrote it.
+HANDOFF_NOT_CHECKED: Final = "handoff not checked"
 NODE_FIELDS: Final = frozenset({"id", "label", "category", "prompt", "depends_on", "write_scope"})
 DAG_CLAIM_BOUNDARY: Final = (
     "The plan a parent agent declared for a dag-ulw run and the outcomes it settled. A settled outcome is the "
@@ -130,8 +138,21 @@ def record_path(omh_home: Path, session_id: str, run: str) -> Path:
 
 
 def handoff_path(omh_home: Path, session_id: str, run: str, node: str) -> Path:
-    """Where a node's child writes its report and its dependents read it."""
+    """Where a node's child writes its report and its dependents read it, on this host."""
     return session_dir(omh_home, session_id) / run / f"{node}.md"
+
+
+def node_handoff(record: Mapping[str, Any], omh_home: Path, node: str) -> str:
+    """Where a node's child writes its report and its dependents read it.
+
+    Under the run's pinned ``handoff_root`` inside its Docker or SSH terminal
+    (`dag_tool.backend_root`, the terminal user's own home) when it has one,
+    else on this host (`handoff_path`).
+    """
+    root = record.get("handoff_root")
+    if isinstance(root, str) and root:
+        return posixpath.join(root, ledger_key(str(record["session_id"])), str(record["run"]), f"{node}.md")
+    return str(handoff_path(omh_home, str(record["session_id"]), str(record["run"]), node))
 
 
 def _number(value: object) -> float | None:
@@ -582,6 +603,10 @@ def status_line(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, An
     parts = [f"DAG {record['name']}", f"{tally['done']}/{tally['total']} done", f"{tally['running']} running"]
     if tally["failed"]:
         parts.append(f"{tally['failed']} failed ({tally['first_failure']})")
+    unchecked = sum(1 for node in record["nodes"]
+                    if derived[str(node["id"])]["state"] == "accepted" and handoff_unchecked(node))
+    if unchecked:
+        parts.append(f"{unchecked} {HANDOFF_NOT_CHECKED}")
     if added:
         parts.append(added)
     return " · ".join(parts)
@@ -659,17 +684,16 @@ def task_for(
     record: Mapping[str, Any], node: Mapping[str, Any], omh_home: Path, derived: Mapping[str, Mapping[str, Any]]
 ) -> dict[str, str]:
     """One `delegate_task` task: the marked goal, and the node's prompt with where to write and read handoffs."""
-    session = str(record["session_id"])
     run = str(record["run"])
     lines = [
         str(node["prompt"]),
         "",
-        f"Handoff: before you stop, write your report to {handoff_path(omh_home, session, run, str(node['id']))}: "
+        f"Handoff: before you stop, write your report to {node_handoff(record, omh_home, str(node['id']))}: "
         "what you did, the files you changed, what VERIFY showed, and anything still open. The parent reads that "
         "file and your final message.",
     ]
     if node["depends_on"]:
-        reads = ", ".join(str(handoff_path(omh_home, session, run, parent)) for parent in reads_for(record, derived, node))
+        reads = ", ".join(node_handoff(record, omh_home, parent) for parent in reads_for(record, derived, node))
         lines.append(f"Read first: {reads}. A missing file means that part did not finish: stop and say so.")
     lines.append("Stay inside your SCOPE: other parts of this run work at the same time. If you cannot finish, "
                  "say plainly that you are blocked and why; do not report blocked work as done.")
@@ -724,9 +748,17 @@ def calls_for(
 
 def settle(
     record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], node_id: str, outcome: object, reason: object,
-    provider_error: bool, *, handoff_exists: bool, now: float,
+    provider_error: bool, *, read_handoff: Callable[[], tuple[bool, str]], now: float,
 ) -> str:
-    """Close the node's open attempt. Returns what happened: the outcome, or ``retry`` (a provider error's one retry)."""
+    """Close the node's open attempt. Returns what happened: the outcome, or ``retry`` (a provider error's one retry).
+
+    ``read_handoff`` answers (found, unread) and is called only for an
+    ``accepted`` settle that every other check let through, so a settle
+    refused for another reason reads nothing. ``unread`` names why the
+    handoff could not be read where the child wrote it
+    (`dag_tool.backend_handoff`): ``accepted`` then stands, and the attempt
+    records ``handoff_checked: false`` with that reason.
+    """
     nodes = {str(node["id"]): node for node in record["nodes"]}
     if node_id not in nodes:
         raise DagRefusal("unknown_node", f"Node {node_id} is not in run {record['run']}.")
@@ -744,12 +776,18 @@ def settle(
             "child_reported_failure",
             f"Hermes reported node {node_id}'s child {stop.get('status')}; settle it failed or blocked, not accepted.",
         )
-    if outcome == "accepted" and not handoff_exists:
-        raise DagRefusal(
-            "handoff_missing",
-            f"Node {node_id} has no handoff file, and the nodes after it read one. Write it from the child's result, "
-            "or settle the node failed.",
-        )
+    if reason and record.get("backend"):
+        # A run on a Docker or SSH terminal checks the reason before its backend is asked, so a bad one sends nothing.
+        _plain(reason, MAX_REASON_CHARS, "invalid_reason", "The reason is one short line.")
+    unread = ""
+    if outcome == "accepted":
+        found, unread = read_handoff()
+        if not found and not unread:
+            raise DagRefusal(
+                "handoff_missing",
+                f"Node {node_id} has no handoff file, and the nodes after it read one. Write it from the child's "
+                "result, or settle the node failed.",
+            )
     attempt = nodes[node_id]["attempts"][-1]
     retries = sum(1 for item in nodes[node_id]["attempts"] if item.get("outcome") == "retry")
     note = _plain(reason, MAX_REASON_CHARS, "invalid_reason", "The reason is one short line.") if reason else ""
@@ -758,7 +796,15 @@ def settle(
         attempt["outcome"] = "retry"
         return "retry"
     attempt["outcome"] = outcome
+    if outcome == "accepted" and unread:
+        attempt.update(handoff_checked=False, handoff_unread=unread)
     return str(outcome)
+
+
+def handoff_unchecked(node: Mapping[str, Any]) -> bool:
+    """True when the node's last attempt was accepted without its handoff read (``handoff_checked: false``)."""
+    attempts = node.get("attempts") or []
+    return bool(attempts) and isinstance(attempts[-1], Mapping) and attempts[-1].get("handoff_checked") is False
 
 
 def repair(
@@ -897,6 +943,8 @@ def node_rows(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]
             row["found_by"] = node["found_by"]
         if attempts and attempts[-1].get("reason"):
             row["reason"] = attempts[-1]["reason"]
+        if info["state"] == "accepted" and handoff_unchecked(node):
+            row.update(handoff_checked=False, handoff_unread=str(attempts[-1].get("handoff_unread") or ""))
         if info["state"] in ("failed", "blocked"):
             row["repair_cycles_left"] = cycles_left(record, node_id)
         rows.append(row)

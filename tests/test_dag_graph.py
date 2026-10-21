@@ -26,6 +26,7 @@ from omh.plugin_bundle.omh.delegation_graph import build_delegation_graph, graph
 from omh.plugin_bundle.omh.delegation_view import render_delegation_view  # noqa: E402
 from omh.plugin_bundle.omh.hooks import result_transforms  # noqa: E402
 from omh.plugin_bundle.omh.tools import dag_tool  # noqa: E402
+from test_dag_tool import HOME_UNUSABLE, Answers, Terminal, terminal_env  # noqa: E402
 
 PROMPT = "TASK: t\nDELIVERABLE: d\nSCOPE: s\nVERIFY: v\nSTOP WHEN: w"
 NODES = [
@@ -503,6 +504,55 @@ class MessengerTests(unittest.TestCase):
             started(home, "api", now=time.time())
             self.assertIsNone(reply("child reply", platform="subagent"))
             self.assertIn("DAG · export feature", reply("parent reply"))
+
+
+class HandoffNotCheckedTests(unittest.TestCase):
+    def test_a_node_accepted_with_its_handoff_not_checked_says_so_wherever_it_is_shown(self) -> None:
+        """Mutation: keep `accepted` as the word, list a Done lane by its title alone, or leave the totals as they were.
+
+        A Docker terminal whose environment is gone by the time api settles: its
+        handoff cannot be read where the child wrote it. The button's is on the
+        host, so it is checked, and the views tell the two apart.
+        """
+        terminal = Terminal("docker", Answers(HOME_UNUSABLE))  # this host's path for the run, read there first
+        with homes() as home, terminal_env(), terminal.modules():
+            defined(home)
+            terminal.environment = None
+            now = time.time()
+            for node in ("api", "ui"):
+                started(home, node, now=now)
+            reply("Dispatched.", turn="t1")
+            for node in ("api", "ui"):
+                stop(home, f"child-{node}", now=now + 5)
+            settled = call(action="settle", run="export", node="api", outcome="accepted")
+            mid = reply("API is in.", turn="t1b")
+            for node in ("ui", "verify"):
+                write_handoff(home, node)
+                call(action="settle", run="export", node=node, outcome="accepted")
+            graph = build_delegation_graph(home.omh, home.hermes, PARENT, now=now + 10)
+            end = reply("Verified.", turn="t2")
+            with patch("omh.commands.hud._encodes", return_value=True):
+                code, stdout, stderr = run_cli(
+                    ["--omh-home", str(home.omh), "--hermes-home", str(home.hermes), "hud", "--graph"],
+                    output_json=False)
+        self.assertEqual(settled["status"], "ok", settled)
+        lanes = {node["id"]: node for node in graph["nodes"]}
+        api, ui = lanes["d:export:api"], lanes["d:export:ui"]
+        self.assertEqual((api["state"], api["status"], api["handoff_checked"]), ("done", "handoff not checked", False))
+        self.assertEqual((ui["state"], ui["status"]), ("done", "accepted"))
+        self.assertNotIn("handoff_checked", ui)
+        # The box (a card), the tree, and `omh hud --graph`.
+        self.assertIn("✓ Handoff not checked", render_delegation_view(graph, width=120, layout="box").text())
+        self.assertIn("handoff not checked", render_delegation_view(graph, width=120, layout="tree").text())
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Handoff not checked", stdout)
+        # The count line while the run goes on, and the run's own status line the parent replies with.
+        self.assertTrue(mid.endswith("\n\nDAG export feature · 1/3 done · 0 running · 1 handoff not checked"), mid)
+        self.assertEqual(settled["status_line"], "DAG export feature · 1/3 done · 0 running · 1 handoff not checked")
+        # The chat end post: under Done with its word, and in the totals, which still say it for a lane the listing
+        # counts as `+N`.
+        self.assertIn("\n✓ Done     Export API (handoff not checked) · Export button +1\n", end)
+        self.assertIn("\n3 tasks · 3 done · 0 failed · 0 stopped · 1 handoff not checked\n", end)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,18 @@ Export to an external coding owner (`export`) is only for a person who has
 already chosen one: it reads the explicit-choice record the router writes
 (`coding_owner_preference/v1`), and without one every node stays on
 `delegate_task`.
+
+On a Docker or SSH terminal a child's `write_file` lands inside that
+backend, not on this host. `define` records the backend Hermes resolves
+(`terminal_backend`). Before the run's first node goes out, its handoff
+root is pinned inside that terminal, under the terminal user's own home
+(`backend_root`); with no terminal environment up yet, nothing goes out
+and the result says to run one terminal command first. A home that does
+not qualify keeps this host's path. `settle` reads the handoff through
+Hermes' own live environment for the child (`backend_handoff`), under the
+host check's rule; when that cannot be read, the node is accepted with
+``handoff_checked: false``, and an interrupted read settles nothing. A
+local backend, or one this does not read, keeps the host check alone.
 """
 from __future__ import annotations
 
@@ -24,7 +36,9 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
+import shlex
 import sqlite3
 import time
 from typing import Any
@@ -59,6 +73,28 @@ EXTERNAL_OWNERS = ("claude-code", "codex")
 OWNER_CHOICE_MAX_AGE_SECONDS = 24 * 3600
 SPAWN_PLAN_THRESHOLD = 4  # `fanout_contracts.FANOUT_SPAWN_PLAN_THRESHOLD`, held by the same test
 SPAWN_PLAN_FIELDS = ("why_parallel", "why_not_single_unit", "independence", "expected_evidence_shape")
+# Hermes terminal backends where a child's files land out of this host's sight: a container, or another machine.
+REMOTE_BACKENDS = ("docker", "ssh")
+BACKEND_READ_SECONDS = 10  # the one `test` a settle runs there; a backend that has not answered by then is unread
+# One line per verdict, as Hermes' own probe echoes them (`ShellFileOperations._probe_regular_file`): a shell that did
+# not run prints none of them, so it is never taken for a missing file.
+_HANDOFF_FILE, _HANDOFF_LINK, _HANDOFF_NONE = "OMH_HANDOFF_FILE", "OMH_HANDOFF_LINK", "OMH_HANDOFF_NONE"
+# What a run on a Docker or SSH terminal says, each time, while no environment is up to find its handoff root in.
+# Same turn: on a session-isolated Docker terminal a later turn may get another task id, and so another environment.
+TERMINAL_FIRST = ("No node was handed out: the children write their handoff files in the {backend} terminal, and "
+                  "none is up yet to find where. In this same turn, run one terminal command there (for example "
+                  "`pwd`; a file tool brings it up too), then call omh_dag action=ready.")
+TERMINAL_INTERRUPTED = ("No node was handed out: reading where the children write their handoff files in the {backend} "
+                        "terminal was interrupted. Call omh_dag action=ready again.")
+_HOME_LINE, _HOME_UNUSABLE = "OMH_BACKEND_HOME=", "OMH_BACKEND_HOME_UNUSABLE"
+# A home a handoff root may sit in: absolute, plain characters, and not one of the temp directories every user can
+# write, where another user could plant a handoff file.
+_HOME_PATH = re.compile(r"(?:/[A-Za-z0-9._@+-]+)+")
+_SHARED_DIRS = ("/tmp", "/var/tmp", "/dev/shm", "/private/tmp", "/private/var/tmp")
+# What a shell can glue to a line of its output, stripped before a verdict is read, as Hermes strips it
+# (`file_operations_common._strip_terminal_fence_leaks`): OSC sequences, Hermes' fence markers, CSI sequences, BEL.
+_TERMINAL_ESCAPES = re.compile(
+    r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|'?\x07?__HERMES_FENCE_[A-Za-z0-9]+__\x07?'?|\x1b\[[0-?]*[ -/]*[@-~]|\x07")
 
 _ACTIONS = ("define", "ready", "settle", "repair", "extend", "status", "cancel", "export")
 
@@ -142,8 +178,10 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
         now = time.time()
         # The lanes this conversation's chat posts showed, so a status line names a node added since then once.
         shown = shown_lanes(omh_home, segments)
+        # The parent's own task id, whose terminal environment its children share (`backend_root`).
+        task = str(kwargs.get("task_id") or "default")
         if action == "define":
-            return _define(args, omh_home, hermes_home, durable, segments, now, shown)
+            return _define(args, omh_home, hermes_home, durable, segments, now, shown, task)
         found = _find(omh_home, segments, args.get("run"))
         if found is None:
             return _refused(action, "run_not_found", "No dag run by that id in this conversation; define it first.")
@@ -164,35 +202,48 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
                     "The run is cancelled. Children already running keep running; stop them with "
                     "delegate_task action=stop if they should not finish."))
             if action == "ready":
-                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown)
+                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown, task=task)
             if action == "settle":
                 node = dag_run.valid_id(args.get("node"), "invalid_node_id", "Name the node to settle.")
-                handoff = dag_run.handoff_path(omh_home, str(record["session_id"]), str(record["run"]), node)
+                backend = record.get("backend")
+
+                def read() -> tuple[bool, str]:
+                    # Called by `settle` only once its other checks passed. The child wrote the file under its own
+                    # task id, its subagent id; with no child bound, the parent's, whose environment its children share.
+                    child = derived[node].get("child") or {}
+                    return read_handoff(record, omh_home, node, str(child.get("subagent_id") or task))
+
                 happened = dag_run.settle(
                     record, derived, node, args.get("outcome"), args.get("reason"), _flag(args.get("provider_error")),
-                    handoff_exists=handoff.is_file() and not handoff.is_symlink(), now=now,
+                    read_handoff=read, now=now,
                 )
                 record["updated_at"] = now
                 dag_run.write_run(path, record)
                 derived = dag_run.derive(record, children, now)
                 say = ("The child hit a provider error: its node is offered once more on the route's fallback."
                        if happened == "retry" else "")
-                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown, say=say,
-                              settled={"node": node, "outcome": happened})
+                unread = str(next(item for item in record["nodes"] if item["id"] == node)["attempts"][-1]
+                             .get("handoff_unread") or "")
+                if happened == "accepted" and unread:
+                    say = (f"Node {node} is accepted, but its handoff was not checked: OMH could not read the {backend} "
+                           f"terminal the child wrote it in ({unread}). The nodes after it read that file; if it is "
+                           "not there, they stop and say so.")
+                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown, task=task,
+                              say=say, settled={"node": node, "outcome": happened})
             if action == "repair":
                 node = dag_run.valid_id(args.get("node"), "invalid_node_id", "Name the failed node to repair.")
                 added = dag_run.repair(record, derived, node, args.get("nodes"), now)
                 dag_run.write_run(path, record)
                 derived = dag_run.derive(record, children, now)
-                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown,
+                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown, task=task,
                               settled={"node": node, "repair_nodes": added})
             if action == "extend":
                 added = dag_run.extend(record, derived, args.get("nodes"), args.get("node"), now)
                 dag_run.write_run(path, record)
                 derived = dag_run.derive(record, children, now)
-                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown, settled={
-                    "extend_round": len(record["extends"]), "extend_nodes": added,
-                    "found_by": record["nodes"][-1]["found_by"]})
+                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown, task=task,
+                              settled={"extend_round": len(record["extends"]), "extend_nodes": added,
+                                       "found_by": record["nodes"][-1]["found_by"]})
             return _export(args, record, path, derived, children, omh_home, now, shown)
     except dag_run.DagRefusal as refusal:
         return _refused(action, refusal.reason, refusal.say)
@@ -204,7 +255,7 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
 
 
 def _define(args: Mapping[str, object], omh_home: Path, hermes_home: Path, durable: str, segments: list[str],
-            now: float, shown: set[str] | None) -> str:
+            now: float, shown: set[str] | None, task: str) -> str:
     run = dag_run.valid_id(args.get("run"), "invalid_run_id", "Give the run a short lowercase id (a-z, 0-9, -).")
     record = dag_run.new_record(durable, run, args.get("name"), args.get("goal"), args.get("nodes"), now)
     found = _find(omh_home, segments, run)
@@ -226,9 +277,12 @@ def _define(args: Mapping[str, object], omh_home: Path, hermes_home: Path, durab
         if dag_run.read_run(path) is not None:
             raise dag_run.DagRefusal("run_exists", f"Run {run} was just defined by another call.")
         (path.parent / run).mkdir(parents=True, exist_ok=True, mode=0o700)
+        backend = terminal_backend()
+        if backend:
+            record["backend"] = backend  # where the children's handoff files land; `settle` reads them there
         dag_run.write_run(path, record)
         derived = dag_run.derive(record, [], now)
-        return _ready("define", record, path, derived, [], omh_home, hermes_home, now, shown)
+        return _ready("define", record, path, derived, [], omh_home, hermes_home, now, shown, task=task)
 
 
 def _find(omh_home: Path, segments: list[str], run: object) -> tuple[dict[str, Any], Path] | None:
@@ -323,21 +377,177 @@ def _cap(configured: object) -> int:
     return DEFAULT_MAX_CONCURRENT_CHILDREN
 
 
+def terminal_backend() -> str:
+    """``docker`` or ``ssh`` when Hermes runs this profile's terminal there, else "".
+
+    The backend comes from Hermes' own resolver
+    (`tools.terminal_tool._get_env_config`, which reads the profile's
+    settings), imported at call time; when it cannot be imported or raises,
+    from ``TERMINAL_ENV``, the variable it reads. ``local``, a backend not in
+    `REMOTE_BACKENDS`, and nothing readable give "": the host check alone, as
+    before.
+    """
+    try:
+        from tools.terminal_tool import _get_env_config
+
+        backend = _get_env_config()["env_type"]
+    except Exception:
+        # Not Hermes (ImportError), or a resolver that moved or raised on a bad TERMINAL_* value: the variable it reads.
+        backend = os.environ.get("TERMINAL_ENV", "")
+    name = str(backend or "").strip().casefold()
+    return name if name in REMOTE_BACKENDS else ""
+
+
+def read_handoff(record: Mapping[str, Any], omh_home: Path, node: str, task_id: str) -> tuple[bool, str]:
+    """A node's handoff, (found, unread).
+
+    Under a pinned backend root, read in that backend only (the path names no
+    file of this host). Otherwise the host check, then, for a run kept on a
+    Docker or SSH terminal, the same path in that backend.
+    """
+    if record.get("handoff_root"):
+        return backend_handoff(dag_run.node_handoff(record, omh_home, node), task_id)
+    path = dag_run.handoff_path(omh_home, str(record["session_id"]), str(record["run"]), node)
+    if path.is_file() and not path.is_symlink():
+        return True, ""
+    if record.get("backend") not in REMOTE_BACKENDS:
+        return False, ""
+    return backend_handoff(str(path), task_id)
+
+
+def backend_handoff(path: str, task_id: str) -> tuple[bool, str]:
+    """Whether a handoff is a regular file and no link inside the terminal backend a child wrote it in: (found, unread).
+
+    ``unread`` names why there is no answer (`_backend_lines`), and ``found``
+    is then False. A read the parent's interrupt stopped refuses the settle
+    and records nothing, so the parent settles again.
+    """
+    quoted = shlex.quote(path)
+    lines, unread = _backend_lines(task_id, f"if [ -L {quoted} ]; then echo {_HANDOFF_LINK}; elif [ -f {quoted} ]; "
+                                            f"then echo {_HANDOFF_FILE}; else echo {_HANDOFF_NONE}; fi")
+    if unread == "interrupted":
+        raise dag_run.DagRefusal("settle_interrupted", "The handoff check was interrupted, so nothing was settled; "
+                                                       "settle the node again.")
+    if unread:
+        return False, unread
+    verdicts = {line.strip() for line in lines}
+    if _HANDOFF_FILE in verdicts:
+        return True, ""
+    if _HANDOFF_LINK in verdicts or _HANDOFF_NONE in verdicts:
+        return False, ""
+    return False, "backend_unanswered"
+
+
+def backend_root(task_id: str) -> tuple[str | None, str]:
+    """Where a run on a Docker or SSH terminal keeps its handoff files: (``<home>/.omh/dag`` in that terminal, why not).
+
+    The home is the backend user's ``$HOME``, read once through the parent's
+    live environment and resolved to its physical path (``cd -P``, ``pwd -P``),
+    so a home that is a link is judged, and pinned, as the directory it points
+    at. It is taken only as a directory that user can write and that no other
+    user can (neither group- nor world-writable), at a plain absolute path
+    outside the shared temp directories; the shell refuses a ``$HOME`` with
+    whitespace in it or a relative one, and exactly one home line must come back.
+    The check fails closed: ``cd``, ``pwd`` and ``find`` run as ``command``
+    (Hermes' snapshot carries the login shell's functions and aliases), and
+    the home qualifies only when `find` itself prints it back as neither
+    group- nor world-writable; a `find` that prints nothing refuses it. A child's
+    `write_file` takes the absolute path as it is in the backend; ``~`` would
+    not do, since on Docker Hermes expands it on this host.
+
+    "" keeps this host's path for the run, as before: a home that does not
+    qualify, or a backend that cannot be read or does not answer. None pins
+    nothing, with the reason: ``environment_gone`` (no environment is live
+    yet, and none is started for this) or ``interrupted``.
+    """
+    lines, unread = _backend_lines(task_id, (
+        'if case "$HOME" in *[[:space:]]*) false ;; /*) true ;; *) false ;; esac '
+        '&& home="$(command cd -P -- "$HOME" 2>/dev/null && command pwd -P)" '
+        '&& case "$home" in /*[[:space:]]*|"") false ;; /*) true ;; *) false ;; esac '
+        '&& [ -d "$home" ] && [ -w "$home" ] '
+        '&& [ "$(command find "$home" -prune ! -perm -0002 ! -perm -0020 -print 2>/dev/null)" = "$home" ]; '
+        f"then command printf '%s%s\\n' {_HOME_LINE} \"$home\"; else echo {_HOME_UNUSABLE}; fi"))
+    if unread in ("environment_gone", "interrupted"):
+        return None, unread
+    homes = [line[len(_HOME_LINE):] for line in lines if line.startswith(_HOME_LINE)]
+    home = homes[0] if len(homes) == 1 else ""
+    usable = (_HOME_PATH.fullmatch(home) is not None and posixpath.normpath(home) == home
+              and not any(home == shared or home.startswith(shared + "/") for shared in _SHARED_DIRS))
+    return (f"{home}/.omh/dag" if usable else ""), ""
+
+
+def _backend_lines(task_id: str, command: str) -> tuple[list[str], str]:
+    """The output lines of one command in Hermes' live environment for ``task_id``, terminal escapes stripped.
+
+    A line keeps its own spaces: a caller that compares a verdict strips it,
+    and one that reads a value takes it as it was printed.
+
+    The environment is the one `get_active_env` returns, which follows a
+    delegated child to its parent's environment, the one the child's
+    `write_file` ran in; with none live, nothing runs. The command goes
+    through `BaseEnvironment.execute`, not the backend's own `execute`, so
+    Docker's recovery (`DockerEnvironment.execute` restarts or recreates a
+    container that went away) is never entered from here and its notice stays
+    for the parent's next terminal call. It passes no cwd, so the cwd marker
+    the environment writes back leaves the shared shell where it was. On SSH
+    it rides the connection Hermes keeps, which opens a new one when its
+    shared master expired (``ControlMaster=auto``).
+
+    The second item names why there are no lines: ``no_read_path`` (Hermes'
+    environment registry is not importable here, or raised, or the
+    environment is no `BaseEnvironment`), ``environment_gone`` (no live
+    environment for the task: its idle reaper or a close ended it, or this
+    is another process), ``interrupted`` (the parent's interrupt stopped the
+    command), ``backend_unanswered`` (the backend raised).
+    """
+    try:
+        from tools.environments.base import BaseEnvironment
+        from tools.terminal_tool_lifecycle import get_active_env
+
+        environment = get_active_env(task_id)
+    except Exception:
+        # Not Hermes, or a Hermes whose environment registry moved or raised: nothing reaches the backend.
+        return [], "no_read_path"
+    if environment is None:
+        return [], "environment_gone"
+    if not isinstance(environment, BaseEnvironment):
+        return [], "no_read_path"
+    try:
+        answer = BaseEnvironment.execute(environment, command, timeout=BACKEND_READ_SECONDS)
+    except Exception:
+        # The backend raised (a dropped connection, a removed container): no lines, so no verdict either.
+        return [], "backend_unanswered"
+    if isinstance(answer, Mapping) and answer.get("hermes_interrupted"):
+        return [], "interrupted"
+    output = answer.get("output") if isinstance(answer, Mapping) else None
+    output = output if isinstance(output, str) else ""
+    return [_TERMINAL_ESCAPES.sub("", line) for line in output.splitlines()], ""
+
+
 def _ready(
     action: str, record: dict[str, Any], path: Path, derived: Mapping[str, Mapping[str, Any]],
     children: list[dict[str, Any]], omh_home: Path, hermes_home: Path, now: float, shown: set[str] | None, *,
-    say: str = "", settled: Mapping[str, Any] | None = None,
+    task: str, say: str = "", settled: Mapping[str, Any] | None = None,
 ) -> str:
     slots = free_slots(hermes_home)
     owner = owner_choice(omh_home, now=now)
     nodes = {str(node["id"]): node for node in record["nodes"]}
     # With a coding owner the person chose, the ready coding nodes go to that owner's fanout, never to delegate_task;
     # verification and review nodes, and every node without a write scope, stay native.
-    coding = [node_id for node_id in dag_run.offerable(record, derived, now)
+    offered = dag_run.offerable(record, derived, now)
+    coding = [node_id for node_id in offered
               if derived[node_id]["state"] == "ready" and dag_run.is_coding(nodes[node_id])] if owner else []
-    calls, held = dag_run.calls_for(record, derived, free_slots=slots["free"], per_call=slots["cap"],
-                                    omh_home=omh_home, now=now, skip=coding)
-    if calls:
+    # A run on a Docker or SSH terminal pins where its handoff files live before its first node goes out, and with no
+    # terminal up to ask, hands out nothing yet.
+    pinned, waits = False, ""
+    if record.get("backend") in REMOTE_BACKENDS and "handoff_root" not in record and set(offered) - set(coding):
+        root, waits = backend_root(task)
+        if root is not None:
+            record["handoff_root"] = root
+            pinned = True
+    calls, held = ([], []) if waits else dag_run.calls_for(
+        record, derived, free_slots=slots["free"], per_call=slots["cap"], omh_home=omh_home, now=now, skip=coding)
+    if calls or pinned:
         record["updated_at"] = now
         dag_run.write_run(path, record)
         derived = dag_run.derive(record, children, now)
@@ -358,6 +568,9 @@ def _ready(
         extra["lint"] = record["lint"]
     if not say and held and not calls:
         say = "No delegate_task slot is free; end the turn and call ready again after a completion."
+    if waits:
+        instruction = TERMINAL_INTERRUPTED if waits == "interrupted" else TERMINAL_FIRST
+        say = " ".join(part for part in (say, instruction.format(backend=record["backend"])) if part)
     return _result(action, record, derived, shown, say=say, extra=extra)
 
 
