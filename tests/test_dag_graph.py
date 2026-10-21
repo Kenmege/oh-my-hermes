@@ -10,6 +10,7 @@ an end block once the run itself is over.
 from __future__ import annotations
 
 import json
+import re
 import time
 import unittest
 from unittest.mock import patch
@@ -21,7 +22,7 @@ load_local_package()
 from _cli_harness import run_cli  # noqa: E402
 from _delegation_state import PARENT, homes, start, stop  # noqa: E402
 from omh.plugin_bundle.omh import dag_run  # noqa: E402
-from omh.plugin_bundle.omh.delegation_graph import build_delegation_graph  # noqa: E402
+from omh.plugin_bundle.omh.delegation_graph import build_delegation_graph, graph_fingerprint  # noqa: E402
 from omh.plugin_bundle.omh.delegation_view import render_delegation_view  # noqa: E402
 from omh.plugin_bundle.omh.hooks import result_transforms  # noqa: E402
 from omh.plugin_bundle.omh.tools import dag_tool  # noqa: E402
@@ -92,6 +93,48 @@ class GraphTests(unittest.TestCase):
         self.assertFalse([node for node in graph["nodes"] if node["id"].startswith("s:")])
         header = render_delegation_view(graph, width=100).text_lines()[:2]  # the task count, then the run's name
         self.assertIn("export feature", header[1])
+
+    def test_a_node_bound_to_a_child_carries_the_childs_output_tokens(self) -> None:
+        # The same fact a native lane carries: what the child's own state.db row has counted, out of the fingerprint.
+        with homes() as home:
+            defined(home)
+            now = time.time()
+            started(home, "api", now=now)
+            home.tokens("child-api", 1234)
+            graph = build_delegation_graph(home.omh, home.hermes, PARENT, now=now + 1)
+            home.tokens("child-api", 56_000)
+            grown = build_delegation_graph(home.omh, home.hermes, PARENT, now=now + 1)
+        by_id = {node["id"]: node for node in graph["nodes"]}
+        self.assertEqual(by_id["d:export:api"]["output_tokens"], 1234)
+        self.assertEqual({node["id"]: node.get("output_tokens") for node in grown["nodes"]}["d:export:api"], 56_000)
+        self.assertNotIn("output_tokens", by_id["d:export:ui"], "a node no child has taken has no count")
+        self.assertEqual(graph_fingerprint(graph), graph_fingerprint(grown))
+        view = render_delegation_view(graph, width=100)
+        self.assertIn("    Running 1s · ↓1.2k tokens · layer 1 · session child-ap", view.text_lines())
+        self.assertIn("│ ● Running 1s · ↓1.2k   │", view.text())
+        tree = render_delegation_view(graph, width=100, layout="tree").text()
+        self.assertIn("running 1s · ↓1.2k", tree)
+
+    def test_the_narrowest_box_shows_its_count_while_the_status_line_fits_and_drops_it_whole(self) -> None:
+        # The run's boxes are 24 cells inside, the narrowest #2191 draws for these titles; a count is never what
+        # widens them. `● Running 21s · ↓1.4k` is 21 cells and shows; `● Running 25m 30s · ↓1.4k` is 25 and does not.
+        with homes() as home:
+            defined(home)
+            now = time.time()
+            started(home, "api", now=now)
+            home.tokens("child-api", 1400)
+            early = render_delegation_view(build_delegation_graph(home.omh, home.hermes, PARENT, now=now + 21),
+                                           width=100)
+            home.usage("child-api", "glm-5.3-flash", last_seen=now + 1529)  # still moving: running, not no news
+            late = render_delegation_view(build_delegation_graph(home.omh, home.hermes, PARENT, now=now + 1530),
+                                          width=100)
+        for view in (early, late):
+            self.assertEqual(view.layout, "box")
+            self.assertEqual({len(edge) for edge in re.findall(r"┌─*┐", view.text())}, {26}, "24 cells inside")
+        self.assertIn("│ ● Running 21s · ↓1.4k  │", early.text())
+        self.assertIn("│ ● Running 25m 30s      │", late.text())
+        self.assertIsNone(re.search(r"↓[0-9.]*[kM]?…", late.text()))
+        self.assertIn("Running 25m 30s · ↓1.4k tokens", late.text(), "the card still says it")
 
     def test_a_repair_hangs_below_the_node_it_repairs_and_superseded_nodes_go(self) -> None:
         with homes() as home:
@@ -399,6 +442,38 @@ class MessengerTests(unittest.TestCase):
         self.assertNotIn("```", reopened)  # no second start block
         self.assertIn("DAG · export feature · ended", closing)
         self.assertIn("4 tasks · 4 done", closing)
+
+    def test_a_runs_posts_are_the_same_with_and_without_token_counts(self) -> None:
+        # Messengers do not change: a growing count on the children's rows leaves every post byte-identical.
+        def posts(counted: bool) -> list[str | None]:
+            with homes() as home:
+                defined(home)
+                now = time.time()
+                said = []
+                for node in ("api", "ui"):
+                    started(home, node, now=now)
+                    if counted:
+                        home.tokens(f"child-{node}", 900)
+                said.append(reply("Dispatched the first layer.", turn="t1"))
+                stop(home, "child-api", now=now + 5)
+                if counted:
+                    home.tokens("child-api", 4_900)
+                write_handoff(home, "api")
+                call(action="settle", run="export", node="api", outcome="accepted")
+                said.append(reply("The API is in.", turn="t2"))
+                stop(home, "child-ui", now=now + 6)
+                if counted:
+                    home.tokens("child-ui", 7_800)
+                for node in ("ui", "verify"):
+                    write_handoff(home, node)
+                    call(action="settle", run="export", node=node, outcome="accepted")
+                said.append(reply("Verified.", turn="t3"))
+                return said
+
+        plain, counted = posts(False), posts(True)
+        self.assertEqual(counted, plain)
+        self.assertTrue(all(post for post in plain), plain)
+        self.assertFalse([post for post in counted if "↓" in post])
 
     def test_a_subagent_turn_gets_no_post(self) -> None:
         with homes() as home:

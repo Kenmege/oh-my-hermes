@@ -29,6 +29,7 @@ from omh.tui.subagents import (
     ROSTER_CAP,
     ROW_CHARS,
     TAIL_CHARS,
+    TOKEN_SETTLE_SECONDS,
     Agent,
     Roster,
 )
@@ -56,10 +57,14 @@ def payload(subagent_id: str = FIRST, **changes: object) -> dict[str, object]:
 
 
 def feed(roster: Roster, kind: str, now: float = 0.0, subagent_id: str = FIRST, **changes: object) -> None:
-    """One frame of a child. Like the relay's frames, it repeats the goal, model and tool count the
+    """One frame of a child. Like the relay's frames, it repeats the goal, model, tool count and child session the
     child's earlier frames gave, unless `changes` names them."""
     held = roster.agents.get(subagent_id)
-    said = {"goal": held.goal, "model": held.model, "tool_count": held.tool_count} if held is not None else {}
+    said = (
+        {"goal": held.goal, "model": held.model, "tool_count": held.tool_count,
+         "child_session_id": held.child_session_id}
+        if held is not None else {}
+    )
     roster.apply(f"subagent.{kind}", payload(subagent_id, **{**said, **changes}), now)
 
 
@@ -172,31 +177,31 @@ class RelayFixtureTests(unittest.TestCase):
         self.fail("the fixture has no subagent.progress frame")
 
     def test_replay_renders(self) -> None:
+        # The completed agent's `subagent.complete` counted 340 output tokens; the timed-out one's counted none.
         roster = replayed()
         self.assertEqual(
-            lines_text(roster.view_lines(60, THEME, 0, 7, 500.0)),
+            lines_text(roster.view_lines(70, THEME, 0, 7, 500.0)),
             [
                 "  ● main",
-                "  ○ find usages of old_api in src/ and list …  12s · 6 tools",
-                "  ✗ read the diff for risks                    30s · 0 tools",
+                "  ○ find usages of old_api in src/ and l…  12s · 6 tools · ↓340 tokens",
+                "  ✗ read the diff for risks" + " " * 28 + "  30s · 0 tools",
             ],
         )
-        rows, ids = roster.list_lines(60, THEME, SECOND, 0, 6, 500.0)
+        rows, ids = roster.list_lines(70, THEME, SECOND, 0, 6, 500.0)
         self.assertEqual(
             lines_text(rows),
             [
                 "  ● main",
-                "  ○ find usages of old_api in src/ and list …  12s · 6 tools",
-                "▸ ✗ read the diff for risks                    30s · 0 tools",
+                "  ○ find usages of old_api in src/ and l…  12s · 6 tools · ↓340 tokens",
+                "▸ ✗ read the diff for risks" + " " * 28 + "  30s · 0 tools",
             ],
         )
         self.assertEqual(ids, (MAIN_ID, FIRST, SECOND))
         self.assertEqual(
-            lines_text(roster.log_lines(FIRST, 50, THEME, 500.0))[:6],
+            lines_text(roster.log_lines(FIRST, 70, THEME, 500.0))[:5],
             [
-                "find usages of old_api in src/ and list every call",
-                "site",
-                "completed · 12s · 6 tools · deepseek-v4.1-flash",
+                "find usages of old_api in src/ and list every call site",
+                "completed · 12s · 6 tools · ↓340\N{NO-BREAK SPACE}tokens · deepseek-v4.1-flash",
                 "",
                 "▸ I will grep for old_api first",
                 "⏺ search_files  old_api",
@@ -841,6 +846,153 @@ class ListTests(unittest.TestCase):
         self.assertEqual(line_text(roster.list_lines(40, THEME, MAIN_ID, 0, 6, 0.0)[0][1])[:9], "  ⠋ agent")
         self.assertEqual(line_text(roster.view_lines(40, THEME, 0, 6, 0.0)[1])[:9], "  ⠋ agent")
         self.assertEqual(lines_text(roster.log_lines(FIRST, 40, THEME, 0.0))[0], "agent")
+
+
+class TokenTests(unittest.TestCase):
+    """Output tokens: the child's state.db row read while it runs, then `subagent.complete`'s count."""
+
+    def _roster(self) -> Roster:
+        roster = Roster()
+        feed(roster, "start", 10.0, "sa-a", goal="find usages of old_api in the tree", child_session_id="child-a")
+        feed(roster, "tool", 11.0, "sa-a", tool_count=3)
+        feed(roster, "start", 16.0, "sa-b", goal="read the diff for risks", child_session_id="child-b")
+        return roster
+
+    def row(self, roster: Roster, index: int, width: int = 70, now: float = 20.0) -> str:
+        return line_text(roster.list_lines(width, THEME, MAIN_ID, 0, 6, now)[0][index])
+
+    def test_every_running_agents_child_session_is_watched(self) -> None:
+        roster = self._roster()
+        self.assertEqual(roster.token_sessions(20.0), ("child-a", "child-b"))
+        roster.clear()
+        self.assertEqual(roster.token_sessions(20.0), ())
+
+    def test_an_agent_without_a_usable_child_session_is_never_watched(self) -> None:
+        roster = Roster()
+        for subagent_id, session in (("sa-a", ""), ("sa-b", "   "), ("sa-c", 7), ("sa-d", "x" * 129)):
+            roster.apply("subagent.start", payload(subagent_id, child_session_id=session), 0.0)
+        bare = {key: value for key, value in payload("sa-e").items() if key != "child_session_id"}
+        roster.apply("subagent.start", bare, 0.0)
+        roster.apply("subagent.start", payload("sa-f", child_session_id="y" * 128), 0.0)
+        self.assertEqual(len(roster.agents), 6)
+        self.assertEqual(roster.token_sessions(0.0), ("y" * 128,))
+
+    def test_a_read_count_shows_on_the_row_and_in_the_log_header(self) -> None:
+        roster = self._roster()
+        roster.ingest_tokens({"child-a": 1234})
+        self.assertEqual(self.row(roster, 1), "  ⠋ find usages of old_api in the tree" + " " * 4 + "10s · 3 tools · ↓1.2k tokens")
+        self.assertEqual(self.row(roster, 2), "  ⠋ read the diff for risks" + " " * 31 + "4s · 0 tools")  # no count yet
+        self.assertEqual(lines_text(roster.view_lines(70, THEME, 0, 6, 20.0))[1], self.row(roster, 1))
+        self.assertEqual(
+            lines_text(roster.log_lines("sa-a", 80, THEME, 20.0))[1],
+            "running · 10s · 3 tools · ↓1.2k\N{NO-BREAK SPACE}tokens · deepseek-v4.1-flash",
+        )
+        self.assertEqual(lines_text(roster.log_lines("sa-b", 80, THEME, 20.0))[1], "running · 4s · 0 tools · deepseek-v4.1-flash")
+        roster.ingest_tokens({"child-a": 2500, "child-b": 80})
+        self.assertTrue(self.row(roster, 1).endswith("10s · 3 tools · ↓2.5k tokens"))
+        self.assertTrue(self.row(roster, 2).endswith("4s · 0 tools · ↓80 tokens"))
+
+    def test_no_count_is_never_drawn_as_zero(self) -> None:
+        roster = self._roster()
+        roster.ingest_tokens({"child-a": 0})  # the row's default before the child's first call
+        for count in ("12", 3.5, True, -1, 10**12 + 1, None):
+            roster.ingest_tokens({"child-b": count})
+        self.assertEqual([agent.output_tokens for agent in roster.agents.values()], [None, None])
+        self.assertFalse([row for row in every_row(roster, 80) if "↓" in line_text(row)])
+        roster.ingest_tokens({"child-a": 900})
+        roster.ingest_tokens({"child-a": 0})
+        roster.ingest_tokens({})
+        self.assertEqual(roster.agents["sa-a"].output_tokens, 900, "a later read without a count takes none away")
+
+    def test_complete_gives_the_final_count_and_ends_the_watch(self) -> None:
+        roster = self._roster()
+        roster.ingest_tokens({"child-a": 1000})
+        feed(roster, "complete", 30.0, "sa-a", status="completed", duration_seconds=20.0, output_tokens=1500)
+        self.assertEqual(roster.agents["sa-a"].output_tokens, 1500)
+        self.assertEqual(roster.token_sessions(30.0), ("child-b",))
+        roster.ingest_tokens({"child-a": 1490})  # a read taken before the last call's tokens landed
+        self.assertEqual(roster.agents["sa-a"].output_tokens, 1500)
+        self.assertEqual(self.row(roster, 1, now=40.0), "  ○ find usages of old_api in the tree" + " " * 4 + "20s · 3 tools · ↓1.5k tokens")
+
+    def test_complete_without_a_count_keeps_the_last_read_and_takes_one_more(self) -> None:
+        # Hermes' failure path (`finish_failed`) sends no count, and the tokens of the call that ended the child land
+        # in its row just after the frame: the row stays watched long enough for one more read.
+        roster = self._roster()
+        roster.ingest_tokens({"child-b": 500})
+        feed(roster, "complete", 30.0, "sa-b", status="error", duration_seconds=14.0)
+        self.assertEqual(roster.agents["sa-b"].output_tokens, 500)
+        self.assertEqual(roster.token_sessions(30.0), ("child-a", "child-b"))
+        roster.ingest_tokens({"child-b": 750})
+        self.assertEqual(roster.agents["sa-b"].output_tokens, 750)
+        self.assertEqual(roster.token_sessions(30.0 + TOKEN_SETTLE_SECONDS), ("child-a", "child-b"))
+        self.assertEqual(roster.token_sessions(30.0 + TOKEN_SETTLE_SECONDS + 0.5), ("child-a",))
+        self.assertEqual(self.row(roster, 2, now=60.0), "  ✗ read the diff for risks" + " " * 16 + "14s · 0 tools · ↓750 tokens")
+        replayed_roster = replayed()  # the recorded timeout: no read, no count, no token part
+        self.assertNotIn("↓", line_text(replayed_roster.list_lines(70, THEME, MAIN_ID, 0, 6, 500.0)[0][2]))
+
+    def test_a_complete_with_a_mistyped_count_gives_none(self) -> None:
+        for count in ("340", 3.5, True, -1, 10**12 + 1, None):
+            with self.subTest(count=count):
+                roster = self._roster()
+                feed(roster, "complete", 30.0, "sa-a", status="completed", output_tokens=count)
+                self.assertIsNone(roster.agents["sa-a"].output_tokens)
+                self.assertIn("child-a", roster.token_sessions(30.0))
+        roster = self._roster()
+        feed(roster, "complete", 30.0, "sa-a", status="completed", output_tokens=0)  # a child that made no call
+        self.assertEqual(roster.token_sessions(30.0), ("child-b",))
+        self.assertNotIn("↓", self.row(roster, 1))
+
+    def test_the_log_header_never_parts_a_count_from_its_unit(self) -> None:
+        roster = self._roster()
+        roster.ingest_tokens({"child-a": 1234})
+        def facts(width: int) -> list[str]:  # the status rows: from `running` to the blank row under them
+            rows = lines_text(roster.log_lines("sa-a", width, THEME, 20.0))
+            start = next(at for at, row in enumerate(rows) if row.startswith("running"))
+            return rows[start : rows.index("", start)]
+
+        for width in range(12, 81):
+            with self.subTest(width=width):
+                self.assertNotIn("↓1.2k\n", "\n".join(facts(width)))
+                self.assertFalse([row for row in facts(width) if row.startswith("tokens")], facts(width))
+        self.assertEqual(facts(32)[:2], ["running · 10s · 3 tools ·", "↓1.2k\N{NO-BREAK SPACE}tokens ·"])
+        self.assertIn("· ↓1.2k tokens", self.row(roster, 1), "a row is cut, never wrapped: a plain space there")
+
+    def test_counts_are_compact(self) -> None:
+        roster = self._roster()
+        cases = {950: "↓950 tokens", 1000: "↓1k tokens", 1234: "↓1.2k tokens", 456_900: "↓456.9k tokens",
+                 3_000_000: "↓3M tokens"}
+        for count, text in cases.items():
+            with self.subTest(count=count):
+                roster.ingest_tokens({"child-a": count})
+                self.assertTrue(self.row(roster, 1, 80).endswith(f"  10s · 3 tools · {text}"), self.row(roster, 1, 80))
+
+    def test_a_waiting_agent_shows_only_its_wait(self) -> None:
+        roster = Roster()
+        feed(roster, "spawn_requested", 10.0, "sa-q", goal="queued work", child_session_id="child-q")
+        roster.ingest_tokens({"child-q": 40})
+        self.assertTrue(self.row(roster, 1).endswith("  waiting 10s"), self.row(roster, 1))
+
+    def test_narrow_rows_drop_the_token_count_then_the_tool_count_then_the_time(self) -> None:
+        roster = self._roster()
+        roster.ingest_tokens({"child-a": 1234})
+        cases = {
+            46: "  ⠋ find usages…  10s · 3 tools · ↓1.2k tokens",
+            45: "  ⠋ find usages of old_api in…  10s · 3 tools",
+            31: "  ⠋ find usages…  10s · 3 tools",
+            30: "  ⠋ find usages of old_a…  10s",
+            21: "  ⠋ find usages…  10s",
+            20: "  ⠋ find usages of …",
+        }
+        for width, text in cases.items():
+            with self.subTest(width=width):
+                self.assertEqual(line_text(roster.list_lines(width, THEME, MAIN_ID, 0, 6, 20.0)[0][1]), text)
+        whole = ("10s · 3 tools · ↓1.2k tokens", "10s · 3 tools", "10s")
+        for width in range(0, 90):
+            text = line_text(roster.list_lines(width, THEME, MAIN_ID, 0, 6, 20.0)[0][1])
+            with self.subTest(width=width):
+                self.assertLessEqual(line_width(roster.list_lines(width, THEME, MAIN_ID, 0, 6, 20.0)[0][1]), width)
+                right = text.rsplit("  ", 1)[-1] if "  " in text.strip() else ""
+                self.assertTrue(not right or right in whole or not right[:1].isdigit(), text)
 
 
 class LogViewTests(unittest.TestCase):

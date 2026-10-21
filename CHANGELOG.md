@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The OMH TUI shows each subagent's output tokens.** A row in the agent
+  view under the composer ends `12s · 3 tools · ↓1.2k tokens`, and the
+  agent's log header carries the same count. While a subagent runs, the
+  count is read from its own Hermes session in state.db (one read-only query
+  per HUD poll, only while one runs), so it grows a poll behind each model
+  call; once it finishes it is Hermes' own count. There is no token part
+  until there is a count, and a narrow row drops it first. The delegation
+  graph carries the same fact on each lane bound to a child (`output_tokens`
+  in `delegation_graph/v1`, dag nodes included), and `/dag`'s Node details,
+  its boxes and the tree show it where the line has room. Chat posts do not
+  change.
+
 - **`dag ulw`: a big job runs on its own as a graph.** Say `dag ulw <goal>`
   (also `dag ulw해줘`, `ulw dag`, `/dag-ulw`), or ask for a big job whose words
   say how it splits (parallel lanes, a fan-out, parts integrated afterwards)

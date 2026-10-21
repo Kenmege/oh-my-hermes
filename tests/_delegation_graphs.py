@@ -22,6 +22,14 @@ def graph(nodes: list[dict], edges: list[tuple[str, str, str]], *, name: str = "
             "edges": [{"from": upper, "to": lower, "kind": kind} for upper, lower, kind in edges]}
 
 
+def with_tokens(payload: dict, counts: dict[str, object]) -> dict:
+    """``payload`` with each named node's ``output_tokens`` set, as the graph reader sets a native lane's."""
+    for node in payload["nodes"]:
+        if node["id"] in counts:
+            node["output_tokens"] = counts[node["id"]]
+    return payload
+
+
 def owner_mock() -> dict:
     """The owner's mock-up: three lanes from main, and a verification that depends on all three."""
     return graph(
