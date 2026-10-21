@@ -830,14 +830,17 @@ class ReadOutputTokensTests(unittest.TestCase):
     def test_a_locked_database_reads_as_no_counts_within_the_busy_wait(self) -> None:
         with TemporaryDirectory() as home:
             path = state_db(Path(home), {"child-a": 5})
+            # Closed before the folder is removed: Windows will not unlink a file a connection still holds.
             writer = sqlite3.connect(path, isolation_level=None)
-            self.addCleanup(writer.close)
-            writer.execute("PRAGMA journal_mode=DELETE")
-            writer.execute("BEGIN EXCLUSIVE")
-            started = time.monotonic()
-            self.assertEqual(read_output_tokens(home, ("child-a",)), {})
-            self.assertLess(time.monotonic() - started, 2.0)
-            writer.execute("ROLLBACK")
+            try:
+                writer.execute("PRAGMA journal_mode=DELETE")
+                writer.execute("BEGIN EXCLUSIVE")
+                started = time.monotonic()
+                self.assertEqual(read_output_tokens(home, ("child-a",)), {})
+                self.assertLess(time.monotonic() - started, 2.0)
+                writer.execute("ROLLBACK")
+            finally:
+                writer.close()
             self.assertEqual(read_output_tokens(home, ("child-a",)), {"child-a": 5})
 
     def test_without_a_session_to_read_it_opens_nothing(self) -> None:
