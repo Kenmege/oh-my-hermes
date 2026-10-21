@@ -17,10 +17,26 @@ $inventory = Join-Path $source '.omh-agent-skills-manifest.json'
 if (-not (Test-Path -LiteralPath $inventory -PathType Leaf)) { throw 'Missing source inventory' }
 $inventoryPath = (Get-Item -Force -LiteralPath $inventory).FullName
 # The receipt is the one inventory: generated beside the pack, pinned by the
-# docs gate, and copied verbatim after every listed file verifies.
-$entries = @((Get-Content -Raw -Encoding UTF8 -LiteralPath $inventory | ConvertFrom-Json).files.PSObject.Properties |
-    ForEach-Object { [PSCustomObject]@{ Path = $_.Name; Hash = [string]$_.Value } })
-if (-not $entries.Count) { throw 'Empty source inventory' }
+# docs gate, and copied verbatim after every listed file verifies. Accept only
+# the exact layout the producer emits, so the rows read here are exactly the
+# files any JSON reader of the copied receipt will think it owns; no JSON
+# parser decides what duplicate or case-variant keys mean.
+$raw = [IO.File]::ReadAllText($inventoryPath)
+$row = '    "[A-Za-z0-9._/-]+": "[0-9a-f]{64}"'
+$layout = '\A\{\n  "catalog_revision": "[0-9a-f]{64}",\n  "files": \{\n(' + $row + ',\n)*' + $row +
+    '\n  \},\n  "schema_version": "omh_agent_skills_projection/v1",\n  "target_dirs": \[\n    "\."\n  \]\n\}\n\z'
+if ($raw -cnotmatch $layout) { throw 'Unexpected source inventory layout' }
+$entries = @([regex]::Matches($raw, '(?m)^    "([^"]+)": "([0-9a-f]{64})",?$') |
+    ForEach-Object { [PSCustomObject]@{ Path = $_.Groups[1].Value; Hash = $_.Groups[2].Value } })
+$seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($entry in $entries) {
+    $segments = $entry.Path.Split('/')
+    if ($entry.Path -cnotmatch '\A[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*\z' -or
+            $segments -contains '.' -or $segments -contains '..') {
+        throw "Unsafe source inventory path: $($entry.Path)"
+    }
+    if (-not $seen.Add($entry.Path)) { throw "Duplicate source inventory path: $($entry.Path)" }
+}
 function Assert-NoLink([string]$Path, [string]$Boundary) {
     $current = $Path
     while ($current -and $current -ne $Boundary) {
@@ -40,8 +56,14 @@ foreach ($item in $items) {
         throw "Reparse-point source: $($item.FullName)"
     }
 }
-$sourceFiles = @($items | Where-Object { -not $_.PSIsContainer -and $_.FullName -ne $inventoryPath })
-if ($sourceFiles.Count -ne $entries.Count) { throw 'Source file inventory mismatch' }
+# Compare path sets, not counts: a swapped or aliased row must not pass.
+$prefix = (Get-Item -Force -LiteralPath $source).FullName.TrimEnd('\', '/').Length + 1
+[string[]]$actual = @($items | Where-Object { -not $_.PSIsContainer -and $_.FullName -ne $inventoryPath } |
+    ForEach-Object { $_.FullName.Substring($prefix).Replace('\', '/') })
+[string[]]$expected = @($entries.Path)
+[Array]::Sort($actual, [StringComparer]::Ordinal)
+[Array]::Sort($expected, [StringComparer]::Ordinal)
+if (($actual -join "`n") -cne ($expected -join "`n")) { throw 'Source file inventory mismatch' }
 function Assert-Digests([string]$Root) {
     foreach ($entry in $entries) {
         $path = Join-Path $Root $entry.Path

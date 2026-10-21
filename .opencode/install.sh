@@ -27,18 +27,32 @@ else
     fail 'SHA256 verification requires sha256sum or shasum'
 fi
 # The receipt is the one inventory: generated beside the pack, pinned by the
-# docs gate, and copied verbatim. Its "files" rows are the only 4-space-indented
-# "<path>": "<sha256>" lines; a row this misses leaves its file unlisted, which
-# the inventory comparison below refuses.
+# docs gate, and copied verbatim. Accept only the layout the producer emits:
+# every line of the "files" block is one "<path>": "<sha256>" row and no row
+# sits outside it, so the rows read here are exactly the files a JSON reader
+# of the copied receipt will think it owns.
 inventory="$source/.omh-agent-skills-manifest.json"
 [ -f "$inventory" ] || fail 'Missing source inventory'
-checksums=$(sed -n 's/^    "\([^"]*\)": "\([0-9a-f]\{64\}\)",\{0,1\}$/\2  \1/p' "$inventory")
-[ -n "$checksums" ] || fail 'Empty source inventory'
+row='"[A-Za-z0-9._/-]\{1,\}": "[0-9a-f]\{64\}"'
+skeleton=$(sed -e '/^  "files": {$/,/^  },$/{' -e "/^    $row,\$/d" -e "s/^    $row\$/ROW/" -e '}' \
+    -e 's/^  "catalog_revision": "[0-9a-f]\{64\}",$/  "catalog_revision": REV,/' "$inventory")
+[ "$skeleton" = '{
+  "catalog_revision": REV,
+  "files": {
+ROW
+  },
+  "schema_version": "omh_agent_skills_projection/v1",
+  "target_dirs": [
+    "."
+  ]
+}' ] || fail 'Unexpected source inventory layout'
+checksums=$(sed -n '/^  "files": {$/,/^  },$/s/^    "\([^"]*\)": "\([0-9a-f]\{64\}\)",\{0,1\}$/\2  \1/p' "$inventory")
 paths=$(printf '%s\n' "$checksums" | sed 's/^[0-9a-f]*  //')
+[ "$paths" = "$(printf '%s\n' "$paths" | LC_ALL=C sort -u)" ] || fail 'Source inventory rows are not sorted and unique'
 # Reject extra files and links rather than silently installing an unverified tree.
 [ -z "$(find "$source" ! -type f ! -type d -print)" ] || fail 'Unsupported source entry (including symlink)'
 actual=$(cd "$source" && find . -type f ! -path './.omh-agent-skills-manifest.json' -print | LC_ALL=C sort)
-expected=$(printf '%s\n' "$paths" | while IFS= read -r path; do printf './%s\n' "$path"; done | LC_ALL=C sort)
+expected=$(printf '%s\n' "$paths" | while IFS= read -r path; do printf './%s\n' "$path"; done)
 [ "$actual" = "$expected" ] || fail 'Source file inventory mismatch'
 verify() {
     printf '%s\n' "$checksums" | (cd "$1" && checksum -c -) >/dev/null || fail 'Skill digest mismatch'

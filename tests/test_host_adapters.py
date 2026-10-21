@@ -1,6 +1,7 @@
 """Real clone installers and catalog projection parity; no host execution claims."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,72 @@ HOSTS = ("cursor", "claude", "codex", "opencode", "openclaw", "pi")
 
 def tree(root):
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+
+
+FOREIGN = "my-skill/SKILL.md"
+# Source tampering both installers must refuse before any write. The layout
+# cases are JSON a reader of the copied receipt accepts, so a row the installer
+# skipped or invented would change which files that receipt claims to own.
+TAMPERING = (
+    "modified", "missing", "extra", "inventory_missing", "inventory_row_dropped",
+    "row_six_space", "row_no_space", "row_top_level_four_space", "row_outside_files",
+    "row_parent_escape", "row_dot_alias", "row_extra", "row_duplicate", "row_case_variant",
+)
+
+
+def tamper(case, clone, mutation):
+    path = clone / "agent-skills/ulw-work/SKILL.md"
+    inventory = clone / "agent-skills/.omh-agent-skills-manifest.json"
+    text = inventory.read_text(encoding="utf-8")
+    lines = text.splitlines(keepends=True)
+    first = next(index for index, line in enumerate(lines) if line.startswith('    "'))
+    digest = "a" * 64
+
+    def row(name):
+        return next(line for line in lines if line.startswith(f'    "{name}": '))
+
+    if mutation == "modified":
+        path.write_bytes(path.read_bytes() + b"tampered")
+        return
+    if mutation == "missing":
+        path.unlink()
+        return
+    if mutation == "extra":
+        (path.parent / "extra.txt").write_bytes(b"extra")
+        return
+    if mutation == "inventory_missing":
+        inventory.unlink()
+        return
+    if mutation == "inventory_row_dropped":
+        text = text.replace(row("ulw-work/SKILL.md"), "")
+    elif mutation == "row_six_space":
+        text = text.replace(lines[first], lines[first] + f'      "{FOREIGN}": "{digest}",\n')
+    elif mutation == "row_no_space":
+        text = text.replace(lines[first], lines[first] + f'    "{FOREIGN}":"{digest}",\n')
+    elif mutation == "row_top_level_four_space":
+        moved = row("ulw-work/SKILL.md")
+        text = text.replace(moved, "").replace('  "files": {\n', moved + '  "files": {\n')
+    elif mutation == "row_outside_files":
+        text = text.replace('  "schema_version"', f'  "{FOREIGN}": "{digest}",\n  "schema_version"')
+    elif mutation == "row_parent_escape":
+        readme = clone / "README.md"
+        readme.write_bytes(b"outside the pack\n")
+        target = row("omh-ask/SKILL.md")
+        (clone / "agent-skills/omh-ask/SKILL.md").unlink()
+        text = text.replace(target, f'    "../README.md": "{hashlib.sha256(readme.read_bytes()).hexdigest()}",\n')
+    elif mutation == "row_dot_alias":
+        text = text.replace('    "omh-ask/SKILL.md": ', '    "omh-ask/./SKILL.md": ')
+    elif mutation == "row_extra":
+        text = text.replace(lines[first], lines[first] + f'    "{FOREIGN}": "{digest}",\n')
+    elif mutation == "row_duplicate":
+        text = text.replace(lines[first], lines[first] * 2)
+    elif mutation == "row_case_variant":
+        variant = row("omh-ask/SKILL.md")
+        text = text.replace(variant, variant.replace('"omh-ask/', '"OMH-ASK/') + variant)
+    case.assertNotEqual(text, inventory.read_text(encoding="utf-8"), mutation)
+    if mutation.startswith("row_"):
+        json.loads(text)  # Still JSON: the receipt would be read, not rejected.
+    inventory.write_bytes(text.encode("utf-8"))
 
 
 class HostAdapterTests(unittest.TestCase):
@@ -227,33 +294,28 @@ class HostAdapterTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("sh"), "POSIX shell unavailable")
     def test_source_tampering_fails_before_writes(self):
-        for host in HOSTS:
-            for mutation in ("modified", "missing", "extra", "inventory_missing", "inventory_row_dropped"):
+        self._tampering_fails_before_writes(HOSTS, lambda clone, host: ["sh", str(clone / f".{host}/install.sh")])
+
+    @unittest.skipUnless(shutil.which("pwsh") or shutil.which("powershell"), "PowerShell unavailable")
+    def test_powershell_source_tampering_fails_before_writes(self):
+        shell = shutil.which("pwsh") or shutil.which("powershell")
+        self._tampering_fails_before_writes(("claude", "cursor"), lambda clone, host: [
+            shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-File", str(clone / f".{host}/install.ps1")])
+
+    def _tampering_fails_before_writes(self, hosts, command):
+        for host in hosts:
+            for mutation in TAMPERING:
                 with self.subTest(host=host, mutation=mutation), tempfile.TemporaryDirectory() as tmp:
                     root = Path(tmp).resolve()
                     clone, repo = root / "clone", root / "project"
                     repo.mkdir()
                     shutil.copytree(ROOT / "agent-skills", clone / "agent-skills")
                     shutil.copytree(ROOT / f".{host}", clone / f".{host}", ignore=shutil.ignore_patterns("skills"))
-                    path = clone / "agent-skills/ulw-work/SKILL.md"
-                    inventory = clone / "agent-skills/.omh-agent-skills-manifest.json"
-                    if mutation == "inventory_missing":
-                        inventory.unlink()
-                    elif mutation == "inventory_row_dropped":
-                        # A row the installer cannot read leaves its file unlisted.
-                        lines = inventory.read_bytes().splitlines(keepends=True)
-                        kept = [line for line in lines if b'"ulw-work/SKILL.md"' not in line]
-                        self.assertEqual(len(kept), len(lines) - 1)
-                        inventory.write_bytes(b"".join(kept))
-                    elif mutation == "modified":
-                        path.write_bytes(path.read_bytes() + b"tampered")
-                    elif mutation == "missing":
-                        path.unlink()
-                    else:
-                        (path.parent / "extra.txt").write_bytes(b"extra")
-                    result = subprocess.run(["sh", str(clone / f".{host}/install.sh")], cwd=repo,
+                    tamper(self, clone, mutation)
+                    result = subprocess.run(command(clone, host), cwd=repo,
                                             capture_output=True, text=True, timeout=60)
-                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
                     self.assertTrue(result.stderr)
                     self.assertEqual(list(repo.iterdir()), [])
 
@@ -270,7 +332,7 @@ class HostAdapterTests(unittest.TestCase):
                 binaries, repo = root / "bin", root / "project"
                 binaries.mkdir()
                 repo.mkdir()
-                for name in (hasher, "cat", "dirname", "find", "sort", "mkdir", "cp", "sed"):
+                for name in (hasher, "dirname", "find", "sort", "mkdir", "cp", "sed"):
                     (binaries / name).symlink_to(shutil.which(name))
                 custom = repo / ".claude/skills/triage-sweep/SKILL.md"
                 custom.parent.mkdir(parents=True)

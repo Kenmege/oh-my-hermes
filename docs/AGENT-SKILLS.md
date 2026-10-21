@@ -407,10 +407,15 @@ the per-file SHA256s live once, in `agent-skills/.omh-agent-skills-manifest.json
 field), so a skill body edit moves that body and the inventory and nothing
 under the six host directories. The installers run from the same checkout as
 that inventory, so embedding the hashes in the scripts would verify nothing the
-committed, byte-gated inventory does not. The POSIX script reads its `files`
-rows with `sed`; a row it failed to read would leave its file unlisted, which
-the source-inventory comparison refuses, and the producer refuses a pack path
-outside `[A-Za-z0-9._-]` segments, which JSON would escape. `source_digest`
+committed, byte-gated inventory does not. Both scripts accept only the exact
+layout the producer emits: every line of the `files` block is one
+`"<path>": "<sha256>"` row, no row appears anywhere else, and the rows are
+sorted and unique. So the rows a script reads are exactly the files the copied
+receipt owns for any JSON reader, including `omh install --target agents`, which
+deletes owned files a newer pack retired. The scripts refuse a `.` or `..`
+segment, a path outside `[A-Za-z0-9._-]` segments and a case-variant duplicate,
+and compare the source tree with the listed paths as a set, never by count.
+The producer refuses the same paths before writing the inventory. `source_digest`
 (recorded by discovery receipts) is SHA256 of the UTF-8, LF-terminated
 inventory sorted by relative POSIX path, one `<file-sha256>  <path>` per line,
 computed from that inventory's `files`. `.gitattributes` forces LF for

@@ -5,6 +5,7 @@ import json
 import re
 from string import Template
 
+from ..install.agent_skills_projection import SCHEMA_VERSION
 from .host_adapters import HOST_ADAPTERS, host_adapter_manifest
 
 
@@ -37,18 +38,32 @@ else
     fail 'SHA256 verification requires sha256sum or shasum'
 fi
 # The receipt is the one inventory: generated beside the pack, pinned by the
-# docs gate, and copied verbatim. Its "files" rows are the only 4-space-indented
-# "<path>": "<sha256>" lines; a row this misses leaves its file unlisted, which
-# the inventory comparison below refuses.
+# docs gate, and copied verbatim. Accept only the layout the producer emits:
+# every line of the "files" block is one "<path>": "<sha256>" row and no row
+# sits outside it, so the rows read here are exactly the files a JSON reader
+# of the copied receipt will think it owns.
 inventory="$$source/$receipt_name"
 [ -f "$$inventory" ] || fail 'Missing source inventory'
-checksums=$$(sed -n 's/^    "\([^"]*\)": "\([0-9a-f]\{64\}\)",\{0,1\}$$/\2  \1/p' "$$inventory")
-[ -n "$$checksums" ] || fail 'Empty source inventory'
+row='"[A-Za-z0-9._/-]\{1,\}": "[0-9a-f]\{64\}"'
+skeleton=$$(sed -e '/^  "files": {$$/,/^  },$$/{' -e "/^    $$row,\$$/d" -e "s/^    $$row\$$/ROW/" -e '}' \
+    -e 's/^  "catalog_revision": "[0-9a-f]\{64\}",$$/  "catalog_revision": REV,/' "$$inventory")
+[ "$$skeleton" = '{
+  "catalog_revision": REV,
+  "files": {
+ROW
+  },
+  "schema_version": "$schema_version",
+  "target_dirs": [
+    "."
+  ]
+}' ] || fail 'Unexpected source inventory layout'
+checksums=$$(sed -n '/^  "files": {$$/,/^  },$$/s/^    "\([^"]*\)": "\([0-9a-f]\{64\}\)",\{0,1\}$$/\2  \1/p' "$$inventory")
 paths=$$(printf '%s\n' "$$checksums" | sed 's/^[0-9a-f]*  //')
+[ "$$paths" = "$$(printf '%s\n' "$$paths" | LC_ALL=C sort -u)" ] || fail 'Source inventory rows are not sorted and unique'
 # Reject extra files and links rather than silently installing an unverified tree.
 [ -z "$$(find "$$source" ! -type f ! -type d -print)" ] || fail 'Unsupported source entry (including symlink)'
 actual=$$(cd "$$source" && find . -type f ! -path './$receipt_name' -print | LC_ALL=C sort)
-expected=$$(printf '%s\n' "$$paths" | while IFS= read -r path; do printf './%s\n' "$$path"; done | LC_ALL=C sort)
+expected=$$(printf '%s\n' "$$paths" | while IFS= read -r path; do printf './%s\n' "$$path"; done)
 [ "$$actual" = "$$expected" ] || fail 'Source file inventory mismatch'
 verify() {
     printf '%s\n' "$$checksums" | (cd "$$1" && checksum -c -) >/dev/null || fail 'Skill digest mismatch'
@@ -94,10 +109,26 @@ $$inventory = Join-Path $$source '$receipt_name'
 if (-not (Test-Path -LiteralPath $$inventory -PathType Leaf)) { throw 'Missing source inventory' }
 $$inventoryPath = (Get-Item -Force -LiteralPath $$inventory).FullName
 # The receipt is the one inventory: generated beside the pack, pinned by the
-# docs gate, and copied verbatim after every listed file verifies.
-$$entries = @((Get-Content -Raw -Encoding UTF8 -LiteralPath $$inventory | ConvertFrom-Json).files.PSObject.Properties |
-    ForEach-Object { [PSCustomObject]@{ Path = $$_.Name; Hash = [string]$$_.Value } })
-if (-not $$entries.Count) { throw 'Empty source inventory' }
+# docs gate, and copied verbatim after every listed file verifies. Accept only
+# the exact layout the producer emits, so the rows read here are exactly the
+# files any JSON reader of the copied receipt will think it owns; no JSON
+# parser decides what duplicate or case-variant keys mean.
+$$raw = [IO.File]::ReadAllText($$inventoryPath)
+$$row = '    "[A-Za-z0-9._/-]+": "[0-9a-f]{64}"'
+$$layout = '\A\{\n  "catalog_revision": "[0-9a-f]{64}",\n  "files": \{\n(' + $$row + ',\n)*' + $$row +
+    '\n  \},\n  "schema_version": "$schema_version",\n  "target_dirs": \[\n    "\."\n  \]\n\}\n\z'
+if ($$raw -cnotmatch $$layout) { throw 'Unexpected source inventory layout' }
+$$entries = @([regex]::Matches($$raw, '(?m)^    "([^"]+)": "([0-9a-f]{64})",?$$') |
+    ForEach-Object { [PSCustomObject]@{ Path = $$_.Groups[1].Value; Hash = $$_.Groups[2].Value } })
+$$seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($$entry in $$entries) {
+    $$segments = $$entry.Path.Split('/')
+    if ($$entry.Path -cnotmatch '\A[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*\z' -or
+            $$segments -contains '.' -or $$segments -contains '..') {
+        throw "Unsafe source inventory path: $$($$entry.Path)"
+    }
+    if (-not $$seen.Add($$entry.Path)) { throw "Duplicate source inventory path: $$($$entry.Path)" }
+}
 function Assert-NoLink([string]$$Path, [string]$$Boundary) {
     $$current = $$Path
     while ($$current -and $$current -ne $$Boundary) {
@@ -117,8 +148,14 @@ foreach ($$item in $$items) {
         throw "Reparse-point source: $$($$item.FullName)"
     }
 }
-$$sourceFiles = @($$items | Where-Object { -not $$_.PSIsContainer -and $$_.FullName -ne $$inventoryPath })
-if ($$sourceFiles.Count -ne $$entries.Count) { throw 'Source file inventory mismatch' }
+# Compare path sets, not counts: a swapped or aliased row must not pass.
+$$prefix = (Get-Item -Force -LiteralPath $$source).FullName.TrimEnd('\', '/').Length + 1
+[string[]]$$actual = @($$items | Where-Object { -not $$_.PSIsContainer -and $$_.FullName -ne $$inventoryPath } |
+    ForEach-Object { $$_.FullName.Substring($$prefix).Replace('\', '/') })
+[string[]]$$expected = @($$entries.Path)
+[Array]::Sort($$actual, [StringComparer]::Ordinal)
+[Array]::Sort($$expected, [StringComparer]::Ordinal)
+if (($$actual -join "`n") -cne ($$expected -join "`n")) { throw 'Source file inventory mismatch' }
 function Assert-Digests([string]$$Root) {
     foreach ($$entry in $$entries) {
         $$path = Join-Path $$Root $$entry.Path
@@ -153,8 +190,10 @@ $$skills
 
 def host_adapter_files(files: dict[str, str]) -> dict[str, str]:
     """All 18 committed files derive from the host rows alone; none carries a file digest."""
-    # The scripts read the receipt with sed; JSON escapes would hide a row from it.
-    unsafe = sorted(path for path in files if not re.fullmatch(r"[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*", path))
+    # The scripts accept only these paths; JSON would escape others, and a
+    # `.`/`..` segment would alias or escape the destination.
+    unsafe = sorted(path for path in files if not re.fullmatch(r"[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*", path)
+                    or any(part in (".", "..") for part in path.split("/")))
     if unsafe:
         raise ValueError(f"Agent Skills paths the clone installers cannot read: {unsafe}")
     result = {}
@@ -163,6 +202,7 @@ def host_adapter_files(files: dict[str, str]) -> dict[str, str]:
         fields = {
             "host": manifest["host"],
             "receipt_name": manifest["inventory"],
+            "schema_version": SCHEMA_VERSION,
             "repo_path": manifest["targets"]["repo"],
             "user_path": manifest["targets"]["user"],
         }
