@@ -129,6 +129,31 @@ DOMAIN_REVIEW_CONTRACTS = {
             "lifecycle_handoff_boundary_check": {"approver", "evidence_refs", "action_class", "target_owner", "readiness", "disposition", "timing", "stop_conditions", "approval_state", "analysis_cancellation"},
         },
     },
+    "market-research": {
+        "outputs": (
+            "market scope and source ledger",
+            "TAM SAM SOM model and sensitivity",
+            "customer evidence and JTBD matrix",
+            "comparable competitor and pricing profiles",
+            "decision-ready market findings",
+        ),
+        "steps": (
+            "frame_market",
+            "register_market_evidence",
+            "size_addressable_market",
+            "analyze_customer_evidence",
+            "compare_competitors_and_pricing",
+            "deliver_market_findings",
+        ),
+        "checks": {
+            "market_scope_check": {"decision", "segment", "geography", "period", "currency_base_year", "units_denominator", "source_cutoff", "budget", "stop_condition"},
+            "market_source_check": {"source_id", "source_date", "retrieved_at", "coverage", "evidence_class", "claim_ids", "failed_retrieval", "contrary_evidence"},
+            "market_size_check": {"input_refs", "assumptions", "formula_units", "tool_receipt", "tam", "sam", "som", "reconciliation", "sensitivity"},
+            "market_customer_check": {"evidence_ids", "quote_ids", "segment", "sample_frame", "jtbd", "past_behavior", "bias", "contrary_evidence", "privacy"},
+            "market_comparability_check": {"competitor", "source_ids", "as_of", "coverage", "segment", "packaging", "normalized_price", "limits", "evidence_class"},
+            "market_findings_check": {"finding_ids", "source_refs", "assumption_refs", "contrary_evidence", "confidence_limits", "decision_implications", "verification_needs", "stop_reason"},
+        },
+    },
     "product-discovery-validation": {
         "outputs": ("discovery_decision_frame/v1", "discovery_evidence_ledger/v1", "customer_discovery_plan/v1", "assumption_test_portfolio/v1", "discovery_decision_receipt/v1", "initial_gtm_hypothesis/v1"),
         "steps": ("discovery_frame_decision", "discovery_classify_evidence", "discovery_plan_customer_reentry", "discovery_gate_problem", "discovery_rank_assumptions", "discovery_draft_gtm_hypothesis", "discovery_validate_decision_receipt"),
