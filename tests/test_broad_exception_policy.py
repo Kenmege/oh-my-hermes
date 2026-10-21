@@ -582,8 +582,8 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         INTENTIONAL,
         "Hermes' start-time reader raising records the process with `started` None, the shape its "
         "own async-delegation record keeps for an unread time; `process_alive` then answers None "
-        "(unknown) for it, never alive and never gone, and `subagent_start` binding the helper is "
-        "never lost to it.",
+        "(unknown) while that pid exists and False (gone) once it does not, never True, and "
+        "`subagent_start` binding the helper is never lost to it.",
     ),
     ClassifiedSite(
         "src/plugin_bundle/omh/host_process.py",

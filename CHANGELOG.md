@@ -9,12 +9,14 @@ All notable changes will be documented here.
   it without the `subagent_stop` callback, so `omh_team` held the part as
   out until its four-hour bound blocked it as `delegation_not_returned`.
   The dispatch now records that process (pid and start-time fingerprint,
-  through Hermes' own `gateway.status` probes, imported when called), and the
-  first `team_start` after a restart hands back each part whose process is
-  gone: same attempt, no try spent, said as "Hermes restarted while 1 part
-  was out; it starts again." A part with no recorded process, or one whose
-  process cannot be told alive or gone, waits for the bound as before. Each
-  hand-back counts as a re-emit, so after three a part blocks as
+  through Hermes' own `gateway.status` probes, imported when called, and
+  where the pid was read: Linux's boot id and pid namespace, else the host
+  name), and the first `team_start` after a restart hands back each part
+  whose process is gone: same attempt, no try spent, said as "Hermes
+  restarted while 1 part was out; it starts again." A part with no recorded
+  process, one recorded on another machine or in another container, or one
+  whose process cannot be told alive or gone, waits for the bound as before.
+  Each hand-back counts as a re-emit, so after three a part blocks as
   `helper_lost` ("Hermes kept restarting while its helper was out"). A
   dag-ulw node whose child a restart ended no longer stays `running` with no
   bound: its ledger entry records the same process, and `omh_dag ready`

@@ -27,6 +27,7 @@ from omh.coding.fanout import build_fanout_contract  # noqa: E402
 from omh.coding.fanout_contracts import FANOUT_SPAWN_PLAN_FIELDS, FANOUT_SPAWN_PLAN_THRESHOLD  # noqa: E402
 from omh.coding.executors import EXTERNAL_CLI_PROFILES  # noqa: E402
 from omh.plugin_bundle.omh import dag_run  # noqa: E402
+from omh.plugin_bundle.omh import host_process  # noqa: E402
 from omh.plugin_bundle.omh.delegation_ledger import dag_binding, read_ledger  # noqa: E402
 from omh.plugin_bundle.omh.tools import dag_tool  # noqa: E402
 from omh.routing import owner_preference  # noqa: E402
@@ -492,7 +493,8 @@ class RestartTests(unittest.TestCase):
         moment = time.time()
         with homes() as home:
             self.out(home, moment, probes=hermes_process(1000))
-            self.assertEqual(read_ledger(home.omh, PARENT)["children"][0]["host"], {"pid": os.getpid(), "started": 1000})
+            self.assertEqual(read_ledger(home.omh, PARENT)["children"][0]["host"],
+                             {"pid": os.getpid(), "started": 1000, "machine": host_process.machine()})
             with patch.object(dag_tool.time, "time", return_value=moment + 60), patch_modules(hermes_process(5000)):
                 status = call(action="status", run="feat")
                 ready = call(action="ready", run="feat")
@@ -504,6 +506,16 @@ class RestartTests(unittest.TestCase):
         self.assertEqual(ready["calls"][0]["tasks"][0]["goal"], "[dag:feat/api] Node api")
         self.assertEqual(again["nodes"][0]["state"], "running")
         self.assertEqual([(attempt["n"], attempt["lost"]) for attempt in attempts], [(1, 1)])
+
+    def test_a_child_that_came_back_before_the_restart_is_not_offered_again(self) -> None:
+        """Mutation: drop the `"stop" in child` skip in `dag_tool._children`."""
+        moment = time.time()
+        with homes() as home:
+            self.out(home, moment, probes=hermes_process(1000))
+            stop(home, "child-api", now=moment + 30)
+            with patch.object(dag_tool.time, "time", return_value=moment + 60), patch_modules(hermes_process(5000)):
+                ready = call(action="ready", run="feat")
+        self.assertEqual((ready["nodes"][0]["state"], ready["calls"]), ("returned", []))
 
     def test_a_running_child_and_one_with_no_recorded_process_stay_running(self) -> None:
         moment = time.time()

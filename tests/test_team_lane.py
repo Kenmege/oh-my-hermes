@@ -32,6 +32,7 @@ from _module_patch import patch_modules
 load_local_package()
 
 from omh.plugin_bundle.omh import team_gate  # noqa: E402
+from omh.plugin_bundle.omh import host_process  # noqa: E402
 from omh.plugin_bundle.omh.live_session import compaction_ancestors  # noqa: E402
 from omh.plugin_bundle.omh.hooks import nudge_budget  # noqa: E402
 from omh.plugin_bundle.omh.todo_store import todo_items_digest  # noqa: E402
@@ -545,7 +546,8 @@ class ARestartHandsBackTheHelpersItEnded(TeamHarness):
     """
 
     PID = 4242
-    HOST = {"pid": PID, "started": 1_700_000_000}
+    # The engine reads the machine only through `dispatcher_alive`, so any name stands for one here.
+    HOST = {"pid": PID, "started": 1_700_000_000, "machine": "linux:boot-1:pid:[4026531836]"}
 
     def out(self, units: list[dict[str, object]], hosts: dict[str, dict[str, int] | None]) -> dict[str, object]:
         """Start the team and play `subagent_start` for each part, recording the process ``hosts`` names."""
@@ -579,7 +581,7 @@ class ARestartHandsBackTheHelpersItEnded(TeamHarness):
         self.assertEqual(self.reconcile()["team_state"], "done")
 
     def test_only_the_parts_whose_process_ended_go_out_again(self) -> None:
-        other = {"pid": 5151, "started": 1_700_000_500}
+        other = {"pid": 5151, "started": 1_700_000_500, "machine": "linux:boot-1:pid:[4026531836]"}
         self.out([unit("a", CHECK_A), unit("b", CHECK_B)], {"a": self.HOST, "b": other})
         self.restart()
         self.dispatchers.update({self.PID: False, 5151: True})
@@ -613,6 +615,20 @@ class ARestartHandsBackTheHelpersItEnded(TeamHarness):
     def test_a_dispatch_with_no_recorded_process_is_never_asked_about(self) -> None:
         # The answer would say "gone"; with no process recorded it is never asked.
         self.waits_for_the_bound(None, False)
+
+    def test_a_helper_that_came_back_before_the_restart_is_not_handed_back(self) -> None:
+        """Mutation: drop the `returned_at` skip in `_hand_back_lost`."""
+        self.out([unit("a", CHECK_A)], {"a": self.HOST})
+        self.assertTrue(team.observe_return(self.home, SESSION, child_session_id="child-a", now=self.now()))
+        self.restart()
+        self.dispatchers[self.PID] = False
+        again = self.start([unit("a", CHECK_A)])
+        self.assertEqual((self.entries(again), self.states(again)), ([], {"a": "awaiting_check"}))
+        self.assertEqual(again["say"], "This team is already running: 0 of 1 part has passed its check.")
+        self.assertNotIn("lost", [item["event"] for item in again["events"]])
+        attempt = self.record()["units"][0]["attempts"][0]
+        self.assertEqual((attempt["dispatch"]["child_session_id"], "lost" in attempt), ("child-a", False))
+        self.assertEqual(self.reconcile()["team_state"], "done")
 
     def test_a_repeat_start_in_the_same_process_hands_nothing_back(self) -> None:
         self.out([unit("a", CHECK_A)], {"a": self.HOST})
@@ -993,7 +1009,7 @@ class TeamToolHandler(unittest.TestCase):
                                    child_goal=started["delegate_task"]["arguments"]["tasks"][0]["goal"], **hooks)
                 record = team.read_team(team.team_path(runtime_paths.default_omh_home(), self.SESSION, team_id))
                 self.assertEqual(record["units"][0]["attempts"][0]["dispatch"]["host"],
-                                 {"pid": os.getpid(), "started": 777})
+                                 {"pid": os.getpid(), "started": 777, "machine": host_process.machine()})
                 self.team_tool._APPROVED_TEAMS.clear()  # a Hermes restart
                 # The process now running started at `later_start`: another start time is another process.
                 resumed = self.call({**self.args, "team_id": team_id},
