@@ -711,8 +711,8 @@ def _delegation_protocol_platform_check(paths: OmhPaths) -> Check:
     literal = f'platform="{CHILD_PLATFORM}"'
     reach = "the only platform the OMH delegation protocol section renders for"
     next_action = (
-        "until OMH matches this Hermes, paste the protocol lines from `omh coding composition-guide` "
-        "into each delegate_task goal that needs them"
+        "until OMH matches this Hermes, paste the protocol lines from "
+        "`omh coding composition-guide --model <your model>` into each delegate_task goal that needs them"
     )
     text = read_bounded_text(source)
     if text is None:

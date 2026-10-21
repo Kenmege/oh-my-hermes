@@ -28,6 +28,7 @@ from omh.coding import unit_prompt_protocol  # noqa: E402
 from omh.commands import setup as setup_commands  # noqa: E402
 from omh.maintenance.doctor import _delegation_protocol_platform_check, run_doctor  # noqa: E402
 from omh.paths import OmhPaths  # noqa: E402
+from omh.system.hermes_install import MAX_BOUNDED_READ_BYTES  # noqa: E402
 from omh.plugin_bundle.omh import register  # noqa: E402
 from omh.plugin_bundle.omh.hooks import tool_hooks  # noqa: E402
 from omh.skills.catalog import harness_definition  # noqa: E402
@@ -303,11 +304,13 @@ class HarnessGuidanceTests(unittest.TestCase):
         applies_to = _composition_guide_protocol()["applies_to"]
         self.assertIn("On Hermes `delegate_task` the OMH plugin puts goal_echo, verification_stop", applies_to)
         self.assertIn("do not paste them into the goal", applies_to)
+        self.assertIn("its goal_echo asking for the numbered criteria only if the goal has them", applies_to)
         self.assertIn("For Codex, Claude Code, and other runtime-native spawns, embed them", applies_to)
         status, stdout, _stderr = run_cli(["coding", "composition-guide", "--model", "gpt-6-astra"], output_json=False)
         self.assertEqual(status, 0)
         header = next(line for line in stdout.splitlines() if line.startswith("Delegation protocol ("))
         self.assertIn("each Hermes `delegate_task` child, so do not paste them there", header)
+        self.assertIn("its goal echo asks for the numbered criteria only if the goal has them", header)
         self.assertIn("embed them for Codex, Claude Code", header)
 
 
@@ -342,10 +345,17 @@ class DoctorPlatformCheckTests(unittest.TestCase):
         check = _delegation_protocol_platform_check(self.paths)
         self.assertEqual((check.ok, check.severity, check.observed), (True, "warning", True))
         self.assertIn('no longer builds a delegate_task child with platform="subagent"', check.message)
-        self.assertIn("omh coding composition-guide", check.next_action)
+        # Bare `composition-guide` prints no protocol line; `--model` does.
+        self.assertIn("omh coding composition-guide --model <your model>", check.next_action)
 
     def test_an_install_without_the_delegate_tool_warns_unobserved(self) -> None:
         self.install(None)
+        check = _delegation_protocol_platform_check(self.paths)
+        self.assertEqual((check.ok, check.severity, check.observed), (True, "warning", False))
+        self.assertIn("is not established", check.message)
+
+    def test_a_delegate_tool_over_the_read_cap_is_not_read(self) -> None:
+        self.install(_HERMES_CHILD_BUILD_LINE + "#" * MAX_BOUNDED_READ_BYTES)
         check = _delegation_protocol_platform_check(self.paths)
         self.assertEqual((check.ok, check.severity, check.observed), (True, "warning", False))
         self.assertIn("is not established", check.message)
