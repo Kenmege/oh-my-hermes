@@ -8,8 +8,8 @@ lines with its own styles (every piece of text carries a role), and `omh hud
 The boxes stand in frontiers under a header that names the task count,
 the run and its state (``Running · Done 1/5``). Every node but the root is a
 box of four lines: its title, its category and model, its status with its
-glyph and duration (and the output tokens its child wrote, ``· ↓1.2k``, where
-the box has room for them), and its parents (``← Export API``) or ``Start node``. The
+glyph and duration (and the output tokens its child wrote, ``· ↓1.2k``, while
+the line still fits the box whole), and its parents (``← Export API``) or ``Start node``. The
 root is no box: what it dispatched starts a frontier, and its model is named
 in the header. A node's frontier is the longest path of recorded edges (a
 dispatch, a `depends_on`, a repair or an extend) from a node with none. The
@@ -33,8 +33,11 @@ drawn, which nests a node under its dispatcher and draws no edge. So is a
 graph whose edges loop, or one too narrow for a box. Widths are terminal
 cells: a wide (CJK) character counts 2, and text is folded first so that
 what is counted is what is painted. A duration is counted at
-`DURATION_CELLS` whatever it reads, so a ticking clock never resizes a box,
-and a token count at `TOKEN_CELLS`, so a growing one never comes and goes.
+`DURATION_CELLS` whatever it reads, so a ticking clock never resizes a box.
+A box's count is measured as it reads, beside the status as it reads: the box
+is never widened for it, so it shows while the line fits and drops out, whole,
+once a longer duration or count would not. The tree's and a card's count are
+measured at their widest (`TOKEN_CELLS`), so a growing one never comes and goes.
 
 Every part of a box carries its node's state as its role (``node:running``),
 so a painter colours border, title and status by state; the drawing is
@@ -585,11 +588,11 @@ def _box_content(
     head.append(Segment(title, title_role))
     lines = [head, _facts(node, charset)]
     status = [Segment(glyph, f"node:{state}"), Segment(" " + _capital(_status_text(node)), f"node-word:{state}")]
-    tokens = _tokens_text(node, charset)
-    # Only where the box has room for a count at its widest: the box is never widened for it, and it never comes
-    # and goes as the clock or the count grows.
-    if tokens and cells(_box_glyph(node, charset, None)) + 1 + _status_room(node) + _tokens_room(charset) <= inner:
-        status.append(Segment(f"{charset.separator}{tokens}", "more"))
+    tokens = f"{charset.separator}{_tokens_text(node, charset)}" if _tokens_text(node, charset) else ""
+    # While the status line as it reads, with the count, fits the box whole: the box is never widened for it, so a
+    # count shows in the narrowest box while its line is short, and drops out, never cut, once the line is not.
+    if tokens and sum(cells(segment.text) for segment in status) + cells(tokens) <= inner:
+        status.append(Segment(tokens, "more"))
     lines.append(status)
     parents = [_title(shape.lanes[upper]) for upper in shape.parents[node_id]]
     if parents:

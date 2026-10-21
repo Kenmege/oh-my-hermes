@@ -288,10 +288,12 @@ What it shows, and what it leaves as `?`:
   count grows from one HUD read to the next and a finished one keeps its
   final count. A team part or a dag node takes its bound child's count. A
   lane has none while that row says 0 or was not read, and a team part or
-  dag node no child took, a fanout unit and main have none. A box and the
-  tree's status column show it only where the line has room for a count at
-  its widest, so no box is widened and no other field is cut for it; a card
-  says it after the status, and its group and session give way first. The
+  dag node no child took, a fanout unit and main have none. A box shows it
+  while its status line, with the count, fits the box as it reads: no box is
+  widened for it, so the count drops out whole once a longer duration or
+  count would not fit. The tree's status column shows it only where the row
+  has room for a count at its widest, so no other field is cut for it; a
+  card says it after the status, and its group and session give way first. The
   graph's fingerprint leaves it out, so a growing count posts nothing to a
   chat.
 - **State** comes from Hermes' `subagent_stop`, a recorded model call, or the

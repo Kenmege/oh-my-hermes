@@ -734,8 +734,28 @@ class OutputTokenTests(unittest.TestCase):
         )
         ascii_drawn = text(with_tokens(dag_export_run(), EXPORT_COUNTS), width=80, charset="ascii")
         self.assertIn("| * Running 21s - out 1.2k       |", ascii_drawn)
-        self.assertIn("| + Accepted 12s                 |", ascii_drawn, "no room at this width: no count")
+        self.assertIn("| + Accepted 12s - out 5.6k      |", ascii_drawn)
         self.assertTrue(ascii_drawn.isascii())
+
+    def test_a_box_count_shows_while_its_status_line_fits_and_drops_out_whole(self) -> None:
+        # Measured as it reads, beside the status as it reads: the box keeps its width, the count comes and goes.
+        def button(elapsed: float, count: int) -> str:
+            counted = dag_export_run()
+            for node in counted["nodes"]:
+                if node["id"] == "d:r1:button":
+                    node.update(elapsed_seconds=elapsed, output_tokens=count)
+            return box_lines(render_delegation_view(counted, width=100))["d:r1:button"][2]
+
+        self.assertEqual(button(21, 1400), "● Running 21s · ↓1.4k")
+        self.assertEqual(button(21, 45_600), "● Running 21s · ↓45.6k")
+        self.assertEqual(button(59 * 60 + 59, 45_600), "● Running 59m 59s · ↓45.6k")
+        self.assertEqual(button(100 * 3600 + 59 * 60, 999_900), "● Running 100h 59m · ↓999.9k")
+        widths = {len(render_delegation_view(dag_export_run(), width=100).text_lines()[4])}
+        for elapsed in (21, 3599, 100 * 3600 + 59 * 60):
+            counted = with_tokens(dag_export_run(), {"d:r1:button": 999_900})
+            counted["nodes"][2]["elapsed_seconds"] = elapsed
+            widths.add(len(render_delegation_view(counted, width=100).text_lines()[4]))
+        self.assertEqual(len(widths), 1, "no count widens a box")
 
     def test_a_card_says_the_count_in_tokens(self) -> None:
         view = render_delegation_view(with_tokens(dag_export_run(), EXPORT_COUNTS), width=100)

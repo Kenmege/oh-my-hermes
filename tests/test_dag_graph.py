@@ -10,6 +10,7 @@ an end block once the run itself is over.
 from __future__ import annotations
 
 import json
+import re
 import time
 import unittest
 from unittest.mock import patch
@@ -110,10 +111,30 @@ class GraphTests(unittest.TestCase):
         self.assertEqual(graph_fingerprint(graph), graph_fingerprint(grown))
         view = render_delegation_view(graph, width=100)
         self.assertIn("    Running 1s · ↓1.2k tokens · layer 1 · session child-ap", view.text_lines())
-        # These boxes are 24 cells inside, under the 27 a status and a count take at their widest: no count there.
-        self.assertIn("│ ● Running 1s           │", view.text())
+        self.assertIn("│ ● Running 1s · ↓1.2k   │", view.text())
         tree = render_delegation_view(graph, width=100, layout="tree").text()
         self.assertIn("running 1s · ↓1.2k", tree)
+
+    def test_the_narrowest_box_shows_its_count_while_the_status_line_fits_and_drops_it_whole(self) -> None:
+        # The run's boxes are 24 cells inside, the narrowest #2191 draws for these titles; a count is never what
+        # widens them. `● Running 21s · ↓1.4k` is 21 cells and shows; `● Running 25m 30s · ↓1.4k` is 25 and does not.
+        with homes() as home:
+            defined(home)
+            now = time.time()
+            started(home, "api", now=now)
+            home.tokens("child-api", 1400)
+            early = render_delegation_view(build_delegation_graph(home.omh, home.hermes, PARENT, now=now + 21),
+                                           width=100)
+            home.usage("child-api", "glm-5.3-flash", last_seen=now + 1529)  # still moving: running, not no news
+            late = render_delegation_view(build_delegation_graph(home.omh, home.hermes, PARENT, now=now + 1530),
+                                          width=100)
+        for view in (early, late):
+            self.assertEqual(view.layout, "box")
+            self.assertEqual({len(edge) for edge in re.findall(r"┌─*┐", view.text())}, {26}, "24 cells inside")
+        self.assertIn("│ ● Running 21s · ↓1.4k  │", early.text())
+        self.assertIn("│ ● Running 25m 30s      │", late.text())
+        self.assertIsNone(re.search(r"↓[0-9.]*[kM]?…", late.text()))
+        self.assertIn("Running 25m 30s · ↓1.4k tokens", late.text(), "the card still says it")
 
     def test_a_repair_hangs_below_the_node_it_repairs_and_superseded_nodes_go(self) -> None:
         with homes() as home:
