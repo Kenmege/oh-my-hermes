@@ -60,3 +60,48 @@ def nested() -> dict:
         [("root", "o", "dispatch"), ("root", "k", "dispatch"), ("o", "o1", "dispatch"), ("o", "o2", "dispatch"),
          ("o2", "o21", "dispatch"), ("o2", "o22", "dispatch")],
     )
+
+
+def export_run() -> dict:
+    """A dag run of five nodes over three frontiers: an API, three nodes on it, a verification of all three.
+
+    One node in each state a box colours differently: accepted, running, handed out, failed and waiting.
+    """
+    def node(key: str, title: str, category: str, model: str, effort: str, state: str, status: str, order: int,
+             **extra) -> dict:
+        return {**lane(f"d:r1:{key}", title, category, model, effort, state, order=order, status=status,
+                       group=f"layer {extra.pop('layer')}"), **extra}
+
+    return graph(
+        [
+            root(),
+            node("api", "Export API", "quick", "glm-5.3-flash", "low", "done", "accepted", 1, layer=1,
+                 elapsed_seconds=12, session_tail="3f0a9c1d"),
+            node("button", "Export button", "unspecified-high", "glm-5.3", "low", "running", "running", 2, layer=2,
+                 elapsed_seconds=21, session_tail="7c41e9a2"),
+            node("docs", "Export docs", "writing", "?", "", "dispatched", "handed out", 3, layer=2),
+            node("cli", "Export CLI flag", "quick", "glm-5.3-flash", "low", "failed", "failed", 4, layer=2,
+                 elapsed_seconds=8, session_tail="b84d2e07"),
+            node("verify", "Verify export", "unspecified-high", "?", "", "waiting", "waiting", 5, layer=3, waits_on=3),
+        ],
+        [("root", "d:r1:api", "dispatch"),
+         *(("d:r1:api", f"d:r1:{key}", "depends_on") for key in ("button", "docs", "cli")),
+         *((f"d:r1:{key}", "d:r1:verify", "depends_on") for key in ("button", "docs", "cli"))],
+        name="export feature",
+    )
+
+
+def export_repair_run() -> dict:
+    """The export run later: all five accepted, an extend node that failed, and the repair added for it."""
+    run = export_run()
+    for node in run["nodes"][1:]:
+        node.update(state="done", status="accepted", elapsed_seconds=node.get("elapsed_seconds") or 9, waits_on=0)
+    run["nodes"] += [
+        {**lane("d:r1:csv", "CSV export", "quick", "glm-5.3-flash", "low", "failed", status="failed", order=6,
+                group="extend 1"), "elapsed_seconds": 6, "session_tail": "51be07c4"},
+        {**lane("d:r1:csv-fix", "CSV export, with the header row", "quick", "glm-5.3-flash", "low", "running",
+                status="running", order=7, group="repair 1"), "elapsed_seconds": 18, "session_tail": "9d2e6f30"},
+    ]
+    run["edges"] += [{"from": "d:r1:verify", "to": "d:r1:csv", "kind": "extend"},
+                     {"from": "d:r1:csv", "to": "d:r1:csv-fix", "kind": "repair"}]
+    return run

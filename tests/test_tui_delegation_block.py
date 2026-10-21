@@ -1,10 +1,12 @@
 """The delegation block in the OMH TUI at the heights people have, the layout kept per structure, and `/dag`.
 
 The panel gets a third of the terminal's rows (`layout.slot_cap`), so the
-block is drawn with four-line boxes, two-line boxes or the tree depending on
-that height. `TIERS` is what each common size gets, read off the drawing:
-two-line boxes take their arrows into their top border (`─▼─`), four-line
-boxes draw them on a row of their own, and the tree has branches and no box.
+block is drawn with boxes, three-line boxes or the tree depending on that
+height. `TIERS` is what each common size gets, read off the drawing: a box
+holds four lines (title, category and model, status, parents), a three-line
+box leaves out its category and model, and the tree has branches and no box.
+The boxes with their Dependencies and Node details are taller than a third of
+50 rows for these graphs, so the panel draws three-line boxes or the tree.
 """
 
 from __future__ import annotations
@@ -17,11 +19,13 @@ from _local_package import load_local_package
 
 load_local_package()
 
-from _delegation_graphs import owner_mock, parallel  # noqa: E402
+from _delegation_graphs import export_run, owner_mock, parallel  # noqa: E402
 from _tui_lines import lines_text  # noqa: E402
 from omh.plugin_bundle.omh import delegation_view  # noqa: E402
 from omh.plugin_bundle.omh.delegation_view import render_delegation_view  # noqa: E402
-from omh.tui.keys import CHAR, ESCAPE, Key  # noqa: E402
+from omh.tui.dag_pager import DAG_KEYS, DagPager  # noqa: E402
+from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, UP, Key  # noqa: E402
+from omh.tui.keys import TAB as TAB_KEY  # noqa: E402
 from omh.tui.layout import slot_cap  # noqa: E402
 from omh.tui.panels import panel_lines  # noqa: E402
 from omh.tui.style import NO_COLOR, TRUECOLOR  # noqa: E402
@@ -33,74 +37,57 @@ SIZES = [(rows, cols) for rows in (24, 30, 40, 50) for cols in (80, 100, 120)]
 # (rows, columns) -> the tier each graph gets in the panel's third of the screen.
 TIERS = {
     "three lanes": {
-        (24, 80): "tree", (24, 100): "tree", (24, 120): "tree",
-        (30, 80): "compact", (30, 100): "compact", (30, 120): "compact",
-        (40, 80): "compact", (40, 100): "compact", (40, 120): "compact",
-        (50, 80): "box", (50, 100): "box", (50, 120): "box",
-    },
-    "owner mock-up": {
-        **{size: "tree" for size in SIZES if size[0] < 50},
+        **{size: "tree" for size in SIZES if size[0] < 40},
+        (40, 80): "tree", (40, 100): "compact", (40, 120): "compact",
         (50, 80): "compact", (50, 100): "compact", (50, 120): "compact",
     },
+    "owner mock-up": {size: "tree" for size in SIZES},
     "six lanes": {
-        **{size: "tree" for size in SIZES if size[0] == 24},
-        (30, 80): "tree", (30, 100): "tree", (30, 120): "compact",
-        (40, 80): "tree", (40, 100): "tree", (40, 120): "compact",
-        (50, 80): "compact", (50, 100): "compact", (50, 120): "box",
+        **{size: "tree" for size in SIZES if size[0] < 50},
+        (50, 80): "tree", (50, 100): "compact", (50, 120): "compact",
     },
 }
 GRAPHS = {"three lanes": parallel(3), "owner mock-up": owner_mock(), "six lanes": parallel(6)}
 
-THREE_30x100 = """\
+THREE_40x100 = """\
 [Agents] │ ready
-  DAG · delegation · 4 nodes · 3 edges · 3 running
-                                   ┌──────────────────────────┐
-                                   │ ◆ main · opus-5-5 · high │
-                                   └─────────────┬────────────┘
-                 ┌───────────────────────────────┼───────────────────────────────┐
-  ┌──────────────▼─────────────┐  ┌──────────────▼─────────────┐  ┌──────────────▼─────────────┐
-  │ ● Lane 0 migrate           │  │ ● Lane 1 migrate           │  │ ● Lane 2 migrate           │
-  │ quick · glm-5.3-flash      │  │ quick · glm-5.3-flash      │  │ quick · glm-5.3-flash      │
-  └────────────────────────────┘  └────────────────────────────┘  └────────────────────────────┘
+  OMH / DAG · 3 tasks
+  delegation · 1/1 · main opus-5-5:high
+  Running · Done 0/3
+
+  ┌────────────────────────┐  ┌────────────────────────┐  ┌────────────────────────┐
+  │ Lane 0 migrate         │  │ Lane 1 migrate         │  │ Lane 2 migrate         │
+  │ ● Running 1m 0s        │  │ ● Running 1m 1s        │  │ ● Running 1m 2s        │
+  │ Start node             │  │ Start node             │  │ Start node             │
+  └────────────────────────┘  └────────────────────────┘  └────────────────────────┘
+  · Same frontier
 """
 
-MOCK_50x100 = """\
+SIX_50x120 = """\
 [Agents] │ ready
-  DAG · ulw-work hud-graph · 5 nodes · 6 edges · 2 running · 1 waiting · 1 done
-                                   ┌──────────────────────────┐
-                                   │ ◆ main · opus-5-5 · high │
-                                   └─────────────┬────────────┘
-                 ┌───────────────────────────────┼───────────────────────────────┐
-  ┌──────────────▼─────────────┐  ┌──────────────▼─────────────┐  ┌──────────────▼─────────────┐
-  │ ● Refresh HUD docs         │  │ ✓ Polish HUD CLI           │  │ ● Update HUD tests         │
-  │ writing · opus-5-5         │  │ quick · glm-5.3-flash      │  │ deep · opus-5-5 · high     │
-  └──────────────┬─────────────┘  └──────────────┬─────────────┘  └──────────────┬─────────────┘
-                 └───────────────────────────────┼───────────────────────────────┘
-                                  ┌──────────────▼─────────────┐
-                                  │ · Integration verify       │
-                                  │ inherit · opus-5-5         │
-                                  └────────────────────────────┘
-"""
+  OMH / DAG · 6 tasks
+  delegation · 1/1 · main opus-5-5:high
+  Running · Done 0/6
 
-SIX_40x120 = """\
-[Agents] │ ready
-  DAG · delegation · 7 nodes · 6 edges · 6 running
-                                               ┌──────────────────────────┐
-                                               │ ◆ main · opus-5-5 · high │
-                                               └─────────────┬────────────┘
-           ┌───────────────────┬───────────────────┬─────────┴─────────┬───────────────────┬───────────────────┐
-  ┌────────▼───────┐  ┌────────▼───────┐  ┌────────▼───────┐  ┌────────▼───────┐  ┌────────▼───────┐  ┌────────▼───────┐
-  │ ● Lane 0 migr… │  │ ● Lane 1 migr… │  │ ● Lane 2 migr… │  │ ● Lane 3 migr… │  │ ● Lane 4 migr… │  │ ● Lane 5 migr… │
-  │ quick · glm-5… │  │ quick · glm-5… │  │ quick · glm-5… │  │ quick · glm-5… │  │ quick · glm-5… │  │ quick · glm-5… │
-  └────────────────┘  └────────────────┘  └────────────────┘  └────────────────┘  └────────────────┘  └────────────────┘
+  ┌────────────────────────┐  ┌────────────────────────┐  ┌────────────────────────┐  ┌────────────────────────┐
+  │ Lane 0 migrate         │  │ Lane 1 migrate         │  │ Lane 2 migrate         │  │ Lane 3 migrate         │
+  │ ● Running 1m 0s        │  │ ● Running 1m 1s        │  │ ● Running 1m 2s        │  │ ● Running 1m 3s        │
+  │ Start node             │  │ Start node             │  │ Start node             │  │ Start node             │
+  └────────────────────────┘  └────────────────────────┘  └────────────────────────┘  └────────────────────────┘
+  ┌────────────────────────┐  ┌────────────────────────┐
+  │ Lane 4 migrate         │  │ Lane 5 migrate         │
+  │ ● Running 1m 4s        │  │ ● Running 1m 5s        │
+  │ Start node             │  │ Start node             │
+  └────────────────────────┘  └────────────────────────┘
+  · Same frontier
 """
 
 
 def tier(rows: list[str]) -> str:
-    if any("┌" in row and "▼" in row for row in rows):
-        return "compact"
-    if any("┌" in row for row in rows):
-        return "box"
+    tops = [at for at, row in enumerate(rows) if "┌" in row]
+    if tops:
+        bottom = next(at for at in range(tops[0], len(rows)) if "└" in rows[at])
+        return "box" if bottom - tops[0] - 1 == 4 else "compact"
     if any(row.strip().startswith(("├─", "└─")) for row in rows):
         return "tree"
     return "header"
@@ -118,9 +105,8 @@ class TierTests(unittest.TestCase):
                 with self.subTest(graph=name, size=size):
                     self.assertEqual(tier(panel(graph, *size)), TIERS[name][size])
 
-    def test_two_line_boxes_at_30_40_and_50_rows(self) -> None:
-        for snapshot, graph, size in ((THREE_30x100, parallel(3), (30, 100)), (MOCK_50x100, owner_mock(), (50, 100)),
-                                      (SIX_40x120, parallel(6), (40, 120))):
+    def test_three_line_boxes_at_40_and_50_rows(self) -> None:
+        for snapshot, graph, size in ((THREE_40x100, parallel(3), (40, 100)), (SIX_50x120, parallel(6), (50, 120))):
             with self.subTest(size=size):
                 self.assertEqual("\n".join(row.rstrip() for row in panel(graph, *size)) + "\n", snapshot)
 
@@ -129,17 +115,21 @@ class TierTests(unittest.TestCase):
         self.assertEqual(tier(rows), "tree")
         self.assertLessEqual(len(rows), slot_cap(24, 80))
 
-    def test_two_line_boxes_keep_the_same_edges_and_rules(self) -> None:
+    def test_three_line_boxes_are_the_boxes_without_facts_or_sections(self) -> None:
         for name, graph in GRAPHS.items():
             full = render_delegation_view(graph, width=118, layout="box")
             compact = render_delegation_view(graph, width=118, layout="compact")
             with self.subTest(graph=name):
                 self.assertEqual(compact.layout, "compact")
-                self.assertEqual(compact.text().count("▼"), full.text().count("▼"), "one arrow per recorded edge end")
+                self.assertEqual([box[0] for box in compact.boxes], [box[0] for box in full.boxes], "the same boxes")
+                self.assertEqual(compact.text().count("▼"), full.text().count("▼"), "one connector per frontier gap")
+                self.assertNotIn("Dependencies", compact.text_lines())
+                self.assertNotIn("Node details", compact.text_lines())
                 self.assertLess(len(compact.lines), len(full.lines))
         drawn = render_delegation_view(owner_mock(), width=98, layout="compact").text()
-        self.assertIn("│ deep · opus-5-5 · high", drawn, "the effort stays where it fits")
-        self.assertIn("│ writing · opus-5-5 ", drawn, "and gives way where it does not")
+        self.assertIn("│ Integration verify ", drawn)
+        self.assertIn("│ ○ Waits on 3 lanes ", drawn)
+        self.assertNotIn("opus-5-5", drawn.split("\n", 3)[3], "no category and model line in a box")
 
 
 class LayoutCacheTests(unittest.TestCase):
@@ -164,10 +154,10 @@ class LayoutCacheTests(unittest.TestCase):
             for node in graph["nodes"][1:]:
                 # Every other line is short, so the status line (`running 5s`, `running 59m 59s`) is the widest.
                 node.update(title="A", category="c", model="m", effort="", elapsed_seconds=elapsed)
-        widths = [
-            [len(row) for row in render_delegation_view(graph, width=118, layout="box").text_lines()]
-            for graph in (short, long)
-        ]
+        widths = []
+        for graph in (short, long):
+            rows = render_delegation_view(graph, width=118, layout="box").text_lines()
+            widths.append([len(row) for row in rows[:rows.index("Node details")]])  # a card's status is not boxed
         self.assertEqual(widths[0], widths[1])
 
 
@@ -178,31 +168,119 @@ def with_hud(app, graph: dict | None) -> None:
     app.hud = type("Hud", (), {"payload": payload, "received_at": None})()
 
 
+def screen(app) -> list[str]:
+    """What the terminal shows now, after the app paints its frame."""
+    app._render()
+    return [row.rstrip() for row in app.terminal.screen.lines()]
+
+
+def press(app, *keys: Key) -> list[str]:
+    for key in keys:
+        app._on_input(key)
+    return screen(app)
+
+
+TAB, SHIFT_TAB, SPACE = Key(TAB_KEY), Key(TAB_KEY, shift=True), Key(CHAR, " ")
+
+
 class DagCommandTests(unittest.TestCase):
-    def test_dag_opens_the_whole_graph_with_four_line_boxes_and_q_closes_it(self) -> None:
-        app, _client = make_app(rows=24, cols=100, environ={"COLORTERM": "truecolor", "TERM": "xterm-256color"})
-        with_hud(app, owner_mock())
+    def test_dag_opens_the_boxes_on_the_running_node_and_q_closes_it(self) -> None:
+        app, client = make_app(rows=60, cols=100, environ={"COLORTERM": "truecolor", "TERM": "xterm-256color"})
+        with_hud(app, export_run())
         send(app, "/dag")
-        self.assertIsNotNone(app.pager)
-        self.assertEqual(app.pager.title, "delegation graph")
-        rows = lines_text(app.pager.lines)
-        self.assertEqual(tier(rows), "box", "full boxes, however short the terminal")
-        self.assertIn("│ waits on 3 lanes", "\n".join(rows))
-        self.assertGreater(len(rows), slot_cap(24, 100), "the pager scrolls; the panel would have drawn the tree")
-        edges = [span for line in app.pager.lines for span in line if span.text.strip("─│┌┐└┘┬┴┼▼ ") == ""
-                 and span.text.strip()]
-        self.assertTrue(edges and all(span.style.fg for span in edges), "the same colours as the panel")
-        self.assertTrue(all(span.style.depth == TRUECOLOR for line in app.pager.lines for span in line))
+        self.assertIsInstance(app.pager, DagPager)
+        rows = screen(app)
+        self.assertEqual(rows[0], "OMH / DAG · 5 tasks")
+        self.assertIn("│ [-] > Export button", "\n".join(rows), "it opens on the running node")
+        self.assertIn("Node details", rows)
+        self.assertEqual(rows[-2:], [f" {DAG_KEYS}", " delegation graph · rows 1-40/40"])
+        self.assertNotIn("Runs", rows[-2], "one graph per conversation: no other run to switch to")
+        spans = [span for line in app.pager.lines for span in line if span.text.strip()]
+        self.assertTrue(all(span.style.depth == TRUECOLOR for span in spans))
+        self.assertTrue(any(span.style.fg for span in spans if "│" in span.text), "the borders take their state's colour")
         app._on_input(Key(CHAR, "q"))
         self.assertIsNone(app.pager)
         send(app, "/dag")
         app._on_input(Key(ESCAPE))
         self.assertIsNone(app.pager, "Esc closes it too")
+        self.assertEqual(client.calls, [], "nothing in /dag reaches the gateway")
+
+    def test_tab_and_shift_tab_move_the_highlight_in_reading_order(self) -> None:
+        app, client = make_app(rows=60, cols=100)
+        with_hud(app, export_run())
+        send(app, "/dag")
+        screen(app)
+        order = []
+        for key in (TAB, TAB, TAB, TAB, Key(CHAR, "n")):
+            press(app, key)
+            order.append(app.pager.node)
+        self.assertEqual(order, ["d:r1:docs", "d:r1:cli", "d:r1:verify", "d:r1:api", "d:r1:button"], "and round again")
+        for key in (SHIFT_TAB, Key(CHAR, "p")):
+            press(app, key)
+        self.assertEqual(app.pager.node, "d:r1:verify")
+        rows = "\n".join(screen(app))
+        self.assertIn("│ [-] > Verify export", rows)
+        self.assertEqual(rows.count(" > "), 1, "one box is highlighted")
+        self.assertIn("  ○ Verify export", rows, "the highlighted node has a card")
+        self.assertEqual(client.calls, [])
+
+    def test_space_or_enter_folds_and_d_switches_node_details(self) -> None:
+        app, _client = make_app(rows=60, cols=100)
+        with_hud(app, export_run())
+        send(app, "/dag")
+        screen(app)
+        rows = press(app, SPACE)
+        self.assertIn("│ [+] > ● Export button", "\n".join(rows), "folded to its title line, its state's glyph kept")
+        self.assertNotIn("● Running 21s", "\n".join(rows[:20]))
+        rows = press(app, Key(ENTER))
+        self.assertIn("│ [-] > Export button", "\n".join(rows))
+        rows = press(app, Key(CHAR, "d"))
+        self.assertNotIn("Node details", rows)
+        rows = press(app, Key(CHAR, "d"))
+        self.assertIn("Node details", rows)
+
+    def test_the_highlight_is_scrolled_into_view_and_the_arrows_scroll(self) -> None:
+        app, _client = make_app(rows=16, cols=100)
+        with_hud(app, export_run())
+        send(app, "/dag")
+        rows = screen(app)
+        self.assertEqual(app.pager.top, 4, "the running node it opens on is scrolled whole into the 14 rows")
+        self.assertTrue(rows[8].startswith("┌") and rows[9].startswith("│ [-] > Export button")
+                        and rows[13].startswith("└"), rows)
+        rows = press(app, SHIFT_TAB, SHIFT_TAB)  # Export button, then back past Export API to Verify export
+        self.assertEqual(app.pager.node, "d:r1:verify")
+        self.assertTrue(any("[-] > Verify export" in row for row in rows[:14]), rows)
+        top = app.pager.top
+        press(app, Key(UP))
+        self.assertEqual(app.pager.top, top - 1)
+        press(app, Key(DOWN), Key(DOWN))
+        self.assertEqual(app.pager.top, top + 1)
+        press(app, Key(CHAR, "g"))
+        self.assertEqual(app.pager.top, 0)
+
+    def test_dag_is_live_from_the_newest_hud_read(self) -> None:
+        app, client = make_app(rows=60, cols=100)
+        with_hud(app, export_run())
+        send(app, "/dag")
+        self.assertIn("│ ● Running 21s", "\n".join(screen(app)))
+        later = export_run()
+        later["nodes"][2].update(state="done", status="accepted", elapsed_seconds=40)
+        later["nodes"][3].update(state="running", status="running", elapsed_seconds=5, model="claude-opus-5-5",
+                                 effort="medium")
+        with_hud(app, later)
+        rows = "\n".join(screen(app))
+        self.assertIn("✓ Accepted 40s", rows)
+        self.assertIn("● Running 5s", rows)
+        self.assertEqual(app.pager.node, "d:r1:button", "the highlight stays on its node while that node is drawn")
+        with_hud(app, None)
+        self.assertIn("✓ Accepted 40s", "\n".join(screen(app)), "a graph that aged out leaves the last drawing")
+        self.assertEqual(client.calls, [])
 
     def test_dag_follows_the_terminals_depth(self) -> None:
         app, _client = make_app(rows=24, cols=100, environ={"NO_COLOR": "1"})
         with_hud(app, parallel(3))
         send(app, "/dag")
+        screen(app)
         self.assertTrue(all(";" not in span.style.sgr() for line in app.pager.lines for span in line))
         self.assertEqual(app.color_depth, NO_COLOR)
 

@@ -80,7 +80,10 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
              "(Esc cancels)"),
     ("Click", "On a row of the agent list, opens that agent's log (on main, only leaves the list)"),
     ("← / →, q or Esc", "In an agent's log, show the agent before or after, or go back; the pager's keys scroll it"),
-    ("j / k, Space / b, g / G, q or Esc", "In a pager (/history, /logs, /dag, an agent's log, this list), "
+    ("Tab / n, Shift+Tab / p, Space / Enter, d", "In /dag, highlight the next or the previous box, fold or unfold "
+                                                 "the highlighted one, or show or hide Node details; ↑ / ↓, "
+                                                 "PageUp / PageDown and g / G scroll, q or Esc leaves"),
+    ("j / k, Space / b, g / G, q or Esc", "In a pager (/history, /logs, an agent's log, this list), "
                                           "move a line, a page, or to either end, or leave"),
 )
 

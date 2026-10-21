@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from .keys import CHAR, DOWN, END, ESCAPE, HOME, PAGE_DOWN, PAGE_UP, UP, Key, Paste
 from .screen import HIDE_CURSOR, SYNC_BEGIN, SYNC_END, paint_line
@@ -41,6 +42,8 @@ def _move_to(row: int) -> str:
 
 @dataclass
 class Pager:
+    FOOTER_ROWS: ClassVar[int] = 1  # the rows `footer` paints under the page
+
     title: str
     lines: Sequence[Line]
     top: int = 0
@@ -54,7 +57,7 @@ class Pager:
         self._size = None
 
     def body_rows(self, rows: int) -> int:
-        return max(rows - 1, 1)
+        return max(rows - self.FOOTER_ROWS, 1)
 
     def _last_top(self, rows: int) -> int:
         return max(len(self.lines) - self.body_rows(rows), 0)
@@ -105,11 +108,18 @@ class Pager:
             self._size = (cols, rows)
         shown, position = self._page(cols, rows, theme)
         parts: list[str] = []
-        for row in range(self.body_rows(rows)):
+        body = self.body_rows(rows)
+        for row in range(body):
             self._paint(row, shown[row] if row < len(shown) else (), cols, parts)
-        footer: Line = (Span(f" {self.title} · {position} · {FOOTER_KEYS} ", theme.status),)
-        self._paint(rows - 1, footer, cols, parts)
+        footer = self.footer(position, theme)
+        for at, line in enumerate(footer):
+            if rows - len(footer) + at >= body:  # a screen too short for the footer keeps its last rows
+                self._paint(rows - len(footer) + at, line, cols, parts)
         return SYNC_BEGIN + HIDE_CURSOR + "".join(parts) + SYNC_END if parts else ""
+
+    def footer(self, position: str, theme: Theme) -> list[Line]:
+        """The `FOOTER_ROWS` rows under the page: the title, where the page is, and the keys."""
+        return [(Span(f" {self.title} · {position} · {FOOTER_KEYS} ", theme.status),)]
 
     def _paint(self, row: int, line: Line, cols: int, parts: list[str]) -> None:
         """Add screen row `row`'s bytes to `parts`, unless the last frame left this very line there."""

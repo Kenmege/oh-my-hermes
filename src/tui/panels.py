@@ -999,21 +999,22 @@ DAG_FEW_ROWS = 4  # header, root and two lanes: what it keeps while the plan sti
 def dag_style(role: str, theme: Theme, level: int = 0, levels: int = 1, depth: str = TRUECOLOR) -> Style:
     """The theme role for one piece of the delegation view (`delegation_view` names them), painted at `depth`.
 
-    An edge takes the step of the theme's gradient for its level, the top of
-    the drawing violet and its bottom blue by default; a node's border its
-    state (running the accent, done muted, failed the error colour, a node that
-    has not started dim); its title is bold; a field with no record (`?`) dim.
+    A tree's edge takes the step of the theme's gradient for its level, the
+    top of the drawing violet and its bottom blue by default. A box's border,
+    title and status take its node's state (`node_style`); the connector
+    between two frontiers is dim, and blue into a frontier with a node
+    running. A title is bold; a field with no record (`?`) dim.
     """
     kind, _, state = role.partition(":")
-    if kind == "edge" or (kind == "border" and not state):  # the root's border is where the gradient starts
+    if kind == "edge":
         steps = theme.dag_edges
         at = round(min(max(level, 0), levels - 1) / (levels - 1) * (len(steps) - 1)) if levels > 1 else 0
         style = steps[at] if steps else theme.dim
-    elif kind == "border":
-        style = {
-            "running": theme.accent, "done": theme.muted, "failed": theme.error, "stuck": theme.warn,
-            "interrupted": theme.warn,
-        }.get(state, theme.dim)
+    elif kind in ("node", "node-title"):
+        style = node_style(state, theme)
+        style = _bold(style) if kind == "node-title" else style
+    elif kind == "connector":
+        style = node_style("running", theme) if state == "running" else theme.dim
     elif kind in ("glyph", "status"):
         style = {
             "running": theme.accent, "stuck": theme.warn, "done": theme.ok, "failed": theme.error,
@@ -1023,8 +1024,22 @@ def dag_style(role: str, theme: Theme, level: int = 0, levels: int = 1, depth: s
         style = {
             "header": theme.label, "title": _bold(theme.text), "category": theme.label, "model": theme.hint,
             "unknown": theme.dim, "group": theme.hint, "more": theme.muted, "": theme.text,
+            "frontier": theme.dim, "dependency": theme.text,
         }.get(kind, theme.muted)
     return replace(style, depth=depth) if depth != style.depth else style
+
+
+def node_style(state: str, theme: Theme) -> Style:
+    """A box's colour by its node's state, from the theme's roles: selected (`/dag`'s highlight) the violet the
+    edge gradient starts at, running the blue it ends at, handed out the step between them, failed and cancelled
+    the error colour, stuck the warning colour, done the terminal's own foreground, waiting and unknown dim."""
+    steps = theme.dag_edges
+    if not steps:
+        return theme.text if state == "done" else theme.accent if state in ("selected", "running") else theme.dim
+    return {
+        "selected": steps[0], "running": steps[-1], "dispatched": steps[len(steps) // 2], "failed": theme.error,
+        "interrupted": theme.error, "stuck": theme.warn, "done": theme.text,
+    }.get(state, theme.dim)
 
 
 @dataclass
@@ -1085,16 +1100,19 @@ def dag_line(row: Sequence[Any], levels: int, theme: Theme, depth: str = TRUECOL
     )
 
 
-def dag_page_lines(payload: Any, width: int, theme: Theme, depth: str = TRUECOLOR) -> list[Line] | None:
-    """The delegation graph in this payload with four-line boxes and no height limit, for a pager; None when the
-    payload holds no active graph."""
+def dag_page_lines(
+    payload: Any, width: int, theme: Theme, depth: str = TRUECOLOR, focus: Any = None
+) -> tuple[list[Line], Any] | None:
+    """The delegation graph in this payload as `/dag` draws it: boxes with Dependencies and Node details and no
+    height limit, at `focus` (a `delegation_view.Focus`); its lines and the view, whose `boxes` the pager moves
+    through. None when the payload holds no active graph."""
     from ..plugin_bundle.omh.delegation_view import render_delegation_view
 
     graph = _delegation_graph(payload) if isinstance(payload, Mapping) else None
     if graph is None:
         return None
-    view = render_delegation_view(graph, width=max(8, width), layout="box")
-    return [dag_line(row, view.levels, theme, depth) for row in view.lines]
+    view = render_delegation_view(graph, width=max(8, width), layout="box", focus=focus)
+    return [dag_line(row, view.levels, theme, depth) for row in view.lines], view
 
 
 def _dag_lines(graph: Mapping[str, Any], budget: int, columns: int, theme: Theme, depth: str) -> list[Line]:

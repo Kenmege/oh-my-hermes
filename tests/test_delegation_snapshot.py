@@ -509,7 +509,7 @@ class HudTests(unittest.TestCase):
             self.assertEqual((status, stderr), (0, ""))
             # The harness's stdout names no encoding, so the drawing is the ASCII one.
             lines = stdout.splitlines()
-            self.assertTrue(any(line.startswith("DAG - delegation - 4 nodes - 3 edges") for line in lines), stdout)
+            self.assertIn("OMH / DAG - 3 tasks", lines, stdout)
             self.assertIn("[global] the newest conversation with delegated work", lines, "no session named")
             self.assertTrue(any("Polish HUD CLI" in line for line in lines))
             self.assertTrue(stdout.isascii())
@@ -518,7 +518,7 @@ class HudTests(unittest.TestCase):
                     ["--omh-home", str(home.omh), "--hermes-home", str(home.hermes), "hud", "--graph"],
                     output_json=False,
                 )
-            self.assertIn("DAG · delegation · 4 nodes · 3 edges", stdout)
+            self.assertIn("OMH / DAG · 3 tasks", stdout)
             self.assertIn("┌", stdout)
             status, stdout, _stderr = run_cli(
                 ["--omh-home", str(home.omh), "--hermes-home", str(home.hermes), "hud", "--graph", "--json"],
