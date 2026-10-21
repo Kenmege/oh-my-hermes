@@ -54,6 +54,24 @@ All notable changes will be documented here.
   - an English stop after `can you` (`can you stop dag ulw`).
 
   `dag ulw 주문 취소 기능 구현해줘` still runs.
+- **A conversation keeps its delegation graph across Hermes' rotating
+  compaction.** With `compression.in_place: false`, Hermes moves a
+  conversation to a new session id mid-run. The HUD graph, the TUI's agent
+  tree and `omh hud --graph` then read only the new session: its lanes
+  vanished, and a child that stopped afterwards (Hermes names the new
+  session as its parent) never read done. The graph now reads the ledger,
+  the `omh_team` record and the `omh_dag` run under every session of the
+  conversation, as the compaction links in `state.db` join them. A stop the
+  ledger could not join is matched to its child, and `omh_dag` reads it the
+  same way: a dag-ulw node whose child came back before a Hermes restart
+  reads `returned` instead of being offered, and run, again. A chat post
+  goes on from the last post any of those sessions recorded, so the run is
+  not announced again. A child whose own session rotated is read through its
+  continuation, so it shows running while its continuation runs, instead of
+  `unknown (compacted)`, which also posted it as Stopped mid-run. Its output
+  tokens (the agent view and the graph) add up over every session it wrote
+  in, instead of stopping at the rotation. Hermes' default in-place
+  compaction keeps one session id, and its graphs are unchanged.
 - **A Hermes restart no longer leaves a team part waiting four hours.** A
   helper runs inside the Hermes process that started it, and a restart ends
   it without the `subagent_stop` callback, so `omh_team` held the part as

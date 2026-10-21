@@ -315,10 +315,17 @@ def read_output_tokens(hermes_home: object, session_ids: Sequence[str]) -> dict[
     quarter-second busy wait, the path quoted so a `#` or `?` in it is not
     read as the URI's), never created, and closed before this returns.
     Hermes adds each API call's output tokens to a child's own row as the
-    call returns, so a running child's count grows here. No ids, no home, no
-    file, and any SQLite failure (a locked or half-written database, one
-    without the table) read as no counts, never as zero.
+    call returns, so a running child's count grows here. A child whose row
+    Hermes closed for compaction (`compression.in_place: false`) goes on
+    writing in a new row the gateway's frames never name, so its count is
+    the sum over every segment of it (`live_session.conversation_segments`),
+    as Hermes' own per-agent count is; that lineage is read only for such a
+    row. No ids, no home, no file, and any SQLite failure (a locked or
+    half-written database, one without the table) read as no counts, never
+    as zero.
     """
+    from ..plugin_bundle.omh.live_session import COMPACTION_END_REASON, conversation_segments
+
     if not session_ids or not isinstance(hermes_home, str) or not hermes_home:
         return {}
     try:
@@ -332,15 +339,27 @@ def read_output_tokens(hermes_home: object, session_ids: Sequence[str]) -> dict[
     except sqlite3.Error:
         return {}
     try:
+        columns = {row[1] for row in connection.execute('PRAGMA table_info("sessions")')}
+        # One of two fixed literals, never caller text.
+        reason = "end_reason" if "end_reason" in columns else "NULL"
         rows = connection.execute(
-            f"SELECT id, output_tokens FROM sessions WHERE id IN ({','.join('?' for _ in session_ids)})",
+            f"SELECT id, output_tokens, {reason} FROM sessions WHERE id IN ({','.join('?' for _ in session_ids)})",
             tuple(session_ids),
         ).fetchall()
+        counts = {str(row[0]): row[1] for row in rows if isinstance(row[1], int)}
+        for row in rows:
+            if row[2] != COMPACTION_END_REASON or not isinstance(row[1], int):
+                continue
+            segments = sorted(conversation_segments(connection, str(row[0])))
+            written = connection.execute(
+                f"SELECT output_tokens FROM sessions WHERE id IN ({','.join('?' for _ in segments)})", segments
+            ).fetchall()
+            counts[str(row[0])] = sum(found[0] for found in written if isinstance(found[0], int))
     except sqlite3.Error:
         return {}
     finally:
         connection.close()
-    return {str(row[0]): row[1] for row in rows if isinstance(row[1], int)}
+    return counts
 
 
 # ── small formatters (ports of the widget's helpers) ───────────────────────
