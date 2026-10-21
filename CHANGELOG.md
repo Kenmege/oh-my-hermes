@@ -8,15 +8,21 @@ All notable changes will be documented here.
   under it.** On the bottom rows the agent view took the working row's place
   once the turn ended, so at 12 rows with the plan and seven agents the
   composer's box moved up a row and came back down when the next turn
-  started. Once a turn ends, the view now keeps the rows the turn's last
-  frame gave it, unless it wants more rows than it did then (an agent that
-  starts, a tree that grows) or the terminal changed size, and the freed row
-  stays blank above the composer until output fills it. A view that wants
-  fewer rows still gives them up at once, and a new turn or another session
-  drops the hold. A test now pins that a finished DAG run counts at its one
-  summary line in the agents block's budget. The docs say what the DAG tree
-  takes: up to a third of the rows (8 of 24, 13 of 40), and no more rows than
-  the tree has, so a five-lane run's seven-row tree takes 7 at 24 and at 40.
+  started. Once a turn ends there, the view no longer takes the working
+  row's place: it gets the rows the slot, the menu and the composer leave
+  it, less the working rows, and never fewer than the turn's last frame gave
+  it. That place stays blank above the composer until output fills it. A
+  draft, a menu or a question that squeezed the view as the turn ended
+  gives the rows back when it closes. A view that wants more rows than it
+  did drops the hold, so it does not snap back when it wants fewer again,
+  and so does a frame drawn above the bottom rows. The cost, measured over
+  1,287 cases: at 8, 9, 12 and 13 rows with the plan, 54 idle views keep 1
+  or 2 fewer rows than before, the same 54 where the composer used to jump,
+  and each keeps at least one row (a header, a running agent or the `+N`
+  count). A test now pins that a finished DAG run counts at its one summary
+  line in the agents block's budget. The docs say what the DAG tree takes:
+  up to a third of the rows (8 of 24, 13 of 40), and no more rows than the
+  tree has, so a five-lane run's seven-row tree takes 7 at 24 and at 40.
 - **A conversation keeps its delegation graph across Hermes' rotating
   compaction.** With `compression.in_place: false`, Hermes moves a
   conversation to a new session id mid-run. The HUD graph, the TUI's agent

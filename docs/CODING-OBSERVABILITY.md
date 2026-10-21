@@ -166,12 +166,13 @@ Where it shows:
   start (8 of 24, 13 of 40), and no more rows than it has: a five-lane run's
   seven-row tree takes 7 at 24 rows and at 40, and the same run with a row
   per stage (ten rows) takes 8 at 24 and 10 at 40. Other views take at most
-  a quarter, seven from 28 rows, raised only to show every running lane. Boxes do not fit there, so
-  the tree is drawn, its done lanes giving way first to a `+N more nodes` row and its
-  running lanes kept. Once every lane has settled (done, failed, interrupted
-  or unknown, and no lane left out by the reader) and a dag-ulw run is over
-  as a run, the tree is one line, `DAG · <name> · done 5/6 · 1 failed`,
-  until the graph lingers out of the HUD.
+  a quarter, seven from 28 rows, raised only to show every running lane.
+  Boxes do not fit there, so the tree is drawn, its done lanes giving way
+  first to a `+N more nodes` row and its running lanes kept. Once every
+  lane has settled (done, failed, interrupted or unknown, and no lane left
+  out by the reader) and a dag-ulw run is over as a run, the tree is one
+  line, `DAG · <name> · done 5/6 · 1 failed`, until the graph lingers out
+  of the HUD.
 - **`/dag`** opens the graph full screen in the pager, as boxes with their
   Dependencies and Node details, redrawn from the HUD's newest read on every
   frame, so a node that starts, finishes or fails while it is open changes on
