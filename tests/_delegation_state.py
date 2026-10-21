@@ -73,6 +73,21 @@ class Homes:
         """The output tokens a session's row has counted, as Hermes' per-call deltas leave it."""
         self.execute("UPDATE sessions SET output_tokens = ? WHERE id = ?", (count, session_id))
 
+    def rotate(self, old: str, new: str, *, at: float = 0.0) -> None:
+        """Hermes' rotating compaction (`publish_compression_child`, `compression.in_place: false`).
+
+        ``old`` is closed with `compression` and ``new`` opens under it with
+        the same source, model and `model_config` (the agent's own, so a
+        delegate child's continuation keeps its `_delegate_from`), counting
+        its tokens from 0.
+        """
+        self.execute(
+            "INSERT INTO sessions (id, source, model, model_config, started_at, parent_session_id) "
+            "SELECT ?, source, model, model_config, ?, id FROM sessions WHERE id = ?",
+            (new, at, old),
+        )
+        self.execute("UPDATE sessions SET ended_at = ?, end_reason = 'compression' WHERE id = ?", (at, old))
+
     def usage(self, session_id: str, model: str, *, last_seen: float) -> None:
         self.execute(
             "INSERT INTO session_model_usage (session_id, model, api_call_count, first_seen, last_seen) "
