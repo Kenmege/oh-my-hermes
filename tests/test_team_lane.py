@@ -547,7 +547,7 @@ class ARestartHandsBackTheHelpersItEnded(TeamHarness):
 
     PID = 4242
     # The engine reads the machine only through `dispatcher_alive`, so any name stands for one here.
-    HOST = {"pid": PID, "started": 1_700_000_000, "machine": "linux:boot-1:pid:[4026531836]"}
+    HOST = {"pid": PID, "started": 1_700_000_000, "machine": "linux:0a1b2c:pid:[4026531836]", "boot": "boot-1"}
 
     def out(self, units: list[dict[str, object]], hosts: dict[str, dict[str, int] | None]) -> dict[str, object]:
         """Start the team and play `subagent_start` for each part, recording the process ``hosts`` names."""
@@ -582,7 +582,7 @@ class ARestartHandsBackTheHelpersItEnded(TeamHarness):
         self.assertEqual(self.reconcile()["team_state"], "done")
 
     def test_only_the_parts_whose_process_ended_go_out_again(self) -> None:
-        other = {"pid": 5151, "started": 1_700_000_500, "machine": "linux:boot-1:pid:[4026531836]"}
+        other = {"pid": 5151, "started": 1_700_000_500, "machine": "linux:0a1b2c:pid:[4026531836]", "boot": "boot-1"}
         self.out([unit("a", CHECK_A), unit("b", CHECK_B)], {"a": self.HOST, "b": other})
         self.restart()
         self.dispatchers.update({self.PID: False, 5151: True})
@@ -1056,7 +1056,8 @@ class TeamToolHandler(unittest.TestCase):
                                    child_goal=started["delegate_task"]["arguments"]["tasks"][0]["goal"], **hooks)
                 record = team.read_team(team.team_path(runtime_paths.default_omh_home(), self.SESSION, team_id))
                 self.assertEqual(record["units"][0]["attempts"][0]["dispatch"]["host"],
-                                 {"pid": os.getpid(), "started": 777, "machine": host_process.machine()})
+                                 {"pid": os.getpid(), "started": 777, "machine": host_process.machine(),
+                                  "boot": host_process.boot()})
                 self.team_tool._APPROVED_TEAMS.clear()  # a Hermes restart
                 # The process now running started at `later_start`: another start time is another process.
                 resumed = self.call({**self.args, "team_id": team_id},

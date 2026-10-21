@@ -494,7 +494,8 @@ class RestartTests(unittest.TestCase):
         with homes() as home:
             self.out(home, moment, probes=hermes_process(1000))
             self.assertEqual(read_ledger(home.omh, PARENT)["children"][0]["host"],
-                             {"pid": os.getpid(), "started": 1000, "machine": host_process.machine()})
+                             {"pid": os.getpid(), "started": 1000, "machine": host_process.machine(),
+                              "boot": host_process.boot()})
             with patch.object(dag_tool.time, "time", return_value=moment + 60), patch_modules(hermes_process(5000)):
                 status = call(action="status", run="feat")
                 ready = call(action="ready", run="feat")
@@ -516,6 +517,31 @@ class RestartTests(unittest.TestCase):
             with patch.object(dag_tool.time, "time", return_value=moment + 60), patch_modules(hermes_process(5000)):
                 ready = call(action="ready", run="feat")
         self.assertEqual((ready["nodes"][0]["state"], ready["calls"]), ("returned", []))
+
+    def test_two_children_under_one_pid_are_asked_about_apart_by_where_it_was_read(self) -> None:
+        """Mutation: key the per-call answer by pid and start time only."""
+        moment = time.time()
+        with homes() as home:
+            with patch_modules(hermes_process(1000)):
+                with patch.object(host_process, "machine", return_value="linux:0a1b2c:pid:[4026532999]"):
+                    start(home, "child-there", "sa-there", "[dag:feat/api] There", now=moment)
+                start(home, "child-here", "sa-here", "[dag:feat/ui] Here", now=moment + 1)
+            with patch_modules(hermes_process(5000)):
+                lost = {child["child_session_id"]: bool(child.get("lost")) for child in dag_tool._children(home.omh, [PARENT])}
+        self.assertEqual(lost, {"child-there": False, "child-here": True})
+
+    def test_a_child_from_before_a_reboot_is_lost_and_one_since_is_not(self) -> None:
+        """Mutation: key the per-call answer without the boot, or read another boot as unknown."""
+        moment = time.time()
+        with homes() as home:
+            with patch_modules(hermes_process(1000)):
+                with patch.object(host_process, "boot", return_value="boot-1"):
+                    start(home, "child-old", "sa-old", "[dag:feat/api] Old", now=moment)
+                with patch.object(host_process, "boot", return_value="boot-2"):
+                    start(home, "child-new", "sa-new", "[dag:feat/ui] New", now=moment + 1)
+                    lost = {child["child_session_id"]: bool(child.get("lost"))
+                            for child in dag_tool._children(home.omh, [PARENT])}
+        self.assertEqual(lost, {"child-old": True, "child-new": False})
 
     def test_a_running_child_and_one_with_no_recorded_process_stay_running(self) -> None:
         moment = time.time()

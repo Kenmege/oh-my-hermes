@@ -54,37 +54,57 @@ class ThisProcess(unittest.TestCase):
         for probes, started in ((hermes(started=777), 777), (hermes(started=None), None),
                                 (hermes(started="777"), None), (hermes(raises=True), None)):
             with self.subTest(started=started), patch_modules(probes):
-                self.assertEqual(host_process.this_process(),
-                                 {"pid": os.getpid(), "started": started, "machine": host_process.machine()})
+                self.assertEqual(host_process.this_process(), {"pid": os.getpid(), "started": started,
+                                                               "machine": host_process.machine(),
+                                                               "boot": host_process.boot()})
 
 
 class Machine(unittest.TestCase):
-    """Mutation: leave the pid namespace or the boot id out of the Linux machine, or drop the fallback."""
+    """Mutation: leave the machine id or the pid namespace out on Linux, or let a host name in elsewhere."""
 
-    def test_linux_names_the_boot_and_the_pid_namespace(self) -> None:
+    def linux(self, machine_id: str | None, namespace: str, node: str = "build-host") -> str:
         with tempfile.TemporaryDirectory() as folder:
-            boot = Path(folder) / "boot_id"
-            boot.write_text("4f1c0d2e-boot\n", encoding="ascii")
-            with mock.patch.object(host_process, "_BOOT_ID", boot), \
-                    mock.patch.object(host_process.os, "readlink", return_value="pid:[4026531836]"):
-                host = host_process.machine()
-            with mock.patch.object(host_process, "_BOOT_ID", boot), \
-                    mock.patch.object(host_process.os, "readlink", return_value="pid:[4026532999]"):
-                container = host_process.machine()
-        self.assertEqual(host, "linux:4f1c0d2e-boot:pid:[4026531836]")
-        self.assertNotEqual(container, host)
+            path = Path(folder) / "machine-id"
+            if machine_id is not None:
+                path.write_text(machine_id + "\n", encoding="ascii")
+            with mock.patch.object(host_process, "_PLATFORM", "linux"), \
+                    mock.patch.object(host_process, "_MACHINE_ID", path), \
+                    mock.patch.object(host_process.os, "readlink", return_value=namespace), \
+                    mock.patch.object(host_process.platform, "node", return_value=node):
+                return host_process.machine()
 
-    def test_elsewhere_the_host_name(self) -> None:
-        with mock.patch.object(host_process, "_BOOT_ID", Path("/nonexistent/boot_id")), \
-                mock.patch.object(host_process.platform, "node", return_value="build-host"):
-            self.assertEqual(host_process.machine(), "host:build-host")
+    def test_linux_names_the_machine_id_and_the_pid_namespace(self) -> None:
+        host = self.linux("0a1b2c", "pid:[4026531836]")
+        self.assertEqual(host, "linux:0a1b2c:pid:[4026531836]")
+        self.assertNotEqual(self.linux("0a1b2c", "pid:[4026532999]"), host, "a container on this host")
+        self.assertNotEqual(self.linux("9f8e7d", "pid:[4026531836]"), host, "another host")
+        self.assertEqual(self.linux("0a1b2c", "pid:[4026531836]", node="renamed"), host, "the id, not the name")
+        self.assertEqual(self.linux(None, "pid:[4026531836]"), "linux:build-host:pid:[4026531836]")
+
+    def test_elsewhere_the_platform_and_never_the_host_name(self) -> None:
+        """D-F1. A macOS host name follows the network; a record must not turn unknown when it does."""
+        names = []
+        for node in ("MacBook-Pro.local", "MacBook-Pro-2.local"):
+            with mock.patch.object(host_process, "_PLATFORM", "darwin"), \
+                    mock.patch.object(host_process.platform, "node", return_value=node):
+                names.append(host_process.machine())
+        self.assertEqual(names, ["host:darwin", "host:darwin"])
+
+    def test_the_boot_is_the_linux_boot_id_or_none(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "boot_id"
+            path.write_text("4f1c0d2e\n", encoding="ascii")
+            with mock.patch.object(host_process, "_BOOT_ID", path):
+                self.assertEqual(host_process.boot(), "4f1c0d2e")
+        with mock.patch.object(host_process, "_BOOT_ID", Path("/nonexistent/boot_id")):
+            self.assertIsNone(host_process.boot())
 
 
 class ProcessAlive(unittest.TestCase):
     """Mutation: read a pid that exists as alive under another start time, or an unknown as gone."""
 
     def setUp(self) -> None:
-        self.RECORDED = {"pid": 4242, "started": 777, "machine": host_process.machine()}
+        self.RECORDED = {"pid": 4242, "started": 777, "machine": host_process.machine(), "boot": host_process.boot()}
 
     def alive(self, probes: dict[str, object], recorded: object = None) -> bool | None:
         with patch_modules(probes):
@@ -100,9 +120,26 @@ class ProcessAlive(unittest.TestCase):
 
     def test_a_record_names_where_its_pid_was_read(self) -> None:
         self.assertEqual(host_process.recorded_process(self.RECORDED), self.RECORDED)
+        self.assertEqual(host_process.recorded_process({**self.RECORDED, "boot": None})["boot"], None)
         for where in (None, "", 7, "x" * 301):
             with self.subTest(machine=where):
                 self.assertIsNone(host_process.recorded_process({**self.RECORDED, "machine": where}))
+        for booted in ("", 7, "x" * 301):
+            with self.subTest(boot=booted):
+                self.assertIsNone(host_process.recorded_process({**self.RECORDED, "boot": booted}))
+
+    def test_another_boot_of_this_machine_is_gone(self) -> None:
+        """D-F2. Mutation: read another boot of this machine as unknown, or as gone on another machine."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "boot_id"
+            path.write_text("boot-2\n", encoding="ascii")
+            with mock.patch.object(host_process, "_BOOT_ID", path):
+                # The probes would say the pid still runs under its start time; the reboot ended it all the same.
+                self.assertIs(self.alive(hermes(started=777), {**self.RECORDED, "boot": "boot-1"}), False)
+                self.assertIs(self.alive(hermes(started=777), {**self.RECORDED, "boot": "boot-2"}), True)
+                self.assertIs(self.alive(hermes(started=777), {**self.RECORDED, "boot": None}), True)
+                self.assertIsNone(self.alive(hermes(exists=False), {**self.RECORDED, "machine": "host:another",
+                                                                     "boot": "boot-1"}))
 
     def test_what_cannot_be_told_is_unknown(self) -> None:
         here = host_process.machine()
