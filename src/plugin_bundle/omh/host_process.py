@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import platform
 import sys
 from typing import Any, Final
 import uuid
@@ -76,17 +75,17 @@ def machine() -> str:
 
     On Linux, the boot id and the pid namespace: another host, and another
     boot of this one, has another boot id, and a container has its own
-    namespace. "" when either cannot be read: nothing is recorded then, and
-    no record reads as here. On macOS the hardware UUID (`gethostuuid`), on
-    Windows the `MachineGuid` the OS keeps in the registry: neither follows
-    the network, as a host name does (macOS renames itself on a DHCP or
-    reverse-DNS change, or on a Bonjour conflict). Where that read fails,
-    and on any other platform, the host name, under its own prefix so it
-    never equals a hardware id; a renamed host then reads as unknown.
+    namespace. On macOS the hardware UUID (`gethostuuid`), on Windows the
+    `MachineGuid` the OS keeps in the registry: neither follows the network,
+    as a host name does (macOS renames itself on a DHCP or reverse-DNS
+    change, or on a Bonjour conflict), and two machines may share a name.
+    "" when that cannot be read, and on any other platform: nothing is
+    recorded then, and no record reads as here, so the caller's own bound
+    holds.
     """
     if not _PLATFORM.startswith("linux"):
         hardware = _darwin_uuid() if _PLATFORM == "darwin" else _windows_guid() if _PLATFORM == "win32" else ""
-        return (f"{_PLATFORM}:{hardware}" if hardware else f"host:{platform.node()}")[:_MACHINE_CHARS]
+        return f"{_PLATFORM}:{hardware}"[:_MACHINE_CHARS] if hardware else ""
     try:
         boot = _BOOT_ID.read_text(encoding="ascii").strip()
         namespace = os.readlink(_PID_NAMESPACE)

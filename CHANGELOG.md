@@ -11,19 +11,21 @@ All notable changes will be documented here.
   The dispatch now records that process (pid and start-time fingerprint,
   through Hermes' own `gateway.status` probes, imported when called, and
   where the pid was read: on Linux the boot id and pid namespace, on macOS
-  the hardware UUID, on Windows the `MachineGuid`, and the host name where
-  that read fails), and the first `team_start` after a restart hands back each
-  part whose process is gone: same attempt, no try spent, said as "Hermes
-  restarted while 1 part was out; it starts again." A part with no recorded
-  process, one recorded on another machine or in another container, or one
-  whose process cannot be told alive or gone, waits for the bound as before.
+  the hardware UUID, on Windows the `MachineGuid`), and the first
+  `team_start` after a restart hands back each part whose process is gone:
+  same attempt, no try spent, said as "Hermes restarted while 1 part was
+  out; it starts again." A part with no recorded process, one recorded on
+  another machine or in another container, or one whose process cannot be
+  told alive or gone, waits for the bound as before.
   On Linux the boot is part of where the pid was read, so a reboot,
   `wsl --shutdown`, `docker restart` or a recreated container also reads as
   unknown: the team part waits the four-hour bound, and a dag node stays
-  running with no bound, as before; so does a host renamed while its
-  hardware id could not be read. Hand-backs are counted apart from
-  re-emits for a slow start: after three, a part blocks as `helper_lost`
-  ("Hermes kept restarting while its helper was out"). A dag-ulw node whose
+  running with no bound, as before. Where that id cannot be read, or on
+  another platform, nothing is recorded and the hand-back is off: the team
+  part waits the four-hour bound and a dag node stays running, as before.
+  Hand-backs are counted apart from re-emits for a slow start: after three,
+  a part blocks as `helper_lost` ("Hermes kept restarting while its helper
+  was out"). A dag-ulw node whose
   child a restart ended no longer stays `running` with no bound: its ledger
   entry records the same process, and `omh_dag ready` offers the node again
   at once, at most three times per attempt, then says on every `omh_dag`

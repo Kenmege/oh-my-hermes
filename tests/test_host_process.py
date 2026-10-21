@@ -88,7 +88,7 @@ class Machine(unittest.TestCase):
         reader = "_darwin_uuid" if platform_name == "darwin" else "_windows_guid"
         with mock.patch.object(host_process, "_PLATFORM", platform_name), \
                 mock.patch.object(host_process, reader, return_value=hardware), \
-                mock.patch.object(host_process.platform, "node", return_value=node):
+                mock.patch("platform.node", return_value=node):
             return host_process.machine()
 
     def test_off_linux_a_hardware_id_that_does_not_follow_the_network(self) -> None:
@@ -103,15 +103,30 @@ class Machine(unittest.TestCase):
         self.assertEqual(self.on("win32", "6d0e4c2a-guid", "DESKTOP-1"), "win32:6d0e4c2a-guid")
         self.assertNotEqual(self.on("win32", "7e1f5d3b-guid", "DESKTOP-1"), "win32:6d0e4c2a-guid")
 
-    def test_a_failed_read_falls_back_to_the_host_name_under_its_own_prefix(self) -> None:
-        """Mutation: fall back to the platform alone, or without a prefix of its own."""
-        self.assertEqual(self.on("darwin", "", "MacBook-Pro.local"), "host:MacBook-Pro.local")
-        self.assertEqual(self.on("win32", "", "DESKTOP-1"), "host:DESKTOP-1")
-        self.assertNotEqual(self.on("darwin", "", "MacBook-Air.local"), self.on("darwin", "", "MacBook-Pro.local"))
-        # A host name that happens to read like a hardware id is still another prefix.
-        uuid_like = "11111111-2222-3333-4444-555555555555"
-        self.assertNotEqual(self.on("darwin", "", uuid_like), self.on("darwin", uuid_like, "MacBook-Pro.local"))
-        self.assertTrue(self.on("darwin", "", "darwin:" + uuid_like).startswith("host:"))
+    def test_without_a_hardware_id_nothing_is_recorded(self) -> None:
+        """Two machines that share a name must never read as one, so a host name is never the identity.
+
+        Mutation: fall back to the host name, or to the platform alone.
+        """
+        for platform_name, node in (("darwin", "MacBook-Pro.local"), ("win32", "DESKTOP-1"), ("freebsd14", "box")):
+            with self.subTest(platform=platform_name):
+                self.assertEqual(self.on(platform_name, "", node), "")
+                with mock.patch.object(host_process, "_PLATFORM", platform_name), \
+                        mock.patch.object(host_process, "_darwin_uuid", return_value=""), \
+                        mock.patch.object(host_process, "_windows_guid", return_value=""), \
+                        patch_modules(hermes()):
+                    self.assertIsNone(host_process.this_process())
+
+    def test_a_host_name_record_never_reads_as_here(self) -> None:
+        """A `host:` record, which nothing writes, is unknown even under this machine's own name."""
+        import platform
+
+        status = hermes(exists=False)
+        for here in ("darwin:11111111-2222-3333-4444-555555555555", ""):
+            with self.subTest(here=here), mock.patch.object(host_process, "machine", return_value=here), \
+                    patch_modules(status):
+                self.assertIsNone(host_process.process_alive(
+                    {"pid": 4242, "started": 777, "machine": f"host:{platform.node()}"}))
 
     def test_gethostuuid_is_read_through_libc_with_a_bounded_wait(self) -> None:
         """Mutation: accept a non-zero return, or pass a zero wait (gethostuuid(2): wait indefinitely)."""
@@ -135,6 +150,9 @@ class Machine(unittest.TestCase):
                 self.assertEqual(host_process._darwin_uuid(), "")
         self.assertTrue(all(seconds > 0 or nanoseconds > 0 for seconds, nanoseconds in calls))
         with mock.patch.object(ctypes, "CDLL", side_effect=OSError("no libc")):
+            self.assertEqual(host_process._darwin_uuid(), "")
+        # A libc without `gethostuuid`: the symbol lookup raises AttributeError.
+        with mock.patch.object(ctypes, "CDLL", return_value=SimpleNamespace()):
             self.assertEqual(host_process._darwin_uuid(), "")
 
     @unittest.skipUnless(sys.platform == "darwin", "reads this Mac's own hardware UUID")
