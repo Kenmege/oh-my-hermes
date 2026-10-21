@@ -222,8 +222,8 @@ def resolve_ulw_alias(message: str, *, allow_containment: bool = False) -> dict[
 
 
 def _head_reports_or_asks(raw: str) -> bool:
-    """Whether the words after a bare leading engine name report on it or ask about it ("team failed again",
-    "ralph broke my build"): about the engine, not a request to run it (`name_report_cues`)."""
+    """Whether the words after a bare leading engine name report on it or ask about it ("ralph broke my build",
+    "team stop", "ultragoal done?"): about the engine, not a request to run it (`name_report_cues`)."""
     parts = raw.split(None, 1)
     if len(parts) < 2 or parts[0].endswith((":", ",")):
         return False

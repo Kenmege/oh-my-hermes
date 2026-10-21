@@ -112,7 +112,10 @@ class RouterTests(unittest.TestCase):
                         "/dag-ulw broke the build, fix it", "dag ulw failed again, rerun it", "dag ulw why the build is failing",
                         # Work on a cancel, named as such.
                         "dag ulw 결제 취소 처리 로직 구현해줘", "dag ulw 취소 버튼 만들어줘", "dag ulw cancel order flow",
-                        "dag ulw add a cancel button", "dag ulw 취소 버튼 눌러도 안 멈추는 버그 고쳐줘"):
+                        "dag ulw add a cancel button", "dag ulw 취소 버튼 눌러도 안 멈추는 버그 고쳐줘",
+                        "dag ulw kill switch for flags",
+                        # A request after a use clause, or the name said again as the request.
+                        "dag ulw 돌리고 나서 PR 올려", "dag ulw failed, dag ulw it again"):
             with self.subTest(message=message):
                 route = route_chat_message(message, source="discord")
                 self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "dag-ulw"))
@@ -315,6 +318,8 @@ class RouterTests(unittest.TestCase):
                   # run goes on.
                   "dag ulw 작업 중단 걸어줘", "dag ulw 중단 걸어줘", "dag ulw 작업 취소 처리 좀",
                   "dag ulw 취소 버튼 눌렀는데 계속 돌아가",
+                  # A stop with its reason after it.
+                  "dag ulw stop, too expensive", "dag ulw cancel, wrong task",
                   "dag ulw 취소했는데 계속 돌아가", "dag ulw 취소했는데 아직 안 멈춰", "dag ulw 취소 눌렀는데 계속 돌아가",
                   "dag ulw 멈춤",
                   "dag ulw 취소해 주시겠어요?", "dag ulw 취소해주실래요",

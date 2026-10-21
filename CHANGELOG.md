@@ -5,33 +5,43 @@ All notable changes will be documented here.
 ## Unreleased
 
 - **A complaint, a question or a stop that opens with a skill's name no
-  longer runs the skill.** `ultrawork broke my build`, `dag ulw failed
-  again`, `ralplan 때문에 빌드 깨졌어`, `maestro failed again`, `ultraqa 또
-  실패했어`, `code-review 결과가 이상해`, `ralph broke my build`, `ultrawork
-  이거 어떻게 써`, `ultrawork stop` and `loop 멈춰` are answered directly, and
-  Hermes' route hint neither offers the skill nor calls it explicitly invoked.
+  longer runs the skill, in the shapes measured.** `ultrawork broke my
+  build`, `dag ulw failed again`, `ralplan 때문에 빌드 깨졌어`, `maestro failed
+  again`, `ultraqa 또 실패했어`, `code-review 결과가 이상해`, `ralph broke my
+  build`, `ultrawork 이거 어떻게 써`, `ultrawork still running?`, `ultrawork
+  stop`, `ultrawork stop, too expensive` and `loop 멈춰` are answered
+  directly, and Hermes' route hint neither offers the skill nor calls it
+  explicitly invoked. The reading is `name_report_cues` in the plugin
+  bundle, which the router, the retired-engine aliases and the route hint
+  share:
+  - the name, or the skill's own output, is the subject of a finite verb
+    (`broke`, `failed again`, `is too slow`, `output was wrong`);
+  - a Korean predicate after it is a complaint, negated or past (`너무
+    느려`, `안 돼`, `또 실패했어`);
+  - the name is the cause (`때문에`);
+  - a stop word is all there is, said once or twice or with its reason
+    after it;
+  - a question asks about the skill.
   A report counts only after a name that can mean nothing but the skill (a
   coined name such as ultrawork, or a hyphenated id such as code-review): a
   name that is also a word may open a sentence about the person's own thing
   (`frontend is broken on safari`, `code review takes forever`), which keeps
-  its route. The
-  reading is `name_report_cues` in the plugin bundle, which the router, the
-  retired-engine aliases and the route hint share: the name, or the skill's
-  own output, is the subject of a finite verb (`broke`, `failed again`, `is
-  too slow`, `output was wrong`); a Korean predicate after it is a complaint,
-  negated or past (`너무 느려`, `안 돼`, `또 실패했어`); the name is the cause
-  (`때문에`); or a stop word is all there is. A request still runs the skill:
-  `ultrawork fix the broken build`, `dag ulw the build that broke`, `ralplan
-  the failed migration`, `ultrawork failed again, rerun it`, `ultrawork the
-  build is broken`, and every sigil form (`/dag-ulw broke the build, fix
-  it`). After dag-ulw, ultrawork and maestro, which only run work, any
-  question is answered (`dag ulw 결제 api 뭐야`, `dag ulw run finished, now
-  what`); after another skill only a question about the skill itself is,
-  since a question may be its work. A stop of the dag-ulw run said as an act
-  after words that may name the work (`dag ulw 결제 취소 처리해줘`, `결제 작업
-  중단 걸어줘`, `취소 버튼 눌러줘`) and an English stop word beside such words
-  (`dag ulw cancel order`, `dag ulw order cancel`) now ask which (owner
-  decision O7).
+  its route. After dag-ulw, ultrawork and maestro a question that opens
+  with a question word is answered whatever it asks (`dag ulw 결제 api 뭐야`),
+  and after ralplan unless it deliberates the work (`ralplan how should we
+  split the billing refactor` still plans). After a skill whose work is
+  answering what is running, wrong or left, that question is its work
+  (`app-debugging what's wrong`). A request still runs the skill:
+  `ultrawork fix the broken build`, `dag ulw the build that broke`,
+  `ultrawork failed again, rerun it`, `… one more time`, `… 다시`, the name
+  said again (`ultrawork failed again, ultrawork it again`), a request after
+  a use clause or credit (`ultrawork 하고 나서 배포해`, `ultrawork 덕분에 빨리
+  끝났어, 결제 모듈도 이렇게 해줘`), and every sigil form (`/dag-ulw broke the
+  build, fix it`). A stop of the dag-ulw run said as an act after words that
+  may name the work (`dag ulw 결제 취소 처리해줘`, `결제 작업 중단 걸어줘`,
+  `취소 버튼 눌러줘`) and an English stop word beside such words (`dag ulw
+  cancel order`) now ask which (owner decision O7).
+
 - **dag-ulw routing reads remarks, bug reports, questions and polite requests
   as what they are.** The router and Hermes' route hint read the same
   `dag_ulw_cues`, so each change holds on both paths. `can you dag ulw the

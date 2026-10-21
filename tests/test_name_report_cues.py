@@ -96,7 +96,13 @@ class RouteTests(unittest.TestCase):
                         "ralph broke my build", "ultrawork 때문에 생긴 버그 고쳐줘", "build-failure-triage hung again",
                         # A stop or a question about the skill, whatever its name.
                         "ultrawork 이거 어떻게 써", "research how does it work", "wiki what is it", "ultrawork 결제 api 뭐야",
-                        "ultrawork stop", "loop 멈춰", "team stop"):
+                        "ultrawork stop", "loop 멈춰", "team stop",
+                        # A yes-or-no question after an engine, a stop with its reason or said twice, what is going on
+                        # after ralplan, and a question that asks ralplan for no plan.
+                        "ultrawork still running?", "ultrawork 써도 돼?", "ultrawork stop, too expensive",
+                        "ultrawork 멈춰 멈춰", "ralplan what's going on", "ralplan 결제 api 뭐야",
+                        # A question about the skill itself after one whose work is answering questions.
+                        "app-debugging what is it", "running-work-board 이거 어떻게 써"):
             with self.subTest(message=message):
                 self.assertIsNone(explicit_skill_invocation(message))
                 route = route_chat_message(message, source="discord")
@@ -106,6 +112,17 @@ class RouteTests(unittest.TestCase):
                 context = awareness_route_hint_context_from_payload(payload)
                 self.assertNotIn("explicitly invoked", context)
                 self.assertNotIn("Start at once", context)
+
+    def test_the_hint_reads_the_colon_and_dag_ulws_own_words_as_the_router_does(self) -> None:
+        # A colon after the name addresses the skill, so the hint still names it invoked; a question about a dag-ulw
+        # run's result is answered, and the hint offers no ultrawork run for its leading `ulw`.
+        payload = awareness_route_hint("ultrawork: broke my build")
+        self.assertEqual([hint["workflow"] for hint in payload["hints"]], ["ulw-work"])
+        self.assertIn("explicitly invoked", awareness_route_hint_context_from_payload(payload))
+        for message in ("ulw dag 결과 정리해줘", "ulw dag 결과 보고서 써줘"):
+            with self.subTest(message=message):
+                self.assertEqual(route_chat_message(message, source="discord")["action"], "fallback")
+                self.assertEqual(awareness_route_hint(message)["hints"], [])
 
     def test_a_report_after_a_name_that_is_also_a_word_keeps_its_route(self) -> None:
         # "frontend", "loop", "plan" may be the person's own frontend, loop or plan, and "code review" written with
@@ -128,7 +145,18 @@ class RouteTests(unittest.TestCase):
                                ("/ultrawork broke my build", "ultrawork"),
                                ("$code-review 결과가 이상해", "code-review"),
                                ("use ultrawork, it broke my build", "ultrawork"),
-                               ("research kubernetes operator patterns for this design", "research")):
+                               ("research kubernetes operator patterns for this design", "research"),
+                               # A request after a use clause, after credit, as the name said again, or as "again".
+                               ("ultrawork 하고 나서 배포해", "ultrawork"),
+                               ("ultrawork 덕분에 빨리 끝났어, 결제 모듈도 이렇게 해줘", "ultrawork"),
+                               ("ultrawork failed again, ultrawork it again", "ultrawork"),
+                               ("ultrawork failed again, one more time", "ultrawork"),
+                               ("ultrawork 또 실패했어, 다시", "ultrawork"),
+                               # A question that deliberates the work is ralplan's, and a status question is the work
+                               # of a skill that answers it.
+                               ("ralplan how should we split the billing refactor", "ralplan"),
+                               ("app-debugging what's wrong", "app-debugging"),
+                               ("running-work-board what's running", "running-work-board")):
             with self.subTest(message=message):
                 self.assertEqual(explicit_skill_invocation(message), skill)
                 route = route_chat_message(message, source="discord")

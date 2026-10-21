@@ -27,7 +27,7 @@ import re
 import unicodedata
 from typing import Final
 
-from .name_report_cues import asks_after_the_name, reports_on_the_name
+from .name_report_cues import asks_after_the_name, asks_for_something, reports_on_the_name
 
 DAG_ULW: Final = "dag-ulw"
 
@@ -191,7 +191,7 @@ _EN_STOP_AFTER_NAME: Final = re.compile(
 _EN_WORK_WORD: Final = re.compile(
     r"\b(?:add|implement|build|create|make|write|fix|refactor|support|design|migrate|handle|handling|test|tests"
     r"|button|feature|flow|endpoint|api|handler|logic|page|ui|function|method|module|service|bug|issue|dto|schema"
-    r"|query|filter|words?|tokens?|signals?|conditions?)\b"
+    r"|query|filter|words?|tokens?|signals?|conditions?|switch(?:es)?|flags?|toggles?)\b"
 )
 _STATUS: Final = re.compile(
     rf"{_NAME}[\s,:]*(?:status|progress|logs?)(?:\s+(?:please|now|of\s+the\s+(?:run|dag|graph)))*\s*[.!?]*$"
@@ -212,6 +212,9 @@ def dag_ulw_control(text: str) -> str:
     folded = _folded(text)
     if _STOP.search(folded):
         return "cancel"
+    first = re.match(r"^(.*?)\s*[,;.!?~]+\s*(\S.*)$", folded)
+    if first and _STOP.search(first.group(1)) and not asks_for_something(", " + first.group(2)):
+        return "cancel"  # "dag ulw stop, too expensive": a stop, then why
     if _STATUS.search(folded):
         return "status"
     if _STOP_THEN_WORK.search(folded):
@@ -283,7 +286,7 @@ def reports_or_asks_after_the_name(text: str) -> bool:
     if not bare or dag_ulw_control(folded):
         return False
     rest = folded[bare.end() :]
-    return reports_on_the_name(rest) or asks_after_the_name(rest, about_anything=True)
+    return (not re.search(_NAME, rest) and reports_on_the_name(rest)) or asks_after_the_name(rest, about_anything=True)
 
 
 def asks_about_dag_ulw(text: str) -> bool:

@@ -6387,7 +6387,7 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
         hints = [_dag_ulw_control_hint(control)] if hint_limit else []
     elif _opens_with_a_report_on_a_name(routing_normalized):
         # A complaint or a question about the skill the message opens with ("ultrawork broke my build", "research
-        # failed again", "code-review 결과가 이상해"): the router answers it, so no hint offers a run either.
+        # how does it work", "code-review 결과가 이상해"): the router answers it, so no hint offers a run either.
         hints = []
     hints = [_route_hint_with_coding_route_decision(hint, routing_normalized) for hint in hints]
     hints = [_route_hint_with_action_labels(hint) for hint in hints]

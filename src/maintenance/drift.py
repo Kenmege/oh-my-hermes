@@ -755,7 +755,13 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # question after dag ulw; ultrawork stop. Three stop words beside
             # other words after dag ulw, each a run on main, ask which (O7):
             # 결제 취소 처리해줘, 취소 버튼 눌러줘, cancel order (3).
-            expected=936,
+            # The review adds nine, each answered: a yes-or-no question
+            # after ultrawork, in English and Korean (2); a stop with its
+            # reason after ultrawork and after dag ulw, and one said twice
+            # (3); what is going on after ralplan and a factual question
+            # after it (2); what app-debugging is (1); and a build broken
+            # after using ultrawork, still a report (1) (9).
+            expected=945,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1124,7 +1130,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # ultrawork failed again then rerun it, dag ulw 또 실패했어 then
             # 다시 돌려줘, dag ulw 실패한 테스트 고쳐줘, and ultrawork the
             # build is broken (8).
-            expected=955,
+            # The review adds ten, each dispatched on main too: a question
+            # that deliberates the work after ralplan (1); a use clause then
+            # a request, for ultrawork and dag ulw (2); credit then a
+            # request for more (1); the name said again as the request (1);
+            # a report then one more time, or 다시 (2); a status question
+            # to app-debugging and running-work-board, whose work it is (2);
+            # and a kill switch for flags with dag ulw (1) (10).
+            expected=965,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

@@ -24,17 +24,25 @@ broke my build", "dag ulw failed again", "ralplan 때문에 빌드 깨졌어", "
   whatever comes before it ("결제 모듈 리팩터링 끝났어?");
 - the name is the cause ("때문에 빌드 깨졌어", "탓에 다 꼬였어"), even with a request after it: "dag ulw 때문에 생긴
   버그 고쳐줘" asks for a fix, not for the skill that caused the bug. So is a use of the skill before what happened
-  ("쓰니까 빌드 깨졌어", "돌렸더니 망가졌어"), when nothing is asked for.
-A stop is no request, so "dag ulw hung, kill it" still reports.
+  ("쓰니까 빌드 깨졌어", "돌렸더니 망가졌어") when nothing is asked for and what follows is a past, a complaint or a
+  negation; "하고 나서 배포해" asks for the run first. Credit (덕분에) reports only when nothing is asked for: "덕분에 빨리
+  끝났어, 결제 모듈도 이렇게 해줘" asks for more of the same.
+A stop is no request, so "dag ulw hung, kill it" still reports. A clause that only asks again is one ("…, one more
+time", "…, 다시"), and so is the name said again ("ultrawork failed again, ultrawork it again").
 
-`stops_the_name(rest)` reads a stop word with nothing else ("ultrawork stop", "loop 계속 멈춰"): about the run in
+`stops_the_name(rest)` reads a stop word with nothing else, said once or twice ("ultrawork stop", "loop 계속 멈춰",
+"ultrawork 멈춰 멈춰"), or followed by clauses that ask for nothing ("ultrawork stop, too expensive"): about the run in
 progress, which a new run of the skill would not stop.
 
 `asks_after_the_name(rest)` reads a question: a question word that opens a question rather than a clause of its own
 ("why is the build failing", not "why the build is failing"; "왜 깨졌어", not "왜 깨지는지"), with nothing asked for.
 After most skills only a question about the skill itself counts ("what is it", "how does it work", "이거 어떻게 써",
 "결과 어디 있어"), since a skill may be asked a question as its work ("research what are the best vector databases").
-After a skill that only runs work (`RUN_ONLY_SKILLS`) any question does.
+After a skill that only runs work (`RUN_ONLY_SKILLS`) any question that opens with a question word does, and after
+another coined name too unless it deliberates the work ("ralplan 결제 api 뭐야" is answered, "ralplan how should we
+split the billing refactor" plans). After a coined name a question that ends in a question mark and asks for nothing
+is answered whatever it opens with ("ultrawork still running?"). After a skill whose own work is answering what is
+running, wrong or left (`QUESTION_IS_THE_WORK`), such a question is its work ("app-debugging what's wrong").
 
 `about_the_skill(name, rest)` is what the callers read: a stop, a question, or a report after a name that can only
 mean the skill (`COINED_NAMES`, or a hyphenated id written with its hyphens). A name that is also an ordinary word
@@ -131,13 +139,18 @@ _EN_REQUEST_VERBS: Final = frozenset(
      "resolve", "handle", "sort", "rewrite", "split", "review", "test", "retest", "rebuild", "reset", "remove",
      "delete", "get", "take", "complete", "salvage", "recover", "rescue", "reopen", "close", "refactor", "migrate",
      "execute", "apply", "proceed", "carry", "follow", "begin", "kick", "launch", "push", "land", "publish", "release",
-     "commit", "approve", "keep"}
+     "commit", "approve", "keep", "pick"}
 )
+# A clause that only asks for the run again ("…, one more time", "…. again.", "…, another try").
+_EN_AGAIN_ONLY: Final = frozenset({"again", "one", "more", "time", "once", "pass", "another", "try", "go", "shot", "round",
+                                   "two", "attempt"})
+_KO_AGAIN_ONLY: Final = frozenset({"다시", "한", "번", "한번", "더", "재실행", "재시도", "이어서", "마저", "또", "계속"})
 
 # ── Korean ───────────────────────────────────────────────────────────────
 
 # The name as the cause of what happened.
-_KO_CAUSE: Final = re.compile(r"^(?:때문에|때문|땜에|땜시|때매|때메|탓에|탓|덕분에|덕에|(?:으)?로\s*인(?:해|한))(?![가-힣])")
+_KO_CAUSE: Final = re.compile(r"^(?:때문에|때문|땜에|땜시|때매|때메|탓에|탓|(?:으)?로\s*인(?:해|한))(?![가-힣])")
+_KO_CREDIT: Final = re.compile(r"^(?:덕분에|덕에)(?![가-힣])")
 # A use of the skill before what happened: "쓰니까", "돌렸더니", "돌리다가", "실행했는데".
 _KO_USE_CLAUSE: Final = re.compile(
     r"^(?:을|를)?\s*(?:쓰|써|썼|돌리|돌렸|실행하|실행했|했|하)(?:니까|니|더니|는데|다가|고\s*나서|고\s*나니)(?![가-힣])"
@@ -246,7 +259,7 @@ _EN_ABOUT_IT: Final = frozenset(
      "with", "about", "up", "there", "here", "now", "next", "work", "works", "working", "use", "using", "cost",
      "costs", "mean", "means", "doing", "done", "take", "takes", "cancel", "stop", "finish", "finished", "running",
      "left", "happen", "happened", "happening", "going", "go", "get", "got", "help", "wrong", "much", "long", "status",
-     "then", "anyway", "exactly", "even", "supposed", "be", "need", "start", "started", "started?"}
+     "then", "anyway", "exactly", "even", "supposed", "be", "need", "start", "started", "started?", "on"}
 )
 _KO_ABOUT_IT: Final = re.compile(
     r"^(?:이거|이건|이게|그거|그건|그게|저거|얘|쟤|나|내가|우리|이제|지금|다|써|쓰는|쓰면|써야|쓰는\s*거|사용|사용해|사용하는|돌아|돌아가|"
@@ -285,10 +298,14 @@ def asks_for_something(rest: str) -> bool:
         words = [word for word in _EN_WORD.findall(clause) if word not in _EN_CLAUSE_FILLERS]
         if words and words[0] in _EN_REQUEST_VERBS:
             return True
+        if words and set(words) <= _EN_AGAIN_ONLY and set(words) & {"again", "more", "another", "round"}:
+            return True
     for clause in re.split(r"[,;.!?~]+", folded):
         words = _words(clause)
         if not words or _KO_STOP.search(words[-1]):
             continue
+        if set(words) <= _KO_AGAIN_ONLY:
+            return True
         if _KO_REQUEST.search(words[-1]):
             return True
         # A casual 해 or 돌려 is a request unless a negation or a question word comes right before it ("작동 안 해",
@@ -379,11 +396,30 @@ def _korean_reports(words: list[str], question: bool) -> bool:
     return bool(
         any(word in _KO_DEGREE for word in before)
         or _KO_NEGATED.search(" ".join(words))
-        or any(_KO_COMPLAINT_NOUN.match(word) or _KO_COMPLAINT.search(word) for word in before)
+        or any(
+            (_KO_COMPLAINT_NOUN.match(word) or _KO_COMPLAINT.search(word)) and not word.endswith("면") for word in before
+        )
     )
 
 
-def asks_after_the_name(rest: str, *, about_anything: bool = False) -> bool:
+# Skills whose own work is answering a question about what is running, what is wrong or what is left: after one of
+# these only a question about the skill itself counts ("app-debugging what's wrong" asks for its work).
+QUESTION_IS_THE_WORK: Final = frozenset(
+    {"running-work-board", "harness-session-inventory", "skill-health", "doctor", "cancel", "live-incident-response",
+     "verification-gate", "app-debugging", "build-failure-triage", "native-debugging", "failure-signal-audit",
+     "production-audit", "workspace-audit", "security-event-response", "deploy-and-monitor", "run-efficiency"}
+)
+_EN_RUN_STATE: Final = frozenset(
+    {"up", "there", "here", "now", "next", "doing", "done", "finished", "finish", "running", "left", "happen",
+     "happened", "happening", "going", "go", "get", "got", "wrong", "status", "then", "anyway", "exactly", "even",
+     "start", "started", "started?", "on"}
+)
+_KO_RUN_STATE: Final = re.compile(
+    r"^(?:이제|지금|다|돌아|돌아가|돌아가는|돌려|끝나|끝나는|끝날|문제|문제야|문제가|상태|상태가|있어|남았어|걸려|걸리|개|된|된\s*거|되는|되는\s*거)\S{0,2}$"
+)
+
+
+def asks_after_the_name(rest: str, *, about_anything: bool = False, run_state: bool = True) -> bool:
     """Whether ``rest``, the words after a skill's bare name at the head of a message, ask a question and nothing
     else: about the skill itself, or with ``about_anything`` about anything ("dag ulw 결제 api 뭐야")."""
     folded = _folded(rest)
@@ -394,8 +430,8 @@ def asks_after_the_name(rest: str, *, about_anything: bool = False) -> bool:
         if not any(_KO_WH.match(word) for word in words) or _KO_EMBEDDED_QUESTION.search(words[-1]):
             return False
         return about_anything or all(
-            _KO_WH.match(word) or word in _KO_ADVERBS or _KO_OWN_WORD.match(word) or _KO_ABOUT_IT.match(word)
-            or _has_past(word)
+            _KO_WH.match(word) or (run_state and (word in _KO_ADVERBS or _KO_OWN_WORD.match(word) or _has_past(word)))
+            or (_KO_ABOUT_IT.match(word) and (run_state or not _KO_RUN_STATE.match(word)))
             for word in words
         )
     words = _EN_WORD.findall(folded)
@@ -403,8 +439,10 @@ def asks_after_the_name(rest: str, *, about_anything: bool = False) -> bool:
         words and words[0] in _EN_WH and not (len(words) > 1 and words[1] in _EN_EMBEDDED_SUBJECT)
     ):
         return False
+    about_it = _EN_ABOUT_IT if run_state else _EN_ABOUT_IT - _EN_RUN_STATE
     return about_anything or all(
-        word in _EN_WH or word in _EN_ABOUT_IT or word in _EN_ADVERBS or word in _EN_OWN_WORDS for word in words
+        word in _EN_WH or word in about_it or (run_state and (word in _EN_ADVERBS or word in _EN_OWN_WORDS))
+        for word in words
     )
 
 
@@ -416,7 +454,12 @@ def stops_the_name(rest: str) -> bool:
     if _STOP_ALONE.match(folded):
         return True
     words = _words(folded)
-    return bool(words) and bool(_KO_STOP.match(words[-1])) and all(word in _KO_ADVERBS for word in words[:-1])
+    if words and all(re.fullmatch(r"stop|cancel|abort|halt|kill|멈춰|그만|그만해|취소|중단|중지|정지", word) for word in words):
+        return True
+    if bool(words) and bool(_KO_STOP.match(words[-1])) and all(word in _KO_ADVERBS for word in words[:-1]):
+        return True
+    parts = re.split(r"\s*[,;.!?~]+\s*", folded, maxsplit=1)
+    return len(parts) == 2 and bool(parts[1]) and stops_the_name(parts[0]) and not asks_for_something(", " + parts[1])
 
 
 def about_the_skill(name: str, rest: str) -> bool:
@@ -424,8 +467,24 @@ def about_the_skill(name: str, rest: str) -> bool:
     about it, or report on it, rather than ask to run it. A report counts only after a name that can mean nothing
     but the skill (`COINED_NAMES`, or a name with its hyphens)."""
     written = _folded(name)
-    if stops_the_name(rest) or asks_after_the_name(rest, about_anything=written.replace(" ", "-") in RUN_ONLY_SKILLS):
+    key = written.replace(" ", "-")
+    run_only = key in RUN_ONLY_SKILLS
+    deliberates = re.search(
+        r"\b(?:should|shall|best\s+way|how\s+(?:do|can|could|would)\s+(?:we|i))\b|어떻게\s*(?:\S+\s+)?(?:나눠|나누|해야|하면|할까|진행)",
+        _folded(rest),
+    )
+    if stops_the_name(rest) or asks_after_the_name(
+        rest,
+        about_anything=run_only or (written in COINED_NAMES and not deliberates),
+        run_state=key not in QUESTION_IS_THE_WORK,
+    ):
         return True
+    # A1: a yes-or-no question after an engine's name asks about it, as one after dag-ulw's does ("ultrawork safe
+    # to use on prod?", "ultrawork still running?", "ultrawork 써도 돼?").
+    if (run_only or written in COINED_NAMES) and _folded(rest).endswith(("?", "？")) and not asks_for_something(rest):
+        return True
+    if re.search(rf"(?<![a-z0-9_-]){re.escape(written)}(?![a-z0-9_-])", _folded(rest)):
+        return False  # the name again: "ultrawork failed again, ultrawork it again"
     return (("-" in written and " " not in written) or written in COINED_NAMES) and reports_on_the_name(rest)
 
 
@@ -439,8 +498,13 @@ def reports_on_the_name(rest: str) -> bool:
         return True
     if asks_for_something(folded):
         return False
-    if _KO_USE_CLAUSE.match(folded):
+    if _KO_CREDIT.match(folded):
         return True
+    use = _KO_USE_CLAUSE.match(folded)
+    if use:
+        tail = _words(folded[use.end():])
+        if not tail or _has_past(tail[-1]) or _KO_COMPLAINT.search(tail[-1]) or _KO_NEGATED.search(" ".join(tail)):
+            return True
     first_clause = re.split(r"[,;.!?]+", folded, maxsplit=1)[0]
     words = _words(first_clause)
     if not words:

@@ -2163,7 +2163,7 @@ def _route_chat_message_cached(
     if not routing_message.strip():
         return _direct_answer_decision(message, source=source, min_confidence=min_confidence).to_dict()
     # A complaint or a question that opens with a skill's bare name ("ultrawork broke my build", "code-review 결과가
-    # 이상해", "team failed again", "ultrawork 이거 어떻게 써") is about that skill, not a request to run it. It is
+    # 이상해", "ralph broke my build", "ultrawork 이거 어떻게 써") is about that skill, not a request to run it. It is
     # answered, as a question about dag-ulw is, before a fast path or the scorer reads the name as the skill's own
     # phrase. The route hint reads the same functions (`awareness._opens_with_a_report_on_a_name`).
     if bare_name_reports_or_asks(
