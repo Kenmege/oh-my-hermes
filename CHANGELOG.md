@@ -27,8 +27,9 @@ All notable changes will be documented here.
   취소`, `dag ulw 업로드 중단`) no longer cancels the run in progress, and a
   verb-form cancel after more than three words no longer starts one. Both
   start nothing: the router clarifies and the hint asks one question naming
-  both readings (owner decision O7). These cancel; the polite and casual endings and
-  `그만 돌려` started a run on main, and `can you stop dag ulw` clarified:
+  both readings (owner decision O7). These cancel; the polite and casual
+  endings and `그만 돌려` started a run on main, and `can you stop dag ulw`
+  clarified:
   - a verb ending, plain or polite (`주문 취소해줘`, `취소하세요`,
     `취소 부탁해`, `취소 좀 해줘`, `그만 돌려`);
   - the bare noun or a stop adverb (`취소`, `바로 취소`, `즉시 중단`);
@@ -37,6 +38,23 @@ All notable changes will be documented here.
   - an English stop after `can you` (`can you stop dag ulw`).
 
   `dag ulw 주문 취소 기능 구현해줘` still runs.
+- **A child's answering model is judged on its own calls, not Hermes'
+  auxiliary ones.** Hermes records a compression or vision call in
+  `session_model_usage` under a non-empty `task`, on the aux route's model.
+  The HUD's served-model check counted those rows. One compression call on
+  another model turned a child's `agreement` into
+  `unknown/multiple_usage_models`, and a child whose only rows were auxiliary
+  read as a `disagreement` with the model it asked for. The answering model,
+  its count, and the model the HUD row and the delegation graph show for a
+  child whose session row names none now read only rows with an empty
+  `task`. Tokens, calls and recorded cost still sum every row, because
+  auxiliary calls are real spend, and a child whose only calls were
+  auxiliary is still priced at the model they ran on. One approximate figure
+  moves: a child whose session row names no model, with its own calls on one
+  model and an auxiliary call on another, now gets the model, category and
+  `~$` estimate that a child whose session row names that model already got.
+  Before, it got none, or `$0.0000 (unknown)`. A `state.db` without the
+  `task` column reads as before.
 - **A skill body edit no longer rewrites the six host installer directories.**
   Every `.<host>/install.sh`, `install.ps1` and `manifest.json` embedded the
   full per-file SHA256 list, the installers twice, so a one-line `SKILL.md`
