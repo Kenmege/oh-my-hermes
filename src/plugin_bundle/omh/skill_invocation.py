@@ -98,9 +98,12 @@ def affirmative_marked_request(message, name, names):
             }
             if complement in nominal_complements.get(command, set()):
                 return False
-            # Bare Korean action nouns need an imperative ending when followed
-            # by more text; 사용 예시 / 실행 기록 are noun phrases.
-            if command in {"사용", "실행", "부탁"} and not re.fullmatch(r"해(?:줘|요|주세요)?|하(?:자|세요|라)|합시다", complement):
+            # Bare action nouns need an imperative or courtesy request next;
+            # 사용 예시 / 실행 기록 remain descriptions rather than requests.
+            if command in {"사용", "실행", "부탁"} and not re.fullmatch(
+                r"해(?:줘|요|주세요)?|하(?:자|세요|라)|합시다|부탁(?:해(?:줘|요)?|드립니다|드려요|합니다)",
+                complement,
+            ):
                 return False
     candidates = marker_candidates(words, names)
     if candidates != [name]:
