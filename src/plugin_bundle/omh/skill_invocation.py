@@ -54,6 +54,46 @@ def marker_candidates(words, names, aliases=None):
     return candidates
 
 
+def _english_command_arguments(words):
+    """An operation has arguments; a bare unknown noun may instead name metadata.
+
+    Recognize argument structure, never a vocabulary of metadata or styles. A
+    trailing courtesy cannot promote an otherwise ambiguous nominal compound.
+    """
+    if not words:
+        return True
+    if all(word in {"please", "pls", "plz", "kindly"} for word in words):
+        return True
+    head = words[0]
+    if head in {"with", "from", "using", "to", "for", "in", "on", "at", "by", "into", "the", "a", "an", "this", "that", "these", "those", "my", "your", "our", "their", "his", "her", "its"}:
+        return len(words) > 1
+    # Explicit CLI options, input paths/files and quantity+unit arguments.
+    if re.fullmatch(r"--?[a-z][a-z0-9-]*(?:=\S+)?", head):
+        return True
+    if re.fullmatch(r"(?:\.?\.?/|~/)\S+|[\w-]+(?:/[\w.-]+)+|[\w-]+\.[a-z0-9]{1,12}", head):
+        return True
+    return bool(re.match(r"^\d+(?:\.\d+)?(?:[- ]?(?:seconds?|secs?|s|minutes?|mins?|m))\b", " ".join(words)))
+
+
+# Predicate pieces compose with the action noun and optional adjacent fillers.
+# The formal/future branches belong to verb stems, not whole request phrases.
+_KO_FUTURE = r"겠(?:습니다|어요|습니까)"
+_KO_DO = r"(?:해(?:요)?|하(?:자|라|세요|십시오|" + _KO_FUTURE + r")|할(?:게요|까요)|합(?:시다|니다))"
+_KO_GIVE = r"주(?:세요|십시오|시" + _KO_FUTURE + r"|실(?:래요|까요))|줘(?:요)?"
+_KO_DEFER = r"드(?:려(?:요)?|리겠(?:습니다|어요|습니까)|립(?:니다|시다)|릴(?:게요|까요))"
+_KO_REQUEST = re.compile(
+    r"^(?:(?:좀|한\s*번|제발)\s+){0,3}"
+    r"(?:부탁\s*(?:" + _KO_DEFER + r"|" + _KO_DO + r"(?:\s*(?:" + _KO_GIVE + r"))?)"
+    r"|" + _KO_DO + r"(?:\s*(?:" + _KO_GIVE + r"))?)"
+    r"(?=$|\s)(?!\s*(?:주지|드리지|하지|말|않|마))"
+)
+
+
+def _korean_noun_request(words):
+    """Read the adjacent predicate, never search across a reference object."""
+    return bool(_KO_REQUEST.match(" ".join(words)))
+
+
 def affirmative_marked_request(message, name, names):
     """Domain admission preserves genuine named requests, not explanation/reference text.
 
@@ -88,21 +128,17 @@ def affirmative_marked_request(message, name, names):
         if not suffix or not contains_run_cue(suffix[0]):
             return False
         if len(suffix) > 1:
-            command, complement = (word.strip(":,.!?~…'\"()[];*‘’“”") for word in suffix[:2])
-            # These are adjacent nominal compounds, not a veto on words in
-            # genuine command arguments ("run with history as input" stays valid).
-            nominal_complements = {
-                "use": {"case", "cases", "example", "examples"},
-                "run": {"history", "count", "counts", "log", "logs", "status", "result", "results", "time", "times", "duration", "date", "dates", "statistic", "statistics", "metadata", "metrics"},
-                "start": {"date", "dates", "time", "times"},
-            }
-            if complement in nominal_complements.get(command, set()):
+            command = suffix[0].strip(":,.!?~…'\"()[];*‘’“”")
+            arguments = [word.strip(":,.!?~…'\"()[];*‘’“”") for word in suffix[1:]]
+            # Method-first English is ambiguous without an argument structure;
+            # action-first named invocations above are already imperative.
+            if command in verbs and not _english_command_arguments(arguments):
                 return False
-            # Bare action nouns need an imperative or courtesy request next;
-            # 사용 예시 / 실행 기록 remain descriptions rather than requests.
-            if command in {"사용", "실행", "부탁"} and not re.fullmatch(
-                r"해(?:줘|요|주세요)?|하(?:자|세요|라)|합시다|부탁(?:해(?:줘|요)?|드립니다|드려요|합니다)",
-                complement,
+            if command in {"사용", "실행", "부탁"} and not _korean_noun_request(arguments):
+                return False
+            # A split negative auxiliary modifies this adjacent action too.
+            if re.match(r"^(?:사용|실행|부탁|해|돌려|써)", command) and re.match(
+                r"^(?:주지|드리지|하지|말|않|마)", arguments[0],
             ):
                 return False
     candidates = marker_candidates(words, names)

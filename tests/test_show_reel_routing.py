@@ -21,6 +21,35 @@ from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
 
 
 class ShowReelRoutingTests(unittest.TestCase):
+    def test_named_english_command_requires_positive_argument_structure(self):
+        from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
+
+        nouns = ("details", "records", "summary", "summaries", "identifier", "number", "timestamp", "instructions", "quuxledger")
+        with TemporaryDirectory() as td:
+            paths = resolve_paths(Path(td) / "omh", Path(td) / "hermes")
+            for marker in ("skill", "workflow"):
+                for verb in ("run", "start", "use", "execute", "invoke"):
+                    for noun in nouns:
+                        for ending in ("", " please"):
+                            message = f"show-reel {marker} {verb} {noun}{ending}"
+                            with self.subTest(message=message):
+                                self.assertFalse(show_reel_request_admitted(message))
+                                self.assertNotEqual(route_chat_message(message).get("selected_skill"), "show-reel")
+                                self.assertNotIn("show-reel", [r["skill"] for r in recommend_skills(message, limit=200)])
+                                self.assertNotEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
+                                self.assertNotEqual(build_chat_interaction_payload(message, source="discord", paths=paths)["chat_response"]["kind"], "show_reel")
+                                self.assertNotIn("prepare_show_reel", str(pre_llm_call(omh_home=str(paths.omh_home), hermes_home=str(paths.hermes_home), user_message=message, is_first_turn=False)))
+        self._assert_production_surfaces((
+            "show-reel workflow run please", "show-reel workflow run with research as input",
+            "show-reel skill use our documentation to produce a film",
+            "show-reel workflow execute the history report as input",
+            "show-reel workflow run from research.md", "show-reel workflow run research.md",
+            "show-reel workflow run --duration 60 --language English",
+            "show-reel workflow start for a French audience", "show-reel workflow run in English",
+            "show-reel workflow run 90 seconds in French", "Run the show-reel workflow with records",
+            "Create an unusually textured quietly luminous product showcase video using the supplied research documentation.",
+        ))
+
     def test_nominal_command_complements_are_not_production_on_any_surface(self):
         from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
 
@@ -66,6 +95,42 @@ class ShowReelRoutingTests(unittest.TestCase):
                     self.assertNotEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
                     self.assertNotEqual(build_chat_interaction_payload(message, source="discord", paths=paths)["chat_response"]["kind"], "show_reel")
                     self.assertNotIn("prepare_show_reel", str(pre_llm_call(omh_home=str(paths.omh_home), hermes_home=str(paths.hermes_home), user_message=message, is_first_turn=False)))
+
+    def test_korean_action_filler_request_predicates_compose_without_reference_scan(self):
+        self._assert_production_surfaces(tuple(
+            f"show-reel {marker} {action} {filler}{predicate}"
+            for marker in ("스킬", "워크플로우")
+            for action in ("실행", "사용")
+            for filler in ("", "좀 ", "한번 좀 ")
+            for predicate in ("부탁드립니다", "해주세요", "부탁드릴게요", "부탁드리겠습니다", "해 주십시오", "부탁해 주시겠어요")
+        ) + (
+            "show-reel 스킬 실행 좀 부탁드릴게요 기록을 바탕으로",
+            "show-reel 워크플로우 사용 한번 부탁드리겠습니다 연구 문서를 입력으로",
+        ))
+        from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
+        with TemporaryDirectory() as td:
+            paths = resolve_paths(Path(td) / "omh", Path(td) / "hermes")
+            for action in ("실행", "사용"):
+                for suffix in ("기록 좀 정리해주세요", "예시를 부탁드립니다", "좀 하지 마세요", "부탁드리지 마세요", "해 주지 마세요", "좀 부탁하지 말아주세요", "기록 좀 부탁드리겠습니다"):
+                    message = f"show-reel 스킬 {action} {suffix}"
+                    with self.subTest(message=message):
+                        self.assertFalse(show_reel_request_admitted(message))
+                        self.assertNotEqual(route_chat_message(message).get("selected_skill"), "show-reel")
+                        self.assertNotIn("show-reel", [r["skill"] for r in recommend_skills(message, limit=200)])
+                        self.assertNotEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
+                        self.assertNotEqual(build_chat_interaction_payload(message, source="discord", paths=paths)["chat_response"]["kind"], "show_reel")
+                        self.assertNotIn("prepare_show_reel", str(pre_llm_call(omh_home=str(paths.omh_home), hermes_home=str(paths.hermes_home), user_message=message, is_first_turn=False)))
+
+    def test_korean_request_stems_compose_future_and_split_negative_auxiliaries(self):
+        self._assert_production_surfaces((
+            "show-reel 스킬 실행 좀 부탁하겠습니다",
+            "show-reel 워크플로우 사용 한번 부탁할게요",
+            "show-reel 스킬 사용 좀 해주시겠어요",
+        ))
+        from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
+        for action in ("사용해", "실행해", "사용해주세요", "실행해줘"):
+            with self.subTest(action=action):
+                self.assertFalse(show_reel_request_admitted(f"show-reel 스킬 {action} 주지 마세요"))
 
     def test_korean_courtesy_after_action_noun_is_still_a_production_request(self):
         self._assert_production_surfaces(tuple(
