@@ -111,30 +111,41 @@ class GraphTests(unittest.TestCase):
         self.assertEqual(graph_fingerprint(graph), graph_fingerprint(grown))
         view = render_delegation_view(graph, width=100)
         self.assertIn("    Running 1s · ↓1.2k tokens · layer 1 · session child-ap", view.text_lines())
-        self.assertIn("│ ● Running 1s · ↓1.2k   │", view.text())
+        self.assertRegex(view.text(), r"│ ● Running 1s · ↓1\.2k *│")
         tree = render_delegation_view(graph, width=100, layout="tree").text()
         self.assertIn("running 1s · ↓1.2k", tree)
 
-    def test_the_narrowest_box_shows_its_count_while_the_status_line_fits_and_drops_it_whole(self) -> None:
-        # The run's boxes are 24 cells inside, the narrowest #2191 draws for these titles; a count is never what
-        # widens them. `● Running 21s · ↓1.4k` is 21 cells and shows; `● Running 25m 30s · ↓1.4k` is 25 and does not.
-        with homes() as home:
-            defined(home)
-            now = time.time()
-            started(home, "api", now=now)
-            home.tokens("child-api", 1400)
-            early = render_delegation_view(build_delegation_graph(home.omh, home.hermes, PARENT, now=now + 21),
-                                           width=100)
-            home.usage("child-api", "glm-5.3-flash", last_seen=now + 1529)  # still moving: running, not no news
-            late = render_delegation_view(build_delegation_graph(home.omh, home.hermes, PARENT, now=now + 1530),
-                                          width=100)
-        for view in (early, late):
-            self.assertEqual(view.layout, "box")
-            self.assertEqual({len(edge) for edge in re.findall(r"┌─*┐", view.text())}, {26}, "24 cells inside")
-        self.assertIn("│ ● Running 21s · ↓1.4k  │", early.text())
-        self.assertIn("│ ● Running 25m 30s      │", late.text())
+    def test_a_box_makes_room_for_a_count_so_it_stays_in_sight_while_the_node_runs(self) -> None:
+        # Without a count the run's boxes are 22 cells inside, as #2191 draws them for these titles. Once a lane
+        # carries one, a box makes room for `● Running 59m 59s · ↓999.9k` (27 cells), so the count stays through
+        # the first hour; past what the room holds it drops out whole, never cut.
+        def boxes(count: int | None, seconds: int, width: int = 100):
+            with homes() as home:
+                defined(home)
+                now = time.time()
+                started(home, "api", now=now)
+                if count is not None:
+                    home.tokens("child-api", count)
+                home.usage("child-api", "glm-5.3-flash", last_seen=now + seconds - 1)  # running, not no news
+                return render_delegation_view(build_delegation_graph(home.omh, home.hermes, PARENT, now=now + seconds),
+                                              width=width)
+
+        def inner(view) -> set[int]:
+            return {len(edge) - 4 for edge in re.findall(r"┌─*┐", view.text())}
+
+        for width in (80, 100, 120):
+            with self.subTest(width=width):
+                self.assertEqual(inner(boxes(None, 21, width)), {22}, "no count: #2191's widths")
+                self.assertEqual(inner(boxes(1400, 21, width)), {27})
+        for seconds, count, line in ((21, 1400, "● Running 21s · ↓1.4k"), (724, 45_600, "● Running 12m 4s · ↓45.6k"),
+                                     (3599, 999_900, "● Running 59m 59s · ↓999.9k")):
+            with self.subTest(seconds=seconds):
+                self.assertRegex(boxes(count, seconds).text(), rf"│ {re.escape(line)} *│")
+        # `100h 59m` with `↓999.9k` is 28 cells, past the room: the count drops out whole.
+        late = boxes(999_900, 100 * 3600 + 59 * 60)
+        self.assertRegex(late.text(), r"│ ● Running 100h 59m *│")
         self.assertIsNone(re.search(r"↓[0-9.]*[kM]?…", late.text()))
-        self.assertIn("Running 25m 30s · ↓1.4k tokens", late.text(), "the card still says it")
+        self.assertIn("Running 100h 59m · ↓999.9k tokens", late.text(), "the card still says it")
 
     def test_a_repair_hangs_below_the_node_it_repairs_and_superseded_nodes_go(self) -> None:
         with homes() as home:

@@ -34,9 +34,13 @@ graph whose edges loop, or one too narrow for a box. Widths are terminal
 cells: a wide (CJK) character counts 2, and text is folded first so that
 what is counted is what is painted. A duration is counted at
 `DURATION_CELLS` whatever it reads, so a ticking clock never resizes a box.
-A box's count is measured as it reads, beside the status as it reads: the box
-is never widened for it, so it shows while the line fits and drops out, whole,
-once a longer duration or count would not. The tree's and a card's count are
+A box's count is measured as it reads, beside the status as it reads, so it
+shows while the line fits and drops out, whole, once a longer duration or
+count would not. Once any lane carries a count, a box makes room for one: a
+lane bound to a child (one with an `output_tokens` key) needs its status with
+a count at a realistic widest (`● Running 59m 59s · ↓999.9k`), within the
+same `BOX_INNER_MAX` and the same shrinking to put a frontier on one row; a
+graph with no count keeps the widths it always had. The tree's and a card's count are
 measured at their widest (`TOKEN_CELLS`), so a growing one never comes and goes.
 
 Every part of a box carries its node's state as its role (``node:running``),
@@ -52,7 +56,7 @@ redraw of the same graph with new durations lays it out once (`_DECISIONS`).
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Final
@@ -72,6 +76,9 @@ ELAPSED_LIMIT: Final = 10**9  # seconds, about 31 years: a figure past it (or no
 DURATION_CELLS: Final = 7  # a duration's width when a box is measured: `59m 59s`, the widest under 100 hours
 TOKEN_LIMIT: Final = 10**9  # output tokens: a count past it (or not a whole number) is not drawn
 TOKEN_CELLS: Final = 6  # a count's width when a line is measured: `999.9M`, the widest under TOKEN_LIMIT
+# The realistic widest a box makes room for once a lane carries a count: `● Running 59m 59s · ↓999.9k`.
+WIDEST_DURATION_SECONDS: Final = 59 * 60 + 59  # `59m 59s`, the widest duration under an hour
+WIDEST_COUNT: Final = 999_900  # `999.9k`, the widest count under a million
 DECISION_LIMIT: Final = 64
 
 GAP: Final = 2  # cells between two boxes of a row
@@ -316,6 +323,11 @@ def _tokens_text(node: Mapping[str, Any], charset: Charset) -> str:
     return f"{charset.written}{compact_count(count)}"
 
 
+def _any_count(nodes: Iterable[Mapping[str, Any]]) -> bool:
+    """Whether any of ``nodes`` carries a count a drawing would show; boxes make room for one only then."""
+    return any(_tokens_text(node, UNICODE) for node in nodes)
+
+
 def _tokens_room(charset: Charset) -> int:
     """The cells a token count takes after a status, separator included, whatever the count reads."""
     return cells(charset.separator) + cells(charset.written) + TOKEN_CELLS
@@ -543,10 +555,21 @@ def _origin_mark(node_id: str, shape: _Frontiers, charset: Charset) -> str:
     return f"{charset.repair} " if kind == "repair" else f"{charset.extend} " if kind == "extend" else ""
 
 
-def _box_natural(node_id: str, shape: _Frontiers, charset: Charset, focus: Focus | None) -> int:
+def _counted_status_cells(node: Mapping[str, Any], charset: Charset) -> int:
+    """The cells a box's status line takes with a count beside it, measured at a realistic widest: the node's own
+    status word with `59m 59s` and `↓999.9k` (`● Running 59m 59s · ↓999.9k`)."""
+    widest = {**node, "elapsed_seconds": WIDEST_DURATION_SECONDS, "output_tokens": WIDEST_COUNT}
+    status = f"{_box_glyph(node, charset, None)} {_capital(_status_text(widest))}"
+    return cells(f"{status}{charset.separator}{_tokens_text(widest, charset)}")
+
+
+def _box_natural(
+    node_id: str, shape: _Frontiers, charset: Charset, focus: Focus | None, counted: bool = False,
+) -> int:
     """The inner width a box needs for its title, facts and status, whatever its duration reads; the parents line
     is cut to the box (the Dependencies section holds every edge whole). A folded box's one line holds its glyph
-    and its status word too."""
+    and its status word too. With ``counted`` (some lane carries a count), a lane bound to a child also needs its
+    status with a count at its widest (`_counted_status_cells`)."""
     node = shape.lanes[node_id]
     glyph = cells(_box_glyph(node, charset, None)) + 1
     lead = 0
@@ -555,6 +578,8 @@ def _box_natural(node_id: str, shape: _Frontiers, charset: Charset, focus: Focus
         if node_id in focus.folded:
             lead += glyph + cells(charset.separator) + cells(_capital(_status_parts(node)[0]))
     status = glyph + _status_cells(node)
+    if counted and "output_tokens" in node:
+        status = max(status, _counted_status_cells(node, charset))
     facts = sum(cells(segment.text) for segment in _facts(node, charset))
     return max(lead + cells(_origin_mark(node_id, shape, charset)) + cells(_title(node)), status, facts)
 
@@ -807,7 +832,8 @@ def _box_view(
 ) -> _Boxes | None:
     """The header, the frontiers of boxes, then (``sections`` 1 and up) Dependencies and (2) Node details.
 
-    Every box is one width: as wide as the widest lane needs, up to
+    Every box is one width: as wide as the widest lane needs (with room for
+    a count once any lane carries one, `_box_natural`), up to
     `BOX_INNER_MAX`, and narrower where that puts a frontier on one row,
     down to `BOX_INNER_MIN` (each line cut to it with the ellipsis). A
     frontier that does not fit one row even then wraps, at that same width.
@@ -816,7 +842,8 @@ def _box_view(
     shape = _frontiers(graph)
     if shape is None:
         return None
-    natural = max(_box_natural(node_id, shape, charset, focus) for node_id in shape.lanes)
+    counted = _any_count(shape.lanes.values())
+    natural = max(_box_natural(node_id, shape, charset, focus, counted) for node_id in shape.lanes)
     one_row = [(width - (len(row) - 1) * GAP) // len(row) - 4 for row in shape.rows]
     inner = min([max(natural, BOX_INNER_MIN), BOX_INNER_MAX, width - 4,
                  *(fit for fit in one_row if fit >= BOX_INNER_MIN)])
@@ -1174,7 +1201,10 @@ def render_delegation_view(
     if not isinstance(graph, Mapping) or not _nodes(graph):
         return View((), "header")
     header = _header_lines(graph, safe_width, chosen)
-    key = (_structure(graph), safe_width, max_lines, max_chars, chosen.name, layout, spinner, focus)
+    # Whether any lane carries a count is part of the key: it changes the boxes' widths (`_box_natural`), so a
+    # decision made for a graph before its first count must not be replayed for it after, nor the other way round.
+    counted = _any_count(_nodes(graph))
+    key = (_structure(graph), counted, safe_width, max_lines, max_chars, chosen.name, layout, spinner, focus)
 
     def fits(lines: Sequence[tuple[Segment, ...]]) -> bool:
         if max_lines is not None and len(lines) > max_lines:

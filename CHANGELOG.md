@@ -13,8 +13,9 @@ All notable changes will be documented here.
   until there is a count, and a narrow row drops it first. The delegation
   graph carries the same fact on each lane bound to a child (`output_tokens`
   in `delegation_graph/v1`, dag nodes included), and `/dag`'s Node details,
-  its boxes and the tree show it where the line has room. Chat posts do not
-  change.
+  its boxes and the tree show it where the line has room; once a lane
+  carries a count, the boxes make room for one through the first hour of a
+  run (`● Running 59m 59s · ↓999.9k`). Chat posts do not change.
 
 - **`dag ulw`: a big job runs on its own as a graph.** Say `dag ulw <goal>`
   (also `dag ulw해줘`, `ulw dag`, `/dag-ulw`), or ask for a big job whose words

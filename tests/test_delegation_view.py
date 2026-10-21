@@ -25,6 +25,7 @@ load_local_package()
 from _delegation_graphs import (  # noqa: E402
     dag_export_repair_run,
     dag_export_run,
+    export_run,
     graph,
     lane,
     nested,
@@ -774,29 +775,36 @@ class OutputTokenTests(unittest.TestCase):
         row = render_delegation_view(with_tokens(owner_mock(), {"a": 1234}), width=100, layout="tree").text_lines()[2]
         self.assertTrue(row.endswith("running 2m 10s · ↓1.2k"), row)
 
-    def test_a_count_takes_only_room_nothing_else_needs_and_never_moves_the_layout(self) -> None:
-        # The same drawing with the count parts taken out, at every width: no box is widened and no field cut for it.
+    def test_a_count_cuts_nothing_and_a_growing_one_never_moves_the_layout(self) -> None:
+        # The drawing with the count parts blanked out where they stand (a box keeps its padding, a row ends there):
+        # the tree's is the plain one, and a box's is the same whatever the counts read, since a box makes its room
+        # for a count at a fixed widest. Node details are left out: a card's group and session give way to a count.
         cases = [(dag_export_run, EXPORT_COUNTS), (nested, {"o": 45_600, "k": 900, "o1": 3000, "o2": 120}),
                  (owner_mock, {"a": 1234, "b": 62_000, "c": 7})]
+
+        def blanked(view) -> list[str]:
+            text = TOKEN_PART.sub(lambda part: " " * cells(part.group()), view.text())
+            return [line.rstrip() for line in text.splitlines()][:card_start(view)]
+
         for make, counts in cases:
             for width in range(20, 161, 3):
                 for layout in ("box", "tree"):
                     plain = render_delegation_view(make(), width=width, layout=layout)
+                    drawn = []
                     for scale in (1, 1000, 100_000):
                         scaled = {key: value * scale for key, value in counts.items()}
                         counted = render_delegation_view(with_tokens(make(), scaled), width=width, layout=layout)
+                        drawn.append(counted)
                         with self.subTest(case=make.__name__, width=width, layout=layout, scale=scale):
-                            self.assertEqual((counted.layout, counted.boxes), (plain.layout, plain.boxes))
-                            # A count blanked out where it stands: a box keeps its padding, a row ends there.
-                            # Node details are left out: a card's group and session give way to a count.
-                            blanked = TOKEN_PART.sub(lambda part: " " * cells(part.group()), counted.text())
-                            self.assertEqual(
-                                [line.rstrip() for line in blanked.splitlines()][:card_start(counted)],
-                                [line.rstrip() for line in plain.text_lines()][:card_start(plain)],
-                            )
+                            self.assertEqual(counted.layout, plain.layout)
+                            if layout == "tree":
+                                self.assertEqual(blanked(counted), [line.rstrip() for line in plain.text_lines()])
                             cut = [line for line in section(counted, "Node details") if "↓" in line]
                             self.assertFalse([line for line in cut if not TOKEN_PART.search(line)], "whole or none")
                             self.assertTrue(all(cells(line) <= width for line in counted.text_lines()))
+                    with self.subTest(case=make.__name__, width=width, layout=layout):
+                        self.assertEqual([view.boxes for view in drawn], [drawn[0].boxes] * 3)
+                        self.assertEqual([blanked(view) for view in drawn], [blanked(drawn[0])] * 3)
 
     def test_a_card_keeps_its_status_whole_and_drops_its_session_before_the_count(self) -> None:
         counted = with_tokens(dag_export_run(), EXPORT_COUNTS)
@@ -851,6 +859,115 @@ class OutputTokenTests(unittest.TestCase):
             with self.subTest(count=count):
                 counted = with_tokens(dag_export_run(), {"d:r1:button": count})
                 self.assertEqual(render_delegation_view(counted, width=100).text(), plain)
+
+
+def box_inner(view) -> set[int]:
+    """The inner widths of the boxes in ``view``, read off their top borders."""
+    return {len(edge) - 4 for edge in re.findall(r"[┌+][─-]*[┐+]", view.text()) if len(edge) > 4}
+
+
+def bound(payload: dict, count: object) -> dict:
+    """``payload`` with every lane bound to a child that has counted ``count`` (None: no count yet)."""
+    for node in payload["nodes"][1:]:
+        node["output_tokens"] = count
+    return payload
+
+
+class BoxTokenRoomTests(unittest.TestCase):
+    """Once a lane carries a count, a box makes room for one at a realistic widest, so it stays in sight."""
+
+    def test_a_graph_without_a_count_draws_exactly_as_before(self) -> None:
+        # Lanes bound to children with no count yet (`output_tokens` None) draw as lanes with no key at all; the
+        # #2191 snapshots above pin those drawings against main.
+        makes = (dag_export_run, dag_export_repair_run, owner_mock, nested, lambda: parallel(3), lambda: parallel(6),
+                 export_run, lambda: export_run(staged=True))
+        for make in makes:
+            for width in range(26, 161, 2):
+                for charset in ("unicode", "ascii"):
+                    for focus in (None, Focus(node=str(make()["nodes"][1]["id"]))):
+                        with self.subTest(graph=make().get("name"), width=width, charset=charset, focus=focus):
+                            plain = render_delegation_view(make(), width=width, charset=charset, focus=focus)
+                            unseen = render_delegation_view(bound(make(), None), width=width, charset=charset,
+                                                            focus=focus)
+                            self.assertEqual(unseen.text(), plain.text())
+
+    def test_a_counted_box_holds_a_running_status_of_an_hour_with_its_count(self) -> None:
+        # `● Running 59m 59s · ↓999.9k` is 27 cells: the room, measured from the text, not written down as a number.
+        counted = bound(parallel(2), 45_600)
+        for width in (80, 100, 120):
+            with self.subTest(width=width):
+                self.assertEqual(box_inner(render_delegation_view(parallel(2), width=width)), {25})
+                self.assertEqual(box_inner(render_delegation_view(counted, width=width)), {27})
+        for elapsed, line in ((21, "● Running 21s · ↓45.6k"), (724, "● Running 12m 4s · ↓45.6k"),
+                              (3599, "● Running 59m 59s · ↓45.6k")):
+            for node in counted["nodes"][1:]:
+                node["elapsed_seconds"] = elapsed
+            with self.subTest(elapsed=elapsed):
+                self.assertEqual(box_lines(render_delegation_view(counted, width=100))["l0"][2], line)
+
+    def test_the_ascii_room_holds_its_longer_count_mark(self) -> None:
+        # ASCII writes `out ` where Unicode writes `↓`: its room is measured in its own charset, three cells wider.
+        counted = bound(parallel(2), 45_600)
+        for node in counted["nodes"][1:]:
+            node["elapsed_seconds"] = 3599
+        view = render_delegation_view(counted, width=100, charset="ascii")
+        self.assertEqual({len(edge) - 4 for edge in re.findall(r"\+-+\+", view.text())}, {30})
+        self.assertIn("| * Running 59m 59s - out 45.6k  |", view.text())
+
+    def test_a_layout_decided_before_a_count_is_not_replayed_after_it(self) -> None:
+        # The kept layout decision is keyed on whether any lane carries a count, which changes the boxes' widths:
+        # under a line budget a graph reached through a warm cache draws exactly as it does cold, either way round.
+        from omh.plugin_bundle.omh import delegation_view
+
+        cases = [(owner_mock, 62, 30), (lambda: parallel(3), 62, 20), (lambda: parallel(5), 62, 30),
+                 (export_run, 62, 45)]
+        for make, width, budget in cases:
+            plain, counted = make(), make()
+            for payload in (plain, counted):
+                for node in payload["nodes"][1:]:
+                    node["elapsed_seconds"] = 724
+            for node in counted["nodes"][1:]:
+                if node.get("state") in ("running", "stuck", "done", "failed", "interrupted"):
+                    node["output_tokens"] = 45_600
+            options = {"width": width, "max_lines": budget}
+            cold = {}
+            for name, payload in (("plain", plain), ("counted", counted)):
+                delegation_view._DECISIONS.clear()
+                cold[name] = render_delegation_view(payload, **options).text()
+            for first, then in (("plain", "counted"), ("counted", "plain")):
+                delegation_view._DECISIONS.clear()
+                render_delegation_view(plain if first == "plain" else counted, **options)
+                warm = render_delegation_view(plain if then == "plain" else counted, **options).text()
+                with self.subTest(graph=make().get("name"), width=width, budget=budget, order=f"{first} then {then}"):
+                    self.assertEqual(warm, cold[then])
+        delegation_view._DECISIONS.clear()
+
+    def test_three_boxes_still_share_a_row_at_100_columns(self) -> None:
+        counted = with_tokens(dag_export_run(), {"d:r1:button": 1234, "d:r1:docs": 900, "d:r1:cli": 800})
+        for payload in (dag_export_run(), counted):
+            view = render_delegation_view(payload, width=100)
+            rows = [line for line in view.text_lines() if "┌" in line]
+            self.assertIn(3, [line.count("┌") for line in rows], "the middle frontier is one row")
+
+    def test_a_row_that_cannot_afford_the_room_shrinks_and_the_count_shows_only_while_it_fits(self) -> None:
+        # Three boxes in 82 columns get 22 cells inside, as without a count; the line as it reads decides.
+        counted = bound(parallel(3), 1234)
+        view = render_delegation_view(counted, width=82)
+        self.assertEqual(box_inner(view), {22})
+        self.assertEqual([line.count("┌") for line in view.text_lines() if "┌" in line], [3])
+        self.assertEqual(box_lines(view)["l0"][2], "● Running 1m 0s")  # with the count, 23 cells: left out
+        for node in counted["nodes"][1:]:
+            node["elapsed_seconds"] = 21
+        self.assertEqual(box_lines(render_delegation_view(counted, width=82))["l0"][2], "● Running 21s · ↓1.2k")
+
+    def test_the_room_is_made_only_for_a_lane_bound_to_a_child(self) -> None:
+        # A waiting lane with no child (no `output_tokens` key) keeps its own need: `○ Waits on 3 lanes` sets nothing.
+        mock = owner_mock()
+        mock["nodes"][1]["output_tokens"] = 1234  # the running `Refresh HUD docs` lane
+        for node in mock["nodes"][1:]:
+            node.update(title="A", category="c", model="m", effort="")
+        widths = box_inner(render_delegation_view(mock, width=140))
+        self.assertEqual(widths, {27})
 
 
 class FieldTests(unittest.TestCase):
