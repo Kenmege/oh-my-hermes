@@ -185,6 +185,21 @@ All notable changes will be documented here.
   space. Hermes' own lines (the Discord post, its completion line) keep
   what its cut leaves: after a short label, the marker or its head
   (`2 tasks: Export API [dag:export/api] ...`).
+- **One verification rule for Hermes `delegate_task` children, and a doctor
+  row for the platform they are marked with.** The protocol section's
+  verification rule now binds a child whose task changes files or other
+  state (a deploy, a migration, remote or config state), not only files. Its
+  goal echo-back asks for the numbered criteria only when the goal has them,
+  so a `/review` reviewer is not asked for criteria it was never given; fanout
+  unit prompts keep the unconditional line. The `coding-handling` harness line
+  and `omh coding composition-guide` now state the same conditions: the
+  harness no longer makes the verification pass mandatory on every prompt.
+  `omh doctor` gains `plugin_delegation_protocol`, which reads the installed
+  Hermes `tools/delegate_tool.py` for `platform="subagent"`, the platform the
+  section renders for, and warns when it is gone. The unknown-role warning in
+  `pre_tool_call` is removed: Hermes reads only `action` from that hook's
+  result, so it never reached anyone, and the child's own `pre_llm_call` turn
+  already warns about an unknown `[omh-role:...]` marker in its goal.
 - **A conversation keeps its delegation graph across Hermes' rotating
   compaction.** With `compression.in_place: false`, Hermes moves a
   conversation to a new session id mid-run. The HUD graph, the TUI's agent

@@ -1656,13 +1656,22 @@ print(json.dumps(observed, ensure_ascii=False))
                     tool_input={"goal": "[omh-role:planning-lead] prepare a plan"},
                 )
             )
-            tool_warning = ctx.hooks["pre_tool_call"](
-                tool_name="delegate_task",
-                tool_input={"goal": "[omh-role:nope] prepare a plan"},
+            self.assertIsNone(
+                ctx.hooks["pre_tool_call"](
+                    tool_name="delegate_task",
+                    tool_input={"goal": "[omh-role:nope] prepare a plan"},
+                )
             )
-            self.assertIsNotNone(tool_warning)
-            self.assertIn("Unknown role 'nope'", tool_warning["context"])
-            self.assertIn("planner", tool_warning["context"])
+            # The unknown role is warned in the child's own turn instead.
+            child_warning = ctx.hooks["pre_llm_call"](
+                omh_home=str(omh_home),
+                user_message="[omh-role:nope] prepare a plan",
+                platform="subagent",
+                is_first_turn=True,
+            )
+            self.assertIsNotNone(child_warning)
+            self.assertIn("Unknown role 'nope'", child_warning["context"])
+            self.assertIn("planner", child_warning["context"])
 
             tool_checkpoint = ctx.hooks["pre_tool_call"](
                 tool_name="image_generate",
