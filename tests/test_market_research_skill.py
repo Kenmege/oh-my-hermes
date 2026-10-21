@@ -13,6 +13,18 @@ from omh.skills.render import (
 
 
 class MarketResearchSkillTests(unittest.TestCase):
+    def test_opening_steps_live_once_in_the_compact_body(self) -> None:
+        definition = next(item for item in installable_skill_definitions() if item.name == "market-research")
+        body = next(item.content for item in builtin_skill_templates() if item.name == definition.name)
+        contract = next(
+            item.content for item in builtin_skill_reference_templates()
+            if item.skill_name == definition.name and item.relative_path == "references/full-contract.md"
+        )
+        for step in definition.opening_steps:
+            self.assertIn(step, body)
+            self.assertNotIn(step, contract)
+        self.assertLess(body.index("## First Steps"), body.index("## When to Use"))
+
     def test_market_procedure_passes_the_real_catalog_validator(self) -> None:
         from omh.skills.validation import validate_skill_definition_contract
 

@@ -131,9 +131,9 @@ DEFINITION = SkillDefinition(
     ),
     progressive_disclosure=True,
     situations=(
-        "size a market with sourced assumptions", "tam sam som sensitivity model",
+        "size a market with sourced assumptions", "addressable demand model with bounded assumptions",
         "customer jobs pains and purchase triggers", "comparable competitor pricing profiles",
-        "market sizing and customer evidence before a business decision",
+        "quantify demand and synthesize customer signals before a business decision",
     ),
 )
 

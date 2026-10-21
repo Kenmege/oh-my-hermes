@@ -6,6 +6,7 @@ TARGETS = frozenset(
         "curriculum-design",
         "decision-prototype",
         "lifecycle-growth",
+        "market-research",
         "product-discovery-validation",
         "sales-pipeline-review",
     }

@@ -22,7 +22,8 @@ Output: source ledger, requested method worksheets, and decision-ready findings.
 
 ## Why This Exists
 
-`market-research` turns a broad market question into bounded sizing, customer evidence, and comparable competitive analysis that a decision owner can inspect without mistaking secondary research for validation.
+Use a domain method when a market question needs calculations or comparable
+customer and competitor evidence, rather than a narrative assembled from links.
 
 ## First Steps
 
@@ -37,7 +38,8 @@ Outreach, payments and scheduling need separate explicit approval.
 
 ## When to Use
 
-Use when the task needs market-specific analysis of addressable demand, customer jobs and pains, or comparable competitor and pricing evidence, not merely a generic brief or source list.
+Choose this workflow for a bounded demand estimate, an attributed buyer-evidence
+analysis, or a consistent comparison of commercial alternatives.
 
 Strong routing signals: `market-research`, `market sizing`, `tam sam som`, `bottom up market sizing`, `market size sensitivity`, `customer evidence analysis`, `jtbd evidence matrix`, `prepare competitor pricing profiles`, `perform competitive pricing analysis`
 
@@ -50,16 +52,15 @@ Quality tier: `source-gated`
 
 ## Completion Checklist
 
-- The scope, units, source cutoff and stop reason are explicit, and every material finding links sources or labeled assumptions.
-- Requested methods include source coverage, contrary evidence and confidence limits; unrequested lanes are marked not requested, not completed.
-- Calculation receipts, unresolved retrieval gaps and customer sample limitations are attached; unknowns remain unknown.
-- Decision implications name verification needs and an owner, never an automatic discovery, outreach, payment, scheduling or coding action.
+- Check the selected worksheets against the full contract: evidence, arithmetic,
+  assumptions, counterexamples and remaining verification must stay connected.
+- Return the decision-relevant findings with their limitations; leave methods
+  outside the request explicitly unused and close with the actual stop reason.
 
 ## Recovery Notes
 
-- If retrieval fails, record the source ID, attempted date, failure and uncovered period; seek an allowed alternative once within budget or leave the finding unresolved.
-- If sources disagree, compare definitions, geography, units and dates before choosing; preserve both ranges when they cannot be reconciled.
-- If customer evidence is absent, prepare a consent-aware evidence request and leave the JTBD hypothesis unvalidated, never generate participant answers.
+- Use the full contract's recovery paths for inaccessible sources, incompatible
+  estimates or missing customer observations; do not manufacture a completed lane.
 
 ## Workflow Lane
 

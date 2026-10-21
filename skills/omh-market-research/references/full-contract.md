@@ -9,11 +9,6 @@ holds the workflow-specific detail without copying those shared rails.
 
 `market-research` turns a broad market question into bounded sizing, customer evidence, and comparable competitive analysis that a decision owner can inspect without mistaking secondary research for validation.
 
-## First Steps
-
-- Confirm the decision, buyer/segment, geography, period, currency/base year, units/denominator, source cutoff, budget, and stop condition before retrieval. Mark missing inputs unknown; ask the one that changes the analysis first.
-- Read `references/findings-template.md` to open the ledger, then load only the needed methods: `references/market-sizing.md`, `references/customer-evidence.md`, or `references/competitive-pricing.md`. Do not manufacture empty analysis lanes for an out-of-scope question.
-
 ## Do Not Use When
 
 - A kill, pivot, or persevere gate before a PRD is needed; use `omh-product-discovery-validation`.

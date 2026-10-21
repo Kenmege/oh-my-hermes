@@ -663,12 +663,13 @@ def _opening_steps_block(definition: SkillDefinition) -> str:
 
 def _quality_rubric_sections(
     definition: SkillDefinition, target: Literal["hermes", "agent-skills"] = "hermes",
+    *, include_opening_steps: bool = True,
 ) -> str:
     definition = _target_definition(definition, target)
     return f"""## Why This Exists
 
 {definition.why_this_exists}
-{_opening_steps_block(definition)}
+{_opening_steps_block(definition) if include_opening_steps else ""}
 ## Do Not Use When
 
 {_tuple_list(tuple(loadable_skill_mentions(line) for line in definition.do_not_use_when))}
@@ -2814,7 +2815,7 @@ workflow. The main body owns routing signals, shared rules, the runtime
 operation, delegation fallback, and completion/recovery pointers; this file
 holds the workflow-specific detail without copying those shared rails.
 
-{_quality_rubric_sections(definition)}
+{_quality_rubric_sections(definition, include_opening_steps=False)}
 
 ## When to Use
 
@@ -2870,7 +2871,8 @@ Output: source ledger, requested method worksheets, and decision-ready findings.
 
 ## Why This Exists
 
-{definition.why_this_exists}
+Use a domain method when a market question needs calculations or comparable
+customer and competitor evidence, rather than a narrative assembled from links.
 
 ## First Steps
 
@@ -2884,7 +2886,8 @@ Outreach, payments and scheduling need separate explicit approval.
 
 ## When to Use
 
-{definition.use_when}
+Choose this workflow for a bounded demand estimate, an attributed buyer-evidence
+analysis, or a consistent comparison of commercial alternatives.
 
 Strong routing signals: {_shipped_triggers(definition)}
 
@@ -2897,11 +2900,15 @@ Quality tier: `{definition.quality_tier}`
 
 ## Completion Checklist
 
-{_tuple_list(definition.final_checklist)}
+- Check the selected worksheets against the full contract: evidence, arithmetic,
+  assumptions, counterexamples and remaining verification must stay connected.
+- Return the decision-relevant findings with their limitations; leave methods
+  outside the request explicitly unused and close with the actual stop reason.
 
 ## Recovery Notes
 
-{_tuple_list(definition.recovery_notes)}
+- Use the full contract's recovery paths for inaccessible sources, incompatible
+  estimates or missing customer observations; do not manufacture a completed lane.
 
 {awareness_workflow_context_markdown(name)}
 
