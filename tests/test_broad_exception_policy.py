@@ -576,12 +576,36 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "is never mistaken for an empty or healthy HUD; catching it here is what keeps the thread "
         "alive and keeps a traceback from being printed over the TUI's own screen.",
     ),
+    ClassifiedSite(
+        "src/plugin_bundle/omh/host_process.py",
+        "this_process",
+        INTENTIONAL,
+        "Two handlers. A failing import of Hermes' `gateway.status` (not only ImportError, as "
+        "Hermes' own `_persist_dispatch` guards it) records no process, the path a record from "
+        "before this change takes: `omh_team` keeps the part out under its four-hour bound, and "
+        "`omh_dag` keeps the node running with no bound, as on main. Hermes' start-time reader raising "
+        "records the process with `started` None, the shape its own async-delegation record keeps "
+        "for an unread time; `process_alive` then answers None (unknown) while that pid exists and "
+        "False (gone) once it does not, never True. Either way the `subagent_start` observers that "
+        "call it keep their promise never to raise, and binding the helper is never lost to it.",
+    ),
+    ClassifiedSite(
+        "src/plugin_bundle/omh/host_process.py",
+        "process_alive",
+        INTENTIONAL,
+        "Two handlers. A failing import of the probes, or a probe that raised, answers None, which "
+        "callers keep apart from False (gone) and True: `omh_team` keeps the part out under its "
+        "four-hour bound and `omh_dag` keeps the node running, exactly as with no process "
+        "recorded. Only a probe's own answer that the process ended hands work out again, so a "
+        "raise never re-runs a live helper.",
+    ),
 )
 
 # Ruff reports one hit per handler; the inventory is keyed per enclosing
 # function. `_write_candidate_batch`, `_is_catalog_question`, `pre_llm_call`,
-# `_resume_unlocked`, and `_execute_cell` each hold two handlers, so the handler
-# count is five above the anchor count.
+# `_resume_unlocked`, `_execute_cell`, `host_process.this_process` and
+# `host_process.process_alive` each hold two handlers, so the handler count is
+# seven above the anchor count.
 # 45 -> 46 / 50 -> 51: `recommend_tool._route_summary`, the additive route beside
 # the ranking (#2005 review: a route failure must not empty the ranking or
 # relabel the source).
@@ -607,8 +631,13 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # 60 -> 61 / 55 -> 56: `result_transforms._delegation_snapshot`, the messenger
 # block beside the honest stop (a failure is counted and the reply goes out
 # without a block, never without the honest stop).
-EXPECTED_HANDLER_COUNT = 61
-EXPECTED_ANCHOR_COUNT = 56
+# 61 -> 63 / 56 -> 58: `host_process.this_process` and `process_alive`, Hermes'
+# own liveness probes (a raise is an unread start time or an unknown answer,
+# never "gone", so it never hands a live helper's work out again).
+# 63 -> 65 / 58 -> 58: the same two functions guard Hermes' import against any
+# failure, as Hermes' own call sites do (#2198 review L2).
+EXPECTED_HANDLER_COUNT = 65
+EXPECTED_ANCHOR_COUNT = 58
 
 
 class DerivedSite(NamedTuple):

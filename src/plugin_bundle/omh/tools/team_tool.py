@@ -20,6 +20,7 @@ from typing import Any
 
 from .. import runtime_paths
 from ..host_observation import host_session_id
+from ..host_process import process_alive
 
 KANBAN_TASK_ENV = "HERMES_KANBAN_TASK"
 # Hermes marks a cron run with this; its approval can be an automatic `approve`.
@@ -128,7 +129,7 @@ def omh_team_handler(args: Mapping[str, object], **kwargs: object) -> str:
         ctx = team.TeamContext(
             omh_home=omh_home, session_ref=owner, runner=_runner(team),
             fingerprint=_fingerprint, now=_now, host_guard=_host_floor, helper_work=_helper_work,
-            approved=_APPROVED_TEAMS, observed_checks=_OBSERVED_CHECKS,
+            approved=_APPROVED_TEAMS, observed_checks=_OBSERVED_CHECKS, dispatcher_alive=process_alive,
         )
         if action == "team_start" and _cron_session():
             # A cron run's approval can be answered by `approve` mode with no
