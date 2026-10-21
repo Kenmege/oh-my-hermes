@@ -721,11 +721,13 @@ class TeamToolHandler(unittest.TestCase):
     def test_only_a_start_in_this_process_approves_a_reconcile(self) -> None:
         """H2. Mutation: add to `_APPROVED_TEAMS` anywhere but after a successful start, or not at all."""
         reconcile = {"action": "team_reconcile", "team_id": "handler"}
-        self.assertEqual(self.call(self.args)["status"], "ok")
+        started = self.call(self.args)
+        self.assertEqual((started["status"], started["team_state"]), ("ok", "running"))
         self.assertEqual(self.call(reconcile)["reason"], "delegations_in_flight")
         self.team_tool._APPROVED_TEAMS.clear()  # a Hermes restart
         self.assertEqual(self.call(reconcile)["reason"], "team_not_approved_here")
-        self.assertEqual(self.call(self.args)["status"], "ok")
+        resumed = self.call(self.args)
+        self.assertEqual((resumed["status"], resumed["team_state"]), ("ok", "running"))
         self.assertEqual(self.call(reconcile)["status"], "ok")
 
     LATER = "20260928_140000_handler"
