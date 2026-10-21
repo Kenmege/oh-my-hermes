@@ -55,6 +55,7 @@ from ..owner_preference_record import (
 from ..delegation_routing import read_delegation_settings
 from ..host_observation import host_session_id
 from ..host_process import process_alive
+from ..sqlite_readonly import connect_readonly
 
 DEFAULT_MAX_CONCURRENT_CHILDREN = 10  # Hermes' `_DEFAULT_MAX_CONCURRENT_CHILDREN` (tools/delegate_tool_config.py)
 MAX_CONCURRENT_ENV = "DELEGATION_MAX_CONCURRENT_CHILDREN"
@@ -350,7 +351,7 @@ def free_slots(hermes_home: Path, *, pid: int | None = None) -> dict[str, Any]:
     try:
         if not state_db.is_file():
             raise sqlite3.OperationalError("no state.db")
-        connection = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True, timeout=0.25)
+        connection = connect_readonly(state_db, timeout=0.25)
         try:
             rows = connection.execute(
                 "SELECT delegation_id FROM async_delegations WHERE state IN (?, ?) AND owner_pid = ?",

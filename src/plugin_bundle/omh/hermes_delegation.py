@@ -27,6 +27,7 @@ from __future__ import annotations
 from . import runtime_paths
 from .live_session import conversation_segments
 from .provider_detection import detect_linked_providers, env_row_is_covered
+from .sqlite_readonly import connect_readonly
 
 import json
 import os
@@ -2328,9 +2329,7 @@ def _query_state_db(
         result["read_status"] = "absent"
         return result
     try:
-        connection = sqlite3.connect(
-            f"file:{state_db}?mode=ro", uri=True, timeout=0.25
-        )
+        connection = connect_readonly(state_db, timeout=0.25)
     except sqlite3.Error:
         result["read_status"] = "unreadable"
         return result

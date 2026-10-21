@@ -41,6 +41,7 @@ from .hermes_delegation import (
     _finite,
     _iso_utc,
 )
+from .sqlite_readonly import connect_readonly
 
 LANE_BACKEND = "kanban"
 DEFAULT_BOARD = "default"
@@ -217,7 +218,7 @@ def conversation_session_ids(hermes_home: str | Path, session_ref: str) -> set[s
     if not state_db.is_file():
         return set()
     try:
-        connection = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True, timeout=0.25)
+        connection = connect_readonly(state_db, timeout=0.25)
     except sqlite3.Error:
         return set()
     try:
@@ -256,7 +257,7 @@ def _query_tasks(db: Path, *, now: float) -> list[dict[str, Any]] | None:
     bound cut; the caller drops that row.
     """
     try:
-        connection = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=0.25)
+        connection = connect_readonly(db, timeout=0.25)
     except sqlite3.Error:
         return None
     try:
@@ -380,7 +381,7 @@ def _state_db_connection(
     """One read-only connection per ``state.db`` per poll, opened at most once."""
     if state_db not in cache:
         try:
-            cache[state_db] = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True, timeout=0.25)
+            cache[state_db] = connect_readonly(state_db, timeout=0.25)
         except sqlite3.Error:
             cache[state_db] = None
     return cache[state_db]

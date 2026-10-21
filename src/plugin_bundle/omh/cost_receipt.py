@@ -69,6 +69,7 @@ from .kanban_board_reader import (
 )
 from .run_records import DISPATCH_SUMMARY_FILE, FANOUT_DISPATCH_SCHEMA_VERSION as _FANOUT_DISPATCH_SCHEMA_VERSION
 from .runtime_reader import _read_hud_json
+from .sqlite_readonly import connect_readonly
 
 COST_RECEIPT_SCHEMA_VERSION = "omh_cost_receipt/v1"
 _FANOUT_DIR_PREFIX = "fanout-"
@@ -331,7 +332,7 @@ def hermes_usage_record(
 
 def _read_sessions(state_db: Path, conversation: set[str]) -> dict[str, Any] | None:
     try:
-        connection = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True, timeout=0.5)
+        connection = connect_readonly(state_db, timeout=0.5)
     except sqlite3.Error:
         return None
     try:
@@ -538,7 +539,7 @@ def _kanban_runs(board_db: Path, lineage_ids: set[str]) -> list[dict[str, Any]] 
     it reaps the worker.
     """
     try:
-        connection = sqlite3.connect(f"file:{board_db}?mode=ro", uri=True, timeout=0.5)
+        connection = connect_readonly(board_db, timeout=0.5)
     except sqlite3.Error:
         return None
     try:

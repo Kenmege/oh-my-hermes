@@ -29,6 +29,7 @@ from typing import Any
 
 from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, observe_plugin_tool_call
 from ..cost_receipt import build_cost_receipt
+from ..sqlite_readonly import connect_readonly
 
 RUN_SUMMARY_CLAIM_BOUNDARY = (
     "Observed host accounting from state.db (session row plus direct "
@@ -101,7 +102,7 @@ def _rows(
     state_db: Path, session_id: str
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[str]]:
     try:
-        connection = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True, timeout=0.25)
+        connection = connect_readonly(state_db, timeout=0.25)
     except sqlite3.Error:
         return None, [], []
     try:
