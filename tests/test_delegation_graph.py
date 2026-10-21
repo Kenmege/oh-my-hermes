@@ -1,4 +1,5 @@
-"""The delegation graph: every field from a record, `?` where there is none, edges only where recorded."""
+"""The delegation graph: every field from a record, `?` where there is none (a title names its node instead), edges
+only where recorded."""
 
 from __future__ import annotations
 
@@ -136,9 +137,10 @@ class FieldEvidenceTests(unittest.TestCase):
             delegation_ledger._titles.clear()
             home.opener("child-2", "From the opener")
             self.assertEqual(built(home)["nodes"][-1]["title"], "From the opener")
-            start(home, "child-3", "sa-3", "x", now=NOW + 4)
+            start(home, "20261022_101500_7c41e9a2", "sa-3", "x", now=NOW + 4)
             delegation_ledger._titles.clear()
-            self.assertEqual(built(home)["nodes"][-1]["title"], "?")
+            self.assertEqual(built(home)["nodes"][-1]["title"], "session 7c41e9a2",
+                             "no record names it: its short session id, as its card says it, never `?`")
 
 
 class StateTests(unittest.TestCase):
@@ -342,6 +344,13 @@ class TeamOverlayTests(unittest.TestCase):
             self.assertEqual(verify["group"], "stage 2")
             self.assertEqual(sum(1 for item in graph["nodes"] if item["title"] == "Refresh docs"), 1,
                              "the helper is the part, not a second node")
+
+    def test_a_part_with_no_title_reads_its_unit_id(self) -> None:
+        with homes() as home:
+            home.session(PARENT, "claude-opus-5-5")
+            self.write_team(home, [unit("docs", "Refresh docs", []), unit("cli", "", ["docs"]),
+                                   unit("verify", " \x07 ", ["cli"])])
+            self.assertEqual([item["title"] for item in built(home)["nodes"][1:]], ["Refresh docs", "cli", "verify"])
 
     def test_the_part_state_mirrors_the_team_records_own(self) -> None:
         from omh.workflows.team import unit_state

@@ -80,7 +80,7 @@ from .delegation_graph import (
     graph_fingerprint,
 )
 from .delegation_ledger import note_posted, note_skipped, posted_record, root_session
-from .delegation_view import UNICODE, cells, clean_text, fit
+from .delegation_view import UNICODE, UNTITLED, cells, clean_text, fit
 
 MESSENGER_PLATFORMS: Final = frozenset({"discord", "slack", "telegram", "mattermost", "matrix"})
 FENCE: Final = "```"
@@ -89,6 +89,10 @@ MOMENT_LINES: Final = 8  # a start block's layer lines; past them, `+N more`
 LINE_CELLS: Final = 72  # one listing line; titles that do not fit are counted as `+N`
 LABEL_CELLS: Final = 28  # one title in a listing
 STATUS_CELLS: Final = 20
+# A team part's status words while its record says the attempt was sent (`delegation_graph._TEAM_VIEW`), and what an
+# end post says for one with no child the ledger holds.
+SENT_WORDS: Final = frozenset({"dispatched", "repair dispatched"})
+UNSEEN_CHILD: Final = "sent, no child seen"
 ADDED_LABELS: Final = 2  # the added nodes a count line names; past them, `+N more`
 # One message's cap on each platform and the unit its Hermes adapter counts, at v0.22.2 (d923a5eb48) and on main
 # (8b9ac5773e) alike, in plugins/platforms/<platform>/adapter.py: Discord's and Slack's MAX_MESSAGE_LENGTH (2,000;
@@ -196,9 +200,13 @@ def collapse(node: Mapping[str, Any]) -> str:
 
 def _label(node: Mapping[str, Any], *, with_status: bool = False) -> str:
     """A lane's title, and, when asked, its status word: always for a Stopped lane, which says why it is not moving,
-    and otherwise where the word says more than the state (``no model call``)."""
-    title = fit(clean_text(node.get("title")) or "?", LABEL_CELLS)
-    status = fit(clean_text(node.get("status")), STATUS_CELLS)
+    and otherwise where the word says more than the state (``no model call``). A Stopped team part the team record
+    says was sent reads `UNSEEN_CHILD`, never ``dispatched``, which would read as in flight."""
+    title = fit(clean_text(node.get("title")) or UNTITLED, LABEL_CELLS)
+    word = clean_text(node.get("status"))
+    if word in SENT_WORDS and collapse(node) == "Stopped":
+        word = UNSEEN_CHILD
+    status = fit(word, STATUS_CELLS)
     shown = with_status and status and (status != _state(node) or collapse(node) == "Stopped")
     return f"{title} ({status})" if shown else title
 
@@ -254,7 +262,7 @@ def added_clause(items: Sequence[tuple[str, str]]) -> str:
     named: list[str] = []
     said = ""
     for kind, title in items[:ADDED_LABELS]:
-        label = fit(clean_text(title) or "?", LABEL_CELLS)
+        label = fit(clean_text(title) or UNTITLED, LABEL_CELLS)
         named.append(label if kind == said else f"{kind}: {label}")
         said = kind
     if len(items) > ADDED_LABELS:
@@ -379,7 +387,7 @@ def messenger_snapshot(
     if not isinstance(platform, str) or platform.strip().lower() not in MESSENGER_PLATFORMS:
         return ""
     cap, unit = message_cap(platform.strip().lower())
-    if os.environ.get(GRAPH_SWITCH, "").strip() == "off":
+    if os.environ.get(GRAPH_SWITCH, "").strip().lower() == "off":
         return ""  # the same switch that turns the HUD's graphs off
     if not isinstance(session_id, str) or not session_id.strip():
         return ""

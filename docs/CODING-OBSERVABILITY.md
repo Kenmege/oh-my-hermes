@@ -83,7 +83,9 @@ What the delegated work of one conversation looks like as a graph: who started
 whom, and, for parts with recorded dependencies, what waits on what. A header
 names the task count, the run and its state; then the nodes stand in
 frontiers, a node's frontier being the longest path of recorded edges that
-leads to it. Each node is a box of four lines: its title, its category and
+leads to it, and what comes after a repaired node (a node that depends on it,
+or an extend its check added) standing below that node's repair, which ran
+first. Each node is a box of four lines: its title, its category and
 model with effort, its status with its glyph and duration (then the output
 tokens its child has written, `· ↓1.2k`, where the box has room), and its
 parents (`← Export API`) or `Start node`. The nodes of one frontier sit side by side
@@ -215,8 +217,8 @@ Where it shows:
     under Stopped, and leaves them open, so a part that moves later opens a
     run of its own. Stopped is a lane not moving, with its reason:
     `interrupted`, `unknown` (`no news` after 30 minutes, `compacted`,
-    `ended`), or a team part `waiting` or sent with no child the ledger
-    holds. A Working group (running, stuck, or dispatched to a child Hermes
+    `ended`), or a team part `waiting`, or sent with no child the ledger
+    holds (`sent, no child seen`). A Working group (running, stuck, or dispatched to a child Hermes
     recorded) is listed only while one is in flight, so an end post has none.
 
     ```
@@ -251,7 +253,7 @@ Where it shows:
 - **`omh hud --graph`** prints it under the HUD line, sized to the terminal,
   in ASCII when the output cannot encode the line characters.
 
-`OMH_SUBAGENT_GRAPH=off` turns the graph off in the process that reads it:
+`OMH_SUBAGENT_GRAPH=off` (in any case: `OFF` too) turns the graph off in the process that reads it:
 in Hermes' environment for chat replies, and in the OMH TUI's or `omh hud`'s
 own for those. The ledger keeps recording while it is off. `omh hud --graph` names no conversation, so it draws the one
 whose ledger changed last, under a `[global]` line. The `omh_hud` tool, the MCP status tool, the standalone `omh_probe` and the
@@ -357,7 +359,9 @@ The structure comes from a metadata-only record, `delegation_ledger/v1` under
 `subagent_start`, `post_tool_call` (for `delegate_task`) and `subagent_stop`
 hooks: session and subagent ids, task order, turn ids, times, status words
 and OMH's own route. It holds no goal, summary, prompt or tool history. A
-title is read from Hermes' records when the graph is drawn. A conversation's
+title is read from Hermes' records when the graph is drawn; where they name
+none, a team part reads its unit id and a child `session <tail>`, its short
+session id, and a drawing reads `untitled`, never `?`. A conversation's
 record that no hook has written for a day is removed, under its lock; the
 lock file stays.
 
@@ -368,7 +372,9 @@ width, as wide as its widest node needs and narrowed to put each frontier on
 one row, down to 22 cells (every line is cut to that width with `…`, and
 the category and model line, usually the widest, is the one that shows it); a
 frontier that does not fit one row even then wraps, under the same label.
-Narrower than a 22-cell box, or where the edges loop, the graph is the tree,
+A duration is measured as `59m 59s` until it reads wider, so a box widens
+by one cell when a node passes 100 hours (`100h 00m`), and its duration
+stays whole; the tree's columns measure it the same way. Narrower than a 22-cell box, or where the edges loop, the graph is the tree,
 which nests a node under its dispatcher and draws no edge at all. Its
 category column is as wide as the longest category. The cells it needs past
 12 come from room no status needs, then from the model column (down to 8

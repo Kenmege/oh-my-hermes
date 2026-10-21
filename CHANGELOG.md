@@ -33,6 +33,20 @@ All notable changes will be documented here.
   helper as a lane of its own. Start lines name how many parts start:
   "Started 1 part", "1 starts now and the rest wait for the parts they
   depend on", and no line says "1 parts".
+- **The delegation graph keeps a long duration whole, draws no `?` title, and
+  puts a repair above what waits on it.** A duration of 100 hours or more
+  (`111h 06m`) is measured as it reads, so a box widens by one cell at the
+  100-hour mark instead of cutting it to `111h 0…`, and the tree's
+  columns give it the cell. A node no record titles reads its own name: a
+  team part its unit id, a child `session <tail>`; a drawing or chat post
+  given no title reads `untitled`. Where a dag-ulw node failed and was
+  repaired, the repair takes its own frontier between that node and what
+  comes after it (Verify export no longer sits beside the repair it waits
+  for); the parents line and Dependencies keep the recorded edges. An end
+  post says `(sent, no child seen)`, not `(dispatched)`, for a stopped team
+  part whose child never appeared. `OMH_SUBAGENT_GRAPH` is read in any case
+  (`OFF`, ` Off `), in the HUD and for chat posts; the ledger keeps
+  recording while it is off.
 - **A child's answering model is judged on its own calls, not Hermes'
   auxiliary ones.** Hermes records a compression or vision call in
   `session_model_usage` under a non-empty `task`, on the aux route's model.

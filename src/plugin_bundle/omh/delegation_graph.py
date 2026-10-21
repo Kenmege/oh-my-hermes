@@ -32,6 +32,10 @@ Every field without evidence is ``?``:
   own lifecycle. A child whose session closed for compaction without a stop
   this ledger could join is ``unknown``, never done and never running.
 
+A title is never ``?``: where no record names one, a team part or fanout unit
+reads its unit id, a dag node its node id, and a child ``session <tail>``
+(`session_tail`).
+
 An edge is a dispatch (a parent started this child), a recorded `depends_on`,
 or, in a dag run, where a node added mid-run came from: a repair (from the
 node it repairs) or an extend (from the node whose check found the work
@@ -514,7 +518,7 @@ def _build(
         goals = delegation.get("goals", [])
         if not title and isinstance(index, int) and 0 <= index < len(goals):
             title = goals[index]
-        return title or facts["openers"].get(child["child_session_id"], "") or "?"
+        return title or facts["openers"].get(child["child_session_id"], "")
 
     order = 1
     if team is not None:
@@ -538,7 +542,7 @@ def _build(
             node_id = f"t:{unit_id}"
             state, status = _TEAM_VIEW.get(states[unit_id], ("unknown", states[unit_id]))
             node: dict[str, Any] = {
-                "id": node_id, "kind": "lane", "title": _text(unit.get("title"), TITLE_LIMIT) or "?",
+                "id": node_id, "kind": "lane", "title": _text(unit.get("title"), TITLE_LIMIT) or unit_id,
                 "category": "?", "category_source": "not_dispatched", "model": "?", "effort": "",
                 "state": state, "status": status, "elapsed_seconds": None, "order": order,
                 "group": f"stage {stage(unit_id)}", "waits_on": 0, "team_unit": unit_id,
@@ -603,7 +607,8 @@ def _build(
         key = (child["parent_session_id"], child["parent_turn_id"] or child.get("call_id", ""))
         group = f"wave {waves[key]} · {_clock(wave_start[key])}" if parent_id == "root" and key in waves else ""
         nodes.append({
-            "id": node_id, "kind": "lane", "title": _text(title_for(child), TITLE_LIMIT) or "?",
+            "id": node_id, "kind": "lane",
+            "title": _text(title_for(child), TITLE_LIMIT) or f"session {session_tail(child['child_session_id'])}",
             **derived, "order": order, "group": group, "waits_on": 0,
             "session_tail": session_tail(child["child_session_id"]),
         })

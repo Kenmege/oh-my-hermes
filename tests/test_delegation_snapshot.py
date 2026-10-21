@@ -28,6 +28,7 @@ from omh.plugin_bundle.omh.delegation_snapshot import (  # noqa: E402
     LINE_CELLS,
     MESSENGER_PLATFORMS,
     STALL_SECONDS,
+    added_clause,
     count_line,
     end_block,
     lane_key,
@@ -37,7 +38,7 @@ from omh.plugin_bundle.omh.delegation_snapshot import (  # noqa: E402
 )
 from omh.plugin_bundle.omh.delegation_view import UNICODE, cells  # noqa: E402
 from omh.plugin_bundle.omh.hooks import result_transforms  # noqa: E402
-from omh.plugin_bundle.omh.runtime_reader import read_omh_hud  # noqa: E402
+from omh.plugin_bundle.omh.runtime_reader import _hud_graph_preference, read_omh_hud  # noqa: E402
 
 BOX_GLYPHS = frozenset(UNICODE.lines.values()) | {UNICODE.arrow}
 
@@ -332,9 +333,13 @@ class SurfaceTests(unittest.TestCase):
                 self.assertIsNone(reply(platform=platform))
 
     def test_the_graph_switch_turns_the_post_off(self) -> None:
-        with homes() as home, patch.dict(os.environ, {"OMH_SUBAGENT_GRAPH": "off"}):
+        for value in ("off", "OFF", " Off "):
+            with self.subTest(value=value), homes() as home, patch.dict(os.environ, {"OMH_SUBAGENT_GRAPH": value}):
+                three_lanes(home)
+                self.assertIsNone(reply())
+        with homes() as home, patch.dict(os.environ, {"OMH_SUBAGENT_GRAPH": "ON"}):
             three_lanes(home)
-            self.assertIsNone(reply())
+            self.assertIn("```\nDAG ·", reply())
 
     def test_a_childs_own_turn_carries_nothing(self) -> None:
         with homes() as home:
@@ -435,6 +440,30 @@ class TextTests(unittest.TestCase):
         self.assertIn("● Working  Rotate keys", lines)
         self.assertEqual(lines[-2], "4 tasks · 1 done · 1 failed · 1 stopped · 1 working")
 
+    def test_a_team_part_sent_with_no_child_seen_never_reads_dispatched_under_stopped(self) -> None:
+        done = {**lane("a", "Export API", "quick", "m", "", "done", order=1, status="accepted"), "team_unit": "a"}
+        for status in ("dispatched", "repair dispatched"):
+            sent = {**lane("b", "Export button", "quick", "m", "", "dispatched", order=2, status=status),
+                    "team_unit": "b"}
+            with self.subTest(status=status):
+                self.assertIn("▪ Stopped  Export button (sent, no child seen)",
+                              end_block(graph([root(), done, sent], []), [done, sent]).splitlines())
+        child = {**lane("c", "Export docs", "quick", "m", "", "dispatched", order=3), "session_tail": "7c41e9a2"}
+        handed = lane("d", "Export CLI flag", "quick", "m", "", "dispatched", order=4, status="handed out")
+        lines = end_block(graph([root(), done, child, handed], []), [done, child, handed]).splitlines()
+        self.assertIn("● Working  Export docs", lines, "a child Hermes recorded is in flight, its word unchanged")
+        self.assertIn("▪ Stopped  Export CLI flag (handed out)", lines, "only a team part's sent words are reworded")
+
+    def test_a_lane_with_no_title_is_untitled_in_every_post(self) -> None:
+        nameless = [lane("a", "", "quick", "m", "", "failed", order=1, status="timeout")]
+        layered = {**graph([root(), *nameless], []), "layers": [["a"]]}
+        self.assertIn("1  untitled", start_block(layered, nameless).splitlines())
+        self.assertIn("✗ Failed   untitled (timeout)", end_block(layered, nameless).splitlines())
+        self.assertEqual(count_line("delegation", tally(nameless)),
+                         "DAG delegation · 0/1 done · 0 running · 1 failed (untitled)")
+        self.assertEqual(added_clause([("repair", ""), ("extend", "CSV export")]),
+                         "+2 added (repair: untitled, extend: CSV export)")
+
 
 class HudTests(unittest.TestCase):
     def test_the_hud_carries_the_reading_sessions_graph(self) -> None:
@@ -449,10 +478,13 @@ class HudTests(unittest.TestCase):
             unscoped = read_omh_hud(home.omh, home.hermes, status={"runs": []})
             self.assertEqual(unscoped["delegation_graph"]["scope"], "global")
             self.assertEqual(len(unscoped["delegation_graph"]["nodes"]), 4)
-            with patch.dict(os.environ, {"OMH_SUBAGENT_GRAPH": "off"}):
-                off = read_omh_hud(home.omh, home.hermes, session_ref=PARENT, status={"runs": []})
-            self.assertEqual((off["delegation_graph"]["status"], off["delegation_graph"]["reason"]),
-                             ("inactive", "explicit_off"))
+            for value in ("off", "OFF", " Off "):
+                with self.subTest(value=value), patch.dict(os.environ, {"OMH_SUBAGENT_GRAPH": value}):
+                    off = read_omh_hud(home.omh, home.hermes, session_ref=PARENT, status={"runs": []})
+                    self.assertEqual((off["delegation_graph"]["status"], off["delegation_graph"]["reason"]),
+                                     ("inactive", "explicit_off"))
+            with patch.dict(os.environ, {"OMH_SUBAGENT_GRAPH": "ON"}):
+                self.assertEqual(_hud_graph_preference("auto"), "on")
 
     def test_the_hud_says_what_the_chat_last_carried_and_why_one_was_skipped(self) -> None:
         with homes() as home:
