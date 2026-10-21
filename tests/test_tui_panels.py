@@ -38,6 +38,7 @@ from omh.tui.panels import (
     panel_lines,
     plan_state,
     hud_chips,
+    read_output_tokens,
 )
 from omh.tui.theme import DEFAULT_THEME
 from omh.tui.width import line_width
@@ -774,6 +775,146 @@ class HudPollerTests(unittest.TestCase):
         poller.stop()
         self.assertLess(time.monotonic() - started, 0.5, "stop must not wait out the two-second interval")
         self.assertFalse(poller._thread.is_alive())
+
+
+def state_db(home: Path, rows: dict[str, object]) -> Path:
+    """A state.db under `home` whose `sessions` rows are `rows` (session id to `output_tokens`), as Hermes keeps them."""
+    path = home / "state.db"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE sessions (id TEXT PRIMARY KEY, input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0)"
+        )
+        connection.executemany("INSERT INTO sessions (id, output_tokens) VALUES (?, ?)", rows.items())
+    connection.close()
+    return path
+
+
+class ReadOutputTokensTests(unittest.TestCase):
+    """`read_output_tokens`: the watched child sessions' counts in one read-only query, and nothing on any failure."""
+
+    def test_it_reads_each_named_session_the_database_holds(self) -> None:
+        with TemporaryDirectory() as home:
+            state_db(Path(home), {"child-a": 1200, "child-b": 0, "child-c": None, "parent": 9000})
+            self.assertEqual(
+                read_output_tokens(home, ("child-a", "child-b", "child-c", "child-gone")),
+                {"child-a": 1200, "child-b": 0},
+            )
+
+    def test_it_never_creates_or_changes_the_database(self) -> None:
+        with TemporaryDirectory() as home:
+            self.assertEqual(read_output_tokens(home, ("child-a",)), {})
+            self.assertEqual(list(Path(home).iterdir()), [], "an absent state.db is not created")
+            path = state_db(Path(home), {"child-a": 5})
+            before = (path.read_bytes(), sorted(item.name for item in Path(home).iterdir()))
+            read_output_tokens(home, ("child-a",))
+            self.assertEqual((path.read_bytes(), sorted(item.name for item in Path(home).iterdir())), before)
+
+    def test_an_unreadable_database_reads_as_no_counts(self) -> None:
+        with TemporaryDirectory() as home:
+            root = Path(home)
+            self.assertEqual(read_output_tokens(None, ("child-a",)), {})
+            self.assertEqual(read_output_tokens(7, ("child-a",)), {})
+            self.assertEqual(read_output_tokens("", ("child-a",)), {})
+            self.assertEqual(read_output_tokens("bad\0home", ("child-a",)), {})
+            (root / "state.db").mkdir()
+            self.assertEqual(read_output_tokens(home, ("child-a",)), {}, "a directory named state.db")
+            (root / "state.db").rmdir()
+            (root / "state.db").write_bytes(b"not a database" * 100)
+            self.assertEqual(read_output_tokens(home, ("child-a",)), {}, "a file that is not SQLite")
+            (root / "state.db").unlink()
+            with sqlite3.connect(root / "state.db") as connection:
+                connection.execute("CREATE TABLE other (id TEXT)")
+            connection.close()
+            self.assertEqual(read_output_tokens(home, ("child-a",)), {}, "a database with no sessions table yet")
+
+    def test_a_locked_database_reads_as_no_counts_within_the_busy_wait(self) -> None:
+        with TemporaryDirectory() as home:
+            path = state_db(Path(home), {"child-a": 5})
+            writer = sqlite3.connect(path, isolation_level=None)
+            self.addCleanup(writer.close)
+            writer.execute("PRAGMA journal_mode=DELETE")
+            writer.execute("BEGIN EXCLUSIVE")
+            started = time.monotonic()
+            self.assertEqual(read_output_tokens(home, ("child-a",)), {})
+            self.assertLess(time.monotonic() - started, 2.0)
+            writer.execute("ROLLBACK")
+            self.assertEqual(read_output_tokens(home, ("child-a",)), {"child-a": 5})
+
+    def test_without_a_session_to_read_it_opens_nothing(self) -> None:
+        from unittest import mock
+
+        with TemporaryDirectory() as home:
+            state_db(Path(home), {"child-a": 5})
+            with mock.patch("omh.tui.panels.sqlite3.connect") as connect:
+                self.assertEqual(read_output_tokens(home, ()), {})
+            connect.assert_not_called()
+
+
+class HudPollerTokenTests(unittest.TestCase):
+    """Each HUD read also takes the watched subagents' output tokens, from the state.db of the home it read."""
+
+    def poller(self, home: str, payloads: list[dict]) -> HudPoller:
+        reader = FakeReader(lambda session: {**payloads[-1], "hermes_home": home})
+        poller = HudPoller("/omh", "/hermes", package_version="9.9.9", reader=reader, clock=lambda: 50.0)
+        poller.set_session("stored-1")
+        poller.take()
+        return poller
+
+    def test_a_snapshot_carries_the_watched_sessions_counts(self) -> None:
+        with TemporaryDirectory() as home:
+            path = state_db(Path(home), {"child-a": 300, "child-b": 700})
+            poller = self.poller(home, [{"privacy": "metadata_only"}])
+            poller.poll_once()
+            self.assertEqual(poller.take().output_tokens, {}, "nothing is watched yet")
+            poller.watch_tokens(("child-a", "child-b"))
+            poller.poll_once()
+            self.assertEqual(poller.take().output_tokens, {"child-a": 300, "child-b": 700})
+            with sqlite3.connect(path) as connection:
+                connection.execute("UPDATE sessions SET output_tokens = output_tokens + 300 WHERE id = 'child-a'")
+            connection.close()
+            poller.poll_once()
+            self.assertEqual(poller.take().output_tokens, {"child-a": 600, "child-b": 700})
+            poller.watch_tokens(())
+            poller.poll_once()
+            self.assertEqual(poller.take().output_tokens, {})
+
+    def test_a_count_that_moved_keeps_the_poll_at_two_seconds(self) -> None:
+        with TemporaryDirectory() as home:
+            path = state_db(Path(home), {"child-a": 300})
+            poller = self.poller(home, [{"privacy": "metadata_only"}])
+            poller.watch_tokens(("child-a",))
+            self.assertEqual([poller.poll_once() for _ in range(3)], [HUD_POLL_MIN_SECONDS, 4.0, HUD_POLL_MAX_SECONDS])
+            with sqlite3.connect(path) as connection:
+                connection.execute("UPDATE sessions SET output_tokens = 900 WHERE id = 'child-a'")
+            connection.close()
+            self.assertEqual(poller.poll_once(), HUD_POLL_MIN_SECONDS)
+            self.assertEqual(poller.take().output_tokens, {"child-a": 900})
+
+    def test_a_payload_without_a_home_or_an_unreadable_database_gives_no_counts(self) -> None:
+        reader = FakeReader()  # a payload without `hermes_home`, as a failed read's is
+        poller = HudPoller("/omh", "/hermes", reader=reader, clock=lambda: 50.0)
+        poller.set_session("stored-1")
+        poller.take()
+        poller.watch_tokens(("child-a",))
+        poller.poll_once()
+        self.assertEqual(poller.take().output_tokens, {})
+        with TemporaryDirectory() as home:
+            (Path(home) / "state.db").write_bytes(b"not a database")
+            poller = self.poller(home, [{"privacy": "metadata_only"}])
+            poller.watch_tokens(("child-a",))
+            poller.poll_once()
+            snapshot = poller.take()
+            self.assertEqual((snapshot.payload["privacy"], snapshot.output_tokens), ("metadata_only", {}))
+
+    def test_the_watch_is_bounded_by_the_rosters_cap(self) -> None:
+        from omh.tui.subagents import ROSTER_CAP
+
+        with TemporaryDirectory() as home:
+            state_db(Path(home), {f"child-{index}": index + 1 for index in range(80)})
+            poller = self.poller(home, [{"privacy": "metadata_only"}])
+            poller.watch_tokens(tuple(f"child-{index}" for index in range(80)))
+            poller.poll_once()
+            self.assertEqual(len(poller.take().output_tokens), ROSTER_CAP)
 
 
 def parity_cases() -> list[dict]:

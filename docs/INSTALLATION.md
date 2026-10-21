@@ -444,7 +444,12 @@ run and approval decision stays Hermes'; the screen is OMH's.
   its subagents as Claude Code's agent list does: `● main`, then one row per
   agent, its mark (a spinner while it runs, `○` done, `✗` failed, `▪`
   interrupted, `◌` waiting for a worker), its goal, and on the right how long
-  it has run and how many tools it called (`waiting 35s` while it waits).
+  it has run, how many tools it called and how many output tokens it wrote
+  (`12s · 3 tools · ↓1.2k tokens`; `waiting 35s` while it waits). The token
+  count is read from the subagent's own Hermes session in state.db while it
+  runs, so it grows a poll behind each model call, and is Hermes' own count
+  once the agent finishes; there is no token part until there is a count,
+  and a narrow row drops it before the tool count.
   The info line counts them (`2 agents · ↓ agents`; the count alone where
   the line is too narrow for both, or where Down would not open the list:
   while you type, while a question or a picker is open). The view stays

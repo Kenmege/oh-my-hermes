@@ -4,7 +4,9 @@ Two halves. `HudPoller` reads `read_omh_hud` IN PROCESS on a background thread
 -- the retired Hermes status widget had to spawn a Python child every two
 seconds for the same payload -- importing the HUD reader there on its first
 read rather than with this module, and hands each new payload to the UI thread
-through a latest-value slot it can poll without blocking. `panel_lines` turns
+through a latest-value slot it can poll without blocking. Each read also takes
+the output tokens of the subagents the agent view is watching from state.db,
+in one read-only query (`read_output_tokens`). `panel_lines` turns
 one payload into styled rows: the agents block (header, activity rows,
 `+N more`), then the delegation block (the conversation's delegation graph,
 drawn by `delegation_view` as its tree, the boxes being `/dag`'s, and once
@@ -45,6 +47,8 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 import json
 import math
+from pathlib import Path
+import sqlite3
 import threading
 import time
 from typing import Any
@@ -59,6 +63,7 @@ from .width import cell_width, clusters, truncate, truncate_line
 
 HUD_POLL_MIN_SECONDS = 2.0
 HUD_POLL_MAX_SECONDS = 8.0
+TOKEN_WATCH_CAP = 64  # the roster's own cap: one query never names more child sessions than the agent view holds
 
 # The fields that drift on every poll without anything having happened: the
 # widget's VOLATILE_KEYS. A payload differing only here is still delivered (so
@@ -119,11 +124,13 @@ _SAFE_PUNCTUATION = frozenset(" .:/_·|+()[]!-',;?\"#%&=@~")
 
 @dataclass(frozen=True)
 class HudSnapshot:
-    """One delivery: whose payload, the payload (None = empty panel), and when it was read."""
+    """One delivery: whose payload, the payload (None = empty panel), when it was read, and the watched subagents'
+    output tokens the same read took (child session id to count; `read_output_tokens`)."""
 
     session_id: str
     payload: Mapping[str, Any] | None
     received_at: float
+    output_tokens: Mapping[str, int] = field(default_factory=dict)
 
 
 HudReader = Callable[..., Mapping[str, Any]]
@@ -156,6 +163,11 @@ class HudPoller:
     is unchanged apart from `VOLATILE_KEYS`; any other change resets it. A read
     that keeps a new snapshot calls `on_snapshot` (the wake `start` was given),
     so the UI loop takes it at once instead of at its next idle wake-up.
+
+    Each read also takes `output_tokens` for the child sessions `watch_tokens`
+    last named. A count that moved is a change like any other, so the poll
+    stays at two seconds while subagents are writing and backs off once they
+    stop. With no session watched there is no query.
     """
 
     def __init__(
@@ -179,6 +191,7 @@ class HudPoller:
         self._session = ""
         self._generation = 0
         self._pending: HudSnapshot | None = None
+        self._watched: tuple[str, ...] = ()
         self._last_full = ""
         self._last_structural = ""
         self._interval = HUD_POLL_MIN_SECONDS
@@ -211,6 +224,11 @@ class HudPoller:
             self._pending = HudSnapshot(stored_id, None, self._clock())
         self._wake.set()
 
+    def watch_tokens(self, session_ids: Sequence[str]) -> None:
+        """Name the child sessions each read takes output tokens for (`Roster.token_sessions`); none stops it."""
+        with self._lock:
+            self._watched = tuple(session_ids)[:TOKEN_WATCH_CAP]
+
     def refresh(self) -> None:
         """Read again now rather than at the next poll, and start the back-off over (Hermes' plan just changed)."""
         with self._lock:
@@ -226,19 +244,21 @@ class HudPoller:
     def poll_once(self) -> float:
         """Read once for the current session and return the seconds to wait before the next read."""
         with self._lock:
-            session, generation = self._session, self._generation
+            session, generation, watched = self._session, self._generation, self._watched
         if not session:
             return HUD_POLL_MAX_SECONDS
         payload = self._read(session)
-        full = _fingerprint(payload)
-        structural = _fingerprint(_without_volatile(payload))
+        # The home this read resolved, so the tokens come from the state.db the payload describes.
+        tokens = read_output_tokens(payload.get("hermes_home"), watched)
+        full = _fingerprint([payload, tokens])
+        structural = _fingerprint([_without_volatile(payload), tokens])
         with self._lock:
             if generation != self._generation:
                 return HUD_POLL_MIN_SECONDS
             fresh = full != self._last_full
             if fresh:
                 self._last_full = full
-                self._pending = HudSnapshot(session, payload, self._clock())
+                self._pending = HudSnapshot(session, payload, self._clock(), tokens)
             if structural != self._last_structural:
                 self._last_structural = structural
                 self._interval = HUD_POLL_MIN_SECONDS
@@ -273,6 +293,40 @@ class HudPoller:
             self._wake.clear()
             interval = self.poll_once()
             self._wake.wait(interval)
+
+
+def read_output_tokens(hermes_home: object, session_ids: Sequence[str]) -> dict[str, int]:
+    """`sessions.output_tokens` for each of `session_ids` the state.db under `hermes_home` holds, in one query.
+
+    Read-only: the file is opened as the HUD reader opens it (`mode=ro`, a
+    quarter-second busy wait), never created, and closed before this returns.
+    Hermes adds each API call's output tokens to a child's own row as the
+    call returns, so a running child's count grows here. No ids, no home, no
+    file, and any SQLite failure (a locked or half-written database, one
+    without the table) read as no counts, never as zero.
+    """
+    if not session_ids or not isinstance(hermes_home, str) or not hermes_home:
+        return {}
+    try:
+        state_db = Path(hermes_home) / "state.db"
+        if not state_db.is_file():
+            return {}
+    except (OSError, ValueError):
+        return {}
+    try:
+        connection = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True, timeout=0.25)
+    except sqlite3.Error:
+        return {}
+    try:
+        rows = connection.execute(
+            f"SELECT id, output_tokens FROM sessions WHERE id IN ({','.join('?' for _ in session_ids)})",
+            tuple(session_ids),
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+    finally:
+        connection.close()
+    return {str(row[0]): row[1] for row in rows if isinstance(row[1], int)}
 
 
 # ── small formatters (ports of the widget's helpers) ───────────────────────

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import base64
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 import io
 import json
@@ -286,6 +286,9 @@ class FakePoller:
 
     def refresh(self) -> None:
         self.refreshes = getattr(self, "refreshes", 0) + 1
+
+    def watch_tokens(self, session_ids: Sequence[str]) -> None:
+        self.watched = tuple(session_ids)
 
 
 @dataclass

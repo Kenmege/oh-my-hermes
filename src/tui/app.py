@@ -570,6 +570,7 @@ class PollerLike(Protocol):
     def set_session(self, stored_id: str) -> None: ...
     def take(self) -> HudSnapshot | None: ...
     def refresh(self) -> None: ...
+    def watch_tokens(self, session_ids: Sequence[str]) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -3860,9 +3861,12 @@ class App(ModesMixin, AgentViewMixin):
         self.dirty = True
 
     def _take_hud(self) -> None:
+        # The subagents whose output tokens the poller's next read takes from state.db, on its thread, not this one.
+        self.poller.watch_tokens(self.roster.token_sessions(self.clock()))
         snapshot = self.poller.take()
         if snapshot is not None and snapshot.session_id == self.stored_id:
             self.hud = snapshot
+            self.roster.ingest_tokens(snapshot.output_tokens)
             self.dirty = True
             self._retire_finished_plan()
 

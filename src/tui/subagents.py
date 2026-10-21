@@ -10,8 +10,8 @@ What the gateway sends, measured against Hermes 6c61c3e27d. One function,
 frames it built for a scripted run are `tests/fixtures/tui_gateway/subagent_relay.jsonl`.
 
 - Every frame carries `goal`, and from the child relay's identity
-  `subagent_id`, `model` and `tool_count`. So any frame can introduce an
-  agent, not only its first.
+  `subagent_id`, `model`, `tool_count` and `child_session_id`, the child's
+  own Hermes session. So any frame can introduce an agent, not only its first.
 - `subagent.start` is the first frame of a child. `subagent.spawn_requested`
   is in the gateway's event contract, but the child relay has no entry for
   it and drops it; it is folded here (as a queued agent) in case it arrives.
@@ -23,7 +23,9 @@ frames it built for a scripted run are `tests/fixtures/tui_gateway/subagent_rela
   calls the `subagent.tool` frames already reported, so it adds no log row.
 - `subagent.complete` carries `status` (`completed`, `interrupted`, or a
   failure: `failed`, `error`, `timeout`), `duration_seconds`, and `summary`,
-  the child's reply cut to 500 characters, or its error.
+  the child's reply cut to 500 characters, or its error. On Hermes' success
+  path it also carries `output_tokens`, what the child wrote; the failure
+  path (`finish_failed`) sends no token count.
 - `subagent.text`, the child's streamed reply, is never sent on the parent's
   session: the gateway mirrors it onto the child's own session and skips the
   emit. It is not in the event contract and it is not folded here. An agent's
@@ -42,6 +44,16 @@ shown has no row to land on. A finished agent is frozen, so a repeated
 `complete` or a late frame cannot change its verdict, its time or its log,
 and a late `subagent.tail` can only fill a log that is still empty.
 
+Tokens. No frame before `subagent.complete` counts tokens, but Hermes adds
+each of the child's API calls to the `output_tokens` of the child's own row
+in state.db as it goes (a per-call delta, applied by a background writer
+as the call returns). So `token_sessions` names the child
+sessions the HUD poller reads on its thread, and `ingest_tokens` takes what
+it read: a running agent's count is the last read, a finished one's is
+`subagent.complete`'s, or the last read when it carried none. A count of 0
+(the column's default before the first call) is no count, and a row says
+nothing about tokens until it has one.
+
 Bounds. The roster holds `ROSTER_CAP` agents; one more pushes out a finished
 agent, or the one seen longest ago when none has finished (every frame that
 names an agent counts as seeing it, so a busy agent stays however early it
@@ -57,7 +69,7 @@ will show. `screen.paint_line` strips every row again when it paints.
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
@@ -67,6 +79,7 @@ from .markdown import clean_text, wrap_prefixed
 from .panels import SPINNER_FRAMES
 from .style import Line, Span
 from .theme import Theme
+from .transcript import compact_count
 from .width import cell_width, truncate, truncate_line, wrap_line
 
 QUEUED = "queued"
@@ -88,6 +101,10 @@ SUMMARY_CHARS = 2000  # four times what Hermes sends
 TAIL_CHARS = 32768  # twice the gateway's 16 KB tail, so a reply within its contract is never cut here
 MAX_TOOL_COUNT = 999_999
 MAX_SECONDS = 1_000_000_000
+MAX_TOKEN_COUNT = 10**12
+# A finished agent whose `subagent.complete` gave no count (Hermes' failure path) is read this much longer: the
+# delta of the call that ended it lands just after the frame, and the poller reads at least every eight seconds.
+TOKEN_SETTLE_SECONDS = 10.0
 
 NAME_CELLS = 16
 MIN_GOAL_CELLS = 12  # a list row keeps its right-hand figures only while the goal has this much room
@@ -113,6 +130,7 @@ TOOL_MARK = "⏺ "
 THINKING_MARK = "▸ "
 LOG_INDENT = "  "
 NO_OUTPUT = "no output yet"
+TOKENS_MARK = "↓"  # output tokens, as the turn's working row and its done line say them
 TAIL_CUT_NOTICE = "… earlier output not shown"
 
 LOG_TEXT = "text"
@@ -150,6 +168,9 @@ class Agent:
     last_tool: str = ""
     finished_at: float | None = None
     duration: float | None = None  # Hermes' own `duration_seconds`, when the `subagent.complete` carried one
+    child_session_id: str = ""  # the child's own Hermes session, whose state.db row counts its tokens as it runs
+    output_tokens: int | None = None  # what it wrote: `subagent.complete`'s count, else the last state.db read
+    tokens_final: bool = False  # `output_tokens` is `subagent.complete`'s, so no read replaces it
     log: deque[LogRow] = field(default_factory=_new_log)
     dropped: int = 0  # rows the cap pushed out of `log`
     tail_cut: bool = False  # `log` was seeded from a tail that had already lost its beginning
@@ -224,6 +245,9 @@ def _identify(agent: Agent, payload: dict[str, Any]) -> None:
     count = payload.get("tool_count")
     if isinstance(count, int) and _bounded(count, MAX_TOOL_COUNT):
         agent.tool_count = count
+    session = payload.get("child_session_id")
+    if isinstance(session, str) and session.strip() and len(session) <= ID_CHARS:
+        agent.child_session_id = session
 
 
 def _push(agent: Agent, kind: str, text: str, detail: str = "") -> None:
@@ -250,6 +274,11 @@ def _mark(agent: Agent, theme: Theme, spinner_frame: int) -> Span:
 
 def _tools_text(count: int) -> str:
     return f"{count} tool{'' if count == 1 else 's'}"
+
+
+def _tokens_text(count: int | None) -> str:
+    """`↓1.2k tokens`, what an agent wrote, as the turn's working row says it; "" until there is a count."""
+    return f"{TOKENS_MARK}{compact_count(count)} tokens" if count else ""
 
 
 def _collapsed_row(cut: list[Agent], theme: Theme) -> Line:
@@ -330,6 +359,33 @@ class Roster:
         if agent is not None:
             self._frames += 1
             agent.seen = self._frames
+
+    def token_sessions(self, now: float) -> tuple[str, ...]:
+        """The child sessions whose state.db rows the HUD poller reads output tokens from, for `ingest_tokens`.
+
+        Every agent with a child session whose count `subagent.complete` has
+        not given: while it runs or waits, and for `TOKEN_SETTLE_SECONDS`
+        after it finished without one. `now` is the app's clock.
+        """
+        return tuple(
+            agent.child_session_id
+            for agent in self.agents.values()
+            if agent.child_session_id
+            and not agent.tokens_final
+            and (agent.finished_at is None or now - agent.finished_at <= TOKEN_SETTLE_SECONDS)
+        )
+
+    def ingest_tokens(self, counts: Mapping[str, object]) -> None:
+        """Take each agent's output tokens from a state.db read, child session id to count.
+
+        A count `subagent.complete` gave is kept. A missing, mistyped or
+        out-of-range count, and 0 (no call made yet), change nothing.
+        """
+        for agent in self.agents.values():
+            count = counts.get(agent.child_session_id) if agent.child_session_id else None
+            if agent.tokens_final or not isinstance(count, int) or not _bounded(count, MAX_TOKEN_COUNT) or not count:
+                continue
+            agent.output_tokens = count
 
     def lose_unfinished(self, now: float) -> None:
         """Mark every agent that has not finished interrupted at `now`: the gateway that ran it is gone (a respawn)."""
@@ -421,6 +477,9 @@ class Roster:
         duration = payload.get("duration_seconds")
         if _bounded(duration, MAX_SECONDS):
             agent.duration = float(duration)
+        tokens = payload.get("output_tokens")
+        if isinstance(tokens, int) and _bounded(tokens, MAX_TOKEN_COUNT):
+            agent.output_tokens, agent.tokens_final = tokens, True
         for line in _lines(_text(payload.get("summary") or payload.get("text"))[:SUMMARY_CHARS]):
             _push(agent, LOG_TEXT, line)
 
@@ -474,13 +533,14 @@ class Roster:
         """One row for main and one per agent, and the id each row is for (`MAIN_ID` for main).
 
         A row is its selection marker, status glyph and goal (muted once the
-        agent finished), with `elapsed · N tools` at the right edge
-        (`waiting <elapsed>` for an agent still waiting for a worker); the
-        `selected` row is one
+        agent finished), with `elapsed · N tools · ↓N tokens` at the right
+        edge (the tokens once there is a count; `waiting <elapsed>` for an
+        agent still waiting for a worker); the `selected` row is one
         `menu_current` bar across `width`. More rows than `max_rows` scroll
         just far enough to keep the selected one on screen. Where the goal
-        would be left less than `MIN_GOAL_CELLS`, the tool count goes first,
-        then the elapsed time. With no agent there is no list.
+        would be left less than `MIN_GOAL_CELLS`, the token count goes first,
+        then the tool count, then the elapsed time, each whole. With no agent
+        there is no list.
         """
         if not self.agents or max_rows <= 0:
             return [], ()
@@ -503,7 +563,9 @@ class Roster:
             if agent.status == QUEUED:  # its clock is the wait: a row that never changes reads as a dead one
                 figures = [f"{WAITING} {elapsed}", elapsed, ""]
             else:
-                figures = [f"{elapsed}{FACT_SEPARATOR}{_tools_text(agent.tool_count)}", elapsed, ""]
+                tools = f"{elapsed}{FACT_SEPARATOR}{_tools_text(agent.tool_count)}"
+                tokens = _tokens_text(agent.output_tokens)
+                figures = [*([f"{tools}{FACT_SEPARATOR}{tokens}"] if tokens else []), tools, elapsed, ""]
         lead = SELECTED_MARK if current else UNSELECTED_MARK
         fixed = cell_width(f"{lead}{mark.text} ")
         for figure in figures:  # ends on "", which always stays
@@ -523,7 +585,7 @@ class Roster:
         )
 
     def log_lines(self, subagent_id: str, width: int, theme: Theme, now: float) -> list[Line]:
-        """An agent's log view: its goal, then `status · elapsed · N tools · model`, a blank row, and its log.
+        """An agent's log view: its goal, `status · elapsed · N tools · ↓N tokens · model`, a blank row, its log.
 
         Everything is wrapped to `width`. A log that lost rows opens by saying
         so; an empty one says `no output yet`. An id the roster does not hold
@@ -534,7 +596,10 @@ class Roster:
         agent = self.agents.get(subagent_id)
         if agent is None:
             return []
-        facts = [elapsed_text(agent.elapsed(now)), _tools_text(agent.tool_count), agent.model]
+        facts = [
+            elapsed_text(agent.elapsed(now)), _tools_text(agent.tool_count), _tokens_text(agent.output_tokens),
+            agent.model,
+        ]
         status = Span(agent.status, _mark(agent, theme, 0).style)
         rest = Span("".join(f"{FACT_SEPARATOR}{fact}" for fact in facts if fact), theme.muted)
         header: list[Line] = [

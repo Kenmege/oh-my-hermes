@@ -409,6 +409,41 @@ class ViewTests(unittest.TestCase):
         self.assertTrue(info_text(app).startswith(CHIP), info_text(app))
 
 
+class TokenTests(unittest.TestCase):
+    """The view's token figures: the poller is told which child sessions to read, and each snapshot's counts land on
+    their agents' rows."""
+
+    def snapshot(self, app: App, counts: dict[str, int], session: str | None = None) -> None:
+        from omh.tui.panels import HudSnapshot
+
+        snapshot = HudSnapshot(app.stored_id if session is None else session, {"privacy": "metadata_only"}, 0.0, counts)
+        app.poller.take = lambda: snapshot  # type: ignore[method-assign]
+        app._take_hud()
+
+    def test_the_running_agents_are_watched_and_a_snapshots_counts_reach_their_rows(self) -> None:
+        app, _client = agent_app()
+        app._take_hud()
+        self.assertEqual(app.poller.watched, ("child-session-0", "child-session-1"))
+        self.snapshot(app, {"child-session-0": 1234})
+        rows = view_text(app)
+        self.assertEqual(rows[1], f"  {SPIN} find usages of old_api in src/ and list every …  0s · 0 tools · ↓1.2k tokens")
+        self.assertEqual(rows[2], VIEW[2], "no count yet: no token part")
+
+    def test_a_snapshot_of_another_session_brings_no_counts(self) -> None:
+        app, _client = agent_app()
+        self.snapshot(app, {"child-session-0": 1234}, session="another-session")
+        self.assertEqual(view_text(app), VIEW)
+
+    def test_a_finished_agents_count_is_its_completes_and_it_leaves_the_watch(self) -> None:
+        app, _client = agent_app(frames=FRAMES)  # the first completes with 340 output tokens, the second times out
+        app._take_hud()
+        self.assertEqual(app.poller.watched, ("child-session-1",), "the timed-out one is read once more")
+        self.snapshot(app, {"child-session-0": 999, "child-session-1": 75})
+        rows = view_text(app)
+        self.assertTrue(rows[1].endswith("12s · 6 tools · ↓340 tokens"), rows[1])
+        self.assertTrue(rows[2].endswith("30s · 0 tools · ↓75 tokens"), rows[2])
+
+
 if __name__ == "__main__":
     unittest.main()
 
