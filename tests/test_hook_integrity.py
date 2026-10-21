@@ -436,7 +436,7 @@ class DoctorSurfaceTests(unittest.TestCase):
             check = next(item for item in run_doctor(paths) if item.name == "plugin_hook_integrity")
 
             self.assertFalse(check.ok)
-            self.assertIn("unknown-role warning", check.message)
+            self.assertIn("repeat-call guard", check.message)
             self.assertIn("revocation ledger", check.next_action)
 
     def test_the_check_lands_in_an_operator_visible_group(self) -> None:

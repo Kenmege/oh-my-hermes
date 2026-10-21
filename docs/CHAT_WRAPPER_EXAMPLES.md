@@ -390,9 +390,9 @@ coding dispatch, review, CI, and merge remain observed-only claims.
 
 The managed plugin does not mirror this checkpoint from its `pre_tool_call`
 hook. That hook enforces user-authored toolcall rules (returning the host's
-block directive on a match) and validates `delegate_task` role markers,
-warning when a requested OMH role is unknown; it does not copy raw tool input
-into injected context.
+block directive on a match) and does not copy raw tool input into injected
+context. An unknown OMH role in a `delegate_task` goal is warned in the child's
+own turn, by `pre_llm_call`.
 
 Capability-specific catalog questions and short image requests should also stay
 workflow-native. If the user asks "이미지 생성 기능 뭐 있어?", "이미지 생성해줘",

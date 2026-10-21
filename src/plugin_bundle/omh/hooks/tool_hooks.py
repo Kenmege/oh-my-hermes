@@ -6,8 +6,7 @@ from ..engagement_nudges import observe_engagement_outcome
 
 from collections.abc import Mapping
 from datetime import datetime, timezone
-import json
-from typing import Protocol, TypeGuard, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from ..degradation import runtime_binding_degradation
 from ..approval_bypass import record_approval_bypass
@@ -15,7 +14,6 @@ from ..host_observation import host_session_id, observe_plugin_hook_call
 from ..jev_consent import arm_tool_call as arm_jev_tool_call
 from ..jev_consent import disarm_tool_call as disarm_jev_tool_call
 from ..native_todo import project_native_todo
-from ..omh_roles import extract_role_marker, resolve_role_name, role_aliases, role_names
 from ..plan_stage_gate import plan_stage_edit_directive
 from ..skill_ownership import managed_skill_edit_directive
 from ..team_gate import team_start_directive
@@ -127,7 +125,7 @@ def _rule_directive_or_recorded_fault(
 
 
 def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
-    """Return only host-supported pre-tool directives or role warnings."""
+    """Return only host-supported pre-tool directives."""
     if str(kwargs.get("tool_name", "") or "") == "omh_jev_ask":
         # First, before any early return: the call carries the turn it runs
         # in, and `omh_jev_ask` proceeds only when that is the turn whose own
@@ -342,16 +340,7 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
         session_id=session_id,
         escalation_allowed=escalation_allowed,
     )
-    context_parts: list[str] = []
-    payload: dict[str, object] = {}
-    role_warning = _delegate_role_warning(kwargs)
-    if role_warning:
-        context_parts.append(role_warning)
-
-    if not context_parts:
-        return None
-    payload["context"] = "\n\n".join(context_parts)
-    return payload
+    return None
 
 
 def post_tool_call(**kwargs: object) -> dict[str, object] | None:
@@ -464,41 +453,3 @@ def _tool_arguments(kwargs: Mapping[str, object]) -> object:
     reason, invisibly.
     """
     return kwargs.get("tool_input") if "tool_input" in kwargs else kwargs.get("args")
-
-
-class _JsonDecoder(Protocol):
-    def loads(self, s: str) -> object: ...
-
-
-_decoder: _JsonDecoder = json
-
-
-def _is_dict(value: object) -> TypeGuard[dict[object, object]]:
-    return isinstance(value, dict)
-
-
-def _delegate_role_warning(kwargs: dict[str, object]) -> str:
-    if str(kwargs.get("tool_name", "") or "") != "delegate_task":
-        return ""
-    tool_input: object = kwargs.get("tool_input") or {}
-    if isinstance(tool_input, str):
-        try:
-            parsed = _decoder.loads(tool_input)
-        except json.JSONDecodeError:
-            return ""
-        tool_input = parsed if _is_dict(parsed) else {}
-    if not _is_dict(tool_input):
-        return ""
-    marker = extract_role_marker(str(tool_input.get("goal", "") or ""))
-    if not marker:
-        return ""
-    available = role_names()
-    aliases = role_aliases()
-    if marker in available or resolve_role_name(marker) in available:
-        return ""
-    return (
-        f"[OMH Role Warning] Unknown role '{marker}' in delegate_task goal. "
-        f"Available roles: {', '.join(available) or '(none)'}. "
-        f"Legacy aliases: {', '.join(sorted(aliases)) or '(none)'}. "
-        "No OMH role context will be injected for that subagent."
-    )

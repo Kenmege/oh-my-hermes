@@ -238,15 +238,21 @@ session the section did not render for. A second section,
 `omh.delegation-protocol`, renders only for a Hermes `delegate_task` child
 (platform `subagent`) and is empty for every other session. It carries the
 delegation protocol that `omh coding composition-guide` returns: the goal
-echo-back for every child, the bounded verification pass when the task changes
-files, and the two-round re-review cap when the child reviews work against
+echo-back for every child (naming numbered criteria only when the goal has
+them), the bounded verification pass when the task changes files or other
+state, and the two-round re-review cap when the child reviews work against
 stated success criteria. So every child of a batch gets it without the parent
 pasting it into the goal, and the `coding-handling` harness and
-`omh coding composition-guide` tell the parent not to. The `pre_tool_call` hook enforces user-authored toolcall rules (a
-matching rule returns the host's block directive). Its delegate role-marker
-check reads a `tool_input` argument, while Hermes passes the arguments as
-`args`, so the unknown-role warning does not fire on current Hermes. The hook
-does not inject generic-tool checkpoint metadata or raw tool input.
+`omh coding composition-guide` tell the parent not to. The section keys on the
+`platform="subagent"` that Hermes gives a `delegate_task` child, and
+`omh doctor` reads the installed Hermes for that literal
+(`plugin_delegation_protocol`), so a rename shows as a warning rather than as
+children quietly losing the protocol. The `pre_tool_call` hook enforces
+user-authored toolcall rules (a matching rule returns the host's block
+directive). An unknown `[omh-role:...]` marker in a delegate goal is warned in
+the child's own turn by `pre_llm_call`, since Hermes reads only `action` from a
+`pre_tool_call` result. The hook does not inject generic-tool checkpoint
+metadata or raw tool input.
 `omh hud`
 exposes the same status-line payload for local operator smoke tests. The HUD
 line stays limited to version, plugin bridge readiness, target topology, current

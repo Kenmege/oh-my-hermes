@@ -833,13 +833,18 @@ class HookManifestTests(unittest.TestCase):
 
             self.assertFalse(activity["post_tool_call_observed"])
 
-    def test_pre_tool_call_preserves_delegate_role_warning(self) -> None:
-        result = pre_tool_call(
-            tool_name="delegate_task",
-            tool_input={"goal": "[omh-role:not-a-role] prepare a plan"},
-        )
+    def test_an_unknown_delegate_role_is_warned_in_the_child_turn_not_at_the_call(self) -> None:
+        # Hermes reads only `action` from a `pre_tool_call` result
+        # (`hermes_cli/plugins.py`, `_get_pre_tool_call_directive_details`),
+        # so a warning there reached no one. The child runs its goal as its
+        # first user message, on platform `subagent`, and `pre_llm_call`
+        # warns there.
+        goal = "[omh-role:not-a-role] prepare a plan"
+        for spelling in ("args", "tool_input"):
+            with self.subTest(spelling=spelling):
+                self.assertIsNone(pre_tool_call(tool_name="delegate_task", **{spelling: {"goal": goal}}))
 
-        self.assertIsNotNone(result)
-        self.assertEqual(set(result or {}), {"context"})
-        self.assertIn("[OMH Role Warning]", str((result or {}).get("context", "")))
-        self.assertIn("Unknown role 'not-a-role'", str((result or {}).get("context", "")))
+        child_turn = pre_llm_call(user_message=goal, platform="subagent", is_first_turn=True)
+
+        self.assertIn("[OMH Role Warning]", str((child_turn or {}).get("context", "")))
+        self.assertIn("Unknown role 'not-a-role'", str((child_turn or {}).get("context", "")))

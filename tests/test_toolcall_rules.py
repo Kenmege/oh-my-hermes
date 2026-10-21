@@ -301,7 +301,7 @@ class HookWiringTest(unittest.TestCase):
         )
         self.assertIsNone(result)
 
-    def test_rule_block_takes_precedence_over_role_warning(self):
+    def test_rule_block_applies_to_a_delegate_goal_with_a_role_marker(self):
         _write_rules(self.home, [{"name": "goal-guard", "pattern": "forbidden", "message": "m"}])
         result = pre_tool_call(
             tool_name="delegate_task",
