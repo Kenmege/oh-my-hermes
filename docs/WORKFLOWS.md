@@ -8030,7 +8030,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - A supplied spreadsheet needs cleaning, descriptive statistics, or anomaly analysis; use `data-analysis`.
   - A supplied academic PDF needs section-by-section explanation; use `paper-learning`.
   - A general business question needs an audience-ready synthesis rather than a domain model; use `research-brief`.
-- Strong routing signals: `market-research`, `market sizing`, `tam sam som`, `bottom up market sizing`, `market size sensitivity`, `customer evidence analysis`, `jtbd evidence matrix`, `competitor pricing profiles`, `competitive pricing analysis`
+- Strong routing signals: `market-research`, `market sizing`, `tam sam som`, `bottom up market sizing`, `market size sensitivity`, `customer evidence analysis`, `jtbd evidence matrix`, `prepare competitor pricing profiles`, `perform competitive pricing analysis`
 - Good example:
   - Prompt: Estimate TAM SAM SOM for US independent dental clinics with sourced counts and sensitivity, not a guessed capture percentage.
   - Expected behavior: Fix scope and units, build a source/assumption ledger, calculate addressable scenarios with tools, and expose confidence limits and missing inputs.

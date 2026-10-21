@@ -2810,7 +2810,7 @@ _SIBLING_POINTER_METADATA_TOKENS = {
 _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # Only complete domain phrases may score; their ordinary component words
     # must not turn unrelated market, customer or profile mentions into work.
-    "market-research": frozenset({"market", "research", "sizing", "tam", "sam", "som", "bottom", "up", "size", "sensitivity", "customer", "evidence", "analysis", "jtbd", "matrix", "competitor", "pricing", "profiles", "competitive"}),
+    "market-research": frozenset({"market", "research", "sizing", "tam", "sam", "som", "bottom", "up", "size", "sensitivity", "customer", "evidence", "analysis", "jtbd", "matrix", "competitor", "pricing", "profiles", "competitive", "prepare", "perform"}),
     # The Jev skills are reached through `routing/jev_addressing.py` only:
     # every word their triggers are built from is held back, `jev` included,
     # so a sentence that merely mentions Jev or a review, a failure, or a

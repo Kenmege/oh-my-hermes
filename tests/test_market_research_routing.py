@@ -38,6 +38,49 @@ class MarketResearchRoutingTests(unittest.TestCase):
             with self.subTest(prompt=prompt):
                 self.assertEqual(route_owner(route_chat_message(prompt)), owner)
 
+    def test_existing_workflows_keep_market_methods_as_their_input(self) -> None:
+        cases = (
+            (
+                "Create a research brief for the board from the supplied competitor pricing profiles",
+                "research-brief",
+            ),
+            (
+                "Triage this customer feedback backlog about competitive pricing analysis",
+                "feedback-triage",
+            ),
+        )
+        for prompt, owner in cases:
+            with self.subTest(prompt=prompt):
+                decision = route_chat_message(prompt)
+                self.assertEqual(route_owner(decision), owner)
+                self.assertNotEqual(build_chat_interaction_payload(prompt)["chat_response"]["kind"], "market_research")
+                for row in recommend_skills(prompt, limit=100):
+                    if row["skill"] == "market-research":
+                        self.assertNotIn("guard:market_comparison", row["matched"])
+
+    def test_sending_or_translating_market_material_does_not_request_analysis(self) -> None:
+        for prompt in (
+            "Send the supplied competitor pricing profiles to Slack",
+            "Translate competitive pricing analysis into Korean",
+        ):
+            with self.subTest(prompt=prompt):
+                decision = route_chat_message(prompt)
+                self.assertNotEqual(decision.get("selected_skill"), "market-research")
+                self.assertNotEqual(build_chat_interaction_payload(prompt)["chat_response"]["kind"], "market_research")
+                for row in recommend_skills(prompt, limit=100):
+                    if row["skill"] == "market-research":
+                        self.assertNotIn("guard:market_comparison", row["matched"])
+
+    def test_analysis_predicates_still_request_the_market_method(self) -> None:
+        for prompt in (
+            "Perform competitive pricing analysis for three SaaS vendors",
+            "Please conduct competitive pricing analysis for dental SaaS vendors",
+            "Build competitor pricing profiles for the three shortlisted vendors",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertEqual(route_owner(route_chat_message(prompt)), "market-research")
+                self.assertEqual(build_chat_interaction_payload(prompt)["chat_response"]["kind"], "market_research")
+
     def test_generic_market_word_does_not_trigger_a_method(self) -> None:
         prompt = "the market stall is closing; price the used monitor"
         rows = recommend_skills(prompt, limit=100)

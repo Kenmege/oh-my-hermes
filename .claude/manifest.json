@@ -120,7 +120,7 @@
     "omh-llm-app-dev/references/public-board.md": "e69b890be7da4d91ce612722b180b229821db714bd72aa28a55db013364e7cca",
     "omh-llm-app-dev/references/stateful-contracts.md": "7bda4e79b8c60f406d3a4e7ea9d3e4f7c69d6ee80a23416678be678d6dd95816",
     "omh-localization-review/SKILL.md": "4b8bd3dddca56b72b30e8e9662898a58864a8897f7509f924af2b97bbd2387da",
-    "omh-market-research/SKILL.md": "138d6362ff63ff5c346b3a010618f736e96ee5fde466c5dda018832c030b203e",
+    "omh-market-research/SKILL.md": "e81b598130e5a452704307b105ed79737b0aaa1661f00cae44c9f6db69943c69",
     "omh-market-research/references/competitive-pricing.md": "b711c6509e14cc949ecf16390356eb3ee9afc91a43d40638d182fbe7661108b0",
     "omh-market-research/references/customer-evidence.md": "8da581b0b92b6abc38d08b5f808afa5a5f85b3c440e6657fb3328e2e14a9eec7",
     "omh-market-research/references/findings-template.md": "d5ba16727921be3ffef82a4972c02b9375dce85da5460cf3f92815c2c4938af7",
@@ -331,7 +331,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "85853eabda40010995ddb7159a54b7ac31016631d23b705655ff19b88cf8c322",
+  "source_digest": "d9bc1fc8c456aa111bdd65a7b3ab55e040fffe6206b71da7af149f2bc668225d",
   "targets": {
     "repo": ".claude/skills",
     "user": ".claude/skills"

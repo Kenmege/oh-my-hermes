@@ -6529,8 +6529,13 @@ def _active_routing_guard_rules_cached(
         and not paper_learning_applies
         and not point_in_time_web_applies
         and not direct_coding_task_applies
-        and contains_cue_phrase(normalized_query, (
-            "competitor pricing profiles", "competitive pricing analysis",
+        and not feedback_before_coding_applies
+        # Boost an analysis predicate bound to the domain method, not a method
+        # noun used as input to a brief, feedback triage, translation or send.
+        and contains_cue_phrase(normalized_query, tuple(
+            f"{action} {method}"
+            for action in ("prepare", "build", "create", "research", "analyze", "compare", "conduct", "perform", "run")
+            for method in ("competitor pricing profiles", "competitive pricing analysis")
         ))
     ):
         rules.append(MARKET_COMPARISON_GUARD)

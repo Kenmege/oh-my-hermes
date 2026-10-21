@@ -138,7 +138,7 @@ When Hermes exposes installed skill descriptions to the model, use this registry
 - `spend-gate`: `spend-gate`, `spend gate`, `pre-spend`, `pre-spend card`, `spend cap`, `spending cap`, `spend limit`, `spending limit`, `spend request`
 - `decision-prototype`: `decision-prototype`, `$decision-prototype`, `decision prototype`, `prototype this uncertain choice before planning`, `prototype before planning`, `prototype the uncertain choice`, `run a small spike`, `small spike`, `spike solution`
 - `lifecycle-growth`: `lifecycle-growth`, `lifecycle growth`, `lifecycle marketing`, `lifecycle messaging`, `in-app journey`, `in-app message campaign`, `onboarding journey`, `onboarding nudge`, `activation campaign`
-- `market-research`: `market-research`, `market sizing`, `tam sam som`, `bottom up market sizing`, `market size sensitivity`, `customer evidence analysis`, `jtbd evidence matrix`, `competitor pricing profiles`, `competitive pricing analysis`
+- `market-research`: `market-research`, `market sizing`, `tam sam som`, `bottom up market sizing`, `market size sensitivity`, `customer evidence analysis`, `jtbd evidence matrix`, `prepare competitor pricing profiles`, `perform competitive pricing analysis`
 - `product-discovery-validation`: `product-discovery-validation`, `product discovery validation`, `product discovery`, `customer discovery`, `customer discovery plan`, `zero to one validation`, `validate the problem before building`, `problem solution interview`, `customer interview guide`
 - `sales-pipeline-review`: `sales-pipeline-review`, `sales pipeline review`, `pipeline review`, `pipeline health`, `pipeline coverage`, `deal review`, `deal health`, `sales forecast review`, `forecast call`
 - `jev-ask`: `jev-ask`, `ask jev`, `jev question`, `jev score`
