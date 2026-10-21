@@ -37,8 +37,9 @@ All notable changes will be documented here.
   clarifies and the hint asks one question naming both readings (owner
   decision O7). A question about stopping (`dag ulw 취소 어떻게 해`,
   `dag ulw 멈출 수 있어`, `dag ulw 중단하면 어떻게 돼`), or whether it stopped
-  (`dag ulw 취소됐어?`, `dag ulw 멈췄어`), is answered, unless a request of its
-  own comes first (`dag ulw 다시 돌려줘, 아까 취소한 거` runs). So is a sigil
+  (`dag ulw 취소됐어?`, `dag ulw 멈췄어`, `dag ulw 확인해줘, 취소됐는지`), is
+  answered, unless a re-run request comes first (`dag ulw 다시 돌려줘, 아까
+  취소한 거` runs). So is a sigil
   before a question (`/dag-ulw what is it?`, `/dag-ulw how do I cancel the
   run?`), unless it goes on to ask for work (`/dag-ulw explain the plan, then
   run the migration` runs). These cancel. On main
@@ -55,7 +56,7 @@ All notable changes will be documented here.
     취소`);
   - the act of stopping after those (`작업 취소 처리해줘`, `런 중단 요청
     보내줘`, `취소 눌러줘`), and a stop that did not take (`취소했는데 계속
-    돌아가`);
+    돌아가`, `취소 눌렀는데 계속 돌아가`);
   - an English stop after `can you` (`can you stop dag ulw`).
 
   `dag ulw 주문 취소 기능 구현해줘` still runs.

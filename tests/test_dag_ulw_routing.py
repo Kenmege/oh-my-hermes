@@ -208,6 +208,9 @@ class RouterTests(unittest.TestCase):
                         "dag ulw 취소됐어?", "dag ulw 멈췄어?", "dag ulw 중단됐나?", "dag ulw 종료됐어?", "dag ulw 취소했어?",
                         "dag ulw 주문 취소됐어?", "dag ulw 취소된 거 맞아?", "dag ulw 취소 완료됐어?", "dag ulw 그만뒀어?",
                         "dag ulw 결과 보고 취소 여부 결정할게",
+                        # A status check before a past stop asks whether it stopped; it is no re-run.
+                        "dag ulw 확인해줘, 취소됐는지", "dag ulw 보여줘, 취소된 거", "dag ulw 봐줘, 아까 취소한 거 끝났는지",
+                        "dag ulw 살펴봐줘, 중단된 거",
                         # A sigil before a question is a question.
                         "/dag-ulw 취소 어떻게 해", "$dag-ulw 취소 방법 알려줘"):
             with self.subTest(message=message):
@@ -225,7 +228,8 @@ class RouterTests(unittest.TestCase):
         self.assertTrue(invokes_dag_ulw("/dag-ulw migrate the billing service"))
         for message in ("/dag-ulw explain the plan, then run the migration",
                         "/dag-ulw is the auth refactor done? if not, finish it",
-                        "/dag-ulw what's left of the migration, finish it"):
+                        "/dag-ulw what's left of the migration, finish it",
+                        "/dag-ulw how do I fix the auth bug? fix it"):
             with self.subTest(message=message):
                 # A question that goes on to ask for work is still a command.
                 self.assertTrue(invokes_dag_ulw(message))
@@ -291,7 +295,7 @@ class RouterTests(unittest.TestCase):
                   "dag ulw 런 종료 처리해줘", "dag ulw 취소 처리해줘", "dag ulw 작업 취소 진행해줘", "dag ulw 취소 요청해줘",
                   "dag ulw 런 중단 요청 보내줘", "dag ulw 취소 눌러줘", "dag ulw 취소 실행해줘", "dag ulw 중단 명령 내려줘",
                   "dag ulw 취소 처리", "dag ulw 작업 취소 좀 진행해 주세요", "dag ulw 취소 요청",
-                  "dag ulw 취소했는데 계속 돌아가", "dag ulw 취소했는데 아직 안 멈춰",
+                  "dag ulw 취소했는데 계속 돌아가", "dag ulw 취소했는데 아직 안 멈춰", "dag ulw 취소 눌렀는데 계속 돌아가",
                   "dag ulw 취소해 주시겠어요?", "dag ulw 취소해주실래요",
                   # A polite opener or a trailing please before an English stop word.
                   "can you stop dag ulw", "could you cancel the dag ulw run", "can you please cancel dag ulw?",
@@ -336,6 +340,7 @@ class RouterTests(unittest.TestCase):
                         # Work on a cancel, not the act of cancelling the run; and a re-run that names a past stop.
                         "dag ulw 결제 취소 처리해줘", "dag ulw 취소 처리 로직 만들어줘", "dag ulw 취소 요청 큐 리팩터링해줘",
                         "dag ulw 다시 돌려줘, 아까 취소한 거", "dag ulw 다시 실행해줘. 어제 중단된 거",
+                        "dag ulw 재시작해줘 취소했던 거", "dag ulw 다시 돌려줘 아까 취소한 거", "dag ulw 다시 해줘, 아까 취소한 거 말고",
                         "dag ulw 취소했는데 계속 돌아가는 버그 고쳐줘"):
             with self.subTest(message=message):
                 self.assertTrue(invokes_dag_ulw(message))

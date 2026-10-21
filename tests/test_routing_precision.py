@@ -24,7 +24,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # The Indonesian trigger pack adds six negatives and eleven interventions.
         # The Vietnamese trigger pack adds eight negatives and eleven interventions.
         # dag-ulw adds twenty-one negatives and twenty-nine interventions.
-        self.assertEqual(payload["summary"]["case_count"], 907)
+        self.assertEqual(payload["summary"]["case_count"], 912)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -62,12 +62,14 @@ class RoutingPrecisionTests(unittest.TestCase):
         # The fifth review makes a cancel request said as a noun a cancel, and
         # adds a processed cancel, a halt request sent, and a cancelled run
         # that keeps going, each answered directly (+4).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 259)
+        # The sixth review adds four status checks before a past stop and a
+        # cancel pressed while the run still goes, each answered directly (+5).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 264)
         self.assertEqual(payload["summary"]["file_lookup_count"], 10)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
         self.assertEqual(payload["summary"]["catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["intervention_case_count"], 939)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 943)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

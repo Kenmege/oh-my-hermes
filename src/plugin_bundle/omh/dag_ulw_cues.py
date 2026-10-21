@@ -150,12 +150,16 @@ _KOREAN_PAST: Final = re.compile(r"^\s*(?:완료\s*)?(?:됐|되었|됨|된|했|�
 # refactor done? if not, finish it").
 _SIGIL_QUESTION: Final = re.compile(
     r"^(?!.*(?:\b(?:then|and)\s+(?:run|do|start|finish|implement|fix|migrate|build)\b|\bif\s+not\b"
-    r"|,\s*(?:finish|run|do|fix|start|implement)\b))"
+    r"|[,?!.]\s*(?:finish|run|do|fix|start|implement)\b))"
     rf"(?:\$|\./|/){_NAME}[\s,:]+(?:how|what|why|when|where|who|which|is|are|does|do\s+i|can\s+i|should|tell\s+me"
     r"|explain|describe)\b",
     re.DOTALL,
 )
-# A stop the person already made, said while the run still goes ("dag ulw 취소했는데 계속 돌아가"): stop it again.
+# A stop the person already made, said while the run still goes ("dag ulw 취소했는데 계속 돌아가", "dag ulw 취소
+# 눌렀는데 계속 돌아가"): stop it again.
+_KOREAN_PRESSED: Final = re.compile(r"\s*눌렀")
+_REQUEST_BEFORE_STOP: Final = re.compile(r"(?:^|\s)(?:다시\s*)?(?!해|하|좀)\S+?(?:해)?(?:줘|주세요)(?=[\s,.]|$)|다시\s*해\s*(?:줘|주세요)")
+_STATUS_REQUEST: Final = re.compile(r"(?:확인|체크|봐|보여|알려|살펴|점검|조회)\S*?(?:해)?(?:줘|주세요)")
 _KOREAN_STILL_RUNNING: Final = re.compile(r"(?:계속|아직|여전히)\s*(?:돌아|돌고|실행|진행|안\s*멈)|안\s*(?:멈춰|멈추|꺼져|꺼지)")
 # A stop of the run right after the name, then more work ("dag ulw 지금 거 취소하고 결제 모듈부터 다시 해줘",
 # "dag ulw 취소하고 다시 처음부터 구현해줘"): stop and restart, or work on a cancel, so it asks before either.
@@ -188,7 +192,8 @@ def dag_ulw_control(text: str) -> str:
     stop = _STOP_AFTER_NAME.search(folded)
     if not stop or _stop_names_work(stop):
         return ""
-    if _KOREAN_PAST.search(stop.group("after")) and _KOREAN_STILL_RUNNING.search(stop.group("after")):
+    after = stop.group("after")
+    if (_KOREAN_PAST.search(after) or _KOREAN_PRESSED.match(after)) and _KOREAN_STILL_RUNNING.search(after):
         return "cancel"
     return "" if _asks_about_stopping(stop) else "cancel_or_run"
 
@@ -217,8 +222,7 @@ def _stop_names_work(stop: re.Match[str]) -> bool:
         return False  # a question about stopping (`_asks_about_stopping`), even after …하면 ("중단하면 어떻게 돼")
     if _KOREAN_WORK_CONDITION.search(after) or _KOREAN_CONDITION_BEFORE.search(before):
         return True
-    clauses_before = re.split(r"[,.]", before)[:-1]
-    if _KOREAN_PAST.search(after) and any(_ends_in_its_own_request(clause) for clause in clauses_before):
+    if _KOREAN_PAST.search(after) and _REQUEST_BEFORE_STOP.search(before) and not _STATUS_REQUEST.search(before):
         return True  # a request of its own, then the stop it names: "dag ulw 다시 돌려줘, 아까 취소한 거"
     return _ends_in_its_own_request(after)
 
