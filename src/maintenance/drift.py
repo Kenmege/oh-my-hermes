@@ -340,8 +340,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             name="route_hint_case_count",
             describe="Route hint alignment cases",
             live=_route_hint_case_count,
-            # show-reel adds one aligned workflow route hint.
-            expected=211,
+            # show-reel adds one coverage hint and seven fixback alignment
+            # cases for operations, the static-reference owner and ko/ja/zh.
+            expected=218,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",
@@ -764,7 +765,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # after it (2); what app-debugging is (1); and a build broken
             # after using ultrawork, still a report (1) (9).
             # show-reel adds six non-production controls across EN/KO/JA/ZH.
-            expected=951,
+            # Its fixback adds ten operation/reference/translation controls.
+            expected=961,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1141,7 +1143,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # to app-debugging and running-work-board, whose work it is (2);
             # and a kill switch for flags with dag ulw (1) (10).
             # show-reel adds four named-script production interventions.
-            expected=969,
+            # Its fixback adds three production verbs and two adjacent owners.
+            expected=974,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

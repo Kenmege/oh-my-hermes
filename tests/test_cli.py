@@ -4574,7 +4574,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertEqual(gates["chat_card_coverage"]["status"], "passed")
             self.assertIn("generic ack 0", gates["chat_card_coverage"]["summary"])
             self.assertEqual(gates["route_hint_alignment"]["status"], "passed")
-            self.assertIn("211/211 route hints aligned", gates["route_hint_alignment"]["summary"])
+            self.assertIn("218/218 route hints aligned", gates["route_hint_alignment"]["summary"])
             self.assertEqual(gates["context_brief_coverage"]["status"], "passed")
             self.assertIn("12/12 context brief cases passing", gates["context_brief_coverage"]["summary"])
             self.assertEqual(gates["routing_precision"]["status"], "passed")
@@ -4686,7 +4686,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertEqual(payload["summary"]["grounded_score_average"], 10.0)
             self.assertEqual(payload["summary"]["chat_card_coverage_passing"], 91)
             self.assertEqual(payload["summary"]["chat_card_generic_ack_count"], 0)
-            self.assertEqual(payload["summary"]["route_hint_alignment_aligned"], 211)
+            self.assertEqual(payload["summary"]["route_hint_alignment_aligned"], 218)
             self.assertEqual(payload["summary"]["route_hint_mismatch_count"], 0)
             self.assertEqual(payload["summary"]["context_brief_coverage_passing"], 12)
             self.assertEqual(payload["summary"]["context_brief_coverage_total"], 12)
@@ -9884,9 +9884,9 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         self.assertEqual(status, 0)
         payload = json.loads(stdout)
         self.assertEqual(payload["schema_version"], "route_hint_alignment/v1")
-        self.assertEqual(payload["summary"]["case_count"], 211)
-        self.assertEqual(payload["summary"]["hinted_count"], 211)
-        self.assertEqual(payload["summary"]["aligned_count"], 211)
+        self.assertEqual(payload["summary"]["case_count"], 218)
+        self.assertEqual(payload["summary"]["hinted_count"], 218)
+        self.assertEqual(payload["summary"]["aligned_count"], 218)
         self.assertEqual(payload["summary"]["missing_hint_count"], 0)
         self.assertEqual(payload["summary"]["mismatch_count"], 0)
         self.assertTrue(payload["summary"]["all_aligned"])
@@ -9917,7 +9917,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         self.assertEqual(status, 0)
         explicit_payload = json.loads(stdout)
         self.assertEqual(explicit_payload["schema_version"], "route_hint_alignment/v1")
-        self.assertEqual(explicit_payload["summary"]["case_count"], 211)
+        self.assertEqual(explicit_payload["summary"]["case_count"], 218)
 
     def test_demo_route_hint_alignment_summary_is_human_readable(self) -> None:
         status, stdout, stderr = run_cli(["demo", "route-hint-alignment", "--summary"])
@@ -9927,8 +9927,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         with self.assertRaises(json.JSONDecodeError):
             json.loads(stdout)
         self.assertIn("OMH route hint alignment", stdout)
-        self.assertIn("Result: 211/211 route hints aligned (all passing)", stdout)
-        self.assertIn("Hints present: 211/211; missing hints: 0; mismatches: 0", stdout)
+        self.assertIn("Result: 218/218 route hints aligned (all passing)", stdout)
+        self.assertIn("Hints present: 218/218; missing hints: 0; mismatches: 0", stdout)
         self.assertIn(
             # The route keeps the catalog key, the hint emits the installed
             # skill's identifier; the rollup shows both vocabularies (#1249).

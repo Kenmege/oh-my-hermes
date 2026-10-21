@@ -6138,6 +6138,11 @@ def explicit_skill_invocation(message: str, names: set[str], query: RoutingQuery
     # the `ask` skill's name, and the Jev skill is the more specific owner
     # (`routing/jev_addressing.py`) -- or a message with no explicit form.
     ordinary = _ordinary_explicit_skill_invocation(stripped, names, query)
+    if ordinary == "show-reel":
+        from ..plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
+
+        if not show_reel_request_admitted(stripped):
+            ordinary = None
     if ordinary is not None and ordinary != "ask" and not ordinary.startswith("jev-"):
         return ordinary
     jev_skill = jev_addressed_skill(stripped, names, query)

@@ -781,8 +781,8 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 67130
 # 505556 -> 505649: the `dag-ulw` row's handoff policy says where a coding
 # owner's choice comes from (`omh chat` or `omh coding`, within a day) and
 # that Hermes chat records none (+93). Re-derived from the producer.
-# 505649 -> 509331: the `show-reel` capability row and its membership in
-# the materials/visual lane's sibling listings. Re-derived from the producer.
+# 505649 -> 509331: only the new `show-reel` capability row (+3682);
+# no existing row changed. Re-derived from the producer.
 FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 509331
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone

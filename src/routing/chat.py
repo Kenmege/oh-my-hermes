@@ -2129,7 +2129,11 @@ def _with_canonical_display_names(routing_message: str) -> str:
     # Join the spaced form first: the mapping below is keyed on the rendered
     # labels, which are hyphenated.
     routing_message = _joined_ulw_invocation(routing_message)
-    canonical = canonical_display_mentions(routing_message, _canonical_skill_by_display_name())
+    # Keep the invocation marker for the motion workflow: its admission
+    # distinguishes an explicit host-label invocation (including arbitrary
+    # language payloads) from a bare format name used as reference context.
+    display_names = {**_canonical_skill_by_display_name(), "omh-show-reel": "omh-show-reel"}
+    canonical = canonical_display_mentions(routing_message, display_names)
     # The fold must not turn OMH's goal loop into Hermes' timer: "every 2 hours
     # ulw-loop the flaky list" folded to "every 2 hours loop the flaky list"
     # would read as native `/loop` to every later reader of this text. There

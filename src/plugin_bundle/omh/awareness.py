@@ -33,6 +33,7 @@ from .hermes_session_commands import (
 from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, OMH_TODO_HELD_PLANS, native_tool_presence_clause
 from .spend_signals import SPEND_GATE_PHRASES, spend_request_phrases
+from .show_reel_cues import SHOW_REEL_PHRASES, show_reel_request_admitted, show_reel_request_phrases
 from .reference_regions import executable_routing_text
 from .degradation import (
     COMPONENT_LOCALIZED_ROUTING_TEXT,
@@ -2656,7 +2657,7 @@ _ROUTE_HINT_RULES = (
         "next_action": "prepare_show_reel",
         "reason": "The user needs an authored motion showcase with audience, source, concept, timing, export QA and delivery gates.",
         "fallback_action": "confirm_audience_sources_and_available_renderer",
-        "phrases": ("show-reel", "show reel", "showreel", "product showcase video", "animated product film", "motion showcase", "animated portfolio", "launch film", "product teaser video"),
+        "phrases": SHOW_REEL_PHRASES,
         "tokens": (),
         "adjacent_workflows": ("img-summary", "visual-qa", "materials-package"),
     },
@@ -6046,6 +6047,7 @@ def _awareness_context_matches_message_cached(message: str) -> tuple[bool, str]:
         or any(marker in text for marker in _AWARENESS_MESSAGE_MARKERS)
         or _spend_awareness_marked(raw_text)
         or _data_share_awareness_marked(raw_text)
+        or show_reel_request_admitted(raw_text)
     )
     # `degraded[0][1]` is lossless here because the `_localized_routing_text`
     # call above is the sole guarded call in this function body, so the
@@ -6537,6 +6539,7 @@ def _rule_suppressed_by_named_coding_agent_delivery(
 #   starts mid-word; the request the router admits is checked apart, by
 #   `_rule_suppressed_by_context`.
 _ROUTE_HINT_PHRASE_READERS: dict[str, Callable[[str, list[str]], list[str]]] = {
+    "show_reel_production": show_reel_request_phrases,
     "spend_gate": spend_request_phrases,
     "data_share_review": data_share_phrases_said,
 }
@@ -7720,6 +7723,8 @@ def _direct_workflow_invocation_hint(
     if not direct_prefix_workflow and "workflow_marker" not in structural and not direct_omh_form:
         return {}
     workflow = direct_prefix_workflow or mentioned[0]
+    if workflow == "show-reel" and not show_reel_request_admitted(message):
+        return {}
     if workflow == "loop" and timed_native_loop:
         return {}
     next_action = _DIRECT_WORKFLOW_NEXT_ACTIONS.get(workflow, "route_to_downstream_workflow")

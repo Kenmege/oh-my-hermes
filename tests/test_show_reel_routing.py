@@ -9,9 +9,11 @@ from _local_package import load_local_package
 load_local_package()
 from omh.paths import resolve_paths
 from omh.routing.chat import route_chat_message
+from omh.routing.recommend import recommend_skills
 from omh.skills.skill_record import skill_record
 from omh.wrapper_contract import build_chat_interaction_payload
 from omh.plugin_bundle.omh.awareness import awareness_primer_payload, awareness_route_hint, workflow_context_card_for_workflow
+from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
 
 
 class ShowReelRoutingTests(unittest.TestCase):
@@ -48,11 +50,181 @@ class ShowReelRoutingTests(unittest.TestCase):
             self.assertEqual(hint["hints"][0]["workflow_context_card"]["id"], "materials_and_visuals")
 
     def test_supported_pack_phrases_route_without_claiming_arabic_lexical_support(self):
-        for message in ("제품 쇼케이스 영상 만들어줘", "製品ショーケース動画を作って", "制作产品展示短片", "omh-show-reel اصنع عرضًا للمنتج"):
+        for message in ("제품 쇼케이스 영상 만들어줘", "제품 쇼케이스 영상 만들어 주세요", "製品ショーケース動画を作って", "製品ショーケース動画を作ってください", "制作产品展示短片", "请制作产品展示短片", "omh-show-reel اصنع عرضًا للمنتج"):
             with self.subTest(message=message):
                 route = route_chat_message(message, source="discord")
                 self.assertEqual(route.get("selected_skill"), "show-reel")
                 self.assertEqual(route["action"], "dispatch")
+                self.assertEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
+
+    def test_production_refreshes_real_mid_session_hook(self):
+        with TemporaryDirectory() as temp:
+            for message in (
+                "Create a product showcase video for a Japanese audience.",
+                "제품 쇼케이스 영상 만들어줘",
+                "製品ショーケース動画を作って",
+                "制作产品展示短片",
+            ):
+                with self.subTest(message=message):
+                    payload = pre_llm_call(omh_home=temp, hermes_home=temp, user_message=message, is_first_turn=False)
+                    self.assertIsNotNone(payload)
+                    self.assertIn("prepare_show_reel", str(payload))
+
+    def test_production_verb_article_and_polite_family(self):
+        with TemporaryDirectory() as temp:
+            paths = resolve_paths(Path(temp) / "omh", Path(temp) / "hermes")
+            messages = [
+                f"{prefix}{verb} {article}{noun} for our audience."
+                for prefix in ("", "Please ", "Could you please ")
+                for verb in ("Make", "Create", "Write", "Produce")
+                for article, noun in (("", "product showcase video"), ("a ", "product showcase video"), ("an ", "animated product film"), ("the ", "launch film"))
+            ]
+            messages += [
+                "show-reel",
+                "omh-show-reel",
+                "showreel",
+                "show reel",
+                "Use this review to create a product showcase video.",
+                "Create a product showcase video using this review as input.",
+                "Produce a product showcase video with narration; do not translate the quoted review.",
+                "Make a launch film with translated subtitles and explicit narration.",
+            ]
+            for message in messages:
+                with self.subTest(message=message):
+                    self.assertEqual(recommend_skills(message, limit=1)[0]["skill"], "show-reel")
+                    self.assertEqual(route_chat_message(message, source="discord")["selected_skill"], "show-reel")
+                    self.assertEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
+                    self.assertEqual(build_chat_interaction_payload(message, source="discord", paths=paths)["chat_response"]["kind"], "show_reel")
+
+    def test_modified_production_objects_keep_their_head(self):
+        messages = [
+            f"{verb} a {modifier} {noun} for OMH."
+            for verb, noun in (("Create", "product showcase video"), ("Produce", "launch film"))
+            for modifier in ("cinematic", "high-quality", "60-second English", "engaging", "quietly confident", "bold hand-drawn", "warm accessible", "90 second French")
+        ] + [
+            "Could you make an engaging product showcase video?",
+            "Create a showreel that introduces OMH.",
+            "Produce a launch film which explains our product.",
+            "Use this review of what not to translate to create a vivid product showcase video.",
+        ]
+        self._assert_production_surfaces(messages)
+
+    def _assert_production_surfaces(self, messages):
+        with TemporaryDirectory() as temp:
+            paths = resolve_paths(Path(temp) / "omh", Path(temp) / "hermes")
+            for message in messages:
+                with self.subTest(message=message):
+                    self.assertEqual(recommend_skills(message, limit=1)[0]["skill"], "show-reel")
+                    self.assertEqual(route_chat_message(message, source="discord")["selected_skill"], "show-reel")
+                    self.assertEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
+                    self.assertEqual(build_chat_interaction_payload(message, source="discord", paths=paths)["chat_response"]["kind"], "show_reel")
+                    payload = pre_llm_call(omh_home=temp, hermes_home=temp, user_message=message, is_first_turn=False)
+                    self.assertIsNotNone(payload)
+                    self.assertIn("prepare_show_reel", str(payload))
+
+    def test_existing_pack_qualifiers_keep_production_intent(self):
+        self._assert_production_surfaces((
+            "제품 쇼케이스 영상을 영어로 만들어줘",
+            "제품 쇼케이스 영상 60초짜리로 만들어줘",
+            "제품 쇼케이스 영상을 프랑스어로 90초짜리로 제작해 주세요",
+            "製品ショーケース動画を英語で作ってください",
+            "製品ショーケース動画を60秒で制作してください",
+            "请帮我制作一个产品展示短片",
+            "請幫我製作一個产品展示短片",
+        ))
+
+    def test_native_qualifiers_do_not_cross_reference_or_text_heads(self):
+        for message in (
+            "제품 쇼케이스 영상을 참고로 정적인 카드로 만들어줘",
+            "제품 쇼케이스 영상 문구를 영어로 만들어줘",
+            "제품 쇼케이스 영상을 영어로 만들지 마",
+            "제품 쇼케이스 영상을 영어로 만들어줘야 한다는 문구를 번역해줘",
+            "製品ショーケース動画を参考に静的なカードを作ってください",
+            "製品ショーケース動画を英語で作ってはいけない",
+            "请帮我制作一个产品展示短片的字幕",
+            "请帮我制作一个产品展示短片的翻译",
+            "请不要制作一个产品展示短片",
+            "请使用产品展示短片作为参考制作一个静态卡片",
+        ):
+            with self.subTest(message=message):
+                self.assertNotEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
+                self.assertNotIn("show-reel", [r["skill"] for r in recommend_skills(message, limit=200)])
+                self.assertNotEqual(route_chat_message(message, source="discord").get("selected_skill"), "show-reel")
+
+    def test_modified_nonproduction_objects_do_not_change_owner(self):
+        for message in (
+            "Create an engaging script for a product showcase video.",
+            "Make a vivid caption for a launch film.",
+            "Produce a high-quality translation of a showreel.",
+            "Write an engaging product showcase video script.",
+            "Create a cinematic launch film caption.",
+            "Create a high-quality showreel translation.",
+            "Make no cinematic product showcase video.",
+            "Create a static infographic using a cinematic product showcase video as reference.",
+            "Use a cinematic product showcase video as reference to make a static infographic.",
+            "Review a cinematic product showcase video.",
+            "Convert a 60-second English product showcase video to MP4.",
+            "Create a cinematic product showcase video.md file.",
+            "Create a cinematic xshowreely identifier.",
+            'Translate "Create a cinematic product showcase video" into Japanese.',
+            'Metadata: title="Create a cinematic product showcase video"',
+        ):
+            with self.subTest(message=message):
+                self.assertNotEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
+                self.assertNotIn("show-reel", [r["skill"] for r in recommend_skills(message, limit=200)])
+                self.assertNotEqual(route_chat_message(message, source="discord").get("selected_skill"), "show-reel")
+
+    def test_nonproduction_nouns_earn_no_recommendation_or_dispatch(self):
+        for message in (
+            "Convert this product showcase video to a smaller MP4.",
+            "Review the typography in this product showcase video.",
+            "Explain how the showreel repository works; do not create a video.",
+            "Write narration for this existing product showcase video; do not produce video.",
+            "제품 쇼케이스 영상 문구를 영어로 번역해줘",
+            "製品ショーケース動画という文章を英語に翻訳して",
+            "把产品展示短片这句话翻译成英文",
+        ):
+            with self.subTest(message=message):
+                self.assertNotIn("show-reel", [r["skill"] for r in recommend_skills(message, limit=200)])
+                self.assertNotEqual(route_chat_message(message, source="discord").get("selected_skill"), "show-reel")
+
+    def test_hint_and_card_admit_the_same_production_intent(self):
+        with TemporaryDirectory() as temp:
+            paths = resolve_paths(Path(temp) / "omh", Path(temp) / "hermes")
+            for message in (
+                "Use this product showcase video as a reference for a static infographic.",
+                "Review the typography in this product showcase video.",
+                "Explain how the showreel repository works; do not create a video.",
+                "Write narration for this existing product showcase video; do not produce video.",
+                "Convert this product showcase video to a smaller MP4.",
+                "Do not create a product showcase video.",
+                "Use this review not to create a product showcase video.",
+                "Write a product showcase video script.",
+                "Create a product showcase video translation.",
+                "제품 쇼케이스 영상 문구를 영어로 번역해줘",
+                "製品ショーケース動画という文章を英語に翻訳して",
+                "把产品展示短片这句话翻译成英文",
+                "Showreelish is our internal code name, not a video.",
+                "Please document the identifier xshowreely; do not make media.",
+                "Read show-reel.md before answering.",
+                "show-reel.md",
+                "show-reel repository explanation",
+                "製品ショーケース動画を作ってはいけない",
+                "不要制作产品展示短片",
+                "제품 쇼케이스 영상 만들어줘야 한다는 문구를 번역해줘",
+                'Translate "Create a product showcase video" into Japanese.',
+                'Metadata: title="product showcase video"',
+            ):
+                with self.subTest(message=message):
+                    self.assertNotEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
+                    self.assertNotIn("show-reel", [r["skill"] for r in recommend_skills(message, limit=200)])
+                    interaction = build_chat_interaction_payload(message, source="discord", paths=paths)
+                    self.assertNotEqual(interaction["route"].get("selected_skill"), "show-reel")
+                    self.assertNotEqual(interaction["chat_response"]["kind"], "show_reel")
+            message = "Use this product showcase video as a reference for a static infographic."
+            self.assertEqual(awareness_route_hint(message)["primary_workflow"], "img-summary")
+            self.assertEqual(recommend_skills(message, limit=1)[0]["skill"], "img-summary")
+            self.assertEqual(build_chat_interaction_payload(message, source="discord", paths=paths)["chat_response"]["kind"], "img_summary")
 
     def test_negative_senses_and_sibling_boundaries_do_not_dispatch_here(self):
         for message in ("Which fishing reel should I buy?", "The tape reel is damaged.", "What is the plot of this film?", "Convert this MP4 to a smaller file.", "Make a static infographic summary card", "Build a landing page website", "Create a PowerPoint deck", "visual QA this screenshot against the reference", "Show the video attachment in this bug report"):

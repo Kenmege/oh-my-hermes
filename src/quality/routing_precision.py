@@ -58,6 +58,18 @@ class RoutingInterventionCase:
 # helpful but should not hijack the answer into workflow selection, catalog
 # pickers, coding handoffs, or generic workflow acknowledgements.
 ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
+    RoutingPrecisionCase("show-reel-conversion-not-production", "A format noun does not change a conversion operation", "Convert this product showcase video to a smaller MP4.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-review-not-production", "An existing film review is not authoring", "Review the typography in this product showcase video.", "answer_clarification", "", "show-reel"),
+    # A model-selection shortlist may still name the source format; it gives
+    # no scoring credit and is not a selected production route or card.
+    RoutingPrecisionCase("show-reel-repository-not-production", "A repository explanation does not author a film", "Explain how the showreel repository works; do not create a video.", "answer_clarification", ""),
+    RoutingPrecisionCase("show-reel-narration-not-production", "Writing narration alone does not produce the existing film", "Write narration for this existing product showcase video; do not produce video.", "answer_clarification", ""),
+    RoutingPrecisionCase("show-reel-ko-translation", "The Korean pack noun is a translation object", "제품 쇼케이스 영상 문구를 영어로 번역해줘", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-ja-translation", "The Japanese pack noun is a translation object", "製品ショーケース動画という文章を英語に翻訳して", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-zh-translation", "The Chinese pack noun is a translation object", "把产品展示短片这句话翻译成英文", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-negated-production", "A negated production verb grants no production credit", "Do not create a product showcase video.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-identifier-inner", "An identifier containing a format name is not that format", "Showreelish is our internal code name, not a video.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-quoted-production", "A quoted production request is translation input", 'Translate "Create a product showcase video" into Japanese.', "answer_directly", "direct_answer", "show-reel"),
     RoutingPrecisionCase("show-reel-fishing", "Fishing equipment is not motion production", "Which fishing reel should I buy?", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-tape", "Tape storage is not motion production", "The tape reel is damaged.", "answer_clarification", ""),
     RoutingPrecisionCase("show-reel-film-plot", "A film plot question is not a production brief", "What is the plot of this film?", "answer_directly", "direct_answer", "show-reel"),
@@ -7770,6 +7782,11 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
 # Positive-intervention corpus. These are real OMH-shaped turns where the router
 # should still step in after the direct-answer fallback was added.
 ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
+    RoutingInterventionCase("show-reel-make-production", "Product is not the retired make a PR alias", "Make a product showcase video for a Japanese audience.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-write-production", "Writing a launch film is production", "Write a launch film for our product, with English subtitles.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-produce-with-narration", "Source review and negative translation instruction do not negate film production", "Produce a product showcase video with narration; do not translate the quoted review.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-reference-for-static-owner", "A motion source does not take the static output owner", "Use this product showcase video as a reference for a static infographic.", "dispatch", "img-summary", "prepare_visual_prompt_card", "img_summary"),
+    RoutingInterventionCase("show-reel-transcript-owner", "An existing launch film transcript stays with media input", "Summarize this launch film transcript for the weekly report.", "dispatch", "media-input-operator", "prepare_media_input_card", "media_input"),
     RoutingInterventionCase("show-reel-en-production", "An unnamed authored motion brief reaches production", "Create a product showcase video for a Japanese audience.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-ko-production", "Korean motion-production phrase", "제품 쇼케이스 영상 만들어줘", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-ja-production", "Japanese motion-production phrase", "製品ショーケース動画を作って", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),

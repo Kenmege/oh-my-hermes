@@ -22,6 +22,7 @@ from .localization import (
     routing_tokens,
 )
 from .visual_qa_cues import contains_cue_phrase
+from ..plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
 from .missed_route import is_missed_route_feedback
 from .omh_help import is_omh_docs_question
 from .trigger_language_packs import (
@@ -4539,7 +4540,7 @@ def _score_definition(
         score += 30
         matched.add("direct:specialist_language_pack_trigger")
 
-    if definition.name == "show-reel" and contains_cue_phrase(normalized_query, prepared.plain_trigger_phrases):
+    if definition.name == "show-reel" and show_reel_request_admitted(normalized_query):
         score += 30
         matched.add("direct:show_reel_phrase")
 
@@ -5871,6 +5872,7 @@ def _spend_gate_clause(normalized_query: str) -> str:
 # as blockers upstream and keep that phrasing in the wrappers above rather than
 # being rewritten, so the predicates here are the same ones as before.
 _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
+    "show-reel": lambda normalized_query, query_tokens: show_reel_request_admitted(normalized_query),
     # Changing how a page looks is not operating a browser on it, even when
     # the page is named by a browser phrase ("login page").
     "browser-operator": lambda normalized_query, query_tokens: not appearance_edit_request(query_tokens),
