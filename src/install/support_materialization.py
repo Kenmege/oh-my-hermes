@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import replace
+import os
 import re
 
 from ..core.errors import OmhError
@@ -9,6 +11,38 @@ from ..hashutil import sha256_file, sha256_text
 from ..local_store import atomic_write_text
 from ..skills.catalog import omh_skill_install_path
 from ..skills.support_files import checked_support_path, validate_support_path, validate_support_templates
+
+
+def legacy_support_paths(paths):
+    """Translate only the bootstrap's direct link to the migration's legacy pack.
+
+    The general support reader/writer still refuses every symlink component.
+    Check both lexical parents and the named destination before translating;
+    resolving arbitrary aliases would erase the boundary that reader enforces.
+    """
+    alias = paths.skills_dir.absolute()
+    if not alias.is_symlink() or alias.parts[-3:] != ("generations", "bootstrap-legacy", "skills"):
+        return paths
+    legacy = (paths.omh_home / "skills").absolute()
+    try:
+        checked_support_path(alias.parent, "toolkit/root-check.py")
+        checked_support_path(legacy, "toolkit/root-check.py")
+        # Match migrate_legacy's existing default-store fallback, not an arbitrary
+        # manifest root: a newly named store has no legacy pack of its own yet.
+        if not legacy.is_dir():
+            from ..plugin_bundle.omh import runtime_paths
+
+            legacy = (runtime_paths.standalone_default_omh_home(paths.hermes_home) / "skills").absolute()
+            checked_support_path(legacy, "toolkit/root-check.py")
+        target = Path(os.path.abspath(alias.parent / os.readlink(alias)))
+        checked_support_path(target, "toolkit/root-check.py")
+        # Windows readlink may return an extended-length spelling of the same
+        # directory. Identity is safe only after both lexical roots reject links.
+        if not legacy.is_dir() or not os.path.samefile(target, legacy):
+            raise ValueError("bootstrap legacy link must directly name this home's skills directory")
+    except (ValueError, OSError) as exc:
+        raise OmhError(str(exc)) from exc
+    return replace(paths, managed_skills_dir=legacy)
 
 
 def support_records(manifest):

@@ -103,16 +103,17 @@ class DistributionParityTests(unittest.TestCase):
             for rel, content in project(skill_record("show-reel"), "hermes").items():
                 file = source / rel
                 file.parent.mkdir(parents=True, exist_ok=True)
-                file.write_text(content, encoding="utf-8")
+                file.write_bytes(content.encode("utf-8"))
             converted = convert_support_from_dir(source)
             self.assertEqual({t.relative_path: t.content for t in converted}, expected)
             paths = OmhPaths(base / "omh", base / "hermes")
             result = install_skill_pack(paths, source="local", source_dir=source)
             self.assertEqual(len(result["support_files"]), len(expected))
             for rel, content in expected.items():
-                self.assertEqual((paths.skills_dir / "operator/omh-show-reel" / rel).read_text(), content)
+                self.assertEqual((paths.skills_dir / "operator/omh-show-reel" / rel).read_bytes(), content.encode("utf-8"))
+                self.assertEqual((source / "omh-show-reel" / rel).read_bytes(), content.encode("utf-8"))
             bad = source / "omh-show-reel/toolkit/scripts/timeline.py"
-            bad.write_text("unreviewed changed script")
+            bad.write_text("unreviewed changed script", encoding="utf-8", newline="\n")
             with self.assertRaises(ValueError):
                 convert_support_from_dir(source)
             bad.unlink()
@@ -127,22 +128,22 @@ class DistributionParityTests(unittest.TestCase):
                 target = base / (".claude/skills" if host == "claude" else ".agents/skills")
                 support = target / "omh-show-reel/toolkit/scripts/timeline.py"
                 support.parent.mkdir(parents=True)
-                support.write_text("foreign support")
+                support.write_text("foreign support", encoding="utf-8", newline="\n")
                 command = ["sh", str(ROOT / f".{host}/install.sh")]
                 result = subprocess.run(command, cwd=base, capture_output=True, text=True)
                 self.assertNotEqual(result.returncode, 0, "foreign support overwritten")
-                self.assertEqual(support.read_text(), "foreign support")
+                self.assertEqual(support.read_text(encoding="utf-8"), "foreign support")
                 self.assertFalse((target / "omh-show-reel/SKILL.md").exists())
                 support.unlink()
                 result = subprocess.run(command, cwd=base, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                support.write_text("edited support")
+                support.write_text("edited support", encoding="utf-8", newline="\n")
                 body = target / "omh-show-reel/SKILL.md"
-                body.write_text("edited body")
+                body.write_text("edited body", encoding="utf-8", newline="\n")
                 result = subprocess.run(command, cwd=base, capture_output=True, text=True)
                 self.assertNotEqual(result.returncode, 0, "edited support overwritten")
-                self.assertEqual(support.read_text(), "edited support")
-                self.assertEqual(body.read_text(), "edited body")
+                self.assertEqual(support.read_text(encoding="utf-8"), "edited support")
+                self.assertEqual(body.read_text(encoding="utf-8"), "edited body")
 
     def test_support_symlink_ancestors_and_dangling_local_toolkit_refuse(self):
         from omh.install.agent_skills_projection import install_agent_skills
@@ -158,7 +159,7 @@ class DistributionParityTests(unittest.TestCase):
             self.assertFalse((real / "nested").exists())
             source = base / "source/omh-show-reel"
             source.mkdir(parents=True)
-            (source / "SKILL.md").write_text("---\nname: show-reel\ndescription: test\n---\n")
+            (source / "SKILL.md").write_text("---\nname: show-reel\ndescription: test\n---\n", encoding="utf-8", newline="\n")
             (source / "toolkit").symlink_to(base / "missing", target_is_directory=True)
             with self.assertRaisesRegex(ValueError, "symlink"):
                 convert_support_from_dir(source.parent)
@@ -169,9 +170,9 @@ class DistributionParityTests(unittest.TestCase):
             root = Path(td) / "portable"
             install_agent_skills(root)
             support = root / "omh-show-reel/toolkit/scripts/timeline.py"
-            support.write_text("user edit")
+            support.write_text("user edit", encoding="utf-8", newline="\n")
             body = root / "omh-show-reel/SKILL.md"
-            body.write_text("body edit must also survive refused update")
+            body.write_text("body edit must also survive refused update", encoding="utf-8", newline="\n")
             before = {p: p.read_bytes() for p in (support, body, root / MANIFEST_NAME)}
             with self.assertRaisesRegex(ValueError, "edited support"):
                 install_agent_skills(root)
@@ -184,18 +185,18 @@ class DistributionParityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "portable"
             install_agent_skills(root)
-            manifest = json.loads((root / MANIFEST_NAME).read_text())
+            manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
             unchanged = "omh-show-reel/toolkit/scripts/retired.py"
             edited = "omh-show-reel/toolkit/scripts/retired-edited.py"
             for rel in (unchanged, edited):
-                (root / rel).write_text("old")
+                (root / rel).write_text("old", encoding="utf-8", newline="\n")
                 manifest["files"][rel] = sha256_text("old")
-            (root / edited).write_text("user edit")
+            (root / edited).write_text("user edit", encoding="utf-8", newline="\n")
             atomic_write_json(root / MANIFEST_NAME, manifest)
             install_agent_skills(root)
             self.assertFalse((root / unchanged).exists())
-            self.assertEqual((root / edited).read_text(), "user edit")
-            manifest = json.loads((root / MANIFEST_NAME).read_text())
+            self.assertEqual((root / edited).read_text(encoding="utf-8"), "user edit")
+            manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
             manifest["files"]["omh-show-reel/toolkit/CON.py"] = "a"*64
             atomic_write_json(root / MANIFEST_NAME, manifest)
             body = root / "omh-show-reel/SKILL.md"
@@ -215,9 +216,9 @@ class DistributionParityTests(unittest.TestCase):
             plan = reconcile_skill_profile(paths, dry_run=True)
             self.assertIn("show-reel", plan["would_remove_skills"])
             foreign = paths.skills_dir / "operator/omh-show-reel/toolkit/foreign.py"
-            foreign.write_text("foreign")
+            foreign.write_text("foreign", encoding="utf-8", newline="\n")
             reconcile_skill_profile(paths)
-            self.assertEqual(foreign.read_text(), "foreign")
+            self.assertEqual(foreign.read_text(encoding="utf-8"), "foreign")
             self.assertEqual(read_manifest(paths.manifest_path)["support_files"], manifest["support_files"])
 
     def test_curator_keeps_support_and_carries_ownership_into_new_generation(self):
@@ -232,16 +233,16 @@ class DistributionParityTests(unittest.TestCase):
             relative = "operator/omh-show-reel/toolkit/scripts/timeline.py"
             target = paths.skills_dir / relative
             old_hash = sha256_file(target)
-            target.write_text(target.read_text()+"\n# curator edit\n")
+            target.write_text(target.read_text(encoding="utf-8")+"\n# curator edit\n", encoding="utf-8", newline="\n")
             _append_ledger(paths.hermes_home, _ledger_row(target, before=old_hash))
             result = install_skill_pack(paths)
-            self.assertIn("# curator edit", target.read_text())
+            self.assertIn("# curator edit", target.read_text(encoding="utf-8"))
             self.assertEqual(result["support_files"][relative], manifest["support_files"][relative])
             next_paths = OmhPaths(paths.omh_home, paths.hermes_home, managed_skills_dir=root / "new-generation/skills")
             result = install_skill_pack(next_paths)
-            self.assertIn("# curator edit", (next_paths.skills_dir / relative).read_text())
+            self.assertIn("# curator edit", (next_paths.skills_dir / relative).read_text(encoding="utf-8"))
             self.assertEqual(result["support_files"][relative], old_hash)
-            self.assertIn("# curator edit", target.read_text(), "old generation is rollback target")
+            self.assertIn("# curator edit", target.read_text(encoding="utf-8"), "old generation is rollback target")
 
     def test_native_support_is_owned_profile_scoped_preserved_and_freshness_checked(self):
         from omh.install.installer import install_skill_pack
@@ -258,30 +259,30 @@ class DistributionParityTests(unittest.TestCase):
             expected = {"operator/omh-show-reel/"+t.relative_path: hashlib.sha256(t.content.encode()).hexdigest() for t in builtin_skill_support_templates()}
             self.assertEqual(manifest.get("support_files"), expected)
             sample = paths.skills_dir / "operator/omh-show-reel/toolkit/scripts/timeline.py"
-            baseline = sample.read_text()
+            baseline = sample.read_text(encoding="utf-8")
             sample.unlink()
             status = build_guidance_projection_status(paths.skills_dir, manifest, registered=True, host_observed=False)
             self.assertNotEqual(status["projection"], "fresh")
             manifest = install_skill_pack(paths)
-            sample.write_text("user edit")
+            sample.write_text("user edit", encoding="utf-8", newline="\n")
             before_body = (sample.parents[2] / "SKILL.md").read_bytes()
             with self.assertRaises(OmhError):
                 install_skill_pack(paths)
-            self.assertEqual(sample.read_text(), "user edit")
+            self.assertEqual(sample.read_text(encoding="utf-8"), "user edit")
             self.assertEqual((sample.parents[2] / "SKILL.md").read_bytes(), before_body)
             with patch.dict(os.environ, {"OMH_SECURITY": "strict"}), self.assertRaises(OmhError):
                 install_skill_pack(paths, force=True)
             manifest = install_skill_pack(paths, force=True)
-            self.assertEqual(sample.read_text(), baseline)
+            self.assertEqual(sample.read_text(encoding="utf-8"), baseline)
             foreign = sample.parent / "foreign.py"
-            foreign.write_text("foreign")
+            foreign.write_text("foreign", encoding="utf-8", newline="\n")
             retired = sample.parent / "retired.py"
-            retired.write_text("previously owned")
+            retired.write_text("previously owned", encoding="utf-8", newline="\n")
             manifest["support_files"][retired.relative_to(paths.skills_dir).as_posix()] = hashlib.sha256(retired.read_bytes()).hexdigest()
             atomic_write_json(paths.manifest_path, manifest)
             manifest = install_skill_pack(paths)
             self.assertFalse(retired.exists())
-            self.assertEqual(foreign.read_text(), "foreign")
+            self.assertEqual(foreign.read_text(encoding="utf-8"), "foreign")
             legacy = {key: value for key, value in manifest.items() if key != "support_files"}
             self.assertNotEqual(build_guidance_projection_status(paths.skills_dir, legacy, registered=True, host_observed=False)["projection"], "fresh")
             core = OmhPaths(root / "core", root / "core-hermes")

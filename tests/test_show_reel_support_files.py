@@ -15,6 +15,39 @@ load_local_package()
 
 
 class SupportFilesTests(unittest.TestCase):
+    def test_fresh_core_import_preparation_and_install_never_execute_companion_code(self):
+        import subprocess
+        import sys
+        script = r'''
+import sys,json
+from pathlib import Path
+from unittest.mock import patch
+root,workspace=map(Path,sys.argv[1:])
+kit=root/'src/skills/show_reel_toolkit'
+def audit(event,args):
+    if event=='exec' and args and Path(args[0].co_filename).is_relative_to(kit):
+        raise AssertionError('core executed optional companion')
+sys.addaudithook(audit)
+with patch('subprocess.Popen',side_effect=AssertionError('hidden process')),patch('socket.socket',side_effect=AssertionError('hidden network')):
+    import omh.cli
+    from omh.paths import OmhPaths
+    from omh.wrapper_contract import build_chat_interaction_payload
+    from omh.skills.skill_record import skill_record,project
+    from omh.install.installer import install_skill_pack
+    paths=OmhPaths(workspace/'omh',workspace/'hermes')
+    card=build_chat_interaction_payload('Use the show-reel skill',source='discord',paths=paths)
+    assert card['chat_response']['state']['next_action']=='prepare_show_reel'
+    assert project(skill_record('show-reel'),'hermes')
+    installed=install_skill_pack(paths)
+assert not any('show_reel_toolkit' in name for name in sys.modules)
+print(json.dumps({'support_files':len(installed['support_files']),'companion_execution':False}))
+'''
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(__file__).resolve().parents[1]
+            result = subprocess.run([sys.executable, "-I", "-c", script, str(root), td], cwd=td, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["support_files"], len(self.api().builtin_skill_support_templates()))
+
     def api(self):
         self.assertIsNotNone(importlib.util.find_spec("omh.skills.support_files"), "missing declared support-file seam")
         return importlib.import_module("omh.skills.support_files")
@@ -55,7 +88,7 @@ class SupportFilesTests(unittest.TestCase):
             for rel, content in files.items():
                 path = root / rel
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(content, encoding="utf-8")
+                path.write_bytes(content.encode("utf-8"))
             relative = "omh-show-reel/toolkit/scripts/timeline.py"
             (root / relative).unlink()
             report = tap_skills_check_payload(root)

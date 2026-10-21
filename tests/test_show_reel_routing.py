@@ -21,6 +21,69 @@ from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
 
 
 class ShowReelRoutingTests(unittest.TestCase):
+    def test_nominal_command_complements_are_not_production_on_any_surface(self):
+        from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
+
+        messages = [
+            "show-reel skill use cases", "show-reel workflow use case documentation",
+            "show-reel workflow run history", "show-reel workflow start date",
+            "show-reel workflow run count", "show-reel 스킬 사용 예시",
+            "show-reel 워크플로우 실행 기록",
+        ] + [f"show-reel workflow {verb} {noun}" for verb, nouns in (
+            ("use", ("case", "cases")), ("run", ("logs", "results", "status", "duration")),
+            ("start", ("dates", "time")), ("사용", ("사례", "기록")), ("실행", ("예시", "횟수")),
+        ) for noun in nouns]
+        with TemporaryDirectory() as td:
+            paths = resolve_paths(Path(td) / "omh", Path(td) / "hermes")
+            for message in messages:
+                with self.subTest(message=message):
+                    self.assertFalse(show_reel_request_admitted(message))
+                    self.assertNotEqual(route_chat_message(message).get("selected_skill"), "show-reel")
+                    self.assertNotIn("show-reel", [r["skill"] for r in recommend_skills(message, limit=200)])
+                    self.assertNotEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
+                    self.assertNotEqual(build_chat_interaction_payload(message, source="discord", paths=paths)["chat_response"]["kind"], "show_reel")
+                    self.assertNotIn("prepare_show_reel", str(pre_llm_call(omh_home=str(paths.omh_home), hermes_home=str(paths.hermes_home), user_message=message, is_first_turn=False)))
+
+    def test_additional_nominal_metadata_requests_do_not_start_production(self):
+        from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
+
+        messages = tuple(
+            f"show-reel {marker} {verb} {noun}"
+            for marker in ("skill", "workflow")
+            for verb, nouns in (
+                ("run", ("date", "dates", "statistics", "statistic", "metadata", "metrics")),
+                ("use", ("example", "examples")),
+            )
+            for noun in nouns
+        )
+        with TemporaryDirectory() as td:
+            paths = resolve_paths(Path(td) / "omh", Path(td) / "hermes")
+            for message in messages:
+                with self.subTest(message=message):
+                    self.assertFalse(show_reel_request_admitted(message))
+                    self.assertNotEqual(route_chat_message(message).get("selected_skill"), "show-reel")
+                    self.assertNotIn("show-reel", [r["skill"] for r in recommend_skills(message, limit=200)])
+                    self.assertNotEqual(awareness_route_hint(message)["primary_workflow"], "show-reel")
+                    self.assertNotEqual(build_chat_interaction_payload(message, source="discord", paths=paths)["chat_response"]["kind"], "show_reel")
+                    self.assertNotIn("prepare_show_reel", str(pre_llm_call(omh_home=str(paths.omh_home), hermes_home=str(paths.hermes_home), user_message=message, is_first_turn=False)))
+
+    def test_korean_courtesy_after_action_noun_is_still_a_production_request(self):
+        self._assert_production_surfaces((
+            "show-reel 스킬 사용 부탁해",
+            "show-reel 워크플로우 실행 부탁드립니다",
+        ))
+
+    def test_imperatives_keep_arguments_even_when_inputs_describe_documentation_or_history(self):
+        self._assert_production_surfaces((
+            "show-reel workflow run", "show-reel workflow run.", "show-reel workflow **run**",
+            "show-reel workflow run with customer research documentation as input",
+            "show-reel skill use our research documentation to create a product showcase video",
+            "show-reel workflow start with the run history as input",
+            "Use the show-reel skill with use cases from our documentation",
+            "show-reel 스킬 실행해줘", "show-reel 스킬 실행해주세요",
+            "show-reel 스킬 사용해 주세요", "show-reel 워크플로우 실행해줘 기록을 바탕으로",
+        ))
+
     def test_invocation_cues_are_lexical_commands_not_noun_prefixes(self):
         from omh.plugin_bundle.omh.skill_invocation import contains_run_cue
 

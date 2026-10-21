@@ -35,7 +35,7 @@ from project_identity_fixture import pin_review_first
 from omh.plugin_bundle.omh.memory_governance import canonical_payload_digest
 from omh.record_revision import MAX_MUTATION_ID_CHARS
 from omh.routing.intent import classify_omh_quality_intent
-from omh.skill_pack import builtin_skill_reference_templates, builtin_skill_templates
+from omh.skill_pack import builtin_skill_reference_templates, builtin_skill_templates, builtin_skill_support_templates
 from omh.skills.catalog import builtin_harnesses, installable_skill_names
 from omh.wrapper.localized_copy import detect_copy_locale
 from omh.wrapper_sessions import (
@@ -2861,6 +2861,14 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
     def test_setup_project_scope_uses_project_local_paths(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
+            # A project-scoped fixture must not select an ancestor checkout or
+            # an enclosing test invocation's filesystem barrier as its project.
+            (root / ".git").write_bytes(b"gitdir: .nonexistent-project-fixture-barrier\n")
+            import subprocess
+            probe = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=root,
+                                   env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+                                   capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(probe.returncode, 0, probe.stdout)
 
             with patch("omh.paths.Path.cwd", return_value=root):
                 status, stdout, stderr = run_cli(["setup", "--scope", "project"])
@@ -14361,7 +14369,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertEqual(stderr, "")
             self.assertEqual(status, 0)
             checked = json.loads(stdout)
-            expected_tap_files = len(builtin_skill_templates()) + len(builtin_skill_reference_templates())
+            expected_tap_files = len(builtin_skill_templates()) + len(builtin_skill_reference_templates()) + len(builtin_skill_support_templates())
             self.assertIn("checked", checked)
             self.assertTrue(checked["tap_skills"]["ok"])
             self.assertEqual(checked["tap_skills"]["expected"], expected_tap_files)

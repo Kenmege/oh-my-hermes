@@ -137,6 +137,21 @@ def _imported_modules(tree: ast.Module) -> list[tuple[str, tuple[str, ...], int]
 # is reachable only from an explicit operator command; none sits on the chat or
 # handoff-preparation path.
 PROCESS_SPAWN_ALLOWLIST: dict[str, str] = {
+    "src/skills/show_reel_toolkit/scripts/mix.py": (
+        "explicit host CLI `python toolkit/scripts/mix.py`; optional local FFmpeg audio/video "
+        "mixing only. Packaged as inert UTF-8 data, never imported by core, routing, preparation, "
+        "or install; companion nonexecution and built-wheel parity tests guard that boundary."
+    ),
+    "src/skills/show_reel_toolkit/scripts/motion_check.py": (
+        "explicit host CLI `python toolkit/scripts/motion_check.py`; optional local FFmpeg/ffprobe "
+        "motion measurements only. Packaged as inert UTF-8 data, never imported by core, routing, "
+        "preparation, or install; companion nonexecution and built-wheel parity tests guard it."
+    ),
+    "src/skills/show_reel_toolkit/scripts/qa_check.py": (
+        "explicit host CLI `python toolkit/scripts/qa_check.py`; optional local FFmpeg/ffprobe "
+        "technical QA only. Packaged as inert UTF-8 data, never imported by core, routing, "
+        "preparation, or install; companion nonexecution and built-wheel parity tests guard it."
+    ),
     "src/install/agent_skills_projection.py": (
         "explicit `omh install --target agents --scope repo` (including read-only --status); "
         "runs only bounded local git rev-parse --show-toplevel with fsmonitor disabled, "
@@ -611,6 +626,16 @@ class NoHiddenProcessSpawn(unittest.TestCase):
     whose reach a reader has to infer from what it happens to match is how this
     check came to fire on nothing at all (#1637).
     """
+
+    def test_core_never_imports_the_exact_optional_companion_process_owners(self) -> None:
+        companion = "src/skills/show_reel_toolkit/"
+        owners = {companion + "scripts/" + name for name in ("mix.py", "motion_check.py", "qa_check.py")}
+        self.assertEqual({p for p in PROCESS_SPAWN_ALLOWLIST if p.startswith(companion)}, owners)
+        for relative_path, tree in _source_modules():
+            if relative_path.startswith(companion):
+                continue
+            for stem in ("mix", "motion_check", "qa_check", "show_reel_toolkit"):
+                self.assertFalse(_imports_module_named(tree, stem), (relative_path, stem))
 
     def test_only_allowlisted_modules_import_subprocess(self) -> None:
         for relative_path, tree in _source_modules():

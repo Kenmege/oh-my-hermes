@@ -64,7 +64,7 @@ class TechnicalQATests(unittest.TestCase):
 @unittest.skipUnless(os.environ.get("SHOW_REEL_HOST_TOOLS"), "explicit host tool opt-in")
 class ActualQATests(unittest.TestCase):
     def test_corrupt_decode_and_missing_required_audio_strict_exit(self):
-        tools = json.loads(Path(os.environ["SHOW_REEL_HOST_TOOLS"]).read_text())
+        tools = json.loads(Path(os.environ["SHOW_REEL_HOST_TOOLS"]).read_text(encoding="utf-8"))
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             video = root / "muted.mp4"

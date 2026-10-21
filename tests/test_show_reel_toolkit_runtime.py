@@ -16,9 +16,48 @@ import socket
 from unittest.mock import patch
 import unittest
 
+from _module_patch import patch_modules
+
 ROOT = Path(__file__).resolve().parents[1]
 KIT = ROOT / "src/skills/show_reel_toolkit"
 NODE = shutil.which("node")
+
+
+def cancel_render(command, *, delay=.7, timeout=15.0):
+    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
+        try:
+            time.sleep(delay)
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=timeout)
+            return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=5)
+
+
+class ProcessCleanupTests(unittest.TestCase):
+    def test_cancellation_timeout_reaps_child_and_closes_both_pipes(self):
+        children = []
+        spawn = subprocess.Popen
+
+        def observe(*args, **kwargs):
+            child = spawn(*args, **kwargs)
+            children.append(child)
+            # Model a renderer that cannot acknowledge cancellation, on any OS.
+            send_signal = child.send_signal
+            self.enterContext(patch.object(child, "send_signal", side_effect=lambda sig: None if sig == signal.SIGTERM else send_signal(sig)))
+            return child
+
+        command = [sys.executable, "-c", "import time; time.sleep(10)"]
+        started = time.monotonic()
+        with patch("subprocess.Popen", side_effect=observe), self.assertRaises(subprocess.TimeoutExpired):
+            cancel_render(command, delay=.5, timeout=.1)
+        self.assertLess(time.monotonic() - started, 4, "cleanup waited for natural child exit")
+        self.assertEqual(len(children), 1)
+        self.assertIsNotNone(children[0].poll())
+        self.assertTrue(children[0].stdout.closed)
+        self.assertTrue(children[0].stderr.closed)
 
 
 class MotionHelpersTests(unittest.TestCase):
@@ -55,7 +94,7 @@ class LocalProjectTests(unittest.TestCase):
     def load(self, name):
         path = KIT / "scripts" / name
         self.assertTrue(path.is_file(), f"missing callable {name}")
-        with patch.dict(sys.modules):
+        with patch_modules({}):
             sys.path.insert(0, str(path.parent))
             try:
                 return runpy.run_path(str(path))
@@ -68,12 +107,12 @@ class LocalProjectTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             good = root / "timing.json"
-            good.write_text('{"duration":1,"fps":30,"cues":[]}')
+            good.write_text('{"duration":1,"fps":30,"cues":[]}', encoding="utf-8", newline="\n")
             self.assertEqual(api["read_spec"](good)["duration"], 1)
             large = root / "large.json"
             large.write_bytes(b" " * 1_048_577)
             bad = root / "invalid.json"
-            bad.write_text("not json")
+            bad.write_text("not json", encoding="utf-8", newline="\n")
             for path in (root, large, bad):
                 with self.assertRaises(ValueError):
                     api["read_spec"](path)
@@ -106,15 +145,15 @@ class LocalProjectTests(unittest.TestCase):
             with patch("subprocess.Popen", side_effect=AssertionError("implicit process")), patch("socket.socket", side_effect=AssertionError("implicit network")):
                 out = root / "project"
                 api["initialize"](out, duration=2, fps=30, width=640, height=360, language="ar", direction="rtl", fonts=[font])
-            config = json.loads((out / "reel/project.json").read_text())
+            config = json.loads((out / "reel/project.json").read_text(encoding="utf-8"))
             self.assertEqual(config["language"], "ar")
             self.assertEqual(config["direction"], "rtl")
             self.assertEqual((out / "reel/assets/chosen.ttf").read_bytes(), font.read_bytes())
             scene = out / "reel/scene.js"
-            scene.write_text("AUTHORED")
+            scene.write_text("AUTHORED", encoding="utf-8", newline="\n")
             with self.assertRaises(FileExistsError):
                 api["initialize"](out, duration=2, fonts=[font])
-            self.assertEqual(scene.read_text(), "AUTHORED")
+            self.assertEqual(scene.read_text(encoding="utf-8"), "AUTHORED")
             for kwargs in [{"duration": 0}, {"fps": float("inf")}, {"fonts": [root / "missing.ttf"]}, {"fonts": []}]:
                 dest = root / "refused"
                 with self.assertRaises((ValueError, FileNotFoundError)):
@@ -135,7 +174,7 @@ class RendererBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "root"
             root.mkdir()
-            (root / "ok.js").write_text("local")
+            (root / "ok.js").write_text("local", encoding="utf-8", newline="\n")
             (root / "link.js").symlink_to(Path(td) / "outside.js")
             script = """
 const {resolveAsset,noLinks,snapshotAssets} = await import(process.argv[1]);
@@ -145,7 +184,8 @@ const snap=snapshotAssets(root,['ok.js']);
 const fs=await import('node:fs');fs.writeFileSync(root+'/ok.js','changed after snapshot');
 if(snap.buffers['ok.js'].toString()!=='local')throw Error('live mutable asset used');
 let bounded=false;try{snapshotAssets(root,['ok.js'],2);}catch{bounded=true;}if(!bounded)throw Error('asset total byte cap ignored');
-if(!resolveAsset(root,'ok.js',new Set(['ok.js'])).endsWith('/ok.js'))throw Error('valid local refused');
+const path=await import('node:path');
+if(resolveAsset(root,'ok.js',new Set(['ok.js']))!==path.resolve(root,'ok.js'))throw Error('valid local refused');
 for(const p of ['../outside.js','/outside.js','http://example.org/x','..%2foutside.js','a\\\\b','link.js','missing.js']) {
  let refused=false;try{resolveAsset(root,p,new Set([p]));}catch{refused=true;}
  if(!refused)throw Error('unsafe admitted '+p);
@@ -180,7 +220,7 @@ class HostRenderTests(unittest.TestCase):
         listener.timeout = .5
         thread = threading.Thread(target=listener.serve_forever, daemon=True)
         thread.start()
-        tools = json.loads(Path(os.environ["SHOW_REEL_HOST_TOOLS"]).read_text())
+        tools = json.loads(Path(os.environ["SHOW_REEL_HOST_TOOLS"]).read_text(encoding="utf-8"))
         try:
             for scheme in ("http", "https"):
                 with self.subTest(scheme=scheme), tempfile.TemporaryDirectory() as td:
@@ -191,7 +231,7 @@ class HostRenderTests(unittest.TestCase):
                     result = subprocess.run([sys.executable, str(KIT / "scripts/new_project.py"), str(dest), "--font", os.environ["SHOW_REEL_FONT"], "--duration", "1", "--fps", "4", "--width", "320", "--height", "180"], capture_output=True, text=True, timeout=20)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     scene = dest / "reel/scene.js"
-                    scene.write_text(scene.read_text()+f"\nsetTimeout(()=>window.open('{scheme}://127.0.0.1:{listener.server_port}/sentinel'),0);")
+                    scene.write_text(scene.read_text(encoding="utf-8")+f"\nsetTimeout(()=>window.open('{scheme}://127.0.0.1:{listener.server_port}/sentinel'),0);", encoding="utf-8", newline="\n")
                     out = root / "popup.mp4"
                     command = [tools["binaries"]["node"], str(KIT / "scripts/render.mjs"), "--dir", str(dest / "reel"), "--out", str(out), "--browser", tools["chrome"], "--dependency-root", tools["available_puppeteer_core"]["root"], "--ffmpeg", tools["binaries"]["ffmpeg"], "--ffprobe", tools["binaries"]["ffprobe"]]
                     result = subprocess.run(command, capture_output=True, text=True, timeout=20)
@@ -200,7 +240,7 @@ class HostRenderTests(unittest.TestCase):
                     self.assertEqual(connections, [], "browser connected outside declared asset origin")
                     self.assertFalse(out.exists())
                     self.assertFalse(Path(str(out) + ".receipt.json").exists())
-                    receipt = json.loads(Path(str(out) + ".failure.json").read_text())
+                    receipt = json.loads(Path(str(out) + ".failure.json").read_text(encoding="utf-8"))
                     self.assertIn("proxy CONNECT refused" if scheme == "https" else "proxy request refused", receipt["error"])
                     self.assertTrue(all(receipt["cleanup"].values()))
                     with self.assertRaises(ProcessLookupError):
@@ -215,7 +255,7 @@ class HostRenderTests(unittest.TestCase):
             self.assertFalse(thread.is_alive())
 
     def test_runtime_faults_and_cancellation_leave_no_final_success_or_process(self):
-        tools = json.loads(Path(os.environ["SHOW_REEL_HOST_TOOLS"]).read_text())
+        tools = json.loads(Path(os.environ["SHOW_REEL_HOST_TOOLS"]).read_text(encoding="utf-8"))
         faults = {
             "late-pageerror": "const savedSeek=globalThis.__seek;globalThis.__seek=async t=>{await savedSeek(t);if(t>=1.875)setTimeout(()=>{throw Error('late injected pageerror')},50);};",
             "pageerror": "setTimeout(()=>{throw Error('injected pageerror')},0);",
@@ -230,14 +270,14 @@ class HostRenderTests(unittest.TestCase):
                 init = subprocess.run([sys.executable, str(KIT / "scripts/new_project.py"), str(base / "project"), "--font", os.environ["SHOW_REEL_FONT"], "--duration", "2", "--fps", "8", "--width", "320", "--height", "180"], capture_output=True, text=True, timeout=20)
                 self.assertEqual(init.returncode, 0, init.stderr)
                 scene = base / "project/reel/scene.js"
-                scene.write_text(scene.read_text() + "\n" + injected)
+                scene.write_text(scene.read_text(encoding="utf-8") + "\n" + injected, encoding="utf-8", newline="\n")
                 out = base / "fault.mp4"
                 command = [tools["binaries"]["node"], str(KIT / "scripts/render.mjs"), "--dir", str(base / "project/reel"), "--out", str(out), "--browser", tools["chrome"], "--dependency-root", tools["available_puppeteer_core"]["root"], "--ffmpeg", tools["binaries"]["ffmpeg"], "--ffprobe", tools["binaries"]["ffprobe"], "--timeout", "2"]
                 result = subprocess.run(command, capture_output=True, text=True, timeout=20)
                 self.assertNotEqual(result.returncode, 0, result.stdout)
                 self.assertFalse(out.exists())
                 self.assertFalse(Path(str(out) + ".receipt.json").exists())
-                receipt = json.loads(Path(str(out) + ".failure.json").read_text())
+                receipt = json.loads(Path(str(out) + ".failure.json").read_text(encoding="utf-8"))
                 self.assertTrue(all(receipt["cleanup"].values()))
                 pid = receipt["browser_pid"]
                 with self.assertRaises(ProcessLookupError):
@@ -248,18 +288,15 @@ class HostRenderTests(unittest.TestCase):
                 if name == "timeout":
                     cancel_out = base / "cancel.mp4"
                     command[command.index(str(out))] = str(cancel_out)
-                    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                    time.sleep(.7)
-                    process.send_signal(signal.SIGTERM)
-                    stdout, stderr = process.communicate(timeout=15)
-                    self.assertNotEqual(process.returncode, 0, stdout + stderr)
-                    cancelled = json.loads(Path(str(cancel_out) + ".failure.json").read_text())
+                    result = cancel_render(command)
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    cancelled = json.loads(Path(str(cancel_out) + ".failure.json").read_text(encoding="utf-8"))
                     self.assertIn("cancelled", cancelled["error"])
                     with self.assertRaises(ProcessLookupError):
                         os.kill(cancelled["browser_pid"], 0)
 
     def test_exact_gallery_frames_and_shuffled_seeks(self):
-        tools = json.loads(Path(os.environ["SHOW_REEL_HOST_TOOLS"]).read_text())
+        tools = json.loads(Path(os.environ["SHOW_REEL_HOST_TOOLS"]).read_text(encoding="utf-8"))
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
             init = subprocess.run([sys.executable, str(KIT / "scripts/new_project.py"), str(base / "project"), "--font", os.environ["SHOW_REEL_FONT"], "--duration", "2", "--fps", "8", "--width", "320", "--height", "180"], capture_output=True, text=True, timeout=20)
@@ -269,7 +306,7 @@ class HostRenderTests(unittest.TestCase):
             result = subprocess.run(command + ["--out", str(out)], capture_output=True, text=True, timeout=100)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(out.is_file(), "no actual rendered artifact")
-            receipt = json.loads(Path(str(out) + ".receipt.json").read_text())
+            receipt = json.loads(Path(str(out) + ".receipt.json").read_text(encoding="utf-8"))
             self.assertEqual(receipt["decoded_frames"], 16)
             self.assertEqual(receipt["color"], {"range": "tv", "space": "bt709", "transfer": "bt709", "primaries": "bt709"})
             self.assertTrue(all(receipt["cleanup"].values()))
@@ -281,10 +318,10 @@ class HostRenderTests(unittest.TestCase):
             self.assertEqual(hashes[1], hashes[4])
             self.assertEqual(len(set(hashes)), 4)
             config_path = base / "project/reel/project.json"
-            config = json.loads(config_path.read_text())
+            config = json.loads(config_path.read_text(encoding="utf-8"))
             config["texts"] = [{"text": chr(0x10ffff), "lang": "en", "dir": "ltr"}]
-            config_path.write_text(json.dumps(config))
-            (base / "project/reel/project.js").write_text("globalThis.PROJECT=" + json.dumps(config) + ";")
+            config_path.write_text(json.dumps(config), encoding="utf-8", newline="\n")
+            (base / "project/reel/project.js").write_text("globalThis.PROJECT=" + json.dumps(config) + ";", encoding="utf-8", newline="\n")
             result = subprocess.run(command + ["--out", str(base / "missing-glyph.mp4")], capture_output=True, text=True, timeout=30)
             self.assertNotEqual(result.returncode, 0, "missing glyph silently used browser fallback")
             self.assertIn("glyph", result.stderr.lower())

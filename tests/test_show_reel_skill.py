@@ -36,11 +36,11 @@ class ShowReelSkillTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         guide = root / "docs/SHOW-REEL-TOOLKIT.md"
         self.assertTrue(guide.is_file(), "missing maintained toolkit guide")
-        text = guide.read_text()
+        text = guide.read_text(encoding="utf-8")
         for marker in ("toolkit/README.md", "LICENSE.upstream", "macOS", "HOLD", "not_observed", "built wheel"):
             self.assertIn(marker, text)
-        self.assertIn("SHOW-REEL-TOOLKIT.md", (root / "README.md").read_text())
-        self.assertIn("modified MIT", (root / "docs/SKILL-SOURCES.md").read_text())
+        self.assertIn("SHOW-REEL-TOOLKIT.md", (root / "README.md").read_text(encoding="utf-8"))
+        self.assertIn("modified MIT", (root / "docs/SKILL-SOURCES.md").read_text(encoding="utf-8"))
 
     def test_original_end_to_end_method_has_observed_delivery_gates(self):
         definitions = {d.name: d for d in builtin_definitions()}
@@ -54,7 +54,7 @@ class ShowReelSkillTests(unittest.TestCase):
         method = " ".join((*d.opening_steps, *d.quality_bar, *d.safety_rules, *d.final_checklist, *(s.instruction for s in d.procedure_steps)))
         for marker in ("at least 3", "keep/fix/rebuild", "weakest", "delivery-size", "codec", "color", "filesize", "concept", "source package", "HOLD"):
             self.assertIn(marker, method)
-        project = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())
+        project = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
         self.assertEqual(project["project"]["dependencies"], [])
 
 

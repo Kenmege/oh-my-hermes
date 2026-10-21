@@ -50,7 +50,7 @@ from ..skill_pack import (
     builtin_skill_templates,
     builtin_skill_support_templates,
 )
-from .support_materialization import preflight_support, write_support
+from .support_materialization import legacy_support_paths, preflight_support, write_support
 from ..system.approval_tier import TIER_AUTO_ALLOWED, resolve_approval_tier
 from ..system.security_posture import resolve_security_posture
 
@@ -591,6 +591,7 @@ def install_skill_pack(
 ) -> dict:
     if profile not in SKILL_PROFILES:
         raise OmhError(f"unknown skill profile {profile!r}; choose one of {', '.join(SKILL_PROFILES)}")
+    paths = legacy_support_paths(paths)
     all_templates = convert_from_dir(source_dir) if source_dir else builtin_skill_templates()
     reference_templates = convert_references_from_dir(source_dir) if source_dir else builtin_skill_reference_templates()
     # Taken before any filtering: which files OMH renders for a skill does not

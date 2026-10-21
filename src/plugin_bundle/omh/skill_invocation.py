@@ -87,6 +87,21 @@ def affirmative_marked_request(message, name, names):
             suffix = suffix[1:]
         if not suffix or not contains_run_cue(suffix[0]):
             return False
+        if len(suffix) > 1:
+            command, complement = (word.strip(":,.!?~…'\"()[];*‘’“”") for word in suffix[:2])
+            # These are adjacent nominal compounds, not a veto on words in
+            # genuine command arguments ("run with history as input" stays valid).
+            nominal_complements = {
+                "use": {"case", "cases"},
+                "run": {"history", "count", "counts", "log", "logs", "status", "result", "results", "time", "times", "duration"},
+                "start": {"date", "dates", "time", "times"},
+            }
+            if complement in nominal_complements.get(command, set()):
+                return False
+            # Bare Korean action nouns need an imperative ending when followed
+            # by more text; 사용 예시 / 실행 기록 are noun phrases.
+            if command in {"사용", "실행", "부탁"} and not re.fullmatch(r"해(?:줘|요|주세요)?|하(?:자|세요|라)|합시다", complement):
+                return False
     candidates = marker_candidates(words, names)
     if candidates != [name]:
         return False
