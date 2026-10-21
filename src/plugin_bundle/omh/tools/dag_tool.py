@@ -80,9 +80,12 @@ BACKEND_READ_SECONDS = 10  # the one `test` a settle runs there; a backend that 
 # not run prints none of them, so it is never taken for a missing file.
 _HANDOFF_FILE, _HANDOFF_LINK, _HANDOFF_NONE = "OMH_HANDOFF_FILE", "OMH_HANDOFF_LINK", "OMH_HANDOFF_NONE"
 # What a run on a Docker or SSH terminal says, each time, while no environment is up to find its handoff root in.
+# Same turn: on a session-isolated Docker terminal a later turn may get another task id, and so another environment.
 TERMINAL_FIRST = ("No node was handed out: the children write their handoff files in the {backend} terminal, and "
-                  "none is up yet to find where. Run one terminal command there (for example `pwd`), then call "
-                  "omh_dag action=ready.")
+                  "none is up yet to find where. In this same turn, run one terminal command there (for example "
+                  "`pwd`; a file tool brings it up too), then call omh_dag action=ready.")
+TERMINAL_INTERRUPTED = ("No node was handed out: reading where the children write their handoff files in the {backend} "
+                        "terminal was interrupted. Call omh_dag action=ready again.")
 _HOME_LINE, _HOME_UNUSABLE = "OMH_BACKEND_HOME=", "OMH_BACKEND_HOME_UNUSABLE"
 # A home a handoff root may sit in: absolute, plain characters, and not one of the temp directories every user can
 # write, where another user could plant a handoff file.
@@ -427,40 +430,52 @@ def backend_handoff(path: str, task_id: str) -> tuple[bool, str]:
                                                        "settle the node again.")
     if unread:
         return False, unread
-    if _HANDOFF_FILE in lines:
+    verdicts = {line.strip() for line in lines}
+    if _HANDOFF_FILE in verdicts:
         return True, ""
-    if _HANDOFF_LINK in lines or _HANDOFF_NONE in lines:
+    if _HANDOFF_LINK in verdicts or _HANDOFF_NONE in verdicts:
         return False, ""
     return False, "backend_unanswered"
 
 
-def backend_root(task_id: str) -> str | None:
-    """Where a run on a Docker or SSH terminal keeps its handoff files: ``<home>/.omh/dag`` in that terminal.
+def backend_root(task_id: str) -> tuple[str | None, str]:
+    """Where a run on a Docker or SSH terminal keeps its handoff files: (``<home>/.omh/dag`` in that terminal, why not).
 
     The home is the backend user's ``$HOME``, read once through the parent's
-    live environment, and taken only as a directory that user can write and
-    that no other user can (neither group- nor world-writable), at a plain
-    absolute path outside the shared temp directories. A child's `write_file`
-    takes the absolute path as it is in the backend; ``~`` would not do,
-    since on Docker Hermes expands it on this host. "" keeps this host's path
-    for the run, as before: a home that does not qualify, or a backend that
-    cannot be read or does not answer. None pins nothing: no environment is
-    live yet (or the read was interrupted), and none is started for this.
+    live environment and resolved to its physical path (``cd -P``, ``pwd -P``),
+    so a home that is a link is judged, and pinned, as the directory it points
+    at. It is taken only as a directory that user can write and that no other
+    user can (neither group- nor world-writable), at a plain absolute path
+    outside the shared temp directories; the shell refuses a ``$HOME`` with
+    whitespace in it or a relative one, and exactly one home line must come back. A child's
+    `write_file` takes the absolute path as it is in the backend; ``~`` would
+    not do, since on Docker Hermes expands it on this host.
+
+    "" keeps this host's path for the run, as before: a home that does not
+    qualify, or a backend that cannot be read or does not answer. None pins
+    nothing, with the reason: ``environment_gone`` (no environment is live
+    yet, and none is started for this) or ``interrupted``.
     """
     lines, unread = _backend_lines(task_id, (
-        'if [ -n "$HOME" ] && [ -d "$HOME" ] && [ -w "$HOME" ] && command -v find >/dev/null 2>&1 '
-        '&& [ -z "$(find "$HOME" -prune \\( -perm -0002 -o -perm -0020 \\) 2>/dev/null)" ]; '
-        f"then printf '%s%s\\n' {_HOME_LINE} \"$HOME\"; else echo {_HOME_UNUSABLE}; fi"))
+        'if case "$HOME" in *[[:space:]]*) false ;; /*) true ;; *) false ;; esac '
+        '&& home="$(cd -P -- "$HOME" 2>/dev/null && pwd -P)" && case "$home" in /*[[:space:]]*|"") false ;; '
+        '/*) true ;; *) false ;; esac && [ -d "$home" ] && [ -w "$home" ] && command -v find >/dev/null 2>&1 '
+        '&& [ -z "$(find "$home" -prune \\( -perm -0002 -o -perm -0020 \\) 2>/dev/null)" ]; '
+        f"then printf '%s%s\\n' {_HOME_LINE} \"$home\"; else echo {_HOME_UNUSABLE}; fi"))
     if unread in ("environment_gone", "interrupted"):
-        return None
-    home = next((line[len(_HOME_LINE):] for line in lines if line.startswith(_HOME_LINE)), "")
+        return None, unread
+    homes = [line[len(_HOME_LINE):] for line in lines if line.startswith(_HOME_LINE)]
+    home = homes[0] if len(homes) == 1 else ""
     usable = (_HOME_PATH.fullmatch(home) is not None and posixpath.normpath(home) == home
               and not any(home == shared or home.startswith(shared + "/") for shared in _SHARED_DIRS))
-    return f"{home}/.omh/dag" if usable else ""
+    return (f"{home}/.omh/dag" if usable else ""), ""
 
 
-def _backend_lines(task_id: str, command: str) -> tuple[set[str], str]:
+def _backend_lines(task_id: str, command: str) -> tuple[list[str], str]:
     """The output lines of one command in Hermes' live environment for ``task_id``, terminal escapes stripped.
+
+    A line keeps its own spaces: a caller that compares a verdict strips it,
+    and one that reads a value takes it as it was printed.
 
     The environment is the one `get_active_env` returns, which follows a
     delegated child to its parent's environment, the one the child's
@@ -487,21 +502,21 @@ def _backend_lines(task_id: str, command: str) -> tuple[set[str], str]:
         environment = get_active_env(task_id)
     except Exception:
         # Not Hermes, or a Hermes whose environment registry moved or raised: nothing reaches the backend.
-        return set(), "no_read_path"
+        return [], "no_read_path"
     if environment is None:
-        return set(), "environment_gone"
+        return [], "environment_gone"
     if not isinstance(environment, BaseEnvironment):
-        return set(), "no_read_path"
+        return [], "no_read_path"
     try:
         answer = BaseEnvironment.execute(environment, command, timeout=BACKEND_READ_SECONDS)
     except Exception:
         # The backend raised (a dropped connection, a removed container): no lines, so no verdict either.
-        return set(), "backend_unanswered"
+        return [], "backend_unanswered"
     if isinstance(answer, Mapping) and answer.get("hermes_interrupted"):
-        return set(), "interrupted"
+        return [], "interrupted"
     output = answer.get("output") if isinstance(answer, Mapping) else None
     output = output if isinstance(output, str) else ""
-    return {_TERMINAL_ESCAPES.sub("", line).strip() for line in output.splitlines()}, ""
+    return [_TERMINAL_ESCAPES.sub("", line) for line in output.splitlines()], ""
 
 
 def _ready(
@@ -519,12 +534,10 @@ def _ready(
               if derived[node_id]["state"] == "ready" and dag_run.is_coding(nodes[node_id])] if owner else []
     # A run on a Docker or SSH terminal pins where its handoff files live before its first node goes out, and with no
     # terminal up to ask, hands out nothing yet.
-    pinned = waits = False
+    pinned, waits = False, ""
     if record.get("backend") in REMOTE_BACKENDS and "handoff_root" not in record and set(offered) - set(coding):
-        root = backend_root(task)
-        if root is None:
-            waits = True
-        else:
+        root, waits = backend_root(task)
+        if root is not None:
             record["handoff_root"] = root
             pinned = True
     calls, held = ([], []) if waits else dag_run.calls_for(
@@ -551,7 +564,8 @@ def _ready(
     if not say and held and not calls:
         say = "No delegate_task slot is free; end the turn and call ready again after a completion."
     if waits:
-        say = " ".join(part for part in (say, TERMINAL_FIRST.format(backend=record["backend"])) if part)
+        instruction = TERMINAL_INTERRUPTED if waits == "interrupted" else TERMINAL_FIRST
+        say = " ".join(part for part in (say, instruction.format(backend=record["backend"])) if part)
     return _result(action, record, derived, shown, say=say, extra=extra)
 
 

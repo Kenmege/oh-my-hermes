@@ -13,10 +13,11 @@ All notable changes will be documented here.
   reads the terminal user's `$HOME` once through Hermes' live environment
   and pins `<home>/.omh/dag` on the run, where every node writes its
   handoff and its dependents read it; with no terminal environment up yet,
-  nothing goes out and the result says to run one terminal command first
-  (OMH never starts one). A home another user can write, one in a shared
-  temp directory, or one OMH cannot read keeps this host's path, as
-  before. `settle` reads the handoff inside the backend under the host's
+  nothing goes out and the result says to run one terminal command first,
+  in the same turn (OMH never starts one). A home that is a link is judged,
+  and pinned, as the directory it points at. A home another user can write,
+  one in a shared temp directory, one with whitespace in it, or one OMH
+  cannot read keeps this host's path, as before. `settle` reads the handoff inside the backend under the host's
   rule: a regular file and no link, so a missing file, a directory or a
   link is still refused. When the terminal cannot be reached (its
   environment is gone, Hermes' registry cannot be read, or no answer

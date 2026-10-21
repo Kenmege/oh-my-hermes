@@ -141,15 +141,20 @@ class Sandbox(Base):
     """A Docker or SSH terminal's filesystem: each file at its own absolute path, kept under ``root`` here.
 
     The command runs in `sh`: the handoff path it names is moved under
-    ``root``, and ``$HOME`` is ``home`` (made with ``mode``), moved likewise
-    and read back as the backend sees it, so a real shell judges both.
+    ``root``, and ``$HOME`` is ``home`` (made with ``mode``, or as a link to
+    ``target`` made so), moved likewise and read back as the backend sees it,
+    so a real shell judges both.
     """
 
-    def __init__(self, root: Path, home: str = "/sandbox-home/dev", mode: int = 0o700) -> None:
+    def __init__(self, root: Path, home: str = "/sandbox-home/dev", mode: int = 0o700, target: str = "") -> None:
         super().__init__()
         self.root, self.home = root, home
-        self.path(Path(home)).mkdir(parents=True)
-        self.path(Path(home)).chmod(mode)
+        made = self.path(Path(target or home))
+        made.mkdir(parents=True)
+        made.chmod(mode)
+        if target:
+            self.path(Path(home)).parent.mkdir(parents=True)
+            self.path(Path(home)).symlink_to(made)
 
     def path(self, host: Path) -> Path:
         return self.root / os.path.realpath(host).lstrip("/")
@@ -165,7 +170,8 @@ class Sandbox(Base):
             command = command.replace(shlex.quote(named), shlex.quote(str(self.path(Path(named)))))
         done = subprocess.run(["sh", "-c", command], capture_output=True, text=True, timeout=30, check=False,
                               env={**os.environ, "HOME": str(self.path(Path(self.home)))})
-        return {"output": (done.stdout + done.stderr).replace(str(self.root), ""), "returncode": done.returncode}
+        output = (done.stdout + done.stderr).replace(os.path.realpath(self.root), "").replace(str(self.root), "")
+        return {"output": output, "returncode": done.returncode}
 
 
 class Answers(Base):
@@ -470,10 +476,13 @@ class RemoteBackendTests(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "a Docker or SSH terminal runs a POSIX shell over POSIX paths")
     def test_a_home_another_user_can_write_keeps_this_hosts_path(self) -> None:
-        """Mutation: take any home, so a file another user planted could pass a node."""
-        for mode in (0o777, 0o770):
-            with self.subTest(mode=oct(mode)), homes() as home, terminal_env(), TemporaryDirectory() as root:
-                sandbox = Sandbox(Path(root), mode=mode)
+        """Mutation: take any home, judge a linked home by the link, or let a `$HOME` with a space through."""
+        cases = {"0777": {"mode": 0o777}, "0770": {"mode": 0o770}, "1777": {"mode": 0o1777},
+                 "link to 1777": {"mode": 0o1777, "target": "/shared/scratch"},
+                 "trailing space": {"home": "/sandbox-home/dev "}}
+        for name, made in cases.items():
+            with self.subTest(home=name), homes() as home, terminal_env(), TemporaryDirectory() as root:
+                sandbox = Sandbox(Path(root), **made)
                 with Terminal("ssh", sandbox).modules():
                     self._returned(home)
                     record = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))
@@ -484,13 +493,21 @@ class RemoteBackendTests(unittest.TestCase):
             self.assertEqual(record["handoff_root"], "")
             self.assertEqual(dag_run.node_handoff(record, home.omh, "api"), str(host))
             self.assertEqual(accepted["settled"], {"node": "api", "outcome": "accepted"})
+        # A home that is a link to a directory only its user can write is pinned as that directory.
+        with homes() as home, terminal_env(), TemporaryDirectory() as root, Terminal(
+                "docker", Sandbox(Path(root), target="/data/users/dev")).modules():
+            call(action="define", run="feat", nodes=FEATURE)
+            pinned = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))["handoff_root"]
+        self.assertEqual(pinned, "/data/users/dev/.omh/dag")
 
     def test_a_home_that_does_not_qualify_keeps_this_hosts_path(self) -> None:
         """Mutation: take a home in a shared temp directory, at a relative path, with odd characters, or `/`."""
         for line in ("OMH_BACKEND_HOME=/", "OMH_BACKEND_HOME=/tmp/dev", "OMH_BACKEND_HOME=/var/tmp",
                      "OMH_BACKEND_HOME=/home/a b", "OMH_BACKEND_HOME=/home/../etc", "OMH_BACKEND_HOME=home/dev",
                      "OMH_BACKEND_HOME=/home/dev/", "OMH_BACKEND_HOME=/home/$(id)", "OMH_BACKEND_HOME_UNUSABLE",
-                     "OMH_BACKEND_HOME="):
+                     "OMH_BACKEND_HOME=", "OMH_BACKEND_HOME=/home/dev ", " OMH_BACKEND_HOME=/home/dev",
+                     # Two home lines (a $HOME with a newline in it): neither is taken.
+                     "OMH_BACKEND_HOME=/home/dev\nOMH_BACKEND_HOME=/home/other"):
             with self.subTest(line=line), homes() as home, terminal_env(), Terminal(
                     "docker", Answers({"output": line + "\n", "returncode": 0})).modules():
                 defined = call(action="define", run="feat", nodes=FEATURE)
@@ -515,6 +532,7 @@ class RemoteBackendTests(unittest.TestCase):
         answers = Answers({"output": "OMH_BACKEND_HOME=/home/dev\n", "returncode": 0})
         terminal = Terminal("ssh", None)
         instruction = dag_tool.TERMINAL_FIRST.format(backend="ssh")
+        retry = dag_tool.TERMINAL_INTERRUPTED.format(backend="ssh")
         with homes() as home, terminal_env(), terminal.modules():
             slots_table(home)
             results = [call(action="define", run="feat", nodes=FEATURE)]
@@ -532,14 +550,17 @@ class RemoteBackendTests(unittest.TestCase):
             results.append(self._settle())
             record = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))
         define, ready, status, interrupted, resolved, later, settled = results
-        for held in (define, ready, interrupted):
+        for held in (define, ready):
             self.assertEqual((held["status"], held["calls"], held["say"]), ("ok", [], instruction))
+        self.assertIn("In this same turn", instruction)
+        # An interrupted read says so, not that no terminal is up.
+        self.assertEqual((interrupted["calls"], interrupted["say"]), ([], retry))
         self.assertNotIn("say", status)
         self.assertNotIn("handoff_root", held_record)
         self.assertEqual([c["nodes"] for c in resolved["calls"]], [["api"], ["ui"]])
         self.assertIn("/home/dev/.omh/dag/", resolved["calls"][0]["tasks"][0]["context"])
         self.assertEqual(record["handoff_root"], "/home/dev/.omh/dag")
-        self.assertEqual(sum(instruction in str(result.get("say", "")) for result in results), 3)
+        self.assertEqual(sum(instruction in str(result.get("say", "")) for result in results), 2)
         self.assertEqual(later["calls"], [])
         # The pinned root no longer answers: the node is accepted with its handoff not checked, never refused.
         self.assertEqual(settled["settled"], {"node": "api", "outcome": "accepted"})
