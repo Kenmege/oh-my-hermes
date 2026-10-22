@@ -385,6 +385,12 @@ Keep source files and generated projections together in the same change:
   `python tools/render_skill_pack.py --write` regenerates the tap pack;
   `--check` checks its declared files. `--refresh-provenance` with `--write`
   refreshes the canonical toolkit provenance after an audited source edit.
+- Canonical domain toolkit resources and definition-owned closed support
+  factories feed `builtin_skill_support_templates()` for geospatial analysis,
+  biomedical evidence and molecular docking. `tools/render_skill_pack.py --write`
+  projects these inert files to `skills/omh-<canonical-id>/toolkit/**`.
+  The domain provenance files are producer-validated, not written by the
+  show-reel-specific `--refresh-provenance` flag.
 - `agent_skill_files()` and `agent_skills_manifest()` produce the one portable
   inventory `agent-skills/.omh-agent-skills-manifest.json`; `docs agent-skills`
   regenerates that tree and its six host adapters. Never embed copied digest

@@ -46,6 +46,7 @@ references rather than normal user steps.
 | See which coding work is running, in which session | [Coding Observability](CODING-OBSERVABILITY.md) |
 | Understand measured and unproven impact claims | [Capability Impact](CAPABILITY_IMPACT.md) |
 | Browse all generated skills and harness metadata | [Workflow Reference](WORKFLOWS.md) |
+| Run optional polygon intersection, public biomedical reconciliation or prepared-input docking | [Domain science toolkits](domain-skills/README.md) |
 | Apply Apple UI design/review/improvement guidance | [Apple Design Guidance](APPLE-DESIGN.md) |
 | Track the external skill sources our skills reconstruct | [Skill Upstream Sources](SKILL-SOURCES.md) |
 | Prepare coding work for a selected executor | [Delegation-First Completeness](DELEGATION_FIRST_COMPLETENESS.md) |
@@ -72,7 +73,7 @@ Hermes memory, skills, tools, gateway surfaces, and OMH's role, see the
 
 ## Six Capability Families
 
-The public front door groups **147 installable skills** by user intent. Exact
+The public front door groups **150 installable skills** by user intent. Exact
 skill names remain available for deterministic routing, wrapper rendering, and
 operator control.
 

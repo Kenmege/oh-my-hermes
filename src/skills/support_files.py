@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 import re
 
@@ -62,8 +63,22 @@ def checked_support_path(root: Path, relative: str) -> Path:
 
 def builtin_skill_support_templates():
     from .show_reel_support import show_reel_support_templates
+    from .geospatial_analysis_skill import geospatial_analysis_support_templates
+    from .biomedical_evidence_skill import biomedical_evidence_support_templates
+    from .molecular_docking_skill import molecular_docking_support_templates
 
-    return validate_support_templates(show_reel_support_templates())
+    return validate_support_templates([
+        *show_reel_support_templates(),
+        *geospatial_analysis_support_templates(),
+        *biomedical_evidence_support_templates(),
+        *molecular_docking_support_templates(),
+    ])
+
+
+@lru_cache(maxsize=1)
+def builtin_support_owners():
+    """Finite reviewed owners, derived from the authoritative support inventory."""
+    return frozenset(t.skill_name for t in builtin_skill_support_templates())
 
 def agent_skill_support_templates():
     from dataclasses import replace

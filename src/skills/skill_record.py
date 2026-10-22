@@ -61,6 +61,10 @@ from .procedure_rendering import specialist_procedure_reference_markdown
 from .dag_ulw_skill import dag_ulw_reference_templates
 from .market_research_skill import REFERENCE_CONTENT as MARKET_RESEARCH_REFERENCES
 from .show_reel_references import show_reel_reference_templates
+from .review_methods import review_method_reference_templates
+from .geospatial_analysis_skill import geospatial_analysis_reference_templates
+from .biomedical_evidence_skill import biomedical_evidence_reference_templates
+from .molecular_docking_skill import molecular_docking_reference_templates
 from .render import (
     SkillReferenceTemplate,
     SkillTemplate,
@@ -224,6 +228,7 @@ REFERENCE_PRODUCERS: tuple[Callable[[], list[SkillReferenceTemplate]], ...] = (
     router_reference_templates,
     wiki_reference_templates,
     code_review_reference_templates,
+    review_method_reference_templates,
     context_reference_templates,
     docs_reference_templates,
     context_budget_reference_templates,
@@ -260,6 +265,9 @@ REFERENCE_PRODUCERS: tuple[Callable[[], list[SkillReferenceTemplate]], ...] = (
     ultrawork_reference_templates,
     dag_ulw_reference_templates,
     show_reel_reference_templates,
+    geospatial_analysis_reference_templates,
+    biomedical_evidence_reference_templates,
+    molecular_docking_reference_templates,
     idea_to_deploy_reference_templates,
     llm_app_dev_reference_templates,
     _procedure_reference_templates,
@@ -324,7 +332,7 @@ class SkillRecord:
         """Optional closed support resources; reading is never runtime execution."""
         from .support_files import builtin_skill_support_templates
 
-        return tuple(t for t in builtin_skill_support_templates() if t.skill_name == self.name) if self.name == "show-reel" else ()
+        return tuple(t for t in builtin_skill_support_templates() if t.skill_name == self.name)
 
     @property
     def display_name(self) -> str:

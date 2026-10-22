@@ -10,10 +10,41 @@ TARGETS = frozenset(
         "product-discovery-validation",
         "sales-pipeline-review",
         "show-reel",
+        "geospatial-analysis",
+        "biomedical-evidence",
+        "molecular-docking",
     }
 )
 
 DOMAIN_REVIEW_CONTRACTS = {
+    "geospatial-analysis": {
+        "outputs": ("result GeoJSON", "measured summary JSON", "replay and provenance manifest"),
+        "steps": ("gis_validate", "gis_intersect", "gis_reconcile"),
+        "checks": {
+            "gis_input_check": {"layer_hashes", "source_crs", "geometry_validity", "target_units"},
+            "gis_backend_check": {"backend", "versions", "command", "exit_code"},
+            "gis_output_check": {"result_count", "pair_area_sum_m2", "union_area_m2", "output_hashes", "fixture_limits"},
+        },
+    },
+    "biomedical-evidence": {
+        "outputs": ("biomedical_evidence_matrix/v1", "biomedical_reconciliation_manifest/v1"),
+        "steps": ("bio_frame", "bio_capture_sources", "bio_reconcile_captures", "bio_verify_outputs"),
+        "checks": {
+            "bio_scope": {"query", "intended_ids", "data_class", "source_terms"},
+            "bio_capture": {"argv", "version", "started_at", "finished_at", "exit_code", "sha256", "stderr_sha256"},
+            "bio_reconcile": {"identity", "claims", "disagreements", "freshness", "gaps"},
+            "bio_verify": {"availability", "status", "outputs", "exit_code"},
+        },
+    },
+    "molecular-docking": {
+        "outputs": ("molecular_docking_preflight/v1", "molecular_docking_run/v1 and real pose/score files"),
+        "steps": ("docking_scope", "docking_execute", "docking_verify"),
+        "checks": {
+            "docking_input_check": {"file_hashes", "format_validation", "source_license", "preparation_choices", "binding_box"},
+            "docking_budget_check": {"cpu", "seed", "exhaustiveness", "n_poses", "host_deadline"},
+            "docking_execution_check": {"backend_identity", "pose_score_readback", "hashes", "replay", "claim_boundary"},
+        },
+    },
     "show-reel": {
         "outputs": ("show_reel_brief/v1", "show_reel_source_asset_register/v1", "show_reel_concept_selection/v1", "show_reel_storyboard/v1", "show_reel_timing_map/v1", "show_reel_renderer_handoff/v1", "show_reel_preview_review/v1", "show_reel_export_manifest/v1", "show_reel_qa_report/v1", "show_reel_delivery_manifest/v1"),
         "steps": ("reel_brief", "reel_verify_sources", "reel_select_concept", "reel_direct_segments", "reel_measure_timing", "reel_author_motion", "reel_review_revise", "reel_export", "reel_validate", "reel_deliver"),

@@ -4988,15 +4988,18 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Review on two axes and report them side by side, never re-ranked against each other: the correctness/risk axis judges the code as it is, and the spec axis judges the diff against the dispatch's Claim and Requirements pointer. A clean diff that does not do what was asked is a spec-axis finding; when no Claim or spec pointer was supplied, report the spec axis as `not_assessed` with that reason instead of staying silent.
   - Judge maintainability findings against the named baseline in `omh-code-review/references/smell-baseline.md`: a baseline smell is a judgement call to argue from evidence, never an automatic finding, and the reviewed repository's own standards override the baseline wherever they conflict.
   - Close with two lists beside the verdict: what was checked and found clean, and what could not be assessed with the reason. An absent finding is evidence only when the closing says the surface was actually checked.
+  - Require structured `spec_axis`, `could_not_assess` (empty allowed), and unranked `verification_gaps` (empty allowed) under the dispatch schema; gaps carry `path`, `line_range`, and `evidence`, never finding priority or confidence. Check actual reads, revision, bounds, ordered ranges, and claim truth separately from shape.
+  - Select depth by changed risk, not diff size; record selected and omitted checks, reasons, actual coverage, and budget. Deduplicate candidates by root cause and validate before final findings; retain unresolved protected risks separately. Say `independent validation unavailable` when no different reader participated.
   - Hermes handles two parts of a review itself; load `omh-code-review/references/native-review-contract.md` for both. When `delegate_task` is in your tool list or tool_search finds it, pass the findings schema as the reviewer task's `output_schema`. The host validates the return, but its `schema_valid` record reaches you only when the call returns its results in the same turn; a result that arrives later as a completion message carries none, so check that summary against the schema yourself and never read `completed` as validated. A return that fails the contract is `not_observed`, never a pass. Inside a kanban review worker, `no_ship` becomes the request-changes transition that `sdlc-review` makes.
   - When the reviewed work ran in a Hermes session, cite `session_file_activity/v1` (`omh quality-evidence file-activity --hermes-session <id> --json`) to scope which workspace files its read_file, write_file, and patch calls touched, with the outcome Hermes recorded; it is file lineage, never file-content, diff, test, review, CI, or merge evidence.
   - For native `omh_todo` checkpoints, load the todo-checklist closing recipe; `record` then `recall` this review declaration. Stored declarations are not proof.
 - Completion checklist:
-  - Findings come first and are ranked by severity before summary or praise.
+  - Findings come first: rank ordinary findings by severity; keep gaps unranked in `verification_gaps`.
   - Every finding cites file, diff, command output, artifact, or expected behavior evidence.
   - Both axes appear in the report: correctness/risk findings, and a spec-axis verdict naming its Claim source or the `not_assessed` reason.
   - No-issue reviews still name residual risk, missing tests, and independent review evidence if unavailable.
   - The closing carries the checked-and-clean list and the could-not-assess list, each naming its surfaces.
+  - The dispatch schema matches the return, candidate validation states remain distinct, and selected checks are not reported as observed coverage.
   - Fix implementation, architecture follow-up, and CI/merge claims stay separate from the review result.
 - Recovery notes:
   - If no diff, file set, PR, or artifact is available, inspect the requested target or ask one target question before reviewing.
@@ -5005,7 +5008,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - To dispatch a reviewer rather than write the findings yourself, load `omh-code-review/references/review-dispatch.md`; it carries the base-SHA rule, the findings schema the return is checked against, and the implementer status contract.
   - When findings arrive for work you own, load `omh-code-review/references/review-response.md` before changing anything.
   - For maintainability judgement calls, load `omh-code-review/references/smell-baseline.md`; it names the twelve baseline smells with their fixes and the repo-standards-override rule.
-  - When one bug-first pass is not enough, load `omh-code-review/references/review-lenses.md` and run the five lenses separately; the verification-gap lens asks whether anything would go red if the changed behavior broke.
+  - Load `omh-code-review/references/risk-selection.md` to select depth; when additional lenses are justified, load `omh-code-review/references/review-lenses.md` and run only those selected as separate passes.
+  - Before final findings, load `omh-code-review/references/finding-validation.md` for candidate confirmation, rejection, and unresolved-risk handling; load `omh-code-review/references/architecture-delta.md` when ownership, contracts, dependencies, or shared-code extraction change.
 - Required inputs:
   - diff or files
   - expected behavior
@@ -8659,6 +8663,309 @@ These surfaces are generated command references, not installed Hermes workflow s
     - Output refs: `show_reel_delivery_manifest/v1`
     - Check IDs: `reel_delivery_check`, `reel_qa_check`
     - Instruction: Deliver requested files and source package with selected sources, pinned versions, licenses, locale variants, regeneration recipe and QA receipts; distinguish generated/attached/received/published with exact-target readback and honest missing evidence. HOLD a video request if only a storyboard exists.
+
+### geospatial-analysis
+
+[omh] Spatial layers to intersect: execute CRS-safe polygon overlay with measured areas, validated geometry and reproducible GeoJSON outputs.
+
+- Category: `analysis`
+- Phase: `spatial-computation`
+- Hermes role: `operator`
+- Quality tier: `execution-evidence-gated`
+- Reasoning demand: `heavy`
+- Exposure: `direct_skill`
+- Install visibility: `true`
+- Docs visibility: `primary_workflow_skill`
+- Compatibility alias: `false`
+- Lifecycle stage: `canonical`
+- Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
+- Handoff policy: Hermes retains domain framing and evidence interpretation. Invoke the optional standalone helper only within accepted file and execution scope; use a selected coding owner for code changes. A prepared command is not observed spatial computation.
+- Why this exists: Polygon computations can return plausible but wrong numbers when CRS, coordinate units or geometry are invalid. This skill couples fail-closed checks to a runnable optional overlay producer and inspectable replay artifacts.
+- First steps:
+  - Read `toolkit/README.md` and `references/execution-and-qa.md` before executing `toolkit/scripts/analyze.py`; installation and skill discovery never run it.
+  - Confirm the two layers, explicit EPSG declarations, study extent, projected metre CRS, output directory and finite host timeout; never guess a missing CRS.
+  - Use the original synthetic rectangle fixture only for backend QA; do not describe it as a public flood, facility or site-suitability finding.
+- Use when: Use when supplied polygon layers need actual intersection and measured overlap, not a narrative report or a decorative map.
+- Do not use when:
+  - The task only aggregates supplied tables or charts without coordinate computation; use `data-analysis`.
+  - The task only needs source discovery or an explanation from documentation; use `web-research`.
+  - The task is connecting a generic tool server, not executing a domain calculation; use Hermes' native MCP configuration guidance.
+- Strong routing signals: `geospatial-analysis`, `geospatial overlay`, `spatial intersection`, `intersect geojson layers`, `compute overlap area`
+- Good example:
+  - Prompt: Intersect these two GeoJSON layers in a metric CRS and compute overlap area.
+  - Expected behavior: Require authoritative source CRS, validate geometry, execute real intersection, then inspect result GeoJSON, measured summary and replay manifest.
+  - Why: A spatial computation has measurable geometry and units rather than a report-only output.
+- Bad example:
+  - Prompt: Explain the map metaphor in this essay and plot the existing CSV totals.
+  - Expected behavior: Answer the writing question or use `data-analysis` for the table; do not run a spatial backend.
+  - Why: Map vocabulary alone does not establish a coordinate computation.
+- Quality bar:
+  - Require finite 2D polygon geometry, explicit CRS and projected metre axes before measuring.
+  - Record the real backend, exact versions, command, exit and output hashes; do not call direct libraries GIS-MCP.
+  - Verify synthetic fixture count and area independently, and never generalize fixture numbers to public-world risk.
+- Completion checklist:
+  - Source declarations and metric target are explicit; invalid geometry is rejected, not silently repaired.
+  - The actual backend command and exit were observed; output GeoJSON, summary and manifest were read back and hashed, or the blocker is stated.
+  - Pair sums versus union area, projected measurement limits and synthetic versus public-world evidence remain distinct.
+- Recovery notes:
+  - If CRS is missing, stop and ask for the authoritative declaration; do not assign one based on numeric range.
+  - If dependencies are missing, return a nonzero failure and an explicit optional-environment setup recipe; never synthesize outputs.
+  - If geometry is invalid, report the failing layer and request approved preprocessing before rerunning; if output already exists, choose a new directory.
+- Required inputs:
+  - input and overlay polygon layers
+  - explicit source and metric target CRS
+  - new output directory and execution budget
+- Expert clarification questions:
+  - `input and overlay polygon layers`
+    - English: Which two polygon layers, source permissions, and study extent define the overlap question?
+    - Korean: Which two polygon layers, source permissions, and study extent define the overlap question?
+  - `explicit source and metric target CRS`
+    - English: What are the authoritative source CRS declarations and an appropriate projected metre CRS for measurement?
+    - Korean: What are the authoritative source CRS declarations and an appropriate projected metre CRS for measurement?
+  - `new output directory and execution budget`
+    - English: Which new directory receives outputs, which optional backend is installed, and what host timeout bounds execution?
+    - Korean: Which new directory receives outputs, which optional backend is installed, and what host timeout bounds execution?
+- Expected outputs:
+  - result GeoJSON
+  - measured summary JSON
+  - replay and provenance manifest
+- Artifact expectations:
+  - Actual `result.geojson` in longitude/latitude OGC:CRS84; each positive-area pair carries source indices, original namespaced properties, area_m2 and perimeter_m.
+  - Authored `geospatial_summary/v1` in `summary.json`: result count, touch-only count, measurement CRS, pair sums, unique union area and explicit limitations.
+  - Authored `geospatial_manifest/v1` in `manifest.json`: input/output hashes, actual direct backend versions, settings, timestamp, script digest and replay argv; not a registered OMH artifact API.
+- Safety rules:
+  - Never infer CRS from plausible coordinates. Explicit source flags are mandatory; embedded declarations must agree.
+  - Refuse geographic-degree area/distance and non-metre targets; choose a suitable local/equal-area projected CRS rather than treating map units as ground truth.
+  - Do not auto-install optional libraries, import the companion on skill load, open a network connection, silently repair invalid geometry or overwrite existing outputs.
+  - No result is observed until the actual domain backend exits successfully and its output files are inspected. Missing backend, validation failure and timeout are not zero-overlap findings.
+  - Keep confidential locations and source data out of shared reports; carry only permitted evidence references. No map, raster/NoData, buffer, spatial statistics or nearest-distance capability is promised.
+- Procedure checks:
+  - `gis_input_check`
+    - Required result fields: `layer_hashes`, `source_crs`, `geometry_validity`, `target_units`
+    - Criterion: Reject missing/conflicting CRS, invalid or non-finite geometry and geographic-degree measurement. Do not repair geometry silently.
+  - `gis_backend_check`
+    - Required result fields: `backend`, `versions`, `command`, `exit_code`
+    - Criterion: Name the actual backend and versions; use direct Shapely/PyProj when sufficient. Missing dependencies or timeout must never produce guessed results.
+  - `gis_output_check`
+    - Required result fields: `result_count`, `pair_area_sum_m2`, `union_area_m2`, `output_hashes`, `fixture_limits`
+    - Criterion: Read back actual output geometry, summary and manifest, reconcile count/area independently and distinguish overlapping pair sums from unique coverage.
+- Procedure steps:
+  - `gis_validate` (`analysis`)
+    - Input refs: `input and overlay polygon layers`, `explicit source and metric target CRS`
+    - Output refs: `replay and provenance manifest`
+    - Check IDs: `gis_input_check`
+    - Instruction: Inspect source rights, coordinate ordering and extent; require explicit EPSG identifiers and an appropriate projected metre CRS before preparing computation.
+  - `gis_intersect` (`production`)
+    - Input refs: `input and overlay polygon layers`, `explicit source and metric target CRS`, `new output directory and execution budget`
+    - Output refs: `result GeoJSON`, `measured summary JSON`, `replay and provenance manifest`
+    - Check IDs: `gis_input_check`, `gis_backend_check`
+    - Instruction: Run the standalone helper with a finite host timeout in an isolated optional environment; record real stdout, stderr and exit without fallback values.
+  - `gis_reconcile` (`validation`)
+    - Input refs: `input and overlay polygon layers`, `explicit source and metric target CRS`, `new output directory and execution budget`
+    - Output refs: `result GeoJSON`, `measured summary JSON`, `replay and provenance manifest`
+    - Check IDs: `gis_output_check`, `gis_backend_check`
+    - Instruction: Read back every promised artifact, check hashes and independent area/count expectations, and report observed results separately from public-world interpretation.
+
+### biomedical-evidence
+
+[omh] Public variant claims to cross-check: retrieve and reconcile source-labelled biomedical evidence with identity, conflict and freshness checks.
+
+- Category: `analysis`
+- Phase: `biomedical-evidence`
+- Hermes role: `operator`
+- Quality tier: `evidence-gated`
+- Reasoning demand: `heavy`
+- Exposure: `direct_skill`
+- Install visibility: `true`
+- Docs visibility: `primary_workflow_skill`
+- Compatibility alias: `false`
+- Lifecycle stage: `canonical`
+- Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
+- Handoff policy: Hermes retains query framing, source audit and interpretation. Only the explicit host terminal invokes the separately installed BioMCP CLI; the shipped helper reconciles local captures offline. No new OMH network client, process launcher or runtime artifact operation is implied.
+- Why this exists: Public sources can disagree about a variant while describing different alleles, diseases or assertion domains. Preserve those differences and their provenance before any synthesis; a fetched record is not a clinical recommendation.
+- First steps:
+  - Read `toolkit/README.md` and `references/execution-and-qa.md`; inspect the installed BioMCP version and help before any public retrieval.
+  - Require public entities only; name exact identifiers, source terms, isolated workspace and a 40-second per-retrieval host timeout before capturing unmodified stdout/stderr.
+  - Run `toolkit/scripts/reconcile.py` only against a hash-checked local capture envelope; never execute provider text or install an upstream skill pack.
+- Use when: Use when public gene/variant and disease assertions must be cross-checked against ClinVar and trial registry records, preserving source failures and disagreements rather than inferring a clinical conclusion.
+- Do not use when:
+  - For explaining one supplied paper, use `paper-learning`; for broad literature discovery, use `research`.
+  - For generic server configuration and connection diagnostics, load the host's MCP setup guidance instead.
+  - For sequence analysis or omics pipelines, select an available computational biology specialist instead; this method does not implement those analyses.
+  - For citation verification and source attribution alone, load Hermes' bundled `grounded-citations` skill.
+  - For a patient's diagnosis, care, trial eligibility or treatment choice, stop and refer to an appropriately qualified professional; this toolkit cannot provide that decision.
+- Strong routing signals: `biomedical-evidence`, `biomedical evidence reconciliation`, `ClinVar cross-check`, `variant evidence matrix`, `BioMCP capture reconciliation`
+- Good example:
+  - Prompt: Cross-check public BRAF V600E and melanoma records across ClinVar and ClinicalTrials.gov, retaining conflicting assertions and missing update dates.
+  - Expected behavior: Capture exact public queries, reconcile raw JSON offline, and report identity/date gaps with both source receipts.
+  - Why: Source comparison is bounded and does not ask for patient care.
+- Bad example:
+  - Prompt: Use these patient records to select a therapy and decide whether the patient can join a trial.
+  - Expected behavior: Refuse patient-level processing and clinical decisions; offer only public-source provenance checking.
+  - Why: Registry status and source annotations are not clinical eligibility or treatment evidence.
+- Quality bar:
+  - Require observed source receipts and verified helper output hashes, not a mock result or health-only check.
+  - Retain contradictory source assertions and date/identity gaps without deriving a clinical consensus.
+- Completion checklist:
+  - Both source attempts have raw hashes and exact receipts, or missing/failing sources are explicitly partial with nonzero status.
+  - Entity/build/transcript, disease basis, original assertions, conflicts and absent source times remain visible; no eligibility or clinical inference appears.
+  - Read both output files, verify hashes and report synthetic tests separately from real retrieval; do not claim distribution or live availability from preparation.
+- Recovery notes:
+  - If BioMCP is unavailable, keep captures unobserved and prepare only the explicit isolated setup; never fabricate a source response.
+  - If a source fails or JSON changes, preserve stdout/stderr and a partial report; audit an updated adapter before accepting unknown schemas.
+  - If disease labels or allele aliases cannot be matched literally, preserve the mismatch and ask for authoritative identifiers rather than silently broadening.
+- Required inputs:
+  - public gene/variant and disease query
+  - bounded BioMCP capture workspace
+  - intended entity identifiers and source scope
+- Expert clarification questions:
+  - `public gene/variant and disease query`
+    - English: Which public gene, exact allele if any, disease label and intended IDs should remain distinct?
+    - Korean: 어떤 공개 유전자, 정확한 변이, 질환명과 식별자를 구분해서 확인할까요?
+  - `bounded BioMCP capture workspace`
+    - English: Which isolated workspace and finite host timeout will preserve raw stdout, stderr, argv, version and retrieval times?
+    - Korean: 원본 응답과 명령, 버전, 조회 시각을 보존할 격리 폴더와 제한 시간은 무엇인가요?
+  - `intended entity identifiers and source scope`
+    - English: Which source accessions, genome build, transcript and registry IDs are asserted, and which are unresolved?
+    - Korean: 원본 접근번호, 유전체 빌드, 전사체, 임상시험 ID 중 확정된 것과 미확인인 것은 무엇인가요?
+- Expected outputs:
+  - biomedical_evidence_matrix/v1
+  - biomedical_reconciliation_manifest/v1
+- Artifact expectations:
+  - Authored file contracts, not registered OMH RPC artifacts: evidence-matrix.json and manifest.json plus external raw capture/receipt references.
+  - Raw responses remain outside the package; the matrix preserves source assertions with JSON-pointer paths, accessions/NCT IDs, review/submitter context and retrieval/source times.
+- Safety rules:
+  - No patient data, clinical eligibility determination, treatment recommendation or pathogenicity adjudication; source assertions are not medical advice.
+  - No network or subprocess from the shipped helper, registration, discovery or install; BioMCP runs only via explicit bounded host invocation in an isolated optional environment.
+  - Keep germline/somatic and disease/population contexts separate; recruitment and text matches never establish eligibility or variant relevance.
+  - Preserve raw bytes and exact queries; mark source failure, missing dates and unresolved identity as partial instead of inventing biological findings.
+- Procedure checks:
+  - `bio_scope`
+    - Required result fields: `query`, `intended_ids`, `data_class`, `source_terms`
+    - Criterion: Require public query scope and exact identifiers; HOLD patient data, clinical eligibility or treatment requests.
+  - `bio_capture`
+    - Required result fields: `argv`, `version`, `started_at`, `finished_at`, `exit_code`, `sha256`, `stderr_sha256`
+    - Criterion: Preserve exact commands and unmodified streams, including timeout/failure; never relabel a missing source as no evidence.
+  - `bio_reconcile`
+    - Required result fields: `identity`, `claims`, `disagreements`, `freshness`, `gaps`
+    - Criterion: Compare exact identity and disease context before assertions; keep germline, somatic, RCV and SCV separate; absent dates stay unknown.
+  - `bio_verify`
+    - Required result fields: `availability`, `status`, `outputs`, `exit_code`
+    - Criterion: Read both output JSON files and verify hashes; partial results must exit nonzero and live captures must remain separate from synthetic fixtures.
+- Procedure steps:
+  - `bio_frame` (`analysis`)
+    - Input refs: `public gene/variant and disease query`, `intended entity identifiers and source scope`
+    - Output refs: `biomedical_evidence_matrix/v1`
+    - Check IDs: `bio_scope`
+    - Instruction: Fix the exact public query, allele/build/transcript and disease matching basis; do not repair ambiguous identifiers.
+  - `bio_capture_sources` (`production`)
+    - Input refs: `public gene/variant and disease query`, `bounded BioMCP capture workspace`, `intended entity identifiers and source scope`
+    - Output refs: `biomedical_reconciliation_manifest/v1`
+    - Check IDs: `bio_scope`, `bio_capture`
+    - Instruction: Use the bounded host terminal to capture ClinVar and CTGov responses plus receipts; retrieval remains unobserved without actual streams.
+  - `bio_reconcile_captures` (`analysis`)
+    - Input refs: `public gene/variant and disease query`, `bounded BioMCP capture workspace`, `intended entity identifiers and source scope`
+    - Output refs: `biomedical_evidence_matrix/v1`
+    - Check IDs: `bio_capture`, `bio_reconcile`
+    - Instruction: Invoke the offline helper against the original capture envelope; preserve structured assertions, source failures and mismatched contexts.
+  - `bio_verify_outputs` (`validation`)
+    - Input refs: `public gene/variant and disease query`, `bounded BioMCP capture workspace`, `intended entity identifiers and source scope`
+    - Output refs: `biomedical_evidence_matrix/v1`, `biomedical_reconciliation_manifest/v1`
+    - Check IDs: `bio_reconcile`, `bio_verify`
+    - Instruction: Read back outputs and hashes; report availability separately from completeness, observed conflicts and every unresolved date or identifier.
+
+### molecular-docking
+
+[omh] Prepared PDBQT inputs: run bounded standalone Vina docking with real poses, scores and replay provenance; never infer efficacy or safety.
+
+- Category: `analysis`
+- Phase: `docking-validation`
+- Hermes role: `operator`
+- Quality tier: `evidence-gated`
+- Reasoning demand: `standard`
+- Exposure: `direct_skill`
+- Install visibility: `true`
+- Docs visibility: `primary_workflow_skill`
+- Compatibility alias: `false`
+- Lifecycle stage: `canonical`
+- Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
+- Handoff policy: Keep framing and evidence assessment with the host. Report actual docking only after reading genuine pose/score/version/log/hash/replay evidence. Optional dependency or native failures remain BLOCKED for that run; preflight, source inspection and a successful install alone are not execution. No ToolUniverse execution is claimed.
+- Why this exists: Input validation and tutorial numbers are not measured docking. Require a real engine search and digest-bound poses, finite energies and replay settings.
+- First steps:
+  - Read `toolkit/README.md` and `references/execution-and-qa.md`. Use the explicitly invoked standalone Vina Python helper, not an invented ToolUniverse tool or hidden core execution service.
+  - Recover prepared file paths, source/license and preparation receipts, angstrom binding box, seed, CPU, new output directory and host deadline. Never guess a site, silently prepare a molecule or install dependencies on skill load.
+  - Use `--validate-only` for dependency-free prerequisites, or explicitly invoke actual docking in an approved environment with a host-enforced timeout and stdout/stderr capture. Missing dependencies must refuse, not produce guessed findings.
+- Use when: Use when prepared receptor/ligand files and an explicit binding box need a bounded rigid-receptor computational run.
+- Do not use when:
+  - A general literature question belongs to `research`; one supplied paper belongs to `paper-learning`.
+  - A boat reservation, molecular mechanism explanation without computation, drug recommendation or clinical decision is outside this scope.
+- Strong routing signals: `molecular-docking`, `rigid-receptor docking`, `PDBQT docking`, `ligand docking poses`, `AutoDock Vina`
+- Good example:
+  - Prompt: Run these prepared PDBQT inputs in this declared box with one CPU and fixed seed, preserving actual poses and replay settings.
+  - Expected behavior: Validate inputs, run the explicit optional Vina helper under a host deadline, then read back poses/scores/hashes and state limitations.
+  - Why: Actual engine output is distinguishable from preflight and source inspection.
+- Bad example:
+  - Prompt: These scores prove the compound is safe and effective; recommend a dose.
+  - Expected behavior: Reject the unsupported inference and do not produce clinical advice.
+  - Why: Computational score evidence cannot establish those claims.
+- Quality bar:
+  - Reject symlinks, existing output directories, unsupported formats, non-finite inputs and resource-cap violations before output writes. Preserve existing user files and keep failed-run partial files distinct from success manifests.
+  - Retain actual setup and runtime errors. Never fill a missing backend gate with tutorial numbers, fake poses, optimizer output or a success stub.
+- Completion checklist:
+  - Input/format/resource checks and exact input hashes are observed; source rights and preparation assumptions remain explicit.
+  - Actual poses, finite matching energies, backend version/settings, host logs/exit/deadline and replay manifest are read back, or the run is reported BLOCKED without invented results.
+- Recovery notes:
+  - Preserve failed setup receipts. On this host, one authorized correction of the existing native build supplied CONDA_DEFAULT_ENV as well as CONDA_PREFIX/PATH, then Vina 1.2.7 built and the real 1IEP smoke passed; this is not a promise for other platforms.
+  - If a native run fails or times out, retain its logs and partial files without a success claim; review the backend failure before retrying in a new output directory.
+- Required inputs:
+  - prepared receptor and ligand PDBQT paths
+  - binding box and preparation provenance
+  - approved local resource budget
+- Expert clarification questions:
+  - `prepared receptor and ligand PDBQT paths`
+    - English: Which prepared, rights-cleared single-ligand and rigid-receptor PDBQT files are authorized?
+    - Korean: Which prepared, rights-cleared single-ligand and rigid-receptor PDBQT files are authorized?
+  - `binding box and preparation provenance`
+    - English: What are the center and box dimensions in angstrom, and which protonation, charge, tautomer and preparation choices produced these files?
+    - Korean: What are the center and box dimensions in angstrom, and which protonation, charge, tautomer and preparation choices produced these files?
+  - `approved local resource budget`
+    - English: Which isolated optional backend, finite host deadline and new evidence directory are approved?
+    - Korean: Which isolated optional backend, finite host deadline and new evidence directory are approved?
+- Expected outputs:
+  - molecular_docking_preflight/v1
+  - molecular_docking_run/v1 and real pose/score files
+- Artifact expectations:
+  - Keep raw inputs, stdout/stderr and pose/score files in the approved evidence directory, outside metadata-only OMH state. Preflight/run/score JSON schemas are standalone file contracts, not new registered operations artifacts.
+- Safety rules:
+  - Never infer efficacy, safety, affinity certainty, target validation, dosing or treatment advice. PDBQT syntax validation is not chemical validity or a preparation review.
+  - No hidden execution, network, credentials, global install or paid compute. Dependencies are optional and task-isolated; discovery, routing and skill installation never execute the helper.
+  - ToolUniverse registrations were inspected, not invoked. This toolkit uses standalone AutoDock Vina Python only; do not invent a ToolUniverse adapter or tool name.
+- Procedure checks:
+  - `docking_input_check`
+    - Required result fields: `file_hashes`, `format_validation`, `source_license`, `preparation_choices`, `binding_box`
+    - Criterion: Require safe new output paths, valid finite PDBQT atoms, rigid receptor/single ligand, rights and preparation provenance; HOLD absent binding center or preparation facts.
+  - `docking_budget_check`
+    - Required result fields: `cpu`, `seed`, `exhaustiveness`, `n_poses`, `host_deadline`
+    - Criterion: Require CPU 1-2, positive fixed seed, exhaustiveness 1-4, poses 1-5, box dimensions 1-24 angstrom and a host-enforced deadline at most 180 seconds; the helper records but cannot interrupt native code itself.
+  - `docking_execution_check`
+    - Required result fields: `backend_identity`, `pose_score_readback`, `hashes`, `replay`, `claim_boundary`
+    - Criterion: Require actual dock(), matching MODEL/ENDMDL and VINA RESULT records, finite energies in kcal/mol, engine version, stdout/stderr, exit/deadline evidence and digest-bound replay. A mock, score-only or optimize-only call cannot pass.
+- Procedure steps:
+  - `docking_scope` (`analysis`)
+    - Input refs: `prepared receptor and ligand PDBQT paths`, `binding box and preparation provenance`, `approved local resource budget`
+    - Output refs: `molecular_docking_preflight/v1`
+    - Check IDs: `docking_input_check`, `docking_budget_check`
+    - Instruction: Bind rights-cleared prepared files, protonation/tautomer/charges, receptor assumptions, site and resource budget. Run optional --validate-only to read back input digests, never as completed docking.
+  - `docking_execute` (`production`)
+    - Input refs: `prepared receptor and ligand PDBQT paths`, `binding box and preparation provenance`, `approved local resource budget`
+    - Output refs: `molecular_docking_run/v1 and real pose/score files`
+    - Check IDs: `docking_input_check`, `docking_budget_check`
+    - Instruction: Explicitly run toolkit/scripts/dock.py in the chosen isolated Vina environment with a new output directory, captured logs and a real finite host timeout. Never auto-install or silently substitute a provider.
+  - `docking_verify` (`validation`)
+    - Input refs: `prepared receptor and ligand PDBQT paths`, `binding box and preparation provenance`, `approved local resource budget`
+    - Output refs: `molecular_docking_run/v1 and real pose/score files`
+    - Check IDs: `docking_execution_check`
+    - Instruction: Read poses.pdbqt, scores.json and manifest.json; reconcile saved pose energies and atom records with actual inputs and all hashes. Replay with a new output directory when needed; qualify reproducibility by version/platform.
 
 ### jev-ask
 

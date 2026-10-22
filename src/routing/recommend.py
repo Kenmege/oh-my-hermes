@@ -1386,6 +1386,21 @@ _SKILL_POLICIES = {
         evidence_boundary="A brief, storyboard or renderer handoff is not a rendered video, locale/font/voice review, export QA, attachment, receipt or publication. Missing required production evidence keeps HOLD.",
         wrapper_guidance="Prepare audience and language tracks, source/brand rights, three concepts and segment direction, measured timing, selected renderer capability, revision budget, export/QA and source delivery with honest gaps.",
     ),
+    "geospatial-analysis": RecommendationPolicy(
+        next_action="prepare_geospatial_analysis",
+        evidence_boundary="Prepared CRS checks and commands are not observed spatial computation; require actual geometry, metric summary and hash-checked replay outputs.",
+        wrapper_guidance="Confirm supplied polygon layers, explicit source and projected metre CRS, isolated Shapely/PyProj environment and host timeout; inspect actual intersection outputs without silent repairs.",
+    ),
+    "biomedical-evidence": RecommendationPolicy(
+        next_action="prepare_biomedical_evidence",
+        evidence_boundary="Source availability is not complete reconciliation, eligibility, diagnosis or treatment advice; missing identity or date evidence remains partial.",
+        wrapper_guidance="Confirm public query and exact IDs, capture BioMCP sources through the explicit bounded host terminal, then reconcile local hash-checked captures offline and retain source failures and disagreements.",
+    ),
+    "molecular-docking": RecommendationPolicy(
+        next_action="prepare_molecular_docking",
+        evidence_boundary="Preflight, installation and tutorial scores are not docking; require genuine pose and finite energy readback, logs and replay hashes. Scores do not establish efficacy or safety.",
+        wrapper_guidance="Confirm prepared PDBQT inputs, preparation provenance, binding box, seed and resource limits; explicitly invoke standalone Vina under a host deadline, never an invented ToolUniverse backend.",
+    ),
     "visual-qa": RecommendationPolicy(
         next_action="prepare_visual_qa",
         evidence_boundary=(
@@ -2820,6 +2835,9 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     "market-research": frozenset({"market", "research", "sizing", "tam", "sam", "som", "bottom", "up", "size", "sensitivity", "customer", "evidence", "analysis", "jtbd", "matrix", "competitor", "pricing", "profiles", "competitive"}),
     # Product/video/reel words alone must not acquire a motion-production owner.
     "show-reel": frozenset({"show", "reel", "product", "showcase", "video", "animated", "film", "motion", "portfolio", "launch", "teaser"}),
+    "geospatial-analysis": frozenset({"analysis", "overlay", "spatial", "intersection", "intersect", "layers", "compute", "overlap", "area"}),
+    "biomedical-evidence": frozenset({"evidence", "reconciliation", "cross", "check", "variant", "matrix", "capture"}),
+    "molecular-docking": frozenset({"molecular", "docking", "rigid", "receptor", "ligand", "poses"}),
     # The Jev skills are reached through `routing/jev_addressing.py` only:
     # every word their triggers are built from is held back, `jev` included,
     # so a sentence that merely mentions Jev or a review, a failure, or a

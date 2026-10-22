@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import unittest
+from typing import Any
 
 from omh.skills.catalog import builtin_definitions
 from omh.skills.packaging import builtin_skill_reference_templates, builtin_skill_templates
@@ -37,11 +38,12 @@ def _flat(text: str) -> str:
 
 _JSON_TYPES = {"object": dict, "array": list, "string": str}
 _KEYWORDS = frozenset(
-    {"type", "required", "properties", "items", "enum", "const", "minLength", "minItems", "if", "then"}
+    {"type", "required", "properties", "items", "enum", "const", "minLength", "minItems", "if", "then",
+     "oneOf", "not", "pattern"}
 )
 
 
-def _matches(instance: object, schema: dict[str, object]) -> bool:
+def _matches(instance: object, schema: dict[str, Any]) -> bool:
     """Whether `instance` satisfies `schema`, for the keywords the findings schema uses.
 
     OMH has no runtime dependency and so no JSON Schema validator; Hermes
@@ -59,6 +61,12 @@ def _matches(instance: object, schema: dict[str, object]) -> bool:
         return False
     if "const" in schema and instance != schema["const"]:
         return False
+    if "oneOf" in schema and sum(_matches(instance, branch) for branch in schema["oneOf"]) != 1:
+        return False
+    if "not" in schema and _matches(instance, schema["not"]):
+        return False
+    if "pattern" in schema and isinstance(instance, str) and re.search(schema["pattern"], instance) is None:
+        return False
     if "minLength" in schema and isinstance(instance, str) and len(instance) < schema["minLength"]:
         return False
     if isinstance(instance, list):
@@ -75,6 +83,31 @@ def _matches(instance: object, schema: dict[str, object]) -> bool:
     if "if" in schema and _matches(instance, schema["if"]) and not _matches(instance, schema.get("then", {})):
         return False
     return True
+
+
+class ReviewSchemaEvaluatorTests(unittest.TestCase):
+    def test_new_keywords_are_evaluated_not_just_allowlisted(self) -> None:
+        self.assertTrue(_matches("x", {"oneOf": [{"const": "x"}, {"const": "y"}]}))
+        self.assertFalse(_matches("z", {"oneOf": [{"const": "x"}, {"const": "y"}]}))
+        self.assertFalse(_matches("x", {"oneOf": [{}, {"type": "string"}]}))
+        self.assertFalse(_matches("anything", {"not": {}}))
+        self.assertTrue(_matches("y", {"not": {"const": "x"}}))
+        self.assertFalse(_matches("   ", {"type": "string", "pattern": r"\S"}))
+        self.assertTrue(_matches(" value ", {"type": "string", "pattern": r"\S"}))
+        with self.assertRaisesRegex(AssertionError, "does not evaluate"):
+            _matches({}, {"unsupported_keyword": True})
+
+    def test_every_schema_branch_uses_only_evaluated_keywords(self) -> None:
+        def walk(schema: dict[str, Any]) -> None:
+            self.assertFalse(set(schema) - _KEYWORDS)
+            for child in schema.get("properties", {}).values():
+                walk(child)
+            for keyword in ("items", "if", "then", "not"):
+                if keyword in schema:
+                    walk(schema[keyword])
+            for child in schema.get("oneOf", []):
+                walk(child)
+        walk(REVIEW_FINDINGS_OUTPUT_SCHEMA)
 
 
 class CodeReviewReferenceTests(unittest.TestCase):
@@ -192,6 +225,121 @@ class ReviewFindingsSchemaTests(unittest.TestCase):
         definition = next(d for d in builtin_definitions() if d.name == "code-review")
         return next(line for line in definition.quality_bar if line.startswith("Report each finding with"))
 
+    @staticmethod
+    def _coverage() -> dict[str, Any]:
+        return {
+            "spec_axis": {"status": "not_assessed", "reason": "No Claim or Requirements pointer supplied"},
+            "could_not_assess": [],
+            "verification_gaps": [],
+        }
+
+    def _clean_review(self) -> dict[str, Any]:
+        return dict(self._coverage(), verdict="ship", confidence="high", findings=[], checked_clean=["src/a.py error path"])
+
+    def test_coverage_fields_cannot_be_omitted_even_on_a_clean_review(self) -> None:
+        review = self._clean_review()
+        self.assertTrue(_matches(review, REVIEW_FINDINGS_OUTPUT_SCHEMA))
+        for field in self._coverage():
+            with self.subTest(missing=field):
+                self.assertFalse(_matches({k: v for k, v in review.items() if k != field}, REVIEW_FINDINGS_OUTPUT_SCHEMA))
+
+    def test_spec_axis_requires_supported_status_and_evidenced_nonempty_verdicts(self) -> None:
+        row = {"claim": "Reject invalid input", "requirements": ["docs/plan.md#R2"],
+               "verdict": "met", "evidence": "tests/test_a.py::test_invalid checks the error"}
+        assessed = {"status": "assessed", "verdicts": [row]}
+        cases = [
+            (assessed, True),
+            ({"status": "assessed", "verdicts": [dict(row, verdict="unmet")]}, True),
+            (self._coverage()["spec_axis"], True),
+            ("misses R2", False), ({}, False),
+            ({"status": "unknown", "reason": "No spec"}, False),
+            ({"status": "not_assessed"}, False),
+            ({"status": "not_assessed", "reason": ""}, False),
+            ({"status": "not_assessed", "reason": " \t\n"}, False),
+            ({"status": "assessed"}, False),
+            ({"status": "assessed", "verdicts": []}, False),
+        ]
+        for field in row:
+            cases.append(({"status": "assessed", "verdicts": [{k: v for k, v in row.items() if k != field}]}, False))
+        for field in ("claim", "evidence"):
+            cases.append(({"status": "assessed", "verdicts": [dict(row, **{field: " \n"})]}, False))
+        for requirements in ([], [" "], "docs/plan.md"):
+            cases.append(({"status": "assessed", "verdicts": [dict(row, requirements=requirements)]}, False))
+        cases.append(({"status": "assessed", "verdicts": [dict(row, verdict="ship")]}, False))
+        for index, (axis, expected) in enumerate(cases):
+            with self.subTest(case=index):
+                review = dict(self._clean_review(), spec_axis=axis)
+                if isinstance(axis, dict) and any(row.get("verdict") == "unmet" for row in axis.get("verdicts", [])):
+                    review["verdict"] = "no_ship"  # An unmet spec needs no correctness finding.
+                self.assertEqual(_matches(review, REVIEW_FINDINGS_OUTPUT_SCHEMA), expected)
+
+    def test_verification_gaps_are_located_unranked_and_need_not_block(self) -> None:
+        gap = {"path": "src/a.py", "line_range": "10-14", "evidence": "Error return can change without an assertion failing"}
+        cases = [([], True), ([gap], True), ([dict(gap, regression="return success instead")], True),
+                 (["missing test"], False), ([{}], False),
+                 ([dict(gap, priority="P2")], False), ([dict(gap, confidence="low")], False),
+                 ([dict(gap, severity="high")], False)]
+        for field in gap:
+            cases.append(([{k: v for k, v in gap.items() if k != field}], False))
+            cases.append(([dict(gap, **{field: " \t"})], False))
+        for gaps, expected in cases:
+            with self.subTest(gaps=gaps):
+                for verdict in ("ship", "no_ship"):
+                    self.assertEqual(_matches(dict(self._clean_review(), verdict=verdict, verification_gaps=gaps),
+                                              REVIEW_FINDINGS_OUTPUT_SCHEMA), expected)
+
+    def test_located_rows_require_positive_line_syntax_and_nonblank_evidence(self) -> None:
+        row = {"path": "src/a.py", "line_range": "10-14", "evidence": "Error return is unchecked"}
+        malformed = ("banana", "0", "0-1", "1-0", "01", "1-02", "-1", "1.5", "1:2", "L1-L2",
+                     "1 - 2", "1-2-3", "1\n", "1-2\n", "１", "1-")
+        for bucket in ("findings", "verification_gaps"):
+            base = dict(row, priority="P1", confidence="high") if bucket == "findings" else row
+            for line_range in ("1", "10-14", "10-10") + malformed:
+                with self.subTest(bucket=bucket, line_range=line_range):
+                    review = dict(self._clean_review(), **{bucket: [dict(base, line_range=line_range)]})
+                    self.assertEqual(_matches(review, REVIEW_FINDINGS_OUTPUT_SCHEMA), line_range not in malformed)
+            for field in ("path", "evidence"):
+                with self.subTest(bucket=bucket, blank=field):
+                    self.assertFalse(_matches(dict(self._clean_review(), **{bucket: [dict(base, **{field: " \t\n"})]}),
+                                              REVIEW_FINDINGS_OUTPUT_SCHEMA))
+
+    def test_coverage_lists_reject_blank_items_but_allow_explicit_empty_unknowns(self) -> None:
+        for field in ("checked_clean", "could_not_assess", "open_questions"):
+            for value in ([""], [" \t\n"], "not an array", [False]):
+                with self.subTest(field=field, value=value):
+                    self.assertFalse(_matches(dict(self._clean_review(), **{field: value}), REVIEW_FINDINGS_OUTPUT_SCHEMA))
+        self.assertTrue(_matches(dict(self._clean_review(), could_not_assess=["Live provider unavailable: no credentials"]),
+                                 REVIEW_FINDINGS_OUTPUT_SCHEMA))
+
+    def test_dispatch_explains_the_full_contract_and_semantic_checks(self) -> None:
+        content = _flat(self._dispatch())
+        for clause in (
+            "`status: assessed`", "non-empty `verdicts`", "`claim`", "`requirements`", "`met` or `unmet`",
+            "`status: not_assessed`", "non-blank `reason`", "`could_not_assess` is required",
+            "`verification_gaps` is required", "without `priority` or `confidence`",
+            "A gap does not automatically block", "never re-ranked against each other",
+            "positive decimal line", "reject inverted ranges", "actual reads", "real files", "truth",
+            "Extra keys remain allowed",
+        ):
+            with self.subTest(clause=clause):
+                self.assertIn(clause, content)
+
+    def test_shape_alone_does_not_prove_locations_or_reads_or_verdict_truth(self) -> None:
+        # Positive syntax is all portable JSON Schema can establish here.
+        # Ordering, file bounds, revision and actual reads stay semantic checks.
+        for line_range in ("14-10", "999999999999999999999"):
+            row = {"path": "not-a-real-file.py", "line_range": line_range, "evidence": "Unverified assertion"}
+            self.assertTrue(_matches(dict(self._clean_review(), verification_gaps=[row]), REVIEW_FINDINGS_OUTPUT_SCHEMA))
+
+    def test_compatible_extensions_do_not_relax_reserved_fields(self) -> None:
+        review = self._clean_review()
+        review["extra"] = {"duration_ms": 12}
+        review["spec_axis"]["note"] = "Missing dispatch context"
+        self.assertTrue(_matches(review, REVIEW_FINDINGS_OUTPUT_SCHEMA))
+        review["spec_axis"] = {"status": "assessed", "verdicts": [{"claim": "Handle errors",
+                               "requirements": ["plan.md#R2"], "evidence": "test_errors", "verdict": "met", "note": "x"}], "note": "x"}
+        self.assertTrue(_matches(review, REVIEW_FINDINGS_OUTPUT_SCHEMA))
+
     def test_the_dispatch_reference_prints_the_schema_held_in_code(self) -> None:
         blocks = re.findall(r"```json\n(.*?)\n```", self._dispatch(), flags=re.DOTALL)
         self.assertEqual(len(blocks), 1, "the dispatch reference should print exactly one JSON block: the schema")
@@ -225,7 +373,10 @@ class ReviewFindingsSchemaTests(unittest.TestCase):
             self.assertIn(f"`{verdict}`", sentence)
         self.assertEqual(properties["findings"]["items"]["properties"]["priority"]["enum"], ["P0", "P1", "P2", "P3"])
         self.assertIn("(`P0`-`P3`)", sentence)
-        self.assertEqual(REVIEW_FINDINGS_OUTPUT_SCHEMA["required"], ["verdict", "confidence", "findings"])
+        self.assertEqual(
+            REVIEW_FINDINGS_OUTPUT_SCHEMA["required"],
+            ["verdict", "confidence", "findings", "spec_axis", "could_not_assess", "verification_gaps"],
+        )
 
     def test_confidence_has_one_declaration(self) -> None:
         """The page cannot name a confidence vocabulary the schema does not enforce.
@@ -271,13 +422,17 @@ class ReviewFindingsSchemaTests(unittest.TestCase):
             ("ship with a blank checked_clean item", {"verdict": "ship", "confidence": "high", "findings": [], "checked_clean": [""]}, False),
             ("ship naming what it checked", {"verdict": "ship", "confidence": "high", "findings": [], "checked_clean": ["src/a.py error path"]}, True),
             ("no_ship with a finding", {"verdict": "no_ship", "confidence": "medium", "findings": [finding]}, True),
-            ("no_ship on the spec axis", {"verdict": "no_ship", "confidence": "medium", "findings": [], "spec_axis": "misses R2"}, True),
+            ("no_ship on the spec axis", {"verdict": "no_ship", "confidence": "medium", "findings": [],
+             "spec_axis": {"status": "assessed", "verdicts": [{"claim": "Reject bad input", "requirements": ["plan.md#R2"],
+                                                           "verdict": "unmet", "evidence": "Bad input is accepted"}]}}, True),
             ("finding without a line range", {"verdict": "no_ship", "confidence": "medium", "findings": [{k: v for k, v in finding.items() if k != "line_range"}]}, False),
             ("confidence outside the vocabulary", {"verdict": "no_ship", "confidence": 0.8, "findings": [finding]}, False),
             ("unknown verdict", {"verdict": "approve", "confidence": "high", "findings": []}, False),
             ("extra keys", {"verdict": "no_ship", "confidence": "low", "findings": [dict(finding, note="x")], "extra": 1}, True),
         )
         for label, instance, expected in cases:
+            # Supply coverage without replacing a case's explicit spec verdict.
+            instance = dict(self._coverage(), **instance)
             with self.subTest(case=label):
                 self.assertEqual(_matches(instance, REVIEW_FINDINGS_OUTPUT_SCHEMA), expected)
         self.assertIn(
@@ -427,6 +582,13 @@ class NativeReviewContractTests(unittest.TestCase):
         required = ", ".join(f"`{key}`" for key in REVIEW_FINDINGS_OUTPUT_SCHEMA["required"])
         self.assertIn(f"one JSON value carrying {required}", section)
         self.assertIn("`checked_clean` on a `ship`", section)
+        for clause in (
+            "non-empty `checked_clean`", "non-empty `verdicts`", "`claim`", "`requirements`", "`met` or `unmet`",
+            "non-blank `reason`", "`could_not_assess`", "`verification_gaps`", "without `priority` or `confidence`",
+            "line-range syntax", "reject inverted ranges", "actual reads", "real files", "truth",
+        ):
+            with self.subTest(clause=clause):
+                self.assertIn(clause, section)
 
     def test_the_body_line_does_not_promise_a_field_an_interactive_session_never_sees(self) -> None:
         definition = next(d for d in builtin_definitions() if d.name == "code-review")

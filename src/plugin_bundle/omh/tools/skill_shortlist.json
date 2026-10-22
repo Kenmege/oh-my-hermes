@@ -149,7 +149,7 @@
 }
 },
 {
-"anchors":"best citation cite current diversity documentation fresh gap guidanc internet latest library official onlin practic pric retrieval say scan search still today true upstream",
+"anchors":"best citation cite diversity documentation fresh gap guidanc internet latest library official onlin practic pric retrieval say scan search still today true upstream",
 "hangul":"검색 색해 서치 웹서 인터 자료 찾아 최신 출처 터넷",
 "hangul_anchors":"검색 색해 서치 웹서 인터 자료 찾아 최신 출처 터넷",
 "label":"omh-web-research",
@@ -1184,7 +1184,7 @@
 }
 },
 {
-"anchors":"abort cancel current everyth kill progress stop",
+"anchors":"abort cancel everyth kill progress stop",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-cancel",
@@ -1297,7 +1297,7 @@
 }
 },
 {
-"anchors":"capability current enabl faster parallel",
+"anchors":"capability enabl faster parallel",
 "hangul":"데이 도구 르메 메스 병렬 설정 업데 이트 인해 헤르 확인",
 "hangul_anchors":"데이 도구 르메 메스 병렬 설정 업데 이트 인해 헤르 확인",
 "label":"omh-parallel-tools",
@@ -1517,7 +1517,7 @@
 }
 },
 {
-"anchors":"ai assistant codex current cursorrul date document edit generat md stop tell wrong",
+"anchors":"ai assistant codex cursorrul date document edit generat md stop tell wrong",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-agent-instructions",
@@ -1767,7 +1767,7 @@
 }
 },
 {
-"anchors":"audienc captur compell different instead introduction movement narrativ reproducibl rhythm script short showreel slid static timed",
+"anchors":"audienc compell different instead introduction movement narrativ reproducibl rhythm script short showreel slid static timed",
 "hangul":"쇼케 영상 이스 제품 케이",
 "hangul_anchors":"쇼케 영상 이스 제품 케이",
 "label":"omh-show-reel",
@@ -1780,6 +1780,53 @@
 "4":"audienc motion portfolio showcas sourc teaser",
 "5":"reel",
 "6":"product"
+}
+},
+{
+"anchors":"authoritativ conversion coordinat cover coverag declar declaration differ footprint geojson geospatial measurement pair parcel polygon shar sum uniqu wrong",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-geospatial-analysis",
+"name":"geospatial-analysis",
+"situation":"Spatial layers to intersect",
+"terms":{
+"1":"actual crs decorativ execut geometry map narrativ output report reproducibl safe suppli validat",
+"2":"after authoritativ boundary comput conversion coordinat cover coverag declar declaration differ file footprint measur measurement pair parcel shar sum uniqu wrong",
+"3":"geojson intersect intersection overlay spatial",
+"4":"polygon",
+"5":"analysis area geospatial overlap",
+"6":"layer"
+}
+},
+{
+"anchors":"accession alteration biomcp biomedical cach classification clinvar date differ different disagree gene genom last omit registry respons return success timed transcript",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-biomedical-evidence",
+"name":"biomedical-evidence",
+"situation":"Public variant claims to cross-check",
+"terms":{
+"1":"against assertion claim clinical conclusion conflict disagreement diseas failur freshness identity infer labell preserv rather reconcil retriev trial",
+"2":"accession alteration biomcp build cach captur classification command current date differ different disagree genom last matrix omit provider reconciliation respons return sourc success timed transcript updat",
+"3":"clinvar gene record registry",
+"4":"check cross public variant",
+"6":"biomedical evidenc"
+}
+},
+{
+"anchors":"autodock box budget differ energy engin genuin measur mistaken number pdbqt result saved scor search tutorial vina",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-molecular-docking",
+"name":"molecular-docking",
+"situation":"Prepared PDBQT inputs",
+"terms":{
+"1":"bind computational efficacy explicit infer input never provenanc real replay safety standalon",
+"2":"autodock budget differ energy engin genuin measur mistaken number output result saved search tutorial",
+"3":"box file ligand pdbqt rigid scor vina",
+"4":"bound prepar run",
+"5":"molecular pose receptor",
+"8":"dock"
 }
 },
 {
@@ -1917,7 +1964,7 @@
 }
 },
 {
-"anchors":"captur don fact forget naming remember rule save secret stor token",
+"anchors":"don fact forget naming remember rule save secret stor token",
 "hangul":"기억 로젝 메모 모리 저장 제품 젝트 추가 캡처 프로",
 "hangul_anchors":"기억 로젝 메모 모리 저장 제품 젝트 추가 캡처",
 "label":"omh-memory-new",
@@ -2018,7 +2065,7 @@
 }
 },
 {
-"anchors":"automat automation blocker browser button captur checkout click fill flow form interactiv link login navigat observation playwright site stag submit trac url visit webpag",
+"anchors":"automat automation blocker browser button checkout click fill flow form interactiv link login navigat observation playwright site stag submit trac url visit webpag",
 "hangul":"그인 라우 로그 링크 막히 부분 브라 열고 우저 웹페 이지 입력 작성 작업 조작 캡처 클릭 페이 히는",
 "hangul_anchors":"그인 라우 로그 링크 막히 부분 브라 열고 우저 웹페 이지 입력 작성 작업 조작 캡처 클릭 페이 히는",
 "label":"omh-browser",
@@ -2084,7 +2131,7 @@
 }
 },
 {
-"anchors":"airport bitcoin btc crypto current direction exchang forecast game info information krw last live near nearby night pric rate real restaurant scor seoul sport stock timezon today traffic usd weather won york zone",
+"anchors":"airport bitcoin btc crypto direction exchang forecast game info information krw last live near nearby night pric rate real restaurant scor seoul sport stock timezon today traffic usd weather won york zone",
 "hangul":"가격 간대 결과 경기 길찾 날씨 스포 시간 식당 예보 점수 주가 주변 지도 찾기 코인 포츠 현재 환율",
 "hangul_anchors":"가격 간대 결과 경기 길찾 날씨 스포 시간 식당 예보 점수 주가 주변 지도 찾기 코인 포츠 현재 환율",
 "label":"omh-live-info",
@@ -2285,7 +2332,7 @@
 }
 },
 {
-"anchors":"burn captur debug drift goal introspection lost progress repeat retry self stall stuck token way",
+"anchors":"burn debug drift goal introspection lost progress repeat retry self stall stuck token way",
 "hangul":"낭비 도구 드리 디버 리프 반복 버그 스트 실패 에이 이전 전트 컨텍 텍스 토큰 프트",
 "hangul_anchors":"낭비 도구 드리 디버 리프 반복 버그 실패 에이 이전 전트 컨텍 텍스 토큰 프트",
 "label":"omh-agent-debug",

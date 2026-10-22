@@ -841,7 +841,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # schedule over every PR (1), the tests of one PR singled out by a
             # modifier and of the current branch (2), and one fault said as
             # 안 돌아가 and as a symptom clause (2).
-            expected=1059,
+            # Three domain-science vocabulary controls (+3).
+            expected=1062,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1307,7 +1308,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # the PR just opened on code-review (4). Three run as a graph: 몽땅,
             # for each of my PRs:, and upgrade해줘 (a fallback or a clarify on
             # main) (3).
-            expected=1065,
+            # Three unnamed domain-science interventions (+3).
+            expected=1068,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1320,7 +1322,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # `data-share-review` adds one. `spend-gate` adds one. `dag-ulw` adds one.
             # `market-research` adds one.
             # show-reel adds one installable motion-production method.
-            expected=147,
+            # Three optional executable science methods (+3).
+            expected=150,
             sites=(
                 "docs/README.md",
                 # The docs index quotes the count in prose and

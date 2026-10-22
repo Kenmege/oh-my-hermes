@@ -49,7 +49,11 @@ class RoutingPrecisionTests(unittest.TestCase):
         # A report-only review, a past, a single command and a stop with a
         # declarative reason add four (+4).
         # A past, a summary and a condition over every PR add three (+3).
-        self.assertEqual(payload["summary"]["case_count"], 1059)
+        # One PR in other words, a "does not work" fault and a push over every
+        # branch add five (+5); a schedule, one PR or branch singled out and a
+        # fault in other words add five more (+5).
+        # Three science vocabulary controls remain direct answers.
+        self.assertEqual(payload["summary"]["case_count"], 1062)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -117,7 +121,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # its label (+1), and so are the eight stops and questions above (+8).
         # A Korean stop then a negation is answered directly (+1).
         # A stop with a declarative reason is answered directly (+1).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 339)
+        # The three science vocabulary controls also answer directly.
+        self.assertEqual(payload["summary"]["direct_answer_count"], 342)
         # show-reel's README-link control is answered as a file lookup (+1).
         self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
@@ -148,7 +153,11 @@ class RoutingPrecisionTests(unittest.TestCase):
         # stay, agent-ops-review's status and a stop with a loanword object (+11).
         # One fix in many places stays on ultrawork (+1).
         # Two changes on every unit run as a graph and a hold stays (+3).
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1065)
+        # Four request forms run as a graph and four named skills keep the
+        # request (+8); three more forms run as a graph and four requests
+        # stay where main sends them (+7).
+        # Three unnamed science requests render dedicated computation cards.
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1068)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

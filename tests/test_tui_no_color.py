@@ -14,10 +14,13 @@ from pathlib import Path
 import re
 import unittest
 
-from test_tui_modes import FakePoller, RecordingClient, ScriptedTerminal, type_text
+from _delegation_graphs import dag_export_run
+from test_tui_delegation_block import with_hud
+from test_tui_modes import FakePoller, RecordingClient, ScriptedTerminal, make_app, type_text
 from test_tui_subagents import feed
 from omh.skin_pack import SKIN_THEMES
 from omh.tui.app import App
+from omh.tui.dag_pager import DAG_KEYS, DagPager
 from omh.tui.gateway import Event
 from omh.tui.keys import ENTER, Key
 from omh.tui.pager import FOOTER_KEYS
@@ -108,6 +111,33 @@ class NoColourTests(unittest.TestCase):
             with self.subTest(rows=name):
                 self.assertGreater(len(rows), 1)
                 self.assertEqual(colour_codes("".join(span.style.sgr() for row in rows for span in row)), [])
+
+    def test_the_dag_pagers_footer_is_reversed(self) -> None:
+        # nocolor-review R7 on #2230: /dag's footer, the same `status` bar as the pager's, under NO_COLOR.
+        app, _client = make_app(rows=60, cols=100, environ={"NO_COLOR": "1"})
+        with_hud(app, dag_export_run())
+        app._dag("")
+        app._render()
+        self.assertIsInstance(app.pager, DagPager)
+        keys = re.search(r"\x1b\[([0-9;]*)m " + re.escape(DAG_KEYS), written(app))
+        self.assertIsNotNone(keys, "the keys row is drawn in a style of its own")
+        self.assertIn("7", keys[1].split(";"))
+        # nocolor-review R7b on #2233: the row under the keys, the title and the rows shown, is reversed too.
+        title = re.search(r"\x1b\[([0-9;]*)m " + re.escape(f"{app.pager.title} · rows "), written(app))
+        self.assertIsNotNone(title, "the title row is drawn in a style of its own")
+        self.assertIn("7", title[1].split(";"))
+        self.assertEqual(colour_codes(written(app)), [])
+
+    def test_unset_the_rows_on_a_band_keep_its_colour(self) -> None:
+        # nocolor-review R8 on #2230: `_banded` gives a band's spans its depth; unset, that is truecolour, so every
+        # word on the band keeps the band's background.
+        theme = scene_app({}).theme
+        wide = NoticeBlock("The turn ended with an error. " * 6, NOTICE_ERROR)  # wider than the screen: it wraps
+        rows = block_rows(wide, 60, theme)
+        words = [span for row in rows for span in row if span.text.strip()]
+        self.assertGreater(len(rows), 1)
+        self.assertTrue(words)
+        self.assertEqual([span.text for span in words if "48;2;" not in span.style.sgr()], [])
 
     def test_a_theme_switch_keeps_no_colour(self) -> None:
         # #2230 review F2: `/theme <name>` and `/theme light` build the theme again.
