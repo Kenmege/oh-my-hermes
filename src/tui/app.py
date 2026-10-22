@@ -184,7 +184,7 @@ from .slash import (
     HERMES,
     LOCAL,
     RENAMED,
-    RETRY_COMMAND,
+    TURN_BACK_COMMANDS,
     Completion,
     SlashInvocation,
     catalog_categories,
@@ -300,7 +300,7 @@ REWIND_REFUSED_NOTICE = "Hermes did not rewind: {reason}. The screen shows the s
 # Said as Hermes refuses, over the screen from before the send, until Hermes' history redraws it.
 REWIND_KEPT_NOTICE = "Hermes did not rewind: {reason}. The screen is back to how it was before you sent."
 REWIND_UNREAD_NOTICE = "Hermes did not send the session's history ({reason}), so the screen stays as it was before you sent."
-REWIND_RETRY_NOTICE = "/retry took the last turn back, so the rewind is cancelled."
+REWIND_TURN_BACK_NOTICE = "/{name} went back in the session itself, so the rewind is cancelled."
 MODEL_BUSY_NOTICE = "Hermes switches the model between turns: let this one end, or interrupt it with Esc."
 TODOS_NONE_NOTICE = "No plan in this session yet: Hermes' todo tool writes one."
 QUESTION_VIEW_TITLE = "the open question (q goes back to it)"  # Ctrl+O's pager while Hermes asks something
@@ -3348,12 +3348,12 @@ class App(ModesMixin, AgentViewMixin):
         shows_command = kind == "skill" or bool(display)  # a built-in's bare send (/plan, /retry) shows what it sends
         echo = self.transcript.withdraw_command() if sends and shows_command and self.sid else None
         rewinds = sends and invocation.rewind is not None and invocation.rewind is self.rewind  # the pick it went with
-        if invocation.name == RETRY_COMMAND:
-            # An answer means Hermes' /retry took the last turn back already, so a pick (the one it went with, or one
-            # made while it was out) or an open picker names the session as it was before: both go, and the prompt
-            # goes plain, as /retry does without one.
+        if invocation.name in TURN_BACK_COMMANDS:
+            # An answer means Hermes' /retry or /undo took the last turn(s) back already, so a pick (the one it went
+            # with, or one made while it was out) or an open picker names the session as it was before: both go, and
+            # what it answers goes plain (/retry's prompt, /undo's draft), as without a rewind.
             if self.rewind is not None or self.rewind_picker is not None:
-                self.transcript.add_notice(REWIND_RETRY_NOTICE)
+                self.transcript.add_notice(REWIND_TURN_BACK_NOTICE.format(name=invocation.name))
             rewinds, self.rewind, self.rewind_picker = False, None, None
         if echo is not None or rewinds:
             # One row for the skill the person ran: the prompt's, with Hermes' `display` for it (`/name arg`) or else

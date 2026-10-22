@@ -40,7 +40,9 @@ RENAMED = "renamed"
 
 HERMES_DOOR = "hermes --tui"
 PLAN_COMMAND = "plan"  # Hermes' one-turn plan prompt; the TUI's plan mode sends every prompt through it
-RETRY_COMMAND = "retry"  # Hermes' /retry: it takes the last turn back itself before it sends that prompt again
+# Hermes' /retry and /undo take the last turn(s) back themselves before they answer: /retry with that prompt to send
+# again, /undo with it to edit (a `prefill`).
+TURN_BACK_COMMANDS = frozenset({"retry", "undo"})
 
 
 @dataclass(frozen=True)
