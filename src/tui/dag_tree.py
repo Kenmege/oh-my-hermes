@@ -502,8 +502,8 @@ def _window(rows: list[_Row], cap: int, selected: str | None, more: Callable[...
     yield first, wherever they stand, with the keys or without (the highlighted row itself never does), so running
     and failed nodes keep the rows and Down moves nothing. Then, without the keys, the rows from the bottom, a last row
     counting what is cut; with them, the same rows while they show the highlight, else the rows around it between
-    counts of what is above and below. A count that holds both a yielded layer above and rows below says
-    `↑↓ to browse`. No blank row stands next to a count row: the next row with something on it takes its place."""
+    counts of what is above and below. A count that holds a yielded layer from the other side of it, or from
+    between the rows shown, says `↑↓ to browse`. No blank row stands next to a count row: the next row with something on it takes its place."""
 
     def drawn(cut: Sequence[_Row]) -> list[tuple[Line, str]]:
         return [(line, key) for line, key, _count, _mark in cut]
@@ -545,7 +545,7 @@ def _window(rows: list[_Row], cap: int, selected: str | None, more: Callable[...
     elif kept[start + body - 1][3] == BLANK and start > 1 and index < start + body - 1:
         start -= 1
     shown = kept[start : start + body]
-    below = after(shown[-1])  # a yielded layer between the rows shown counts above
-    return (
-        [(more(total - _counted(shown) - below, " above"), "")] + drawn(shown) + [(more(below, " below"), "")]
-    )
+    below = after(shown[-1])
+    above = total - _counted(shown) - below  # with a done layer that gave way between the rows shown, as the others say
+    where = " above" if above == before(shown[0]) else " · ↑↓ to browse"
+    return [(more(above, where), "")] + drawn(shown) + [(more(below, " below"), "")]

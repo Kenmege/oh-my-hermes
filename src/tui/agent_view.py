@@ -675,7 +675,7 @@ class AgentViewMixin:
         """Drop the lanes a new turn kept for a dag run (`_clear_roster`) once a payload shows that run over (its
         graph one summary line, `panels.dag_run_summary`): the payload the turn read was a stale one. A payload that
         shows no run (no session, a graph that lingered out of the HUD, one the HUD could not read) shows nothing
-        over, so nothing goes."""
+        over, so nothing goes. Only that run's lanes go, its superseded ones included; another run's stay."""
         payload = self.hud.payload if self.hud is not None else None
         if not isinstance(payload, Mapping) or payload.get("error") or not graph_is_dag(payload):
             return
@@ -683,7 +683,10 @@ class AgentViewMixin:
         if not dag_run_summary(graph):
             return
         nodes = graph.get("nodes") if isinstance(graph.get("nodes"), list) else []
-        dropped = self.roster.drop_kept(frozenset(str(node.get("id")) for node in nodes if isinstance(node, Mapping)))
+        ids = (str(node.get("id")) for node in nodes if isinstance(node, Mapping))
+        # By run, not by node: a kept lane whose node left the drawing (a superseded repair) belongs to the run too.
+        runs = frozenset(node_id.rpartition(":")[0] for node_id in ids if node_id.startswith("d:"))
+        dropped = self.roster.drop_kept(runs)
         if self.interrupt_armed in dropped:
             self.interrupt_armed = None
         if self.agent_steer in dropped:
