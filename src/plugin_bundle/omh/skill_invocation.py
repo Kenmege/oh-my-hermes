@@ -119,6 +119,7 @@ def _adjunct_clause(words):
 def _after_command_adjuncts(words):
     position = 0
     derived = False
+    complete_operator = False
     while position < len(words):
         word = words[position]
         if word == "once" and position + 1 < len(words) and words[position + 1] in _EN_CLAUSE_SUBJECTS:
@@ -127,17 +128,19 @@ def _after_command_adjuncts(words):
         if not length:
             break
         derived = derived or word not in _EN_COMMAND_ADJUNCTS
+        complete_operator = complete_operator or length > 1 or word in _EN_EXECUTION_MODES
         position += length
         if position < len(words) and words[position] == "and":
             # A coordinator joins modifier constituents, never a modifier to
             # an argument/reference. Do not skip a dangling or nominal operand.
             if not _command_adjunct_length(words[position + 1:]):
                 return words[position:]
+            complete_operator = True
             position += 1
-    # An inferred manner cannot prove an imperative on its own. The caller
-    # must still recognize the immediately following argument, never scan past
-    # an intervening noun/reference to find a later courtesy or preposition.
-    return words[position:] if not derived or position < len(words) else words
+    # A bare inferred manner still requires an argument. A complete closed
+    # operator or modifier coordination supplies its own grammatical proof.
+    # Never scan past a noun/reference for a later courtesy or preposition.
+    return words[position:] if not derived or complete_operator or position < len(words) else words
 
 
 def _english_command_arguments(words):
@@ -160,7 +163,7 @@ def _english_command_arguments(words):
         if not _manner_word(words[1]):
             return False
         if words[3] == "possible":
-            return len(words) > 4 and _english_command_arguments(words[4:])
+            return len(words) == 4 or _english_command_arguments(words[4:])
         return _adjunct_clause(words[3:])
     if head in _EN_DIAGNOSTIC_OPTIONS:
         return False

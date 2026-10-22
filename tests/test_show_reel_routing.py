@@ -21,6 +21,28 @@ from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
 
 
 class ShowReelRoutingTests(unittest.TestCase):
+    def test_complete_modifier_operators_do_not_require_an_extra_argument(self):
+        from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
+
+        self._assert_production_surfaces((
+            "show-reel workflow run right now",
+            "show-reel workflow run offline",
+            "show-reel workflow run very carefully",
+            "show-reel workflow run as quickly as possible",
+            "show-reel workflow run as safely as possible",
+            "show-reel workflow run safely and quietly",
+        ))
+        for message in (
+            "show-reel workflow run offline catalog please",
+            "show-reel workflow run family right now",
+            "show-reel workflow run safely and reference with the guide",
+            "show-reel workflow run as family as possible",
+            "show-reel workflow run as soon as",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(show_reel_request_admitted(message))
+                self.assertNotEqual(route_chat_message(message).get("selected_skill"), "show-reel")
+
     def test_explicit_sibling_articles_and_courtesy_keep_the_preparation_owner(self):
         for owner in ("media-input-operator", "workflow-learning", "code-review"):
             for opening in ("Use the", "Please use the", "Could you please run the", "Execute the"):
