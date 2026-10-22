@@ -3,7 +3,8 @@
 # scripts/eleven.py: OPT-IN provider client, run only by a user who invokes it with their own
 # key. The key comes from ELEVENLABS_API_KEY in the environment only (no .env, home or config
 # lookup) and reaches curl on stdin, never argv or logs. No default voice or language: the
-# caller names both. Messages in English; optional --ffmpeg/--ffprobe (PATH names by default).
+# caller names both. curl runs with -q (no ~/.curlrc) and --form-string for values. Messages in English;
+# optional --ffmpeg/--ffprobe (PATH names by default).
 # Full permission/warranty: ../LICENSE.upstream. OMH core never imports or runs this file.
 """ElevenLabs helper (TTS, STT, sound effects, music, voice lookup, key check). narrate.py imports it too.
 
@@ -84,23 +85,31 @@ def _explain(status, body):
     return ElevenError(f"HTTP {status}: {st} {msg}", 5, status, body)
 
 
-def request(method, path, body=None, form=None, accept_audio=False, timeout=300, retries=6):
+def redact(text, key):
+    """Never echo the key: a user's curl config or proxy could put headers on stderr."""
+    return text.replace(key, "[redacted]") if key else text
+
+
+def request(method, path, body=None, form=None, files=None, accept_audio=False, timeout=300, retries=6):
     """Call ElevenLabs and return the response bytes. 429, 5xx and network errors retry with growing waits."""
     key = api_key()
     if not key:
         raise ElevenError("ELEVENLABS_API_KEY is not set; nothing was sent.\n" + KEY_HELP, 2)
     # The key never goes into a file or argv: only curl's stdin (-H @-). The body (not secret) is an argument, so no temp file.
-    cmd = ["curl", "-sS", "-X", method, API + path, "-H", "@-", "--max-time", str(timeout), "-w", "\n%{http_code}"]
+    # -q first: ignore ~/.curlrc, so no user config can turn on verbose/trace and print the key header.
+    cmd = ["curl", "-q", "-sS", "-X", method, API + path, "-H", "@-", "--max-time", str(timeout), "-w", "\n%{http_code}"]
     if body is not None:
         cmd += ["-H", "Content-Type: application/json", "--data-binary", json.dumps(body, ensure_ascii=False)]
-    for k, v in (form or {}).items():
-        cmd += ["-F", f"{k}={v}"]
+    for k, v in (form or {}).items():   # literal values: a leading @ or < never makes curl read a file
+        cmd += ["--form-string", f"{k}={v}"]
+    for k, v in (files or {}).items():  # the only file uploads, named by this script
+        cmd += ["-F", f"{k}=@{v}"]
     hdr = f"xi-api-key: {key}\n".encode()
     last = None
     for attempt in range(retries):
         r = subprocess.run(cmd, input=hdr, capture_output=True)
         if r.returncode != 0:
-            last = ElevenError(f"network error: {r.stderr.decode('utf-8', 'replace')[:300]}", 6)
+            last = ElevenError(f"network error: {redact(r.stderr.decode('utf-8', 'replace'), key)[:300]}", 6)
             time.sleep(min(30, 3 * (attempt + 1)))
             continue
         out, _, code = r.stdout.rpartition(b"\n")
@@ -165,12 +174,12 @@ def tts(text, out, voice, model=DEFAULT_MODEL, settings=None, seed=None,
 
 
 def stt(path, lang=None, words=True, model="scribe_v1"):
-    form = {"model_id": model, "file": f"@{path}"}
+    form = {"model_id": model}
     if lang:
         form["language_code"] = lang
     if words:
         form["timestamps_granularity"] = "word"
-    return json.loads(request("POST", "/v1/speech-to-text", form=form, timeout=300))
+    return json.loads(request("POST", "/v1/speech-to-text", form=form, files={"file": path}, timeout=300))
 
 
 def sfx(text, out, dur=None, influence=0.5, loop=False, fmt="mp3_44100_128"):

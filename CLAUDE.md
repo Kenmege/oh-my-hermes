@@ -21,8 +21,8 @@ POSTs typed questions to Jev (TypeSafe, or OpenRouter only with the operator
 setting in `<omh_home>/jev/settings.json`) with the user's own key, only when
 the user named Jev in that turn and a key resolves. Stdlib only, HTTPS only, a
 fixed two-host route table, redirects refused;
-`src/plugin_bundle/omh/jev_ask_client.py` is the only network client in
-`src/`, pinned by INVARIANT 2's `NETWORK_CLIENT_BRIDGES`. Third-party Jev
+`src/plugin_bundle/omh/jev_ask_client.py` is the only in-process network
+client in `src/`, pinned by INVARIANT 2's `NETWORK_CLIENT_BRIDGES`. Third-party Jev
 plugins are still never called. The `show-reel` skill's opt-in toolkit scripts
 `toolkit/scripts/eleven.py`, `narrate.py` (ElevenLabs, by spawning `curl` with
 the key on stdin) and `codex_ref_image.sh` (the user's codex CLI) are package

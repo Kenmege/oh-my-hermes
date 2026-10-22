@@ -162,10 +162,10 @@ PR without the chat history.
   OMH never writes. Stdlib only, HTTPS only, a fixed two-host route table, no
   redirects, bounded bodies, no retry after a sent request times out. It
   persists no key, `state`, question text, or reply; one metadata-only ledger
-  row per ask. `src/plugin_bundle/omh/jev_ask_client.py` is the only network
-  client in `src/` and only `tools/jev_ask_tool.py` may import it. Third-party
-  Jev plugins are still never called, and `omh doctor` still reads no
-  credential value.
+  row per ask. `src/plugin_bundle/omh/jev_ask_client.py` is the only
+  in-process network client in `src/` and only `tools/jev_ask_tool.py` may
+  import it. Third-party Jev plugins are still never called, and `omh doctor`
+  still reads no credential value.
 - Opt-in show-reel provider scripts (owner approval, PR for show-reel
   upstream parity): `src/skills/show_reel_toolkit/scripts/eleven.py` and
   `narrate.py` (ElevenLabs TTS/STT/SFX/music by spawning `curl`, key from

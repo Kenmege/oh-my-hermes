@@ -117,7 +117,7 @@
       "classification": "modified_derivative",
       "license": "MIT",
       "local_sha256": "9464cbfe7de1296c053f7893ef90305bc1fdf32498123f18322e9851977c4533",
-      "modification_notice": "English messages, optional --ffmpeg/--ffprobe (PATH names by default) and explicit --label-font, FFmpeg tile path without Pillow, -fps_mode for FFmpeg 8+",
+      "modification_notice": "English messages, tool paths overridable (default from PATH) and explicit --label-font, FFmpeg tile path without Pillow, -fps_mode for FFmpeg 8+",
       "upstream": [
         {
           "path": "scripts/contact_sheet.py",
@@ -128,8 +128,8 @@
     "scripts/eleven.py": {
       "classification": "modified_derivative",
       "license": "MIT",
-      "local_sha256": "16f3e7bcc73120646a60bb7d48f9bda879bb3df7ec6505cad38587f8b1f1c22f",
-      "modification_notice": "Opt-in provider client run only by the user: key from ELEVENLABS_API_KEY only (no .env/home/config lookup), on curl stdin; no default voice or language; English messages; explicit --ffmpeg/--ffprobe",
+      "local_sha256": "85c27191aef2d08135a665d14e0330f30842bbd90d6e1bd89110cd68b8313de7",
+      "modification_notice": "Opt-in provider client run only by the user: key from ELEVENLABS_API_KEY only (no .env/home/config lookup), on curl stdin; no default voice or language; curl -q and --form-string; English messages; tool paths overridable (default from PATH)",
       "upstream": [
         {
           "path": "scripts/eleven.py",
@@ -141,7 +141,7 @@
       "classification": "modified_derivative",
       "license": "MIT",
       "local_sha256": "e5a2ace0345754485773375bdc785b67b6fdef4859cff4a8204bf9a88fcdd48e",
-      "modification_notice": "English messages and suffixes, optional --ffmpeg/--ffprobe (PATH names by default), outputs must be new, failing spec exits 1",
+      "modification_notice": "English messages and suffixes, tool paths overridable (default from PATH), outputs must be new, failing spec exits 1",
       "upstream": [
         {
           "path": "scripts/finish.py",
@@ -184,7 +184,7 @@
       "classification": "modified_derivative",
       "license": "MIT",
       "local_sha256": "f1e6a54ac66e264920a2933964cdd06ff708d464053dfb4b8d33f5f540899c9e",
-      "modification_notice": "English messages, optional --ffmpeg/--ffprobe (PATH names by default), outputs must be new, numpy only for analyze/gap, synth_music event keys accepted, gap writes 16-bit PCM for mix.py",
+      "modification_notice": "English messages, tool paths overridable (default from PATH), outputs must be new, numpy only for analyze/gap, synth_music event keys accepted, gap writes 16-bit PCM for mix.py",
       "upstream": [
         {
           "path": "scripts/music_tools.py",
@@ -195,8 +195,8 @@
     "scripts/narrate.py": {
       "classification": "modified_derivative",
       "license": "MIT",
-      "local_sha256": "ecde28055460f5edd4f96bdcf3a34d5543519a97a71c33f7a479eb65d901eedc",
-      "modification_notice": "Opt-in, user's own key: refuses without ELEVENLABS_API_KEY (exit 2), requires script.json voice and language, no sys.path edit, English messages",
+      "local_sha256": "22124b3f1124c6cbfaede7d8884f4d2e46d60bb19de7eef8242246bb88111916",
+      "modification_notice": "Opt-in, user's own key: refuses without ELEVENLABS_API_KEY (exit 2), refuses (exit 2) without script.json voice or language, no sys.path edit, English messages",
       "upstream": [
         {
           "path": "scripts/narrate.py",
@@ -220,7 +220,7 @@
       "classification": "modified_derivative",
       "license": "MIT",
       "local_sha256": "195670f4fc7d9652b04213422c79b6c52ebc282f20bae419f9d0e2b9056d9aa8",
-      "modification_notice": "Local-only checks of the passed browser/dependency root, optional --ffmpeg/--ffprobe (PATH names by default) and key presence; no provider call, install or font scan",
+      "modification_notice": "Local-only checks of the passed browser/dependency root, tool paths overridable (default from PATH) and key presence; no provider call, install or font scan",
       "upstream": [
         {
           "path": "scripts/preflight.py",

@@ -128,7 +128,11 @@ def main():
         if not (line.get("tts") or line.get("text", "")).strip():
             sys.exit(f"FAIL {line['id']}: empty text")
         if not line.get("voice", cfg.get("voice")):
-            sys.exit(f"FAIL {line['id']}: no voice; set script.json \"voice\" from the brief's voice_policy (there is no default)")
+            print(f"FAIL {line['id']}: no voice; set script.json \"voice\" from the brief's voice_policy (there is no default)", file=sys.stderr)
+            sys.exit(2)
+        if not line.get("language", cfg.get("language")):
+            print(f"FAIL {line['id']}: no language; set script.json \"language\" to the narration's content locale (there is no default)", file=sys.stderr)
+            sys.exit(2)
     rep_path = out / "report.json"
     report = json.loads(rep_path.read_text(encoding="utf-8")) if rep_path.exists() else {}
 
