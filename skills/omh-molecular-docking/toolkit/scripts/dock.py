@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import platform
 import sys
@@ -20,11 +21,25 @@ MAX_ATOMS = {"receptor": 30000, "ligand": 128}
 ATOM_TYPES = frozenset("C A N NA O OA S SA P F Cl Br I H HD Mg Mn Zn Ca Fe Cu Ni Co Cd Si B".split())
 
 
+def system_alias(candidate):
+    """Trust only macOS's own /etc, /tmp and /var links into /private.
+
+    The default temp dir lives under /var. Only root can create a top-level
+    entry, so the exact name and the exact link text are both required.
+    """
+    if sys.platform != "darwin" or candidate.parent != Path("/") or candidate.name not in ("etc", "tmp", "var"):
+        return False
+    try:
+        return os.readlink(candidate) in ("private/" + candidate.name, "/private/" + candidate.name)
+    except OSError:
+        return False
+
+
 def checked_path(value):
     """Reject symlink components before resolving an explicit local path."""
     path = Path(value).absolute()
     for candidate in (path, *path.parents):
-        if candidate.is_symlink():
+        if candidate.is_symlink() and not system_alias(candidate):
             raise ValueError("symlink paths are not accepted")
     return path
 

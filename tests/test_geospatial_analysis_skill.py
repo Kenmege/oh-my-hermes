@@ -14,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from _local_package import load_local_package
+from _toolkit_path_guard import assert_only_system_aliases_trusted
 
 load_local_package()
 ROOT = Path(__file__).resolve().parents[1]
@@ -128,6 +129,11 @@ class GeospatialCliTests(CliFixture):
         directory = self.root / "alias"
         directory.symlink_to(self.root, target_is_directory=True)
         self.refused(self.run_cli(**{"output-dir": directory / "result"}), "symlink")
+
+    def test_only_macos_system_aliases_are_trusted(self):
+        api = helper_api()
+        assert_only_system_aliases_trusted(self, api.safe_path, api.system_alias, self.root,
+                                           "symlink paths", traversal="path traversal")
 
     def test_traversal_and_oversized_input_refused(self):
         self.refused(self.run_cli(input=self.root / ".." / "left.json"), "traversal")

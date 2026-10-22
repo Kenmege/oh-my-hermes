@@ -17,6 +17,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from _module_patch import patch_modules
+from _toolkit_path_guard import assert_only_system_aliases_trusted
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "src/skills/molecular_docking_toolkit/scripts/dock.py"
@@ -175,6 +176,12 @@ class PrerequisiteTests(unittest.TestCase):
                         self.assertEqual(helper.main(self.argv(receptor, ligand, selected_output) + ["--validate-only"]), 2)
             self.assertEqual(sentinel.read_text(), "unchanged")
             self.assertEqual((receptor.read_bytes(), ligand.read_bytes()), original)
+
+    def test_only_macos_system_aliases_are_trusted(self):
+        helper = load_helper()
+        with tempfile.TemporaryDirectory() as directory:
+            assert_only_system_aliases_trusted(self, helper.checked_path, helper.system_alias, Path(directory),
+                                               "symlink paths")
 
     def test_malformed_engine_pose_refuses_without_success_manifest(self):
         # Corrupted backend output fixture only: never evidence of native execution.
