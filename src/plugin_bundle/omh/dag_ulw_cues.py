@@ -723,9 +723,12 @@ def _asks_to_be_told(text: str) -> bool:
 # - `work_over_many_targets`, a breadth word on such units with a request that may be work but is not that evidence
 #   ("review all open PRs"): the router may only ask once with dag-ulw as the candidate, and the hint offers it.
 _KOREAN_UNIT: Final = r"(?:pr|prs|pull\s*request|레포|리포|저장소|서비스|모듈|패키지|컴포넌트|엔드포인트|테스트|이슈|파일|페이지|브랜치)"
+# A count of units is many of them ("PR 3개", "PR 5건", "PR 3개의"), unless one is picked out of it ("PR 3개 중 하나").
+_KOREAN_COUNT: Final = r"(?:두|세|네|다섯|여러|[2-9]|\d{2,})\s*(?:개|건)(?!\s*중)"
 _KOREAN_BREADTH_OBJECT: Final = (
-    rf"(?:(?<![가-힣])(?:마이크로)?{_KOREAN_UNIT}(?:들)?\s*(?:(?:두|세|네|다섯|여러|\d+)\s*개\s*)?(?:을|를|은|는)?\s*"
+    rf"(?:(?<![가-힣])(?:마이크로)?{_KOREAN_UNIT}(?:들)?\s*(?:{_KOREAN_COUNT}\s*)?(?:을|를|은|는)?\s*"
     rf"(?:전부|모두|다|싹|몽땅|하나하나|각각)(?![가-힣])"
+    rf"|(?<![가-힣])(?:마이크로)?{_KOREAN_UNIT}(?:들)?\s*{_KOREAN_COUNT}(?:의|을|를|은|는)?(?![가-힣])"
     rf"|(?<![가-힣])(?:모든|전체|각)\s*(?:마이크로)?{_KOREAN_UNIT}(?:들)?(?:을|를|에|의|에서)?)"
 )
 _EN_UNITS: Final = (
@@ -916,16 +919,18 @@ _SCHEDULE: Final = re.compile(
 _PULL_REQUEST_ADDRESS: Final = re.compile(r"/pulls?/\d+|/merge_requests/\d+")
 # - one numbered pull request, or the person's own one ("PR 2232", "#2232", "2232번 PR", "내 PR", "pull request 2232",
 #   "pull 951", "files touched by PR 2232", "this PR", "이 PR"); 이 or 그 must open its word, so 버그 and 블로그 are no
-#   scope. One branch is one scope the same way: a named one ("feature/dag-default", "fix/login-bug") and the current
-#   one ("current branch", "this branch", "이 브랜치");
+#   scope, and a number with a counter is a count of PRs, not one ("PR 3개", "PR 5건": `_KOREAN_COUNT`). One branch is
+#   one scope the same way: a named one ("feature/dag-default", "fix/login-bug") and the current one ("current
+#   branch", "this branch", "이 브랜치");
 _ONE_SCOPE: Final = re.compile(
-    r"\bpr\s*#?\s*\d+|#\s*\d+|\d+\s*번\s*(?:pr|이슈)|(?<![가-힣])내\s*pr(?!\s*들)|\bpull\s+request\s+#?\d+|\bpull\s*#?\s*\d+"
+    r"\bpr\s*#?\s*\d+(?!\d|\s*(?:개|건))|#\s*\d+|\d+\s*번\s*(?:pr|이슈)|(?<![가-힣])내\s*pr(?!\s*들)"
+    r"|\bpull\s+request\s+#?\d+(?!\d|\s*(?:개|건))|\bpull\s*#?\s*\d+(?!\d|\s*(?:개|건))"
     r"|(?<![\w/.-])(?:feature|feat|fix|bugfix|hotfix|release|chore|docs|refactor|omh|dev|wip)/[\w.-]+"
     r"|\b(?:current|my\s+current)\s+branch\b"
     # A pull request's address or its number said in words ("github.com/…/pull/2240", "PR number 2240", "2240번
     # 풀리퀘", "풀 리퀘스트 2240").
     rf"|{_PULL_REQUEST_ADDRESS.pattern}|\b(?:pr|pull\s+request)\s+(?:number|no\.?|num\.?)\s*#?\s*\d+|\bpr\s*번호\s*\d+"
-    r"|\d+\s*번?\s*풀\s*리퀘(?:스트)?|풀\s*리퀘(?:스트)?\s*#?\s*\d+"
+    r"|\d+\s*번?\s*풀\s*리퀘(?:스트)?|풀\s*리퀘(?:스트)?\s*#?\s*\d+(?!\d|\s*(?:개|건))"
     r"|\b(?:this|that)\s+(?:pr|pull\s+request|branch|commit|diff)\b|(?<![가-힣])(?:이|그)\s*(?:pr|브랜치|커밋)(?![a-z])"
     r"|\b(?:in|of|from|on)\s+(?:the|my)\s+(?:pr|pull\s+request|branch|commit|diff)\b|\btouched\s+by\b"
 )

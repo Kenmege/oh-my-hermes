@@ -240,7 +240,9 @@ class RouterTests(unittest.TestCase):
                         "모든 서비스 업데이트 시켜줘", "모든 패키지 버전 올리자", "PR들 전부 리베이스 고", "PR들 전부 리베이스해주셈",
                         "모든 서비스 업데이트 부탁", "충돌났었던 브랜치들 전부 리베이스해줘", "모든 패키지 upgrade해줘",
                         "PR들 전부 확인해서 close할 건 close하고 리베이스하고", "PR들 몽땅 리베이스해줘", "모든 패키지 최신화해줘",
-                        "for each of my PRs: rebase onto main and fix the conflicts", "for every open PR, rebase it onto main"):
+                        "for each of my PRs: rebase onto main and fix the conflicts", "for every open PR, rebase it onto main",
+                        # A number with a counter is a count of PRs, many of them.
+                        "PR 3개 전부 리베이스해줘", "PR 5개 다 머지해줘", "PR 3개 리베이스해줘"):
             with self.subTest(message=message):
                 self.assertTrue(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
@@ -270,7 +272,9 @@ class RouterTests(unittest.TestCase):
                         "update all snapshots in PR number 2240", "2240번 풀리퀘 모든 테스트 다시 고쳐줘",
                         "테스트 수정 완료, 이제 PR들 전부 머지해줘", "rebase all my open PRs every hour", "매일 아침 PR들 전부 리베이스해줘",
                         "pull 951 테스트들 다 고쳐줘", "fix all the failing tests on feature/dag-default",
-                        "fix all the failing tests on the current branch", "현재 브랜치 테스트 전부 고쳐줘", "어제 내가 연 PR 테스트 전부 고쳐줘"):
+                        "fix all the failing tests on the current branch", "현재 브랜치 테스트 전부 고쳐줘", "어제 내가 연 PR 테스트 전부 고쳐줘",
+                        # A PR number without a counter stays one scope, the numbered twins of "PR 3개".
+                        "PR 3 테스트 전부 고쳐줘", "3번 PR 테스트 전부 고쳐줘", "#3 테스트 전부 고쳐줘"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 router, hint, _candidate = self._dag_ulw_starts(message)
@@ -376,7 +380,7 @@ class RouterTests(unittest.TestCase):
                         "모든 페이지가 하얗게 나와 고쳐줘", "모든 테스트가 돌지 않아 고쳐줘", "모든 서비스에서 로그인이 안 돼 수정 부탁",
                         "모든 서비스 업데이트 해 놨어", "PR들 몽땅 머지됐어", "모든 패키지 최신화 완료",
                         "for each of my PRs, tell me the status", "for each of my PRs: summarize the changes",
-                        "PR들 몽땅 리베이스할까?"):
+                        "PR들 몽땅 리베이스할까?", "PR 3개 중 하나 리베이스해줘"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertFalse(work_over_many_targets(message))

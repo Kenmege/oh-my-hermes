@@ -32,7 +32,8 @@ All notable changes will be documented here.
   change (`리뷰 코멘트 반영하고 force push ㄱㄱ`); `모든 브랜치 push 해줘` is one
   command. More request forms count: `해줘요`, `해주세용`, `해 놔줘`, `시켜줘`,
   `올리자`, `리베이스 고`, `부탁`, `upgrade해줘`, `몽땅`, `최신화`, and `for each of my
-  PRs: …`. A past in a modifier names the units (`내가 올렸던 PR들 전부
+  PRs: …`; a number with a counter is a count of PRs (`PR 3개 전부 리베이스해줘`),
+  while `PR 3`, `3번 PR` and `#3` stay one PR. A past in a modifier names the units (`내가 올렸던 PR들 전부
   리베이스해줘`, `충돌났었던 브랜치들`), and a report after an English change is
   its tail (`fix all the failing tests and tell me which ones were flaky`). A
   stop or a hold, a

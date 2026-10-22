@@ -840,9 +840,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # review adds five more, each a clarify or a fallback as on main: a
             # schedule over every PR (1), the tests of one PR singled out by a
             # modifier and of the current branch (2), and one fault said as
-            # 안 돌아가 and as a symptom clause (2).
+            # 안 돌아가 and as a symptom clause (2). PR 3 without a counter
+            # stays one numbered PR, a clarify as on main (1).
             # Three domain-science vocabulary controls (+3).
-            expected=1062,
+            expected=1063,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1307,9 +1308,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # and dark mode that does not apply on ultrawork, and the files of
             # the PR just opened on code-review (4). Three run as a graph: 몽땅,
             # for each of my PRs:, and upgrade해줘 (a fallback or a clarify on
-            # main) (3).
+            # main) (3). PR 3개 is a count of PRs and runs as a graph (a
+            # fallback on main) (1).
             # Three unnamed domain-science interventions (+3).
-            expected=1068,
+            expected=1069,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

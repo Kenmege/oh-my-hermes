@@ -7810,6 +7810,14 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "dag-ulw",
     ),
     RoutingPrecisionCase(
+        "a-pr-number-without-a-counter-is-one-scope",
+        "PR 3 without a counter is one numbered PR: its tests are one task, not a graph run",
+        "PR 3 테스트 전부 고쳐줘",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
         "korean-push-over-every-branch-is-one-command",
         "Pushing every branch is one command, said in English or Korean, not a graph run",
         "모든 브랜치 push 해줘",
@@ -17761,6 +17769,12 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "english-upgrade-inside-a-korean-request-runs-as-a-graph",
         "upgrade해줘 over every package is a change on each: a dag-ulw graph",
         "모든 패키지 upgrade해줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "a-count-of-prs-runs-as-a-graph",
+        "PR 3개 counts three PRs, not PR number 3: rebasing them all runs as a dag-ulw graph",
+        "PR 3개 전부 리베이스해줘",
         "dispatch", "dag-ulw", "start_dag_run", "dag_run",
     ),
     RoutingInterventionCase(
