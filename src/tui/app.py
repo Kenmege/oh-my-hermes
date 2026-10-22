@@ -604,6 +604,7 @@ class QueuedLine(NamedTuple):
     typed: str = ""  # "" puts `text` back
     shell: bool = False
     chips: tuple[tuple[str, str], ...] = ()  # the paste chips in `shown` (label, text), for Up to put back as chips
+    notice: str = ""  # what the skill command that sent it said (Hermes' dispatch notice), shown under its row
 
 
 @dataclass(frozen=True)
@@ -2927,30 +2928,34 @@ class App(ModesMixin, AgentViewMixin):
             self._send_prompt(text, shown=shown, hold=hold, chips=chips)
 
     def _send_prompt(
-        self, text: str, shown: str = "", typed: str = "", hold: bool = False, chips: tuple[tuple[str, str], ...] = ()
+        self, text: str, shown: str = "", typed: str = "", hold: bool = False, chips: tuple[tuple[str, str], ...] = (),
+        notice: str = "",
     ) -> None:
         """Send `text`, or queue it behind the running turn; `typed` is what Up puts back in the composer.
 
-        `hold` queues it behind a running turn whatever the busy mode.
+        `hold` queues it behind a running turn whatever the busy mode. `notice` goes under its row (`_submit_prompt`).
         """
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
         if self._busy() and (hold or self.busy_mode == BUSY_QUEUE):
-            self.queued.append(QueuedLine(text, shown, typed, chips=chips))
+            self.queued.append(QueuedLine(text, shown, typed, chips=chips, notice=notice))
             return
-        self._submit_prompt(text, shown)
+        self._submit_prompt(text, shown, notice=notice)
 
     def _submit_prompt(
         self, text: str, shown: str = "", queued: bool = False, truncate: int | None = None,
-        before_cut: Transcript | None = None,
+        before_cut: Transcript | None = None, notice: str = "",
     ) -> None:
         """Send one prompt; `queued` says the queue sent it.
 
         `truncate` names the row a rewind cuts the session before, and
         `before_cut` the transcript from before that cut, which a refusal puts back.
+        `notice` is what the skill command that sent it said, under its row whenever it goes.
         """
         self.transcript.add_user(shown or text, from_queue=queued)
+        if notice:
+            self.transcript.add_aside(NoticeBlock(notice))
         if not queued:
             self.queue_held = False  # the person started a turn: the queue goes on behind it
         self.sticky = shown or text
@@ -3020,7 +3025,7 @@ class App(ModesMixin, AgentViewMixin):
             if line.shell:
                 self._run_shell(line.text[len(SHELL_PREFIX) :].strip(), drain_after=True, echo=line.shown)
             else:
-                self._submit_prompt(line.text, line.shown, queued=True)
+                self._submit_prompt(line.text, line.shown, queued=True, notice=line.notice)
 
     # ── `!` shell lines ──
 
@@ -3326,12 +3331,24 @@ class App(ModesMixin, AgentViewMixin):
                 self.transcript.add_notice(f"/{invocation.name}: the alias did not resolve.", NOTICE_WARN)
             return
         notice = as_text(result.get("notice")).strip()
+        message = as_text(result.get("message"))
+        display = as_text(result.get("display")).strip()
+        sends = kind in ("send", "skill") and bool(message.strip())
+        shows_command = kind == "skill" or bool(display)  # a built-in's bare send (/plan, /retry) shows what it sends
+        echo = self.transcript.withdraw_command() if sends and shows_command and self.sid else None
+        if echo is not None:
+            # One row for the skill the person ran: the prompt's, with Hermes' `display` for it (`/name arg`) or else
+            # the echo's text, never the skill body sent; the dispatch's notice goes under it. The prompt is then the
+            # person's, as a typed one is: its call is not the echo's.
+            with self._for_command(None):
+                shown = display or echo.command
+                self._send_prompt(message, shown, typed=invocation.typed, hold=invocation.held, notice=notice)
+            return
         if notice:
             self.transcript.add_notice(notice)
-        message = as_text(result.get("message"))
         if kind in ("send", "skill"):
             if message.strip():
-                shown = as_text(result.get("display")).strip() or invocation.shown
+                shown = display or invocation.shown
                 self._send_prompt(message, shown, typed=invocation.typed, hold=invocation.held)
             else:
                 self.transcript.add_notice(f"/{invocation.name}: empty message", NOTICE_WARN)

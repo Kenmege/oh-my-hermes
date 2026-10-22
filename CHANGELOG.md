@@ -15,6 +15,21 @@ All notable changes will be documented here.
   resolver; protocol text, goals, and existing calibration wording are unchanged.
   The section reaches newly built prompts, not already frozen resumed prompts.
 
+- **A skill command typed once in the OMH TUI shows as one input row.**
+  `/dag-ulw <request>` printed `> /dag-ulw <request>` twice: the command's
+  echo, then the prompt the skill sends, which shows Hermes' `display` for
+  the turn. Hermes got one `command.dispatch` and one `prompt.submit` either
+  way; only the screen doubled. Once `command.dispatch` answers with a skill's
+  prompt, the TUI takes the echo back and the prompt row is the input. That
+  row shows Hermes' `display`, the same row a resumed or rewound session
+  draws for the turn, or the line as typed when Hermes names none. A dispatch
+  notice, such as stacked skills loading, goes under that row, also when the
+  prompt waits behind a running turn. A refused prompt reads as one for a
+  typed prompt. A built-in command that sends a prompt with no `display`
+  (`/plan`, `/retry`, `/learn`, `/init`) keeps its echo above what it sends,
+  as Hermes' own TUI shows it, and commands that print output keep their
+  echo. The same line sent twice still shows twice and is sent twice.
+
 ## 4.0.1 - 2026-10-22
 
 - **`omh doctor`'s real-loader probe can observe a load on Windows, and on the
