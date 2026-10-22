@@ -1338,7 +1338,7 @@ class App(ModesMixin, AgentViewMixin):
                 self.transcript.add_recorded_tools(tools)
                 tools = []
             if role == "user":
-                self.transcript.add_user(text, known=self.known_slash)
+                self.transcript.add_user(text, known=self.known_slash, recorded=True)
             else:
                 self.transcript.add_assistant(text)
         if tools:
@@ -1375,6 +1375,8 @@ class App(ModesMixin, AgentViewMixin):
         """
         self.catalog = catalog_pairs(result)
         self.known_slash = known_names(self.catalog)
+        if self.transcript.resolve_recorded_prompts(self.known_slash):
+            self._full_redraw()  # a resumed prompt printed before the catalog answered draws its `/skill` now
         self.catalog_categories = catalog_categories(result)
         self.skill_count = catalog_skill_count(result)
         warning = as_text(result.get("warning")).strip()

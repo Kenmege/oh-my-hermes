@@ -17,25 +17,31 @@ from pathlib import Path
 import unittest
 
 from _tui_lines import line_text, lines_text
-from test_tui_modes import make_app
+from test_tui_modes import FakePoller, RecordingClient, ScriptedTerminal, make_app
 from test_tui_panels import agent_row, hud_payload, with_agents
 from test_tui_prompts import CLARIFY, slot
 from test_tui_subagents import feed
 from omh.skin_pack import SKIN_THEMES
+from omh.tui.app import ATTACH_ICON, STATE_WAITING, WAITING_GLYPH, App, Attachment, attachment_line
 from omh.tui.composer import Composer
-from omh.tui.diff_view import DIFF_HUNK, DiffLine, diff_rows
+from omh.tui.diff_view import diff_rows, parse_inline_diff
 from omh.tui.frame import build_frame, sticky_line
-from omh.tui.gateway import Event
+from omh.tui.gateway import Event, Response
+from omh.tui.history import SEARCH_LABEL, HistorySearch
+from omh.tui.keys import CHAR, Key
 from omh.tui.markdown import MarkdownState, render_lines
 from omh.tui.panels import panel_lines
+from omh.tui.screen import CLEAR_SCREEN_AND_SCROLLBACK
 from omh.tui.shortcuts import shortcut_lines
 from omh.tui.slash import known_names, slash_token_ranges
 from omh.tui.style import Span
-from omh.tui.subagents import FIELD_LABELS, MAIN_ID, Roster, short_title
+from omh.tui.subagents import FIELD_LABELS, MAIN_ID, TITLE_ABBREVIATIONS, Roster, short_title
 from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.theme import KIND_FAMILIES, TEXT_CONTRAST, build_theme, contrast_ratio, kind_style, surface_for, tool_family
 from omh.tui.transcript import (
     NOTICE_INFO,
+    STEER_MARK,
+    STEER_QUEUED,
     TOOL_ERROR,
     TOOL_GENERATING,
     TOOL_INTERRUPTED,
@@ -43,6 +49,7 @@ from omh.tui.transcript import (
     TOOL_RUNNING,
     AssistantBlock,
     CommandBlock,
+    SteerBlock,
     ToolGroup,
     ToolRow,
     Transcript,
@@ -63,6 +70,31 @@ def calls(*tools: ToolRow, expanded: bool = False, width: int = 150) -> list[str
 
 def loaded(tool_id: str, skill: str, status: str = TOOL_OK, duration: float | None = 0.7) -> ToolRow:
     return ToolRow(tool_id, "skill_view", skill, status, duration_s=duration, output=(f"loaded skill {skill}",))
+
+
+def resumed(messages: list[dict]) -> tuple[App, RecordingClient]:
+    """An app started on `HERMES_TUI_RESUME`, its history drawn and `commands.catalog` not answered yet."""
+
+    class Resuming(RecordingClient):
+        def call(self, method: str, params: dict, timeout: float = 30.0) -> dict:
+            return {"session_id": SID, "stored_session_id": "stored", "messages": messages, "info": {"model": "m"}}
+
+    client = Resuming()
+    environ = {"HERMES_TUI_RESUME": "stored"}
+    app = App(ScriptedTerminal(40, 100), client, environ, poller=FakePoller())  # type: ignore[arg-type]
+    app.startup()
+    return app, client
+
+
+def answer_catalog(app: App, client: RecordingClient, pairs: list[list[str]]) -> None:
+    app._on_response(Response(1 + [method for method, _params in client.calls].index("commands.catalog"),
+                              {"pairs": pairs}, None))
+
+
+def prompt_tokens(app: App) -> list[list[str]]:
+    """The `/name` tokens drawn bold in each prompt row the next frame prints."""
+    rows = [line for line in app.transcript.take_stable_lines(100, THEME) if line_text(line).startswith("┃ ❯")]
+    return [[span.text for span in row if span.style == THEME.slash] for row in rows]
 
 
 class KindHueTests(unittest.TestCase):
@@ -223,6 +255,8 @@ class HeredocTests(unittest.TestCase):
             "cd /repo && git commit -F - <<'MSG'\nfix: x\n\nThe body.\nMSG": "cd /repo && git commit -F - <<'MSG'",
             "cat > src/app.py <<'EOF'\nprint(1)\nEOF": "cat > src/app.py <<'EOF'",
             "python3 - <<< 'print(1)'\nls\npwd": "python3 - <<< 'print(1)'",  # a here-string
+            # A here-string whose word is a terminator's: its last two `<` would open a heredoc `PY` closes.
+            "python3 -<<<PY\nx = 1\nPY": "python3 -<<<PY",
             "echo $((1<<3))\nls\npwd": "echo $((1<<3))",  # a shift
             "python3 tool.py <<EOF\ndata\nEOF": "python3 tool.py <<EOF",  # a script file reading data
             "python3 - <<'PY'\nnever closed": "python3 - <<'PY'",  # no terminator: not a script
@@ -232,6 +266,22 @@ class HeredocTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(self.started("terminal", command), [f"┃ ○ terminal({said})"])
         self.assertNotIn("script", "".join(self.started("read_file", "python3 - <<'PY'\nx\nPY")))  # not a shell
+
+    def test_only_the_commands_around_the_script_are_counted(self) -> None:
+        # #2223 follow-up: another heredoc's body, a continued line and a comment each counted as a command.
+        script = "python3 - <<'PY'\nx = 1\nPY"
+        cases = {
+            f"{script}\ncat > notes.md <<'EOF'\nline 1\nline 2\nline 3\nEOF": " + 1 command",
+            f"{script}\ncat <<EOF > out.txt\na\nEOF\nls": " + 2 commands",  # more of the command after its opener
+            f"{script}\ngit add a \\\n  b \\\n  c": " + 1 command",
+            "cd /repo && \\\n  " + script: " + 1 command",
+            "uv run --with requests \\\n  " + script: "",  # the interpreter's own command, continued onto its line
+            f"# check the repo\n\n{script}\n  # done": "",
+            f"{script}\necho $((1<<n))\nls": " + 2 commands",  # a shift opens no heredoc
+        }
+        for command, said in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(self.started("terminal", command), [f"┃ ○ terminal(python3 script · 1 line{said})"])
 
     def test_the_details_view_shows_the_command_itself(self) -> None:
         command = "python3 - <<'PY'\nimport json\nprint(1)\nPY"
@@ -276,7 +326,18 @@ class ShortTitleTests(unittest.TestCase):
 
     def test_a_dot_inside_a_word_does_not_cut(self) -> None:
         self.assertEqual(short_title("Bump to v1.2.3 and tag it"), "Bump to v1.2.3 and tag it")
+        self.assertEqual(short_title("Bump to v1.2 and tag it. Then announce"), "Bump to v1.2 and tag it")
+        self.assertEqual(short_title("Release v1.2. Then announce"), "Release v1.2")  # a version can end one
         self.assertEqual(short_title("DELIVERABLE: a report"), "DELIVERABLE: a report")  # nothing before it to keep
+
+    def test_an_abbreviation_does_not_end_the_sentence(self) -> None:
+        # #2223 follow-up: `Fix e.g. the bug` read `Fix e.g`.
+        for word in TITLE_ABBREVIATIONS:
+            with self.subTest(word=word):
+                self.assertEqual(short_title(f"Fix {word} the parser. Then run it"), f"Fix {word} the parser")
+        self.assertEqual(short_title("E.g. the parser. Then run it"), "E.g. the parser")
+        self.assertEqual(short_title("Pin numpy 1.26 vs. 2.0. Then test"), "Pin numpy 1.26 vs. 2.0")
+        self.assertEqual(short_title("Ask the devs. Then fix it"), "Ask the devs")  # `vs.` only as its own word
 
     def test_a_dag_lane_keeps_its_whole_label(self) -> None:
         self.assertEqual(short_title("Audit auth. Then the tests [dag:r1/audit]"), "Audit auth. Then the tests")
@@ -327,6 +388,23 @@ class SlashTokenTests(unittest.TestCase):
         (row,) = [line for line in app.transcript.take_stable_lines(100, THEME) if line_text(line).startswith("┃ ❯")]
         self.assertEqual([span.text for span in row if span.style == THEME.slash], ["/dag-ulw"])
 
+    def test_a_prompt_resumed_before_the_catalog_answers_is_redrawn_once_it_does(self) -> None:
+        # #2223 follow-up: a startup resume prints the history before `commands.catalog` answers, so a resumed
+        # `/dag-ulw go` stayed plain while the TUI's own `/model` was bold.
+        app, client = resumed([{"role": "user", "text": "/dag-ulw go"}, {"role": "user", "text": "/model x"}])
+        self.assertEqual(prompt_tokens(app), [[], ["/model"]])  # what the first frame prints
+        app.transcript.add_user("/dag-ulw now", known=app.known_slash)  # a live prompt keeps what it was sent with
+        answer_catalog(app, client, [["/dag-ulw", "Graph work"]])
+        self.assertIn(CLEAR_SCREEN_AND_SCROLLBACK, "".join(app.terminal.writes))
+        self.assertEqual(prompt_tokens(app), [["/dag-ulw"], ["/model"], []])
+
+    def test_a_catalog_that_resolves_no_resumed_prompt_otherwise_redraws_nothing(self) -> None:
+        app, client = resumed([{"role": "user", "text": "/model x"}, {"role": "user", "text": "read src/dag-ulw"}])
+        self.assertEqual(prompt_tokens(app), [["/model"], []])
+        answer_catalog(app, client, [["/dag-ulw", "Graph work"]])
+        self.assertNotIn(CLEAR_SCREEN_AND_SCROLLBACK, "".join(app.terminal.writes))
+        self.assertEqual(prompt_tokens(app), [])  # nothing is printed again
+
     def test_the_composer_draws_a_known_name_bold_in_the_skill_hue(self) -> None:
         frame = build_frame(cols=60, rows=24, composer=Composer(text="/dag-ulw go /foo src/a.py"),
                             info=(Span("info"),), known_slash=KNOWN)
@@ -346,8 +424,6 @@ class SlashTokenTests(unittest.TestCase):
         self.assertFalse([span for span in sticky_line("/dag-ulw go", 60, THEME) if span.style == THEME.slash])
 
 
-
-
 class TinyWidthTests(unittest.TestCase):
     def test_no_railed_row_is_wider_than_a_tiny_terminal(self) -> None:
         # #2223 review 15: the rail takes two cells, so a terminal of a few columns cut rows to its width.
@@ -362,9 +438,11 @@ class TinyWidthTests(unittest.TestCase):
                 with self.subTest(width=width, block=type(block).__name__):
                     self.assertTrue(all(line_width(row) <= width for row in block_rows(block, width, THEME)))
 
+
 class RunningBlueTests(unittest.TestCase):
-    """The running blue (`Theme.running`) says "running" and nothing else (#2223 review): a list bullet, a diff hunk,
-    a key, a question's bar, a finished agent's goal and a kanban lane's row in any other state are drawn without it."""
+    """The running blue (`Theme.running`) says "running" and nothing else (#2223 review): a list bullet, a diff's
+    hunks, a key, a question's bar, the waiting row, an attached image, the history search's label, a paste chip, a
+    steer's mark, a finished agent's goal and a kanban lane's row in any other state are drawn without it."""
 
     def spans(self, lines: list) -> list[Span]:
         return [span for line in lines for span in line]
@@ -372,11 +450,31 @@ class RunningBlueTests(unittest.TestCase):
     def test_no_state_is_drawn_in_the_running_blue(self) -> None:
         rows, _state = render_lines(["- a bullet", "```diff", "@@ -1 +1 @@", "-old", "+new", "```"], MarkdownState(),
                                     60, THEME)
-        hunk = DiffLine(DIFF_HUNK, "@@ -1,2 +1,2 @@")
+        # Two hunks: their starts number the gutter and the second leaves its `⋮` (a hunk header is no row).
+        hunks = parse_inline_diff("a/x.py → b/x.py\n@@ -1,2 +1,2 @@\n-old\n+new\n same\n@@ -40 +40 @@\n-late\n+later")
         question = slot("clarify", CLARIFY).lines(60, THEME, max_rows=6)
-        for name, lines in (("markdown", rows), ("diff", diff_rows((hunk,), 60, THEME)),
-                            ("keys", shortcut_lines(100, THEME)), ("question", question)):
+        app, _client = make_app(busy=True)
+        app.waiting_since = app.clock()
+        search = HistorySearch(["git push"], "")
+        search.handle_key(Key(CHAR, "g"))
+        chip = "[Pasted text #1 +60 lines]"
+        composer = Composer(text=chip, pastes={chip: "x\n" * 60})
+        steers = [SteerBlock("look at b"), SteerBlock("look at c", STEER_QUEUED)]
+        sites = {  # each site, and what it draws that the running blue once coloured
+            "markdown": (rows, "• a bullet"),
+            "diff": (diff_rows(hunks, 60, THEME), "⋮"),
+            "keys": (shortcut_lines(100, THEME), "Ctrl+R"),
+            "question": (question, "?"),
+            "waiting": (app._tail(80), WAITING_GLYPH + STATE_WAITING),
+            "attachment": ([attachment_line([Attachment("/x/shot.png", "shot.png", "1280×720")], 60, THEME)],
+                           f"{ATTACH_ICON} shot.png"),
+            "history search": (search.lines(60, THEME, 4), SEARCH_LABEL),
+            "paste chip": (build_frame(cols=60, rows=24, composer=composer, info=(Span("info"),)).lines, chip),
+            "steer": ([row for steer in steers for row in block_rows(steer, 60, THEME)], STEER_MARK),
+        }
+        for name, (lines, drawn) in sites.items():
             with self.subTest(site=name):
+                self.assertIn(drawn, "\n".join(lines_text(lines)))
                 self.assertNotIn(THEME.running, {span.style for span in self.spans(lines)})
 
     def test_an_agents_goal_in_its_log_is_its_own_state(self) -> None:
@@ -398,6 +496,7 @@ class RunningBlueTests(unittest.TestCase):
             if "kanban/" in line_text(line) and "running" not in line_text(line):
                 with self.subTest(row=line_text(line)):
                     self.assertNotIn(THEME.running, {span.style for span in line})
+
 
 if __name__ == "__main__":
     unittest.main()
