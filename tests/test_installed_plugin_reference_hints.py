@@ -54,6 +54,13 @@ for message in json.load(sys.stdin):
 assert not any(name == 'omh' or name.startswith('omh.') for name in sys.modules)
 print(json.dumps(results))
 '''
+# The probe runs this many messages a subprocess, each under PROBE_TIMEOUT_S, so no one subprocess carries the whole
+# batch. Measured on 2026-10-23 (macOS, b16fe58d6): 805 messages, about 29 ms each; the slowest 100-message chunk took
+# 3.5 s, and a probe with no message 0.1 s. The whole batch in one subprocess timed out at 60 s on Windows CI (runs
+# 39770637903 and #2232's), so a runner there is at least 2.6x slower; at that pace a chunk takes about 9 s, which
+# leaves the 60 s timeout a margin of over 6x.
+PROBE_CHUNK = 100
+PROBE_TIMEOUT_S = 60
 
 
 class InstalledPluginReferenceHintTests(unittest.TestCase):
@@ -75,15 +82,17 @@ class InstalledPluginReferenceHintTests(unittest.TestCase):
                 'setup', '--with-plugin',
             ])
             self.assertEqual(status, 0, stderr)
-            result = subprocess.run(
-                [sys.executable, '-I', '-S', '-B', '-c', STANDALONE_PROBE, str(plugin_dir)],
-                input=json.dumps([message for message, _ in cases]),
-                cwd=root, env={**os.environ, 'HOME': str(root / 'home'),
-                               'OMH_HOME': str(root / 'omh'), 'HERMES_HOME': str(root / 'hermes')},
-                text=True, capture_output=True, timeout=60,
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            rows = json.loads(result.stdout)
+            rows = []
+            for start in range(0, len(cases), PROBE_CHUNK):
+                result = subprocess.run(
+                    [sys.executable, '-I', '-S', '-B', '-c', STANDALONE_PROBE, str(plugin_dir)],
+                    input=json.dumps([message for message, _ in cases[start:start + PROBE_CHUNK]]),
+                    cwd=root, env={**os.environ, 'HOME': str(root / 'home'),
+                                   'OMH_HOME': str(root / 'omh'), 'HERMES_HOME': str(root / 'hermes')},
+                    text=True, capture_output=True, timeout=PROBE_TIMEOUT_S,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                rows += json.loads(result.stdout)
             self.assertEqual(len(rows), len(cases))
             for (message, expected), row in zip(cases, rows, strict=True):
                 with self.subTest(message=message):
