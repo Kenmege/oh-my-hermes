@@ -467,6 +467,90 @@ class RewindCommandTests(unittest.TestCase):
         self.assertIn("between turns", notices(app, NOTICE_WARN)[-1])
         self.assertIsNone(app.rewind)
 
+    def test_steer_text_sent_between_turns_replaces_the_picked_prompt(self) -> None:
+        app, client = picked()
+        self.send(app, "/steer redo it shorter")
+        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": "redo it shorter",
+                                                              "truncate_before_row_id": 7, "confirm_truncate": True}))
+        self.assertIsNone(app.rewind)
+        self.assertEqual(self.users(app), [TODO_PROMPT, "redo it shorter"])
+
+    def test_retry_drops_the_rewind_and_resends_plain_since_hermes_took_the_turn_back(self) -> None:
+        # Hermes' /retry rewinds the last turn itself (methods_tools.py `_cmd_retry`): a cut at the picked row on top
+        # of that names a row that moved, and Hermes refuses it, so the retry would never run.
+        app, client = picked()
+        self.send(app, "/retry")
+        self.assertEqual(client.calls[-1], ("slash.exec", {"command": "retry", "session_id": SID}))
+        answer(app, client, {"type": "send", "message": SECOND_PROMPT})
+        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": SECOND_PROMPT}))
+        self.assertIsNone(app.rewind)
+
+    def test_a_rewind_picked_again_while_the_dispatch_is_out_is_not_the_commands(self) -> None:
+        # Esc cancelled the pick the command went with; a pick made after it, even of the same row, is the next prompt's.
+        for down, row_id, text in ((1, 1, TODO_PROMPT), (0, 7, SECOND_PROMPT)):
+            with self.subTest(row=row_id):
+                app, client = picked()
+                self.send(app, SKILL_LINE)
+                answer(app, client, error=SKILL_REFUSAL)
+                dispatch = len(client.calls)
+                esc(app)
+                app._rewind("")
+                answer(app, client, HISTORY)
+                for _ in range(down):
+                    app._on_input(Key(DOWN))
+                app._on_input(Key(ENTER))  # picked while the skill's dispatch is out
+                app._on_response(Response(dispatch, SKILL_TURN, None))
+                self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": SKILL_TURN["message"]}))
+                self.assertEqual(app.rewind.row_id, row_id)  # type: ignore[union-attr]  # still picked, for the next prompt
+                self.assertEqual(app.composer.text, text)
+
+    def test_a_draft_typed_while_the_dispatch_was_out_stays_when_the_command_comes_back(self) -> None:
+        app, client = picked()
+        self.send(app, SKILL_LINE)
+        answer(app, client, error=SKILL_REFUSAL)
+        type_text(app, "a draft")
+        app.turn_pending = True  # a turn started before Hermes answered
+        answer(app, client, SKILL_TURN)
+        self.assertEqual(app.composer.text, f"a draft\n{SKILL_LINE}")
+        self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
+
+    def test_a_command_that_sends_no_prompt_leaves_the_rewind_picked(self) -> None:
+        for reply, said in (({"type": "prefill", "message": "a prefilled draft"}, ""),
+                            ({"type": "send", "message": "  "}, "/dag-ulw: empty message")):
+            with self.subTest(answer=reply["type"]):
+                app, client = picked()
+                self.send(app, SKILL_LINE)
+                answer(app, client, error=SKILL_REFUSAL)
+                answer(app, client, reply)
+                self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
+                self.assertIsNotNone(app.rewind)
+                if said:
+                    self.assertIn(said, notices(app, NOTICE_WARN))
+                else:
+                    self.assertEqual(app.composer.text, "a prefilled draft")
+
+    def test_an_alias_sent_without_a_rewind_cuts_nothing_when_one_is_picked_meanwhile(self) -> None:
+        app, client = make_app()
+        type_text(app, "/ulw check every upstream pr")
+        app._on_input(Key(ENTER))
+        app._rewind("")
+        answer(app, client, HISTORY)
+        app._on_input(Key(ENTER))  # picked before Hermes says /ulw is an alias
+        app._on_response(Response(1, {"type": "alias", "target": "dag-ulw"}, None))
+        answer(app, client, error=SKILL_REFUSAL)
+        answer(app, client, SKILL_TURN)
+        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": SKILL_TURN["message"]}))
+        self.assertIsNotNone(app.rewind)
+
+    def test_a_renamed_command_keeps_the_rewind_it_was_sent_with(self) -> None:
+        # Today's renamed targets only print; were one to send a prompt, it would go in the picked one's place too.
+        app, client = picked()
+        self.send(app, "/cost")
+        self.assertEqual(client.calls[-1], ("slash.exec", {"command": "usage", "session_id": SID}))
+        answer(app, client, {"type": "send", "message": "a prompt usage sent"})
+        self.assertEqual(client.calls[-1][1].get("truncate_before_row_id"), 7)
+        self.assertIsNone(app.rewind)
+
 
 class DocumentedRewindTests(unittest.TestCase):
     def test_installation_names_the_window_and_the_calls_the_code_uses(self) -> None:

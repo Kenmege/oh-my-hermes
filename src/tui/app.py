@@ -184,6 +184,7 @@ from .slash import (
     HERMES,
     LOCAL,
     RENAMED,
+    RETRY_COMMAND,
     Completion,
     SlashInvocation,
     catalog_categories,
@@ -2692,15 +2693,18 @@ class App(ModesMixin, AgentViewMixin):
         session's is drawn), the new prompt goes as `prompt.submit` with
         `truncate_before_row_id` and `confirm_truncate`, and the screen is
         redrawn. Plan mode does not wrap it: a truncation is a `prompt.submit`.
-        For a prompt a command sent, `typed` is the command, which a refusal
-        to send gives back, and `notice` what it said, under the new row.
+        For a prompt a command sent, `typed` is the command and `notice` what
+        it said, under the new row. When a turn started before it went, the
+        text (the command, for a command's prompt) goes back after the draft
+        and nothing is cut; when Hermes refuses the cut, the screen goes back
+        to how it was before the send and nothing comes back to the draft.
         """
         rewind, self.rewind = self.rewind, None
         if rewind is None:
             return
         if self._busy():  # a turn started meanwhile: the row it names may be gone by its end
             self.transcript.add_notice(REWIND_BUSY_NOTICE, NOTICE_WARN)
-            self._set_composer(typed or text)
+            self._give_back(typed or text)
             return
         kept = self.transcript  # the screen before the cut, put back if Hermes refuses it
         self._restart_transcript(list(rewind.before))
@@ -2912,7 +2916,7 @@ class App(ModesMixin, AgentViewMixin):
             if sent is None or sent.name != invocation.name:
                 sent = invocation
             # A picked rewind or agent stays picked under a command; a prompt the command sends replaces the rewind's.
-            self._run_slash(replace(sent, rewound=self.rewind is not None), echo=f"/{invocation.text}")
+            self._run_slash(replace(sent, rewind=self.rewind), echo=f"/{invocation.text}")
         elif self.agent_steer is not None:
             self._steer_agent(text)
         elif self.rewind is not None:
@@ -3153,11 +3157,14 @@ class App(ModesMixin, AgentViewMixin):
             self._submit(text, shown, chips)
 
     def _steer_command(self, arg: str) -> None:
-        """`/steer <text>`: what Ctrl+Enter does, on any terminal. Idle, the text goes as a prompt."""
+        """`/steer <text>`: what Ctrl+Enter does, on any terminal. Idle, the text goes as a prompt: in place of the
+        picked one when a rewind is picked, as Enter sends it."""
         if not arg:
             self.transcript.add_aside(NoticeBlock(STEER_USAGE, NOTICE_WARN))  # no echo: it must not close what runs
         elif self._busy():
             self._steer(arg)
+        elif self.rewind is not None:
+            self._send_rewind(arg)
         else:
             self._send_typed(arg)
 
@@ -3290,7 +3297,7 @@ class App(ModesMixin, AgentViewMixin):
         elif command is not None and command.route == DROPPED:
             self.transcript.add_notice(dropped_notice(command))
         elif command is not None and command.route == RENAMED:
-            self._route_slash(SlashInvocation(command.target, invocation.arg, None), depth)
+            self._route_slash(SlashInvocation(command.target, invocation.arg, None, rewind=invocation.rewind), depth)
         elif not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
         else:
@@ -3329,7 +3336,7 @@ class App(ModesMixin, AgentViewMixin):
             target = as_text(result.get("target")).lstrip("/")
             aliased = parse_slash(f"/{target} {invocation.arg}") if target and depth == 0 else None
             if aliased is not None:
-                self._run_slash(replace(aliased, rewound=invocation.rewound), depth + 1)
+                self._run_slash(replace(aliased, rewind=invocation.rewind), depth + 1)
             else:
                 self.transcript.add_notice(f"/{invocation.name}: the alias did not resolve.", NOTICE_WARN)
             return
@@ -3339,7 +3346,11 @@ class App(ModesMixin, AgentViewMixin):
         sends = kind in ("send", "skill") and bool(message.strip())
         shows_command = kind == "skill" or bool(display)  # a built-in's bare send (/plan, /retry) shows what it sends
         echo = self.transcript.withdraw_command() if sends and shows_command and self.sid else None
-        rewinds = sends and invocation.rewound and self.rewind is not None
+        rewinds = sends and invocation.rewind is not None and invocation.rewind is self.rewind  # the pick it went with
+        if rewinds and invocation.name == RETRY_COMMAND:
+            # Hermes' /retry took the last turn back already, so the row the rewind names has moved: the rewind goes
+            # and the prompt goes plain, as /retry does without one.
+            rewinds, self.rewind = False, None
         if echo is not None or rewinds:
             # One row for the skill the person ran: the prompt's, with Hermes' `display` for it (`/name arg`) or else
             # the echo's text, never the skill body sent; the dispatch's notice goes under it. The prompt is then the

@@ -769,9 +769,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   from the cut with your prompt under it; Esc instead cancels and empties the
   composer. A rewind goes as a plain prompt, never through plan mode. A
   slash command you send instead still runs: one that sends a prompt (a
-  skill, `/plan`) sends it in place of the picked prompt, the same way, and
-  one that only prints (`/help`, `/usage`) leaves the rewind picked for the
-  next prompt you send. If
+  skill, `/plan`, `/steer <text>`) sends it in place of the picked prompt,
+  the same way, and one that only prints (`/help`, `/usage`) leaves the
+  rewind picked for the next prompt you send. `/retry` drops the rewind and
+  resends as it does without one, since Hermes takes the last turn back
+  itself. If
   Hermes refuses it, the screen goes back to how it was before you sent, and
   is then redrawn from the history Hermes sends, as Hermes still has the
   session; if Hermes does not send that history, a notice says so and the

@@ -40,6 +40,7 @@ RENAMED = "renamed"
 
 HERMES_DOOR = "hermes --tui"
 PLAN_COMMAND = "plan"  # Hermes' one-turn plan prompt; the TUI's plan mode sends every prompt through it
+RETRY_COMMAND = "retry"  # Hermes' /retry: it takes the last turn back itself before it sends that prompt again
 
 
 @dataclass(frozen=True)
@@ -139,9 +140,10 @@ class SlashInvocation:
     `for_plan_mode` says the TUI wrote the command around a prompt the person
     typed in plan mode, instead of the person typing the command. `held` says
     a prompt the command sends waits for a running turn to end whatever the
-    busy mode: it is a steer Hermes did not take. `rewound` says the person
-    sent it with a rewind picked: a prompt it sends goes in place of the
-    picked one while that rewind is still picked.
+    busy mode: it is a steer Hermes did not take. `rewind` is the rewind the
+    person had picked when they sent it (the app's `Rewind`), or None: a
+    prompt it sends goes in place of the picked one while that very rewind is
+    still picked.
     """
 
     name: str
@@ -149,7 +151,7 @@ class SlashInvocation:
     command: SlashCommand | None
     for_plan_mode: bool = False
     held: bool = False
-    rewound: bool = False
+    rewind: object | None = None
 
     @property
     def text(self) -> str:

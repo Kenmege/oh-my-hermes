@@ -37,10 +37,12 @@ All notable changes will be documented here.
   everything after it, and the rewind stayed picked for the next prompt. A
   prompt a command sends (a skill, `/plan`) now goes in the picked prompt's
   place, as a typed prompt does: the session is cut there, the screen is
-  redrawn from the cut, and the rewind clears. A command that only prints
-  (`/help`, `/usage`) runs and leaves the rewind picked. A rewind cancelled
-  before Hermes builds the command's prompt, or picked after the command went,
-  cuts nothing.
+  redrawn from the cut, and the rewind clears; `/steer <text>` sent between
+  turns does the same. A command that only prints (`/help`, `/usage`) runs
+  and leaves the rewind picked. `/retry` drops the rewind and resends plain,
+  since Hermes' `/retry` takes the last turn back itself. A rewind cancelled
+  before Hermes builds the command's prompt, or picked (again) after the
+  command went, cuts nothing and stays picked for the next prompt.
 
 ## 4.0.1 - 2026-10-22
 
