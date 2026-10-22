@@ -40,8 +40,8 @@ All notable changes will be documented here.
   commands and skills, so a resumed `/dag-ulw go` stayed plain for the whole
   session while the TUI's own `/model` was bold. Once that catalog answers, a
   resumed prompt whose `/name` it resolves otherwise is drawn again, with the
-  full redraw a resize does; when no resumed prompt changes, nothing is
-  redrawn. The heredoc summary counts one command a line around the script,
+  full redraw a resize does; when no resumed prompt the redraw would print
+  changes, nothing is redrawn. The heredoc summary counts one command a line around the script,
   and another heredoc's body, a `#` comment and a `\` continuation count
   none: `python3 - <<PY … PY` followed by `cat > notes.md <<EOF` with three
   lines read `+ 5 commands` and now reads `+ 1 command`. An agent's short

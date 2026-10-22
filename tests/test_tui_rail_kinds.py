@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from _tui_lines import line_text, lines_text
 from test_tui_modes import FakePoller, RecordingClient, ScriptedTerminal, make_app
@@ -277,7 +278,11 @@ class HeredocTests(unittest.TestCase):
             "cd /repo && \\\n  " + script: " + 1 command",
             "uv run --with requests \\\n  " + script: "",  # the interpreter's own command, continued onto its line
             f"# check the repo\n\n{script}\n  # done": "",
-            f"{script}\necho $((1<<n))\nls": " + 2 commands",  # a shift opens no heredoc
+            # A shift opens no heredoc, however it is spaced (#2225 review F3), nor `<<` glued to more of a word.
+            f"{script}\necho $((1<<3))\nls": " + 2 commands",
+            f"{script}\necho $(( 1 << n ))\nls\npwd": " + 3 commands",
+            f"{script}\necho $((a<<b))\nls": " + 2 commands",
+            f"{script}\necho \"feed it <<EOF\"\nls": " + 2 commands",
         }
         for command, said in cases.items():
             with self.subTest(command=command):
@@ -404,6 +409,19 @@ class SlashTokenTests(unittest.TestCase):
         answer_catalog(app, client, [["/dag-ulw", "Graph work"]])
         self.assertNotIn(CLEAR_SCREEN_AND_SCROLLBACK, "".join(app.terminal.writes))
         self.assertEqual(prompt_tokens(app), [])  # nothing is printed again
+
+    def test_a_moved_prompt_above_the_redrawn_tail_redraws_nothing(self) -> None:
+        # #2225 review F1: a full redraw reprints only the last `REDRAW_TAIL_ROWS` rows; one for a prompt above them
+        # reprinted the tail and changed nothing on the screen.
+        history = [{"role": "user", "text": "/dag-ulw go"}, *({"role": "assistant", "text": f"reply {number}"}
+                                                              for number in range(8))]
+        with patch("omh.tui.app.REDRAW_TAIL_ROWS", 10):
+            app, client = resumed(history)
+            self.assertEqual(prompt_tokens(app), [])  # the tail the first frame prints holds no prompt
+            answer_catalog(app, client, [["/dag-ulw", "Graph work"]])
+        self.assertNotIn(CLEAR_SCREEN_AND_SCROLLBACK, "".join(app.terminal.writes))
+        (prompt,) = [block for block in app.transcript.blocks if isinstance(block, UserBlock)]
+        self.assertIn("dag-ulw", prompt.known)  # /history draws it with the catalog's names
 
     def test_the_composer_draws_a_known_name_bold_in_the_skill_hue(self) -> None:
         frame = build_frame(cols=60, rows=24, composer=Composer(text="/dag-ulw go /foo src/a.py"),

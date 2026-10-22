@@ -1375,7 +1375,7 @@ class App(ModesMixin, AgentViewMixin):
         """
         self.catalog = catalog_pairs(result)
         self.known_slash = known_names(self.catalog)
-        if self.transcript.resolve_recorded_prompts(self.known_slash):
+        if self.transcript.resolve_recorded_prompts(self.known_slash, self.size[0], self.theme, REDRAW_TAIL_ROWS):
             self._full_redraw()  # a resumed prompt printed before the catalog answered draws its `/skill` now
         self.catalog_categories = catalog_categories(result)
         self.skill_count = catalog_skill_count(result)

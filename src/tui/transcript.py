@@ -427,10 +427,12 @@ _VERSIONED_PYTHON = re.compile(r"python3\.\d+")
 # A heredoc's opener at the end of its line (`<<'PY'`, `<<-EOF`), never a here-string (`<<<`: no `<` before the
 # two, and the word after them refuses a third) or a shift (`$((1<<3))`); group 1 is `<<-`'s dash (its terminator may
 # be indented with tabs), group 3 the terminator. `_ANY_HEREDOC_OPENER` also finds one with more of its command
-# after it (`cat <<'EOF' > notes.md`), never a shift by a name (`$((1<<n))`).
+# after it (`cat <<'EOF' > notes.md`), never one glued to more of a word (`"feed it <<EOF"`); `_command_lines` looks
+# for it outside arithmetic (`_ARITHMETIC`), where `<<` is a shift however it is spaced (`$(( 1 << n ))`).
 _HEREDOC = r"(?<!<)<<(-?)\s*(['\"]?)([A-Za-z_]\w*)\2"
 _HEREDOC_OPENER = re.compile(_HEREDOC + r"\s*$")
 _ANY_HEREDOC_OPENER = re.compile(_HEREDOC + r"(?=[\s;&|>]|$)")
+_ARITHMETIC = re.compile(r"\$?\(\(.*?\)\)")
 _COMMAND_SEPARATOR = re.compile(r"&&|\|\||;|\|")
 _ENV_ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=\S*")
 UV_RUN_VALUE_OPTIONS = frozenset({"--with", "--python", "-p", "--project", "--directory", "--group", "--extra",
@@ -474,7 +476,7 @@ def _command_lines(lines: list[str]) -> int:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         count += 1
-        for opener in _ANY_HEREDOC_OPENER.finditer(line):
+        for opener in _ANY_HEREDOC_OPENER.finditer(_ARITHMETIC.sub("", line)):
             while at < len(lines) and not _ends_heredoc(lines[at], opener):
                 at += 1
             at += 1
@@ -1141,17 +1143,19 @@ class Transcript:
         `recorded` for one from the session's history."""
         self._append(UserBlock(text, from_queue=from_queue, known=known, recorded=recorded))
 
-    def resolve_recorded_prompts(self, known: frozenset[str]) -> bool:
+    def resolve_recorded_prompts(self, known: frozenset[str], width: int, theme: Theme, max_rows: int) -> bool:
         """The history's prompts take `known`, the session's catalog, which answers after they are drawn (`App.startup`
-        draws a resumed session's history at once); True when a `/name` in one resolves otherwise now, so rows of
-        it already printed are not what it draws."""
-        moved = False
-        for block in self.blocks:
+        draws a resumed session's history at once); True when a `/name` resolves otherwise now in one that
+        `retake_tail(width, theme, max_rows)` prints again, so a full redraw shows it. One above that tail is
+        only in /history, which draws it with `known` from now on."""
+        moved = -1
+        for index, block in enumerate(self.blocks):
             if isinstance(block, UserBlock) and block.recorded and block.known != known:
-                moved = moved or slash_token_ranges(block.text, block.known) != slash_token_ranges(block.text, known)
+                if slash_token_ranges(block.text, block.known) != slash_token_ranges(block.text, known):
+                    moved = index
                 block.known = known
                 self._version += 1
-        return moved
+        return moved >= 0 and moved >= self._tail_start(width, theme, max_rows)
 
     def add_steer(self, text: str, agent: str = "") -> SteerBlock:
         """A steer the person just sent, held until Hermes answers and the transcript reaches a block boundary.
@@ -1667,6 +1671,13 @@ class Transcript:
         opens with one row counting them, blocks `BLOCK_CAP` dropped included.
         """
         self.retake()
+        cut = self._tail_start(width, theme, max_rows)
+        self._cursor = cut
+        self._left_out = cut + self.dropped
+        self._drop_past_cap()  # before the take, so the row names how many /history still holds
+
+    def _tail_start(self, width: int, theme: Theme, max_rows: int) -> int:
+        """The first block `retake_tail(width, theme, max_rows)` keeps."""
         end = len(self.blocks) - (1 if self.blocks and not self.blocks[-1].done else 0)
         cut, rows = end, 0
         while cut > 0:
@@ -1675,9 +1686,7 @@ class Transcript:
                 break
             rows += height
             cut -= 1
-        self._cursor = cut
-        self._left_out = cut + self.dropped
-        self._drop_past_cap()  # before the take, so the row names how many /history still holds
+        return cut
 
     def live_lines(self, width: int, theme: Theme, max_rows: int | None = None, now: float | None = None) -> list[Line]:
         """Everything not yet taken, as it shows now: the streaming tail, live thinking, running tools.

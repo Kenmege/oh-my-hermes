@@ -332,7 +332,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   that names one of Hermes' commands or skills is drawn bold in the skill
   colour, in the composer, in your prompt once it is sent and on the
   `↳ you:` row; a resumed session's prompts are drawn again once Hermes
-  names the session's commands and skills, when that moves one of them. A
+  names the session's commands and skills, when that moves one of the
+  prompts a redraw prints. A
   path such as `src/a.py`, a `/name` nothing answers to and
   a word with a slash inside it stay plain. While you pick from a
   list (a question answered by picking, or the `/sessions`, `/rewind` or bare
