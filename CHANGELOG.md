@@ -4,6 +4,17 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The dag tree under the composer holds still when Down gives it the keys,
+  and keeps a run's lanes until a payload shows the run over (#2224's delta
+  review).** With the keys the tree cuts the same rows as without them, so
+  Down only highlights a row; the done layers that gave way at the top stay
+  out, and the last row says `↑↓ to browse` when it counts one of them as
+  well as rows below. A new turn's kept lanes now go only on a payload whose
+  graph shows the run over (its one summary line); a payload with no run in
+  it (no session, a graph that lingered out of the HUD, an error) drops
+  nothing. A window shrunk under three rows gives the keys back to the
+  composer, and INSTALLATION.md says → opens a row and Space flips it.
+
 - **A dag run's view under the composer is a folding tree that says what each
   child is doing (the owner's ask of 2026-10-22).** Each node is one header
   row: a `▾`/`▸` fold triangle, its state glyph (the running spinner in the

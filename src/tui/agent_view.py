@@ -672,12 +672,18 @@ class AgentViewMixin:
         self._drop_agent_actions()
 
     def _prune_kept_lanes(self) -> None:
-        """Drop the lanes a new turn kept for a dag run (`_clear_roster`) once a payload shows that run over: the
-        payload the turn read was a stale one. Nothing goes on a payload the HUD could not read."""
+        """Drop the lanes a new turn kept for a dag run (`_clear_roster`) once a payload shows that run over (its
+        graph one summary line, `panels.dag_run_summary`): the payload the turn read was a stale one. A payload that
+        shows no run (no session, a graph that lingered out of the HUD, one the HUD could not read) shows nothing
+        over, so nothing goes."""
         payload = self.hud.payload if self.hud is not None else None
-        if not isinstance(payload, Mapping) or payload.get("error"):
+        if not isinstance(payload, Mapping) or payload.get("error") or not graph_is_dag(payload):
             return
-        dropped = self.roster.drop_kept(self._open_dag_nodes())
+        graph = payload["delegation_graph"]
+        if not dag_run_summary(graph):
+            return
+        nodes = graph.get("nodes") if isinstance(graph.get("nodes"), list) else []
+        dropped = self.roster.drop_kept(frozenset(str(node.get("id")) for node in nodes if isinstance(node, Mapping)))
         if self.interrupt_armed in dropped:
             self.interrupt_armed = None
         if self.agent_steer in dropped:

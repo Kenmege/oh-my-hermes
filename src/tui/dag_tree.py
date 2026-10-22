@@ -46,8 +46,11 @@ one with a running or failed node under it. What still does not fit is cut:
 the shut all-done layers' rows go first, wherever they stand, so running and
 failed nodes keep the rows; then the rows from the bottom, the last row
 saying `… N more nodes · ↓ to browse`, with no blank row wasted next to it.
-While the tree has the keys (`selected`) the rows scroll to the highlight
-instead, between `… N more nodes above` and `… N more nodes below`.
+While the tree has the keys (`selected`) the cut is the same, so Down moves
+no row, for as long as the highlight is among the rows shown (the last row
+then says `below`, or `↑↓ to browse` when it also counts a done layer that
+gave way above); past them the rows scroll to the highlight, between
+`… N more nodes above` and `… N more nodes below`.
 
 The person's folds belong to one run (`run_key`): the app drops them when
 the graph's run changes and when it leaves a session, so a layer shut in one
@@ -495,10 +498,12 @@ def _last(rows: list[_Row], count: int) -> list[_Row]:
 
 
 def _window(rows: list[_Row], cap: int, selected: str | None, more: Callable[..., Line]) -> list[tuple[Line, str]]:
-    """`rows` in `cap` rows, each with the key it selects: all of them when they fit. Else, without the keys, the shut
-    all-done layers yield first, wherever they stand (running and failed nodes keep the rows), then the rows from the
-    bottom, a last row counting what is cut; with them, the rows around the highlight between counts of what is above
-    and below. No blank row stands next to a count row: the next row with something on it takes its place."""
+    """`rows` in `cap` rows, each with the key it selects: all of them when they fit. Else the shut all-done layers
+    yield first, wherever they stand, with the keys or without (the highlighted row itself never does), so running
+    and failed nodes keep the rows and Down moves nothing. Then, without the keys, the rows from the bottom, a last row
+    counting what is cut; with them, the same rows while they show the highlight, else the rows around it between
+    counts of what is above and below. A count that holds both a yielded layer above and rows below says
+    `↑↓ to browse`. No blank row stands next to a count row: the next row with something on it takes its place."""
 
     def drawn(cut: Sequence[_Row]) -> list[tuple[Line, str]]:
         return [(line, key) for line, key, _count, _mark in cut]
@@ -507,29 +512,40 @@ def _window(rows: list[_Row], cap: int, selected: str | None, more: Callable[...
         return drawn(rows)
     if cap < 2:
         return drawn(rows[:cap])
-    if selected is None:
-        kept = list(rows)
-        for row in [row for row in rows if row[3] == YIELDS]:
-            if len(_tidy(kept)) < cap:  # a row stays for the count
-                break
-            kept = [each for each in kept if each is not row]
-        shown = _first(_tidy(kept), cap - 1)
-        return drawn(shown) + [(more(_counted(rows) - _counted(shown), " · ↓ to browse"), "")]
-    index = next((at for at, row in enumerate(rows) if row[1] == selected), 0)
+    kept = list(rows)
+    for row in [row for row in rows if row[3] == YIELDS and row[1] != selected]:
+        if len(_tidy(kept)) < cap:  # a row stays for the count
+            break
+        kept = [each for each in kept if each is not row]
+    kept = _tidy(kept)
+    total, at = _counted(rows), {id(row): place for place, row in enumerate(rows)}
+
+    def after(row: _Row) -> int:
+        """The nodes the rows past `row` stand for, in the whole tree."""
+        return sum(each[2] for each in rows[at[id(row)] + 1 :])
+
+    def before(row: _Row) -> int:
+        return sum(each[2] for each in rows[: at[id(row)]])
+
+    first = _first(kept, cap - 1)
+    if selected is None or cap < 3 or any(row[1] == selected for row in first):  # under 3 rows no highlight fits
+        hidden = total - _counted(first)
+        where = " · ↓ to browse" if selected is None else " below" if hidden == after(first[-1]) else " · ↑↓ to browse"
+        return drawn(first) + [(more(hidden, where), "")]
+    index = next((place for place, row in enumerate(kept) if row[1] == selected), 0)
     body = cap - 2
-    start = min(max(index - body // 2, 0), len(rows) - body)
-    if start == 0:
-        shown = _first(rows, cap - 1)
-        return drawn(shown) + [(more(_counted(rows) - _counted(shown), " below"), "")]
-    if start + body >= len(rows):
-        shown = _last(rows, cap - 1)
-        return [(more(_counted(rows) - _counted(shown), " above"), "")] + drawn(shown)
+    start = min(max(index - body // 2, 0), len(kept) - body)
+    if start + body >= len(kept):
+        shown = _last(kept, cap - 1)
+        hidden = total - _counted(shown)
+        return [(more(hidden, " above" if hidden == before(shown[0]) else " · ↑↓ to browse"), "")] + drawn(shown)
     # A blank row is never the highlight's: one at either end of the window gives way to the row past the other end.
-    if rows[start][3] == BLANK and start + body + 1 < len(rows):
+    if kept[start][3] == BLANK and start + body + 1 < len(kept):
         start += 1
-    elif rows[start + body - 1][3] == BLANK and start > 1 and index < start + body - 1:
+    elif kept[start + body - 1][3] == BLANK and start > 1 and index < start + body - 1:
         start -= 1
-    shown = rows[start : start + body]
+    shown = kept[start : start + body]
+    below = after(shown[-1])  # a yielded layer between the rows shown counts above
     return (
-        [(more(_counted(rows[:start]), " above"), "")] + drawn(shown) + [(more(_counted(rows[start + body :]), " below"), "")]
+        [(more(total - _counted(shown) - below, " above"), "")] + drawn(shown) + [(more(below, " below"), "")]
     )

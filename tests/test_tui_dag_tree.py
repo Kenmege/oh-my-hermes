@@ -330,6 +330,18 @@ class CapTests(unittest.TestCase):
                 self.assertNotEqual(shown[-2], "", f"a blank row over the cut at {rows} rows")
                 self.assertEqual(accounted(shown), len(self.big()), f"every node is drawn, folded or counted at {rows}")
 
+    def test_down_moves_no_row(self) -> None:
+        # The done layers that yield their rows without the keys yield them with the keys too: Down only highlights.
+        for rows, cols in ((40, 150), (30, 120), (21, 120)):
+            app, _client = tree_app(rows=rows, cols=cols, nodes=self.big())
+            before = [left(row) for row in view_text(app)]
+            app._on_input(Key(DOWN))
+            after = [left(row) for row in view_text(app)]
+            self.assertEqual(app.tree_selected, node_id("group-1"))
+            self.assertEqual(after[:-1], before[:-1], f"the rows moved on Down at {cols}x{rows}")
+            self.assertNotIn("  ▸ layer 1 · 1 node · 1 done", after)
+            self.assertRegex(after[-1], r"^  … \d+ more nodes · ↑↓ to browse$", "the count holds the done layer above")
+
     def test_with_the_keys_the_rows_scroll_to_the_highlight_between_counts(self) -> None:
         app, _client = tree_app(rows=30, nodes=self.big())  # a cap of 10
         app._on_input(Key(DOWN))
@@ -342,7 +354,9 @@ class CapTests(unittest.TestCase):
             self.assertEqual(accounted(shown), len(self.big()), f"every node is drawn or counted: {shown}")
             for at in (0, -1):
                 if shown[at].startswith("  … "):
-                    self.assertRegex(shown[at], r"^  … ([1-9]\d* more nodes?|more) (above|below)$", "no count of 0")
+                    # `↑↓ to browse`: the count holds a done layer that yielded its row above and rows below.
+                    self.assertRegex(shown[at], r"^  … ([1-9]\d* more nodes?|more)( above| below| · ↑↓ to browse)$",
+                                     "no count of 0")
                     self.assertNotEqual(shown[1 if at == 0 else -2], "", "no blank row next to a count")
             seen += shown[0].startswith("  … ") and shown[-1].startswith("  … ")
         self.assertTrue(seen, "the window was between two counts at least once")
@@ -681,6 +695,13 @@ class TurnBoundaryTests(unittest.TestCase):
         self.assertEqual(set(app.roster.agents), lanes | {"sa-new"})
         take(app, None, error=True)  # the HUD could not read: nothing is known about the run
         self.assertEqual(set(app.roster.agents), lanes | {"sa-new"})
+        from omh.plugin_bundle.omh.delegation_graph import inactive_graph
+
+        for reason in ("no_session", "lingered"):  # a payload that shows no run shows nothing over
+            take(app, inactive_graph(reason))
+            self.assertEqual(set(app.roster.agents), lanes | {"sa-new"}, reason)
+        take(app, None)  # no graph in the payload at all
+        self.assertEqual(set(app.roster.agents), lanes | {"sa-new"})
         over = {key: (*values[:5], "done", "accepted", *values[7:]) for key, values in NODES.items()}
         take(app, sweep(over))
         self.assertEqual(set(app.roster.agents), {"sa-new"}, "the run's lanes go; this turn's agent stays")
@@ -753,6 +774,19 @@ class FoldScopeTests(unittest.TestCase):
 
 class SmallCapTests(unittest.TestCase):
     """Under three rows a tree has no room for its highlight between two counts: Down opens the agent list there."""
+
+    def test_the_tree_gives_the_keys_back_when_the_window_shrinks_under_three_rows(self) -> None:
+        app, _client = tree_app(rows=30)
+        app._on_input(Key(DOWN))
+        self.assertEqual(app.tree_selected, node_id("group-1"))
+        app.terminal.screen.resize(8, 120)  # type: ignore[attr-defined]  # a cap of 2
+        app._on_resize()
+        app._full_redraw()
+        app.redraw_at = None
+        drawn(app)
+        self.assertIsNone(app.tree_selected, "the tree kept the keys with no room for its highlight")
+        type_text(app, "hi")
+        self.assertEqual(app.composer.text, "hi", "a typed key reaches the composer")
 
     def test_with_two_rows_or_fewer_down_opens_the_list(self) -> None:
         for rows in (6, 8):  # caps of 1 and 2
