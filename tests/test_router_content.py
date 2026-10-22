@@ -1188,10 +1188,12 @@ class RouterContentTests(unittest.TestCase):
             "native subagents -> Hermes delegation when available, otherwise sequential lanes",
             "Record observed delegation results",
             "not_observed",
-            # A stop ends the turn with the next action offered, never with a
-            # refusal; every skill carries the sentence because every skill
-            # has a stop condition.
-            "offer the next action as a question rather than declaring what will not be done",
+            # Completion is not itself a user decision or a reason to append a
+            # generic question or an unrelated list of actions nobody requested.
+            "real unresolved user decision or a useful briefing discussion",
+            "one specific, content-linked question",
+            "Completed work needs no question",
+            "omit unrelated non-action footers and generic offers to continue",
             # The reply is written in the user's words and the host's voice;
             # the persona owns the reply language, speech level, and endings,
             # progress updates too, the user's language is the fallback, and
@@ -1226,6 +1228,47 @@ class RouterContentTests(unittest.TestCase):
         for name, content in sorted(templates.items()):
             if name != "oh-my-hermes":
                 self.assertIn("Preserve workflow intent and stop conditions", content, name)
+
+    def test_brief_endings_are_relevant_in_native_and_portable_guidance(self) -> None:
+        """Pin delivered guidance, not a context-free ban on negative sentences."""
+        from omh.skills.render import agent_skill_templates, SHARED_RAIL_REFERENCE_PATH
+
+        for renderer in (builtin_skill_templates, agent_skill_templates):
+            for template in renderer():
+                with self.subTest(renderer=renderer.__name__, skill=template.name):
+                    text = " ".join(template.content.split())
+                    self.assertIn("real unresolved user decision or a useful briefing discussion", text)
+                    self.assertIn("one specific, content-linked question", text)
+                    self.assertIn("Completed work needs no question", text)
+                    self.assertIn("omit unrelated non-action footers and generic offers to continue", text)
+                    self.assertNotIn("when a stop condition or a decision the user owns ends the turn", text)
+
+        rail = next(
+            template.content for template in builtin_skill_reference_templates()
+            if f"{omh_skill_display_name(template.skill_name)}/{template.relative_path}"
+            == SHARED_RAIL_REFERENCE_PATH
+        )
+        # Paired scenarios are policy examples, not claims that a model was run
+        # or that the text-only reply lint can infer the task's intent.
+        scenarios = (
+            ("설치나 설정 변경은 하지 않았어. / No installation or settings changed.",
+             "omit unrelated non-action footers"),
+            ("이번 캐시 변경을 우리 배포에 적용할까요? / Apply this cache change to our deployment?",
+             "one specific, content-linked question"),
+            ("검증을 통과했습니다. / The checks passed.", "Completed work needs no question"),
+            ("설치했나요? 아니요, 설치하지 않았습니다. / Did you install it? No, I did not.",
+             "Answer direct questions about non-actions truthfully"),
+            ("요청한 원문을 읽지 못했습니다. / The requested source could not be read.",
+             "failed retrievals and unavailable requested checks stay explicit"),
+            ("이 PR을 머지할까요? / Shall I merge this PR?", "A discussion question grants no permission"),
+            ("더 도와줄까? / Shall I continue?", "generic offers to continue"),
+        )
+        for example, contract in scenarios:
+            with self.subTest(example=example):
+                self.assertIn(contract, rail)
+        self.assertIn("requested-but-not-done work", rail)
+        self.assertIn("necessary to interpret a claim", rail)
+        self.assertNotIn("say what was done, what was checked, what was not checked", rail)
 
     def test_ultragoal_guards_settings_only_requests_from_goal_escalation(self) -> None:
         """A settings-only request (for example a gateway channel mention policy) must not
@@ -1331,7 +1374,7 @@ class RouterContentTests(unittest.TestCase):
             ENGINE_INTERJECTION_RESUME_RULE,
         )
 
-        engines = ("ultrawork", "ultraqa", "loop", "research", "context", "ultraperf", "maestro")
+        engines = ("ultrawork", "ultraqa", "loop", "research", "context", "ultraperf", "maestro", "dag-ulw")
         definitions = {definition.name: definition for definition in installable_skill_definitions()}
         for name in engines:
             with self.subTest(engine=name):
@@ -1342,14 +1385,27 @@ class RouterContentTests(unittest.TestCase):
             self.assertIn("persistence never broadens the authorized scope", templates[name].content, name)
             self.assertIn("omit abandoned approaches unless they explain a tradeoff", templates[name].content, name)
             self.assertIn("not automatically a replacement objective", templates[name].content, name)
-            # The brief's scaling never licenses dropping the mandatory close.
-            self.assertIn("Required closing lines stay outside this scaling", templates[name].content, name)
-            # A boundary stop is offered as the next question, never closed as
-            # a refusal: the pattern this replaced ended turns with "I will
-            # not merge or force-push here" and left the person no next move.
+            self.assertIn("Required accounting stays outside this scaling", templates[name].content, name)
+            # Approval is still required for real authority gates, while a
+            # completed result does not manufacture another question.
             self.assertIn("asking whether to take it", templates[name].content, name)
             self.assertIn("never by declaring what will not be done", templates[name].content, name)
-            self.assertIn("end with the next action offered as a question", templates[name].content, name)
+            self.assertIn("Completed work needs no question", templates[name].content, name)
+            self.assertIn("requested-but-not-done work", templates[name].content, name)
+            self.assertIn("omit unrelated non-action footers", templates[name].content, name)
+            self.assertIn(
+                "result -> relevant evidence/limits -> observed accounting (when required) -> "
+                "specific question (if useful)", templates[name].content, name,
+            )
+        from omh.skills.render import agent_skill_templates
+
+        portable = {template.name: template.content for template in agent_skill_templates()}
+        for name in ("loop", "ultrawork", "ultraqa"):
+            with self.subTest(portable=name):
+                content = portable[omh_skill_display_name(name)]
+                self.assertIn(ENGINE_CLOSING_BRIEF_RULE, content)
+                self.assertIn("persistence never broadens the authorized scope", content)
+                self.assertNotIn("any prepared-not-observed or unmerged work, are stated whatever", content)
         for planning_name in ("ralplan", "plan", "deep-interview"):
             for rule in (ENGINE_FOLLOW_UP_AUTHORITY_RULE, ENGINE_CLOSING_BRIEF_RULE):
                 self.assertNotIn(rule, definitions[planning_name].quality_bar, planning_name)
@@ -1362,35 +1418,43 @@ class RouterContentTests(unittest.TestCase):
                 self.assertNotIn(phrase, bar_text, f"{name}: {phrase}")
         self.assertIn("it replaces the objective when the user says so", ENGINE_INTERJECTION_RESUME_RULE)
 
-    def test_ultrawork_closes_with_observed_run_summary_or_not_available(self) -> None:
-        """The owner reported ultrawork's closing brief showing deploy/verification
-        status but not total tokens or elapsed time. `omh_run_summary` reads those
-        numbers from Hermes' own state.db accounting (never model-estimated); the
-        closing quality-bar rule must require printing its summary_text as the final
-        lines, fall back to an explicit not_available line when the tool reports a
-        non-observed status, and the final checklist must gate on that closing line
-        so the run cannot claim completion without it.
-        """
+    def test_delegated_runs_place_observed_accounting_before_optional_question(self) -> None:
+        """DAG, work and maestro retain accounting without competing final lines."""
+        from omh.skills.render import agent_skill_templates
+
         definitions = {definition.name: definition for definition in installable_skill_definitions()}
-        ultrawork = definitions["ultrawork"]
-        quality_bar = " ".join(ultrawork.quality_bar)
-        self.assertIn("call `omh_run_summary`", quality_bar)
-        self.assertIn("print its summary_text verbatim as the final lines", quality_bar)
-        self.assertIn("never numbers the model estimated", quality_bar)
+        native = {template.name: template.content for template in builtin_skill_templates()}
+        portable = {template.name: template.content for template in agent_skill_templates()}
+        for name in ("ultrawork", "maestro", "dag-ulw"):
+            definition = definitions[name]
+            sections = [
+                ("quality_bar", " ".join(definition.quality_bar)),
+                ("final_checklist", " ".join(definition.final_checklist)),
+                ("native", native[name]),
+            ]
+            # Only work is in the reviewed portable pack; DAG and maestro
+            # remain native-only, not silently added to portable admission.
+            if name == "ultrawork":
+                sections.append(("portable", portable[omh_skill_display_name(name)]))
+            for section, content in sections:
+                with self.subTest(skill=name, section=section):
+                    self.assertIn("run-summary not_available", content)
+                    self.assertIn("before any specific next-action question", content)
+                    self.assertNotIn("as the final lines", content)
+                    self.assertNotIn("ends with the observed", content)
+            with self.subTest(accounting=name):
+                bar = " ".join(definition.quality_bar)
+                self.assertIn("summary_text verbatim", bar)
+                self.assertIn("never", bar)
+                self.assertIn("estimated", bar)
+        work_bar = " ".join(definitions["ultrawork"].quality_bar)
+        self.assertIn("call `omh_run_summary`", work_bar)
+        self.assertIn("never numbers the model estimated", work_bar)
         self.assertIn(
             "when the tool reports a non-observed status (no session id, no accounting row), "
             "print an explicit run-summary not_available line instead of omitting it or estimating the numbers",
-            quality_bar,
+            work_bar,
         )
-        checklist = " ".join(ultrawork.final_checklist)
-        self.assertIn(
-            "The closing brief ends with the observed `omh_run_summary` line "
-            "(elapsed seconds and token usage) or an explicit run-summary not_available "
-            "statement — never a model-estimated number.",
-            checklist,
-        )
-        templates = {template.name: template for template in builtin_skill_templates()}
-        self.assertIn("run-summary not_available", templates["ultrawork"].content)
 
     def test_planning_skills_recommend_engine_fit_and_require_go_ahead(self) -> None:
         """Plan acceptance approves plan content, not execution: ralplan and plan must
