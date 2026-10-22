@@ -226,10 +226,10 @@ _HEAVY_LANE_TRIGGER_TOKEN_STEMS: dict[str, tuple[str, ...]] = {
 }
 # Big work by intent (owner direction 2026-10-21): an `ultrawork` route nobody named, for a request whose own
 # words say it has several parts, goes to `dag-ulw`, which plans it as a graph and runs it to a verified goal. The
-# The lanes a sweep over many pull requests or repositories scores into on one of its words ("upstream", "rebase",
-# "review"); `dag_ulw_cues.big_work_over_prs` reads the sweep.
-_PR_SWEEP_LANES = frozenset({"web-research", "github-event-ops", "git-workflow", "code-review"})
 # reading is `dag_ulw_cues.big_work_for_dag_ulw`, which the in-Hermes route hint reads too, so the two agree.
+# The lanes a sweep over many pull requests or repositories scores into on one of its words ("upstream", "rebase",
+# "review"): `dag_ulw_cues.big_work_over_prs` reads the sweep, and the hint's `_PR_SWEEP_WORKFLOWS` is the same set.
+_PR_SWEEP_LANES = frozenset({"web-research", "github-event-ops", "git-workflow", "code-review"})
 _HEAVY_LANE_VAGUENESS_MAX_WORDS = 8
 # Generic filler and unresolved deictic references ("this", "it", "그거") in
 # the languages the trigger-language packs already cover. None of these name
@@ -2670,7 +2670,7 @@ def _route_chat_message_cached(
             ambiguity_kind = ""
             reason = "Several parts to run in parallel or across the codebase: plan and run them as a dag-ulw graph."
     elif (
-        action == "clarify"
+        action in {"clarify", "fallback"}
         and selected_skill == _ROUTER_SKILL
         and not explicit_skill
         and work_over_many_targets(routing_message)

@@ -825,7 +825,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # test with one fix, and a question whether every PR merged,
             # stay answered, as on main (2); /ulw-work 멈춰 그거 아님 is a stop,
             # which dispatched ultrawork on main (1).
-            expected=1039,
+            # The review of #2232 adds three: a sweep asked not to happen, the
+            # status of every open PR, and every file of one PR start no
+            # graph run, as on main (3).
+            expected=1042,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

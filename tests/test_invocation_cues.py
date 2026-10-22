@@ -49,6 +49,8 @@ OWN_RUN_STOPS = (
     "/ulw-work 그만해 지금 회의 중", "/ulw-work 멈춰 멈춰 멈춰 제발",
     # The sigil's name in any case, as Hermes matches it.
     "/ULW-LOOP stop the loop", "/Omh-Code-Review 리뷰 취소", "/ulw-work 멈춰 그거 아님",
+    # A plain declarative ending is a reason; only a loanword or a counter is the stop's object.
+    "/ulw-work 멈춰 필요 없다", "/ulw-loop 그만해 필요없다", "/omh-code-review 멈춰 이건 아니다",
 )
 # A question about the skill itself.
 META_QUESTIONS = (
@@ -141,6 +143,7 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(invoked_instruction("ops-observability-card", "status"), "")
         self.assertEqual(invoked_instruction("app-debugging", "is it running?"), STATUS)
         self.assertEqual(invoked_instruction("cancel", "상태 보여줘"), STATUS)
+        self.assertEqual(invoked_instruction("loop", "멈춰 ? ?"), "")  # reads, and does not raise
         self.assertEqual(invoked_instruction("skill-health", "상태 보여줘"), "")
 
     def test_a_stop_of_the_skills_own_run_is_a_stop(self) -> None:

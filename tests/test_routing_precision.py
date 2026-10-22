@@ -45,7 +45,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # question that names ultrawork by its short name and an uppercase
         # sigil's stop add eight (+8).
         # Multi-part work to dag-ulw adds three controls (+3).
-        self.assertEqual(payload["summary"]["case_count"], 1039)
+        # A negated sweep, a status lookup and one PR's files add three (+3).
+        self.assertEqual(payload["summary"]["case_count"], 1042)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])

@@ -212,7 +212,16 @@ class RouterTests(unittest.TestCase):
         # One task said over many things, one fault with one fix, a question, a report, or a runtime behaviour.
         for message in ("README 오타 전부 고쳐줘", "fix all the typos in the readme", "모든 테스트가 깨졌어, 고쳐줘",
                         "PR들 전부 머지됐어?", "all the tests fail", "are all the tests passing?",
-                        "make the test runner execute tests in parallel", "review this PR", "rebase my branch onto main"):
+                        "make the test runner execute tests in parallel", "review this PR", "rebase my branch onto main",
+                        # A report, a negation, a lookup or a status after a breadth word asks for no work.
+                        "PR들 전부 확인했어", "PR들 전부 머지하지 마", "PR들 전부 알려줘", "모든 서비스 상태 확인해줘",
+                        "check the status of all open PRs", "review all open PRs and just tell me which are safe",
+                        "review all the PRs but do not merge anything", "실패하는 테스트 다 안 고쳐도 돼",
+                        # One PR's files or tests, one command over everything, work until a condition, and a request
+                        # that opens with a skill's name or a retired engine's.
+                        "review all the files in this PR", "fix all the tests in this PR", "전체 테스트 돌려줘",
+                        "모든 파일 포맷팅해줘", "fix all the failing tests until the suite is green",
+                        "모든 테스트 통과할 때까지 다 고쳐줘", "team 실패하는 테스트 다 고쳐", "ask 실패하는 테스트 다 고쳐"):
             with self.subTest(message=message):
                 self.assertNotEqual(route_chat_message(message, source="discord")["selected_skill"], "dag-ulw")
 
