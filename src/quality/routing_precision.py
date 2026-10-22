@@ -143,6 +143,57 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "market-research",
     ),
+    # A question that opens on a listed verb, a method handed to someone by
+    # "by" or set beside another idea by "with", and a follower whose object is
+    # a question clause or supplied material do not request the method either.
+    RoutingPrecisionCase(
+        "market-sizing-and-tam-same-thing-question",
+        "A question that opens on a method verb is answered, not run",
+        "Do market sizing and TAM mean the same thing?",
+        "answer_directly",
+        "direct_answer",
+        "market-research",
+    ),
+    RoutingPrecisionCase(
+        "market-sizing-run-by-legal",
+        "Running a market sizing by legal is a review step, not analysis",
+        "Run the market sizing by legal before we publish",
+        "answer_clarification",
+        "",
+        "market-research",
+    ),
+    RoutingPrecisionCase(
+        "estimate-tam-sam-som-declined-for-acronym",
+        "A method question declined in the next breath asks only for the acronym",
+        "Estimate TAM SAM SOM? No, I just want to know what the acronym means",
+        "answer_directly",
+        "direct_answer",
+        "market-research",
+    ),
+    RoutingPrecisionCase(
+        "market-sizing-of-pizza-count",
+        "A party head count is not a market",
+        "Do a quick market sizing of how many pizzas I need for 20 people",
+        "answer_clarification",
+        "",
+        "market-research",
+    ),
+    RoutingPrecisionCase(
+        "competitive-pricing-analysis-on-pull-request-diff",
+        "A method aimed at supplied code is not market analysis",
+        "Perform competitive pricing analysis on this pull request diff",
+        "answer_clarification",
+        "",
+        "market-research",
+    ),
+    RoutingPrecisionCase(
+        "competitive-pricing-analysis-with-value-pricing-theory",
+        "Comparing two pricing ideas in theory is a concept question",
+        "Compare competitive pricing analysis with value-based pricing in theory",
+        "answer_clarification",
+        "",
+        "market-research",
+    ),
     # Engine-entry approvals (#1638). Accepting something is the most common
     # thing a person says in the seconds after a planning workflow finishes,
     # and the corpus had no sentence of this shape at all -- 235 negative

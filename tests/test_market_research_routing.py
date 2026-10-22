@@ -44,6 +44,7 @@ class MarketResearchRoutingTests(unittest.TestCase):
             "Can you do market sizing for dental clinics in Korea?",
             "hey, estimate tam sam som for pet insurance in germany",
             "Do market sizing: home espresso machines in the US",
+            "Hey, could you estimate TAM SAM SOM for pet insurance in Germany?",
         ):
             with self.subTest(prompt=prompt):
                 self.assertEqual(route_owner(route_chat_message(prompt)), "market-research")
@@ -75,6 +76,14 @@ class MarketResearchRoutingTests(unittest.TestCase):
             "tam sam som are my three cats, suggest a name for the fourth",
             "the market stall is closing; price the used monitor",
             "경쟁사 가격표를 슬랙에 보내줘",
+            "Do market sizing and TAM mean the same thing?",
+            "Run the market sizing by legal before we publish",
+            "Estimate TAM SAM SOM? No, I just want to know what the acronym means",
+            "Do TAM SAM SOM for me? Nah, just send the old deck to the board",
+            "Do market sizing for fun on weekends, is that normal?",
+            "Do a quick market sizing of how many pizzas I need for 20 people",
+            "Perform competitive pricing analysis on this pull request diff",
+            "Compare competitive pricing analysis with value-based pricing in theory",
         ):
             with self.subTest(prompt=prompt):
                 self.assertFalse(_names_market_research(prompt))

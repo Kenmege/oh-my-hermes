@@ -5854,14 +5854,24 @@ def _sales_pipeline_review_offers_itself(normalized_query: str, query_tokens: se
 # method named as the topic, input or material of another request ("send the
 # market sizing slide", "explain tam sam som", "should we kill it? our market
 # sizing ...", "write a post about why startups should perform ...") is not one.
+# Neither is a question that opens on a listed verb ("do market sizing and tam
+# mean the same thing?", "estimate tam sam som? no, I just want ..."): a message
+# carrying a "?" is admitted only when a courtesy opener made it a request
+# ("can you do market sizing for dental clinics?"). "by" and "with" are not
+# followers: "run the market sizing by legal" and "compare competitive pricing
+# analysis with value-based pricing" name the method as an object. The word
+# after a follower may not open supplied material, the person's own private
+# thing, or a question clause (`_MARKET_RESEARCH_NOT_A_MARKET`): "on this pull
+# request diff", "for my lemonade stand homework", "of how many pizzas".
 _MARKET_RESEARCH_LEAD_VERBS = frozenset(
     {"analyse", "analyze", "build", "calculate", "compare", "conduct", "create", "do", "estimate", "perform", "prepare", "research", "run"}
 )
 _MARKET_RESEARCH_DETERMINERS = frozenset({"a", "an", "the", "our", "my"})
 _MARKET_RESEARCH_MODIFIERS = frozenset({"bottom-up", "detailed", "full", "new", "quick", "rough", "top-down"})
 _MARKET_RESEARCH_FOLLOWERS = frozenset(
-    {"across", "and", "between", "by", "covering", "for", "from", "in", "of", "on", "using", "versus", "vs", "with", "within"}
+    {"across", "and", "between", "covering", "for", "from", "in", "of", "on", "using", "versus", "vs", "within"}
 )
+_MARKET_RESEARCH_NOT_A_MARKET = frozenset({"how", "my", "that", "these", "this", "those", "what", "which"})
 _MARKET_RESEARCH_WORD = re.compile(r"[^\W_]+(?:-[^\W_]+)*|[,:]")
 
 
@@ -5875,7 +5885,11 @@ def _market_research_method_phrases() -> tuple[tuple[str, ...], ...]:
 def _market_research_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
     """Admit only a request that leads with a market method, not a method named in passing."""
     del query_tokens
-    sentence = re.split(r"[.!?;](?:\s|$)", after_courtesy(normalized_query.strip()), maxsplit=1)[0]
+    message = normalized_query.strip()
+    request = after_courtesy(message)
+    if "?" in message and request == message:
+        return False
+    sentence = re.split(r"[.!?;](?:\s|$)", request, maxsplit=1)[0]
     words = _MARKET_RESEARCH_WORD.findall(sentence)
     if not words or words[0] not in _MARKET_RESEARCH_LEAD_VERBS:
         return False
@@ -5887,7 +5901,9 @@ def _market_research_offers_itself(normalized_query: str, query_tokens: set[str]
     for phrase in _market_research_method_phrases():
         if tuple(words[index:index + len(phrase)]) == phrase:
             rest = words[index + len(phrase):]
-            return not rest or rest[0] in {",", ":"} or rest[0] in _MARKET_RESEARCH_FOLLOWERS
+            if not rest or rest[0] in {",", ":"}:
+                return True
+            return rest[0] in _MARKET_RESEARCH_FOLLOWERS and (len(rest) == 1 or rest[1] not in _MARKET_RESEARCH_NOT_A_MARKET)
     return False
 
 
