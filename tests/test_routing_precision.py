@@ -148,7 +148,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # stay, agent-ops-review's status and a stop with a loanword object (+11).
         # One fix in many places stays on ultrawork (+1).
         # Two changes on every unit run as a graph and a hold stays (+3).
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1057)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1058)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

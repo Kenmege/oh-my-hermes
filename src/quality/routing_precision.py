@@ -17676,6 +17676,12 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "dispatch", "git-workflow", "prepare_git_repair_plan", "git_repair_plan",
     ),
     RoutingInterventionCase(
+        "skill-named-as-the-instrument-keeps-the-request",
+        "with git-workflow names the skill for rebasing every open PR, at the end: it keeps the request",
+        "rebase all my open PRs with git-workflow",
+        "dispatch", "git-workflow", "prepare_git_repair_plan", "git_repair_plan",
+    ),
+    RoutingInterventionCase(
         "explicit-agent-ops-review-status-runs-the-review",
         "/omh-agent-ops-review status is the review's own work: it reports agent progress",
         "/omh-agent-ops-review status",

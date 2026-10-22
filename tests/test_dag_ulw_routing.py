@@ -268,20 +268,25 @@ class RouterTests(unittest.TestCase):
         self.assertTrue(work_over_many_targets("PR들 전부 리뷰해줘"))
 
     def test_a_skill_named_or_invoked_keeps_a_change_over_many_targets(self) -> None:
-        # The name with a Korean particle, in Korean, or after omh, and an explicit invocation of a skill or the loop,
-        # keep the request on that skill: the router does not dispatch dag-ulw and the hint does not start it.
+        # The name with a Korean particle, in Korean, after omh, or as the instrument anywhere, and an explicit
+        # invocation of a skill or the loop, keep the request on that skill: the router does not dispatch dag-ulw and
+        # the hint does not start it.
         for message, skill in (("loop로 모든 서비스 업데이트해줘", "loop"), ("루프로 모든 서비스 업데이트해줘", "loop"),
                                ("loop으로 PR들 전부 리베이스해줘", "loop"), ("omh loop 모든 서비스 업데이트해줘", "loop"),
                                ("github-event-ops로 열린 PR들 전부 리베이스해줘", "github-event-ops"),
+                               ("github-event-ops에서 열린 PR들 전부 리베이스해줘", "github-event-ops"),
                                ("deploy-and-monitor로 모든 서비스 업데이트해줘", "deploy-and-monitor"),
                                ("git-workflow로 브랜치들 전부 리베이스해줘", "git-workflow"),
-                               ("use git-workflow: 열린 PR들 전부 리베이스해줘", "git-workflow")):
+                               ("use git-workflow: 열린 PR들 전부 리베이스해줘", "git-workflow"),
+                               ("rebase all my open PRs with git-workflow", "git-workflow")):
             with self.subTest(message=message):
                 route = route_chat_message(message, source="discord")
                 self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", skill))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
         for message in ("team으로 모든 서비스 업데이트해줘", "ralph로 모든 서비스 업데이트해줘", "maestro로 모든 패키지 버전 올려줘",
-                        "refactor-plan으로 모든 모듈 python 3.12로 올려줘", "code-review로 열린 PR들 전부 고쳐줘"):
+                        "refactor-plan으로 모든 모듈 python 3.12로 올려줘", "refactor-plan를 써서 모든 모듈 python 3.12로 올려줘",
+                        "code-review로 열린 PR들 전부 고쳐줘",
+                        "열린 PR들 전부 git-workflow로 리베이스해줘", "모든 서비스 루프로 돌면서 업데이트해줘"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))

@@ -1294,10 +1294,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # as a graph: a request ending said apart from its verb and a force
             # push after a change (github-event-ops on main) (2), a past in a
             # modifier that names the PRs (a fallback on main) (1), and a change
-            # with a report after it (ultrawork on main) (1). Three keep the
-            # skill they name, as on main: loop로, github-event-ops로, and use
-            # git-workflow: (3).
-            expected=1057,
+            # with a report after it (ultrawork on main) (1). Four keep the
+            # skill they name, as on main: loop로, github-event-ops로, use
+            # git-workflow:, and with git-workflow at the end (4).
+            expected=1058,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

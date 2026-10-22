@@ -911,6 +911,10 @@ _KOREAN_NAMES: Final = frozenset({"루프"})
 # OMH's own name before it ("omh loop …", "use omh github-event-ops …").
 _NAME_PARTICLE: Final = re.compile(r"(?:으로|로|을|를|에서|에게|한테|이랑|랑|와|과)$")
 _OMH_OPENER: Final = re.compile(r"^(?:use\s+)?(?:omh|oh-my-hermes(?:-agent)?)\s+")
+# A skill named as the instrument anywhere names it for the work too, as dag-ulw's own name does (`_WITH`,
+# `_KOREAN_RUN`): "열린 PR들 전부 git-workflow로 리베이스해줘", "rebase all my open PRs with git-workflow".
+_KOREAN_INSTRUMENT: Final = re.compile(r"(?P<name>\S+?)(?:으로|로)(?:\s|$)")
+_EN_INSTRUMENT: Final = re.compile(r"\b(?:with|using|via|through)\s+(?:the\s+)?(?P<name>[a-z0-9][a-z0-9_-]*)")
 
 
 # The catalog's names, kept once the sidecar answered. A missing sidecar is not kept: the next call reads it again.
@@ -939,14 +943,26 @@ def _opens_with_a_skill_name(folded: str) -> bool:
     )
 
 
+def _names_a_skill_as_the_instrument(folded: str) -> bool:
+    """Whether ``folded`` names a skill, the loop or a retired engine as what the work is done with, anywhere."""
+    names = _skill_names()
+    return any(
+        match.group("name").strip(",:") in names
+        for pattern in (_KOREAN_INSTRUMENT, _EN_INSTRUMENT)
+        for match in pattern.finditer(folded)
+    )
+
+
 def _hard_excluded(folded: str, links: tuple[str, ...]) -> bool:
     """Whether ``folded`` is no request for work over many targets whatever else it says: a sigil (the invoked skill's
-    work), a skill or engine named first, a stop or a hold, a condition, a past or a completion, one pull request's
-    scope (in its words or its ``links``), work until a condition, or parallel running as its subject."""
+    work), a skill or engine named first or as the instrument, a stop or a hold, a condition, a past or a completion,
+    one pull request's scope (in its words or its ``links``), work until a condition, or parallel running as its
+    subject."""
     return bool(
         folded.startswith(("/", "$", "@", "./"))
         or any(_PULL_REQUEST_ADDRESS.search(link.casefold()) for link in links)
         or _opens_with_a_skill_name(folded)
+        or _names_a_skill_as_the_instrument(folded)
         or _STOP_OR_HOLD.search(folded)
         or _CONDITION.search(folded)
         or _COMPLETED.search(folded)

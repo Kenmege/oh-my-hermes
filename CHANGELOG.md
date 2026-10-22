@@ -37,9 +37,10 @@ All notable changes will be documented here.
   number, `PR number 2240`, `2240번 풀리퀘`, or its link), one fault with one fix
   (`모든 서비스에서 로그인이 안 돼 고쳐줘`), work until a condition, and a request
   that opens with a sigil or names a skill, ulw or a retired engine, also with a
-  Korean particle (`loop로`, `github-event-ops로`, `루프로`), never qualify, and
-  neither does an explicit invocation of a skill or the loop (`use git-workflow:
-  …`). The route hint starts dag-ulw only on
+  Korean particle (`loop로`, `github-event-ops에서`, `루프로`) or as the
+  instrument anywhere (`… git-workflow로 리베이스해줘`, `… with git-workflow`),
+  never qualify, and neither does an explicit invocation of a skill or the loop
+  (`use git-workflow: …`). The route hint starts dag-ulw only on
   that same reading; work over many targets without it (`review all open
   PRs`) is at most offered, as one question with dag-ulw as the candidate.
   Reading, summarising, measuring, sharing or checking verbs are not on the
