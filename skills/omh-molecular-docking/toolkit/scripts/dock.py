@@ -44,6 +44,15 @@ def checked_path(value):
     return path
 
 
+def same_file(first, second):
+    """True when two checked paths name one file, however spelled (`..`, hard links)."""
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        # Either is missing; compare where both would resolve.
+        return os.path.realpath(first) == os.path.realpath(second)
+
+
 def read_pdbqt(value, role):
     """Validate a deliberately narrow single-ligand, rigid-receptor PDBQT subset."""
     path = checked_path(value)
@@ -168,10 +177,11 @@ def validate(args):
         raise ValueError("box dimensions must be finite, between 1 and 24 angstrom")
     if math.prod(args.box_size) > 13824:
         raise ValueError("box volume exceeds 13824 cubic angstrom")
+    # Before parsing: no file passes both role checks, so a repeated input would fail as a role error instead.
+    if same_file(checked_path(args.receptor), checked_path(args.ligand)):
+        raise ValueError("receptor and ligand must be different files")
     receptor = read_pdbqt(args.receptor, "receptor")
     ligand = read_pdbqt(args.ligand, "ligand")
-    if receptor["path"] == ligand["path"]:
-        raise ValueError("receptor and ligand must be different files")
     output = checked_path(args.output_dir)
     if output.exists() or not output.parent.is_dir():
         raise ValueError("output directory must be new with an existing directory parent")

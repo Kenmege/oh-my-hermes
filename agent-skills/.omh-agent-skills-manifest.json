@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "8176b565cdeeacad7ba4c186f476e1975d01a958ce2b917fd26eef5f4d1b4642",
+  "catalog_revision": "bb97cb905998412a7c0dbeb9612c1d0567c02e7abb1f34633ce73572a9f1dd91",
   "files": {
     "omh-accessibility-audit/SKILL.md": "65f1e0ce5395420440d4bca184e1fef09650a70a5ac80e4972baa241da839669",
     "omh-accessibility-audit/references/a11y-rules.md": "cd7e0404576923cfd3bcec9e055b1de7a78f3fc55971fd033598aac1043e4469",
@@ -159,8 +159,8 @@
     "omh-molecular-docking/toolkit/NOTICE.md": "d11a59bb58a384ce4f2f70d0295107b98e8773e124b4b0e83b69fa8d609cbb26",
     "omh-molecular-docking/toolkit/README.md": "8741e1fc2c16c0d3dbb690b9669af84c4e04f177ad9248ae3cfe867b160ab71e",
     "omh-molecular-docking/toolkit/examples/settings.json": "bc82519f57c91e9fb97f69029b2be1f54be5003700348aa074e9aacfe9c46cc5",
-    "omh-molecular-docking/toolkit/scripts/dock.py": "a0b3cea2072b8513aa9034af13f94c14d75e1bcbbfe689b45dd1bf02d840fc21",
-    "omh-molecular-docking/toolkit/upstream-manifest.json": "9dd4584769f56d700f61d31fc6c50fdfaa0d4617993629461d217d5cda6a730a",
+    "omh-molecular-docking/toolkit/scripts/dock.py": "e27d15c921543849de47023bf21417efa73d94620d54cb158378fab998c65f41",
+    "omh-molecular-docking/toolkit/upstream-manifest.json": "3fc34932681e4f696c33072b3fb2b826cdc8b5d996131eb492a68e9250b4adff",
     "omh-native-debugging/SKILL.md": "de811334a5006698a6e6892baddae3ed6c00cc503f318c3bfe83e59eddb8d374",
     "omh-native-debugging/references/native-debug-loop.md": "3ce0f29395b8a1c71074ce2808d6d2497bef1ccbecbba179b74950055435430d",
     "omh-operating-rhythm/SKILL.md": "423a838df7d796951a6326fb2871b709a91453c0985fd065c3ae8313a6bbb7e6",
