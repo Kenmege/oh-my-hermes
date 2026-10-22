@@ -180,6 +180,23 @@ class ResearchBriefingContractTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "url"):
                         render(payload)
 
+    def test_invalid_citation_ids_are_refused_at_every_entry(self) -> None:
+        # Index labels avoid stringifying an integer beyond Python's digit limit.
+        invalid_ids = (True, False, 1.0, [], {}, (), b"paper", 0, -1,
+                       "", " \t\n", 2**63, 10**5000)
+        for index, identifier in enumerate(invalid_ids):
+            with self.subTest(case=index):
+                payload = _briefing()
+                source = dict(payload["sources"][0], id=identifier)
+                with self.assertRaisesRegex(ValueError, "source 0: id"):
+                    _briefing(sources=(source,))
+                payload["sources"] = [source]
+                self.assertTrue(any("source 0: id" in issue
+                                    for issue in research_briefing_errors(payload)))
+                for render in (render_research_briefing_markdown, render_research_briefing_page):
+                    with self.assertRaisesRegex(ValueError, "source 0: id"):
+                        render(payload)
+
     def test_figures_and_sources_carry_their_basis_and_class(self) -> None:
         with self.assertRaises(ValueError):
             _briefing(figures=({"label": "x", "value": "1", "basis": "guessed"},))
@@ -193,6 +210,32 @@ class ResearchBriefingContractTests(unittest.TestCase):
 
 
 class ResearchBriefingRenderTests(unittest.TestCase):
+    def test_positive_integer_citation_ids_survive_as_visible_metadata(self) -> None:
+        from html.parser import HTMLParser
+
+        class VisibleText(HTMLParser):
+            def __init__(self) -> None:
+                super().__init__()
+                self.text: list[str] = []
+
+            def handle_data(self, data: str) -> None:
+                self.text.append(data)
+
+        for identifier in (1, 42, 2**63 - 1):
+            with self.subTest(identifier=identifier):
+                source = dict(_briefing()["sources"][0], id=identifier)
+                payload = _briefing(sources=(source,))
+                self.assertEqual(payload["sources"][0]["id"], identifier)
+                self.assertEqual(research_briefing_errors(payload), [])
+                markdown = render_research_briefing_markdown(payload)
+                page = render_research_briefing_page(payload)
+                self.assertIn(f"- [{identifier}] GQA paper", markdown)
+                parser = VisibleText()
+                parser.feed(page)
+                self.assertIn(f"[{identifier}] GQA paper", "".join(parser.text))
+                self.assertIn(f"<li>[{identifier}] GQA paper", page)
+                self.assertIn("@media print", page)
+
     def test_markdown_follows_the_required_structure(self) -> None:
         markdown = render_research_briefing_markdown(_briefing())
         self.assertTrue(markdown.startswith("# KV cache layout choice for the serving stack"))
@@ -231,13 +274,13 @@ class ResearchBriefingRenderTests(unittest.TestCase):
                     self.links.append(dict(attrs)["href"])
 
         for scheme in ("http", "https"):
-            for identifier in (None, "paper-1", '<img src=x onerror="alert(1)">'):
+            for identifier in (None, "paper-1", "  paper-01  ", "001", "A_[B]*\\C`",
+                               '<img src=x onerror="alert(1)">'):
                 with self.subTest(scheme=scheme, identifier=identifier):
                     source = dict(_briefing()["sources"][0])
                     source.update(title='<script>alert(1)</script> [paper]',
                                   url=f'{scheme}://example.org/p?q="<paper>"&x=1')
-                    if identifier is not None:
-                        source["id"] = identifier
+                    source["id"] = identifier
                     payload = _briefing(sources=(source,))
                     markdown = render_research_briefing_markdown(payload)
                     page = render_research_briefing_page(payload)
@@ -253,8 +296,11 @@ class ResearchBriefingRenderTests(unittest.TestCase):
                     self.assertNotIn("<img", markdown)
                     self.assertIn("@media print", page)
                     if identifier is not None:
-                        self.assertIn(identifier, visible)
-                        self.assertIn(identifier, unescape(markdown))
+                        self.assertIn(f"[{identifier}] ", visible)
+                        self.assertIn(f"[{identifier}] ", unescape(markdown))
+                    else:
+                        self.assertNotIn("[None]", visible)
+                        self.assertNotIn("[None]", markdown)
                     self.assertEqual(payload["sources"][0], source)
 
     def test_english_temporal_receipt_and_capture_clock_are_preserved(self) -> None:

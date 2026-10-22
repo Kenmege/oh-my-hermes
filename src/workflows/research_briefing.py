@@ -325,6 +325,15 @@ def _source_errors(sources: list[Any]) -> list[str]:
         if not isinstance(source, dict):
             issues.append(f"{where} must be a mapping")
             continue
+        # IDs are optional, but supplied values must render without coercion loss.
+        # Bound integers before conversion, independently of Python's digit limit.
+        # Nonblank strings are opaque identifiers: never strip or normalize them.
+        identifier = source.get("id")
+        if identifier is not None and not (
+            (type(identifier) is int and 1 <= identifier <= 2**63 - 1)
+            or (isinstance(identifier, str) and bool(identifier.strip()))
+        ):
+            issues.append(f"{where}: id must be a nonblank string or an integer from 1 to 9223372036854775807 (not bool)")
         if not _text(source.get("title")):
             issues.append(f"{where}: title is required")
         if _text(source.get("source_class")) not in BRIEFING_SOURCE_CLASSES:
@@ -499,7 +508,7 @@ def render_research_briefing_markdown(value: Any) -> str:
         lines.extend([f"## {_caption(value, 'sources')}", ""])
         for source in sources:
             location = f" - {_markdown_source_text(source['url'])}" if _text(source.get("url")) else ""
-            identifier = f"[{_markdown_source_text(source['id'])}] " if _text(source.get("id")) else ""
+            identifier = f"[{_markdown_source_text(source['id'])}] " if source.get("id") is not None else ""
             lines.append(
                 f"- {identifier}{_markdown_source_text(source['title'])}{location} "
                 f"({_markdown_source_text(_caption(value, 'source_class_' + _text(source['source_class'])))}, "
@@ -531,7 +540,7 @@ def _page_source_location(source: dict[str, Any]) -> str:
     """An inert navigation link whose visible URL also survives printing."""
     url = source.get("url")
     location = f' - <a href="{escape(str(url))}">{escape(str(url))}</a>' if _text(url) else ""
-    identifier = f"[{escape(str(source['id']))}] " if _text(source.get("id")) else ""
+    identifier = f"[{escape(str(source['id']))}] " if source.get("id") is not None else ""
     return f"{identifier}{escape(str(source['title']))}{location}"
 
 
