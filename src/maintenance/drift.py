@@ -836,8 +836,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # main (3). Its review adds five, each a clarify as on main: one PR
             # by its number in words, by its link, and by 풀리퀘 with a number
             # (3); a login that does not work in every service, with one fix
-            # (1); and a push over every branch, one command (1).
-            expected=1054,
+            # (1); and a push over every branch, one command (1). Its second
+            # review adds five more, each a clarify or a fallback as on main: a
+            # schedule over every PR (1), the tests of one PR singled out by a
+            # modifier and of the current branch (2), and one fault said as
+            # 안 돌아가 and as a symptom clause (2).
+            expected=1059,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1296,8 +1300,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # modifier that names the PRs (a fallback on main) (1), and a change
             # with a report after it (ultrawork on main) (1). Four keep the
             # skill they name, as on main: loop로, github-event-ops로, use
-            # git-workflow:, and with git-workflow at the end (4).
-            expected=1058,
+            # git-workflow:, and with git-workflow at the end (4). Its second
+            # review adds seven. Four stay where main sends them: a morning
+            # schedule on automation-blueprint, the tests on one named branch
+            # and dark mode that does not apply on ultrawork, and the files of
+            # the PR just opened on code-review (4). Three run as a graph: 몽땅,
+            # for each of my PRs:, and upgrade해줘 (a fallback or a clarify on
+            # main) (3).
+            expected=1065,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

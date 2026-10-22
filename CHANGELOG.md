@@ -30,12 +30,19 @@ All notable changes will be documented here.
   two named parts asked for in parallel. rebase, merge, bump and fix count
   inside a Korean request (`rebase까지 ㄱㄱ`), and a push counts only after a
   change (`리뷰 코멘트 반영하고 force push ㄱㄱ`); `모든 브랜치 push 해줘` is one
-  command. A past in a modifier names the units (`내가 올렸던 PR들 전부
-  리베이스해줘`), and a report after an English change is its tail (`fix all the
-  failing tests and tell me which ones were flaky`). A stop or a hold, a
-  condition, a past or a completion as the predicate, one pull request (its
-  number, `PR number 2240`, `2240번 풀리퀘`, or its link), one fault with one fix
-  (`모든 서비스에서 로그인이 안 돼 고쳐줘`), work until a condition, and a request
+  command. More request forms count: `해줘요`, `해주세용`, `해 놔줘`, `시켜줘`,
+  `올리자`, `리베이스 고`, `부탁`, `upgrade해줘`, `몽땅`, `최신화`, and `for each of my
+  PRs: …`. A past in a modifier names the units (`내가 올렸던 PR들 전부
+  리베이스해줘`, `충돌났었던 브랜치들`), and a report after an English change is
+  its tail (`fix all the failing tests and tell me which ones were flaky`). A
+  stop or a hold, a
+  condition, a past or a completion as the predicate, a recurring schedule
+  (`매일 아침`, `30분마다`, `every hour`, `nightly`, `cron`), one pull request (its
+  number, `PR number 2240`, `2240번 풀리퀘`, `pull 951`, its link, or one singled
+  out by a modifier: `어제 내가 연 PR 테스트 전부`), one branch (`feature/x`,
+  `현재 브랜치`, `this branch`), one fault with one fix in any words (`안 돌아가`,
+  `안 먹어`, `돌지 않아`, `페이지가 하얗게 나와 고쳐줘`; `안 되게 고쳐줘` is a
+  change), work until a condition, and a request
   that opens with a sigil or names a skill, ulw or a retired engine, also with a
   Korean particle (`loop로`, `github-event-ops에서`, `루프로`) or as the
   instrument anywhere (`… git-workflow로 리베이스해줘`, `… with git-workflow`),

@@ -229,7 +229,18 @@ class RouterTests(unittest.TestCase):
                         "hermes upstream에 낸 PR들 전부 확인해서 리뷰 코멘트 반영하고 rebase까지 ㄱㄱ",
                         "열린 PR들 전부 리뷰 코멘트 반영하고 force push ㄱㄱ", "PR들 전부 rebase 해줘",
                         # A change, then a report on it.
-                        "fix all the failing tests and tell me which ones were flaky"):
+                        "fix all the failing tests and tell me which ones were flaky",
+                        # Many PRs or branches stay many: 들, a breadth word or 모든 on the PR or the branch itself.
+                        "열린 PR 전부 리베이스해줘", "main 브랜치에 PR들 전부 머지해줘", "모든 PR 테스트 고쳐줘",
+                        # A change aimed so a thing does not happen, or units a fault describes, are no fault.
+                        "모든 테스트 통과하도록 고쳐줘", "모든 모듈 print 안 쓰게 고쳐줘", "안 돌아가는 테스트 전부 고쳐줘",
+                        "모든 페이지 더블클릭 안 되게 고쳐줘",
+                        # More request endings, a modifier past, the owner's words (#2232 review 2).
+                        "모든 서비스 업데이트 해주세용", "PR들 전부 리베이스해줘요", "모든 서비스 업데이트 해 놔줘", "모든 모듈에 로깅 넣어 줘",
+                        "모든 서비스 업데이트 시켜줘", "모든 패키지 버전 올리자", "PR들 전부 리베이스 고", "PR들 전부 리베이스해주셈",
+                        "모든 서비스 업데이트 부탁", "충돌났었던 브랜치들 전부 리베이스해줘", "모든 패키지 upgrade해줘",
+                        "PR들 전부 확인해서 close할 건 close하고 리베이스하고", "PR들 몽땅 리베이스해줘", "모든 패키지 최신화해줘",
+                        "for each of my PRs: rebase onto main and fix the conflicts", "for every open PR, rebase it onto main"):
             with self.subTest(message=message):
                 self.assertTrue(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
@@ -250,14 +261,16 @@ class RouterTests(unittest.TestCase):
         # Each row is a change the router would dispatch on but for one hard exclude: a skill or engine named first
         # (with a Korean particle, in Korean, or after omh), a past, one pull request's scope (by number, in words or
         # as 풀리퀘), a stop or a hold, a completion, a condition, work until a condition, parallel running as the
-        # work's subject.
+        # work's subject, a recurring schedule, one branch (named or current), one PR singled out by a modifier.
         for message in ("team 열린 PR들 전부 리베이스해줘", "plan 모든 패키지 버전 올려줘", "PR들 전부 리베이스했으니 머지해줘",
                         "PR 2232 파일들 전부 고쳐줘", "fix all the files in this PR", "PR들 전부 리베이스 중단하고 머지해줘",
                         "브랜치들 다 정리됨 이제 전부 머지해줘", "테스트 다 통과하면 모든 PR 머지해줘",
                         "fix all the failing tests until CI is green", "fix all the modules that run in parallel",
                         "loop로 모든 서비스 업데이트해줘", "루프로 모든 서비스 업데이트해줘", "omh loop 모든 서비스 업데이트해줘",
                         "update all snapshots in PR number 2240", "2240번 풀리퀘 모든 테스트 다시 고쳐줘",
-                        "테스트 수정 완료, 이제 PR들 전부 머지해줘"):
+                        "테스트 수정 완료, 이제 PR들 전부 머지해줘", "rebase all my open PRs every hour", "매일 아침 PR들 전부 리베이스해줘",
+                        "pull 951 테스트들 다 고쳐줘", "fix all the failing tests on feature/dag-default",
+                        "fix all the failing tests on the current branch", "현재 브랜치 테스트 전부 고쳐줘", "어제 내가 연 PR 테스트 전부 고쳐줘"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 router, hint, _candidate = self._dag_ulw_starts(message)
@@ -353,7 +366,17 @@ class RouterTests(unittest.TestCase):
                         "모든 서비스에서 로그인이 안 돼 고쳐줘", "모든 서비스에서 결제가 안 돼 고쳐줘",
                         "모든 페이지에서 버튼이 안 눌려, 고쳐줘", "모든 페이지에서 모달이 안 떠 고쳐줘", "모든 서비스 로그인 먹통이야 고쳐줘",
                         "모든 브랜치 push 해줘", "PR들 다 리베이스하려고 해", "PR들 전부 리베이스해야 해",
-                        "PR들 전부 리베이스 완료됨", "review all open PRs and send me a list of risky ones"):
+                        "PR들 전부 리베이스 완료됨", "review all open PRs and send me a list of risky ones",
+                        # #2232 review 2: a recurring schedule, one PR or branch singled out, one fault in any words,
+                        # and no-work twins of the new request forms.
+                        "30분마다 열린 PR들 전부 리베이스해줘", "매주 월요일 레포들 전부 의존성 업데이트해줘",
+                        "update every service nightly", "아침마다 모든 브랜치 main에 리베이스해줘", "PR 올릴 때마다 테스트 전부 고쳐줘",
+                        "방금 올린 PR 파일들 전부 리뷰 반영해줘", "feature/dag-default 브랜치 테스트 전부 고쳐줘",
+                        "모든 테스트가 안 돌아가 고쳐줘", "PR들 전부 CI가 안 돌아 고쳐줘", "모든 페이지 다크모드가 안 먹어 고쳐줘",
+                        "모든 페이지가 하얗게 나와 고쳐줘", "모든 테스트가 돌지 않아 고쳐줘", "모든 서비스에서 로그인이 안 돼 수정 부탁",
+                        "모든 서비스 업데이트 해 놨어", "PR들 몽땅 머지됐어", "모든 패키지 최신화 완료",
+                        "for each of my PRs, tell me the status", "for each of my PRs: summarize the changes",
+                        "PR들 몽땅 리베이스할까?"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertFalse(work_over_many_targets(message))

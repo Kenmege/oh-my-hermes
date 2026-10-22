@@ -629,9 +629,6 @@ _FAULT: Final = re.compile(
     r"|(?:is|are|gets?|got)\s+(?:broken|corrupted|stuck)|times?\s+out|timed\s+out)\b"
     r"|깨져|깨지|깨졌|터져|터지|터졌|죽어|죽었|실패해|실패하|실패했|꼬여|꼬이|꼬였|(?:에러|오류)가?\s*(?:나|났|떠|뜨)"
     r"|충돌이?\s*(?:나|났)|데드락|교착"
-    # Something that does not work ("로그인이 안 돼", "버튼이 안 눌려", "모달이 안 떠", "먹통"); not a change made so that
-    # it does not ("중복 결제가 안 되게").
-    r"|안\s*(?:돼|됨|되(?!게|도록)|눌려|눌리|열려|열리|떠|뜨)|먹통"
 )
 _FIX_REQUEST: Final = re.compile(r"\b(?:fix|resolve|debug|repair)\b|고쳐|수정해|해결해")
 # Unless the concurrency word says how the work or the fixes run ("테스트가 실패하는데 병렬로 고쳐줘", "병렬로 각각
@@ -728,7 +725,7 @@ def _asks_to_be_told(text: str) -> bool:
 _KOREAN_UNIT: Final = r"(?:pr|prs|pull\s*request|레포|리포|저장소|서비스|모듈|패키지|컴포넌트|엔드포인트|테스트|이슈|파일|페이지|브랜치)"
 _KOREAN_BREADTH_OBJECT: Final = (
     rf"(?:(?<![가-힣])(?:마이크로)?{_KOREAN_UNIT}(?:들)?\s*(?:(?:두|세|네|다섯|여러|\d+)\s*개\s*)?(?:을|를|은|는)?\s*"
-    rf"(?:전부|모두|다|싹|하나하나|각각)(?![가-힣])"
+    rf"(?:전부|모두|다|싹|몽땅|하나하나|각각)(?![가-힣])"
     rf"|(?<![가-힣])(?:모든|전체|각)\s*(?:마이크로)?{_KOREAN_UNIT}(?:들)?(?:을|를|에|의|에서)?)"
 )
 _EN_UNITS: Final = (
@@ -737,18 +734,60 @@ _EN_UNITS: Final = (
 )
 # A fault word that only describes the units ("실패하는 테스트", "the failing tests") names which units, not one fault.
 _FAULTY_UNIT: Final = re.compile(
-    r"(?:실패하는|실패한|실패했던|깨진|깨지는|깨졌던|터진|터졌던|충돌난|충돌났던|failing|failed|broken|flaky)\s+"
-    rf"(?:{_KOREAN_UNIT}|{_EN_UNITS})"
+    r"(?:실패하는|실패한|실패했(?:었)?던|깨진|깨지는|깨졌(?:었)?던|터진|터졌(?:었)?던|충돌난|충돌났(?:었)?던|failing|failed|broken"
+    rf"|flaky)\s+(?:{_KOREAN_UNIT}|{_EN_UNITS})"
 )
+# One fault said in Korean as something that does not work, in any words, with one fix asked: 안 or 못 before a
+# predicate ("안 돌아가", "안 먹어", "못 해"), …지 않 or …지 못 ("돌지 않아"), a fault noun ("먹통", "고장"), or a symptom
+# clause, a subject with 이 or 가 and its predicate right before the fix ("페이지가 하얗게 나와 고쳐줘", "아이콘이 깨져 보여
+# 고쳐줘", "페이지가 느려 고쳐줘").
+_KOREAN_NEGATED_PREDICATE: Final = re.compile(
+    r"(?<![가-힣])(?:안|못)\s*(?!(?:의|에|에서|으로|을|이)(?![가-힣]))(?P<word>[가-힣]+)|지\s*(?P<negation>(?:않|못)[가-힣]*)"
+)
+_KOREAN_FAULT_NOUN: Final = re.compile(r"먹통|고장")
+_KOREAN_SYMPTOM_BEFORE_FIX: Final = re.compile(
+    r"[가-힣](?:이|가)\s+(?:\S+\s+){0,2}?(?P<word>[가-힣]+)\s*[,.~]?\s+(?:고쳐|고치|수정|해결|fix\b)"
+)
+_FIX_VERB: Final = re.compile(r"\b(?:fix|resolve|debug|repair)\b|고쳐|고치|수정|해결")
+
+
+def _closes_a_clause(word: str) -> bool:
+    """Whether a Korean predicate ``word`` closes its clause, as a symptom does ("안 돌아가", "느려", "나와", "안됨"), rather
+    than aiming the change (…게, …도록: "안 되게 고쳐줘", "쓰지 않게"), going on to more (…고), or describing a noun (…는,
+    …던, …은, a final ㄴ: "안 돌아가는 테스트")."""
+    code = ord(word[-1]) - 0xAC00
+    return not (word.endswith(("게", "도록", "고", "는", "던", "은")) or (0 <= code < 11172 and code % 28 == 4))
+
+
+def _one_fault(folded: str) -> bool:
+    """Whether ``folded`` asks to fix one fault however wide it reaches (`_FAULT`, or a Korean "does not work"), rather
+    than for work on each unit; a fault word that only describes the units names which units (`_FAULTY_UNIT`), and
+    a concurrency word that says how the fixes run is no fault (`_PARALLEL_WORK`)."""
+    plain = _FAULTY_UNIT.sub(" ", folded)
+    if not _FIX_VERB.search(plain) or _PARALLEL_WORK.search(plain):
+        return False
+    if _FAULT.search(plain) or _KOREAN_FAULT_NOUN.search(plain):
+        return True
+    if any(
+        _closes_a_clause(match.group("word") or match.group("negation"))
+        for match in _KOREAN_NEGATED_PREDICATE.finditer(plain)
+    ):
+        return True
+    return any(
+        match.group("word") not in ("해", "돼") and _closes_a_clause(match.group("word"))
+        for match in _KOREAN_SYMPTOM_BEFORE_FIX.finditer(plain)
+    )
 _EN_PARTS_IN_PARALLEL: Final = re.compile(
     r"^(?:please\s+)?(?:implement|build|develop|ship|write|add|create)\s+(?:the\s+)?\S+(?:,\s*\S+)*\s+(?:and|&)\s+\S+\s+"
     r"(?:features|endpoints|pages|screens|apis|modules|services|components)\s+(?:in\s+parallel|concurrently)\b"
 )
 _G: Final = unicodedata.normalize("NFKC", "ㄱ")
-# The owner writes some English change verbs inside a Korean request ("rebase까지 ㄱㄱ", "merge 해줘", "bump 해줘"): one is
+# The owner writes some English change verbs inside a Korean request ("rebase까지 ㄱㄱ", "upgrade해줘", "close하고"): one is
 # a change where a Korean request ending, 까지 or 하고 follows it.
 _KOREAN_ENDING_AFTER_EN: Final = rf"(?=\s*(?:까지|하고|해|부탁|진행|{_G}|고고|$))"
-_EN_VERB_IN_KOREAN: Final = rf"(?<![a-z])(?:rebase|merge|bump|fix){_KOREAN_ENDING_AFTER_EN}"
+_EN_VERB_IN_KOREAN: Final = (
+    rf"(?<![a-z])(?:rebase|merge|bump|fix|upgrade|update|close){_KOREAN_ENDING_AFTER_EN}"
+)
 # A push is one command over everything ("모든 브랜치 push 해줘", as "모든 브랜치 푸시해줘"); said last, after a change, it is
 # that change's final step ("리뷰 코멘트 반영하고 force push ㄱㄱ").
 _PUSH_IN_KOREAN: Final = re.compile(rf"(?<![a-z])(?:force\s*)?push{_KOREAN_ENDING_AFTER_EN}")
@@ -757,7 +796,7 @@ _PUSH_IN_KOREAN: Final = re.compile(rf"(?<![a-z])(?:force\s*)?push{_KOREAN_ENDIN
 # one command over everything (run, restart, push, deploy, format, delete, merge into one).
 _KOREAN_CHANGE_VERB: Final = (
     r"(?:고쳐|고치|수정|업데이트|업그레이드|올려|올리|교체|추가|옮겨|옮기|바꿔|바꾸|리베이스|반영|닫|적용|붙여|붙이|통일|만들"
-    rf"|마이그레이션|변경|리팩터링|리팩토링|머지|이전|해결|{_EN_VERB_IN_KOREAN})"
+    rf"|마이그레이션|변경|리팩터링|리팩토링|머지|이전|해결|넣|최신화|{_EN_VERB_IN_KOREAN})"
 )
 _EN_CHANGE_VERB: Final = (
     r"(?:fix|update|upgrade|migrate|refactor|port|convert|add|rename|rebase|close|merge|bump|address|resolve|implement"
@@ -773,21 +812,31 @@ _EN_BREADTH: Final = (
 )
 # An English request over many targets: an imperative whose verb is on the offer list, or a read first and a change
 # after it ("check all open pull requests and close the stale ones").
+# The units said first, then what to do with each ("for each of my PRs: rebase onto main", "for every open PR, rebase
+# it").
+_EN_FOR_EACH: Final = (
+    rf"for\s+(?:each|every|all)\s+(?:of\s+)?(?:the\s+|my\s+|our\s+)?(?:\S+\s+){{0,2}}?{_EN_UNITS}\b\s*[:,]?\s*(?:please\s+)?"
+)
 _EN_OFFER: Final = re.compile(
     rf"^(?:please\s+)?{_POLITE_OPENER}?(?:{_EN_OFFER_VERB}\b[^.?!]*?{_EN_BREADTH}"
-    rf"|(?:check|go\s+through|look\s+at)\b[^.?!]*?{_EN_BREADTH}[^.?!]*?\band\s+(?:then\s+)?{_EN_CHANGE_VERB}\b)"
+    rf"|(?:check|go\s+through|look\s+at)\b[^.?!]*?{_EN_BREADTH}[^.?!]*?\band\s+(?:then\s+)?{_EN_CHANGE_VERB}\b"
+    rf"|{_EN_FOR_EACH}{_EN_OFFER_VERB}\b)"
 )
 _EN_LATER_CLAUSE_VERB: Final = re.compile(r"\band\s+(?:then\s+)?(?:just\s+)?([a-z]+)")
 _KOREAN_OFFER: Final = re.compile(rf"{_KOREAN_BREADTH_OBJECT}\s*(?:\S+\s+){{0,3}}\S*{_KOREAN_OFFER_VERB}")
-# An explicit request: a Korean request ending on the verb, the message's last word ("리베이스해줘", "리베이스해",
-# "올려놔"), or said as a word of its own right after the verb ("리베이스 해줘", "업데이트 좀 해 주세요", "업데이트
-# 부탁해", "고쳐 줘", "리베이스 ㄱ"); or a chain of two or more change verbs joined by 고 ("닫을건 닫고 리뷰반영할건
-# 리뷰반영하고 rebase할건 리베이스하고").
-_KOREAN_REQUEST_END: Final = re.compile(rf"(?:해\s*줘|해\s*주세요|해\s*줄래|하자|줘|주세요|줄래|해라|해|놔|둬|{_G}+|고고)\s*[.!~]*$")
+# An explicit request: a Korean request ending on the verb, the message's last word ("리베이스해줘", "리베이스해줘요",
+# "리베이스해", "올려놔", "올리자", "리베이스해주셈"), or said as a word of its own right after the verb ("리베이스 해줘",
+# "업데이트 좀 해 주세요", "업데이트 해 놔줘", "업데이트 시켜줘", "업데이트 부탁", "고쳐 줘", "리베이스 ㄱ", "리베이스 고"); or a
+# chain of two or more change verbs joined by 고 ("닫을건 닫고 리뷰반영할건 리뷰반영하고 rebase할건 리베이스하고").
+_KOREAN_GIVE: Final = r"(?:줘요|줘|주세요|주세용|주셈|줄래)"
+_KOREAN_REQUEST_END: Final = re.compile(
+    rf"(?:해\s*{_KOREAN_GIVE}|하자|{_KOREAN_GIVE}|해라|해|놔|둬|자|{_G}+|고고)\s*[.!~]*$"
+)
 _KOREAN_BARE_REQUEST_END: Final = re.compile(
     r"\s(?:(?:좀|꼭|다시|빨리|얼른|바로|제발)\s+)?"
-    rf"(?:(?:진행\s*)?해\s*(?:줘|주세요|줄래|놔|둬)?|줘|주세요|줄래|부탁(?:해|드려요|드립니다|합니다)?|(?:해\s*)?주시기\s*바랍니다"
-    rf"|바랍니다|놔|둬|{_G}+|고고)\s*[.!~]*$"
+    rf"(?:(?:진행\s*)?해\s*(?:{_KOREAN_GIVE}|(?:놔|둬)\s*{_KOREAN_GIVE}?)?|{_KOREAN_GIVE}|시켜\s*{_KOREAN_GIVE}?|하자"
+    rf"|부탁(?:해요|해|드려요|드립니다|합니다|요)?|(?:해\s*)?주시기\s*바랍니다|바랍니다|(?:놔|둬)\s*{_KOREAN_GIVE}?|{_G}+|고고|고)"
+    r"\s*[.!~]*$"
 )
 # The verb a bare ending is said after closes its word, or carries only its own ending ("고쳐", "만들어", "업데이트해",
 # "rebase까지"): not a clause before it ("리베이스하려고 해", "리베이스해야 해").
@@ -832,6 +881,7 @@ _EN_CHANGE_ON_BREADTH: Final = re.compile(
     # A read first, then a change on the same targets by pronoun ("go through all my open PRs and rebase them").
     rf"|^(?:please\s+)?{_POLITE_OPENER}?(?:go\s+through|check|look\s+at)\b[^.?!]*?{_EN_BREADTH}[^.?!]*?"
     rf"\band\s+(?:then\s+)?{_EN_CHANGE_VERB}\s+(?:them|each(?:\s+one)?|all\s+of\s+them)\b"
+    rf"|^(?:please\s+)?{_EN_FOR_EACH}{_EN_CHANGE_VERB}\b"
 )
 
 
@@ -850,13 +900,28 @@ _CONDITION: Final = re.compile(
 _COMPLETED: Final = re.compile(
     r"됨(?=[\s,.!?~]|$)|(?<![가-힣])끝(?=[\s,.!?~]|$)|완료(?=[\s,.!?~]|$|됨|됐|되었|했|함|임|입니다|이에요|예요|요)"
 )
+# - a recurring schedule, which stays on ulw-loop, Hermes' /loop or an automation ("매일 아침 PR들 전부 리베이스해줘", "30분마다
+#   …", "PR 올릴 때마다 …", "rebase all my open PRs every hour", "update every service nightly");
+_SCHEDULE: Final = re.compile(
+    r"(?<![가-힣])매(?:일|주|달|월|년|시간|분)(?![가-힣])|(?<![가-힣])매일(?=아침|밤|저녁|오전|오후)|하루에\s*한\s*번|주기적|정기적"
+    r"|때마다|(?:\d+\s*(?:초|분|시간|일|주|달|개월)|아침|저녁|밤|새벽|점심|오전|오후|주말|평일|[월화수목금토일]요일|하루|이틀|날|주|달"
+    r"|해|시간)\s*마다|\d{1,2}\s*시(?:\s*\d{1,2}\s*분)?\s*(?:에|마다|정각)"
+    r"|\bevery\s+(?:\d+\s+|other\s+)?(?:second|minute|min|hour|day|week|month|year|morning|afternoon|evening|night"
+    r"|weekday|weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?\b"
+    r"|\b(?:hourly|daily|nightly|weekly|monthly|periodically)\b|\bat\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\b"
+    r"|\bon\s+a\s+schedule\b|\bcron\b"
+)
 # A pull request's address, written bare or as a link the caller passes (`reference_regions(...).links`: the
 # executable text has none).
 _PULL_REQUEST_ADDRESS: Final = re.compile(r"/pulls?/\d+|/merge_requests/\d+")
 # - one numbered pull request, or the person's own one ("PR 2232", "#2232", "2232번 PR", "내 PR", "pull request 2232",
-#   "files touched by PR 2232", "this PR", "이 PR"); 이 or 그 must open its word, so 버그 and 블로그 are no scope.
+#   "pull 951", "files touched by PR 2232", "this PR", "이 PR"); 이 or 그 must open its word, so 버그 and 블로그 are no
+#   scope. One branch is one scope the same way: a named one ("feature/dag-default", "fix/login-bug") and the current
+#   one ("current branch", "this branch", "이 브랜치");
 _ONE_SCOPE: Final = re.compile(
-    r"\bpr\s*#?\s*\d+|#\s*\d+|\d+\s*번\s*(?:pr|이슈)|(?<![가-힣])내\s*pr(?!\s*들)|\bpull\s+request\s+#?\d+"
+    r"\bpr\s*#?\s*\d+|#\s*\d+|\d+\s*번\s*(?:pr|이슈)|(?<![가-힣])내\s*pr(?!\s*들)|\bpull\s+request\s+#?\d+|\bpull\s*#?\s*\d+"
+    r"|(?<![\w/.-])(?:feature|feat|fix|bugfix|hotfix|release|chore|docs|refactor|omh|dev|wip)/[\w.-]+"
+    r"|\b(?:current|my\s+current)\s+branch\b"
     # A pull request's address or its number said in words ("github.com/…/pull/2240", "PR number 2240", "2240번
     # 풀리퀘", "풀 리퀘스트 2240").
     rf"|{_PULL_REQUEST_ADDRESS.pattern}|\b(?:pr|pull\s+request)\s+(?:number|no\.?|num\.?)\s*#?\s*\d+|\bpr\s*번호\s*\d+"
@@ -864,17 +929,35 @@ _ONE_SCOPE: Final = re.compile(
     r"|\b(?:this|that)\s+(?:pr|pull\s+request|branch|commit|diff)\b|(?<![가-힣])(?:이|그)\s*(?:pr|브랜치|커밋)(?![a-z])"
     r"|\b(?:in|of|from|on)\s+(?:the|my)\s+(?:pr|pull\s+request|branch|commit|diff)\b|\btouched\s+by\b"
 )
+# - one PR or one branch singled out by a modifier, with the breadth on what is inside it ("어제 내가 연 PR 테스트 전부",
+#   "방금 올린 PR 파일들 전부", "feature/x 브랜치 테스트 전부", "현재 브랜치 테스트 전부"): no 들 and no breadth word on the PR
+#   or the branch itself, and no 모든, 전체, 각 or 여러 before it ("PR들 전부", "모든 PR 테스트", "열린 PR 전부" stay many).
+_ONE_CONTAINER: Final = re.compile(
+    r"(?:(?P<before>\S+)\s+)?(?<![a-z가-힣])(?:pr|pull\s*request|풀\s*리퀘(?:스트)?|브랜치)(?:의|에서|에\s*있는|안의|안에\s*있는)?"
+    r"\s+(?:리뷰\s+)?(?:테스트|파일|라인|줄|커밋|코드|변경|스냅샷|함수|코멘트|충돌|에러|오류|경고|린트|타입)"
+)
+_MANY_BEFORE_A_CONTAINER: Final = frozenset({"모든", "전체", "각", "여러", "all", "every", "each"})
+
+
+def _names_one_container(folded: str) -> bool:
+    return any(match.group("before") not in _MANY_BEFORE_A_CONTAINER for match in _ONE_CONTAINER.finditer(folded))
+
+
 # A past: a syllable closing on ㅆ, other than 있 and 겠 ("리베이스했습니다", "머지했어요", "머지됐네", "닫혔네"). A past
-# in a modifier names which units, and reports nothing ("내가 올렸던 PR들", "어제 실패했던 테스트", "충돌났던 브랜치들").
+# in a modifier names which units, and reports nothing ("내가 올렸던 PR들", "어제 실패했던 테스트", "충돌났었던 브랜치들").
 _NOT_A_PAST: Final = frozenset("있겠")
+
+
+def _closes_on_ss(character: str) -> bool:
+    code = ord(character) - 0xAC00
+    return 0 <= code < 11172 and code % 28 == 20
 
 
 def _says_a_past(folded: str) -> bool:
     return any(
-        0 <= ord(character) - 0xAC00 < 11172
-        and (ord(character) - 0xAC00) % 28 == 20
+        _closes_on_ss(character)
         and character not in _NOT_A_PAST
-        and folded[index + 1 : index + 2] != "던"
+        and folded[index + 1 :].lstrip("었았였")[:1] != "던"
         for index, character in enumerate(folded)
     )
 
@@ -956,8 +1039,8 @@ def _names_a_skill_as_the_instrument(folded: str) -> bool:
 def _hard_excluded(folded: str, links: tuple[str, ...]) -> bool:
     """Whether ``folded`` is no request for work over many targets whatever else it says: a sigil (the invoked skill's
     work), a skill or engine named first or as the instrument, a stop or a hold, a condition, a past or a completion,
-    one pull request's scope (in its words or its ``links``), work until a condition, or parallel running as its
-    subject."""
+    one pull request's or one branch's scope (in its words or its ``links``), a recurring schedule, work until a
+    condition, or parallel running as its subject."""
     return bool(
         folded.startswith(("/", "$", "@", "./"))
         or any(_PULL_REQUEST_ADDRESS.search(link.casefold()) for link in links)
@@ -968,6 +1051,8 @@ def _hard_excluded(folded: str, links: tuple[str, ...]) -> bool:
         or _COMPLETED.search(folded)
         or _says_a_past(folded)
         or _ONE_SCOPE.search(folded)
+        or _names_one_container(folded)
+        or _SCHEDULE.search(folded)
         or _UNTIL.search(folded)
         or _RUNTIME_PARALLEL.search(folded)
         or names_ultrawork(folded)
@@ -1003,9 +1088,8 @@ def dispatches_dag_ulw(text: str, links: tuple[str, ...] = ()) -> bool:
     folded = _folded(text)
     if not _work_over_many_targets(text, links) or _asks_to_be_told(text):
         return False
-    plain = _FAULTY_UNIT.sub(" ", folded)
-    if _FAULT.search(plain) and _FIX_REQUEST.search(plain) and not _PARALLEL_WORK.search(plain):
-        return False  # one fault to fix, however wide ("모든 테스트가 깨졌어, 고쳐줘")
+    if _one_fault(folded):
+        return False  # one fault to fix, however wide ("모든 테스트가 깨졌어, 고쳐줘", "모든 테스트가 안 돌아가 고쳐줘")
     if _EN_CHANGE_ON_BREADTH.search(folded) or _EN_PARTS_IN_PARALLEL.search(folded):
         return True
     # A chain of changes joined by 고 counts too, closed by 고 or ㄱㄱ ("닫을건 닫고 … 리베이스하고 ㄱㄱ").
@@ -1043,11 +1127,9 @@ def work_over_many_targets(text: str, links: tuple[str, ...] = ()) -> bool:
     """Whether ``text`` asks for work over many targets without the evidence `dispatches_dag_ulw` needs ("review all
     open PRs", "PR들 전부 확인해서 정리해줘"): nothing hard-excluded, no question, and not one fault with one fix. The
     router may ask once with dag-ulw as the candidate, and the route hint offers it; neither starts a run."""
-    folded = _folded(text)
     if not _work_over_many_targets(text, links) or _asks_to_be_told(text):
         return False
-    plain = _FAULTY_UNIT.sub(" ", folded)
-    return not (_FAULT.search(plain) and _FIX_REQUEST.search(plain) and not _PARALLEL_WORK.search(plain))
+    return not _one_fault(_folded(text))
 
 
 def big_work_for_dag_ulw(text: str) -> bool:
