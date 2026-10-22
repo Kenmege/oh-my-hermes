@@ -1236,6 +1236,7 @@ class App(ModesMixin, AgentViewMixin):
         self.listed: tuple[str, ...] = ()  # the agent id of each list row as the agent view last drew them, top first
         self.tree_selected: str | None = None  # the dag tree's highlighted row while the tree has the keys
         self.tree_folds: dict[str, bool] = {}  # the dag tree's rows the person folded (False) or opened (True)
+        self.tree_run = ""  # the run those folds belong to (`dag_tree.run_key`); a new run, or session, starts none
         self.tree_state: TreeState | None = None  # what the tree's keys need, as the agent view last drew it
         self.tree_size = (0, 0)  # the width and the rows the agent view last drew the tree in
         self.log_agent = ""  # the agent whose log the pager shows; "" for every other pager
@@ -3530,6 +3531,7 @@ class App(ModesMixin, AgentViewMixin):
         self.goal = None
         self.retired_plan, self.plan_seen_open = "", False
         self._clear_roster()
+        self.tree_folds, self.tree_run = {}, ""  # a run of the same name in the next session starts unfolded
         self._adopt_session(result, fallback_stored)
         return declined
 
@@ -3945,6 +3947,7 @@ class App(ModesMixin, AgentViewMixin):
         snapshot = self.poller.take()
         if snapshot is not None and snapshot.session_id == self.stored_id:
             self.hud = snapshot
+            self._prune_kept_lanes()  # a run a new turn read as open may be over in this payload
             self.roster.ingest_tokens(snapshot.output_tokens)
             self.dirty = True
             self._retire_finished_plan()
@@ -4068,7 +4071,7 @@ class App(ModesMixin, AgentViewMixin):
         self.frame_budget = frame.budget
         if busy:
             self.view_hold = (wanted, frame.budget.agents, self._working_rows())
-        self._take_clickable(frame.budget, self.listed)
+        self._take_clickable(frame.budget, self._clickable_rows())
 
     def _place_menu(self, rows: int, flushed: int, frame: Frame) -> bool:
         """Where the open completion menu goes with `frame`; True when that changed, so the frame is built again.

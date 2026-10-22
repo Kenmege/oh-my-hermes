@@ -43,9 +43,15 @@ or failed), all-done ones first; then, in a layer with work moving, folds its
 quiet nodes into one row at the layer's end (`▸ 12 more · 9 waiting · 3
 done`); then shuts the open nodes the person did not open, bottom up, except
 one with a running or failed node under it. What still does not fit is cut:
-the last row says `… N more nodes · ↓ to browse`; while the tree has the
-keys (`selected`) the rows scroll to the highlight instead, between
-`… N more nodes above` and `… N more nodes below`.
+the shut all-done layers' rows go first, wherever they stand, so running and
+failed nodes keep the rows; then the rows from the bottom, the last row
+saying `… N more nodes · ↓ to browse`, with no blank row wasted next to it.
+While the tree has the keys (`selected`) the rows scroll to the highlight
+instead, between `… N more nodes above` and `… N more nodes below`.
+
+The person's folds belong to one run (`run_key`): the app drops them when
+the graph's run changes and when it leaves a session, so a layer shut in one
+run never opens shut in the next.
 """
 
 from __future__ import annotations
@@ -80,6 +86,7 @@ MORE_KEY = "more:"  # + a layer's label: the row that layer's quiet nodes fold i
 OPEN_STATES = frozenset({"running", "stuck", "failed"})  # open by default; a layer holding one is never shut to fit
 MIN_TITLE_CELLS = 12
 FACT_SEPARATOR = " · "
+BLANK, YIELDS = "blank", "yields"  # a row's mark for the cut: a blank row; a shut layer whose every node is done
 
 
 @dataclass
@@ -107,6 +114,26 @@ class TreeState:
     first: str  # where Down opens: the first running node, else the first node
     agents: Mapping[str, str] = field(default_factory=dict)  # a node's key -> its child's subagent id
     reveals: Mapping[str, str] = field(default_factory=dict)  # a `more` row -> the first node opening it shows
+    rows: tuple[str, ...] = ()  # the key each drawn row selects, top to bottom; "" for a row a click does nothing on
+
+
+def run_key(graph: Mapping[str, Any]) -> str:
+    """Which run `graph` draws: its nodes' `d:<run>` prefixes (an extend keeps them), else its name."""
+    nodes = graph.get("nodes") if isinstance(graph.get("nodes"), list) else []
+    ids = (str(node.get("id")) for node in nodes if isinstance(node, Mapping))
+    return " ".join(sorted({node_id.rpartition(":")[0] for node_id in ids if node_id.startswith("d:")})) or (
+        f"name:{graph.get('name')}"
+    )
+
+
+def tree_agents(graph: Mapping[str, Any], roster: Roster) -> frozenset[str]:
+    """The roster's agents the tree draws: each node's child and the `other agents`, not a lane of this run the
+    graph no longer draws (a superseded repair attempt)."""
+    from ..plugin_bundle.omh.delegation_view import _tree_structure
+
+    by_id = _tree_structure(graph)[3]
+    bound = {agent.subagent_id for agent in _bound(by_id, roster).values()}
+    return frozenset(bound | {agent.subagent_id for agent in _others(by_id, roster, bound)})
 
 
 def _bound(by_id: Mapping[str, Mapping[str, Any]], roster: Roster) -> dict[str, Agent]:
@@ -125,6 +152,14 @@ def _bound(by_id: Mapping[str, Mapping[str, Any]], roster: Roster) -> dict[str, 
         if agent is not None and node.get("kind") != "root":
             bound[node_id] = agent
     return bound
+
+
+def _others(by_id: Mapping[str, Mapping[str, Any]], roster: Roster, bound: set[str]) -> list[Agent]:
+    """The roster's agents no node is bound to; a lane of this run the graph no longer draws (a superseded repair
+    attempt) is not one of them."""
+    runs = {node_id.rpartition(":")[0] for node_id in by_id if node_id.startswith("d:")}
+    return [agent for agent in roster.agents.values()
+            if agent.subagent_id not in bound and agent.dag_node.rpartition(":")[0] not in runs]
 
 
 def _second_row(agent: Agent) -> LogRow | None:
@@ -184,11 +219,7 @@ def _items(graph: Mapping[str, Any], roster: Roster, now: float) -> list[_Item]:
         layer = _Item(key, 0, label=label)
         layer.kids = [node_item(member, 1, key) for member in members]
         layers.append(layer)
-    bound = {agent.subagent_id for agent in agents.values()}
-    # A lane of this run the graph no longer draws (a superseded repair attempt) is not another agent.
-    runs = {node_id.rpartition(":")[0] for node_id in by_id if node_id.startswith("d:")}
-    others = [agent for agent in roster.agents.values()
-              if agent.subagent_id not in bound and agent.dag_node.rpartition(":")[0] not in runs]
+    others = _others(by_id, roster, {agent.subagent_id for agent in agents.values()})
     if others:
         group = _Item(OTHERS_KEY, 0, label=OTHERS)
         for agent in others:
@@ -364,7 +395,9 @@ def _covers(kind: str, item: _Item | None, expanded: Mapping[str, bool], detail:
 
 
 def _more(count: int, where: str, theme: Theme, depth: str) -> Line:
-    text = f"… {count} more node{'' if count == 1 else 's'}{where}"
+    """A count row: the nodes cut, or, when the rows cut hold no node (the header, a layer's row, a node's detail
+    rows), only that there is more."""
+    text = f"… {count} more node{'' if count == 1 else 's'}{where}" if count else f"… more{where}"
     return (Span(DAG_INDENT), Span(text, replace(theme.muted, depth=depth)))
 
 
@@ -387,7 +420,7 @@ def tree_lines(
 
     layers = _items(graph, roster, now)
     expanded = _fitted(layers, overrides, cap)
-    rows: list[tuple[Line, str, int]] = []  # (line, the key it selects or "", the nodes it stands for)
+    rows: list[_Row] = []
     for kind, item, detail in _specs(layers, expanded):
         if kind == "header":
             spans = [Span(DAG_INDENT), Span(header_text(graph), dag_style("header", theme))]
@@ -409,9 +442,12 @@ def tree_lines(
             line = (Span(text + " " * max(width - cell_width(text), 0), theme.menu_current),)
         line = tuple(span if span.style.depth == depth else Span(span.text, replace(span.style, depth=depth))
                      for span in line)
-        rows.append((truncate_line(line, width), key, _covers(kind, item, expanded, detail)))
+        done = kind == "layer" and item is not None and not expanded[item.key] and all(
+            each.state == "done" for each in _walk(item.kids))
+        mark = BLANK if kind == "blank" else YIELDS if done else ""
+        rows.append((truncate_line(line, width), key, _covers(kind, item, expanded, detail), mark))
     every = _walk(layers)
-    order = tuple(key for _line, key, _count in rows if key)
+    order = tuple(key for _line, key, _count, _mark in rows if key)
     shown = [item for item in every if item.node is not None and item.key in order]
     running = [item.key for item in shown if item.state == "running"]
     state = TreeState(
@@ -424,32 +460,76 @@ def tree_lines(
         agents={item.key: item.agent.subagent_id for item in every if item.agent is not None},
         reveals={MORE_KEY + layer.label: _quiet(layer)[0].key for layer in layers if _quiet(layer)},
     )
-    return _window(rows, cap, selected, partial(_more, theme=theme, depth=depth)), state
+    shown = _window(rows, cap, selected, partial(_more, theme=theme, depth=depth))
+    return [line for line, _key in shown], replace(state, rows=tuple(key for _line, key in shown))
 
 
-def _window(rows: list[tuple[Line, str, int]], cap: int, selected: str | None, more: Callable[..., Line]) -> list[Line]:
-    """`rows` in `cap` rows: all of them when they fit; else, without the keys, the first ones and a last row counting
-    what is cut; with them, the rows around the highlight between counts of what is above and below."""
+# A row as `_window` cuts it: (line, the key it selects or "", the nodes it stands for, `BLANK`, `YIELDS` or "").
+_Row = tuple[Line, str, int, str]
+
+
+def _counted(rows: Sequence[_Row]) -> int:
+    return sum(count for _line, _key, count, _mark in rows)
+
+
+def _tidy(rows: list[_Row]) -> list[_Row]:
+    """`rows` without a blank row that sets nothing apart: one right under the header, after another, or last."""
+    kept: list[_Row] = []
+    for at, row in enumerate(rows):
+        if row[3] == BLANK and (len(kept) == 1 or kept[-1][3] == BLANK or at == len(rows) - 1):
+            continue
+        kept.append(row)
+    return kept
+
+
+def _first(rows: list[_Row], count: int) -> list[_Row]:
+    """The first `count` rows, a blank one last giving way to the row after it: no blank row stands over a cut."""
+    shown = rows[:count]
+    return shown[:-1] + [rows[count]] if shown[-1][3] == BLANK and len(rows) > count else shown
+
+
+def _last(rows: list[_Row], count: int) -> list[_Row]:
+    """The last `count` rows, a blank one first giving way to the row before it."""
+    shown = rows[len(rows) - count :]
+    return [rows[len(rows) - count - 1]] + shown[1:] if shown[0][3] == BLANK and len(rows) > count else shown
+
+
+def _window(rows: list[_Row], cap: int, selected: str | None, more: Callable[..., Line]) -> list[tuple[Line, str]]:
+    """`rows` in `cap` rows, each with the key it selects: all of them when they fit. Else, without the keys, the shut
+    all-done layers yield first, wherever they stand (running and failed nodes keep the rows), then the rows from the
+    bottom, a last row counting what is cut; with them, the rows around the highlight between counts of what is above
+    and below. No blank row stands next to a count row: the next row with something on it takes its place."""
+
+    def drawn(cut: Sequence[_Row]) -> list[tuple[Line, str]]:
+        return [(line, key) for line, key, _count, _mark in cut]
+
     if len(rows) <= cap:
-        return [line for line, _key, _count in rows]
+        return drawn(rows)
     if cap < 2:
-        return [line for line, _key, _count in rows[:cap]]
-
-    def counted(cut: Sequence[tuple[Line, str, int]]) -> int:
-        return sum(count for _line, _key, count in cut)
-
+        return drawn(rows[:cap])
     if selected is None:
-        return [line for line, *_rest in rows[: cap - 1]] + [more(counted(rows[cap - 1 :]), " · ↓ to browse")]
-    index = next((at for at, (_line, key, _count) in enumerate(rows) if key == selected), 0)
+        kept = list(rows)
+        for row in [row for row in rows if row[3] == YIELDS]:
+            if len(_tidy(kept)) < cap:  # a row stays for the count
+                break
+            kept = [each for each in kept if each is not row]
+        shown = _first(_tidy(kept), cap - 1)
+        return drawn(shown) + [(more(_counted(rows) - _counted(shown), " · ↓ to browse"), "")]
+    index = next((at for at, row in enumerate(rows) if row[1] == selected), 0)
     body = cap - 2
     start = min(max(index - body // 2, 0), len(rows) - body)
     if start == 0:
-        return [line for line, *_rest in rows[: cap - 1]] + [more(counted(rows[cap - 1 :]), " below")]
+        shown = _first(rows, cap - 1)
+        return drawn(shown) + [(more(_counted(rows) - _counted(shown), " below"), "")]
     if start + body >= len(rows):
-        tail = rows[len(rows) - cap + 1 :]
-        return [more(counted(rows[: len(rows) - cap + 1]), " above")] + [line for line, *_rest in tail]
+        shown = _last(rows, cap - 1)
+        return [(more(_counted(rows) - _counted(shown), " above"), "")] + drawn(shown)
+    # A blank row is never the highlight's: one at either end of the window gives way to the row past the other end.
+    if rows[start][3] == BLANK and start + body + 1 < len(rows):
+        start += 1
+    elif rows[start + body - 1][3] == BLANK and start > 1 and index < start + body - 1:
+        start -= 1
+    shown = rows[start : start + body]
     return (
-        [more(counted(rows[:start]), " above")]
-        + [line for line, *_rest in rows[start : start + body]]
-        + [more(counted(rows[start + body :]), " below")]
+        [(more(_counted(rows[:start]), " above"), "")] + drawn(shown) + [(more(_counted(rows[start + body :]), " below"), "")]
     )

@@ -496,16 +496,22 @@ run and approval decision stays Hermes'; the screen is OMH's.
   Under an open node two `›` rows say what its child is doing: its latest
   call (`terminal(gh pr checkout 138300)`) and its latest other line, a
   thinking line, Hermes' progress line (the names of its last five calls) or
-  its reply, whichever came last, never repeating the call above it. A
+  its reply, whichever came last, never repeating the call above it. While
+  a child waits on its model, Hermes sends its spinner text (`(°ロ°)
+  pondering...`) as that child's thinking line, with nothing marking it as
+  such, and the tree shows it as sent. A
   repair hangs under the node it repairs (`↻ repair 2 · …` in its second
   repair cycle), and the agents no node names close the tree as `other
   agents`. Running and failed nodes are open, and so is a node with one of
   them under it; the rest are shut. A tree taller than its rows shuts its
   quiet layers, then folds a busy layer's quiet nodes into one `▸ N more ·
   …` row, then shuts open nodes from the bottom (one over a running repair
-  stays open), and counts what is still cut on its last row (`… N more
-  nodes · ↓ to browse`). A new turn keeps the open run's agents, so the rows
-  under its nodes stay. `/dag` shows the
+  stays open). What still does not fit is cut: the shut all-done layers go
+  first, so running and failed nodes keep the rows, then the rows from the
+  bottom, and the last row counts what is cut (`… N more nodes · ↓ to
+  browse`). A new turn keeps the open run's agents, so the rows under its
+  nodes stay. Your folds last as long as the run: a new run, or another
+  session, starts with none. `/dag` shows the
   graph with boxes. Once every lane has
   settled the tree is one line (`DAG · <name> · done 5/6 · 1 failed`).
 
@@ -526,8 +532,12 @@ run and approval decision stays Hermes'; the screen is OMH's.
   above` and `below`, and Enter, `x` and `s` act on the highlighted node's
   agent as they do in the list (`↑↓ select · ←/→ or space fold · ⏎ log · x
   interrupt · s steer · esc back`); on a layer's row, or a node no agent ran
-  for, they do nothing. Esc, Left, `q` or Ctrl+C closes it and
-  the composer comes back on its row as you left it; any other key does
+  for, they do nothing. A click on a tree row highlights it, and on a node's
+  row opens its agent's log. With fewer than three rows for the tree, Down
+  opens the list instead. Esc, `q` or Ctrl+C closes the list or the tree,
+  and so does Left in the list (in the tree Left shuts a row or goes to its
+  parent, and never closes the tree); the composer comes back on its row as
+  you left it; any other key does
   nothing while the list is open, so nothing typed there lands in the
   composer. Enter, or a click on its row,
   opens that agent's log on the alternate screen (its thinking lines, tool

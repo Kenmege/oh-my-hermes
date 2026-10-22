@@ -173,7 +173,8 @@ Where it shows:
   raised only to show every running lane. Boxes do not fit there. The
   folding tree fits by shutting its quiet layers, then folding a busy
   layer's quiet nodes into one `▸ N more` row, then shutting open nodes, its
-  running ones kept in sight, before its last row counts what is cut. Once every
+  running ones kept in sight, before its last row counts what is cut; its
+  shut all-done layers are the first rows cut. Once every
   lane has settled (done, failed, interrupted or unknown, and no lane left
   out by the reader) and a dag-ulw run is over as a run, the tree is one
   line, `DAG · <name> · done 5/6 · 1 failed`, until the graph lingers out
@@ -377,7 +378,7 @@ What it shows, and what it leaves as `?`:
 
     ![The dag-ulw plan block in the OMH TUI transcript: Export API handed out as the start node, the button, the docs and the CLI flag waiting on it in the next frontier, and the verification node waiting on all three, with the Dependencies list under them](../assets/omh-tui-dag-ulw-plan-block.png)
 
-    ![A dag-ulw run in the OMH TUI mid-run: the two done layers shut, the verification node open with its child's last call and reply, the extend round hanging under it, the CSV node blocked with its child's reason and its repair running beneath it with that child's call, and the plan holding one item per layer](../assets/omh-tui-dag-ulw-run.png)
+    ![A dag-ulw run in the OMH TUI mid-run: the two done layers shut, the verification node open with its child's last call and reply, the extend round hanging under it, the CSV node blocked with its child's reason, its repair running beneath it and the CSV docs beside it, each with its child's check and its own line under it, and the plan holding one item per layer](../assets/omh-tui-dag-ulw-run.png)
 
 The structure comes from a metadata-only record, `delegation_ledger/v1` under
 `<omh_home>/runtime/delegation/`, that OMH writes from Hermes' own

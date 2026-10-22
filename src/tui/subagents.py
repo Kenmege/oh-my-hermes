@@ -379,6 +379,7 @@ class Roster:
     def __init__(self) -> None:
         self.agents: dict[str, Agent] = {}
         self.evicted = 0  # agents the cap pushed out since the last `clear`
+        self.kept: frozenset[str] = frozenset()  # the agents the last `clear` kept for an open dag run
         self._frames = 0  # frames that named a held agent, for `Agent.seen`
         # Each agent's log rows as `log_lines` last wrapped them, with the agent, log generation, width and theme
         # they were wrapped for: a log view repaints every tick, and its log changes far less often.
@@ -450,11 +451,22 @@ class Roster:
     def clear(self, keep: frozenset[str] = frozenset()) -> None:
         """Drop every agent but those bound to a dag node in `keep`: the app calls this when a new turn starts, keeping
         the lanes of the dag run still open (they outlive the turn that sent them), and when it leaves a session,
-        keeping none."""
+        keeping none. The agents kept are noted in `kept` until `drop_kept` lets them go."""
         for key in [key for key, agent in self.agents.items() if not (agent.dag_node and agent.dag_node in keep)]:
             del self.agents[key]
             self._wrapped.pop(key, None)
+        self.kept = frozenset(self.agents)
         self.evicted = 0
+
+    def drop_kept(self, keep: frozenset[str]) -> frozenset[str]:
+        """Drop the agents `clear` kept whose dag node is no longer in `keep` (the run is over, or another run is
+        drawn); the ids dropped. An agent that arrived in this turn is never one of them."""
+        dropped = frozenset(key for key in self.kept if key in self.agents and self.agents[key].dag_node not in keep)
+        for key in dropped:
+            del self.agents[key]
+            self._wrapped.pop(key, None)
+        self.kept -= dropped
+        return dropped
 
     def ingest_tail(self, subagent_id: str, text: str, truncated: bool = False) -> None:
         """Replace an agent's log with the `text` of a `subagent.tail` reply; `truncated` is the reply's own flag.

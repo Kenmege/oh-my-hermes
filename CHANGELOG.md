@@ -25,7 +25,14 @@ All notable changes will be documented here.
   and Space fold, and Enter, `x` and `s` open the highlighted node's child's
   log, interrupt it and steer it as the agent list does. A new turn keeps
   the open run's lanes, so their rows stay without waiting for the next
-  frame. In a dag run Down no longer opens the agent list.
+  frame, and drops them on the first payload that shows the run over. When
+  rows run short, the shut all-done layers are cut before anything else, so
+  running and failed nodes keep the rows. A fold lasts as long as its run:
+  a new run, or another session, starts with none. A click on a tree row
+  highlights it, and on a node's row opens its agent's log. In a dag run
+  Down opens the agent list only when fewer than three rows are left for
+  the tree, and the info line's count leaves out a superseded repair
+  attempt's lane.
 
 - **The OMH TUI's transcript tells blocks, states and tools apart at a glance
   (the rail and kind colours the owner picked on 2026-10-22).** On v4.0.1 a

@@ -19,11 +19,13 @@ on the highlighted node's child as the list's keys do. The log is
 read-only: `subagent.tail` is asked for the open agent while it runs, at most
 every `TAIL_POLL_SECONDS`, and no more once `TAIL_MISSES_BEFORE_STOP` answers
 in a row had no tail, until that agent sends a frame; nothing is ever sent to
-a subagent. Mouse reports are on only while the agent list is open and the
-row a click would land on is certain (the owner's decision of 2026-10-14:
+a subagent. Mouse reports are on only while the agent list (or the dag
+tree) has the keys and the row a click would land on is certain (the owner's decision of 2026-10-14:
 during a turn the wheel scrolls and a drag selects, and Down opens the list
 from the keyboard). A plain left click on a list row opens that agent's log,
-or on the list's main row leaves the list; every other report does nothing. Reports the terminal sent before it acted on an off
+or on the list's main row leaves the list; on a tree row it takes the
+highlight, and on a node's row opens its child's log; every other report
+does nothing. Reports the terminal sent before it acted on an off
 arrive after it, so `_set_mouse` notes when reporting went off and the
 decoder is told: a report that starts arriving while reporting is on, or
 within `keys.MOUSE_REPORT_SECONDS` after the off, types nothing if it
@@ -43,7 +45,7 @@ from typing import Any
 from . import gateway_contract as contract
 from .keys import BUTTON_LEFT, CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
 from .layout import Budget, agent_view_cap, is_tiny, max_height
-from .dag_tree import TreeState, tree_lines
+from .dag_tree import TreeState, run_key, tree_agents, tree_lines
 from .panels import (
     DAG_INDENT, agent_view_count, agent_view_keep, dag_run_summary, dag_style, graph_is_dag, panel_lines,
 )
@@ -64,6 +66,9 @@ TREE_HINTS = (
     TREE_HINT, "←/→ fold · ⏎ log · x interrupt · s steer · esc back", "←/→ fold · x interrupt · s steer · esc back",
     "←/→ fold · esc back",
 )
+# The fewest rows a tree takes the keys in: its highlight between a count above and one below. Under it Down opens the
+# agent list in the view's rows, as it did before the tree.
+MIN_TREE_ROWS = 3
 # What the info line says once `x` asked, longest first.
 INTERRUPT_CONFIRM = "x again interrupts {name} · any other key cancels"
 INTERRUPT_CONFIRMS = (INTERRUPT_CONFIRM, "x again interrupts {name}", "x again interrupts")
@@ -101,6 +106,15 @@ TAIL_POLL_SECONDS = 2.0
 TAIL_MISSES_BEFORE_STOP = 5
 # A call with no answer this long no longer holds the next one back; its answer, if it still comes, is dropped.
 TAIL_ANSWER_SECONDS = 10.0
+
+
+def _nearest_shown(state: TreeState, key: str, before: TreeState | None = None) -> str:
+    """The row nearest above `key` that `state` still shows (its node, layer or `more` row), else the tree's first;
+    `before`, the tree as last drawn, knows where a node that left the graph since stood."""
+    parents = {**(before.parent if before is not None else {}), **state.parent}
+    while key and key not in state.order:
+        key = parents.get(key, "")
+    return key or state.first
 
 
 class AgentViewMixin:
@@ -156,27 +170,33 @@ class AgentViewMixin:
             self.slot is None and self.picker is None and self.rewind_picker is None and self.model_picker is None
             and self.search is None
         )
-        if summary or cap <= 0 or not keys_free:
-            self.tree_selected = None  # a question, a picker or the search has the keys now
+        if summary or cap < MIN_TREE_ROWS or not keys_free:
+            self.tree_selected = None  # a question, a picker or the search has the keys now, or no room for a highlight
         if summary or cap <= 0:
             header = dag_style("header", self.theme, depth=self.color_depth)
             return [(Span(DAG_INDENT), Span(summary, header))][:cap] if summary else []
         frame, now = self._spinner_frame(), self.clock()
         self.tree_size = (cols, cap)
+        folds = self._tree_folds(graph)
 
         def draw() -> tuple[list[Line], TreeState]:
-            return tree_lines(graph, self.roster, cols, cap, self.theme, frame, self.tree_folds, self.tree_selected,
+            return tree_lines(graph, self.roster, cols, cap, self.theme, frame, folds, self.tree_selected,
                               self.color_depth, now)
 
         lines, self.tree_state = draw()
         if self.tree_selected is not None and self.tree_selected not in self.tree_state.order:
             # A fold hid the highlighted row, or its node left the graph: the nearest row above it still shown.
-            key = self.tree_selected
-            while key and key not in self.tree_state.order:
-                key = self.tree_state.parent.get(key, "")
-            self.tree_selected = key or self.tree_state.first
+            self.tree_selected = _nearest_shown(self.tree_state, self.tree_selected)
             lines, self.tree_state = draw()
         return lines
+
+    def _tree_folds(self, graph: Mapping[str, Any]) -> dict[str, bool]:
+        """The person's folds for `graph`'s run: they belong to one run (a layer's key is only its label), so a new run
+        starts with none."""
+        run = run_key(graph)
+        if run != self.tree_run:
+            self.tree_folds, self.tree_run = {}, run
+        return self.tree_folds
 
     def _tree_state_now(self) -> TreeState | None:
         """The tree the last frame drew, laid out again with the folds and the highlight as they are now: keys read
@@ -186,17 +206,17 @@ class AgentViewMixin:
         if self.tree_state is None or not valid or not graph_is_dag(payload):
             return None
         cols, cap = self.tree_size
+        graph = payload["delegation_graph"]
         return tree_lines(
-            payload["delegation_graph"], self.roster, cols, cap, self.theme, 0, self.tree_folds, self.tree_selected,
-            now=self.clock(),
+            graph, self.roster, cols, cap, self.theme, 0, self._tree_folds(graph), self.tree_selected, now=self.clock(),
         )[1]
 
     def _tree_available(self) -> bool:
         """Whether Down can give the tree the keys: the last frame drew one, and nothing else holds the keys (a
         question, a picker, the history search, the agent list)."""
         return (
-            self.tree_state is not None and bool(self.tree_state.order) and self.slot is None
-            and self.picker is None and self.rewind_picker is None and self.model_picker is None
+            self.tree_state is not None and bool(self.tree_state.order) and self.tree_size[1] >= MIN_TREE_ROWS
+            and self.slot is None and self.picker is None and self.rewind_picker is None and self.model_picker is None
             and self.search is None and self.list_selected is None
         )
 
@@ -225,7 +245,10 @@ class AgentViewMixin:
         leaves, and so does an Alt chord in the legacy encoding, which is
         then read as it would have been (`_agent_list_key`); any other key
         does nothing. A fold is kept in `tree_folds` and wins over the
-        default and over shutting rows to fit.
+        default and over shutting rows to fit, for as long as the run lasts
+        (`_tree_folds`). A key that finds its highlighted row gone (a
+        payload hid it since the last frame) moves the highlight to the
+        nearest row still shown and does nothing else.
         """
         name = event.name if isinstance(event, Key) else ""  # a paste is no key of the tree's
         if self.tree_selected is None and name != DOWN:
@@ -240,8 +263,13 @@ class AgentViewMixin:
             self.tree_selected = state.first
             return True
         armed, self.interrupt_armed = self.interrupt_armed, None  # any key ends a question it did not answer
-        if state is None or self.tree_selected not in state.order:
+        if state is None:  # no tree is drawn now (the run is over, or the graph left the HUD): the keys go back
             self.tree_selected = None
+            return True
+        if self.tree_selected not in state.order:
+            # A payload since the last frame hid the highlighted row: the highlight moves to the nearest row still shown
+            # and the key is spent on that, so no key acts on a row the person did not see highlighted.
+            self.tree_selected = _nearest_shown(state, self.tree_selected, self.tree_state)
             return True
         key = self.tree_selected
         expanded = state.expanded.get(key, False)
@@ -337,6 +365,9 @@ class AgentViewMixin:
         while Down would open their list, else the count alone; nothing with no agent, or no room for the count."""
         payload = self.hud.payload if self.hud is not None else None
         count = self.roster.count_text()
+        drawn = self._tree_drawn_agents(payload)
+        if count and drawn is not None:  # a superseded lane of the run is no agent the tree stands for
+            count = f"{len(drawn)}{'+' if self.roster.evicted else ''} agent{'' if len(drawn) == 1 else 's'}" if drawn else ""
         if not count:
             number = agent_view_count(payload)
             count = f"{number} agent{'' if number == 1 else 's'}" if number else ""
@@ -347,6 +378,13 @@ class AgentViewMixin:
         shown = next((form for form in forms if cell_width(form) <= room), "")
         return (Span(shown, self.theme.hint),) if shown else ()
 
+    def _tree_drawn_agents(self, payload: Any) -> frozenset[str] | None:
+        """The roster's agents the dag run's tree draws (`dag_tree.tree_agents`); None while no tree is drawn."""
+        if not isinstance(payload, Mapping) or payload.get("error") or not graph_is_dag(payload):
+            return None
+        graph = payload["delegation_graph"]
+        return None if dag_run_summary(graph) else tree_agents(graph, self.roster)
+
     def _agent_list_say(self) -> tuple[tuple[str, ...], Style]:
         """What the info line says while the list is open: its keys, or, once `x` asked, the confirmation in warn."""
         armed = self.roster.agents.get(self.interrupt_armed or "") if self.interrupt_armed == self.list_selected else None
@@ -354,12 +392,21 @@ class AgentViewMixin:
             return tuple(form.format(name=armed.name) for form in INTERRUPT_CONFIRMS), self.theme.warn
         return AGENT_LIST_HINTS, self.theme.hint
 
+    def _clickable_rows(self) -> Sequence[str]:
+        """What a click on each of the view's rows selects, top first: the list's agent ids while it is open, the tree's
+        row keys while it has the keys ("" for a row a click does nothing on), else nothing."""
+        if self.tree_selected is not None and self.tree_state is not None:
+            return self.tree_state.rows
+        return self.listed
+
     def _take_clickable(self, budget: Budget, listed: Sequence[str]) -> None:
-        """Note the agent list's rows a click opens in the frame just drawn, and ask for mouse reports only while it is open.
+        """Note the agent list's rows a click opens in the frame just drawn (or the dag tree's rows, while the tree has
+        the keys), and ask for mouse reports only while one of them is open.
 
         The list is the agent view's rows, from its first, under the info
         line: the region's last rows. A list row is clickable from edge to
-        edge; nothing else is, the info line's count included. Reports stay
+        edge, and so is a tree row (one with nothing to select does nothing
+        when clicked); nothing else is, the info line's count included. Reports stay
         off while the region's place on the screen is not certain, since no
         click could be read then.
         """
@@ -503,7 +550,8 @@ class AgentViewMixin:
         return True
 
     def _on_mouse(self, event: Mouse) -> None:
-        """A plain left press on an agent's row of the list opens that agent's log; nothing else does anything.
+        """A plain left press on an agent's row of the list opens that agent's log, and on a dag tree row moves the
+        highlight there and opens the node's child's log if it has one; nothing else does anything.
 
         The one other thing a click does is leave the list, from its main
         row, which has no log. `clickable` holds the cells of the last frame
@@ -520,6 +568,14 @@ class AgentViewMixin:
         above, column = last - (event.y - 1), event.x - 1  # a report counts rows and columns from 1
         target = next((hit.subagent_id for hit in self.clickable.get(above, ()) if hit.start <= column < hit.end), None)
         if target is None:
+            return
+        if self.tree_selected is not None:  # a dag tree row: it takes the highlight, and a node's child its log opens
+            if not target:
+                return  # a count or blank row selects nothing
+            self.tree_selected = target
+            agent = self.tree_state.agents.get(target) if self.tree_state is not None else None
+            if agent is not None:
+                self._open_agent_log(agent)
             return
         if self.list_selected is not None:
             self.list_selected = target if target != MAIN_ID else None  # main has no log: the click leaves the list
@@ -614,6 +670,20 @@ class AgentViewMixin:
         self.roster.clear(self._open_dag_nodes())
         self.view_hold = None
         self._drop_agent_actions()
+
+    def _prune_kept_lanes(self) -> None:
+        """Drop the lanes a new turn kept for a dag run (`_clear_roster`) once a payload shows that run over: the
+        payload the turn read was a stale one. Nothing goes on a payload the HUD could not read."""
+        payload = self.hud.payload if self.hud is not None else None
+        if not isinstance(payload, Mapping) or payload.get("error"):
+            return
+        dropped = self.roster.drop_kept(self._open_dag_nodes())
+        if self.interrupt_armed in dropped:
+            self.interrupt_armed = None
+        if self.agent_steer in dropped:
+            self.agent_steer = None
+        for subagent_id in dropped:
+            self.tail_misses.pop(subagent_id, None)
 
     def _lose_roster(self) -> None:
         """The gateway exited: the agents stay listed as they were, those not finished marked interrupted, and every
