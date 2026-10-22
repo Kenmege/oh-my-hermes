@@ -798,8 +798,8 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 67130
 # 513064 -> 522236: three science catalog rows and procedure contracts, measured
 # from the merged producer with main's DAG handoff and review-method contracts.
 # No eager toolkit bytes or headroom are included.
-# 522236 -> 525318: one local result-audit contract row, producer measured.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525318
+# Combined adaptation-quality guidance and result-audit row; skill-content-smoke measured exactly.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525389
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

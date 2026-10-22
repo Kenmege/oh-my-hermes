@@ -458,6 +458,8 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'live-incident-response/references/incident-command-method.md',
     'external-connector-readiness/references/memory-provider-trial.md',
     'verification-gate/references/generated-artifact-provenance.md',
+    # Shared host-neutral adaptation procedure, loaded only for capability ports.
+    'verification-gate/references/adaptation-quality.md',
     'security-safety-review/references/credential-rotation.md',
     # Issue #1714. Each of these is named by a body pointer that projects into
     # this target, so omitting it would ship a pointer at a file the portable

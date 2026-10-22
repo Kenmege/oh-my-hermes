@@ -582,8 +582,9 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Why: Shared core logic makes parallel edits likely to conflict or hide regressions.
 - Quality bar:
   - Do not start this engine as an automatic continuation of another skill's output: an accepted plan, a clarified brief, or a routing recommendation is planning evidence, not permission. Unless the user explicitly invoked this engine themselves, restate in one line what will start (engine, scope, selected executor) and wait for the user's explicit go-ahead first.
-  - Resolve the dependency_topology decision before any dispatch: work coupled by a shared invariant or inseparable edit boundary collapses to one owner; separable but ordered units get explicit acyclic dependency edges; independent units form the dependency-ready parallel frontier; no unit dispatches without scope, acceptance criteria, a verification command, and an owner route - load `references/dependency-topology.md` for the full discipline, `references/kanban-lane.md` for lanes outliving the session, `references/team-lane.md` for checked lanes.
+  - Resolve `dependency_topology` before dispatch; load `references/dependency-topology.md` for owner/edge/frontier selection and admission requirements, `references/kanban-lane.md` for durable lanes, `references/team-lane.md` for checked lanes.
   - Before concurrent fan-out, load `references/file-ownership-manifest.md`.
+  - When adapting an existing capability, load `skill_view(name='omh-verification-gate', file_path='references/adaptation-quality.md')` before accepting a plan, dispatching work, or claiming completion; carry its criteria and comparisons into tasks and evidence.
   - Attach acceptance criteria, verification commands, and review expectations to each lane.
   - Keep dispatch, execution, review, CI, and merge status evidence separate.
   - After final brief composition and before unattended coding handoff, explicitly run `omh handoff-risk-scan --brief-file <final-brief> --repo <workspace> --strict --json`. Route high_risk (exit 1) to existing confirmation or security-safety-review; scan_error (exit 2) requires repaired input and a new scan. Clear never grants permission or bypasses metadata preflight, approval, or host policy.
@@ -3701,6 +3702,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Expected behavior: Return HOLD/BLOCK and list missing or stale checks instead of claiming readiness.
   - Why: A verification gate is useful only if planned checks and observed results stay separate.
 - Quality bar:
+  - When adapting an existing capability, load `skill_view(name='omh-verification-gate', file_path='references/adaptation-quality.md')` before accepting a plan, dispatching work, or claiming completion; carry its criteria and comparisons into tasks and evidence.
   - Tie every completion claim to the smallest check that proves it, then broaden for shared surfaces.
   - When a diff touches a declared generated path, name its source of truth and regeneration command before the edit rather than after a byte gate rejects it; a diff touching a generator and its output together is the correct shape, not a violation — load `references/generated-artifact-provenance.md` for the declaration and reporting rules.
   - Record every field the `observed_check_results/v1` artifact expectation below names, for each observed result (`origin` on a failing check only); a field left out is a gap in the record, not a shorter record.
@@ -4821,6 +4823,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Include planner view, critic/risk review, alternative paths, rejected options, and a testability check before handoff.
   - Produce testable acceptance criteria and exact verification commands or explain why they are not yet knowable.
   - List every lane of the accepted plan in node-prompt shape - `TASK`, `DELIVERABLE`, `SCOPE`, `VERIFY`, `STOP WHEN` - with `depends_on` per lane, so `ultrawork` can prepare board rows from the plan without re-planning; planning itself stays a bounded in-session lane.
+  - When adapting an existing capability, load `skill_view(name='omh-verification-gate', file_path='references/adaptation-quality.md')` before accepting a plan, dispatching work, or claiming completion; carry its criteria and comparisons into tasks and evidence.
   - Before comparing options, write the target state: name each consumer of the result (a person, a maintainer, or a program reading its output), their current workflow on this surface, the state in which that workflow keeps working with no new friction or loss, and every difference between current and target, each with why it matters.
   - Record a `Success criteria` table with columns `Criterion | Task | Verification scenario`, one row per target-state difference naming its owning task and the scenario that shows the difference closed; these rows are the acceptance criteria above, extended to the target state.
   - End with a `Target-state coverage` check: a difference with no owning task or no verification scenario is added to the plan as its own task, unless the user excluded it, in which case the plan records it as a non-goal with that reason; a difference blocked on missing evidence stays in the evidence-gap record below instead.
@@ -7737,7 +7740,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Why this exists: `dag-ulw` exists so a big job runs end to end without the person driving it: the parent plans a graph OMH can validate and draw, runs the ready nodes in parallel on Hermes' own children, verifies the goal with a separate node, and repairs before it reports.
 - First steps:
   - Start at once; there is no plan approval. Write the goal criteria in one line.
-  - Plan the graph and call `omh_dag action=define` with each node's id, label, category, prompt, depends_on and write_scope; fix every refusal and read the lint before going on. Never `delegate_task` before `define` returns its calls.
+  - Plan the graph and call `omh_dag action=define` with the complete run `goal` and each node's id, label, category, prompt, depends_on and write_scope; fix every refusal and read the lint before going on. Never `delegate_task` before `define` returns its calls. The saved goal reaches every native task; local VERIFY does not replace goal acceptance.
   - Keep the plan todo as the run's layers in ONE tool: `todo_list` when `todo_list` is in your tool list or tool_search finds it (OMH mirrors it), else `omh_todo`. One item per layer, named for what it delivers, never a list of its nodes (the panel draws those); advance it as each layer settles.
   - For each call `omh_dag` returns, run its route (`omh_delegate_route`, set or fallback as given), then `delegate_task` with the tasks unchanged; never more calls than it returned. Then end the turn with one status line; never wait or poll.
   - On each completion read the node's handoff file and call `omh_dag action=settle` (accepted, failed, or blocked; a provider error is failed with provider_error). Dispatch what it returns in the same turn.
@@ -7757,6 +7760,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Expected behavior: Fix it directly; a one-node graph adds a tool round trip and a status line for nothing.
   - Why: One bounded edit has no parallelism or ordering to plan.
 - Quality bar:
+  - When adapting an existing capability, load `skill_view(name='omh-verification-gate', file_path='references/adaptation-quality.md')` before accepting a plan, dispatching work, or claiming completion; carry its criteria and comparisons into tasks and evidence.
   - Split first: many small nodes beat one big one, but never split one shared write scope or one judgement.
   - Climb the difficulty ladder `quick` -> `unspecified-low` -> `unspecified-high` with a one-line reason per climb; use `ultrabrain` at most once, and a graph whose every node is `deep` or `deep-work` is a routing failure.
   - Write every node prompt self-contained, in order: TASK, DELIVERABLE, SCOPE (what it may read and write), VERIFY (the literal command and expected result), STOP WHEN.
