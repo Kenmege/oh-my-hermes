@@ -136,8 +136,8 @@ Expected outputs:
 - source-backed synthesis
 - links or citations
 - source-quality notes
-- reference_study/v1 records with pinned revisions, license provenance and read evidence
-- research_claims/v1 typed records with separate unresolved and refuted claims
+- reference_study/v1: revision pin, license provenance, code evidence
+- research_claims/v1: separate unresolved/refuted claims
 - plan-feed block: decision drivers, viable options with evidence, rejected candidates with reasons, risks, open questions
 - confidence and residual uncertainty
 - product_evidence_loop/v1
