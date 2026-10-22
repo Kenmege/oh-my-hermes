@@ -16,7 +16,7 @@
     "README.md": {
       "classification": "original_omh",
       "license": "MIT",
-      "local_sha256": "0c7f689f089aacc3970a81ac04c6d00c19b5eadd2facae07727b467a4823a4c8",
+      "local_sha256": "66d3a37e9385701df53bbe2d39ce3592fdf01c6dc75f6b8ff80b0c4032bdd378",
       "modification_notice": "Original OMH companion guidance/helper/example",
       "upstream": []
     },
@@ -116,8 +116,8 @@
     "scripts/contact_sheet.py": {
       "classification": "modified_derivative",
       "license": "MIT",
-      "local_sha256": "f5834507f8be02344f8f3c47e4244b24ef6e7a3ffa88f65b144dca884ca93d48",
-      "modification_notice": "English messages, explicit tool paths and label font, FFmpeg tile path without Pillow, -fps_mode for FFmpeg 8+",
+      "local_sha256": "9464cbfe7de1296c053f7893ef90305bc1fdf32498123f18322e9851977c4533",
+      "modification_notice": "English messages, optional --ffmpeg/--ffprobe (PATH names by default) and explicit --label-font, FFmpeg tile path without Pillow, -fps_mode for FFmpeg 8+",
       "upstream": [
         {
           "path": "scripts/contact_sheet.py",
@@ -128,7 +128,7 @@
     "scripts/eleven.py": {
       "classification": "modified_derivative",
       "license": "MIT",
-      "local_sha256": "89b38a2886c546157795caaa3e2e15d1e2323ae302f52fbfaacea980ef88100e",
+      "local_sha256": "16f3e7bcc73120646a60bb7d48f9bda879bb3df7ec6505cad38587f8b1f1c22f",
       "modification_notice": "Opt-in provider client run only by the user: key from ELEVENLABS_API_KEY only (no .env/home/config lookup), on curl stdin; no default voice or language; English messages; explicit --ffmpeg/--ffprobe",
       "upstream": [
         {
@@ -140,8 +140,8 @@
     "scripts/finish.py": {
       "classification": "modified_derivative",
       "license": "MIT",
-      "local_sha256": "2d8e055eb519e111b12dc088f85945d23951f9479da7ed379c4d53b56af19799",
-      "modification_notice": "English messages and suffixes, explicit tool paths, outputs must be new, failing spec exits 1",
+      "local_sha256": "e5a2ace0345754485773375bdc785b67b6fdef4859cff4a8204bf9a88fcdd48e",
+      "modification_notice": "English messages and suffixes, optional --ffmpeg/--ffprobe (PATH names by default), outputs must be new, failing spec exits 1",
       "upstream": [
         {
           "path": "scripts/finish.py",
@@ -183,8 +183,8 @@
     "scripts/music_tools.py": {
       "classification": "modified_derivative",
       "license": "MIT",
-      "local_sha256": "62d54ccbdaa315448f2536a6531d35d86b1fff68c066f334ac43e9cf94e075da",
-      "modification_notice": "English messages, explicit tool paths, outputs must be new, numpy only for analyze/gap, synth_music event keys accepted, gap writes 16-bit PCM for mix.py",
+      "local_sha256": "f1e6a54ac66e264920a2933964cdd06ff708d464053dfb4b8d33f5f540899c9e",
+      "modification_notice": "English messages, optional --ffmpeg/--ffprobe (PATH names by default), outputs must be new, numpy only for analyze/gap, synth_music event keys accepted, gap writes 16-bit PCM for mix.py",
       "upstream": [
         {
           "path": "scripts/music_tools.py",
@@ -220,7 +220,7 @@
       "classification": "modified_derivative",
       "license": "MIT",
       "local_sha256": "195670f4fc7d9652b04213422c79b6c52ebc282f20bae419f9d0e2b9056d9aa8",
-      "modification_notice": "Local-only checks of explicit tool paths and key presence; no provider call, install or font scan",
+      "modification_notice": "Local-only checks of the passed browser/dependency root, optional --ffmpeg/--ffprobe (PATH names by default) and key presence; no provider call, install or font scan",
       "upstream": [
         {
           "path": "scripts/preflight.py",
@@ -255,7 +255,7 @@
     "scripts/render.mjs": {
       "classification": "modified_derivative",
       "license": "MIT",
-      "local_sha256": "05092c8ca967b9cf9f2062091ad3fd7d654e9d794e039ebb39161b529d45bf7b",
+      "local_sha256": "c50bdb4f9fc8b0448937196147a309749fc21b98e07289caff6176dea3a67443",
       "modification_notice": "Puppeteer adapter with a realpath allowlist server; keeps upstream --scale/--sub/--shutter/--crf 16/--preset/--from/--to/--every; serial capture piped to FFmpeg",
       "upstream": [
         {

@@ -1,6 +1,6 @@
 # MIT; Copyright (c) 2026 Minho Hwang (revfactory).
 # Modified for OMH from revfactory/showreel@64521220a2f8e91cb9894400c48c15b7f45205d6
-# scripts/music_tools.py: messages in English, explicit --ffmpeg/--ffprobe, outputs must be new,
+# scripts/music_tools.py: messages in English, optional --ffmpeg/--ffprobe, outputs must be new,
 # numpy imported only by the commands that analyze samples (plan/splice/fit run without it), and
 # plan also reads synth_music.py's event keys (kind/at); gap writes 16-bit PCM, the only depth mix.py reads.
 # Full permission/warranty: ../LICENSE.upstream. Standalone, not an OMH import.

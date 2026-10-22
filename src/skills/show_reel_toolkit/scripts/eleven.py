@@ -3,7 +3,7 @@
 # scripts/eleven.py: OPT-IN provider client, run only by a user who invokes it with their own
 # key. The key comes from ELEVENLABS_API_KEY in the environment only (no .env, home or config
 # lookup) and reaches curl on stdin, never argv or logs. No default voice or language: the
-# caller names both. Messages in English; explicit --ffmpeg/--ffprobe.
+# caller names both. Messages in English; optional --ffmpeg/--ffprobe (PATH names by default).
 # Full permission/warranty: ../LICENSE.upstream. OMH core never imports or runs this file.
 """ElevenLabs helper (TTS, STT, sound effects, music, voice lookup, key check). narrate.py imports it too.
 

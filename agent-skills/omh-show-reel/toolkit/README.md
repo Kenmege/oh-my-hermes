@@ -172,7 +172,19 @@ turns them into `barN`/`music.hitN` cues and writes `timeline.json` plus
 `reel/timeline.js`. Narration lines in `script.json` need per-line clips and
 character alignment in `audio/vo/` first; without them timeline.py reports the
 missing lines and exits 1. The opt-in `narrate.py` produces them with your own
-key; an approved local recording needs the same clip and alignment files.
+key. An approved local recording can be supplied by hand in the same shapes:
+
+- `audio/vo/<id>.mp3`: the line's clip (timeline.py decodes it with FFmpeg for
+  the loudness envelope; mix it from a WAV conversion of the same clip).
+- `audio/vo/<id>.align.json`: `{"characters": [...], "character_start_times_seconds": [...],
+  "character_end_times_seconds": [...]}`, one entry per character of the line's
+  `tts` text (spaces included), times in seconds from the clip start. Word timing
+  and narration cues come from these arrays.
+- `audio/vo/report.json`: `{"<id>": {"speech_start": 0.12, "speech_end": 2.84}, ...}`,
+  the first and last spoken instants inside each clip.
+
+Without character alignment, place lines and cues with `timing.json` instead
+(explicit seconds/frames), which needs no narration files.
 
 Mix accepts explicit stereo 16-bit PCM WAV at one declared sample rate; missing,
 corrupt or mismatched audio refuses (convert explicitly first). Modes are

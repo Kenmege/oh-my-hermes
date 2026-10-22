@@ -680,6 +680,18 @@ class NoHiddenProcessSpawn(unittest.TestCase):
             for stem in ("mix", "motion_check", "qa_check", "contact_sheet", "finish", "music_tools",
                          "prep_images", "timeline", "eleven", "narrate", "show_reel_toolkit"):
                 self.assertFalse(_imports_module_named(tree, stem), (relative_path, stem))
+            # The stem check reads only the last dotted part, so a path through the kit
+            # (`from omh.skills.show_reel_toolkit.scripts import preflight`, relative or
+            # absolute) is caught here instead, `preflight` included.
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    paths = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    paths = [node.module or "", *(f"{node.module or ''}.{alias.name}" for alias in node.names)]
+                else:
+                    continue
+                for dotted in paths:
+                    self.assertNotIn("show_reel_toolkit", dotted.split("."), (relative_path, node.lineno, dotted))
 
     def test_only_allowlisted_modules_import_subprocess(self) -> None:
         for relative_path, tree in _source_modules():

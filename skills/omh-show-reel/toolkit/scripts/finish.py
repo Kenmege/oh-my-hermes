@@ -1,6 +1,6 @@
 # MIT; Copyright (c) 2026 Minho Hwang (revfactory).
 # Modified for OMH from revfactory/showreel@64521220a2f8e91cb9894400c48c15b7f45205d6
-# scripts/finish.py: messages and file suffixes in English (_share.mp4, _poster.jpg), explicit
+# scripts/finish.py: messages and file suffixes in English (_share.mp4, _poster.jpg), optional
 # --ffmpeg/--ffprobe, outputs must be new, and a spec failure exits 1 instead of 0.
 # Full permission/warranty: ../LICENSE.upstream. Standalone, not an OMH import.
 """Finish: silent rendered video + mix -> delivery set (master, share copy, poster, subtitles) + spec check.

@@ -1,6 +1,6 @@
 # MIT; Copyright (c) 2026 Minho Hwang (revfactory).
 # Modified for OMH from revfactory/showreel@64521220a2f8e91cb9894400c48c15b7f45205d6
-# scripts/contact_sheet.py: messages in English, explicit --ffmpeg/--ffprobe and --label-font
+# scripts/contact_sheet.py: messages in English, optional --ffmpeg/--ffprobe, explicit --label-font
 # (no font search), an FFmpeg tile path when Pillow is absent (labels then print to stdout), and
 # -fps_mode in place of -vsync, which FFmpeg 8+ removed.
 # Full permission/warranty: ../LICENSE.upstream. Standalone, not an OMH import.

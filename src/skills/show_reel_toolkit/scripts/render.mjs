@@ -172,7 +172,7 @@ export async function render(options) {
       const resample=capture.scale!==1?`scale=${capture.outWidth}:${capture.outHeight}:flags=lanczos,`:'';
       const color=capture.color==='zscale'?'zscale=pin=bt709:tin=iec61966-2-1:min=gbr:rin=full:p=bt709:t=bt709:m=bt709:r=limited,format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709'
         :'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709';
-      encoder=spawn(options.ffmpeg,['-v','error','-nostdin','-n','-f','image2pipe','-c:v','png','-framerate',String(config.fps*capture.sub),'-i','-','-vf',blur+resample+color,'-r',String(config.fps),'-frames:v',String(times.length),'-c:v','libx264','-preset',capture.preset,'-crf',String(capture.crf),'-pix_fmt','yuv420p','-color_range','tv','-color_primaries','bt709','-color_trc','bt709','-colorspace','bt709','-movflags','+faststart',staged],{stdio:['pipe','ignore','pipe']});
+      encoder=spawn(options.ffmpeg,['-v','error','-nostdin','-n','-f','image2pipe','-c:v','png','-framerate',String(config.fps*capture.sub),'-i','-','-vf',blur+resample+color,'-r',String(config.fps),'-frames:v',String(times.length),'-c:v','libx264','-preset',capture.preset,'-crf',String(capture.crf),'-pix_fmt','yuv420p','-color_range','tv','-color_primaries','bt709','-color_trc','bt709','-colorspace','bt709','-movflags','+faststart','-fs',String(maxBytes),staged],{stdio:['pipe','ignore','pipe']});
       child=encoder;let stderr='';
       encoder.stderr.on('data',b=>{stderr+=b;if(stderr.length>2e6)encoder.kill('SIGKILL');});
       encoder.stdin.on('error',e=>failures.push('encoder stdin: '+String(e)));
