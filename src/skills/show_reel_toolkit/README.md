@@ -24,8 +24,9 @@ Prerequisites: Python >=3.11; Node, an **explicitly supplied** local
 `puppeteer-core` dependency root, a Chrome or chrome-headless-shell executable,
 FFmpeg with libx264 and FFprobe for capture. Optional: numpy for
 `music_tools.py analyze`/`gap`, Pillow for `prep_images.py` and labelled contact
-sheets, `swiftc` on macOS for cutouts. No npm/pip/font setup, CDN, network
-client, provider account or home font scan is performed. `preflight.py` reports
+sheets, `swiftc` on macOS for cutouts. No npm/pip/font setup, CDN, provider
+account or home font scan is performed; the only network-reaching scripts are the
+opt-in provider scripts below, which run only when you invoke them. `preflight.py` reports
 what is present. Use only explicit licensed local TTF/OTF fonts for rendering:
 the cmap gate does not support WOFF/collections. A missing font/tool/glyph is
 HOLD, never substitution. Only macOS capture execution has been exercised;
@@ -92,7 +93,31 @@ The craft references quote upstream's commands. Their equivalents here:
 | `qa_check.py out.mp4 --timeline ... --script ... --stt` | `qa_check.py out.mp4 --audio-mode <mode>`; no STT |
 | `motion_check.py draft.mp4 --timeline timeline.json` | `motion_check.py draft.mp4 --holds intentional-holds.json` |
 | `contact_sheet.py`, `finish.py`, `prep_images.py`, `preflight.py` | same flags plus optional `--ffmpeg`/`--ffprobe`; `finish.py` writes `_share.mp4`/`_poster.jpg` |
-| `eleven.py`, `narrate.py`, `codex_ref_image.sh`, codex-image skills | not shipped here: narrate with an approved local recording, build visuals in code and from supplied photos |
+| `eleven.py ...`, `narrate.py script.json` | same, opt-in with your own `ELEVENLABS_API_KEY`; `--voice`/script.json `voice` and `language` are required (no default voice) |
+| `codex_ref_image.sh out.png "scene" ref.jpg` | same, opt-in with your own signed-in `codex` CLI |
+| codex-image and photoreal skills | not part of this kit; use them only if you installed them yourself |
+
+## Opt-in provider scripts
+
+`eleven.py` (ElevenLabs TTS, STT, SFX, music, voice lookup), `narrate.py`
+(script.json narration lines with character alignment into `audio/vo/`) and
+`codex_ref_image.sh` (reference-photo image generation through codex) reach a
+provider. They are package data like everything here: OMH core never imports or
+runs them, and nothing runs them on install, update or routing. They run only
+when you invoke them, with your own credentials:
+
+- `eleven.py` and `narrate.py` read the key only from `ELEVENLABS_API_KEY` in the
+  environment (no `.env`, home or config lookup) and pass it to `curl` on stdin,
+  never in argv, files or logs. Without it they print why and exit 2 having sent
+  nothing. Credits are spent on your account; `narrate.py --only` regenerates
+  single lines.
+- `codex_ref_image.sh` needs your signed-in `codex` CLI on PATH and exits 2
+  without it.
+- Voice and language come from the brief's voice_policy and content locale; the
+  scripts never choose them. Without a key the procedure falls back to the
+  music-and-captions version: `synth_music.py` for music, on-screen text instead
+  of narration, code-drawn or supplied visuals instead of generated images.
+- `eleven.py sfx-kit` reads `assets/sfx_presets.json` (upstream's preset prompts).
 
 ## Capture contract
 
@@ -146,7 +171,8 @@ any chosen track (`analysis.json`); `timeline.py script.json --music-analysis`
 turns them into `barN`/`music.hitN` cues and writes `timeline.json` plus
 `reel/timeline.js`. Narration lines in `script.json` need per-line clips and
 character alignment in `audio/vo/` first; without them timeline.py reports the
-missing lines and exits 1.
+missing lines and exits 1. The opt-in `narrate.py` produces them with your own
+key; an approved local recording needs the same clip and alignment files.
 
 Mix accepts explicit stereo 16-bit PCM WAV at one declared sample rate; missing,
 corrupt or mismatched audio refuses (convert explicitly first). Modes are

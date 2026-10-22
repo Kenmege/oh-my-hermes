@@ -2,6 +2,10 @@
 
 Choose muted/music-only/narration/narration+bed/SFX from the brief, not from the
 conversation language. No default voice, provider, STT, download or paid call.
+The opt-in `eleven.py`/`narrate.py` (narration, SFX, music, STT) and
+`codex_ref_image.sh` run only when the user asks for them with their own
+`ELEVENLABS_API_KEY` or signed-in codex; they refuse without it, and the film
+falls back to local music and on-screen text.
 Audio comes before scenes: music beats and narration words set the picture's
 times. Craft depth (voices, music plans, SFX design, mix targets) is in
 `references/craft-audio.md`. `music_tools.py analyze` reads tempo, downbeats and

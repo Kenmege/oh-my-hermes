@@ -38,7 +38,9 @@ currently managed files; edited retired support is left as foreign data.
 ## Production authority and prerequisites
 
 OMH core remains stdlib-only, with no renderer dependency, import of companion
-scripts, new render command, network call or hidden execution. Catalog/discovery,
+scripts, new render command, network call or hidden execution. The kit's opt-in
+provider scripts are the one place it reaches a network service, and only when
+the user runs them with their own key. Catalog/discovery,
 routing, setup/update, projection and doctor only read/write declared data. Running
 an optional script is a separate explicit host action in an approved output folder.
 Neither a manifest nor a plan authorizes dependency installation or publication.
@@ -96,8 +98,10 @@ The companion engine and scripts are MIT material from revfactory/showreel at
 (revfactory). `toolkit/LICENSE.upstream` is verbatim; per-file notices and
 `toolkit/upstream-manifest.json` distinguish upstream files kept below a notice,
 modified scripts, original OMH helpers/guidance, the unchanged license and the
-translated `craft-*` references. Upstream's provider scripts (ElevenLabs
-narration, codex image generation) are not shipped. The provenance inventory excludes its own
+translated `craft-*` references. Upstream's provider scripts (`eleven.py`,
+`narrate.py`, `codex_ref_image.sh`) ship as opt-in: they reach ElevenLabs or
+codex only when the user runs them with their own `ELEVENLABS_API_KEY` or
+signed-in codex, refuse with exit 2 otherwise, and are never run by OMH. The provenance inventory excludes its own
 self-hash; outer native/portable inventories hash it normally. Keep these notices
 in every distribution and reproducible source package; asset/font rights remain
 separate. See [Skill sources](SKILL-SOURCES.md).

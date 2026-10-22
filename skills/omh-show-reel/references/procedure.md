@@ -27,8 +27,8 @@ Declared checks:
   - Required result fields: `candidates`, `shared_rubric`, `selection`, `rejected_alternatives`, `revision_budget`
   - Criterion: Require at least 3 distinct narrative and visual approaches, not palette swaps; compare audience fit, evidence clarity, native script, motion intent, feasibility and legibility before selecting one within the revision budget.
 - `reel_story_check`
-  - Required result fields: `segments`, `source_asset_ids`, `art_direction`, `motion_intent`, `locale_runs`
-  - Criterion: Every segment must bind time, message, source/asset IDs, medium, palette, typography, texture, composition, movement and transition; HOLD invented product UI or unsupported claims unless visibly labeled concept.
+  - Required result fields: `segments`, `source_asset_ids`, `art_direction`, `motion_intent`, `locale_runs`, `distinct_compositions`
+  - Criterion: Every segment must bind time, message, source/asset IDs, medium, palette, typography, texture, composition, movement and transition, and adjacent segments must differ in at least two of medium, palette, typeface, motion and texture even when one semantic object carries the film; HOLD invented product UI or unsupported claims unless visibly labeled concept.
 - `reel_timing_check`
   - Required result fields: `audio_mode`, `measured_cues`, `reading_time`, `pronunciation_approval`, `voice_rights`, `sync_status`
   - Criterion: Use measured native-script reading and actual utterance timing, not a fixed character-per-minute formula. When narration is needed require pronunciation, supported locale, voice consent and measured word cues before scene locking; music-only uses beat cues, muted channels need no audio or STT.
@@ -36,8 +36,8 @@ Declared checks:
   - Required result fields: `selected_executor`, `capabilities`, `workspace_scope`, `deterministic_time`, `commands_timeout_cancel`, `partial_resume`, `font_readiness`, `toolkit_provenance`, `source_bound_run`
   - Criterion: A selected renderer needs observed capability and a bounded reproducible recipe with time-based seek, timeout/cancel and partial/resume policy; HOLD missing capability, pageerror or font readiness, and never install tools, download fonts or call paid APIs implicitly.
 - `reel_preview_check`
-  - Required result fields: `style_frames`, `draft`, `transition_strips`, `keep_fix_rebuild`, `weakest_scene`, `revision_spend`, `delivery_size_review`, `strongest_scene`, `anti_slide_review`, `before_after_and_boundaries`
-  - Criterion: Inspect actual style frames then a moving draft and transition strips at delivery-size; assign keep/fix/rebuild and revise the weakest scene within a declared iteration/time budget, then re-render and compare. Stills alone cannot pass motion QA.
+  - Required result fields: `style_frames`, `draft`, `transition_strips`, `keep_fix_rebuild`, `weakest_scene`, `revision_spend`, `delivery_size_review`, `strongest_scene`, `anti_slide_review`, `composition_variety`, `before_after_and_boundaries`
+  - Criterion: Inspect actual style frames then a moving draft and transition strips at delivery-size; assign keep/fix/rebuild and revise the weakest scene within a declared iteration/time budget, then re-render and compare. A draft contact sheet where one composition fills most of the runtime is REVISE: rebuild segments by medium and motion. Stills alone cannot pass motion QA.
 - `reel_export_check`
   - Required result fields: `files_hashes`, `codec_dimensions_fps_duration`, `color_metadata`, `filesize_cap`, `audio_metrics`, `av_sync`
   - Criterion: Record measured hashes, size, duration, fps, codec, color primaries/range and channel constraints; HOLD unsupported codec, oversized output or missing measurements. Audio requires loudness/true peak and A/V sync, with STT only when speech exists; numerical results are not listening evidence.
@@ -74,7 +74,7 @@ Author at least 3 distinct concept candidates, compare one shared rubric, select
 
 ### `reel_direct_segments` (production)
 
-Author each timed segment with message, source/asset IDs, medium, palette, typography, texture, layout, camera/object movement and transition; bind native-script text runs and visibly distinguish concept from captured product evidence.
+Author each timed segment with message, source/asset IDs, medium, palette, typography, texture, layout, camera/object movement and transition, listing a distinct composition per beat so that adjacent segments differ in at least two of medium, palette, typeface, motion and texture; bind native-script text runs and visibly distinguish concept from captured product evidence.
 
 - Input refs: `objective audience and channel`, `duration format and budget`, `source brand and asset permissions`
 - Output refs: `show_reel_storyboard/v1`

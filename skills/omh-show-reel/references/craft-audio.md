@@ -1,4 +1,4 @@
-> Translated in full from revfactory/showreel@64521220a2f8e91cb9894400c48c15b7f45205d6 `showreel/references/audio.md` (MIT, Copyright (c) 2026 Minho Hwang (revfactory); `toolkit/LICENSE.upstream`, provenance in `toolkit/upstream-manifest.json`). Read it for voices and settings, music and SFX, mix targets. `$S` is `toolkit/scripts` under the loaded skill directory. Commands here are upstream's; check the upstream command map in `toolkit/README.md` before running one. Content language follows `references/brief-and-locales.md`: Korean-first defaults apply only to Korean content, the craft bar applies to every locale; host install paths are placeholders here and upstream's default narration voice is named by role, chosen only through voice_policy.
+> Translated in full from revfactory/showreel@64521220a2f8e91cb9894400c48c15b7f45205d6 `showreel/references/audio.md` (MIT, Copyright (c) 2026 Minho Hwang (revfactory); `toolkit/LICENSE.upstream`, provenance in `toolkit/upstream-manifest.json`). Read it for voices and settings, music and SFX, mix targets. `$S` is `toolkit/scripts` under the loaded skill directory. Commands here are upstream's; check the upstream command map in `toolkit/README.md` before running one. Content language follows `references/brief-and-locales.md`: Korean-first defaults apply only to Korean content, the craft bar applies to every locale; host install paths are placeholders here, upstream's default narration voice is named by role and chosen only through voice_policy, inline OMH notes mark where OMH policy overrides an upstream default, and the provider scripts are opt-in with the user's own key.
 
 # Audio: narration, music, sound effects, mix
 
@@ -45,6 +45,8 @@ Features blocked by plan (measured):
 | Kwan | `eMzlsWTml7eAEDvSiETn` | Energy, passion | v2 |
 | Anna Kim | `uyVNoMrnUku1dZyVEXwD` | Young female, composed (whisper acting `[whispers]`) | v3, v4 |
 | Sujin | `8zHuDw1bbkbkL93Inv5N` | Bright, lively female | v2 |
+
+> OMH note: this table lists Korean voices because upstream makes Korean films. Choose a voice through the brief's voice_policy for the content locale; `eleven.py` and `narrate.py` require the voice and language to be named and run only with the user's own ELEVENLABS_API_KEY.
 
 Find other voices with `eleven.py voices --lang ko` (my voices) and `--library` (public library search).
 

@@ -44,6 +44,8 @@ Features blocked by plan (measured):
 | Anna Kim | `uyVNoMrnUku1dZyVEXwD` | Young female, composed (whisper acting `[whispers]`) | v3, v4 |
 | Sujin | `8zHuDw1bbkbkL93Inv5N` | Bright, lively female | v2 |
 
+> OMH note: this table lists Korean voices because upstream makes Korean films. Choose a voice through the brief's voice_policy for the content locale; `eleven.py` and `narrate.py` require the voice and language to be named and run only with the user's own ELEVENLABS_API_KEY.
+
 Find other voices with `eleven.py voices --lang ko` (my voices) and `--library` (public library search).
 
 Model choice:

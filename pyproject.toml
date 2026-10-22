@@ -112,6 +112,8 @@ packages = [
   "show_reel_toolkit/scripts/motion_check.py", "show_reel_toolkit/scripts/qa_check.py",
   "show_reel_toolkit/scripts/contact_sheet.py", "show_reel_toolkit/scripts/finish.py", "show_reel_toolkit/scripts/preflight.py",
   "show_reel_toolkit/scripts/prep_images.py", "show_reel_toolkit/scripts/music_tools.py", "show_reel_toolkit/scripts/tools/cutout.swift",
+  "show_reel_toolkit/scripts/eleven.py", "show_reel_toolkit/scripts/narrate.py", "show_reel_toolkit/scripts/codex_ref_image.sh",
+  "show_reel_toolkit/assets/sfx_presets.json",
   "show_reel_toolkit/examples/timing.json", "show_reel_toolkit/examples/music-spec.json", "show_reel_toolkit/examples/README.md",
   "show_reel_craft/*.md",
 ]

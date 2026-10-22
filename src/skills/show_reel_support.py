@@ -15,6 +15,7 @@ SHOW_REEL_RESOURCES = (
     "scripts/motion_check.py", "scripts/qa_check.py",
     "scripts/contact_sheet.py", "scripts/finish.py", "scripts/preflight.py",
     "scripts/prep_images.py", "scripts/music_tools.py", "scripts/tools/cutout.swift",
+    "scripts/eleven.py", "scripts/narrate.py", "scripts/codex_ref_image.sh", "assets/sfx_presets.json",
     "examples/timing.json", "examples/music-spec.json", "examples/README.md",
 )
 
@@ -39,6 +40,10 @@ UPSTREAM_SOURCES = {
     "scripts/prep_images.py": "7fa0534b90cbb801ed0bb2d5d5eb0a5e7ad69816eb91bf4d0b241ee8b2e3897b",
     "scripts/music_tools.py": "297e12e8ffd7dfc667134b27a97c2a67770a754fe1ff1048a882dc90ccabc4a5",
     "scripts/tools/cutout.swift": "292e252c05bd2775945fa6a56b8734436aa6fa6323e9a33e79e645e5ba050729",
+    "scripts/eleven.py": "ad61f1a5431a18d059202b999b50c7b16826a8b872fcef05b975047787985ce1",
+    "scripts/narrate.py": "7148e331b3cc66c5af4ff0d3515f21b0f76cda7f7138fc188c32bd4ad88b2dd3",
+    "scripts/codex_ref_image.sh": "84d9c732e11f38ab2d4dbb5dac77e8de2dbdb05be08cbe816c5dcef913e48484",
+    "assets/sfx_presets.json": "4d6459d9728bfb52a1499bcd3b0f51d3989d98e723f8fbe263557ad9d23355d2",
     "references/techniques.md": "bb6f32abb1f557b58958748e0461b57f2da117a1ffc360e5148e56a418976cc8",
     "references/design.md": "d4e8ff5a84db3658e6d070dd1c5df62e60c83bcd478c794727147f339942db4f",
     "references/engine.md": "2639e9fdb49a846bb18d1a4382890f228e5a85f3123637588d7e21668864fcf6",
@@ -67,6 +72,10 @@ DERIVATIONS = {
     "scripts/prep_images.py": ["scripts/prep_images.py"],
     "scripts/music_tools.py": ["scripts/music_tools.py"],
     "scripts/tools/cutout.swift": ["scripts/tools/cutout.swift"],
+    "scripts/eleven.py": ["scripts/eleven.py"],
+    "scripts/narrate.py": ["scripts/narrate.py"],
+    "scripts/codex_ref_image.sh": ["scripts/codex_ref_image.sh"],
+    "assets/sfx_presets.json": ["assets/sfx_presets.json"],
 }
 # What each derived file changes from its upstream source; the file's own header says the same.
 MODIFICATIONS = {
@@ -88,6 +97,10 @@ MODIFICATIONS = {
     "scripts/prep_images.py": ("modified_derivative", "English messages, Pillow prerequisite stated, cutout tool compiled into the output folder"),
     "scripts/music_tools.py": ("modified_derivative", "English messages, explicit tool paths, outputs must be new, numpy only for analyze/gap, synth_music event keys accepted, gap writes 16-bit PCM for mix.py"),
     "scripts/tools/cutout.swift": ("modified_derivative", "Comments translated to English; attribution notice"),
+    "scripts/eleven.py": ("modified_derivative", "Opt-in provider client run only by the user: key from ELEVENLABS_API_KEY only (no .env/home/config lookup), on curl stdin; no default voice or language; English messages; explicit --ffmpeg/--ffprobe"),
+    "scripts/narrate.py": ("modified_derivative", "Opt-in, user's own key: refuses without ELEVENLABS_API_KEY (exit 2), requires script.json voice and language, no sys.path edit, English messages"),
+    "scripts/codex_ref_image.sh": ("modified_derivative", "Opt-in, user's own signed-in codex CLI; refuses without it (exit 2); prompt and messages in English"),
+    "assets/sfx_presets.json": ("unmodified_upstream", "Upstream bytes verbatim (JSON allows no notice)"),
 }
 # Skill references translated from upstream: English translation of the complete text, cross-references
 # renamed to references/craft-*.md, with an OMH header that maps upstream commands to this toolkit.
@@ -121,7 +134,7 @@ def provenance_manifest():
             "local_sha256": hashlib.sha256(craft.joinpath(f"{name}.md").read_bytes()).hexdigest(),
             "classification": "translated_derivative",
             "upstream": [{"path": source, "sha256": UPSTREAM_SOURCES[source]}],
-            "modification_notice": "Complete English translation; cross-references renamed to references/craft-*.md; host install paths made placeholders; the default narration voice named by role; OMH header",
+            "modification_notice": f"Translated from upstream {source}@{REVISION[:9]}: complete English translation; cross-references renamed to references/craft-*.md; host install paths made placeholders; the default narration voice named by role; inline OMH notes where the locale/brief policy overrides an upstream default; OMH header",
             "license": "MIT",
         }
         for name, source in CRAFT_REFERENCES.items()

@@ -177,6 +177,12 @@ PROCESS_SPAWN_ALLOWLIST: dict[str, str] = {
         "data, never imported by core, routing, preparation, or install; companion nonexecution "
         "and built-wheel parity tests guard it."
     ),
+    "src/skills/show_reel_toolkit/scripts/eleven.py": (
+        "opt-in host CLI `python toolkit/scripts/eleven.py` (and `narrate.py`, which imports it), run only by "
+        "a user who invokes it with their own ELEVENLABS_API_KEY; spawns `curl` to api.elevenlabs.io with the key "
+        "on stdin, plus local ffmpeg/ffprobe measurements. OMH core never imports or invokes it; packaged as inert "
+        "UTF-8 data, named as a scoped exception in CLAUDE.md, and guarded by companion nonexecution tests."
+    ),
     "src/skills/show_reel_toolkit/scripts/timeline.py": (
         "explicit host CLI `python toolkit/scripts/timeline.py`; a local FFmpeg decode for the loudness envelope of the project's own narration/music clips only. Packaged as inert UTF-8 "
         "data, never imported by core, routing, preparation, or install; companion nonexecution "
@@ -661,7 +667,7 @@ class NoHiddenProcessSpawn(unittest.TestCase):
         companion = "src/skills/show_reel_toolkit/"
         owners = {companion + "scripts/" + name for name in (
             "mix.py", "motion_check.py", "qa_check.py", "contact_sheet.py", "finish.py",
-            "music_tools.py", "prep_images.py", "preflight.py", "timeline.py",
+            "music_tools.py", "prep_images.py", "preflight.py", "timeline.py", "eleven.py",
         )}
         self.assertEqual({p for p in PROCESS_SPAWN_ALLOWLIST if p.startswith(companion)}, owners)
         for relative_path, tree in _source_modules():
@@ -669,8 +675,10 @@ class NoHiddenProcessSpawn(unittest.TestCase):
                 continue
             # `preflight` is left out: core already imports unrelated `preflight` names
             # (e.g. coding.fanout_confinement), and the stem check matches imported names too.
+            # `narrate` spawns nothing itself (it imports `eleven`), so it has no allowlist entry, but
+            # core must import neither provider script.
             for stem in ("mix", "motion_check", "qa_check", "contact_sheet", "finish", "music_tools",
-                         "prep_images", "timeline", "show_reel_toolkit"):
+                         "prep_images", "timeline", "eleven", "narrate", "show_reel_toolkit"):
                 self.assertFalse(_imports_module_named(tree, stem), (relative_path, stem))
 
     def test_only_allowlisted_modules_import_subprocess(self) -> None:

@@ -435,6 +435,10 @@ extrapolating to every locale or platform.
 
 Choose muted/music-only/narration/narration+bed/SFX from the brief, not from the
 conversation language. No default voice, provider, STT, download or paid call.
+The opt-in `eleven.py`/`narrate.py` (narration, SFX, music, STT) and
+`codex_ref_image.sh` run only when the user asks for them with their own
+`ELEVENLABS_API_KEY` or signed-in codex; they refuse without it, and the film
+falls back to local music and on-screen text.
 Audio comes before scenes: music beats and narration words set the picture's
 times. Craft depth (voices, music plans, SFX design, mix targets) is in
 `references/craft-audio.md`. `music_tools.py analyze` reads tempo, downbeats and
@@ -540,7 +544,8 @@ def craft_reference_text(name):
             f"Read it for {CRAFT_WHEN[name]}. `$S` is `toolkit/scripts` under the loaded skill directory. Commands here are "
             "upstream's; check the upstream command map in `toolkit/README.md` before running one. Content language follows "
             "`references/brief-and-locales.md`: Korean-first defaults apply only to Korean content, the craft bar applies to every locale; "
-            "host install paths are placeholders here and upstream's default narration voice is named by role, chosen only through voice_policy.\n\n")
+            "host install paths are placeholders here, upstream's default narration voice is named by role and chosen only through voice_policy, "
+            "inline OMH notes mark where OMH policy overrides an upstream default, and the provider scripts are opt-in with the user's own key.\n\n")
     return note + body
 
 

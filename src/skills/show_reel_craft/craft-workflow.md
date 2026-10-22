@@ -23,6 +23,8 @@ What each part of the request demands of the output is as follows.
 
 When this sentence comes attached to a different subject (a product introduction, an event promotion, a person profile), follow the request for the subject, and follow the table above for the standard of making. Even for requests without this sentence, the standards "놀라운 (amazing), 역동적인 (dynamic), 한글버전 (Korean-language version), 전력을 다해요 (give it everything you have)" apply as they are. The standard "each segment looks like a different project" applies when the format is a work compilation (showreel). For a video that must read as a single work, such as a brand or educational video, keep consistency inside the video first, and divide the scenes by medium and motion.
 
+> OMH note: "한글버전 (Korean-language version)" is upstream's default because upstream makes Korean films. In OMH the content language comes from `references/brief-and-locales.md`; for Korean content this standard applies as written, and for any other locale read it as "use the content script's own forms as design material". The other three standards apply to every locale.
+
 ## What is not fixed in advance
 
 Mood, palette, typeface pairing, scene structure, and whether to use narration are decided per request at the concept stage. The previous version of this skill set "dark background + gold accent + letterbox + film grain + HUD corners" as defaults, and as a result videos came out alike even with different subjects. Use such elements ("Predictable screens" in `references/craft-design.md`) deliberately, only when the concept demands them, and write the reason in `concept.md`.
@@ -41,6 +43,8 @@ Items not in the request proceed with the values below.
 | Images | Generate with codex-image only when the concept needs them. Do not generate the faces of real people; use only real photos |
 | Deliverables | Master MP4, sharing MP4, poster JPG, subtitle SRT (when there is narration), production notes |
 | Loudness | -14 LUFS. `mix.py` masters to a true peak of -2.0 dBTP, and the QA criterion is -1.0 dBTP or below |
+
+> OMH note: the narration voice and language are not defaults in OMH. They come from the brief's voice_policy and content locale (`references/brief-and-locales.md`); the verified Korean narrator above is a candidate for Korean narration only. Narration and image generation use the opt-in `eleven.py`, `narrate.py` and `codex_ref_image.sh`, run only with the user's own key or signed-in codex; without them, use the music-and-picture version and code-drawn or supplied visuals.
 
 ## Where to work
 
