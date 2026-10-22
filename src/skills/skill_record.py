@@ -59,9 +59,11 @@ from .catalog import (
 )
 from .procedure_rendering import specialist_procedure_reference_markdown
 from .dag_ulw_skill import dag_ulw_reference_templates
+from .market_research_skill import REFERENCE_CONTENT as MARKET_RESEARCH_REFERENCES
 from .render import (
     SkillReferenceTemplate,
     SkillTemplate,
+    loadable_skill_mentions,
     accessibility_audit_reference_templates,
     adversarial_consensus_reference_templates,
     agent_debug_reference_templates,
@@ -182,6 +184,13 @@ _BESPOKE_BODIES: dict[str, Callable[[], SkillTemplate]] = {
 }
 
 
+def _market_research_reference_templates() -> list[SkillReferenceTemplate]:
+    return [
+        SkillReferenceTemplate("market-research", f"references/{path}", loadable_skill_mentions(content))
+        for path, content in MARKET_RESEARCH_REFERENCES.items()
+    ]
+
+
 def _procedure_reference_templates() -> list[SkillReferenceTemplate]:
     return [
         SkillReferenceTemplate(
@@ -254,6 +263,7 @@ REFERENCE_PRODUCERS: tuple[Callable[[], list[SkillReferenceTemplate]], ...] = (
     _procedure_reference_templates,
     _full_contract_reference_templates,
     research_reference_templates,
+    _market_research_reference_templates,
     design_reference_templates,
     apple_design_reference_templates,
     award_bar_score_reference_templates,

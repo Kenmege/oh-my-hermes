@@ -27,6 +27,7 @@ Role selection is prepared guidance only. It is not worker dispatch, tool execut
 - `research`
 - `web-research`
 - `research-brief`
+- `market-research`
 
 ## Primary Harnesses
 

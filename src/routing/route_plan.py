@@ -120,6 +120,7 @@ _SKILL_STAGE = {
     "research": "research",
     "web-research": "research",
     "research-brief": "research",
+    "market-research": "research",
     "research-department": "research",
     "paper-learning": "research",
     "plan": "plan",
@@ -134,7 +135,7 @@ _SKILL_STAGE = {
 _STAGE_PRIORITY = {
     "clarify": ("deep-interview",),
     "triage": ("feedback-triage",),
-    "research": ("research", "source-finder", "web-research", "research-brief", "research-department", "paper-learning"),
+    "research": ("research", "source-finder", "web-research", "research-brief", "market-research", "research-department", "paper-learning"),
     "plan": ("ralplan", "plan"),
     "deliver": ("ultrawork", "ai-slop-cleaner"),
     "review": ("code-review",),

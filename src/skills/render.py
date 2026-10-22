@@ -2807,6 +2807,30 @@ def _progressive_workflow_full_contract(definition: SkillDefinition, name: str) 
     """Render skill-specific detail without copying the compact body's shared rails."""
     title = name.replace("-", " ").title()
     triggers = _shipped_triggers(definition)
+    # A method skill's compact body (`_progressive_method_body`) already renders
+    # its why-this-exists, opening steps, use-when, safety rules, checklist and
+    # recovery notes; this file carries only what the body does not.
+    from .jev_skills import JEV_SKILL_NAMES
+
+    method_body = name not in _PROGRESSIVE_WORKFLOW_OPERATIONS and name not in JEV_SKILL_NAMES
+    rubric = (
+        f"""## Do Not Use When
+
+{_tuple_list(tuple(loadable_skill_mentions(line) for line in definition.do_not_use_when))}
+
+## Examples
+
+{_example_block("Good", definition, good=True)}
+
+{_example_block("Bad", definition, good=False)}"""
+        if method_body else _quality_rubric_sections(definition)
+    )
+    use_when = "" if method_body else f"{definition.use_when}\n\n"
+    safety = "" if method_body else f"""
+
+Safety rules:
+
+{_tuple_list(definition.safety_rules)}"""
     return f"""# {title}
 
 Load this on-demand contract after the compact `{name}` body identifies the
@@ -2814,13 +2838,11 @@ workflow. The main body owns routing signals, shared rules, the runtime
 operation, delegation fallback, and completion/recovery pointers; this file
 holds the workflow-specific detail without copying those shared rails.
 
-{_quality_rubric_sections(definition)}
+{rubric}
 
 ## When to Use
 
-{definition.use_when}
-
-Routing signals: {triggers}
+{use_when}Routing signals: {triggers}
 
 ## Workflow Contract
 
@@ -2848,19 +2870,76 @@ Expected outputs:
 
 Artifact expectations:
 
-{_tuple_list(definition.artifact_expectations)}{_artifact_contract_block(definition)}
-
-Safety rules:
-
-{_tuple_list(definition.safety_rules)}
+{_tuple_list(definition.artifact_expectations)}{_artifact_contract_block(definition)}{safety}
 
 Detailed procedure steps: `references/procedure.md`.
 """
 
 
+def _progressive_method_body(definition: SkillDefinition, name: str) -> str:
+    """Render a compact body for a method skill with no workflow-artifact operation.
+
+    Every line is drawn from the catalog definition, so the body cannot drift
+    from it; the method detail stays in `references/full-contract.md`.
+    """
+    title = name.replace("-", " ").title()
+    bundled_boundary = "".join(
+        f"**Do Not Use When:** {loadable_skill_mentions(line)}\n\n"
+        for line in definition.do_not_use_when
+        if isinstance(line, HermesSkillLine)
+    )
+    return f"""# {title}
+
+Required: {", ".join(definition.required_inputs)}. Output: {", ".join(definition.expected_outputs)}.
+
+{bundled_boundary}**HOLD:** Missing inputs or failed contract gates. Prepared OMH routing is not execution or approval.
+
+## Why This Exists
+
+{loadable_skill_mentions(definition.why_this_exists)}
+
+## First Steps
+
+{_tuple_list(definition.opening_steps)}
+
+Contract: `references/full-contract.md`, loaded before analysis. Procedure: `references/procedure.md`. These are working methods, not an OMH runtime operation.
+
+## Safety Rules
+
+{_tuple_list(definition.safety_rules)}
+
+## When to Use
+
+{definition.use_when}
+
+Strong routing signals: {_shipped_triggers(definition)}
+
+## Catalog Metadata
+
+Category: `{definition.category}`
+Phase: `{definition.phase}`
+Hermes role: `{definition.hermes_role}`
+Quality tier: `{definition.quality_tier}`
+
+## Completion Checklist
+
+{_tuple_list(definition.final_checklist)}
+
+## Recovery Notes
+
+{_tuple_list(definition.recovery_notes)}
+
+{awareness_workflow_context_markdown(name)}
+
+{_common_rail_sections(definition, declared_primary_harness(name))}
+"""
+
+
 def _progressive_workflow_body(definition: SkillDefinition, name: str) -> str:
     """Keep the routing and action boundary in the always-loaded workflow body."""
-    operation = _PROGRESSIVE_WORKFLOW_OPERATIONS[name]
+    operation = _PROGRESSIVE_WORKFLOW_OPERATIONS.get(name)
+    if operation is None:
+        return _progressive_method_body(definition, name)
     title = name.replace("-", " ").title()
     compact_contracts = {
         "decision-prototype": "Required: one decision, a bounded experiment, an isolated scratch boundary, and a measurement method. Output: a decision record, prepared handoff, observation ledger, and receipt. When Hermes' bundled `spike` skill is loaded for the same question, build the way it says and keep these records: `references/spike-composition.md`.",

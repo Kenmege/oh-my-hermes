@@ -145,6 +145,7 @@ NEXT_ACTION_LABELS: dict[str, str] = {
     "prepare_reliability_review": "preparing a reliability review",
     "prepare_report_package": "preparing a report package",
     "prepare_research_department_plan": "preparing a research department plan",
+    "prepare_market_research": "scoping market research methods",
     "prepare_review_or_followup_handoff": "preparing a review or follow-up handoff",
     "prepare_rules_distillation": "preparing rule candidates",
     "prepare_scheduled_ops_blueprint": "preparing a scheduled-ops blueprint",

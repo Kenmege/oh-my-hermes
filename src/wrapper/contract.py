@@ -279,6 +279,7 @@ VISIBLE_ACTIONS = (
     "prepare_action_hold_check",
     "prepare_completion_objection_check",
     "prepare_lifecycle_growth",
+    "prepare_market_research",
     "prepare_product_discovery_validation",
     "prepare_sales_pipeline_review",
     "prepare_product_brief",
@@ -671,6 +672,7 @@ _CONTEXT_PRIMER_GROUPS = (
 )
 _RETAINED_DELEGATION_SKILLS = set(retained_delegation_skill_names())
 _DIRECT_WORKFLOW_SKILLS = {
+    "market-research",
     "research",
     "ultraqa",
     # A big job the person asked for runs at once (owner decision D1); only scope, spend or an irreversible step
@@ -1088,6 +1090,7 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "prepare_reliability_review": ("prepare_reliability_review", "Review reliability"),
     "prepare_scheduled_ops_blueprint": ("prepare_scheduled_ops_blueprint", "Prepare automation"),
     "prepare_research_department_plan": ("prepare_research_department_plan", "Prepare research flow"),
+    "prepare_market_research": ("prepare_market_research", "Scope market analysis"),
     "prepare_source_finder_plan": ("prepare_source_finder_plan", "Prepare sources"),
     "prepare_learning_brief": ("prepare_learning_brief", "Confirm learning target"),
     "prepare_paper_learning": ("prepare_paper_learning", "Prepare paper learning"),
@@ -4708,6 +4711,21 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS.update(
             ],
             "recommended_flow": ["frame_one_falsifiable_decision", "bound_disposable_experiment_and_workspace", "prepare_measurement_and_stop_conditions", "record_receipt_for_later_planning"],
             "evidence_not_observed": ["executor dispatch", "prototype execution", "workspace cleanup", "observed result", "plan acceptance", "implementation or production promotion"],
+        },
+        "market-research": {
+            "kind": "market_research",
+            "headline": "I can scope the market analysis and its evidence requirements.",
+            "body": "I will frame the decision, buyer segment, geography, units, period, source cutoff and budget, then select sizing, customer/JTBD or comparable competitor/pricing methods. Sources, calculation results, interviews and validation remain unobserved until evidence is recorded.",
+            "phase": "market_research_prepared",
+            "next_action": "prepare_market_research",
+            "artifact_schema": "market_research_card/v1",
+            "claim_boundary_suffix": "It is not retrieval, calculation, customer validation, outreach, payment, scheduling or investment approval evidence.",
+            "actions": [
+                {"id": "prepare_market_research", "label": "Scope market analysis", "style": "primary"},
+                {"id": "show_status", "label": "Show status", "style": "secondary"},
+            ],
+            "recommended_flow": ["frame_scope_units_cutoff_and_budget", "register_sources_and_assumptions", "apply_requested_market_methods", "report_contrary_evidence_and_verification_needs"],
+            "evidence_not_observed": ["source retrieval", "calculation results", "customer evidence", "customer validation", "outreach, payments or scheduling", "investment approval"],
         },
         "lifecycle-growth": {
             "kind": "lifecycle_growth",

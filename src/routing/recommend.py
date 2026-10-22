@@ -6,6 +6,7 @@ from functools import lru_cache
 import re
 
 from ..plugin_bundle.omh.data_share_cues import DATA_SHARE_REVIEW_KOREAN_PHRASES, data_share_request_admitted
+from ..plugin_bundle.omh.request_lead import after_courtesy
 from ..plugin_bundle.omh.spend_signals import SPEND_GATE_KOREAN_PHRASES, spend_request_clause
 from ..skills.catalog import SkillDefinition, builtin_definitions, routable_definitions
 from .domain_signals import (
@@ -1626,6 +1627,11 @@ _SKILL_POLICIES = {
             "copy; ask for missing runtime/delivery decisions and record observed evidence only when Hermes or the host runtime provides it."
         ),
     ),
+    "market-research": RecommendationPolicy(
+        next_action="prepare_market_research",
+        evidence_boundary="A market analysis plan is not source retrieval, a calculation result, customer validation, outreach, payment, scheduling, or investment approval evidence.",
+        wrapper_guidance="Frame scope, source cutoff and budget; load market sizing, customer evidence or comparable pricing methods as needed, then preserve source IDs, assumptions, contrary evidence and verification gaps.",
+    ),
     "research-department": RecommendationPolicy(
         next_action="prepare_research_department_plan",
         evidence_boundary=(
@@ -2803,6 +2809,9 @@ _SIBLING_POINTER_METADATA_TOKENS = {
 # phrases. Crediting them separately made unrelated sentences containing
 # `models` and `work` look like observed-work inventory requests.
 _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
+    # Only complete domain phrases may score; their ordinary component words
+    # must not turn unrelated market, customer or profile mentions into work.
+    "market-research": frozenset({"market", "research", "sizing", "tam", "sam", "som", "bottom", "up", "size", "sensitivity", "customer", "evidence", "analysis", "jtbd", "matrix", "competitor", "pricing", "profiles", "competitive"}),
     # The Jev skills are reached through `routing/jev_addressing.py` only:
     # every word their triggers are built from is held back, `jev` included,
     # so a sentence that merely mentions Jev or a review, a failure, or a
@@ -5837,6 +5846,70 @@ def _sales_pipeline_review_offers_itself(normalized_query: str, query_tokens: se
     )
 
 
+# `market-research` is admitted only by a request that opens on one of its own
+# method phrases: the first sentence, after the courtesy openers
+# (`request_lead.COURTESY_OPENERS`), is a verb from this closed list, at most
+# one determiner and one modifier, a trigger phrase of the skill, and then
+# nothing, a comma or colon, or a word from `_MARKET_RESEARCH_FOLLOWERS`. A
+# method named as the topic, input or material of another request ("send the
+# market sizing slide", "explain tam sam som", "should we kill it? our market
+# sizing ...", "write a post about why startups should perform ...") is not one.
+# Neither is a question that opens on a listed verb ("do market sizing and tam
+# mean the same thing?", "estimate tam sam som? no, I just want ..."): a message
+# carrying a "?" is admitted only when its courtesy opener asks the agent ("can
+# you do market sizing for dental clinics?") and the "?" ends the message;
+# "hey," or "please," before a question leaves it a question, and "can you
+# estimate tam sam som? never mind, ..." takes the request back. "by" and "with" are not
+# followers: "run the market sizing by legal" and "compare competitive pricing
+# analysis with value-based pricing" name the method as an object. The word
+# after a follower may not open supplied material, the person's own private
+# thing, or a question clause (`_MARKET_RESEARCH_NOT_A_MARKET`): "on this pull
+# request diff", "for my lemonade stand homework", "of how many pizzas".
+_MARKET_RESEARCH_LEAD_VERBS = frozenset(
+    {"analyse", "analyze", "build", "calculate", "compare", "conduct", "create", "do", "estimate", "perform", "prepare", "research", "run"}
+)
+_MARKET_RESEARCH_DETERMINERS = frozenset({"a", "an", "the", "our", "my"})
+_MARKET_RESEARCH_MODIFIERS = frozenset({"bottom-up", "detailed", "full", "new", "quick", "rough", "top-down"})
+_MARKET_RESEARCH_FOLLOWERS = frozenset(
+    {"across", "and", "between", "covering", "for", "from", "in", "of", "on", "using", "versus", "vs", "within"}
+)
+_MARKET_RESEARCH_NOT_A_MARKET = frozenset({"how", "my", "that", "these", "this", "those", "what", "which"})
+_MARKET_RESEARCH_WORD = re.compile(r"[^\W_]+(?:-[^\W_]+)*|[,:]")
+
+
+@lru_cache(maxsize=1)
+def _market_research_method_phrases() -> tuple[tuple[str, ...], ...]:
+    definition = next(item for item in builtin_definitions() if item.name == "market-research")
+    phrases = {tuple(_MARKET_RESEARCH_WORD.findall(normalized_phrase(trigger))) for trigger in definition.triggers}
+    return tuple(sorted(phrases, key=len, reverse=True))
+
+
+def _market_research_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
+    """Admit only a request that leads with a market method, not a method named in passing."""
+    del query_tokens
+    message = normalized_query.strip()
+    request = after_courtesy(message)
+    opener = message[: len(message) - len(request)]
+    if "?" in message and ("you" not in _MARKET_RESEARCH_WORD.findall(opener) or "?" in message.rstrip("?")):
+        return False
+    sentence = re.split(r"[.!?;](?:\s|$)", request, maxsplit=1)[0]
+    words = _MARKET_RESEARCH_WORD.findall(sentence)
+    if not words or words[0] not in _MARKET_RESEARCH_LEAD_VERBS:
+        return False
+    index = 1
+    if index < len(words) and words[index] in _MARKET_RESEARCH_DETERMINERS:
+        index += 1
+    if index < len(words) and words[index] in _MARKET_RESEARCH_MODIFIERS:
+        index += 1
+    for phrase in _market_research_method_phrases():
+        if tuple(words[index:index + len(phrase)]) == phrase:
+            rest = words[index + len(phrase):]
+            if not rest or rest[0] in {",", ":"}:
+                return True
+            return rest[0] in _MARKET_RESEARCH_FOLLOWERS and (len(rest) == 1 or rest[1] not in _MARKET_RESEARCH_NOT_A_MARKET)
+    return False
+
+
 @lru_cache(maxsize=1)
 def _spend_gate_trigger_phrases() -> tuple[str, ...]:
     definition = next(item for item in builtin_definitions() if item.name == "spend-gate")
@@ -5904,6 +5977,10 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     # dispatched to the gate by the chat router before scoring
     # (`SPENDING_LOOP_REASON` in `chat.py`), unmarked imperative or not.
     "spend-gate": lambda normalized_query, query_tokens: bool(_spend_gate_clause(normalized_query)),
+    # `market-research`: a request that leads with one of its method phrases
+    # (`_market_research_offers_itself`). Like the two gates above it has no
+    # boost and stands down no guard.
+    "market-research": _market_research_offers_itself,
 }
 # A skill whose admission reads where the data goes reads a stricter predicate
 # when the masker removed quoted, code, link or relayed text from the message

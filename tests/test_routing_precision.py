@@ -26,7 +26,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # dag-ulw adds twenty-one negatives and twenty-nine interventions.
         # A complaint, a question or a stop after a skill's bare name adds fifteen negatives and eight interventions.
         # Its review adds nine negatives and ten interventions.
-        self.assertEqual(payload["summary"]["case_count"], 945)
+        # market-research adds ten negatives and four interventions; its second
+        # review six more negatives, its third two.
+        self.assertEqual(payload["summary"]["case_count"], 963)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -74,12 +76,15 @@ class RoutingPrecisionTests(unittest.TestCase):
         # name is answered directly (+12). Its review adds a yes-or-no question,
         # a stop with a reason or said twice, and questions that ask for no plan
         # or about the skill itself, each answered directly (+9).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 291)
+        # TAM SAM SOM explained to a five-year-old is answered directly (+1),
+        # and so are two method questions from its second review (+2) and one
+        # from its third (+1).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 295)
         self.assertEqual(payload["summary"]["file_lookup_count"], 10)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
         self.assertEqual(payload["summary"]["catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["intervention_case_count"], 965)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 969)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

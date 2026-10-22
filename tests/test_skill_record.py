@@ -47,7 +47,8 @@ class SkillRecordTests(unittest.TestCase):
         # `_SKILL_POLICIES` entry or changes category/role. Re-measure then.
         counts = Counter(record.policy_source for record in skill_records())
         # spend-gate adds a `_SKILL_POLICIES` entry (+1 skill). dag-ulw takes its role's policy (+1 role).
-        self.assertEqual(counts, Counter({"skill": 117, "category": 27, "role": 9}))
+        # market-research adds a `_SKILL_POLICIES` entry (+1 skill).
+        self.assertEqual(counts, Counter({"skill": 118, "category": 27, "role": 9}))
         self.assertEqual(counts["default"], 0)
 
     def test_next_action_label_is_the_action_copy_label(self) -> None:
