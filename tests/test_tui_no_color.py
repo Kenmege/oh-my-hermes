@@ -23,6 +23,7 @@ from omh.tui.keys import ENTER, Key
 from omh.tui.panels import dag_style
 from omh.tui.style import Style
 from omh.tui.theme import build_theme, on_band, without_colour
+from omh.tui.transcript import NOTICE_ERROR, NOTICE_OK, TOOL_OK, NoticeBlock, ToolGroup, ToolRow, block_rows
 
 SID = "s"
 RESUME = json.loads(
@@ -91,6 +92,27 @@ class NoColourTests(unittest.TestCase):
         self.assertTrue(current, "the menu's current row is drawn reversed and bold")
         self.assertTrue(app.theme.menu_current.reverse and app.theme.menu_current.bold)
         self.assertFalse(app.theme.menu.reverse)  # only the current row
+
+    def test_the_rows_on_a_band_paint_no_colour(self) -> None:
+        # #2230 review F1: `_banded` gave a band's spans its background at their own depth, the default truecolour.
+        theme = scene_app({"NO_COLOR": "1"}).theme
+        allowed = ToolGroup([ToolRow("t", "terminal", "ls", TOOL_OK, duration_s=0.1, output=("a.txt",),
+                                     answers=[("allowed once · ls", NOTICE_OK)])], done=True)
+        wide = NoticeBlock("The turn ended with an error. " * 6, NOTICE_ERROR)  # wider than the screen: it wraps
+        for name, rows in (("approval", block_rows(allowed, 60, theme)), ("notice", block_rows(wide, 60, theme))):
+            with self.subTest(rows=name):
+                self.assertGreater(len(rows), 1)
+                self.assertEqual(colour_codes("".join(span.style.sgr() for row in rows for span in row)), [])
+
+    def test_a_theme_switch_keeps_no_colour(self) -> None:
+        # #2230 review F2: `/theme <name>` and `/theme light` build the theme again.
+        for arg in (SKIN_THEMES[1].short_name, "light"):
+            with self.subTest(theme=arg):
+                app = scene_app({"NO_COLOR": "1"})
+                app._theme(arg)
+                app._render()
+                self.assertIn("pytest", written(app))
+                self.assertEqual(colour_codes(written(app)), [])
 
     def test_every_skin_dark_or_light_has_no_colour_left(self) -> None:
         for skin in SKIN_THEMES:
