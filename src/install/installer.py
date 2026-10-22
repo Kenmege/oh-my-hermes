@@ -752,10 +752,11 @@ def install_skill_pack(
         _write_skill_reference(paths.skills_dir, template, force=force, managed=managed)
     support_hashes = write_support(paths.skills_dir, support_current, manifest, rendered_names={t.name for t in templates})
     _carry_kept_skills(paths.skills_dir, kept.values())
-    if "show-reel" in kept_names:
+    if kept_names:
         from .support_materialization import support_records
 
-        support_hashes.update(support_records(recorded_manifest))
+        support_hashes.update({relative: digest for relative, digest in support_records(recorded_manifest).items()
+                               if any(relative.startswith(skill_install_relative_dir(name).as_posix() + "/") for name in kept_names)})
     # The pruners act only on what the prior manifest records, so leaving a
     # kept skill, and an edit reported as left behind, out of the copy they
     # read is what keeps them off both: "stays" has to be true, with or

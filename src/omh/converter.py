@@ -185,16 +185,25 @@ def convert_support_from_dir(source_dir: Path):
     from .skills.support_files import builtin_skill_support_templates, checked_support_path, validate_support_templates
 
     expected = builtin_skill_support_templates()
+    owners = {t.skill_name for t in expected}
     templates = []
     for skill_file in discover_skill_files(source_dir):
         skill_name = extract_name(skill_file.read_text(encoding="utf-8"), skill_file.parent.name)
-        if skill_name != "show-reel":
+        if skill_name not in owners:
             continue
         if (skill_file.parent / "toolkit").is_symlink():
             raise ValueError("local-source support refuses symlink toolkit")
         if not (skill_file.parent / "toolkit").exists():
-            continue
+            raise ValueError(f"local-source support toolkit missing for {skill_name}")
+        owned = {t.relative_path for t in expected if t.skill_name == skill_name}
+        actual = {path.relative_to(skill_file.parent).as_posix()
+                  for path in (skill_file.parent / "toolkit").rglob("*")
+                  if path.is_file() or path.is_symlink()}
+        if actual != owned:
+            raise ValueError(f"local-source support inventory mismatch for {skill_name}")
         for template in expected:
+            if template.skill_name != skill_name:
+                continue
             path = checked_support_path(skill_file.parent, template.relative_path)
             if not path.is_file() or path.read_bytes() != template.content.encode("utf-8"):
                 raise ValueError(f"local-source support missing/unreviewed bytes: {template.relative_path}")

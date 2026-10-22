@@ -61,6 +61,9 @@ from .llm_app_references import LLM_APP_DEV_CONDITIONAL_CONTRACTS, LLM_APP_DEV_S
 from .product_discovery_skill import DEFINITION as PRODUCT_DISCOVERY_DEFINITION
 from .sales_pipeline_skill import DEFINITION as SALES_PIPELINE_DEFINITION
 from .show_reel_skill import DEFINITION as SHOW_REEL_DEFINITION
+from .geospatial_analysis_skill import DEFINITION as GEOSPATIAL_ANALYSIS_DEFINITION
+from .biomedical_evidence_skill import DEFINITION as BIOMEDICAL_EVIDENCE_DEFINITION
+from .molecular_docking_skill import DEFINITION as MOLECULAR_DOCKING_DEFINITION
 
 from .catalog_types import (
     ADVERSARIAL_CONSENSUS_BUCKETS,
@@ -11774,6 +11777,9 @@ _DEFINITIONS.extend(
         PRODUCT_DISCOVERY_DEFINITION,
         SALES_PIPELINE_DEFINITION,
         SHOW_REEL_DEFINITION,
+        GEOSPATIAL_ANALYSIS_DEFINITION,
+        BIOMEDICAL_EVIDENCE_DEFINITION,
+        MOLECULAR_DOCKING_DEFINITION,
         *JEV_DEFINITIONS,
     )
 )

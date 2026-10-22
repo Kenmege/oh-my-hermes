@@ -312,9 +312,10 @@ NON_SKILL_BACKTICKS = frozenset(
 # to `design-quality-gate`, and a verdict on rendered frames to `visual-qa`;
 # no sibling gains a statement pointing back. Five cases, five pairs, one
 # owner.
-EXPECTED_DEFERENCE_CASES = 398
-EXPECTED_DEFERENCE_PAIRS = 412
-EXPECTED_DEFERRING_OWNERS = 115
+# Three science owners add four statements and six sibling pairs.
+EXPECTED_DEFERENCE_CASES = 402
+EXPECTED_DEFERENCE_PAIRS = 418
+EXPECTED_DEFERRING_OWNERS = 118
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.

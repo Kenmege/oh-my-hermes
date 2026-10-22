@@ -104,6 +104,14 @@ packages = [
 [tool.setuptools.package-data]
 # Closed optional companion data, not packages/imported production modules.
 "omh.skills" = [
+  "geospatial_analysis_toolkit/README.md", "geospatial_analysis_toolkit/LICENSE.upstream",
+  "geospatial_analysis_toolkit/scripts/analyze.py", "geospatial_analysis_toolkit/examples/input.json",
+  "geospatial_analysis_toolkit/examples/overlay.json", "geospatial_analysis_toolkit/upstream-manifest.json",
+  "biomedical_evidence_toolkit/README.md", "biomedical_evidence_toolkit/scripts/reconcile.py",
+  "biomedical_evidence_toolkit/upstream-manifest.json",
+  "molecular_docking_toolkit/README.md", "molecular_docking_toolkit/NOTICE.md",
+  "molecular_docking_toolkit/scripts/dock.py", "molecular_docking_toolkit/examples/settings.json",
+  "molecular_docking_toolkit/upstream-manifest.json",
   "show_reel_toolkit/README.md", "show_reel_toolkit/LICENSE.upstream", "show_reel_toolkit/upstream-manifest.json",
   "show_reel_toolkit/assets/engine/engine.js", "show_reel_toolkit/assets/engine/fx.js", "show_reel_toolkit/assets/engine/scenes.js",
   "show_reel_toolkit/assets/engine/index.html",

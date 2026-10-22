@@ -16,7 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _tree(root: Path) -> dict[str, str]:
-    files = [*root.glob("*/SKILL.md"), *root.glob("*/references/*.md"), *[p for p in root.glob("omh-show-reel/toolkit/**/*") if p.is_file()]]
+    from omh.skills.catalog import omh_skill_display_name
+    from omh.skills.support_files import builtin_support_owners
+    files = [*root.glob("*/SKILL.md"), *root.glob("*/references/*.md"),
+             *[p for owner in builtin_support_owners() for p in root.glob(f"{omh_skill_display_name(owner)}/toolkit/**/*") if p.is_file()]]
     return {path.relative_to(root).as_posix(): path.read_text(encoding="utf-8") for path in files}
 
 
@@ -48,7 +51,8 @@ class SkillRecordTests(unittest.TestCase):
         counts = Counter(record.policy_source for record in skill_records())
         # spend-gate adds a `_SKILL_POLICIES` entry (+1 skill). dag-ulw takes its role's policy (+1 role).
         # market-research adds a `_SKILL_POLICIES` entry (+1 skill). show-reel adds one (+1 skill).
-        self.assertEqual(counts, Counter({"skill": 119, "category": 27, "role": 9}))
+        # Three optional science methods each declare a curated policy.
+        self.assertEqual(counts, Counter({"skill": 122, "category": 27, "role": 9}))
         self.assertEqual(counts["default"], 0)
 
     def test_next_action_label_is_the_action_copy_label(self) -> None:

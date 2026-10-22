@@ -42,7 +42,10 @@ class SkillContextCostTests(unittest.TestCase):
         # owns (reply language, tone, speech level, endings, progress
         # updates) and the user's language as the fallback, on every body;
         # repeated bytes measure 117,742. ~2.7% headroom kept.
-        self.assertLess(profile["repeated"]["bytes"], 121_000)
+        # Three science methods carry their lane/evidence rails: 122343
+        # producer bytes. 126000 retains approximately 3% headroom; toolkit
+        # bytes remain on-demand and do not enter this measurement.
+        self.assertLess(profile["repeated"]["bytes"], 126_000)
 
     def test_ulw_context_reports_bounded_static_body_and_progressive_references(self) -> None:
         payload = skill_context_cost_payload()

@@ -73,7 +73,7 @@ Source of truth → generated file → regen command → drift gate:
 
 | Source | Generated | Regenerate | Gate |
 | --- | --- | --- | --- |
-| `src/skills/skill_record.py` (`SkillRecord` over the catalog/render producers) plus `src/skills/show_reel_toolkit/` and its closed support registry | `skills/*/SKILL.md`, `skills/*/references/*.md`, `skills/omh-show-reel/toolkit/**` | `uv run python tools/render_skill_pack.py --write` (add `--refresh-provenance` only after auditing canonical toolkit edits) | `uv run python tools/render_skill_pack.py --check`; tap-skills byte gate in `docs workflows --check` |
+| `src/skills/skill_record.py` (`SkillRecord` over catalog/render producers) plus the closed `builtin_skill_support_templates()` inventory and canonical toolkit resources | `skills/*/SKILL.md`, `skills/*/references/*.md`, declared `skills/omh-*/toolkit/**` | `uv run python tools/render_skill_pack.py --write` (`--refresh-provenance` refreshes only audited show-reel resources; domains deliver validated provenance) | `uv run python tools/render_skill_pack.py --check`; tap-skills byte gate in `docs workflows --check` |
 | Canonical toolkit resources + `provenance_manifest()` | `src/skills/show_reel_toolkit/upstream-manifest.json` (self-hash excluded) | `uv run python tools/render_skill_pack.py --write --refresh-provenance` | closed producer digest validation and support/distribution tests; outer inventories hash the provenance file |
 | Same catalog data | `docs/WORKFLOWS.md` | `uv run python -m omh.cli docs workflows --output docs/WORKFLOWS.md` | `uv run python -m omh.cli docs workflows --check` |
 | Same catalog data | `docs/ROLES.md` | `uv run python -m omh.cli docs roles --output docs/ROLES.md` | `uv run python -m omh.cli docs roles --check` |

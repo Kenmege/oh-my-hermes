@@ -57,9 +57,10 @@ print(json.dumps({'support_files':len(installed['support_files']),'companion_exe
         with patch("subprocess.Popen", side_effect=AssertionError("hidden process")), patch("socket.socket", side_effect=AssertionError("hidden network")):
             templates = api.builtin_skill_support_templates()
         self.assertTrue(templates)
-        mapping = {t.relative_path: t.content for t in templates}
-        self.assertEqual(len(mapping), len(templates))
-        self.assertTrue(all(t.skill_name == "show-reel" and t.kind == "support" for t in templates))
+        owned = [t for t in templates if t.skill_name == "show-reel"]
+        mapping = {t.relative_path: t.content for t in owned}
+        self.assertEqual(len(mapping), len(owned))
+        self.assertTrue(all(t.kind == "support" for t in templates))
         self.assertIn("Copyright (c) 2026 Minho Hwang (revfactory)", mapping["toolkit/LICENSE.upstream"])
         manifest = json.loads(mapping["toolkit/upstream-manifest.json"])
         self.assertNotIn("upstream-manifest.json", manifest["files"])
@@ -74,7 +75,7 @@ print(json.dumps({'support_files':len(installed['support_files']),'companion_exe
         import subprocess
         api = self.api()
         root = Path(__file__).resolve().parents[1]
-        paths = [f"{prefix}/{t.relative_path.removeprefix('toolkit/')}" for t in api.builtin_skill_support_templates() for prefix in ("src/skills/show_reel_toolkit", "skills/omh-show-reel/toolkit", "agent-skills/omh-show-reel/toolkit")]
+        paths = [f"{prefix}/{t.relative_path.removeprefix('toolkit/')}" for t in api.builtin_skill_support_templates() if t.skill_name == "show-reel" for prefix in ("src/skills/show_reel_toolkit", "skills/omh-show-reel/toolkit", "agent-skills/omh-show-reel/toolkit")]
         result = subprocess.run(["git", "check-attr", "eol", "--", *paths], cwd=root, capture_output=True, text=True, timeout=20, check=True)
         self.assertEqual(len(result.stdout.splitlines()), len(paths))
         self.assertTrue(all(line.endswith(": eol: lf") for line in result.stdout.splitlines()), result.stdout)
