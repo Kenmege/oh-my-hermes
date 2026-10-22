@@ -307,9 +307,14 @@ NON_SKILL_BACKTICKS = frozenset(
 # PDF to `paper-learning`, and an audience-ready synthesis to
 # `research-brief`; no sibling gains a statement pointing back. Six cases,
 # six pairs, one owner.
-EXPECTED_DEFERENCE_CASES = 393
-EXPECTED_DEFERENCE_PAIRS = 407
-EXPECTED_DEFERRING_OWNERS = 114
+# `show-reel` defers a static card to `img-summary`, a website build to
+# `frontend`, a deck or document to `materials-package`, a layout assessment
+# to `design-quality-gate`, and a verdict on rendered frames to `visual-qa`;
+# no sibling gains a statement pointing back. Five cases, five pairs, one
+# owner.
+EXPECTED_DEFERENCE_CASES = 398
+EXPECTED_DEFERENCE_PAIRS = 412
+EXPECTED_DEFERRING_OWNERS = 115
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.

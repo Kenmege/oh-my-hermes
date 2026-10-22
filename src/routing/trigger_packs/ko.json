@@ -2,6 +2,7 @@
   "schema_version": "trigger_language_pack/v1",
   "language": "ko",
   "skills": {
+    "show-reel": ["제품 쇼케이스 영상"],
     "codebase-uml": [
       "코드베이스 시각화",
       "코드베이스 시각화해줘",

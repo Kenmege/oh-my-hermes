@@ -116,4 +116,11 @@ def local_modifications(manifest: dict[str, Any] | None, skills_dir: Path) -> li
             continue
         if sha256_file(path) != expected:
             modified.append(str(rel))
+    from .support_materialization import support_records, support_path
+
+    for relative, expected in support_records(manifest).items():
+        path = support_path(skills_dir, relative)
+        # Missing support is safe repair, not user-authored modification.
+        if path.is_file() and sha256_file(path) != expected:
+            modified.append(relative)
     return modified

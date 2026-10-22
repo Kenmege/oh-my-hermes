@@ -88,6 +88,60 @@ def tamper(case, clone, mutation):
 
 
 class HostAdapterTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("sh"), "POSIX shell unavailable")
+    def test_destination_types_are_preflighted_before_any_write(self):
+        self._destination_type_conflicts("sh")
+
+    @unittest.skipUnless(shutil.which("pwsh") or shutil.which("powershell"), "PowerShell unavailable")
+    def test_powershell_destination_types_are_preflighted_before_any_write(self):
+        self._destination_type_conflicts(shutil.which("pwsh") or shutil.which("powershell"))
+
+    def _destination_type_conflicts(self, shell):
+        for host in HOSTS:
+            for conflict in ("ancestor", "root", "nested_parent", "leaf", "receipt"):
+                with self.subTest(host=host, conflict=conflict), tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp).resolve()
+                    target = root / (".claude/skills" if host == "claude" else ".agents/skills")
+                    if conflict in ("ancestor", "root"):
+                        block = target.parent if conflict == "ancestor" else target
+                        block.parent.mkdir(parents=True, exist_ok=True)
+                        block.write_bytes(b"USER PARENT FILE")
+                    else:
+                        for relative in ("omh-ask/SKILL.md", "omh-show-reel/SKILL.md", ".omh-agent-skills-manifest.json"):
+                            path = target / relative
+                            path.parent.mkdir(parents=True, exist_ok=True)
+                            path.write_bytes(b"ORIGINAL MUST SURVIVE REFUSAL")
+                        relative = {"nested_parent": "omh-show-reel/toolkit/scripts", "leaf": "omh-show-reel/toolkit/scripts/timeline.py", "receipt": ".omh-agent-skills-manifest.json"}[conflict]
+                        block = target / relative
+                        block.parent.mkdir(parents=True, exist_ok=True)
+                        if conflict == "nested_parent":
+                            block.write_bytes(b"USER PARENT FILE")
+                        else:
+                            if block.exists():
+                                block.unlink()
+                            block.mkdir()
+                    (root / "foreign.txt").write_bytes(b"FOREIGN")
+                    def snapshot():
+                        return {p.relative_to(root).as_posix(): None if p.is_dir() else p.read_bytes() for p in root.rglob("*")}
+                    before = snapshot()
+                    command = [shell, str(ROOT / f".{host}/install.sh")] if shell == "sh" else [shell, "-NoProfile", "-NonInteractive", "-File", str(ROOT / f".{host}/install.ps1")]
+                    result = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=60)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertEqual(snapshot(), before, result.stderr)
+
+    def test_powershell_producer_checks_parent_types_before_copying(self):
+        from omh.install.agent_skills_projection import agent_skill_files
+        from omh.skills.host_adapter_render import host_adapter_files
+
+        generated = host_adapter_files(agent_skill_files())
+        for host in HOSTS:
+            text = generated[f".{host}/install.ps1"]
+            with self.subTest(host=host):
+                self.assertIn("function Assert-DirectoryParents", text)
+                self.assertIn("-PathType Container", text)
+                self.assertLess(text.index("Assert-DirectoryParents $path $base"), text.index("[IO.Directory]::CreateDirectory"))
+                self.assertEqual((ROOT / f".{host}/install.ps1").read_text(), text)
+
     def test_committed_adapter_byte_gate(self):
         from contextlib import chdir
         with chdir(ROOT):

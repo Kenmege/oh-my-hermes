@@ -212,6 +212,44 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "market-research",
     ),
+    RoutingPrecisionCase("show-reel-conversion-not-production", "A format noun does not change a conversion operation", "Convert this product showcase video to a smaller MP4.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-review-not-production", "An existing film review is not authoring", "Review the typography in this product showcase video.", "answer_clarification", "", "show-reel"),
+    # A model-selection shortlist may still name the source format; it gives
+    # no scoring credit and is not a selected production route or card.
+    RoutingPrecisionCase("show-reel-repository-not-production", "A repository explanation does not author a film", "Explain how the showreel repository works; do not create a video.", "answer_clarification", ""),
+    RoutingPrecisionCase("show-reel-narration-not-production", "Writing narration alone does not produce the existing film", "Write narration for this existing product showcase video; do not produce video.", "answer_clarification", ""),
+    RoutingPrecisionCase("show-reel-ko-translation", "The Korean pack noun is a translation object", "제품 쇼케이스 영상 문구를 영어로 번역해줘", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-ja-translation", "The Japanese pack noun is a translation object", "製品ショーケース動画という文章を英語に翻訳して", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-zh-translation", "The Chinese pack noun is a translation object", "把产品展示短片这句话翻译成英文", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-negated-production", "A negated production verb grants no production credit", "Do not create a product showcase video.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-identifier-inner", "An identifier containing a format name is not that format", "Showreelish is our internal code name, not a video.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-quoted-production", "A quoted production request is translation input", 'Translate "Create a product showcase video" into Japanese.', "answer_directly", "direct_answer", "show-reel"),
+    RoutingPrecisionCase("show-reel-fishing", "Fishing equipment is not motion production", "Which fishing reel should I buy?", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-tape", "Tape storage is not motion production", "The tape reel is damaged.", "answer_clarification", ""),
+    RoutingPrecisionCase("show-reel-film-plot", "A film plot question is not a production brief", "What is the plot of this film?", "answer_directly", "direct_answer", "show-reel"),
+    RoutingPrecisionCase("show-reel-ko-file-question", "Korean file question is not production", "제품 영상 파일 용량은 얼마야?", "answer_clarification", ""),
+    RoutingPrecisionCase("show-reel-ja-file-question", "Japanese file question is not production", "この動画ファイルの容量は？", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-zh-file-question", "Chinese file question is not production", "这个视频文件多大？", "answer_clarification", "", "show-reel"),
+    # Each of these dispatched show-reel under the first admission grammar,
+    # which took any words before the noun, and/in/with after it, and the
+    # noun alone: a film as the object of another request, a causative over
+    # an existing film, or the bare noun.
+    RoutingPrecisionCase("show-reel-make-sure-uploaded", "Make sure is not make a film", "Make sure the launch film for Tuesday is uploaded to the drive.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-tweet-announcing", "A tweet about a film is not the film", "Write a tweet announcing the launch film.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-causative-smaller", "A causative over an existing film is not authoring", "Make the product teaser video in the footer smaller.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-causative-default", "A film with subtitles made the default is a setting", "Make the launch film with subtitles the default.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-readme-link", "A broken README link to a reel is a file fix", "Make the show reel in the README link work.", "answer_file_lookup", "file_or_text", "show-reel"),
+    RoutingPrecisionCase("show-reel-causative-consistent", "Making assets consistent is not authoring a film", "Make our launch film, website and app icons consistent.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-bare-noun", "The bare noun is not a request", "showreel", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-bare-spaced-noun", "The spaced bare noun is not a request", "Show reel.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-bare-noun-question", "The bare noun asked is not a request", "show reel?", "answer_clarification", "", "show-reel"),
+    # A first sentence asked rather than told, and a causative whose object
+    # carries a relative clause.
+    RoutingPrecisionCase("show-reel-asked-then-declined", "Make a show reel asked, then declined, is not a request", "Make a show reel? No, just send the old one.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-causative-relative", "A definite film with a relative clause made shorter is an edit", "Make the launch film that we discussed shorter.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-asked-doubted", "Make a film asked and then doubted is not a request", "Make a new launch film? Should we even?", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-asked-alternative", "A film weighed against hiring an agency is a question", "Make a launch film, or should I hire an agency?", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-causative-on-site", "A reel on the website made faster is a page fix", "Make a showreel on the website load faster.", "answer_clarification", "", "show-reel"),
     # Engine-entry approvals (#1638). Accepting something is the most common
     # thing a person says in the seconds after a planning workflow finishes,
     # and the corpus had no sentence of this shape at all -- 235 negative
@@ -7942,6 +7980,36 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "Can you do market sizing for dental clinics in Korea?",
         "dispatch", "market-research", "prepare_market_research", "market_research",
     ),
+    # show-reel is offered only for a request that leads with producing one
+    # (`show_reel_cues`): a verb, at most an indefinite article and two
+    # modifiers, its own noun, then the end or a closed follower.
+    RoutingInterventionCase("show-reel-make-production", "Product is not the retired make a PR alias", "Make a product showcase video for a Japanese audience.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-write-production", "Writing a launch film is production", "Write a launch film for our product, with English subtitles.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-produce-from-notes", "A later negative translation instruction does not negate film production", "Produce a product showcase video for the beta; do not translate the quoted review.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-en-production", "An unnamed authored motion brief reaches production", "Create a product showcase video for a Japanese audience.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-ko-production", "Korean motion-production phrase", "제품 쇼케이스 영상 만들어줘", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-ja-production", "Japanese motion-production phrase", "製品ショーケース動画を作って", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-zh-production", "Chinese motion-production phrase", "制作产品展示短片", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-zh-courtesy-quantity", "Chinese courtesy and quantity keep the production phrase", "请帮我制作一部产品展示短片", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-bare-production", "The shortest production request", "Create a launch film.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-make-motion-showcase", "Make with an indefinite object is production", "Make a motion showcase for the new dashboard.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-cut-production", "Cutting a new reel from source work is production", "Cut a show reel from last year's client work.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-produce-using-source", "Courtesy and a source adjunct keep the production lead", "Please produce a product showcase video using our brand guide.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-reference-for-static-owner", "A motion source does not take the static output owner", "Use this product showcase video as a reference for a static infographic.", "dispatch", "img-summary", "prepare_visual_prompt_card", "img_summary"),
+    RoutingInterventionCase("show-reel-transcript-owner", "An existing launch film transcript stays with media input", "Summarize this launch film transcript for the weekly report.", "dispatch", "media-input-operator", "prepare_media_input_card", "media_input"),
+    # A film named inside another skill's request keeps that skill. Each of
+    # these dispatched show-reel under the first admission grammar; they are
+    # interventions because the negative-control evaluator counts any
+    # dispatch, including the rightful owner's, as an overroute.
+    RoutingInterventionCase("show-reel-issue-title-owner", "A film word as an issue title stays with issue intake", "Create a GitHub issue titled showreel.", "dispatch", "github-issue-intake", "prepare_github_issue_intake", "github_issue_intake"),
+    RoutingInterventionCase("show-reel-slack-post-owner", "A post announcing a film stays with the connector", "Write a Slack post announcing the launch film.", "dispatch", "connector-operator", "prepare_connector_operator_card", "connector_operator"),
+    RoutingInterventionCase("show-reel-jira-ticket-owner", "A ticket tracking a film stays with the connector", "Create a Jira ticket tracking the launch film.", "dispatch", "connector-operator", "prepare_connector_operator_card", "connector_operator"),
+    RoutingInterventionCase("show-reel-thumbnail-owner", "A thumbnail showing a film is a static visual", "Design a thumbnail showing the product teaser video.", "dispatch", "img-summary", "prepare_visual_prompt_card", "img_summary"),
+    RoutingInterventionCase("show-reel-spreadsheet-owner", "A spreadsheet listing films is a material", "Create a spreadsheet listing every launch film.", "dispatch", "materials-package", "prepare_material_package", "materials_package"),
+    RoutingInterventionCase("show-reel-folder-owner", "A folder structure for a film is a material", "Create the launch film and deck folder structure.", "dispatch", "materials-package", "prepare_material_package", "materials_package"),
+    # A second request chained on after the film keeps its owner.
+    RoutingInterventionCase("show-reel-chained-deploy-owner", "A deploy chained after a film stays with frontend", "Produce a launch film, then deploy the landing page.", "dispatch", "frontend", "prepare_frontend_handoff", "frontend_handoff"),
+    RoutingInterventionCase("show-reel-chained-sizing-owner", "A deck task chained after a film stays with materials", "Make a launch film for the investors, then do a market sizing for the deck.", "dispatch", "materials-package", "prepare_material_package", "materials_package"),
     # `docs/INSTALLATION.md` tells users to type `ulw work …`, and only the
     # hyphenated label routed: `ulw` alone is an `ultrawork` trigger at score
     # 12, so it took the whole request and the second word was never read.

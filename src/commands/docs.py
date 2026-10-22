@@ -376,13 +376,14 @@ class TapSkillsCheckPayload(TypedDict):
 
 
 def _tap_skills_check_payload(skills_root: Path) -> TapSkillsCheckPayload:
+    from ..skills.support_files import builtin_skill_support_templates
     templates = {omh_skill_display_name(template.name): template for template in builtin_skill_templates()}
     reference_templates = {
         Path(omh_skill_display_name(template.skill_name)) / template.relative_path: template
-        for template in builtin_skill_reference_templates()
+        for template in [*builtin_skill_reference_templates(), *builtin_skill_support_templates()]
     }
     paths = {path.parent.name: path for path in skills_root.glob("*/SKILL.md")}
-    reference_paths = {path.relative_to(skills_root): path for path in skills_root.glob("*/references/*.md")}
+    reference_paths = {path.relative_to(skills_root): path for pattern in ("*/references/*.md", "omh-show-reel/toolkit/**/*") for path in skills_root.glob(pattern) if path.is_file() or path.is_symlink()}
     missing = sorted(name for name in templates if name not in paths)
     missing.extend(path.as_posix() for path in sorted(reference_templates) if path not in reference_paths)
     extra = sorted(name for name in paths if name not in templates)

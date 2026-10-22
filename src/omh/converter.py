@@ -174,3 +174,29 @@ def convert_references_from_dir(source_dir: Path) -> list[SkillReferenceTemplate
                 )
             )
     return templates
+
+
+def convert_support_from_dir(source_dir: Path):
+    """Import only the fixed reviewed companion, as inert UTF-8 data.
+
+    Source manifests never grant execution authority or widen the inventory.
+    Custom skills without this companion remain a no-op.
+    """
+    from .skills.support_files import builtin_skill_support_templates, checked_support_path, validate_support_templates
+
+    expected = builtin_skill_support_templates()
+    templates = []
+    for skill_file in discover_skill_files(source_dir):
+        skill_name = extract_name(skill_file.read_text(encoding="utf-8"), skill_file.parent.name)
+        if skill_name != "show-reel":
+            continue
+        if (skill_file.parent / "toolkit").is_symlink():
+            raise ValueError("local-source support refuses symlink toolkit")
+        if not (skill_file.parent / "toolkit").exists():
+            continue
+        for template in expected:
+            path = checked_support_path(skill_file.parent, template.relative_path)
+            if not path.is_file() or path.read_bytes() != template.content.encode("utf-8"):
+                raise ValueError(f"local-source support missing/unreviewed bytes: {template.relative_path}")
+            templates.append(template)
+    return validate_support_templates(templates)

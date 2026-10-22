@@ -23,6 +23,7 @@ from .localization import (
     routing_tokens,
 )
 from .visual_qa_cues import contains_cue_phrase
+from ..plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
 from .missed_route import is_missed_route_feedback
 from .omh_help import is_omh_docs_question
 from .trigger_language_packs import (
@@ -1379,6 +1380,11 @@ _SKILL_POLICIES = {
             "focus_and_keyboard_trace/v1, screen_reader_announcement_map/v1, target_size_and_pointer_review/v1, "
             "contrast_and_reflow_review/v1, and a remediation or visual-qa route when evidence is missing."
         ),
+    ),
+    "show-reel": RecommendationPolicy(
+        next_action="prepare_show_reel",
+        evidence_boundary="A brief, storyboard or renderer handoff is not a rendered video, locale/font/voice review, export QA, attachment, receipt or publication. Missing required production evidence keeps HOLD.",
+        wrapper_guidance="Prepare audience and language tracks, source/brand rights, three concepts and segment direction, measured timing, selected renderer capability, revision budget, export/QA and source delivery with honest gaps.",
     ),
     "visual-qa": RecommendationPolicy(
         next_action="prepare_visual_qa",
@@ -2812,6 +2818,8 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # Only complete domain phrases may score; their ordinary component words
     # must not turn unrelated market, customer or profile mentions into work.
     "market-research": frozenset({"market", "research", "sizing", "tam", "sam", "som", "bottom", "up", "size", "sensitivity", "customer", "evidence", "analysis", "jtbd", "matrix", "competitor", "pricing", "profiles", "competitive"}),
+    # Product/video/reel words alone must not acquire a motion-production owner.
+    "show-reel": frozenset({"show", "reel", "product", "showcase", "video", "animated", "film", "motion", "portfolio", "launch", "teaser"}),
     # The Jev skills are reached through `routing/jev_addressing.py` only:
     # every word their triggers are built from is held back, `jev` included,
     # so a sentence that merely mentions Jev or a review, a failure, or a
@@ -4541,6 +4549,14 @@ def _score_definition(
         score += 30
         matched.add("direct:specialist_language_pack_trigger")
 
+    # Only a request `show_reel_request_admitted` reads as leading with
+    # producing a show reel: the same lead-anchored predicate as its
+    # `_SKILL_OFFERS_ITSELF` row, so a film named inside another request earns
+    # nothing here, and every guard above has already run.
+    if definition.name == "show-reel" and show_reel_request_admitted(normalized_query):
+        score += 30
+        matched.add("direct:show_reel_phrase")
+
     if definition.name == "apple-design" and _apple_design_offers_itself(normalized_query, query_tokens):
         score += 30
         matched.add("direct:apple_design_specialist")
@@ -5933,6 +5949,10 @@ def _spend_gate_clause(normalized_query: str) -> str:
 # as blockers upstream and keep that phrasing in the wrappers above rather than
 # being rewritten, so the predicates here are the same ones as before.
 _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
+    # `show-reel`: a request that leads with producing one
+    # (`show_reel_cues.show_reel_request_admitted`). It stands down no guard:
+    # a film named inside another request stays that request's.
+    "show-reel": lambda normalized_query, query_tokens: show_reel_request_admitted(normalized_query),
     # Changing how a page looks is not operating a browser on it, even when
     # the page is named by a browser phrase ("login page").
     "browser-operator": lambda normalized_query, query_tokens: not appearance_edit_request(query_tokens),

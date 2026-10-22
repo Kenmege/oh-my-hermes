@@ -500,6 +500,12 @@ Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appr
 
 ## Ultra-Skills
 
+Ask for an audience-specific product showcase and `omh-show-reel` combines
+source/rights checks, concept and segment direction, weakest-scene revision and
+an optional reusable local motion/audio toolkit. The installed toolkit is inert
+until explicitly invoked by the host; technical QA is not artistic or listening
+approval. See [Show-reel toolkit](docs/SHOW-REEL-TOOLKIT.md).
+
 <p align="center">
   <img src="assets/omh-character-badge.png" alt="Oh My Hermes character mark" width="170">
 </p>

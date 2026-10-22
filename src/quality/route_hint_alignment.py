@@ -28,6 +28,13 @@ class RouteHintAlignmentCase:
 
 
 _OPERATOR_ROUTE_HINT_ALIGNMENT_CASES = (
+    RouteHintAlignmentCase("operator_regression", "show-reel-make-production", "Make is production, not make a PR", "Make a product showcase video for a Japanese audience.", "show-reel", "prepare_show_reel"),
+    RouteHintAlignmentCase("operator_regression", "show-reel-write-production", "A launch film is the requested output", "Write a launch film for our product, with English subtitles.", "show-reel", "prepare_show_reel"),
+    RouteHintAlignmentCase("operator_regression", "show-reel-produce-from-notes", "A later negative translation instruction does not veto production", "Produce a product showcase video for the beta; do not translate the quoted review.", "show-reel", "prepare_show_reel"),
+    RouteHintAlignmentCase("operator_regression", "show-reel-reference-for-static-owner", "Reference format does not override static output", "Use this product showcase video as a reference for a static infographic.", "img-summary", "prepare_visual_prompt_card"),
+    RouteHintAlignmentCase("operator_regression", "show-reel-ko-production", "Korean production grammar", "제품 쇼케이스 영상 만들어줘", "show-reel", "prepare_show_reel"),
+    RouteHintAlignmentCase("operator_regression", "show-reel-ja-production", "Japanese production grammar", "製品ショーケース動画を作って", "show-reel", "prepare_show_reel"),
+    RouteHintAlignmentCase("operator_regression", "show-reel-zh-production", "Chinese production grammar", "制作产品展示短片", "show-reel", "prepare_show_reel"),
     RouteHintAlignmentCase(
         "operator_regression",
         "claude-code-session-status",

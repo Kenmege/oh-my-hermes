@@ -9,10 +9,27 @@ TARGETS = frozenset(
         "market-research",
         "product-discovery-validation",
         "sales-pipeline-review",
+        "show-reel",
     }
 )
 
 DOMAIN_REVIEW_CONTRACTS = {
+    "show-reel": {
+        "outputs": ("show_reel_brief/v1", "show_reel_source_asset_register/v1", "show_reel_concept_selection/v1", "show_reel_storyboard/v1", "show_reel_timing_map/v1", "show_reel_renderer_handoff/v1", "show_reel_preview_review/v1", "show_reel_export_manifest/v1", "show_reel_qa_report/v1", "show_reel_delivery_manifest/v1"),
+        "steps": ("reel_brief", "reel_verify_sources", "reel_select_concept", "reel_direct_segments", "reel_measure_timing", "reel_author_motion", "reel_review_revise", "reel_export", "reel_validate", "reel_deliver"),
+        "checks": {
+            "reel_brief_check": {"objective", "audience_channel", "format_duration_budget", "locale_precedence", "language_tracks", "literal_tokens", "unknowns"},
+            "reel_source_check": {"claim_source_version", "evidence_class", "brand_verification", "asset_rights", "consent", "conflicts"},
+            "reel_concept_check": {"candidates", "shared_rubric", "selection", "rejected_alternatives", "revision_budget"},
+            "reel_story_check": {"segments", "source_asset_ids", "art_direction", "motion_intent", "locale_runs"},
+            "reel_timing_check": {"audio_mode", "measured_cues", "reading_time", "pronunciation_approval", "voice_rights", "sync_status"},
+            "reel_adapter_check": {"selected_executor", "capabilities", "workspace_scope", "deterministic_time", "commands_timeout_cancel", "partial_resume", "font_readiness", "toolkit_provenance", "source_bound_run"},
+            "reel_preview_check": {"style_frames", "draft", "transition_strips", "keep_fix_rebuild", "weakest_scene", "revision_spend", "delivery_size_review", "strongest_scene", "anti_slide_review", "before_after_and_boundaries"},
+            "reel_export_check": {"files_hashes", "codec_dimensions_fps_duration", "color_metadata", "filesize_cap", "audio_metrics", "av_sync"},
+            "reel_qa_check": {"content_brand", "locale_font_bidi", "cut_motion", "delivery_size_legibility", "temporal_audio", "critical_defects", "disposition", "evidence_refs", "technical_verdict", "artistic_verdict", "playback_verdict", "listening_verdict"},
+            "reel_delivery_check": {"generated_files", "attachment_receipt", "recipient_state", "publication_approval", "source_package", "missing_evidence"},
+        },
+    },
     "finance-analysis": {
         "outputs": (
             "finance_scope_source_record/v1",

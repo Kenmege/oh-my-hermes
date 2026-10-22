@@ -491,8 +491,10 @@ class RouterContentTests(unittest.TestCase):
         # `mobile-release`, and `internal-audit` (#1565, #1567, #1568, #1569)
         # add four registry rows (31,464 measured); one row per new skill,
         # ~2.6% headroom kept.
+        # 32,300 -> 33,100: `market-research` and `show-reel` add two registry
+        # rows (32,367 measured); one row per new skill, ~2.3% headroom kept.
         for template in builtin_skill_reference_templates():
-            self.assertLess(len(template.content.encode("utf-8")), 32_300, template.relative_path)
+            self.assertLess(len(template.content.encode("utf-8")), 33_100, template.relative_path)
 
         schemas = (
             OMH_CAPABILITIES_SCHEMA,
@@ -552,8 +554,10 @@ class RouterContentTests(unittest.TestCase):
         # embedded messenger rendering (measured 63,474). Deliberate, named,
         # not room for silent growth. Raised to 65,000 when `apple-design`
         # added its prepared-only platform guidance (measured 64,061), leaving
-        # bounded headroom for a future named catalog change.
-        self.assertLess(len(json.dumps(context_payload, sort_keys=True)), 65_000)
+        # bounded headroom for a future named catalog change. Raised to 66,000
+        # when `show-reel` joined the materials lane: main measured 64,997 with
+        # `market-research`, and the new lane entry takes it to 65,010.
+        self.assertLess(len(json.dumps(context_payload, sort_keys=True)), 66_000)
 
     def test_role_surface_docs_match_catalog_and_avoid_runtime_claims(self) -> None:
         roles_doc = Path("docs/ROLES.md").read_text(encoding="utf-8")
@@ -1688,6 +1692,7 @@ class RouterContentTests(unittest.TestCase):
                 "accessibility-audit",
                 "visual-qa",
                 "browser-operator",
+                "show-reel",
                 "workspace-file-operator",
                 "command-operator",
                 "connector-operator",
@@ -4242,7 +4247,7 @@ class RouterContentTests(unittest.TestCase):
         # Retired engines must not be presented as current planning skills.
         self.assertNotIn("`ultragoal`", docs_readme)
         # omh-docs and github-issue-intake raise the measured catalog to 119.
-        self.assertIn("**146 installable skills**", docs_readme)
+        self.assertIn("**147 installable skills**", docs_readme)
         self.assertIn("**Retain knowledge**", docs_readme)
         # The unit suite runs through the deterministic sharding tools (issue
         # #1294): plan once, run per shard plus the serial quarantine, then
