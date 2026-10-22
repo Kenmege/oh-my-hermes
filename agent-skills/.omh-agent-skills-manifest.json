@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "c06f986f850a4d03be1a982443c87cbf8a00a5fcd2cf40870207f0fecd81d030",
+  "catalog_revision": "31e2de611509cd13f45f7433076a2f7f80278d01346d3f249550d4b2dac9f3dd",
   "files": {
     "omh-accessibility-audit/SKILL.md": "0be02c4e7af447857f365dc3bff58e7fefae8a1df12adcd0ca793bc363c17ccb",
     "omh-accessibility-audit/references/a11y-rules.md": "cd7e0404576923cfd3bcec9e055b1de7a78f3fc55971fd033598aac1043e4469",
@@ -254,8 +254,9 @@
     "ulw-perf/SKILL.md": "c67d873b5c9a6df211b53007586cbcbefd8b5f7891afdc92328f68b273f8b674",
     "ulw-plan/SKILL.md": "7457259eff9ebe1be93ca3d9059cfb1b914edc6ebb331001262e0b09d7aaca85",
     "ulw-qa/SKILL.md": "2f08224f15320f8df30cf3fb6213d8d57291dd4f59f93ad67f8f1161a875a6f3",
-    "ulw-research/SKILL.md": "ee6f260e1678fcb01a73a9e619d8e5f792cecea21f1e04d7451809494183b354",
-    "ulw-research/references/briefing-format.md": "466c21fb7bedefe1e42dbdb3f8ddaf3321504882140af507a292188678243dac",
+    "ulw-research/SKILL.md": "38845fea22a8eea9e574c50a039f4c8fa466982162f9738e2d883fa589abd28c",
+    "ulw-research/references/briefing-format.md": "32c2fc92b8ff37877b623d30f79697a015c7be139121f60bac9de82f6bedfdcc",
+    "ulw-research/references/evidence-records.md": "0cfeb3c0fcc99cc78d0d8e8a14fae833f97ac48bbef29b20f8cbe94fedc9aa11",
     "ulw-work/SKILL.md": "cb8fc8baeb01c2ab5dd8dabfcb04de81907cf25e995b9f71251f2d81a3b77bc5",
     "ulw-work/references/dependency-topology.md": "b6cbd98db3612d4bee2a6f1052ac120a7a360955f3e0ab1f26d37a1f20ad2a86"
   },

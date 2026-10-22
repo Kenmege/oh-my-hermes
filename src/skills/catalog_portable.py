@@ -385,6 +385,7 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'show-reel/references/craft-techniques-2.md',
     'show-reel/references/craft-qa.md',
     'research/references/briefing-format.md',
+    'research/references/evidence-records.md',
     'frontend/references/design-system-contract.md',
     'frontend/references/taste-foundations.md',
     'frontend/references/reference-token-extraction.md',

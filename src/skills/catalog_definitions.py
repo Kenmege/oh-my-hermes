@@ -1675,12 +1675,12 @@ _DEFINITIONS = [
             "source-backed synthesis",
             "links or citations",
             "source-quality notes",
-            "reference-implementation notes with pinned versions or permalinks",
-            "verified-claims ledger with an unresolved and refuted annex",
+            "reference_study/v1 records with pinned revisions, license provenance and read evidence",
+            "research_claims/v1 typed records with separate unresolved and refuted claims",
             "plan-feed block: decision drivers, viable options with evidence, rejected candidates with reasons, risks, open questions",
             "confidence and residual uncertainty",
             "product_evidence_loop/v1",
-            "deep_research_dossier/v1",
+            "deep_research_dossier/v1 binding question/scope, records, progress, reference studies and plan feed",
             "research_briefing/v1 with its markdown and print-ready page when the reader is human",
             "temporal_source_receipt/v1 per historical claim and temporal_evidence_surfaces/v1 when the question is point-in-time",
         ),
@@ -1709,15 +1709,15 @@ _DEFINITIONS = [
             "Keep the coding-agent branch dense: findings, exact symbols, file paths, and the plan-feed block, with no narrative framing and no briefing structure.",
             "Use official or primary sources first when current or external facts matter, then add source diversity when the topic is contested.",
             "Revise the search plan when new evidence exposes a gap or contradiction instead of stopping at the first pass.",
-            "Gate contested claims: require at least two independent source domains, one counter-search for disconfirming evidence, and a primary source, or move the claim to the unresolved annex.",
+            "Record contested claims with two independent original groups/domains, primary support and an observed counter-search, or keep them unresolved; use `references/evidence-records.md` for records. Agent/operator validation: `python -m omh.workflows.research_dossier <json-file>`.",
             "Separate direct evidence, citation links, retrieval dates, inference, confidence, and residual uncertainty.",
-            f"{_GROUNDED_CITATIONS_REGISTER_RULE}. {_GROUNDED_CITATIONS_LEDGER_FILE_RULE} Only the parent's reset under First Steps touches that file, so an id names the same source in every lane's findings; a delegated lane gets terminal, file, and web tools by default but cannot load the skill, so it works from the two paths its brief carries. When a human briefing is written, report the citation check from a run, or as `not_observed`: {_GROUNDED_CITATIONS_VERIFY_RULE}. It is a citation check, not fact verification, and it never stands in for the contested-claim gate. Without the skill, keep each source's URL and retrieval date in the research notes and report the citation check as `not_observed`.",
+            f"{_GROUNDED_CITATIONS_REGISTER_RULE}. {_GROUNDED_CITATIONS_LEDGER_FILE_RULE} Use parent-only serialized writes: lanes return observed source entries and quote refs; the parent registers URLs, attaches quotes, and remaps lane ids before drafting. Lanes never write the shared ledger. When a human briefing is written, report the citation check from a run, or as `not_observed`: {_GROUNDED_CITATIONS_VERIFY_RULE}. It is a citation check, not fact verification, and it never stands in for the contested-claim gate. Without the skill, keep each source's URL and retrieval date in the research notes and report the citation check as `not_observed`.",
             "Name retrieval gaps when Hermes or the wrapper cannot access the web.",
             "For AI or usability research, separate target-user/task assumptions, measured or reported usability dimensions, and generalizability limits from the evidence.",
             "Decompose the question into orthogonal research axes and disambiguate named entities before any deep reading.",
-            "Fan out one research lane per axis in parallel when the runtime provides subagents or delegation - covering distinct evidence kinds such as web evidence, reference-implementation study, and claim verification - and merge every lane's leads into one shared ledger between waves; without parallel delegation, run the same lanes sequentially under the same contract.",
+            "Fan out one lane per research axis when delegation is available; merge returned leads between waves, with parent-only shared citation writes. Otherwise run lanes sequentially under the same contract.",
             "Study reference implementations directly: read the core modules of the most relevant open-source repos, pin the exact version or commit, and record mechanism, tradeoffs, and license per reference.",
-            "Expand lead-by-lead: track open leads and dead ends, and continue until leads run dry or the declared budget is reached.",
+            "Track axes, coverage, novel evidence and open leads in `research_progress/v1`; budget exhaustion or interruption stays partial, never saturation.",
             "Mark every figure as measured, assumed, or derived, and carry retrieval dates for time-sensitive facts.",
             "Keep historical-capture evidence and live-page evidence as two typed surfaces for a point-in-time or then-versus-now question; capture time, publication time, and retrieval time are independent clocks and none substitutes for another.",
             "Distill the dossier into a plan-feed block - decision drivers, viable options with evidence, rejected candidates with reasons, risks, and open questions - so planning consumes conclusions, not raw notes.",
@@ -1728,12 +1728,10 @@ _DEFINITIONS = [
             "Summarize the evidence or dossier before any planning or coding handoff; research is not implementation evidence.",
         ),
         why_this_exists="`research` exists to make Hermes a careful research engine: it routes research demands to source-backed evidence gathering - from live web citations to studied reference implementations - verifies contested claims, and distills decision-grounding output so planning starts from evidence instead of guesses.",
-        # The ledger setup has to happen before the first lane is briefed: a
-        # lane that starts without the ledger path registers into the
-        # profile-wide default, and that cannot be repaired from the quality
-        # bar at the bottom of the body.
+        # Declare ownership before fan-out: readers return entries and only
+        # the parent writes the run-private shared ledger at fan-in.
         opening_steps=(
-            "When Hermes' bundled `grounded-citations` skill is available, set the citation ledger up before the first retrieval: choose one ledger file for the run, have the parent reset it once (`sources.py --ledger <path> reset`), and put the script's absolute path and that ledger path in every delegated lane's brief. No lane resets it.",
+            "When Hermes' bundled `grounded-citations` skill is available, set the citation ledger up before the first retrieval: choose one run-private file, have the parent reset it once (`sources.py --ledger <path> reset`), and declare parent-only writes in every lane brief. No lane resets it.",
         ),
         do_not_use_when=(
             "The user asks for a full plan-to-PR delivery cycle; use `ultrawork` (its `delivery_boundary` capability) or a planning workflow after research instead.",
