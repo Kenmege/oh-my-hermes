@@ -250,6 +250,14 @@ def catalog_skill_labels() -> frozenset[str] | None:
     return frozenset(skill.label for skill in index.skills)
 
 
+def catalog_skill_label(name: str) -> str:
+    """The label Hermes lists the catalog skill ``name`` under, or "" for no such skill or no sidecar."""
+    index = _index()
+    if index is None:
+        return ""
+    return next((skill.label for skill in index.skills if skill.name == name), "")
+
+
 def _installed(skill: _Skill, installed: frozenset[str] | None) -> bool:
     return installed is None or skill.name in installed or skill.label in installed
 
@@ -576,6 +584,7 @@ __all__ = [
     "HANGUL_ADMISSION_SCORE_FLOOR",
     "HANGUL_ADMISSION_SINGLE_WORD_SCORE",
     "MAX_CANDIDATES",
+    "catalog_skill_label",
     "catalog_skill_labels",
     "catalog_skill_names",
     "claim_candidate_line",

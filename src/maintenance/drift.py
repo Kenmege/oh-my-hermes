@@ -800,8 +800,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # dispatched on main: /ulw-work 停止 and /ulw-plan 何これ (their
             # skill), /omh-code-review 这是什么 (OMH's intro card), /dag-ulw
             # 停止 (a run), and /dag-ulw show me the run in Hermes' scaffold
-            # (a plan) (5).
-            expected=1018,
+            # (a plan) (5). A stop of the skill's own run adds five, each
+            # dispatched its skill on main: /ulw-loop stop the loop,
+            # /omh-code-review 리뷰 취소, /ulw-loop 그만해 비싸 (a stop said
+            # with why), /ulw-work 别做了, and /omh-code-review what is
+            # omh-code-review? (a question that names the skill) (5); the
+            # Chinese question case moved from /omh-code-review to /omh-plan,
+            # since after code-review "what is this" asks for the review.
+            expected=1023,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1212,7 +1218,17 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # scaffold, as on main (1). A status request runs a skill whose
             # work it is: /omh-running-work-board status and
             # /omh-verification-gate is it done?, as on main (2).
-            expected=1017,
+            # A stop of something other than the skill's own run still runs
+            # it: /ulw-loop stop the loop when tests pass and
+            # /omh-data-pipelines stop the pipelines, as on main (2); so does
+            # a stop after the cancel skill, its work: /omh-cancel stop, as on
+            # main (1). A this/it question after a skill that explains or
+            # judges what the person points at is its work: /omh-code-review
+            # how is it?, and /omh-codebase-onboarding what does this do?, as
+            # on main (2), and /omh-code-review 这是什么 and
+            # /omh-paper-learning what is it?, which got OMH's intro card on
+            # main (2).
+            expected=1024,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

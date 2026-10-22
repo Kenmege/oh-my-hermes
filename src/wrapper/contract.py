@@ -40,6 +40,7 @@ from ..routing.chat import (
     LOOP_TIMER_ANSWER_REASON_CODES,
     REASON_CODE_FILE_LOOKUP,
     invoked_skill_asks_status,
+    invoked_skill_instruction,
     invoked_skill_stops_or_asks,
     public_chat_route_payload,
     route_explanation_payload,
@@ -5672,11 +5673,15 @@ def _build_chat_interaction_payload_uncached(
     # are answered as the route says; their text is never a question about
     # OMH's intro, quickstart, or status, as it is never a catalog question.
     # Neither is a question about an invoked skill ("/omh-plan 这是什么"): it
-    # asks about that skill, and the route answers it.
+    # asks about that skill, and the route answers it. An invoked skill's
+    # `omh-` label is no question about OMH either, so the intro and
+    # quickstart read the words after it ("/omh-paper-learning what is it?"
+    # runs paper-learning).
     answered_as_routed = _is_loop_timer_answer(route_payload) or host_command_turn(message)
     asks_the_invoked_skill = invoked_skill_stops_or_asks(message) and not invoked_skill_asks_status(message)
+    omh_question = invoked_skill_instruction(message) or message
     if (
-        _is_omh_intro_question(message)
+        _is_omh_intro_question(omh_question)
         and not answered_as_routed
         and not asks_the_invoked_skill
         and resolved_mode in {"route", "plan", "clarify"}
@@ -5692,7 +5697,7 @@ def _build_chat_interaction_payload_uncached(
         return _finish_interaction(base, target_notice)
 
     if (
-        _is_omh_quickstart_question(message)
+        _is_omh_quickstart_question(omh_question)
         and not answered_as_routed
         and not asks_the_invoked_skill
         and resolved_mode in {"route", "plan", "clarify"}

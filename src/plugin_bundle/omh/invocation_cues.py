@@ -3,15 +3,20 @@
 The person chose the skill ("/ulw-work …", "$code-review …", and every slash skill Hermes sends), so the default is
 to run it. It is answered instead only when the instruction is about the skill or its run, never a task:
 
-- a stop with no task object (`dag_ulw_cues.stops_the_run`: "stop", "멈춰", "이거 취소", "停止", "止めて", "取消"). A
-  stop word with a task object is work: "kill the zombie processes", "stop the modal from flickering", "로그 폭주
-  멈춰줘", "abort the rebase";
+- a stop with no task object (`dag_ulw_cues.stops_the_run`: "stop", "멈춰", "이거 취소", "停止", "止めて", "取消",
+  "别做了", "그만해 비싸"), the skill's own run named included ("/ulw-loop stop the loop", "/omh-code-review 리뷰 취소",
+  "/ulw-work stop ultrawork": `_own_run`). A stop word with a task object is work: "kill the zombie processes", "stop
+  the modal from flickering", "로그 폭주 멈춰줘", "abort the rebase". After the cancel skill a stop is its work
+  (`STOP_IS_THE_WORK`: "/omh-cancel stop");
 - a request to see how the run stands (`dag_ulw_cues.asks_how_the_run_stands`: "status", "show me the run", "상태
   보여줘", "끝났어?", "is it running?", "状態"), except after a skill whose own work is that status
   (`STATUS_IS_THE_WORK`: "/omh-running-work-board status", "/omh-verification-gate is it done?");
 - a question about what the skill is (`asks_after_the_name` without its run-state words: "what is it?", "what does
-  this do?", "이게 뭐야?", "어떻게 써?", "何これ", "这是什么"), or about dag-ulw ("/ulw-loop dag-ulw가 뭐야?"; a report
-  on it, "/ulw-work dag-ulw is broken", is work).
+  this do?", "이게 뭐야?", "어떻게 써?", "何これ", "这是什么"; "what is omh-code-review?", "what does this skill do?",
+  "이 스킬 뭐야?"), or about dag-ulw ("/ulw-loop dag-ulw가 뭐야?"; a report on it, "/ulw-work dag-ulw is broken", is
+  work). After a skill whose work is to explain or judge what the person points at (`MATERIAL_IS_THE_WORK`), a
+  question about "this" or "it" is about that material, so only a question that names the skill is about the skill
+  ("/omh-code-review how is it?" reviews, "/omh-code-review what is omh-code-review?" is answered).
 
 Every other instruction runs the skill, a question with a task object included: "/omh-code-review is it safe to
 merge?", "/ulw-plan how should we migrate billing?", "/research is rust faster than go?", "/omh-app-debugging why did
@@ -22,6 +27,8 @@ this file with Hermes' interpreter (#1623).
 
 from __future__ import annotations
 
+from functools import lru_cache
+import re
 import unicodedata
 from typing import Final
 
@@ -33,30 +40,84 @@ from .dag_ulw_cues import (
     stops_the_run,
 )
 from .name_report_cues import QUESTION_IS_THE_WORK, asks_after_the_name
+from . import skill_shortlist as _skill_shortlist
 
 # The skills whose own work is answering how a run stands, so a status request after their sigil runs them:
 # `QUESTION_IS_THE_WORK` but app-debugging, whose work is diagnosing a failure and whose status questions are answered
 # (lead's ruling on #2221), and the ops command board, whose work is the operations status.
 STATUS_IS_THE_WORK: Final = (QUESTION_IS_THE_WORK - {"app-debugging"}) | {"ops-observability-card"}
+# The skill whose own work is the stop, so a stop after its sigil runs it, as on origin/main ("/omh-cancel stop").
+STOP_IS_THE_WORK: Final = frozenset({"cancel"})
+# The skills whose work is to explain or judge the material the person points at: after one of these, "what is it?"
+# or "how is it?" asks about that material.
+MATERIAL_IS_THE_WORK: Final = frozenset({"code-review", "codebase-onboarding", "paper-learning"})
+
+# The words for a skill's own run, by a word of its name or label: "/ulw-loop stop the loop", "/omh-plan stop
+# planning", "/omh-app-debugging stop the investigation", "/ulw-work stop ultrawork". A word that names what the skill
+# works on is no run of it ("/omh-data-pipelines stop the pipelines" is work), so only these words count.
+_RUN_WORDS: Final = {
+    "loop": ("loop", "looping", "루프"),
+    "review": ("review", "reviewing", "리뷰"),
+    "plan": ("plan", "planning", "계획", "플랜"),
+    "interview": ("interview", "interviewing", "인터뷰"),
+    "debugging": ("debugging", "debug", "investigation", "디버깅"),
+    "debug": ("debugging", "debug", "investigation", "디버깅"),
+    "work": ("work", "working"),
+    "ulw": ("ulw", "ultrawork"),
+    "ultrawork": ("ultrawork", "ulw"),
+}
+# The skill named as "this skill" or "이 스킬", which a question about the skill reads as "it".
+_THE_SKILL: Final = re.compile(r"\b(?:(?:this|the|that|your)\s+)?skill\b|(?:(?:이|그|저)\s*)?스킬")
 
 STOP: Final = "stop"
 STATUS: Final = "status"
 META: Final = "meta"
 
 
+@lru_cache(maxsize=256)
+def _own_run(name: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The invoked skill's names (``name`` and the label Hermes lists it under, from the catalog's sidecar) and the
+    words for its own run (`_RUN_WORDS`, by each word of a name, and a name spaced when it ends in one: "code
+    review")."""
+    names = tuple(sorted({name, _skill_shortlist.catalog_skill_label(name)} - {""}))
+    nouns: set[str] = set()
+    for written in names:
+        parts = written.split("-")
+        for part in parts:
+            nouns.update(_RUN_WORDS.get(part, ()))
+        if len(parts) > 1 and parts[-1] in _RUN_WORDS:
+            nouns.add(" ".join(parts))
+    return names, tuple(sorted(nouns))
+
+
+def _names_as_it(folded: str, names: tuple[str, ...]) -> str:
+    """``folded`` with the skill's names and "this skill" read as "it" ("이거" in Korean), so a question about the
+    skill by name reads as one about it ("what is omh-code-review?" as "what is it?")."""
+    it = "이거" if re.search(r"[가-힣]", folded) else "it"
+    for written in sorted(names, key=len, reverse=True):
+        folded = re.sub(rf"(?<![a-z0-9_-]){re.escape(written)}(?![a-z0-9_-])", it, folded)
+    return _THE_SKILL.sub(it, folded)
+
+
 def invoked_instruction(name: str, rest: str) -> str:
     """`STOP`, `STATUS` or `META` when ``rest``, the words after an explicitly invoked skill (``name``, its canonical
     name), are about the skill or its run, else "": run the skill."""
-    if stops_the_run(rest):
-        return STOP
+    names, nouns = _own_run(name)
+    if stops_the_run(rest, names=names, nouns=nouns):
+        return "" if name in STOP_IS_THE_WORK else STOP
     if asks_how_the_run_stands(rest):
         return "" if name in STATUS_IS_THE_WORK else STATUS
     folded = unicodedata.normalize("NFKC", rest).casefold().strip(" ,:")
-    if asks_after_the_name(folded, run_state=False) or ja_zh_asks_what_it_is(folded):
+    named = _names_as_it(folded, names)
+    if named != folded and asks_after_the_name(named, run_state=False):
+        return META  # "what is omh-code-review?", "what does this skill do?", "이 스킬 뭐야?"
+    if name not in MATERIAL_IS_THE_WORK and (
+        asks_after_the_name(folded, run_state=False) or ja_zh_asks_what_it_is(folded)
+    ):
         return META
     if asks_about_dag_ulw(folded) and not reports_on_dag_ulw(folded):
         return META  # "/ulw-loop dag-ulw가 뭐야?"; "/ulw-work dag-ulw is broken" is work for ulw-work
     return ""
 
 
-__all__ = ["META", "STATUS", "STATUS_IS_THE_WORK", "STOP", "invoked_instruction"]
+__all__ = ["MATERIAL_IS_THE_WORK", "META", "STATUS", "STATUS_IS_THE_WORK", "STOP", "STOP_IS_THE_WORK", "invoked_instruction"]

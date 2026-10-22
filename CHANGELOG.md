@@ -97,13 +97,38 @@ All notable changes will be documented here.
   to a skill whose own work that status is (`/omh-running-work-board status`,
   `/omh-deploy-and-monitor status`, `/omh-verification-gate is it done?`,
   `/omh-ops-observability-card status`). A question about an `omh-` skill is
-  answered about that skill, not with OMH's intro card. In the frozen
-  acceptance set's 1,231 labeled explicit invocations, typed and as Hermes'
-  turn, no stop, status or question-about-the-skill row starts a run
-  (origin/main started one on 631 of 673), and none of the 554 labeled work
-  rows is answered instead of run; four questions about the run after
-  `/dag-ulw` are answered by dag-ulw's own reading. Rows outside that set are
-  not measured.
+  answered about that skill, not with OMH's intro card.
+- **A stop of the invoked skill's own run is a stop.** `/ulw-loop stop the
+  loop`, `/omh-code-review 리뷰 취소`, `/ulw-interview 인터뷰 그만`, `/omh-plan
+  cancel the plan`, `/omh-app-debugging stop debugging`, `/ulw-work stop
+  ultrawork` and `/ulw-loop stop ulw-loop` started the skill they stopped.
+  The skill's names (its catalog name and label) and the words for its own
+  run, picked by the words of those names (loop, review, plan, interview,
+  debugging, work, ulw), now count as the stop's object, so these are
+  answered; a stop of anything else is still work (`/omh-data-pipelines stop
+  the pipelines`, `/ulw-loop stop the loop when tests pass`, `/omh-plan cancel
+  the plan for the free tier`). A Korean stop said with why (`그만해 비싸`,
+  `멈춰 너무 오래 걸려`), a stop after `no` (`no stop`), and the Chinese
+  `别做了`, `不要做了`, `算了` and `停一下` are stops too. After `/omh-cancel` a
+  stop is that skill's own work and dispatches it, as on origin/main.
+- **After a skill that explains or judges what the person points at, a
+  question about "this" or "it" is its work.** `/omh-code-review how is it?`,
+  `/omh-code-review 这是什么`, `/omh-codebase-onboarding what does this do?` and
+  `/omh-paper-learning what is it?` run the skill; only a question that names
+  the skill (`what is omh-code-review?`, `what does this skill do?`, `이 스킬
+  뭐야?`) is answered about it, after any skill. An invoked skill's `omh-`
+  label no longer makes its words an OMH intro or quickstart question:
+  `/omh-paper-learning what is it?` got OMH's intro card on origin/main.
+  After `/dag-ulw`, a stop verb with an object (`/dag-ulw kill the zombie
+  processes`) asks once whether to stop the run or start one on that work,
+  dag-ulw's own reading of a stop word with other words; origin/main started
+  a run.
+- In the frozen acceptance set's 1,427 labeled explicit invocations, typed
+  and as Hermes' turn, no stop, status or question-about-the-skill row starts
+  a run (origin/main started one on 755 of 797), and none of the 630 labeled
+  work rows is answered instead of run; four questions about the run after
+  `/dag-ulw` are answered and three stop verbs with an object after it ask
+  once, by dag-ulw's own reading. Rows outside that set are not measured.
 
 ## 4.0.1 - 2026-10-22
 

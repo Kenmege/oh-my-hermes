@@ -26,11 +26,22 @@ STOPS = (
     "/ulw-work stop", "/ulw-loop stop", "/ulw-interview stop", "/omh-plan stop", "/omh-code-review stop",
     "/omh-app-debugging stop", "/ulw-work cancel", "/ulw-work 그만", "/ulw-work 취소해줘", "/ulw-work 이거 취소",
     "$ulw-work stop", "/ralplan 멈춰", "/ulw-work 停止", "/ulw-plan 止めて", "/omh-plan 取消",
+    "/ulw-work 别做了", "/ulw-work 不要做了", "/ulw-loop 算了", "/omh-plan 停一下",
+)
+# A stop whose object is the invoked skill's own run, or its name, and a stop said with why.
+OWN_RUN_STOPS = (
+    "/ulw-loop stop the loop", "/ulw-loop stop looping", "/ulw-loop 루프 멈춰", "/ulw-loop cancel the loop",
+    "/ulw-work stop the work", "/ulw-work stop ultrawork", "/ulw-loop stop ulw-loop", "/omh-code-review stop the review",
+    "/omh-code-review 리뷰 취소", "/omh-plan stop planning", "/omh-plan cancel the plan", "/ulw-plan stop the plan",
+    "/ulw-interview 인터뷰 그만", "/omh-app-debugging stop debugging", "/omh-app-debugging stop the investigation",
+    "/ulw-loop 그만해 비싸", "/ulw-loop 멈춰 너무 오래 걸려", "/ulw-loop no stop", "/omh-frontend stop omh-frontend",
 )
 # A question about the skill itself.
 META_QUESTIONS = (
     "/ulw-plan what does this do?", "/ulw-plan what is it?", "/ulw-plan 이게 뭐야?", "/ulw-plan 어떻게 써?",
-    "/ulw-plan 何これ", "/omh-code-review 这是什么", "/omh-code-review what is it?", "/omh-app-debugging what does this do?",
+    "/ulw-plan 何これ", "/omh-plan 这是什么", "/omh-app-debugging what does this do?", "/ulw-plan what is ulw-plan?",
+    "/omh-code-review what is omh-code-review?", "/omh-code-review what does this skill do?",
+    "/omh-code-review 이 스킬 뭐야?", "/omh-paper-learning what does this skill do?",
 )
 # How the run stands, after a skill whose work is not that status.
 STATUS_REQUESTS = (
@@ -52,6 +63,17 @@ REQUESTS = (
     ("/omh-running-work-board what's running?", "running-work-board"),
     ("/omh-deploy-and-monitor status", "deploy-and-monitor"),
     ("/omh-ops-observability-card status", "ops-observability-card"),
+    # A stop of something other than the skill's own run, or with a task after it.
+    ("/ulw-loop stop the loop when tests pass", "loop"), ("/omh-code-review 리뷰 취소 기능 만들어줘", "code-review"),
+    ("/omh-data-pipelines stop the pipelines", "data-pipelines"), ("/omh-frontend stop the frontend", "frontend"),
+    ("/ulw-loop 그만해 그리고 결제 모듈 고쳐줘", "loop"), ("/ulw-loop no stop words in the tokenizer", "loop"),
+    ("/ulw-work 예약 취소 버튼", "ultrawork"),
+    # A stop after the cancel skill is its work.
+    ("/omh-cancel stop", "cancel"), ("/omh-cancel 취소해줘", "cancel"), ("/omh-cancel 그만", "cancel"),
+    # A this/it question after a skill that explains or judges what the person points at.
+    ("/omh-code-review how is it?", "code-review"), ("/omh-code-review what is it?", "code-review"),
+    ("/omh-code-review 这是什么", "code-review"), ("/omh-codebase-onboarding what does this do?", "codebase-onboarding"),
+    ("/omh-paper-learning what does this mean?", "paper-learning"), ("/omh-paper-learning what is it?", "paper-learning"),
 )
 
 
@@ -79,10 +101,41 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(invoked_instruction("ops-observability-card", "status"), "")
         self.assertEqual(invoked_instruction("app-debugging", "is it running?"), STATUS)
 
+    def test_a_stop_of_the_skills_own_run_is_a_stop(self) -> None:
+        self.assertEqual(invoked_instruction("loop", "stop the loop"), STOP)
+        self.assertEqual(invoked_instruction("loop", "루프 그만"), STOP)
+        self.assertEqual(invoked_instruction("ralplan", "stop the plan"), STOP)  # its label is ulw-plan
+        self.assertEqual(invoked_instruction("ultrawork", "stop ulw"), STOP)
+        self.assertEqual(invoked_instruction("deep-interview", "cancel the interview please"), STOP)
+        self.assertEqual(invoked_instruction("loop", "no, stop"), STOP)
+        self.assertEqual(invoked_instruction("ultrawork", "算了"), STOP)
+        # Another thing named, a condition, a task after the stop, or a stop noun before its object: work.
+        self.assertEqual(invoked_instruction("loop", "stop the loop when tests pass"), "")
+        self.assertEqual(invoked_instruction("plan", "cancel the plan for the free tier"), "")
+        self.assertEqual(invoked_instruction("code-review", "cancel the review request"), "")
+        self.assertEqual(invoked_instruction("ultrawork", "stop the review"), "")
+        self.assertEqual(invoked_instruction("frontend", "stop the frontend"), "")
+        self.assertEqual(invoked_instruction("loop", "멈춰 로그 폭주 원인 찾아줘"), "")
+        self.assertEqual(invoked_instruction("loop", "no, don't stop"), "")
+        self.assertEqual(invoked_instruction("ultrawork", "算了一下成本"), "")
+        # The cancel skill's work is the stop.
+        self.assertEqual(invoked_instruction("cancel", "stop"), "")
+
+    def test_a_question_about_this_after_a_skill_that_judges_material_is_its_work(self) -> None:
+        for name in ("code-review", "codebase-onboarding", "paper-learning"):
+            with self.subTest(name=name):
+                self.assertEqual(invoked_instruction(name, "what is it?"), "")
+                self.assertEqual(invoked_instruction(name, "이게 뭐야?"), "")
+                self.assertEqual(invoked_instruction(name, "what does this skill do?"), META)
+                self.assertEqual(invoked_instruction(name, "이 스킬 뭐야?"), META)
+        self.assertEqual(invoked_instruction("code-review", "what is omh-code-review?"), META)
+        self.assertEqual(invoked_instruction("code-review", "how should we structure code-review here?"), "")
+        self.assertEqual(invoked_instruction("ultrawork", "what does this do?"), META)
+
 
 class RouteTests(unittest.TestCase):
     def test_a_stop_or_a_question_about_the_skill_is_answered(self) -> None:
-        for message in STOPS + META_QUESTIONS:
+        for message in STOPS + OWN_RUN_STOPS + META_QUESTIONS:
             for form, text in _forms(message):
                 with self.subTest(message=message, form=form):
                     if form == "scaffold":
@@ -108,6 +161,8 @@ class RouteTests(unittest.TestCase):
                 with self.subTest(message=message, form=form):
                     route = route_chat_message(text, source="discord")
                     self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", skill))
+                    interaction = build_chat_interaction_payload(text, source="discord")
+                    self.assertEqual(interaction["route"]["selected_skill"], skill)
 
 
 if __name__ == "__main__":

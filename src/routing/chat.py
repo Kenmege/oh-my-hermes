@@ -6983,6 +6983,19 @@ def invoked_skill_stops_or_asks(message: str) -> bool:
     )
 
 
+def invoked_skill_instruction(message: str) -> str:
+    """The words after a sigil that invokes a skill other than OMH's router, else "" ("/omh-paper-learning what is
+    it?" gives "what is it?"): the skill's `omh-` label is not the person asking about OMH, so a wrapper reads OMH's
+    intro and quickstart questions on these words, and the route runs the skill."""
+    routing_message = _with_canonical_display_names(executable_routing_text(message)).strip()
+    if not routing_message.startswith(EXPLICIT_INVOCATION_PREFIXES):
+        return ""
+    if explicit_skill_invocation(routing_message) in (None, _ROUTER_SKILL, "meta-router"):
+        return ""
+    parts = routing_message.split(maxsplit=1)
+    return parts[1] if len(parts) == 2 else ""
+
+
 def invoked_skill_asks_status(message: str) -> bool:
     """Whether a sigil invokes a skill and the words after its name ask how its run stands ("/ulw-work status"): the
     router sends it to OMH's status card (`_invoked_status_word`), and the wrapper renders that card."""

@@ -7477,12 +7477,12 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "ralplan",
     ),
     RoutingPrecisionCase(
-        "explicit-omh-code-review-chinese-question-is-answered",
-        "/omh-code-review 这是什么 asks about the review skill, not about OMH",
-        "/omh-code-review 这是什么",
+        "explicit-omh-plan-chinese-question-is-answered",
+        "/omh-plan 这是什么 asks about the plan skill, not about OMH",
+        "/omh-plan 这是什么",
         "answer_directly",
         "direct_answer",
-        "code-review",
+        "plan",
     ),
     RoutingPrecisionCase(
         "dag-ulw-sigil-chinese-stop-starts-no-run",
@@ -7507,6 +7507,48 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_directly",
         "direct_answer",
         "ultrawork",
+    ),
+    # A stop whose object is the invoked skill's own run or name, a Korean stop said with why, a Chinese bare stop,
+    # and a question that names the skill: each about the skill, not a task for it.
+    RoutingPrecisionCase(
+        "explicit-ulw-loop-stop-of-the-loop-is-answered",
+        "/ulw-loop stop the loop stops the loop's own run, it starts none",
+        "/ulw-loop stop the loop",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "explicit-omh-code-review-korean-stop-of-the-review-is-answered",
+        "/omh-code-review 리뷰 취소 cancels the review, in Korean, and starts none",
+        "/omh-code-review 리뷰 취소",
+        "answer_directly",
+        "direct_answer",
+        "code-review",
+    ),
+    RoutingPrecisionCase(
+        "explicit-ulw-loop-korean-stop-with-a-reason-is-answered",
+        "/ulw-loop 그만해 비싸 stops and says why, it starts no loop",
+        "/ulw-loop 그만해 비싸",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "explicit-ulw-work-chinese-bare-stop-is-answered",
+        "/ulw-work 别做了 stops, in Chinese, and starts nothing",
+        "/ulw-work 别做了",
+        "answer_directly",
+        "direct_answer",
+        "ultrawork",
+    ),
+    RoutingPrecisionCase(
+        "explicit-omh-code-review-question-naming-the-skill-is-answered",
+        "/omh-code-review what is omh-code-review? asks about the skill by name, it reviews nothing",
+        "/omh-code-review what is omh-code-review?",
+        "answer_directly",
+        "direct_answer",
+        "code-review",
     ),
     # A stop, cancel or status word for the dag-ulw run in progress starts no new run; Hermes' route hint points it
     # at the run's own omh_dag cancel or status. The shortlist may still list dag-ulw; the route answers directly.
@@ -17175,6 +17217,52 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "/omh-verification-gate is it done? is the gate's own work",
         "/omh-verification-gate is it done?",
         "dispatch", "verification-gate", "prepare_verification_gate", "verification_gate",
+    ),
+    # A stop of something other than the skill's own run is work, and so is a stop after the cancel skill, whose work
+    # it is (as on main).
+    RoutingInterventionCase(
+        "explicit-ulw-loop-stop-the-loop-on-a-condition-dispatches",
+        "/ulw-loop stop the loop when tests pass sets the loop's goal, it is no stop",
+        "/ulw-loop stop the loop when tests pass",
+        "dispatch", "loop", "ask_goal_boundary", "loop",
+    ),
+    RoutingInterventionCase(
+        "explicit-data-pipelines-stop-the-pipelines-dispatches",
+        "/omh-data-pipelines stop the pipelines names what the skill works on, not its run",
+        "/omh-data-pipelines stop the pipelines",
+        "dispatch", "data-pipelines", "prepare_pipeline_plan", "pipeline_plan",
+    ),
+    RoutingInterventionCase(
+        "explicit-omh-cancel-stop-runs-the-cancel-skill",
+        "/omh-cancel stop is the cancel skill's own work",
+        "/omh-cancel stop",
+        "dispatch", "cancel", "cancel", "cancellation",
+    ),
+    # After a skill that explains or judges what the person points at, a question about "this" or "it" is about that
+    # material: the skill's work.
+    RoutingInterventionCase(
+        "explicit-code-review-it-question-reviews",
+        "/omh-code-review how is it? asks for the review",
+        "/omh-code-review how is it?",
+        "dispatch", "code-review", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "explicit-code-review-chinese-this-question-reviews",
+        "/omh-code-review 这是什么 asks, in Chinese, what the change is: the review",
+        "/omh-code-review 这是什么",
+        "dispatch", "code-review", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "explicit-paper-learning-it-question-is-its-work",
+        "/omh-paper-learning what is it? asks about the paper, not about OMH",
+        "/omh-paper-learning what is it?",
+        "dispatch", "paper-learning", "prepare_paper_learning", "paper_learning",
+    ),
+    RoutingInterventionCase(
+        "explicit-codebase-onboarding-this-question-is-its-work",
+        "/omh-codebase-onboarding what does this do? asks about the codebase",
+        "/omh-codebase-onboarding what does this do?",
+        "dispatch", "codebase-onboarding", "prepare_codebase_onboarding", "codebase_onboarding",
     ),
     RoutingInterventionCase(
         "work-with-dag-ulw-dispatches",

@@ -35,8 +35,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # after the /dag-ulw sigil six (+6), a stop or a question after an
         # explicit invocation ten (+10), and the rule after an explicit sigil
         # five: four Japanese or Chinese stops or questions, and a status
-        # request after /dag-ulw in Hermes' scaffold (+5).
-        self.assertEqual(payload["summary"]["case_count"], 1018)
+        # request after /dag-ulw in Hermes' scaffold (+5). A stop of the
+        # invoked skill's own run, a Korean stop said with why, a Chinese bare
+        # stop and a question that names the skill add five (+5).
+        self.assertEqual(payload["summary"]["case_count"], 1023)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -97,8 +99,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # answered directly (+4). Ten stops or questions after an explicit
         # invocation are answered directly (+10), and so are a Japanese stop,
         # a Japanese and a Chinese question about the skill, and a status
-        # request in Hermes' scaffold after /dag-ulw (+4).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 319)
+        # request in Hermes' scaffold after /dag-ulw (+4). Five stops of the
+        # invoked skill's own run or questions that name it are answered
+        # directly (+5).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 324)
         # show-reel's README-link control is answered as a file lookup (+1).
         self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
@@ -115,8 +119,11 @@ class RoutingPrecisionTests(unittest.TestCase):
         # after an explicit sigil adds six stop verbs or questions with a
         # task object that run their skill, five status requests that get
         # OMH's status card, and two status requests that run a skill whose
-        # work they are (+13).
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1017)
+        # work they are (+13). Two stops of something other than the skill's
+        # own run, a stop after the cancel skill, and four this/it questions
+        # after a skill that explains or judges what the person points at run
+        # their skill (+7).
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1024)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )
