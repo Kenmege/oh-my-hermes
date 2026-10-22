@@ -77,7 +77,8 @@ supported AutoDock atom types. The receptor is rigid (ATOM/HETATM plus
 REMARK/TER/END); one ligand requires balanced ROOT/ENDROOT, BRANCH/ENDBRANCH
 and final TORSDOF. Reject flexible receptors, multi-model inputs, PDB/SDF,
 missing charge/type, duplicate serials, symlink components and existing output
-directories. The output parent must already exist. No conversion or silent
+directories; the only links accepted are macOS's own `/etc`, `/tmp` and `/var`
+into `/private`. The output parent must already exist. No conversion or silent
 repair occurs. Parsing cannot certify protonation, stereochemistry, tautomer,
 charge preparation, missing atoms, receptor state or binding-site validity.
 

@@ -17,6 +17,15 @@ import {glyphChecker,assertGlyphs} from './font-coverage.mjs';
 const hash=data=>crypto.createHash('sha256').update(data).digest('hex');
 const MIME={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json','.ttf':'font/ttf','.otf':'font/otf','.woff':'font/woff','.woff2':'font/woff2','.png':'image/png','.jpg':'image/jpeg','.svg':'image/svg+xml','.css':'text/css','.wav':'audio/wav'};
 
+export function systemAlias(component) {
+  // macOS ships /etc, /tmp and /var (home of the default temp dir) as links into /private. Only
+  // root can create a top-level entry, so trust exactly those three, linked to the same name.
+  const name=path.basename(component);
+  if(process.platform!=='darwin'||path.dirname(component)!=='/'||!['etc','tmp','var'].includes(name))return false;
+  try {return ['private/'+name,'/private/'+name].includes(fs.readlinkSync(component));}
+  catch {return false;}
+}
+
 export function noLinks(candidate,root) {
   // The root's own parent, the root and every component below it. Without a root the path's
   // folder is the root; above it is the operator's own layout (macOS temp dirs sit under /var).
@@ -26,7 +35,7 @@ export function noLinks(candidate,root) {
   const chain=[path.dirname(base),base];let cursor=base;
   for(const part of rel?rel.split(path.sep):[]){cursor=path.join(cursor,part);chain.push(cursor);}
   for(const component of chain) {
-    try {if(fs.lstatSync(component).isSymbolicLink())throw Error('symlink refused: '+component);}
+    try {if(fs.lstatSync(component).isSymbolicLink()&&!systemAlias(component))throw Error('symlink refused: '+component);}
     catch(e){if(e.code!=='ENOENT')throw e;}
   }
   return absolute;

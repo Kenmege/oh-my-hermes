@@ -59,7 +59,8 @@ Use the host's capture/clock/hash tools to write `captures.json` with:
   `stdout_path`, `stderr_path`, stdout `sha256`, and `stderr_sha256`.
 
 Paths resolve beneath the manifest directory. Absolute paths, traversal and
-symlink components are refused; each input is capped at 8 MiB. Captures stay
+symlink components are refused; the only links accepted are macOS's own `/etc`,
+`/tmp` and `/var` into `/private`. Each input is capped at 8 MiB. Captures stay
 outside the skill/package and must remain available beside their envelope.
 The helper hashes both streams before interpreting them. Its receipt is an
 operator assertion, not authenticated proof of the retrieval or source identity.
