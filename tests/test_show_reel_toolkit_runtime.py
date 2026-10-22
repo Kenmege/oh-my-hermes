@@ -17,6 +17,7 @@ from unittest.mock import patch
 import unittest
 
 from _module_patch import patch_modules
+from _toolkit_path_guard import alias_fixture, assert_only_system_aliases_trusted
 
 ROOT = Path(__file__).resolve().parents[1]
 KIT = ROOT / "src/skills/show_reel_toolkit"
@@ -124,6 +125,25 @@ class LocalProjectTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 api["read_spec"](link)
 
+    def test_only_macos_system_aliases_are_trusted(self):
+        timeline, new_project = self.load("timeline.py"), self.load("new_project.py")
+        for api, guard, refusal in ((timeline, "generated", "generated output refuses symlink"),
+                                    (new_project, "no_links", "symlink input/destination refused")):
+            with self.subTest(guard=guard), tempfile.TemporaryDirectory() as td:
+                assert_only_system_aliases_trusted(self, api[guard], api["system_alias"], Path(td), refusal)
+
+    @unittest.skipUnless(Path("/tmp").is_dir(), "no /tmp on this host")
+    def test_spec_output_and_project_two_levels_under_tmp_are_accepted(self):
+        # On macOS /tmp is the OS's own link into /private, within reach of every guard here.
+        timeline, new_project = self.load("timeline.py"), self.load("new_project.py")
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            root = Path(td)
+            spec = root / "timing.json"
+            spec.write_text('{"duration":1,"fps":30,"cues":[]}', encoding="utf-8", newline="\n")
+            self.assertEqual(timeline["read_spec"](spec)["duration"], 1)
+            self.assertEqual(timeline["generated"](root / "timeline.json"), root / "timeline.json")
+            self.assertEqual(new_project["no_links"](root), root)
+
     def test_explicit_locale_neutral_cues_validate_before_output(self):
         api = self.load("timeline.py")
         spec = {"duration": 2, "fps": 30, "cues": [{"id": "مرحلة.一", "frame": 12}, {"id": "cut", "after": "مرحلة.一", "offset": .2}]}
@@ -194,6 +214,34 @@ console.log('safe');
 """
             result = subprocess.run([NODE, "--input-type=module", "-e", script, adapter.as_uri(), str(root)], capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_only_macos_system_aliases_are_trusted(self):
+        if not NODE:
+            self.skipTest("optional Node unavailable")
+        with tempfile.TemporaryDirectory() as td:
+            real, refused, cases = alias_fixture(Path(td))
+            script = """
+const [adapter,real,refusedJson,casesJson]=process.argv.slice(1);
+const {noLinks,systemAlias}=await import(adapter);
+const fs=(await import('node:fs')).default,path=await import('node:path');
+for(const p of [real,'/tmp/omh-alias-probe.json'])if(noLinks(p)!==path.resolve(p))throw Error('refused '+p);
+const platform=process.platform,readlink=fs.readlinkSync;
+const setPlatform=value=>Object.defineProperty(process,'platform',{value,configurable:true});
+try {
+ setPlatform('darwin');
+ for(const p of JSON.parse(refusedJson)){let refused=false;try{noLinks(p);}catch(e){refused=/symlink refused/.test(e.message);}if(!refused)throw Error('admitted '+p);}
+ for(const [os,part,link,trusted] of JSON.parse(casesJson)){
+  setPlatform(os);fs.readlinkSync=()=>link;
+  if(systemAlias(part)!==trusted)throw Error(`systemAlias ${os} ${part} -> ${link}`);
+ }
+} finally {setPlatform(platform);fs.readlinkSync=readlink;}
+console.log('aliases');
+"""
+            argv = [str(real), json.dumps([str(p) for p in refused]), json.dumps(cases)]
+            adapter = KIT / "scripts/render.mjs"
+            result = subprocess.run([NODE, "--input-type=module", "-e", script, adapter.as_uri(), *argv], capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), "aliases")
 
 
 @unittest.skipUnless(os.environ.get("SHOW_REEL_HOST_TOOLS"), "optional real browser/FFmpeg: run explicit host smoke")

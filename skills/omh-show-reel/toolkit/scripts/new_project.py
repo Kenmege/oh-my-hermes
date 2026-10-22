@@ -14,7 +14,7 @@ import re
 import shutil
 import struct
 
-from timeline import settings
+from timeline import settings, system_alias
 
 KIT = Path(__file__).resolve().parents[1]
 ENGINE = KIT / "assets/engine"
@@ -35,6 +35,7 @@ def no_links(path, root=None):
 
     Without an explicit root the path's parent is the root. Components above it are the
     operator's own layout (macOS reaches every temp dir through `/var`), not this input.
+    macOS's own /etc, /tmp and /var links are accepted wherever they fall (`system_alias`).
     """
     path = Path(path).absolute()
     root = Path(root).absolute() if root is not None else path.parent
@@ -42,7 +43,7 @@ def no_links(path, root=None):
         raise ValueError(f"path escapes its root: {path}")
     chain = [root.parent, root, *(p for p in reversed(path.parents) if root in p.parents), path]
     for component in chain:
-        if component.is_symlink():
+        if component.is_symlink() and not system_alias(component):
             raise ValueError(f"symlink input/destination refused: {component}")
     return path
 

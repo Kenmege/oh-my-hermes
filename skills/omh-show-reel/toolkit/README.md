@@ -56,7 +56,9 @@ python $S/motion_check.py PROJECT/out/draft.mp4 --ffmpeg /explicit/ffmpeg --hold
 /explicit/node_modules --ffmpeg /explicit/ffmpeg --ffprobe /explicit/ffprobe`;
 add `--color swscale` when that FFmpeg has no zscale. Render outputs (videos,
 still folders) and receipts must be new paths; initialization refuses an existing
-project. Never use secrets or unreviewed scripts.
+project. A symlink as the file, its folder or that folder's parent is refused; the
+only links accepted are macOS's own `/etc`, `/tmp` and `/var` into `/private`.
+Never use secrets or unreviewed scripts.
 
 ## Project layout (upstream's)
 
