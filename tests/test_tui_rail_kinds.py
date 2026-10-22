@@ -283,8 +283,10 @@ class HeredocTests(unittest.TestCase):
             f"{script}\necho $(( 1 << n ))\nls\npwd": " + 3 commands",
             f"{script}\necho $((a<<b))\nls": " + 2 commands",
             f"{script}\n(( z = x << y ))\nls": " + 2 commands",
+            f"{script}\n(( x = 1 << n ))\nls\npwd": " + 3 commands",
             f"{script}\necho \"a << b c\"\nls\npwd": " + 3 commands",
             f"{script}\necho 'a << b c'\nls\npwd": " + 3 commands",
+            f"{script}\necho 'x <<EOF'\nls\npwd": " + 3 commands",
             f"{script}\necho \"a \\\" << b\"\nls": " + 2 commands",  # an escaped quote does not close it
             f"{script}\necho \"feed it <<EOF\"\nls": " + 2 commands",
             f"{script}\necho 'x' && cat <<EOF\nbody\nEOF\nls": " + 2 commands",  # an opener after a quoted word
@@ -427,6 +429,17 @@ class SlashTokenTests(unittest.TestCase):
         self.assertNotIn(CLEAR_SCREEN_AND_SCROLLBACK, "".join(app.terminal.writes))
         (prompt,) = [block for block in app.transcript.blocks if isinstance(block, UserBlock)]
         self.assertIn("dag-ulw", prompt.known)  # /history draws it with the catalog's names
+
+    def test_a_moved_prompt_in_the_tail_redraws_though_one_above_it_moved_first(self) -> None:
+        # #2225 review D2: whichever moved prompt comes first, one the redraw reprints decides.
+        replies = [{"role": "assistant", "text": f"reply {number}"} for number in range(8)]
+        history = [{"role": "user", "text": "/dag-ulw go"}, *replies, {"role": "user", "text": "/dag-ulw again"}]
+        with patch("omh.tui.app.REDRAW_TAIL_ROWS", 10):
+            app, client = resumed(history)
+            self.assertEqual(prompt_tokens(app), [[]])  # only the second prompt is in the tail
+            answer_catalog(app, client, [["/dag-ulw", "Graph work"]])
+            self.assertIn(CLEAR_SCREEN_AND_SCROLLBACK, "".join(app.terminal.writes))
+            self.assertEqual(prompt_tokens(app), [["/dag-ulw"]])
 
     def test_the_composer_draws_a_known_name_bold_in_the_skill_hue(self) -> None:
         frame = build_frame(cols=60, rows=24, composer=Composer(text="/dag-ulw go /foo src/a.py"),
