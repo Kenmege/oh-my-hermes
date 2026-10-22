@@ -425,14 +425,13 @@ SHELL_TOOLS = TOOL_FAMILIES["shell"]
 SCRIPT_INTERPRETERS = frozenset({"python", "python3", "node", "bash", "sh", "zsh", "ruby", "perl"})
 _VERSIONED_PYTHON = re.compile(r"python3\.\d+")
 # A heredoc's opener at the end of its line (`<<'PY'`, `<<-EOF`), never a here-string (`<<<`: no `<` before the
-# two, and the word after them refuses a third) or a shift (`$((1<<3))`); group 1 is `<<-`'s dash (its terminator may
-# be indented with tabs), group 3 the terminator. `_ANY_HEREDOC_OPENER` also finds one with more of its command
-# after it (`cat <<'EOF' > notes.md`), never one glued to more of a word (`"feed it <<EOF"`); `_command_lines` looks
-# for it outside arithmetic (`_ARITHMETIC`), where `<<` is a shift however it is spaced (`$(( 1 << n ))`).
-_HEREDOC = r"(?<!<)<<(-?)\s*(['\"]?)([A-Za-z_]\w*)\2"
+# two, and the word after them refuses a third) or a shift (`$((1<<3))`); `dash` is `<<-`'s (its terminator may be
+# indented with tabs), `word` the terminator.
+_HEREDOC = r"(?<!<)<<(?P<dash>-?)\s*(?P<quote>['\"]?)(?P<word>[A-Za-z_]\w*)(?P=quote)"
 _HEREDOC_OPENER = re.compile(_HEREDOC + r"\s*$")
-_ANY_HEREDOC_OPENER = re.compile(_HEREDOC + r"(?=[\s;&|>]|$)")
-_ARITHMETIC = re.compile(r"\$?\(\(.*?\)\)")
+# A line as `_command_lines` reads it, left to right: arithmetic (`$(( 1 << n ))`, `((x << y))`) and a quoted string
+# (`"a << b c"`, `'<<EOF'`), where `<<` is never a heredoc, then an `opener` anywhere (`cat <<'EOF' > notes.md`).
+_SHELL_SPANS = re.compile(r"\$?\(\(.*?\)\)|'[^']*'|\"(?:[^\"\\]|\\.)*\"|(?P<opener>" + _HEREDOC + ")")
 _COMMAND_SEPARATOR = re.compile(r"&&|\|\||;|\|")
 _ENV_ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=\S*")
 UV_RUN_VALUE_OPTIONS = frozenset({"--with", "--python", "-p", "--project", "--directory", "--group", "--extra",
@@ -462,7 +461,7 @@ def _script_interpreter(segment: str) -> str:
 
 def _ends_heredoc(line: str, opener: re.Match[str]) -> bool:
     """Whether `line` is the terminator `opener` names (tab-indented after `<<-`)."""
-    return (line.lstrip("\t") if opener[1] else line).rstrip() == opener[3]
+    return (line.lstrip("\t") if opener["dash"] else line).rstrip() == opener["word"]
 
 
 def _command_lines(lines: list[str]) -> int:
@@ -476,7 +475,7 @@ def _command_lines(lines: list[str]) -> int:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         count += 1
-        for opener in _ANY_HEREDOC_OPENER.finditer(_ARITHMETIC.sub("", line)):
+        for opener in (span for span in _SHELL_SPANS.finditer(line) if span["opener"]):
             while at < len(lines) and not _ends_heredoc(lines[at], opener):
                 at += 1
             at += 1

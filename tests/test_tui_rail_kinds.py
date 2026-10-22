@@ -278,11 +278,16 @@ class HeredocTests(unittest.TestCase):
             "cd /repo && \\\n  " + script: " + 1 command",
             "uv run --with requests \\\n  " + script: "",  # the interpreter's own command, continued onto its line
             f"# check the repo\n\n{script}\n  # done": "",
-            # A shift opens no heredoc, however it is spaced (#2225 review F3), nor `<<` glued to more of a word.
+            # No heredoc opens in arithmetic, however its shift is spaced, or in quotes (#2225 review F3).
             f"{script}\necho $((1<<3))\nls": " + 2 commands",
             f"{script}\necho $(( 1 << n ))\nls\npwd": " + 3 commands",
             f"{script}\necho $((a<<b))\nls": " + 2 commands",
+            f"{script}\n(( z = x << y ))\nls": " + 2 commands",
+            f"{script}\necho \"a << b c\"\nls\npwd": " + 3 commands",
+            f"{script}\necho 'a << b c'\nls\npwd": " + 3 commands",
+            f"{script}\necho \"a \\\" << b\"\nls": " + 2 commands",  # an escaped quote does not close it
             f"{script}\necho \"feed it <<EOF\"\nls": " + 2 commands",
+            f"{script}\necho 'x' && cat <<EOF\nbody\nEOF\nls": " + 2 commands",  # an opener after a quoted word
         }
         for command, said in cases.items():
             with self.subTest(command=command):
