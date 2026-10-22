@@ -200,6 +200,22 @@ class RouterTests(unittest.TestCase):
         route = route_chat_message("run three coordinated workers on one shared task list in parallel lanes")
         self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "ultrawork"))
 
+    def test_work_over_many_targets_runs_as_a_graph(self) -> None:
+        # Multi-part work routed to ulw-work, or a sweep over many PRs scored for a git, review or lookup lane.
+        for message in ("rlaope로 올린 hermes upstream pr들 전부 확인해서 닫을건 닫고 리뷰반영할건 리뷰반영하고 rebase할건 리베이스하고",
+                        "열린 PR들 전부 리베이스해줘", "review all open PRs", "fix all the failing tests",
+                        "implement search and export features in parallel",
+                        "check all open pull requests and close the stale ones"):
+            with self.subTest(message=message):
+                route = route_chat_message(message, source="discord")
+                self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "dag-ulw"))
+        # One task said over many things, one fault with one fix, a question, a report, or a runtime behaviour.
+        for message in ("README 오타 전부 고쳐줘", "fix all the typos in the readme", "모든 테스트가 깨졌어, 고쳐줘",
+                        "PR들 전부 머지됐어?", "all the tests fail", "are all the tests passing?",
+                        "make the test runner execute tests in parallel", "review this PR", "rebase my branch onto main"):
+            with self.subTest(message=message):
+                self.assertNotEqual(route_chat_message(message, source="discord")["selected_skill"], "dag-ulw")
+
     def test_a_question_about_dag_ulw_is_answered_whichever_skill_scored(self) -> None:
         for message in ("dag ulw는 뭐야?", "dag ulw 설명해줘", "how does dag-ulw handle repairs?", "tell me about dag-ulw",
                         "dag ulw 결과 알려줘", "dag ulw 쓰면 비용이 얼마나 나와?", "dag ulw 문서 보여줘", "dag ulw 어떻게 써?",

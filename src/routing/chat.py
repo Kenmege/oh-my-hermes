@@ -45,6 +45,8 @@ from ..plugin_bundle.omh.dag_ulw_cues import (
     asks_about_dag_ulw,
     asks_after_the_sigil,
     big_work_for_dag_ulw,
+    big_work_over_prs,
+    work_over_many_targets,
     dag_ulw_control,
     reports_or_asks_after_the_name,
 )
@@ -224,6 +226,9 @@ _HEAVY_LANE_TRIGGER_TOKEN_STEMS: dict[str, tuple[str, ...]] = {
 }
 # Big work by intent (owner direction 2026-10-21): an `ultrawork` route nobody named, for a request whose own
 # words say it has several parts, goes to `dag-ulw`, which plans it as a graph and runs it to a verified goal. The
+# The lanes a sweep over many pull requests or repositories scores into on one of its words ("upstream", "rebase",
+# "review"); `dag_ulw_cues.big_work_over_prs` reads the sweep.
+_PR_SWEEP_LANES = frozenset({"web-research", "github-event-ops", "git-workflow", "code-review"})
 # reading is `dag_ulw_cues.big_work_for_dag_ulw`, which the in-Hermes route hint reads too, so the two agree.
 _HEAVY_LANE_VAGUENESS_MAX_WORDS = 8
 # Generic filler and unresolved deictic references ("this", "it", "그거") in
@@ -1831,7 +1836,8 @@ def _enriched_route(
             and isinstance(lexical_rows[0], dict)
         ):
             first_skill = str(lexical_rows[0].get("skill") or "")
-            if first_skill:
+            # Big work by size keeps dag-ulw, which the shortlist ranks below ultrawork on the same words.
+            if first_skill and not _keeps_dag_ulw_by_size(route, matching_message):
                 route["candidate_skill"] = first_skill
                 route["candidate_harness"] = primary_harness_for_skill(first_skill)
             route["clarification"] = shortlist_clarification(
@@ -1878,7 +1884,11 @@ def _enriched_route(
         )
         route["recommendations"] = [dict(candidate) for candidate in candidates]
         if candidates:
-            candidate_skill = str(candidates[0].get("skill") or "")
+            # A request read as big work by size keeps dag-ulw as the skill it asks about: the shortlist ranks
+            # ultrawork first on the same words (`dag_ulw_cues.big_work_for_dag_ulw`).
+            candidate_skill = (
+                DAG_ULW if _keeps_dag_ulw_by_size(route, matching_message) else str(candidates[0].get("skill") or "")
+            )
             route["candidate_skill"] = candidate_skill
             route["candidate_harness"] = primary_harness_for_skill(candidate_skill)
             route["clarification"] = f"Ask whether to use `{candidate_skill}` for the requested outcome."
@@ -2642,10 +2652,13 @@ def _route_chat_message_cached(
         reason = f"Best match confidence {candidate_confidence} is below {min_confidence}; clarify before dispatch."
 
     if (
-        candidate_skill == "ultrawork"
-        and action in {"dispatch", "clarify"}
+        action in {"dispatch", "clarify"}
         and not explicit_skill
-        and big_work_for_dag_ulw(routing_message)
+        and (
+            (candidate_skill == "ultrawork" and big_work_for_dag_ulw(routing_message))
+            # A sweep over pull requests or repositories scores a git, review or lookup lane on one of its words.
+            or (candidate_skill in _PR_SWEEP_LANES and big_work_over_prs(routing_message))
+        )
     ):
         candidate_skill = "dag-ulw"
         candidate_harness = primary_harness_for_skill(candidate_skill)
@@ -2656,6 +2669,15 @@ def _route_chat_message_cached(
             action = "dispatch"
             ambiguity_kind = ""
             reason = "Several parts to run in parallel or across the codebase: plan and run them as a dag-ulw graph."
+    elif (
+        action == "clarify"
+        and selected_skill == _ROUTER_SKILL
+        and not explicit_skill
+        and work_over_many_targets(routing_message)
+    ):
+        # Work over many targets that scored no lane of its own asks about dag-ulw, the skill for it.
+        candidate_skill = "dag-ulw"
+        candidate_harness = primary_harness_for_skill(candidate_skill)
 
     # A question about dag-ulw is answered, the way a question about any other skill is: its two triggers score
     # its name high in the catalog, and `ulw` inside the name scores ultrawork, but asking what it is, what it
@@ -6991,6 +7013,14 @@ def _invocation_as_written(written: str, routing_message: str) -> str:
     if _with_canonical_display_names(folded[0].lower()) != head:
         return routing_message
     return f"{head} {typed[1]}"
+
+
+def _keeps_dag_ulw_by_size(route: Mapping[str, object], matching_message: str) -> bool:
+    """Whether a clarify keeps dag-ulw as its candidate: the route named it for big work by size, not for a mention
+    of the skill ("stop using dag ulw")."""
+    return route.get("candidate_skill") == DAG_ULW and (
+        big_work_for_dag_ulw(matching_message) or big_work_over_prs(matching_message)
+    )
 
 
 def invoked_skill_stops_or_asks(message: str) -> bool:

@@ -4,6 +4,25 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A plain request for work over many targets runs as a dag-ulw graph.**
+  "rlaope로 올린 hermes upstream pr들 전부 확인해서 닫을건 닫고 리뷰반영할건
+  리뷰반영하고 rebase할건 리베이스하고" went to web-research on the router and
+  ulw-work in the route hint. A breadth word on a work object that names
+  independent units (`PR들 전부 확인해서`, `열린 PR들 전부 리베이스해줘`,
+  `fix all the failing tests`, `update every service`, `모든 패키지 버전
+  올려줘`), or two named parts asked for in parallel (`implement search and
+  export features in parallel`), now reaches dag-ulw: the router dispatches
+  it where it scored ultrawork, or a git, review or lookup lane for a sweep
+  over many PRs, and offers it where it asked; the route hint runs it. One
+  task said over many things (`README 오타 전부 고쳐줘`), one fault with one
+  fix (`모든 테스트가 깨졌어, 고쳐줘`), a question, a report, a runtime
+  behaviour (`make the test runner execute tests in parallel`), work until a
+  condition (`… until every test passes`), and a request that names a skill,
+  ulw or a retired engine, or opens with a sigil, stay where they were.
+  Coordinated workers on one shared task list stay on ulw-work: they talk
+  mid-run, which dag-ulw's contract leaves to ulw-work. A Korean loanword or
+  counter after a stop verb is its object (`/ulw-work 멈춰 리뷰어`, `멈춰 서버
+  두 대` run), and `멈춰 그거 아님` is a stop.
 - **The dag tree under the composer holds still when Down gives it the keys,
   and keeps a run's lanes until a payload shows the run over (#2224's delta
   review).** With the keys the tree cuts the same rows as without them, so

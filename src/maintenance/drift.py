@@ -821,7 +821,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # that names ultrawork by its short name, /ulw-work what is ulw?,
             # and an uppercase sigil's stop, /ULW-LOOP stop the loop, add two,
             # each dispatched its skill on main (2).
-            expected=1036,
+            # Multi-part work to dag-ulw adds three: one fault said over every
+            # test with one fix, and a question whether every PR merged,
+            # stay answered, as on main (2); /ulw-work 멈춰 그거 아님 is a stop,
+            # which dispatched ultrawork on main (1).
+            expected=1039,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1258,7 +1262,17 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # /omh-cancel 상태 보여줘 gets the status card where main ran
             # cancel: only a skill whose job is reporting a state runs on a
             # status request (1).
-            expected=1035,
+            # Multi-part work to dag-ulw adds eleven. Six run as a graph: the
+            # owner's sweep over upstream PRs (web-research on main), 열린
+            # PR들 전부 리베이스해줘 (github-event-ops on main), review all open
+            # PRs, fix all the failing tests, two features in parallel, and
+            # check all open pull requests and close the stale ones (6). Three
+            # single tasks stay on ultrawork, as on main: every typo in one
+            # file, in Korean and English, and tests running in parallel (3).
+            # /omh-agent-ops-review status runs the review, as on main (1),
+            # and /ulw-work 멈춰 리뷰어 runs ultrawork, which main answered:
+            # its 어 ending read the loanword as a reason (1).
+            expected=1046,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

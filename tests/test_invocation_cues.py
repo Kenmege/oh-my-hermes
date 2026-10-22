@@ -48,7 +48,7 @@ OWN_RUN_STOPS = (
     "/ulw-work 멈춰 일단", "/ulw-work 멈춰 잠깐만", "/ulw-work 취소해 이거 아니야", "/ulw-work 그만해 그거 아니야",
     "/ulw-work 그만해 지금 회의 중", "/ulw-work 멈춰 멈춰 멈춰 제발",
     # The sigil's name in any case, as Hermes matches it.
-    "/ULW-LOOP stop the loop", "/Omh-Code-Review 리뷰 취소",
+    "/ULW-LOOP stop the loop", "/Omh-Code-Review 리뷰 취소", "/ulw-work 멈춰 그거 아님",
 )
 # A question about the skill itself.
 META_QUESTIONS = (
@@ -105,6 +105,11 @@ REQUESTS = (
     ("/omh-rust what is rust?", "rust"), ("/omh-rust how does rust work?", "rust"),
     # A stop verb before a task noun is that thing's stop; an uppercase sigil runs its skill as lower case does.
     ("/ulw-work 멈춰 서버", "ultrawork"), ("/ULW-LOOP fix the flaky test until green", "loop"),
+    # A loanword or a counter after the stop is its object, not a reason.
+    ("/ulw-work 멈춰 리뷰어", "ultrawork"), ("/ulw-work 멈춰 플레이어", "ultrawork"), ("/ulw-work 멈춰 서버 두 대", "ultrawork"),
+    ("/ulw-work 취소해 주문 다", "ultrawork"),
+    # Agent progress is agent-ops-review's own report.
+    ("/omh-agent-ops-review status", "agent-ops-review"),
     # A stop verb before a task noun, a domain word that shares an own-run noun, and a stop of something else.
     ("/ulw-work 취소해 주문", "ultrawork"), ("/ulw-loop 무한 루프 멈춰", "loop"),
     ("/ulw-research stop the research paper from leaking", "research"), ("/ulw-work 取消订单", "ultrawork"),

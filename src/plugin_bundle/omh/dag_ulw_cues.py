@@ -29,7 +29,8 @@ import re
 import unicodedata
 from typing import Final
 
-from .name_report_cues import asks_after_the_name, asks_for_something, reports_on_the_name
+from . import skill_shortlist as _skill_shortlist
+from .name_report_cues import COINED_NAMES, asks_after_the_name, asks_for_something, reports_on_the_name
 
 DAG_ULW: Final = "dag-ulw"
 
@@ -272,7 +273,15 @@ _KOREAN_STOP_WORDS_MAX: Final = 6
 # 아니야", "지금 회의 중"), reads as a report on the run (`reports_on_the_name`: "비싸", "너무 오래 걸려"), or is only
 # fillers and stop words ("일단", "잠깐만", "멈춰 멈춰 제발"). A noun is the stop's object, so a loanword that closes
 # on a vowel is too ("취소해 주문", "멈춰 서버").
-_KOREAN_REASON_END: Final = re.compile(r"(?:[어아여해워야냐요다네게걸까래대데든군음함됨임듯]|아니라고|중)$")
+_KOREAN_REASON_END: Final = re.compile(
+    r"(?:[아여해워야냐요네게걸까래데든군음함됨임듯]|[없있싫]어|[습합됩입]니다|아니라고|아님|중)$"
+)
+
+
+def _ends_in_a_past(word: str) -> bool:
+    """Whether a Korean word ends in a past tense, a syllable closing on ㅆ then 어 or 아 ("보냈어", "됐어")."""
+    code = ord(word[-2]) - 0xAC00 if len(word) >= 2 else -1
+    return word[-1] in "어아" and 0 <= code < 11172 and code % 28 == 20
 _KOREAN_FILLER_REASON: Final = re.compile(
     r"^(?:(?:일단|잠깐만?|제발|좀|그냥|지금|빨리|당장|얼른|바로|멈춰|그만|그만해|취소|중단)\s*)+$"
 )
@@ -330,7 +339,10 @@ def stops_the_run(rest: str, *, names: tuple[str, ...] = (), nouns: tuple[str, .
             # Not a why that asks how or why, which asks about stopping ("취소해줘 왜 안 돼": `_asks_about_stopping`).
             reason = why.rstrip(".!?~ ")
             return bool(
-                _KOREAN_FILLER_REASON.match(reason) or _KOREAN_REASON_END.search(reason) or reports_on_the_name(reason)
+                _KOREAN_FILLER_REASON.match(reason)
+                or _KOREAN_REASON_END.search(reason)
+                or _ends_in_a_past(reason)
+                or reports_on_the_name(reason)
             ) and not (
                 asks_for_something(", " + why) or _KOREAN_WORK_WORD.search(why) or _KOREAN_HOW.search(why)
             )
@@ -696,6 +708,85 @@ def _asks_to_be_told(text: str) -> bool:
     return bool(_WEIGHS_THE_SPLIT.search(folded)) or not _REQUEST_AS_QUESTION.search(folded)
 
 
+# Work said over many targets, which splits into parallel parts (owner decision: only multi-part work moves). A
+# breadth word on a work object that names independent units ("pr들 전부 확인해서", "fix all the failing tests",
+# "update every service"), or two named parts of one job asked for in parallel ("implement search and export
+# features in parallel"). Each needs a request: a Korean request or connective ending, or an English imperative. A
+# breadth word on anything else stays one task ("README 오타 전부 고쳐줘", "fix all the typos"), and so does a
+# runtime behaviour asked for ("make the test runner execute tests in parallel").
+_KOREAN_UNIT: Final = r"(?:pr|prs|pull\s*request|레포|리포|저장소|서비스|모듈|패키지|컴포넌트|엔드포인트|테스트|이슈|파일|페이지|브랜치)"
+_KOREAN_BREADTH_WORK: Final = re.compile(
+    rf"{_KOREAN_UNIT}(?:들)?\s*(?:을|를|은|는)?\s*(?:전부|모두|다|싹|하나하나|각각)(?![가-힣])\s*(?:\S*\s+)?"
+    r"\S*(?:해\s*(?:줘|주세요)|해서|하고|고쳐|확인|처리|정리|업데이트|올려|닫|머지|리베이스|반영|리뷰|봐\s*줘|줘|ㄱㄱ)"
+    rf"|(?:모든|전체)\s*{_KOREAN_UNIT}(?:들)?\s*(?:을|를)?\s+(?:\S+\s+){{0,2}}?\S*(?:해\s*(?:줘|주세요)|해서|하고|줘|ㄱㄱ)"
+)
+_EN_UNITS: Final = (
+    r"(?:prs?|pull\s+requests?|repos?|repositor(?:y|ies)|(?:micro)?services?|modules?|packages?|components?|endpoints?"
+    r"|tests?|issues?|files?|pages?|apps?|branch(?:es)?)"
+)
+# A fault word that only describes the units ("실패하는 테스트", "the failing tests") names which units, not one fault.
+_FAULTY_UNIT: Final = re.compile(
+    rf"(?:실패하는|실패한|깨진|깨지는|터진|failing|failed|broken|flaky)\s+(?:{_KOREAN_UNIT}|{_EN_UNITS})"
+)
+_EN_WORK_VERB: Final = (
+    r"(?:fix|check|update|upgrade|review|close|rebase|merge|migrate|refactor|port|convert|audit|triage|resolve"
+    r"|address|bump|clean\s+up|go\s+through|test|implement|build|add|remove|rename|lint|format)"
+)
+_EN_BREADTH_WORK: Final = re.compile(
+    rf"^(?:please\s+)?{_POLITE_OPENER}?{_EN_WORK_VERB}\b[^.?!]*?\b(?:all|every|each)\s+(?:of\s+)?(?:the\s+|my\s+|our\s+)?"
+    rf"(?:\S+\s+){{0,2}}?{_EN_UNITS}\b"
+    rf"|^(?:please\s+)?{_POLITE_OPENER}?{_EN_WORK_VERB}\b[^.?!]*?\bacross\s+(?:all\s+|every\s+)?(?:the\s+)?{_EN_UNITS}\b"
+)
+_EN_PARTS_IN_PARALLEL: Final = re.compile(
+    r"^(?:please\s+)?(?:implement|build|develop|ship|write|add|create)\s+(?:the\s+)?\S+(?:,\s*\S+)*\s+(?:and|&)\s+\S+\s+"
+    r"(?:features|endpoints|pages|screens|apis|modules|services|components)\s+(?:in\s+parallel|concurrently)\b"
+)
+
+
+# Parallel running is the work's subject, not its shape ("fix the race where uploads run in parallel across modules").
+_RUNTIME_PARALLEL: Final = re.compile(
+    r"\b(?:run|runs|running|execute|executes|load|loads)\s+in\s+parallel\b|\brace(?:\s+condition)?s?\b|\bdeadlock"
+)
+# Work until a condition holds stays on the loop and ultrawork lanes ("… until every test passes", "다 통과할 때까지").
+_UNTIL: Final = re.compile(r"\buntil\b|\btill\b|때까지")
+# A retired engine's name, which opens a request for that engine as a skill's name does ("team 실패하는 테스트 다 고쳐").
+_RETIRED_ENGINE_NAMES: Final = frozenset({"team", "maestro", "ralph", "ultrapilot", "ultraprocess", "ultragoal"})
+
+
+def _opens_with_a_skill_name(folded: str) -> bool:
+    """Whether ``folded`` opens with a skill's name, its label or a retired engine's: a request named for that skill."""
+    words = re.findall(r"[^\s,:]+", folded)[:3]
+    names = (_skill_shortlist.catalog_skill_names() or frozenset()) | COINED_NAMES | _RETIRED_ENGINE_NAMES
+    return any("-".join(words[:length]) in names or " ".join(words[:length]) in names for length in (1, 2, 3))
+
+
+def _work_over_many_targets(text: str) -> bool:
+    folded = _folded(text)
+    # A sigil invokes the skill it names, Hermes' or another's ("/github pr들 전부 …"): the work is that skill's.
+    if (
+        folded.startswith(("/", "$", "@", "./"))
+        or _RUNTIME_PARALLEL.search(folded)
+        or _UNTIL.search(folded)
+        or _opens_with_a_skill_name(folded)
+    ):
+        return False
+    return bool(
+        _KOREAN_BREADTH_WORK.search(folded) or _EN_BREADTH_WORK.search(folded) or _EN_PARTS_IN_PARALLEL.search(folded)
+    )
+
+
+_REPO_UNITS: Final = re.compile(
+    r"\b(?:prs?|pull\s+requests?|branch(?:es)?|repos?|repositor(?:y|ies))\b|pr\s*들|브랜치|레포|리포|저장소"
+)
+
+
+def big_work_over_prs(text: str) -> bool:
+    """Whether ``text`` is big work by size (`big_work_for_dag_ulw`) over pull requests, branches or repositories ("pr들
+    전부 확인해서 닫을건 닫고 …", "열린 PR들 전부 리베이스해줘"): a sweep the router may have scored for a git, review or
+    lookup lane by one of its words ("upstream", "rebase"), which runs as a graph all the same."""
+    return big_work_for_dag_ulw(text) and bool(_REPO_UNITS.search(_folded(text)))
+
+
 def work_has_several_parts(text: str) -> bool:
     """Whether ``text`` says its work splits into parts or reaches across many (`SHAPE_CUES`, `BREADTH_CUES`), or
     runs at once across several named parts (a `CONCURRENCY_CUES` phrase beside `_PART_WORDS`) for a reason other
@@ -703,6 +794,10 @@ def work_has_several_parts(text: str) -> bool:
     folded = _cue_text(text)
     if _asks_for_a_split(text) or _contains(folded, BREADTH_CUES):
         return True
+    if _work_over_many_targets(text):
+        plain = _FAULTY_UNIT.sub(" ", _folded(text))
+        # One fault to fix, however wide it is said to be ("all the tests broke, fix it"), is one task.
+        return not (_FAULT.search(plain) and _FIX_REQUEST.search(plain) and not _PARALLEL_WORK.search(plain))
     if not _contains(folded, CONCURRENCY_CUES):
         return False
     plain = _folded(text)
@@ -721,6 +816,18 @@ def work_is_split(text: str) -> bool:
     alone is ordinary in a question about code, while a split ("fan out", "split into parallel") asks for work.
     """
     return not names_ultrawork(text) and not _asks_to_be_told(text) and _asks_for_a_split(text)
+
+
+def work_over_many_targets(text: str) -> bool:
+    """Whether ``text`` asks for work over many targets (`_work_over_many_targets`: "pr들 전부 확인해서", "update every
+    service", "모든 패키지 버전 올려줘"), not one fault with one fix, a question, or a request naming ultrawork: big work
+    by size that no other rule named, which the router offers and the route hint runs as dag-ulw."""
+    return (
+        not names_ultrawork(text)
+        and not _asks_to_be_told(text)
+        and _work_over_many_targets(text)
+        and work_has_several_parts(text)
+    )
 
 
 def big_work_for_dag_ulw(text: str) -> bool:

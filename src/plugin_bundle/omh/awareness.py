@@ -11,10 +11,12 @@ from .dag_ulw_cues import (
     asks_about_dag_ulw,
     asks_after_the_sigil,
     big_work_for_dag_ulw,
+    big_work_over_prs,
     dag_ulw_control,
     invokes_dag_ulw,
     reports_or_asks_after_the_name,
     work_is_split,
+    work_over_many_targets,
 )
 from .invocation_cues import invoked_instruction
 from .name_report_cues import about_the_skill
@@ -6302,7 +6304,9 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
             if rule["id"] == "coding_delivery":
                 next_action = _coding_delivery_route_hint_next_action(matching_message, next_action)
             workflow, next_action = _ulw_retired_hint_target(workflow, next_action, routing_normalized)
-            big_work = workflow == "ultrawork" and big_work_for_dag_ulw(matching_message)
+            big_work = (workflow == "ultrawork" and big_work_for_dag_ulw(matching_message)) or (
+                workflow in _PR_SWEEP_WORKFLOWS and big_work_over_prs(matching_message)
+            )
             if big_work:
                 # The router's own reading (`dag_ulw_cues`): ultrawork-shaped work in several parts runs as a graph.
                 workflow, next_action = "dag-ulw", _DIRECT_WORKFLOW_NEXT_ACTIONS["dag-ulw"]
@@ -6334,9 +6338,10 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
             and hint_limit
             and not matching_message.rstrip().endswith(("?", "？"))
             and getattr(intent, "intent_class", "") not in {"meta_discussion", "feedback_signal"}
-            and work_is_split(matching_message)
+            and (work_is_split(matching_message) or work_over_many_targets(matching_message))
         ):
-            # Work split into parts that no rule named ("split this into parallel work lanes").
+            # Work split into parts, or over many targets, that no rule named ("split this into parallel work lanes",
+            # "모든 서비스 의존성 업데이트해줘").
             hints.append(_dag_ulw_by_size_hint())
         domain_signal = _specialist_domain_route_signal(matching_message)
         domain_operator_override = (
@@ -8054,6 +8059,9 @@ _WORKFLOW_INVOCATION_ALIASES = {
 _ADMISSION_HELD_WORKFLOWS = frozenset({"spend-gate", "data-share-review", "show-reel"})
 
 
+# The router's `_PR_SWEEP_LANES`: a sweep over many pull requests or repositories runs as a graph whichever of these
+# lanes one of its words scored (`dag_ulw_cues.big_work_over_prs`).
+_PR_SWEEP_WORKFLOWS = frozenset({"web-research", "github-event-ops", "git-workflow", "code-review"})
 _DAG_ULW_BY_SIZE_REASON = (
     "The request has several parts to run in parallel or across the codebase, so it runs as a dag-ulw graph."
 )
