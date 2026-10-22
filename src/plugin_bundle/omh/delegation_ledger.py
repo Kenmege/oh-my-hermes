@@ -53,6 +53,7 @@ from . import runtime_paths
 from .awareness_delivery import _awareness_delivery_lock
 from .hermes_delegation import load_delegation_route_provenance
 from .host_process import recorded_process, this_process
+from .sqlite_readonly import connect_readonly
 
 LEDGER_SCHEMA_VERSION: Final = "delegation_ledger/v1"
 LEDGER_DIRNAME: Final = "delegation"
@@ -195,7 +196,7 @@ def _delegated_from(hermes_home: Path, session_id: str) -> str:
     if not state_db.is_file():
         return ""
     try:
-        connection = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True, timeout=0.25)
+        connection = connect_readonly(state_db, timeout=0.25)
     except sqlite3.Error:
         return ""
     try:

@@ -31,6 +31,8 @@ import re
 import sqlite3
 from pathlib import Path
 
+from ..plugin_bundle.omh.sqlite_readonly import connect_readonly
+
 # Hermes' own profile id rule (``hermes_cli/main.py``, ``_PROFILE_NAME_RE``,
 # which mirrors ``hermes_cli/profiles.py``). A name that could not identify a
 # profile directory never becomes a path component here.
@@ -150,11 +152,7 @@ def resumable_session_id(
     if db_path is None or child_ended_at < child_started_at:
         return None
     try:
-        connection = sqlite3.connect(
-            f"file:{db_path}?mode=ro",
-            uri=True,
-            timeout=_DB_BUSY_TIMEOUT_SECONDS,
-        )
+        connection = connect_readonly(db_path, timeout=_DB_BUSY_TIMEOUT_SECONDS)
     except (sqlite3.Error, ValueError, OSError):
         return None
     try:

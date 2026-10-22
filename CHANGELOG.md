@@ -4,6 +4,19 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A Hermes home whose path holds `#`, `?`, or a `%` followed by two hex
+  digits is read, and no stray file is created beside it.** Ten read-only
+  opens of Hermes' `state.db` and `kanban.db` built `file:{path}?mode=ro`
+  from the bare path, which SQLite parses as a URI. A `#` or `?` cut the
+  path: the open lost `mode=ro` and created an empty writable file at the
+  cut, and a `%41` opened another directory's file, or none. The resume
+  line after a TUI exit, the cost receipt and `omh_run_summary`, the
+  delegation ledger's root walk, the native delegate and kanban HUD
+  readers, and `omh_dag`'s free slots then found nothing. They now open
+  through one bundle helper, `sqlite_readonly.connect_readonly`, which
+  quotes the path's file-system bytes. A policy test fails any
+  `sqlite3.connect(..., uri=...)` in `src/` whose URI is built from an
+  unquoted path.
 - **A complaint, a question or a stop that opens with a skill's name no
   longer runs the skill, in the shapes measured.** `ultrawork broke my
   build`, `dag ulw failed again`, `ralplan 때문에 빌드 깨졌어`, `maestro failed
