@@ -72,9 +72,9 @@ class SelfUpdatePlatform:
         return target if target.is_absolute() else root / target
 
     def create_directory_link(self, root: Path, link: Path, target: Path) -> None:
-        """Create a relocatable directory link without following its target."""
-        relative = os.path.relpath(target, link.parent)
+        """Create a relative POSIX symlink or absolute Windows junction without resolving its target."""
         if not self.is_windows:
+            relative = os.path.relpath(target, link.parent)
             os.symlink(relative, link, target_is_directory=True)
             return
         command = [
@@ -87,7 +87,7 @@ class SelfUpdatePlatform:
         ]
         environment = os.environ.copy()
         environment[JUNCTION_LINK_ENV] = str(link)
-        environment[JUNCTION_TARGET_ENV] = relative
+        environment[JUNCTION_TARGET_ENV] = os.path.abspath(target)
         try:
             completed = self.runner(
                 command,
