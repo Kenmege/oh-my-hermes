@@ -378,7 +378,8 @@ def on_band(theme: Theme, band: Style) -> Theme:
 
 def without_colour(theme: Theme) -> Theme:
     """`theme` painted at the `NO_COLOR` depth (no-color.org): every style keeps its bold, dim, italic, underline and
-    reverse, and the menu's current row, which only its background told apart from the others, is reversed."""
+    reverse, and the menu's current row and the pager's footer bar (`status`), which only their background told
+    apart, are reversed."""
 
     def plain(value: object) -> object:
         if isinstance(value, Style):
@@ -388,7 +389,8 @@ def without_colour(theme: Theme) -> Theme:
         return value
 
     painted = replace(theme, **{field.name: plain(getattr(theme, field.name)) for field in fields(theme)})
-    return replace(painted, menu_current=replace(painted.menu_current, reverse=True))
+    return replace(painted, menu_current=replace(painted.menu_current, reverse=True),
+                   status=replace(painted.status, reverse=True))
 
 
 def theme_named(value: str, background: str | None = None) -> Theme:

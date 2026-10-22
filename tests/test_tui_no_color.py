@@ -20,6 +20,7 @@ from omh.skin_pack import SKIN_THEMES
 from omh.tui.app import App
 from omh.tui.gateway import Event
 from omh.tui.keys import ENTER, Key
+from omh.tui.pager import FOOTER_KEYS
 from omh.tui.panels import dag_style
 from omh.tui.style import Style
 from omh.tui.theme import build_theme, on_band, without_colour
@@ -81,6 +82,10 @@ class NoColourTests(unittest.TestCase):
         app._render()
         self.assertIsNotNone(app.pager)
         self.assertIn("pytest", written(app))  # the scene drew
+        # #2230 review F6: the pager's footer, which only its background marked as a bar, is reversed.
+        footer = re.search(r"\x1b\[([0-9;]*)m[^\x1b]*" + re.escape(FOOTER_KEYS), written(app))
+        self.assertIsNotNone(footer)
+        self.assertIn("7", footer[1].split(";"))
         self.assertEqual(colour_codes(written(app)), [])
 
     def test_the_menus_current_row_is_reversed_and_bold(self) -> None:

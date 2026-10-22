@@ -1116,7 +1116,7 @@ class App(ModesMixin, AgentViewMixin):
         self.respawn_reason = ""  # the gateway is gone, for this reason, and a respawn is due after this step
         self.environ = environ
         self.motion = not reduced_motion(environ)
-        self.color_depth = color_depth(environ)  # what the delegation graph is painted at
+        self.color_depth = color_depth(environ)  # the delegation graph's depth; at `NO_COLOR`, no colour anywhere
         self.poller = poller
         self.theme = self._painted(theme)
         self.clock = clock
