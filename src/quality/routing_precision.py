@@ -17618,6 +17618,13 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "/omh-run-efficiency status",
         "dispatch", "run-efficiency", "show_run_efficiency_report", "run_efficiency",
     ),
+    # doctor's own work is the install's health, which the status card does not show (#2221 L4).
+    RoutingInterventionCase(
+        "explicit-doctor-status-runs-doctor",
+        "/omh-doctor status is doctor's own health check: the status card shows no install drift",
+        "/omh-doctor status",
+        "dispatch", "doctor", "run_local_operator_check", "doctor_health",
+    ),
     # A stop of something other than the skill's own run is work, and so is a stop after the cancel skill, whose work
     # it is (as on main).
     RoutingInterventionCase(

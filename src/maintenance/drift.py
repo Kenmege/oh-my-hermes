@@ -1327,7 +1327,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # (deploy-and-monitor, ops-observability-card,
             # live-incident-response, context-budget-review,
             # harness-session-inventory, skill-health, run-efficiency) (+7).
-            expected=1082,
+            # #2221 L4: doctor joins the set, since the status card shows no
+            # install drift, and /omh-doctor status runs doctor (+1).
+            expected=1083,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
