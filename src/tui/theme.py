@@ -31,9 +31,8 @@ colours), so the transcript's chrome is neutral grey: a call's arguments on
 glyphs and the composer's rules on `dim` and `rule`, each lifted from a fixed
 neutral grey (`NEUTRAL_GREYS`) toward white or black only as far as its floor
 takes. State is hue: `running`, a running call and everything that says a
-turn or an agent is running, is the blue a running node takes in the
-delegation view (`dag_edge_end`, lifted to 4.5:1), `ok` green and `error`
-red; nothing else is drawn in it. What only needs to stand out without a
+turn or an agent is running, is the owner's approved blue (`RUNNING_BLUE`,
+lifted to 4.5:1), `ok` green and `error` red; nothing else is drawn in it. What only needs to stand out without a
 state (a key, a question's mark, a list bullet, a diff hunk) is bold in the
 terminal's foreground (`user`) or grey (`muted`). The palette's own accent
 is the banner title's alone (`brand`). A call's name is
@@ -111,6 +110,9 @@ GLYPH_ROLES = ("dim", "rule", "prompt")
 # The transcript's neutral greys, (on a dark background, on a light one): a call's arguments (`muted`), the dimmer
 # words under and beside it (`faint`, `hint`, thinking), and its glyphs and the composer's rules (`dim`, `rule`).
 NEUTRAL_GREYS = {"muted": ("#9198A1", "#59636E"), "faint": ("#7D8590", "#6E7781"), "glyph": ("#545D68", "#8C959F")}
+# The running state's blue (on a dark background, on a light one), the owner's approved shade of 2026-10-22: its own
+# colour, apart from the delegation view's edge gradient, which keeps its stops.
+RUNNING_BLUE = ("#58A6FF", "#2374C9")
 # The tool families a call's name is coloured by, and each family's hue (on a dark background, on a light one).
 # Each keeps 23 degrees of OKLCH hue or more from the state hues (running blue, failed red, done green), the
 # banner's turquoise and the delegation view's selected violet; tests/test_tui_rail_kinds.py holds each to 4.5:1.
@@ -119,6 +121,16 @@ KIND_HUES = {
     "skill": ("#D58CF0", "#9E58B8"), "shell": ("#E3B341", "#996C00"), "file": ("#F8A87E", "#AB6239"),
     "web": ("#C5DE70", "#687C00"), "dag": ("#F778BA", "#BF4588"),
 }
+# The tool families a call's name is coloured by (`Theme.kinds`, in `KIND_FAMILIES` order); a name in none
+# keeps the terminal's foreground, bold. Hermes' browser tools all start `browser_`.
+TOOL_FAMILIES = {
+    "skill": frozenset({"skill_view", "skills_list", "skill_manage", "tool_describe", "tool_search", "tool_call",
+                        "todo_list", "memory", "clarify", "session_search"}),
+    "shell": frozenset({"terminal", "process", "execute_code"}),
+    "file": frozenset({"read_file", "write_file", "patch", "search_files"}),
+    "web": frozenset({"web_search", "web_extract"}),
+    "dag": frozenset({"delegate_task", "omh_dag", "omh_team"}),
+}
 
 
 @dataclass(frozen=True)
@@ -126,7 +138,7 @@ class Theme:
     name: str
     text: Style
     dim: Style
-    running: Style  # a running call, turn or agent: the delegation view's running blue, and nothing else
+    running: Style  # a running call, turn or agent, in the approved blue (`RUNNING_BLUE`), and nothing else
     label: Style
     ok: Style
     warn: Style
@@ -163,6 +175,19 @@ class Theme:
     brand: Style  # the banner's title, bold: the palette's accent, which no other role uses
     kinds: tuple[Style, ...]  # a call's name, bold, in its tool family's hue, in `KIND_FAMILIES` order
     slash: Style  # a `/name` that resolves to a command or skill, bold, in the composer and your prompt's rows
+
+
+def tool_family(name: str) -> str:
+    """The family a tool's name belongs to (`TOOL_FAMILIES`), or "" for none."""
+    if name.startswith("browser_"):
+        return "web"
+    return next((family for family, names in TOOL_FAMILIES.items() if name in names), "")
+
+
+def kind_style(name: str, theme: Theme) -> Style:
+    """A call's name: bold, in its family's hue, else in the terminal's foreground."""
+    family = tool_family(name)
+    return theme.kinds[KIND_FAMILIES.index(family)] if family and theme.kinds else theme.tool
 
 
 def _channel(value: int) -> float:
@@ -276,7 +301,7 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         name=skin.short_name,
         text=Style(),
         dim=Style(fg=grey("glyph", EDGE_CONTRAST)),
-        running=Style(fg=read("dag_edge_end")),
+        running=Style(fg=_lifted(RUNNING_BLUE[side], ink, surface, TEXT_CONTRAST)),
         label=Style(fg=read("ui_label")),
         ok=Style(fg=read("ui_ok")),
         warn=Style(fg=read("ui_warn")),

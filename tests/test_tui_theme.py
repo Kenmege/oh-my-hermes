@@ -41,7 +41,7 @@ class ThemeTests(unittest.TestCase):
                 theme = build_theme(skin, background)
                 for field in fields(theme):
                     # `tool` joined the terminal's own foreground with the rail and kind colours (2026-10-22): a call's
-                    # name is bold in its family's hue (`kinds`, tested below), else the default foreground.
+                    # name is bold in its family's hue (`kinds`, tested in test_tui_rail_kinds.py), else the default foreground.
                     if field.name in ("name", "text", "user", "tool"):
                         continue
                     if background is None and field.name in BAND_ROLES:
@@ -101,9 +101,11 @@ class ThemeTests(unittest.TestCase):
 
     def test_roles_follow_the_palette(self) -> None:
         amber = theme_named("amber")
-        # The palette's accent is the banner title's alone; `running` is state, the delegation view's running blue.
+        # The palette's accent is the banner title's alone; `running` is state, in the approved blue on every palette
+        # (#2223: decoupled from the delegation view's edge gradient, which keeps its own stops).
         self.assertEqual(amber.brand.fg, skin_colors("omh-amber")["ui_accent"])
-        self.assertEqual(amber.running, amber.dag_words[-1])
+        self.assertEqual((amber.running.fg, theme_named("amber", "#FFFFFF").running.fg), ("#58A6FF", "#2374C9"))
+        self.assertNotEqual(amber.running.fg, amber.dag_words[-1].fg)
         self.assertEqual(amber.diff_add.bg, skin_colors("omh-amber")["diff_added"])
         # A colour that clears the background is the palette's own; amber's comments (3.6:1) are lifted for reading.
         for role in ("syntax_keyword", "syntax_string", "syntax_number"):

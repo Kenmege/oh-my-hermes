@@ -30,7 +30,7 @@ from omh.tui.gateway import Event
 from omh.tui.panels import HudSnapshot, hud_chips, panel_lines
 from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME as THEME
-from omh.tui.theme import theme_named
+from omh.tui.theme import kind_style, theme_named
 from omh.tui.transcript import (
     PULSE_SECONDS,
     TOOL_DENIED,
@@ -44,7 +44,6 @@ from omh.tui.transcript import (
     ToolRow,
     Transcript,
     block_rows,
-    kind_style,
 )
 from omh.tui.width import truncate_left
 

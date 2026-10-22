@@ -243,11 +243,14 @@ def slash_token_ranges(text: str, known: frozenset[str]) -> list[tuple[int, int]
     return [(found.start(), found.end()) for found in _SLASH_TOKEN.finditer(text) if found.group(1) in known]
 
 
-def slash_spans(text: str, known: frozenset[str], style: Style, token_style: Style) -> tuple[Span, ...]:
-    """`text` in `style`, each `/name` token whose name is in `known` (`slash_token_ranges`) in `token_style`."""
+def slash_spans(
+    text: str, known: frozenset[str], style: Style, token_style: Style, ranges: list[tuple[int, int]] | None = None
+) -> tuple[Span, ...]:
+    """`text` in `style`, each `/name` token whose name is in `known` (`slash_token_ranges`, or the `ranges` given) in
+    `token_style`."""
     spans: list[Span] = []
     at = 0
-    for start, end in slash_token_ranges(text, known):
+    for start, end in slash_token_ranges(text, known) if ranges is None else ranges:
         spans += [Span(text[at:start], style), Span(text[start:end], token_style)]
         at = end
     spans.append(Span(text[at:], style))

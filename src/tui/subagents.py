@@ -80,8 +80,7 @@ from . import gateway_contract as contract
 from .markdown import clean_text, wrap_prefixed
 from .panels import SPINNER_FRAMES
 from .style import Line, Span
-from .theme import Theme
-from .transcript import kind_style
+from .theme import Theme, kind_style
 from .width import cell_width, truncate, truncate_line, wrap_line
 
 QUEUED = "queued"

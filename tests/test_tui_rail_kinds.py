@@ -17,6 +17,7 @@ from pathlib import Path
 import unittest
 
 from _tui_lines import line_text, lines_text
+from test_tui_modes import make_app
 from test_tui_panels import agent_row, hud_payload, with_agents
 from test_tui_prompts import CLARIFY, slot
 from test_tui_subagents import feed
@@ -32,19 +33,23 @@ from omh.tui.slash import known_names, slash_token_ranges
 from omh.tui.style import Span
 from omh.tui.subagents import FIELD_LABELS, MAIN_ID, Roster, short_title
 from omh.tui.theme import DEFAULT_THEME as THEME
-from omh.tui.theme import KIND_FAMILIES, TEXT_CONTRAST, build_theme, contrast_ratio, surface_for
+from omh.tui.theme import KIND_FAMILIES, TEXT_CONTRAST, build_theme, contrast_ratio, kind_style, surface_for, tool_family
 from omh.tui.transcript import (
+    NOTICE_INFO,
     TOOL_ERROR,
+    TOOL_GENERATING,
+    TOOL_INTERRUPTED,
     TOOL_OK,
     TOOL_RUNNING,
+    AssistantBlock,
+    CommandBlock,
     ToolGroup,
     ToolRow,
     Transcript,
     UserBlock,
     block_rows,
-    kind_style,
-    tool_family,
 )
+from omh.tui.width import line_width
 
 SID = "s"
 DARK = ("#0D1117", "#1E1E1E", "#000000")
@@ -149,6 +154,17 @@ class GroupingTests(unittest.TestCase):
         self.assertEqual(rows, ["┃ ● Loaded 1 skill · dag-ulw  0.7s", "", "┃ ✗ skill_view(nope)  0.1s",
                                 "┃   ⎿  Skill not found: nope", "", "┃ ● Loaded 1 skill · hermes-agent  0.7s"])
 
+    def test_a_draft_or_a_cut_off_call_is_not_counted_as_loaded(self) -> None:
+        # #2223 review 6: a draft names nothing yet (an empty label left `· x, ,`), a cut-off call loaded nothing.
+        draft = ToolRow("b", "skill_view", "", TOOL_GENERATING)
+        self.assertEqual(calls(loaded("a", "dag-ulw"), loaded("c", "hermes-agent"), draft),
+                         ["┃ ● Loaded 2 skills · dag-ulw, hermes-agent  1.4s", "", "┃ ◌ skill_view"])
+        cut = ToolRow("b", "skill_view", "omh-docs", TOOL_INTERRUPTED)
+        self.assertEqual(calls(loaded("a", "dag-ulw"), cut),
+                         ["┃ ● Loaded 1 skill · dag-ulw  0.7s", "", "┃ ▪ skill_view(omh-docs)"])
+        nameless = ToolRow("d", "skill_view", "", TOOL_OK, duration_s=0.1)
+        self.assertEqual(calls(loaded("a", "dag-ulw"), nameless), ["┃ ● Loaded 2 skills · dag-ulw  0.8s"])
+
     def test_the_details_view_unfolds_the_run(self) -> None:
         rows = calls(loaded("a", "dag-ulw"), loaded("b", "hermes-agent"), expanded=True)
         self.assertEqual(rows, ["┃ ● skill_view(dag-ulw)  0.7s", "┃   ⎿  loaded skill dag-ulw", "",
@@ -168,8 +184,8 @@ class GroupingTests(unittest.TestCase):
 
 
 class HeredocTests(unittest.TestCase):
-    """Only an interpreter reading its whole script from a heredoc is summarised (#2223 review R1); every other
-    command keeps its own first line, as on main, and the details view always shows the command."""
+    """Only a heredoc that feeds an interpreter its script is summarised (#2223 review R1), the commands around it
+    counted; every other command keeps its own first line, as on main, and the details view shows the command."""
 
     def started(self, name: str, command: str, expanded: bool = False) -> list[str]:
         transcript = Transcript(clock=lambda: 0.0)
@@ -187,6 +203,14 @@ class HeredocTests(unittest.TestCase):
             "node - <<'JS'\nconsole.log(1)\nJS": "node script · 1 line",
             "/usr/bin/python3 -u - <<PY\nx = 1\ny = 2\nPY": "python3 script · 2 lines",
             "sh <<-EOF\n\techo hi\n\tEOF": "sh script · 1 line",  # `<<-`: a tab-indented terminator
+            "cd /repo && python3 - <<'PY'\na = 1\nb = 2\nPY": "python3 script · 2 lines + 1 command",
+            "FOO=1 python3 - <<EOF\nx = 1\nEOF": "python3 script · 1 line",
+            "uv run python - <<'PY'\nx = 1\nPY": "python script · 1 line",
+            "uv run --with requests python3 -u - <<'PY'\nx = 1\nPY": "python3 script · 1 line",
+            "env A=1 node - <<'JS'\nx\nJS": "node script · 1 line",
+            "python3.12 - <<PY\nx = 1\nPY": "python3.12 script · 1 line",
+            # The heredoc not on the first line, and a command after it: the script's own lines are counted.
+            "set -e\npython3 - <<EOF\nx = 1\nEOF\necho done": "python3 script · 1 line + 2 commands",
         }
         for command, said in cases.items():
             with self.subTest(command=command):
@@ -200,8 +224,8 @@ class HeredocTests(unittest.TestCase):
             "cat > src/app.py <<'EOF'\nprint(1)\nEOF": "cat > src/app.py <<'EOF'",
             "python3 - <<< 'print(1)'\nls\npwd": "python3 - <<< 'print(1)'",  # a here-string
             "echo $((1<<3))\nls\npwd": "echo $((1<<3))",  # a shift
-            "cd /repo\npython3 - <<'PY'\nprint(1)\nPY": "cd /repo",  # the heredoc is not the first line
-            "python3 - <<'PY'\nprint(1)\nPY\necho done": "python3 - <<'PY'",  # more after the script
+            "python3 tool.py <<EOF\ndata\nEOF": "python3 tool.py <<EOF",  # a script file reading data
+            "python3 - <<'PY'\nnever closed": "python3 - <<'PY'",  # no terminator: not a script
             "git status": "git status",
         }
         for command, said in cases.items():
@@ -283,6 +307,26 @@ class SlashTokenTests(unittest.TestCase):
         self.assertTrue({"dag-ulw", "model", "help"} <= names)
         self.assertNotIn("update", names)  # Hermes' own TUI runs it, not this one
 
+    def test_a_cut_through_a_token_leaves_no_half_of_it_coloured(self) -> None:
+        # #2223 review 14: the sticky row cuts its words before it colours them; `/dag-ulw` cut to `/dag` is not
+        # the `/dag` command either.
+        known = frozenset({"dag-ulw", "dag"})
+        for width in range(9, 16):
+            sticky = sticky_line("/dag-ulw go on", width, THEME, known)
+            with self.subTest(width=width, row=line_text(sticky)):
+                self.assertTrue(line_text(sticky).endswith("…"))
+                self.assertFalse([span for span in sticky if span.style == THEME.slash])
+        whole = sticky_line("/dag-ulw go on and on", 18, THEME, known)
+        self.assertEqual([span.text for span in whole if span.style == THEME.slash], ["/dag-ulw"])
+
+    def test_a_resumed_prompt_keeps_the_highlight(self) -> None:
+        # #2223 review 9: a resumed session's prompt rows read `known` as a live prompt's do.
+        app, _client = make_app(rows=40, cols=100)
+        app.known_slash = known_names([("/dag-ulw", "Graph work")])
+        app._draw_history([{"role": "user", "text": "/dag-ulw go"}])
+        (row,) = [line for line in app.transcript.take_stable_lines(100, THEME) if line_text(line).startswith("┃ ❯")]
+        self.assertEqual([span.text for span in row if span.style == THEME.slash], ["/dag-ulw"])
+
     def test_the_composer_draws_a_known_name_bold_in_the_skill_hue(self) -> None:
         frame = build_frame(cols=60, rows=24, composer=Composer(text="/dag-ulw go /foo src/a.py"),
                             info=(Span("info"),), known_slash=KNOWN)
@@ -302,6 +346,21 @@ class SlashTokenTests(unittest.TestCase):
         self.assertFalse([span for span in sticky_line("/dag-ulw go", 60, THEME) if span.style == THEME.slash])
 
 
+
+
+class TinyWidthTests(unittest.TestCase):
+    def test_no_railed_row_is_wider_than_a_tiny_terminal(self) -> None:
+        # #2223 review 15: the rail takes two cells, so a terminal of a few columns cut rows to its width.
+        blocks = (
+            UserBlock("hello /dag-ulw there", known=KNOWN),
+            CommandBlock("/usage", [("Session cost: $0.01", NOTICE_INFO)], done=True),
+            ToolGroup([ToolRow("t", "terminal", "ls -la", TOOL_OK, duration_s=0.1, output=("a", "b"))], done=True),
+            AssistantBlock("hello there\n\nsecond paragraph", done=True),
+        )
+        for width in range(1, 9):
+            for block in blocks:
+                with self.subTest(width=width, block=type(block).__name__):
+                    self.assertTrue(all(line_width(row) <= width for row in block_rows(block, width, THEME)))
 
 class RunningBlueTests(unittest.TestCase):
     """The running blue (`Theme.running`) says "running" and nothing else (#2223 review): a list bullet, a diff hunk,

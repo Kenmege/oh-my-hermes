@@ -49,7 +49,7 @@ from omh.tui.keys import BACKSPACE, CHAR, Key
 from omh.tui.session_picker import FILTER_PROMPT
 from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME as THEME
-from omh.tui.theme import build_theme, contrast_ratio
+from omh.tui.theme import build_theme, contrast_ratio, kind_style
 from omh.tui.transcript import (
     NOTICE_INFO,
     PULSE_SECONDS,
@@ -65,7 +65,6 @@ from omh.tui.transcript import (
     TurnSummaryBlock,
     UserBlock,
     block_rows,
-    kind_style,
 )
 from omh.tui.width import line_width
 
@@ -113,7 +112,7 @@ class ToolRowTests(unittest.TestCase):
                 rows = rows_of(ToolRow("t", "terminal", "ls", status, started_at=0.0, duration_s=0.1, output=("x",)))
                 self.assertEqual(rows[0][2], Span(glyph, style))
                 self.assertEqual({row[0] for row in rows}, {Span("┃", style)})  # one rail down the whole call
-        self.assertEqual(THEME.running.fg, THEME.dag_words[-1].fg)  # the running blue is the graph's running node's
+        self.assertEqual(THEME.running.fg, "#58A6FF")  # the owner's approved shade, apart from the graph's edge stops
         running = ToolRow("t", "terminal", "ls", TOOL_RUNNING, started_at=0.0)
         pulsed = rows_of(running, now=PULSE_SECONDS * 1.5)[0]
         self.assertEqual(pulsed[2], Span("○", THEME.dim))  # its dim half; the rail holds still
@@ -420,8 +419,10 @@ class PromptRowTests(unittest.TestCase):
 
     def test_a_command_echoes_as_a_prompt_does_in_the_hint_colour(self) -> None:
         rows = block_rows(CommandBlock("/model", [("Current model: x", NOTICE_INFO)], done=True), 40, THEME)
-        self.assertEqual(lines_text(rows), ["❯ /model", "  ⎿  Current model: x"])  # no rail: what OMH ran itself
-        self.assertEqual((rows[0][0], rows[0][1].style), (Span("❯ ", THEME.dim), THEME.hint))
+        # On the prompt's dim rail (#2223 review 7), so a bare `❯` on the left edge is only ever the composer.
+        self.assertEqual(lines_text(rows), ["┃ ❯ /model", "┃   ⎿  Current model: x"])
+        self.assertEqual({row[0] for row in rows}, {Span("┃", THEME.dim)})
+        self.assertEqual((rows[0][2], rows[0][3].style), (Span("❯ ", THEME.dim), THEME.hint))
 
 
 class DoneLineTests(unittest.TestCase):

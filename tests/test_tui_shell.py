@@ -23,6 +23,7 @@ from omh.tui.frame import MODE_SHELL
 from omh.tui.gateway import Event, Response
 from omh.tui.keys import BACKSPACE, ENTER, UP, Key, Paste
 from omh.tui.modes import SHELL_LABEL
+from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME, KIND_FAMILIES, build_theme
 from omh.tui.transcript import NOTICE_ERROR, NOTICE_INFO, NOTICE_WARN, OUTPUT_FAILED, CommandBlock, block_rows
 
@@ -86,9 +87,10 @@ class ShellModeTests(unittest.TestCase):
         self.assertEqual(app.transcript.blocks[-1].parts, [("partial", OUTPUT_FAILED), ("exit 3", NOTICE_ERROR)])
         theme = build_theme(SKIN_THEMES[0], "#FFFFFF")
         rows = block_rows(app.transcript.blocks[-1], 80, theme)
-        self.assertEqual([line_text(row) for row in rows], ["❯ " + "!" + params["command"], "  ⎿  partial", "     ✗ exit 3"])
-        for row in rows[1:]:  # what it printed and its exit line, one red region as a failed tool's output
-            self.assertEqual({span.style.bg for span in row}, {theme.error_band.bg})
+        self.assertEqual([line_text(row) for row in rows], ["┃ ❯ " + "!" + params["command"], "┃   ⎿  partial", "┃      ✗ exit 3"])
+        for row in rows[1:]:  # what it printed and its exit line, one red region beside the echo's rail
+            self.assertEqual(row[:2], (Span("┃", theme.dim), Span(" ")))
+            self.assertEqual({span.style.bg for span in row[2:]}, {theme.error_band.bg})
         self.assertEqual({span.style.bg for span in rows[0]}, {None})  # the echo is no outcome
 
     def test_hermes_refusing_a_dangerous_command_is_said_in_its_words(self) -> None:

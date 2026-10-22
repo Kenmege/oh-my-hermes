@@ -1912,7 +1912,7 @@ class LocalCommandTests(AppTestCase):
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        said = " ".join(terminal.history().split())  # the notice wraps at the terminal's width
+        said = " ".join(word for word in terminal.history().split() if word != "┃")  # it wraps on the echo's rail
         self.assertIn("follows the terminal's background (a dark one, as COLORFGBG names it)", said)
 
     def test_keys_typed_while_the_background_query_waited_reach_the_composer(self) -> None:
@@ -1997,7 +1997,7 @@ class LocalCommandTests(AppTestCase):
         self.assertIn("/yolo included", pager)
         # The banner no longer says it, so /help is where the way back to Hermes' own terminal stays.
         self.assertIn("Bare `hermes` opens Hermes' own terminal.", pager)
-        self.assertIn("❯ /help\n  ⎿  OMH TUI commands:", terminal.history())
+        self.assertIn("┃ ❯ /help\n┃   ⎿  OMH TUI commands:", terminal.history())
         self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
 
     def test_reload_skills_rescans_in_the_gateway_and_the_new_skill_completes(self) -> None:
@@ -2049,9 +2049,9 @@ class LocalCommandTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         history = terminal.screen.history()
-        listed = history.index("  ⎿  Queued (sent one at a time as each turn ends):")
-        self.assertEqual(history[listed - 1], "❯ /queue")
-        self.assertEqual(history[listed + 1], "     1. second prompt")
+        listed = history.index("┃   ⎿  Queued (sent one at a time as each turn ends):")
+        self.assertEqual(history[listed - 1], "┃ ❯ /queue")
+        self.assertEqual(history[listed + 1], "┃      1. second prompt")
         self.assertIn("┃ ❯ second prompt  ⧗ from queue", history[listed:])  # the queue sent it once the turn ended
         self.assertLess(history.index("┃ ❯ first prompt"), listed)
 

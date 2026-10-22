@@ -1338,7 +1338,7 @@ class App(ModesMixin, AgentViewMixin):
                 self.transcript.add_recorded_tools(tools)
                 tools = []
             if role == "user":
-                self.transcript.add_user(text)
+                self.transcript.add_user(text, known=self.known_slash)
             else:
                 self.transcript.add_assistant(text)
         if tools:

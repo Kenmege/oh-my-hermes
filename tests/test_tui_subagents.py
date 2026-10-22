@@ -34,7 +34,7 @@ from omh.tui.subagents import (
     Roster,
 )
 from omh.tui.theme import DEFAULT_THEME as THEME
-from omh.tui.transcript import kind_style
+from omh.tui.theme import kind_style
 from omh.tui.width import cluster_width, clusters, is_control, line_width
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "tui_gateway" / "subagent_relay.jsonl"

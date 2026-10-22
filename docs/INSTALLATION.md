@@ -660,9 +660,12 @@ run and approval decision stays Hermes'; the screen is OMH's.
   ends the run. A failed one keeps a row of its own with its error, and
   Ctrl+O unfolds the run, each load saying what it loaded (`loaded skill
   omh-docs`, `loaded references/api.md from skill omh-docs` for a file in
-  it). A shell call that feeds a script through a heredoc names the script
-  and counts its lines (`terminal(python3 script · 23 lines)`) instead of
-  showing its first characters. A failed call (a red `✗` on a red rail) shows its error's first line,
+  it). A shell call whose heredoc feeds an interpreter its script
+  (`python3 - <<'PY'`, `uv run python - <<'PY'`, `bash <<EOF`) names the
+  interpreter and counts the script's lines and the commands around it
+  (`terminal(python3 script · 23 lines)`); any other command fed a heredoc
+  (`cat > a.py <<'EOF'`, `git commit -F - <<'MSG'`) shows its own first
+  line, and Ctrl+O shows the command. A failed call (a red `✗` on a red rail) shows its error's first line,
   or, when it failed by its exit code alone (a test
   run, say), the last three lines it printed, under the
   count of the lines above them. An edit's diff hangs under the same `⎿`, and a long diff counts
@@ -738,7 +741,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
     across its verb, beside the elapsed time and the tokens written.
   - Your prompt reads as in Claude Code, the composer's dim `❯` and dim text with no
     band behind it, on a grey rail; a prompt the queue sent says `⧗ from queue`. A command
-    you run is echoed the same way, with no rail (`❯ /model`).
+    you run is echoed the same way, on the same rail (`┃ ❯ /model`), so a
+    bare `❯` on the left edge is only ever the composer.
   - A steer shows as `↪ steer · <text>` under what is running until Hermes
     answers, then becomes `↪ steer queued by Hermes · <text>`, or the amber
     refusal, at the next boundary in the transcript (see below).
@@ -763,7 +767,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
     `✗ skipped`, `✗ timed out`, `✗ interrupted`, or `✗ withdrawn (<Hermes'
     reason>)`), and the `clarify` call it was about has a red `✗` too, with
     `cancelled`, `timed out` or `not delivered` under it when no such answer
-    of yours is under it already to say so. An error notice and a
+    of yours is under it already to say so. Once a call has ended failed or
+    denied, its own `✗` is the one mark: the red answer rows under it keep
+    their words and drop theirs (`⎿  denied · <command>`). An error notice and a
     command's error line (for a failed `!` command, with what it printed
     above it) are on the light red band too. A tool call itself has no
     band: its rail and its mark say how it ended, and a denied call shows one
@@ -791,7 +797,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   one, its `❯` mark turns the shell family's amber and the info line says
   `! shell (not sent to the model)`. Sending it runs it through Hermes'
   `shell.exec` (Hermes' own limit of 30 s, its refusal of dangerous commands,
-  and its redaction of what the command printed) and shows `❯ !command`
+  and its redaction of what the command printed) and shows `┃ ❯ !command`
   with what it printed (its stdout, then its stderr, in the same colour) and
   its exit code when that is not 0 (`exit 0` when it printed nothing; a
   failure's lines are red on the red band with that exit line), or
@@ -949,7 +955,7 @@ says so; for an agent's steer it names the agent and the session you left. The O
 steers only with text you typed and sent this way: a queued prompt is never
 turned into a steer.
 
-A slash command you run is echoed in the transcript as `❯ /name arg` (but
+A slash command you run is echoed in the transcript as `┃ ❯ /name arg` (but
 `/steer`, whose own row is its echo, and a bare `/sessions`, `/rewind`,
 `/model`, `/keys`, `/history`, `/logs`, `/dag` or `/redraw`, which only open a picker
 or a pager, or repaint, and print nothing to attribute), and what it prints stays there, under it after `⎿`, in the terminal's scrollback

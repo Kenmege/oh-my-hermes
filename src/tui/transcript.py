@@ -27,8 +27,8 @@ space, which a terminal draws to the full cell height, so a block's rail is one
 line): your prompt's in dim grey, each tool call's in its state's colour, and a
 reply's in the skin's accent, the banner's colour (`Theme.brand`). Nothing has a band behind it.
 
-A slash command the person runs is a block of its own: `❯ /name arg` in the
-hint colour, then what it printed under `⎿`, each part in its level's colour
+A slash command the person runs is a block of its own: `┃ ❯ /name arg` on the prompt's dim
+rail, in the hint colour, then what it printed under `⎿`, each part in its level's colour
 and, for a warning or an error, its glyph. Its echo stays live while the
 command may still print (`close_command` ends that); what it says meanwhile
 is its output (`command` names the command speaking). Typed while a block
@@ -101,7 +101,7 @@ from .gateway_contract import TOOL_CALL_BRIDGE
 from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
 from .style import Line, Span, Style, fill
 from .slash import slash_spans
-from .theme import KIND_FAMILIES, Theme, on_band
+from .theme import TOOL_FAMILIES, Theme, kind_style, on_band
 from .width import line_width, truncate, truncate_left, truncate_line
 
 TOOL_GENERATING = "generating"
@@ -419,35 +419,70 @@ _GOAL_MARKERS = re.compile(
 
 # The shell tools, and the interpreters among their commands that read a whole script from a heredoc on their stdin
 # (`python3 - <<'PY'`): such a call is summarised by its interpreter and the script's length.
-SHELL_TOOLS = frozenset({"terminal", "process", "execute_code"})
-SCRIPT_INTERPRETERS = frozenset({"python", "python3", "node", "bash", "sh", "ruby", "perl"})
-# A command's first line that is only an interpreter, its dash flags (`-`, `-u`), and a heredoc on its stdin; group 3
-# is `<<-`'s dash (its terminator may be indented with tabs), group 5 the terminator.
-_SCRIPT_HEAD = re.compile(r"(\S+)((?:\s+-\S*)*)\s*<<(-?)\s*(['\"]?)([A-Za-z_]\w*)\4")
+SHELL_TOOLS = TOOL_FAMILIES["shell"]
+SCRIPT_INTERPRETERS = frozenset({"python", "python3", "node", "bash", "sh", "zsh", "ruby", "perl"})
+_VERSIONED_PYTHON = re.compile(r"python3\.\d+")
+# A heredoc's opener at the end of its line (`<<'PY'`, `<<-EOF`), never a here-string (`<<<`) or a shift
+# (`$((1<<3))`); group 1 is `<<-`'s dash (its terminator may be indented with tabs), group 3 the terminator.
+_HEREDOC_OPENER = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_]\w*)\2\s*$")
+_COMMAND_SEPARATOR = re.compile(r"&&|\|\||;|\|")
+_ENV_ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=\S*")
+UV_RUN_VALUE_OPTIONS = frozenset({"--with", "--python", "-p", "--project", "--directory", "--group", "--extra",
+                                  "--env-file"})
+
+
+def _script_interpreter(segment: str) -> str:
+    """The interpreter one command runs to read its script from stdin (`python3` in `FOO=1 uv run python3 -u -`),
+    or "" when the command is anything else (`cat > a.py`, `git commit -F -`, `python3 tool.py`)."""
+    words = segment.split()
+    while words and _ENV_ASSIGNMENT.fullmatch(words[0]):
+        words.pop(0)
+    if words[:1] == ["env"]:
+        words.pop(0)
+        while words and (_ENV_ASSIGNMENT.fullmatch(words[0]) or words[0].startswith("-")):
+            words.pop(0)
+    if words[:2] == ["uv", "run"]:
+        words = words[2:]
+        while words and words[0].startswith("-"):
+            if words.pop(0) in UV_RUN_VALUE_OPTIONS and words:
+                words.pop(0)
+    if not words or not all(word.startswith("-") for word in words[1:]):  # a script file is no stdin script
+        return ""
+    name = words[0].rsplit("/", 1)[-1]
+    return name if name in SCRIPT_INTERPRETERS or _VERSIONED_PYTHON.fullmatch(name) else ""
 
 
 def _heredoc_summary(payload: dict[str, Any]) -> str:
-    """`python3 script · 23 lines` for a shell call that is one interpreter reading its whole script from a heredoc;
-    "" for any other call, which shows its own command (`_call_summary`).
+    """`python3 script · 23 lines` for a shell call whose heredoc feeds an interpreter its script, with
+    `+ N commands` for the commands around it; "" for any other call, which shows its own command (`_call_summary`).
 
-    Only the whole command qualifies: its first line the interpreter and the
-    heredoc (`SCRIPT_INTERPRETERS`), its last line the terminator. Another
-    command fed a heredoc (`cat > a.py <<'EOF'`, `git commit -F - <<'MSG'`),
-    a here-string (`<<<`), a shift (`$((1<<3))`), a heredoc after another
-    command, or more commands after the script, is not a script.
+    The heredoc's opener may be on any line (`set -e` before it, `cd /repo &&`
+    before the interpreter); the script is the lines between it and its
+    terminator. Another command fed a heredoc (`cat > a.py <<'EOF'`,
+    `git commit -F - <<'MSG'`, `gh pr create --body-file - <<'EOF'`), a
+    here-string (`<<<`) and a shift (`$((1<<3))`) are not scripts.
     """
     args = payload.get("args")
     command = as_text(args.get("command")) if isinstance(args, dict) else ""
+    if as_text(payload.get("name")) not in SHELL_TOOLS:
+        return ""
     lines = command.rstrip("\n").split("\n")
-    head = _SCRIPT_HEAD.fullmatch(lines[0].strip())
-    if as_text(payload.get("name")) not in SHELL_TOOLS or head is None or len(lines) < 3:
+    found = next(((index, opener) for index, line in enumerate(lines) if (opener := _HEREDOC_OPENER.search(line))),
+                 None)
+    if found is None:
         return ""
-    interpreter = head[1].rsplit("/", 1)[-1]
-    terminator = lines[-1].lstrip("\t") if head[3] else lines[-1]
-    if interpreter not in SCRIPT_INTERPRETERS or terminator.rstrip() != head[5]:
+    index, opener = found
+    segments = _COMMAND_SEPARATOR.split(lines[index][: opener.start()])
+    interpreter = _script_interpreter(segments[-1])
+    terminator = next((at for at in range(index + 1, len(lines))
+                       if (lines[at].lstrip("\t") if opener[1] else lines[at]).rstrip() == opener[3]), None)
+    if not interpreter or terminator is None:
         return ""
-    body = len(lines) - 2
-    return f"{interpreter} script · {body} line{'' if body == 1 else 's'}"
+    body = terminator - index - 1
+    others = (len(segments) - 1 + sum(1 for line in lines[:index] if line.strip())
+              + sum(1 for line in lines[terminator + 1 :] if line.strip()))
+    around = f" + {others} command{'' if others == 1 else 's'}" if others else ""
+    return f"{interpreter} script · {body} line{'' if body == 1 else 's'}{around}"
 
 
 def _args_summary(payload: dict[str, Any]) -> str:
@@ -625,7 +660,7 @@ def _text_rows(
 def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
     """Your prompt on a dim rail, behind a dim `❯`, in the muted colour on no band; a `/name` that resolved to a
     command or skill bold in its colour (`slash_spans`); `⧗ from queue` when the queue sent it."""
-    inner = width - len(RAIL)
+    inner = max(width - len(RAIL), 1)
     first, rest = (Span(USER_MARK, theme.dim),), (Span(" " * len(USER_MARK)),)
     rows: list[Line] = []
     for index, source in enumerate(_display_lines(block.text)):
@@ -638,8 +673,7 @@ def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
         tag: Line = (Span(COLUMN_GAP + FROM_QUEUE_TAG, theme.muted),)
         if line_width(rows[0]) + line_width(tag) <= inner:
             rows[0] = (*rows[0], *tag)
-    return [(*_rail(theme.dim), *row) for row in rows]
-
+    return [_within((*_rail(theme.dim), *row), width) for row in rows]
 
 
 def _awaits_answer(block: Block) -> bool:
@@ -729,7 +763,9 @@ def _output_leads(theme: Theme) -> tuple[Line, Line]:
 
 
 def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool) -> list[Line]:
-    """`> /name arg`, then each part of its output under `⎿` in its level's colour (and glyph), cut unless `expanded`."""
+    """`┃ ❯ /name arg` on the prompt's dim rail (a bare `❯` on the left edge is only ever the composer), then each part
+    of its output under `⎿` in its level's colour (and glyph), cut unless `expanded`."""
+    full, width = width, max(width - len(RAIL), 1)
     rows = wrap_prefixed((Span(block.command, theme.hint),), (Span(COMMAND_MARK, theme.dim),), (Span("  "),), width)
     rest = _output_leads(theme)[1]
     output: list[Line] = []
@@ -744,16 +780,16 @@ def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool)
         hidden = len(output) - OUTPUT_PREVIEW_ROWS
         more = OUTPUT_MORE.format(count=hidden, noun="row" if hidden == 1 else "rows")  # rows at this width
         output = [*output[:OUTPUT_PREVIEW_ROWS], truncate_line((*rest, Span(more, theme.muted)), width)]
-    return rows + output
+    return [_within((*_rail(theme.dim), *row), full) for row in rows + output]
 
 
-def _marked(rows: list[Line], opens_block: bool, theme: Theme) -> list[Line]:
+def _marked(rows: list[Line], opens_block: bool, theme: Theme, width: int) -> list[Line]:
     """Assistant rows on the reply's rail in the skin's accent: a bold `● ` on the block's first row, an indent on
-    every other one, and the rail alone on a blank row, so a reply's rail is one line."""
+    every other one, and the rail alone on a blank row, so a reply's rail is one line; none wider than `width`."""
     first: Line = (Span(ASSISTANT_MARK, replace(theme.text, bold=True)),)  # what it said; a call's mark is its state
     rest: Line = (Span(ASSISTANT_INDENT),)
     rail = _rail(theme.brand)
-    return [(*rail, *(first if opens_block and index == 0 else rest), *row) if row else rail[:1]
+    return [_within((*rail, *(first if opens_block and index == 0 else rest), *row), width) if row else rail[:1]
             for index, row in enumerate(rows)]
 
 
@@ -764,7 +800,7 @@ def _reply_width(width: int) -> int:
 
 def _assistant_rows(block: AssistantBlock, width: int, theme: Theme) -> list[Line]:
     rows = render_lines(_display_lines(block.text), MarkdownState(), _reply_width(width), theme)[0]
-    return _marked(rows, True, theme)
+    return _marked(rows, True, theme, width)
 
 
 def _seconds(value: float) -> str:
@@ -802,6 +838,11 @@ def _pulse_dim(tool: ToolRow, now: float | None) -> bool:
 
 def _rail(style: Style) -> Line:
     return (Span(RAIL[0], style), Span(RAIL[1:]))
+
+
+def _within(row: Line, width: int) -> Line:
+    """`row` as it is, or cut to `width` on a terminal too narrow for the rail and what hangs on it."""
+    return row if line_width(row) <= width else truncate_line(row, width)
 
 
 def _state_style(status: str, theme: Theme, dim: bool = False) -> Style:
@@ -863,48 +904,32 @@ def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> lis
     return [truncate_line((*(rest if index else first), span), width) for index, span in enumerate(ordered)]
 
 
-def _answer_rows(text: str, level: str, width: int, theme: Theme) -> list[Line]:
-    """`  ⎿  ✓ allowed once · <command>`: what the person answered, under the call that asked, on its outcome's band."""
+def _answer_rows(text: str, level: str, width: int, theme: Theme, marked: bool = True) -> list[Line]:
+    """`  ⎿  ✓ allowed once · <command>`: what the person answered, under the call that asked, on its outcome's band;
+    with no mark when not `marked` (the call's own row already says it failed: one `✗` per denial, round 2)."""
     band = _outcome_band(level, theme)
     roles = on_band(theme, band) if band is not None else theme
     mark, style = _notice_style(level, roles)
+    mark = mark if marked else ""
     first, rest = _output_leads(roles)
     rows = _text_rows(text, style, (*first, Span(mark, style)), (*rest, Span(" " * len(mark))), width)
     return _banded(rows, band) if band is not None else rows
 
 
-# The tool families a call's name is coloured by (`Theme.kinds`, in `theme.KIND_FAMILIES` order); a name in none
-# keeps the terminal's foreground, bold. Hermes' browser tools all start `browser_`.
-TOOL_FAMILIES = {
-    "skill": frozenset({"skill_view", "skills_list", "skill_manage", "tool_describe", "tool_search", "tool_call",
-                        "todo_list", "memory", "clarify", "session_search"}),
-    "shell": SHELL_TOOLS,
-    "file": frozenset({"read_file", "write_file", "patch", "search_files"}),
-    "web": frozenset({"web_search", "web_extract"}),
-    "dag": frozenset({"delegate_task", "omh_dag", "omh_team"}),
-}
 # The plumbing calls a run of which folds into one row: loading a skill (or a file in one), reading tool details.
 PLUMBING_TOOLS = frozenset({"skill_view", "tool_describe"})
 SKILL_TOOL = "skill_view"
 FOLD_LABEL_SEPARATOR = " → "  # how Hermes labels a skill_view that read a file in a skill: `skill → references/x.md`
 
 
-def tool_family(name: str) -> str:
-    """The family a tool's name belongs to (`TOOL_FAMILIES`), or "" for none."""
-    if name.startswith("browser_"):
-        return "web"
-    return next((family for family, names in TOOL_FAMILIES.items() if name in names), "")
-
-
-def kind_style(name: str, theme: Theme) -> Style:
-    """A call's name: bold, in its family's hue, else in the terminal's foreground."""
-    family = tool_family(name)
-    return theme.kinds[KIND_FAMILIES.index(family)] if family and theme.kinds else theme.tool
+# The states of a plumbing call that loaded, or is loading, what it names: only these join a run. A failed or
+# refused call keeps its row and says why; a draft names nothing yet and a cut-off call loaded nothing.
+FOLDED_STATUSES = frozenset({TOOL_OK, TOOL_RECORDED, TOOL_RUNNING})
 
 
 def _folds(tool: ToolRow) -> bool:
-    """Whether a call joins a run of plumbing calls: a failed or refused one keeps its row and says why."""
-    return tool.name in PLUMBING_TOOLS and tool.status not in (TOOL_ERROR, TOOL_DENIED)
+    """Whether a call joins a run of plumbing calls (`FOLDED_STATUSES`)."""
+    return tool.name in PLUMBING_TOOLS and tool.status in FOLDED_STATUSES
 
 
 def _units(tools: list[ToolRow], fold: bool = True) -> list[list[ToolRow]]:
@@ -920,10 +945,8 @@ def _units(tools: list[ToolRow], fold: bool = True) -> list[list[ToolRow]]:
 
 
 def _unit_status(unit: list[ToolRow]) -> str:
-    """A folded run's state: the first of failed, denied, running, drafted, cut off a member is in, else its last's."""
-    statuses = {tool.status for tool in unit}
-    return next((status for status in (TOOL_ERROR, TOOL_DENIED, TOOL_RUNNING, TOOL_GENERATING, TOOL_INTERRUPTED)
-                 if status in statuses), unit[-1].status)
+    """A unit's state: a folded run's is running while a member runs, else its last member's."""
+    return TOOL_RUNNING if any(tool.status == TOOL_RUNNING for tool in unit) else unit[-1].status
 
 
 def _loaded_label(tool: ToolRow) -> str:
@@ -948,7 +971,7 @@ def _folded_row(unit: list[ToolRow], width: int, theme: Theme, now: float | None
     head: Line = (mark, Span(" "), Span(words, kind_style(SKILL_TOOL, theme)))
     durations = [tool.duration_s for tool in unit if tool.duration_s is not None]
     tail: Line = (Span(COLUMN_GAP + _seconds(sum(durations)), theme.faint),) if durations and running is None else ()
-    names = ", ".join(_loaded_label(tool) for tool in skills)
+    names = ", ".join(label for label in (_loaded_label(tool) for tool in skills) if label)
     room = width - line_width(head) - line_width(tail) - len(LABEL_SEPARATOR)
     args: Line = (Span(LABEL_SEPARATOR + truncate(names, room), theme.muted),) if names and room > 1 else ()
     return truncate_line((*head, *args, *tail), width)
@@ -958,7 +981,7 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: 
     """Each call on a rail in its state's colour: its own row (what ran, on what), what the person answered it right
     under that, and what it printed under them, a blank row between two calls; a run of plumbing calls is one row,
     unfolded again by `expanded`. A group with no call shows nothing."""
-    inner = width - len(RAIL)
+    inner = max(width - len(RAIL), 1)
     rows: list[Line] = []
     for unit in _units(group.tools, fold=not expanded):
         status = _unit_status(unit)
@@ -967,7 +990,9 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: 
         else:
             tool = unit[0]
             own = [_tool_row(tool, inner, theme, now, expanded)]
-            own += [row for text, level in tool.answers for row in _answer_rows(text, level, inner, theme)]
+            said = tool.status in (TOOL_ERROR, TOOL_DENIED)  # its own `✗` says it: the answer under it adds none
+            own += [row for text, level in tool.answers
+                    for row in _answer_rows(text, level, inner, theme, marked=not (said and level == NOTICE_ERROR))]
             if expanded and tool.summary and tool.summary not in tool.output[:1]:  # a failure's line is said once
                 summary_first, summary_rest = _output_leads(theme)
                 own.extend(wrap_prefixed((Span(tool.summary, theme.faint),), summary_first, summary_rest, inner))
@@ -977,7 +1002,7 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: 
             else:
                 own.extend(_output_rows(tool, inner, theme, expanded))
         rail = _rail(_state_style(status, theme))
-        rows.extend([*([()] if rows else []), *((*rail, *row) for row in own)])
+        rows.extend([*([()] if rows else []), *(_within((*rail, *row), width) for row in own)])
     return rows
 
 
@@ -1548,7 +1573,7 @@ class Transcript:
         rows, self._cursor_state = render_lines(fresh, self._cursor_state, _reply_width(width), theme)
         opens_block = self._cursor_lines == 0
         self._cursor_lines = len(sources)
-        return self._spaced(_marked(rows, opens_block, theme), opens_block)
+        return self._spaced(_marked(rows, opens_block, theme, width), opens_block)
 
     def _spaced(self, rows: list[Line], opens_block: bool) -> list[Line]:
         if not rows:
@@ -1649,7 +1674,8 @@ class Transcript:
             if index == self._cursor and isinstance(block, AssistantBlock):
                 rest = _display_lines(block.text)[self._cursor_lines :]
                 opens_block = self._cursor_lines == 0
-                block_lines = _marked(render_lines(rest, self._cursor_state, _reply_width(width), theme)[0], opens_block, theme)
+                block_lines = _marked(render_lines(rest, self._cursor_state, _reply_width(width), theme)[0], opens_block,
+                                      theme, width)
             else:  # only the last block can be live thinking, the one kind the limit shortens, so it gets all of it
                 block_lines = block_rows(block, width, theme, self.details_expanded and not block.done, max_rows, now)
             if block_lines:

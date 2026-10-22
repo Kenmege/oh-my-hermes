@@ -117,7 +117,7 @@ class OutcomeBandTests(unittest.TestCase):
             ("error_band", unrailed(block_rows(refused, 60, theme)[1:2])),  # type: ignore[arg-type]  # the refusal under it
             ("error_band", block_rows(NoticeBlock("denied · rm -rf ./build", NOTICE_ERROR), 60, theme)),  # type: ignore[arg-type]
             ("error_band", block_rows(NoticeBlock("The turn ended with an error.", NOTICE_ERROR), 60, theme)),  # type: ignore[arg-type]
-            ("error_band", block_rows(command, 60, theme)[1:]),  # type: ignore[arg-type]  # its output, not its echo
+            ("error_band", unrailed(block_rows(command, 60, theme)[1:])),  # type: ignore[arg-type]  # its output
         ]
 
     def test_every_outcome_row_is_on_its_band_to_the_edge_and_every_word_reads_on_it(self) -> None:
@@ -469,7 +469,7 @@ class CommandPlacementTests(unittest.TestCase):
     def test_the_echo_and_its_output_wait_under_the_call_then_land_after_its_group(self) -> None:
         app, _client = self.mid_tool("/queue")
         live = lines_text(app.transcript.live_lines(80, THEME))
-        self.assertEqual(live[-2:], ["❯ /queue", "  ⎿  Nothing is queued."])  # under what runs, its output under it
+        self.assertEqual(live[-2:], ["┃ ❯ /queue", "┃   ⎿  Nothing is queued."])  # under what runs, its output under it
         app._on_event(ev("tool.complete", tool_id="t1", name="terminal", result={"output": "1 passed"}))
         app._on_event(ev("message.delta", text="All green."))
         kinds = [type(block).__name__ for block in app.transcript.blocks]
@@ -506,7 +506,7 @@ class CommandPlacementTests(unittest.TestCase):
         self.assertIsInstance(group, ToolGroup)
         self.assertEqual(group.tools[0].status, TOOL_RUNNING)
         self.assertEqual(lines_text(app.transcript.live_lines(140, THEME))[-2:],
-                         ["❯ /usage", "  ⎿  ⚠ Hermes has not answered slash.exec in 120 s; the OMH TUI stopped waiting for it."])
+                         ["┃ ❯ /usage", "┃   ⎿  ⚠ Hermes has not answered slash.exec in 120 s; the OMH TUI stopped waiting for it."])
 
     def usage_out_past_the_turn(self) -> tuple[object, object, int]:
         """`/usage` typed over a running tool, the turn ended with it still out, and the next prompt streaming."""
@@ -541,7 +541,7 @@ class CommandPlacementTests(unittest.TestCase):
         replies = [block.text for block in app.transcript.blocks if isinstance(block, AssistantBlock)]
         self.assertEqual(replies, ["done", "Second reply goes on."])
         held = lines_text(app.transcript.live_lines(100, THEME))
-        self.assertEqual(held[-2:], ["❯ /usage", "  ⎿  ✗ Usage is unavailable."])
+        self.assertEqual(held[-2:], ["┃ ❯ /usage", "┃   ⎿  ✗ Usage is unavailable."])
 
     def test_output_for_an_echo_already_closed_waits_under_a_running_call(self) -> None:
         app, client = make_app()
@@ -555,7 +555,7 @@ class CommandPlacementTests(unittest.TestCase):
         group = app.transcript.blocks[-1]
         self.assertIsInstance(group, ToolGroup)
         self.assertEqual(group.tools[0].status, TOOL_RUNNING)  # the repeated echo did not cut the call off
-        self.assertEqual(lines_text(app.transcript.live_lines(80, THEME))[-2:], ["❯ /usage", "  ⎿  Session cost: $0.01"])
+        self.assertEqual(lines_text(app.transcript.live_lines(80, THEME))[-2:], ["┃ ❯ /usage", "┃   ⎿  Session cost: $0.01"])
 
 
 class Clock:
@@ -830,8 +830,10 @@ class ApprovalOutcomeTests(unittest.TestCase):
         app._on_event(ev("message.complete", text="", status="interrupted"))
         rows = [row for row in lines_text(app.transcript.take_stable_lines(80, REPORTED)) if row]
         self.assertTrue(rows[0].startswith(f"┃ ✗ terminal({self.COMMAND})"), rows)
-        self.assertEqual(rows[1:4], [f"┃   ⎿  ✗ denied · {self.COMMAND}", "┃   ⎿  You denied this command — it did not run.",
+        # One mark for a denial (round 2): the call's red `✗`; its answer row keeps its words and drops its own.
+        self.assertEqual(rows[1:4], [f"┃   ⎿  denied · {self.COMMAND}", "┃   ⎿  You denied this command — it did not run.",
                                      "⚠ Interrupted."])
+        self.assertEqual(sum(row.count("✗") for row in rows[:3]), 1)
 
     def test_the_answer_goes_under_the_call_that_asked_not_the_first_of_the_turn(self) -> None:
         # Review B: `✓ allowed once · …` stood above `⏺ read_file(README.md)`, the turn's first call.
@@ -897,12 +899,13 @@ class ApprovalOutcomeTests(unittest.TestCase):
 
     def test_a_clarify_that_closed_unanswered_says_so_once_under_its_call(self) -> None:
         # Hermes withdraws the request (`timeout`) or the person cancels it, then the clarify returns its `outcome`:
-        # the answer row already says how the wait ended. A notice of Hermes' says why, and stays.
+        # the answer row already says how the wait ended. A notice of Hermes' says why, and stays. The call's red `✗`
+        # is the one mark (#2223 review 8): the answer row under it keeps its words.
         cases = (
-            ("timeout", "timed_out", "", ["┃   ⎿  ✗ timed out · Which colour?"]),
+            ("timeout", "timed_out", "", ["┃   ⎿  timed out · Which colour?"]),
             ("timeout", "timed_out", "No answer within 300 s.",
-             ["┃   ⎿  ✗ timed out · Which colour?", "┃   ⎿  No answer within 300 s."]),
-            ("", "cancelled", "", ["┃   ⎿  ✗ cancelled · Which colour?"]),
+             ["┃   ⎿  timed out · Which colour?", "┃   ⎿  No answer within 300 s."]),
+            ("", "cancelled", "", ["┃   ⎿  cancelled · Which colour?"]),
         )
         for reason, outcome, notice, under in cases:
             with self.subTest(outcome=outcome, notice=notice):

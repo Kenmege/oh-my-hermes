@@ -60,7 +60,7 @@ from .layout import BLANK, Budget, allocate, caret_row, compose, composer_cap
 from .style import Line, Span
 from .slash import slash_spans, slash_token_ranges
 from .theme import DEFAULT_THEME, KIND_FAMILIES, Theme
-from .width import line_width, truncate_line
+from .width import cell_width, line_width, truncate, truncate_line
 
 RULE = "─"  # the composer's rules, above and under it, full width
 INFO_INSET = 2  # cells before the info line's text, under the rule
@@ -199,7 +199,15 @@ def sticky_line(prompt_text: str, width: int, theme: Theme = DEFAULT_THEME, know
     if width <= 0:
         return ()
     first = prompt_text.strip().split("\n", 1)[0]
-    line = (Span(STICKY_PREFIX, theme.running), *slash_spans(first, known, theme.muted, theme.slash))  # a turn runs
+    lead = Span(STICKY_PREFIX, theme.running)  # a turn runs
+    line = (lead, *slash_spans(first, known, theme.muted, theme.slash))
     if line_width(line) <= width:
         return line
-    return (*truncate_line(line, width - len(STICKY_CUT), ellipsis=""), Span(STICKY_CUT, theme.dim))
+    room = width - cell_width(STICKY_PREFIX) - cell_width(STICKY_CUT)
+    if room <= 0:
+        return (*truncate_line(line, width - len(STICKY_CUT), ellipsis=""), Span(STICKY_CUT, theme.dim))
+    # The words are cut before they are coloured: a token the cut goes through is no token (`/dag-ulw` cut to `/dag`).
+    cut = truncate(first, room, ellipsis="")
+    whole = [(start, end) for start, end in slash_token_ranges(first, known) if end <= len(cut)]
+    spans = slash_spans(cut, known, theme.muted, theme.slash, whole if first.startswith(cut) else [])
+    return (lead, *spans, Span(STICKY_CUT, theme.dim))
