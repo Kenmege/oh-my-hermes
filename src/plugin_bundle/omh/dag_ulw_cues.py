@@ -874,21 +874,34 @@ def _korean_request_verb(folded: str) -> tuple[str, bool]:
     return (folded.rstrip(" .!~").split()[-1] if _KOREAN_REQUEST_END.search(folded) else ""), False
 
 
-# A clause after the request that takes it back, holds it or talks about it ("…해줘, 아 잠깐만", "…해줘, 말고 그냥 둬",
-# "…해줘, 는 농담이고", "…해줘, 같은 요청은 위험해", "…해줘, 아니다 나중에 하자") refers back to it.
-_BACK_REFERENCE: Final = re.compile(r"^(?:는|은|라고|이라고|같은|말고|란|이란|이런|그런)(?![가-힣])|^아니")
+# A last clause that cancels, holds, takes back or jokes about the request, or remarks on the request itself ("…해줘,
+# 아 잠깐만", "…해줘, 말고 그냥 둬", "…해줘, 는 농담이고", "…해줘, 같은 요청은 위험해", "…해줘, 아니다 나중에 하자", "…, never
+# mind", "… — jk", "…, scratch that", "…, or not", "…, actually don't", "…, wait"). A deadline, an urgency, thanks or
+# politeness takes nothing back ("…해줘, 오늘 안에", "…해줘, 급해", "…해줘, 고마워", "…, asap", "…, thanks", "… by EOD"), and
+# neither does a request that follows ("…해줘, 그리고 CI도 고쳐줘", "…해줘, 바로 시작해").
+_CLAUSE_BREAK: Final = re.compile(r"\s*(?:[,;—–]|\s-\s)\s*")
+_KOREAN_TAKE_BACK: Final = re.compile(
+    r"잠깐|됐어|그만|취소|대기|나중에|농담|장난|같은\s*요청|맞는\s*표현|말고"
+    r"|^(?:는|은|라고|이라고|이런|그런)(?![가-힣])|^아니"
+)
+_EN_TAKE_BACK: Final = re.compile(
+    r"^(?:oh\s+|um\s+|no\s+)?(?:never\s*mind|nvm|jk|j/k|just\s+kidding|kidding|scratch\s+that|or\s+not|actually\s+(?:don'?t|no)"
+    r"|don'?t|wait|hold\s+on|cancel\s+that|forget\s+(?:it|that)|not\s+now|later)\b"
+)
+
+
+def _takes_it_back(folded: str) -> bool:
+    """Whether the last clause of an English request takes it back (`_EN_TAKE_BACK`)."""
+    clauses = [clause for clause in _CLAUSE_BREAK.split(folded) if clause]
+    return len(clauses) > 1 and bool(_EN_TAKE_BACK.match(clauses[-1]))
 
 
 def _korean_clauses(folded: str) -> list[str]:
-    """``folded``, then each clause of it between commas or semicolons, read on its own only when the message itself
-    ends in a request of its own ("모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘"): a last clause that asks for
-    nothing or refers back to the request leaves only the whole message (`_BACK_REFERENCE`; a hold anywhere is a hard
-    exclude)."""
-    clauses = [clause for clause in re.split(r"\s*[,;]\s*", folded) if clause]
-    if len(clauses) < 2:
-        return [folded]
-    last = clauses[-1]
-    if not _korean_request_verb(last)[0] or _BACK_REFERENCE.match(last):
+    """``folded``, then each clause of it, read on its own unless the last clause takes the request back
+    (`_KOREAN_TAKE_BACK`): then only the whole message is read, as on main ("모든 패키지 업데이트해줘, 패키지마다
+    changelog도 써줘" runs, "PR들 전부 리베이스해줘, 아 잠깐만" does not)."""
+    clauses = [clause for clause in _CLAUSE_BREAK.split(folded) if clause]
+    if len(clauses) < 2 or _KOREAN_TAKE_BACK.search(clauses[-1]):
         return [folded]
     return [folded, *clauses]
 
@@ -1136,6 +1149,7 @@ def _hard_excluded(folded: str, links: tuple[str, ...]) -> bool:
         or _ONE_SCOPE.search(folded)
         or _names_one_container(folded)
         or _says_a_schedule(folded)
+        or _takes_it_back(folded)
         or _UNTIL.search(folded)
         or _RUNTIME_PARALLEL.search(folded)
         or names_ultrawork(folded)

@@ -7919,6 +7919,14 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "dag-ulw",
     ),
     RoutingPrecisionCase(
+        "english-request-called-a-joke-is-not-a-graph-run",
+        "An update of every service followed by jk takes it back: no graph run, where main dispatched one",
+        "update every service — jk",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
         "one-named-function-split-is-asked-not-run",
         "One function split into parallel parts is one task: dag-ulw is asked about, not run",
         "이 함수 병렬로 나눠서 구현해줘",
@@ -18005,6 +18013,12 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "korean-change-in-one-clause-runs-as-a-graph",
         "A change over every package in one clause, a per-package note in the next, is a dag-ulw graph",
         "모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-urgency-after-the-request-runs-as-a-graph",
+        "An urgency after a rebase of every PR takes nothing back: a dag-ulw graph",
+        "PR들 전부 리베이스해줘, 급해",
         "dispatch", "dag-ulw", "start_dag_run", "dag_run",
     ),
     RoutingInterventionCase(

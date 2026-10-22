@@ -40,8 +40,11 @@ All notable changes will be documented here.
   count (`닫아`, `고쳐`, `올려라`, `주라`, `고고싱`, `놔라`, `해주십쇼`, `요망`, `…해 주시면
   감사하겠습니다`), breadth words `쭉` and `하나도 빠짐없이`, `… fix them all`, a change
   in one clause when the message ends in a request of its own (`모든 패키지
-  업데이트해줘, 패키지마다 changelog도 써줘`; `…해줘, 아 잠깐만`, `…해줘, 는 농담이고`
-  and `…해줘, 말고 그냥 둬` start nothing), a past inside an embedded question
+  업데이트해줘, 패키지마다 changelog도 써줘`), unless the last clause cancels, holds,
+  takes back or jokes about it (`…해줘, 아 잠깐만`, `…해줘, 는 농담이고`, `…해줘, 말고
+  그냥 둬`, `…, never mind`, `… — jk`, `…, scratch that`: these start nothing; an
+  urgency, thanks or a follow-on request does not take it back), a past inside
+  an embedded question
   (`어떻게 나눴는지 설명해줘`), and a change
   aimed so a thing does not happen a few words off (`… 안 되게끔 수정해줘`).
   `일정 간격으로` is a schedule.

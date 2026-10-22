@@ -409,17 +409,25 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
 
     def test_a_request_taken_back_or_held_in_a_later_clause_starts_nothing(self) -> None:
-        # A clause after the request that takes it back, holds it, jokes or talks about it leaves only the whole message
-        # to read, as on main: nothing dispatches or starts (#2243 review). A last clause that asks for work of its own
-        # still lets the earlier one count ("모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘").
+        # A last clause that cancels, holds, takes back, jokes about or remarks on the request, in Korean or English,
+        # leaves nothing to dispatch or start (#2243 review).
         for message in ("PR들 전부 리베이스해줘, 아 잠깐만", "모든 서비스 업데이트해줘, 아니 잠깐", "레포들 전부 CI 고쳐줘, 근데 일단 대기",
                         "레포들 전부 CI 고쳐줘, 말고 그냥 둬", "브랜치들 전부 리베이스해줘, 아니다 나중에 하자",
                         "모든 서비스 node 22로 올려줘, 는 다음 주에 하자", "모든 서비스 업데이트해줘, 는 농담이고",
-                        "엔드포인트 전부 인증 붙여줘, 장난이야", "PR들 전부 머지해줘, 는 아니고 리뷰만 해줘", "PR들 전부 머지해줘, 같은 요청은 위험해"):
+                        "엔드포인트 전부 인증 붙여줘, 장난이야", "PR들 전부 머지해줘, 는 아니고 리뷰만 해줘", "PR들 전부 머지해줘, 같은 요청은 위험해",
+                        "rebase all open PRs, never mind", "update every service — jk", "fix all the failing tests, scratch that",
+                        "rebase all open PRs, or not", "update every service, actually don't", "fix all the failing tests, wait"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
-        self.assertEqual(self._dag_ulw_starts("모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘")[:2], (True, True))
+        # A deadline, an urgency, thanks, politeness or a request that follows takes nothing back.
+        for message in ("모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘", "PR들 전부 리베이스해줘, 급해", "모든 서비스 업데이트해줘, 오늘 안에",
+                        "PR들 전부 리베이스해줘, 빨리", "모든 서비스 업데이트해줘, 부탁해", "PR들 전부 리베이스해줘, 고마워",
+                        "모든 서비스 업데이트해줘, 그리고 CI도 고쳐줘", "PR들 전부 리베이스해줘, 바로 시작해", "rebase all open PRs, asap",
+                        "update every service, please", "fix all the failing tests, thanks", "rebase all open PRs by EOD"):
+            with self.subTest(message=message):
+                self.assertTrue(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
 
     def test_a_missing_skill_catalog_is_not_kept(self) -> None:
         # With no sidecar the catalog names are unknown, and that is not kept: once the sidecar answers, a request
