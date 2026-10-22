@@ -106,9 +106,9 @@ def shortcut_lines(width: int, theme: Theme) -> list[Line]:
     for keys, does in SHORTCUTS:
         text = wrap_line((Span(does, theme.text),), max(width - indent, 1))
         if beside:
-            lines.append((Span(keys, theme.accent), Span(" " * (column - cell_width(keys))), *text[0]))
+            lines.append((Span(keys, theme.user), Span(" " * (column - cell_width(keys))), *text[0]))
             text = text[1:]
         else:
-            lines.extend(wrap_line((Span(keys, theme.accent),), max(width, 1)))
+            lines.extend(wrap_line((Span(keys, theme.user),), max(width, 1)))
         lines.extend((Span(" " * indent), *row) for row in text)
     return lines

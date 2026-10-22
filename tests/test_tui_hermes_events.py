@@ -11,7 +11,7 @@ from __future__ import annotations
 import time
 import unittest
 
-from _tui_lines import line_text
+from _tui_lines import line_text, RULE_ROW
 from test_tui_modes import SID, drawn, make_app
 
 from omh.tui.app import goal_line
@@ -82,7 +82,7 @@ class GoalRowTests(unittest.TestCase):
                 line = goal_line(snapshot, 120, THEME)
                 assert line is not None
                 self.assertEqual(line_text(line), expected)
-                self.assertEqual(line[0].style, THEME.accent if name == "active" else THEME.warn)
+                self.assertEqual(line[0].style, THEME.running if name == "active" else THEME.warn)
         for status in ("done", "cleared", "failed", None):
             with self.subTest(status=status):
                 self.assertIsNone(goal_line(goal(status=status), 120, THEME))
@@ -104,7 +104,7 @@ class GoalRowTests(unittest.TestCase):
         app, client = make_app()
         app._on_event(control(goal()))
         screen = drawn(app)
-        rule = next(index for index, row in enumerate(screen) if row.startswith("╭"))
+        rule = next(index for index, row in enumerate(screen) if row.startswith(RULE_ROW))
         self.assertEqual(screen[rule - 1], "⊙ goal · 3/20 turns · ship the parity round")
         app._on_event(control(goal(status="done")))
         self.assertFalse([row for row in drawn(app) if "goal" in row])

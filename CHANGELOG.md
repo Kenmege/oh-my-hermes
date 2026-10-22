@@ -4,6 +4,36 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The OMH TUI's transcript tells blocks, states and tools apart at a glance
+  (the rail and kind colours the owner picked on 2026-10-22).** On v4.0.1 a
+  tool's name, its arguments, its duration and its `⎿` results were all one
+  teal, calls were stacked with no gap, and nine of the fifteen rows in the
+  owner's screenshot were skill loads and tool-detail reads. Now each block
+  hangs on a continuous `┃` rail with no fill: grey for your prompt, the
+  skin's accent for a reply, and a call's state colour for the call. A call's
+  mark and rail follow the dag view's rule, each state in its own glyph: a
+  running blue `○` (the same blue as the working glyph, the agent spinners, `●
+  main` and a running lane in the dag tree), a green `●` once done, a red `✗`
+  when it failed or was denied (the one mark: the answer row under a denied
+  call keeps its words and drops its own); a failed call no longer sits on a
+  red band. Its name is bold in its tool family's hue (skills orchid, shell
+  amber, files peach, web lime, delegation and the dag magenta), each at 4.5:1
+  on dark and light terminals; arguments are grey and results a fainter grey.
+  A blank row separates two calls. A run of `skill_view` and `tool_describe`
+  calls is one row, `● Loaded 4 skills + tool details · …`, unfolded again by
+  Ctrl+O, and an interpreter fed its script through a heredoc reads
+  `terminal(python3 script · 23 lines)` while any other command shows its own
+  first line. The composer sits between two full-width rules behind `❯ ` with
+  no side edges, as in Claude Code, and your echoed prompt and a command's
+  echo hang on the same `┃ ❯`, so a bare `❯` is only ever the composer. A
+  `/name` that names one of the TUI's commands or Hermes' skills is bold in
+  the skill hue in the composer, in the echoed prompt and on the `↳ you:` row;
+  a path, an unknown `/foo` and a slash inside a word stay plain. Agent rows
+  read a short title (the goal up to its first field label such as
+  `DELIVERABLE:` or the end of its first sentence; a dag lane keeps its label)
+  and lead their figures with the model, which stays longest as the row
+  narrows. The agent log's tool rows take the same hues.
+
 - **Native Hermes children receive their own model calibration (#2214).** A
   separate child-only system prompt section selects one exact-model override,
   family block, or generic fallback from the child's own session model, never
@@ -46,6 +76,25 @@ All notable changes will be documented here.
   as Hermes' own TUI shows it, and commands that print output keep their
   echo. The same line sent twice still shows twice and is sent twice.
 
+- **A skill command sent over a picked rewind replaces the picked prompt.**
+  With a rewind picked (Esc Esc or `/rewind`), a line starting with `/` ran
+  as a command. A skill's prompt then went as a plain `prompt.submit` without
+  `truncate_before_row_id`, so Hermes kept the prompt you meant to replace and
+  everything after it, and the rewind stayed picked for the next prompt. A
+  prompt a command sends (a skill, `/plan`) now goes in the picked prompt's
+  place, as a typed prompt does: the session is cut there, the screen is
+  redrawn from the cut, and the rewind clears; `/steer <text>` sent between
+  turns does the same. A command that only prints (`/help`, `/usage`) runs
+  and leaves the rewind picked. `/retry` and `/undo` take the last turn back
+  in Hermes themselves, so they cancel the rewind and say so: `/retry`
+  resends plain, and the prompt `/undo` puts back in the composer goes plain
+  when you send it. Before, a rewind left picked after `/undo` sent that
+  prompt as a cut at a row Hermes had removed; Hermes refuses that cut, and
+  the prompt was gone from the composer. A rewind picked while either was
+  out, or the rewind list left open, goes too. For any other command, a
+  rewind cancelled before Hermes builds the command's prompt, or picked
+  (again) after the command went, cuts nothing and stays picked for the next
+  prompt.
 - **A Hermes slash-skill turn routes on what the person typed, not on the
   skill body Hermes pasted in.** Hermes sends `/dag-ulw <text>` to every hook
   as the skill's whole `SKILL.md` inside a frame, and OMH routed that body as

@@ -18,14 +18,14 @@ from __future__ import annotations
 import re
 import unittest
 
-from _tui_lines import line_text
+from _tui_lines import line_text, RULE_ROW
 from test_tui_app import info_index
 from test_tui_modes import SID, RecordingClient, answer, drawn, make_app, show_mode, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND, cells, payload
 from omh.tui.app import App
 from omh.tui.layout import AGENT_VIEW_ROWS, agent_view_cap
 from omh.tui.modes import chip_column, info_line, mode_label
-from omh.tui.frame import BOX_INSET, MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
+from omh.tui.frame import INFO_INSET as INFO_INSET_CELLS, MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, ServerRequest
 from omh.tui.keys import BACKSPACE, CHAR, ENTER, Key
 from omh.tui.panels import SPINNER_FRAMES
@@ -38,10 +38,12 @@ from omh.tui.width import line_width
 STARTS = FRAMES[:2]  # both recorded agents started, neither finished
 SPIN = SPINNER_FRAMES[0]  # a clock at 0 draws the spinner's first frame
 CHIP = "2 agents · ↓ agents"
+# Each agent row: its short title, then the model it runs on leading its figures (the rail and kind colours,
+# 2026-10-22: "어떤 모델로 들어갔는지도 안보이고"), the title cut first where the row is narrow.
 VIEW = [
     "  ● main",
-    f"  {SPIN} find usages of old_api in src/ and list every call site         0s · 0 tools",
-    f"  {SPIN} read the diff for risks                                         0s · 0 tools",
+    f"  {SPIN} find usages of old_api in src/ and list…  deepseek-v4.1-flash · 0s · 0 tools",
+    f"  {SPIN} read the diff for risks                   deepseek-v4.1-flash · 0s · 0 tools",
 ]
 BUSY_HINT = "/steer <text> steers"
 IDLE_HINT = "? for shortcuts"
@@ -94,11 +96,11 @@ def view_text(app: App) -> list[str]:
 
 
 def info_text(app: App) -> str:
-    """The info line after the inset it starts with under the box."""
+    """The info line after the inset it starts with under the composer."""
     row = mode_row(app)
-    if not row.startswith(" " * BOX_INSET):
-        raise AssertionError(f"the info line does not start {BOX_INSET} cells in: {row!r}")
-    return row[BOX_INSET:]
+    if not row.startswith(" " * INFO_INSET_CELLS):
+        raise AssertionError(f"the info line does not start {INFO_INSET_CELLS} cells in: {row!r}")
+    return row[INFO_INSET_CELLS:]
 
 
 def info_left(app: App) -> str:
@@ -262,11 +264,11 @@ class ViewTests(unittest.TestCase):
         app, _client = agent_app()
         app.hud = HudSnapshot(app.stored_id, hud_payload([{"text": "Ship it", "state": "active"}]), 0.0)
         screen = drawn(app)
-        top = next(index for index, row in enumerate(screen) if row.startswith("╭"))
+        top = next(index for index, row in enumerate(screen) if row.startswith(RULE_ROW))
         info = screen_info_index(app, screen)
         self.assertTrue(screen[top - 2].startswith("[Plan]"), screen)
         self.assertEqual(screen[top - 1].strip(), "[•] Ship it")
-        self.assertTrue(screen[top + 1].startswith("│ > ") and screen[top + 2].startswith("╰"), screen)
+        self.assertTrue(screen[top + 1].startswith("❯ ") and screen[top + 2].startswith(RULE_ROW), screen)
         self.assertEqual(info, top + 3)
         self.assertEqual(screen[info + 1 :], [*VIEW, *[""] * (len(screen) - info - 1 - len(VIEW))])
 
@@ -349,7 +351,7 @@ class ViewTests(unittest.TestCase):
                 self.assertEqual(chip_column(mode, DEFAULT_THEME), line_width(label) + 3)
                 app, _client = agent_app(cols=120)
                 show_mode(app, mode)
-                start = BOX_INSET + chip_column(mode, DEFAULT_THEME)
+                start = INFO_INSET_CELLS + chip_column(mode, DEFAULT_THEME)
                 self.assertEqual(cells(mode_row(app), start, start + len(CHIP)), CHIP)
         self.assertEqual(mode_label(MODE_NORMAL, DEFAULT_THEME), ())
 
@@ -426,7 +428,7 @@ class TokenTests(unittest.TestCase):
         self.assertEqual(app.poller.watched, ("child-session-0", "child-session-1"))
         self.snapshot(app, {"child-session-0": 1234})
         rows = view_text(app)
-        self.assertEqual(rows[1], f"  {SPIN} find usages of old_api in src/ and list every …  0s · 0 tools · ↓1.2k tokens")
+        self.assertEqual(rows[1], f"  {SPIN} find usages of old_api in src/ …  deepseek-v4.1-flash · 0s · 0 tools · ↓1.2k")
         self.assertEqual(rows[2], VIEW[2], "no count yet: no token part")
 
     def test_a_snapshot_of_another_session_brings_no_counts(self) -> None:
@@ -440,8 +442,8 @@ class TokenTests(unittest.TestCase):
         self.assertEqual(app.poller.watched, ("child-session-1",), "the timed-out one is read once more")
         self.snapshot(app, {"child-session-0": 999, "child-session-1": 75})
         rows = view_text(app)
-        self.assertTrue(rows[1].endswith("12s · 6 tools · ↓340 tokens"), rows[1])
-        self.assertTrue(rows[2].endswith("30s · 0 tools · ↓75 tokens"), rows[2])
+        self.assertTrue(rows[1].endswith("12s · 6 tools · ↓340"), rows[1])
+        self.assertTrue(rows[2].endswith("30s · 0 tools · ↓75"), rows[2])
 
     def test_a_complete_that_comes_before_its_last_calls_tokens_still_settles_on_the_final_count(self) -> None:
         # Measured against Hermes d923a5eb48: `subagent.complete` can arrive before the delta of the child's last
@@ -452,18 +454,18 @@ class TokenTests(unittest.TestCase):
         # Success: complete's own count is final, whatever a read taken before the last delta landed says.
         agent_event(app, "complete", FIRST, status="completed", duration_seconds=12.0, output_tokens=1500)
         self.snapshot(app, {"child-session-0": 1300, "child-session-1": 500})
-        self.assertTrue(view_text(app)[1].endswith("12s · 0 tools · ↓1.5k tokens"), view_text(app)[1])
+        self.assertTrue(view_text(app)[1].endswith("12s · 0 tools · ↓1.5k"), view_text(app)[1])
         # Hermes' failure path sends no count: the row keeps being read, and the read after the last delta settles it.
         clock[0] = 20.0
         agent_event(app, "complete", SECOND, status="error", duration_seconds=20.0, child_session_id="child-session-1")
-        self.assertTrue(view_text(app)[2].endswith("20s · 0 tools · ↓500 tokens"), view_text(app)[2])
+        self.assertTrue(view_text(app)[2].endswith("20s · 0 tools · ↓500"), view_text(app)[2])
         self.snapshot(app, {"child-session-0": 1500, "child-session-1": 750})
         self.assertEqual(app.poller.watched, ("child-session-1",))
-        self.assertTrue(view_text(app)[2].endswith("20s · 0 tools · ↓750 tokens"), view_text(app)[2])
+        self.assertTrue(view_text(app)[2].endswith("20s · 0 tools · ↓750"), view_text(app)[2])
         clock[0] = 31.0  # past the settle window: the finished row is no longer read
         app._take_hud()
         self.assertEqual(app.poller.watched, ())
-        self.assertTrue(view_text(app)[2].endswith("20s · 0 tools · ↓750 tokens"))
+        self.assertTrue(view_text(app)[2].endswith("20s · 0 tools · ↓750"))
 
 
 if __name__ == "__main__":
@@ -547,7 +549,7 @@ def pinned(app: App) -> list[str]:
 
 
 def box_top(screen: list[str]) -> int | None:
-    return next((index for index, row in enumerate(screen) if row.startswith("╭")), None)
+    return next((index for index, row in enumerate(screen) if row.startswith(RULE_ROW)), None)
 
 
 class DagViewTests(unittest.TestCase):

@@ -470,10 +470,6 @@ def _bold(style: Style) -> Style:
     return replace(style, bold=True)
 
 
-def _faint(style: Style) -> Style:
-    return replace(style, dim=True)
-
-
 def _line(*spans: Span | None) -> Line:
     return tuple(span for span in spans if span is not None and span.text)
 
@@ -906,7 +902,7 @@ def _agents_header(payload: Mapping[str, Any], columns: int, theme: Theme, view:
         else ""
     )
     return _line(
-        Span(f"{MAIN_MARK} ", theme.accent),
+        Span(f"{MAIN_MARK} ", theme.running),
         Span(MAIN_NAME, theme.heading),
         Span(SEPARATOR, theme.rule),
         Span(f"{'[global] ' if outside else ''}{label}", theme.muted if label == GRAPH_HOLDS_ALL else
@@ -984,21 +980,21 @@ def _route_style(kind: str, theme: Theme) -> Style:
         return theme.label
     if kind in ("route-fallback", "maestro"):
         return theme.warn
-    return theme.accent if kind == "kanban" else theme.muted
+    return theme.muted
 
 
 def _row_marker(state: Any, board: bool, spinner: str, theme: Theme) -> tuple[str, Style, Style]:
-    """(marker, marker style, state-word style). A board lane is accent unless it is stuck or stale."""
+    """(marker, marker style, state-word style), by the row's state; a board lane's running one in the running blue."""
     if state in ("blocked", "failed"):
         return "▲", theme.error, theme.error
     if state == "stale":
         return "!", theme.warn, theme.warn
     if state == "done":
-        return "✓", theme.accent if board else theme.ok, theme.accent if board else theme.ok
+        return "✓", theme.ok, theme.ok
     if state == "queued":
         # A queued task has no worker yet, so it must not spin.
-        return "·", theme.accent if board else theme.dim, theme.accent if board else theme.muted
-    return spinner, theme.accent if board else theme.warn, theme.accent if board else theme.ok
+        return "·", theme.dim, theme.muted
+    return spinner, theme.running if board else theme.warn, theme.running if board else theme.ok
 
 
 def _segment_style(kind: str, theme: Theme) -> Style:
@@ -1072,13 +1068,13 @@ def _activity_row(
         optional.pop(shed)
     spinner = SPINNER_FRAMES[(frame if running else 0) % len(SPINNER_FRAMES)]
     marker, marker_style, status_style = _row_marker(raw_state, board, spinner, theme)
-    secondary = _faint(theme.accent) if board else theme.muted
+    secondary = theme.muted
     segments = [Span(f"{ROW_SEPARATOR}{text}", _segment_style(kind, theme)) for kind, text, _ in optional]
     return _line(
         Span(f"{marker} ", marker_style),
-        Span(scope, _bold(theme.accent if board else theme.muted)),
+        Span(scope, _bold(theme.muted)),
         Span(f"{_pad('MAIN', 8) if main else task_id} ", secondary),
-        Span(_pad(_cut(row.get("action"), action_width), action_width), theme.accent if board else theme.text),
+        Span(_pad(_cut(row.get("action"), action_width), action_width), theme.text),
         Span(route_cell, _route_style(route_kind, theme)),
         Span("  "),
         Span(tail_state, status_style),
@@ -1115,8 +1111,8 @@ def dag_style(role: str, theme: Theme, level: int = 0, levels: int = 1, depth: s
         style = node_style("running", theme) if state == "running" else theme.dim
     elif kind in ("glyph", "status"):
         style = {
-            "running": theme.accent, "stuck": theme.warn, "done": theme.ok, "failed": theme.error,
-            "interrupted": theme.warn, "root": theme.accent,
+            "running": theme.running, "stuck": theme.warn, "done": theme.ok, "failed": theme.error,
+            "interrupted": theme.warn, "root": theme.running,
         }.get(state, theme.muted)
     else:
         style = {
@@ -1139,7 +1135,7 @@ def node_style(state: str, theme: Theme, words: bool = False) -> Style:
     steps = theme.dag_words if words else theme.dag_edges
     quiet = theme.muted if words else theme.dim
     if not steps:
-        return theme.text if state == "done" else theme.accent if state in ("selected", "running") else quiet
+        return theme.text if state == "done" else theme.running if state in ("selected", "running") else quiet
     return {
         "selected": steps[0], "running": steps[-1], "dispatched": steps[len(steps) // 2], "failed": theme.error,
         "interrupted": theme.error, "stuck": theme.warn, "done": theme.text,

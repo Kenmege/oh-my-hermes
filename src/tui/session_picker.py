@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from .composer import PROMPT
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
 from .style import Line, Span
 from .theme import Theme
@@ -28,7 +29,7 @@ CLOSE = "close"
 CURRENT_MARK = "●"
 # Its keys, longest first: on the info line while it is open.
 KEYS = ("↑↓ move · enter switches · esc closes", "↑↓ enter switches · esc closes", "esc closes")
-FILTER_PROMPT = " > "  # the composer's mark, on the row that stands where the composer was
+FILTER_PROMPT = PROMPT  # the composer's mark, on the row that stands where the composer was
 FILTER_PLACEHOLDER = "type to filter"
 
 

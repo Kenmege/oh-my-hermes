@@ -5,25 +5,27 @@ parts it holds (sticky prompt, streaming tail, slot, composer, info line)
 and the input mode, then hands the result to
 `LiveRegion.render(frame.lines, frame.cursor, cols, flush=lines)`.
 
-The composer is a rounded box: a top edge `╭─…─╮`, its input rows each drawn
-as `│ ` + row + ` │`, and a bottom edge `╰─…─╯`, all in the rule colour
-whatever the input mode, so the composer rows are `BOX_INSET` cells narrower
-than the terminal on each side. The box takes the rows the layout gives the
-composer frame (`layout.allocate`: the top edge where the top rule was, the
-bottom edge where the bottom rule was), so a 6-row terminal draws it open at
-the bottom, and below `layout.MIN_ROWS` rows or `layout.MIN_COLS` columns the
-input rows are drawn full width with no box at all. While the composer holds
-a `!` line for Hermes' shell the prompt mark is drawn in the accent instead
-of the prompt colour; the box stays as it is. The info line under the bottom
-edge is a line the app builds; the frame only places it. The agent view the
-app builds (`agents`) is drawn under the info line, the region's last rows.
+The composer is drawn as Claude Code draws it: a full-width rule `─…─` above
+it, its input rows full width behind the `❯ ` prompt mark (no side edges, no
+corners), and a full-width rule under it, both rules in the rule colour
+whatever the input mode. The rules take the rows the layout gives the
+composer frame (`layout.allocate`), so a 6-row terminal draws the top rule
+alone, and below `layout.MIN_ROWS` rows or `layout.MIN_COLS` columns the input
+rows have no rule at all. A `/name` in the draft that resolves to a command or
+skill (`known_slash`, `slash.known_names`) is drawn bold in its colour
+(`Theme.slash`). While the composer holds a `!` line for Hermes' shell the
+prompt mark is drawn bold in the shell family's hue instead of the prompt colour; the rules
+stay as they are. The info line under the bottom rule is a line the app
+builds, its text `INFO_INSET` cells in; the frame only places it. The agent
+view the app builds (`agents`) is drawn under the info line, the region's last
+rows.
 
 The composer follows the content until the screen is full, then stays on the
 bottom rows. With `min_height` 0 a frame is exactly as tall as what it holds
 (`layout.allocate`), and `LiveRegion` draws it right under the output, so the
 composer sits under the last row printed, the panel, prompt slot, completion
 menu, tail and sticky prompt above it, and the rows under it (the bottom
-edge, by the terminal size alone, `layout.under_composer`, the info line and
+rule, by the terminal size alone, `layout.under_composer`, the info line and
 the agent view) under it. When something above the composer grows,
 the composer moves down with it until the region's last row is the screen's
 last row, and from then on the screen scrolls instead; when something above
@@ -38,33 +40,30 @@ colour while the app asks for it (no slot open). It is drawn, never typed:
 the caret stays right after the glyph and the composer's text stays empty.
 
 While the person picks from a list (`composer` is None) the frame draws no
-composer at all: no box, no input rows, and no caret (`Frame.cursor` is None,
+composer at all: no rules, no input rows, and no caret (`Frame.cursor` is None,
 and `LiveRegion` hides the cursor) unless `slot_caret` puts one in the slot (a
 picker's filter row or the history search's query row, where typing goes). The slot stands in the
 composer's place, right above the info line, with the rows `layout.choice_cap`
 gives it. The rows under the composer are the same either way.
 
 The attachment row (the images queued for the next message) is the composer's
-first row inside the box while there is one: it counts against the composer's cap.
+first row under the top rule while there is one: it counts against the composer's cap.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from .composer import PROMPT, Composer
-from .layout import BLANK, Budget, allocate, caret_row, compose, composer_cap, is_tiny
+from .layout import BLANK, Budget, allocate, caret_row, compose, composer_cap
 from .style import Line, Span
-from .theme import DEFAULT_THEME, Theme
-from .width import line_width, truncate_line
+from .slash import slash_spans, slash_token_ranges
+from .theme import DEFAULT_THEME, KIND_FAMILIES, Theme
+from .width import cell_width, line_width, truncate, truncate_line
 
-# The composer's box: its corners, its edges and its sides.
-BOX_EDGE = "─"
-BOX_TOP = ("╭", "╮")
-BOX_BOTTOM = ("╰", "╯")
-BOX_SIDE = "│"
-BOX_INSET = 2  # cells the box takes on each side of a composer row: the side and a space
+RULE = "─"  # the composer's rules, above and under it, full width
+INFO_INSET = 2  # cells before the info line's text, under the rule
 STICKY_PREFIX = "↳ you: "
 STICKY_CUT = "…"  # where the reminder's prompt is cut
 
@@ -104,12 +103,13 @@ def build_frame(
     agents: Sequence[Line] = (),
     composer_blank: bool = False,
     tail_floor: int = 0,
+    known_slash: frozenset[str] = frozenset(),
 ) -> Frame:
     """The region for one repaint; `min_height` rows at least, pad rows at the top making up the rest.
 
     `attachments` is drawn as the composer's first row when the composer may
     have two rows; a terminal too short for that shows the input alone.
-    `mode` MODE_SHELL draws the prompt mark in the accent; `info` is the
+    `mode` MODE_SHELL draws the prompt mark in the shell family's hue; `info` is the
     region's last row. `composer` None draws no
     composer (nor the attachment row): the slot takes its place, and the caret
     is `slot_caret`, a (row, col) within `slot`, or none where that is None or
@@ -120,26 +120,26 @@ def build_frame(
     app puts it under the composer. `agents` is the agent view, drawn under
     the info line as the region's last rows, sized by its producer to
     `layout.agent_view_cap`. `composer_blank` draws the composer's rows, its
-    box's included, as blank rows of the same count, with no caret: the agent
+    rules included, as blank rows of the same count, with no caret: the agent
     list under them has the keys, and nothing moves as it opens or closes.
     `tail_floor` is the tail's last rows the agent view leaves it
-    (`layout.allocate`): the working row while a turn runs.
+    (`layout.allocate`): the working row while a turn runs. `known_slash`
+    names the commands and skills a `/name` in the draft is drawn for (none
+    in a draft holding a paste chip).
     """
     cap = composer_cap(rows)
-    boxed = not is_tiny(rows, cols)
-    inner = cols - 2 * BOX_INSET if boxed else cols
     composer_lines: list[Line] = []
     caret_line = caret_col = 0
     if composer is not None:
-        chips = [truncate_line(attachments, inner)] if attachments is not None and cap >= 2 else []
-        mark = replace(theme.accent, bold=True) if mode == MODE_SHELL else theme.prompt
-        input_lines, (caret_line, caret_col) = composer.render(inner, cap - len(chips), prompt, mark, theme.accent)
+        chips = [truncate_line(attachments, cols)] if attachments is not None and cap >= 2 else []
+        mark = theme.kinds[KIND_FAMILIES.index("shell")] if mode == MODE_SHELL else theme.prompt
+        marks = slash_token_ranges(composer.text, known_slash) if known_slash and not composer.pastes else []
+        input_lines, (caret_line, caret_col) = composer.render(
+            cols, cap - len(chips), prompt, mark, theme.muted, marks, theme.slash
+        )
         if placeholder and not composer.text and input_lines:
-            input_lines[0] = truncate_line((*input_lines[0], Span(placeholder, theme.hint)), inner)
+            input_lines[0] = truncate_line((*input_lines[0], Span(placeholder, theme.hint)), cols)
         composer_lines = chips + input_lines
-        if boxed:
-            composer_lines = [box_row(line, inner, theme) for line in composer_lines]
-            caret_col += BOX_INSET
         caret_line += len(chips)
     budget = allocate(
         rows,
@@ -160,9 +160,9 @@ def build_frame(
         sticky=sticky,
         tail=tail,
         slot=slot,
-        rule=BLANK if composer_blank else box_edge(cols, theme, BOX_TOP),
+        rule=BLANK if composer_blank else rule_line(cols, theme),
         composer=[BLANK] * len(composer_lines) if composer_blank else composer_lines,
-        bottom_rule=BLANK if composer_blank else box_edge(cols, theme, BOX_BOTTOM),
+        bottom_rule=BLANK if composer_blank else rule_line(cols, theme),
         info=truncate_line(info, cols),
         below=below,
         agents=agents,
@@ -181,32 +181,33 @@ def build_frame(
     )
 
 
-def box_edge(width: int, theme: Theme = DEFAULT_THEME, corners: tuple[str, str] = BOX_TOP) -> Line:
-    """The box's top (`BOX_TOP`) or bottom (`BOX_BOTTOM`) edge, full width, in the rule colour."""
-    if width < 2:
-        return (Span(BOX_EDGE * max(width, 0), theme.rule),)
-    return (Span(corners[0] + BOX_EDGE * (width - 2) + corners[1], theme.rule),)
+def rule_line(width: int, theme: Theme = DEFAULT_THEME) -> Line:
+    """One of the composer's rules: `RULE` across `width`, in the rule colour."""
+    return (Span(RULE * max(width, 0), theme.rule),)
 
 
-def box_row(line: Line, inner: int, theme: Theme = DEFAULT_THEME) -> Line:
-    """One composer row inside the box: the side, a space, `line` padded to `inner` cells, a space, the side."""
-    shown = truncate_line(line, inner)
-    pad = (Span(" " * (inner - line_width(shown))),) if line_width(shown) < inner else ()
-    return (Span(BOX_SIDE + " ", theme.rule), *shown, *pad, Span(" " + BOX_SIDE, theme.rule))
-
-
-def sticky_line(prompt_text: str, width: int, theme: Theme = DEFAULT_THEME) -> Line:
+def sticky_line(prompt_text: str, width: int, theme: Theme = DEFAULT_THEME, known: frozenset[str] = frozenset()) -> Line:
     """`↳ you: <first line of the prompt>` cut to `width`, shown while a turn runs.
 
     It has no band, as the prompt's echo in the transcript has none: `↳ you:`
-    in the accent, which no transcript row starts with, the prompt in the
-    muted text colour, and a dim `…` where it is cut. So it reads apart from
-    the transcript rows right above it by its words and colours.
+    in the running blue (a turn runs), which no transcript row starts with, the prompt in the
+    muted text colour (a `/name` in it that resolves, `known`, bold in its
+    colour, as on the prompt's own row), and a dim `…` where it is cut. So it
+    reads apart from the transcript rows right above it by its words and
+    colours.
     """
     if width <= 0:
         return ()
     first = prompt_text.strip().split("\n", 1)[0]
-    line = (Span(STICKY_PREFIX, theme.accent), Span(first, theme.muted))
+    lead = Span(STICKY_PREFIX, theme.running)  # a turn runs
+    line = (lead, *slash_spans(first, known, theme.muted, theme.slash))
     if line_width(line) <= width:
         return line
-    return (*truncate_line(line, width - len(STICKY_CUT), ellipsis=""), Span(STICKY_CUT, theme.dim))
+    room = width - cell_width(STICKY_PREFIX) - cell_width(STICKY_CUT)
+    if room <= 0:
+        return (*truncate_line(line, width - len(STICKY_CUT), ellipsis=""), Span(STICKY_CUT, theme.dim))
+    # The words are cut before they are coloured: a token the cut goes through is no token (`/dag-ulw` cut to `/dag`).
+    cut = truncate(first, room, ellipsis="")
+    whole = [(start, end) for start, end in slash_token_ranges(first, known) if end <= len(cut)]
+    spans = slash_spans(cut, known, theme.muted, theme.slash, whole if first.startswith(cut) else [])
+    return (lead, *spans, Span(STICKY_CUT, theme.dim))

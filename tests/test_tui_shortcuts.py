@@ -133,9 +133,9 @@ class OverlayLinesTests(unittest.TestCase):
         at = narrow.index("Enter")
         self.assertEqual(narrow[at + 1], "  Sends the composer")
 
-    def test_the_keys_are_in_the_accent_and_the_text_is_text(self) -> None:
+    def test_the_keys_are_bold_and_the_text_is_text(self) -> None:
         line = next(line for line in shortcut_lines(120, DEFAULT_THEME) if line_text(line).startswith("Ctrl+T"))
-        self.assertEqual(line[0].style, DEFAULT_THEME.accent)
+        self.assertEqual(line[0].style, DEFAULT_THEME.user)  # bold, no hue: a key is no state
         self.assertEqual(line[-1].style, DEFAULT_THEME.text)
 
 

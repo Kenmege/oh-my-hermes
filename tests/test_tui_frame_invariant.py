@@ -17,7 +17,7 @@ event sequences: a streaming tail that grows past the screen while stable
 lines flush, a panel slot that grows and shrinks, a server-request prompt
 slot, a completion menu, a composer that grows to its maximum and back, a
 multi-line paste, the end of a turn, the input mode switching between normal,
-accept and plan (each redraws the info line and leaves the box as it was).
+accept and plan (each redraws the info line and leaves the rules as they were).
 After every frame it reads the VT screen back and asserts:
 
 (a) the shell history and every line flushed so far are exactly what lies
@@ -30,8 +30,8 @@ After every frame it reads the VT screen back and asserts:
 (d) a frame that scrolled the screen leaves the info line on the screen's
     last row: the screen scrolls only once the region reaches its end, so
     together with (a) and (c) the region's place is fixed by the content alone;
-(e) the composer's rows sit inside the box: its top edge right above them
-    and, from 7 rows, its bottom edge right under them, between them and the
+(e) the composer's rows sit between the rules: its top rule right above them
+    and, from 7 rows, its bottom rule right under them, between them and the
     info line; neither edge changes with the mode;
 (f) whenever the live region says which screen row it ends on
     (`LiveRegion.last_row`), that is the row the info line is on, and by
@@ -59,12 +59,12 @@ from collections.abc import Sequence
 import re
 import unittest
 
-from _tui_lines import line_text
+from _tui_lines import line_text, RULE_ROW
 from _vt_screen import VTScreen
 
-from _tui_lines import box_edges
+from _tui_lines import rule_edges
 from omh.tui.composer import PROMPT, SUBMIT, Composer
-from omh.tui.frame import BOX_INSET, MODE_ACCEPT, MODE_NORMAL, MODE_PLAN, box_row, build_frame, sticky_line
+from omh.tui.frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN, build_frame, sticky_line
 from omh.tui.keys import BACKSPACE, CHAR, ENTER, ESCAPE, Key, Paste
 from omh.tui.layout import AGENT_VIEW_ROWS, agent_view_cap, choice_cap, composer_cap, slot_cap
 from omh.tui.modes import info_line
@@ -81,7 +81,7 @@ INFO_RIGHT = ((Span("test-model · ctx 12% · effort high"),),)
 
 
 def rows_under_composer(rows: int) -> int:
-    """The spec, written out: the box's bottom edge from 7 rows, on a terminal of 20+ columns."""
+    """The spec, written out: the bottom rule from 7 rows, on a terminal of 20+ columns."""
     return int(rows >= 7)
 
 
@@ -177,7 +177,7 @@ class Session:
         where = f"{self.rows}x{self.cols} after {self.label!r}"
         info_row, top = self.check_region(expected, scrolled, where)
         screen = self.screen.lines()
-        edges = set(box_edges(self.cols))
+        edges = set(rule_edges(self.cols))
         t.assertFalse([row for row in screen[top:info_row] if row in edges], f"{where}: a box edge is drawn")
         drawn = [text_of(line) for line in self.slot[:slot_rows]]
         t.assertEqual(screen[info_row - slot_rows : info_row], drawn, f"{where}: the slot rows")
@@ -210,14 +210,14 @@ class Session:
         )
         scrolled = self.render(frame.lines, frame.cursor, flush)
         self.lines = frame.lines
-        inner = self.cols - 2 * BOX_INSET
+        inner = self.cols  # the composer has no sides: its rows are the terminal's width
         rendered, (caret_row, caret_col) = self.composer.render(inner, composer_cap(self.rows), PROMPT, DEFAULT_THEME.prompt)
-        self.view = ([box_row(line, inner) for line in rendered], (caret_row, caret_col + BOX_INSET))
+        self.view = (rendered, (caret_row, caret_col))
         self.check(frame.lines, self.view, scrolled)
-        # the caret claim itself, counted without the composer: one row of text, caret at its end, inside the box
+        # the caret claim itself, counted without the composer: one row of text, caret at its end
         text = self.composer.text
         if text and "\n" not in text and self.composer.caret == len(text) and cell_width(PROMPT + text) < inner:
-            self.case.assertEqual(self.screen.cursor[1], BOX_INSET + cell_width(PROMPT + text), f"{label}: cursor column")
+            self.case.assertEqual(self.screen.cursor[1], cell_width(PROMPT + text), f"{label}: cursor column")
 
     def keys(self, label: str, events: Sequence[Key | Paste]) -> None:
         for event in events:
@@ -265,12 +265,12 @@ class Session:
         where = f"{self.rows}x{self.cols} after {self.label!r}"
         info_row, _top = self.check_region(expected, scrolled, where)
         screen = self.screen.lines()
-        # (e) the composer's rows sit inside the box, its bottom edge on the info line where the height keeps it
+        # (e) the composer's rows sit between the rules, its bottom rule on the info line where the height keeps it
         lines, (caret_row, caret_col) = view
         under = rows_under_composer(self.rows)
         composer_top = info_row - under - len(lines)
         t.assertEqual(screen[composer_top : info_row - under], [text_of(line) for line in lines], where)
-        top_edge, bottom_edge = box_edges(self.cols)
+        top_edge, bottom_edge = rule_edges(self.cols)
         t.assertEqual(screen[composer_top - 1], top_edge, f"{where}: the top edge")
         if under:
             t.assertEqual(screen[info_row - 1], bottom_edge, f"{where}: the bottom edge")
@@ -399,7 +399,7 @@ class RegionFollowsContentTests(unittest.TestCase):
         session.paint("first frame")
         screen = session.screen.lines()
         self.assertEqual(screen[:8], session.shell)
-        self.assertEqual(screen[8], box_edges(80)[0])  # the box's top edge, right under the shell
+        self.assertEqual(screen[8], rule_edges(80)[0])  # the top rule, right under the shell
         self.assertEqual(session.last, (11, 9, 1))  # info line, composer row, composer rows
         self.assertEqual(screen[12:], [""] * 12)
         self.assertEqual(session.screen.scrollback, [])
@@ -552,13 +552,13 @@ class AppBottomRowsTests(unittest.TestCase):
         return app, screen
 
     def gap(self, screen: list[str]) -> int:
-        """Blank rows right above the box's top edge (the region's pad rows, and the one spacer row)."""
-        rule = next(index for index, row in enumerate(screen) if row.startswith("╭"))
+        """Blank rows right above the top rule (the region's pad rows, and the one spacer row)."""
+        rule = next(index for index, row in enumerate(screen) if row.startswith(RULE_ROW))
         return next(count for count in range(rule + 1) if screen[rule - count - 1])
 
     def where(self, screen: list[str]) -> tuple[int, int]:
-        """(the box's top edge, the region's last row: the info line, or the agent view's last row under it)."""
-        rule = next(index for index, row in enumerate(screen) if row.startswith("╭"))
+        """(the top rule, the region's last row: the info line, or the agent view's last row under it)."""
+        rule = next(index for index, row in enumerate(screen) if row.startswith(RULE_ROW))
         return rule, info_row_of(screen)
 
     def test_a_picker_a_menu_a_question_and_the_agent_list_closing_leave_the_composer_on_the_bottom_rows(self) -> None:
@@ -681,7 +681,7 @@ class AppBottomRowsTests(unittest.TestCase):
                 rule = self.where(before)[0]
                 self.assertEqual(self.where(opened)[0], rule)  # the composer's row did not move
                 self.assertEqual(app.terminal.screen.cursor, (caret[0], caret[1] + 1))
-                bottom = opened.index(box_edges(80)[1], rule + 1)  # the bottom edge, right under the input row
+                bottom = opened.index(rule_edges(80)[1], rule + 1)  # the bottom edge, right under the input row
                 self.assertTrue(opened[bottom + 1].strip(), opened)  # the menu's first row under it
                 self.assertTrue(app.menu_below)
                 app._on_input(Key(ESCAPE))
@@ -717,7 +717,7 @@ class AppBottomRowsTests(unittest.TestCase):
                 opened = drawn(app)
                 self.assertFalse(app.menu_below)
                 rule, info = self.where(opened)
-                self.assertEqual(opened[rule + 2], box_edges(80)[1])  # top edge, input row, bottom edge: nothing under it
+                self.assertEqual(opened[rule + 2], rule_edges(80)[1])  # top edge, input row, bottom edge: nothing under it
                 self.assertEqual(info, 23)
                 if row == 24:
                     self.assertEqual(self.where(opened), self.where(before))
@@ -755,7 +755,7 @@ class AppBottomRowsTests(unittest.TestCase):
                 self.assertFalse(app.menu_below)
                 rule, info = self.where(pushed)
                 self.assertEqual(info, 23)
-                self.assertEqual(pushed[rule + 2], box_edges(80)[1])  # nothing under the composer now
+                self.assertEqual(pushed[rule + 2], rule_edges(80)[1])  # nothing under the composer now
                 self.assertTrue(pushed[rule - 1].strip())  # the menu above it
                 caret = app.terminal.screen.cursor
                 app._on_input(close)
@@ -831,8 +831,8 @@ class AppBottomRowsTests(unittest.TestCase):
 class AgentViewBelowTests(unittest.TestCase):
     """The agent view under the info line (the owner's call of 2026-10-21) and the round-3 composer rule.
 
-    On the bottom rows the view is never taller than `layout.agent_view_cap`, so the box's top edge is never more
-    than that plus the box and the info line above the screen's last row, and as the view shrinks the composer moves
+    On the bottom rows the view is never taller than `layout.agent_view_cap`, so the top rule is never more
+    than that plus the composer and the info line above the screen's last row, and as the view shrinks the composer moves
     down, never up. Short of the bottom rows the region still follows the content: the composer right under the
     output, the view right under the info line.
     """
@@ -871,12 +871,12 @@ class AgentViewBelowTests(unittest.TestCase):
                         cap = agent_view_cap(rows, cols, keep)
                         shown = view_rows(app)
                         self.assertEqual(shown, min(cap, running + done + 1))
-                        top = next(index for index, row in enumerate(screen) if row.startswith("╭"))
-                        # The box's top edge, one input row, its bottom edge, the info line, then the view.
+                        top = next(index for index, row in enumerate(screen) if row.startswith(RULE_ROW))
+                        # The top rule, one input row, its bottom rule, the info line, then the view.
                         self.assertEqual(top, rows - 1 - shown - 3)
                         self.assertGreaterEqual(top, rows - 1 - cap - 3)
                         self.assertGreaterEqual(top, rows - 1 - max(min(AGENT_VIEW_ROWS, rows // 4), rows // 3) - 3)
-                        self.assertTrue(screen[top + 3].startswith("  "), screen)  # the info line, under the box
+                        self.assertTrue(screen[top + 3].startswith("  "), screen)  # the info line, under the composer
                         self.assertTrue(screen[rows - 1], "the view ends on the screen's last row")
 
     def test_the_usual_cap_measured(self) -> None:
@@ -892,12 +892,12 @@ class AgentViewBelowTests(unittest.TestCase):
 
         app = self.agents(24, 80, 10, 0)  # ten running: the view at a third of the screen
         screen = self.pinned(app)
-        tops = [next(index for index, row in enumerate(screen) if row.startswith("╭"))]
+        tops = [next(index for index, row in enumerate(screen) if row.startswith(RULE_ROW))]
         sizes = [view_rows(app)]
         for number in range(10):
             agent_event(app, "complete", f"sa-{number}", goal=f"task {number}", status="completed")
             screen = drawn(app)
-            tops.append(next(index for index, row in enumerate(screen) if row.startswith("╭")))
+            tops.append(next(index for index, row in enumerate(screen) if row.startswith(RULE_ROW)))
             sizes.append(view_rows(app))
         self.assertEqual((sizes[0], sizes[-1]), (8, 6))
         self.assertEqual(tops, sorted(tops), f"the composer moved up: {tops}")
@@ -912,7 +912,7 @@ class AgentViewBelowTests(unittest.TestCase):
         app._on_input(Key(CHAR, "l", ctrl=True))
         app.transcript.add_notice("a short output")
         screen = drawn(app)
-        top = next(index for index, row in enumerate(screen) if row.startswith("╭"))
+        top = next(index for index, row in enumerate(screen) if row.startswith(RULE_ROW))
         info = screen_info_index(app, screen)
         self.assertLess(info + len(VIEW), 23)
         self.assertEqual(screen[info + 1 : info + 1 + len(VIEW)], VIEW)

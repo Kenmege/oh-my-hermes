@@ -75,7 +75,7 @@ class BlockTests(unittest.TestCase):
     def test_bullet_wraps_under_its_text(self) -> None:
         rows = render("- alpha beta gamma delta epsilon", width=16)
         self.assertEqual(lines_text(rows), ["• alpha beta", "  gamma delta", "  epsilon"])
-        self.assertEqual(span_with(rows[0], "• ").style, THEME.accent)
+        self.assertEqual(span_with(rows[0], "• ").style, THEME.muted)  # a bullet is no state: grey, not the running blue
 
     def test_numbered_item_wraps_under_its_text(self) -> None:
         rows = render("10. one two three four five six", width=14)
@@ -153,7 +153,7 @@ class FenceTests(unittest.TestCase):
         self.assertEqual(rows[0], (Span("diff", THEME.muted),))
         self.assertEqual(rows[1], (Span("--- a/f", THEME.label),))
         self.assertEqual(rows[2], (Span("+++ b/f", THEME.label),))
-        self.assertEqual(rows[3], (Span("@@ -1 +1 @@", THEME.accent),))
+        self.assertEqual(rows[3], (Span("@@ -1 +1 @@", THEME.muted),))  # a hunk header is no state either
         self.assertEqual(rows[4], (Span("-old" + " " * 16, THEME.diff_remove),))
         self.assertEqual(rows[5], (Span("+new" + " " * 16, THEME.diff_add),))
         self.assertEqual(rows[6], (Span(" ctx", THEME.code),))

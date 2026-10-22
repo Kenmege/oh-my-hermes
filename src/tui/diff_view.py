@@ -131,7 +131,7 @@ def _style(kind: str, theme: Theme) -> Style:
     if kind == DIFF_REMOVED:
         return theme.diff_remove
     if kind == DIFF_HUNK:
-        return theme.accent
+        return theme.muted
     if kind == DIFF_FILE:
         return theme.label
     if kind == DIFF_CONTEXT:
