@@ -371,6 +371,40 @@ class RepairTests(unittest.TestCase):
         self.assertIn("    ▸ ⠋ PR group 2: #128662 #99354", shown)
 
 
+class RepairCycleTests(unittest.TestCase):
+    """`↻ repair N` reads the node's repair cycle, which the graph copies from the run record."""
+
+    def test_a_second_cycle_reads_repair_2_once_the_first_cycles_node_left_the_drawing(self) -> None:
+        from _delegation_state import PARENT, homes
+        from test_dag_graph import PROMPT, call, defined, write_handoff
+        from omh.plugin_bundle.omh.delegation_graph import build_delegation_graph
+
+        with homes() as home:
+            defined(home)
+            for node in ("api", "ui"):
+                write_handoff(home, node)
+                call(action="settle", run="export", node=node, outcome="accepted")
+            call(action="settle", run="export", node="verify", outcome="failed")
+            call(action="repair", run="export", node="verify", nodes=[
+                {"id": "fix", "label": "Fix export", "category": "quick", "prompt": PROMPT}])
+            call(action="settle", run="export", node="fix", outcome="failed")
+            call(action="repair", run="export", node="fix", nodes=[
+                {"id": "fix2", "label": "Fix export again", "category": "quick", "prompt": PROMPT}])
+            built = build_delegation_graph(home.omh, home.hermes, PARENT)
+        app, _client = make_app(busy=True, rows=72, cols=120, clock=lambda: 0.0)
+        with_graph(app, built)
+        shown = [left(row) for row in view_text(app)]
+        self.assertTrue([row for row in shown if "↻ repair 2 · Fix export again" in row], shown)
+        self.assertFalse([row for row in shown if "Fix export" in row and "again" not in row], "cycle 1 left the drawing")
+
+    def test_a_graph_without_the_cycle_counts_the_repair_edges(self) -> None:
+        nodes = dict(NODES)
+        app, _client = tree_app(nodes=nodes)
+        graph = app.hud.payload["delegation_graph"]
+        self.assertNotIn("cycle", next(node for node in graph["nodes"] if node["id"] == node_id("group-3-fix")))
+        self.assertIn("        ▾ ⠋ ↻ repair 1 · Resolve the registry conflict", [left(row) for row in view_text(app)])
+
+
 class TreeActionTests(unittest.TestCase):
     """On a node a child ran for, Enter opens the child's log, and x and s interrupt and steer it as the list does."""
 

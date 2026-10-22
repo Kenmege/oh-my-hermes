@@ -22,9 +22,10 @@ last name is the call the first row already shows gives way to the thinking
 or reply line, or, with none, drops that name (`_second_row`). A node
 a repair or an extend added hangs under the node it came from, as the tree's
 nesting edges say (`delegation_view._tree_structure`), led by `↻ repair N`
-(`+ extend`). The graph carries no repair cycle (`dag_run` records one on
-the node; the graph does not copy it), so N counts the repair edges under
-that node.
+(`+ extend`): N is the node's repair cycle (`cycle`, which the graph copies
+from the run record), so a second cycle reads `repair 2` once the first
+cycle's unaccepted nodes left the drawing; a graph without it counts the
+repair edges under the node.
 
 A node's child is the agent whose child session the node names
 (`session_tail`), else the newest agent whose goal's `[dag:<run>/<node>]`
@@ -171,7 +172,9 @@ def _items(graph: Mapping[str, Any], roster: Roster, now: float) -> list[_Item]:
         for kid in nested.get(node_id, []):
             kind = kinds.get((node_id, kid))
             repairs += kind == "repair"
-            mark = f"↻ repair {repairs}" if kind == "repair" else "+ extend" if kind == "extend" else ""
+            cycle = by_id[kid].get("cycle")
+            number = cycle if isinstance(cycle, int) and not isinstance(cycle, bool) and cycle > 0 else repairs
+            mark = f"↻ repair {number}" if kind == "repair" else "+ extend" if kind == "extend" else ""
             item.kids.append(node_item(kid, depth + 1, node_id, mark))
         return item
 

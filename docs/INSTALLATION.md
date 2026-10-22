@@ -496,15 +496,16 @@ run and approval decision stays Hermes'; the screen is OMH's.
   Under an open node two `›` rows say what its child is doing: its latest
   call (`terminal(gh pr checkout 138300)`) and its latest other line, a
   thinking line, Hermes' progress line (the names of its last five calls) or
-  its reply, whichever came last, never repeating the call above it. A repair hangs under the node it repairs
-  (`↻ repair 1 · …`), and the agents no node names close the tree as `other
+  its reply, whichever came last, never repeating the call above it. A
+  repair hangs under the node it repairs (`↻ repair 2 · …` in its second
+  repair cycle), and the agents no node names close the tree as `other
   agents`. Running and failed nodes are open, and so is a node with one of
-  them under it; the rest are shut. A tree
-  taller than its rows shuts its quiet layers, then folds a busy layer's
-  quiet nodes into one `▸ N more · …` row, then shuts open nodes from the
-  bottom (one over a running repair stays open), and counts what is still
-  cut on its last row (`… N more nodes · ↓ to browse`). A new turn keeps the
-  open run's agents, so the rows under its nodes stay. `/dag` shows the
+  them under it; the rest are shut. A tree taller than its rows shuts its
+  quiet layers, then folds a busy layer's quiet nodes into one `▸ N more ·
+  …` row, then shuts open nodes from the bottom (one over a running repair
+  stays open), and counts what is still cut on its last row (`… N more
+  nodes · ↓ to browse`). A new turn keeps the open run's agents, so the rows
+  under its nodes stay. `/dag` shows the
   graph with boxes. Once every lane has
   settled the tree is one line (`DAG · <name> · done 5/6 · 1 failed`).
 

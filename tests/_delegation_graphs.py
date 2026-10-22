@@ -133,6 +133,7 @@ def dag_export_button_repair_run() -> dict:
     run["nodes"].append({
         **lane("d:r1:button-fix", "Export button, with the key", "unspecified-high", "glm-5.3", "low", "running",
                status="running", order=6, group="layer 2"), "elapsed_seconds": 14, "session_tail": "e5a1c093",
+        "cycle": 1,  # a repair node's repair cycle, as `delegation_graph._dag_nodes` copies it from the run record
     })
     run["edges"] += [{"from": "d:r1:api", "to": "d:r1:button-fix", "kind": "depends_on"},
                      {"from": "d:r1:button", "to": "d:r1:button-fix", "kind": "repair"}]
@@ -148,7 +149,8 @@ def dag_export_repair_run() -> dict:
         {**lane("d:r1:csv", "CSV export", "quick", "glm-5.3-flash", "low", "failed", status="failed", order=6,
                 group="extend 1"), "elapsed_seconds": 6, "session_tail": "51be07c4"},
         {**lane("d:r1:csv-fix", "CSV export, with the header row", "quick", "glm-5.3-flash", "low", "running",
-                status="running", order=7, group="repair 1"), "elapsed_seconds": 18, "session_tail": "9d2e6f30"},
+                status="running", order=7, group="repair 1"), "elapsed_seconds": 18, "session_tail": "9d2e6f30",
+         "cycle": 1},
     ]
     run["edges"] += [{"from": "d:r1:verify", "to": "d:r1:csv", "kind": "extend"},
                      {"from": "d:r1:csv", "to": "d:r1:csv-fix", "kind": "repair"}]
