@@ -439,5 +439,61 @@ class RouterTests(unittest.TestCase):
         self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "dag-ulw"))
 
 
+class SigilTests(unittest.TestCase):
+    """After the `/dag-ulw` sigil. Hermes sends every `/dag-ulw` turn as one, so these are the turns that run."""
+
+    def _routed(self, message: str) -> tuple[str, str, list[tuple[str, str]]]:
+        route = route_chat_message(message, source="discord")
+        hints = [(str(hint["workflow"]), str(hint["next_action"])) for hint in awareness_route_hint(message)["hints"]]
+        return str(route["action"]), str(route["selected_skill"]), hints
+
+    def test_a_question_after_the_sigil_starts_no_run_in_korean_or_english(self) -> None:
+        for message in ("/dag-ulw 이게 뭐야?", "/dag-ulw 이게 뭐야", "/dag-ulw 어떻게 써?", "/dag-ulw dag-ulw가 뭐야?",
+                        "/dag-ulw 결제 api 뭐야", "/dag-ulw CI 통과했어?", "/dag-ulw 결제 모듈 리팩터링 끝났어?",
+                        "/dag-ulw 이거 병렬로 돌릴 수 있어?", "/dag-ulw what is it?", "/dag-ulw how does it work?",
+                        # A question mark that ends it, in any language, as after the bare name.
+                        "/dag-ulw did the anti-slop sweep finish?", "/dag-ulw Kubernetes是什么？",
+                        # A question after skills stacked on the sigil invokes none of them.
+                        "/dag-ulw /ulw-plan what is it?", "/dag-ulw /ulw-plan 이게 뭐야?",
+                        # A capability question routes as it does without the sigil, not to dag-ulw's own card.
+                        "/dag-ulw 슬랙에서 /omh 치면 뭐가 떠야해?"):
+            with self.subTest(message=message):
+                action, skill, hints = self._routed(message)
+                self.assertFalse(invokes_dag_ulw(message))
+                self.assertTrue(asks_about_dag_ulw(message))
+                self.assertNotEqual((action, skill), ("dispatch", "dag-ulw"))
+                self.assertNotIn(("dag-ulw", "start_dag_run"), hints)
+                self.assertFalse([hint for hint in hints if hint[1] in ("present_plan", "start_dag_run")])
+
+    def test_status_and_stop_words_after_the_sigil_point_at_the_run(self) -> None:
+        for message, control, hint in (("/dag-ulw 뭐 남았어?", "status", ("dag-ulw", "show_status")),
+                                       ("/dag-ulw 상태 보여줘", "status", ("dag-ulw", "show_status")),
+                                       ("dag ulw 뭐 남았어?", "status", ("dag-ulw", "show_status")),
+                                       ("/dag-ulw what's left?", "status", ("dag-ulw", "show_status")),
+                                       ("/dag-ulw 취소해줘", "cancel", ("dag-ulw", "cancel")),
+                                       ("/dag-ulw /ulw-plan 취소해줘", "cancel", ("dag-ulw", "cancel")),
+                                       ("/dag-ulw 주문 취소", "cancel_or_run", ("dag-ulw", "ask_one_clarification"))):
+            with self.subTest(message=message):
+                self.assertEqual(dag_ulw_control(message), control)
+                action, skill, hints = self._routed(message)
+                self.assertNotEqual(action, "dispatch")
+                self.assertEqual(hints, [hint])
+
+    def test_a_request_after_the_sigil_still_runs_it(self) -> None:
+        for message in ("/dag-ulw 왜 깨졌는지 찾아서 고쳐줘", "/dag-ulw 뭐가 문제인지 보고 PR들 정리해",
+                        "/dag-ulw 내가 올린 upstream pr들 전부 확인해서 닫을건 닫고 리뷰반영할건 리뷰반영하고 rebase할건 "
+                        "리베이스하고 ㄱㄱ",
+                        "/dag-ulw api, ui, docs 작업을 병렬로 나눠서 구현해줄 수 있어?", "/dag-ulw 결제 모듈 고쳐줄래?",
+                        "/dag-ulw 나눠서 해주실래요?", "/dag-ulw how do I fix the auth bug? fix it",
+                        "/dag-ulw can you dag ulw the migration?", "/dag-ulw migrate the billing service?",
+                        "/dag-ulw can we split the api, ui and docs work into parallel lanes?",
+                        "/dag-ulw /ulw-plan migrate billing in parts", "/dag-ulw broke the build, fix it"):
+            with self.subTest(message=message):
+                action, skill, hints = self._routed(message)
+                self.assertTrue(invokes_dag_ulw(message))
+                self.assertEqual((action, skill), ("dispatch", "dag-ulw"))
+                self.assertEqual(hints[0], ("dag-ulw", "start_dag_run"))
+
+
 if __name__ == "__main__":
     unittest.main()

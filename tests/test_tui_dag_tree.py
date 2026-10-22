@@ -330,6 +330,18 @@ class CapTests(unittest.TestCase):
                 self.assertNotEqual(shown[-2], "", f"a blank row over the cut at {rows} rows")
                 self.assertEqual(accounted(shown), len(self.big()), f"every node is drawn, folded or counted at {rows}")
 
+    def test_down_moves_no_row(self) -> None:
+        # The done layers that yield their rows without the keys yield them with the keys too: Down only highlights.
+        for rows, cols in ((40, 150), (30, 120), (21, 120)):
+            app, _client = tree_app(rows=rows, cols=cols, nodes=self.big())
+            before = [left(row) for row in view_text(app)]
+            app._on_input(Key(DOWN))
+            after = [left(row) for row in view_text(app)]
+            self.assertEqual(app.tree_selected, node_id("group-1"))
+            self.assertEqual(after[:-1], before[:-1], f"the rows moved on Down at {cols}x{rows}")
+            self.assertNotIn("  ▸ layer 1 · 1 node · 1 done", after)
+            self.assertRegex(after[-1], r"^  … \d+ more nodes · ↑↓ to browse$", "the count holds the done layer above")
+
     def test_with_the_keys_the_rows_scroll_to_the_highlight_between_counts(self) -> None:
         app, _client = tree_app(rows=30, nodes=self.big())  # a cap of 10
         app._on_input(Key(DOWN))
@@ -342,7 +354,9 @@ class CapTests(unittest.TestCase):
             self.assertEqual(accounted(shown), len(self.big()), f"every node is drawn or counted: {shown}")
             for at in (0, -1):
                 if shown[at].startswith("  … "):
-                    self.assertRegex(shown[at], r"^  … ([1-9]\d* more nodes?|more) (above|below)$", "no count of 0")
+                    # `↑↓ to browse`: the count holds a done layer that yielded its row above and rows below.
+                    self.assertRegex(shown[at], r"^  … ([1-9]\d* more nodes?|more)( above| below| · ↑↓ to browse)$",
+                                     "no count of 0")
                     self.assertNotEqual(shown[1 if at == 0 else -2], "", "no blank row next to a count")
             seen += shown[0].startswith("  … ") and shown[-1].startswith("  … ")
         self.assertTrue(seen, "the window was between two counts at least once")
@@ -681,6 +695,13 @@ class TurnBoundaryTests(unittest.TestCase):
         self.assertEqual(set(app.roster.agents), lanes | {"sa-new"})
         take(app, None, error=True)  # the HUD could not read: nothing is known about the run
         self.assertEqual(set(app.roster.agents), lanes | {"sa-new"})
+        from omh.plugin_bundle.omh.delegation_graph import inactive_graph
+
+        for reason in ("no_session", "lingered"):  # a payload that shows no run shows nothing over
+            take(app, inactive_graph(reason))
+            self.assertEqual(set(app.roster.agents), lanes | {"sa-new"}, reason)
+        take(app, None)  # no graph in the payload at all
+        self.assertEqual(set(app.roster.agents), lanes | {"sa-new"})
         over = {key: (*values[:5], "done", "accepted", *values[7:]) for key, values in NODES.items()}
         take(app, sweep(over))
         self.assertEqual(set(app.roster.agents), {"sa-new"}, "the run's lanes go; this turn's agent stays")
@@ -753,6 +774,19 @@ class FoldScopeTests(unittest.TestCase):
 
 class SmallCapTests(unittest.TestCase):
     """Under three rows a tree has no room for its highlight between two counts: Down opens the agent list there."""
+
+    def test_the_tree_gives_the_keys_back_when_the_window_shrinks_under_three_rows(self) -> None:
+        app, _client = tree_app(rows=30)
+        app._on_input(Key(DOWN))
+        self.assertEqual(app.tree_selected, node_id("group-1"))
+        app.terminal.screen.resize(8, 120)  # type: ignore[attr-defined]  # a cap of 2
+        app._on_resize()
+        app._full_redraw()
+        app.redraw_at = None
+        drawn(app)
+        self.assertIsNone(app.tree_selected, "the tree kept the keys with no room for its highlight")
+        type_text(app, "hi")
+        self.assertEqual(app.composer.text, "hi", "a typed key reaches the composer")
 
     def test_with_two_rows_or_fewer_down_opens_the_list(self) -> None:
         for rows in (6, 8):  # caps of 1 and 2
@@ -841,3 +875,87 @@ class TreeChipTests(unittest.TestCase):
         self.assertIn("5 agents", mode_row(app))
         agent_event(app, "start", "sa-helper", goal="look something up", child_session_id="helper-session")
         self.assertIn("6 agents", mode_row(app), "a helper beside the run is counted: the tree draws it")
+
+
+def mixed(done: bool = True) -> dict:
+    """Twelve running nodes, a layer of two between them and six more running ones: done (it gives its row way to
+    fit) or running (nothing gives way)."""
+    nodes = {}
+    for number in range(12):
+        nodes[f"fix-{number}"] = (f"Fix batch {number}", "quick", KIMI, "low", 1, "running", "running", 30, 100, "")
+    for number in range(2):
+        state, status = ("done", "accepted") if done else ("running", "running")
+        nodes[f"check-{number}"] = (f"Check {number}", "quick", KIMI, "low", 2, state, status, 30, 100, "")
+    for number in range(6):
+        nodes[f"ship-{number}"] = (f"Ship {number}", "quick", KIMI, "low", 3, "running", "running", 30, 100, "")
+    return nodes
+
+
+class CountLabelTests(unittest.TestCase):
+    """With the keys, a count says where the nodes it holds are: `above`, `below`, or `↑↓ to browse` when it holds a
+    done layer that gave way from the other side of it or from between the rows shown. 20 nodes, a cap of 10."""
+
+    def window(self, key: str, done: bool = True) -> list[str]:
+        app, _client = tree_app(rows=30, nodes=mixed(done), children=False)
+        app._on_input(Key(DOWN))
+        down_to(app, key)
+        shown = [left(row) for row in view_text(app)]
+        self.assertEqual(len(shown), 10)
+        self.assertIn(key, app.tree_state.rows, "the highlighted row is drawn")
+        self.assertEqual(accounted(shown), 20, shown)
+        return shown
+
+    def test_the_first_rows_count_what_is_below(self) -> None:
+        shown = self.window(node_id("fix-0"))
+        self.assertEqual(shown[-1], "  … 13 more nodes below", "the done layer is below the rows shown")
+
+    def test_the_middle_counts_a_done_layer_past_the_window_below(self) -> None:
+        shown = self.window(node_id("fix-9"))
+        self.assertEqual((shown[0], shown[-1]), ("  … 4 more nodes above", "  … 8 more nodes below"))
+
+    def test_the_middle_says_browse_for_a_done_layer_between_its_rows(self) -> None:
+        shown = self.window("layer:layer 3")
+        self.assertEqual((shown[0], shown[-1]), ("  … 11 more nodes · ↑↓ to browse", "  … 3 more nodes below"))
+
+    def test_the_last_rows_say_browse_for_a_done_layer_between_them(self) -> None:
+        shown = self.window(node_id("ship-5"))
+        self.assertEqual(shown[0], "  … 13 more nodes · ↑↓ to browse")
+
+    def test_with_nothing_given_way_the_last_rows_count_what_is_above(self) -> None:
+        shown = self.window(node_id("ship-5"), done=False)
+        self.assertEqual(shown[0], "  … 13 more nodes above")
+
+    def test_a_highlighted_done_layer_keeps_its_row(self) -> None:
+        shown = self.window("layer:layer 2")
+        self.assertIn("  ▸ layer 2 · 2 nodes · 2 done", shown)
+
+
+class KeptRunTests(unittest.TestCase):
+    """A run that is over takes its kept lanes with it, by run: a lane whose node left the drawing goes too, and
+    another run's lanes stay."""
+
+    def take(self, app, built: dict) -> None:
+        from omh.tui.panels import HudSnapshot
+        from test_tui_panels import hud_payload
+
+        payload = hud_payload(None)
+        payload["delegation_graph"] = built
+        app.poller.take = lambda: HudSnapshot(app.stored_id, payload, 0.0)  # type: ignore[method-assign]
+        app._take_hud()
+
+    def test_the_run_over_drops_its_superseded_lane_and_only_its_own(self) -> None:
+        nodes = {**NODES, "old-fix": ("Resolve the registry conflict", "quick", KIMI, "low", 3, "running", "running",
+                                      12, 300, "")}
+        app, _client = tree_app(nodes=nodes)
+        agent_event(app, "start", "sa-old-fix", goal=f"Resolve the registry conflict [dag:{RUN}/old-fix]",
+                    child_session_id="20261022_134612_0ldf1x00")
+        app.turn_pending = False
+        type_text(app, "next")
+        app._on_input(Key(ENTER))
+        self.assertIn("sa-old-fix", app.roster.agents, "the turn kept the lane while its node was drawn")
+        over = {key: (*values[:5], "done", "accepted", *values[7:]) for key, values in NODES.items()}
+        self.take(app, other_run(sweep(over)))  # another run is over: this one's lanes stay
+        self.assertIn("sa-old-fix", app.roster.agents)
+        self.assertIn(subagent_id("group-1"), app.roster.agents)
+        self.take(app, sweep(over))  # this run is over, without the superseded attempt's node
+        self.assertEqual(app.roster.agents, {})

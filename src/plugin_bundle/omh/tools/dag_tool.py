@@ -74,6 +74,11 @@ EXTERNAL_OWNERS = ("claude-code", "codex")
 OWNER_CHOICE_MAX_AGE_SECONDS = 24 * 3600
 SPAWN_PLAN_THRESHOLD = 4  # `fanout_contracts.FANOUT_SPAWN_PLAN_THRESHOLD`, held by the same test
 SPAWN_PLAN_FIELDS = ("why_parallel", "why_not_single_unit", "independence", "expected_evidence_shape")
+# A call that names no run, before this conversation has one: the next call to make, never only a refusal.
+NO_RUN_YET_SAY = (
+    "No dag run in this conversation yet. A dag-ulw request starts with omh_dag action=define; the calls it "
+    "returns carry the node markers the run view draws. Do not dispatch delegate_task for it before define."
+)
 # Hermes terminal backends where a child's files land out of this host's sight: a container, or another machine.
 REMOTE_BACKENDS = ("docker", "ssh")
 BACKEND_READ_SECONDS = 10  # the one `test` a settle runs there; a backend that has not answered by then is unread
@@ -184,6 +189,8 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
         if action == "define":
             return _define(args, omh_home, hermes_home, durable, segments, now, shown, task)
         found = _find(omh_home, segments, args.get("run"))
+        if found is None and not args.get("run"):
+            return _refused(action, "run_not_found", NO_RUN_YET_SAY)
         if found is None:
             return _refused(action, "run_not_found", "No dag run by that id in this conversation; define it first.")
         record, path = found

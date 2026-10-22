@@ -41,11 +41,15 @@ from .domain_signals import (
 from .display_names import canonical_display_mentions
 from .input_language import routing_input_language
 from ..plugin_bundle.omh.dag_ulw_cues import (
+    DAG_ULW,
     asks_about_dag_ulw,
+    asks_after_the_sigil,
     big_work_for_dag_ulw,
     dag_ulw_control,
     reports_or_asks_after_the_name,
 )
+from ..plugin_bundle.omh.invocation_cues import STATUS as INVOKED_STATUS
+from ..plugin_bundle.omh.invocation_cues import invoked_instruction
 from ..plugin_bundle.omh.hermes_session_commands import (
     LOOP_TIMER_GOAL,
     LOOP_TIMER_NATIVE,
@@ -88,7 +92,7 @@ from .policy import (
 from .policy import _doctor_health_guard_applies
 from .policy import asks_to_produce_materials, command_request_is_failure_or_agent_question, guard_label_dispatch_trust
 from .policy import _explicit_skill_candidate_is_negated
-from .policy import bare_name_reports_or_asks
+from .policy import EXPLICIT_INVOCATION_PREFIXES, bare_name_reports_or_asks
 from .policy import _greenfield_project_bootstrap_requested
 from .policy import _hermes_setup_guide_requested
 from .policy import _github_event_ops_guard_applies
@@ -2122,6 +2126,10 @@ def _with_canonical_display_names(routing_message: str) -> str:
     instead of letting the extra `omh` token pull the request toward the router
     skill. Names the catalog does not own are left alone.
     """
+    # A sigil's name in any case, as Hermes matches it ("/ULW-LOOP stop the loop").
+    sigil = re.match(r"\s*(?:\$|\./|/|@)\S+", routing_message)
+    if sigil:
+        routing_message = sigil.group(0).lower() + routing_message[sigil.end() :]
     if _explicit_skill_candidate_is_negated(routing_message, "omh-docs", "product-docs") or (
         contains_cue_phrase(routing_message, ("omh-docs",)) and not is_omh_docs_question(routing_message)
     ):
@@ -2160,15 +2168,18 @@ def _route_chat_message_cached(
         ).to_dict()
     executable_message = executable_routing_text(message)
     routing_message = _with_canonical_display_names(scrub_diagnostic_status_text(executable_message))
+    invocation = _invocation_as_written(scrub_diagnostic_status_text(executable_message), routing_message)
     if not routing_message.strip():
         return _direct_answer_decision(message, source=source, min_confidence=min_confidence).to_dict()
     # A complaint or a question that opens with a skill's bare name ("ultrawork broke my build", "code-review 결과가
     # 이상해", "ralph broke my build", "ultrawork 이거 어떻게 써") is about that skill, not a request to run it. It is
     # answered, as a question about dag-ulw is, before a fast path or the scorer reads the name as the skill's own
     # phrase. The route hint reads the same functions (`awareness._opens_with_a_report_on_a_name`).
-    if bare_name_reports_or_asks(
-        routing_message.strip(), _names_a_message_may_open_with()
-    ) or reports_or_asks_after_the_name(routing_message):
+    answered_skill = bare_name_reports_or_asks(invocation.strip(), _names_a_message_may_open_with())
+    if answered_skill and _invoked_status_word(invocation, answered_skill):
+        # A status word after a sigil ("/ulw-loop 상태 보여줘"): how the work stands, the status card's to show.
+        return _omh_status_decision(message, source=source, min_confidence=min_confidence).to_dict()
+    if answered_skill or reports_or_asks_after_the_name(routing_message):
         return _direct_answer_decision(message, source=source, min_confidence=min_confidence).to_dict()
     # The same text and the same function the route hint reads, so the two
     # surfaces reach one verdict on a loop beside a timer. A skill the person
@@ -2920,20 +2931,7 @@ def _omh_help_fast_path_decision(
             normalized_phrase(routing_message), routing_tokens(normalized_phrase(routing_message))
         )
     ):
-        return _router_help_decision(
-            message,
-            source=source,
-            min_confidence=min_confidence,
-            matched=("omh_status_question",),
-            next_action="show_status",
-            reason="OMH status or next-action question; show probe-backed status instead of drafting a plan.",
-            evidence_boundary=(
-                "Status and roadmap output is local probe evidence only; it is not host plugin load, executor work, "
-                "review, CI, or merge evidence."
-            ),
-            wrapper_guidance="Render the OMH status card and only claim observed local probe results.",
-            score=12,
-        )
+        return _omh_status_decision(message, source=source, min_confidence=min_confidence)
     if is_omh_intro_question(routing_message):
         return _router_help_decision(
             message,
@@ -2950,6 +2948,23 @@ def _omh_help_fast_path_decision(
             score=12,
         )
     return None
+
+
+def _omh_status_decision(message: str, *, source: str, min_confidence: str) -> ChatRouteDecision:
+    return _router_help_decision(
+        message,
+        source=source,
+        min_confidence=min_confidence,
+        matched=("omh_status_question",),
+        next_action="show_status",
+        reason="OMH status or next-action question; show probe-backed status instead of drafting a plan.",
+        evidence_boundary=(
+            "Status and roadmap output is local probe evidence only; it is not host plugin load, executor work, "
+            "review, CI, or merge evidence."
+        ),
+        wrapper_guidance="Render the OMH status card and only claim observed local probe results.",
+        score=12,
+    )
 
 
 def _router_help_decision(
@@ -3336,6 +3351,11 @@ def _catalog_fast_path_decision(
         if catalog_question and not _is_broad_capability_catalog_question(routing_message)
         else None
     )
+    # A question after the `/dag-ulw` sigil ("/dag-ulw 슬랙에서 /omh 치면 뭐가 떠야해?") names dag-ulw as what the person
+    # invoked, not as what the question is about: the question routes as it does without the sigil.
+    sigil_question = asks_after_the_sigil(routing_message)
+    if sigil_question and exact_skill == DAG_ULW:
+        exact_skill = None
     if exact_skill is not None:
         return _specific_capability_fast_path_result(
             skill=exact_skill,
@@ -3348,6 +3368,8 @@ def _catalog_fast_path_decision(
             catalog_question=catalog_question,
         )
     alias_skill, alias_label = _specific_capability_alias_hit(routing_message)
+    if sigil_question and alias_skill == DAG_ULW:
+        alias_skill = None
     if catalog_question and alias_skill and not _is_broad_capability_catalog_question(routing_message):
         return _specific_capability_fast_path_result(
             skill=alias_skill,
@@ -6947,6 +6969,63 @@ def _bounded_direct_blocker_scope(routing_message: str, query: RoutingQuery) -> 
 
 
 @lru_cache(maxsize=1)
+def _invoked_status_word(routing_message: str, skill: str) -> bool:
+    """Whether a sigil invokes ``skill`` and the words after it ask how its run stands (`invoked_instruction`)."""
+    text = routing_message.strip()
+    if not text.startswith(EXPLICIT_INVOCATION_PREFIXES):
+        return False
+    parts = text.split(maxsplit=1)
+    return len(parts) == 2 and invoked_instruction(skill, parts[1]) == INVOKED_STATUS
+
+
+def _invocation_as_written(written: str, routing_message: str) -> str:
+    """A sigil invocation with only the skill's name folded to its canonical name (`_with_canonical_display_names`),
+    the words after it as the person wrote them: a label said in them still names the skill ("/omh-rust what is
+    omh-rust?"), where the fold would leave a common word ("rust"). The name is read in any case. Any other message,
+    or a fold that changed more than the name, is ``routing_message``."""
+    folded, typed = routing_message.strip().split(maxsplit=1), written.strip().split(maxsplit=1)
+    if not routing_message.strip().startswith(EXPLICIT_INVOCATION_PREFIXES) or len(folded) < 2 or len(typed) < 2:
+        return routing_message
+    # The sigil's name in any case, as Hermes matches it ("/ULW-LOOP stop the loop").
+    head = _with_canonical_display_names(typed[0].lower())
+    if _with_canonical_display_names(folded[0].lower()) != head:
+        return routing_message
+    return f"{head} {typed[1]}"
+
+
+def invoked_skill_stops_or_asks(message: str) -> bool:
+    """Whether a sigil invokes a skill and the words after its name stop its run or ask about it ("/omh-plan stop",
+    "/ulw-plan what does this do?"): the router answers it directly (`bare_name_reports_or_asks`), and a wrapper must
+    not turn that answer into a workflow picker either."""
+    executable = executable_routing_text(message)
+    routing_message = _invocation_as_written(executable, _with_canonical_display_names(executable)).strip()
+    return routing_message.startswith(EXPLICIT_INVOCATION_PREFIXES) and bool(
+        bare_name_reports_or_asks(routing_message, _names_a_message_may_open_with())
+    )
+
+
+def invoked_skill_instruction(message: str) -> str:
+    """The words after a sigil that invokes a skill other than OMH's router, else "" ("/omh-paper-learning what is
+    it?" gives "what is it?"): the skill's `omh-` label is not the person asking about OMH, so a wrapper reads OMH's
+    intro and quickstart questions on these words, and the route runs the skill."""
+    routing_message = _with_canonical_display_names(executable_routing_text(message)).strip()
+    if not routing_message.startswith(EXPLICIT_INVOCATION_PREFIXES):
+        return ""
+    if explicit_skill_invocation(routing_message) in (None, _ROUTER_SKILL, "meta-router"):
+        return ""
+    parts = routing_message.split(maxsplit=1)
+    return parts[1] if len(parts) == 2 else ""
+
+
+def invoked_skill_asks_status(message: str) -> bool:
+    """Whether a sigil invokes a skill and the words after its name ask how its run stands ("/ulw-work status"): the
+    router sends it to OMH's status card (`_invoked_status_word`), and the wrapper renders that card."""
+    executable = executable_routing_text(message)
+    routing_message = _invocation_as_written(executable, _with_canonical_display_names(executable)).strip()
+    skill = bare_name_reports_or_asks(routing_message, _names_a_message_may_open_with())
+    return bool(skill) and _invoked_status_word(routing_message, skill)
+
+
 def _names_a_message_may_open_with() -> frozenset[str]:
     """Every routable skill's name, and the retired engine names `ulw_alias` still resolves ("team", "ralph")."""
     return frozenset({definition.name for definition in routable_definitions()} | set(_retired_name_and_alias_index()))

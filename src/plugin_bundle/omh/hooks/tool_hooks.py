@@ -10,6 +10,7 @@ from typing import Protocol, runtime_checkable
 
 from ..degradation import runtime_binding_degradation
 from ..approval_bypass import record_approval_bypass
+from ..dag_define_gate import delegate_before_define_directive
 from ..host_observation import host_session_id, observe_plugin_hook_call
 from ..jev_consent import arm_tool_call as arm_jev_tool_call
 from ..jev_consent import disarm_tool_call as disarm_jev_tool_call
@@ -309,6 +310,19 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
         # would be a second record of the same fact, and OMH cannot observe
         # how the gate was answered anyway.
         return dict(plan_stage_directive)
+    # A dag-ulw turn's first markerless `delegate_task`, before the run is
+    # defined, goes back to `omh_dag define` once (`dag_define_gate`). Before
+    # anything records a dispatch, like the gates above: it dispatches nothing.
+    dag_define_directive = delegate_before_define_directive(
+        tool_name=kwargs.get("tool_name"),
+        tool_input=tool_input,
+        session_id=session_id,
+        turn_id=kwargs.get("turn_id"),
+        omh_home=omh_home,
+        hermes_home=hermes_home,
+    )
+    if dag_define_directive is not None:
+        return dict(dag_define_directive)
     # `omh_team` `team_start` freezes commands OMH will later run by itself,
     # so the person sees the exact list and answers for it (`team_gate`).
     # Where nobody can answer, the call is blocked rather than let through.

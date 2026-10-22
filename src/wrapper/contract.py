@@ -39,6 +39,9 @@ from ..routing.chat import (
     DIRECT_ANSWER_REASON_CODES,
     LOOP_TIMER_ANSWER_REASON_CODES,
     REASON_CODE_FILE_LOOKUP,
+    invoked_skill_asks_status,
+    invoked_skill_instruction,
+    invoked_skill_stops_or_asks,
     public_chat_route_payload,
     route_explanation_payload,
     route_question_observation,
@@ -82,7 +85,7 @@ from ..operator_productivity import build_agent_operator_productivity_card
 from ..system.paths import OmhPaths, resolve_paths
 from ..plugin_bundle.omh.awareness import workflow_context_card_for_workflow, workflow_context_cards
 from ..plugin_bundle.omh.degradation import degradation_chat_note
-from ..plugin_bundle.omh.hermes_session_commands import host_command_turn, person_request_text
+from ..plugin_bundle.omh.hermes_session_commands import handed_on_text, host_command_turn, person_request_text
 from ..plugin_bundle.omh.memory_dreaming import read_latest_consolidation
 from ..probe import probe_capabilities
 from ..quickstart import build_quickstart_card
@@ -5586,8 +5589,11 @@ def _build_chat_interaction_payload_uncached(
     # from the turn), the message hash, length and thread key, the coding
     # handoff, and the plan's statement. The handoff is built from the whole
     # turn, as before, so its safety preflight judges exactly what it carries;
-    # the plan is decided on the words.
+    # the plan is decided on the words. A slash skill of OMH's own is handed
+    # on as the invocation typed (`handed_on_text`): the skill body Hermes
+    # loaded is its instruction to its own agent, not the person's context.
     message = person_request_text(turn_text, messaging=source in MESSAGING_CHAT_SOURCES)
+    handoff_text = handed_on_text(turn_text)
     metadata = _source_metadata(event_or_message, source_metadata)
     # Files the platform attached to the message are declared media inputs
     # (name and media type only, never bytes); the coding handoff below has
@@ -5666,8 +5672,20 @@ def _build_chat_interaction_payload_uncached(
     # A loop on a timer and a turn Hermes wrote for its own session command
     # are answered as the route says; their text is never a question about
     # OMH's intro, quickstart, or status, as it is never a catalog question.
+    # Neither is a question about an invoked skill ("/omh-plan 这是什么"): it
+    # asks about that skill, and the route answers it. An invoked skill's
+    # `omh-` label is no question about OMH either, so the intro and
+    # quickstart read the words after it ("/omh-paper-learning what is it?"
+    # runs paper-learning).
     answered_as_routed = _is_loop_timer_answer(route_payload) or host_command_turn(message)
-    if _is_omh_intro_question(message) and not answered_as_routed and resolved_mode in {"route", "plan", "clarify"}:
+    asks_the_invoked_skill = invoked_skill_stops_or_asks(message) and not invoked_skill_asks_status(message)
+    omh_question = invoked_skill_instruction(message) or message
+    if (
+        _is_omh_intro_question(omh_question)
+        and not answered_as_routed
+        and not asks_the_invoked_skill
+        and resolved_mode in {"route", "plan", "clarify"}
+    ):
         base["mode"] = "route"
         base["route"] = _omh_intro_route_payload(route_payload)
         base["chat_response"] = build_chat_response_from_omh_context_brief(
@@ -5678,7 +5696,12 @@ def _build_chat_interaction_payload_uncached(
         base["next_action"] = str(_nested(base["chat_response"], "state").get("next_action", "show_context_brief"))
         return _finish_interaction(base, target_notice)
 
-    if _is_omh_quickstart_question(message) and not answered_as_routed and resolved_mode in {"route", "plan", "clarify"}:
+    if (
+        _is_omh_quickstart_question(omh_question)
+        and not answered_as_routed
+        and not asks_the_invoked_skill
+        and resolved_mode in {"route", "plan", "clarify"}
+    ):
         base["mode"] = "status"
         base["route"] = _omh_quickstart_route_payload(route_payload)
         base["chat_response"] = build_chat_response_from_omh_quickstart(
@@ -5690,7 +5713,7 @@ def _build_chat_interaction_payload_uncached(
         return _finish_interaction(base, target_notice)
 
     if (
-        _is_omh_status_question(message)
+        (_is_omh_status_question(message) or invoked_skill_asks_status(message))
         and str(route_payload.get("selected_skill", "")) == _ROUTER_SKILL
         and not answered_as_routed
         and resolved_mode in {"route", "plan", "clarify"}
@@ -5718,7 +5741,7 @@ def _build_chat_interaction_payload_uncached(
 
     if resolved_mode == "delegate":
         delegation = build_coding_delegation_payload(
-            turn_text,
+            handoff_text,
             source=source,
             limit=limit,
             include_message=include_message,
@@ -5727,7 +5750,7 @@ def _build_chat_interaction_payload_uncached(
             main_agent_model=main_agent_model,
             memory_recall_pack=memory_recall_pack_for_handoff(
                 paths,
-                turn_text,
+                handoff_text,
                 executor_target=resolved_executor_target,
                 surface_class=memory_surface_for_source(source),
                 hermes_session_id=hermes_session_id,
@@ -5798,7 +5821,7 @@ def _build_chat_interaction_payload_uncached(
                 _attach_coding_owner_handoff(
                     base,
                     message,
-                    turn_text=turn_text,
+                    turn_text=handoff_text,
                     source=source,
                     limit=limit,
                     include_message=include_message,
@@ -5831,7 +5854,7 @@ def _build_chat_interaction_payload_uncached(
     # the plan artifact is what a coding owner receives once it is accepted.
     plan_statement = _nested(plan, "plan")
     if plan_statement.get("task_statement"):
-        plan_statement["task_statement"] = turn_text
+        plan_statement["task_statement"] = handoff_text
     if _plan_has_coding_delegate(plan):
         coding_delegate = _nested(_nested(plan, "wrapper_contract"), "coding_delegate")
         coding_delegate["executor_resolution"] = executor_resolution
@@ -9677,7 +9700,9 @@ def _is_generic_skill_catalog_route(message: str, decision: dict[str, object]) -
         return False
     # A turn Hermes wrote for its own session command is answered as the host
     # instructs; its template text is never a question about OMH's catalog.
-    if host_command_turn(message) or _is_loop_timer_answer(decision):
+    # Nor is a stop or a question after a skill the person invoked
+    # ("/omh-plan stop"): it is about that skill, and the router answers it.
+    if host_command_turn(message) or _is_loop_timer_answer(decision) or invoked_skill_stops_or_asks(message):
         return False
     if _contains_cue_phrase(message, ("omh-docs",)) and not _is_omh_docs_question(message):
         return False

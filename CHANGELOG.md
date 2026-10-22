@@ -16,6 +16,17 @@ All notable changes will be documented here.
   carries. With `NO_COLOR` unset or empty nothing changes: both scenes are
   byte-identical to before.
 
+- **The dag tree under the composer holds still when Down gives it the keys,
+  and keeps a run's lanes until a payload shows the run over (#2224's delta
+  review).** With the keys the tree cuts the same rows as without them, so
+  Down only highlights a row; the done layers that gave way at the top stay
+  out, and the last row says `↑↓ to browse` when it counts one of them as
+  well as rows below. A new turn's kept lanes now go only on a payload whose
+  graph shows the run over (its one summary line); a payload with no run in
+  it (no session, a graph that lingered out of the HUD, an error) drops
+  nothing. A window shrunk under three rows gives the keys back to the
+  composer, and INSTALLATION.md says → opens a row and Space flips it.
+
 - **A dag run's view under the composer is a folding tree that says what each
   child is doing (the owner's ask of 2026-10-22).** Each node is one header
   row: a `▾`/`▸` fold triangle, its state glyph (the running spinner in the
@@ -152,6 +163,110 @@ All notable changes will be documented here.
   rewind cancelled before Hermes builds the command's prompt, or picked
   (again) after the command went, cuts nothing and stays picked for the next
   prompt.
+- **A Hermes slash-skill turn routes on what the person typed, not on the
+  skill body Hermes pasted in.** Hermes sends `/dag-ulw <text>` to every hook
+  as the skill's whole `SKILL.md` inside a frame, and OMH routed that body as
+  the person's words: the owner's `/dag-ulw` turn got ulw-work and ulw-plan
+  hints, and never the "call omh_dag define" one. `person_request_text` now
+  reads the frame back the way Hermes' own `describe_skill_invocation` does
+  (one skill, a bundle or stacked `/a /b`, a bare invocation, a runtime note,
+  a shared session's sender prefix), so a skill of OMH's own routes as
+  `/<skill> <instruction>`. Another skill's turn is a host-command turn and
+  gets no OMH route hint: the person chose that skill. Only a turn that opens
+  with the frame's exact first line is read this way, so typed messages route
+  as before. A dag-ulw turn's first `delegate_task` with no `[dag:` marker,
+  before the conversation has a run, is now sent back to
+  `omh_dag action=define` once; `omh_dag status` with no run says to start
+  with `define`; and the dag-ulw skill says never to `delegate_task` before
+  `define` returns its calls.
+- **A question, a status word or a stop after `/dag-ulw` starts no run, in
+  Korean, Japanese and Chinese as in English.** Every Hermes `/dag-ulw` turn
+  now routes as the sigil form, and that form read only English question
+  words: `/dag-ulw 이게 뭐야?`, `/dag-ulw 어떻게 써?`, `/dag-ulw CI 통과했어?`,
+  `/dag-ulw /ulw-plan what is it?`, `/dag-ulw 停止` and `/dag-ulw cancel order`
+  dispatched a graph run. A question after the sigil (and after any skills
+  stacked on it) is now answered; `status`, `show me the run`, `뭐 남았어?`,
+  `still running?`, `状态` and `/dag-ulw /ulw-plan 상태 보여줘` read as status;
+  `停止` and `止めて` cancel; an English stop word with other words asks which,
+  as it does after the bare name; and a capability question that names
+  dag-ulw gets the answer, not dag-ulw's run card. A request that holds a
+  question word, opens on a request verb, or is asked politely still runs
+  (`/dag-ulw 왜 깨졌는지 찾아서 고쳐줘`, `/dag-ulw migrate the billing service?`,
+  `/dag-ulw 나눠서 구현해줄 수 있어?`).
+- **After an explicit skill invocation the skill runs, unless the words stop
+  it, ask how its run stands, or ask what it is.** `/ulw-work stop`,
+  `/omh-plan stop`, `/ulw-work 그만`, `/ulw-plan what does this do?` and
+  `/ulw-work status` dispatched the skill they named, typed or as Hermes'
+  slash-skill turn: the router's explicit-invocation rule read a sigil as a
+  command before its stop and question guards. One rule
+  (`invocation_cues.invoked_instruction`) now reads the words after a sigil
+  for the router, the chat wrapper and Hermes' route hint alike. A stop with
+  no task object (`stop`, `그만`, `이거 취소`, `停止`, `止めて`, `取消`) and a
+  question about the skill (`what is it?`, `이게 뭐야?`, `어떻게 써?`, `何これ`,
+  `这是什么`) are answered, and a request to see how the run stands
+  (`status`, `show me the run`, `상태 보여줘`, `뭐 남았어?`, `끝났어?`,
+  `is it running?`, `状態`, `状态`) shows OMH's status card. Everything else
+  runs the skill: a stop verb with a task object (`/ulw-work kill the zombie
+  processes`, `/omh-git-workflow abort the rebase`, `/ulw-loop 로그 폭주
+  멈춰줘`), a question with one (`/omh-code-review is it safe to merge?`,
+  `/ulw-plan how should we migrate billing?`, `/omh-app-debugging why did the
+  run stop?`), a report (`/ultrawork broke my build`), and a status request
+  to a skill whose own work that status is (`/omh-running-work-board status`,
+  `/omh-deploy-and-monitor status`, `/omh-verification-gate is it done?`,
+  `/omh-ops-observability-card status`). A question about an `omh-` skill is
+  answered about that skill, not with OMH's intro card.
+- **A stop of the invoked skill's own run is a stop.** `/ulw-loop stop the
+  loop`, `/omh-code-review 리뷰 취소`, `/ulw-interview 인터뷰 그만`, `/omh-plan
+  cancel the plan`, `/omh-app-debugging stop debugging`, `/ulw-work stop
+  ultrawork` and `/ulw-loop stop ulw-loop` started the skill they stopped.
+  The skill's names (its catalog name and label) and the words for its own
+  run, picked by the words of those names (loop, review, plan, interview,
+  debugging, work, ulw, research, audit, qa, analysis, triage, onboarding,
+  learning), in Korean, Japanese and Chinese too (`/ulw-loop ループを止めて`,
+  `/omh-code-review 取消审查`, `/ulw-plan 计划取消`, `/omh-code-review 코드 리뷰
+  취소`), now count as the stop's object, so these are answered; a stop of
+  anything else is still work (`/omh-data-pipelines stop the pipelines`,
+  `/ulw-loop stop the loop when tests pass`, `/ulw-loop 무한 루프 멈춰`,
+  `/omh-plan cancel the plan for the free tier`). A Korean stop said with why
+  (`그만해 비싸`, `멈춰 너무 오래 걸려`), a stop after `no` (`no stop`), and the
+  Chinese `别做了`, `不要做了`, `算了` and `停一下` are stops too, and so is a
+  Korean stop followed by fillers, a negation or what the person is in the
+  middle of (`멈춰 일단`, `취소해 이거 아니야`, `그만해 지금 회의 중`); a Korean
+  stop verb before a noun is that noun's stop, work (`/ulw-work 취소해 주문`,
+  `/ulw-work 멈춰 서버`). After
+  `/omh-cancel` a stop is that skill's own work and dispatches it, as on
+  origin/main.
+- **After a skill that explains or judges what the person points at, a
+  question about "this" or "it" is its work.** `/omh-code-review how is it?`,
+  `/omh-code-review 这是什么`, `/omh-codebase-onboarding what does this do?` and
+  `/omh-paper-learning what is it?` run the skill; only a question that names
+  the skill (`what is omh-code-review?`, `what does this skill do?`, `이 스킬
+  뭐야?`) or asks how to use it (`어떻게 써?`, `how do I use it?`) is answered
+  about it, after any skill. Only the skill's hyphenated or coined name
+  names it (`what is omh-rust?`, `what is ulw-loop?`): "a skill", a bare
+  `스킬`, a name after an article and a name that is a single common word
+  name a thing, so `/omh-docs what is a skill?`, `/omh-frontend what does the
+  frontend do?` and `/omh-rust what is rust?` run their skill; `/ulw-work
+  what is ulw?` names ultrawork by its short name. `/omh-context-budget-review
+  status` runs the context budget review, whose work that status is; only a
+  skill whose job is reporting a state runs on a status request, and after
+  any other the status card shows (`/omh-cancel 상태 보여줘`, `/omh-doctor
+  status`, which ran their skill on origin/main). A
+  sigil's name is read in any case, as Hermes reads it (`/ULW-LOOP stop the
+  loop`). An
+  invoked skill's `omh-` label no longer makes its words an OMH intro or
+  quickstart question: `/omh-paper-learning what is it?` got OMH's intro card
+  on origin/main.
+  After `/dag-ulw`, a stop verb with an object (`/dag-ulw kill the zombie
+  processes`) asks once whether to stop the run or start one on that work,
+  dag-ulw's own reading of a stop word with other words; origin/main started
+  a run.
+- In the frozen acceptance set's 3,097 labeled explicit invocations, typed
+  and as Hermes' turn, no stop, status or question-about-the-skill row starts
+  a run (origin/main started one on 2,183 of 2,241), and none of the 856 labeled
+  work rows is answered instead of run; four questions about the run after
+  `/dag-ulw` are answered and three stop verbs with an object after it ask
+  once, by dag-ulw's own reading. Rows outside that set are not measured.
 
 - **The OMH TUI's own commands work typed in any case.** `/Rewind`, `/HELP`
   or `/Steer <text>` used to miss the TUI's command table, which matched the
