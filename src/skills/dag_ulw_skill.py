@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from ..plugin_bundle.omh.native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
 from .catalog_types import (
+    ADAPTATION_QUALITY_READ_RULE,
     ENGINE_CLOSING_BRIEF_RULE,
     ENGINE_FOLLOW_UP_AUTHORITY_RULE,
     ENGINE_INTERJECTION_RESUME_RULE,
@@ -76,6 +77,7 @@ DEFINITION = SkillDefinition(
     ),
     quality_tier="evidence-gated",
     quality_bar=(
+        ADAPTATION_QUALITY_READ_RULE,
         "Split first: many small nodes beat one big one, but never split one shared write scope or one judgement.",
         "Climb the difficulty ladder `quick` -> `unspecified-low` -> `unspecified-high` with a one-line reason per "
         "climb; use `ultrabrain` at most once, and a graph whose every node is `deep` or `deep-work` is a routing "
@@ -107,9 +109,9 @@ DEFINITION = SkillDefinition(
     ),
     opening_steps=(
         "Start at once; there is no plan approval. Write the goal criteria in one line.",
-        "Plan the graph and call `omh_dag action=define` with each node's id, label, category, prompt, "
+        "Plan the graph and call `omh_dag action=define` with the complete run `goal` and each node's id, label, category, prompt, "
         "depends_on and write_scope; fix every refusal and read the lint before going on. Never `delegate_task` "
-        "before `define` returns its calls.",
+        "before `define` returns its calls. The saved goal reaches every native task; local VERIFY does not replace goal acceptance.",
         f"Keep the plan todo as the run's layers in ONE tool: `{NATIVE_TODO_TOOL}` when "
         f"{native_tool_presence_clause(NATIVE_TODO_TOOL, code=True)} (OMH mirrors it), else `omh_todo`. One item per "
         "layer, named for what it delivers, never a list of its nodes (the panel draws those); advance it as each "

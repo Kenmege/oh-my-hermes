@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "ef282a58fd080956e9c609a61bd029f1b90c9957d7a2ed5fcc832d0eedf2a781",
+  "catalog_revision": "c19cdeca7944e2a337151477f21a3d4f1b9c78d5e32d2816b5b89c91471dfc37",
   "files": {
     "omh-accessibility-audit/SKILL.md": "0be02c4e7af447857f365dc3bff58e7fefae8a1df12adcd0ca793bc363c17ccb",
     "omh-accessibility-audit/references/a11y-rules.md": "cd7e0404576923cfd3bcec9e055b1de7a78f3fc55971fd033598aac1043e4469",
@@ -259,7 +259,8 @@
     "omh-tech-debt-audit/references/debt-dimensions.md": "7d0d601c1fc8897f0ce433dfa2ae44c2a5c9dd69ded28d7775cb6adbdd2afb75",
     "omh-terminal/SKILL.md": "36650636bf993ab73e57f5e3988cd63b9491dce483ac5924b47792a35c7722b8",
     "omh-toolbelt-readiness/SKILL.md": "894c59bffeaf0b5de4f89e04a2df99e4bd3410039da95c79090cd06bc7bcef9b",
-    "omh-verification-gate/SKILL.md": "cf6ca19068472ebbdee6009db25091ed01375af3d5459a1c67613c8e8c505eeb",
+    "omh-verification-gate/SKILL.md": "48e3542c83cab5721d0767bbbf3951c4cf75419a411ea173ed1d460b594a9ad9",
+    "omh-verification-gate/references/adaptation-quality.md": "915196719a6e60148853a9437521c168f777553dbb324fb7951a173defdf9ede",
     "omh-verification-gate/references/generated-artifact-provenance.md": "91a818c86eb8311e39f7e1e0f1dca2bed5066551acff83a656aeb78e947f2fad",
     "omh-verification-gate/references/requirement-coverage-map.md": "91b86c41bdee5e4336c92a15875f8691fb929e75377b3c18187d6bc8eb184a19",
     "omh-visual-qa/SKILL.md": "8749e9fd8c9dbabefa31ba8ce4bea54bfaaf1e9fa9b3096ab15b8d7f1b1eb861",
@@ -281,13 +282,13 @@
     "ulw-loop/references/loop-design-review.md": "c56c960fae8793b2f7932703a824a1baeef9e8cdfaa4cea679da1e4b4735ed9c",
     "ulw-loop/references/measured-loop-discipline.md": "857c7918fd278e8fca1d420c57e9ab4b6e337e44f039dcc6eb5e14ae5204b4fb",
     "ulw-perf/SKILL.md": "c67d873b5c9a6df211b53007586cbcbefd8b5f7891afdc92328f68b273f8b674",
-    "ulw-plan/SKILL.md": "7457259eff9ebe1be93ca3d9059cfb1b914edc6ebb331001262e0b09d7aaca85",
+    "ulw-plan/SKILL.md": "9d3f337b1d9c19561d06ad4a92ff4f5a6b6fdffea987981a31abc9e73a99b5b1",
     "ulw-qa/SKILL.md": "2f08224f15320f8df30cf3fb6213d8d57291dd4f59f93ad67f8f1161a875a6f3",
     "ulw-research/SKILL.md": "a0697be1af767f3f1618019cfdea3f640ee4c7e73b5b88b49c7c0d82cd0d14c0",
     "ulw-research/references/briefing-format.md": "32c2fc92b8ff37877b623d30f79697a015c7be139121f60bac9de82f6bedfdcc",
     "ulw-research/references/evidence-records.md": "0cfeb3c0fcc99cc78d0d8e8a14fae833f97ac48bbef29b20f8cbe94fedc9aa11",
-    "ulw-work/SKILL.md": "cb8fc8baeb01c2ab5dd8dabfcb04de81907cf25e995b9f71251f2d81a3b77bc5",
-    "ulw-work/references/dependency-topology.md": "b6cbd98db3612d4bee2a6f1052ac120a7a360955f3e0ab1f26d37a1f20ad2a86"
+    "ulw-work/SKILL.md": "1cc228d042505c3c6aad6d6ecc7a8e0e5bc840e80cf4bf7efba545e2603e9011",
+    "ulw-work/references/dependency-topology.md": "e841b92c0027f28bf5dd141c25a9d2a4ffdfb977aa165b4684287695320fda48"
   },
   "schema_version": "omh_agent_skills_projection/v1",
   "target_dirs": [

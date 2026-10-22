@@ -4,6 +4,14 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Preserve adaptation outcomes and native DAG goal context.** Planning,
+  implementation, DAG and verification guidance share one on-demand procedure
+  for reuse decisions, user-agreed losses, early/final output comparisons and
+  separate technical/output-quality verdicts. Native DAG tasks now carry the
+  saved run goal through reload, retry, repair and extension; verifiers are told
+  to check the whole goal, not only local VERIFY. Contract tests establish
+  instruction delivery, not live-agent compliance or artistic quality.
+
 - **`NO_COLOR` turns off colour in the whole OMH TUI (#2223 review item
   17).** With `NO_COLOR` set to any non-empty value (no-color.org), only the
   motion and the delegation graph used to honour it. The transcript,

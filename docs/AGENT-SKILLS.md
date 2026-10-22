@@ -158,6 +158,20 @@ never fabricated participants. Domain contracts and portable references are
 shared with the catalog; Hermes-coupled references are not shipped. Progressive
 specialist contracts are inlined, retaining their portable procedure references.
 
+### Adaptation quality preservation
+
+`ulw-plan`, `ulw-work`, and `omh-verification-gate` conditionally load the one
+[adaptation-quality procedure](../agent-skills/omh-verification-gate/references/adaptation-quality.md).
+Their sibling-relative pointers resolve from the loaded skill directory; the
+native DAG workflow uses the same procedure but its runtime is not ported.
+The procedure preserves requested executable capability and craft through
+component mapping, explicit user-agreed losses, reuse-first decisions, early
+and final same-task comparisons, and distinct technical/output-quality verdicts.
+A methods-only adaptation must declare that narrower outcome; neither a working
+substitute nor structural checks prove retained capability or output quality.
+Unobserved execution/review stays unobserved. It grants no provider, dependency,
+credential or spending authority, and unrelated tasks need no upstream run.
+
 ### Code-review return compatibility
 
 Both distributions ship optional finding-validation, architecture-delta, and

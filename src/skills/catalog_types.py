@@ -987,6 +987,17 @@ class PortableLine(str):
         return (str(self), self.portable)
 
 
+# One on-demand procedure shared by planning, implementation, DAG and verification.
+ADAPTATION_QUALITY_READ_RULE = PortableLine(
+    "When adapting an existing capability, load "
+    "`skill_view(name='omh-verification-gate', file_path='references/adaptation-quality.md')` before accepting "
+    "a plan, dispatching work, or claiming completion; carry its criteria and comparisons into tasks and evidence.",
+    "When adapting an existing capability, read `../omh-verification-gate/references/adaptation-quality.md` "
+    "before accepting a plan, dispatching work, or claiming completion; carry its criteria and comparisons "
+    "into tasks and evidence.",
+)
+
+
 @dataclass(frozen=True)
 class SkillExample:
     prompt: str

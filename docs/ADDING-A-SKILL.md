@@ -154,6 +154,23 @@ skill cannot be listed there instead; remove an entry in the same commit that
 adds the case covering it. For operators and agents,
 `omh demo skill-reach --summary` prints the per-skill projection.
 
+## Adapting an existing capability
+
+Before accepting or dispatching an upstream adaptation, load the shared
+[adaptation-quality procedure](../skills/omh-verification-gate/references/adaptation-quality.md).
+It maps operative components and craft defaults to existing requirement/task/evidence
+rows, requires reuse-first decisions and early/final same-task comparisons, and
+separates technical from output-quality verdicts. Never silently substitute a
+recipe or methods-only outcome for requested executable retention; record the
+user-agreed exclusions. Missing execution or review remains unobserved. The
+native capability structural gate does not evaluate output quality.
+
+Keep the procedure on demand under its verification-gate owner; short conditional
+pointers belong in planning, implementation, DAG and verification bodies. Review
+portable overrides and the closed reference inventory, then regenerate both
+projections. Contract tests prove those instructions are delivered, not that a
+live agent followed them or that the resulting work has artistic quality.
+
 ## Optional companion support (separate from references)
 
 Optional companions use the authoritative `builtin_skill_support_templates()`

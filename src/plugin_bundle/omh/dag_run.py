@@ -685,16 +685,25 @@ def task_for(
 ) -> dict[str, str]:
     """One `delegate_task` task: the marked goal, and the node's prompt with where to write and read handoffs."""
     run = str(record["run"])
-    lines = [
-        str(node["prompt"]),
-        "",
+    lines = [str(node["prompt"]), ""]
+    goal = record.get("goal")
+    if isinstance(goal, str) and goal.strip():
+        lines.extend([
+            f"Run goal (saved):\n{goal}\n",
+            "The run goal is acceptance context, not permission to widen your SCOPE.",
+            "",
+        ])
+    lines.extend([
         f"Handoff: before you stop, write your report to {node_handoff(record, omh_home, str(node['id']))}: "
         "what you did, the files you changed, what VERIFY showed, and anything still open. The parent reads that "
         "file and your final message.",
-    ]
+    ])
     if node["depends_on"]:
         reads = ", ".join(node_handoff(record, omh_home, parent) for parent in reads_for(record, derived, node))
         lines.append(f"Read first: {reads}. A missing file means that part did not finish: stop and say so.")
+    if is_verification(node):
+        lines.append("Check the complete run goal, not only this node's local VERIFY. "
+                     "Name each unmet or unobserved goal criterion; producer claims are not verification evidence.")
     lines.append("Stay inside your SCOPE: other parts of this run work at the same time. If you cannot finish, "
                  "say plainly that you are blocked and why; do not report blocked work as done.")
     # The marker ends the goal: Hermes previews each goal by its first 40 characters, and a person reads the label
