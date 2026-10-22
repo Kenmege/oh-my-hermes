@@ -81,7 +81,9 @@ class MarketResearchSkillTests(unittest.TestCase):
                     self.assertIn(path, body)
                     for term in terms:
                         self.assertIn(term, refs[path])
-                contract = refs["references/full-contract.md"] if name == "market-research" else body
+                # The Hermes body renders the safety rules once and the full
+                # contract carries the boundaries the body does not; read both.
+                contract = body + refs["references/full-contract.md"] if name == "market-research" else body
                 for clause in (
                     "Never invent figures or quotes",
                     "Outreach, participant recruitment, payments, and scheduling each require separate explicit approval",

@@ -663,13 +663,12 @@ def _opening_steps_block(definition: SkillDefinition) -> str:
 
 def _quality_rubric_sections(
     definition: SkillDefinition, target: Literal["hermes", "agent-skills"] = "hermes",
-    *, include_opening_steps: bool = True,
 ) -> str:
     definition = _target_definition(definition, target)
     return f"""## Why This Exists
 
 {definition.why_this_exists}
-{_opening_steps_block(definition) if include_opening_steps else ""}
+{_opening_steps_block(definition)}
 ## Do Not Use When
 
 {_tuple_list(tuple(loadable_skill_mentions(line) for line in definition.do_not_use_when))}
@@ -2808,6 +2807,30 @@ def _progressive_workflow_full_contract(definition: SkillDefinition, name: str) 
     """Render skill-specific detail without copying the compact body's shared rails."""
     title = name.replace("-", " ").title()
     triggers = _shipped_triggers(definition)
+    # A method skill's compact body (`_progressive_method_body`) already renders
+    # its why-this-exists, opening steps, use-when, safety rules, checklist and
+    # recovery notes; this file carries only what the body does not.
+    from .jev_skills import JEV_SKILL_NAMES
+
+    method_body = name not in _PROGRESSIVE_WORKFLOW_OPERATIONS and name not in JEV_SKILL_NAMES
+    rubric = (
+        f"""## Do Not Use When
+
+{_tuple_list(tuple(loadable_skill_mentions(line) for line in definition.do_not_use_when))}
+
+## Examples
+
+{_example_block("Good", definition, good=True)}
+
+{_example_block("Bad", definition, good=False)}"""
+        if method_body else _quality_rubric_sections(definition)
+    )
+    use_when = "" if method_body else f"{definition.use_when}\n\n"
+    safety = "" if method_body else f"""
+
+Safety rules:
+
+{_tuple_list(definition.safety_rules)}"""
     return f"""# {title}
 
 Load this on-demand contract after the compact `{name}` body identifies the
@@ -2815,13 +2838,11 @@ workflow. The main body owns routing signals, shared rules, the runtime
 operation, delegation fallback, and completion/recovery pointers; this file
 holds the workflow-specific detail without copying those shared rails.
 
-{_quality_rubric_sections(definition, include_opening_steps=False)}
+{rubric}
 
 ## When to Use
 
-{definition.use_when}
-
-Routing signals: {triggers}
+{use_when}Routing signals: {triggers}
 
 ## Workflow Contract
 
@@ -2849,11 +2870,7 @@ Expected outputs:
 
 Artifact expectations:
 
-{_tuple_list(definition.artifact_expectations)}{_artifact_contract_block(definition)}
-
-Safety rules:
-
-{_tuple_list(definition.safety_rules)}
+{_tuple_list(definition.artifact_expectations)}{_artifact_contract_block(definition)}{safety}
 
 Detailed procedure steps: `references/procedure.md`.
 """

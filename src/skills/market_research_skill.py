@@ -132,7 +132,7 @@ DEFINITION = SkillDefinition(
     progressive_disclosure=True,
     situations=(
         "size a market with sourced assumptions", "addressable demand model with bounded assumptions",
-        "customer jobs pains and purchase triggers", "comparable competitor pricing profiles",
+        "customer jobs pains and purchase triggers", "rival plans and per-seat prices side by side",
         "quantify demand and synthesize customer signals before a business decision",
     ),
 )

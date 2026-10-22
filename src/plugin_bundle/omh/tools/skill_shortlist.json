@@ -1715,7 +1715,7 @@
 }
 },
 {
-"anchors":"addressabl assumption comparabl demand pain purchas quantify synthesiz trigger",
+"anchors":"addressabl assumption demand pain purchas quantify rival seat side synthesiz trigger",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-market-research",
@@ -1723,11 +1723,11 @@
 "situation":"Market sizing or customer/competitive analysis",
 "terms":{
 "1":"attribut generic investigat list merely scop specific task",
-"2":"assumption bottom bound brief business jtbd matrix model purchas quantify signal synthesiz trigger",
-"3":"addressabl befor competitiv decision demand job pain sam sensitivity sizing som sourc tam",
-"4":"analysis comparabl evidenc size",
-"5":"profil research",
-"6":"competitor customer pric",
+"2":"assumption bottom bound brief business comparabl jtbd matrix model plan purchas quantify rival seat side signal synthesiz trigger",
+"3":"addressabl befor competitiv decision demand job pain profil sam sensitivity sizing som sourc tam",
+"4":"analysis competitor evidenc size",
+"5":"research",
+"6":"customer pric",
 "9":"market"
 }
 },
