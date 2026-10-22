@@ -32,9 +32,11 @@ class RoutingPrecisionTests(unittest.TestCase):
         # dispatched it under its first grammar, three asked first sentences
         # and two causatives (a relative clause, `on`) (+30).
         # Hermes' slash-skill scaffold adds four controls (+4), and a question
-        # after the /dag-ulw sigil six (+6), and a stop or a question after an
-        # explicit invocation twelve (+12).
-        self.assertEqual(payload["summary"]["case_count"], 1015)
+        # after the /dag-ulw sigil six (+6), a stop or a question after an
+        # explicit invocation ten (+10), and the rule after an explicit sigil
+        # five: four Japanese or Chinese stops or questions, and a status
+        # request after /dag-ulw in Hermes' scaffold (+5).
+        self.assertEqual(payload["summary"]["case_count"], 1018)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -92,9 +94,11 @@ class RoutingPrecisionTests(unittest.TestCase):
         # instruction, each answered directly (+4). A Korean question, whether
         # CI passed, a question after a skill stacked on it, and a Korean
         # question in Hermes' scaffold, each after the /dag-ulw sigil, are
-        # answered directly (+4). Twelve stops or questions after an explicit
-        # invocation are answered directly (+12).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 317)
+        # answered directly (+4). Ten stops or questions after an explicit
+        # invocation are answered directly (+10), and so are a Japanese stop,
+        # a Japanese and a Chinese question about the skill, and a status
+        # request in Hermes' scaffold after /dag-ulw (+4).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 319)
         # show-reel's README-link control is answered as a file lookup (+1).
         self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
@@ -107,8 +111,12 @@ class RoutingPrecisionTests(unittest.TestCase):
         # and /ulw-plan with a request, each routed as typed (+3). Four
         # requests after the /dag-ulw sigil that hold a question word or are
         # asked politely still dispatch (+4), and so do six real requests
-        # or diagnosis questions after an explicit invocation (+6).
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1004)
+        # or diagnosis questions after an explicit invocation (+6). The rule
+        # after an explicit sigil adds six stop verbs or questions with a
+        # task object that run their skill, five status requests that get
+        # OMH's status card, and two status requests that run a skill whose
+        # work they are (+13).
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1017)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

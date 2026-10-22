@@ -14,10 +14,10 @@ from .dag_ulw_cues import (
     dag_ulw_control,
     invokes_dag_ulw,
     reports_or_asks_after_the_name,
-    run_control_words,
     work_is_split,
 )
-from .name_report_cues import about_the_skill, stops_or_asks
+from .invocation_cues import invoked_instruction
+from .name_report_cues import about_the_skill
 from .data_share_cues import DATA_SHARE_REVIEW_PHRASES, data_share_phrases_said, data_share_request_admitted
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES as _CODING_DELIVERY_REQUEST_PHRASES,
@@ -6404,8 +6404,8 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
         hints = [_dag_ulw_control_hint(control)] if hint_limit else []
     elif _opens_with_a_report_on_a_name(routing_normalized) or _invoked_name_stops_or_asks(routing_normalized):
         # A complaint or a question about the skill the message opens with ("ultrawork broke my build", "research
-        # how does it work", "code-review 결과가 이상해"), or a stop or a question after the sigil that invokes it
-        # ("/ulw-work stop"): the router answers it, so no hint offers a run either.
+        # how does it work", "code-review 결과가 이상해"), or a stop, a status request or a question about the skill
+        # after the sigil that invokes it ("/ulw-work stop"): the router answers it, so no hint offers a run either.
         hints = []
     hints = [_route_hint_with_coding_route_decision(hint, routing_normalized) for hint in hints]
     hints = [_route_hint_with_action_labels(hint) for hint in hints]
@@ -8148,10 +8148,10 @@ def _workflow_names_a_message_may_open_with() -> tuple[str, ...]:
 
 
 def _invoked_name_stops_or_asks(normalized: str) -> bool:
-    """Whether a sigil invokes a workflow by name and the words after it stop its run or ask about it
-    ("/ulw-work stop", "/ralplan what does this do?", "/ulw-work 작업 중단해줘", "/ulw-loop dag-ulw가 뭐야?"): the
-    router's `bare_name_reports_or_asks` read on a sigil (`_invoked_skill_answered`), so the hint calls nothing
-    explicitly invoked either. dag-ulw reads its own sigil (`dag_ulw_cues`)."""
+    """Whether a sigil invokes a workflow by name and the words after it are about the skill or its run, not a task
+    ("/ulw-work stop", "/ulw-loop 상태 보여줘", "/ralplan what does this do?"): the router's reading
+    (`invocation_cues.invoked_instruction`), so the hint calls nothing explicitly invoked either. dag-ulw reads its
+    own sigil (`dag_ulw_cues`)."""
     text = normalized.strip()
     match = re.match(r"^(?:\$|\./|/|@)([a-z0-9][a-z0-9_-]*)(?=\s)", text)
     if not match:
@@ -8159,13 +8159,7 @@ def _invoked_name_stops_or_asks(normalized: str) -> bool:
     name = _canonical_workflow_by_display_name().get(match.group(1), match.group(1))
     if name == "dag-ulw" or name not in _workflow_names_a_message_may_open_with():
         return False
-    rest = text[match.end() :].strip()
-    return (
-        stops_or_asks(name, rest, invoked=True)
-        or bool(run_control_words(rest))
-        or asks_about_dag_ulw(rest)
-        or _opens_with_a_report_on_a_name(rest)
-    )
+    return bool(invoked_instruction(name, text[match.end() :]))
 
 
 def _opens_with_a_report_on_a_name(normalized: str) -> bool:

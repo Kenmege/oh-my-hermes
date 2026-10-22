@@ -47,8 +47,9 @@ from ..plugin_bundle.omh.dag_ulw_cues import (
     big_work_for_dag_ulw,
     dag_ulw_control,
     reports_or_asks_after_the_name,
-    run_control_words,
 )
+from ..plugin_bundle.omh.invocation_cues import STATUS as INVOKED_STATUS
+from ..plugin_bundle.omh.invocation_cues import invoked_instruction
 from ..plugin_bundle.omh.hermes_session_commands import (
     LOOP_TIMER_GOAL,
     LOOP_TIMER_NATIVE,
@@ -2170,7 +2171,7 @@ def _route_chat_message_cached(
     # answered, as a question about dag-ulw is, before a fast path or the scorer reads the name as the skill's own
     # phrase. The route hint reads the same functions (`awareness._opens_with_a_report_on_a_name`).
     answered_skill = bare_name_reports_or_asks(routing_message.strip(), _names_a_message_may_open_with())
-    if answered_skill and _invoked_status_word(routing_message):
+    if answered_skill and _invoked_status_word(routing_message, answered_skill):
         # A status word after a sigil ("/ulw-loop 상태 보여줘"): how the work stands, the status card's to show.
         return _omh_status_decision(message, source=source, min_confidence=min_confidence).to_dict()
     if answered_skill or reports_or_asks_after_the_name(routing_message):
@@ -6963,13 +6964,13 @@ def _bounded_direct_blocker_scope(routing_message: str, query: RoutingQuery) -> 
 
 
 @lru_cache(maxsize=1)
-def _invoked_status_word(routing_message: str) -> bool:
-    """Whether a sigil invokes a skill and the words after it ask how its run stands (`run_control_words`)."""
+def _invoked_status_word(routing_message: str, skill: str) -> bool:
+    """Whether a sigil invokes ``skill`` and the words after it ask how its run stands (`invoked_instruction`)."""
     text = routing_message.strip()
     if not text.startswith(EXPLICIT_INVOCATION_PREFIXES):
         return False
     parts = text.split(maxsplit=1)
-    return len(parts) == 2 and run_control_words(parts[1]) == "status"
+    return len(parts) == 2 and invoked_instruction(skill, parts[1]) == INVOKED_STATUS
 
 
 def invoked_skill_stops_or_asks(message: str) -> bool:
@@ -6980,6 +6981,14 @@ def invoked_skill_stops_or_asks(message: str) -> bool:
     return routing_message.startswith(EXPLICIT_INVOCATION_PREFIXES) and bool(
         bare_name_reports_or_asks(routing_message, _names_a_message_may_open_with())
     )
+
+
+def invoked_skill_asks_status(message: str) -> bool:
+    """Whether a sigil invokes a skill and the words after its name ask how its run stands ("/ulw-work status"): the
+    router sends it to OMH's status card (`_invoked_status_word`), and the wrapper renders that card."""
+    routing_message = _with_canonical_display_names(executable_routing_text(message)).strip()
+    skill = bare_name_reports_or_asks(routing_message, _names_a_message_may_open_with())
+    return bool(skill) and _invoked_status_word(routing_message, skill)
 
 
 def _names_a_message_may_open_with() -> frozenset[str]:

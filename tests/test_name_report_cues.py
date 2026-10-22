@@ -3,8 +3,7 @@
 The corpus cases in `quality/routing_precision.py` hold the routed outcome; these pin the reading it rests on
 (`name_report_cues`), for every skill rather than one, and that the router and Hermes' own route hint read it alike:
 the router answers directly, and the hint neither offers the skill nor calls it explicitly invoked. A request that
-names a failure, a report followed by a request, and a report after a sigil still run the skill. A stop or a question
-after a sigil does not: an explicit invocation never starts a run on either (`stops_or_asks`).
+names a failure, a report followed by a request, and a sigil still run the skill.
 """
 
 from __future__ import annotations
@@ -20,13 +19,9 @@ from omh.plugin_bundle.omh.name_report_cues import (  # noqa: E402
     about_the_skill,
     asks_after_the_name,
     reports_on_the_name,
-    stops_or_asks,
     stops_the_name,
 )
-from omh.plugin_bundle.omh.hermes_session_commands import person_request_text  # noqa: E402
-from omh.quality.routing_precision import _slash_skill_turn  # noqa: E402
 from omh.routing.chat import explicit_skill_invocation, route_chat_message  # noqa: E402
-from omh.wrapper.contract import build_chat_interaction_payload  # noqa: E402
 
 REPORTS = (
     # The name, or the skill's own output, is the subject of a finite verb.
@@ -166,69 +161,6 @@ class RouteTests(unittest.TestCase):
                 self.assertEqual(explicit_skill_invocation(message), skill)
                 route = route_chat_message(message, source="discord")
                 self.assertEqual(route["action"], "dispatch")
-
-
-class SigilTests(unittest.TestCase):
-    """An explicit invocation whose instruction is a stop or a question starts no run, typed or as Hermes sends it."""
-
-    STOPS_OR_QUESTIONS = (
-        "/ulw-work stop", "/ulw-loop stop", "/ulw-interview stop", "/omh-plan stop", "/omh-code-review stop",
-        "/omh-app-debugging stop", "/ulw-plan what does this do?", "/ulw-plan what is it?", "/ulw-work 그만",
-        "/ulw-work 취소해줘", "/ulw-plan 이게 뭐야?", "/ultrawork still running?", "$ulw-work stop", "/ralplan 멈춰",
-        # A diagnosis skill's status and meta questions; only its diagnosis questions are its work.
-        "/omh-app-debugging is it running?", "/omh-app-debugging 끝났어?", "/omh-app-debugging what does this do?",
-    )
-    REQUESTS = (
-        ("/ulw-plan plan the billing migration", "ralplan"), ("/omh-code-review this PR", "code-review"),
-        ("/ulw-loop fix the flaky test until green", "loop"),
-        ("/ulw-work stop the flaky retry from hiding failures", "ultrawork"),
-        ("/ralplan how should we split the billing refactor", "ralplan"),
-        ("/omh-app-debugging find out why the login test fails", "app-debugging"),
-        ("/omh-app-debugging why did the run stop?", "app-debugging"), ("/omh-app-debugging 왜 멈췄어?", "app-debugging"),
-        ("/omh-app-debugging what's wrong", "app-debugging"),
-        ("/research is rust faster than go?", "research"), ("/ultrawork broke my build", "ultrawork"),
-    )
-
-    def test_a_stop_or_question_reading_leaves_out_the_report(self) -> None:
-        self.assertTrue(stops_or_asks("ultrawork", "stop"))
-        self.assertTrue(stops_or_asks("ralplan", "what does this do?"))
-        self.assertFalse(stops_or_asks("ultrawork", "broke my build"))
-        self.assertTrue(about_the_skill("ultrawork", "broke my build"))
-
-    def test_a_stop_or_question_after_a_sigil_is_answered_and_hinted_nothing(self) -> None:
-        for message in self.STOPS_OR_QUESTIONS:
-            for form, text in (("typed", message), ("scaffold", _slash_skill_turn(message.split()[0].lstrip("/$"),
-                                                                                    message.split(maxsplit=1)[1]))):
-                if form == "scaffold" and not message.startswith(("/ulw-", "/omh-")):
-                    continue  # Hermes lists a skill of OMH's own under its label (`ulw-work`), never `ultrawork`
-                with self.subTest(message=message, form=form):
-                    if form == "scaffold":
-                        self.assertEqual(person_request_text(text), message)
-                    route = route_chat_message(text, source="discord")
-                    self.assertNotEqual(route["action"], "dispatch")
-                    self.assertEqual(awareness_route_hint(text)["hints"], [])
-                    interaction = build_chat_interaction_payload(text, source="discord")
-                    self.assertEqual(interaction["next_action"], "answer_directly")
-
-    def test_a_question_that_is_the_skills_own_work_keeps_its_route(self) -> None:
-        # What is running is the board's work, not a question about the board.
-        route = route_chat_message("/omh-running-work-board what's running?", source="discord")
-        self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "running-work-board"))
-
-    def test_a_status_word_after_a_sigil_shows_the_status_card(self) -> None:
-        for message in ("/ulw-loop 상태 보여줘", "/ulw-work status", "/omh-code-review 진행상황 알려줘"):
-            with self.subTest(message=message):
-                route = route_chat_message(message, source="discord")
-                self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "oh-my-hermes"))
-                self.assertEqual(build_chat_interaction_payload(message, source="discord")["next_action"], "show_status")
-                self.assertEqual(awareness_route_hint(message)["hints"], [])
-
-    def test_a_request_after_a_sigil_still_runs_the_skill(self) -> None:
-        for message, skill in self.REQUESTS:
-            with self.subTest(message=message):
-                route = route_chat_message(message, source="discord")
-                self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", skill))
-                self.assertTrue(awareness_route_hint(message)["hints"])
 
 
 if __name__ == "__main__":

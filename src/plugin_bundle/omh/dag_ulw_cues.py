@@ -204,8 +204,73 @@ _STATUS: Final = re.compile(
 )
 
 
+# Words said to a run, read on their own, after any skill's name: a stop with nothing but the run as its object, and
+# a request to see how the run stands. English, Korean, Japanese and Chinese; Japanese and Chinese have a short closed
+# list, since no trigger pack carries a stop or status word. A stop word with a task object is work ("kill the zombie
+# processes", "로그 폭주 멈춰줘", "abort the rebase").
+_KOREAN_RUN_PHRASE: Final = (
+    rf"(?:(?:{_KOREAN_RUN_MODIFIER}\s*){{0,2}}{_KOREAN_RUN_NOUN}\s*(?:을|를|은|는|도)?\s*)?(?:{_KOREAN_STOP_ADVERB}\s*){{0,2}}"
+)
+_RUN_STOP_ALONE: Final = re.compile(
+    rf"^(?:please\s+)?(?:stop|cancel|abort|halt|kill){_RUN_OBJECT}\s*[.!?]*$"
+    rf"|^{_KOREAN_RUN_PHRASE}"
+    rf"(?:{_KOREAN_STOP_NOUN}(?:{_KOREAN_VERB_TAIL}|{_KOREAN_PARTICLE_TAIL}|{_KOREAN_STOP_ACT}(?:{_KOREAN_PARTICLE_TAIL})?)?"
+    rf"|(?:멈춰(?:라)?|멈추(?:세요|자)?|그만(?:\s*(?:돌려|돌리자))?)(?:{_KOREAN_VERB_TAIL}|{_KOREAN_PARTICLE_TAIL})?"
+    rf"|꺼\s*(?:줘|주세요|라)?\s*요?)\s*[.!?~]*$"
+    r"|^(?:作業を?|実行を?|これを?|それを?)?(?:停止|中止|キャンセル)(?:して)?(?:ください)?[。.!！]*$"
+    r"|^(?:止めて|やめて)(?:ください)?[。.!！]*$"
+    r"|^(?:请)?(?:停止|取消|停下|中止)(?:运行|执行|任务|吧)?[。.!！]*$"
+)
+_STOP_WORD: Final = re.compile(r"stop|cancel|abort|halt|kill|멈춰|그만|그만해|취소|중단|중지|정지")
+# What the skill is, in Japanese and Chinese, which `asks_after_the_name` does not read.
+_JA_ZH_META: Final = re.compile(
+    r"^(?:何これ|これ(?:は)?何(?:ですか)?|使い方(?:は)?|どうやって使う(?:の)?|(?:这|这个)是什么|是什么|怎么用)[?？。]*$"
+)
+_RUN_STATUS: Final = re.compile(
+    r"^(?:(?:please\s+)?show\s+(?:me\s+)?(?:the\s+)?)?(?:status|progress|logs?)"
+    r"(?:\s+(?:please|now|of\s+the\s+(?:run|dag|graph|job)))*\s*[.!?]*$"
+    r"|^(?:please\s+)?show\s+(?:me\s+)?(?:the\s+)?(?:run|dag|graph|job)\s*[.!?]*$"
+    r"|^(?:is\s+it|is\s+the\s+(?:run|job)|are\s+we)\s+(?:still\s+)?(?:running|done|finished|stuck)\s*\?*$"
+    r"|^(?:still\s+)?(?:running|done|finished|stuck)\s*\?+$"
+    r"|^(?:what'?s|what\s+is|how\s+much\s+is)\s+(?:still\s+)?left\s*[.!?]*$"
+    r"|^how\s+(?:much|many)\s+(?:\S+\s+){0,2}(?:is|are)\s+(?:done|left|remaining|finished)\s*\?*$"
+    r"|^(?:지금\s*)?(?:상태|진행\s*상황|진행\s*상태|진행도|로그)\s*(?:좀\s*)?"
+    r"(?:(?:보여|알려|확인)\S*|어때\S*|어떻게\s*돼\S*|는\s*[?？])?\s*[.!?？]*$"
+    r"|^(?:뭐|얼마나|몇\s*개)\s*(?:더\s*)?남았(?:어|나|니|어요|나요|습니까)?\s*[.!?？]*$"
+    r"|^(?:다\s*)?(?:끝났|돌아가고\s*있|진행\s*중이)(?:어|나|니|어요|나요|습니까)?\s*[?？]\s*$"
+    r"|^어디까지\s*(?:됐|했|왔)\S*\s*[?？]*$"
+    r"|^(?:今の)?(?:状態|進捗|進行状況)(?:は|を)?(?:どう|教えて|見せて)?(?:ですか|ください)?[?？。]*$"
+    r"|^(?:当前)?(?:状态|进度|进展)(?:怎么样|如何)?[?？。]*$"
+)
+
+
 def _folded(text: str) -> str:
     return unicodedata.normalize("NFKC", text).casefold().strip()
+
+
+def stops_the_run(rest: str) -> bool:
+    """Whether ``rest``, the words after a skill's name, stop its run and name no task: a stop word alone, said twice,
+    or with only the run as its object ("stop", "멈춰 멈춰", "cancel the run", "이거 취소", "작업 중단해줘", "실행 중인
+    거 멈춰줘", "停止", "止めて", "取消"), then at most a clause that asks for nothing ("stop, too expensive"). A past
+    or a question about stopping is no stop ("취소됐어?")."""
+    parts = re.split(r"\s*[,;.!~]+\s*", _folded(rest).strip(" ,:"), maxsplit=1)
+    first, after = parts[0], parts[1] if len(parts) > 1 else ""
+    if not first or (after and asks_for_something(", " + after)):
+        return False
+    if all(_STOP_WORD.fullmatch(word) for word in first.split()):
+        return True
+    return bool(_RUN_STOP_ALONE.match(first))
+
+
+def ja_zh_asks_what_it_is(rest: str) -> bool:
+    """Whether ``rest`` asks, in Japanese or Chinese, what the skill is or how to use it ("何これ", "这是什么")."""
+    return bool(_JA_ZH_META.match(_folded(rest).strip(" ,:")))
+
+
+def asks_how_the_run_stands(rest: str) -> bool:
+    """Whether ``rest``, the words after a skill's name, ask to see how its run stands ("status", "show status", "show
+    me the run", "is it running?", "what's left?", "상태 보여줘", "뭐 남았어?", "끝났어?", "状態", "状态")."""
+    return bool(_RUN_STATUS.match(_folded(rest).strip(" ,:")))
 
 
 def dag_ulw_control(text: str) -> str:
@@ -217,6 +282,10 @@ def dag_ulw_control(text: str) -> str:
     folded = _folded(text)
     if _SIGIL_LEAD.match(folded):
         folded = folded.lstrip("$./")
+        name = _BARE_LEAD.match(folded)
+        stacked = _STACKED_SIGILS.match(folded[name.end() :]) if name else None
+        if name and stacked:  # "/dag-ulw /ulw-plan 상태 보여줘": the words after the stacked skills
+            folded = folded[: name.end()] + folded[name.end() + stacked.end() :]
     if _STOP.search(folded):
         return "cancel"
     first = re.match(r"^(.*?)\s*[,;.!?~]+\s*(\S.*)$", folded)
@@ -224,6 +293,11 @@ def dag_ulw_control(text: str) -> str:
         return "cancel"  # "dag ulw stop, too expensive": a stop, then why
     if _STATUS.search(folded):
         return "status"
+    name = _BARE_LEAD.match(folded)
+    if name and stops_the_run(folded[name.end() :]):
+        return "cancel"  # "dag ulw 停止", "dag ulw 止めて"
+    if name and asks_how_the_run_stands(folded[name.end() :]):
+        return "status"  # "dag ulw show status", "dag ulw show me the run", "dag ulw 状态"
     if _STOP_THEN_WORK.search(folded):
         return "cancel_or_run"
     if _EN_STOP_AFTER_NAME.match(folded) and not _EN_WORK_WORD.search(folded):
@@ -235,13 +309,6 @@ def dag_ulw_control(text: str) -> str:
     if (_KOREAN_PAST.search(after) or _KOREAN_PRESSED.match(after)) and _KOREAN_STILL_RUNNING.search(after):
         return "cancel"
     return "" if _asks_about_stopping(stop) else "cancel_or_run"
-
-
-def run_control_words(rest: str) -> str:
-    """`dag_ulw_control`'s verdict on ``rest``, words said to any skill's run after its name ("/ulw-work 작업 중단해줘",
-    "/omh-code-review stop the review", "/ulw-loop 상태 보여줘"): a stop or a status word for a run reads the same
-    whichever skill's run it is, so every explicit invocation shares dag-ulw's vocabulary for them."""
-    return dag_ulw_control(f"{DAG_ULW} {rest}")
 
 
 def _ends_in_its_own_request(after: str) -> bool:
@@ -303,6 +370,17 @@ def reports_or_asks_after_the_name(text: str) -> bool:
     return (not re.search(_NAME, rest) and reports_on_the_name(rest)) or asks_after_the_name(rest, about_anything=True)
 
 
+def reports_on_dag_ulw(text: str) -> bool:
+    """Whether ``text`` opens with the bare name and goes on to report on dag-ulw, asking nothing ("dag-ulw is
+    broken"): after another skill's sigil that is work for the skill, not a question about dag-ulw."""
+    folded = _folded(text)
+    bare = _BARE_LEAD.match(folded)
+    if not bare:
+        return False
+    rest = folded[bare.end() :]
+    return reports_on_the_name(rest) and not asks_after_the_name(rest, about_anything=True)
+
+
 def asks_about_dag_ulw(text: str) -> bool:
     """Whether ``text`` names `dag-ulw` to ask about it rather than to run it."""
     folded = _folded(text)
@@ -354,7 +432,7 @@ def _sigil_asks(folded: str) -> bool:
         if _SIGIL_QUESTION.match(f"/{DAG_ULW} {rest.strip()}"):
             return True
     rest = rest.strip(" ,:")
-    if asks_after_the_name(rest, about_anything=True) or _ASKED_ABOUT.search(rest):
+    if asks_after_the_name(rest, about_anything=True) or _ASKED_ABOUT.search(rest) or ja_zh_asks_what_it_is(rest):
         return True  # _ASKED_ABOUT: the name again, asked about ("/dag-ulw can you explain dag ulw?")
     # ", " makes the opening clause one `asks_for_something` reads too: "/dag-ulw migrate the billing service?" opens
     # on a request verb, so it is a request with a question mark.

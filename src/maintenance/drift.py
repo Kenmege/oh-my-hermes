@@ -796,10 +796,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # /ulw-interview, /omh-plan, /omh-code-review and
             # /omh-app-debugging stop, /ulw-plan what does this do?, /ulw-work
             # 그만, /ulw-plan 이게 뭐야?, and /ulw-work stop in Hermes' scaffold
-            # (10). Its app-debugging follow-up answers that skill's status
-            # questions and keeps its diagnosis questions its work: /omh-app-
-            # debugging is it running? and 끝났어? (2).
-            expected=1015,
+            # (10). The rule after an explicit sigil adds five, each
+            # dispatched on main: /ulw-work 停止 and /ulw-plan 何これ (their
+            # skill), /omh-code-review 这是什么 (OMH's intro card), /dag-ulw
+            # 停止 (a run), and /dag-ulw show me the run in Hermes' scaffold
+            # (a plan) (5).
+            expected=1018,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1198,7 +1200,19 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # with a goal, and /ulw-work with a stop word that names the
             # work (4), and /omh-app-debugging asked to find out why a test
             # fails or why the run stopped, a diagnosis question (2).
-            expected=1004,
+            # The rule after an explicit sigil adds thirteen. A stop verb with
+            # a task object (/ulw-work kill the zombie processes, /omh-git-
+            # workflow abort the rebase, /omh-frontend stop the modal from
+            # flickering, /ulw-loop 로그 폭주 멈춰줘) or a question with one
+            # (/ulw-plan how should we migrate billing?, /omh-code-review is
+            # it safe to merge?) runs its skill, as on main (6). A status
+            # request gets OMH's status card where main ran the skill:
+            # /ulw-work status, /ulw-loop 상태 보여줘, /omh-app-debugging is it
+            # running? and 끝났어? (4), and /ulw-work show status in Hermes'
+            # scaffold, as on main (1). A status request runs a skill whose
+            # work it is: /omh-running-work-board status and
+            # /omh-verification-gate is it done?, as on main (2).
+            expected=1017,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

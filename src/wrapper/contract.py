@@ -39,6 +39,7 @@ from ..routing.chat import (
     DIRECT_ANSWER_REASON_CODES,
     LOOP_TIMER_ANSWER_REASON_CODES,
     REASON_CODE_FILE_LOOKUP,
+    invoked_skill_asks_status,
     invoked_skill_stops_or_asks,
     public_chat_route_payload,
     route_explanation_payload,
@@ -5670,8 +5671,16 @@ def _build_chat_interaction_payload_uncached(
     # A loop on a timer and a turn Hermes wrote for its own session command
     # are answered as the route says; their text is never a question about
     # OMH's intro, quickstart, or status, as it is never a catalog question.
+    # Neither is a question about an invoked skill ("/omh-plan 这是什么"): it
+    # asks about that skill, and the route answers it.
     answered_as_routed = _is_loop_timer_answer(route_payload) or host_command_turn(message)
-    if _is_omh_intro_question(message) and not answered_as_routed and resolved_mode in {"route", "plan", "clarify"}:
+    asks_the_invoked_skill = invoked_skill_stops_or_asks(message) and not invoked_skill_asks_status(message)
+    if (
+        _is_omh_intro_question(message)
+        and not answered_as_routed
+        and not asks_the_invoked_skill
+        and resolved_mode in {"route", "plan", "clarify"}
+    ):
         base["mode"] = "route"
         base["route"] = _omh_intro_route_payload(route_payload)
         base["chat_response"] = build_chat_response_from_omh_context_brief(
@@ -5682,7 +5691,12 @@ def _build_chat_interaction_payload_uncached(
         base["next_action"] = str(_nested(base["chat_response"], "state").get("next_action", "show_context_brief"))
         return _finish_interaction(base, target_notice)
 
-    if _is_omh_quickstart_question(message) and not answered_as_routed and resolved_mode in {"route", "plan", "clarify"}:
+    if (
+        _is_omh_quickstart_question(message)
+        and not answered_as_routed
+        and not asks_the_invoked_skill
+        and resolved_mode in {"route", "plan", "clarify"}
+    ):
         base["mode"] = "status"
         base["route"] = _omh_quickstart_route_payload(route_payload)
         base["chat_response"] = build_chat_response_from_omh_quickstart(
@@ -5694,7 +5708,7 @@ def _build_chat_interaction_payload_uncached(
         return _finish_interaction(base, target_notice)
 
     if (
-        _is_omh_status_question(message)
+        (_is_omh_status_question(message) or invoked_skill_asks_status(message))
         and str(route_payload.get("selected_skill", "")) == _ROUTER_SKILL
         and not answered_as_routed
         and resolved_mode in {"route", "plan", "clarify"}
@@ -9613,8 +9627,6 @@ def _resolve_mode(mode: str, route: dict[str, object], *, message: str = "") -> 
         return "route"
     if selected == _ROUTER_SKILL and _is_skill_picker_invocation(message):
         return "route"
-    if selected == _ROUTER_SKILL and _route_recommendation_next_action(route) == "show_status":
-        return "route"  # the router's status card ("/ulw-loop 상태 보여줘"), never a plan drafted over it
     if selected in _CLARIFICATION_SKILLS:
         return "clarify"
     if _route_is_explicit_hermes_coding_team_request(route, message):
