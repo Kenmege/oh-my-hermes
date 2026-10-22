@@ -48,8 +48,7 @@ from . import skill_shortlist as _skill_shortlist
 # (lead's ruling on #2221), and the ops command board, whose work is the operations status.
 STATUS_IS_THE_WORK: Final = (QUESTION_IS_THE_WORK - {"app-debugging"}) | {
     "ops-observability-card",
-    # The context budget's own work is how much of it is left ("/ulw-context how much context is left?").
-    "context",
+    # The context budget's own work is how much of it is left ("/omh-context-budget-review status").
     "context-budget-review",
 }
 # The skill whose own work is the stop, so a stop after its sigil runs it, as on origin/main ("/omh-cancel stop").
@@ -84,6 +83,9 @@ _RUN_WORDS: Final = {
     "learning": _LEARNING,
     "learn": _LEARNING,
 }
+# A skill's short name, which the router reads as an invocation of it too (`policy._EXPLICIT_SKILL_ALIASES`):
+# "/ulw-work what is ulw?" asks about the skill.
+_SHORT_NAMES: Final = {"ultrawork": ("ulw",)}
 # The skill named as "this skill" or "이 스킬", which a question about the skill reads as "it". A skill with no
 # determiner, or with "a", is any skill ("/omh-docs what is a skill?", "스킬이 뭐야?").
 _THE_SKILL: Final = re.compile(r"\b(?:this|the|that|your)\s+skill\b|(?:이|그|저)\s*스킬")
@@ -104,7 +106,7 @@ def _own_run(name: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """The invoked skill's names (``name`` and the label Hermes lists it under, from the catalog's sidecar) and the
     words for its own run (`_RUN_WORDS`, by each word of a name, and a name spaced when it ends in one: "code
     review")."""
-    names = tuple(sorted({name, _skill_shortlist.catalog_skill_label(name)} - {""}))
+    names = tuple(sorted({name, _skill_shortlist.catalog_skill_label(name), *_SHORT_NAMES.get(name, ())} - {""}))
     nouns: set[str] = set()
     for written in names:
         parts = written.split("-")

@@ -161,8 +161,11 @@ All notable changes will be documented here.
   `/ulw-loop stop the loop when tests pass`, `/ulw-loop 무한 루프 멈춰`,
   `/omh-plan cancel the plan for the free tier`). A Korean stop said with why
   (`그만해 비싸`, `멈춰 너무 오래 걸려`), a stop after `no` (`no stop`), and the
-  Chinese `别做了`, `不要做了`, `算了` and `停一下` are stops too; a Korean stop
-  verb before a noun is that noun's stop, work (`/ulw-work 취소해 주문`). After
+  Chinese `别做了`, `不要做了`, `算了` and `停一下` are stops too, and so is a
+  Korean stop followed by fillers, a negation or what the person is in the
+  middle of (`멈춰 일단`, `취소해 이거 아니야`, `그만해 지금 회의 중`); a Korean
+  stop verb before a noun is that noun's stop, work (`/ulw-work 취소해 주문`,
+  `/ulw-work 멈춰 서버`). After
   `/omh-cancel` a stop is that skill's own work and dispatches it, as on
   origin/main.
 - **After a skill that explains or judges what the person points at, a
@@ -175,9 +178,11 @@ All notable changes will be documented here.
   names it (`what is omh-rust?`, `what is ulw-loop?`): "a skill", a bare
   `스킬`, a name after an article and a name that is a single common word
   name a thing, so `/omh-docs what is a skill?`, `/omh-frontend what does the
-  frontend do?` and `/omh-rust what is rust?` run their skill, and
-  `/ulw-context how much context is left?` runs the context skill, whose work
-  that status is. An
+  frontend do?` and `/omh-rust what is rust?` run their skill; `/ulw-work
+  what is ulw?` names ultrawork by its short name. `/omh-context-budget-review
+  status` runs the context budget review, whose work that status is. A
+  sigil's name is read in any case, as Hermes reads it (`/ULW-LOOP stop the
+  loop`). An
   invoked skill's `omh-` label no longer makes its words an OMH intro or
   quickstart question: `/omh-paper-learning what is it?` got OMH's intro card
   on origin/main.
@@ -185,9 +190,9 @@ All notable changes will be documented here.
   processes`) asks once whether to stop the run or start one on that work,
   dag-ulw's own reading of a stop word with other words; origin/main started
   a run.
-- In the frozen acceptance set's 1,725 labeled explicit invocations, typed
+- In the frozen acceptance set's 3,097 labeled explicit invocations, typed
   and as Hermes' turn, no stop, status or question-about-the-skill row starts
-  a run (origin/main started one on 904 of 949), and none of the 776 labeled
+  a run (origin/main started one on 2,169 of 2,227), and none of the 870 labeled
   work rows is answered instead of run; four questions about the run after
   `/dag-ulw` are answered and three stop verbs with an object after it ask
   once, by dag-ulw's own reading. Rows outside that set are not measured.

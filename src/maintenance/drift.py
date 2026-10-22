@@ -814,7 +814,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # skill), and /omh-code-review 어떻게 써? (OMH's intro card) (4).
             # A question that names the skill by its label adds one,
             # dispatched its skill on main: /ulw-loop what is ulw-loop? (1).
-            expected=1028,
+            # A Korean stop then only fillers, a negation or what the person
+            # is in the middle of adds six, each dispatched ultrawork on main:
+            # /ulw-work 멈춰 일단, 멈춰 잠깐만, 취소해 이거 아니야, 그만해 그거
+            # 아니야, 그만해 지금 회의 중, 멈춰 멈춰 멈춰 제발 (6). A question
+            # that names ultrawork by its short name, /ulw-work what is ulw?,
+            # and an uppercase sigil's stop, /ULW-LOOP stop the loop, add two,
+            # each dispatched its skill on main (2).
+            expected=1036,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1244,8 +1251,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # and an own-run word inside a domain noun, /ulw-loop 무한 루프
             # 멈춰, as on main (2). A single common word that is a skill's
             # name is its material, not the skill: /omh-rust what is rust?,
-            # which got OMH's intro card on main (1).
-            expected=1032,
+            # which got OMH's intro card on main (1). A Korean stop verb
+            # before a task noun is work, /ulw-work 멈춰 서버, as on main (1),
+            # and /ulw-context status gets the status card where main ran the
+            # skill: aligning project terms has no status of its own (1).
+            expected=1034,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

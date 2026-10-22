@@ -2126,6 +2126,10 @@ def _with_canonical_display_names(routing_message: str) -> str:
     instead of letting the extra `omh` token pull the request toward the router
     skill. Names the catalog does not own are left alone.
     """
+    # A sigil's name in any case, as Hermes matches it ("/ULW-LOOP stop the loop").
+    sigil = re.match(r"\s*(?:\$|\./|/|@)\S+", routing_message)
+    if sigil:
+        routing_message = sigil.group(0).lower() + routing_message[sigil.end() :]
     if _explicit_skill_candidate_is_negated(routing_message, "omh-docs", "product-docs") or (
         contains_cue_phrase(routing_message, ("omh-docs",)) and not is_omh_docs_question(routing_message)
     ):
@@ -6977,14 +6981,16 @@ def _invoked_status_word(routing_message: str, skill: str) -> bool:
 def _invocation_as_written(written: str, routing_message: str) -> str:
     """A sigil invocation with only the skill's name folded to its canonical name (`_with_canonical_display_names`),
     the words after it as the person wrote them: a label said in them still names the skill ("/omh-rust what is
-    omh-rust?"), where the fold would leave a common word ("rust"). Any other message, or a fold that changed more
-    than the name, is ``routing_message``."""
+    omh-rust?"), where the fold would leave a common word ("rust"). The name is read in any case. Any other message,
+    or a fold that changed more than the name, is ``routing_message``."""
     folded, typed = routing_message.strip().split(maxsplit=1), written.strip().split(maxsplit=1)
     if not routing_message.strip().startswith(EXPLICIT_INVOCATION_PREFIXES) or len(folded) < 2 or len(typed) < 2:
         return routing_message
-    if _with_canonical_display_names(typed[0]) != folded[0]:
+    # The sigil's name in any case, as Hermes matches it ("/ULW-LOOP stop the loop").
+    head = _with_canonical_display_names(typed[0].lower())
+    if _with_canonical_display_names(folded[0].lower()) != head:
         return routing_message
-    return f"{folded[0]} {typed[1]}"
+    return f"{head} {typed[1]}"
 
 
 def invoked_skill_stops_or_asks(message: str) -> bool:

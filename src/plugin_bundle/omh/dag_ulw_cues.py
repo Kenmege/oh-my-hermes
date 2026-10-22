@@ -29,7 +29,7 @@ import re
 import unicodedata
 from typing import Final
 
-from .name_report_cues import _predicate_like, asks_after_the_name, asks_for_something, reports_on_the_name
+from .name_report_cues import asks_after_the_name, asks_for_something, reports_on_the_name
 
 DAG_ULW: Final = "dag-ulw"
 
@@ -268,8 +268,14 @@ _KOREAN_STOP_VERB_END: Final = re.compile(
     rf"(?:(?:멈춰(?:라)?|멈추(?:세요|자))(?:{_KOREAN_VERB_TAIL})?|(?:그만|{_KOREAN_STOP_NOUN})(?:{_KOREAN_VERB_TAIL}))$"
 )
 _KOREAN_STOP_WORDS_MAX: Final = 6
-# Clause endings `_predicate_like` does not read as one ("그만해 내가 할게").
-_KOREAN_CLAUSE_ENDINGS: Final = ("게", "걸", "거든", "잖아", "니까", "는데", "던데")
+# A why after a Korean stop verb is a reason when it closes on a predicate ending ("필요 없어", "내가 할게", "이거
+# 아니야", "지금 회의 중"), reads as a report on the run (`reports_on_the_name`: "비싸", "너무 오래 걸려"), or is only
+# fillers and stop words ("일단", "잠깐만", "멈춰 멈춰 제발"). A noun is the stop's object, so a loanword that closes
+# on a vowel is too ("취소해 주문", "멈춰 서버").
+_KOREAN_REASON_END: Final = re.compile(r"(?:[어아여해워야냐요다네게걸까래대데든군음함됨임듯]|아니라고|중)$")
+_KOREAN_FILLER_REASON: Final = re.compile(
+    r"^(?:(?:일단|잠깐만?|제발|좀|그냥|지금|빨리|당장|얼른|바로|멈춰|그만|그만해|취소|중단)\s*)+$"
+)
 # A word that only answers or interrupts before the stop ("no stop", "no, stop", "잠깐 멈춰").
 _INTERJECTION: Final = re.compile(r"^(?:no|nope|wait|ok|okay|아니|아니야|잠깐|야)(?:\s*[,!.]+\s*|\s+)(?=\S)")
 # What the skill is, in Japanese and Chinese, which `asks_after_the_name` does not read.
@@ -322,8 +328,10 @@ def stops_the_run(rest: str, *, names: tuple[str, ...] = (), nouns: tuple[str, .
         stop, why = " ".join(words[:cut]), " ".join(words[cut:])
         if alone.match(stop):
             # Not a why that asks how or why, which asks about stopping ("취소해줘 왜 안 돼": `_asks_about_stopping`).
-            last = words[-1].rstrip(".!?~")
-            return (_predicate_like(last) or last.endswith(_KOREAN_CLAUSE_ENDINGS)) and not (
+            reason = why.rstrip(".!?~ ")
+            return bool(
+                _KOREAN_FILLER_REASON.match(reason) or _KOREAN_REASON_END.search(reason) or reports_on_the_name(reason)
+            ) and not (
                 asks_for_something(", " + why) or _KOREAN_WORK_WORD.search(why) or _KOREAN_HOW.search(why)
             )
     return False

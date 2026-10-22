@@ -44,6 +44,11 @@ OWN_RUN_STOPS = (
     "/omh-codebase-onboarding stop the tour", "/omh-build-failure-triage stop triaging", "/omh-paper-learning stop learning",
     "/ulw-loop ループを止めて", "/omh-code-review レビューをキャンセル", "/ulw-loop 停止循环", "/omh-code-review 取消审查",
     "/ulw-plan 计划取消",
+    # A stop then only fillers, a negation or what the person is in the middle of.
+    "/ulw-work 멈춰 일단", "/ulw-work 멈춰 잠깐만", "/ulw-work 취소해 이거 아니야", "/ulw-work 그만해 그거 아니야",
+    "/ulw-work 그만해 지금 회의 중", "/ulw-work 멈춰 멈춰 멈춰 제발",
+    # The sigil's name in any case, as Hermes matches it.
+    "/ULW-LOOP stop the loop", "/Omh-Code-Review 리뷰 취소",
 )
 # A question about the skill itself.
 META_QUESTIONS = (
@@ -55,12 +60,15 @@ META_QUESTIONS = (
     "/omh-code-review 어떻게 써?", "/omh-code-review how do I use it?", "/omh-paper-learning 어떻게 써?",
     # The skill named by its label or its hyphenated name.
     "/omh-rust what is omh-rust?", "/ulw-loop what is ulw-loop?", "/omh-plan what is omh-plan?",
+    "/ulw-work what is ulw?", "/ULW-LOOP what is ULW-LOOP?", "/omh-docs 사용법 알려줘",
 )
 # How the run stands, after a skill whose work is not that status.
 STATUS_REQUESTS = (
     "/ulw-work status", "/ulw-work show status", "/ulw-work show me the run", "/ulw-loop 상태 보여줘",
     "/omh-code-review 진행상황 알려줘", "/ulw-work 뭐 남았어?", "/ultrawork still running?",
     "/omh-app-debugging is it running?", "/omh-app-debugging 끝났어?", "/ulw-plan 状態", "/omh-plan 状态",
+    # ulw-context aligns project terms; its status is no work of its own.
+    "/ulw-context status", "/ulw-context how much context is left?",
 )
 # Everything else runs the skill: a stop verb with a task object, a question with one, and a status request to a
 # skill whose own work that status is.
@@ -91,9 +99,10 @@ REQUESTS = (
     ("/omh-docs what is a skill?", "product-docs"), ("/omh-docs 스킬이 뭐야?", "product-docs"),
     ("/omh-skill-scout what can a skill do?", "skill-scout"), ("/omh-frontend what does the frontend do?", "frontend"),
     ("/ulw-research what is the research about?", "research"), ("/ulw-context what is the context?", "context"),
-    ("/ulw-context how much context is left?", "context"),
     # A single common word that is a skill's name is its material: the language, not the skill.
     ("/omh-rust what is rust?", "rust"), ("/omh-rust how does rust work?", "rust"),
+    # A stop verb before a task noun is that thing's stop; an uppercase sigil runs its skill as lower case does.
+    ("/ulw-work 멈춰 서버", "ultrawork"), ("/ULW-LOOP fix the flaky test until green", "loop"),
     # A stop verb before a task noun, a domain word that shares an own-run noun, and a stop of something else.
     ("/ulw-work 취소해 주문", "ultrawork"), ("/ulw-loop 무한 루프 멈춰", "loop"),
     ("/ulw-research stop the research paper from leaking", "research"), ("/ulw-work 取消订单", "ultrawork"),
