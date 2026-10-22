@@ -771,12 +771,12 @@ run and approval decision stays Hermes'; the screen is OMH's.
   slash command you send instead still runs: one that sends a prompt (a
   skill, `/plan`, `/steer <text>`) sends it in place of the picked prompt,
   the same way, and one that only prints (`/help`, `/usage`) leaves the
-  rewind picked for the next prompt you send. `/retry` drops the rewind and
-  resends as it does without one, since Hermes takes the last turn back
-  itself. If
-  Hermes refuses it, the screen goes back to how it was before you sent, and
-  is then redrawn from the history Hermes sends, as Hermes still has the
-  session; if Hermes does not send that history, a notice says so and the
+  rewind picked for the next prompt you send. `/retry` cancels the rewind,
+  even one picked while it was out, says so, and resends as it does without
+  one, since Hermes takes the last turn back itself. If Hermes refuses a
+  rewind, the screen goes back to how it was before you sent, and is then
+  redrawn from the history Hermes sends, as Hermes still has the session; if
+  Hermes does not send that history, a notice says so and the
   screen stays as it was before you sent. A prompt you queued behind the
   rewind goes once that is settled.
   Esc twice with text clears it, keeping it in this session's input history

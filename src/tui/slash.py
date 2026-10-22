@@ -31,7 +31,7 @@ relies on: a prompt typed in plan mode goes out as `/plan <text>`
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 LOCAL = "local"
 HERMES = "hermes"
@@ -143,7 +143,8 @@ class SlashInvocation:
     busy mode: it is a steer Hermes did not take. `rewind` is the rewind the
     person had picked when they sent it (the app's `Rewind`), or None: a
     prompt it sends goes in place of the picked one while that very rewind is
-    still picked.
+    still picked. It is matched by identity, so it takes no part in `==` or
+    `hash()`.
     """
 
     name: str
@@ -151,7 +152,7 @@ class SlashInvocation:
     command: SlashCommand | None
     for_plan_mode: bool = False
     held: bool = False
-    rewind: object | None = None
+    rewind: object | None = field(default=None, compare=False)
 
     @property
     def text(self) -> str:

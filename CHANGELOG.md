@@ -39,10 +39,12 @@ All notable changes will be documented here.
   place, as a typed prompt does: the session is cut there, the screen is
   redrawn from the cut, and the rewind clears; `/steer <text>` sent between
   turns does the same. A command that only prints (`/help`, `/usage`) runs
-  and leaves the rewind picked. `/retry` drops the rewind and resends plain,
-  since Hermes' `/retry` takes the last turn back itself. A rewind cancelled
-  before Hermes builds the command's prompt, or picked (again) after the
-  command went, cuts nothing and stays picked for the next prompt.
+  and leaves the rewind picked. `/retry` cancels the rewind, says so, and
+  resends plain, since Hermes' `/retry` takes the last turn back itself; a
+  rewind picked while it was out, or the rewind list left open, goes too. For
+  any other command, a rewind cancelled before Hermes builds the command's
+  prompt, or picked (again) after the command went, cuts nothing and stays
+  picked for the next prompt.
 
 ## 4.0.1 - 2026-10-22
 

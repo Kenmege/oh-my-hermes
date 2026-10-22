@@ -14,15 +14,17 @@ the picked prompt's place; one that only prints leaves the rewind picked.
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from _tui_lines import line_text, lines_text
 from test_tui_command_output import SKILL_LINE, SKILL_REFUSAL, SKILL_TURN
 from test_tui_gateway_contract import recorded_rows
 from test_tui_modes import PLAN_PROMPT, SID, answer, make_app, notices, type_text
-from omh.tui.app import DOUBLE_ESCAPE_SECONDS, App
+from omh.tui.app import DOUBLE_ESCAPE_SECONDS, REWIND_RETRY_NOTICE, App
 from omh.tui.gateway import Event, Response
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, Key
 from omh.tui.rewind_picker import CLOSE, PICK, RewindPicker, rewind_rows
+from omh.tui.slash import SlashInvocation
 from omh.tui.theme import DEFAULT_THEME
 from omh.tui.transcript import NOTICE_WARN, AssistantBlock, CommandBlock, NoticeBlock, UserBlock
 
@@ -393,14 +395,21 @@ class RewindCommandTests(unittest.TestCase):
         self.assertNotIn("rewind", line_text(app._info_line(100)))
 
     def test_a_built_in_command_that_sends_a_prompt_sends_it_in_the_picked_ones_place(self) -> None:
-        app, client = picked()
-        self.send(app, "/plan fix the flaky test")
-        answer(app, client, error={"code": 4018, "message": "pending-input command"})
-        answer(app, client, {"type": "send", "message": PLAN_PROMPT})
-        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": PLAN_PROMPT,
-                                                              "truncate_before_row_id": 7, "confirm_truncate": True}))
-        self.assertIsNone(app.rewind)
-        self.assertEqual(self.users(app), [TODO_PROMPT, PLAN_PROMPT])  # what Hermes stores, as a resumed session shows
+        # Hermes 0.22.2's slash.exec runs command.dispatch itself for /plan (`_PENDING_INPUT_COMMANDS`) and answers
+        # with its `send`; the TUI's 4018 fallback to command.dispatch, which a skill takes, gives the same.
+        for refused in (False, True):
+            with self.subTest(refused_first=refused):
+                app, client = picked()
+                start = self.send(app, "/plan fix the flaky test")
+                if refused:
+                    answer(app, client, error={"code": 4018, "message": "pending-input command"})
+                answer(app, client, {"type": "send", "message": PLAN_PROMPT})
+                self.assertEqual([method for method, _params in client.calls[start:]],
+                                 ["slash.exec", *(["command.dispatch"] if refused else []), "prompt.submit"])
+                self.assertEqual(client.calls[-1][1], {"session_id": SID, "text": PLAN_PROMPT,
+                                                       "truncate_before_row_id": 7, "confirm_truncate": True})
+                self.assertIsNone(app.rewind)
+                self.assertEqual(self.users(app), [TODO_PROMPT, PLAN_PROMPT])  # what Hermes stores and a resume shows
 
     def test_what_the_dispatch_says_goes_under_the_new_row_after_the_cut(self) -> None:
         notice = "⚡ Loading 2 stacked skills: dag-ulw, review"
@@ -477,13 +486,63 @@ class RewindCommandTests(unittest.TestCase):
 
     def test_retry_drops_the_rewind_and_resends_plain_since_hermes_took_the_turn_back(self) -> None:
         # Hermes' /retry rewinds the last turn itself (methods_tools.py `_cmd_retry`): a cut at the picked row on top
-        # of that names a row that moved, and Hermes refuses it, so the retry would never run.
+        # of that names a row that moved, and Hermes refuses it, so the retry would never run. slash.exec runs
+        # command.dispatch itself for /retry (`_PENDING_INPUT_COMMANDS`), so it answers with the `send`.
         app, client = picked()
         self.send(app, "/retry")
         self.assertEqual(client.calls[-1], ("slash.exec", {"command": "retry", "session_id": SID}))
         answer(app, client, {"type": "send", "message": SECOND_PROMPT})
         self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": SECOND_PROMPT}))
         self.assertIsNone(app.rewind)
+        self.assertIn(REWIND_RETRY_NOTICE, notices(app))
+
+    def test_retry_also_cancels_a_rewind_picked_while_it_was_out_and_closes_the_picker(self) -> None:
+        # The picks and the picker were made from the session as it was before Hermes took the last turn back.
+        for down, text in ((0, SECOND_PROMPT), (1, TODO_PROMPT), (0, None)):
+            with self.subTest(row=down, picks=text is not None):
+                app, client = picked()
+                self.send(app, "/retry")
+                retry = len(client.calls)
+                esc(app)  # the pick /retry went with is cancelled; the next is made while /retry is out
+                app._rewind("")
+                answer(app, client, HISTORY)
+                for _ in range(down):
+                    app._on_input(Key(DOWN))
+                if text is not None:
+                    app._on_input(Key(ENTER))
+                app._on_response(Response(retry, {"type": "send", "message": SECOND_PROMPT}, None))
+                self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": SECOND_PROMPT}))
+                self.assertIsNone(app.rewind)
+                self.assertIsNone(app.rewind_picker)
+                self.assertIn(REWIND_RETRY_NOTICE, notices(app))
+                self.assertNotIn("rewind", line_text(app._info_line(100)))
+                self.assertEqual(app.composer.text, text or "")  # the picked text stays as a draft
+
+    def test_retry_answered_with_an_empty_prompt_still_cancels_the_rewind(self) -> None:
+        # Hermes took the turn back before it answered, whatever the answer carries.
+        app, client = picked()
+        self.send(app, "/retry")
+        answer(app, client, {"type": "send", "message": "  "})
+        self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
+        self.assertIsNone(app.rewind)
+        self.assertIn("/retry: empty message", notices(app, NOTICE_WARN))
+
+    def test_retry_with_no_rewind_picked_says_nothing_about_one(self) -> None:
+        app, client = make_app()
+        self.send(app, "/retry")
+        answer(app, client, {"type": "send", "message": SECOND_PROMPT})
+        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": SECOND_PROMPT}))
+        self.assertNotIn(REWIND_RETRY_NOTICE, notices(app))
+
+    def test_the_rewind_an_invocation_carries_takes_no_part_in_its_equality_or_hash(self) -> None:
+        # It is matched by identity (`is`): a Rewind holds the history's dicts, so hashing it raises.
+        app, _client = picked()
+        with self.assertRaises(TypeError):
+            hash(app.rewind)
+        bare = SlashInvocation("retry", "", None)
+        carried = replace(bare, rewind=app.rewind)
+        self.assertEqual(carried, bare)
+        self.assertEqual(hash(carried), hash(bare))
 
     def test_a_rewind_picked_again_while_the_dispatch_is_out_is_not_the_commands(self) -> None:
         # Esc cancelled the pick the command went with; a pick made after it, even of the same row, is the next prompt's.
