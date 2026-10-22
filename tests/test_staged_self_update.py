@@ -882,7 +882,9 @@ class StagedSelfUpdateTests(unittest.TestCase):
                     timeout=timeout,
                 )))
                 link = Path(env["OMH_JUNCTION_LINK"])
-                link.symlink_to(env["OMH_JUNCTION_TARGET"], target_is_directory=True)
+                target = Path(env["OMH_JUNCTION_TARGET"])
+                self.assertTrue(target.is_absolute(), "PowerShell 7 rejects relative junction targets")
+                link.symlink_to(target, target_is_directory=True)
                 return subprocess.CompletedProcess(command, 0, "", "")
 
             platform = SelfUpdatePlatform.windows(junction_runner)
@@ -1085,20 +1087,91 @@ class StagedSelfUpdateTests(unittest.TestCase):
                 SelfUpdatePlatform.windows(junction_runner).create_directory_link(root, link, target)
 
             command, kwargs = calls[0]
-            relative_target = os.path.relpath(target, link.parent)
             program_text = subprocess.list2cmdline(command)
             self.assertNotIn("A&B%TEMP%^!()", "\n".join(command))
             self.assertNotIn("A&B%TEMP%^!()", program_text)
             self.assertEqual(kwargs["env"], {
                 "PRESERVED": "yes",
                 "OMH_JUNCTION_LINK": str(link),
-                "OMH_JUNCTION_TARGET": relative_target,
+                "OMH_JUNCTION_TARGET": str(target.absolute()),
             })
             self.assertEqual(command[0], "powershell.exe")
             self.assertEqual(command[1:4], ["-NoLogo", "-NoProfile", "-NonInteractive"])
             self.assertTrue(kwargs["shell"] is False)
             self.assertEqual(kwargs["cwd"], str(link.parent))
             self.assertGreater(kwargs["timeout"], 0)
+
+    def test_windows_junction_absolutizes_relative_target_without_resolving_aliases(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            generations = root / "generations"
+            generations.mkdir()
+            (generations / "candidate").mkdir()
+            alias = root / "generation-alias"
+            alias.symlink_to(generations, target_is_directory=True)
+            target = Path("generation-alias") / "candidate"
+            targets: list[str] = []
+
+            def junction_runner(
+                command: list[str],
+                *,
+                shell: Literal[False],
+                cwd: str,
+                env: dict[str, str],
+                text: Literal[True],
+                stdout: int,
+                stderr: int,
+                timeout: float,
+            ) -> subprocess.CompletedProcess[str]:
+                targets.append(env["OMH_JUNCTION_TARGET"])
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            # A relative input is relative to the process, not the new link.
+            # Keep cwd on the temporary drive even when Windows CI checks the
+            # repository out on a different drive from its temporary directory.
+            with contextlib.chdir(root):
+                SelfUpdatePlatform.windows(junction_runner).create_directory_link(root, root / "link", target)
+
+            self.assertEqual(targets, [str(alias / "candidate")])
+            self.assertTrue(Path(targets[0]).is_absolute())
+
+    def test_windows_junction_does_not_compute_a_cross_drive_relative_path(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            calls: list[str] = []
+
+            def junction_runner(
+                command: list[str],
+                *,
+                shell: Literal[False],
+                cwd: str,
+                env: dict[str, str],
+                text: Literal[True],
+                stdout: int,
+                stderr: int,
+                timeout: float,
+            ) -> subprocess.CompletedProcess[str]:
+                calls.append(env["OMH_JUNCTION_TARGET"])
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            # Windows relpath raises across drives; junctions permit that target.
+            with patch.object(os.path, "relpath", side_effect=ValueError("path is on a different drive")):
+                SelfUpdatePlatform.windows(junction_runner).create_directory_link(root, root / "link", root / "target")
+
+            self.assertEqual(calls, [str(root / "target")])
+
+    def test_posix_directory_link_keeps_the_relative_payload(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "generations" / "candidate"
+            target.mkdir(parents=True)
+            (target / "sentinel").write_text("candidate", encoding="utf-8")
+            platform = SelfUpdatePlatform.host(is_windows=False)
+
+            platform.create_directory_link(root, root / "current", target)
+
+            self.assertEqual(os.readlink(root / "current").replace("\\", "/"), "generations/candidate")
+            self.assertEqual((root / "current" / "sentinel").read_text(encoding="utf-8"), "candidate")
 
     def test_windows_broken_junction_is_removed_even_without_a_target(self):
         broken = Path("broken-junction")

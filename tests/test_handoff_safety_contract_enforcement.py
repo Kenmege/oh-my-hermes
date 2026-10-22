@@ -1836,7 +1836,7 @@ class WindowsJunctionCommandBoundary(unittest.TestCase):
         expected_environment = {
             "PRESERVED": "yes",
             JUNCTION_LINK_ENV: str(link),
-            JUNCTION_TARGET_ENV: os.path.relpath(target, link.parent),
+            JUNCTION_TARGET_ENV: str(target.absolute()),
         }
         self.assertEqual(
             kwargs["env"],
