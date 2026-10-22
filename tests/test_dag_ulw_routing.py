@@ -243,6 +243,13 @@ class RouterTests(unittest.TestCase):
                         "for each of my PRs: rebase onto main and fix the conflicts", "for every open PR, rebase it onto main",
                         # A count of PRs, repos or branches with a breadth word after it is many of them.
                         "PR 3개 전부 리베이스해줘", "PR 5개 다 머지해줘", "레포 3개 전부 의존성 올려줘", "풀리퀘 3개 전부 리베이스해줘",
+                        # More breadth words, casual imperatives and request endings, a change asked in one clause,
+                        # and a change aimed so a thing does not happen a few words off (#2232 follow-ups).
+                        "PR들 쭉 리베이스해줘", "PR들 하나도 빠짐없이 리베이스해줘", "take the failing tests and fix them all",
+                        "PR들 전부 닫아", "모든 테스트 고쳐", "모든 패키지 버전 올려라", "PR들 전부 리베이스해주라", "PR들 전부 리베이스 고고싱",
+                        "모든 패키지 업데이트해놔라", "모든 서비스 업데이트해주십쇼", "모든 서비스 업데이트 요망",
+                        "모든 서비스 업데이트해 주시면 감사하겠습니다", "모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘",
+                        "모든 페이지 더블클릭 안 되게끔 수정해줘", "모든 서비스에서 중복 결제가 안 되게 수정해줘",
                         # The same request now is no schedule.
                         "rebase every open PR now", "지금 바로 열린 PR들 전부 리베이스해줘", "이번에 한 번만 열린 PR들 전부 리베이스해줘",
                         # A change aimed so a thing does not happen, with 수정 as with 고쳐.
@@ -290,7 +297,7 @@ class RouterTests(unittest.TestCase):
                         "반나절마다 PR들 전부 리베이스해줘", "스프린트마다 모든 패키지 올려줘", "배포마다 모든 서비스 설정 업데이트해줘",
                         "매 분기마다 모든 레포 라이선스 업데이트해줘", "매 스프린트 모든 패키지 올려줘", "3일 간격으로 모든 서비스 업데이트해줘",
                         "fix all failing tests on every push", "rebase all open PRs on each merge", "자정에 PR들 전부 리베이스해줘",
-                        "하루 걸러 모든 서비스 업데이트해줘", "우리 팀 PR 하나 테스트 다 고쳐줘"):
+                        "하루 걸러 모든 서비스 업데이트해줘", "우리 팀 PR 하나 테스트 다 고쳐줘", "일정 간격으로 PR들 전부 리베이스해줘"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 router, hint, _candidate = self._dag_ulw_starts(message)
@@ -362,6 +369,34 @@ class RouterTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
 
+    def test_a_split_starts_only_where_the_router_dispatches_it(self) -> None:
+        # Rule A for the size cues: named work asked to split into parallel parts dispatches dag-ulw on the router and
+        # starts it in the hint; a split of text, a proposal, a plan said, a report, a question or breadth alone is
+        # asked about on the router and offered in the hint, never started by the hint alone.
+        for message in ("fan out across the services and migrate each one to the new logger",
+                        "the migration is big, split it into parallel lanes", "결제, 주문, 배송 모듈을 병렬로 나눠서 리팩터링해줘",
+                        "문장 분리기와 문단 파서 작업을 병렬로 나눠서 구현해줘", "can you split the api, ui and docs work into parallel lanes?",
+                        "analyze API and UI in parallel, then integrate the findings",
+                        "api, ui, docs 작업을 병렬로 나눠서 마이그레이션하고 결과 알려줘",
+                        "tell me when done: split the api, ui and docs work into parallel lanes",
+                        "결제, 주문, 배송 모듈을 병렬로 나눠서 리팩터링해줄래?", "api, ui, docs 작업을 병렬로 나눠서 구현해 주시겠어요?",
+                        "api, ui, docs 작업을 병렬로 나눠서 구현해줄 수 있어?"):
+            with self.subTest(message=message):
+                self.assertTrue(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
+        for message in ("split the paragraphs into parallel parts for translation", "문단 하나를 병렬로 나눠서 번역해줘",
+                        "how about we fan out across the services and migrate each one",
+                        "my plan is to split the api, ui and docs work into parallel lanes",
+                        "fan out across the services and give each a one-sentence summary",
+                        "which way should I split the work into parallel lanes", "split this into parallel tasks: lint, test, build",
+                        "여러 모듈에 걸친 결제 기능 구현해줘", "why don't we split the api, ui and docs work into parallel lanes",
+                        "maybe split the api, ui and docs work into parallel lanes", "split the translation work into parallel lanes"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+                offers = [hint for hint in awareness_route_hint(message)["hints"] if hint.get("workflow") == "dag-ulw"]
+                self.assertEqual([hint.get("next_action") for hint in offers], ["ask_one_clarification"])
+
     def test_a_missing_skill_catalog_is_not_kept(self) -> None:
         # With no sidecar the catalog names are unknown, and that is not kept: once the sidecar answers, a request
         # that opens with a catalog skill's name is that skill's again.
@@ -423,7 +458,8 @@ class RouterTests(unittest.TestCase):
                         "모든 페이지가 하얗게 나와 고쳐줘", "모든 테스트가 돌지 않아 고쳐줘", "모든 서비스에서 로그인이 안 돼 수정 부탁",
                         "모든 서비스 업데이트 해 놨어", "PR들 몽땅 머지됐어", "모든 패키지 최신화 완료",
                         "for each of my PRs, tell me the status", "for each of my PRs: summarize the changes",
-                        "PR들 몽땅 리베이스할까?", "PR 3개 중 하나 리베이스해줘"):
+                        "PR들 몽땅 리베이스할까?", "PR 3개 중 하나 리베이스해줘", "PR들 전부 머지하지마", "PR들 전부 고쳐?",
+                        "PR들 쭉 리베이스했어"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertFalse(work_over_many_targets(message))

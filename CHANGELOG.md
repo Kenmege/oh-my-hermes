@@ -4,6 +4,24 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The route hint no longer starts dag-ulw on a split the router only asks
+  about (#2232 follow-ups).** A split into parallel parts ("fan out across the
+  services …", "split … into parallel lanes", "병렬로 나눠서 …") started a
+  dag-ulw run from the hint on 36 survey rows while the router only clarified.
+  Now named work asked to split runs as a graph on both: a work verb after the
+  split (`fan out across the services and migrate each one`, `…, then
+  integrate`, `모듈을 병렬로 나눠서 리팩터링해줘`) or a work noun as what splits (`the
+  migration is big, split it into parallel lanes`), in an imperative, a
+  polite request, or after `tell me when done:`. A split of text to translate,
+  a proposal or a plan said (`how about we …`, `my plan is to …`, `maybe …`), a
+  question how to split, a report, or breadth alone is asked about on the
+  router and offered in the hint, never started. More Korean request forms
+  count (`닫아`, `고쳐`, `올려라`, `주라`, `고고싱`, `놔라`, `해주십쇼`, `요망`, `…해 주시면
+  감사하겠습니다`), breadth words `쭉` and `하나도 빠짐없이`, `… fix them all`, a change
+  in one clause (`모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘`), and a change
+  aimed so a thing does not happen a few words off (`… 안 되게끔 수정해줘`).
+  `일정 간격으로` is a schedule.
+
 - **`NO_COLOR` turns off colour in the whole OMH TUI (#2223 review item
   17).** With `NO_COLOR` set to any non-empty value (no-color.org), only the
   motion and the delegation graph used to honour it. The transcript,

@@ -847,8 +847,13 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # files and a count of PRs with no breadth word (2). Its fourth
             # review adds three, each a clarify or a fallback as on main: a
             # noun with 마다, an interval, and PR 하나 (3).
+            # The dag-ulw follow-ups add four, each a clarify: a split of text
+            # to translate (a clarify whose hint started dag-ulw on main), a
+            # proposed split and a question how to split (dag-ulw dispatches on
+            # main) (3), and an unnumbered interval, a schedule (a dag-ulw
+            # dispatch on main) (1).
             # Three domain-science vocabulary controls (+3).
-            expected=1070,
+            expected=1074,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1320,9 +1325,13 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # (a clarify on main) (1). Its fourth review adds three: 배포마다
             # stays on toolbelt-readiness and on every push on ultrawork, as on
             # main (2), and 각 서비스마다 runs as a graph, each service and no
-            # schedule (a fallback on main) (1).
+            # schedule (a fallback on main) (1). The dag-ulw follow-ups add five,
+            # each a dag-ulw graph: a fan out and a Korean split that name the
+            # work (clarifies on main whose hint started dag-ulw) (2), a casual
+            # imperative over every PR (a fallback on main) (1), a change aimed a
+            # few words off and a change in one clause (clarifies on main) (2).
             # Three unnamed domain-science interventions (+3).
-            expected=1075,
+            expected=1080,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

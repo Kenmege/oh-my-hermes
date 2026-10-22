@@ -730,7 +730,8 @@ _KOREAN_UNIT: Final = r"(?:pr|prs|pull\s*request|레포|리포|저장소|서비�
 _KOREAN_COUNTED_UNIT: Final = r"(?:pr|pull\s*request|풀\s*리퀘(?:스트)?|레포|리포|repo|브랜치|branch)"
 _KOREAN_COUNT: Final = r"(?:두|세|네|다섯|여러|[2-9]|\d{2,})\s*(?:개|건)"
 _KOREAN_BREADTH_OBJECT: Final = (
-    rf"(?:(?<![가-힣])(?:마이크로)?{_KOREAN_UNIT}(?:들)?\s*(?:을|를|은|는)?\s*(?:전부|모두|다|싹|몽땅|하나하나|각각)(?![가-힣])"
+    rf"(?:(?<![가-힣])(?:마이크로)?{_KOREAN_UNIT}(?:들)?\s*(?:을|를|은|는)?\s*(?:전부|모두|다|싹|몽땅|쭉|하나하나|각각"
+    rf"|(?:하나도\s*)?빠짐없이)(?![가-힣])"
     rf"|(?<![가-힣a-z]){_KOREAN_COUNTED_UNIT}(?:들)?\s*{_KOREAN_COUNT}\s*(?:을|를|은|는)?\s*(?:전부|모두|다|몽땅)(?![가-힣])"
     rf"|(?<![가-힣])(?:모든|전체|각)\s*(?:마이크로)?{_KOREAN_UNIT}(?:들)?(?:을|를|에|의|에서)?)"
 )
@@ -759,10 +760,10 @@ _FIX_VERB: Final = re.compile(r"\b(?:fix|resolve|debug|repair)\b|고쳐|고치|�
 
 def _closes_a_clause(word: str) -> bool:
     """Whether a Korean predicate ``word`` closes its clause, as a symptom does ("안 돌아가", "느려", "나와", "안됨"), rather
-    than aiming the change (…게, …도록: "안 되게 고쳐줘", "쓰지 않게"), going on to more (…고), or describing a noun (…는,
-    …던, …은, a final ㄴ: "안 돌아가는 테스트")."""
+    than aiming the change (…게, …게끔, …도록: "안 되게 고쳐줘", "안 되게끔 수정해줘", "쓰지 않게"), going on to more (…고), or
+    describing a noun (…는, …던, …은, a final ㄴ: "안 돌아가는 테스트")."""
     code = ord(word[-1]) - 0xAC00
-    return not (word.endswith(("게", "도록", "고", "는", "던", "은")) or (0 <= code < 11172 and code % 28 == 4))
+    return not (word.endswith(("게", "게끔", "도록", "고", "는", "던", "은")) or (0 <= code < 11172 and code % 28 == 4))
 
 
 def _one_fault(folded: str) -> bool:
@@ -823,25 +824,38 @@ _EN_BREADTH: Final = (
 _EN_FOR_EACH: Final = (
     rf"for\s+(?:each|every|all)\s+(?:of\s+)?(?:the\s+|my\s+|our\s+)?(?:\S+\s+){{0,2}}?{_EN_UNITS}\b\s*[:,]?\s*(?:please\s+)?"
 )
+_EN_PLURAL_UNITS: Final = (
+    r"(?:prs|pull\s+requests|repos|repositories|(?:micro)?services|modules|packages|components|endpoints|tests|issues|files"
+    r"|pages|apps|branches)"
+)
 _EN_OFFER: Final = re.compile(
     rf"^(?:please\s+)?{_POLITE_OPENER}?(?:{_EN_OFFER_VERB}\b[^.?!]*?{_EN_BREADTH}"
     rf"|(?:check|go\s+through|look\s+at)\b[^.?!]*?{_EN_BREADTH}[^.?!]*?\band\s+(?:then\s+)?{_EN_CHANGE_VERB}\b"
     rf"|{_EN_FOR_EACH}{_EN_OFFER_VERB}\b)"
+    rf"|\b{_EN_PLURAL_UNITS}\b[^.?!]*?\b{_EN_OFFER_VERB}\s+them\s+all\b"
 )
 _EN_LATER_CLAUSE_VERB: Final = re.compile(r"\band\s+(?:then\s+)?(?:just\s+)?([a-z]+)")
-_KOREAN_OFFER: Final = re.compile(rf"{_KOREAN_BREADTH_OBJECT}\s*(?:\S+\s+){{0,3}}\S*{_KOREAN_OFFER_VERB}")
+_KOREAN_OFFER: Final = re.compile(
+    rf"{_KOREAN_BREADTH_OBJECT}\s*(?:\S+\s+){{0,3}}\S*{_KOREAN_OFFER_VERB}"
+    rf"|{_KOREAN_BREADTH_OBJECT}\s*(?:\S+\s+){{0,4}}\S*(?:게|게끔|도록)\s+(?:좀\s+)?\S*{_KOREAN_OFFER_VERB}"
+)
 # An explicit request: a Korean request ending on the verb, the message's last word ("리베이스해줘", "리베이스해줘요",
 # "리베이스해", "올려놔", "올리자", "리베이스해주셈"), or said as a word of its own right after the verb ("리베이스 해줘",
 # "업데이트 좀 해 주세요", "업데이트 해 놔줘", "업데이트 시켜줘", "업데이트 부탁", "고쳐 줘", "리베이스 ㄱ", "리베이스 고"); or a
 # chain of two or more change verbs joined by 고 ("닫을건 닫고 리뷰반영할건 리뷰반영하고 rebase할건 리베이스하고").
-_KOREAN_GIVE: Final = r"(?:줘요|줘|주세요|주세용|주셈|줄래)"
+_KOREAN_GIVE: Final = r"(?:줘요|줘|주세요|주세용|주셈|주라|주십쇼|주십시오|줄래)"
+# A casual imperative of a change verb closes a request on its own ("PR들 전부 닫아", "모든 테스트 고쳐", "모든 패키지
+# 올려라").
+_KOREAN_PLAIN_IMPERATIVE: Final = r"(?:닫아|고쳐|올려|바꿔|옮겨|붙여|만들어|넣어)(?:라)?"
 _KOREAN_REQUEST_END: Final = re.compile(
-    rf"(?:해\s*{_KOREAN_GIVE}|하자|{_KOREAN_GIVE}|해라|해|놔|둬|자|{_G}+|고고)\s*[.!~]*$"
+    rf"(?:해\s*{_KOREAN_GIVE}|하자|{_KOREAN_GIVE}|해라|해|놔라|둬라|놔|둬|자|{_KOREAN_PLAIN_IMPERATIVE}|{_G}+|고고싱|고고)"
+    r"\s*[.!~]*$"
 )
 _KOREAN_BARE_REQUEST_END: Final = re.compile(
     r"\s(?:(?:좀|꼭|다시|빨리|얼른|바로|제발)\s+)?"
     rf"(?:(?:진행\s*)?해\s*(?:{_KOREAN_GIVE}|(?:놔|둬)\s*{_KOREAN_GIVE}?)?|{_KOREAN_GIVE}|시켜\s*{_KOREAN_GIVE}?|하자"
-    rf"|부탁(?:해요|해|드려요|드립니다|합니다|요)?|(?:해\s*)?주시기\s*바랍니다|바랍니다|(?:놔|둬)\s*{_KOREAN_GIVE}?|{_G}+|고고|고)"
+    rf"|부탁(?:해요|해|드려요|드립니다|합니다|요)?|(?:해\s*)?주시기\s*바랍니다|바랍니다|(?:해\s*)?주시면\s*감사하겠습니다|요망"
+    rf"|(?:놔|둬)(?:라|\s*{_KOREAN_GIVE})?|{_G}+|고고싱|고고|고)"
     r"\s*[.!~]*$"
 )
 # The verb a bare ending is said after closes its word, or carries only its own ending ("고쳐", "만들어", "업데이트해",
@@ -858,6 +872,11 @@ def _korean_request_verb(folded: str) -> tuple[str, bool]:
         words = folded[: bare.start()].split()
         return (words[-1] if words else ""), True
     return (folded.rstrip(" .!~").split()[-1] if _KOREAN_REQUEST_END.search(folded) else ""), False
+
+
+def _korean_clauses(folded: str) -> list[str]:
+    """``folded``, then each clause of it between commas or semicolons."""
+    return [folded, *re.split(r"\s*[,;]\s*", folded)]
 
 
 def _asks_for(folded: str, verbs: str) -> bool:
@@ -877,7 +896,11 @@ def _asks_for(folded: str, verbs: str) -> bool:
 # requests"), a bare object on every unit ("add auth to every endpoint"), or a plural object in all of them ("update
 # the dependencies in all services"). A singular object in many places is one change ("fix the login bug on every
 # page", "update the license header in every file").
-_KOREAN_CHANGE_ON_BREADTH: Final = re.compile(rf"{_KOREAN_BREADTH_OBJECT}\s*(?:\S+\s+){{0,3}}\S*{_KOREAN_CHANGE_VERB}")
+# A clause that aims the change may sit between them, a few words longer ("모든 서비스에서 중복 결제가 안 되게 수정해줘").
+_KOREAN_CHANGE_ON_BREADTH: Final = re.compile(
+    rf"{_KOREAN_BREADTH_OBJECT}\s*(?:\S+\s+){{0,3}}\S*{_KOREAN_CHANGE_VERB}"
+    rf"|{_KOREAN_BREADTH_OBJECT}\s*(?:\S+\s+){{0,4}}\S*(?:게|게끔|도록)\s+(?:좀\s+)?\S*{_KOREAN_CHANGE_VERB}"
+)
 _EN_CHANGE_ON_BREADTH: Final = re.compile(
     rf"^(?:please\s+)?{_POLITE_OPENER}?{_EN_CHANGE_VERB}\s+"
     rf"(?:(?:all|every|each)\s+(?:of\s+)?(?:the\s+|my\s+|our\s+)?(?:\S+\s+){{0,2}}?{_EN_UNITS}\b"
@@ -887,6 +910,8 @@ _EN_CHANGE_ON_BREADTH: Final = re.compile(
     # A read first, then a change on the same targets by pronoun ("go through all my open PRs and rebase them").
     rf"|^(?:please\s+)?{_POLITE_OPENER}?(?:go\s+through|check|look\s+at)\b[^.?!]*?{_EN_BREADTH}[^.?!]*?"
     rf"\band\s+(?:then\s+)?{_EN_CHANGE_VERB}\s+(?:them|each(?:\s+one)?|all\s+of\s+them)\b"
+    # Plural units, then a change on them all ("take the failing tests and fix them all", "open PRs: rebase them all").
+    rf"|\b{_EN_PLURAL_UNITS}\b[^.?!]*?\b{_EN_CHANGE_VERB}\s+them\s+all\b"
     rf"|^(?:please\s+)?{_EN_FOR_EACH}{_EN_CHANGE_VERB}\b"
 )
 
@@ -899,7 +924,7 @@ _STOP_OR_HOLD: Final = re.compile(
 # - a condition ("테스트 다 통과하면 머지해줘", "PR 다 올렸으면 리뷰 요청해줘", "if all the tests pass, merge"); a noun that ends in
 #   면 (화면, 측면, 전면) is no condition;
 _CONDITION: Final = re.compile(
-    r"(?<![화측전양단표방내외평])면(?=[\s,.!?~]|$)|거든|\b(?:if|when|once|after|unless|whenever|before)\b"
+    r"(?<![화측전양단표방내외평])면(?=[\s,.!?~]|$)(?!\s*감사)|거든|\b(?:if|when|once|after|unless|whenever|before)\b"
 )
 # - a completion said as a noun or a bare word ("브랜치들 다 정리됨", "upstream PR들 다 리뷰 반영 끝", "테스트 수정 완료"),
 #   not one that names the units ("완료된 이슈들 전부 닫아줘") or asks for it ("… 리베이스 완료해줘");
@@ -928,7 +953,7 @@ _SCHEDULE: Final = re.compile(
     r"(?<![가-힣])매(?:일|주|달|월|년|시간|분)(?![가-힣])|(?<![가-힣])매일(?=아침|밤|저녁|오전|오후)|(?<![가-힣])매\s+(?=\S)"
     r"|주기적|정기적|\d{1,2}\s*시(?:\s*\d{1,2}\s*분)?\s*(?:에|마다|정각)|(?<![가-힣])(?:자정|정오|새벽)(?:에|마다)?(?![가-힣])"
     rf"|(?:(?<![가-힣]){_KOREAN_NUMBER}|일)\s*{_TIME_UNIT_KO}\s*에\s*{_KOREAN_NUMBER}\s*번|하루\s*(?:에\s*)?{_KOREAN_NUMBER}\s*번"
-    rf"|{_KOREAN_NUMBER}\s*{_TIME_UNIT_KO}\s*간격|(?:하루|이틀|사흘|나흘|한\s*주|일주일|\d+\s*일)\s*걸러"
+    rf"|{_KOREAN_NUMBER}\s*{_TIME_UNIT_KO}\s*간격|(?:일정한?|정해진|규칙적인?)\s*간격|(?:하루|이틀|사흘|나흘|한\s*주|일주일|\d+\s*일)\s*걸러"
     r"|(?<![가-힣])(?:주|월|연|하루)\s*\d+\s*회|\d+\s*회\s*씩|(?<![가-힣])격(?:일|주|월)(?:로|으로|에|마다|씩)?(?![가-힣])"
     r"|(?<![a-z])cron(?![a-z])|크론|스케줄(?!러)|schedule(?=\s*(?:으로|로|에|을|를|걸))|예약(?:해서|으로|을\s*걸)"
     rf"|\bevery\s+(?:\d+\s+|other\s+)?{_TIME_UNIT_EN}s?\b|\beach\s+{_TIME_UNIT_EN}\b"
@@ -1008,7 +1033,7 @@ def _says_a_past(folded: str) -> bool:
 # 머지하지 마", "PR들 전부 알려줘", "모든 서비스 상태 확인해줘", "check the status of all open PRs", "review all open PRs and
 # just tell me which are safe"), and one thing in many places ("fix the bug in all three services").
 _NO_WORK_ASKED: Final = re.compile(
-    r"했다|됐다|했음|됐음|했잖아|했는데|했지만|했더니|지\s*마|지\s*말|안\s*해|필요\s*없|도\s*돼|도\s*된다|도\s*괜찮"
+    r"했다|됐다|했음|됐음|했잖아|했는데|했지만|했더니|지\s*마(?!다)|지\s*말|안\s*해|필요\s*없|도\s*돼|도\s*된다|도\s*괜찮"
     r"|알려\s*줘|알려\s*주세요|보여\s*줘|찾아|링크\s*(?:줘|주세요|보내)|읽어|상태|몇\s*개|목록|리스트|어때|뭐야|[?？]"
     r"|pr\s*들?\s*(?:을|를)?\s*(?:전부|모두|다)\s*정리"
     r"|\b(?:tell\s+me|let\s+me\s+know|report|summari[sz]e|show\s+me|status|which\s+(?:ones|are|is)|do\s+not|don'?t"
@@ -1116,26 +1141,117 @@ def _work_over_many_targets(text: str, links: tuple[str, ...]) -> bool:
     if _EN_OFFER.search(folded):
         # Every clause after the first is a change or a review too, not a report ("… and send me a list").
         return all(re.fullmatch(_EN_OFFER_VERB, verb) for verb in _EN_LATER_CLAUSE_VERB.findall(folded))
-    # The request is the change or the review, not a summary.
-    return bool(_KOREAN_OFFER.search(folded)) and _asks_for(folded, _KOREAN_OFFER_VERB)
+    # The request is the change or the review, not a summary, in the message or in one clause of it.
+    return any(
+        _KOREAN_OFFER.search(clause) and _asks_for(clause, _KOREAN_OFFER_VERB) for clause in _korean_clauses(folded)
+    )
+
+
+# Work asked to split into parallel parts, with the work named: the split itself (`work_is_split`), asked for, and a
+# work verb after it ("fan out across the services and migrate each one", "…, then integrate", "모듈을 병렬로 나눠서
+# 리팩터링해줘") or a work noun as what splits ("split the migration into parallel lanes", "this refactor is too big for
+# one agent, fan out across the services"). Not text to translate ("split the paragraphs into parallel parts for
+# translation", "문단을 병렬로 나눠서 번역해줘"), not a proposal or a plan said ("how about we …", "why not …", "my plan is
+# to …", "the goal is to …", "maybe …": no imperative, `_EN_SPLIT_REQUEST`), and nothing hard-excluded or asking for no
+# work (rule A for the size cues).
+_SPLIT_TEXT: Final = re.compile(r"\btranslat|번역")
+_SPLIT_WORK_NOUN: Final = r"(?:migration|refactor(?:ing)?|rewrite|work|implementation|port|upgrade)"
+# The split asked for: an imperative, whatever its verb ("split …", "fan out …", "do the api and the ui in parallel …",
+# "analyze API and UI in parallel, then integrate"), put politely, after a clause ("…, fan out across the services",
+# "tell me when done: split …"), or said as what the person wants ("what we need is to split …"). A sentence that
+# opens on a determiner, a pronoun, a question word or an auxiliary is no imperative.
+_EN_SPLIT_REQUEST: Final = re.compile(
+    rf"^(?:please\s+)?(?:{_POLITE_OPENER}|(?:can|could|shall)\s+we\s+|let'?s\s+)?(?:just\s+)?"
+    r"(?!(?:the|a|an|this|that|these|those|my|our|your|their|its|we|i|you|it|they|there|here|which|what|who|why|how"
+    r"|when|where|is|are|was|were|am|do\s+(?:you|we|i)|does|did|should|would|could|can|will|shall|may|might|must|if"
+    r"|so|and|but|or|maybe|perhaps)\b)[a-z]+\b"
+    r"|[,:]\s*(?:so\s+|just\s+|please\s+)?(?:fan\s+out|split)\b"
+    r"|^(?:what\s+(?:i|we)\s+(?:want|need)\s+is\s+to|(?:i|we)\s+(?:want|need)\s+(?:you\s+)?to)\s+(?:fan\s+out|split)\b"
+)
+_EN_SPLIT_EVIDENCE: Final = re.compile(
+    rf"(?:\band|\bthen|,\s*then)\s+(?:then\s+)?(?:{_EN_CHANGE_VERB}|integrate|develop|ship)\b"
+    rf"|\bsplit\s+(?:the\s+|this\s+|that\s+|our\s+|my\s+)?(?:\S+\s+){{0,6}}?{_SPLIT_WORK_NOUN}\s+into\b"
+    r"|\binto\s+parallel\s+work\b"
+    rf"|\b{_SPLIT_WORK_NOUN}\b[^.?!]*?,\s*(?:so\s+|just\s+|please\s+)?(?:split|fan\s+out)\b"
+)
+_KOREAN_WORK_VERB: Final = rf"(?:{_KOREAN_CHANGE_VERB}|구현|개발|통합)"
+
+
+# What a split request may carry besides the work: a request put as a question ("can you split …?", "… 구현해줄래?"), a
+# "tell me when done" before it, and a report on the work after it ("…, then tell me which failed", "… 구현하고 나눈 방법
+# 설명해줘"): the work asked for is still the split.
+_EN_DONE_OPENER: Final = re.compile(r"^tell\s+me\s+when\s+(?:it'?s\s+|you'?re\s+)?done\s*[:,]\s*")
+_KOREAN_REPORT_TAIL: Final = re.compile(
+    r"(?P<work>\S*(?:하고|해서))\s+(?:\S+\s+){0,3}\S*(?:설명|알려|보고|공유)\S*\s*[.!~]*$"
+)
+
+
+def _splits_named_work(text: str, folded: str, links: tuple[str, ...]) -> bool:
+    """Whether ``text`` asks to split named work into parallel parts (`_EN_SPLIT_EVIDENCE`, a Korean work verb in
+    request form), rather than to split text, to propose a split (no imperative), or to be told how."""
+    request = _EN_DONE_OPENER.sub("", folded, count=1)
+    if not work_is_split(text) or _hard_excluded(request, links):
+        return False
+    if _REQUEST_AS_QUESTION.search(request):
+        request = request.rstrip(" ?？")
+        if re.search(rf"{_KOREAN_WORK_VERB}\S*\s*{_KOREAN_ASKS_TO_BE_DONE.pattern}", request):
+            return not _SPLIT_TEXT.search(request) and not _one_fault(request)  # "… 구현해 주시겠어요?"
+    tail = _KOREAN_REPORT_TAIL.search(request)
+    if tail and re.search(_KOREAN_WORK_VERB, tail.group("work")):
+        return not _SPLIT_TEXT.search(request) and not _one_fault(request)  # "… 구현하고 변경 내용 설명해줘"
+    request = _EN_REPORT_TAIL.sub("", request)
+    if _NO_WORK_ASKED.search(request) or _SPLIT_TEXT.search(request):
+        return False
+    if _one_fault(request):
+        return False
+    if re.search(r"[가-힣]", request):
+        return _asks_for(request, _KOREAN_WORK_VERB)
+    return bool(_EN_SPLIT_REQUEST.search(request) and _EN_SPLIT_EVIDENCE.search(request))
+
+
+def splits_without_evidence(text: str, links: tuple[str, ...] = ()) -> bool:
+    """Whether ``text`` asks for a split (`work_is_split`) without naming the work to split (`_splits_named_work`):
+    the router asks about dag-ulw instead of dispatching it, and the route hint offers it, rather than either starting a
+    run ("split the paragraphs into parallel parts for translation", "how about we split the work into parallel
+    lanes")."""
+    return work_is_split(text) and not _splits_named_work(text, _folded(text), links)
+
+
+def sized_without_evidence(text: str, links: tuple[str, ...] = ()) -> bool:
+    """Whether ``text`` is big work by size (`big_work_for_dag_ulw`) only through a split with no work named
+    (`splits_without_evidence`) or a breadth phrase alone ("여러 모듈에 걸친 결제 기능 구현해줘"), without the evidence
+    `dispatches_dag_ulw` needs: the route hint offers dag-ulw there instead of starting it (rule A)."""
+    if not big_work_for_dag_ulw(text) or dispatches_dag_ulw(text, links):
+        return False
+    if splits_without_evidence(text, links):
+        return True
+    folded = _cue_text(text)
+    return _contains(folded, BREADTH_CUES) and not _asks_for_a_split(text) and not _contains(folded, CONCURRENCY_CUES)
 
 
 def dispatches_dag_ulw(text: str, links: tuple[str, ...] = ()) -> bool:
     """Whether ``text`` gives the positive evidence the router dispatches a dag-ulw graph on, and the route hint starts
     one on: a change verb from the closed allow list (`_KOREAN_CHANGE_VERB`, `_EN_CHANGE_VERB`), on a breadth object
     that names independent units, in request form ("열린 PR들 전부 리베이스해줘", "fix all the failing tests", the owner's
-    "pr들 전부 확인해서 닫을건 닫고 … 리베이스하고"), or two named parts asked for in parallel. Nothing hard-excluded
-    (`_hard_excluded`) qualifies, and neither does a request that only reads, reports or runs one command. ``links``
-    are the message's links, which the executable text leaves out."""
+    "pr들 전부 확인해서 닫을건 닫고 … 리베이스하고"), two named parts asked for in parallel, or named work asked to split
+    into parallel parts (`_splits_named_work`). Nothing hard-excluded (`_hard_excluded`) qualifies, and neither does a
+    request that only reads, reports or runs one command. ``links`` are the message's links, which the executable text
+    leaves out."""
     folded = _folded(text)
+    if _splits_named_work(text, folded, links):
+        return True
     if not _work_over_many_targets(text, links) or _asks_to_be_told(text):
         return False
     if _one_fault(folded):
         return False  # one fault to fix, however wide ("모든 테스트가 깨졌어, 고쳐줘", "모든 테스트가 안 돌아가 고쳐줘")
     if _EN_CHANGE_ON_BREADTH.search(folded) or _EN_PARTS_IN_PARALLEL.search(folded):
         return True
-    # A chain of changes joined by 고 counts too, closed by 고 or ㄱㄱ ("닫을건 닫고 … 리베이스하고 ㄱㄱ").
-    return bool(_KOREAN_CHANGE_ON_BREADTH.search(folded)) and _asks_for(folded, _KOREAN_CHANGE_VERB)
+    # A chain of changes joined by 고 counts too, closed by 고 or ㄱㄱ ("닫을건 닫고 … 리베이스하고 ㄱㄱ"), and so does one
+    # clause of the message that asks for the change ("모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘").
+    return any(
+        _KOREAN_CHANGE_ON_BREADTH.search(clause) and _asks_for(clause, _KOREAN_CHANGE_VERB)
+        for clause in _korean_clauses(folded)
+    )
 
 
 def work_has_several_parts(text: str) -> bool:
