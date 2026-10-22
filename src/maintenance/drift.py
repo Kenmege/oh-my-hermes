@@ -855,9 +855,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # and one called a joke in a later clause, a fallback and a clarify
             # as on main (2), and one named function and one file split, which
             # started dag-ulw on main (2). An English request followed by jk
-            # starts nothing, where main dispatched dag-ulw (1).
+            # starts nothing, where main dispatched dag-ulw (1). A Korean request
+            # followed by a doubt, which is no keeper and asks for no work,
+            # clarifies as on main (1).
             # Three domain-science vocabulary controls (+3).
-            expected=1079,
+            expected=1080,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

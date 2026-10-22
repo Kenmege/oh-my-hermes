@@ -416,15 +416,27 @@ class RouterTests(unittest.TestCase):
                         "모든 서비스 node 22로 올려줘, 는 다음 주에 하자", "모든 서비스 업데이트해줘, 는 농담이고",
                         "엔드포인트 전부 인증 붙여줘, 장난이야", "PR들 전부 머지해줘, 는 아니고 리뷰만 해줘", "PR들 전부 머지해줘, 같은 요청은 위험해",
                         "rebase all open PRs, never mind", "update every service — jk", "fix all the failing tests, scratch that",
-                        "rebase all open PRs, or not", "update every service, actually don't", "fix all the failing tests, wait"):
+                        "rebase all open PRs, or not", "update every service, actually don't", "fix all the failing tests, wait",
+                        # A trailing remark that is no keeper and asks for no work keeps nothing either, listed or not.
+                        "PR들 전부 머지해줘, 하고 싶은데 무서워", "모든 서비스 업데이트해줘, 해도 되나", "레포들 전부 CI 고쳐줘, 이거 맞아?",
+                        "모든 서비스 업데이트해줘, 어떻게 생각해", "PR들 전부 리베이스해줘, 나중에 해줘", "모든 패키지 업데이트해줘, 근데 괜찮을까",
+                        "브랜치들 전부 리베이스해줘, 팀장님이 시킨 거야",
+                        # Work narrowed to itself alone, an undo, or work in place of the request keeps nothing.
+                        "PR들 전부 리베이스해줘, 확인만 해줘", "PR들 전부 리베이스해줘, 리뷰만 해줘", "PR들 전부 리베이스해줘, 그냥 되돌려줘",
+                        "PR들 전부 머지해줘, 는 아니고 리뷰해줘", "PR들 전부 머지해줘, 말고 리뷰해줘", "PR들 전부 머지해줘, 아니 리뷰해줘"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
-        # A deadline, an urgency, thanks, politeness or a request that follows takes nothing back.
-        for message in ("모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘", "PR들 전부 리베이스해줘, 급해", "모든 서비스 업데이트해줘, 오늘 안에",
-                        "PR들 전부 리베이스해줘, 빨리", "모든 서비스 업데이트해줘, 부탁해", "PR들 전부 리베이스해줘, 고마워",
-                        "모든 서비스 업데이트해줘, 그리고 CI도 고쳐줘", "PR들 전부 리베이스해줘, 바로 시작해", "rebase all open PRs, asap",
-                        "update every service, please", "fix all the failing tests, thanks", "rebase all open PRs by EOD"):
+        # The closed set of keepers (an urgency or a deadline, thanks or politeness, a start cue) and a request for work
+        # that follows keep it.
+        for message in ("모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘", "모든 서비스 업데이트해줘, 그리고 CI도 고쳐줘",
+                        "PR들 전부 리베이스해줘, 급해", "PR들 전부 리베이스해줘, 급함", "모든 서비스 업데이트해줘, 빨리",
+                        "모든 서비스 업데이트해줘, 얼른", "모든 서비스 업데이트해줘, 오늘 안에", "PR들 전부 리베이스해줘, 내일까지",
+                        "모든 패키지 업데이트해줘, 이번 주 안에", "모든 서비스 업데이트해줘, 부탁해", "모든 서비스 업데이트해줘, 부탁드려요",
+                        "PR들 전부 리베이스해줘, 고마워", "PR들 전부 리베이스해줘, 감사", "PR들 전부 리베이스해줘, 바로 시작해",
+                        "PR들 전부 리베이스해줘, 지금 해", "rebase all open PRs, asap", "rebase all open PRs by EOD",
+                        "update every service today", "update every service, please", "fix all the failing tests, thanks",
+                        "fix all the failing tests, thank you", "rebase all open PRs, go"):
             with self.subTest(message=message):
                 self.assertTrue(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))

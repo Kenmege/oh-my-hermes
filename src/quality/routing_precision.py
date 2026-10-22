@@ -7927,6 +7927,14 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "dag-ulw",
     ),
     RoutingPrecisionCase(
+        "korean-request-followed-by-a-doubt-is-not-a-graph-run",
+        "An update of every service followed by a doubt is no keeper and asks for no work: no graph run, as on main",
+        "모든 서비스 업데이트해줘, 해도 되나",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
         "one-named-function-split-is-asked-not-run",
         "One function split into parallel parts is one task: dag-ulw is asked about, not run",
         "이 함수 병렬로 나눠서 구현해줘",

@@ -874,16 +874,21 @@ def _korean_request_verb(folded: str) -> tuple[str, bool]:
     return (folded.rstrip(" .!~").split()[-1] if _KOREAN_REQUEST_END.search(folded) else ""), False
 
 
-# A last clause that cancels, holds, takes back or jokes about the request, or remarks on the request itself ("…해줘,
-# 아 잠깐만", "…해줘, 말고 그냥 둬", "…해줘, 는 농담이고", "…해줘, 같은 요청은 위험해", "…해줘, 아니다 나중에 하자", "…, never
-# mind", "… — jk", "…, scratch that", "…, or not", "…, actually don't", "…, wait"). A deadline, an urgency, thanks or
-# politeness takes nothing back ("…해줘, 오늘 안에", "…해줘, 급해", "…해줘, 고마워", "…, asap", "…, thanks", "… by EOD"), and
-# neither does a request that follows ("…해줘, 그리고 CI도 고쳐줘", "…해줘, 바로 시작해").
+# An earlier clause is read on its own only when the last clause keeps the request: it asks for work of its own ("…해줘,
+# 그리고 CI도 고쳐줘", "…해줘, 패키지마다 changelog도 써줘"), with no particle at its start referring back to the request
+# ("…해줘, 는 아니고 리뷰만 해줘"), no 만 narrowing it to that work alone ("…해줘, 확인만 해줘") and no undoing it ("…해줘,
+# 그냥 되돌려줘"), or it is one of a closed set of keepers: an urgency or a deadline, thanks or
+# politeness, a start cue ("…해줘, 급해", "…해줘, 오늘 안에", "…해줘, 고마워", "…해줘, 바로 시작해"). Anything else after the
+# request is not read as keeping it ("…해줘, 아 잠깐만", "…해줘, 해도 되나", "…해줘, 이거 맞아?"), as on main. An English
+# request whose last clause takes it back starts nothing either (`_EN_TAKE_BACK`: "…, never mind", "… — jk").
 _CLAUSE_BREAK: Final = re.compile(r"\s*(?:[,;—–]|\s-\s)\s*")
-_KOREAN_TAKE_BACK: Final = re.compile(
-    r"잠깐|됐어|그만|취소|대기|나중에|농담|장난|같은\s*요청|맞는\s*표현|말고"
-    r"|^(?:는|은|라고|이라고|이런|그런)(?![가-힣])|^아니"
+_KEEPER: Final = (
+    r"(?:급해|급해요|급함|빨리|얼른|오늘\s*안에|오늘\s*중으로|내일까지|이번\s*주\s*안에|asap|by\s+eod|today|부탁해|부탁해요|부탁드려요"
+    r"|부탁드립니다|부탁|고마워|고마워요|감사|감사해요|감사합니다|please|pls|thanks|thank\s+you|thx|바로\s*시작해|지금\s*해|go)"
 )
+_KOREAN_KEEPER: Final = re.compile(rf"(?:(?:좀|진짜|정말|너무)\s+)?{_KEEPER}(?:\s+{_KEEPER})*\s*[.!~]*")
+_BACK_REFERENCE: Final = re.compile(r"^(?:는|은|라고|이라고|같은|말고|란|이란|이런|그런)(?![가-힣])|^아니")
+_FOLLOW_ON_VERB: Final = rf"(?:{_KOREAN_OFFER_VERB}|써|작성|확인|(?<!되)돌려|실행|시작|진행|정리)"
 _EN_TAKE_BACK: Final = re.compile(
     r"^(?:oh\s+|um\s+|no\s+)?(?:never\s*mind|nvm|jk|j/k|just\s+kidding|kidding|scratch\s+that|or\s+not|actually\s+(?:don'?t|no)"
     r"|don'?t|wait|hold\s+on|cancel\s+that|forget\s+(?:it|that)|not\s+now|later)\b"
@@ -896,12 +901,23 @@ def _takes_it_back(folded: str) -> bool:
     return len(clauses) > 1 and bool(_EN_TAKE_BACK.match(clauses[-1]))
 
 
+def _keeps_the_request(clause: str) -> bool:
+    """Whether a last ``clause`` keeps the request before it: a keeper (`_KOREAN_KEEPER`), or a request of its own that
+    asks for more work (`_FOLLOW_ON_VERB`, not that work alone: "확인만") and does not refer back (`_BACK_REFERENCE`)."""
+    if _KOREAN_KEEPER.fullmatch(clause):
+        return True
+    verb, _bare = _korean_request_verb(clause)
+    return (
+        bool(verb) and bool(re.search(_FOLLOW_ON_VERB, verb)) and not verb.endswith("만") and not _BACK_REFERENCE.match(clause)
+    )
+
+
 def _korean_clauses(folded: str) -> list[str]:
-    """``folded``, then each clause of it, read on its own unless the last clause takes the request back
-    (`_KOREAN_TAKE_BACK`): then only the whole message is read, as on main ("모든 패키지 업데이트해줘, 패키지마다
-    changelog도 써줘" runs, "PR들 전부 리베이스해줘, 아 잠깐만" does not)."""
+    """``folded``, then each clause of it, read on its own only when the last clause keeps the request
+    (`_keeps_the_request`): otherwise only the whole message is read, as on main ("모든 패키지 업데이트해줘, 패키지마다
+    changelog도 써줘" and "PR들 전부 리베이스해줘, 급해" run, "PR들 전부 리베이스해줘, 아 잠깐만" does not)."""
     clauses = [clause for clause in _CLAUSE_BREAK.split(folded) if clause]
-    if len(clauses) < 2 or _KOREAN_TAKE_BACK.search(clauses[-1]):
+    if len(clauses) < 2 or not _keeps_the_request(clauses[-1]):
         return [folded]
     return [folded, *clauses]
 

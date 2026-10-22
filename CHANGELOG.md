@@ -39,14 +39,15 @@ All notable changes will be documented here.
   never started. More Korean request forms
   count (`닫아`, `고쳐`, `올려라`, `주라`, `고고싱`, `놔라`, `해주십쇼`, `요망`, `…해 주시면
   감사하겠습니다`), breadth words `쭉` and `하나도 빠짐없이`, `… fix them all`, a change
-  in one clause when the message ends in a request of its own (`모든 패키지
-  업데이트해줘, 패키지마다 changelog도 써줘`), unless the last clause cancels, holds,
-  takes back or jokes about it (`…해줘, 아 잠깐만`, `…해줘, 는 농담이고`, `…해줘, 말고
-  그냥 둬`, `…, never mind`, `… — jk`, `…, scratch that`: these start nothing; an
-  urgency, thanks or a follow-on request does not take it back), a past inside
-  an embedded question
-  (`어떻게 나눴는지 설명해줘`), and a change
-  aimed so a thing does not happen a few words off (`… 안 되게끔 수정해줘`).
+  in one clause when the message ends in a request for more work (`모든 패키지
+  업데이트해줘, 패키지마다 changelog도 써줘`) or in one of a closed set of keepers: an
+  urgency or a deadline (`급해`, `빨리`, `오늘 안에`, `내일까지`), thanks or politeness
+  (`고마워`, `부탁해`), or a start cue (`바로 시작해`). Any other Korean last clause
+  keeps nothing (`…해줘, 아 잠깐만`, `…해줘, 는 농담이고`, `…해줘, 해도 되나`, `…해줘,
+  팀장님이 시킨 거야`), and an English take-back (`…, never mind`, `… — jk`, `…,
+  scratch that`) starts nothing while `…, asap`, `…, please` and `… by EOD` run.
+  A past inside an embedded question (`어떻게 나눴는지 설명해줘`) and a change aimed
+  so a thing does not happen a few words off (`… 안 되게끔 수정해줘`) count too.
   `일정 간격으로` is a schedule.
 
 - **`NO_COLOR` turns off colour in the whole OMH TUI (#2223 review item

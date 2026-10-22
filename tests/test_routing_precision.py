@@ -57,9 +57,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # interval and PR 하나 add three (+3); a split of text, a proposed split,
         # a question how to split and an unnumbered interval add four (+4); a
         # request taken back or called a joke, and one function or file split,
-        # add four (+4); an English request followed by jk adds one (+1).
+        # add four (+4); an English request followed by jk adds one (+1), and a
+        # Korean request followed by a doubt one more (+1).
         # Three science vocabulary controls remain direct answers.
-        self.assertEqual(payload["summary"]["case_count"], 1079)
+        self.assertEqual(payload["summary"]["case_count"], 1080)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
