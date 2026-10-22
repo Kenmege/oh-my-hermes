@@ -7,6 +7,7 @@ import re
 import unicodedata
 
 from .boundary_phrase import contains_boundary_phrase as _contains_boundary_phrase
+from .request_lead import after_courtesy
 from .dag_ulw_cues import (
     asks_about_dag_ulw,
     big_work_for_dag_ulw,
@@ -6267,6 +6268,10 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
         for rule in _prioritized_route_hint_rules(jit_learn_match):
             if len(hints) >= hint_limit:
                 break
+            if direct_hint and direct_hint["workflow"] != "show-reel" and rule["workflow"] == "show-reel":
+                # A requested sibling owns the turn; source production words
+                # must not add a conflicting actionable preparation slot.
+                continue
             if _rule_suppressed_by_omh_quality_intent(rule, omh_quality_intent):
                 continue
             if _rule_suppressed_by_named_coding_agent_delivery(rule, named_coding_agent_delivery):
@@ -8113,7 +8118,7 @@ def _dag_ulw_by_size_hint() -> dict[str, object]:
 
 
 def _direct_workflow_prefix(routing_normalized: str) -> str:
-    normalized = routing_normalized.strip()
+    normalized = after_courtesy(routing_normalized.strip())
     # The router's own reading of the two-word name (`routing/policy.py` reads the same function), so
     # `dag ulw해줘`, `ulw dag ...` and `/dag-ulw` hint what the router dispatches.
     if "dag-ulw" in _DIRECT_WORKFLOW_NEXT_ACTIONS and invokes_dag_ulw(normalized):
@@ -8158,8 +8163,13 @@ def _opens_with_a_report_on_a_name(normalized: str) -> bool:
     return False
 
 
+# The same action/article/OMH order accepted by native explicit invocation.
+# Names and aliases still come from their existing authoritative registries.
+_DIRECT_INVOCATION_LEAD = r"(?P<verb>(?:use|run|execute|invoke|start)\s+(?:(?:the|omh|oh-my-hermes|oh-my-hermes-agent)\s+)*)?"
+
+
 def _starts_with_direct_workflow_alias(normalized: str, alias: str) -> bool:
-    match = re.match(rf"^(?P<verb>use\s+(?:omh\s+)?|run\s+)?{re.escape(alias)}(?:\b|$)", normalized)
+    match = re.match(rf"^{_DIRECT_INVOCATION_LEAD}{re.escape(alias)}(?:\b|$)", normalized)
     return match is not None and not _bare_name_reports_or_asks(match, normalized, alias)
 
 
@@ -8182,7 +8192,7 @@ def _starts_with_invocation_alias(normalized: str, alias: str) -> bool:
     here while the router, whose alias lookup is keyed on the whole token,
     does not read it as an explicit invocation at all.
     """
-    match = re.match(rf"^(?P<verb>use\s+(?:omh\s+)?|run\s+)?{re.escape(alias)}\b(?!-)", normalized)
+    match = re.match(rf"^{_DIRECT_INVOCATION_LEAD}{re.escape(alias)}\b(?!-)", normalized)
     return match is not None and not _bare_name_reports_or_asks(match, normalized, alias)
 
 

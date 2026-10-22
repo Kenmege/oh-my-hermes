@@ -21,6 +21,36 @@ from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
 
 
 class ShowReelRoutingTests(unittest.TestCase):
+    def test_explicit_sibling_articles_and_courtesy_keep_the_preparation_owner(self):
+        for owner in ("media-input-operator", "workflow-learning", "code-review"):
+            for opening in ("Use the", "Please use the", "Could you please run the", "Execute the"):
+                message = f"{opening} {owner} skill to create a launch film from the attached transcript."
+                with self.subTest(message=message), TemporaryDirectory() as temp:
+                    paths = resolve_paths(Path(temp) / "omh", Path(temp) / "hermes")
+                    self.assertEqual(route_chat_message(message)["selected_skill"], owner)
+                    hint = awareness_route_hint(message)
+                    self.assertEqual(hint["primary_workflow"], owner)
+                    self.assertFalse(any(item["next_action"] == "prepare_show_reel" for item in hint["hints"]))
+                    card = build_chat_interaction_payload(message, source="discord", paths=paths)
+                    self.assertNotEqual(card["chat_response"]["kind"], "show_reel")
+                    mid = pre_llm_call(omh_home=str(paths.omh_home), hermes_home=str(paths.hermes_home), user_message=message, is_first_turn=False)
+                    self.assertNotIn("next_action=prepare_show_reel", str(mid))
+        self._assert_production_surfaces((
+            "Create a launch film using the code-review report as input",
+            "Use the show-reel skill with workflow-learning notes as input",
+        ), first_recommendation=False)
+
+    def test_source_first_comma_separates_inputs_from_the_production_operation(self):
+        self._assert_production_surfaces((
+            "Using the media transcript and research notes, create a launch film for the new brand.",
+            "Based on the customer history and media transcript, produce a cinematic product showcase video.",
+        ), first_recommendation=False)
+        self._assert_nonproduction_surfaces((
+            "Using the transcript, explain how to create a launch film",
+            "Using the transcript, do not create a launch film",
+            'Using the quoted example "create a launch film", explain its wording',
+        ))
+
     def test_named_operation_accepts_deictic_inputs_and_temporal_clauses(self):
         from omh.plugin_bundle.omh.show_reel_cues import show_reel_request_admitted
 

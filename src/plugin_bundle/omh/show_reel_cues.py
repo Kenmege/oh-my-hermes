@@ -88,6 +88,10 @@ def show_reel_request_admitted(message: str) -> bool:
     # Source-first production is still production; inspect the operation
     # after a source-introducing lead, not every verb in an explanatory topic.
     if re.match(r"^(?:use|using|based on)\b", lead):
+        if "," in lead:
+            # A source adjunct ends at its comma. Read the immediately
+            # requested operation, not a later example inside an explanation.
+            return bool(_PRODUCTION.match(lead.split(",", 1)[1].lstrip()))
         for match in re.finditer(r"\b(?:to|and)\s+", lead):
             # Negation belongs to the operation it modifies, not to an
             # unrelated 'not' inside the supplied review/material.
