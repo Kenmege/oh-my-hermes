@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`NO_COLOR` turns off colour in the whole OMH TUI (#2223 review item
+  17).** With `NO_COLOR` set to any non-empty value (no-color.org), only the
+  motion and the delegation graph used to honour it. The transcript,
+  composer, agent view, pager and pickers still painted truecolour: 326
+  colour codes in the redesign's scene A and 486 in scene B. Now the app's
+  theme drops every colour, and so do the skin's logo, a box graph drawn in
+  the transcript, and the rows on an approval's, a notice's or a command's
+  band. Both scenes write none. Bold, dim, italic, underline and reverse
+  stay, and the bands themselves are not drawn. Two rows that only a
+  background marked are reversed: a menu's or list's highlighted row, which
+  is also bold, and the pager's and `/dag`'s footer bar. Every state keeps
+  the glyph it already carries. With `NO_COLOR` unset or empty nothing
+  changes: both scenes are byte-identical to before.
+
 - **A plain request for work over many targets can run as a dag-ulw graph.**
   "rlaope로 올린 hermes upstream pr들 전부 확인해서 닫을건 닫고 리뷰반영할건
   리뷰반영하고 rebase할건 리베이스하고" went to web-research on the router and
