@@ -122,6 +122,10 @@ class NoColourTests(unittest.TestCase):
         keys = re.search(r"\x1b\[([0-9;]*)m " + re.escape(DAG_KEYS), written(app))
         self.assertIsNotNone(keys, "the keys row is drawn in a style of its own")
         self.assertIn("7", keys[1].split(";"))
+        # nocolor-review R7b on #2233: the row under the keys, the title and the rows shown, is reversed too.
+        title = re.search(r"\x1b\[([0-9;]*)m " + re.escape(f"{app.pager.title} · rows "), written(app))
+        self.assertIsNotNone(title, "the title row is drawn in a style of its own")
+        self.assertIn("7", title[1].split(";"))
         self.assertEqual(colour_codes(written(app)), [])
 
     def test_unset_the_rows_on_a_band_keep_its_colour(self) -> None:
