@@ -14,7 +14,7 @@ alone, and below `layout.MIN_ROWS` rows or `layout.MIN_COLS` columns the input
 rows have no rule at all. A `/name` in the draft that resolves to a command or
 skill (`known_slash`, `slash.known_names`) is drawn bold in its colour
 (`Theme.slash`). While the composer holds a `!` line for Hermes' shell the
-prompt mark is drawn in the accent instead of the prompt colour; the rules
+prompt mark is drawn bold in the shell family's hue instead of the prompt colour; the rules
 stay as they are. The info line under the bottom rule is a line the app
 builds, its text `INFO_INSET` cells in; the frame only places it. The agent
 view the app builds (`agents`) is drawn under the info line, the region's last
@@ -53,13 +53,13 @@ first row under the top rule while there is one: it counts against the composer'
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from .composer import PROMPT, Composer
 from .layout import BLANK, Budget, allocate, caret_row, compose, composer_cap
 from .style import Line, Span
 from .slash import slash_spans, slash_token_ranges
-from .theme import DEFAULT_THEME, Theme
+from .theme import DEFAULT_THEME, KIND_FAMILIES, Theme
 from .width import line_width, truncate_line
 
 RULE = "─"  # the composer's rules, above and under it, full width
@@ -109,7 +109,7 @@ def build_frame(
 
     `attachments` is drawn as the composer's first row when the composer may
     have two rows; a terminal too short for that shows the input alone.
-    `mode` MODE_SHELL draws the prompt mark in the accent; `info` is the
+    `mode` MODE_SHELL draws the prompt mark in the shell family's hue; `info` is the
     region's last row. `composer` None draws no
     composer (nor the attachment row): the slot takes its place, and the caret
     is `slot_caret`, a (row, col) within `slot`, or none where that is None or
@@ -132,10 +132,10 @@ def build_frame(
     caret_line = caret_col = 0
     if composer is not None:
         chips = [truncate_line(attachments, cols)] if attachments is not None and cap >= 2 else []
-        mark = replace(theme.accent, bold=True) if mode == MODE_SHELL else theme.prompt
+        mark = theme.kinds[KIND_FAMILIES.index("shell")] if mode == MODE_SHELL else theme.prompt
         marks = slash_token_ranges(composer.text, known_slash) if known_slash and not composer.pastes else []
         input_lines, (caret_line, caret_col) = composer.render(
-            cols, cap - len(chips), prompt, mark, theme.accent, marks, theme.slash
+            cols, cap - len(chips), prompt, mark, theme.muted, marks, theme.slash
         )
         if placeholder and not composer.text and input_lines:
             input_lines[0] = truncate_line((*input_lines[0], Span(placeholder, theme.hint)), cols)
@@ -190,7 +190,7 @@ def sticky_line(prompt_text: str, width: int, theme: Theme = DEFAULT_THEME, know
     """`↳ you: <first line of the prompt>` cut to `width`, shown while a turn runs.
 
     It has no band, as the prompt's echo in the transcript has none: `↳ you:`
-    in the accent, which no transcript row starts with, the prompt in the
+    in the running blue (a turn runs), which no transcript row starts with, the prompt in the
     muted text colour (a `/name` in it that resolves, `known`, bold in its
     colour, as on the prompt's own row), and a dim `…` where it is cut. So it
     reads apart from the transcript rows right above it by its words and
@@ -199,7 +199,7 @@ def sticky_line(prompt_text: str, width: int, theme: Theme = DEFAULT_THEME, know
     if width <= 0:
         return ()
     first = prompt_text.strip().split("\n", 1)[0]
-    line = (Span(STICKY_PREFIX, theme.accent), *slash_spans(first, known, theme.muted, theme.slash))
+    line = (Span(STICKY_PREFIX, theme.running), *slash_spans(first, known, theme.muted, theme.slash))  # a turn runs
     if line_width(line) <= width:
         return line
     return (*truncate_line(line, width - len(STICKY_CUT), ellipsis=""), Span(STICKY_CUT, theme.dim))

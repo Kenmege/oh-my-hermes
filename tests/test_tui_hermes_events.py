@@ -82,7 +82,7 @@ class GoalRowTests(unittest.TestCase):
                 line = goal_line(snapshot, 120, THEME)
                 assert line is not None
                 self.assertEqual(line_text(line), expected)
-                self.assertEqual(line[0].style, THEME.accent if name == "active" else THEME.warn)
+                self.assertEqual(line[0].style, THEME.running if name == "active" else THEME.warn)
         for status in ("done", "cleared", "failed", None):
             with self.subTest(status=status):
                 self.assertIsNone(goal_line(goal(status=status), 120, THEME))

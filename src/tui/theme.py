@@ -30,10 +30,13 @@ colours), so the transcript's chrome is neutral grey: a call's arguments on
 `muted`, the dimmer duration and what it printed on `faint` (and `hint`), its
 glyphs and the composer's rules on `dim` and `rule`, each lifted from a fixed
 neutral grey (`NEUTRAL_GREYS`) toward white or black only as far as its floor
-takes. State is hue: `accent`, a running call and everything that says a turn
-or an agent is running, is the blue a running node takes in the delegation
-view (`dag_edge_end`, lifted to 4.5:1), `ok` green and `error` red. The
-palette's own accent is the banner title's alone (`brand`). A call's name is
+takes. State is hue: `running`, a running call and everything that says a
+turn or an agent is running, is the blue a running node takes in the
+delegation view (`dag_edge_end`, lifted to 4.5:1), `ok` green and `error`
+red; nothing else is drawn in it. What only needs to stand out without a
+state (a key, a question's mark, a list bullet, a diff hunk) is bold in the
+terminal's foreground (`user`) or grey (`muted`). The palette's own accent
+is the banner title's alone (`brand`). A call's name is
 drawn in its tool family's hue (`kinds`, in `KIND_FAMILIES` order, from
 `KIND_HUES`), kept clear of every state hue, and a `/name` that resolves to a
 command or skill takes the skill hue, bold (`slash`).
@@ -99,7 +102,7 @@ DAG_EDGE_STEPS = 9  # an odd count, so the middle stop is a step of its own
 # The roles a person reads as text: each reaches TEXT_CONTRAST against the background. `text`, `user` and `tool`
 # are not here because they are the terminal's own foreground.
 TEXT_ROLES = (
-    "accent", "label", "ok", "warn", "error", "thinking", "heading", "code", "link", "quote",
+    "running", "label", "ok", "warn", "error", "thinking", "heading", "code", "link", "quote",
     "syntax_keyword", "syntax_string", "syntax_number", "syntax_comment", "hint", "muted", "faint", "mode_accept",
     "mode_plan", "brand", "slash",
 )
@@ -110,7 +113,7 @@ GLYPH_ROLES = ("dim", "rule", "prompt")
 NEUTRAL_GREYS = {"muted": ("#9198A1", "#59636E"), "faint": ("#7D8590", "#6E7781"), "glyph": ("#545D68", "#8C959F")}
 # The tool families a call's name is coloured by, and each family's hue (on a dark background, on a light one).
 # Each keeps 23 degrees of OKLCH hue or more from the state hues (running blue, failed red, done green), the
-# banner's turquoise and the delegation view's selected violet; tests/test_tui_theme.py holds each to 4.5:1.
+# banner's turquoise and the delegation view's selected violet; tests/test_tui_rail_kinds.py holds each to 4.5:1.
 KIND_FAMILIES = ("skill", "shell", "file", "web", "dag")
 KIND_HUES = {
     "skill": ("#D58CF0", "#9E58B8"), "shell": ("#E3B341", "#996C00"), "file": ("#F8A87E", "#AB6239"),
@@ -123,7 +126,7 @@ class Theme:
     name: str
     text: Style
     dim: Style
-    accent: Style
+    running: Style  # a running call, turn or agent: the delegation view's running blue, and nothing else
     label: Style
     ok: Style
     warn: Style
@@ -132,7 +135,7 @@ class Theme:
     thinking: Style
     rule: Style
     prompt: Style
-    user: Style
+    user: Style  # bold in the terminal's own foreground: a key, a question's mark, what stands out without a state
     heading: Style
     code: Style
     link: Style
@@ -273,7 +276,7 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         name=skin.short_name,
         text=Style(),
         dim=Style(fg=grey("glyph", EDGE_CONTRAST)),
-        accent=Style(fg=read("dag_edge_end")),
+        running=Style(fg=read("dag_edge_end")),
         label=Style(fg=read("ui_label")),
         ok=Style(fg=read("ui_ok")),
         warn=Style(fg=read("ui_warn")),

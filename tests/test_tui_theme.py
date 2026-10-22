@@ -101,9 +101,9 @@ class ThemeTests(unittest.TestCase):
 
     def test_roles_follow_the_palette(self) -> None:
         amber = theme_named("amber")
-        # The palette's accent is the banner title's alone; `accent` is state (running), the delegation view's blue.
+        # The palette's accent is the banner title's alone; `running` is state, the delegation view's running blue.
         self.assertEqual(amber.brand.fg, skin_colors("omh-amber")["ui_accent"])
-        self.assertEqual(amber.accent, amber.dag_words[-1])
+        self.assertEqual(amber.running, amber.dag_words[-1])
         self.assertEqual(amber.diff_add.bg, skin_colors("omh-amber")["diff_added"])
         # A colour that clears the background is the palette's own; amber's comments (3.6:1) are lifted for reading.
         for role in ("syntax_keyword", "syntax_string", "syntax_number"):

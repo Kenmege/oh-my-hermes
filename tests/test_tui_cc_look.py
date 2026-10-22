@@ -108,16 +108,16 @@ class ToolRowTests(unittest.TestCase):
         # The DAG border rule: running blue, failed red, done green, and each state its own glyph, so the colour
         # is never the only thing that says it.
         for status, glyph, style in ((TOOL_OK, "●", THEME.ok), (TOOL_ERROR, "✗", THEME.error),
-                                     (TOOL_DENIED, "✗", THEME.error), (TOOL_RUNNING, "○", THEME.accent)):
+                                     (TOOL_DENIED, "✗", THEME.error), (TOOL_RUNNING, "○", THEME.running)):
             with self.subTest(status=status):
                 rows = rows_of(ToolRow("t", "terminal", "ls", status, started_at=0.0, duration_s=0.1, output=("x",)))
                 self.assertEqual(rows[0][2], Span(glyph, style))
                 self.assertEqual({row[0] for row in rows}, {Span("┃", style)})  # one rail down the whole call
-        self.assertEqual(THEME.accent.fg, THEME.dag_words[-1].fg)  # the running blue is the graph's running node's
+        self.assertEqual(THEME.running.fg, THEME.dag_words[-1].fg)  # the running blue is the graph's running node's
         running = ToolRow("t", "terminal", "ls", TOOL_RUNNING, started_at=0.0)
         pulsed = rows_of(running, now=PULSE_SECONDS * 1.5)[0]
         self.assertEqual(pulsed[2], Span("○", THEME.dim))  # its dim half; the rail holds still
-        self.assertEqual(pulsed[0], Span("┃", THEME.accent))
+        self.assertEqual(pulsed[0], Span("┃", THEME.running))
         self.assertFalse([row for row in rows_of(ToolRow("t", "terminal", "ls", TOOL_OK)) if "✓" in line_text(row)])
 
     def test_on_a_light_terminal_each_mark_reads_against_what_it_sits_on(self) -> None:
@@ -333,7 +333,7 @@ class WorkingRowTests(unittest.TestCase):
             clock.now += TICK_SECONDS
             seen.append(app._tail(100)[-2][0])
         self.assertEqual({span.text for span in seen}, set("·✢✳✶✻✽"))
-        self.assertEqual({span.style for span in seen}, {THEME.accent})
+        self.assertEqual({span.style for span in seen}, {THEME.running})
         still, clock = self.busy(environ={"OMH_TUI_REDUCED_MOTION": "1"})
         held = set()
         for _ in range(len(WORKING_GLYPHS)):

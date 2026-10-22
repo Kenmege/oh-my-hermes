@@ -664,7 +664,7 @@ class ViewTests(unittest.TestCase):
         rows = roster.view_lines(40, THEME, 2, 20, 0.0)
         self.assertEqual([line_text(row)[:4] for row in rows],
                          ["  ● ", "  ⠹ ", "  ○ ", "  ◌ ", "  ✗ ", "  ✗ ", "  ✗ ", "  ▪ "])
-        for row, glyph, style in zip(rows, "●⠹○◌✗✗✗▪", (THEME.accent, THEME.accent, THEME.muted, THEME.muted,
+        for row, glyph, style in zip(rows, "●⠹○◌✗✗✗▪", (THEME.running, THEME.running, THEME.muted, THEME.muted,
                                                        THEME.error, THEME.error, THEME.error, THEME.muted)):
             with self.subTest(glyph=glyph):
                 self.assertEqual(style_of(row, glyph), style)
@@ -692,7 +692,10 @@ class ViewTests(unittest.TestCase):
         roster = Roster()
         feed(roster, "spawn_requested", 10.0, "sa-wait", goal="wait for a worker")
         row = line_text(roster.view_lines(50, THEME, 0, 7, 45.0)[1])
-        self.assertEqual(row, "  ◌ wait for a worker" + " " * 18 + "waiting 35s")  # no frame named its model yet
+        # The wait leads the model's figures; where both do not fit, the model alone (#2223 review R2).
+        self.assertEqual(row, "  ◌ wait for a worker" + " " * 10 + "deepseek-v4.1-flash")
+        wide = line_text(roster.view_lines(70, THEME, 0, 7, 45.0)[1])
+        self.assertTrue(wide.endswith("  deepseek-v4.1-flash · waiting 35s"), wide)
         feed(roster, "start", 50.0, "sa-wait")
         self.assertEqual(line_text(roster.view_lines(50, THEME, 0, 7, 52.0)[1]), "  ⠋ wait for a worker     deepseek-v4.1-flash · 2s")
 
@@ -763,9 +766,9 @@ class ListTests(unittest.TestCase):
     def test_only_the_selected_row_is_the_menu_bar_and_it_spans_the_width(self) -> None:
         rows, _ = self._roster().list_lines(50, THEME, "sa-a", 0, 6, 20.0)
         self.assertEqual([{span.style for span in row} == {THEME.menu_current} for row in rows], [False, True, False])
-        self.assertEqual(style_of(rows[0], "●"), THEME.accent)
+        self.assertEqual(style_of(rows[0], "●"), THEME.running)
         self.assertEqual(style_of(rows[0], "main"), THEME.text)
-        self.assertEqual(style_of(rows[2], "⠋"), THEME.accent)
+        self.assertEqual(style_of(rows[2], "⠋"), THEME.running)
         self.assertEqual(style_of(rows[2], "read the diff"), THEME.text)
         self.assertEqual(style_of(rows[2], "deepseek-v4.1-flash · 4s"), THEME.muted)
         rows, _ = self._roster().list_lines(50, THEME, MAIN_ID, 0, 6, 20.0)
@@ -810,13 +813,13 @@ class ListTests(unittest.TestCase):
         rows, shown = self._roster().list_lines(60, THEME, "sa-b", 0, 1, 20.0)
         self.assertEqual((len(rows), shown), (1, ("sa-b",)))
 
-    def test_narrow_rows_drop_the_tool_count_then_the_time(self) -> None:
+    def test_narrow_rows_keep_the_model_then_the_title_alone(self) -> None:
         roster = self._roster()
         cases = {
-            32: "  ⠋ find usages …  10s · 4 tools",
-            31: "  ⠋ find usages…  10s · 4 tools",
-            30: "  ⠋ find usages of old_a…  10s",
-            21: "  ⠋ find usages…  10s",
+            80: "  ⠋ find usages of old_api in the tree       deepseek-v4.1-flash · 10s · 4 tools",
+            52: "  ⠋ find usages of old_a…  deepseek-v4.1-flash · 10s",
+            42: "  ⠋ find usages of o…  deepseek-v4.1-flash",
+            36: "  ⠋ find usages of old_api in the t…",
             20: "  ⠋ find usages of …",
             8: "  ⠋ fin…",
             4: "  ⠋ ",
@@ -838,8 +841,10 @@ class ListTests(unittest.TestCase):
                 for row in rows:
                     self.assertLessEqual(line_width(row), width)
         rows, _ = roster.list_lines(30, THEME, "sa-a", 0, 6, 5.0)
-        self.assertEqual(line_text(rows[1]), "▸ ⠋ 한글 검색 …" + " " * 3 + "5s · 0 tools")
+        self.assertEqual(line_text(rows[1]), "▸ ⠋ 한글 검색 에이전트 실행 … ")  # no room for the model: the title alone
         self.assertEqual(line_width(rows[1]), 30)
+        rows, _ = roster.list_lines(60, THEME, "sa-a", 0, 6, 5.0)
+        self.assertTrue(line_text(rows[1]).endswith("  deepseek-v4.1-flash · 5s · 0 tools"), line_text(rows[1]))
 
     def test_an_agent_without_a_goal_is_named_agent(self) -> None:
         roster = Roster()
@@ -973,32 +978,35 @@ class TokenTests(unittest.TestCase):
         roster.ingest_tokens({"child-q": 40})
         self.assertTrue(self.row(roster, 1).endswith("  deepseek-v4.1-flash · waiting 10s"), self.row(roster, 1))
 
-    def test_narrow_rows_drop_the_token_count_then_the_tool_count_then_the_time(self) -> None:
+    def test_a_narrowing_row_keeps_the_model_longest(self) -> None:
+        # The approved order (#2223 review R2): everything, then no tokens, then the model and the time, then the
+        # model alone, then nothing; a figure dropped never comes back as the row narrows.
         roster = self._roster()
         roster.ingest_tokens({"child-a": 1234})
-        # The model leads while it fits beside the figures (the token count goes first, then the tool count); then the
-        # figures go on alone as before: the token count, the tool count, the time.
         cases = {
             66: "  ⠋ find usages of o…  deepseek-v4.1-flash · 10s · 3 tools · ↓1.2k",
             60: "  ⠋ find usages of old…  deepseek-v4.1-flash · 10s · 3 tools",
             45: "  ⠋ find usages o…  deepseek-v4.1-flash · 10s",
-            40: "  ⠋ find usages …  10s · 3 tools · ↓1.2k",
-            35: "  ⠋ find usages of …  10s · 3 tools",
-            31: "  ⠋ find usages…  10s · 3 tools",
-            30: "  ⠋ find usages of old_a…  10s",
-            21: "  ⠋ find usages…  10s",
+            40: "  ⠋ find usages of…  deepseek-v4.1-flash",
+            35: "  ⠋ find usages of old_api in the …",
             20: "  ⠋ find usages of …",
         }
         for width, text in cases.items():
             with self.subTest(width=width):
                 self.assertEqual(line_text(roster.list_lines(width, THEME, MAIN_ID, 0, 6, 20.0)[0][1]), text)
-        whole = ("10s · 3 tools · ↓1.2k", "10s · 3 tools", "10s")
-        for width in range(0, 90):
-            text = line_text(roster.list_lines(width, THEME, MAIN_ID, 0, 6, 20.0)[0][1])
+        steps = ("deepseek-v4.1-flash · 10s · 3 tools · ↓1.2k", "deepseek-v4.1-flash · 10s · 3 tools",
+                 "deepseek-v4.1-flash · 10s", "deepseek-v4.1-flash", "")
+        seen = []
+        for width in range(90, -1, -1):
+            row = roster.list_lines(width, THEME, MAIN_ID, 0, 6, 20.0)[0][1]
+            text = line_text(row)
             with self.subTest(width=width):
-                self.assertLessEqual(line_width(roster.list_lines(width, THEME, MAIN_ID, 0, 6, 20.0)[0][1]), width)
+                self.assertLessEqual(line_width(row), width)
                 right = text.rsplit("  ", 1)[-1] if "  " in text.strip() else ""
-                self.assertTrue(not right or right in whole or not right[:1].isdigit(), text)
+                self.assertIn(right, steps, text)
+            if not seen or seen[-1] != right:
+                seen.append(right)
+        self.assertEqual(seen, list(steps))  # each step once, in order
 
 
 class LogViewTests(unittest.TestCase):
@@ -1045,8 +1053,8 @@ class LogViewTests(unittest.TestCase):
 
     def test_the_view_uses_the_theme_roles(self) -> None:
         rows = self._roster().log_lines(FIRST, 120, THEME, 25.0)
-        self.assertEqual(style_of(rows[0], "find usages"), THEME.accent)
-        self.assertEqual(style_of(rows[1], "running"), THEME.accent)
+        self.assertEqual(style_of(rows[0], "find usages"), THEME.running)  # the goal in the agent's own state
+        self.assertEqual(style_of(rows[1], "running"), THEME.running)
         self.assertEqual(style_of(rows[1], "15s"), THEME.muted)
         self.assertEqual(rows[2], ())
         self.assertEqual(style_of(rows[3], "▸"), THEME.muted)

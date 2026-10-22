@@ -474,8 +474,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   count is read from the subagent's own Hermes session in state.db while it
   runs, so it grows a poll behind each model call, and is Hermes' own count
   once the agent finishes; there is no token part until there is a count,
-  and a narrow row drops it before the tool count; a row with no room for
-  the model beside the time and the tools leaves the model out. A subagent whose session
+  and as a row narrows it drops the token count first, then the tool count,
+  then the time, and keeps the model longest; a row too narrow for the model
+  shows the title alone. A subagent whose session
   Hermes' rotating compaction (`compression.in_place: false`) replaced with a
   new one counts every session it wrote in.
   The info line counts them (`2 agents · ↓ agents`; the count alone where
@@ -725,7 +726,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
     for a command that failed by its exit code alone, the last lines it
     printed. The same running blue is the working row's glyph, the agent
     view's spinners and `● main`, and a running lane's dot and status in
-    the dag tree.
+    the dag tree; nothing that is not running is drawn in it (a list
+    bullet, a diff hunk, a key, a question's bar are grey or bold).
     `▪` marks a call that was cut off and
     `◌` one still being written (a call Hermes never starts, such as a streamed
     attempt it discards and retries, leaves no row and is not counted in the
@@ -786,7 +788,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   queues the file; the OMH TUI keeps only its name. Dropping a file that is not
   an image types Hermes' reference to it instead.
 - A line that starts with `!` is a shell command: while the composer holds
-  one, its `❯` mark turns the running blue and the info line says
+  one, its `❯` mark turns the shell family's amber and the info line says
   `! shell (not sent to the model)`. Sending it runs it through Hermes'
   `shell.exec` (Hermes' own limit of 30 s, its refusal of dangerous commands,
   and its redaction of what the command printed) and shows `❯ !command`

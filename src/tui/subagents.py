@@ -269,7 +269,7 @@ def _push(agent: Agent, kind: str, text: str, detail: str = "") -> None:
 
 def _mark(agent: Agent, theme: Theme, spinner_frame: int) -> Span:
     if agent.status == RUNNING:
-        return Span(SPINNER_FRAMES[spinner_frame % len(SPINNER_FRAMES)], theme.accent)
+        return Span(SPINNER_FRAMES[spinner_frame % len(SPINNER_FRAMES)], theme.running)
     if agent.status == QUEUED:
         return Span(QUEUED_MARK, theme.muted)
     if agent.status in FAILED_STATUSES:
@@ -279,9 +279,11 @@ def _mark(agent: Agent, theme: Theme, spinner_frame: int) -> Span:
     return Span(DONE_MARK, theme.muted)
 
 
-# Where a structured goal's title ends: at its first field label (`DELIVERABLE:`, `SCOPE:`, `VERIFY:`) or at the end of
-# its first sentence.
-_FIELD_LABEL = re.compile(r"\s[A-Z][A-Z_]{3,}:(?:\s|$)")  # four capitals or more, so `API:` in a sentence stays
+# Where a structured goal's title ends: at its first field label or at the end of its first sentence. The labels are
+# the node prompt's own (skills/dag-ulw, ulw-plan and ulw-work: TASK, DELIVERABLE, SCOPE, VERIFY, STOP WHEN), a closed
+# list, so `README:` or `JSON:` in a title stays.
+FIELD_LABELS = ("TASK", "DELIVERABLE", "SCOPE", "VERIFY", "STOP WHEN")
+_FIELD_LABEL = re.compile(r"\s(?:" + "|".join(re.escape(label) for label in FIELD_LABELS) + r"):(?:\s|$)")
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s")
 
 
@@ -585,7 +587,7 @@ class Roster:
     ) -> Line:
         agent = self.agents.get(row_id)
         if agent is None:
-            mark, label, figures = Span(MAIN_MARK, theme.accent), MAIN_NAME, [""]
+            mark, label, figures = Span(MAIN_MARK, theme.running), MAIN_NAME, [""]
         else:
             elapsed = elapsed_text(agent.elapsed(now))
             mark, label = _mark(agent, theme, spinner_frame), short_title(agent.goal) or UNNAMED
@@ -595,9 +597,9 @@ class Roster:
                 tools = f"{elapsed}{FACT_SEPARATOR}{_tools_text(agent.tool_count)}"
                 tokens = _tokens_text(agent.output_tokens).removesuffix(ROW_TOKENS_WORD)
                 figures = [*([f"{tools}{FACT_SEPARATOR}{tokens}"] if tokens else []), tools, elapsed, ""]
-            if agent.model:  # which model it runs on leads the figures while it fits beside them, then they go on alone
+            if agent.model:  # the model leads and stays longest: all of it, no tokens, model and time, model alone
                 led = figures[:1] if agent.status == QUEUED else figures[:-1]  # a wait keeps its word: `waiting 35s`
-                figures = [*(f"{agent.model}{FACT_SEPARATOR}{figure}" for figure in led), *figures]
+                figures = [*(f"{agent.model}{FACT_SEPARATOR}{figure}" for figure in led), agent.model, ""]
         lead = SELECTED_MARK if current else UNSELECTED_MARK
         fixed = cell_width(f"{lead}{mark.text} ")
         for figure in figures:  # ends on "", which always stays
@@ -633,10 +635,11 @@ class Roster:
             elapsed_text(agent.elapsed(now)), _tools_text(agent.tool_count),
             _tokens_text(agent.output_tokens).replace(" ", NO_BREAK_SPACE), agent.model,
         ]
-        status = Span(agent.status, _mark(agent, theme, 0).style)
+        state = _mark(agent, theme, 0).style  # the agent's own state: running blue, failed red, else grey
+        status = Span(agent.status, state)
         rest = Span("".join(f"{FACT_SEPARATOR}{fact}" for fact in facts if fact), theme.muted)
         header: list[Line] = [
-            *wrap_line((Span(agent.goal or UNNAMED, theme.accent),), width),
+            *wrap_line((Span(agent.goal or UNNAMED, state),), width),
             *wrap_line((status, rest), width),
             (),
         ]

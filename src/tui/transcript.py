@@ -157,14 +157,14 @@ EXPANDED_MARK = "▾"
 ASSISTANT_MARK = "● "
 ASSISTANT_INDENT = "  "
 # A call's mark by its state: a shape of its own for each, in its state's colour, so the colour is never the only
-# signal. Running in the accent (the delegation view's running blue), done green, failed or denied red; dim for a
+# signal. Running in `running` (the delegation view's running blue), done green, failed or denied red; dim for a
 # call cut off, one still being written, and a resumed session's call, whose outcome its record does not keep.
 TOOL_MARKS = {
     TOOL_RUNNING: "○", TOOL_OK: "●", TOOL_ERROR: "✗", TOOL_DENIED: "✗", TOOL_INTERRUPTED: "▪", TOOL_RECORDED: "●",
     TOOL_GENERATING: "◌",
 }
 RAIL = "┃ "  # the left rail of a prompt, a tool call or a reply, in the block's colour, and a space
-# A running tool's mark alternates the accent and dim this often, counted from its own start, so calls that run
+# A running tool's mark alternates the running blue and dim this often, counted from its own start, so calls that run
 # side by side pulse each on its own. Only the live region is drawn with a clock; scrollback gets the settled mark.
 PULSE_SECONDS = 0.5
 DETAIL_INDENT = "  "
@@ -265,6 +265,9 @@ class ToolRow:
     output_more: int = 0
     # What the person answered a question this call asked, as (words, notice level), drawn under its row.
     answers: list[tuple[str, str]] = field(default_factory=list)
+    # An interpreter fed its script through a heredoc, `python3 script · 23 lines` (`_heredoc_summary`): shown in its
+    # row instead of `args_summary`, which the details view shows.
+    script: str = ""
 
     def diff_lines(self, hold: bool = False) -> tuple[DiffLine, ...]:
         """The diff colour-stripped and classified, its file names relative to `diff_root`.
@@ -414,31 +417,40 @@ _GOAL_MARKERS = re.compile(
 )
 
 
-# The shell tools whose heredoc script is summarised by its interpreter and length.
+# The shell tools, and the interpreters among their commands that read a whole script from a heredoc on their stdin
+# (`python3 - <<'PY'`): such a call is summarised by its interpreter and the script's length.
 SHELL_TOOLS = frozenset({"terminal", "process", "execute_code"})
+SCRIPT_INTERPRETERS = frozenset({"python", "python3", "node", "bash", "sh", "ruby", "perl"})
+# A command's first line that is only an interpreter, its dash flags (`-`, `-u`), and a heredoc on its stdin; group 3
+# is `<<-`'s dash (its terminator may be indented with tabs), group 5 the terminator.
+_SCRIPT_HEAD = re.compile(r"(\S+)((?:\s+-\S*)*)\s*<<(-?)\s*(['\"]?)([A-Za-z_]\w*)\4")
 
 
 def _heredoc_summary(payload: dict[str, Any]) -> str:
-    """A shell call that feeds a script through a heredoc, as `<interpreter> script · N lines`; "" for any other.
+    """`python3 script · 23 lines` for a shell call that is one interpreter reading its whole script from a heredoc;
+    "" for any other call, which shows its own command (`_call_summary`).
 
-    N counts the script's lines, between the line that opens the heredoc and
-    its terminator; the interpreter is the command's first word.
+    Only the whole command qualifies: its first line the interpreter and the
+    heredoc (`SCRIPT_INTERPRETERS`), its last line the terminator. Another
+    command fed a heredoc (`cat > a.py <<'EOF'`, `git commit -F - <<'MSG'`),
+    a here-string (`<<<`), a shift (`$((1<<3))`), a heredoc after another
+    command, or more commands after the script, is not a script.
     """
     args = payload.get("args")
     command = as_text(args.get("command")) if isinstance(args, dict) else ""
-    head, marker, _rest = command.partition("<<")
     lines = command.rstrip("\n").split("\n")
-    if as_text(payload.get("name")) not in SHELL_TOOLS or not marker or len(lines) < 3:
+    head = _SCRIPT_HEAD.fullmatch(lines[0].strip())
+    if as_text(payload.get("name")) not in SHELL_TOOLS or head is None or len(lines) < 3:
         return ""
-    words = head.split()
+    interpreter = head[1].rsplit("/", 1)[-1]
+    terminator = lines[-1].lstrip("\t") if head[3] else lines[-1]
+    if interpreter not in SCRIPT_INTERPRETERS or terminator.rstrip() != head[5]:
+        return ""
     body = len(lines) - 2
-    return f"{words[0] if words else 'shell'} script · {body} line{'' if body == 1 else 's'}"
+    return f"{interpreter} script · {body} line{'' if body == 1 else 's'}"
 
 
 def _args_summary(payload: dict[str, Any]) -> str:
-    script = _heredoc_summary(payload)
-    if script:
-        return script
     summary = _call_summary(payload)
     return _GOAL_MARKERS.sub("", summary).strip() if as_text(payload.get("name")) == "delegate_task" else summary
 
@@ -648,7 +660,7 @@ def _steer_rows(block: SteerBlock, width: int, theme: Theme) -> list[Line]:
     if block.state == STEER_REFUSED:
         return [truncate_line((Span(f"{STEER_REFUSED_MARK}{block.outcome} · {text}", theme.warn),), width)]
     words = "steer queued by Hermes · " if block.state == STEER_QUEUED else "steer · "
-    return [truncate_line((Span(STEER_MARK, theme.accent), Span(words, theme.muted), Span(text, theme.text)), width)]
+    return [truncate_line((Span(STEER_MARK, theme.muted), Span(words, theme.muted), Span(text, theme.text)), width)]
 
 
 def _notice_style(level: str, theme: Theme) -> tuple[str, Style]:
@@ -799,7 +811,7 @@ def _state_style(status: str, theme: Theme, dim: bool = False) -> Style:
     if status in (TOOL_ERROR, TOOL_DENIED):
         return theme.error  # the line under a denial says it was denied
     if status == TOOL_RUNNING:
-        return theme.dim if dim else theme.accent
+        return theme.dim if dim else theme.running
     return theme.dim
 
 
@@ -812,9 +824,10 @@ def _is_path(text: str) -> bool:
     return " " not in text and text.startswith(("/", "~/", "./", "../"))
 
 
-def _tool_row(tool: ToolRow, width: int, theme: Theme, now: float | None = None) -> Line:
+def _tool_row(tool: ToolRow, width: int, theme: Theme, now: float | None = None, expanded: bool = False) -> Line:
     """One line per call: `● name(args summary)` and its duration; the mark pulses while it runs, given `now`, and
-    the summary is cut first (a path from the left)."""
+    the summary is cut first (a path from the left). An interpreter's heredoc script reads as its `script` summary,
+    and as the command itself when `expanded`."""
     mark = _tool_mark(tool.status, theme, tool.status == TOOL_RUNNING and _pulse_dim(tool, now))
     head: Line = (mark, Span(" "), Span(tool.name, kind_style(tool.name, theme)))
     tail: Line = ()
@@ -822,9 +835,10 @@ def _tool_row(tool: ToolRow, width: int, theme: Theme, now: float | None = None)
         tail = (Span(COLUMN_GAP + _seconds(tool.duration_s), theme.faint),)
     room = width - line_width(head) - line_width(tail) - len("()")
     args: Line = ()
-    if tool.args_summary and room > 1:
-        cut = truncate_left if _is_path(tool.args_summary) else truncate
-        args = (Span(f"({cut(tool.args_summary, room)})", theme.muted),)
+    shown = tool.script if tool.script and not expanded else tool.args_summary
+    if shown and room > 1:
+        cut = truncate_left if _is_path(shown) else truncate
+        args = (Span(f"({cut(shown, room)})", theme.muted),)
     return truncate_line((*head, *args, *tail), width)
 
 
@@ -952,7 +966,7 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: 
             own = [_folded_row(unit, inner, theme, now)]
         else:
             tool = unit[0]
-            own = [_tool_row(tool, inner, theme, now)]
+            own = [_tool_row(tool, inner, theme, now, expanded)]
             own += [row for text, level in tool.answers for row in _answer_rows(text, level, inner, theme)]
             if expanded and tool.summary and tool.summary not in tool.output[:1]:  # a failure's line is said once
                 summary_first, summary_rest = _output_leads(theme)
@@ -1226,7 +1240,8 @@ class Transcript:
             shown = metadata.get("tool_result_metadata") if isinstance(metadata, dict) else None
             diff = as_text(shown.get("inline_diff")) if isinstance(shown, dict) else ""
             name, args = _first_line(as_text(message.get("name"))) or "tool", self._display_args(_args_summary(message))
-            row = ToolRow(as_text(message.get("tool_call_id")), name, args, TOOL_RECORDED)
+            row = ToolRow(as_text(message.get("tool_call_id")), name, args, TOOL_RECORDED,
+                          script=_heredoc_summary(message))
             row.inline_diff, row.diff_root = diff.encode("utf-8", "surrogatepass"), self.cwd
             rows.append(row)
         if rows:
@@ -1455,6 +1470,7 @@ class Transcript:
         row.status = TOOL_RUNNING
         row.started_at = self._clock()
         row.args_summary = self._display_args(_args_summary(payload))
+        row.script = _heredoc_summary(payload)
 
     def _on_tool_complete(self, payload: dict[str, Any]) -> None:
         tool_id = as_text(payload.get("tool_id"))
@@ -1462,7 +1478,8 @@ class Transcript:
         row = _find_row(group, tool_id)
         if row is None:
             name = _first_line(as_text(payload.get("name"))) or "tool"
-            row = ToolRow(tool_id=tool_id, name=name, args_summary=self._display_args(_args_summary(payload)))
+            row = ToolRow(tool_id=tool_id, name=name, args_summary=self._display_args(_args_summary(payload)),
+                          script=_heredoc_summary(payload))
             group.tools.append(row)
         row.status = tool_result_status(payload.get("result"))
         now = self._clock()

@@ -17,14 +17,20 @@ from pathlib import Path
 import unittest
 
 from _tui_lines import line_text, lines_text
+from test_tui_panels import agent_row, hud_payload, with_agents
+from test_tui_prompts import CLARIFY, slot
 from test_tui_subagents import feed
 from omh.skin_pack import SKIN_THEMES
 from omh.tui.composer import Composer
+from omh.tui.diff_view import DIFF_HUNK, DiffLine, diff_rows
 from omh.tui.frame import build_frame, sticky_line
 from omh.tui.gateway import Event
+from omh.tui.markdown import MarkdownState, render_lines
+from omh.tui.panels import panel_lines
+from omh.tui.shortcuts import shortcut_lines
 from omh.tui.slash import known_names, slash_token_ranges
 from omh.tui.style import Span
-from omh.tui.subagents import MAIN_ID, Roster, short_title
+from omh.tui.subagents import FIELD_LABELS, MAIN_ID, Roster, short_title
 from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.theme import KIND_FAMILIES, TEXT_CONTRAST, build_theme, contrast_ratio, surface_for
 from omh.tui.transcript import (
@@ -87,7 +93,7 @@ class KindHueTests(unittest.TestCase):
                 hues = [style.fg for style in theme.kinds]
                 with self.subTest(theme=skin.short_name, background=background):
                     self.assertEqual(len(set(hues)), len(KIND_FAMILIES))
-                    self.assertFalse({theme.ok.fg, theme.error.fg, theme.accent.fg} & set(hues))
+                    self.assertFalse({theme.ok.fg, theme.error.fg, theme.running.fg} & set(hues))
 
 
 class ContrastTests(unittest.TestCase):
@@ -97,7 +103,8 @@ class ContrastTests(unittest.TestCase):
                 theme = build_theme(skin, background)
                 surface = surface_for(skin, background)
                 roles = {**{f"kind:{family}": style for family, style in zip(KIND_FAMILIES, theme.kinds)},
-                         "slash": theme.slash, "brand": theme.brand, "faint": theme.faint, "muted": theme.muted}
+                         "slash": theme.slash, "brand": theme.brand, "faint": theme.faint, "muted": theme.muted,
+                         "running": theme.running}
                 for role, style in roles.items():
                     with self.subTest(theme=skin.short_name, background=background, role=role):
                         self.assertGreaterEqual(contrast_ratio(style.fg, surface), TEXT_CONTRAST)
@@ -161,21 +168,51 @@ class GroupingTests(unittest.TestCase):
 
 
 class HeredocTests(unittest.TestCase):
-    def started(self, name: str, command: str) -> list[str]:
+    """Only an interpreter reading its whole script from a heredoc is summarised (#2223 review R1); every other
+    command keeps its own first line, as on main, and the details view always shows the command."""
+
+    def started(self, name: str, command: str, expanded: bool = False) -> list[str]:
         transcript = Transcript(clock=lambda: 0.0)
         transcript.apply(Event("message.start", SID, {}))
         transcript.apply(Event("tool.start", SID, {"tool_id": "t", "name": name, "args": {"command": command},
                                                    "context": command[:60]}))
+        if expanded:
+            return lines_text(block_rows(transcript.blocks[-1], 120, THEME, expanded=True))
         return lines_text(transcript.live_lines(120, THEME))
 
-    def test_a_script_fed_through_a_heredoc_is_named_and_its_lines_counted(self) -> None:
-        script = "python3 - <<'PY'\nimport subprocess, json\nroot = '/x'\nprint(root)\nPY"
-        self.assertEqual(self.started("terminal", script), ["┃ ○ terminal(python3 script · 3 lines)"])
-        self.assertEqual(self.started("terminal", "bash <<EOF\necho hi\nEOF"), ["┃ ○ terminal(bash script · 1 line)"])
+    def test_an_interpreter_fed_its_script_is_named_and_the_script_counted(self) -> None:
+        cases = {
+            "python3 - <<'PY'\nimport subprocess, json\nroot = '/x'\nprint(root)\nPY": "python3 script · 3 lines",
+            "bash <<EOF\necho hi\nEOF": "bash script · 1 line",
+            "node - <<'JS'\nconsole.log(1)\nJS": "node script · 1 line",
+            "/usr/bin/python3 -u - <<PY\nx = 1\ny = 2\nPY": "python3 script · 2 lines",
+            "sh <<-EOF\n\techo hi\n\tEOF": "sh script · 1 line",  # `<<-`: a tab-indented terminator
+        }
+        for command, said in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(self.started("terminal", command), [f"┃ ○ terminal({said})"])
 
-    def test_any_other_command_keeps_its_own_summary(self) -> None:
-        self.assertEqual(self.started("terminal", "git status"), ["┃ ○ terminal(git status)"])
-        self.assertNotIn("script", "".join(self.started("read_file", "a <<b\nc\nd")))  # not a shell
+    def test_any_other_command_keeps_its_own_first_line(self) -> None:
+        cases = {
+            "gh pr create --title 'x' --body-file - <<'EOF'\nThe body.\nEOF":
+                "gh pr create --title 'x' --body-file - <<'EOF'",
+            "cd /repo && git commit -F - <<'MSG'\nfix: x\n\nThe body.\nMSG": "cd /repo && git commit -F - <<'MSG'",
+            "cat > src/app.py <<'EOF'\nprint(1)\nEOF": "cat > src/app.py <<'EOF'",
+            "python3 - <<< 'print(1)'\nls\npwd": "python3 - <<< 'print(1)'",  # a here-string
+            "echo $((1<<3))\nls\npwd": "echo $((1<<3))",  # a shift
+            "cd /repo\npython3 - <<'PY'\nprint(1)\nPY": "cd /repo",  # the heredoc is not the first line
+            "python3 - <<'PY'\nprint(1)\nPY\necho done": "python3 - <<'PY'",  # more after the script
+            "git status": "git status",
+        }
+        for command, said in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(self.started("terminal", command), [f"┃ ○ terminal({said})"])
+        self.assertNotIn("script", "".join(self.started("read_file", "python3 - <<'PY'\nx\nPY")))  # not a shell
+
+    def test_the_details_view_shows_the_command_itself(self) -> None:
+        command = "python3 - <<'PY'\nimport json\nprint(1)\nPY"
+        self.assertEqual(self.started("terminal", command), ["┃ ○ terminal(python3 script · 2 lines)"])
+        self.assertEqual(self.started("terminal", command, expanded=True), ["┃ ○ terminal(python3 - <<'PY')"])
 
     def test_the_documented_rows_are_the_rows_the_code_draws(self) -> None:
         prose = " ".join((Path(__file__).resolve().parents[1] / "docs" / "INSTALLATION.md").read_text(
@@ -202,8 +239,18 @@ class ShortTitleTests(unittest.TestCase):
         self.assertEqual(short_title("Fix the flaky test. Then run the whole suite and report."), "Fix the flaky test")
         self.assertEqual(short_title("Is the cache stale? Check it."), "Is the cache stale?")
 
-    def test_a_short_capital_word_or_a_dot_inside_a_word_does_not_cut(self) -> None:
+    def test_only_the_node_prompts_own_field_labels_cut(self) -> None:
+        # #2223 review R3: a capitalised word and a colon is not a field label; only the node prompt's are
+        # (TASK, DELIVERABLE, SCOPE, VERIFY, STOP WHEN).
+        self.assertEqual(short_title("Update the README: add the install steps"), "Update the README: add the install steps")
+        self.assertEqual(short_title("Fix the JSON: parser crash"), "Fix the JSON: parser crash")
+        self.assertEqual(short_title("TASK: Bump CHANGELOG: note the fix DELIVERABLE: a PR"), "Bump CHANGELOG: note the fix")
         self.assertEqual(short_title("List the API: every endpoint"), "List the API: every endpoint")
+        for label in FIELD_LABELS:
+            with self.subTest(label=label):
+                self.assertEqual(short_title(f"Rebase PR 12 {label}: the rest"), "Rebase PR 12")
+
+    def test_a_dot_inside_a_word_does_not_cut(self) -> None:
         self.assertEqual(short_title("Bump to v1.2.3 and tag it"), "Bump to v1.2.3 and tag it")
         self.assertEqual(short_title("DELIVERABLE: a report"), "DELIVERABLE: a report")  # nothing before it to keep
 
@@ -254,6 +301,44 @@ class SlashTokenTests(unittest.TestCase):
         self.assertEqual([span.text for span in sticky if span.style == THEME.slash], ["/dag-ulw"])
         self.assertFalse([span for span in sticky_line("/dag-ulw go", 60, THEME) if span.style == THEME.slash])
 
+
+
+class RunningBlueTests(unittest.TestCase):
+    """The running blue (`Theme.running`) says "running" and nothing else (#2223 review): a list bullet, a diff hunk,
+    a key, a question's bar, a finished agent's goal and a kanban lane's row in any other state are drawn without it."""
+
+    def spans(self, lines: list) -> list[Span]:
+        return [span for line in lines for span in line]
+
+    def test_no_state_is_drawn_in_the_running_blue(self) -> None:
+        rows, _state = render_lines(["- a bullet", "```diff", "@@ -1 +1 @@", "-old", "+new", "```"], MarkdownState(),
+                                    60, THEME)
+        hunk = DiffLine(DIFF_HUNK, "@@ -1,2 +1,2 @@")
+        question = slot("clarify", CLARIFY).lines(60, THEME, max_rows=6)
+        for name, lines in (("markdown", rows), ("diff", diff_rows((hunk,), 60, THEME)),
+                            ("keys", shortcut_lines(100, THEME)), ("question", question)):
+            with self.subTest(site=name):
+                self.assertNotIn(THEME.running, {span.style for span in self.spans(lines)})
+
+    def test_an_agents_goal_in_its_log_is_its_own_state(self) -> None:
+        roster = Roster()
+        for subagent_id, status in (("sa-r", ""), ("sa-d", "completed"), ("sa-f", "failed")):
+            feed(roster, "start", 10.0, subagent_id, goal=f"goal {subagent_id}")
+            if status:
+                feed(roster, "complete", 12.0, subagent_id, status=status)
+        header = {sid: roster.log_lines(sid, 80, THEME, 20.0)[0][0].style for sid in ("sa-r", "sa-d", "sa-f")}
+        self.assertEqual(header, {"sa-r": THEME.running, "sa-d": THEME.muted, "sa-f": THEME.error})
+
+    def test_a_kanban_lane_row_is_its_rows_state(self) -> None:
+        states = ("running", "done", "queued", "blocked")
+        rows = [agent_row(0, lane_backend="kanban", state=state, task_id=f"t{index}") for index, state in enumerate(states)]
+        lines = panel_lines(with_agents(hud_payload([{"text": "a", "state": "active"}]), rows), 120, 20, THEME, 0.0)
+        marks = {line_text(line).split()[2]: line[0].style for line in lines if "kanban/" in line_text(line)}
+        self.assertEqual(marks, {"t0": THEME.running, "t1": THEME.ok, "t2": THEME.dim, "t3": THEME.error})
+        for line in lines:
+            if "kanban/" in line_text(line) and "running" not in line_text(line):
+                with self.subTest(row=line_text(line)):
+                    self.assertNotIn(THEME.running, {span.style for span in line})
 
 if __name__ == "__main__":
     unittest.main()

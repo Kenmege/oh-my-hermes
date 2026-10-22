@@ -30,7 +30,7 @@ composer while it is open. A clarify
 question's last row opens a text field for an answer of the person's own
 (Hermes' wording, "Other (type your answer)"); while that field is open the
 composer is the field. Every slot row hangs off a `▌` bar, in the warn colour
-for an approval and the accent for anything else, so a question Hermes asked
+for an approval and grey for anything else, so a question Hermes asked
 never reads as panel or transcript text. The command an approval would run is
 drawn in the code style; the choices are plain text, the highlighted one also
 highlighted.
@@ -486,7 +486,7 @@ class PromptSlot:
         else:
             # The header and the hint matter most; the body is what gets cut.
             rows = _keep_ends(self._value_lines(inner, theme, queued), max_rows, inner, theme)
-        bar = Span(SLOT_BAR, theme.warn if self.method == "approval" else theme.accent)
+        bar = Span(SLOT_BAR, theme.warn if self.method == "approval" else theme.muted)
         return [truncate_line((bar, *truncate_line(row, inner)), width) for row in rows]
 
     def whole_lines(self, width: int, theme: Theme, waiting: int = 0) -> list[Line]:
@@ -626,7 +626,7 @@ class PromptSlot:
         note: Line = (Span(MULTI_NOTE, theme.muted),) if self._multi() else ()
         head: list[Line] = list(
             wrap_line(
-                (Span("? ", theme.accent), Span(str(question.get("question", "")) + counter, theme.text), *note, *queued),
+                (Span("? ", theme.user), Span(str(question.get("question", "")) + counter, theme.text), *note, *queued),
                 width,
             )
         )
@@ -638,7 +638,7 @@ class PromptSlot:
         if self._multi():
             boxes = [TICKED if choice in self.ticked else UNTICKED for choice in choices] + [" " * len(UNTICKED)]
             labels = [(box + lead, label) for box, (lead, label) in zip(boxes, labels)]
-        return self._fit(head, [], self._choice_rows(labels, width, theme, theme.accent), max_rows, width, theme)
+        return self._fit(head, [], self._choice_rows(labels, width, theme, theme.user), max_rows, width, theme)
 
     def _value_lines(self, width: int, theme: Theme, queued: Line) -> list[Line]:
         label = {
@@ -648,7 +648,7 @@ class PromptSlot:
         }.get(self.method, f"Hermes asks: {self.method}")
         prompt = self.params.get("prompt") or self.params.get("command") or self.params.get("hint") or ""
         rows = wrap_prefixed(
-            (Span(label, theme.text), *queued), (Span("🔑 " if self.masked else "? ", theme.accent),), (Span("   "),),
+            (Span(label, theme.text), *queued), (Span("🔑 " if self.masked else "? ", theme.user),), (Span("   "),),
             width,
         )
         if prompt:

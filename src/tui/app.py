@@ -707,7 +707,7 @@ def goal_line(goal: Mapping[str, Any] | None, width: int, theme: Theme) -> Line 
     else:
         glyph, label, detail = "⊙", "goal", turns
     line = (
-        Span(f"{glyph} {label}", theme.accent if glyph == "⊙" else theme.warn),
+        Span(f"{glyph} {label}", theme.running if glyph == "⊙" else theme.warn),  # an active goal runs
         Span(f" · {detail} · ", theme.muted),
         Span(words(goal.get(contract.GOAL_TITLE)), theme.text),
     )
@@ -926,7 +926,7 @@ def attachment_from(result: Mapping[str, Any]) -> Attachment | None:
 def attachment_line(attachments: Sequence[Attachment], width: int, theme: Theme) -> Line:
     """`📎 shot.png 1280×720 · notes.png  Backspace removes`, cut to `width` (the hint goes first)."""
     labels = " · ".join(f"{item.name} {item.size}".strip() for item in attachments)
-    return truncate_line((Span(f"{ATTACH_ICON} {labels}", theme.accent), Span(f"  {ATTACH_HINT}", theme.hint)), width)
+    return truncate_line((Span(f"{ATTACH_ICON} {labels}", theme.text), Span(f"  {ATTACH_HINT}", theme.hint)), width)
 
 
 def path_items(result: Mapping[str, Any]) -> list[PathItem]:
@@ -4144,11 +4144,11 @@ class App(ModesMixin, AgentViewMixin):
         elif self.list_selected is not None:
             say, say_style = self._agent_list_say()
         elif steered is not None:
-            say, say_style = tuple(form.format(name=steered.name) for form in STEER_SAY), self.theme.accent
+            say, say_style = tuple(form.format(name=steered.name) for form in STEER_SAY), self.theme.muted
         elif self.rewind is not None:
             say, say_style = tuple(form.format(ordinal=self.rewind.ordinal) for form in REWIND_SAY), self.theme.warn
         elif self.tell_draft is not None:
-            say, say_style = TELL_SAY, self.theme.accent
+            say, say_style = TELL_SAY, self.theme.muted
         elif self.exit_armed_at is not None and self.clock() - self.exit_armed_at <= EXIT_CONFIRM_SECONDS:
             say = EXIT_HINT
         elif armed is not None and self.clock() - armed[1] <= DOUBLE_ESCAPE_SECONDS:
@@ -4264,7 +4264,7 @@ class App(ModesMixin, AgentViewMixin):
         if self._busy() and self.waiting_since is not None:
             # The turn waits on the person: no spinner, and one clock, the wait's.
             waited = elapsed_text(now - self.waiting_since)
-            row = (Span(WAITING_GLYPH, self.theme.accent), Span(STATE_WAITING, self.theme.text),
+            row = (Span(WAITING_GLYPH, self.theme.user), Span(STATE_WAITING, self.theme.text),
                    Span(f" ({waited})", self.theme.muted))
             lines.append(truncate_line(row, cols))
         elif self._busy() and self.interrupting:
@@ -4287,7 +4287,7 @@ class App(ModesMixin, AgentViewMixin):
             if self.effort in contract.REASONING_LEVELS and self.effort != "none":  # `none` is thinking off
                 effort = THINKING_EFFORT.format(self.effort)
             interrupt = INTERRUPT_HINT if self._esc_interrupts() else ""  # else Esc means something else now
-            lead = (Span(WORKING_GLYPHS[frame % len(WORKING_GLYPHS)], self.theme.accent), Span(" "),
+            lead = (Span(WORKING_GLYPHS[frame % len(WORKING_GLYPHS)], self.theme.running), Span(" "),
                     *working_spans(text, frame, self.theme))
             # A narrow row drops whole facts, the effort first (the info line says it where it has room), then the
             # tokens, the time, and the interrupt last; only a verb too long for the row alone is cut at the edge.

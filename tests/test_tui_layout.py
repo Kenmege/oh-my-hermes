@@ -43,7 +43,7 @@ from omh.tui.layout import (
     slot_cap,
 )
 from omh.tui.style import Line, Span
-from omh.tui.theme import DEFAULT_THEME
+from omh.tui.theme import DEFAULT_THEME, KIND_FAMILIES
 from omh.tui.width import line_width
 
 ROWS = range(1, 86)
@@ -472,10 +472,9 @@ class FrameTests(unittest.TestCase):
                     self.assertLessEqual(line_width(row), cols)
             self.assertEqual(frame.cursor, (top, 2 + 3))  # the caret is the input's own column: no side before it
 
-    def test_no_mode_changes_the_box_and_a_shell_line_takes_the_accent_only_on_its_prompt_mark(self) -> None:
-        # The owner, round 4: no composer recolour for accept all or plan; the mode is said on the info line.
-        from dataclasses import replace
-
+    def test_no_mode_changes_the_rules_and_a_shell_line_takes_the_shell_hue_only_on_its_prompt_mark(self) -> None:
+        # The owner, round 4: no composer recolour for accept all or plan; the mode is said on the info line. A `!`
+        # line's mark is the shell family's hue (#2223 review: the running blue says only "running").
         expected = (rule_line(30, DEFAULT_THEME), rule_line(30, DEFAULT_THEME))
         for mode in ("normal", MODE_ACCEPT, MODE_PLAN, MODE_ACCEPT_PLAN, MODE_SHELL, "not-a-mode"):
             with self.subTest(mode=mode):
@@ -484,7 +483,7 @@ class FrameTests(unittest.TestCase):
                 self.assertEqual((frame.lines[top], frame.lines[bottom]), expected)
                 mark = frame.lines[frame.budget.composer_top][0]
                 self.assertEqual(mark.text, "❯ ")
-                shell = replace(DEFAULT_THEME.accent, bold=True)
+                shell = DEFAULT_THEME.kinds[KIND_FAMILIES.index("shell")]
                 self.assertEqual(mark.style, shell if mode == MODE_SHELL else DEFAULT_THEME.prompt)
 
     def test_the_placeholder_is_drawn_after_the_prompt_and_never_typed(self) -> None:
@@ -524,7 +523,7 @@ class FrameTests(unittest.TestCase):
                 self.assertEqual({span.style.bg for span in line}, {None})
                 self.assertFalse(any(is_fill(span) for span in line))
                 self.assertEqual([(span.text, span.style) for span in line],
-                                 [("↳ you: ", theme.accent), ("fix the bug", theme.muted)])
+                                 [("↳ you: ", theme.running), ("fix the bug", theme.muted)])
                 (cut,) = [sticky_line("abcdefghij", 12, theme)]
                 self.assertEqual((cut[-1].text, cut[-1].style), ("…", theme.dim))  # a dim mark where it is cut
 

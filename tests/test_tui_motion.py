@@ -85,7 +85,7 @@ class SaidAndDoneTests(unittest.TestCase):
         self.assertEqual({status: marks[status].text for status in (TOOL_RUNNING, TOOL_OK, TOOL_ERROR)},
                          {TOOL_RUNNING: "○", TOOL_OK: "●", TOOL_ERROR: "✗"})
         self.assertEqual({status: marks[status].style for status in (TOOL_RUNNING, TOOL_OK, TOOL_ERROR)},
-                         {TOOL_RUNNING: THEME.accent, TOOL_OK: THEME.ok, TOOL_ERROR: THEME.error})
+                         {TOOL_RUNNING: THEME.running, TOOL_OK: THEME.ok, TOOL_ERROR: THEME.error})
         # A denial shows the failure's red mark, and says so on its line.
         self.assertEqual(marks[TOOL_DENIED], marks[TOOL_ERROR])
         self.assertTrue(lines[TOOL_DENIED].endswith("⎿  denied"), lines[TOOL_DENIED])
@@ -107,14 +107,14 @@ class PulseTests(unittest.TestCase):
         for offset in (0.1, PULSE_SECONDS + 0.1, 2 * PULSE_SECONDS + 0.1):
             (row,) = transcript.live_lines(80, THEME, now=clock.now + offset)
             styles.append(mark(row).style)
-        self.assertEqual(styles, [THEME.accent, THEME.dim, THEME.accent])
+        self.assertEqual(styles, [THEME.running, THEME.dim, THEME.running])
 
     def test_calls_side_by_side_pulse_each_on_its_own(self) -> None:
         transcript, clock = self.started()
         clock.now += PULSE_SECONDS / 2
         transcript.apply(ev("tool.start", tool_id="t2", name="read_file", context="a.py"))
         first, second = [row for row in transcript.live_lines(80, THEME, now=100.0 + PULSE_SECONDS + 0.1) if row]
-        self.assertEqual((mark(first).style, mark(second).style), (THEME.dim, THEME.accent))
+        self.assertEqual((mark(first).style, mark(second).style), (THEME.dim, THEME.running))
 
     def test_the_tail_renders_again_only_when_a_mark_turns(self) -> None:
         transcript, clock = self.started()
@@ -137,7 +137,7 @@ class PulseTests(unittest.TestCase):
     def test_without_a_clock_the_mark_holds_the_accent(self) -> None:
         transcript, clock = self.started()
         (row,) = transcript.live_lines(80, THEME)
-        self.assertEqual(mark(row).style, THEME.accent)
+        self.assertEqual(mark(row).style, THEME.running)
 
     def test_calls_that_pulsed_reach_scrollback_with_their_settled_marks(self) -> None:
         clock = Clock()
@@ -208,7 +208,7 @@ class SweepTests(unittest.TestCase):
             rows.append(app._tail(80)[-2])  # the working row, its tip under it
         self.assertEqual(line_text(rows[0])[2:], line_text(rows[1])[2:])  # past the spinner, the same words
         self.assertNotEqual(rows[0][2:], rows[1][2:])  # in a different light
-        self.assertEqual(rows[0][0].style, THEME.accent)
+        self.assertEqual(rows[0][0].style, THEME.running)
 
 
 class ReducedMotionTests(unittest.TestCase):
@@ -236,7 +236,7 @@ class ReducedMotionTests(unittest.TestCase):
             seen.add((mark(tool).style, tuple(working)))
         self.assertEqual(len(seen), 1)  # the same rows at every moment (this turn has no start time to count from)
         ((style, working),) = seen
-        self.assertEqual(style, THEME.accent)
+        self.assertEqual(style, THEME.running)
         self.assertTrue(line_text(working).startswith(f"{WORKING_GLYPHS[0]} Reading the router… (0s"))
         self.assertFalse([span for span in working if span.style.bold])
 

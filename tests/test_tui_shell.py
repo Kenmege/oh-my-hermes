@@ -23,7 +23,7 @@ from omh.tui.frame import MODE_SHELL
 from omh.tui.gateway import Event, Response
 from omh.tui.keys import BACKSPACE, ENTER, UP, Key, Paste
 from omh.tui.modes import SHELL_LABEL
-from omh.tui.theme import DEFAULT_THEME, build_theme
+from omh.tui.theme import DEFAULT_THEME, KIND_FAMILIES, build_theme
 from omh.tui.transcript import NOTICE_ERROR, NOTICE_INFO, NOTICE_WARN, OUTPUT_FAILED, CommandBlock, block_rows
 
 
@@ -60,7 +60,7 @@ class ShellModeTests(unittest.TestCase):
         screen = drawn(app)
         self.assertTrue(info_row_of(screen).startswith(INFO_INSET + SHELL_LABEL), screen)
         self.assertTrue(set(rule_edges(80)) <= set(screen))  # the rules as in every mode
-        self.assertEqual(mark_colour(screen), hex_to_rgb(DEFAULT_THEME.accent.fg))  # the mark says it, not only the label
+        self.assertEqual(mark_colour(screen), hex_to_rgb(DEFAULT_THEME.kinds[KIND_FAMILIES.index("shell")].fg))  # the shell hue says it, not only the label
         app.composer.replace(0, len(app.composer.text), "ls")
         screen = drawn(app)
         self.assertNotIn(SHELL_LABEL, "\n".join(screen))
