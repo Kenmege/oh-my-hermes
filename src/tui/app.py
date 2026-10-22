@@ -3367,7 +3367,7 @@ class App(ModesMixin, AgentViewMixin):
         shows_command = kind == "skill" or bool(display)  # a built-in's bare send (/plan, /retry) shows what it sends
         echo = self.transcript.withdraw_command() if sends and shows_command and self.sid else None
         rewinds = sends and invocation.rewind is not None and invocation.rewind is self.rewind  # the pick it went with
-        if invocation.name in TURN_BACK_COMMANDS:
+        if invocation.name.lower() in TURN_BACK_COMMANDS:  # Hermes lowercases a name before it routes it: /Retry too
             # An answer means Hermes' /retry or /undo took the last turn(s) back already, so a pick (the one it went
             # with, or one made while it was out) or an open picker names the session as it was before: both go, and
             # what it answers goes plain (/retry's prompt, /undo's draft), as without a rewind.

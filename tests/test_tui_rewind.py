@@ -491,27 +491,32 @@ class RewindCommandTests(unittest.TestCase):
     def test_retry_drops_the_rewind_and_resends_plain_since_hermes_took_the_turn_back(self) -> None:
         # Hermes' /retry rewinds the last turn itself (methods_tools.py `_cmd_retry`): a cut at the picked row on top
         # of that names a row that moved, and Hermes refuses it, so the retry would never run. slash.exec runs
-        # command.dispatch itself for /retry (`_PENDING_INPUT_COMMANDS`), so it answers with the `send`.
-        app, client = picked()
-        self.send(app, "/retry")
-        self.assertEqual(client.calls[-1], ("slash.exec", {"command": "retry", "session_id": SID}))
-        answer(app, client, RETRIED)
-        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": SECOND_PROMPT}))
-        self.assertIsNone(app.rewind)
-        self.assertIn(REWIND_TURN_BACK_NOTICE.format(name="retry"), notices(app))
+        # command.dispatch itself for /retry (`_PENDING_INPUT_COMMANDS`), so it answers with the `send`. It lowercases the
+        # name first, so /Retry is Hermes' /retry too.
+        for line in ("/retry", "/Retry", "/RETRY"):
+            with self.subTest(command=line):
+                app, client = picked()
+                self.send(app, line)
+                self.assertEqual(client.calls[-1], ("slash.exec", {"command": line[1:], "session_id": SID}))
+                answer(app, client, RETRIED)
+                self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": SECOND_PROMPT}))
+                self.assertIsNone(app.rewind)
+                self.assertIn(REWIND_TURN_BACK_NOTICE.format(name=line[1:]), notices(app))
 
     def test_undo_drops_the_rewind_so_the_prompt_it_gives_back_goes_plain(self) -> None:
         # Hermes' /undo soft-deletes the last turn and answers `prefill` with its prompt (methods_tools.py `_cmd_undo`):
         # left picked, the rewind would send that prompt as a cut at a row that is gone, and Hermes would refuse it.
-        app, client = picked()
-        self.send(app, "/undo")
-        self.assertEqual(client.calls[-1], ("slash.exec", {"command": "undo", "session_id": SID}))
-        answer(app, client, UNDONE)
-        self.assertIsNone(app.rewind)
-        self.assertEqual(app.composer.text, SECOND_PROMPT)
-        self.assertEqual(notices(app)[-2:], [REWIND_TURN_BACK_NOTICE.format(name="undo"), UNDONE["notice"]])
-        app._on_input(Key(ENTER))
-        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": SECOND_PROMPT}))
+        for line in ("/undo", "/Undo"):
+            with self.subTest(command=line):
+                app, client = picked()
+                self.send(app, line)
+                self.assertEqual(client.calls[-1], ("slash.exec", {"command": line[1:], "session_id": SID}))
+                answer(app, client, UNDONE)
+                self.assertIsNone(app.rewind)
+                self.assertEqual(app.composer.text, SECOND_PROMPT)
+                self.assertEqual(notices(app)[-2:], [REWIND_TURN_BACK_NOTICE.format(name=line[1:]), UNDONE["notice"]])
+                app._on_input(Key(ENTER))
+                self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": SECOND_PROMPT}))
 
     def test_retry_and_undo_also_cancel_a_rewind_picked_while_they_were_out_and_close_the_picker(self) -> None:
         # The picks and the picker were made from the session as it was before Hermes took the last turn back.
