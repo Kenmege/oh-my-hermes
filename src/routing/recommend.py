@@ -5856,8 +5856,10 @@ def _sales_pipeline_review_offers_itself(normalized_query: str, query_tokens: se
 # sizing ...", "write a post about why startups should perform ...") is not one.
 # Neither is a question that opens on a listed verb ("do market sizing and tam
 # mean the same thing?", "estimate tam sam som? no, I just want ..."): a message
-# carrying a "?" is admitted only when a courtesy opener made it a request
-# ("can you do market sizing for dental clinics?"). "by" and "with" are not
+# carrying a "?" is admitted only when its courtesy opener asks the agent ("can
+# you do market sizing for dental clinics?") and the "?" ends the message;
+# "hey," or "please," before a question leaves it a question, and "can you
+# estimate tam sam som? never mind, ..." takes the request back. "by" and "with" are not
 # followers: "run the market sizing by legal" and "compare competitive pricing
 # analysis with value-based pricing" name the method as an object. The word
 # after a follower may not open supplied material, the person's own private
@@ -5887,7 +5889,8 @@ def _market_research_offers_itself(normalized_query: str, query_tokens: set[str]
     del query_tokens
     message = normalized_query.strip()
     request = after_courtesy(message)
-    if "?" in message and request == message:
+    opener = message[: len(message) - len(request)]
+    if "?" in message and ("you" not in _MARKET_RESEARCH_WORD.findall(opener) or "?" in message.rstrip("?")):
         return False
     sentence = re.split(r"[.!?;](?:\s|$)", request, maxsplit=1)[0]
     words = _MARKET_RESEARCH_WORD.findall(sentence)

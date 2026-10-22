@@ -771,7 +771,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # that open on a method verb, a sizing run by legal, a sizing of a
             # pizza count, a pricing analysis on a pull request diff, and a
             # pricing analysis set beside value-based pricing in theory (6).
-            expected=961,
+            # Its third review adds two method questions opened by "hey," and
+            # "please," (2).
+            expected=963,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

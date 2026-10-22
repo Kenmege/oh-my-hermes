@@ -45,6 +45,7 @@ class MarketResearchRoutingTests(unittest.TestCase):
             "hey, estimate tam sam som for pet insurance in germany",
             "Do market sizing: home espresso machines in the US",
             "Hey, could you estimate TAM SAM SOM for pet insurance in Germany?",
+            "Could you do a competitive pricing analysis of Figma versus Sketch?",
         ):
             with self.subTest(prompt=prompt):
                 self.assertEqual(route_owner(route_chat_message(prompt)), "market-research")
@@ -84,6 +85,10 @@ class MarketResearchRoutingTests(unittest.TestCase):
             "Do a quick market sizing of how many pizzas I need for 20 people",
             "Perform competitive pricing analysis on this pull request diff",
             "Compare competitive pricing analysis with value-based pricing in theory",
+            "Hey, do market sizing and TAM differ?",
+            "Please, do market sizing and TAM mean the same thing?",
+            "Please run market sizing for fun, is that weird?",
+            "Hey can you estimate TAM SAM SOM? Never mind, just explain the acronym",
         ):
             with self.subTest(prompt=prompt):
                 self.assertFalse(_names_market_research(prompt))

@@ -194,6 +194,24 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "market-research",
     ),
+    # A greeting or "please" before a question does not make it a request;
+    # only an opener that asks the agent ("can you", "could you") does.
+    RoutingPrecisionCase(
+        "greeting-before-market-sizing-question",
+        "A greeting before a method question leaves it a question",
+        "Hey, do market sizing and TAM differ?",
+        "answer_clarification",
+        "",
+        "market-research",
+    ),
+    RoutingPrecisionCase(
+        "please-before-market-sizing-question",
+        "Please before a method question leaves it a question",
+        "Please, do market sizing and TAM mean the same thing?",
+        "answer_directly",
+        "direct_answer",
+        "market-research",
+    ),
     # Engine-entry approvals (#1638). Accepting something is the most common
     # thing a person says in the seconds after a planning workflow finishes,
     # and the corpus had no sentence of this shape at all -- 235 negative
