@@ -18,28 +18,26 @@ All notable changes will be documented here.
   the glyph it already carries. With `NO_COLOR` unset or empty nothing
   changes: both scenes are byte-identical to before.
 
-- **A plain request for work over many targets can run as a dag-ulw graph.**
-  "rlaope로 올린 hermes upstream pr들 전부 확인해서 닫을건 닫고 리뷰반영할건
-  리뷰반영하고 rebase할건 리베이스하고" went to web-research on the router and
-  ulw-work in the route hint; it now dispatches dag-ulw. A breadth word on
-  several work units with a write request (`열린 PR들 전부 리베이스해줘`,
-  `fix all the failing tests`, `모든 패키지 버전 올려줘`), or two named parts
-  asked for in parallel, reads as several parts: the router dispatches dag-ulw
-  where it scored ultrawork, or a git, review or lookup lane for a sweep over
-  many PRs, and names it where it asked or fell back; the route hint runs it.
-  These do not: a past, a negation or "no need" (`PR들 전부 머지했어`, `…
-  머지하지 마`, `… 안 고쳐도 돼`), a lookup, a status or a report (`PR들 전부
-  알려줘`, `check the status of all open PRs`, `review all open PRs and just
-  tell me which are safe`), a question, one fault with one fix, one thing in
-  many places (`fix the bug in all three services`), one PR's files, a read
-  alone or one command over everything (`전체 테스트 돌려줘`), work until a
-  condition, and a request that opens with a sigil or names a skill, ulw or a
-  retired engine. Coordinated workers on one shared task list stay on
-  ulw-work. Measured on the frozen sets under
-  `.omc/research/dag-default-routing/acceptance/`; prompts outside them are
-  not measured. A Korean loanword or counter after a stop verb is its object
-  (`/ulw-work 멈춰 리뷰어`, `멈춰 서버 두 대` run), and `멈춰 그거 아님` is a
-  stop.
+- **A plain request for a change over many targets can run as a dag-ulw
+  graph.** "rlaope로 올린 hermes upstream pr들 전부 확인해서 닫을건 닫고
+  리뷰반영할건 리뷰반영하고 rebase할건 리베이스하고" went to web-research on the
+  router and ulw-work in the route hint; it now dispatches dag-ulw. The router
+  dispatches dag-ulw only on positive evidence: a change verb from a closed
+  allow list (fix, update, rebase, close, migrate, 고쳐, 올려, 리베이스, 반영, …)
+  in request form, on a breadth object that names independent units
+  (`열린 PR들 전부 리베이스해줘`, `fix all the failing tests`, `update every
+  service to node 22`), or two named parts asked for in parallel. A stop or a
+  hold, a condition, a past or a completion, one numbered pull request, work
+  until a condition, and a request that opens with a sigil or names a skill,
+  ulw or a retired engine never qualify. The route hint starts dag-ulw only on
+  that same reading; work over many targets without it (`review all open
+  PRs`) is at most offered, as one question with dag-ulw as the candidate.
+  Reading, summarising, measuring, sharing or checking verbs are not on the
+  list, so those requests route as before. Coordinated workers on one shared
+  task list stay on ulw-work. Measured on the frozen sets under
+  `.omc/research/dag-default-routing/acceptance/`; prompts outside them are not
+  measured. A Korean loanword or counter after a stop verb is its object
+  (`/ulw-work 멈춰 리뷰어`, `멈춰 서버 두 대` run), and `멈춰 그거 아님` is a stop.
 - **The dag tree under the composer holds still when Down gives it the keys,
   and keeps a run's lanes until a payload shows the run over (#2224's delta
   review).** With the keys the tree cuts the same rows as without them, so

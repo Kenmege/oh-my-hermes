@@ -48,7 +48,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # A negated sweep, a status lookup and one PR's files add three (+3).
         # A report-only review, a past, a single command and a stop with a
         # declarative reason add four (+4).
-        self.assertEqual(payload["summary"]["case_count"], 1046)
+        # A past, a summary and a condition over every PR add three (+3).
+        self.assertEqual(payload["summary"]["case_count"], 1049)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -142,10 +143,12 @@ class RoutingPrecisionTests(unittest.TestCase):
         # question about rust after /omh-rust (+1). A Korean stop verb before
         # a task noun runs its skill, and /ulw-context status gets the status
         # card (+2), and so does /omh-cancel 상태 보여줘 (+1).
-        # Multi-part work to dag-ulw adds six graph runs, three single tasks that
+        # Multi-part work to dag-ulw adds four graph runs, a review offered and
+        # not started, a check-and-close that stays, three single tasks that
         # stay, agent-ops-review's status and a stop with a loanword object (+11).
         # One fix in many places stays on ultrawork (+1).
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1047)
+        # Two changes on every unit run as a graph and a hold stays (+3).
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1050)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

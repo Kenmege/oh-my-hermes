@@ -831,7 +831,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # reviewed only to be told which are safe, every PR said to be
             # checked, and every test run as one command start no graph run,
             # as on main (3); /ulw-work 멈춰 필요 없다 is a stop, as on main (1).
-            expected=1046,
+            # The structural fix adds three: every PR said merged, a summary
+            # of every PR, and a merge on a condition start no graph run, as on
+            # main (3).
+            expected=1049,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1268,19 +1271,24 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # /omh-cancel 상태 보여줘 gets the status card where main ran
             # cancel: only a skill whose job is reporting a state runs on a
             # status request (1).
-            # Multi-part work to dag-ulw adds eleven. Six run as a graph: the
-            # owner's sweep over upstream PRs (web-research on main), 열린
-            # PR들 전부 리베이스해줘 (github-event-ops on main), review all open
-            # PRs, fix all the failing tests, two features in parallel, and
-            # check all open pull requests and close the stale ones (6). Three
+            # Multi-part work to dag-ulw adds eleven. Four run as a graph on a
+            # change from the allow list: the owner's sweep over upstream PRs
+            # (web-research on main), 열린 PR들 전부 리베이스해줘
+            # (github-event-ops on main), fix all the failing tests, and two
+            # features in parallel (4). review all open PRs is offered dag-ulw
+            # in a clarify, not started (1), and check all open pull requests
+            # and close the stale ones stays on ultrawork, as on main (1). Three
             # single tasks stay on ultrawork, as on main: every typo in one
             # file, in Korean and English, and tests running in parallel (3).
             # /omh-agent-ops-review status runs the review, as on main (1),
             # and /ulw-work 멈춰 리뷰어 runs ultrawork, which main answered:
             # its 어 ending read the loanword as a reason (1). The review adds
             # one: fix the bug in all three services stays on ultrawork, as on
-            # main (1).
-            expected=1047,
+            # main (1). The structural fix adds three: update every service and
+            # 모든 패키지 버전 올려줘 run as a graph on a change from the allow
+            # list (a clarify on main) (2), and a hold on every PR stays on
+            # github-event-ops, as on main (1).
+            expected=1050,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

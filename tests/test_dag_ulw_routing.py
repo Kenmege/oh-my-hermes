@@ -21,7 +21,9 @@ from omh.plugin_bundle.omh.dag_ulw_cues import (  # noqa: E402
     big_work_for_dag_ulw,
     dag_ulw_control,
     declines_dag_ulw,
+    dispatches_dag_ulw,
     invokes_dag_ulw,
+    work_over_many_targets,
 )
 from omh.routing.chat import route_chat_message  # noqa: E402
 from omh.routing.policy import skill_is_negated  # noqa: E402
@@ -200,33 +202,86 @@ class RouterTests(unittest.TestCase):
         route = route_chat_message("run three coordinated workers on one shared task list in parallel lanes")
         self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "ultrawork"))
 
+    def _dag_ulw_starts(self, message: str) -> tuple[bool, bool, str]:
+        """Whether the router dispatches dag-ulw, whether the route hint starts it, and the route's candidate."""
+        route = route_chat_message(message, source="discord")
+        hints = awareness_route_hint(message)["hints"]
+        hint_starts = any(hint.get("workflow") == "dag-ulw" and hint.get("next_action") == "start_dag_run" for hint in hints)
+        return route["selected_skill"] == "dag-ulw", hint_starts, str(route.get("candidate_skill") or "")
+
     def test_work_over_many_targets_runs_as_a_graph(self) -> None:
-        # Multi-part work routed to ulw-work, or a sweep over many PRs scored for a git, review or lookup lane.
+        # Positive evidence (`dispatches_dag_ulw`): a change verb from the allow list, in request form, on a breadth
+        # object. The router dispatches dag-ulw whichever lane scored, and the hint starts it on the same reading.
         for message in ("rlaope로 올린 hermes upstream pr들 전부 확인해서 닫을건 닫고 리뷰반영할건 리뷰반영하고 rebase할건 리베이스하고",
-                        "열린 PR들 전부 리베이스해줘", "review all open PRs", "fix all the failing tests",
-                        "implement search and export features in parallel",
-                        "check all open pull requests and close the stale ones"):
+                        "열린 PR들 전부 리베이스해줘", "fix all the failing tests", "update every service to node 22",
+                        "implement search and export features in parallel", "모든 패키지 버전 올려줘",
+                        "브랜치들 전부 main에 맞춰 리베이스해줘", "billing 말고 모든 서비스 node 22로 올려줘",
+                        "update the dependencies in all services", "블로그 pr 전부 머지해줘"):
             with self.subTest(message=message):
-                route = route_chat_message(message, source="discord")
-                self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "dag-ulw"))
-        # One task said over many things, one fault with one fix, a question, a report, or a runtime behaviour.
-        for message in ("README 오타 전부 고쳐줘", "fix all the typos in the readme", "모든 테스트가 깨졌어, 고쳐줘",
-                        "PR들 전부 머지됐어?", "all the tests fail", "are all the tests passing?",
-                        "make the test runner execute tests in parallel", "review this PR", "rebase my branch onto main",
-                        # A report, a negation, a lookup or a status after a breadth word asks for no work.
-                        "PR들 전부 확인했어", "PR들 전부 머지하지 마", "PR들 전부 알려줘", "모든 서비스 상태 확인해줘",
-                        "check the status of all open PRs", "review all open PRs and just tell me which are safe",
-                        "review all the PRs but do not merge anything", "실패하는 테스트 다 안 고쳐도 돼",
-                        # One PR's files or tests, one command over everything, work until a condition, and a request
-                        # that opens with a skill's name or a retired engine's.
-                        "review all the files in this PR", "fix all the tests in this PR", "전체 테스트 돌려줘",
-                        "모든 파일 포맷팅해줘", "fix all the failing tests until the suite is green",
+                self.assertTrue(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
+        # Work over many targets without that evidence is offered, never started (`work_over_many_targets`).
+        for message in ("review all open PRs", "check all open pull requests and close the stale ones",
+                        "migrate across all modules to the new logger"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertTrue(work_over_many_targets(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        # Where no rule names it, the hint offers dag-ulw (ask once), and the router asks about it.
+        offer = [hint for hint in awareness_route_hint("migrate across all modules to the new logger")["hints"]
+                 if hint.get("workflow") == "dag-ulw"]
+        self.assertEqual([hint.get("next_action") for hint in offer], ["ask_one_clarification"])
+        self.assertEqual(self._dag_ulw_starts("migrate across all modules to the new logger")[2], "dag-ulw")
+
+    def test_each_hard_exclude_alone_keeps_a_change_off_the_graph(self) -> None:
+        # Each row is a change the router would dispatch on but for one hard exclude: a skill or engine named first,
+        # a past, one pull request's scope, a stop or a hold, a completion, a condition, work until a condition.
+        for message in ("team 열린 PR들 전부 리베이스해줘", "plan 모든 패키지 버전 올려줘", "PR들 전부 리베이스했으니 머지해줘",
+                        "PR 2232 파일들 전부 고쳐줘", "fix all the files in this PR", "PR들 전부 리베이스 중단하고 머지해줘",
+                        "브랜치들 다 정리됨 이제 전부 머지해줘", "테스트 다 통과하면 모든 PR 머지해줘",
+                        "fix all the failing tests until CI is green"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                router, hint, _candidate = self._dag_ulw_starts(message)
+                self.assertFalse(router)
+                self.assertFalse(hint)
+        # A review is offered, never dispatched: the allow list holds only changes.
+        self.assertFalse(dispatches_dag_ulw("PR들 전부 리뷰해줘"))
+        self.assertTrue(work_over_many_targets("PR들 전부 리뷰해줘"))
+
+    def test_no_new_work_over_many_targets_starts_or_offers_nothing(self) -> None:
+        # Neither the router nor the hint starts dag-ulw, and no offer names it: a past or a completion, a stop or a
+        # hold, a negation or no need, a lookup, a summary or a share, a report, one numbered pull request, a
+        # condition, one command over everything, one change in many places, a question, work until a condition, and
+        # a request that opens with a skill's name, ulw or a retired engine (#2232 review).
+        for message in ("열린 PR들 전부 리베이스했습니다", "PR들 전부 머지했어요", "PR들 전부 머지됐네", "PR들 전부 닫혔네",
+                        "브랜치들 다 정리됨", "upstream PR들 다 리뷰 반영 끝", "PR들 전부 확인했어",
+                        "열린 PR들 전부 머지 보류해줘", "PR들 전부 리베이스 중단해줘", "모든 서비스 배포 멈춰줘",
+                        "모든 서비스 업데이트 취소해줘", "PR들 전부 머지 금지", "PR들 전부 머지하지 마",
+                        "PR들 전부 머지하면 안 돼", "PR들 전부 머지할 필요는 없어", "실패하는 테스트 다 안 고쳐도 돼",
+                        "upstream PR들 전부 현황 파악해줘", "PR들 전부 요약해줘", "모든 레포 라이선스 조사해줘",
+                        "모든 모듈 구조 설명해줘", "각 엔드포인트 응답 시간 측정해줘", "PR들 전부 슬랙에 공유해줘",
+                        "PR들 전부 알려줘", "모든 서비스 상태 확인해줘", "check the status of all open PRs",
+                        "review all open PRs and send me a list of risky ones", "audit all the repos and send me the findings",
+                        "PR들 전부 리뷰하고 결과만 정리해줘", "review all open PRs and just tell me which are safe",
+                        "review every file in pull request 2232 and fix what's wrong", "2232번 PR 파일들 전부 리뷰해줘",
+                        "내 PR 파일들 전부 리뷰해줘", "review all the files touched by PR 2232", "review all the files in this PR",
+                        "fix all the tests in this PR", "fix the login bug on every page", "fix the bug in all three services",
+                        "update the copyright year in all files", "테스트 다 통과하면 머지해줘", "PR 다 올렸으면 리뷰 요청해줘",
+                        "서비스 다 내려가면 나한테 전화해줘", "패키지 다 설치되면 서버 띄워줘", "전체 서비스 재시작해줘",
+                        "모든 브랜치 푸시해줘", "전체 테스트 돌려줘", "모든 파일 포맷팅해줘", "모든 서비스 env 파일 하나로 합쳐줘",
+                        "각 파일 첫 줄만 뽑아줘", "README 오타 전부 고쳐줘", "모든 테스트가 깨졌어, 고쳐줘", "PR들 전부 머지됐어?",
+                        "are all the tests passing?", "fix all the failing tests until the suite is green",
                         "모든 테스트 통과할 때까지 다 고쳐줘", "team 실패하는 테스트 다 고쳐", "ask 실패하는 테스트 다 고쳐",
-                        # One fix in many places, and a unit word inside another word ("프로파일", "고객서비스").
-                        "fix the bug in all three services", "update the copyright year in all files", "프로파일 전부 지워줘",
-                        "고객서비스 전부 개선해줘"):
+                        "ulw 실패하는 테스트 다 고쳐", "울트라워크로 모든 서비스 업데이트해줘", "프로파일 전부 지워줘",
+                        "고객서비스 전부 개선해줘", "이 버그 pr 리뷰해줘"):
             with self.subTest(message=message):
-                self.assertNotEqual(route_chat_message(message, source="discord")["selected_skill"], "dag-ulw")
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertFalse(work_over_many_targets(message))
+                router, hint, candidate = self._dag_ulw_starts(message)
+                self.assertFalse(router)
+                self.assertFalse(hint)
+                self.assertNotEqual(candidate, "dag-ulw")
 
     def test_a_question_about_dag_ulw_is_answered_whichever_skill_scored(self) -> None:
         for message in ("dag ulw는 뭐야?", "dag ulw 설명해줘", "how does dag-ulw handle repairs?", "tell me about dag-ulw",

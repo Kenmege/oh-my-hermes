@@ -45,8 +45,8 @@ from ..plugin_bundle.omh.dag_ulw_cues import (
     asks_about_dag_ulw,
     asks_after_the_sigil,
     big_work_for_dag_ulw,
-    big_work_over_prs,
     dag_ulw_control,
+    dispatches_dag_ulw,
     reports_or_asks_after_the_name,
     work_over_many_targets,
 )
@@ -227,9 +227,6 @@ _HEAVY_LANE_TRIGGER_TOKEN_STEMS: dict[str, tuple[str, ...]] = {
 # Big work by intent (owner direction 2026-10-21): an `ultrawork` route nobody named, for a request whose own
 # words say it has several parts, goes to `dag-ulw`, which plans it as a graph and runs it to a verified goal. The
 # reading is `dag_ulw_cues.big_work_for_dag_ulw`, which the in-Hermes route hint reads too, so the two agree.
-# The lanes a sweep over many pull requests or repositories scores into on one of its words ("upstream", "rebase",
-# "review"): `dag_ulw_cues.big_work_over_prs` reads the sweep, and the hint's `_PR_SWEEP_WORKFLOWS` is the same set.
-_PR_SWEEP_LANES = frozenset({"web-research", "github-event-ops", "git-workflow", "code-review"})
 _HEAVY_LANE_VAGUENESS_MAX_WORDS = 8
 # Generic filler and unresolved deictic references ("this", "it", "그거") in
 # the languages the trigger-language packs already cover. None of these name
@@ -2214,6 +2211,13 @@ def _route_chat_message_cached(
     # Built once: the fast paths and the scorer below read its stages instead
     # of each re-deriving the prep chain from `routing_message`.
     query = RoutingQuery.from_message(routing_message, shielded=executable_message != message)
+    # Positive evidence of work over many targets dispatches dag-ulw before any lane's fast path reads one of its
+    # words ("upstream", "pytest", "stale"), so the route hint, which starts dag-ulw on the same reading, never
+    # starts a run the router did not dispatch.
+    if dispatches_dag_ulw(routing_message):
+        return _dag_ulw_by_evidence_decision(
+            message, routing_message=routing_message, source=source, min_confidence=min_confidence
+        ).to_dict()
     trivial_decision = _trivial_message_fast_path_decision(
         routing_message,
         query=query,
@@ -2654,11 +2658,8 @@ def _route_chat_message_cached(
     if (
         action in {"dispatch", "clarify"}
         and not explicit_skill
-        and (
-            (candidate_skill == "ultrawork" and big_work_for_dag_ulw(routing_message))
-            # A sweep over pull requests or repositories scores a git, review or lookup lane on one of its words.
-            or (candidate_skill in _PR_SWEEP_LANES and big_work_over_prs(routing_message))
-        )
+        and candidate_skill == "ultrawork"
+        and big_work_for_dag_ulw(routing_message)
     ):
         candidate_skill = "dag-ulw"
         candidate_harness = primary_harness_for_skill(candidate_skill)
@@ -2675,7 +2676,8 @@ def _route_chat_message_cached(
         and not explicit_skill
         and work_over_many_targets(routing_message)
     ):
-        # Work over many targets that scored no lane of its own asks about dag-ulw, the skill for it.
+        # Work over many targets without that evidence ("review all open PRs") asks once, with dag-ulw as the skill it
+        # asks about; it never dispatches it.
         candidate_skill = "dag-ulw"
         candidate_harness = primary_harness_for_skill(candidate_skill)
 
@@ -3195,6 +3197,51 @@ def _meta_router_fast_path_decision(
         workflow_route_plan=None,
         learning_candidate_card=None,
         recommendations=(recommendation,),
+    )
+
+
+def _dag_ulw_by_evidence_decision(
+    message: str,
+    *,
+    routing_message: str,
+    source: str,
+    min_confidence: str,
+) -> ChatRouteDecision:
+    """A dag-ulw dispatch for work over many targets with positive evidence (`dag_ulw_cues.dispatches_dag_ulw`: a
+    change verb from a closed allow list, in request form, on a breadth object)."""
+    selected_skill = DAG_ULW
+    selected_harness = primary_harness_for_skill(selected_skill)
+    reason = "Work over many targets: plan and run it as a dag-ulw graph."
+    recommendation = recommendation_for_definition(
+        _skill_definition_by_name(selected_skill),
+        message,
+        matched=("dag_ulw_by_evidence",),
+        score=12,
+        why=reason,
+    )
+    return ChatRouteDecision(
+        schema_version=1,
+        source=source,
+        action="dispatch",
+        selected_skill=selected_skill,
+        selected_harness=selected_harness,
+        candidate_skill=selected_skill,
+        candidate_harness=selected_harness,
+        confidence="high",
+        score=12,
+        threshold=min_confidence,
+        explicit=False,
+        ambiguous=False,
+        reason=reason,
+        clarification="",
+        routing_prompt=_routing_prompt("dispatch", selected_skill, selected_skill, reason, message),
+        task_card=None,
+        workflow_route_plan=None,
+        learning_candidate_card=None,
+        recommendations=(recommendation,),
+        route_next_action=_route_specific_next_action(
+            routing_message, selected_skill=selected_skill, explicit_loop=False
+        ),
     )
 
 
@@ -7019,7 +7066,7 @@ def _keeps_dag_ulw_by_size(route: Mapping[str, object], matching_message: str) -
     """Whether a clarify keeps dag-ulw as its candidate: the route named it for big work by size, not for a mention
     of the skill ("stop using dag ulw")."""
     return route.get("candidate_skill") == DAG_ULW and (
-        big_work_for_dag_ulw(matching_message) or big_work_over_prs(matching_message)
+        big_work_for_dag_ulw(matching_message) or work_over_many_targets(matching_message)
     )
 
 
