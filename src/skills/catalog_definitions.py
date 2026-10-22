@@ -7426,7 +7426,7 @@ _DEFINITIONS = [
             why="Review can identify the issue, but code mutation is a separate execution step.",
         ),
         final_checklist=(
-            "Ordinary findings come first, ranked by severity; verification gaps stay unranked in `verification_gaps`.",
+            "Findings come first: rank ordinary findings by severity; keep gaps unranked in `verification_gaps`.",
             "Every finding cites file, diff, command output, artifact, or expected behavior evidence.",
             "Both axes appear in the report: correctness/risk findings, and a spec-axis verdict naming its Claim source or the `not_assessed` reason.",
             "No-issue reviews still name residual risk, missing tests, and independent review evidence if unavailable.",

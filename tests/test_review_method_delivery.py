@@ -36,6 +36,24 @@ class ReviewMethodDeliveryTests(unittest.TestCase):
             self.assertIn("independent validation unavailable", body)
             self.assertIn("selected and omitted", body)
 
+    def test_checklists_keep_findings_first_and_verification_gaps_unranked(self):
+        root = Path(__file__).resolve().parents[1]
+        bodies = {
+            "native producer": {t.name: t.content for t in builtin_skill_templates()}["code-review"],
+            "portable producer": {t.name: t.content for t in agent_skill_templates()}["omh-code-review"],
+            "native file": (root / "skills/omh-code-review/SKILL.md").read_text(encoding="utf-8"),
+            "portable file": (root / "agent-skills/omh-code-review/SKILL.md").read_text(encoding="utf-8"),
+        }
+        for target, body in bodies.items():
+            with self.subTest(target=target):
+                _, heading, after = body.partition("## Completion Checklist\n")
+                self.assertTrue(heading, target)
+                checklist = after.split("\n## ", 1)[0]
+                first_item = next(line for line in checklist.splitlines() if line.startswith("- "))
+                self.assertTrue(first_item.startswith("- Findings come first"), first_item)
+                self.assertIn("rank ordinary findings by severity", first_item)
+                self.assertIn("keep gaps unranked in `verification_gaps`", first_item)
+
     def test_lens_and_smell_link_methods_without_ranking_gaps(self):
         refs = {t.relative_path: t.content for t in builtin_skill_reference_templates() if t.skill_name == "code-review"}
         lenses = refs["references/review-lenses.md"]
