@@ -29,6 +29,18 @@ All notable changes will be documented here.
   nothing. A window shrunk under three rows gives the keys back to the
   composer, and INSTALLATION.md says → opens a row and Space flips it.
 
+- **Code review separates response shape, evidence, and review depth.** Native
+  and portable skills now ship on-demand finding-validation, architecture-delta
+  (including shared-code extraction proof), and risk-selection methods. Reviewer
+  returns require structured `spec_axis`, explicit `could_not_assess`, and a
+  separate unranked `verification_gaps` array; old returns omitting these fields,
+  using a spec string, or ranking gap rows no longer satisfy the contract.
+  Ordinary findings keep P0–P3 and low/medium/high confidence. Located evidence
+  rejects malformed line syntax and blank text; real paths, ordered/in-bounds
+  ranges, actual reads, and claim truth still require reviewer checks. These are
+  instruction and schema contracts, not a new review runner or measured gains
+  in model detection, false positives, semantic accuracy, or review cost.
+
 - **A dag run's view under the composer is a folding tree that says what each
   child is doing (the owner's ask of 2026-10-22).** Each node is one header
   row: a `▾`/`▸` fold triangle, its state glyph (the running spinner in the

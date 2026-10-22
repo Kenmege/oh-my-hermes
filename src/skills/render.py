@@ -8145,27 +8145,24 @@ def _code_review_reference_templates_cached() -> tuple[SkillReferenceTemplate, .
     )
 
 
-# The `code-review` finding shape as a JSON Schema. The required fields, the
-# priorities, and the two verdicts are the ones the skill's quality bar names.
-# The schema settles one thing that sentence leaves open, the three values
-# `confidence` takes, and gives the skill's closing lists a key each. It is the
-# return contract a dispatched reviewer is handed, and on Hermes it is what
-# `delegate_task` takes as `output_schema`, so the host validates the return
-# instead of the dispatcher reading it on trust.
+# The `code-review` return shape as standard JSON Schema (Draft 7 keywords).
+# Both axes and the explicit could-not-assess and verification-gap lists are
+# required, including on a clean review. An assessed spec axis carries at least
+# one claim/requirements verdict with evidence; otherwise it names why it was
+# not assessed. These are response-shape requirements, not bug-detection claims.
+# Ordinary findings retain P0-P3 and confidence. Located, unranked verification
+# gaps have their own array and forbid priority, confidence, and severity; gaps do not
+# automatically block. Missing locations belong in open_questions instead.
 #
-# Only the fields a reader acts on are required. A finding without a path and
-# a line range fails as a finding on purpose, because the skill already calls
-# that an open question, and `open_questions` is where it validates. Everything
-# else stays optional and extra keys are allowed: Hermes spends one correction
-# turn on a mismatch and no more, so a contract that rejects a good review over
-# a field nobody reads turns that review into `not_observed`.
+# A `ship` must also carry non-empty checked_clean; no_ship may rest solely on
+# an unmet spec. All evidence/reason/list strings must contain non-whitespace.
+# Extra keys remain allowed for compatible annotations rather than spending the
+# host's one correction ask on a useful extension. Required/reserved keys keep
+# their constraints. No new validator or runtime dependency is introduced.
 #
-# One field is conditional. A `ship` with no finding and nothing named as
-# checked is the emptiest answer a reviewer can give, and it would validate
-# without the `if`/`then` below. The skill already says an absent finding is
-# evidence only when the closing names the surface that was checked, so a
-# `ship` has to carry a non-empty `checked_clean`. `no_ship` is left alone: it
-# can rest on the spec axis with no finding at all.
+# A matched shape proves neither real files, actual reads nor truth. The line
+# pattern checks positive decimal syntax only, not ordering or file bounds:
+# reject inverted ranges and verify revision, locations and claims separately.
 #
 # The values `confidence` takes are declared once here. The schema's enum and
 # the sentence in the dispatch reference are both built from this tuple, so the
@@ -8175,10 +8172,16 @@ _REVIEW_CONFIDENCE_SCHEMA: dict[str, object] = {"enum": list(REVIEW_CONFIDENCE_V
 _REVIEW_CONFIDENCE_PHRASE = (
     ", ".join(f"`{value}`" for value in REVIEW_CONFIDENCE_VALUES[:-1]) + f", or `{REVIEW_CONFIDENCE_VALUES[-1]}`"
 )
-_REVIEW_TEXT_LIST_SCHEMA: dict[str, object] = {"type": "array", "items": {"type": "string"}}
+_REVIEW_NONBLANK_SCHEMA: dict[str, object] = {"type": "string", "pattern": r"\S"}
+_REVIEW_TEXT_LIST_SCHEMA: dict[str, object] = {"type": "array", "items": _REVIEW_NONBLANK_SCHEMA}
+_REVIEW_LINE_RANGE_SCHEMA: dict[str, object] = {
+    "type": "string",
+    # The final negative lookahead rejects even a trailing newline ($ alone does not).
+    "pattern": r"^[1-9][0-9]*(-[1-9][0-9]*)?$(?![\s\S])",
+}
 REVIEW_FINDINGS_OUTPUT_SCHEMA: dict[str, object] = {
     "type": "object",
-    "required": ["verdict", "confidence", "findings"],
+    "required": ["verdict", "confidence", "findings", "spec_axis", "could_not_assess", "verification_gaps"],
     "properties": {
         "verdict": {"enum": ["ship", "no_ship"]},
         "confidence": _REVIEW_CONFIDENCE_SCHEMA,
@@ -8190,13 +8193,55 @@ REVIEW_FINDINGS_OUTPUT_SCHEMA: dict[str, object] = {
                 "properties": {
                     "priority": {"enum": ["P0", "P1", "P2", "P3"]},
                     "confidence": _REVIEW_CONFIDENCE_SCHEMA,
-                    "evidence": {"type": "string", "minLength": 1},
-                    "path": {"type": "string", "minLength": 1},
-                    "line_range": {"type": "string", "minLength": 1},
+                    "evidence": _REVIEW_NONBLANK_SCHEMA,
+                    "path": _REVIEW_NONBLANK_SCHEMA,
+                    "line_range": _REVIEW_LINE_RANGE_SCHEMA,
                 },
             },
         },
-        "spec_axis": {"type": "string"},
+        "spec_axis": {
+            "type": "object",
+            "oneOf": [
+                {
+                    "required": ["status", "verdicts"],
+                    "properties": {
+                        "status": {"const": "assessed"},
+                        "verdicts": {
+                            "type": "array", "minItems": 1,
+                            "items": {
+                                "type": "object",
+                                "required": ["claim", "requirements", "verdict", "evidence"],
+                                "properties": {
+                                    "claim": _REVIEW_NONBLANK_SCHEMA,
+                                    "requirements": {"type": "array", "minItems": 1, "items": _REVIEW_NONBLANK_SCHEMA},
+                                    "verdict": {"enum": ["met", "unmet"]},
+                                    "evidence": _REVIEW_NONBLANK_SCHEMA,
+                                },
+                            },
+                        },
+                    },
+                },
+                {
+                    "required": ["status", "reason"],
+                    "properties": {"status": {"const": "not_assessed"}, "reason": _REVIEW_NONBLANK_SCHEMA},
+                },
+            ],
+        },
+        "verification_gaps": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["path", "line_range", "evidence"],
+                "properties": {
+                    "path": _REVIEW_NONBLANK_SCHEMA,
+                    "line_range": _REVIEW_LINE_RANGE_SCHEMA,
+                    "evidence": _REVIEW_NONBLANK_SCHEMA,
+                    "priority": {"not": {}},
+                    "confidence": {"not": {}},
+                    "severity": {"not": {}},
+                },
+            },
+        },
         "open_questions": _REVIEW_TEXT_LIST_SCHEMA,
         "checked_clean": _REVIEW_TEXT_LIST_SCHEMA,
         "could_not_assess": _REVIEW_TEXT_LIST_SCHEMA,
@@ -8241,6 +8286,10 @@ same definition. Adapted from the classic Fowler/Beck catalog.
 | Refused bequest | A subtype that stubs, ignores, or overrides most of what it inherits. | Replace the inheritance with composition or split the interface. |
 
 ## How to report one
+
+Before recommending shared-code extraction, load `references/architecture-delta.md`
+and apply its extraction proof rubric: actual authored callers, compatible
+contracts, existing reuse, and net maintenance benefit. A smell is not that proof.
 
 - Name the smell, cite the evidence (`path`, `line_range`, and what shows it),
   and say what the fix would be - as a finding, usually `P2`/`P3` unless the
@@ -8322,8 +8371,33 @@ verdicts are the ones `code-review` already names.
   goes under `open_questions`, which is where `code-review` already puts it.
 - `confidence` is {_REVIEW_CONFIDENCE_PHRASE}, on each finding and on the verdict.
   The skill leaves those values open; the schema is where they are fixed.
+- Report the correctness/risk and spec axes side by side, never re-ranked against
+  each other. `spec_axis` is required: use `status: assessed` with non-empty
+  `verdicts`, each naming the `claim`, a non-empty `requirements` list of
+  pointers, a `verdict` of `met` or `unmet`, and non-blank `evidence`. With no
+  Claim or Requirements pointer, use `status: not_assessed` and a non-blank
+  `reason`. Missing context is not a met requirement; an unmet spec can justify
+  `no_ship` without a correctness finding.
+- `could_not_assess` is required, even when empty. Each non-empty entry names
+  the surface and why it could not be checked. `open_questions` stays optional.
+- `verification_gaps` is required, even when empty. Put verification-gap lens
+  rows here, not in ordinary ranked `findings`: each carries `path`,
+  `line_range`, and non-blank `evidence`, without `priority` or `confidence`.
+  `severity` is also forbidden: this bucket is unranked.
+  Name the changed behavior, the smallest missed regression, and how far tests
+  were read/searched in the evidence or compatible extra fields. A gap does not
+  automatically block: use the reviewed repository's blocking policy, not a
+  forced priority or verdict. With no location, use `open_questions` instead.
 - A `ship` names what it checked. `checked_clean` is required and non-empty on a
   `ship`, so a verdict with no finding and nothing checked does not validate.
+  All evidence, reasons, paths and closing-list items must contain non-whitespace.
+- Located rows use one positive decimal line (`10`) or an inclusive range
+  (`10-14`), without leading zeroes, spaces or trailing text. This is syntax
+  only: separately reject inverted ranges, check file bounds at HEAD_SHA, and
+  confirm real files, actual reads and the truth of each claim against the
+  observed evidence. JSON Schema proves none of those semantic facts.
+- Extra keys remain allowed for compatible annotations, but cannot replace or
+  weaken the required fields or add ranking keys to verification gaps.
 - A return that does not match the schema is not a review. The contract allows
   one corrected ask, naming what failed. When the host checked the return
   against this schema, it may already have made that ask without the result
@@ -8503,6 +8577,19 @@ passed or failed, so the status and the summary are all you have:
   value carrying {required},
   each finding's required fields, and {ship_requires} on a `ship`. A summary
   that does not match is `not_observed`.
+
+Check the nested contract too: `spec_axis` must carry `status: assessed` with
+non-empty `verdicts`, each with a non-blank `claim`, non-empty `requirements`
+pointers, a `verdict` of `met` or `unmet`, and non-blank `evidence`; or
+`status: not_assessed` with a non-blank `reason`. `could_not_assess` and
+`verification_gaps` must be arrays, even if empty. Each could-not-assess item
+names a surface and reason. Each gap carries non-blank `path`, `line_range`
+and `evidence`, without `priority` or `confidence`; ordinary findings retain
+both. Reject `severity` on gaps too. Require non-empty `checked_clean` on a
+`ship`, with non-blank items, and check all provided closing-list items and line-range syntax as in
+`review-dispatch.md`. Then separately reject inverted ranges and confirm
+real files, actual reads, revision/file bounds and claim truth: the schema
+does not prove them. Gaps do not automatically block; apply repository policy.
 
 Two readings go wrong in either shape:
 
@@ -13212,10 +13299,10 @@ lenses run as separate passes over the same diff. Load it when a change is large
 enough, or its failure mode quiet enough, that one pass will find the first
 class of problem and stop looking.
 
-One pass finds what its opening question primes it to find. Five passes cost
-five readings and find five different things. Run them in this order, and record
-which lenses were actually run - a review reported as complete after two of them
-is a two-lens review.
+One pass finds what its opening question primes it to find. Load
+`references/risk-selection.md` to select additional passes from changed risk and
+budget, not to require all five. Keep this order among selected lenses and record
+which actually ran; a two-lens review is not a five-lens review.
 
 ## The verification-gap lens
 
@@ -13279,7 +13366,9 @@ claim about the whole repository and needs the search behind it.
   out of each.
 - **Structure** - the shape of the change against the shape of the codebase.
   Misplaced responsibility, a seam in the wrong place, an abstraction that will
-  need undoing before the next change.
+  need undoing before the next change. When ownership, contracts, dependencies,
+  or reuse change, load `references/architecture-delta.md`, including its
+  extraction proof rubric; a file move or large file alone is not a defect.
 - **Prose** - comments, docstrings, commit and report text. A comment that
   overclaims what a guard proves is a review finding here, not a nitpick: the
   next reader trusts it instead of re-deriving it.
@@ -13291,6 +13380,12 @@ from a verification gap. Within the verification-gap lens, do not assign
 severity, confidence, or priority: a gap is present or it is not, and ranking
 invites resolving it by argument instead of by a test. The other four lenses
 carry severity as `code-review` already defines it.
+
+Put these gap rows in `verification_gaps`, not in `findings`. Require `path`,
+`line_range`, and `evidence`; include the regression and search scope in the
+evidence. Keep `priority`, `confidence`, and `severity` absent. An independently
+established defect may also have an ordinary ranked finding, but a missing assertion alone
+does not prove one. Gaps do not automatically block; apply repository policy.
 
 Drop any finding that cannot be grounded in something read. A lens that returns
 nothing returns nothing, and reports it.

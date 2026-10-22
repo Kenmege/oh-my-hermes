@@ -61,6 +61,7 @@ from .procedure_rendering import specialist_procedure_reference_markdown
 from .dag_ulw_skill import dag_ulw_reference_templates
 from .market_research_skill import REFERENCE_CONTENT as MARKET_RESEARCH_REFERENCES
 from .show_reel_references import show_reel_reference_templates
+from .review_methods import review_method_reference_templates
 from .render import (
     SkillReferenceTemplate,
     SkillTemplate,
@@ -224,6 +225,7 @@ REFERENCE_PRODUCERS: tuple[Callable[[], list[SkillReferenceTemplate]], ...] = (
     router_reference_templates,
     wiki_reference_templates,
     code_review_reference_templates,
+    review_method_reference_templates,
     context_reference_templates,
     docs_reference_templates,
     context_budget_reference_templates,
