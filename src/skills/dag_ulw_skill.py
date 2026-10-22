@@ -97,8 +97,8 @@ DEFINITION = SkillDefinition(
         ENGINE_INTERJECTION_RESUME_RULE,
         ENGINE_FOLLOW_UP_AUTHORITY_RULE,
         ENGINE_CLOSING_BRIEF_RULE,
-        "Close a finished run with `omh_run_summary` and print its summary_text verbatim as the final lines, or "
-        "an explicit run-summary not_available line.",
+        "Close a finished run with `omh_run_summary` and print its summary_text verbatim, or an explicit "
+        "run-summary not_available line, before any specific next-action question -- never estimated numbers.",
     ),
     why_this_exists=(
         "`dag-ulw` exists so a big job runs end to end without the person driving it: the parent plans a graph "
@@ -146,7 +146,8 @@ DEFINITION = SkillDefinition(
         "A separate verification node ran the real command after every producer.",
         "Every accepted node was checked against its SCOPE; repairs stayed within two cycles per node and extend "
         "rounds within two per run.",
-        "The report names what is still open and ends with the observed run summary.",
+        "The report names what is still open and includes the observed run summary or an explicit "
+        "run-summary not_available line before any specific next-action question.",
     ),
     recovery_notes=(
         "A node whose child returned blocked or failed blocks only its dependents: repair it, or report it.",
