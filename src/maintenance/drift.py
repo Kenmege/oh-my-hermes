@@ -1322,7 +1322,15 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # main (2), and 각 서비스마다 runs as a graph, each service and no
             # schedule (a fallback on main) (1).
             # Three unnamed domain-science interventions (+3).
-            expected=1076,
+            # #2221 L3: every STATUS_IS_THE_WORK member gets a status request
+            # after its sigil that runs it; the seven without one before
+            # (deploy-and-monitor, ops-observability-card,
+            # live-incident-response, context-budget-review,
+            # harness-session-inventory, skill-health, run-efficiency) (+7).
+            # #2221 L4: doctor joins the set, since the status card shows no
+            # install drift, and /omh-doctor status runs doctor (+1).
+            # Repro-audit adds one retained-result request; combined producer measured.
+            expected=1084,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

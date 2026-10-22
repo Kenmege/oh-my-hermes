@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from _cli_harness import run_cli
-from omh.quality.routing_precision import ROUTING_INTERVENTION_CASES
+from omh.quality.routing_precision import ROUTING_INTERVENTION_CASES, intervention_case_interaction
 from omh.skills.catalog import builtin_definitions
 from omh.quality.skill_reach import (
     NO_NEGATIVE_CONTROL_BASELINE,
@@ -166,7 +166,8 @@ class SkillReachGateTests(unittest.TestCase):
         # Some of its intervention cases ask with `deploy-and-monitor` as the
         # first candidate instead of dispatching: the router did not pick it,
         # so they count as shortlist-first, and only the dispatching cases
-        # count as reach.
+        # count as reach. A dispatch after its sigil (`/omh-deploy-and-monitor
+        # 상태 보여줘`, #2221 L3) is explicit, so it counts as addressed.
         row = self._row("deploy-and-monitor")
         clarifying = [
             case.id
@@ -177,6 +178,7 @@ class SkillReachGateTests(unittest.TestCase):
             case.id
             for case in ROUTING_INTERVENTION_CASES
             if case.expected_route_action == "dispatch" and case.expected_workflow == "deploy-and-monitor"
+            and not intervention_case_interaction(case, source="discord")["route"].get("explicit")
         ]
         self.assertTrue(clarifying)
         self.assertEqual(len(clarifying), row["shortlist_first_cases"], clarifying)
