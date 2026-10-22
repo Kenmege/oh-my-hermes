@@ -433,7 +433,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   terminal's scrollback (ED 3), as a full redraw (a resize, Ctrl+L,
   `/redraw`, switching or resuming a session) already does and as Hermes'
   own TUI does in its default alternate-screen mode (its main-screen native
-  mode, `display.tui_native`, erases nothing), and opens on the top row of
+  mode, `display.tui_native`, erases no scrollback), and opens on the top row of
   a clean screen, so scrolling up stops at the top of the session instead
   of reaching your shell's history. When you quit, the session stays above
   your shell's prompt, as any output does. A terminal that ignores ED 3
@@ -441,8 +441,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   app-wide Advanced setting "Prevent CSI 3 J from clearing scrollback
   history?" is unset, as it is by default, it shows "A control sequence
   attempted to clear scrollback history. Allow this in the future?" and
-  keeps the history until you choose Always Allow (a resize or Ctrl+L,
-  which already erase the scrollback, can show the same prompt). Inside
+  keeps the history; once you choose Always Allow, the history is erased
+  from the next launch or full redraw on (a resize or Ctrl+L, which
+  already erase the scrollback, can show the same prompt). Inside
   tmux, ED 3 clears that pane's history, as `tmux clear-history` does. A
   launch that falls back to Hermes' own terminal leaves the screen as it
   was.
