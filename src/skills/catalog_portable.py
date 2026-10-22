@@ -243,6 +243,10 @@ _PORTABILITY: dict[str, str] = {
     'omh-sales-pipeline-review': PORTABILITY_PORTABLE,
     # Host-neutral production method; tools are selected and observed, never required OMH RPCs.
     'omh-show-reel': PORTABILITY_PORTABLE,
+    # Optional standalone science helpers; materialization never executes them.
+    'omh-geospatial-analysis': PORTABILITY_PORTABLE,
+    'omh-biomedical-evidence': PORTABILITY_PORTABLE,
+    'omh-molecular-docking': PORTABILITY_PORTABLE,
     # required_inputs: user request; expected_outputs: github-event-ops/v1 card or guidance; final_checklist requires evidence/approval, not a native runtime.
     'omh-github-event-ops': PORTABILITY_PORTABLE,
     # expected_outputs require omh_agent_board RPC; final_checklist invokes Hermes native_action.
@@ -368,6 +372,15 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'product-discovery-validation/references/procedure.md',
     'sales-pipeline-review/references/procedure.md',
     'show-reel/references/procedure.md',
+    'geospatial-analysis/references/full-contract.md',
+    'geospatial-analysis/references/procedure.md',
+    'geospatial-analysis/references/execution-and-qa.md',
+    'biomedical-evidence/references/full-contract.md',
+    'biomedical-evidence/references/procedure.md',
+    'biomedical-evidence/references/execution-and-qa.md',
+    'molecular-docking/references/full-contract.md',
+    'molecular-docking/references/procedure.md',
+    'molecular-docking/references/execution-and-qa.md',
     'show-reel/references/brief-and-locales.md',
     'show-reel/references/storyboard-and-evidence.md',
     'show-reel/references/renderer-adapter.md',
@@ -463,6 +476,20 @@ PORTABLE_REFERENCE_PATHS = frozenset({
 
 # Reviewed companion paths, independent of Markdown references and Hermes runtime.
 PORTABLE_SUPPORT_PATHS = frozenset({
+    'geospatial-analysis/toolkit/README.md',
+    'geospatial-analysis/toolkit/LICENSE.upstream',
+    'geospatial-analysis/toolkit/scripts/analyze.py',
+    'geospatial-analysis/toolkit/examples/input.json',
+    'geospatial-analysis/toolkit/examples/overlay.json',
+    'geospatial-analysis/toolkit/upstream-manifest.json',
+    'biomedical-evidence/toolkit/README.md',
+    'biomedical-evidence/toolkit/scripts/reconcile.py',
+    'biomedical-evidence/toolkit/upstream-manifest.json',
+    'molecular-docking/toolkit/README.md',
+    'molecular-docking/toolkit/NOTICE.md',
+    'molecular-docking/toolkit/scripts/dock.py',
+    'molecular-docking/toolkit/examples/settings.json',
+    'molecular-docking/toolkit/upstream-manifest.json',
     'show-reel/toolkit/README.md',
     'show-reel/toolkit/LICENSE.upstream',
     'show-reel/toolkit/upstream-manifest.json',

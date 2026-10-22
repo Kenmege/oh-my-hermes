@@ -48,7 +48,7 @@ from omh.install.installer import install_skill_pack
 from omh.install.agent_skills_projection import install_agent_skills,agent_skill_files
 from omh.skills.skill_record import skill_record,project
 from omh.paths import OmhPaths
-expected={t.relative_path:hashlib.sha256(t.content.encode()).hexdigest() for t in builtin_skill_support_templates()}
+expected={t.relative_path:hashlib.sha256(t.content.encode()).hexdigest() for t in builtin_skill_support_templates() if t.skill_name=='show-reel'}
 with patch('subprocess.Popen',side_effect=AssertionError('hidden companion execution')),patch('socket.socket',side_effect=AssertionError('hidden companion network')):
     native=OmhPaths(workspace/'native',workspace/'hermes')
     native_result=install_skill_pack(native)
@@ -82,7 +82,7 @@ class DistributionParityTests(unittest.TestCase):
         from omh.skills.support_files import builtin_skill_support_templates
         from omh.install.agent_skills_projection import agent_skill_files
         record = skill_record("show-reel")
-        expected = {"omh-show-reel/"+t.relative_path: t.content for t in builtin_skill_support_templates()}
+        expected = {"omh-show-reel/"+t.relative_path: t.content for t in builtin_skill_support_templates() if t.skill_name == "show-reel"}
         with patch("subprocess.Popen", side_effect=AssertionError("hidden execution")), patch("socket.socket", side_effect=AssertionError("hidden socket")):
             for target in ("hermes", "agent-skills"):
                 files = project(record, target)
@@ -96,7 +96,7 @@ class DistributionParityTests(unittest.TestCase):
         from omh.install.installer import install_skill_pack
         from omh.paths import OmhPaths
         from omh.skills.skill_record import project, skill_record
-        expected = {t.relative_path: t.content for t in builtin_skill_support_templates()}
+        expected = {t.relative_path: t.content for t in builtin_skill_support_templates() if t.skill_name == "show-reel"}
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
             source = base / "source"
@@ -234,7 +234,9 @@ class DistributionParityTests(unittest.TestCase):
             foreign.write_text("foreign", encoding="utf-8", newline="\n")
             reconcile_skill_profile(paths)
             self.assertEqual(foreign.read_text(encoding="utf-8"), "foreign")
-            self.assertEqual(read_manifest(paths.manifest_path)["support_files"], manifest["support_files"])
+            # Retain ownership for preserved files, not other removed owners.
+            self.assertEqual(read_manifest(paths.manifest_path)["support_files"],
+                             {rel: digest for rel, digest in manifest["support_files"].items() if (paths.skills_dir / rel).is_file()})
 
     def test_curator_keeps_support_and_carries_ownership_into_new_generation(self):
         from omh.install.installer import install_skill_pack
@@ -271,7 +273,8 @@ class DistributionParityTests(unittest.TestCase):
             paths = OmhPaths(root / "omh", root / "hermes")
             with patch("subprocess.Popen", side_effect=AssertionError("hidden execution")), patch("socket.socket", side_effect=AssertionError("hidden socket")):
                 manifest = install_skill_pack(paths)
-            expected = {"operator/omh-show-reel/"+t.relative_path: hashlib.sha256(t.content.encode()).hexdigest() for t in builtin_skill_support_templates()}
+            from omh.skills.catalog import omh_skill_install_path
+            expected = {omh_skill_install_path(t.skill_name)+"/"+t.relative_path: hashlib.sha256(t.content.encode()).hexdigest() for t in builtin_skill_support_templates()}
             self.assertEqual(manifest.get("support_files"), expected)
             sample = paths.skills_dir / "operator/omh-show-reel/toolkit/scripts/timeline.py"
             baseline = sample.read_text(encoding="utf-8")

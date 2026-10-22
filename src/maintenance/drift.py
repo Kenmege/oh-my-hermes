@@ -821,7 +821,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # that names ultrawork by its short name, /ulw-work what is ulw?,
             # and an uppercase sigil's stop, /ULW-LOOP stop the loop, add two,
             # each dispatched its skill on main (2).
-            expected=1036,
+            # Three domain-science vocabulary controls (+3).
+            expected=1039,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1258,7 +1259,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # /omh-cancel 상태 보여줘 gets the status card where main ran
             # cancel: only a skill whose job is reporting a state runs on a
             # status request (1).
-            expected=1035,
+            # Three unnamed domain-science interventions (+3).
+            expected=1038,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1271,7 +1273,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # `data-share-review` adds one. `spend-gate` adds one. `dag-ulw` adds one.
             # `market-research` adds one.
             # show-reel adds one installable motion-production method.
-            expected=147,
+            # Three optional executable science methods (+3).
+            expected=150,
             sites=(
                 "docs/README.md",
                 # The docs index quotes the count in prose and

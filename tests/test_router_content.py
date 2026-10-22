@@ -317,7 +317,8 @@ class RouterContentTests(unittest.TestCase):
         # 31,300 -> 32,300: `dag-ulw` adds one line (31,416 measured with it;
         # the skills added since the last raise had used the rest); ~2.8%
         # headroom kept.
-        self.assertLess(len(rendered.encode("utf-8")), 32_300)
+        # Three optional science index entries; no eager toolkit bytes.
+        self.assertLess(len(rendered.encode("utf-8")), 33_000)
         for line in rendered.splitlines():
             self.assertLess(len(line.encode("utf-8")), 400, line)
 
@@ -4247,7 +4248,7 @@ class RouterContentTests(unittest.TestCase):
         # Retired engines must not be presented as current planning skills.
         self.assertNotIn("`ultragoal`", docs_readme)
         # omh-docs and github-issue-intake raise the measured catalog to 119.
-        self.assertIn("**147 installable skills**", docs_readme)
+        self.assertIn("**150 installable skills**", docs_readme)
         self.assertIn("**Retain knowledge**", docs_readme)
         # The unit suite runs through the deterministic sharding tools (issue
         # #1294): plan once, run per shard plus the serial quarantine, then

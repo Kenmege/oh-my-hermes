@@ -34,6 +34,7 @@ EXPECTED_BUNDLED_DEFERRALS = {
     "agent-board": ("sdlc-review",),
     "ai-slop-cleaner": ("simplify-code",),
     "app-debugging": ("systematic-debugging",),
+    "biomedical-evidence": ("grounded-citations",),
     "code-review": ("sdlc-review", "requesting-code-review"),
     "codebase-uml": ("architecture-diagram",),
     "content-operator": ("humanizer",),

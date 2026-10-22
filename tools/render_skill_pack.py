@@ -9,7 +9,7 @@ from omh.hashutil import sha256_file
 from omh.local_store import atomic_write_text
 from omh.skills.catalog import omh_skill_display_name
 from omh.skills.packaging import builtin_skill_templates, builtin_skill_reference_templates
-from omh.skills.support_files import builtin_skill_support_templates
+from omh.skills.support_files import builtin_skill_support_templates, builtin_support_owners
 from omh.skills.show_reel_support import provenance_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,7 +40,8 @@ def checked(root, relative):
 
 def materialize(root, *, write=False):
     expected = tap_files()
-    actual = {p.relative_to(root).as_posix() for pattern in ("*/SKILL.md", "*/references/*.md", "omh-show-reel/toolkit/**/*") for p in root.glob(pattern) if p.is_file() or p.is_symlink()}
+    patterns = ("*/SKILL.md", "*/references/*.md", *(f"{omh_skill_display_name(owner)}/toolkit/**/*" for owner in sorted(builtin_support_owners())))
+    actual = {p.relative_to(root).as_posix() for pattern in patterns for p in root.glob(pattern) if p.is_file() or p.is_symlink()}
     missing = sorted(set(expected)-actual)
     extra = sorted(actual-set(expected))
     stale = sorted(p for p in actual & set(expected) if checked(root, p).read_bytes() != expected[p].encode("utf-8"))
@@ -48,12 +49,16 @@ def materialize(root, *, write=False):
     for relative in expected:
         checked(root, relative)
     retired = []
-    provenance = root / "omh-show-reel/toolkit/upstream-manifest.json"
-    previous = json.loads(provenance.read_text(encoding="utf-8")) if provenance.is_file() else {}
+    previous = {}
+    for owner in builtin_support_owners():
+        prefix = omh_skill_display_name(owner) + "/toolkit/"
+        provenance = checked(root, prefix + "upstream-manifest.json")
+        document = json.loads(provenance.read_text(encoding="utf-8")) if provenance.is_file() else {}
+        previous.update({prefix + path: entry for path, entry in document.get("files", {}).items()})
     for relative in extra:
-        entry = previous.get("files", {}).get(relative.removeprefix("omh-show-reel/toolkit/"))
+        entry = previous.get(relative)
         target = checked(root, relative)
-        if not relative.startswith("omh-show-reel/toolkit/") or not isinstance(entry, dict) or sha256_file(target) != entry.get("local_sha256"):
+        if not isinstance(entry, dict) or sha256_file(target) != entry.get("local_sha256"):
             if write:
                 raise ValueError(f"unowned/edited extra generated file preserved: {relative}")
         else:

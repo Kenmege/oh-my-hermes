@@ -156,17 +156,24 @@ adds the case covering it. For operators and agents,
 
 ## Optional companion support (separate from references)
 
-The selected show-reel companion is a closed UTF-8 package-data inventory in
-`src/skills/show_reel_support.py` plus canonical `show_reel_toolkit/` resources.
-It is never imported/executed by discovery, routing, setup/update or doctor.
+Optional companions use the authoritative `builtin_skill_support_templates()`
+inventory in `src/skills/support_files.py`. Show-reel's closed resource factory
+is in `src/skills/show_reel_support.py`; the three domain science factories live
+beside their canonical definitions and enumerate their own toolkit resources.
+Consumers derive finite owners from that inventory and filter by owner; never
+flatten relative paths across owners or create per-host resource maps.
+Companion code is never imported/executed by discovery, routing, setup/update or doctor.
 Do not disguise scripts as Markdown references, recursively copy arbitrary files,
 bootstrap dependencies, or create a new core renderer command. Any expansion
 needs reviewed paths/bytes/notices, unsafe-path and ownership tests, package-data,
 native/local-source/portable/tap parity and a source-hidden built wheel proof.
 Add portable paths explicitly; keep the one portable inventory, not per-host maps.
-Regenerate provenance after an audited change with
+For show-reel, regenerate provenance after an audited change with
 `python tools/render_skill_pack.py --write --refresh-provenance`; `--check`
-checks the tap. Support bytes are on-demand disk footprint, not eager prompt text.
+checks the tap. Domain producers deliver separately validated provenance files;
+that flag is not a domain-manifest writer. Explicit local-source imports require
+all declared companion bytes and reject missing, edited, extra or linked files.
+Support bytes are on-demand disk footprint, not eager prompt text.
 
 ## 4. Regenerate every generated artifact family
 

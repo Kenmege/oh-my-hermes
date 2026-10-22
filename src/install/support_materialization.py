@@ -10,7 +10,18 @@ from ..core.errors import OmhError
 from ..hashutil import sha256_file, sha256_text
 from ..local_store import atomic_write_text
 from ..skills.catalog import omh_skill_install_path
-from ..skills.support_files import checked_support_path, validate_support_path, validate_support_templates
+from ..skills.support_files import builtin_support_owners, checked_support_path, validate_support_path, validate_support_templates
+
+
+def support_owner(relative):
+    """Recognize reviewed owners; retain safe retired paths for conservative cleanup."""
+    if isinstance(relative, str):
+        for owner in builtin_support_owners():
+            prefix = omh_skill_install_path(owner) + "/"
+            if relative.startswith(prefix):
+                validate_support_path(relative.removeprefix(prefix))
+                return owner
+    raise ValueError("invalid native support ownership path")
 
 
 def legacy_support_paths(paths):
@@ -51,11 +62,8 @@ def support_records(manifest):
         raise OmhError("invalid native support_files manifest")
     seen = set()
     for relative, digest in records.items():
-        prefix = omh_skill_install_path("show-reel") + "/"
-        if not isinstance(relative, str) or not relative.startswith(prefix):
-            raise OmhError("invalid native support ownership path")
         try:
-            validate_support_path(relative.removeprefix(prefix))
+            support_owner(relative)
         except ValueError as exc:
             raise OmhError(str(exc)) from exc
         if relative.casefold() in seen or not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest):
@@ -65,17 +73,16 @@ def support_records(manifest):
 
 
 def support_path(skills_dir: Path, relative: str):
-    prefix = omh_skill_install_path("show-reel") + "/"
-    if not relative.startswith(prefix):
-        raise OmhError("invalid support owner")
     skills_dir = skills_dir.absolute()
     try:
+        owner = support_owner(relative)
+        prefix = omh_skill_install_path(owner) + "/"
         # The install root is the skills dir: it and its own parent may not be
         # links either (the per-skill checker starts below them).
         for path in (skills_dir.parent, skills_dir):
             if path.is_symlink():
                 raise ValueError(f"support refuses symlink component: {path}")
-        return checked_support_path(skills_dir / omh_skill_install_path("show-reel"), relative.removeprefix(prefix))
+        return checked_support_path(skills_dir / omh_skill_install_path(owner), relative.removeprefix(prefix))
     except ValueError as exc:
         raise OmhError(str(exc)) from exc
 
@@ -104,8 +111,8 @@ def write_support(skills_dir, current, manifest, *, rendered_names):
     for relative, template in current.items():
         atomic_write_text(support_path(skills_dir, relative), template.content)
         result[relative] = sha256_text(template.content)
-    if "show-reel" in rendered_names:
-        for relative in previous.keys() - current.keys():
+    for relative in previous.keys() - current.keys():
+        if support_owner(relative) in rendered_names:
             target = support_path(skills_dir, relative)
             # Only the previous unchanged owned FILE, never a directory/foreign toolkit tree.
             if target.is_file() and sha256_file(target) == previous[relative]:

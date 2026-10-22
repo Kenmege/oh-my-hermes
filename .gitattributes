@@ -14,6 +14,15 @@ agent-skills/**/*.md text eol=lf
 src/skills/show_reel_toolkit/** text eol=lf
 skills/omh-show-reel/toolkit/** text eol=lf
 agent-skills/omh-show-reel/toolkit/** text eol=lf
+src/skills/geospatial_analysis_toolkit/** text eol=lf
+skills/omh-geospatial-analysis/toolkit/** text eol=lf
+agent-skills/omh-geospatial-analysis/toolkit/** text eol=lf
+src/skills/biomedical_evidence_toolkit/** text eol=lf
+skills/omh-biomedical-evidence/toolkit/** text eol=lf
+agent-skills/omh-biomedical-evidence/toolkit/** text eol=lf
+src/skills/molecular_docking_toolkit/** text eol=lf
+skills/omh-molecular-docking/toolkit/** text eol=lf
+agent-skills/omh-molecular-docking/toolkit/** text eol=lf
 # The pack's digest inventory, copied verbatim as every installer's receipt.
 agent-skills/.omh-agent-skills-manifest.json text eol=lf
 
