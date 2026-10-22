@@ -74,6 +74,22 @@ def _feature_surface_harness(
 
 _HARNESSES = [
     HarnessDefinition(
+        "show-reel",
+        "Keep audience, source-grounded motion production, localization, export QA and delivery evidence together.",
+        "Use for an authored time-based product or work showcase, never just file conversion or static critique.",
+        ("audience and channel", "duration format and budget", "source and asset rights", "selected tools"),
+        ("brief and source register", "concept selection and segment direction", "timing and renderer handoff", "preview export QA and delivery manifests"),
+        ("requested files and sources delivered with observed QA", "budget exhausted", "required source rights or tools unavailable"),
+        ("inspect actual delivery-size playback", "measure final codec color filesize and locale QA", "read back exact delivery target"),
+        "Return useful storyboard/source preparation and HOLD on the requested video when rendering or required QA is unavailable.",
+        ("brief_prepared", "production_observed", "qa_recorded", "delivery_observed"),
+        "Record observed host-tool or selected-executor results only; a prepared handoff never proves production or delivery.",
+        "metadata_only",
+        evidence_ladder=("brief_prepared", "sources_verified", "concept_selected", "motion_observed", "export_qa_observed", "delivery_observed"),
+        wrapper_actions=("prepare_show_reel", "prepare_visual_qa"),
+        overclaim_guards=("No render, translation, font/voice support, listening, attachment or publication claim without exact observed evidence.",),
+    ),
+    HarnessDefinition(
         "coding-handling",
         "Route implementation requests through scoped context, edit discipline, tests, review, and evidence.",
         "Use when the user asks Hermes to write, modify, debug, refactor, or review code.",
@@ -3326,6 +3342,7 @@ _PRIMARY_HARNESSES = {
     "frontend": "frontend",
     "accessibility-audit": "accessibility-audit",
     "visual-qa": "visual-qa",
+    "show-reel": "show-reel",
     "source-finder": "source-finder",
     "workspace-audit": "workspace-audit",
     "production-audit": "production-audit",

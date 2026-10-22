@@ -30,6 +30,7 @@ from ..skills.catalog import (
     retired_ulw_engine_definitions,
 )
 from ..skills.catalog_types import historical_skill_display_names, omh_skill_display_name
+from ..plugin_bundle.omh.boundary_phrase import contains_boundary_phrase
 from .visual_qa_cues import contains_cue_phrase
 from .localization import normalized_phrase
 from .reference_regions import executable_routing_text
@@ -216,7 +217,11 @@ def resolve_ulw_alias(message: str, *, allow_containment: bool = False) -> dict[
     for cue_normalized, cue, retired_name in _alias_cue_index():
         if " " not in cue_normalized and len(cue_normalized) < 6:
             continue
-        if contains_cue_phrase(stripped, (cue,)):
+        # Literal aliases are phrases, not prefixes of product/profile/project
+        # or identifiers. Preserve the cue table's hyphen/space equivalence,
+        # but not compact substring matching; the shared boundary reader also
+        # rejects filename suffixes such as make-a-pr.md.
+        if contains_boundary_phrase(normalized.replace("-", " "), (cue_normalized.replace("-", " "),)):
             return _alias_resolution(cue, retired_name)
     return None
 

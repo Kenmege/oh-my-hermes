@@ -781,6 +781,21 @@ class AgentSkillsProjectionTests(unittest.TestCase):
             self.assertEqual(payload["extra"], ["extra.txt"])
             self.assertEqual(payload["stale"], ["omh-frontend/SKILL.md"])
 
+    def test_cli_scope_fixture_cannot_discover_an_ancestor_repository(self):
+        from unittest.mock import patch
+        import subprocess
+        from _cli_harness import run_cli  # Load test-home setup before patching tempfile.
+
+        self.assertTrue(callable(run_cli))
+        temporary_directory = tempfile.TemporaryDirectory
+        with temporary_directory() as tmp:
+            ancestor = Path(tmp).resolve()
+            subprocess.run(["git", "init", "-q", str(ancestor)], check=True, capture_output=True)
+            with patch.object(tempfile, "TemporaryDirectory", side_effect=lambda: temporary_directory(dir=ancestor)):
+                self.test_cli_scopes_use_git_root_and_home_and_status_is_read_only()
+            self.assertFalse((ancestor / ".agents").exists())
+            self.assertFalse((ancestor / ".claude").exists())
+
     def test_cli_scopes_use_git_root_and_home_and_status_is_read_only(self):
         from contextlib import chdir
         import os
@@ -792,6 +807,9 @@ class AgentSkillsProjectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
             home, repo = root / "home", root / "repo"
+            # A filesystem barrier survives installer stripping of GIT_* env vars.
+            # Keep the sibling real repo discoverable, but never inherit an ancestor.
+            (root / ".git").write_text(f"gitdir: {root / 'nonexistent-git-barrier'}\n")
             home.mkdir()
             repo.mkdir()
             subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)

@@ -16,6 +16,7 @@ from typing import Any
 from ..hashutil import sha256_file, sha256_text
 from ..local_store import atomic_write_text
 from ..skills.render import agent_skill_reference_templates, agent_skill_templates
+from ..skills.support_files import agent_skill_support_templates
 
 MANIFEST_NAME = ".omh-agent-skills-manifest.json"
 SCHEMA_VERSION = "omh_agent_skills_projection/v1"
@@ -29,6 +30,7 @@ def agent_skill_files() -> dict[str, str]:
     """The same packaged producer drives install and the committed byte gate."""
     files = {f"{t.name}/SKILL.md": t.content for t in agent_skill_templates()}
     files.update({f"{t.skill_name}/{t.relative_path}": t.content for t in agent_skill_reference_templates()})
+    files.update({f"{t.skill_name}/{t.relative_path}": t.content for t in agent_skill_support_templates()})
     return files
 
 
@@ -67,13 +69,23 @@ def _checked_path(root: Path, relative: str) -> Path:
     if (path.is_absolute() or "\\" in relative or ":" in relative
             or any(part in ("", ".", "..") for part in relative.split("/"))):
         raise ValueError(f"Unsafe Agent Skills manifest path: {relative!r}")
+    if any(not re.fullmatch(r"[A-Za-z0-9._-]+", part) for part in relative.split("/")):
+        raise ValueError(f"Unsafe Agent Skills manifest path: {relative!r}")
+    if "/toolkit/" in relative:
+        from ..skills.support_files import validate_support_path
+
+        validate_support_path("toolkit/" + relative.split("/toolkit/", 1)[1])
     candidate = root / path
+    if candidate.exists() and not candidate.is_file():
+        raise ValueError(f"Agent Skills manifest target is not a regular file: {candidate}")
     # .agents/.claude and every destination component must be real directories
     # or files; a pre-existing symlink may not redirect an authorized install.
     for item in (root.parent, root, *candidate.relative_to(root).parents):
         checked = item if item.is_absolute() else root / item
         if checked.is_symlink():
             raise ValueError(f"Agent Skills refuses symlink destination: {checked}")
+        if checked.exists() and not checked.is_dir():
+            raise ValueError(f"Agent Skills parent is not a directory: {checked}")
     if candidate.is_symlink():
         raise ValueError(f"Agent Skills refuses symlink destination: {candidate}")
     return candidate
@@ -90,7 +102,11 @@ def _read_manifest(root: Path) -> dict[str, Any] | None:
             or not isinstance(payload.get("target_dirs"), list)
             or not all(isinstance(item, str) for item in payload["target_dirs"])):
         raise ValueError(f"Invalid Agent Skills manifest: {path}")
+    seen = set()
     for relative, digest in payload["files"].items():
+        if relative.casefold() in seen:
+            raise ValueError("Casefold-colliding Agent Skills manifest paths")
+        seen.add(relative.casefold())
         _checked_path(root, relative)
         if not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest):
             raise ValueError(f"Invalid Agent Skills digest: {relative}")
@@ -161,6 +177,10 @@ def install_agent_skills(target: Path, *, mirror: Path | None = None) -> dict[st
         for relative, content in files.items():
             path = _checked_path(root, relative)
             owned = relative in (previous or {}).get("files", {})
+            if path.exists() and owned and "/toolkit/" in relative and (
+                not path.is_file() or sha256_file(path) != previous["files"][relative]
+            ):
+                raise ValueError(f"Agent Skills refuses edited support: {path}")
             if path.exists() and not owned and (not path.is_file() or path.read_bytes() != content.encode("utf-8")):
                 raise ValueError(f"Agent Skills refuses unowned file collision: {path}")
     manifest = agent_skills_manifest(files, roots=roots)
@@ -171,6 +191,9 @@ def install_agent_skills(target: Path, *, mirror: Path | None = None) -> dict[st
         for relative in (previous or {}).get("files", {}).keys() - files.keys():
             path = _checked_path(root, relative)
             if path.exists():
+                if "/toolkit/" in relative and sha256_file(path) != previous["files"][relative]:
+                    # Retired edited support becomes foreign data, not recursive cleanup.
+                    continue
                 path.unlink()
             # Empty retired skill/reference directories are ours; never recurse
             # into or remove a foreign file that shares the same skill root.

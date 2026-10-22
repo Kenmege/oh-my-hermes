@@ -352,6 +352,16 @@ Keep source files and generated projections together in the same change:
 
 - `src/skills/catalog.py` and `src/skills/render.py` produce
   `skills/*/SKILL.md`, `skills/*/references/*.md`, and `docs/WORKFLOWS.md`.
+- `src/skills/show_reel_toolkit/` plus the closed registry in
+  `src/skills/show_reel_support.py` produce `skills/omh-show-reel/toolkit/**`
+  and `agent-skills/omh-show-reel/toolkit/**` as non-executed text support.
+  `python tools/render_skill_pack.py --write` regenerates the tap pack;
+  `--check` checks its declared files. `--refresh-provenance` with `--write`
+  refreshes the canonical toolkit provenance after an audited source edit.
+- `agent_skill_files()` and `agent_skills_manifest()` produce the one portable
+  inventory `agent-skills/.omh-agent-skills-manifest.json`; `docs agent-skills`
+  regenerates that tree and its six host adapters. Never embed copied digest
+  inventories in the adapters.
 - `roles_reference_markdown()` in `src/catalogs/roles.py` produces
   `docs/ROLES.md`.
 - The demo case engine produces

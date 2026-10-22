@@ -2,6 +2,7 @@
   "schema_version": "trigger_language_pack/v1",
   "language": "zh",
   "skills": {
+    "show-reel": ["产品展示短片"],
     "accessibility-audit": [
       "无障碍审查",
       "无障碍检查",

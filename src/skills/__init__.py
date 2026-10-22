@@ -38,6 +38,8 @@ from .catalog import (
 _RENDER_SIDE_EXPORTS: dict[str, str] = {
     "builtin_skill_reference_templates": "packaging",
     "builtin_skill_templates": "packaging",
+    "builtin_skill_support_templates": "packaging",
+    "SkillSupportTemplate": "support_files",
     "SkillReferenceTemplate": "render",
     "SkillTemplate": "render",
     "router_skill": "render",
@@ -52,6 +54,8 @@ def __getattr__(name: str) -> object:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     if owner == "packaging":
         from . import packaging as module
+    elif owner == "support_files":
+        from . import support_files as module
     else:
         from . import render as module
     return getattr(module, name)
@@ -73,6 +77,8 @@ __all__ = [
     "SurfaceExposure",
     "SkillTemplate",
     "SkillReferenceTemplate",
+    "SkillSupportTemplate",
+    "builtin_skill_support_templates",
     "builtin_definitions",
     "builtin_harnesses",
     "capability_definitions",

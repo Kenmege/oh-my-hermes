@@ -50,7 +50,17 @@ def _install_projection(skills_dir: Path) -> dict[str, object]:
         path = skills_dir / omh_skill_install_path(template.name) / "SKILL.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(path, template.content)
-    return new_manifest("builtin", skills_dir, skill_records(skills_dir, "builtin"))
+    from omh.skills.support_files import builtin_skill_support_templates
+    from omh.hashutil import sha256_text
+
+    support = {}
+    for template in builtin_skill_support_templates():
+        relative = f"{omh_skill_install_path(template.skill_name)}/{template.relative_path}"
+        atomic_write_text(skills_dir / relative, template.content)
+        support[relative] = sha256_text(template.content)
+    result = new_manifest("builtin", skills_dir, skill_records(skills_dir, "builtin"))
+    result["support_files"] = support
+    return result
 
 
 class CatalogRevisionTests(unittest.TestCase):

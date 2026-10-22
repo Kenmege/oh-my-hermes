@@ -154,6 +154,20 @@ skill cannot be listed there instead; remove an entry in the same commit that
 adds the case covering it. For operators and agents,
 `omh demo skill-reach --summary` prints the per-skill projection.
 
+## Optional companion support (separate from references)
+
+The selected show-reel companion is a closed UTF-8 package-data inventory in
+`src/skills/show_reel_support.py` plus canonical `show_reel_toolkit/` resources.
+It is never imported/executed by discovery, routing, setup/update or doctor.
+Do not disguise scripts as Markdown references, recursively copy arbitrary files,
+bootstrap dependencies, or create a new core renderer command. Any expansion
+needs reviewed paths/bytes/notices, unsafe-path and ownership tests, package-data,
+native/local-source/portable/tap parity and a source-hidden built wheel proof.
+Add portable paths explicitly; keep the one portable inventory, not per-host maps.
+Regenerate provenance after an audited change with
+`python tools/render_skill_pack.py --write --refresh-provenance`; `--check`
+checks the tap. Support bytes are on-demand disk footprint, not eager prompt text.
+
 ## 4. Regenerate every generated artifact family
 
 ```sh

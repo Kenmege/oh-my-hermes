@@ -33,6 +33,7 @@ from .hermes_session_commands import (
 from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, OMH_TODO_HELD_PLANS, native_tool_presence_clause
 from .spend_signals import SPEND_GATE_PHRASES, spend_request_phrases
+from .show_reel_cues import SHOW_REEL_PHRASES, show_reel_request_admitted, show_reel_request_phrases
 from .reference_regions import executable_routing_text
 from .degradation import (
     COMPONENT_LOCALIZED_ROUTING_TEXT,
@@ -1309,6 +1310,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "frontend": "materials_and_visuals",
     "accessibility-audit": "materials_and_visuals",
     "visual-qa": "materials_and_visuals",
+    "show-reel": "materials_and_visuals",
     "content-operator": "materials_and_visuals",
     "media-input-operator": "materials_and_visuals",
     "localization-review": "materials_and_visuals",
@@ -2648,6 +2650,17 @@ _ROUTE_HINT_RULES = (
         ),
         "tokens": ("frontend", "responsive", "layout", "lighthouse", "wcag"),
         "adjacent_workflows": ("design-quality-gate", "visual-qa", "materials-package", "img-summary"),
+    },
+    {
+        "id": "show_reel_production",
+        "workflow": "show-reel",
+        "lane": "materials_and_visuals",
+        "next_action": "prepare_show_reel",
+        "reason": "The user needs an authored motion showcase with audience, source, concept, timing, export QA and delivery gates.",
+        "fallback_action": "confirm_audience_sources_and_available_renderer",
+        "phrases": SHOW_REEL_PHRASES,
+        "tokens": (),
+        "adjacent_workflows": ("img-summary", "visual-qa", "materials-package"),
     },
     {
         "id": "visual_qa_gate",
@@ -6035,6 +6048,7 @@ def _awareness_context_matches_message_cached(message: str) -> tuple[bool, str]:
         or any(marker in text for marker in _AWARENESS_MESSAGE_MARKERS)
         or _spend_awareness_marked(raw_text)
         or _data_share_awareness_marked(raw_text)
+        or show_reel_request_admitted(raw_text)
     )
     # `degraded[0][1]` is lossless here because the `_localized_routing_text`
     # call above is the sole guarded call in this function body, so the
@@ -6526,6 +6540,7 @@ def _rule_suppressed_by_named_coding_agent_delivery(
 #   starts mid-word; the request the router admits is checked apart, by
 #   `_rule_suppressed_by_context`.
 _ROUTE_HINT_PHRASE_READERS: dict[str, Callable[[str, list[str]], list[str]]] = {
+    "show_reel_production": show_reel_request_phrases,
     "spend_gate": spend_request_phrases,
     "data_share_review": data_share_phrases_said,
 }
@@ -7110,6 +7125,7 @@ def awareness_primer_payload() -> dict[str, object]:
             "id": "materials_and_visuals",
             "label": "Materials and visual summaries",
             "skills": [
+                "show-reel",
                 "design-orchestration",
                 "apple-design",
                 "design-quality-gate",
@@ -7608,6 +7624,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "mobile-release": "prepare_mobile_release_plan",
     "accessibility-audit": "prepare_accessibility_audit",
     "visual-qa": "prepare_visual_qa",
+    "show-reel": "prepare_show_reel",
     "workspace-file-operator": "prepare_workspace_file_operator_card",
     "workspace-audit": "prepare_workspace_audit",
     "production-audit": "prepare_production_audit",
@@ -8020,13 +8037,13 @@ _WORKFLOW_INVOCATION_ALIASES = {
 
 
 # Workflows the router offers only for a request their own rule admits
-# (`spend_signals`, `data_share_cues`). The router reads only the hyphenated
+# (`spend_signals`, `data_share_cues`, `show_reel_cues`). The router reads only the hyphenated
 # name as an invocation; the spaced name is a trigger phrase it scores inside
 # an admitted request, so "use spend gate" dispatches and "spend gate" alone,
 # "use spend gate is greyed out" and "data share review" do not. Here, too,
 # only the hyphenated name is a direct invocation; the spaced name is left to
 # the workflow's own rule, which reads the same admission.
-_ADMISSION_HELD_WORKFLOWS = frozenset({"spend-gate", "data-share-review"})
+_ADMISSION_HELD_WORKFLOWS = frozenset({"spend-gate", "data-share-review", "show-reel"})
 
 
 _DAG_ULW_BY_SIZE_REASON = (

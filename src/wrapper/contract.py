@@ -327,6 +327,7 @@ VISIBLE_ACTIONS = (
     "record_target_size_review",
     "route_to_frontend_or_visual_qa",
     "prepare_visual_qa",
+    "prepare_show_reel",
     "show_visual_qa",
     "show_capture_package",
     "prepare_message_attachment_projection",
@@ -673,6 +674,7 @@ _CONTEXT_PRIMER_GROUPS = (
 _RETAINED_DELEGATION_SKILLS = set(retained_delegation_skill_names())
 _DIRECT_WORKFLOW_SKILLS = {
     "market-research",
+    "show-reel",
     "research",
     "ultraqa",
     # A big job the person asked for runs at once (owner decision D1); only scope, spend or an irreversible step
@@ -1178,6 +1180,7 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "show_release_readiness": ("show_release_readiness", "Show release readiness"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
     "prepare_visual_qa": ("prepare_visual_qa", "Prepare visual QA"),
+    "prepare_show_reel": ("prepare_show_reel", "Prepare show reel"),
     "prepare_deliverable_package": ("prepare_deliverable_package", "Prepare deliverable"),
     "prepare_github_event_ops_card": ("prepare_github_event_ops_card", "Open event card"),
     "prepare_github_issue_intake": ("prepare_github_issue_intake", "Open intake card"),
@@ -2725,6 +2728,21 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "backtrace",
             "root cause",
             "fix",
+        ],
+    },
+    "show-reel": {
+        "kind": "show_reel",
+        "headline": "I can shape an audience-specific motion showcase from verified sources to delivery.",
+        "body": "Prepare the audience, content/subtitle/voice/font/direction tracks, source and brand permissions, three concepts, segment art direction, timing, renderer capability and revision budget. Missing renderer or QA evidence keeps the requested video on hold.",
+        "phase": "show_reel_prepared",
+        "next_action": "prepare_show_reel",
+        "artifact_schema": "show_reel_brief/v1",
+        "recommended_flow": ["verify_audience_locales_and_sources", "compare_concepts_and_direct_segments", "select_available_renderer_and_measure_timing", "review_revise_export_and_record_qa", "package_sources_and_observe_delivery"],
+        "evidence_not_observed": ["source and brand verification", "rendered video", "font shaping and locale review", "codec/color/filesize and motion QA", "source-package transfer", "attachment receipt or publication"],
+        "claim_boundary_suffix": "This is preparation, not a render, measured codec/color/filesize or locale QA, source-package transfer, attachment, receipt or publication.",
+        "actions": [
+            {"id": "prepare_show_reel", "label": "Prepare show reel", "style": "primary"},
+            {"id": "prepare_visual_qa", "label": "Prepare visual QA", "style": "secondary"},
         ],
     },
     "visual-qa": {

@@ -77,8 +77,26 @@ printf '%s\n' "$$paths" '$receipt_name' | while IFS= read -r path; do
         [ ! -L "$$current" ] || fail "Symlink destination: $$current"
         current=$${current%/*}
         [ -n "$$current" ] || current=/
+        [ ! -e "$$current" ] || [ -d "$$current" ] || fail "Not a directory: $$current"
     done
     [ ! -e "$$target/$$path" ] || [ -f "$$target/$$path" ] || fail "Not a file: $$target/$$path"
+done
+# Support data needs ownership even though ordinary skill bodies are replaceable.
+# Use the previous one receipt, never a per-host or duplicate inventory.
+printf '%s\n' "$$checksums" | while IFS= read -r row; do
+    hash=$${row%% *}; path=$${row#*  }
+    case $$path in
+        */toolkit/*)
+            if [ -f "$$target/$$path" ]; then
+                prior=
+                if [ -f "$$target/$receipt_name" ]; then
+                    prior=$$(awk -v key="\"$$path\":" '$$1 == key {gsub(/[",]/, "", $$2); print $$2}' "$$target/$receipt_name")
+                fi
+                [ -n "$$prior" ] || prior=$$hash
+                actual=$$(checksum "$$target/$$path"); actual=$${actual%% *}
+                [ "$$actual" = "$$prior" ] || fail "Foreign/edited support preserved: $$path"
+            fi ;;
+    esac
 done
 printf '%s\n' "$$paths" | while IFS= read -r path; do
     mkdir -p "$$target/$${path%/*}"
@@ -141,6 +159,16 @@ function Assert-NoLink([string]$$Path, [string]$$Boundary) {
         $$current = Split-Path -Parent $$current
     }
 }
+function Assert-DirectoryParents([string]$$Path, [string]$$Boundary) {
+    $$current = Split-Path -Parent $$Path
+    while ($$current) {
+        if ((Test-Path -LiteralPath $$current) -and -not (Test-Path -LiteralPath $$current -PathType Container)) {
+            throw "Not a directory: $$current"
+        }
+        if ($$current -eq $$Boundary) { break }
+        $$current = Split-Path -Parent $$current
+    }
+}
 Assert-NoLink $$source (Split-Path -Parent $$source)
 $$items = @(Get-ChildItem -Force -Recurse -LiteralPath $$source)
 foreach ($$item in $$items) {
@@ -170,8 +198,26 @@ Assert-Digests $$source
 foreach ($$relative in (@($$entries.Path) + '$receipt_name')) {
     $$path = Join-Path $$target $$relative
     Assert-NoLink $$path $$base
+    Assert-DirectoryParents $$path $$base
     if ((Test-Path -LiteralPath $$path) -and -not (Test-Path -LiteralPath $$path -PathType Leaf)) {
         throw "Not a file: $$path"
+    }
+}
+$$previous = @{}
+$$receipt = Join-Path $$target '$receipt_name'
+if (Test-Path -LiteralPath $$receipt -PathType Leaf) {
+    foreach ($$match in [regex]::Matches([IO.File]::ReadAllText($$receipt), '(?m)^    "([^"]+)": "([0-9a-f]{64})",?$$')) {
+        $$previous[$$match.Groups[1].Value] = $$match.Groups[2].Value
+    }
+}
+foreach ($$entry in $$entries) {
+    $$path = Join-Path $$target $$entry.Path
+    if ($$entry.Path.Contains('/toolkit/') -and (Test-Path -LiteralPath $$path -PathType Leaf)) {
+        $$prior = $$entry.Hash
+        if ($$previous.ContainsKey($$entry.Path)) { $$prior = $$previous[$$entry.Path] }
+        if ((Get-FileHash -LiteralPath $$path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $$prior) {
+            throw "Foreign/edited support preserved: $$path"
+        }
     }
 }
 foreach ($$entry in $$entries) {

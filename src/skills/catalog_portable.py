@@ -241,6 +241,8 @@ _PORTABILITY: dict[str, str] = {
     'omh-product-discovery-validation': PORTABILITY_PORTABLE,
     # required_inputs: pipeline snapshot; expected_outputs: sales_pipeline_scope/v1; final_checklist requires evidence/approval, not a native runtime.
     'omh-sales-pipeline-review': PORTABILITY_PORTABLE,
+    # Host-neutral production method; tools are selected and observed, never required OMH RPCs.
+    'omh-show-reel': PORTABILITY_PORTABLE,
     # required_inputs: user request; expected_outputs: github-event-ops/v1 card or guidance; final_checklist requires evidence/approval, not a native runtime.
     'omh-github-event-ops': PORTABILITY_PORTABLE,
     # expected_outputs require omh_agent_board RPC; final_checklist invokes Hermes native_action.
@@ -362,6 +364,16 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'lifecycle-growth/references/procedure.md',
     'product-discovery-validation/references/procedure.md',
     'sales-pipeline-review/references/procedure.md',
+    'show-reel/references/procedure.md',
+    'show-reel/references/brief-and-locales.md',
+    'show-reel/references/storyboard-and-evidence.md',
+    'show-reel/references/renderer-adapter.md',
+    'show-reel/references/assets-and-rights.md',
+    'show-reel/references/render-qa-delivery.md',
+    'show-reel/references/source-package.md',
+    'show-reel/references/motion-techniques.md',
+    'show-reel/references/audio-production.md',
+    'show-reel/references/art-direction.md',
     'research/references/briefing-format.md',
     'frontend/references/design-system-contract.md',
     'frontend/references/taste-foundations.md',
@@ -432,6 +444,33 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'code-review/references/review-lenses.md',
     'ai-slop-cleaner/references/prose-lexicon.md',
     'plan/references/project-constitution.md',
+})
+
+
+# Reviewed companion paths, independent of Markdown references and Hermes runtime.
+PORTABLE_SUPPORT_PATHS = frozenset({
+    'show-reel/toolkit/README.md',
+    'show-reel/toolkit/LICENSE.upstream',
+    'show-reel/toolkit/upstream-manifest.json',
+    'show-reel/toolkit/assets/engine/engine.js',
+    'show-reel/toolkit/assets/engine/fx.js',
+    'show-reel/toolkit/assets/engine/index.html',
+    'show-reel/toolkit/scripts/new_project.py',
+    'show-reel/toolkit/scripts/render.mjs',
+    'show-reel/toolkit/scripts/font-coverage.mjs',
+    'show-reel/toolkit/scripts/timeline.py',
+    'show-reel/toolkit/scripts/synth_music.py',
+    'show-reel/toolkit/scripts/mix.py',
+    'show-reel/toolkit/scripts/motion_check.py',
+    'show-reel/toolkit/scripts/qa_check.py',
+    'show-reel/toolkit/examples/techniques/kinetic-type.js',
+    'show-reel/toolkit/examples/techniques/depth-light.js',
+    'show-reel/toolkit/examples/techniques/particles.js',
+    'show-reel/toolkit/examples/techniques/match-transform.js',
+    'show-reel/toolkit/examples/techniques/gallery.js',
+    'show-reel/toolkit/examples/timing.json',
+    'show-reel/toolkit/examples/music-spec.json',
+    'show-reel/toolkit/examples/README.md',
 })
 
 

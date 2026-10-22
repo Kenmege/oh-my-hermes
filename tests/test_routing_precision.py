@@ -28,7 +28,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # Its review adds nine negatives and ten interventions.
         # market-research adds ten negatives and four interventions; its second
         # review six more negatives, its third two.
-        self.assertEqual(payload["summary"]["case_count"], 963)
+        # show-reel adds sixteen noun/reference controls, nine that
+        # dispatched it under its first grammar, three asked first sentences
+        # and two causatives (a relative clause, `on`) (+30).
+        self.assertEqual(payload["summary"]["case_count"], 993)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -79,12 +82,18 @@ class RoutingPrecisionTests(unittest.TestCase):
         # TAM SAM SOM explained to a five-year-old is answered directly (+1),
         # and so are two method questions from its second review (+2) and one
         # from its third (+1).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 295)
-        self.assertEqual(payload["summary"]["file_lookup_count"], 10)
+        # show-reel's quoted-translation and film-plot controls are answered
+        # directly (+2).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 297)
+        # show-reel's README-link control is answered as a file lookup (+1).
+        self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
         self.assertEqual(payload["summary"]["catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["intervention_case_count"], 969)
+        # show-reel adds fourteen production/owner interventions, six that
+        # keep a film inside another skill's request with that skill, and two
+        # chained requests that keep their owner (+22).
+        self.assertEqual(payload["summary"]["intervention_case_count"], 991)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

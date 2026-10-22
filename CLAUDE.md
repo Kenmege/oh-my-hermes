@@ -67,7 +67,8 @@ Source of truth → generated file → regen command → drift gate:
 
 | Source | Generated | Regenerate | Gate |
 | --- | --- | --- | --- |
-| `src/skills/skill_record.py` (`SkillRecord` over `catalog.py`, `catalog_feature_surfaces.py`, `catalog_harnesses.py`, `catalog_portable.py`, `render.py`; `project(skill, target)`) via `builtin_skill_templates()` / `builtin_skill_reference_templates()` | `skills/*/SKILL.md`, `skills/*/references/*.md` | write template `.content` back to `skills/` (short Python loop; no dedicated CLI writer) | tap-skills staleness inside `docs workflows --check` (missing/stale/extra); `tests/test_router_content.py` |
+| `src/skills/skill_record.py` (`SkillRecord` over the catalog/render producers) plus `src/skills/show_reel_toolkit/` and its closed support registry | `skills/*/SKILL.md`, `skills/*/references/*.md`, `skills/omh-show-reel/toolkit/**` | `uv run python tools/render_skill_pack.py --write` (add `--refresh-provenance` only after auditing canonical toolkit edits) | `uv run python tools/render_skill_pack.py --check`; tap-skills byte gate in `docs workflows --check` |
+| Canonical toolkit resources + `provenance_manifest()` | `src/skills/show_reel_toolkit/upstream-manifest.json` (self-hash excluded) | `uv run python tools/render_skill_pack.py --write --refresh-provenance` | closed producer digest validation and support/distribution tests; outer inventories hash the provenance file |
 | Same catalog data | `docs/WORKFLOWS.md` | `uv run python -m omh.cli docs workflows --output docs/WORKFLOWS.md` | `uv run python -m omh.cli docs workflows --check` |
 | Same catalog data | `docs/ROLES.md` | `uv run python -m omh.cli docs roles --output docs/ROLES.md` | `uv run python -m omh.cli docs roles --check` |
 | Demo case engine | `examples/use-cases/g1-g10-demo-cards.json` | `uv run python -m omh.cli cases demo --all --json` output | parse-equality in `tests/test_application_cases.py` |
@@ -76,7 +77,7 @@ Source of truth → generated file → regen command → drift gate:
 | `ulw_inventory_payload()` in `src/skills/catalog.py` via `src/catalogs/ulw_surfaces.py` | marked ULW region of `README.md` | `uv run python -m omh.cli docs ulw-inventory` | `uv run python -m omh.cli docs ulw-inventory --check`; `tests/test_ulw_inventory.py` |
 | Same producer | marked ULW region of `site/index.html` | `uv run python -m omh.cli docs ulw-site` | `uv run python -m omh.cli docs ulw-site --check`; i18n parity in `tests/test_ulw_inventory.py` |
 | `SHIPPED_MODEL_RECOMMENDATIONS` in `src/coding/model_recommendations.py` via `src/catalogs/model_chain_table.py` | marked chain-table region of `docs/INSTALLATION.md` | `uv run python -m omh.cli docs chain-table` | `uv run python -m omh.cli docs chain-table --check`; round-trip equality in `tests/test_model_chain_table.py` |
-| `src/skills/catalog_portable.py` + catalog/render via `agent_skill_templates()` / `agent_skill_reference_templates()` | `agent-skills/*/SKILL.md`, `agent-skills/*/references/*.md` | `uv run python -m omh.cli docs agent-skills` | `uv run python -m omh.cli docs agent-skills --check` |
+| `agent_skill_files()` and `agent_skills_manifest()` over the catalog/portable/references and reviewed support producers | `agent-skills/**`, one `agent-skills/.omh-agent-skills-manifest.json`, six host adapters | `uv run python -m omh.cli docs agent-skills` | `uv run python -m omh.cli docs agent-skills --check`; never per-host copied digest maps |
 
 Rules:
 

@@ -30,7 +30,8 @@ from pathlib import Path
 from typing import Any
 
 from ..hashutil import sha256_file, sha256_text
-from ..skill_pack import builtin_skill_reference_templates, builtin_skill_templates
+from ..skill_pack import builtin_skill_reference_templates, builtin_skill_templates, builtin_skill_support_templates
+from .support_materialization import support_records, support_path
 from ..skills.catalog import omh_skill_install_path
 
 GUIDANCE_PROJECTION_STATUS_SCHEMA_VERSION = "guidance_projection_status/v1"
@@ -87,6 +88,7 @@ def catalog_revision() -> str:
         f"reference\0{template.skill_name}\0{template.relative_path}\0{sha256_text(template.content)}"
         for template in builtin_skill_reference_templates()
     )
+    lines.extend(f"support\0{t.skill_name}\0{t.relative_path}\0{sha256_text(t.content)}" for t in builtin_skill_support_templates())
     return sha256_text("\n".join(sorted(lines)))
 
 
@@ -208,6 +210,12 @@ def _projection_state(
     # that a core install reads `fresh`, and what the default actually is.
     if any(not (skills_dir / rel).is_file() for rel in installed_paths):
         return "missing"
+    required_support = _required_support(manifest)
+    records = support_records(manifest)
+    if any(not support_path(skills_dir, rel).is_file() for rel in required_support):
+        return "missing"
+    if any(records.get(rel) != digest or sha256_file(support_path(skills_dir, rel)) != digest for rel, digest in required_support.items()):
+        return "stale"
     if not installed_revision:
         # A manifest written before revisions were recorded. Fall back to the
         # comparison that does not need one: does every installed file match
@@ -247,6 +255,11 @@ def _installed_files_match_catalog(skills_dir: Path, manifest: dict[str, Any]) -
     return True
 
 
+def _required_support(manifest):
+    names = {r.get("name") for r in manifest.get("skills", []) if isinstance(r, dict)}
+    return {f"{omh_skill_install_path(t.skill_name)}/{t.relative_path}": sha256_text(t.content) for t in builtin_skill_support_templates() if t.skill_name in names}
+
+
 def _locally_modified(manifest: dict[str, Any] | None, skills_dir: Path) -> list[str]:
     """Projected files whose bytes no longer match the manifest that installed them.
 
@@ -268,6 +281,10 @@ def _locally_modified(manifest: dict[str, Any] | None, skills_dir: Path) -> list
         path = skills_dir / rel
         if not path.is_file() or sha256_file(path) != expected:
             modified.append(rel)
+    for relative, expected in support_records(manifest).items():
+        path = support_path(skills_dir, relative)
+        if not path.is_file() or sha256_file(path) != expected:
+            modified.append(relative)
     return sorted(modified)
 
 

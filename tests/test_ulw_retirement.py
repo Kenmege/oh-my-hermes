@@ -184,6 +184,26 @@ class AliasRoutingTests(unittest.TestCase):
                 # Informational migration copy, never a deprecation warning.
                 self.assertNotIn("deprecat", reason.lower())
 
+    def test_contained_aliases_require_literal_phrase_boundaries(self) -> None:
+        for message in (
+            "Make a product showcase video for a Japanese audience.",
+            "Please make a profile page.",
+            "Could you make a project summary?",
+            "Please document xone cycle deliveryy.",
+            "Read make-a-pr.md before answering.",
+        ):
+            with self.subTest(message=message):
+                self.assertIsNone(resolve_ulw_alias(message, allow_containment=True))
+        for message in (
+            "Please make a PR for this change.",
+            "Could you make a PR, please?",
+            "Please: make a PR!",
+            "Please make-a-PR for this change.",
+            "Please run one cycle delivery for this issue.",
+        ):
+            with self.subTest(message=message):
+                self.assertIsNotNone(resolve_ulw_alias(message, allow_containment=True))
+
     def test_alias_resolution_covers_every_retired_contract(self) -> None:
         for name, capability in ULW_RETIRED_CAPABILITIES.items():
             with self.subTest(contract=name):

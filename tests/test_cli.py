@@ -35,7 +35,7 @@ from project_identity_fixture import pin_review_first
 from omh.plugin_bundle.omh.memory_governance import canonical_payload_digest
 from omh.record_revision import MAX_MUTATION_ID_CHARS
 from omh.routing.intent import classify_omh_quality_intent
-from omh.skill_pack import builtin_skill_reference_templates, builtin_skill_templates
+from omh.skill_pack import builtin_skill_reference_templates, builtin_skill_templates, builtin_skill_support_templates
 from omh.skills.catalog import builtin_harnesses, installable_skill_names
 from omh.wrapper.localized_copy import detect_copy_locale
 from omh.wrapper_sessions import (
@@ -2861,6 +2861,14 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
     def test_setup_project_scope_uses_project_local_paths(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
+            # A project-scoped fixture must not select an ancestor checkout or
+            # an enclosing test invocation's filesystem barrier as its project.
+            (root / ".git").write_bytes(b"gitdir: .nonexistent-project-fixture-barrier\n")
+            import subprocess
+            probe = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=root,
+                                   env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+                                   capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(probe.returncode, 0, probe.stdout)
 
             with patch("omh.paths.Path.cwd", return_value=root):
                 status, stdout, stderr = run_cli(["setup", "--scope", "project"])
@@ -4574,7 +4582,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertEqual(gates["chat_card_coverage"]["status"], "passed")
             self.assertIn("generic ack 0", gates["chat_card_coverage"]["summary"])
             self.assertEqual(gates["route_hint_alignment"]["status"], "passed")
-            self.assertIn("210/210 route hints aligned", gates["route_hint_alignment"]["summary"])
+            self.assertIn("218/218 route hints aligned", gates["route_hint_alignment"]["summary"])
             self.assertEqual(gates["context_brief_coverage"]["status"], "passed")
             self.assertIn("12/12 context brief cases passing", gates["context_brief_coverage"]["summary"])
             self.assertEqual(gates["routing_precision"]["status"], "passed")
@@ -4635,7 +4643,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertIn("Status: ready", stdout)
             self.assertIn("Written: no", stdout)
             self.assertIn("Grounded score: 50/50 (avg 10.0)", stdout)
-            self.assertIn("Chat card coverage: 90/90 (generic ack 0)", stdout)
+            self.assertIn("Chat card coverage: 91/91 (generic ack 0)", stdout)
             self.assertIn("Context brief coverage: 12/12 (route hints 11, catalog hints 1)", stdout)
             routing = build_routing_precision_demo(source="discord")["summary"]
             negatives, interventions = routing["case_count"], routing["intervention_case_count"]
@@ -4684,9 +4692,9 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertEqual(payload["summary"]["product_readiness_status"], "ready")
             self.assertEqual(payload["summary"]["grounded_score_perfect"], 50)
             self.assertEqual(payload["summary"]["grounded_score_average"], 10.0)
-            self.assertEqual(payload["summary"]["chat_card_coverage_passing"], 90)
+            self.assertEqual(payload["summary"]["chat_card_coverage_passing"], 91)
             self.assertEqual(payload["summary"]["chat_card_generic_ack_count"], 0)
-            self.assertEqual(payload["summary"]["route_hint_alignment_aligned"], 210)
+            self.assertEqual(payload["summary"]["route_hint_alignment_aligned"], 218)
             self.assertEqual(payload["summary"]["route_hint_mismatch_count"], 0)
             self.assertEqual(payload["summary"]["context_brief_coverage_passing"], 12)
             self.assertEqual(payload["summary"]["context_brief_coverage_total"], 12)
@@ -9840,8 +9848,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         self.assertEqual(status, 0)
         payload = json.loads(stdout)
         self.assertEqual(payload["schema_version"], "chat_card_coverage/v1")
-        self.assertEqual(payload["summary"]["case_count"], 90)
-        self.assertEqual(payload["summary"]["passing_count"], 90)
+        self.assertEqual(payload["summary"]["case_count"], 91)
+        self.assertEqual(payload["summary"]["passing_count"], 91)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
         self.assertTrue(payload["summary"]["all_passing"])
         self.assertIn("not live Hermes chat", payload["claim_boundary"])
@@ -9865,7 +9873,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         with self.assertRaises(json.JSONDecodeError):
             json.loads(stdout)
         self.assertIn("OMH chat card coverage", stdout)
-        self.assertIn("Result: 90/90 workflow cards dedicated (all passing)", stdout)
+        self.assertIn("Result: 91/91 workflow cards dedicated (all passing)", stdout)
         self.assertIn("Generic ack responses: 0", stdout)
         self.assertIn(
             "Scheduled ops blueprint: ok; "
@@ -9884,9 +9892,9 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         self.assertEqual(status, 0)
         payload = json.loads(stdout)
         self.assertEqual(payload["schema_version"], "route_hint_alignment/v1")
-        self.assertEqual(payload["summary"]["case_count"], 210)
-        self.assertEqual(payload["summary"]["hinted_count"], 210)
-        self.assertEqual(payload["summary"]["aligned_count"], 210)
+        self.assertEqual(payload["summary"]["case_count"], 218)
+        self.assertEqual(payload["summary"]["hinted_count"], 218)
+        self.assertEqual(payload["summary"]["aligned_count"], 218)
         self.assertEqual(payload["summary"]["missing_hint_count"], 0)
         self.assertEqual(payload["summary"]["mismatch_count"], 0)
         self.assertTrue(payload["summary"]["all_aligned"])
@@ -9917,7 +9925,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         self.assertEqual(status, 0)
         explicit_payload = json.loads(stdout)
         self.assertEqual(explicit_payload["schema_version"], "route_hint_alignment/v1")
-        self.assertEqual(explicit_payload["summary"]["case_count"], 210)
+        self.assertEqual(explicit_payload["summary"]["case_count"], 218)
 
     def test_demo_route_hint_alignment_summary_is_human_readable(self) -> None:
         status, stdout, stderr = run_cli(["demo", "route-hint-alignment", "--summary"])
@@ -9927,8 +9935,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         with self.assertRaises(json.JSONDecodeError):
             json.loads(stdout)
         self.assertIn("OMH route hint alignment", stdout)
-        self.assertIn("Result: 210/210 route hints aligned (all passing)", stdout)
-        self.assertIn("Hints present: 210/210; missing hints: 0; mismatches: 0", stdout)
+        self.assertIn("Result: 218/218 route hints aligned (all passing)", stdout)
+        self.assertIn("Hints present: 218/218; missing hints: 0; mismatches: 0", stdout)
         self.assertIn(
             # The route keeps the catalog key, the hint emits the installed
             # skill's identifier; the rollup shows both vocabularies (#1249).
@@ -14361,7 +14369,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertEqual(stderr, "")
             self.assertEqual(status, 0)
             checked = json.loads(stdout)
-            expected_tap_files = len(builtin_skill_templates()) + len(builtin_skill_reference_templates())
+            expected_tap_files = len(builtin_skill_templates()) + len(builtin_skill_reference_templates()) + len(builtin_skill_support_templates())
             self.assertIn("checked", checked)
             self.assertTrue(checked["tap_skills"]["ok"])
             self.assertEqual(checked["tap_skills"]["expected"], expected_tap_files)

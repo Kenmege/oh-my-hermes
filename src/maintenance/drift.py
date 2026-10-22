@@ -328,7 +328,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             name="chat_card_case_count",
             describe="Chat card coverage cases",
             live=_chat_card_case_count,
-            expected=90,
+            # show-reel adds one dedicated production card.
+            expected=91,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",
@@ -339,7 +340,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             name="route_hint_case_count",
             describe="Route hint alignment cases",
             live=_route_hint_case_count,
-            expected=210,
+            # show-reel adds one coverage hint and seven fixback alignment
+            # cases for operations, the static-reference owner and ko/ja/zh.
+            expected=218,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",
@@ -773,7 +776,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # pricing analysis set beside value-based pricing in theory (6).
             # Its third review adds two method questions opened by "hey," and
             # "please," (2).
-            expected=963,
+            # show-reel adds six non-production controls across EN/KO/JA/ZH.
+            # Its fixback adds ten operation/reference/translation controls.
+            # Its carry adds nine controls that dispatched it under the first
+            # grammar: a film inside another request, a causative, the bare
+            # noun (9); a first sentence asked rather than told and a
+            # causative over a definite film with a relative clause (2); two
+            # more asked first sentences and a causative with `on` (3).
+            expected=993,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1153,7 +1163,13 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # TAM SAM SOM sizing, a customer evidence analysis, a competitive
             # pricing analysis of named tools, and market sizing after a
             # courtesy opener (4).
-            expected=969,
+            # show-reel adds nine interventions: four unnamed production
+            # requests, the ko/ja/zh phrases and two adjacent owners. Six more
+            # keep a film named inside another skill's request with that
+            # skill (15). Five more production requests (zh courtesy, the
+            # shortest request, make/cut/produce) and two chained requests
+            # that keep their owner (7).
+            expected=991,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1165,7 +1181,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The current workflow additions are part of the installable catalog.
             # `data-share-review` adds one. `spend-gate` adds one. `dag-ulw` adds one.
             # `market-research` adds one.
-            expected=146,
+            # show-reel adds one installable motion-production method.
+            expected=147,
             sites=(
                 "docs/README.md",
                 # The docs index quotes the count in prose and
