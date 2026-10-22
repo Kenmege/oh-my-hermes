@@ -1,10 +1,10 @@
 # Worked local examples
 
-Initialize a new workspace with the toolkit README's explicit font recipe.
-The copied `scene.js` executes four callable techniques across its duration;
-replace it for a film. Configure text runs in both project files, never split
-native scripts by default. `timing.json` demonstrates explicit multilingual cue
-IDs without narration; `music-spec.json` is a local authored synthesis example.
+`new_project.py` copies upstream's API example to `reel/_example_scenes.js`
+(not loaded). It shows the engine calls; do not start a film from its screens.
+`timing.json` demonstrates explicit multilingual cue IDs without narration;
+`music-spec.json` is a local authored synthesis example for `synth_music.py`
+(and `music_tools.py plan`).
 
 Example mix-spec (save beside a rights-cleared `score.wav`):
 

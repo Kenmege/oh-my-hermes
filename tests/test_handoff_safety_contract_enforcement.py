@@ -152,6 +152,36 @@ PROCESS_SPAWN_ALLOWLIST: dict[str, str] = {
         "technical QA only. Packaged as inert UTF-8 data, never imported by core, routing, "
         "preparation, or install; companion nonexecution and built-wheel parity tests guard it."
     ),
+    "src/skills/show_reel_toolkit/scripts/contact_sheet.py": (
+        "explicit host CLI `python toolkit/scripts/contact_sheet.py`; local FFmpeg/ffprobe frame extraction and tiling for review sheets only. Packaged as inert UTF-8 "
+        "data, never imported by core, routing, preparation, or install; companion nonexecution "
+        "and built-wheel parity tests guard it."
+    ),
+    "src/skills/show_reel_toolkit/scripts/finish.py": (
+        "explicit host CLI `python toolkit/scripts/finish.py`; local FFmpeg/ffprobe mux, share encode, poster and spec measurement only. Packaged as inert UTF-8 "
+        "data, never imported by core, routing, preparation, or install; companion nonexecution "
+        "and built-wheel parity tests guard it."
+    ),
+    "src/skills/show_reel_toolkit/scripts/music_tools.py": (
+        "explicit host CLI `python toolkit/scripts/music_tools.py`; local FFmpeg/ffprobe decode, splice, fit and silence edits of a chosen track only. Packaged as inert UTF-8 "
+        "data, never imported by core, routing, preparation, or install; companion nonexecution "
+        "and built-wheel parity tests guard it."
+    ),
+    "src/skills/show_reel_toolkit/scripts/prep_images.py": (
+        "explicit host CLI `python toolkit/scripts/prep_images.py`; the macOS `swiftc` compile of the shipped cutout tool and that tool, both opt-in via --cutout, only. Packaged as inert UTF-8 "
+        "data, never imported by core, routing, preparation, or install; companion nonexecution "
+        "and built-wheel parity tests guard it."
+    ),
+    "src/skills/show_reel_toolkit/scripts/preflight.py": (
+        "explicit host CLI `python toolkit/scripts/preflight.py`; local version probes of node, the passed FFmpeg/ffprobe and nothing else; no provider call. Packaged as inert UTF-8 "
+        "data, never imported by core, routing, preparation, or install; companion nonexecution "
+        "and built-wheel parity tests guard it."
+    ),
+    "src/skills/show_reel_toolkit/scripts/timeline.py": (
+        "explicit host CLI `python toolkit/scripts/timeline.py`; a local FFmpeg decode for the loudness envelope of the project's own narration/music clips only. Packaged as inert UTF-8 "
+        "data, never imported by core, routing, preparation, or install; companion nonexecution "
+        "and built-wheel parity tests guard it."
+    ),
     "src/install/agent_skills_projection.py": (
         "explicit `omh install --target agents --scope repo` (including read-only --status); "
         "runs only bounded local git rev-parse --show-toplevel with fsmonitor disabled, "
@@ -629,12 +659,18 @@ class NoHiddenProcessSpawn(unittest.TestCase):
 
     def test_core_never_imports_the_exact_optional_companion_process_owners(self) -> None:
         companion = "src/skills/show_reel_toolkit/"
-        owners = {companion + "scripts/" + name for name in ("mix.py", "motion_check.py", "qa_check.py")}
+        owners = {companion + "scripts/" + name for name in (
+            "mix.py", "motion_check.py", "qa_check.py", "contact_sheet.py", "finish.py",
+            "music_tools.py", "prep_images.py", "preflight.py", "timeline.py",
+        )}
         self.assertEqual({p for p in PROCESS_SPAWN_ALLOWLIST if p.startswith(companion)}, owners)
         for relative_path, tree in _source_modules():
             if relative_path.startswith(companion):
                 continue
-            for stem in ("mix", "motion_check", "qa_check", "show_reel_toolkit"):
+            # `preflight` is left out: core already imports unrelated `preflight` names
+            # (e.g. coding.fanout_confinement), and the stem check matches imported names too.
+            for stem in ("mix", "motion_check", "qa_check", "contact_sheet", "finish", "music_tools",
+                         "prep_images", "timeline", "show_reel_toolkit"):
                 self.assertFalse(_imports_module_named(tree, stem), (relative_path, stem))
 
     def test_only_allowlisted_modules_import_subprocess(self) -> None:

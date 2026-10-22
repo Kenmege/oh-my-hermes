@@ -1,8 +1,23 @@
-"""Original host-neutral production guidance; executable companion resources are separate data."""
+"""Original host-neutral production guidance plus the translated upstream craft references.
+
+The `craft-*` references are complete English translations of revfactory/showreel
+(MIT, Copyright (c) 2026 Minho Hwang (revfactory)); their source paths and digests
+are in `show_reel_support.CRAFT_REFERENCES`/`UPSTREAM_SOURCES` and the toolkit's
+`upstream-manifest.json`. Executable companion resources are separate data.
+"""
 from __future__ import annotations
+
+from importlib.resources import files
+
+from .show_reel_support import CRAFT_REFERENCES, REVISION
 
 REFERENCE_TEXT = {
     "brief-and-locales": """# Brief and locale decisions
+
+Craft depth for the brief (what to ask and not ask, concept candidates, the
+`concept.md` form, time/credit estimates, research prompts) is in
+`references/craft-brief.md`. This page decides language and locale; where the
+craft text assumes Korean content, this page's resolution wins.
 
 ## Intake before aesthetics
 
@@ -69,6 +84,9 @@ and name unverified natural-language routing coverage.
 """,
     "storyboard-and-evidence": """# Concepts, source evidence and segment direction
 
+Structure, reference structures by use, length benchmarks, copy and pronunciation
+rules and the script.json form are in `references/craft-story.md`.
+
 ## Verify before illustrating
 
 In `show_reel_source_asset_register/v1`, bind each claim_id to a locator, date,
@@ -121,28 +139,34 @@ an executor. Load `renderer-adapter.md` for timing and capture choices.
 
 ## Companion decision
 
-This release ships a selected optional local companion, NOT a core render
-command or full upstream runtime. Read `toolkit/README.md` with a file reader
+This release ships an optional local companion, NOT a core render command: the
+upstream engine (`engine.js`, `fx.js`, example `scenes.js`) unmodified below its
+attribution notice, upstream-derived scripts, and an OMH capture adapter that keeps
+upstream's render quality flags. Read `toolkit/README.md` with a file reader
 relative to the loaded skill directory (`skill_dir` on native Hermes); portable
 hosts use their own base directory and ordinary file tools. No companion import,
 process, socket, dependency setup or font download occurs during OMH discovery,
 projection, installation, update, routing or doctor.
 
-The method prose is original. Selected motion/audio/capture helpers are modified
-MIT derivatives of revfactory/showreel revision
+The method prose is original; the `references/craft-*.md` pages are complete
+English translations of the upstream references. The engine, motion/audio/capture
+helpers and QA tools are MIT files from revfactory/showreel revision
 64521220a2f8e91cb9894400c48c15b7f45205d6, Copyright (c) 2026 Minho Hwang
 (revfactory). Every distribution carries `toolkit/LICENSE.upstream`, per-file
 notices and `toolkit/upstream-manifest.json` with original/local hashes and
 modification status. Preserve all of them in the source kit. Asset/font/voice
-rights are independent. This is not vendored wholesale upstream runtime parity.
+rights are independent. The engine is upstream's; the capture adapter is not
+upstream's Playwright renderer (no workers, chunks or resume).
 
 Explicit operator invocation, after confirming a new output workspace and local
 prerequisites (paths are examples, never auto-run):
 
 ```sh
-python toolkit/scripts/new_project.py NEW_PROJECT --font /approved/font.ttf --duration 12 --fps 30 --language en --direction ltr
-python toolkit/scripts/timeline.py NEW_PROJECT/timing.json
-node toolkit/scripts/render.mjs --dir NEW_PROJECT/reel --out NEW_PROJECT/gallery.mp4 --browser /approved/chrome-headless-shell --dependency-root /approved/node_modules --ffmpeg /approved/ffmpeg --ffprobe /approved/ffprobe
+python toolkit/scripts/new_project.py NEW_PROJECT --font /approved/font.ttf --ratio 16:9 --duration 60 --language en --direction ltr
+python toolkit/scripts/timeline.py NEW_PROJECT/script.json --music-analysis audio/music/analysis.json
+node toolkit/scripts/render.mjs --dir NEW_PROJECT/reel --out NEW_PROJECT/out/draft.mp4 --scale 0.5 --browser /approved/chrome-headless-shell --dependency-root /approved/node_modules --ffmpeg /approved/ffmpeg --ffprobe /approved/ffprobe
+node toolkit/scripts/render.mjs --dir NEW_PROJECT/reel --out NEW_PROJECT/out/video.mp4 --sub 4 --browser /approved/chrome-headless-shell --dependency-root /approved/node_modules --ffmpeg /approved/ffmpeg --ffprobe /approved/ffprobe
+python toolkit/scripts/contact_sheet.py --video NEW_PROJECT/out/draft.mp4 --every 1 --out NEW_PROJECT/qa/sheet_draft.png
 python toolkit/scripts/synth_music.py toolkit/examples/music-spec.json --out NEW_PROJECT/score.wav
 python toolkit/scripts/mix.py NEW_PROJECT/mix-spec.json --out NEW_PROJECT/mix.wav --ffmpeg /approved/ffmpeg
 python toolkit/scripts/qa_check.py NEW_PROJECT/final.mp4 --audio-mode music-only --ffmpeg /approved/ffmpeg --ffprobe /approved/ffprobe
@@ -150,17 +174,23 @@ python toolkit/scripts/qa_check.py NEW_PROJECT/final.mp4 --audio-mode music-only
 
 These flags are the companion's tested adapter, not a new OMH command. Initialization
 preserves an existing authored project by refusing it. The exact-frame adapter is
-explicitly Puppeteer (not Playwright), serial-only, allowlisted loopback assets,
-no external requests or range access, no resume/chunks/blur; partial frames are
-never a final success. Tested capture execution is macOS with explicitly supplied
+explicitly Puppeteer (not Playwright), serial capture piped to FFmpeg, allowlisted
+loopback assets served from the project root, no external requests or range access,
+no resume/chunks/workers; `--sub N` averages N sub-frame captures per frame (shutter
+blur), `--scale` above 1 supersamples back to the page size, CRF defaults to 16.
+Without FFmpeg zscale pass `--color swscale` (upstream's matrix/range conversion).
+Partial frames are never a final success. Tested capture execution is macOS with explicitly supplied
 Chrome headless-shell; Linux/Windows execution is HOLD, while installation of the
 text data stays portable. Full Chrome headless surface capture stalled on the
 observed host; missing tool/font/glyph and untested paths must not be certified.
 
-Use callable examples from `references/motion-techniques.md`, audio/stem contracts
-from `references/audio-production.md`, and actual composition/revision gates from
-`references/art-direction.md`. The initialized four-technique gallery teaches APIs,
-not the film's storyboard, and a small gallery never fulfills a commissioned film.
+Use the engine contract in `references/motion-techniques.md` with the full API in
+`references/craft-engine.md` and verified technique code in
+`references/craft-techniques.md` and `references/craft-techniques-2.md`,
+audio/stem contracts from
+`references/audio-production.md`, and composition/revision gates from
+`references/art-direction.md`. `reel/_example_scenes.js` teaches the API, not the
+film's storyboard, and an example never fulfills a commissioned film.
 Capture receipts bind exact input/font/tool versions, seek times, cleanup, decoded
 frames and converted color. Keep technical versus artistic/playback/listening
 verdicts separate; source code and measurements are not hearing or artistic review.
@@ -232,7 +262,9 @@ speech can compare words/times, not certify pronunciation or replace listening.
 """,
     "assets-and-rights": """# Assets, brand and consent register
 
-Record asset_id, source locator/revision/date, local safe reference, SHA-256,
+Image generation, real photos, cutouts and post-processing are in
+`references/craft-images.md`; `prep_images.py` removes letterboxes, resizes and
+(macOS, opt-in) cuts out subjects. Record asset_id, source locator/revision/date, local safe reference, SHA-256,
 file type/dimensions/duration, rights holder, license, permitted modification,
 usage/channel/territory limits, consent and verification status. Prefer supplied,
 official and rights-cleared sources. Verify downloaded bytes are the expected
@@ -261,6 +293,12 @@ external-transfer permissions separate from the right to view an asset locally.
     "render-qa-delivery": """# Render, revision, export QA and delivery
 
 ## Observable review ladder
+
+Tools: `render.mjs --stills`/`--every` for style frames, `contact_sheet.py` for
+`--every`, `--times` and `--around` cut strips, `motion_check.py` for unintended
+freezes and flashes, `finish.py` for master/share/poster/SRT. The critique method,
+technical checklist, how to read a sheet and the delivery report form are in
+`references/craft-qa.md`.
 
 Render actual style frames at representative script/scene states, then a moving
 draft, a contact sheet and consecutive transition strips. Inspect at intended
@@ -347,66 +385,70 @@ The requested artifact and source package may have different delivery permission
 
 
 REFERENCE_TEXT.update({
-    "motion-techniques": """# Callable techniques, not a stock film
+    "motion-techniques": """# Engine contract and craft techniques
 
-Read the local `toolkit/README.md`, then the selected example script with a file
-reader. Helpers are callable parameterized source, not scripts OMH executes.
-`REEL.prog/kf/spring/rand` use absolute time/seed. `__seek(seconds)`, `__ready`,
-`__error`, `__meta` are the local host-capture contract, not a runtime RPC.
+Read the local `toolkit/README.md`, then `references/craft-engine.md` (engine API,
+scene authoring, WebGL and 3D, splitting work across agents) and
+`references/craft-techniques.md` with `references/craft-techniques-2.md`
+(verified technique code with the sync, first frame, flash and determinism
+rules) before writing a scene. `new_project.py`
+copies upstream's engine unmodified: `reel/engine.js` (`REEL`), `reel/fx.js`
+(`FX` layers), `reel/_example_scenes.js` (an API example, not loaded) and an empty
+`reel/scenes.js`. Helpers are source the scene calls, not scripts OMH executes.
 
-## Kinetic type as meaning
+## The contract the capture adapter checks
 
-`kineticPose(t,{start,duration,stagger,index,rise})` returns mask/position/opacity
-and spring settling. Apply it to intact native-script runs by default; a semantic
-phrase may move as a unit. Use per-run `lang`/`dir` and isolated literal LTR tokens.
-Never split/reverse Arabic to imitate Latin stagger. Anticipation and settling
-should express weight and arrival, not make essential text unreadable. Measure
-reading time from actual delivery-size moving samples, not a character formula.
+- The screen is a pure function of absolute time `t`. No `Math.random`,
+  `Date.now`, CSS transition/animation, or state carried from the previous frame;
+  use `REEL.rand(i, salt)` and `REEL.noise(t, seed)`. Precompute accumulating
+  simulations in `setup` at fixed steps and read them by time in `render`.
+- `REEL.config`, `REEL.scene({id,start,end,setup,render})`, `REEL.overlay`,
+  `REEL.preload`/`REEL.img`, `REEL.cue`/`bar`/`beat`/`level`/`charTimes` read
+  `reel/timeline.js`. Put times on cues, not literals, so re-timed audio carries
+  the picture with it. Put hard cuts at `cue - 0.5 / fps` so the `--sub` shutter
+  does not blend both states into the cue frame.
+- `window.__seek(t)`, `__ready` and `__meta` are the host capture contract, not a
+  runtime RPC. The adapter refuses running animations, page errors, external
+  requests, undeclared files and glyphs the declared fonts do not cover.
 
-## Depth, lighting and occlusion
+## Native scripts in motion
 
-`depthGeometry` parameterizes grid count/seed/projection/center; `FX.project` and
-`FX.light` are independent helpers. Sorted disjoint grid boxes occlude and react
-to a moving light. This painter ordering does not solve arbitrary intersecting
-meshes. Use scale/camera/negative space to expose the meaningful relation, not a
-city/HUD imposed on every brand. An approved image/capture can be the focal plane;
-do not manufacture live product evidence from authored geometry.
+`REEL.split(el, 'char')` segments graphemes, which suits Hangul, CJK and Latin
+kinetic type. Never split or reverse Arabic or another shaping script to imitate
+a Latin stagger: animate intact runs or `split(el, 'word')`, with per-run
+`lang`/`dir` and isolated literal LTR tokens. Anticipation and settling express
+weight and arrival; they must not make essential text unreadable. Measure reading
+time from delivery-size moving samples, not a character formula.
 
-## Seeded geometric particles
+## Concept first, techniques second
 
-`particleGeometry` samples a seeded disk and evaluates closed-form drag/gravity
-at absolute time. Change sample geometry, palette and forces for the concept;
-there is no accumulating simulation or frame history. The teaching fixture is not
-a claimed glyph-particle engine. Geometry/density must preserve hierarchy; noisy
-motion does not repair a weak story. Repeated shuffled seeks must yield identical
-decoded pixels at the same times in the pinned environment.
-
-## Semantic match transform
-
-`matchGeometry` carries measured `{x,y,w,h}` from one composition to the next.
-Read a meaningful object's actual authored/DOM bounds, preserve its focal point,
-and decide why it changes scale/role across the cut. A decorative box expansion
-between unrelated headline cards is not continuity. Inspect same-time poses,
-consecutive motion frames and both cut boundaries after rebuilding a segment.
-
-The gallery is a local initialized worked example of four different techniques,
-not a film template or a mandatory effect list. Choosing none is valid if an
-explicitly selected renderer/medium better serves the concept. Pin source/tool/
-font hashes, compare a parameter/seed variant and shuffled seeks, and report the
-actual executed fixture rather than extrapolating to all locales or platforms.
+The technique catalog is verified code, not a menu: a film assembled only from it
+looks like every other film made with this skill. Start from the segment's art
+direction in `concept.md`; take a technique when the concept needs that exact
+expression and adapt its palette, type and motion, otherwise build new. Adjacent
+segments should differ in at least two of medium, palette, typeface, motion and
+texture. Repeated shuffled seeks must yield identical decoded pixels at the same
+times in the pinned environment; report the executed fixture rather than
+extrapolating to every locale or platform.
 """,
     "audio-production": """# Local score, cue-aligned SFX, stems and honest audio gates
 
 Choose muted/music-only/narration/narration+bed/SFX from the brief, not from the
 conversation language. No default voice, provider, STT, download or paid call.
+Audio comes before scenes: music beats and narration words set the picture's
+times. Craft depth (voices, music plans, SFX design, mix targets) is in
+`references/craft-audio.md`. `music_tools.py analyze` reads tempo, downbeats and
+hits from the chosen track; `timeline.py script.json --music-analysis` turns them
+into `barN`/`music.hitN` cues and `reel/timeline.js` for `REEL.cue`/`bar`/`level`.
 Read `toolkit/README.md` and `scripts/synth_music.py`, `mix.py`, `qa_check.py`
 relative to that toolkit. The local seeded score is a modest fallback: section
 notes/energy/BPM and tick/boom/whoosh events are parameters, not a musical-quality
 promise. Licensed imported local music is equally valid; record its rights/hash.
 
-Timeline cues are explicit IDs with seconds/frame indices or acyclic after+offset;
-keep imported word timing separate and never derive screen events by substring
-search. Audio events use numeric `at` or an exact cue ID and start/peak/end anchor.
+Timeline cues are explicit IDs with seconds/frame indices or acyclic after+offset,
+or script.json scenes/SFX placed on music and narration cues. A narration cue comes
+from the provider's character alignment of the approved tts text; never derive a
+screen event by guessing where a substring is spoken without that alignment. Audio events use numeric `at` or an exact cue ID and start/peak/end anchor.
 Measure the PCM event anchor and A/V cue against decoded frames, not a guessed
 hearing result. Unknown cues, missing required tracks, corrupt or wrong-rate audio
 must fail closed before a usable final mix. Muted cannot silently discard tracks.
@@ -427,8 +469,10 @@ A musical accent must support the shot/cut, not mask every change with a boom.
 """,
     "art-direction": """# Independent artistic acceptance and the weakest-scene rebuild
 
-Before an expensive render, compare three distinct narrative/visual concepts,
-not palette swaps. For each useful reference record exact source/locator, revision
+How to set art direction per segment, the predictable screens to avoid, motion
+principles, rhythm, typography, safe areas and transitions are in
+`references/craft-design.md`. Before an expensive render, compare three distinct
+narrative/visual concepts, not palette swaps. For each useful reference record exact source/locator, revision
 or inspection date, what composition/motion/sound decision it informs, rights and
 limits. A supplied pinned reference can be enough; do not invent a trend claim or
 seek unrelated references just to fill a quota. Never confuse imitation with
@@ -475,7 +519,33 @@ that real product actions shown as concepts actually ran.
 })
 
 
+CRAFT_WHEN = {
+    "craft-workflow": "the upstream production method end to end: concept candidates, audio first, style frames, draft critique loops, finish and delivery report",
+    "craft-brief": "the brief and concept stage: what to ask and not ask, concept candidates and the concept.md form, time and credit estimates, research prompts",
+    "craft-story": "structure and script: showreel structure, reference structures by use, length benchmarks, copy and pronunciation rules, script.json",
+    "craft-audio": "voices and settings, music and SFX, mix targets",
+    "craft-images": "image generation, real photos, cutouts and post-processing",
+    "craft-design": "art direction per segment, predictable screens, motion principles, rhythm, typography, safe areas, transitions",
+    "craft-engine": "engine API, scene authoring, WebGL and 3D, splitting scenes across agents",
+    "craft-techniques": "the sync, first-frame, flash and determinism rules, common helper code and verified techniques T01 to T09",
+    "craft-techniques-2": "verified techniques T10 to T22 (beat grids, data, counters, 3D UI, camera, match cuts, montage, end cards)",
+    "craft-qa": "critique, the technical checklist, reading contact sheets, delivery report and production notes",
+}
+
+
+def craft_reference_text(name):
+    body = files("omh.skills").joinpath("show_reel_craft", f"{name}.md").read_text(encoding="utf-8")
+    note = (f"> Translated in full from revfactory/showreel@{REVISION} `showreel/{CRAFT_REFERENCES[name]}` (MIT, Copyright (c) 2026 "
+            "Minho Hwang (revfactory); `toolkit/LICENSE.upstream`, provenance in `toolkit/upstream-manifest.json`). "
+            f"Read it for {CRAFT_WHEN[name]}. `$S` is `toolkit/scripts` under the loaded skill directory. Commands here are "
+            "upstream's; check the upstream command map in `toolkit/README.md` before running one. Content language follows "
+            "`references/brief-and-locales.md`: Korean-first defaults apply only to Korean content, the craft bar applies to every locale; "
+            "host install paths are placeholders here and upstream's default narration voice is named by role, chosen only through voice_policy.\n\n")
+    return note + body
+
+
 def show_reel_reference_templates():
     from .render import SkillReferenceTemplate
 
-    return [SkillReferenceTemplate("show-reel", f"references/{name}.md", text) for name, text in REFERENCE_TEXT.items()]
+    texts = {**REFERENCE_TEXT, **{name: craft_reference_text(name) for name in CRAFT_REFERENCES}}
+    return [SkillReferenceTemplate("show-reel", f"references/{name}.md", text) for name, text in texts.items()]

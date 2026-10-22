@@ -15,9 +15,11 @@ Rules:
 - Reconstruction, never copying: our skill text is OMH's own wording and
   contract language. The license column records what made close study
   acceptable; `none` means link-only reference. The explicit exception is
-  `show-reel`'s separate optional companion: selected modified MIT code, not
-  reconstructed prose, with verbatim license/per-file provenance in every copy.
-  OMH core never imports/executes it. See [Show-reel toolkit](SHOW-REEL-TOOLKIT.md).
+  `show-reel`: its optional companion is upstream's engine plus modified MIT
+  scripts, and its `craft-*` references are attributed translations of the
+  upstream references, not reconstructed prose; verbatim license and per-file
+  provenance travel in every copy. OMH core never imports/executes the
+  companion. See [Show-reel toolkit](SHOW-REEL-TOOLKIT.md).
 - When a tracker issue is resolved (folded in or rejected), update
   `reviewed_ref` and `reviewed_on` in the same PR that resolves it, and append
   the closure receipt that records the decision. Both halves or neither; see
@@ -140,7 +142,7 @@ A new row added to the table needs either a receipt with a null
 
 | OMH skill | Category | Upstream repo | Paths studied | License | reviewed_on | reviewed_ref |
 | --- | --- | --- | --- | --- | --- | --- |
-| `show-reel` method + optional companion | materials | https://github.com/revfactory/showreel | Original method prose informed by design/audio/QA references; selected modified MIT companion techniques from `assets/engine/{engine.js,fx.js,scenes.js,index.html}`, `references/techniques.md`, and `scripts/{new_project.py,render.mjs,timeline.py,synth_music.py,mix.py,motion_check.py,qa_check.py}`; explicit `toolkit/upstream-manifest.json` records exact original/local hashes and modifications; `LICENSE` retained verbatim as `toolkit/LICENSE.upstream`; not a full upstream runtime or dependency bootstrap | MIT, Copyright (c) 2026 Minho Hwang (revfactory) | 2026-10-22 | 64521220a2f8e91cb9894400c48c15b7f45205d6 |
+| `show-reel` method + optional companion | materials | https://github.com/revfactory/showreel | Original method prose; complete English translations of `SKILL.md` and `references/{brief,story,audio,images,design,engine,techniques,qa}.md` as `references/craft-*.md`; upstream engine `assets/engine/{engine.js,fx.js,scenes.js}` unmodified below a notice and `index.html` modified; modified MIT scripts from `scripts/{new_project.py,render.mjs,timeline.py,synth_music.py,mix.py,motion_check.py,qa_check.py,contact_sheet.py,finish.py,preflight.py,prep_images.py,music_tools.py,tools/cutout.swift}`; `toolkit/upstream-manifest.json` records exact original/local hashes, classification and modifications; `LICENSE` retained verbatim as `toolkit/LICENSE.upstream`; provider scripts (`eleven.py`, `narrate.py`, `codex_ref_image.sh`) not shipped | MIT, Copyright (c) 2026 Minho Hwang (revfactory) | 2026-10-22 | 64521220a2f8e91cb9894400c48c15b7f45205d6 |
 | `codebase-uml` (PR #1230) | planning | https://github.com/plantuml/plantuml | CLI flags/pragmas/size limits (docs, `src/main/java/net/sourceforge/plantuml/cli/CliFlag.java`) | GPL-3.0 (external tool, invoked not vendored) | 2026-09-04 | b2392e6230a1782e477a45d250b7cb9a569f95da |
 | `code-review` spec axis + smell baseline (PR #1237) | review | https://github.com/mattpocock (code-review skill, plugin dist 1.2.3) | `skills/engineering/code-review/SKILL.md` | plugin dist | 2026-09-01 | plugin 1.2.3 |
 | `ai-slop-cleaner` taxonomy + passes (PR #1239) | maintenance | https://github.com/Effeilo/claude-code-frontend-skills | `front-refactor/SKILL.md`, `front-refactor/front-refactor-rules.md` | MIT | 2026-09-01 | 3c9d5a0501ff |

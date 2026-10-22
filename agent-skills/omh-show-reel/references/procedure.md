@@ -90,7 +90,7 @@ Select muted, music-only or narration mode only as needed; measure reading, appr
 
 ### `reel_author_motion` (production)
 
-Read the installed `toolkit/README.md` and `references/motion-techniques.md` with ordinary file tools; explicitly select callable helpers or another observed host-tool recipe. Bind toolkit provenance and source-bound run receipts, safe inputs/cwd, versions, deterministic seek, commands, timeout/cancel and font readiness; serial capture has no resume/chunk/blur claim. Author motion without hidden installs or core subprocesses.
+Read the installed `toolkit/README.md`, `references/motion-techniques.md`, `references/craft-engine.md` and `references/craft-techniques.md` with ordinary file tools; write scenes fresh from the segment art direction with the engine or another observed host-tool recipe. Bind toolkit provenance and source-bound run receipts, safe inputs/cwd, versions, deterministic seek, commands, timeout/cancel and font readiness; serial capture has no resume/chunk claim. Author motion without hidden installs or core subprocesses.
 
 - Input refs: `objective audience and channel`, `duration format and budget`, `source brand and asset permissions`, `available production tools`
 - Output refs: `show_reel_renderer_handoff/v1`

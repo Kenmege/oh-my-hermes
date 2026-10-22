@@ -68,21 +68,21 @@ class MotionHelpersTests(unittest.TestCase):
         script = """
 const fs = require('node:fs'), vm = require('node:vm');
 const root = process.argv[1];
-const c = {console}; c.globalThis = c; vm.createContext(c);
-for (const f of ['assets/engine/engine.js', 'assets/engine/fx.js',
-'examples/techniques/kinetic-type.js', 'examples/techniques/depth-light.js',
-'examples/techniques/particles.js', 'examples/techniques/match-transform.js'])
+const c = {console, Intl}; c.window = c; c.addEventListener = () => {}; vm.createContext(c);
+for (const f of ['assets/engine/engine.js', 'assets/engine/fx.js'])
   vm.runInContext(fs.readFileSync(root+'/'+f, 'utf8'), c);
-const {REEL:R, TECHNIQUES:T} = c;
+const {REEL:R, FX} = c;
 const times = [0, .15, .7, 1.9, .15, 0, 1.9];
-const evaluate = t => [T.kineticPose(t,{start:.1,duration:.8,stagger:.05,index:2}),
- T.depthGeometry(t,{seed:7,count:9}), T.particleGeometry(t,{seed:7,count:20}),
- T.matchGeometry(t,{from:{x:10,y:20,w:30,h:40},to:{x:80,y:90,w:120,h:140},start:0,duration:2})];
+const evaluate = t => [R.kf(t, [[0, 0], [.5, 1, R.ease.outExpo], [2, .2]]), R.spring(t, .1), R.prog(t, .1, .8),
+ R.win(t, .2, 1.6), R.shake(t, [[.1, 12, .45]]), R.pulse(t, [.1, .7]), R.noise(t, 3), R.scramble('SHOWREEL', R.prog(t, 0, 1.5), t, 7)];
 const rows = times.map(evaluate);
 if (JSON.stringify(rows[0])!==JSON.stringify(rows[5]) || JSON.stringify(rows[2])===JSON.stringify(rows[3]) ||
 JSON.stringify(rows[3])!==JSON.stringify(rows[6])) throw Error('seek history leaked');
-if (JSON.stringify(T.particleGeometry(1,{seed:7,count:20})) === JSON.stringify(T.particleGeometry(1,{seed:8,count:20}))) throw Error('seed ignored');
+if (R.rand(5, 7) === R.rand(5, 8) || R.noise(1, 7) === R.noise(1, 8)) throw Error('seed ignored');
+if (R.scramble('SHOWREEL', 1, .3, 7) !== 'SHOWREEL') throw Error('scramble must resolve to the final text');
 if (R.spring(-1)!==0 || !Number.isFinite(R.spring(.4))) throw Error('spring');
+for (const name of ['camera', 'impact', 'wipe', 'floor', 'dust', 'rays', 'flash', 'letterbox', 'vignette', 'grain', 'hud', 'subtitles'])
+  if (typeof FX[name] !== 'function') throw Error('missing FX.' + name);
 console.log(JSON.stringify(rows));
 """
         result = subprocess.run([NODE, "-e", script, str(KIT)], text=True, capture_output=True, timeout=20)
@@ -145,11 +145,11 @@ class LocalProjectTests(unittest.TestCase):
             with patch("subprocess.Popen", side_effect=AssertionError("implicit process")), patch("socket.socket", side_effect=AssertionError("implicit network")):
                 out = root / "project"
                 api["initialize"](out, duration=2, fps=30, width=640, height=360, language="ar", direction="rtl", fonts=[font])
-            config = json.loads((out / "reel/project.json").read_text(encoding="utf-8"))
+            config = json.loads((out / "project.json").read_text(encoding="utf-8"))
             self.assertEqual(config["language"], "ar")
             self.assertEqual(config["direction"], "rtl")
-            self.assertEqual((out / "reel/assets/chosen.ttf").read_bytes(), font.read_bytes())
-            scene = out / "reel/scene.js"
+            self.assertEqual((out / "reel/fonts/chosen.ttf").read_bytes(), font.read_bytes())
+            scene = out / "reel/scenes.js"
             scene.write_text("AUTHORED", encoding="utf-8", newline="\n")
             with self.assertRaises(FileExistsError):
                 api["initialize"](out, duration=2, fonts=[font])
@@ -230,10 +230,10 @@ class HostRenderTests(unittest.TestCase):
                     dest = root / "project"
                     result = subprocess.run([sys.executable, str(KIT / "scripts/new_project.py"), str(dest), "--font", os.environ["SHOW_REEL_FONT"], "--duration", "1", "--fps", "4", "--width", "320", "--height", "180"], capture_output=True, text=True, timeout=20)
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    scene = dest / "reel/scene.js"
+                    scene = dest / "reel/scenes.js"
                     scene.write_text(scene.read_text(encoding="utf-8")+f"\nsetTimeout(()=>window.open('{scheme}://127.0.0.1:{listener.server_port}/sentinel'),0);", encoding="utf-8", newline="\n")
                     out = root / "popup.mp4"
-                    command = [tools["binaries"]["node"], str(KIT / "scripts/render.mjs"), "--dir", str(dest / "reel"), "--out", str(out), "--browser", tools["chrome"], "--dependency-root", tools["available_puppeteer_core"]["root"], "--ffmpeg", tools["binaries"]["ffmpeg"], "--ffprobe", tools["binaries"]["ffprobe"]]
+                    command = [tools["binaries"]["node"], str(KIT / "scripts/render.mjs"), "--dir", str(dest / "reel"), "--out", str(out), "--browser", tools["chrome"], "--dependency-root", tools["available_puppeteer_core"]["root"], "--ffmpeg", tools["binaries"]["ffmpeg"], "--ffprobe", tools["binaries"]["ffprobe"]] + (["--color", tools["color"]] if tools.get("color") else [])
                     result = subprocess.run(command, capture_output=True, text=True, timeout=20)
                     self.assertNotEqual(result.returncode, 0, "popup escaped request admission")
                     self.assertEqual(hits, [], "browser sent an undeclared loopback HTTP request")
@@ -269,10 +269,10 @@ class HostRenderTests(unittest.TestCase):
                 base = Path(td)
                 init = subprocess.run([sys.executable, str(KIT / "scripts/new_project.py"), str(base / "project"), "--font", os.environ["SHOW_REEL_FONT"], "--duration", "2", "--fps", "8", "--width", "320", "--height", "180"], capture_output=True, text=True, timeout=20)
                 self.assertEqual(init.returncode, 0, init.stderr)
-                scene = base / "project/reel/scene.js"
+                scene = base / "project/reel/scenes.js"
                 scene.write_text(scene.read_text(encoding="utf-8") + "\n" + injected, encoding="utf-8", newline="\n")
                 out = base / "fault.mp4"
-                command = [tools["binaries"]["node"], str(KIT / "scripts/render.mjs"), "--dir", str(base / "project/reel"), "--out", str(out), "--browser", tools["chrome"], "--dependency-root", tools["available_puppeteer_core"]["root"], "--ffmpeg", tools["binaries"]["ffmpeg"], "--ffprobe", tools["binaries"]["ffprobe"], "--timeout", "2"]
+                command = [tools["binaries"]["node"], str(KIT / "scripts/render.mjs"), "--dir", str(base / "project/reel"), "--out", str(out), "--browser", tools["chrome"], "--dependency-root", tools["available_puppeteer_core"]["root"], "--ffmpeg", tools["binaries"]["ffmpeg"], "--ffprobe", tools["binaries"]["ffprobe"], "--timeout", "2"] + (["--color", tools["color"]] if tools.get("color") else [])
                 result = subprocess.run(command, capture_output=True, text=True, timeout=20)
                 self.assertNotEqual(result.returncode, 0, result.stdout)
                 self.assertFalse(out.exists())
@@ -301,7 +301,14 @@ class HostRenderTests(unittest.TestCase):
             base = Path(td)
             init = subprocess.run([sys.executable, str(KIT / "scripts/new_project.py"), str(base / "project"), "--font", os.environ["SHOW_REEL_FONT"], "--duration", "2", "--fps", "8", "--width", "320", "--height", "180"], capture_output=True, text=True, timeout=20)
             self.assertEqual(init.returncode, 0, init.stderr)
+            # Four time segments drawn through the upstream engine: distinct pixels per segment, none between seeks.
+            scenes = base / "project/reel/scenes.js"
+            scenes.write_text(scenes.read_text(encoding="utf-8") + "['a','b','c','d'].forEach((id,i)=>REEL.scene({id,start:i*.5,end:(i+1)*.5,"
+                              "setup(el){el.style.background=['#102030','#e7ba64','#e9eee8','#6b4cff'][i];this.t=REEL.h('div','a',el,'Motion '+id);},"
+                              "render(lt){REEL.css(this.t,{transform:`translateX(${(lt*120).toFixed(1)}px)`});}}));\n", encoding="utf-8", newline="\n")
             command = [tools["binaries"]["node"], str(KIT / "scripts/render.mjs"), "--dir", str(base / "project/reel"), "--browser", tools["chrome"], "--dependency-root", tools["available_puppeteer_core"]["root"], "--ffmpeg", tools["binaries"]["ffmpeg"], "--ffprobe", tools["binaries"]["ffprobe"]]
+            if tools.get("color"):
+                command += ["--color", tools["color"]]
             out = base / "gallery.mp4"
             result = subprocess.run(command + ["--out", str(out)], capture_output=True, text=True, timeout=100)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -317,11 +324,10 @@ class HostRenderTests(unittest.TestCase):
             self.assertEqual(hashes[0], hashes[5])
             self.assertEqual(hashes[1], hashes[4])
             self.assertEqual(len(set(hashes)), 4)
-            config_path = base / "project/reel/project.json"
+            config_path = base / "project/project.json"
             config = json.loads(config_path.read_text(encoding="utf-8"))
             config["texts"] = [{"text": chr(0x10ffff), "lang": "en", "dir": "ltr"}]
             config_path.write_text(json.dumps(config), encoding="utf-8", newline="\n")
-            (base / "project/reel/project.js").write_text("globalThis.PROJECT=" + json.dumps(config) + ";", encoding="utf-8", newline="\n")
             result = subprocess.run(command + ["--out", str(base / "missing-glyph.mp4")], capture_output=True, text=True, timeout=30)
             self.assertNotEqual(result.returncode, 0, "missing glyph silently used browser fallback")
             self.assertIn("glyph", result.stderr.lower())

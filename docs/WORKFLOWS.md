@@ -8512,7 +8512,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - First steps:
   - Read `references/brief-and-locales.md` and `references/storyboard-and-evidence.md` before proposing visuals. Recover objective, audience, channel, duration, aspect ratio, fps, size cap, source/brand permissions, and tool availability from supplied context; honor explicit format and duration, ask only for irretrievable hard facts, and label reversible creative assumptions.
   - Resolve content language from current explicit user/audience/channel instructions, then applicable stable preferences, then user language. Keep reply_language under host persona and separate content_locale, onscreen_text, subtitle_text, pronunciation_text, voice_policy, font_policy, and direction_policy; never replace literal IDs, commands, URLs, or trademarks.
-  - Compare at least 3 genuinely distinct concept candidates before selection; record the rubric, winner, rejected alternatives, and per-segment art direction. Read `toolkit/README.md` under the loaded skill directory with a file reader, then `references/renderer-adapter.md` before choosing tools; a missing renderer means HOLD on a requested video, not a completed delivery.
+  - Compare at least 3 genuinely distinct concept candidates before selection; record the rubric, winner, rejected alternatives, and per-segment art direction. Read `references/craft-workflow.md` (the full upstream production method), `toolkit/README.md` under the loaded skill directory with a file reader, then `references/renderer-adapter.md` before choosing tools; a missing renderer means HOLD on a requested video, not a completed delivery.
 - Use when: Use when a user needs an authored time-based product or work showcase, from evidence and audience framing to rendered motion, localized variants, export inspection, and source delivery.
 - Do not use when:
   - Only a static infographic or summary card is needed; use `img-summary`.
@@ -8638,7 +8638,7 @@ These surfaces are generated command references, not installed Hermes workflow s
     - Input refs: `objective audience and channel`, `duration format and budget`, `source brand and asset permissions`, `available production tools`
     - Output refs: `show_reel_renderer_handoff/v1`
     - Check IDs: `reel_adapter_check`
-    - Instruction: Read the installed `toolkit/README.md` and `references/motion-techniques.md` with ordinary file tools; explicitly select callable helpers or another observed host-tool recipe. Bind toolkit provenance and source-bound run receipts, safe inputs/cwd, versions, deterministic seek, commands, timeout/cancel and font readiness; serial capture has no resume/chunk/blur claim. Author motion without hidden installs or core subprocesses.
+    - Instruction: Read the installed `toolkit/README.md`, `references/motion-techniques.md`, `references/craft-engine.md` and `references/craft-techniques.md` with ordinary file tools; write scenes fresh from the segment art direction with the engine or another observed host-tool recipe. Bind toolkit provenance and source-bound run receipts, safe inputs/cwd, versions, deterministic seek, commands, timeout/cancel and font readiness; serial capture has no resume/chunk claim. Author motion without hidden installs or core subprocesses.
   - `reel_review_revise` (`validation`)
     - Input refs: `objective audience and channel`, `duration format and budget`, `available production tools`
     - Output refs: `show_reel_preview_review/v1`
