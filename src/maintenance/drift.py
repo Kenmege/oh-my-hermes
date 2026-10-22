@@ -783,7 +783,45 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # noun (9); a first sentence asked rather than told and a
             # causative over a definite film with a relative clause (2); two
             # more asked first sentences and a causative with `on` (3).
-            expected=993,
+            # Hermes' slash-skill scaffold read as the invocation typed adds
+            # four, each dispatched on main from the skill body Hermes pasted
+            # in: a question and a status word after /dag-ulw, and another
+            # skill's slash turn with and without an instruction (4).
+            # A question after the /dag-ulw sigil adds six, each dispatched
+            # dag-ulw on main: a Korean question, how to use it, what is left,
+            # whether CI passed, a question after a skill stacked on it, and a
+            # Korean question in Hermes' scaffold (6).
+            # A stop or a question after an explicit invocation adds ten, each
+            # dispatched its skill on main: /ulw-work, /ulw-loop,
+            # /ulw-interview, /omh-plan, /omh-code-review and
+            # /omh-app-debugging stop, /ulw-plan what does this do?, /ulw-work
+            # 그만, /ulw-plan 이게 뭐야?, and /ulw-work stop in Hermes' scaffold
+            # (10). The rule after an explicit sigil adds five, each
+            # dispatched on main: /ulw-work 停止 and /ulw-plan 何これ (their
+            # skill), /omh-code-review 这是什么 (OMH's intro card), /dag-ulw
+            # 停止 (a run), and /dag-ulw show me the run in Hermes' scaffold
+            # (a plan) (5). A stop of the skill's own run adds five, each
+            # dispatched its skill on main: /ulw-loop stop the loop,
+            # /omh-code-review 리뷰 취소, /ulw-loop 그만해 비싸 (a stop said
+            # with why), /ulw-work 别做了, and /omh-code-review what is
+            # omh-code-review? (a question that names the skill) (5); the
+            # Chinese question case moved from /omh-code-review to /omh-plan,
+            # since after code-review "what is this" asks for the review.
+            # A stop of a run word the first table lacked, in Japanese or as
+            # a Korean compound, and a question about using the skill add
+            # four, each dispatched on main: /ulw-research stop the research,
+            # /ulw-loop ループを止めて, /omh-code-review 코드 리뷰 취소 (their
+            # skill), and /omh-code-review 어떻게 써? (OMH's intro card) (4).
+            # A question that names the skill by its label adds one,
+            # dispatched its skill on main: /ulw-loop what is ulw-loop? (1).
+            # A Korean stop then only fillers, a negation or what the person
+            # is in the middle of adds six, each dispatched ultrawork on main:
+            # /ulw-work 멈춰 일단, 멈춰 잠깐만, 취소해 이거 아니야, 그만해 그거
+            # 아니야, 그만해 지금 회의 중, 멈춰 멈춰 멈춰 제발 (6). A question
+            # that names ultrawork by its short name, /ulw-work what is ulw?,
+            # and an uppercase sigil's stop, /ULW-LOOP stop the loop, add two,
+            # each dispatched its skill on main (2).
+            expected=1036,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1169,7 +1207,58 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # skill (15). Five more production requests (zh courtesy, the
             # shortest request, make/cut/produce) and two chained requests
             # that keep their owner (7).
-            expected=991,
+            # Hermes' slash-skill scaffold read as the invocation typed adds
+            # three, each routed to ultrawork on main from the skill body
+            # Hermes pasted in: /dag-ulw with a request and bare, and /ulw-plan
+            # with a request (3).
+            # A request after the /dag-ulw sigil that holds a question word or
+            # is asked politely still dispatches: find why it broke and fix
+            # it, see what is wrong and tidy the PRs, the owner's many-PR
+            # turn, and a polite Korean request (4).
+            # A real request after an explicit invocation still dispatches:
+            # /ulw-plan with a request, /omh-code-review this PR, /ulw-loop
+            # with a goal, and /ulw-work with a stop word that names the
+            # work (4), and /omh-app-debugging asked to find out why a test
+            # fails or why the run stopped, a diagnosis question (2).
+            # The rule after an explicit sigil adds thirteen. A stop verb with
+            # a task object (/ulw-work kill the zombie processes, /omh-git-
+            # workflow abort the rebase, /omh-frontend stop the modal from
+            # flickering, /ulw-loop 로그 폭주 멈춰줘) or a question with one
+            # (/ulw-plan how should we migrate billing?, /omh-code-review is
+            # it safe to merge?) runs its skill, as on main (6). A status
+            # request gets OMH's status card where main ran the skill:
+            # /ulw-work status, /ulw-loop 상태 보여줘, /omh-app-debugging is it
+            # running? and 끝났어? (4), and /ulw-work show status in Hermes'
+            # scaffold, as on main (1). A status request runs a skill whose
+            # work it is: /omh-running-work-board status and
+            # /omh-verification-gate is it done?, as on main (2).
+            # A stop of something other than the skill's own run still runs
+            # it: /ulw-loop stop the loop when tests pass and
+            # /omh-data-pipelines stop the pipelines, as on main (2); so does
+            # a stop after the cancel skill, its work: /omh-cancel stop, as on
+            # main (1). A this/it question after a skill that explains or
+            # judges what the person points at is its work: /omh-code-review
+            # how is it?, and /omh-codebase-onboarding what does this do?, as
+            # on main (2), and /omh-code-review 这是什么 and
+            # /omh-paper-learning what is it?, which got OMH's intro card on
+            # main (2).
+            # A skill with no determiner or with "a", or a name after an
+            # article, names a thing, so the skill runs, as on main: /omh-docs
+            # what is a skill?, /omh-skill-scout what can a skill do?,
+            # /omh-frontend what does the frontend do?, /ulw-research what is
+            # the research about?, /ulw-context what is the context? (5). So
+            # do a Korean stop verb before its object, /ulw-work 취소해 주문,
+            # and an own-run word inside a domain noun, /ulw-loop 무한 루프
+            # 멈춰, as on main (2). A single common word that is a skill's
+            # name is its material, not the skill: /omh-rust what is rust?,
+            # which got OMH's intro card on main (1). A Korean stop verb
+            # before a task noun is work, /ulw-work 멈춰 서버, as on main (1),
+            # and /ulw-context status gets the status card where main ran the
+            # skill: aligning project terms has no status of its own (1).
+            # /omh-cancel 상태 보여줘 gets the status card where main ran
+            # cancel: only a skill whose job is reporting a state runs on a
+            # status request (1).
+            expected=1035,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

@@ -66,6 +66,14 @@ turn from a messaging gateway, the one place Hermes writes it. The cuts
 above are the ways it fails: what follows the cut is read as the person's,
 as all of it was before.
 
+A slash skill is the one host template both questions read. Hermes sends
+`/<skill> <text>` as the skill's whole body inside a frame
+(`_build_skill_message`, `agent/skill_commands.py`), so the body is never the
+person's words. For a skill of OMH's own, `person_request_text` reads the
+turn as it was typed, `/<skill> <text>`, as Hermes' `describe_skill_invocation`
+does. Any other skill is a `host_command_turn`: the person chose it, and an
+OMH route hint would compete with it.
+
 `loop_timer_verdict` -- is this request a loop on a timer? "loop every 5
 minutes and check CI", `/loop 5m ...`, "every 10 minutes loop over the inbox"
 or "5분마다 ... 루프 돌려줘" asks for a check repeated on a cadence, which is
@@ -205,6 +213,27 @@ _DISPLAY_NAME_PREFIX = re.compile(r"\[([^\[\n]*)\] ")
 # is the person invoking something, not a display name.
 _INVOCATION_BRACKET = re.compile(r"\[\s*(?:/|\$|\./|(?:omh|ulw)[- ])", re.IGNORECASE)
 _OMH_BRACKET_WORDS = frozenset({"omh", "ulw"})
+
+# -- a slash skill's scaffold ------------------------------------------------
+# Hermes never hands `/<skill> <text>` to a hook as typed: the CLI, the TUI,
+# the gateway and cron all send the skill's whole body inside a frame
+# (`_build_skill_message` and `_scaffold_header`, `agent/skill_commands.py`).
+# The frame's first line, whole, for one skill and for a bundle or a stacked
+# `/a /b` invocation, and the markers Hermes' own `describe_skill_invocation`
+# reads the instruction back by. Verbatim from upstream, the same in the floor
+# release (`v2026.9.7`) and in 0.22.2.
+_SINGLE_SKILL_FRAME = re.compile(
+    r'\[IMPORTANT: The user has invoked the "([^"\n]*)" skill, indicating they want you to follow its '
+    r"instructions\. The full skill content is loaded below\.\]\n"
+)
+_BUNDLE_FRAME = re.compile(
+    r'\[IMPORTANT: The user has invoked the "([^"\n]*)" (stacked )?skill bundle, loading \d+ skills together\. '
+    r"Treat every skill below as active guidance for this turn\.\]\n"
+)
+_SINGLE_SKILL_INSTRUCTION = "The user has provided the following instruction alongside the skill invocation: "
+_RUNTIME_NOTE = "\n\n[Runtime note:"
+_BUNDLE_USER_INSTRUCTION = "\nUser instruction: "
+_BUNDLE_FIRST_SKILL_BLOCK = "\n\n[Loaded as part of the "
 
 # -- the cadence -------------------------------------------------------------
 _TIMER_UNITS = frozenset(
@@ -428,6 +457,49 @@ def _display_name_prefix_end(text: str) -> int:
     return prefix.end()
 
 
+def _skill_invocation(text: str, *, after_sender: bool) -> tuple[str, bool | None] | None:
+    """(the invocation as typed, whether every skill it loads is OMH's own) when
+    `text` opens with Hermes' slash-skill frame, or None.
+
+    `describe_skill_invocation(content, separator=" ")` in stdlib: `/<name>
+    <instruction>`, or `/<name>` for a bare invocation; a stacked one keeps its
+    typed `/a /b`. One skill's instruction follows its body, which may quote
+    the marker, so the LAST marker is the person's, up to the runtime note. A
+    bundle's sits in its header, read up to the first loaded skill's block, so
+    a body below cannot supply one. With `after_sender`, a shared session's
+    `[<name>] ` sender prefix may come first, as Hermes writes it there.
+
+    Ownership is None when the catalog sidecar cannot be read. A named bundle
+    is the person's own set, never one of OMH's skills.
+    """
+    if after_sender:
+        sender = SENDER_PREFIX.match(text)
+        if sender and not (_SINGLE_SKILL_FRAME.match(text) or _BUNDLE_FRAME.match(text)):
+            text = text[sender.end():]
+    single = _SINGLE_SKILL_FRAME.match(text)
+    bundle = None if single else _BUNDLE_FRAME.match(text)
+    if single:
+        name = single.group(1).strip()
+        skills: tuple[str, ...] = (name,)
+        at = text.rfind(_SINGLE_SKILL_INSTRUCTION)
+        instruction = text[at + len(_SINGLE_SKILL_INSTRUCTION):].split(_RUNTIME_NOTE, 1)[0] if at != -1 else ""
+    elif bundle:
+        name = bundle.group(1).strip()
+        skills = tuple(key.lstrip("/") for key in name.split()) if bundle.group(2) else ()
+        header = text.split(_BUNDLE_FIRST_SKILL_BLOCK, 1)[0]
+        at = header.find(_BUNDLE_USER_INSTRUCTION)
+        instruction = header[at + len(_BUNDLE_USER_INSTRUCTION):] if at != -1 else ""
+    else:
+        return None
+    if not name:
+        return None
+    label = name if name.startswith("/") else f"/{name}"
+    instruction = instruction.strip()
+    labels = _skill_shortlist.catalog_skill_labels()
+    owned = None if labels is None else bool(skills) and all(skill in labels for skill in skills)
+    return (f"{label} {instruction}" if instruction else label), owned
+
+
 def person_request_text(message: str, *, messaging: bool = False) -> str:
     """The words the person wrote in this turn, which is all OMH routes on.
 
@@ -443,6 +515,14 @@ def person_request_text(message: str, *, messaging: bool = False) -> str:
     stays with everything after it, and so does a host command turn's frame,
     which is what `host_command_turn` reads.
 
+    A slash skill of OMH's own is read as the person typed it, `/dag-ulw
+    <text>`. Hermes sends it as the skill's whole body inside a frame
+    (`_skill_invocation`), and that body, read as the person's words, picked
+    the workflows its own prose names instead. Only a turn that opens with the
+    frame's exact first line is read this way, so a typed message reads as it
+    did before. Any other skill's scaffold is left whole, for
+    `host_command_turn`.
+
     Only what decides a route reads this. What OMH hands on -- a forwarded
     routing prompt, a coding handoff, a plan -- carries the whole turn, so the
     quote, an attachment's path and the backfill still reach it as context.
@@ -450,7 +530,25 @@ def person_request_text(message: str, *, messaging: bool = False) -> str:
     text = _after_gateway_material(message)
     if messaging and not text.startswith(HOST_BLOCK_OPENERS) and not _opens_with_frame(_fold(text)):
         text = text[_display_name_prefix_end(text):]
+    invocation = _skill_invocation(text, after_sender=messaging)
+    if invocation is not None and invocation[1] is not False:
+        return invocation[0]
     return text
+
+
+def handed_on_text(message: str) -> str:
+    """The turn as OMH hands it on (a coding handoff, a plan's statement): whole, except that the scaffold of a
+    slash skill of OMH's own is the invocation typed, after any gateway material and sender prefix before it.
+
+    The body Hermes loaded is its instruction to its own agent, not context the person gave: a handoff that carried
+    it judged every path the skill names, Hermes' own absolute skill directory among them, as one the person named.
+    """
+    text = _after_gateway_material(message)
+    invocation = _skill_invocation(text, after_sender=True)
+    if invocation is None or invocation[1] is False:
+        return message
+    sender = None if (_SINGLE_SKILL_FRAME.match(text) or _BUNDLE_FRAME.match(text)) else SENDER_PREFIX.match(text)
+    return message[: len(message) - len(text)] + (sender.group() if sender else "") + invocation[0]
 
 
 def _host_command_turn(text: str) -> bool:
@@ -458,6 +556,9 @@ def _host_command_turn(text: str) -> bool:
     # A host block still open here never closed; what follows it is inside it.
     if text.startswith(HOST_BLOCK_OPENERS):
         return False
+    invocation = _skill_invocation(text, after_sender=True)
+    if invocation is not None:
+        return invocation[1] is False
     if _opens_with_frame(_fold(text)):
         return True
     sender = SENDER_PREFIX.match(text)
@@ -465,7 +566,14 @@ def _host_command_turn(text: str) -> bool:
 
 
 def host_command_turn(message: object) -> bool:
-    """Whether Hermes opened this turn from one of its own session-command templates."""
+    """Whether Hermes opened this turn from one of its own session-command templates.
+
+    A slash skill that is not one of OMH's is one too: the person picked that
+    skill, and the body Hermes loaded for it is the turn's instruction, so an
+    OMH route hint read from its instruction would compete with the skill the
+    person chose (`_skill_invocation`). A slash skill of OMH's own is not; it
+    routes on its invocation as typed (`person_request_text`).
+    """
     return isinstance(message, str) and _host_command_turn(message)
 
 
