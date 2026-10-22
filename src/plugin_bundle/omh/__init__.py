@@ -194,6 +194,11 @@ def register(ctx: _PluginContext) -> None:
         from .egress_attempts import register as register_egress_attempts
         register_egress_attempts(ctx, egress_config)
 
+    from .child_calibration import (
+        CHILD_CALIBRATION_SECTION_ID,
+        CHILD_CALIBRATION_SECTION_MAX_CHARS,
+        child_calibration_section,
+    )
     from .delegation_protocol import (
         DELEGATION_PROTOCOL_SECTION,
         DELEGATION_PROTOCOL_SECTION_ID,
@@ -425,6 +430,18 @@ def register(ctx: _PluginContext) -> None:
             delegation_protocol_section,
             position="after_memory",
             max_chars=len(DELEGATION_PROTOCOL_SECTION),
+        )
+    # A distinct child-only section: shared model calibration, not a protocol
+    # rewrite. Native section metadata cannot reliably expose effort, so this
+    # applies to every child while fanout retains its own high-effort gate.
+    if not _section_already_registered(ctx, CHILD_CALIBRATION_SECTION_ID):
+        _register_optional_surface(
+            ctx,
+            "register_system_prompt_section",
+            CHILD_CALIBRATION_SECTION_ID,
+            child_calibration_section,
+            position="after_memory",
+            max_chars=CHILD_CALIBRATION_SECTION_MAX_CHARS,
         )
     _ = ctx.register_hook("pre_tool_call", pre_tool_call)
     _register_optional_hook(ctx, "on_session_start", on_session_start)
