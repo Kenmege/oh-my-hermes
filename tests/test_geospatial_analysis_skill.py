@@ -14,6 +14,8 @@ import unittest
 from unittest.mock import patch
 
 from _local_package import load_local_package
+from _toolkit_path_guard import (POSIX_ONLY, assert_alias_does_not_exempt_links_below,
+                                 assert_only_system_aliases_trusted)
 
 load_local_package()
 ROOT = Path(__file__).resolve().parents[1]
@@ -128,6 +130,15 @@ class GeospatialCliTests(CliFixture):
         directory = self.root / "alias"
         directory.symlink_to(self.root, target_is_directory=True)
         self.refused(self.run_cli(**{"output-dir": directory / "result"}), "symlink")
+
+    def test_only_macos_system_aliases_are_trusted(self):
+        api = helper_api()
+        assert_only_system_aliases_trusted(self, api.safe_path, api.system_alias, self.root,
+                                           "symlink paths", traversal="path traversal")
+
+    @POSIX_ONLY
+    def test_a_trusted_alias_does_not_exempt_a_link_below_it(self):
+        assert_alias_does_not_exempt_links_below(self, helper_api().safe_path, "symlink paths")
 
     def test_traversal_and_oversized_input_refused(self):
         self.refused(self.run_cli(input=self.root / ".." / "left.json"), "traversal")

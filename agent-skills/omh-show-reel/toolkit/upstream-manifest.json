@@ -16,7 +16,7 @@
     "README.md": {
       "classification": "original_omh",
       "license": "MIT",
-      "local_sha256": "66d3a37e9385701df53bbe2d39ce3592fdf01c6dc75f6b8ff80b0c4032bdd378",
+      "local_sha256": "ea4b359f18d7ea3d3fd6819439c6b4f139611f7bf33a7ae339a1da575464d94b",
       "modification_notice": "Original OMH companion guidance/helper/example",
       "upstream": []
     },
@@ -207,7 +207,7 @@
     "scripts/new_project.py": {
       "classification": "modified_derivative",
       "license": "MIT",
-      "local_sha256": "37fe56b9cbcf4bb7805f45cc348b3570a9091279e478cd06dbb0b056ad6d9b2c",
+      "local_sha256": "63f326fdb4502bc555ab4878f6d3bea898b374b06d6637b3bdb271cba3ff4eee",
       "modification_notice": "Upstream folder layout and engine template; explicit local fonts with family/weight read from the font, no download or npm setup, existing project refused",
       "upstream": [
         {
@@ -255,7 +255,7 @@
     "scripts/render.mjs": {
       "classification": "modified_derivative",
       "license": "MIT",
-      "local_sha256": "c50bdb4f9fc8b0448937196147a309749fc21b98e07289caff6176dea3a67443",
+      "local_sha256": "e90a5e6de48291295825964c8f7ea757289cd8b400fe244be0724f729a9696e4",
       "modification_notice": "Puppeteer adapter with a realpath allowlist server; keeps upstream --scale/--sub/--shutter/--crf 16/--preset/--from/--to/--every; serial capture piped to FFmpeg",
       "upstream": [
         {
@@ -279,7 +279,7 @@
     "scripts/timeline.py": {
       "classification": "modified_derivative",
       "license": "MIT",
-      "local_sha256": "c51326b7effd7a880622f79dc1adffa04b12116db13f1822046ed44ceb58fa41",
+      "local_sha256": "511bbd685c1965f807369516eff97e080963c8951cf03fd4880eb79a60a5cfaa",
       "modification_notice": "Explicit cue graph plus the upstream script.json composition with a stdlib envelope",
       "upstream": [
         {

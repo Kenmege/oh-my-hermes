@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import math
+import os
 import platform
 from pathlib import Path
 import re
@@ -33,12 +34,24 @@ def parser():
     return cli
 
 
+def system_alias(part):
+    # macOS ships /etc, /tmp and /var (home of the default temp dir) as links
+    # into /private. Only root can create a top-level entry, so trust exactly
+    # those three, and only when the link names the same directory there.
+    if sys.platform != "darwin" or part.parent != Path("/") or part.name not in ("etc", "tmp", "var"):
+        return False
+    try:
+        return os.readlink(part) in ("private/" + part.name, "/private/" + part.name)
+    except OSError:
+        return False
+
+
 def safe_path(value):
     path = Path(value)
     if ".." in path.parts:
         raise ValueError("path traversal is not accepted")
     path = path.absolute()
-    if any(part.is_symlink() for part in (path, *path.parents)):
+    if any(part.is_symlink() and not system_alias(part) for part in (path, *path.parents)):
         raise ValueError("symlink paths are not accepted")
     return path
 

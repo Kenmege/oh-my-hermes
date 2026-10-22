@@ -64,9 +64,11 @@ area-preserving recommendation for real-world data.
 - No geometry repair. Mixed polygon/line positive-area intersection collections
   are rejected rather than silently dropping components. Zero-area touch-only
   pairs are counted separately. Pair intersections are actual Shapely operations.
-- Input/output paths may not contain traversal or symlink components. The
-  output directory must be new and its parent must already exist; no overwrite
-  flag exists. Not a defense against a concurrently hostile filesystem writer.
+- Input/output paths may not contain traversal or symlink components; the
+  only links accepted are macOS's own `/etc`, `/tmp` and `/var` into `/private`.
+  The output directory must be new and its parent must already exist; no
+  overwrite flag exists. Not a defense against a concurrently hostile
+  filesystem writer.
 - Dependency, input, CRS or geometry failure exits 2 without creating output.
   An I/O failure after computation can leave partial output, never an intentional
   success receipt; require exit zero and inspect all artifacts. PROJ networking
