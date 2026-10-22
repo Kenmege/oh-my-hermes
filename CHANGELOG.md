@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A skill command typed once in the OMH TUI shows as one input row.**
+  `/dag-ulw <request>` printed `> /dag-ulw <request>` twice: the command's
+  echo, then the prompt the skill sends, which shows Hermes' `display` for
+  the turn. Hermes got one `command.dispatch` and one `prompt.submit` either
+  way; only the screen doubled. Once `command.dispatch` answers with a prompt,
+  the TUI takes the echo back and the prompt row is the input. That row shows
+  Hermes' `display`, the same row a resumed or rewound session draws for the
+  turn. With no `display`, it shows the command as typed: a typed
+  `/plan <task>` is one `> /plan <task>` row, no longer the echo followed by
+  the whole plan scaffold, which is still what is sent. A dispatch notice,
+  such as stacked skills loading, goes under the row, and a refused prompt
+  reads as one for a typed prompt. Commands that print output keep their
+  echo. The same line sent twice still shows twice and is sent twice.
+
 ## 4.0.1 - 2026-10-22
 
 - **`omh doctor`'s real-loader probe can observe a load on Windows, and on the

@@ -162,8 +162,9 @@ class SlashInvocation:
     def shown(self) -> str:
         """What the transcript shows for a prompt the command sends when Hermes names no display text.
 
-        The command itself when plan mode wrote it; "" for a typed command,
-        which keeps showing the prompt Hermes built.
+        The command itself when plan mode wrote it. "" for a typed command:
+        its prompt row takes its echo's text (`App._on_dispatch`), and only
+        an echo already printed leaves the prompt Hermes built to show.
         """
         return f"/{self.text}" if self.for_plan_mode else ""
 

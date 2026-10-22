@@ -3326,12 +3326,24 @@ class App(ModesMixin, AgentViewMixin):
                 self.transcript.add_notice(f"/{invocation.name}: the alias did not resolve.", NOTICE_WARN)
             return
         notice = as_text(result.get("notice")).strip()
+        message = as_text(result.get("message"))
+        display = as_text(result.get("display")).strip()
+        sends = kind in ("send", "skill") and bool(message.strip())
+        echo = self.transcript.withdraw_command() if sends and self.sid else None
+        if echo is not None:
+            # One row for what the person ran: the prompt's, with Hermes' `display` for it (a skill's `/name arg`) or
+            # else the echo's text, never the scaffold sent (a typed /plan's). The prompt is then the person's, as a
+            # typed one is: what it says and its call are not the echo's.
+            with self._for_command(None):
+                self._send_prompt(message, display or echo.command, typed=invocation.typed, hold=invocation.held)
+                if notice:
+                    self.transcript.add_aside(NoticeBlock(notice))
+            return
         if notice:
             self.transcript.add_notice(notice)
-        message = as_text(result.get("message"))
         if kind in ("send", "skill"):
             if message.strip():
-                shown = as_text(result.get("display")).strip() or invocation.shown
+                shown = display or invocation.shown
                 self._send_prompt(message, shown, typed=invocation.typed, hold=invocation.held)
             else:
                 self.transcript.add_notice(f"/{invocation.name}: empty message", NOTICE_WARN)

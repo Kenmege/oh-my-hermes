@@ -1049,6 +1049,22 @@ class Transcript:
             self._write_held()  # a steer sent with /steer goes under its echo; a held echo goes at a boundary
             self._version += 1
 
+    def withdraw_command(self) -> CommandBlock | None:
+        """Take back the open command's echo, with nothing printed under it, for the row the command turned into.
+
+        An open echo is never taken, so it has not reached scrollback. None,
+        and the echo stays, when none is open or it holds output.
+        """
+        block = self._open_command()
+        if block is None or block.parts:
+            return None
+        if self.blocks and self.blocks[-1] is block:
+            self.blocks.pop()
+        else:
+            self._held.remove(block)
+        self._version += 1
+        return block
+
     def add_assistant(self, text: str) -> None:
         """A finished reply (a resumed session's history), rendered like a streamed one."""
         if text.strip():

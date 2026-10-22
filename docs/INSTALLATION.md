@@ -913,6 +913,9 @@ A slash command you run is echoed in the transcript as `> /name arg` (but
 `/model`, `/keys`, `/history`, `/logs`, `/dag` or `/redraw`, which only open a picker
 or a pager, or repaint, and print nothing to attribute), and what it prints stays there, under it after `⎿`, in the terminal's scrollback
 (each command's output under its own echo, also when you send a second command before the first answers).
+A command that sends a prompt, such as a skill command (`/<skill> <request>`) or `/plan <task>`, is one row:
+the echo gives way to that prompt's row once Hermes answers. The row shows the command, as Hermes names it for
+the turn (the row a resumed session shows) or else as you typed it, and never the expanded prompt that is sent.
 Typed during a turn, the echo and its output wait under what is running and are written after it, as a
 steer is, so a command never cuts off a running tool call or splits a reply; one Hermes has not finished
 answering when the turn ends is written above that turn's done line with what it printed so far, and
