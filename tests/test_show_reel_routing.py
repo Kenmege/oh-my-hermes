@@ -118,6 +118,63 @@ class ShowReelRoutingTests(unittest.TestCase):
             self.assertEqual(route["selected_skill"], "oh-my-hermes")
             self.assertNotIn("prepare_show_reel", str(route))
 
+    def test_temporal_degree_mode_and_coordination_are_compositional(self):
+        self._assert_production_surfaces(tuple(
+            f"show-reel {marker} run {tail}"
+            for marker in ("skill", "workflow") for tail in (
+                "right now with the brand guide", "right away using our brief",
+                "as soon as the footage arrives", "as soon as approved assets are ready",
+                "offline with the approved assets", "online from the licensed archive",
+                "very securely using these files", "quite delicately with this testimony",
+                "safely and reliably using the source notes",
+                "offline and very efficiently with approved inputs",
+                "right now gently and consistently with the brand guide",
+                "as cautiously as possible using the archive",
+                "as rapidly as the renderer permits",
+            )
+        ))
+        self._assert_nonproduction_surfaces(tuple(
+            f"show-reel workflow run {tail}" for tail in (
+                "right", "right with approved assets", "as soon", "as soon as",
+                "as soon as the", "as soon as reference catalog please with notes",
+                "as soon as reference notes please with assets",
+                "as soon as reference notes",
+                "very with inputs", "very family with notes", "safely and with assets",
+                "safely and", "as gently as", "as family as possible with notes",
+                "offline reference catalog please with footage", "right now reference index",
+                "family very safely with approved inputs", "reference as soon as footage arrives",
+                "as gently as possible reference catalog with notes",
+            )
+        ))
+
+    def test_regular_manner_derivation_requires_adjacent_argument_roles(self):
+        # Productive formations, not a vocabulary of complete adverbs.
+        tails = (
+            "safely with the approved local assets", "exclusively with licensed footage",
+            "gently using the interview notes", "securely with approved assets",
+            "strictly with licensed footage", "reliably using these notes",
+            "efficiently from the briefing", "delicately with our sources",
+            "consistently using the archive", "rapidly with this source",
+            "cautiously without narration", "creatively with unusual source material",
+            "respectfully using the testimony", "tirelessly from the transcript",
+            "comfortably with approved inputs", "responsibly using licensed sources",
+        )
+        self._assert_production_surfaces(tuple(
+            f"show-reel {marker} run {tail}"
+            for marker in ("skill", "workflow") for tail in tails
+        ))
+        self._assert_nonproduction_surfaces(tuple(
+            f"show-reel {marker} run {head} {tail}"
+            for marker in ("skill", "workflow")
+            for head in ("family", "reply", "assembly", "supply", "anomaly", "tally",
+                         "quuxly", "jelly", "monopoly", "butterfly", "reference")
+            for tail in ("please", "with approved assets", "please safely with notes")
+        ) + (
+            "show-reel workflow run safely reference catalog with notes",
+            "show-reel workflow run securely --help",
+            "show-reel workflow run reliably",
+        ))
+
     def test_english_operational_adjuncts_compose_before_freeform_arguments(self):
         self._assert_production_surfaces(tuple(
             f"show-reel {marker} {verb} {tail}"

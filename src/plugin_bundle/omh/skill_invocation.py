@@ -69,13 +69,75 @@ _EN_ARGUMENT_PRONOUNS = frozenset({"it", "them", "this", "that", "these", "those
 _EN_CLAUSE_SUBJECTS = frozenset({"i", "you", "we", "they", "he", "she", "it"})
 
 
+# Bounded orthographic derivation, not arbitrary -ly recognition: preserve final
+# e + ly, adjectival -ive/-ous/-ful/-less/-ent/-ant/-ic/-id/-ct + ly,
+# and -able/-ible -> -ably/-ibly. Ambiguous -ally/-ily are NOT inferred.
+# These shapes are evidence only alongside an adjacent argument construction;
+# they neither classify all English words nor license a bare manner fragment.
+_EN_REGULAR_MANNER = re.compile(r"[a-z]+(?:ely|(?:iv|ous|ful|less|ent|ant|ic|id|ct)ly|[ai]bly)")
+
+
+# Closed function vocabulary describes execution, never source topics/styles.
+_EN_EXECUTION_MODES = frozenset({"online", "offline"})
+_EN_DEGREE = frozenset({"very", "quite", "rather", "too", "so", "more", "most", "less", "least"})
+
+
+def _manner_word(word):
+    return word in _EN_COMMAND_ADJUNCTS and word.endswith("ly") or bool(_EN_REGULAR_MANNER.fullmatch(word))
+
+
+def _command_adjunct_length(words):
+    """One modifier constituent; operators require their immediate operand."""
+    if not words:
+        return 0
+    if words[0] in _EN_DEGREE:
+        return 2 if len(words) > 1 and _manner_word(words[1]) else 0
+    if words[0] == "right":
+        return 2 if len(words) > 1 and words[1] in {"now", "away"} else 0
+    return int(words[0] in _EN_COMMAND_ADJUNCTS or words[0] in _EN_EXECUTION_MODES or _manner_word(words[0]))
+
+
+def _adjunct_clause(words):
+    """Bounded subject + finite predicate, not a search for a later role word.
+
+    Accept a one-word subject (optionally determined), or a two-word subject
+    before an auxiliary. Lexical finite -s/-ed is evidence only in predicate
+    position. This deliberately is not a general English clause parser.
+    """
+    determined = bool(words and words[0] in {"the", "a", "an", "my", "your", "our", "their"})
+    if determined:
+        words = words[1:]
+    auxiliaries = {"is", "are", "was", "were", "has", "have", "had", "can", "could", "will", "would"}
+    return len(words) > 1 and (
+        words[1] in auxiliaries
+        or (determined or words[0] in _EN_CLAUSE_SUBJECTS)
+        and bool(re.fullmatch(r"[a-z]{2,}(?:s|ed)", words[1]))
+        or len(words) > 2 and words[2] in auxiliaries
+    )
+
+
 def _after_command_adjuncts(words):
     position = 0
-    while position < len(words) and words[position] in _EN_COMMAND_ADJUNCTS:
-        if words[position] == "once" and position + 1 < len(words) and words[position + 1] in _EN_CLAUSE_SUBJECTS:
+    derived = False
+    while position < len(words):
+        word = words[position]
+        if word == "once" and position + 1 < len(words) and words[position + 1] in _EN_CLAUSE_SUBJECTS:
             break
-        position += 1
-    return words[position:]
+        length = _command_adjunct_length(words[position:])
+        if not length:
+            break
+        derived = derived or word not in _EN_COMMAND_ADJUNCTS
+        position += length
+        if position < len(words) and words[position] == "and":
+            # A coordinator joins modifier constituents, never a modifier to
+            # an argument/reference. Do not skip a dangling or nominal operand.
+            if not _command_adjunct_length(words[position + 1:]):
+                return words[position:]
+            position += 1
+    # An inferred manner cannot prove an imperative on its own. The caller
+    # must still recognize the immediately following argument, never scan past
+    # an intervening noun/reference to find a later courtesy or preposition.
+    return words[position:] if not derived or position < len(words) else words
 
 
 def _english_command_arguments(words):
@@ -88,6 +150,18 @@ def _english_command_arguments(words):
     if not words:
         return True
     head = words[0]
+    if head == "as":
+        # as SOON as <finite clause>; as MANNER as possible <argument>;
+        # as MANNER as <finite clause>. Content begins only after the operator.
+        if len(words) < 4 or words[2] != "as":
+            return False
+        if words[1] == "soon":
+            return _adjunct_clause(words[3:])
+        if not _manner_word(words[1]):
+            return False
+        if words[3] == "possible":
+            return len(words) > 4 and _english_command_arguments(words[4:])
+        return _adjunct_clause(words[3:])
     if head in _EN_DIAGNOSTIC_OPTIONS:
         return False
     if head in _EN_ARGUMENT_PRONOUNS:
