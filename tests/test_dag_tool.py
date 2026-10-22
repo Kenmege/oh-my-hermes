@@ -211,6 +211,26 @@ def terminal_env(value: str | None = None) -> Iterator[None]:
 
 
 class DefineTests(unittest.TestCase):
+    def test_saved_run_goal_reaches_every_native_builder_without_changing_its_assignment(self) -> None:
+        goal = "Adapt the renderer: preserve motion, typography and audio; package tests alone are not parity."
+        with homes() as home:
+            slots_table(home)
+            defined = call(action="define", run="feat", goal=goal, nodes=FEATURE)
+            for call_row in defined["calls"]:
+                for node_id, task in zip(call_row["nodes"], call_row["tasks"]):
+                    with self.subTest(node=node_id):
+                        self.assertIn(f"Run goal (saved):\n{goal}\n", task["context"])
+                        self.assertTrue(task["context"].startswith(PROMPT + "\n"))
+                        self.assertEqual(task["goal"], f"Node {node_id} [dag:feat/{node_id}]")
+                        self.assertIn("The run goal is acceptance context, not permission to widen your SCOPE.",
+                                      task["context"])
+            handoff(home, "feat", "api")
+            later = call(action="settle", run="feat", node="api", outcome="accepted")
+            self.assertIn(f"Run goal (saved):\n{goal}\n", later["calls"][0]["tasks"][0]["context"])
+            stored = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))
+            self.assertEqual(stored["goal"], goal)
+            self.assertEqual(stored["nodes"][0]["prompt"], PROMPT)
+
     def test_define_records_topology_and_hands_out_the_first_layer(self) -> None:
         with homes() as home:
             slots_table(home)
@@ -1294,6 +1314,7 @@ class ExportTests(unittest.TestCase):
             result = call(action="export", run="feat", owner="codex")
             payload = json.loads(Path(result["fanout"]["units_file"]).read_text(encoding="utf-8"))
             goal = Path(result["fanout"]["goal_file"]).read_text(encoding="utf-8")
+        self.assertIn("ship the export feature", goal)
         self.assertEqual(defined["calls"], [])
         self.assertEqual(defined["export"]["nodes"], ["api", "ui"])
         self.assertEqual(result["status"], "ok", result)

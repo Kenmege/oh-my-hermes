@@ -105,8 +105,9 @@ Reasoning demand: `heavy`
 Quality bar:
 
 - Do not start this engine as an automatic continuation of another skill's output: an accepted plan, a clarified brief, or a routing recommendation is planning evidence, not permission. Unless the user explicitly invoked this engine themselves, restate in one line what will start (engine, scope, selected executor) and wait for the user's explicit go-ahead first.
-- Resolve the dependency_topology decision before any dispatch: work coupled by a shared invariant or inseparable edit boundary collapses to one owner; separable but ordered units get explicit acyclic dependency edges; independent units form the dependency-ready parallel frontier; no unit dispatches without scope, acceptance criteria, a verification command, and an owner route - load `references/dependency-topology.md` for the full discipline, `references/kanban-lane.md` for lanes outliving the session, `references/team-lane.md` for checked lanes.
+- Resolve `dependency_topology` before dispatch; load `references/dependency-topology.md` for owner/edge/frontier selection and admission requirements, `references/kanban-lane.md` for durable lanes, `references/team-lane.md` for checked lanes.
 - Before concurrent fan-out, load `references/file-ownership-manifest.md`.
+- When adapting an existing capability, load `skill_view(name='omh-verification-gate', file_path='references/adaptation-quality.md')` before accepting a plan, dispatching work, or claiming completion; carry its criteria and comparisons into tasks and evidence.
 - Attach acceptance criteria, verification commands, and review expectations to each lane.
 - Keep dispatch, execution, review, CI, and merge status evidence separate.
 - After final brief composition and before unattended coding handoff, explicitly run `omh handoff-risk-scan --brief-file <final-brief> --repo <workspace> --strict --json`. Route high_risk (exit 1) to existing confirmation or security-safety-review; scan_error (exit 2) requires repaired input and a new scan. Clear never grants permission or bypasses metadata preflight, approval, or host policy.

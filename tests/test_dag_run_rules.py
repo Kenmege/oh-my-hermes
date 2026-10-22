@@ -37,6 +37,76 @@ def record_of(home, run: str = "feat") -> dict:
     return json.loads(dag_run.record_path(home.omh, PARENT, run).read_text(encoding="utf-8"))
 
 
+class SavedGoalLifecycleTests(unittest.TestCase):
+    """Delivery checks only: no live worker compliance is inferred."""
+
+    def test_retry_repair_reverification_and_extend_keep_the_saved_goal(self) -> None:
+        goal = "Retain executable engine and output quality; compare the same task before accepting."
+        with homes() as home:
+            slots_table(home)
+            definitions = [node("api", scope=("a.py",)), node("verify", depends_on=("api",))]
+            call(action="define", run="feat", goal=goal, nodes=definitions)
+            # A repeated definition does not replace the immutable saved goal.
+            call(action="define", run="feat", goal="Only package tests now", nodes=definitions)
+            retried = call(action="settle", run="feat", node="api", outcome="failed", provider_error=True)
+            self.assertEqual(retried["calls"][0]["route"]["action"], "fallback")
+            call(action="settle", run="feat", node="api", outcome="failed")
+            repaired = call(action="repair", run="feat", node="api", nodes=[node("api-fix", scope=("a.py",))])
+            handoff(home, "feat", "api-fix")
+            verified = call(action="settle", run="feat", node="api-fix", outcome="accepted")
+            self.assertIn("api-fix.md", calls_by_node(verified)["verify"]["context"])
+            call(action="settle", run="feat", node="verify", outcome="failed")
+            verify_repair = call(action="repair", run="feat", node="verify", nodes=[node("fix", scope=("a.py",))])
+            handoff(home, "feat", "fix")
+            reverified = call(action="settle", run="feat", node="fix", outcome="accepted")
+            handoff(home, "feat", "verify")
+            done = call(action="settle", run="feat", node="verify", outcome="accepted")
+            self.assertEqual(done["state"], "done")
+            extended = call(action="extend", run="feat", nodes=[node("craft", depends_on=("verify",), scope=("craft.py",)),
+                            node("verify-output", depends_on=("craft",))])
+            handoff(home, "feat", "craft")
+            extend_verified = call(action="settle", run="feat", node="craft", outcome="accepted")
+            for result, node_id in ((retried, "api"), (repaired, "api-fix"), (verified, "verify"),
+                                    (verify_repair, "fix"), (reverified, "verify"), (extended, "craft"),
+                                    (extend_verified, "verify-output")):
+                with self.subTest(node=node_id, result=result):
+                    self.assertEqual(result["status"], "ok", result)
+                    context = calls_by_node(result)[node_id]["context"]
+                    self.assertIn(f"Run goal (saved):\n{goal}\n", context)
+                    self.assertIn("not permission to widen your SCOPE", context)
+                    if "verify" in node_id:
+                        self.assertIn("Check the complete run goal", context)
+            self.assertEqual(record_of(home)["goal"], goal)
+
+    def test_ready_reoffers_reloaded_legacy_records_without_inventing_a_goal(self) -> None:
+        for legacy in (None, "", "   "):
+            with self.subTest(goal=legacy), homes() as home:
+                slots_table(home)
+                call(action="define", run="feat", nodes=[node("api")])
+                path = dag_run.record_path(home.omh, PARENT, "feat")
+                record = record_of(home)
+                if legacy is None:
+                    record.pop("goal")
+                else:
+                    record["goal"] = legacy
+                path.write_text(json.dumps(record), encoding="utf-8")
+                with patch.object(dag_tool.time, "time", return_value=time.time() + dag_run.HANDOUT_STALE_SECONDS + 1):
+                    ready = call(action="ready", run="feat")
+                task = calls_by_node(ready)["api"]
+                self.assertNotIn("Run goal (saved):", task["context"])
+                self.assertNotIn("None", task["context"])
+                self.assertEqual(task["goal"], "Node api [dag:feat/api]")
+
+    def test_ready_reoffers_saved_goal_at_its_existing_limit(self) -> None:
+        goal = "Q" * dag_run.MAX_GOAL_CHARS
+        with homes() as home:
+            slots_table(home)
+            call(action="define", run="feat", goal=goal, nodes=[node("api")])
+            with patch.object(dag_tool.time, "time", return_value=time.time() + dag_run.HANDOUT_STALE_SECONDS + 1):
+                ready = call(action="ready", run="feat")
+            self.assertIn(f"Run goal (saved):\n{goal}\n", calls_by_node(ready)["api"]["context"])
+
+
 class RepairDataFlowTests(unittest.TestCase):
     def test_a_dependent_reads_the_repair_groups_handoff_not_the_failed_nodes(self) -> None:
         with homes() as home:
@@ -66,6 +136,20 @@ class RepairDataFlowTests(unittest.TestCase):
 
 class ReVerificationTests(unittest.TestCase):
     """A failed verification is verified again: its repair never stands in for it."""
+
+    def test_verifier_receives_whole_goal_acceptance_instructions_after_reload(self) -> None:
+        goal = "Keep the source engine and craft quality, not only a working package."
+        with homes() as home:
+            slots_table(home)
+            call(action="define", run="feat", goal=goal, nodes=[node("api", scope=("a.py",)),
+                 node("verify", depends_on=("api",), label="Verify the feature")])
+            handoff(home, "feat", "api", "Package tests pass; output comparison not run.")
+            result = call(action="settle", run="feat", node="api", outcome="accepted")
+            context = calls_by_node(result)["verify"]["context"]
+        self.assertIn(f"Run goal (saved):\n{goal}\n", context)
+        self.assertIn("Check the complete run goal, not only this node's local VERIFY.", context)
+        self.assertIn("Name each unmet or unobserved goal criterion; producer claims are not verification evidence.",
+                      context)
 
     def _failed_verify(self, home) -> None:
         slots_table(home)
