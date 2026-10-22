@@ -15,6 +15,14 @@ All notable changes will be documented here.
   status-is-the-work set now has a routing case and a test that turns red
   if it is dropped from the set.
 
+- **Preserve adaptation outcomes and native DAG goal context.** Planning,
+  implementation, DAG and verification guidance share one on-demand procedure
+  for reuse decisions, user-agreed losses, early/final output comparisons and
+  separate technical/output-quality verdicts. Native DAG tasks now carry the
+  saved run goal through reload, retry, repair and extension; verifiers are told
+  to check the whole goal, not only local VERIFY. Contract tests establish
+  instruction delivery, not live-agent compliance or artistic quality.
+
 - **The route hint no longer starts dag-ulw on a split the router only asks
   about (#2232 follow-ups).** A split into parallel parts ("fan out across the
   services …", "split … into parallel lanes", "병렬로 나눠서 …") started a

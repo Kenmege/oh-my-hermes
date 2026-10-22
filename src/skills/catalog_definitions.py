@@ -66,6 +66,7 @@ from .biomedical_evidence_skill import DEFINITION as BIOMEDICAL_EVIDENCE_DEFINIT
 from .molecular_docking_skill import DEFINITION as MOLECULAR_DOCKING_DEFINITION
 
 from .catalog_types import (
+    ADAPTATION_QUALITY_READ_RULE,
     ADVERSARIAL_CONSENSUS_BUCKETS,
     ADVERSARIAL_CONSENSUS_MAX_PERSPECTIVES,
     ADVERSARIAL_CONSENSUS_MIN_PERSPECTIVES,
@@ -1214,8 +1215,9 @@ _DEFINITIONS = [
         quality_tier="handoff-gated",
         quality_bar=(
             ENGINE_ENTRY_CONFIRMATION_RULE,
-            "Resolve the dependency_topology decision before any dispatch: work coupled by a shared invariant or inseparable edit boundary collapses to one owner; separable but ordered units get explicit acyclic dependency edges; independent units form the dependency-ready parallel frontier; no unit dispatches without scope, acceptance criteria, a verification command, and an owner route - load `references/dependency-topology.md` for the full discipline, `references/kanban-lane.md` for lanes outliving the session, `references/team-lane.md` for checked lanes.",
+            "Resolve `dependency_topology` before dispatch; load `references/dependency-topology.md` for owner/edge/frontier selection and admission requirements, `references/kanban-lane.md` for durable lanes, `references/team-lane.md` for checked lanes.",
             "Before concurrent fan-out, load `references/file-ownership-manifest.md`.",
+            ADAPTATION_QUALITY_READ_RULE,
             "Attach acceptance criteria, verification commands, and review expectations to each lane.",
             "Keep dispatch, execution, review, CI, and merge status evidence separate.",
             "After final brief composition and before unattended coding handoff, explicitly run `omh handoff-risk-scan --brief-file <final-brief> --repo <workspace> --strict --json`. Route high_risk (exit 1) to existing confirmation or security-safety-review; scan_error (exit 2) requires repaired input and a new scan. Clear never grants permission or bypasses metadata preflight, approval, or host policy.",
@@ -1325,6 +1327,7 @@ _DEFINITIONS = [
             "quality_bar": (
                 "Do not start this engine as an automatic continuation of another skill's output: an accepted plan, a clarified brief, or a routing recommendation is planning evidence, not permission. Unless the user explicitly invoked this engine themselves, restate in one line what will start (engine, scope, selected executor) and wait for the user's explicit go-ahead first.",
                 "Resolve the dependency_topology decision before any dispatch: work coupled by a shared invariant or inseparable edit boundary collapses to one owner; separable but ordered units get explicit acyclic dependency edges; independent units form the dependency-ready parallel frontier; no unit dispatches without scope, acceptance criteria, a verification command, and an owner route - load `references/dependency-topology.md` for the full discipline.",
+                ADAPTATION_QUALITY_READ_RULE.portable,
                 "Attach acceptance criteria, verification commands, and review expectations to each lane.",
                 "Keep dispatch, execution, review, CI, and merge status evidence separate.",
                 "After final brief composition and before unattended coding handoff, explicitly run `omh handoff-risk-scan --brief-file <final-brief> --repo <workspace> --strict --json`. Route high_risk (exit 1) to existing confirmation or security-safety-review; scan_error (exit 2) requires repaired input and a new scan. Clear never grants permission or bypasses metadata preflight, approval, or host policy.",
@@ -1392,7 +1395,7 @@ _DEFINITIONS = [
             ),
         },
         portable_override_shadows={
-            "quality_bar": "80baaf4695cd81d0f5c24c6a2fe54fe820b2b1d3fe656d83f9579ad36a8712c5",
+            "quality_bar": "b6444536d60f9df17070e0ac1b28ecc32aa54286626cc2c1daf5e8de389be364",
             "safety_rules": "f5a8f74812425af82829bc083dac62883a283ed8acfa5bc299a594c107ccd4f7",
             "opening_steps": "632f26cd6eeb333b99ad0312a3c568a456d6e36c66d510b6af201ae25f65abf0",
             "final_checklist": "95ac04078f55d2c16dfc5f8a7d0a2ca5e833cae7ae1f2a0c03856687557762d5",
@@ -5723,6 +5726,7 @@ _DEFINITIONS = [
         ),
         quality_tier="verification-gated",
         quality_bar=(
+            ADAPTATION_QUALITY_READ_RULE,
             "Tie every completion claim to the smallest check that proves it, then broaden for shared surfaces.",
             "When a diff touches a declared generated path, name its source of truth and regeneration command before the edit rather than after a byte gate rejects it; a diff touching a generator and its output together is the correct shape, not a violation — load `references/generated-artifact-provenance.md` for the declaration and reporting rules.",
             f"Record every field the `{OBSERVED_CHECK_RESULTS_TOKEN}` artifact expectation below names, "
@@ -7126,6 +7130,7 @@ _DEFINITIONS = [
             "Include planner view, critic/risk review, alternative paths, rejected options, and a testability check before handoff.",
             "Produce testable acceptance criteria and exact verification commands or explain why they are not yet knowable.",
             "List every lane of the accepted plan in node-prompt shape - `TASK`, `DELIVERABLE`, `SCOPE`, `VERIFY`, `STOP WHEN` - with `depends_on` per lane, so `ultrawork` can prepare board rows from the plan without re-planning; planning itself stays a bounded in-session lane.",
+            ADAPTATION_QUALITY_READ_RULE,
             *_RALPLAN_IDEAL_STATE_BAR,
             "Record unresolved tradeoffs and evidence gaps instead of flattening uncertainty.",
             "When plan-shaping evidence is missing — current external behavior, contested claims, or unstudied reference implementations — run the `research` workflow as a bounded in-plan stage (not an exhaustive deep-research run) before comparing options, record its dossier the way the `research` artifact contract requires, and consume it instead of planning on assumptions.",
@@ -7200,6 +7205,7 @@ _DEFINITIONS = [
                 "Start from observed repo facts and source/web evidence when freshness or external behavior matters.",
                 "Include planner view, critic/risk review, alternative paths, rejected options, and a testability check before handoff.",
                 "Produce testable acceptance criteria and exact verification commands or explain why they are not yet knowable.",
+                ADAPTATION_QUALITY_READ_RULE.portable,
                 *_RALPLAN_IDEAL_STATE_BAR,
                 "Record unresolved tradeoffs and evidence gaps instead of flattening uncertainty.",
                 "When plan-shaping evidence is missing — current external behavior, contested claims, or unstudied reference implementations — run the `research` workflow as a bounded in-plan stage (not an exhaustive deep-research run) before comparing options, record its dossier the way the `research` artifact contract requires, and consume it instead of planning on assumptions.",
@@ -7217,7 +7223,7 @@ _DEFINITIONS = [
             "artifact_expectations": "a8eb07c3491b92fb1f72dc0bbd8bd5da29398f9b8aa6cae9b64b2b2c5aa3bae6",
             "safety_rules": "72126c765975b034ab683d27aa0349dbe84c564e45f29832f2b8424a1b3d28cc",
             "opening_steps": "f839a5ee9ecaca2834a76d29b601f18e03ca292e0abc0b2af5c92274b5fa4c7e",
-            "quality_bar": "fe43f8d9c720c840aae9ded32d5889414dcc799e58a9c74c928af36407e9f194",
+            "quality_bar": "5ec6152d25e922a25960189f30a3560e0b82ffedefa4f4181072f214271bf862",
             "why_this_exists": "7c8d4e7c04114ed3e5fa532095f54cbd4f36aa5333d34f873c40d516f27c29e1",
         },
     ),
