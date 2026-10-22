@@ -70,6 +70,7 @@ will show. `screen.paint_line` strips every row again when it paints.
 from __future__ import annotations
 
 from collections import deque
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
@@ -79,7 +80,7 @@ from . import gateway_contract as contract
 from .markdown import clean_text, wrap_prefixed
 from .panels import SPINNER_FRAMES
 from .style import Line, Span
-from .theme import Theme
+from .theme import Theme, kind_style
 from .width import cell_width, truncate, truncate_line, wrap_line
 
 QUEUED = "queued"
@@ -126,11 +127,12 @@ UNSELECTED_MARK = "  "
 COLUMN_GAP = "  "
 FACT_SEPARATOR = " · "
 CUT_MARK = "…"
-TOOL_MARK = "⏺ "
+TOOL_MARK = "● "  # dim: the log keeps no call's outcome; the name is in its family's hue, as in the transcript
 THINKING_MARK = "▸ "
 LOG_INDENT = "  "
 NO_OUTPUT = "no output yet"
 TOKENS_MARK = "↓"  # output tokens, as the turn's working row and its done line say them
+ROW_TOKENS_WORD = " tokens"  # left off a list row's count, `↓1.3k`, where the model and the figures share the row
 NO_BREAK_SPACE = "\N{NO-BREAK SPACE}"  # `wrap_line` breaks on spaces only
 TAIL_CUT_NOTICE = "… earlier output not shown"
 
@@ -266,7 +268,7 @@ def _push(agent: Agent, kind: str, text: str, detail: str = "") -> None:
 
 def _mark(agent: Agent, theme: Theme, spinner_frame: int) -> Span:
     if agent.status == RUNNING:
-        return Span(SPINNER_FRAMES[spinner_frame % len(SPINNER_FRAMES)], theme.accent)
+        return Span(SPINNER_FRAMES[spinner_frame % len(SPINNER_FRAMES)], theme.running)
     if agent.status == QUEUED:
         return Span(QUEUED_MARK, theme.muted)
     if agent.status in FAILED_STATUSES:
@@ -274,6 +276,27 @@ def _mark(agent: Agent, theme: Theme, spinner_frame: int) -> Span:
     if agent.status == INTERRUPTED:
         return Span(INTERRUPTED_MARK, theme.muted)
     return Span(DONE_MARK, theme.muted)
+
+
+# Where a structured goal's title ends: at its first field label or at the end of its first sentence. The labels are
+# the node prompt's own (skills/dag-ulw, ulw-plan and ulw-work: TASK, DELIVERABLE, SCOPE, VERIFY, STOP WHEN), a closed
+# list, so `README:` or `JSON:` in a title stays.
+FIELD_LABELS = ("TASK", "DELIVERABLE", "SCOPE", "VERIFY", "STOP WHEN")
+_FIELD_LABEL = re.compile(r"\s(?:" + "|".join(re.escape(label) for label in FIELD_LABELS) + r"):(?:\s|$)")
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s")
+
+
+def short_title(goal: str) -> str:
+    """An agent row's title: the ledger's title for the goal (`title_from_goal`: no leading `TASK:`, no dag or team
+    marker), up to its first field label or the end of its first sentence. A dag lane's goal is its label and its
+    marker, so it keeps the whole label."""
+    from ..plugin_bundle.omh.delegation_ledger import dag_binding, title_from_goal  # the ledger's own rules
+
+    title = title_from_goal(goal)
+    if dag_binding(goal):
+        return title
+    title = _FIELD_LABEL.split(title, maxsplit=1)[0]
+    return _SENTENCE_END.split(title, maxsplit=1)[0].rstrip(" .")
 
 
 def _tools_text(count: int) -> str:
@@ -313,8 +336,8 @@ def _log_row(row: LogRow, width: int, theme: Theme) -> list[Line]:
     rest: Line = (Span(LOG_INDENT),)
     if row.kind == LOG_TOOL:
         preview = f"{COLUMN_GAP}{row.detail}" if row.detail else ""
-        spans = (Span(row.text, theme.tool), Span(preview, theme.muted))
-        return wrap_prefixed(spans, (Span(TOOL_MARK, theme.tool),), rest, width)
+        spans = (Span(row.text, kind_style(row.text, theme)), Span(preview, theme.muted))
+        return wrap_prefixed(spans, (Span(TOOL_MARK, theme.dim),), rest, width)
     if row.kind == LOG_THINKING:
         return wrap_prefixed((Span(row.text, theme.thinking),), (Span(THINKING_MARK, theme.muted),), rest, width)
     return wrap_line((Span(row.text, theme.text),), width)
@@ -536,15 +559,18 @@ class Roster:
     ) -> tuple[list[Line], tuple[str, ...]]:
         """One row for main and one per agent, and the id each row is for (`MAIN_ID` for main).
 
-        A row is its selection marker, status glyph and goal (muted once the
-        agent finished), with `elapsed · N tools · ↓N tokens` at the right
-        edge (the tokens once there is a count; `waiting <elapsed>` for an
-        agent still waiting for a worker); the `selected` row is one
-        `menu_current` bar across `width`. More rows than `max_rows` scroll
-        just far enough to keep the selected one on screen. Where the goal
-        would be left less than `MIN_GOAL_CELLS`, the token count goes first,
-        then the tool count, then the elapsed time, each whole. With no agent
-        there is no list.
+        A row is its selection marker, status glyph and title (`short_title`
+        of its goal, muted once the agent finished), with `model · elapsed ·
+        N tools · ↓N` at the right edge (the model once a frame named it, the
+        tokens once there is a count; `waiting <elapsed>` for an agent still
+        waiting for a worker); the `selected` row is one `menu_current` bar
+        across `width`. More rows than `max_rows` scroll just far enough to
+        keep the selected one on screen. Where the title would be left less
+        than `MIN_GOAL_CELLS`, the token count goes first, then the tool
+        count, then, with the time alone left beside it, the model, and then
+        the figures go as before: the token count, the tool count, the time,
+        each whole (a waiting agent keeps `waiting` on its clock). With no
+        agent there is no list.
         """
         if not self.agents or max_rows <= 0:
             return [], ()
@@ -560,16 +586,19 @@ class Roster:
     ) -> Line:
         agent = self.agents.get(row_id)
         if agent is None:
-            mark, label, figures = Span(MAIN_MARK, theme.accent), MAIN_NAME, [""]
+            mark, label, figures = Span(MAIN_MARK, theme.running), MAIN_NAME, [""]
         else:
             elapsed = elapsed_text(agent.elapsed(now))
-            mark, label = _mark(agent, theme, spinner_frame), agent.goal or UNNAMED
+            mark, label = _mark(agent, theme, spinner_frame), short_title(agent.goal) or UNNAMED
             if agent.status == QUEUED:  # its clock is the wait: a row that never changes reads as a dead one
                 figures = [f"{WAITING} {elapsed}", elapsed, ""]
             else:
                 tools = f"{elapsed}{FACT_SEPARATOR}{_tools_text(agent.tool_count)}"
-                tokens = _tokens_text(agent.output_tokens)
+                tokens = _tokens_text(agent.output_tokens).removesuffix(ROW_TOKENS_WORD)
                 figures = [*([f"{tools}{FACT_SEPARATOR}{tokens}"] if tokens else []), tools, elapsed, ""]
+            if agent.model:  # the model leads and stays longest: all of it, no tokens, model and time, model alone
+                led = figures[:1] if agent.status == QUEUED else figures[:-1]  # a wait keeps its word: `waiting 35s`
+                figures = [*(f"{agent.model}{FACT_SEPARATOR}{figure}" for figure in led), agent.model, ""]
         lead = SELECTED_MARK if current else UNSELECTED_MARK
         fixed = cell_width(f"{lead}{mark.text} ")
         for figure in figures:  # ends on "", which always stays
@@ -605,10 +634,11 @@ class Roster:
             elapsed_text(agent.elapsed(now)), _tools_text(agent.tool_count),
             _tokens_text(agent.output_tokens).replace(" ", NO_BREAK_SPACE), agent.model,
         ]
-        status = Span(agent.status, _mark(agent, theme, 0).style)
+        state = _mark(agent, theme, 0).style  # the agent's own state: running blue, failed red, else grey
+        status = Span(agent.status, state)
         rest = Span("".join(f"{FACT_SEPARATOR}{fact}" for fact in facts if fact), theme.muted)
         header: list[Line] = [
-            *wrap_line((Span(agent.goal or UNNAMED, theme.accent),), width),
+            *wrap_line((Span(agent.goal or UNNAMED, state),), width),
             *wrap_line((status, rest), width),
             (),
         ]

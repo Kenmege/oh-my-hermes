@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import unittest
 
-from _tui_lines import INFO_INSET, box_inner, line_text
+from _tui_lines import INFO_INSET, composer_text, line_text
 from test_tui_choice_ui import armed, drawn, press
 from test_tui_app import FakePoller, ScriptedTerminal
 from test_tui_modes import RecordingClient, make_app, type_text
@@ -200,9 +200,11 @@ class QuestionOutcomeTests(unittest.TestCase):
 
     def test_a_question_that_went_unanswered_leaves_its_tool_row_a_red_mark_too(self) -> None:
         # Hermes' clarify result says how the wait ended (`outcome`); only `submitted` was an answer.
-        def mark(app) -> Span:
+        def mark(app) -> tuple[Span, Span]:
+            """The call row's rail and its mark: the first and third spans of `┃ ✗ clarify(…)`."""
             (group,) = [block for block in app.transcript.blocks if isinstance(block, ToolGroup)]
-            return block_rows(group, 80, app.theme)[0][0]
+            row = block_rows(group, 80, app.theme)[0]
+            return row[0], row[2]
 
         def complete(app, outcome: str) -> list[str]:
             app._on_event(Event("tool.start", SID, {"tool_id": "c1", "name": "clarify", "context": "Which colour?"}))
@@ -218,14 +220,14 @@ class QuestionOutcomeTests(unittest.TestCase):
                 press(app, Key(ESCAPE))
                 screen = complete(app, outcome)
                 (row,) = [line for line in screen if "clarify" in line and "Which colour?" in line and "·" not in line]
-                self.assertTrue(row.startswith("⏺ clarify("), row)
-                self.assertEqual(mark(app), Span("⏺", app.theme.error))
+                self.assertTrue(row.startswith("┃ ✗ clarify("), row)
+                self.assertEqual(mark(app), (Span("┃", app.theme.error), Span("✗", app.theme.error)))
                 self.assertIn(f"⎿  {words}", "\n".join(screen))
         app, _client = opened(COLOUR)
         press(app, Key(ENTER))
         (row,) = [line for line in complete(app, "submitted") if "clarify" in line and "·" not in line]
-        self.assertTrue(row.startswith("⏺ clarify("), row)
-        self.assertEqual(mark(app), Span("⏺", app.theme.ok))
+        self.assertTrue(row.startswith("┃ ● clarify("), row)
+        self.assertEqual(mark(app), (Span("┃", app.theme.ok), Span("●", app.theme.ok)))
 
     def test_hermes_notice_says_why_under_the_cross_when_it_gives_one(self) -> None:
         app, _client = make_app(busy=True)
@@ -549,7 +551,7 @@ class TellRowTests(unittest.TestCase):
         self.assertEqual(app.tell_draft.text, "my draft")  # type: ignore[union-attr]
         self.assertIn(app_module.TELL_SAY[0], mode_row(app))
         self.assertNotIn("esc to interrupt", mode_row(app))  # Esc leaves the field, it interrupts nothing
-        self.assertIn(f"> {app_module.TELL_PLACEHOLDER}", [box_inner(row) for row in drawn(app)])
+        self.assertIn(f"❯ {app_module.TELL_PLACEHOLDER}", [composer_text(row) for row in drawn(app)])
         self.assertEqual(client.named("session.steer"), [])  # nothing is sent until the person sends it
 
     def test_what_is_sent_goes_into_the_running_turn_as_a_steer_and_the_draft_comes_back(self) -> None:
@@ -878,7 +880,7 @@ class TinyTerminalQuestionTests(unittest.TestCase):
                     (row,) = [line for line in screen if line.startswith("▌ ")]
                     shown = row[2:].removeprefix("🔑 ").removeprefix("? ").split(" …")[0].rstrip("…")
                     self.assertTrue(shown and label.startswith(shown), row)
-                    self.assertTrue([line for line in screen if line.startswith(">")], screen)  # the composer under it
+                    self.assertTrue([line for line in screen if line.startswith("❯")], screen)  # the composer under it
 
     def test_the_label_row_is_the_text_questions_alone(self) -> None:
         # A tiny terminal still gives a panel, a menu or a picked list nothing beyond what it gave before.

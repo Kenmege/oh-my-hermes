@@ -82,7 +82,7 @@ class LinesTests(unittest.TestCase):
         lines = picker().lines(60, DEFAULT_THEME, 8, NOW)
         self.assertTrue(line_text(lines[0]).startswith(" Sessions (3)"))
         self.assertEqual(len(lines), 5)
-        self.assertEqual(line_text(lines[-1]), " > type to filter")  # the filter, where the composer was
+        self.assertEqual(line_text(lines[-1]), "❯ type to filter")  # the filter, where the composer was
         current, other, old = (line_text(line) for line in lines[1:4])
         self.assertTrue(current.startswith(" ● Reply with ok"))
         self.assertTrue(current.rstrip().endswith("just now · 14 messages"))
@@ -104,7 +104,7 @@ class LinesTests(unittest.TestCase):
         lines = picker(query="zzz").lines(60, DEFAULT_THEME, 5, NOW)
         self.assertIn("Sessions (0/3)", line_text(lines[0]))
         self.assertIn("no session matches", line_text(lines[1]))
-        self.assertEqual(line_text(lines[-1]), " > zzz")
+        self.assertEqual(line_text(lines[-1]), "❯ zzz")
 
     def test_the_filter_row_is_last_at_every_budget_and_says_what_typing_filters_by(self) -> None:
         chooser = picker(query="re")
@@ -112,12 +112,12 @@ class LinesTests(unittest.TestCase):
             with self.subTest(max_rows=max_rows):
                 lines = chooser.lines(60, DEFAULT_THEME, max_rows, NOW)
                 self.assertLessEqual(len(lines), max_rows)
-                self.assertEqual(line_text(lines[-1]), " > re")
+                self.assertEqual(line_text(lines[-1]), "❯ re")
                 self.assertNotIn("filter", line_text(lines[0]))
         self.assertEqual(len(chooser.lines(60, DEFAULT_THEME, 1, NOW)), 1)
         filtered = picker()
         filtered.handle_key(Key(CHAR, "R"))
-        self.assertEqual(line_text(filtered.lines(60, DEFAULT_THEME, 6, NOW)[-1]), " > R")
+        self.assertEqual(line_text(filtered.lines(60, DEFAULT_THEME, 6, NOW)[-1]), "❯ R")
 
 
 class FrameTests(unittest.TestCase):
@@ -136,7 +136,7 @@ class FrameTests(unittest.TestCase):
         self.assertEqual(one[0][0].style, DEFAULT_THEME.menu_current)
         two = [line_text(line) for line in chooser.lines(60, DEFAULT_THEME, 2, NOW)]
         self.assertTrue(two[0].startswith("   Refactor the router"), two)
-        self.assertEqual(two[1], " > type to filter")
+        self.assertEqual(two[1], "❯ type to filter")
         self.assertIn("no session matches", line_text(picker(query="zzz").lines(60, DEFAULT_THEME, 1, NOW)[0]))
 
     def test_the_caret_sits_at_the_end_of_the_filter_row(self) -> None:
@@ -144,7 +144,7 @@ class FrameTests(unittest.TestCase):
             with self.subTest(query=query, budget=budget):
                 chooser = picker(query=query)
                 lines = chooser.lines(60, DEFAULT_THEME, budget, NOW)
-                self.assertEqual(chooser.caret, (len(lines) - 1, line_width((Span(" > " + query),))))
+                self.assertEqual(chooser.caret, (len(lines) - 1, line_width((Span("❯ " + query),))))
         chooser = picker()
         chooser.lines(60, DEFAULT_THEME, 1, NOW)
         self.assertIsNone(chooser.caret)  # no filter row drawn, no caret

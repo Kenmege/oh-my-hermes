@@ -132,7 +132,11 @@ OMH is:
 - a delegation-first bridge from Hermes requests to selected coding executors
 - a terminal frontend over Hermes' own gateway (the OMH TUI bare `omh` opens),
   owning layout, input and the OMH panels while Hermes owns every model call,
-  tool run, approval decision and `!` shell command the person types
+  tool run, approval decision and `!` shell command the person types; its look
+  is the rail and kind colours the owner picked on 2026-10-22 (a `┃` rail per
+  transcript block with no fill, a call's state in its mark's glyph and colour
+  as the dag view draws it, its name in its tool family's hue, the composer
+  between two full-width rules with no side edges)
 
 OMH is not:
 

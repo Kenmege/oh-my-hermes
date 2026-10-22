@@ -9,10 +9,10 @@ terminal's height alone, the caps hold, and
 on the screen's last row), and nothing is cut while the region has room.
 `compose` is checked for row order, the tail keeping its last rows, and the
 exact row count. A hidden composer (a question answered by picking, a picker,
-the agent list) is checked over the same grid: no box edges or input rows, the
+the agent list) is checked over the same grid: no rules or input rows, the
 info line exactly where the composer leaves it, and the slot given its
 `choice_cap`, at least one row wherever the composer had one. The frame draws
-the composer as a rounded box that never changes with the mode. The agent
+the composer between two full-width rules that never change with the mode. The agent
 view under the info line takes its rows after the slot and before the tail,
 none on a tiny terminal, and its cap (`agent_view_cap`) is checked against
 the rows it leaves the composer.
@@ -23,9 +23,9 @@ from __future__ import annotations
 import itertools
 import unittest
 
-from _tui_lines import box_edges, box_inner, boxed, lines_text
+from _tui_lines import rule_edges, composer_text, composer_row, lines_text
 from omh.tui.composer import Composer
-from omh.tui.frame import BOX_BOTTOM, BOX_TOP, box_edge, build_frame, sticky_line
+from omh.tui.frame import build_frame, rule_line, sticky_line
 from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_PLAN, MODE_SHELL
 from omh.tui.layout import (
     AGENT_VIEW_ROWS,
@@ -43,7 +43,7 @@ from omh.tui.layout import (
     slot_cap,
 )
 from omh.tui.style import Line, Span
-from omh.tui.theme import DEFAULT_THEME
+from omh.tui.theme import DEFAULT_THEME, KIND_FAMILIES
 from omh.tui.width import line_width
 
 ROWS = range(1, 86)
@@ -386,18 +386,18 @@ class FrameTests(unittest.TestCase):
         composer = Composer(text="hi", caret=2)
         frame = build_frame(cols=40, rows=10, composer=composer, info=self.info)
         self.assertEqual(frame.height, 4)
-        top, bottom = box_edges(40)
-        self.assertEqual(lines_text(list(frame.lines)), [top, boxed("> hi", 40), bottom, "info"])
-        self.assertEqual(frame.cursor, (1, 6))  # the side, a space, the prompt mark and its space, two characters
+        top, bottom = rule_edges(40)
+        self.assertEqual(lines_text(list(frame.lines)), [top, composer_row("❯ hi", 40), bottom, "info"])
+        self.assertEqual(frame.cursor, (1, 4))  # the prompt mark and its space, two characters: no side before it
 
     def test_a_menu_below_sits_between_the_bottom_edge_and_the_info_line_and_shares_the_slots_cap(self) -> None:
         composer = Composer(text="/", caret=1)
         frame = build_frame(cols=40, rows=24, composer=composer, info=self.info,
                             slot=plain("⧗ queued"), below=plain("/help", "/model"))
-        top, bottom = box_edges(40)
+        top, bottom = rule_edges(40)
         self.assertEqual(lines_text(list(frame.lines)),
-                         ["⧗ queued", top, boxed("> /", 40), bottom, "/help", "/model", "info"])
-        self.assertEqual(frame.cursor, (2, 5))  # the caret's row is counted from the top, as without the menu
+                         ["⧗ queued", top, composer_row("❯ /", 40), bottom, "/help", "/model", "info"])
+        self.assertEqual(frame.cursor, (2, 3))  # the caret's row is counted from the top, as without the menu
         self.assertEqual((frame.budget.slot, frame.budget.below), (1, 2))
         full = build_frame(cols=40, rows=24, composer=composer, info=self.info, slot=plain(*"abc"),
                            below=plain(*"0123456789"))
@@ -419,8 +419,8 @@ class FrameTests(unittest.TestCase):
         frame = build_frame(cols=40, rows=12, composer=composer, info=self.info)
         self.assertEqual(frame.budget.composer, 3)
         self.assertEqual(lines_text(list(frame.lines))[-5:],
-                         [boxed("  3", 40), boxed("  4", 40), boxed("  5", 40), box_edges(40)[1], "info"])
-        self.assertEqual(frame.cursor, (3, 5))
+                         [composer_row("  3", 40), composer_row("  4", 40), composer_row("  5", 40), rule_edges(40)[1], "info"])
+        self.assertEqual(frame.cursor, (3, 3))
 
     def test_the_attachment_row_tops_the_composer_within_its_cap(self) -> None:
         chips = (Span("📎 shot.png 1280×720"),)
@@ -438,8 +438,8 @@ class FrameTests(unittest.TestCase):
                 self.assertEqual(lines_text([with_chips.lines[last_input]]), lines_text([plain_frame.lines[plain_last]]))
                 self.assertLessEqual(with_chips.budget.composer, composer_cap(12))
                 top = with_chips.budget.composer_top
-                self.assertEqual(box_inner(lines_text([with_chips.lines[top]])[0]), "📎 shot.png 1280×720")
-                self.assertEqual(lines_text([with_chips.lines[top - 1]]), [box_edges(40)[0]])
+                self.assertEqual(composer_text(lines_text([with_chips.lines[top]])[0]), "📎 shot.png 1280×720")
+                self.assertEqual(lines_text([with_chips.lines[top - 1]]), [rule_edges(40)[0]])
 
     def test_a_terminal_too_short_for_two_composer_rows_drops_the_attachment_row(self) -> None:
         frame = build_frame(
@@ -451,35 +451,39 @@ class FrameTests(unittest.TestCase):
         frame = build_frame(
             cols=12, rows=4, composer=Composer(), info=self.info, slot=plain("menu")
         )
-        self.assertEqual(lines_text(list(frame.lines)), ["> ", "info"])
+        self.assertEqual(lines_text(list(frame.lines)), ["❯ ", "info"])
         self.assertEqual(frame.cursor, (0, 2))
 
-    def test_the_box_edges_span_the_width_in_the_rule_colour(self) -> None:
-        self.assertEqual(box_edge(5, DEFAULT_THEME, BOX_TOP), (Span("╭───╮", DEFAULT_THEME.rule),))
-        self.assertEqual(box_edge(5, DEFAULT_THEME, BOX_BOTTOM), (Span("╰───╯", DEFAULT_THEME.rule),))
+    def test_the_rules_span_the_width_in_the_rule_colour(self) -> None:
+        # The composer as Claude Code draws it now (owner, 2026-10-22): a full-width rule above and under it, no corners.
+        self.assertEqual(rule_line(5, DEFAULT_THEME), (Span("─────", DEFAULT_THEME.rule),))
+        self.assertEqual(rule_line(0, DEFAULT_THEME), (Span("", DEFAULT_THEME.rule),))
 
-    def test_every_composer_row_sits_between_the_boxs_sides_at_the_right_edge(self) -> None:
-        composer = Composer(text="a" * 60 + " 한글 tail", caret=3)
-        frame = build_frame(cols=40, rows=24, composer=composer, info=self.info)
-        top = frame.budget.composer_top
-        for row in frame.lines[top : top + frame.budget.composer]:
-            with self.subTest(row=lines_text([row])):
-                self.assertEqual((row[0], row[-1]), (Span("│ ", DEFAULT_THEME.rule), Span(" │", DEFAULT_THEME.rule)))
-                self.assertEqual(line_width(row), 40)
+    def test_every_composer_row_is_full_width_with_no_sides_at_every_width(self) -> None:
+        for cols in (60, 100, 150):
+            composer = Composer(text="a" * 160 + " 한글 tail", caret=3)
+            frame = build_frame(cols=cols, rows=24, composer=composer, info=self.info)
+            top = frame.budget.composer_top
+            self.assertEqual(lines_text([frame.lines[top - 1], frame.lines[top + frame.budget.composer]]), ["─" * cols] * 2)
+            for index, row in enumerate(frame.lines[top : top + frame.budget.composer]):
+                with self.subTest(cols=cols, row=lines_text([row])):
+                    self.assertEqual(row[0].text, "❯ " if index == 0 else "  ")
+                    self.assertNotIn("│", lines_text([row])[0])
+                    self.assertLessEqual(line_width(row), cols)
+            self.assertEqual(frame.cursor, (top, 2 + 3))  # the caret is the input's own column: no side before it
 
-    def test_no_mode_changes_the_box_and_a_shell_line_takes_the_accent_only_on_its_prompt_mark(self) -> None:
-        # The owner, round 4: no composer recolour for accept all or plan; the mode is said on the info line.
-        from dataclasses import replace
-
-        expected = (box_edge(30, DEFAULT_THEME, BOX_TOP), box_edge(30, DEFAULT_THEME, BOX_BOTTOM))
+    def test_no_mode_changes_the_rules_and_a_shell_line_takes_the_shell_hue_only_on_its_prompt_mark(self) -> None:
+        # The owner, round 4: no composer recolour for accept all or plan; the mode is said on the info line. A `!`
+        # line's mark is the shell family's hue (#2223 review: the running blue says only "running").
+        expected = (rule_line(30, DEFAULT_THEME), rule_line(30, DEFAULT_THEME))
         for mode in ("normal", MODE_ACCEPT, MODE_PLAN, MODE_ACCEPT_PLAN, MODE_SHELL, "not-a-mode"):
             with self.subTest(mode=mode):
                 frame = build_frame(cols=30, rows=24, composer=Composer(text="!ls", caret=3), info=self.info, mode=mode)
                 top, bottom = frame.budget.composer_top - 1, frame.budget.composer_top + frame.budget.composer
                 self.assertEqual((frame.lines[top], frame.lines[bottom]), expected)
-                mark = frame.lines[frame.budget.composer_top][1]
-                self.assertEqual(mark.text, "> ")
-                shell = replace(DEFAULT_THEME.accent, bold=True)
+                mark = frame.lines[frame.budget.composer_top][0]
+                self.assertEqual(mark.text, "❯ ")
+                shell = DEFAULT_THEME.kinds[KIND_FAMILIES.index("shell")]
                 self.assertEqual(mark.style, shell if mode == MODE_SHELL else DEFAULT_THEME.prompt)
 
     def test_the_placeholder_is_drawn_after_the_prompt_and_never_typed(self) -> None:
@@ -488,9 +492,9 @@ class FrameTests(unittest.TestCase):
             cols=40, rows=24, composer=composer, info=self.info, placeholder="Ask Hermes anything"
         )
         row = frame.lines[frame.budget.composer_top]
-        self.assertEqual(lines_text([row]), [boxed("> Ask Hermes anything", 40)])
+        self.assertEqual(lines_text([row]), [composer_row("❯ Ask Hermes anything", 40)])
         self.assertIn(Span("Ask Hermes anything", DEFAULT_THEME.hint), row)
-        self.assertEqual(frame.cursor, (frame.budget.composer_top, 4))
+        self.assertEqual(frame.cursor, (frame.budget.composer_top, 2))
         self.assertEqual(composer.text, "")
         typed = build_frame(
             cols=40,
@@ -499,7 +503,7 @@ class FrameTests(unittest.TestCase):
             info=self.info,
             placeholder="Ask Hermes anything",
         )
-        self.assertEqual(lines_text([typed.lines[typed.budget.composer_top]]), [boxed("> x", 40)])
+        self.assertEqual(lines_text([typed.lines[typed.budget.composer_top]]), [composer_row("❯ x", 40)])
 
     def test_the_sticky_line_shows_the_first_line_of_the_prompt(self) -> None:
         line = sticky_line("  fix the 한글 bug\nand more", 40, DEFAULT_THEME)
@@ -519,7 +523,7 @@ class FrameTests(unittest.TestCase):
                 self.assertEqual({span.style.bg for span in line}, {None})
                 self.assertFalse(any(is_fill(span) for span in line))
                 self.assertEqual([(span.text, span.style) for span in line],
-                                 [("↳ you: ", theme.accent), ("fix the bug", theme.muted)])
+                                 [("↳ you: ", theme.running), ("fix the bug", theme.muted)])
                 (cut,) = [sticky_line("abcdefghij", 12, theme)]
                 self.assertEqual((cut[-1].text, cut[-1].style), ("…", theme.dim))  # a dim mark where it is cut
 

@@ -211,7 +211,7 @@ def _block_rows(text: str, state: MarkdownState, width: int, theme: Theme) -> tu
     if item is not None:
         marker, content = item
         column = indent + cell_width(marker)
-        first = (*pad, Span(marker, theme.accent))
+        first = (*pad, Span(marker, theme.muted))
         rows = wrap_prefixed(_inline_spans(content, theme.text, theme), first, (Span(" " * column),), width)
         return rows, replace(state, list_indent=column)
     if not indent:
@@ -286,7 +286,7 @@ def _diff_fence_rows(text: str, state: MarkdownState, width: int, theme: Theme) 
     if body.startswith(("+++", "---")):
         return _verbatim_rows(text, width, theme.label)
     if body.startswith("@@"):
-        return _verbatim_rows(text, width, theme.accent)
+        return _verbatim_rows(text, width, theme.muted)
     if body.startswith("+"):
         return band_rows(text, width, theme.diff_add)
     if body.startswith("-"):

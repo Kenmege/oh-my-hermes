@@ -34,7 +34,7 @@ from . import gateway_contract as contract
 from .frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN, MODE_SHELL
 from .keys import CHAR, TAB, Key, Paste
 from .style import Line, Span, Style
-from .theme import Theme
+from .theme import KIND_FAMILIES, Theme
 from .transcript import NOTICE_ERROR, NOTICE_WARN, as_text
 from .width import cell_width, line_width, truncate_line
 
@@ -112,7 +112,7 @@ def mode_label(mode: str, theme: Theme, form: int = 0) -> Line:
     if mode == MODE_ACCEPT_PLAN:
         return (*accept, Span(LABEL_SEPARATOR, theme.hint), *plan)
     if mode == MODE_SHELL:
-        return (Span(SHELL_LABELS[form], replace(theme.accent, bold=True)),)
+        return (Span(SHELL_LABELS[form], theme.kinds[KIND_FAMILIES.index("shell")]),)  # the shell family's hue
     return {MODE_ACCEPT: accept, MODE_PLAN: plan}.get(mode, ())
 
 

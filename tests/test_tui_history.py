@@ -224,7 +224,7 @@ class SearchTests(unittest.TestCase):
         search = self.search()
         self.typed(search, "git")
         rows = lines_text(search.lines(80, DEFAULT_THEME, 4))
-        self.assertEqual(rows[0].rstrip(), "> git push  1/2")
+        self.assertEqual(rows[0].rstrip(), "❯ git push  1/2")
         self.assertEqual(rows[1].rstrip(), "⌕ search history: git")  # its keys are the info line's
         empty = HistorySearch(self.ENTRIES, "")
         self.typed(empty, "nothing like it")

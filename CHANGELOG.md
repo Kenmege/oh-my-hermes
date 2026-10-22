@@ -4,6 +4,36 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The OMH TUI's transcript tells blocks, states and tools apart at a glance
+  (the rail and kind colours the owner picked on 2026-10-22).** On v4.0.1 a
+  tool's name, its arguments, its duration and its `⎿` results were all one
+  teal, calls were stacked with no gap, and nine of the fifteen rows in the
+  owner's screenshot were skill loads and tool-detail reads. Now each block
+  hangs on a continuous `┃` rail with no fill: grey for your prompt, the
+  skin's accent for a reply, and a call's state colour for the call. A call's
+  mark and rail follow the dag view's rule, each state in its own glyph: a
+  running blue `○` (the same blue as the working glyph, the agent spinners, `●
+  main` and a running lane in the dag tree), a green `●` once done, a red `✗`
+  when it failed or was denied (the one mark: the answer row under a denied
+  call keeps its words and drops its own); a failed call no longer sits on a
+  red band. Its name is bold in its tool family's hue (skills orchid, shell
+  amber, files peach, web lime, delegation and the dag magenta), each at 4.5:1
+  on dark and light terminals; arguments are grey and results a fainter grey.
+  A blank row separates two calls. A run of `skill_view` and `tool_describe`
+  calls is one row, `● Loaded 4 skills + tool details · …`, unfolded again by
+  Ctrl+O, and an interpreter fed its script through a heredoc reads
+  `terminal(python3 script · 23 lines)` while any other command shows its own
+  first line. The composer sits between two full-width rules behind `❯ ` with
+  no side edges, as in Claude Code, and your echoed prompt and a command's
+  echo hang on the same `┃ ❯`, so a bare `❯` is only ever the composer. A
+  `/name` that names one of the TUI's commands or Hermes' skills is bold in
+  the skill hue in the composer, in the echoed prompt and on the `↳ you:` row;
+  a path, an unknown `/foo` and a slash inside a word stay plain. Agent rows
+  read a short title (the goal up to its first field label such as
+  `DELIVERABLE:` or the end of its first sentence; a dag lane keeps its label)
+  and lead their figures with the model, which stays longest as the row
+  narrows. The agent log's tool rows take the same hues.
+
 - **Native Hermes children receive their own model calibration (#2214).** A
   separate child-only system prompt section selects one exact-model override,
   family block, or generic fallback from the child's own session model, never

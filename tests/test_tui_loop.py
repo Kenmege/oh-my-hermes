@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import unittest
 
-from _tui_lines import box_inner
+from _tui_lines import composer_text
 from test_tui_app import FakePoller, ScriptedTerminal
 from test_tui_modes import SID, RecordingClient
 from omh.tui.app import (
@@ -126,7 +126,7 @@ class LoopWaitTests(unittest.TestCase):
         terminal.reads.append((0.002, b"x"))
         app._step()
         self.assertTrue(app.composer.text == "x" and not app.dirty)
-        self.assertIn("> x", [box_inner(line) for line in drawn_lines(app)])
+        self.assertIn("❯ x", [composer_text(line) for line in drawn_lines(app)])
 
 
 if __name__ == "__main__":
