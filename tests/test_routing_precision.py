@@ -44,8 +44,19 @@ class RoutingPrecisionTests(unittest.TestCase):
         # fillers, a negation or what the person is in the middle of, a
         # question that names ultrawork by its short name and an uppercase
         # sigil's stop add eight (+8).
+        # Multi-part work to dag-ulw adds three controls (+3).
+        # A negated sweep, a status lookup and one PR's files add three (+3).
+        # A report-only review, a past, a single command and a stop with a
+        # declarative reason add four (+4).
+        # A past, a summary and a condition over every PR add three (+3).
+        # One PR in other words, a "does not work" fault and a push over every
+        # branch add five (+5); a schedule, one PR or branch singled out and a
+        # fault in other words add five more (+5); PR 3 without a counter
+        # stays one scope (+1); two more schedule shapes, a count of files and a
+        # count of PRs with no breadth word add four (+4); a noun with 마다, an
+        # interval and PR 하나 add three (+3).
         # Three science vocabulary controls remain direct answers.
-        self.assertEqual(payload["summary"]["case_count"], 1039)
+        self.assertEqual(payload["summary"]["case_count"], 1070)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -111,8 +122,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # directly (+5), and so are four more own-run stops and a question
         # about using the skill (+4), and a question that names the skill by
         # its label (+1), and so are the eight stops and questions above (+8).
+        # A Korean stop then a negation is answered directly (+1).
+        # A stop with a declarative reason is answered directly (+1).
         # The three science vocabulary controls also answer directly.
-        self.assertEqual(payload["summary"]["direct_answer_count"], 340)
+        self.assertEqual(payload["summary"]["direct_answer_count"], 342)
         # show-reel's README-link control is answered as a file lookup (+1).
         self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
@@ -138,8 +151,19 @@ class RoutingPrecisionTests(unittest.TestCase):
         # question about rust after /omh-rust (+1). A Korean stop verb before
         # a task noun runs its skill, and /ulw-context status gets the status
         # card (+2), and so does /omh-cancel 상태 보여줘 (+1).
+        # Multi-part work to dag-ulw adds four graph runs, a review offered and
+        # not started, a check-and-close that stays, three single tasks that
+        # stay, agent-ops-review's status and a stop with a loanword object (+11).
+        # One fix in many places stays on ultrawork (+1).
+        # Two changes on every unit run as a graph and a hold stays (+3).
+        # Four request forms run as a graph and four named skills keep the
+        # request (+8); three more forms run as a graph and four requests
+        # stay where main sends them (+7); a count of PRs runs as a graph (+1).
+        # A twice-a-day schedule and my latest pull request stay, and a sweep
+        # said now runs as a graph (+3). Every deploy and every push stay, and
+        # each service with 마다 runs as a graph (+3).
         # Three unnamed science requests render dedicated computation cards.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1038)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1075)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

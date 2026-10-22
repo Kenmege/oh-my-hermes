@@ -46,7 +46,9 @@ from ..plugin_bundle.omh.dag_ulw_cues import (
     asks_after_the_sigil,
     big_work_for_dag_ulw,
     dag_ulw_control,
+    dispatches_dag_ulw,
     reports_or_asks_after_the_name,
+    work_over_many_targets,
 )
 from ..plugin_bundle.omh.invocation_cues import STATUS as INVOKED_STATUS
 from ..plugin_bundle.omh.invocation_cues import invoked_instruction
@@ -1831,7 +1833,8 @@ def _enriched_route(
             and isinstance(lexical_rows[0], dict)
         ):
             first_skill = str(lexical_rows[0].get("skill") or "")
-            if first_skill:
+            # Big work by size keeps dag-ulw, which the shortlist ranks below ultrawork on the same words.
+            if first_skill and not _keeps_dag_ulw_by_size(route, request):
                 route["candidate_skill"] = first_skill
                 route["candidate_harness"] = primary_harness_for_skill(first_skill)
             route["clarification"] = shortlist_clarification(
@@ -1878,7 +1881,11 @@ def _enriched_route(
         )
         route["recommendations"] = [dict(candidate) for candidate in candidates]
         if candidates:
-            candidate_skill = str(candidates[0].get("skill") or "")
+            # A request read as big work by size keeps dag-ulw as the skill it asks about: the shortlist ranks
+            # ultrawork first on the same words (`dag_ulw_cues.big_work_for_dag_ulw`).
+            candidate_skill = (
+                DAG_ULW if _keeps_dag_ulw_by_size(route, request) else str(candidates[0].get("skill") or "")
+            )
             route["candidate_skill"] = candidate_skill
             route["candidate_harness"] = primary_harness_for_skill(candidate_skill)
             route["clarification"] = f"Ask whether to use `{candidate_skill}` for the requested outcome."
@@ -2204,6 +2211,18 @@ def _route_chat_message_cached(
     # Built once: the fast paths and the scorer below read its stages instead
     # of each re-deriving the prep chain from `routing_message`.
     query = RoutingQuery.from_message(routing_message, shielded=executable_message != message)
+    # Positive evidence of work over many targets dispatches dag-ulw before any lane's fast path reads one of its
+    # words ("upstream", "pytest", "stale"), so the route hint, which starts dag-ulw on the same reading, never
+    # starts a run the router did not dispatch. A request that invokes a skill or the loop is that skill's ("use
+    # git-workflow: 열린 PR들 전부 리베이스해줘", "omh loop …").
+    if (
+        dispatches_dag_ulw(routing_message, reference_regions(message).links)
+        and explicit_skill_invocation(routing_message, query=query) in (None, DAG_ULW)
+        and not explicit_loop_invocation_signal(routing_message)
+    ):
+        return _dag_ulw_by_evidence_decision(
+            message, routing_message=routing_message, source=source, min_confidence=min_confidence
+        ).to_dict()
     trivial_decision = _trivial_message_fast_path_decision(
         routing_message,
         query=query,
@@ -2642,9 +2661,9 @@ def _route_chat_message_cached(
         reason = f"Best match confidence {candidate_confidence} is below {min_confidence}; clarify before dispatch."
 
     if (
-        candidate_skill == "ultrawork"
-        and action in {"dispatch", "clarify"}
+        action in {"dispatch", "clarify"}
         and not explicit_skill
+        and candidate_skill == "ultrawork"
         and big_work_for_dag_ulw(routing_message)
     ):
         candidate_skill = "dag-ulw"
@@ -2656,6 +2675,16 @@ def _route_chat_message_cached(
             action = "dispatch"
             ambiguity_kind = ""
             reason = "Several parts to run in parallel or across the codebase: plan and run them as a dag-ulw graph."
+    elif (
+        action in {"clarify", "fallback"}
+        and selected_skill == _ROUTER_SKILL
+        and not explicit_skill
+        and work_over_many_targets(routing_message, reference_regions(message).links)
+    ):
+        # Work over many targets without that evidence ("review all open PRs") asks once, with dag-ulw as the skill it
+        # asks about; it never dispatches it.
+        candidate_skill = "dag-ulw"
+        candidate_harness = primary_harness_for_skill(candidate_skill)
 
     # A question about dag-ulw is answered, the way a question about any other skill is: its two triggers score
     # its name high in the catalog, and `ulw` inside the name scores ultrawork, but asking what it is, what it
@@ -3173,6 +3202,51 @@ def _meta_router_fast_path_decision(
         workflow_route_plan=None,
         learning_candidate_card=None,
         recommendations=(recommendation,),
+    )
+
+
+def _dag_ulw_by_evidence_decision(
+    message: str,
+    *,
+    routing_message: str,
+    source: str,
+    min_confidence: str,
+) -> ChatRouteDecision:
+    """A dag-ulw dispatch for work over many targets with positive evidence (`dag_ulw_cues.dispatches_dag_ulw`: a
+    change verb from a closed allow list, in request form, on a breadth object)."""
+    selected_skill = DAG_ULW
+    selected_harness = primary_harness_for_skill(selected_skill)
+    reason = "Work over many targets: plan and run it as a dag-ulw graph."
+    recommendation = recommendation_for_definition(
+        _skill_definition_by_name(selected_skill),
+        message,
+        matched=("dag_ulw_by_evidence",),
+        score=12,
+        why=reason,
+    )
+    return ChatRouteDecision(
+        schema_version=1,
+        source=source,
+        action="dispatch",
+        selected_skill=selected_skill,
+        selected_harness=selected_harness,
+        candidate_skill=selected_skill,
+        candidate_harness=selected_harness,
+        confidence="high",
+        score=12,
+        threshold=min_confidence,
+        explicit=False,
+        ambiguous=False,
+        reason=reason,
+        clarification="",
+        routing_prompt=_routing_prompt("dispatch", selected_skill, selected_skill, reason, message),
+        task_card=None,
+        workflow_route_plan=None,
+        learning_candidate_card=None,
+        recommendations=(recommendation,),
+        route_next_action=_route_specific_next_action(
+            routing_message, selected_skill=selected_skill, explicit_loop=False
+        ),
     )
 
 
@@ -6991,6 +7065,15 @@ def _invocation_as_written(written: str, routing_message: str) -> str:
     if _with_canonical_display_names(folded[0].lower()) != head:
         return routing_message
     return f"{head} {typed[1]}"
+
+
+def _keeps_dag_ulw_by_size(route: Mapping[str, object], request: str) -> bool:
+    """Whether a clarify keeps dag-ulw as its candidate: the route named it for big work by size, not for a mention
+    of the skill ("stop using dag ulw")."""
+    regions = reference_regions(request)
+    return route.get("candidate_skill") == DAG_ULW and (
+        big_work_for_dag_ulw(regions.executable_text) or work_over_many_targets(regions.executable_text, regions.links)
+    )
 
 
 def invoked_skill_stops_or_asks(message: str) -> bool:

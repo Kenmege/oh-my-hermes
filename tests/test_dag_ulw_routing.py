@@ -10,18 +10,22 @@ data pipelines, `ulw` / `ultrawork` with `ultrawork`.
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from _local_package import load_local_package
 
 load_local_package()
 
 from omh.plugin_bundle.omh.awareness import awareness_route_hint, awareness_route_hint_context_from_payload  # noqa: E402
+from omh.plugin_bundle.omh.reference_regions import reference_regions  # noqa: E402
 from omh.plugin_bundle.omh.dag_ulw_cues import (  # noqa: E402
     asks_about_dag_ulw,
     big_work_for_dag_ulw,
     dag_ulw_control,
     declines_dag_ulw,
+    dispatches_dag_ulw,
     invokes_dag_ulw,
+    work_over_many_targets,
 )
 from omh.routing.chat import route_chat_message  # noqa: E402
 from omh.routing.policy import skill_is_negated  # noqa: E402
@@ -199,6 +203,234 @@ class RouterTests(unittest.TestCase):
         # The retired-engine alias route answers coordinated workers before scoring, lanes phrase or not.
         route = route_chat_message("run three coordinated workers on one shared task list in parallel lanes")
         self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "ultrawork"))
+
+    def _dag_ulw_starts(self, message: str) -> tuple[bool, bool, str]:
+        """Whether the router dispatches dag-ulw, whether the route hint starts it, and the route's candidate."""
+        route = route_chat_message(message, source="discord")
+        hints = awareness_route_hint(message)["hints"]
+        hint_starts = any(hint.get("workflow") == "dag-ulw" and hint.get("next_action") == "start_dag_run" for hint in hints)
+        return route["selected_skill"] == "dag-ulw", hint_starts, str(route.get("candidate_skill") or "")
+
+    def test_work_over_many_targets_runs_as_a_graph(self) -> None:
+        # Positive evidence (`dispatches_dag_ulw`): a change verb from the allow list, in request form, on a breadth
+        # object. The router dispatches dag-ulw whichever lane scored, and the hint starts it on the same reading.
+        for message in ("rlaope로 올린 hermes upstream pr들 전부 확인해서 닫을건 닫고 리뷰반영할건 리뷰반영하고 rebase할건 리베이스하고",
+                        "열린 PR들 전부 리베이스해줘", "fix all the failing tests", "update every service to node 22",
+                        "implement search and export features in parallel", "모든 패키지 버전 올려줘",
+                        "브랜치들 전부 main에 맞춰 리베이스해줘", "billing 말고 모든 서비스 node 22로 올려줘",
+                        "update the dependencies in all services", "블로그 pr 전부 머지해줘",
+                        # A request ending said as a word of its own, or a 해, 놔 or ㄱ ending (#2232 review).
+                        "열린 PR들 전부 리베이스 해줘", "모든 서비스 node 22로 업데이트 해주세요", "PR들 다 리베이스해",
+                        "모든 패키지 버전 올려놔", "PR들 전부 리베이스 ㄱ", "모든 서비스 업데이트 좀 해줘",
+                        # A past or a completion in a modifier names which units.
+                        "내가 올렸던 PR들 전부 리베이스해줘", "어제 실패했던 테스트 전부 고쳐줘",
+                        "충돌났던 브랜치들 전부 다시 리베이스해줘", "완료된 이슈들 전부 닫아줘",
+                        # The owner's English change verbs inside a Korean request, and a push after a change.
+                        "hermes upstream에 낸 PR들 전부 확인해서 리뷰 코멘트 반영하고 rebase까지 ㄱㄱ",
+                        "열린 PR들 전부 리뷰 코멘트 반영하고 force push ㄱㄱ", "PR들 전부 rebase 해줘",
+                        # A change, then a report on it.
+                        "fix all the failing tests and tell me which ones were flaky",
+                        # Many PRs or branches stay many: 들, a breadth word or 모든 on the PR or the branch itself.
+                        "열린 PR 전부 리베이스해줘", "main 브랜치에 PR들 전부 머지해줘", "모든 PR 테스트 고쳐줘",
+                        # A change aimed so a thing does not happen, or units a fault describes, are no fault.
+                        "모든 테스트 통과하도록 고쳐줘", "모든 모듈 print 안 쓰게 고쳐줘", "안 돌아가는 테스트 전부 고쳐줘",
+                        "모든 페이지 더블클릭 안 되게 고쳐줘",
+                        # More request endings, a modifier past, the owner's words (#2232 review 2).
+                        "모든 서비스 업데이트 해주세용", "PR들 전부 리베이스해줘요", "모든 서비스 업데이트 해 놔줘", "모든 모듈에 로깅 넣어 줘",
+                        "모든 서비스 업데이트 시켜줘", "모든 패키지 버전 올리자", "PR들 전부 리베이스 고", "PR들 전부 리베이스해주셈",
+                        "모든 서비스 업데이트 부탁", "충돌났었던 브랜치들 전부 리베이스해줘", "모든 패키지 upgrade해줘",
+                        "PR들 전부 확인해서 close할 건 close하고 리베이스하고", "PR들 몽땅 리베이스해줘", "모든 패키지 최신화해줘",
+                        "for each of my PRs: rebase onto main and fix the conflicts", "for every open PR, rebase it onto main",
+                        # A count of PRs, repos or branches with a breadth word after it is many of them.
+                        "PR 3개 전부 리베이스해줘", "PR 5개 다 머지해줘", "레포 3개 전부 의존성 올려줘", "풀리퀘 3개 전부 리베이스해줘",
+                        # The same request now is no schedule.
+                        "rebase every open PR now", "지금 바로 열린 PR들 전부 리베이스해줘", "이번에 한 번만 열린 PR들 전부 리베이스해줘",
+                        # A change aimed so a thing does not happen, with 수정 as with 고쳐.
+                        "모든 페이지 버튼 안 보이게 수정해줘", "모든 페이지 링크 안 열리게 수정해줘", "모든 서비스 로그 안 찍히게 수정해줘",
+                        "모든 페이지 더블클릭 안 되게 수정해줘"):
+            with self.subTest(message=message):
+                self.assertTrue(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
+        # Work over many targets without that evidence is offered, never started (`work_over_many_targets`).
+        for message in ("review all open PRs", "check all open pull requests and close the stale ones",
+                        "migrate across all modules to the new logger"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertTrue(work_over_many_targets(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        # Where no rule names it, the hint offers dag-ulw (ask once), and the router asks about it.
+        offer = [hint for hint in awareness_route_hint("migrate across all modules to the new logger")["hints"]
+                 if hint.get("workflow") == "dag-ulw"]
+        self.assertEqual([hint.get("next_action") for hint in offer], ["ask_one_clarification"])
+        self.assertEqual(self._dag_ulw_starts("migrate across all modules to the new logger")[2], "dag-ulw")
+
+    def test_each_hard_exclude_alone_keeps_a_change_off_the_graph(self) -> None:
+        # Each row is a change the router would dispatch on but for one hard exclude: a skill or engine named first
+        # (with a Korean particle, in Korean, or after omh), a past, one pull request's scope (by number, in words or
+        # as 풀리퀘), a stop or a hold, a completion, a condition, work until a condition, parallel running as the
+        # work's subject, a recurring schedule, one branch (named or current), one PR singled out by a modifier.
+        for message in ("team 열린 PR들 전부 리베이스해줘", "plan 모든 패키지 버전 올려줘", "PR들 전부 리베이스했으니 머지해줘",
+                        "PR 2232 파일들 전부 고쳐줘", "fix all the files in this PR", "PR들 전부 리베이스 중단하고 머지해줘",
+                        "브랜치들 다 정리됨 이제 전부 머지해줘", "테스트 다 통과하면 모든 PR 머지해줘",
+                        "fix all the failing tests until CI is green", "fix all the modules that run in parallel",
+                        "loop로 모든 서비스 업데이트해줘", "루프로 모든 서비스 업데이트해줘", "omh loop 모든 서비스 업데이트해줘",
+                        "update all snapshots in PR number 2240", "2240번 풀리퀘 모든 테스트 다시 고쳐줘",
+                        "테스트 수정 완료, 이제 PR들 전부 머지해줘", "rebase all my open PRs every hour", "매일 아침 PR들 전부 리베이스해줘",
+                        "pull 951 테스트들 다 고쳐줘", "fix all the failing tests on feature/dag-default",
+                        "fix all the failing tests on the current branch", "현재 브랜치 테스트 전부 고쳐줘", "어제 내가 연 PR 테스트 전부 고쳐줘",
+                        # A PR number without a counter stays one scope, the numbered twins of "PR 3개".
+                        "PR 3 테스트 전부 고쳐줘", "3번 PR 테스트 전부 고쳐줘", "#3 테스트 전부 고쳐줘",
+                        # A schedule in its other shapes, and one PR picked out by an adjective (#2232 review 3).
+                        "2시간에 한 번씩 레포들 전부 의존성 올려줘", "하루 두 번 열린 PR들 전부 리베이스해줘",
+                        "rebase every open PR each morning", "격주로 모든 서비스 로그 포맷 고쳐줘", "cron으로 모든 서비스 업데이트해줘",
+                        "주 2회 모든 패키지 업데이트해줘", "update all services twice a day", "스케줄 걸어서 모든 서비스 업데이트해줘",
+                        "fix every test in my latest pull request",
+                        # A noun with 마다 other than a unit of work, 매 + a noun, an interval, a clock word, every
+                        # other day, an event that repeats the work, and one PR picked out by 하나 (#2232 review 4).
+                        "반나절마다 PR들 전부 리베이스해줘", "스프린트마다 모든 패키지 올려줘", "배포마다 모든 서비스 설정 업데이트해줘",
+                        "매 분기마다 모든 레포 라이선스 업데이트해줘", "매 스프린트 모든 패키지 올려줘", "3일 간격으로 모든 서비스 업데이트해줘",
+                        "fix all failing tests on every push", "rebase all open PRs on each merge", "자정에 PR들 전부 리베이스해줘",
+                        "하루 걸러 모든 서비스 업데이트해줘", "우리 팀 PR 하나 테스트 다 고쳐줘"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                router, hint, _candidate = self._dag_ulw_starts(message)
+                self.assertFalse(router)
+                self.assertFalse(hint)
+        # A review is offered, never dispatched: the allow list holds only changes.
+        self.assertFalse(dispatches_dag_ulw("PR들 전부 리뷰해줘"))
+        self.assertTrue(work_over_many_targets("PR들 전부 리뷰해줘"))
+
+    def test_a_skill_named_or_invoked_keeps_a_change_over_many_targets(self) -> None:
+        # The name with a Korean particle, in Korean, after omh, or as the instrument anywhere, and an explicit
+        # invocation of a skill or the loop, keep the request on that skill: the router does not dispatch dag-ulw and
+        # the hint does not start it.
+        for message, skill in (("loop로 모든 서비스 업데이트해줘", "loop"), ("루프로 모든 서비스 업데이트해줘", "loop"),
+                               ("loop으로 PR들 전부 리베이스해줘", "loop"), ("omh loop 모든 서비스 업데이트해줘", "loop"),
+                               ("github-event-ops로 열린 PR들 전부 리베이스해줘", "github-event-ops"),
+                               ("github-event-ops에서 열린 PR들 전부 리베이스해줘", "github-event-ops"),
+                               ("deploy-and-monitor로 모든 서비스 업데이트해줘", "deploy-and-monitor"),
+                               ("git-workflow로 브랜치들 전부 리베이스해줘", "git-workflow"),
+                               ("use git-workflow: 열린 PR들 전부 리베이스해줘", "git-workflow"),
+                               ("rebase all my open PRs with git-workflow", "git-workflow")):
+            with self.subTest(message=message):
+                route = route_chat_message(message, source="discord")
+                self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", skill))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        for message in ("team으로 모든 서비스 업데이트해줘", "ralph로 모든 서비스 업데이트해줘", "maestro로 모든 패키지 버전 올려줘",
+                        "refactor-plan으로 모든 모듈 python 3.12로 올려줘", "refactor-plan를 써서 모든 모듈 python 3.12로 올려줘",
+                        "code-review로 열린 PR들 전부 고쳐줘",
+                        "열린 PR들 전부 git-workflow로 리베이스해줘", "모든 서비스 루프로 돌면서 업데이트해줘"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        # The cue reads the change; the explicit invocation is what keeps it off the graph, on both surfaces.
+        self.assertTrue(dispatches_dag_ulw("use git-workflow: 열린 PR들 전부 리베이스해줘"))
+
+    def test_a_pull_request_link_is_one_scope(self) -> None:
+        # The executable text leaves the link out, so the callers pass it: the PR it points at is one scope.
+        message = "https://github.com/rlaope/oh-my-hermes/pull/2240 의 테스트 전부 고쳐줘"
+        regions = reference_regions(message)
+        self.assertTrue(dispatches_dag_ulw(regions.executable_text))
+        self.assertFalse(dispatches_dag_ulw(regions.executable_text, regions.links))
+        self.assertFalse(work_over_many_targets(regions.executable_text, regions.links))
+        self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+
+    def test_a_count_is_breadth_only_on_prs_repos_or_branches_with_a_breadth_word(self) -> None:
+        # Lead decision on the #2232 review: "PR 3개 전부" and "PR 5개 다" are many PRs, while a count of anything else,
+        # or a count with no breadth word, is a small single task that starts nothing, as on main.
+        for message in ("PR 3개 전부 리베이스해줘", "PR 5개 다 머지해줘", "레포 3개 전부 의존성 올려줘", "브랜치 2개 모두 main에 리베이스해줘"):
+            with self.subTest(message=message):
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
+        for message in ("파일 2개 수정해줘", "테스트 3개 고쳐줘", "파일 두 개 이름 바꿔줘", "이슈 2건 닫아줘", "PR 2개 머지해줘",
+                        "엔드포인트 2개 인증 붙여줘", "서비스 세 개 node 22로 올려줘", "PR 3개 리베이스해줘", "파일 2개 전부 수정해줘",
+                        "테스트 3개 다 고쳐줘", "서비스 세 개 다 업데이트해줘", "PR 3개 중 하나 리베이스해줘"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertFalse(work_over_many_targets(message))
+                router, hint, candidate = self._dag_ulw_starts(message)
+                self.assertEqual((router, hint), (False, False))
+                self.assertNotEqual(candidate, "dag-ulw")
+
+    def test_a_unit_of_work_with_madda_is_each_of_them_not_a_schedule(self) -> None:
+        # "서비스마다" and "PR마다" mean each of them, so they route as they did before the schedule reader read 마다:
+        # a breadth object with a change runs as a graph, and one with none starts nothing. Any other noun with 마다 is
+        # a schedule (`test_each_hard_exclude_alone_keeps_a_change_off_the_graph`).
+        for message in ("PR마다 테스트 전부 고쳐줘", "각 서비스마다 로깅 추가해줘"):
+            with self.subTest(message=message):
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
+        for message in ("서비스마다 로깅 추가해줘", "레포마다 CI 설정 고쳐줘", "모듈마다 로거 붙여줘", "패키지마다 버전 올려줘"):
+            with self.subTest(message=message):
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+
+    def test_a_missing_skill_catalog_is_not_kept(self) -> None:
+        # With no sidecar the catalog names are unknown, and that is not kept: once the sidecar answers, a request
+        # that opens with a catalog skill's name is that skill's again.
+        from omh.plugin_bundle.omh import dag_ulw_cues
+
+        dag_ulw_cues._CATALOG_SKILL_NAMES.clear()
+        try:
+            with mock.patch.object(dag_ulw_cues._skill_shortlist, "catalog_skill_names", return_value=None):
+                self.assertFalse(dag_ulw_cues._opens_with_a_skill_name("code-review 모든 패키지 버전 올려줘"))
+            with mock.patch.object(
+                dag_ulw_cues._skill_shortlist, "catalog_skill_names", return_value=frozenset({"code-review"})
+            ):
+                self.assertTrue(dag_ulw_cues._opens_with_a_skill_name("code-review 모든 패키지 버전 올려줘"))
+        finally:
+            dag_ulw_cues._CATALOG_SKILL_NAMES.clear()
+
+    def test_no_new_work_over_many_targets_starts_or_offers_nothing(self) -> None:
+        # Neither the router nor the hint starts dag-ulw, and no offer names it: a past or a completion, a stop or a
+        # hold, a negation or no need, a lookup, a summary or a share, a report, one numbered pull request, a
+        # condition, one command over everything, one change in many places, a question, work until a condition, and
+        # a request that opens with a skill's name, ulw or a retired engine (#2232 review).
+        for message in ("열린 PR들 전부 리베이스했습니다", "PR들 전부 머지했어요", "PR들 전부 머지됐네", "PR들 전부 닫혔네",
+                        "브랜치들 다 정리됨", "upstream PR들 다 리뷰 반영 끝", "PR들 전부 확인했어",
+                        "열린 PR들 전부 머지 보류해줘", "PR들 전부 리베이스 중단해줘", "모든 서비스 배포 멈춰줘",
+                        "모든 서비스 업데이트 취소해줘", "PR들 전부 머지 금지", "PR들 전부 머지하지 마",
+                        "PR들 전부 머지하면 안 돼", "PR들 전부 머지할 필요는 없어", "실패하는 테스트 다 안 고쳐도 돼",
+                        "upstream PR들 전부 현황 파악해줘", "PR들 전부 요약해줘", "모든 레포 라이선스 조사해줘",
+                        "모든 모듈 구조 설명해줘", "각 엔드포인트 응답 시간 측정해줘", "PR들 전부 슬랙에 공유해줘",
+                        "PR들 전부 알려줘", "모든 서비스 상태 확인해줘", "check the status of all open PRs",
+                        "review all open PRs and send me a list of risky ones", "audit all the repos and send me the findings",
+                        "PR들 전부 리뷰하고 결과만 정리해줘", "review all open PRs and just tell me which are safe",
+                        "review every file in pull request 2232 and fix what's wrong", "2232번 PR 파일들 전부 리뷰해줘",
+                        "내 PR 파일들 전부 리뷰해줘", "review all the files touched by PR 2232", "review all the files in this PR",
+                        "fix all the tests in this PR", "fix the login bug on every page", "fix the bug in all three services",
+                        "update the copyright year in all files", "테스트 다 통과하면 머지해줘", "PR 다 올렸으면 리뷰 요청해줘",
+                        "서비스 다 내려가면 나한테 전화해줘", "패키지 다 설치되면 서버 띄워줘", "전체 서비스 재시작해줘",
+                        "모든 브랜치 푸시해줘", "전체 테스트 돌려줘", "모든 파일 포맷팅해줘", "모든 서비스 env 파일 하나로 합쳐줘",
+                        "각 파일 첫 줄만 뽑아줘", "README 오타 전부 고쳐줘", "모든 테스트가 깨졌어, 고쳐줘", "PR들 전부 머지됐어?",
+                        "are all the tests passing?", "fix all the failing tests until the suite is green",
+                        "모든 테스트 통과할 때까지 다 고쳐줘", "team 실패하는 테스트 다 고쳐", "ask 실패하는 테스트 다 고쳐",
+                        "ulw 실패하는 테스트 다 고쳐", "울트라워크로 모든 서비스 업데이트해줘", "프로파일 전부 지워줘",
+                        "고객서비스 전부 개선해줘", "이 버그 pr 리뷰해줘",
+                        # #2232 review: one numbered pull request in more forms, one fault said as "does not work", a
+                        # push over everything, a clause before a bare request ending, a report after a review.
+                        "update all snapshots in PR number 2240", "github.com/rlaope/oh-my-hermes/pull/2240 의 테스트 전부 고쳐줘",
+                        "https://github.com/rlaope/oh-my-hermes/pull/2240 의 테스트 전부 고쳐줘",
+                        "fix all the tests in https://github.com/rlaope/oh-my-hermes/pull/2240",
+                        "2240번 풀리퀘 모든 테스트 다시 고쳐줘", "2240번 풀 리퀘스트 테스트 전부 고쳐줘",
+                        "모든 서비스에서 로그인이 안 돼 고쳐줘", "모든 서비스에서 결제가 안 돼 고쳐줘",
+                        "모든 페이지에서 버튼이 안 눌려, 고쳐줘", "모든 페이지에서 모달이 안 떠 고쳐줘", "모든 서비스 로그인 먹통이야 고쳐줘",
+                        "모든 브랜치 push 해줘", "PR들 다 리베이스하려고 해", "PR들 전부 리베이스해야 해",
+                        "PR들 전부 리베이스 완료됨", "review all open PRs and send me a list of risky ones",
+                        # #2232 review 2: a recurring schedule, one PR or branch singled out, one fault in any words,
+                        # and no-work twins of the new request forms.
+                        "30분마다 열린 PR들 전부 리베이스해줘", "매주 월요일 레포들 전부 의존성 업데이트해줘",
+                        "update every service nightly", "아침마다 모든 브랜치 main에 리베이스해줘", "PR 올릴 때마다 테스트 전부 고쳐줘",
+                        "방금 올린 PR 파일들 전부 리뷰 반영해줘", "feature/dag-default 브랜치 테스트 전부 고쳐줘",
+                        "모든 테스트가 안 돌아가 고쳐줘", "PR들 전부 CI가 안 돌아 고쳐줘", "모든 페이지 다크모드가 안 먹어 고쳐줘",
+                        "모든 페이지가 하얗게 나와 고쳐줘", "모든 테스트가 돌지 않아 고쳐줘", "모든 서비스에서 로그인이 안 돼 수정 부탁",
+                        "모든 서비스 업데이트 해 놨어", "PR들 몽땅 머지됐어", "모든 패키지 최신화 완료",
+                        "for each of my PRs, tell me the status", "for each of my PRs: summarize the changes",
+                        "PR들 몽땅 리베이스할까?", "PR 3개 중 하나 리베이스해줘"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertFalse(work_over_many_targets(message))
+                router, hint, candidate = self._dag_ulw_starts(message)
+                self.assertFalse(router)
+                self.assertFalse(hint)
+                self.assertNotEqual(candidate, "dag-ulw")
 
     def test_a_question_about_dag_ulw_is_answered_whichever_skill_scored(self) -> None:
         for message in ("dag ulw는 뭐야?", "dag ulw 설명해줘", "how does dag-ulw handle repairs?", "tell me about dag-ulw",

@@ -12,9 +12,11 @@ from .dag_ulw_cues import (
     asks_after_the_sigil,
     big_work_for_dag_ulw,
     dag_ulw_control,
+    dispatches_dag_ulw,
     invokes_dag_ulw,
     reports_or_asks_after_the_name,
     work_is_split,
+    work_over_many_targets,
 )
 from .invocation_cues import invoked_instruction
 from .name_report_cues import about_the_skill
@@ -36,7 +38,7 @@ from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, OMH_TODO_HELD_PLANS, native_tool_presence_clause
 from .spend_signals import SPEND_GATE_PHRASES, spend_request_phrases
 from .show_reel_cues import SHOW_REEL_PHRASES, show_reel_request_admitted, show_reel_request_phrases
-from .reference_regions import executable_routing_text
+from .reference_regions import executable_routing_text, reference_regions
 from .degradation import (
     COMPONENT_LOCALIZED_ROUTING_TEXT,
     COMPONENT_LOOP_ROUTE_HINT_ASSESSMENT,
@@ -6332,15 +6334,28 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
             )
             if len(hints) >= hint_limit:
                 break
+        links = reference_regions(message).links
         if (
+            hint_limit
+            and dispatches_dag_ulw(matching_message, links)
+            and direct_hint.get("workflow", "dag-ulw") == "dag-ulw"
+        ):
+            # The router dispatches dag-ulw on this reading whichever lane scored ("열린 PR들 전부 리베이스해줘"), so the
+            # hint starts it first; a start is never the hint's alone. A workflow invoked by name keeps the request, as
+            # the router's explicit invocation does ("use git-workflow: 열린 PR들 전부 리베이스해줘").
+            hints = [_dag_ulw_by_size_hint(), *(hint for hint in hints if hint.get("workflow") != "dag-ulw")][:hint_limit]
+        elif (
             not hints
             and hint_limit
             and not matching_message.rstrip().endswith(("?", "？"))
             and getattr(intent, "intent_class", "") not in {"meta_discussion", "feedback_signal"}
-            and work_is_split(matching_message)
         ):
-            # Work split into parts that no rule named ("split this into parallel work lanes").
-            hints.append(_dag_ulw_by_size_hint())
+            if work_is_split(matching_message):
+                # Work split into parts that no rule named ("split this into parallel work lanes"), as before.
+                hints.append(_dag_ulw_by_size_hint())
+            elif work_over_many_targets(matching_message, links):
+                # Work over many targets without the router's evidence ("review all open PRs"): offered, not started.
+                hints.append(_dag_ulw_offer_hint())
         domain_signal = _specialist_domain_route_signal(matching_message)
         domain_operator_override = (
             _specialist_domain_operator_override(matching_message, domain_signal)
@@ -6956,7 +6971,9 @@ def awareness_route_hint_context_from_payload(payload: dict[str, object]) -> str
         if isinstance(context_card, dict):
             first_response_shape = str(context_card.get("first_response_shape") or "").strip()
             if hint.get("workflow") == "dag-ulw":
-                if hint.get("id") != _DAG_ULW_CONTROL_HINT_ID:
+                if hint.get("id") == _DAG_ULW_OFFER_HINT_ID:
+                    first_response_shape = _DAG_ULW_OFFER_RESPONSE
+                elif hint.get("id") != _DAG_ULW_CONTROL_HINT_ID:
                     first_response_shape = _DAG_ULW_FIRST_RESPONSE
                 elif hint.get("next_action") == _DAG_ULW_CONTROL_NEXT_ACTIONS["cancel_or_run"]:
                     first_response_shape = _DAG_ULW_CANCEL_OR_RUN_RESPONSE
@@ -6964,7 +6981,10 @@ def awareness_route_hint_context_from_payload(payload: dict[str, object]) -> str
                     first_response_shape = _DAG_ULW_CONTROL_RESPONSE
             if first_response_shape:
                 lines.append(f"  first_response_shape={first_response_shape}")
-        if workflow_declares_plan_todo(str(hint.get("workflow", ""))) and hint.get("id") != _DAG_ULW_CONTROL_HINT_ID:
+        if workflow_declares_plan_todo(str(hint.get("workflow", ""))) and hint.get("id") not in {
+            _DAG_ULW_CONTROL_HINT_ID,
+            _DAG_ULW_OFFER_HINT_ID,
+        }:
             lines.append(f"  plan_todo={PLAN_TODO_DECLARATION_RULE}")
         fallback_action = str(hint.get("fallback_action") or "").strip()
         if fallback_action:
@@ -8103,6 +8123,33 @@ def _dag_ulw_control_hint(control: str) -> dict[str, object]:
         "reason": _DAG_ULW_CANCEL_OR_RUN_REASON if control == "cancel_or_run" else _DAG_ULW_CONTROL_REASON,
         "fallback_action": "show_status",
         "matched_cues": [control],
+        "adjacent_workflows": [],
+        "workflow_context_card": context_card,
+        "not_evidence_yet": [],
+    }
+
+
+_DAG_ULW_OFFER_HINT_ID = "dag_ulw_offer"
+_DAG_ULW_OFFER_REASON = (
+    "The request may be work over many targets for a dag-ulw graph, but it gives no change to run on each; it starts "
+    "no run until the user says so."
+)
+_DAG_ULW_OFFER_RESPONSE = (
+    "Do not define a run yet: ask one short question whether to run this as a dag-ulw graph over those targets, then "
+    "do what the answer says."
+)
+
+
+def _dag_ulw_offer_hint() -> dict[str, object]:
+    context_card = workflow_context_card_for_workflow("dag-ulw")
+    return {
+        "id": _DAG_ULW_OFFER_HINT_ID,
+        "workflow": "dag-ulw",
+        "lane": str(context_card.get("id") or "intent_to_plan"),
+        "next_action": "ask_one_clarification",
+        "reason": _DAG_ULW_OFFER_REASON,
+        "fallback_action": "answer_directly",
+        "matched_cues": ["many targets"],
         "adjacent_workflows": [],
         "workflow_context_card": context_card,
         "not_evidence_yet": [],

@@ -18,6 +18,52 @@ All notable changes will be documented here.
   the glyph it already carries. With `NO_COLOR` unset or empty nothing
   changes: both scenes are byte-identical to before.
 
+- **A plain request for a change over many targets can run as a dag-ulw
+  graph.** "rlaope로 올린 hermes upstream pr들 전부 확인해서 닫을건 닫고
+  리뷰반영할건 리뷰반영하고 rebase할건 리베이스하고" went to web-research on the
+  router and ulw-work in the route hint; it now dispatches dag-ulw. The router
+  dispatches dag-ulw only on positive evidence: a change verb from a closed
+  allow list (fix, update, rebase, close, migrate, 고쳐, 올려, 리베이스, 반영, …)
+  in request form, on a breadth object that names independent units
+  (`열린 PR들 전부 리베이스해줘`, `열린 PR들 전부 리베이스 해줘`, `모든 패키지 버전
+  올려놔`, `fix all the failing tests`, `update every service to node 22`), or
+  two named parts asked for in parallel. rebase, merge, bump and fix count
+  inside a Korean request (`rebase까지 ㄱㄱ`), and a push counts only after a
+  change (`리뷰 코멘트 반영하고 force push ㄱㄱ`); `모든 브랜치 push 해줘` is one
+  command. More request forms count: `해줘요`, `해주세용`, `해 놔줘`, `시켜줘`,
+  `올리자`, `리베이스 고`, `부탁`, `upgrade해줘`, `몽땅`, `최신화`, and `for each of my
+  PRs: …`. A count is many only for PRs, repos or branches with a breadth word
+  after it (`PR 3개 전부 리베이스해줘`, `PR 5개 다 머지해줘`); `PR 3개 리베이스해줘`,
+  `파일 2개 수정해줘` and `테스트 3개 다 고쳐줘` stay small single tasks, and `PR 3`,
+  `3번 PR` and `#3` stay one PR. A past in a modifier names the units (`내가 올렸던 PR들 전부
+  리베이스해줘`, `충돌났었던 브랜치들`), and a report after an English change is
+  its tail (`fix all the failing tests and tell me which ones were flaky`). A
+  stop or a hold, a
+  condition, a past or a completion as the predicate, a recurring schedule in
+  any of its shapes (`매일 아침`, any noun with `마다` but a unit of work such as
+  `반나절마다` or `배포마다`, `매 분기`, `2시간에 한 번씩`, `하루 두 번`, `주 2회`,
+  `3일 간격`, `하루 걸러`, `격주로`, `자정에`, `every hour`, `each morning`, `twice
+  a day`, `on every push`, `cron으로`, `스케줄 걸어서`; `서비스마다` and `PR마다` still
+  mean each of them), one pull request (its
+  number, `PR number 2240`, `2240번 풀리퀘`, `pull 951`, `my latest pull
+  request`, `PR 하나`, its link, or one singled
+  out by a modifier: `어제 내가 연 PR 테스트 전부`), one branch (`feature/x`,
+  `현재 브랜치`, `this branch`), one fault with one fix in any words (`안 돌아가`,
+  `안 먹어`, `돌지 않아`, `페이지가 하얗게 나와 고쳐줘`; `안 되게 고쳐줘` is a
+  change), work until a condition, and a request
+  that opens with a sigil or names a skill, ulw or a retired engine, also with a
+  Korean particle (`loop로`, `github-event-ops에서`, `루프로`) or as the
+  instrument anywhere (`… git-workflow로 리베이스해줘`, `… with git-workflow`),
+  never qualify, and neither does an explicit invocation of a skill or the loop
+  (`use git-workflow: …`). The route hint starts dag-ulw only on
+  that same reading; work over many targets without it (`review all open
+  PRs`) is at most offered, as one question with dag-ulw as the candidate.
+  Reading, summarising, measuring, sharing or checking verbs are not on the
+  list, so those requests route as before. Coordinated workers on one shared
+  task list stay on ulw-work. Measured on the frozen sets under
+  `.omc/research/dag-default-routing/acceptance/`; prompts outside them are not
+  measured. A Korean loanword or counter after a stop verb is its object
+  (`/ulw-work 멈춰 리뷰어`, `멈춰 서버 두 대` run), and `멈춰 그거 아님` is a stop.
 - **The dag tree under the composer holds still when Down gives it the keys,
   and keeps a run's lanes until a payload shows the run over (#2224's delta
   review).** With the keys the tree cuts the same rows as without them, so

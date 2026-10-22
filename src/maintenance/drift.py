@@ -821,8 +821,34 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # that names ultrawork by its short name, /ulw-work what is ulw?,
             # and an uppercase sigil's stop, /ULW-LOOP stop the loop, add two,
             # each dispatched its skill on main (2).
+            # Multi-part work to dag-ulw adds three: one fault said over every
+            # test with one fix, and a question whether every PR merged,
+            # stay answered, as on main (2); /ulw-work 멈춰 그거 아님 is a stop,
+            # which dispatched ultrawork on main (1).
+            # The review of #2232 adds three: a sweep asked not to happen, the
+            # status of every open PR, and every file of one PR start no
+            # graph run, as on main (3). Its probes add four more: every PR
+            # reviewed only to be told which are safe, every PR said to be
+            # checked, and every test run as one command start no graph run,
+            # as on main (3); /ulw-work 멈춰 필요 없다 is a stop, as on main (1).
+            # The structural fix adds three: every PR said merged, a summary
+            # of every PR, and a merge on a condition start no graph run, as on
+            # main (3). Its review adds five, each a clarify as on main: one PR
+            # by its number in words, by its link, and by 풀리퀘 with a number
+            # (3); a login that does not work in every service, with one fix
+            # (1); and a push over every branch, one command (1). Its second
+            # review adds five more, each a clarify or a fallback as on main: a
+            # schedule over every PR (1), the tests of one PR singled out by a
+            # modifier and of the current branch (2), and one fault said as
+            # 안 돌아가 and as a symptom clause (2). PR 3 without a counter
+            # stays one numbered PR, a clarify as on main (1). Its third
+            # review adds four, each a clarify or a fallback as on main: a
+            # frequency schedule and cron with a particle (2), and a count of
+            # files and a count of PRs with no breadth word (2). Its fourth
+            # review adds three, each a clarify or a fallback as on main: a
+            # noun with 마다, an interval, and PR 하나 (3).
             # Three domain-science vocabulary controls (+3).
-            expected=1039,
+            expected=1070,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1259,8 +1285,44 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # /omh-cancel 상태 보여줘 gets the status card where main ran
             # cancel: only a skill whose job is reporting a state runs on a
             # status request (1).
+            # Multi-part work to dag-ulw adds eleven. Four run as a graph on a
+            # change from the allow list: the owner's sweep over upstream PRs
+            # (web-research on main), 열린 PR들 전부 리베이스해줘
+            # (github-event-ops on main), fix all the failing tests, and two
+            # features in parallel (4). review all open PRs is offered dag-ulw
+            # in a clarify, not started (1), and check all open pull requests
+            # and close the stale ones stays on ultrawork, as on main (1). Three
+            # single tasks stay on ultrawork, as on main: every typo in one
+            # file, in Korean and English, and tests running in parallel (3).
+            # /omh-agent-ops-review status runs the review, as on main (1),
+            # and /ulw-work 멈춰 리뷰어 runs ultrawork, which main answered:
+            # its 어 ending read the loanword as a reason (1). The review adds
+            # one: fix the bug in all three services stays on ultrawork, as on
+            # main (1). The structural fix adds three: update every service and
+            # 모든 패키지 버전 올려줘 run as a graph on a change from the allow
+            # list (a clarify on main) (2), and a hold on every PR stays on
+            # github-event-ops, as on main (1). Its review adds seven. Four run
+            # as a graph: a request ending said apart from its verb and a force
+            # push after a change (github-event-ops on main) (2), a past in a
+            # modifier that names the PRs (a fallback on main) (1), and a change
+            # with a report after it (ultrawork on main) (1). Four keep the
+            # skill they name, as on main: loop로, github-event-ops로, use
+            # git-workflow:, and with git-workflow at the end (4). Its second
+            # review adds seven. Four stay where main sends them: a morning
+            # schedule on automation-blueprint, the tests on one named branch
+            # and dark mode that does not apply on ultrawork, and the files of
+            # the PR just opened on code-review (4). Three run as a graph: 몽땅,
+            # for each of my PRs:, and upgrade해줘 (a fallback or a clarify on
+            # main) (3). PR 3개 is a count of PRs and runs as a graph (a
+            # fallback on main) (1). Its third review adds three: twice a day
+            # stays on github-event-ops and my latest pull request on
+            # ultrawork, as on main (2), and the same sweep now runs as a graph
+            # (a clarify on main) (1). Its fourth review adds three: 배포마다
+            # stays on toolbelt-readiness and on every push on ultrawork, as on
+            # main (2), and 각 서비스마다 runs as a graph, each service and no
+            # schedule (a fallback on main) (1).
             # Three unnamed domain-science interventions (+3).
-            expected=1038,
+            expected=1075,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
