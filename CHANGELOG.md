@@ -4,6 +4,8 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+## 4.0.1 - 2026-10-22
+
 - **`omh doctor`'s real-loader probe can observe a load on Windows, and on the
   install `omh setup` makes.** The probe wrote a synthetic `config.yaml` naming
   no `plugins.entries.omh.settings.omh_home`, and the plugin refuses to load in
