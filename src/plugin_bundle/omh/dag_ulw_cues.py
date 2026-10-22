@@ -908,10 +908,16 @@ _COMPLETED: Final = re.compile(
 )
 # - a recurring schedule, which stays on ulw-loop, Hermes' /loop or an automation ("매일 아침 PR들 전부 리베이스해줘", "30분마다
 #   …", "PR 올릴 때마다 …", "rebase all my open PRs every hour", "update every service nightly");
-# The shapes a schedule takes, not a word list: a recurring period (매일, 매주, <time>마다, every <time>, each <time>), a
-# frequency over a period (2시간에 한 번씩, 일주일에 한 번, 하루 두 번, 주 2회, 2회씩, twice a day, 3 times a week), an
-# alternating period (격일, 격주, 격월), a clock time (9시에, at 9am), and a scheduler named for it (cron, 크론, 스케줄,
-# schedule로, 스케줄 걸어서, 예약해서). A one-off request in the now stays work ("지금 바로", "이번에 한 번만", "now").
+# The shapes a schedule takes, not a word list:
+# - a recurring period: any noun with 마다 but a unit of work (아침마다, 반나절마다, 스프린트마다, 배포마다, 커밋마다,
+#   때마다, while "서비스마다" and "PR마다" mean each of them: `_says_a_schedule`), 매일, 매주, 매 + a noun (매 분기, 매
+#   스프린트, 매 릴리즈), every <time>, each <time>;
+# - a frequency over a period (2시간에 한 번씩, 일주일에 한 번, 하루 두 번, 주 2회, 2회씩, twice a day, 3 times a week), an
+#   interval (3일 간격, 하루 걸러, every other day), an alternating period (격일, 격주, 격월);
+# - a clock time (9시에, 자정, 정오, 새벽, at 9am), and a scheduler named for it (cron, 크론, 스케줄, schedule로, 스케줄
+#   걸어서, 예약해서);
+# - an event that repeats the work (on every push, after each deploy, on every PR), as 배포마다 and 커밋마다 do.
+# A one-off request in the now stays work ("지금 바로", "이번에 한 번만", "now").
 _KOREAN_NUMBER: Final = r"(?:\d+|한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|몇)"
 _TIME_UNIT_KO: Final = r"(?:초|분|시간|일|주일|주|달|개월|년|해)"
 _TIME_UNIT_EN: Final = (
@@ -919,17 +925,28 @@ _TIME_UNIT_EN: Final = (
     r"|wednesday|thursday|friday|saturday|sunday)"
 )
 _SCHEDULE: Final = re.compile(
-    r"(?<![가-힣])매(?:일|주|달|월|년|시간|분)(?![가-힣])|(?<![가-힣])매일(?=아침|밤|저녁|오전|오후)|주기적|정기적|때마다"
-    r"|(?:\d+\s*(?:초|분|시간|일|주|달|개월)|아침|저녁|밤|새벽|점심|오전|오후|주말|평일|[월화수목금토일]요일|하루|이틀|날|주|달"
-    r"|해|시간)\s*마다|\d{1,2}\s*시(?:\s*\d{1,2}\s*분)?\s*(?:에|마다|정각)"
+    r"(?<![가-힣])매(?:일|주|달|월|년|시간|분)(?![가-힣])|(?<![가-힣])매일(?=아침|밤|저녁|오전|오후)|(?<![가-힣])매\s+(?=\S)"
+    r"|주기적|정기적|\d{1,2}\s*시(?:\s*\d{1,2}\s*분)?\s*(?:에|마다|정각)|(?<![가-힣])(?:자정|정오|새벽)(?:에|마다)?(?![가-힣])"
     rf"|(?:(?<![가-힣]){_KOREAN_NUMBER}|일)\s*{_TIME_UNIT_KO}\s*에\s*{_KOREAN_NUMBER}\s*번|하루\s*(?:에\s*)?{_KOREAN_NUMBER}\s*번"
+    rf"|{_KOREAN_NUMBER}\s*{_TIME_UNIT_KO}\s*간격|(?:하루|이틀|사흘|나흘|한\s*주|일주일|\d+\s*일)\s*걸러"
     r"|(?<![가-힣])(?:주|월|연|하루)\s*\d+\s*회|\d+\s*회\s*씩|(?<![가-힣])격(?:일|주|월)(?:로|으로|에|마다|씩)?(?![가-힣])"
     r"|(?<![a-z])cron(?![a-z])|크론|스케줄(?!러)|schedule(?=\s*(?:으로|로|에|을|를|걸))|예약(?:해서|으로|을\s*걸)"
     rf"|\bevery\s+(?:\d+\s+|other\s+)?{_TIME_UNIT_EN}s?\b|\beach\s+{_TIME_UNIT_EN}\b"
     r"|\b(?:once|twice|thrice|(?:\d+|two|three|four|five|several)\s+times)\s+(?:a|per|each|every)\s+(?:hour|day|week|month|year)\b"
+    r"|\b(?:on|after|upon)\s+(?:every|each)\s+(?:new\s+)?(?:push|commit|merge|deploy|deployment|release|build|pr|pull\s+request)\b"
     r"|\b(?:hourly|daily|nightly|weekly|monthly|periodically)\b|\bat\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\b"
     r"|\bon\s+a\s+schedule\b"
 )
+# What comes before 마다: a unit of work makes it "each of them" (`_KOREAN_UNIT`), anything else a recurrence.
+_BEFORE_MADA: Final = re.compile(r"(?P<noun>[^\s,.!?~]+?)(?:들)?\s*마다")
+_WORK_UNIT_BEFORE_MADA: Final = re.compile(rf"(?:마이크로)?(?:{_KOREAN_UNIT}|풀\s*리퀘(?:스트)?|repos?)")
+
+
+def _says_a_schedule(folded: str) -> bool:
+    """Whether ``folded`` says a recurring schedule (`_SCHEDULE`), or a noun other than a unit of work with 마다."""
+    return bool(_SCHEDULE.search(folded)) or any(
+        not _WORK_UNIT_BEFORE_MADA.fullmatch(match.group("noun")) for match in _BEFORE_MADA.finditer(folded)
+    )
 # A pull request's address, written bare or as a link the caller passes (`reference_regions(...).links`: the
 # executable text has none).
 _PULL_REQUEST_ADDRESS: Final = re.compile(r"/pulls?/\d+|/merge_requests/\d+")
@@ -949,7 +966,9 @@ _ONE_SCOPE: Final = re.compile(
     r"|\d+\s*번?\s*풀\s*리퀘(?:스트)?|풀\s*리퀘(?:스트)?\s*#?\s*\d+(?!\d|\s*(?:개|건))"
     r"|\b(?:this|that)\s+(?:pr|pull\s+request|branch|commit|diff)\b|(?<![가-힣])(?:이|그)\s*(?:pr|브랜치|커밋)(?![a-z])"
     r"|\b(?:in|of|from|on)\s+(?:the|my)\s+(?:pr|pull\s+request|branch|commit|diff)\b|\btouched\s+by\b"
-    # One PR picked out by an adjective or a possessive, never a plural ("my latest pull request", "the last PR").
+    # One PR or branch picked out by an adjective or a possessive, or by 하나, never a plural ("my latest pull request",
+    # "the last PR", "PR 하나").
+    r"|(?<![a-z가-힣])(?:pr|pull\s*request|풀\s*리퀘(?:스트)?|브랜치)\s*(?:하나|한\s*개|1\s*개)(?![가-힣])"
     r"|\b(?:my|the|your|our)\s+(?:latest|last|newest|most\s+recent|current)\s+(?:pr|pull\s+request)\b"
 )
 # - one PR or one branch singled out by a modifier, with the breadth on what is inside it ("어제 내가 연 PR 테스트 전부",
@@ -1075,7 +1094,7 @@ def _hard_excluded(folded: str, links: tuple[str, ...]) -> bool:
         or _says_a_past(folded)
         or _ONE_SCOPE.search(folded)
         or _names_one_container(folded)
-        or _SCHEDULE.search(folded)
+        or _says_a_schedule(folded)
         or _UNTIL.search(folded)
         or _RUNTIME_PARALLEL.search(folded)
         or names_ultrawork(folded)

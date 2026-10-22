@@ -844,9 +844,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # stays one numbered PR, a clarify as on main (1). Its third
             # review adds four, each a clarify or a fallback as on main: a
             # frequency schedule and cron with a particle (2), and a count of
-            # files and a count of PRs with no breadth word (2).
+            # files and a count of PRs with no breadth word (2). Its fourth
+            # review adds three, each a clarify or a fallback as on main: a
+            # noun with 마다, an interval, and PR 하나 (3).
             # Three domain-science vocabulary controls (+3).
-            expected=1067,
+            expected=1070,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1315,9 +1317,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # fallback on main) (1). Its third review adds three: twice a day
             # stays on github-event-ops and my latest pull request on
             # ultrawork, as on main (2), and the same sweep now runs as a graph
-            # (a clarify on main) (1).
+            # (a clarify on main) (1). Its fourth review adds three: 배포마다
+            # stays on toolbelt-readiness and on every push on ultrawork, as on
+            # main (2), and 각 서비스마다 runs as a graph, each service and no
+            # schedule (a fallback on main) (1).
             # Three unnamed domain-science interventions (+3).
-            expected=1072,
+            expected=1075,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

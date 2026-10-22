@@ -53,9 +53,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # branch add five (+5); a schedule, one PR or branch singled out and a
         # fault in other words add five more (+5); PR 3 without a counter
         # stays one scope (+1); two more schedule shapes, a count of files and a
-        # count of PRs with no breadth word add four (+4).
+        # count of PRs with no breadth word add four (+4); a noun with 마다, an
+        # interval and PR 하나 add three (+3).
         # Three science vocabulary controls remain direct answers.
-        self.assertEqual(payload["summary"]["case_count"], 1067)
+        self.assertEqual(payload["summary"]["case_count"], 1070)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -159,9 +160,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # request (+8); three more forms run as a graph and four requests
         # stay where main sends them (+7); a count of PRs runs as a graph (+1).
         # A twice-a-day schedule and my latest pull request stay, and a sweep
-        # said now runs as a graph (+3).
+        # said now runs as a graph (+3). Every deploy and every push stay, and
+        # each service with 마다 runs as a graph (+3).
         # Three unnamed science requests render dedicated computation cards.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1072)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1075)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

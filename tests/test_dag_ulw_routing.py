@@ -284,7 +284,13 @@ class RouterTests(unittest.TestCase):
                         "2시간에 한 번씩 레포들 전부 의존성 올려줘", "하루 두 번 열린 PR들 전부 리베이스해줘",
                         "rebase every open PR each morning", "격주로 모든 서비스 로그 포맷 고쳐줘", "cron으로 모든 서비스 업데이트해줘",
                         "주 2회 모든 패키지 업데이트해줘", "update all services twice a day", "스케줄 걸어서 모든 서비스 업데이트해줘",
-                        "fix every test in my latest pull request"):
+                        "fix every test in my latest pull request",
+                        # A noun with 마다 other than a unit of work, 매 + a noun, an interval, a clock word, every
+                        # other day, an event that repeats the work, and one PR picked out by 하나 (#2232 review 4).
+                        "반나절마다 PR들 전부 리베이스해줘", "스프린트마다 모든 패키지 올려줘", "배포마다 모든 서비스 설정 업데이트해줘",
+                        "매 분기마다 모든 레포 라이선스 업데이트해줘", "매 스프린트 모든 패키지 올려줘", "3일 간격으로 모든 서비스 업데이트해줘",
+                        "fix all failing tests on every push", "rebase all open PRs on each merge", "자정에 PR들 전부 리베이스해줘",
+                        "하루 걸러 모든 서비스 업데이트해줘", "우리 팀 PR 하나 테스트 다 고쳐줘"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 router, hint, _candidate = self._dag_ulw_starts(message)
@@ -344,6 +350,17 @@ class RouterTests(unittest.TestCase):
                 router, hint, candidate = self._dag_ulw_starts(message)
                 self.assertEqual((router, hint), (False, False))
                 self.assertNotEqual(candidate, "dag-ulw")
+
+    def test_a_unit_of_work_with_madda_is_each_of_them_not_a_schedule(self) -> None:
+        # "서비스마다" and "PR마다" mean each of them, so they route as they did before the schedule reader read 마다:
+        # a breadth object with a change runs as a graph, and one with none starts nothing. Any other noun with 마다 is
+        # a schedule (`test_each_hard_exclude_alone_keeps_a_change_off_the_graph`).
+        for message in ("PR마다 테스트 전부 고쳐줘", "각 서비스마다 로깅 추가해줘"):
+            with self.subTest(message=message):
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
+        for message in ("서비스마다 로깅 추가해줘", "레포마다 CI 설정 고쳐줘", "모듈마다 로거 붙여줘", "패키지마다 버전 올려줘"):
+            with self.subTest(message=message):
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
 
     def test_a_missing_skill_catalog_is_not_kept(self) -> None:
         # With no sidecar the catalog names are unknown, and that is not kept: once the sidecar answers, a request

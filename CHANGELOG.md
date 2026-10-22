@@ -40,11 +40,13 @@ All notable changes will be documented here.
   its tail (`fix all the failing tests and tell me which ones were flaky`). A
   stop or a hold, a
   condition, a past or a completion as the predicate, a recurring schedule in
-  any of its shapes (`매일 아침`, `30분마다`, `2시간에 한 번씩`, `하루 두 번`, `주 2회`,
-  `격주로`, `every hour`, `each morning`, `twice a day`, `nightly`, `cron으로`,
-  `스케줄 걸어서`), one pull request (its
+  any of its shapes (`매일 아침`, any noun with `마다` but a unit of work such as
+  `반나절마다` or `배포마다`, `매 분기`, `2시간에 한 번씩`, `하루 두 번`, `주 2회`,
+  `3일 간격`, `하루 걸러`, `격주로`, `자정에`, `every hour`, `each morning`, `twice
+  a day`, `on every push`, `cron으로`, `스케줄 걸어서`; `서비스마다` and `PR마다` still
+  mean each of them), one pull request (its
   number, `PR number 2240`, `2240번 풀리퀘`, `pull 951`, `my latest pull
-  request`, its link, or one singled
+  request`, `PR 하나`, its link, or one singled
   out by a modifier: `어제 내가 연 PR 테스트 전부`), one branch (`feature/x`,
   `현재 브랜치`, `this branch`), one fault with one fix in any words (`안 돌아가`,
   `안 먹어`, `돌지 않아`, `페이지가 하얗게 나와 고쳐줘`; `안 되게 고쳐줘` is a
