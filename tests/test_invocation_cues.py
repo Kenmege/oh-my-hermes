@@ -69,6 +69,8 @@ STATUS_REQUESTS = (
     "/omh-app-debugging is it running?", "/omh-app-debugging 끝났어?", "/ulw-plan 状態", "/omh-plan 状态",
     # ulw-context aligns project terms; its status is no work of its own.
     "/ulw-context status", "/ulw-context how much context is left?",
+    # A skill whose job is not reporting a state: its status is the status card's to show.
+    "/omh-cancel 상태 보여줘", "/omh-doctor status",
 )
 # Everything else runs the skill: a stop verb with a task object, a question with one, and a status request to a
 # skill whose own work that status is.
@@ -133,6 +135,8 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(invoked_instruction("running-work-board", "status"), "")
         self.assertEqual(invoked_instruction("ops-observability-card", "status"), "")
         self.assertEqual(invoked_instruction("app-debugging", "is it running?"), STATUS)
+        self.assertEqual(invoked_instruction("cancel", "상태 보여줘"), STATUS)
+        self.assertEqual(invoked_instruction("skill-health", "상태 보여줘"), "")
 
     def test_a_stop_of_the_skills_own_run_is_a_stop(self) -> None:
         self.assertEqual(invoked_instruction("loop", "stop the loop"), STOP)

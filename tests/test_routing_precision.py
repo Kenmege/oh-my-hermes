@@ -135,8 +135,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # word inside a domain noun run their skill (+7), and so does a
         # question about rust after /omh-rust (+1). A Korean stop verb before
         # a task noun runs its skill, and /ulw-context status gets the status
-        # card (+2).
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1034)
+        # card (+2), and so does /omh-cancel 상태 보여줘 (+1).
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1035)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

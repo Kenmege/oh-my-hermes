@@ -17412,6 +17412,12 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "dispatch", "oh-my-hermes", "show_status", "status",
     ),
     RoutingInterventionCase(
+        "explicit-omh-cancel-status-shows-status",
+        "/omh-cancel 상태 보여줘 gets the status card: ending a run is no report of its state",
+        "/omh-cancel 상태 보여줘",
+        "dispatch", "oh-my-hermes", "show_status", "status",
+    ),
+    RoutingInterventionCase(
         "explicit-rust-question-about-rust-is-its-work",
         "/omh-rust what is rust? asks about the language, the skill's material, not about the skill",
         "/omh-rust what is rust?",

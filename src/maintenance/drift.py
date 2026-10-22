@@ -1255,7 +1255,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # before a task noun is work, /ulw-work 멈춰 서버, as on main (1),
             # and /ulw-context status gets the status card where main ran the
             # skill: aligning project terms has no status of its own (1).
-            expected=1034,
+            # /omh-cancel 상태 보여줘 gets the status card where main ran
+            # cancel: only a skill whose job is reporting a state runs on a
+            # status request (1).
+            expected=1035,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

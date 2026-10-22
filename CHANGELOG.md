@@ -180,7 +180,10 @@ All notable changes will be documented here.
   name a thing, so `/omh-docs what is a skill?`, `/omh-frontend what does the
   frontend do?` and `/omh-rust what is rust?` run their skill; `/ulw-work
   what is ulw?` names ultrawork by its short name. `/omh-context-budget-review
-  status` runs the context budget review, whose work that status is. A
+  status` runs the context budget review, whose work that status is; only a
+  skill whose job is reporting a state runs on a status request, and after
+  any other the status card shows (`/omh-cancel 상태 보여줘`, `/omh-doctor
+  status`, which ran their skill on origin/main). A
   sigil's name is read in any case, as Hermes reads it (`/ULW-LOOP stop the
   loop`). An
   invoked skill's `omh-` label no longer makes its words an OMH intro or
@@ -192,7 +195,7 @@ All notable changes will be documented here.
   a run.
 - In the frozen acceptance set's 3,097 labeled explicit invocations, typed
   and as Hermes' turn, no stop, status or question-about-the-skill row starts
-  a run (origin/main started one on 2,169 of 2,227), and none of the 870 labeled
+  a run (origin/main started one on 2,183 of 2,241), and none of the 856 labeled
   work rows is answered instead of run; four questions about the run after
   `/dag-ulw` are answered and three stop verbs with an object after it ask
   once, by dag-ulw's own reading. Rows outside that set are not measured.

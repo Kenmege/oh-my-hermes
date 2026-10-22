@@ -40,17 +40,18 @@ from .dag_ulw_cues import (
     reports_on_dag_ulw,
     stops_the_run,
 )
-from .name_report_cues import COINED_NAMES, QUESTION_IS_THE_WORK, asks_after_the_name
+from .name_report_cues import COINED_NAMES, asks_after_the_name
 from . import skill_shortlist as _skill_shortlist
 
-# The skills whose own work is answering how a run stands, so a status request after their sigil runs them:
-# `QUESTION_IS_THE_WORK` but app-debugging, whose work is diagnosing a failure and whose status questions are answered
-# (lead's ruling on #2221), and the ops command board, whose work is the operations status.
-STATUS_IS_THE_WORK: Final = (QUESTION_IS_THE_WORK - {"app-debugging"}) | {
-    "ops-observability-card",
-    # The context budget's own work is how much of it is left ("/omh-context-budget-review status").
-    "context-budget-review",
-}
+# The skills whose job is reporting the state of work or systems, so a status request after their sigil runs them
+# ("/omh-running-work-board status"). After any other skill a status request gets OMH's status card, a skill whose
+# work is diagnosing, triaging, auditing or ending a run included ("/omh-cancel 상태 보여줘", "/omh-app-debugging is it
+# running?"). Decided from each skill's description; `QUESTION_IS_THE_WORK` is the bare-name reading's, and wider.
+STATUS_IS_THE_WORK: Final = frozenset(
+    {"running-work-board", "deploy-and-monitor", "verification-gate", "ops-observability-card",
+     "live-incident-response", "context-budget-review", "harness-session-inventory", "skill-health", "run-efficiency",
+     "agent-ops-review"}
+)
 # The skill whose own work is the stop, so a stop after its sigil runs it, as on origin/main ("/omh-cancel stop").
 STOP_IS_THE_WORK: Final = frozenset({"cancel"})
 # The skills whose work is to explain or judge the material the person points at: after one of these, "what is it?"
