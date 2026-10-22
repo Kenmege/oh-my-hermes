@@ -17576,6 +17576,48 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "/omh-verification-gate is it done?",
         "dispatch", "verification-gate", "prepare_verification_gate", "verification_gate",
     ),
+    RoutingInterventionCase(
+        "explicit-deploy-and-monitor-korean-status-runs-the-skill",
+        "/omh-deploy-and-monitor a Korean status request is the deploy watch's own report",
+        "/omh-deploy-and-monitor 상태 보여줘",
+        "dispatch", "deploy-and-monitor", "prepare_deploy_monitor_plan", "deploy_monitor_plan",
+    ),
+    RoutingInterventionCase(
+        "explicit-ops-observability-card-running-question-runs-the-skill",
+        "/omh-ops-observability-card is it running? is the observability card's own report",
+        "/omh-ops-observability-card is it running?",
+        "dispatch", "ops-observability-card", "prepare_ops_observability_card", "ops_observability",
+    ),
+    RoutingInterventionCase(
+        "explicit-live-incident-response-status-runs-the-skill",
+        "/omh-live-incident-response status is the incident record's own work",
+        "/omh-live-incident-response status",
+        "dispatch", "live-incident-response", "prepare_live_incident_record", "live_incident_record",
+    ),
+    RoutingInterventionCase(
+        "explicit-context-budget-review-korean-done-question-runs-the-skill",
+        "/omh-context-budget-review asking, in Korean, whether it is done is the context budget's own review",
+        "/omh-context-budget-review 끝났어?",
+        "dispatch", "context-budget-review", "prepare_context_budget_review", "context_budget_review",
+    ),
+    RoutingInterventionCase(
+        "explicit-harness-session-inventory-show-status-runs-the-skill",
+        "/omh-harness-session-inventory show me the status is the session inventory's own report",
+        "/omh-harness-session-inventory show me the status",
+        "dispatch", "harness-session-inventory", "prepare_harness_session_inventory", "harness_session_inventory",
+    ),
+    RoutingInterventionCase(
+        "explicit-skill-health-korean-status-runs-the-skill",
+        "/omh-skill-health a Korean status request is the skill health check's own work",
+        "/omh-skill-health 상태 보여줘",
+        "dispatch", "skill-health", "prepare_skill_health", "skill_health",
+    ),
+    RoutingInterventionCase(
+        "explicit-run-efficiency-status-runs-the-skill",
+        "/omh-run-efficiency status is the run efficiency report's own work",
+        "/omh-run-efficiency status",
+        "dispatch", "run-efficiency", "show_run_efficiency_report", "run_efficiency",
+    ),
     # A stop of something other than the skill's own run is work, and so is a stop after the cancel skill, whose work
     # it is (as on main).
     RoutingInterventionCase(

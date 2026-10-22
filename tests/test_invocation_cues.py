@@ -19,7 +19,7 @@ load_local_package()
 from omh.plugin_bundle.omh import dag_ulw_cues  # noqa: E402
 from omh.plugin_bundle.omh.awareness import awareness_route_hint  # noqa: E402
 from omh.plugin_bundle.omh.hermes_session_commands import person_request_text  # noqa: E402
-from omh.plugin_bundle.omh.invocation_cues import META, STATUS, STOP, invoked_instruction  # noqa: E402
+from omh.plugin_bundle.omh.invocation_cues import META, STATUS, STATUS_IS_THE_WORK, STOP, invoked_instruction  # noqa: E402
 from omh.quality.routing_precision import _slash_skill_turn  # noqa: E402
 from omh.routing.chat import route_chat_message  # noqa: E402
 from omh.wrapper.contract import build_chat_interaction_payload  # noqa: E402
@@ -117,6 +117,23 @@ REQUESTS = (
     ("/ulw-research stop the research paper from leaking", "research"), ("/ulw-work 取消订单", "ultrawork"),
     ("/ulw-work サーバーを止めて", "ultrawork"),
 )
+
+# Each skill whose own work is a run's status (`invocation_cues.STATUS_IS_THE_WORK`, #2221 L3): a status request after
+# its sigil, and the awareness hint it keeps. Five carry no hint of their own on their sigil whatever follows it
+# (measured on 7c129aca9: "/omh-running-work-board show the board for this repo" hints nothing), so the router alone
+# pins those; the hinted five are pinned by both.
+STATUS_IS_THE_WORK_REQUESTS = {
+    "running-work-board": ("/omh-running-work-board status", ""),
+    "deploy-and-monitor": ("/omh-deploy-and-monitor 상태 보여줘", ""),
+    "verification-gate": ("/omh-verification-gate is it done?", "verification-gate"),
+    "ops-observability-card": ("/omh-ops-observability-card is it running?", ""),
+    "live-incident-response": ("/omh-live-incident-response status", "live-incident-response"),
+    "context-budget-review": ("/omh-context-budget-review 끝났어?", "context-budget-review"),
+    "harness-session-inventory": ("/omh-harness-session-inventory show me the status", ""),
+    "skill-health": ("/omh-skill-health 상태 보여줘", "skill-health"),
+    "run-efficiency": ("/omh-run-efficiency status", "run-efficiency"),
+    "agent-ops-review": ("/omh-agent-ops-review status", ""),
+}
 
 
 def _forms(message: str) -> tuple[tuple[str, str], ...]:
@@ -236,6 +253,18 @@ class RouteTests(unittest.TestCase):
                     self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", skill))
                     interaction = build_chat_interaction_payload(text, source="discord")
                     self.assertEqual(interaction["route"]["selected_skill"], skill)
+
+
+class StatusIsTheWorkTests(unittest.TestCase):
+    def test_every_member_runs_on_a_status_request_after_its_sigil(self) -> None:
+        self.assertEqual(set(STATUS_IS_THE_WORK_REQUESTS), STATUS_IS_THE_WORK)  # a new member brings its case here
+        for skill, (message, hinted) in STATUS_IS_THE_WORK_REQUESTS.items():
+            self.assertEqual(invoked_instruction(skill, message.split(maxsplit=1)[1]), "")
+            for form, text in _forms(message):
+                with self.subTest(skill=skill, form=form):
+                    route = route_chat_message(text, source="discord")
+                    self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", skill))
+                    self.assertEqual(awareness_route_hint(text)["primary_workflow"], hinted)
 
 
 if __name__ == "__main__":
