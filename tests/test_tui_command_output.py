@@ -19,7 +19,7 @@ from test_tui_modes import PLAN_PROMPT, SID, answer, drawn, make_app, notices, t
 from omh.tui import gateway_contract as contract
 from omh.tui.app import App
 from omh.tui.gateway import Event, Response
-from omh.tui.keys import ENTER, TAB, UP, Key
+from omh.tui.keys import DOWN, ENTER, TAB, UP, Key
 from omh.tui.transcript import NOTICE_INFO, NOTICE_WARN, OUTPUT_PREVIEW_ROWS, CommandBlock, NoticeBlock, UserBlock
 
 
@@ -214,6 +214,21 @@ class CommandCaseTests(unittest.TestCase):
                 app.catalog = [("/dag-ulw", "Graph work"), ("/dag-ulw-extra", "Another")]
                 send(app, line)
                 self.assertEqual(client.calls, [("slash.exec", {"command": line[1:], "session_id": SID})])
+
+    def test_enter_on_a_whole_name_typed_in_another_case_sends_the_line(self) -> None:
+        # The TUI's reload-skills row sorts above Hermes' /reload. A whole name on the first row, or the highlight on
+        # the row that only changes the case of what is typed, sends the line, as it does in lower case.
+        for typed in ("/reload", "/Reload"):
+            for downs in (0, 1):
+                with self.subTest(typed=typed, downs=downs):
+                    app, client = make_app()
+                    app.catalog = [("/reload", "Hermes: reload config")]
+                    type_text(app, typed)
+                    self.assertEqual([label for label, _summary in app._menu_rows()][:2], ["/reload-skills", "/reload"])
+                    for _ in range(downs):
+                        app._on_input(Key(DOWN))
+                    app._on_input(Key(ENTER))
+                    self.assertEqual(client.calls, [("slash.exec", {"command": typed[1:], "session_id": SID})])
 
 
 class SkillCommandRowTests(unittest.TestCase):
