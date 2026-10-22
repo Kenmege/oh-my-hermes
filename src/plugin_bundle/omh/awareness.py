@@ -8118,13 +8118,14 @@ def _dag_ulw_by_size_hint() -> dict[str, object]:
 
 
 def _direct_workflow_prefix(routing_normalized: str) -> str:
-    normalized = after_courtesy(routing_normalized.strip())
+    normalized = routing_normalized.strip()
     # The router's own reading of the two-word name (`routing/policy.py` reads the same function), so
     # `dag ulw해줘`, `ulw dag ...` and `/dag-ulw` hint what the router dispatches.
     if "dag-ulw" in _DIRECT_WORKFLOW_NEXT_ACTIONS and invokes_dag_ulw(normalized):
         return "dag-ulw"
     if asks_about_dag_ulw(normalized):
         return ""  # "ulw dag ordering looks wrong" is about dag-ulw, not `ulw` invoked
+    normalized = after_courtesy(normalized)
     for workflow in sorted(_DIRECT_WORKFLOW_NEXT_ACTIONS, key=len, reverse=True):
         if workflow == "dag-ulw":
             continue  # read above, by the router's own function: a question about it is not an invocation
