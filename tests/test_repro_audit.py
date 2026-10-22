@@ -280,4 +280,3 @@ class Profiles(unittest.TestCase):
         f.env('reported', 'metric.definition')['value']['name'] = 'acc'
         with self.assertRaises(ValidationError):
             load_case(f.flush())
-
