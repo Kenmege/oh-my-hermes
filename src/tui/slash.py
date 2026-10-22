@@ -31,7 +31,7 @@ relies on: a prompt typed in plan mode goes out as `/plan <text>`
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
 
 from .style import Span, Style
@@ -43,6 +43,9 @@ RENAMED = "renamed"
 
 HERMES_DOOR = "hermes --tui"
 PLAN_COMMAND = "plan"  # Hermes' one-turn plan prompt; the TUI's plan mode sends every prompt through it
+# Hermes' /retry and /undo take the last turn(s) back themselves before they answer: /retry with that prompt to send
+# again, /undo with it to edit (a `prefill`).
+TURN_BACK_COMMANDS = frozenset({"retry", "undo"})
 
 
 @dataclass(frozen=True)
@@ -142,7 +145,11 @@ class SlashInvocation:
     `for_plan_mode` says the TUI wrote the command around a prompt the person
     typed in plan mode, instead of the person typing the command. `held` says
     a prompt the command sends waits for a running turn to end whatever the
-    busy mode: it is a steer Hermes did not take.
+    busy mode: it is a steer Hermes did not take. `rewind` is the rewind the
+    person had picked when they sent it (the app's `Rewind`), or None: a
+    prompt it sends goes in place of the picked one while that very rewind is
+    still picked. It is matched by identity, so it takes no part in `==` or
+    `hash()`.
     """
 
     name: str
@@ -150,6 +157,7 @@ class SlashInvocation:
     command: SlashCommand | None
     for_plan_mode: bool = False
     held: bool = False
+    rewind: object | None = field(default=None, compare=False)
 
     @property
     def text(self) -> str:
