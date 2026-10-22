@@ -426,13 +426,20 @@ run and approval decision stays Hermes'; the screen is OMH's.
   As it starts, the TUI scrolls what your terminal showed above its cursor
   (your shell, the launcher's warnings) off the screen, erases the
   terminal's scrollback (ED 3), as a full redraw (a resize, Ctrl+L,
-  `/redraw`, switching or resuming a session) and Hermes' own TUI already
-  do, and opens on the top row of a clean screen, so scrolling up stops at
-  the top of the session instead of reaching your shell's history. When you
-  quit, the session stays above your shell's prompt, as any output does. A
-  terminal that ignores ED 3, such as iTerm2 when its profile stops escape
-  sequences from clearing the history, keeps what was there one scroll up.
-  A launch that falls back to Hermes' own terminal leaves the screen as it
+  `/redraw`, switching or resuming a session) already does and as Hermes'
+  own TUI does in its default alternate-screen mode (its main-screen native
+  mode, `display.tui_native`, erases nothing), and opens on the top row of
+  a clean screen, so scrolling up stops at the top of the session instead
+  of reaching your shell's history. When you quit, the session stays above
+  your shell's prompt, as any output does. A terminal that ignores ED 3
+  keeps what was there one scroll up. iTerm2 asks first: while its
+  app-wide Advanced setting "Prevent CSI 3 J from clearing scrollback
+  history?" is unset, as it is by default, it shows "A control sequence
+  attempted to clear scrollback history. Allow this in the future?" and
+  keeps the history until you choose Always Allow (a resize or Ctrl+L,
+  which already erase the scrollback, can show the same prompt). Inside
+  tmux, ED 3 clears that pane's history, as `tmux clear-history` does. A
+  launch that falls back to Hermes' own terminal leaves the screen as it
   was.
 - A notice Hermes sends outside the transcript (the agent still starting, a
   credit warning, a provider that could not be reached) takes one row above

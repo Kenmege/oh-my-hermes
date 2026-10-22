@@ -3,10 +3,11 @@
 It interprets the subset of terminal output the TUI's screen layer emits:
 printable text, CR, LF (scrolling the top row into `scrollback` at the
 bottom), cursor up/down/forward/back, CUP, erase in line 0/1/2, erase in
-display 0/1/2, SGR (recorded per cell), cursor show/hide, the autowrap and
-bracketed-paste mode switches (recorded, never acted on), the alternate
-screen (1049: the main screen and cursor are saved on entry and restored on
-exit), and OSC strings (consumed, never painted, their bodies kept in `osc`).
+display 0/1/2/3 (3 clears `scrollback`), SGR (recorded per cell), cursor
+show/hide, the autowrap and bracketed-paste mode switches (recorded, never
+acted on), the alternate screen (1049: the main screen and cursor are saved
+on entry and restored on exit), and OSC strings (consumed, never painted,
+their bodies kept in `osc`).
 Any other CSI or two-byte escape is ignored. `resize` changes the size
 the way xterm does without reflow.
 

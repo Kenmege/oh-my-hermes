@@ -1465,7 +1465,9 @@ class App(ModesMixin, AgentViewMixin):
         scrollback, those rows and the shell's older output with them, so
         scrolling up stops at the session's top row (the owner, 2026-10-22),
         as it does after a full redraw (`_full_redraw`) and at the start of
-        Hermes' own TUI. A terminal that ignores ED 3 keeps them one scroll up.
+        Hermes' own TUI in its default alternate-screen mode (its main-screen
+        native mode, `display.tui_native`, writes only a line feed). A
+        terminal that ignores ED 3 keeps them one scroll up.
         """
         rows = self.size[1]
         if rows < 2 or self.region.height:
@@ -4495,7 +4497,8 @@ def _run(
         with terminal:
             background, typed, row = terminal.query_background()
             app.adopt_background(background, environ)
-            app.clear_launch_screen(row)  # started: the shell's rows and the launcher's warnings leave the scrollback
+            # Started: the shell's rows and the launcher's warnings are pushed off the screen and erased with the scrollback.
+            app.clear_launch_screen(row)
             code = app.run(typed)
     finally:
         if app.client is not client:  # a gateway spawned after a crash; the caller reaps the first one
