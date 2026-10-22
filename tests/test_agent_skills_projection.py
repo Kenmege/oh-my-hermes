@@ -781,22 +781,63 @@ class AgentSkillsProjectionTests(unittest.TestCase):
             self.assertEqual(payload["extra"], ["extra.txt"])
             self.assertEqual(payload["stale"], ["omh-frontend/SKILL.md"])
 
-    def test_cli_scope_fixture_cannot_discover_an_ancestor_repository(self):
-        from unittest.mock import patch
+    def test_cli_ancestor_fixture_leaves_cold_import_tempfile_aliases_unmocked(self):
+        import os
         import subprocess
-        from _cli_harness import run_cli  # Load test-home setup before patching tempfile.
+        import sys
+        from textwrap import dedent
+
+        # A fresh interpreter matters: collection can import the lazy CLI command
+        # tree before the fixture and hide a captured process-global mock.
+        root = Path(__file__).resolve().parents[1]
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join((str(root / "src"), str(root / "tests"))))
+        probe = dedent("""\
+            import importlib
+            from pathlib import Path
+            import sys
+            import tempfile
+            import unittest
+
+            real_constructor = tempfile.TemporaryDirectory
+            consumers = ("omh.quality.working_tree_fingerprint", "omh.coding.fanout_dispatch")
+            for name in consumers:
+                assert name not in sys.modules, f"probe must start cold: {name}"
+            suite = unittest.TestLoader().loadTestsFromName(
+                "test_agent_skills_projection.AgentSkillsProjectionTests."
+                "test_cli_scope_fixture_cannot_discover_an_ancestor_repository"
+            )
+            result = unittest.TextTestRunner(verbosity=2).run(suite)
+            assert result.wasSuccessful(), "ancestor fixture failed"
+            assert result.testsRun == 1
+            assert tempfile.TemporaryDirectory is real_constructor
+            for name in consumers:
+                constructor = importlib.import_module(name).TemporaryDirectory
+                assert constructor is real_constructor, f"{name} retained a mocked TemporaryDirectory"
+                with constructor(prefix="omh-fixture-isolation-") as directory:
+                    assert Path(directory).is_dir(), name
+        """)
+        result = subprocess.run(
+            [sys.executable, "-c", probe], cwd=root, env=env,
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_cli_scope_fixture_cannot_discover_an_ancestor_repository(self):
+        import subprocess
+        from _cli_harness import run_cli
 
         self.assertTrue(callable(run_cli))
-        temporary_directory = tempfile.TemporaryDirectory
-        with temporary_directory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp:
             ancestor = Path(tmp).resolve()
             subprocess.run(["git", "init", "-q", str(ancestor)], check=True, capture_output=True)
-            with patch.object(tempfile, "TemporaryDirectory", side_effect=lambda: temporary_directory(dir=ancestor)):
-                self.test_cli_scopes_use_git_root_and_home_and_status_is_read_only()
+            self._assert_cli_scopes_use_git_root_and_home_and_status_is_read_only(temporary_parent=ancestor)
             self.assertFalse((ancestor / ".agents").exists())
             self.assertFalse((ancestor / ".claude").exists())
 
     def test_cli_scopes_use_git_root_and_home_and_status_is_read_only(self):
+        self._assert_cli_scopes_use_git_root_and_home_and_status_is_read_only()
+
+    def _assert_cli_scopes_use_git_root_and_home_and_status_is_read_only(self, *, temporary_parent=None):
         from contextlib import chdir
         import os
         import subprocess
@@ -804,7 +845,7 @@ class AgentSkillsProjectionTests(unittest.TestCase):
         from _cli_harness import run_cli
         from omh.skills.catalog_portable import portable_skill_names
         from omh.install.agent_skills_projection import MANIFEST_NAME
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir=temporary_parent) as tmp:
             root = Path(tmp).resolve()
             home, repo = root / "home", root / "repo"
             # A filesystem barrier survives installer stripping of GIT_* env vars.
