@@ -149,9 +149,12 @@ Where it shows:
 
 - **The OMH TUI** draws it live, as its tree, in the agent view under the
   info line (the owner's call of 2026-10-21: the subagent view goes under the
-  prompt, always expanded): in place of the live agent list while the graph
-  is a DAG run (a `depends_on` edge, or a lane that delegates), and under the
-  HUD's agents block while no live agent is listed. The agents block (its
+  prompt, always expanded): a DAG run (a `depends_on` edge, or a lane that
+  delegates) as a folding tree in place of the live agent list (a row per
+  node, with its child's latest call and latest line under an open one; the
+  OMH TUI section of INSTALLATION.md has its rules and keys), and any other
+  graph as its tree, under the HUD's agents block while no live agent is
+  listed. The agents block (its
   header `● main │ …`) leaves out the
   activity row of each Hermes-native child the graph draws, matched by the
   child's session id, so that lane is drawn once. A row whose child the graph
@@ -164,11 +167,13 @@ Where it shows:
   agents block's header keeps the session's cost and tokens.
   The tree of a DAG run takes up to a third of the terminal's rows from the
   start (8 of 24, 13 of 40), and no more rows than it has: a five-lane run's
-  seven-row tree takes 7 at 24 rows and at 40, and the same run with a row
-  per stage (ten rows) takes 8 at 24 and 10 at 40. Other views take at most
-  a quarter, seven from 28 rows, raised only to show every running lane.
-  Boxes do not fit there, so the tree is drawn, its done lanes giving way
-  first to a `+N more nodes` row and its running lanes kept. Once every
+  six-row tree takes 6 at 24 rows and at 40, and the same run with a row per
+  stage (eleven rows, a blank row between stages) takes 11 at 40 and folds
+  into 8 at 24. Other views take at most a quarter, seven from 28 rows,
+  raised only to show every running lane. Boxes do not fit there. The
+  folding tree fits by shutting its quiet layers, then folding a busy
+  layer's quiet nodes into one `▸ N more` row, then shutting open nodes, its
+  running ones kept in sight, before its last row counts what is cut. Once every
   lane has settled (done, failed, interrupted or unknown, and no lane left
   out by the reader) and a dag-ulw run is over as a run, the tree is one
   line, `DAG · <name> · done 5/6 · 1 failed`, until the graph lingers out
@@ -355,9 +360,10 @@ What it shows, and what it leaves as `?`:
     without them, and nodes added after the end post reopen the run with
     that line instead of a second start block.
   - In the TUI each block says one thing: `[Plan]` holds the run's layers
-    (the skill keeps one todo item per layer), the delegation tree in the
-    agent view draws the nodes and edges, and the agents block lists only
-    the children the tree does not draw. The agent view and the
+    (the skill keeps one todo item per layer), the folding tree in the
+    agent view draws the nodes layer by layer, each with what its child is
+    doing now, and closes with the agents no node names (`other agents`).
+    The agent view and the
     transcript's `delegate_task` rows name a node's child by the node's
     label, without its `[dag:<run>/<node>]` marker. The tree collapses a
     finished run to its one summary line. The transcript keeps the run's
@@ -369,7 +375,7 @@ What it shows, and what it leaves as `?`:
 
     ![The dag-ulw plan block in the OMH TUI transcript: Export API handed out as the start node, the button, the docs and the CLI flag waiting on it in the next frontier, and the verification node waiting on all three, with the Dependencies list under them](../assets/omh-tui-dag-ulw-plan-block.png)
 
-    ![A dag-ulw run in the OMH TUI mid-run: five defined nodes accepted, an extend round hanging under the verification node that found CSV export missing, the CSV node blocked with its repair running beneath it, and the plan holding one item per layer](../assets/omh-tui-dag-ulw-run.png)
+    ![A dag-ulw run in the OMH TUI mid-run: the two done layers shut, the verification node open with its child's last call and reply, the extend round hanging under it, the CSV node blocked with its child's reason and its repair running beneath it with that child's call, and the plan holding one item per layer](../assets/omh-tui-dag-ulw-run.png)
 
 The structure comes from a metadata-only record, `delegation_ledger/v1` under
 `<omh_home>/runtime/delegation/`, that OMH writes from Hermes' own

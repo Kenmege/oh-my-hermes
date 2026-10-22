@@ -553,37 +553,49 @@ def box_top(screen: list[str]) -> int | None:
 
 
 class DagViewTests(unittest.TestCase):
-    """A DAG run's tree under the info line: a third of the screen from the start, one line once the run is over, and
-    the list Down opens in the tree's own rows."""
+    """A DAG run's folding tree under the info line (`dag_tree`): a third of the screen from the start, one line once
+    the run is over, and the keys Down gives it in its own rows. tests/test_tui_dag_tree.py pins the tree itself."""
 
     def tree_app(self, rows: int, graph: dict, **options: object) -> App:
         app, _client = make_app(busy=True, rows=rows, cols=120, clock=lambda: 0.0, **options)
         with_graph(app, graph)
         return app
 
-    def test_the_staged_export_tree_is_whole_at_40_rows_and_cut_at_24_keeping_its_running_lane(self) -> None:
+    def test_the_staged_export_tree_is_whole_at_40_rows_and_folded_at_24_keeping_its_running_lane(self) -> None:
         from _delegation_graphs import export_run
 
+        # The folding tree (the owner's pick of 2026-10-22) in place of the box-drawing tree: no `◆ main` row, a
+        # label row per stage, a blank row between two stages.
         whole = view_text(self.tree_app(40, export_run(staged=True)))
-        self.assertEqual(len(whole), 10, whole)  # header, main, three stages, five lanes: under 40 // 3
-        self.assertFalse([row for row in whole if "more nodes" in row])
-        self.assertEqual([row.strip()[:12] for row in whole[:2]], ["DAG · export", "◆ main · opu"])
-        cut = view_text(self.tree_app(24, export_run(staged=True)))
-        self.assertEqual(len(cut), 24 // 3)
-        self.assertIn("+2 more nodes (1 done)", cut[-1])
-        self.assertTrue([row for row in cut if "● Export button" in row and "running" in row], cut)
+        self.assertEqual(len(whole), 11, whole)  # header, three stages, five lanes, two blanks: under 40 // 3
+        self.assertFalse([row for row in whole if "more" in row])
+        self.assertEqual([row.strip()[:12] for row in whole[:2]], ["DAG · export", "▾ stage 1 · "])
+        folded = [row.rstrip() for row in view_text(self.tree_app(24, export_run(staged=True)))]
+        self.assertLessEqual(len(folded), 24 // 3)
+        self.assertIn("  ▸ stage 1 · 1 node · 1 done", folded, "the done stage shuts first")
+        self.assertIn("    ▸ 2 more · 2 waiting", folded, "the busy stage's quiet lanes fold into one row")
+        self.assertTrue([row for row in folded if "⠋ Export button" in row and "running" in row], folded)
 
     def test_the_cap_is_a_third_of_the_screen_whatever_runs(self) -> None:
+        from _delegation_graphs import parallel
+
+        # Nothing running: the non-DAG cap would be min(7, rows // 4), 6 at 24 rows and 7 at 40; the tree, twenty
+        # waiting lanes that fold no further, still gets a third of the screen, its last row the count of the rest.
+        idle = parallel(20)
+        for node in idle["nodes"][1:]:
+            node.update(state="waiting", status="waiting")
+        idle["edges"].append({"from": "l0", "to": "l1", "kind": "depends_on"})
+        for rows in (24, 40):
+            with self.subTest(rows=rows):
+                shown = view_text(self.tree_app(rows, idle))
+                self.assertEqual(len(shown), rows // 3)
+                self.assertEqual(shown[-1].rstrip(), f"  … {20 - (rows // 3 - 2)} more nodes · ↓ to browse")
+        # The same run's six-row tree without stages (one unnamed group draws no label row) fits whole at 24 rows.
         from _delegation_graphs import export_run
 
-        # Nothing running: the non-DAG cap would be min(7, rows // 4), 6 at 24 rows; the tree still gets 8.
-        idle = export_run({"ui": "waiting"}, staged=True)
-        self.assertEqual(len(view_text(self.tree_app(24, idle))), 8)
-        self.assertEqual(len(view_text(self.tree_app(40, idle))), 10)
-        # The seven-row tree of the same run without stages fits whole at 24 rows.
         flat = view_text(self.tree_app(24, export_run()))
-        self.assertEqual(len(flat), 7)
-        self.assertFalse([row for row in flat if "more nodes" in row])
+        self.assertEqual(len(flat), 6)
+        self.assertFalse([row for row in flat if "more" in row])
 
     def test_a_run_whose_every_lane_settled_is_one_summary_line(self) -> None:
         from _delegation_graphs import export_run
@@ -602,11 +614,13 @@ class DagViewTests(unittest.TestCase):
         unread["hidden_nodes"] = 2  # lanes the reader left out may still run
         self.assertGreater(len(view_text(self.tree_app(40, unread))), 1)
 
-    def test_down_in_a_dag_run_opens_the_list_in_the_trees_rows_and_nothing_moves(self) -> None:
+    def test_down_in_a_dag_run_gives_the_tree_the_keys_in_its_own_rows_and_nothing_moves(self) -> None:
         from _delegation_graphs import parallel
         from omh.tui.keys import DOWN, ESCAPE
 
-        # The reviewer's two cases: a tree taller than the roster's list, and one shorter.
+        # The reviewer's two cases for the list this replaced: a tree taller than the roster, and one shorter. Down
+        # now gives the keys to the tree's own rows (its nodes name the agents `x`, `s` and Enter act on), so the
+        # view keeps its rows whatever the roster holds.
         for lanes, agents in ((8, 2), (3, 9)):
             with self.subTest(lanes=lanes, agents=agents):
                 graph = parallel(lanes)
@@ -622,14 +636,14 @@ class DagViewTests(unittest.TestCase):
                 self.assertEqual((screen_info_index(app, during), view_rows(app)), (info, height))
                 self.assertEqual(box_top(during), None)
                 self.assertEqual(during[info - 3 : info], ["", "", ""], "the composer's rows, blank")
-                listed = during[info + 1 : info + 1 + height]
-                self.assertEqual(len(app.listed), min(agents + 1, height))
-                self.assertTrue(listed[1].startswith("▸ "), listed)
-                self.assertEqual(listed[len(app.listed) :], [""] * (height - len(app.listed)), "padded with blanks")
+                self.assertEqual(app.tree_selected, "l0", "on the first running lane")
+                self.assertEqual(app.listed, (), "the roster's list is not what Down opened")
+                self.assertEqual(during[info + 1].strip()[:5], "DAG ·", "the tree stays in its rows")
                 app._on_input(Key(DOWN))
                 app._on_input(Key(ESCAPE))
                 after = drawn(app)
                 self.assertEqual((screen_info_index(app, after), box_top(after)), (info, box_top(before)))
+                self.assertIsNone(app.tree_selected)
                 self.assertEqual(after[info + 1].strip()[:5], "DAG ·", "the tree is back in the same rows")
 
 

@@ -19,8 +19,13 @@ frames it built for a scripted run are `tests/fixtures/tui_gateway/subagent_rela
   when the call has one; its `tool_count` already counts that call.
 - `subagent.thinking` carries one line in `text`, or no `text` at all while
   the session hides reasoning.
-- `subagent.progress` carries a summary naming the child's last five tools:
-  calls the `subagent.tool` frames already reported, so it adds no log row.
+- `subagent.progress` carries a summary naming the child's last five tools,
+  after every fifth call (`🔀 [set 1 · 1/3] terminal, read_file, patch,
+  terminal, terminal` from Hermes d923a5eb48's relay): calls the
+  `subagent.tool` frames already reported, so it adds no log row. It is kept,
+  without Hermes' `🔀 [set …]` tag, as the agent's progress line
+  (`Agent.progress`). The calls after the last full batch of five are never
+  sent as one, and with reasoning hidden a thinking frame has no `text`.
 - `subagent.complete` carries `status` (`completed`, `interrupted`, or a
   failure: `failed`, `error`, `timeout`), `duration_seconds`, and `summary`,
   the child's reply cut to 500 characters, or its error. On Hermes' success
@@ -33,7 +38,16 @@ frames it built for a scripted run are `tests/fixtures/tui_gateway/subagent_rela
   through `subagent.tail` while the child is live.
 - No frame carries a role or a name. An agent's display name is the first
   words of its goal, without the `[dag:<run>/<node>]` marker a dag-ulw node's
-  goal ends with (the node's label comes first) or an omh_team helper's.
+  goal ends with (the node's label comes first) or an omh_team helper's. The
+  dag marker binds the agent to its node (`Agent.dag_node`), as it binds the
+  child in OMH's ledger (`delegation_ledger.dag_binding`).
+
+What the dag tree under the composer shows of an agent (`dag_tree`) is kept
+apart from its log, which a tail may replace: its latest call
+(`Agent.last_call`), its latest thinking or reply line (`Agent.said`: a
+thinking line, the first line of `subagent.complete`'s summary, or a tail's
+last line), its latest progress line (`Agent.progress`), and which of the two
+came last (`Agent.progress_newest`).
 
 The fold. An agent is keyed by `subagent_id`; a frame without a usable one
 changes nothing. The id is stored as it arrived and is never drawn: rows show
@@ -139,6 +153,9 @@ TAIL_CUT_NOTICE = "… earlier output not shown"
 LOG_TEXT = "text"
 LOG_THINKING = "thinking"
 LOG_TOOL = "tool"
+LOG_PROGRESS = "progress"  # only ever an `Agent.progress`: the log keeps no progress row
+# Hermes' tag before a progress line's tool names (`tools/delegate_tool_progress.py`, `_flush`): `🔀 [set 2 · 3/9] `.
+_PROGRESS_TAG = re.compile(r"\A(?:🔀\s*)?(?:\[[^\]]*\]\s*)?")
 
 
 class LogRow(NamedTuple):
@@ -179,6 +196,11 @@ class Agent:
     tail_cut: bool = False  # `log` was seeded from a tail that had already lost its beginning
     seen: int = 0  # the roster's count of frames when one last named this agent; the lowest was seen longest ago
     log_gen: int = 0  # moves whenever `log`, `dropped` or `tail_cut` changes, so the wrapped log is redone only then
+    dag_node: str = ""  # the dag node its goal's `[dag:<run>/<node>]` marker binds it to, by its graph id
+    last_call: LogRow | None = None  # its latest tool call, as the log first wrote it
+    said: LogRow | None = None  # its latest thinking or reply line
+    progress: LogRow | None = None  # its latest progress line, the names of its last calls
+    progress_newest: bool = False  # `progress` came after `said`
 
     @property
     def name(self) -> str:
@@ -239,12 +261,17 @@ def _bounded(value: object, ceiling: int) -> bool:
 
 def _identify(agent: Agent, payload: dict[str, Any]) -> None:
     """Take the identity fields a frame carries; one that is missing or mistyped leaves the agent's own."""
-    from ..plugin_bundle.omh.delegation_ledger import without_goal_marker  # the ledger's own marker pattern
+    from ..plugin_bundle.omh.delegation_graph import dag_node_id
+    from ..plugin_bundle.omh.delegation_ledger import dag_binding, without_goal_marker  # the ledger's own markers
 
     # A dag node's child is named by its node's label: the `[dag:<run>/<node>]` marker is for OMH, not the strip.
-    goal = without_goal_marker(_one_line(payload.get("goal"), GOAL_CHARS))
+    marked = _one_line(payload.get("goal"), GOAL_CHARS)
+    goal = without_goal_marker(marked)
     if goal:
         agent.goal = goal
+    bound = dag_binding(marked)
+    if bound:
+        agent.dag_node = dag_node_id(bound["run"], bound["node"])
     model = _one_line(payload.get("model"), LABEL_CHARS)
     if model:
         agent.model = model
@@ -359,7 +386,7 @@ class Roster:
         self._handlers: dict[str, Callable[[str, dict[str, Any], float], None]] = {
             contract.SUBAGENT_SPAWN_REQUESTED: self._on_spawn_requested,
             contract.SUBAGENT_START: self._on_alive,
-            contract.SUBAGENT_PROGRESS: self._on_alive,
+            contract.SUBAGENT_PROGRESS: self._on_progress,
             contract.SUBAGENT_THINKING: self._on_thinking,
             contract.SUBAGENT_TOOL: self._on_tool,
             contract.SUBAGENT_COMPLETE: self._on_complete,
@@ -420,10 +447,13 @@ class Roster:
             if agent.status not in FINISHED_STATUSES:
                 agent.status, agent.finished_at = INTERRUPTED, now
 
-    def clear(self) -> None:
-        """Drop every agent: the app calls this when a new turn starts and when it leaves a session."""
-        self.agents.clear()
-        self._wrapped.clear()
+    def clear(self, keep: frozenset[str] = frozenset()) -> None:
+        """Drop every agent but those bound to a dag node in `keep`: the app calls this when a new turn starts, keeping
+        the lanes of the dag run still open (they outlive the turn that sent them), and when it leaves a session,
+        keeping none."""
+        for key in [key for key, agent in self.agents.items() if not (agent.dag_node and agent.dag_node in keep)]:
+            del self.agents[key]
+            self._wrapped.pop(key, None)
         self.evicted = 0
 
     def ingest_tail(self, subagent_id: str, text: str, truncated: bool = False) -> None:
@@ -449,6 +479,7 @@ class Roster:
         agent.dropped = max(0, len(rows) - LOG_ROW_CAP)
         agent.tail_cut = cut
         agent.log_gen += 1
+        agent.said, agent.progress_newest = agent.log[-1], False
 
     def _make_room(self) -> None:
         """Keep the roster under its cap: a finished agent leaves first, else the one seen longest ago."""
@@ -484,6 +515,13 @@ class Roster:
         text = _one_line(payload.get("text"), ROW_CHARS)
         if agent is not None and text:
             _push(agent, LOG_THINKING, text)
+            agent.said, agent.progress_newest = agent.log[-1], False
+
+    def _on_progress(self, subagent_id: str, payload: dict[str, Any], now: float) -> None:
+        agent = self._live(subagent_id, payload, now, RUNNING)
+        text = _PROGRESS_TAG.sub("", _one_line(payload.get("text"), ROW_CHARS), count=1)
+        if agent is not None and text:
+            agent.progress, agent.progress_newest = LogRow(LOG_PROGRESS, text), True
 
     def _on_tool(self, subagent_id: str, payload: dict[str, Any], now: float) -> None:
         agent = self._live(subagent_id, payload, now, RUNNING)
@@ -492,6 +530,7 @@ class Roster:
         agent.last_tool = _one_line(payload.get("tool_name"), LABEL_CHARS) or UNNAMED_TOOL
         preview = _one_line(payload.get("tool_preview") or payload.get("text"), ROW_CHARS)
         _push(agent, LOG_TOOL, agent.last_tool, preview)
+        agent.last_call = agent.log[-1]
 
     def _on_complete(self, subagent_id: str, payload: dict[str, Any], now: float) -> None:
         agent = self.agents.get(subagent_id)
@@ -507,8 +546,11 @@ class Roster:
         tokens = payload.get("output_tokens")
         if isinstance(tokens, int) and _bounded(tokens, MAX_TOKEN_COUNT):
             agent.output_tokens, agent.tokens_final = tokens, True
-        for line in _lines(_text(payload.get("summary") or payload.get("text"))[:SUMMARY_CHARS]):
+        summary = _lines(_text(payload.get("summary") or payload.get("text"))[:SUMMARY_CHARS])
+        for line in summary:
             _push(agent, LOG_TEXT, line)
+        if summary:  # its reply's first line, or its error
+            agent.said, agent.progress_newest = LogRow(LOG_TEXT, _cut(summary[0], ROW_CHARS)), False
 
     # ── output ──
 
