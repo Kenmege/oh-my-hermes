@@ -17,6 +17,7 @@ from _local_package import load_local_package
 load_local_package()
 
 from omh.plugin_bundle.omh.awareness import awareness_route_hint, awareness_route_hint_context_from_payload  # noqa: E402
+from omh.plugin_bundle.omh.reference_regions import reference_regions  # noqa: E402
 from omh.plugin_bundle.omh.dag_ulw_cues import (  # noqa: E402
     asks_about_dag_ulw,
     big_work_for_dag_ulw,
@@ -217,7 +218,18 @@ class RouterTests(unittest.TestCase):
                         "열린 PR들 전부 리베이스해줘", "fix all the failing tests", "update every service to node 22",
                         "implement search and export features in parallel", "모든 패키지 버전 올려줘",
                         "브랜치들 전부 main에 맞춰 리베이스해줘", "billing 말고 모든 서비스 node 22로 올려줘",
-                        "update the dependencies in all services", "블로그 pr 전부 머지해줘"):
+                        "update the dependencies in all services", "블로그 pr 전부 머지해줘",
+                        # A request ending said as a word of its own, or a 해, 놔 or ㄱ ending (#2232 review).
+                        "열린 PR들 전부 리베이스 해줘", "모든 서비스 node 22로 업데이트 해주세요", "PR들 다 리베이스해",
+                        "모든 패키지 버전 올려놔", "PR들 전부 리베이스 ㄱ", "모든 서비스 업데이트 좀 해줘",
+                        # A past or a completion in a modifier names which units.
+                        "내가 올렸던 PR들 전부 리베이스해줘", "어제 실패했던 테스트 전부 고쳐줘",
+                        "충돌났던 브랜치들 전부 다시 리베이스해줘", "완료된 이슈들 전부 닫아줘",
+                        # The owner's English change verbs inside a Korean request, and a push after a change.
+                        "hermes upstream에 낸 PR들 전부 확인해서 리뷰 코멘트 반영하고 rebase까지 ㄱㄱ",
+                        "열린 PR들 전부 리뷰 코멘트 반영하고 force push ㄱㄱ", "PR들 전부 rebase 해줘",
+                        # A change, then a report on it.
+                        "fix all the failing tests and tell me which ones were flaky"):
             with self.subTest(message=message):
                 self.assertTrue(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
@@ -235,12 +247,17 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(self._dag_ulw_starts("migrate across all modules to the new logger")[2], "dag-ulw")
 
     def test_each_hard_exclude_alone_keeps_a_change_off_the_graph(self) -> None:
-        # Each row is a change the router would dispatch on but for one hard exclude: a skill or engine named first,
-        # a past, one pull request's scope, a stop or a hold, a completion, a condition, work until a condition.
+        # Each row is a change the router would dispatch on but for one hard exclude: a skill or engine named first
+        # (with a Korean particle, in Korean, or after omh), a past, one pull request's scope (by number, in words or
+        # as 풀리퀘), a stop or a hold, a completion, a condition, work until a condition, parallel running as the
+        # work's subject.
         for message in ("team 열린 PR들 전부 리베이스해줘", "plan 모든 패키지 버전 올려줘", "PR들 전부 리베이스했으니 머지해줘",
                         "PR 2232 파일들 전부 고쳐줘", "fix all the files in this PR", "PR들 전부 리베이스 중단하고 머지해줘",
                         "브랜치들 다 정리됨 이제 전부 머지해줘", "테스트 다 통과하면 모든 PR 머지해줘",
-                        "fix all the failing tests until CI is green"):
+                        "fix all the failing tests until CI is green", "fix all the modules that run in parallel",
+                        "loop로 모든 서비스 업데이트해줘", "루프로 모든 서비스 업데이트해줘", "omh loop 모든 서비스 업데이트해줘",
+                        "update all snapshots in PR number 2240", "2240번 풀리퀘 모든 테스트 다시 고쳐줘",
+                        "테스트 수정 완료, 이제 PR들 전부 머지해줘"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 router, hint, _candidate = self._dag_ulw_starts(message)
@@ -249,6 +266,36 @@ class RouterTests(unittest.TestCase):
         # A review is offered, never dispatched: the allow list holds only changes.
         self.assertFalse(dispatches_dag_ulw("PR들 전부 리뷰해줘"))
         self.assertTrue(work_over_many_targets("PR들 전부 리뷰해줘"))
+
+    def test_a_skill_named_or_invoked_keeps_a_change_over_many_targets(self) -> None:
+        # The name with a Korean particle, in Korean, or after omh, and an explicit invocation of a skill or the loop,
+        # keep the request on that skill: the router does not dispatch dag-ulw and the hint does not start it.
+        for message, skill in (("loop로 모든 서비스 업데이트해줘", "loop"), ("루프로 모든 서비스 업데이트해줘", "loop"),
+                               ("loop으로 PR들 전부 리베이스해줘", "loop"), ("omh loop 모든 서비스 업데이트해줘", "loop"),
+                               ("github-event-ops로 열린 PR들 전부 리베이스해줘", "github-event-ops"),
+                               ("deploy-and-monitor로 모든 서비스 업데이트해줘", "deploy-and-monitor"),
+                               ("git-workflow로 브랜치들 전부 리베이스해줘", "git-workflow"),
+                               ("use git-workflow: 열린 PR들 전부 리베이스해줘", "git-workflow")):
+            with self.subTest(message=message):
+                route = route_chat_message(message, source="discord")
+                self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", skill))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        for message in ("team으로 모든 서비스 업데이트해줘", "ralph로 모든 서비스 업데이트해줘", "maestro로 모든 패키지 버전 올려줘",
+                        "refactor-plan으로 모든 모듈 python 3.12로 올려줘", "code-review로 열린 PR들 전부 고쳐줘"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        # The cue reads the change; the explicit invocation is what keeps it off the graph, on both surfaces.
+        self.assertTrue(dispatches_dag_ulw("use git-workflow: 열린 PR들 전부 리베이스해줘"))
+
+    def test_a_pull_request_link_is_one_scope(self) -> None:
+        # The executable text leaves the link out, so the callers pass it: the PR it points at is one scope.
+        message = "https://github.com/rlaope/oh-my-hermes/pull/2240 의 테스트 전부 고쳐줘"
+        regions = reference_regions(message)
+        self.assertTrue(dispatches_dag_ulw(regions.executable_text))
+        self.assertFalse(dispatches_dag_ulw(regions.executable_text, regions.links))
+        self.assertFalse(work_over_many_targets(regions.executable_text, regions.links))
+        self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
 
     def test_a_missing_skill_catalog_is_not_kept(self) -> None:
         # With no sidecar the catalog names are unknown, and that is not kept: once the sidecar answers, a request
@@ -291,7 +338,17 @@ class RouterTests(unittest.TestCase):
                         "are all the tests passing?", "fix all the failing tests until the suite is green",
                         "모든 테스트 통과할 때까지 다 고쳐줘", "team 실패하는 테스트 다 고쳐", "ask 실패하는 테스트 다 고쳐",
                         "ulw 실패하는 테스트 다 고쳐", "울트라워크로 모든 서비스 업데이트해줘", "프로파일 전부 지워줘",
-                        "고객서비스 전부 개선해줘", "이 버그 pr 리뷰해줘"):
+                        "고객서비스 전부 개선해줘", "이 버그 pr 리뷰해줘",
+                        # #2232 review: one numbered pull request in more forms, one fault said as "does not work", a
+                        # push over everything, a clause before a bare request ending, a report after a review.
+                        "update all snapshots in PR number 2240", "github.com/rlaope/oh-my-hermes/pull/2240 의 테스트 전부 고쳐줘",
+                        "https://github.com/rlaope/oh-my-hermes/pull/2240 의 테스트 전부 고쳐줘",
+                        "fix all the tests in https://github.com/rlaope/oh-my-hermes/pull/2240",
+                        "2240번 풀리퀘 모든 테스트 다시 고쳐줘", "2240번 풀 리퀘스트 테스트 전부 고쳐줘",
+                        "모든 서비스에서 로그인이 안 돼 고쳐줘", "모든 서비스에서 결제가 안 돼 고쳐줘",
+                        "모든 페이지에서 버튼이 안 눌려, 고쳐줘", "모든 페이지에서 모달이 안 떠 고쳐줘", "모든 서비스 로그인 먹통이야 고쳐줘",
+                        "모든 브랜치 push 해줘", "PR들 다 리베이스하려고 해", "PR들 전부 리베이스해야 해",
+                        "PR들 전부 리베이스 완료됨", "review all open PRs and send me a list of risky ones"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertFalse(work_over_many_targets(message))

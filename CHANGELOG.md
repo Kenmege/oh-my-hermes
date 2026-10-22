@@ -25,11 +25,21 @@ All notable changes will be documented here.
   dispatches dag-ulw only on positive evidence: a change verb from a closed
   allow list (fix, update, rebase, close, migrate, 고쳐, 올려, 리베이스, 반영, …)
   in request form, on a breadth object that names independent units
-  (`열린 PR들 전부 리베이스해줘`, `fix all the failing tests`, `update every
-  service to node 22`), or two named parts asked for in parallel. A stop or a
-  hold, a condition, a past or a completion, one numbered pull request, work
-  until a condition, and a request that opens with a sigil or names a skill,
-  ulw or a retired engine never qualify. The route hint starts dag-ulw only on
+  (`열린 PR들 전부 리베이스해줘`, `열린 PR들 전부 리베이스 해줘`, `모든 패키지 버전
+  올려놔`, `fix all the failing tests`, `update every service to node 22`), or
+  two named parts asked for in parallel. rebase, merge, bump and fix count
+  inside a Korean request (`rebase까지 ㄱㄱ`), and a push counts only after a
+  change (`리뷰 코멘트 반영하고 force push ㄱㄱ`); `모든 브랜치 push 해줘` is one
+  command. A past in a modifier names the units (`내가 올렸던 PR들 전부
+  리베이스해줘`), and a report after an English change is its tail (`fix all the
+  failing tests and tell me which ones were flaky`). A stop or a hold, a
+  condition, a past or a completion as the predicate, one pull request (its
+  number, `PR number 2240`, `2240번 풀리퀘`, or its link), one fault with one fix
+  (`모든 서비스에서 로그인이 안 돼 고쳐줘`), work until a condition, and a request
+  that opens with a sigil or names a skill, ulw or a retired engine, also with a
+  Korean particle (`loop로`, `github-event-ops로`, `루프로`), never qualify, and
+  neither does an explicit invocation of a skill or the loop (`use git-workflow:
+  …`). The route hint starts dag-ulw only on
   that same reading; work over many targets without it (`review all open
   PRs`) is at most offered, as one question with dag-ulw as the candidate.
   Reading, summarising, measuring, sharing or checking verbs are not on the

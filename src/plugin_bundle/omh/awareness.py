@@ -38,7 +38,7 @@ from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, OMH_TODO_HELD_PLANS, native_tool_presence_clause
 from .spend_signals import SPEND_GATE_PHRASES, spend_request_phrases
 from .show_reel_cues import SHOW_REEL_PHRASES, show_reel_request_admitted, show_reel_request_phrases
-from .reference_regions import executable_routing_text
+from .reference_regions import executable_routing_text, reference_regions
 from .degradation import (
     COMPONENT_LOCALIZED_ROUTING_TEXT,
     COMPONENT_LOOP_ROUTE_HINT_ASSESSMENT,
@@ -6331,9 +6331,15 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
             )
             if len(hints) >= hint_limit:
                 break
-        if hint_limit and dispatches_dag_ulw(matching_message):
+        links = reference_regions(message).links
+        if (
+            hint_limit
+            and dispatches_dag_ulw(matching_message, links)
+            and direct_hint.get("workflow", "dag-ulw") == "dag-ulw"
+        ):
             # The router dispatches dag-ulw on this reading whichever lane scored ("열린 PR들 전부 리베이스해줘"), so the
-            # hint starts it first; a start is never the hint's alone.
+            # hint starts it first; a start is never the hint's alone. A workflow invoked by name keeps the request, as
+            # the router's explicit invocation does ("use git-workflow: 열린 PR들 전부 리베이스해줘").
             hints = [_dag_ulw_by_size_hint(), *(hint for hint in hints if hint.get("workflow") != "dag-ulw")][:hint_limit]
         elif (
             not hints
@@ -6344,7 +6350,7 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
             if work_is_split(matching_message):
                 # Work split into parts that no rule named ("split this into parallel work lanes"), as before.
                 hints.append(_dag_ulw_by_size_hint())
-            elif work_over_many_targets(matching_message):
+            elif work_over_many_targets(matching_message, links):
                 # Work over many targets without the router's evidence ("review all open PRs"): offered, not started.
                 hints.append(_dag_ulw_offer_hint())
         domain_signal = _specialist_domain_route_signal(matching_message)

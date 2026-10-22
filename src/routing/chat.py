@@ -1834,7 +1834,7 @@ def _enriched_route(
         ):
             first_skill = str(lexical_rows[0].get("skill") or "")
             # Big work by size keeps dag-ulw, which the shortlist ranks below ultrawork on the same words.
-            if first_skill and not _keeps_dag_ulw_by_size(route, matching_message):
+            if first_skill and not _keeps_dag_ulw_by_size(route, request):
                 route["candidate_skill"] = first_skill
                 route["candidate_harness"] = primary_harness_for_skill(first_skill)
             route["clarification"] = shortlist_clarification(
@@ -1884,7 +1884,7 @@ def _enriched_route(
             # A request read as big work by size keeps dag-ulw as the skill it asks about: the shortlist ranks
             # ultrawork first on the same words (`dag_ulw_cues.big_work_for_dag_ulw`).
             candidate_skill = (
-                DAG_ULW if _keeps_dag_ulw_by_size(route, matching_message) else str(candidates[0].get("skill") or "")
+                DAG_ULW if _keeps_dag_ulw_by_size(route, request) else str(candidates[0].get("skill") or "")
             )
             route["candidate_skill"] = candidate_skill
             route["candidate_harness"] = primary_harness_for_skill(candidate_skill)
@@ -2213,8 +2213,13 @@ def _route_chat_message_cached(
     query = RoutingQuery.from_message(routing_message, shielded=executable_message != message)
     # Positive evidence of work over many targets dispatches dag-ulw before any lane's fast path reads one of its
     # words ("upstream", "pytest", "stale"), so the route hint, which starts dag-ulw on the same reading, never
-    # starts a run the router did not dispatch.
-    if dispatches_dag_ulw(routing_message):
+    # starts a run the router did not dispatch. A request that invokes a skill or the loop is that skill's ("use
+    # git-workflow: 열린 PR들 전부 리베이스해줘", "omh loop …").
+    if (
+        dispatches_dag_ulw(routing_message, reference_regions(message).links)
+        and explicit_skill_invocation(routing_message, query=query) in (None, DAG_ULW)
+        and not explicit_loop_invocation_signal(routing_message)
+    ):
         return _dag_ulw_by_evidence_decision(
             message, routing_message=routing_message, source=source, min_confidence=min_confidence
         ).to_dict()
@@ -2674,7 +2679,7 @@ def _route_chat_message_cached(
         action in {"clarify", "fallback"}
         and selected_skill == _ROUTER_SKILL
         and not explicit_skill
-        and work_over_many_targets(routing_message)
+        and work_over_many_targets(routing_message, reference_regions(message).links)
     ):
         # Work over many targets without that evidence ("review all open PRs") asks once, with dag-ulw as the skill it
         # asks about; it never dispatches it.
@@ -7062,11 +7067,12 @@ def _invocation_as_written(written: str, routing_message: str) -> str:
     return f"{head} {typed[1]}"
 
 
-def _keeps_dag_ulw_by_size(route: Mapping[str, object], matching_message: str) -> bool:
+def _keeps_dag_ulw_by_size(route: Mapping[str, object], request: str) -> bool:
     """Whether a clarify keeps dag-ulw as its candidate: the route named it for big work by size, not for a mention
     of the skill ("stop using dag ulw")."""
+    regions = reference_regions(request)
     return route.get("candidate_skill") == DAG_ULW and (
-        big_work_for_dag_ulw(matching_message) or work_over_many_targets(matching_message)
+        big_work_for_dag_ulw(regions.executable_text) or work_over_many_targets(regions.executable_text, regions.links)
     )
 
 

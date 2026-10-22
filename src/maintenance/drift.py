@@ -833,8 +833,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # as on main (3); /ulw-work 멈춰 필요 없다 is a stop, as on main (1).
             # The structural fix adds three: every PR said merged, a summary
             # of every PR, and a merge on a condition start no graph run, as on
-            # main (3).
-            expected=1049,
+            # main (3). Its review adds five, each a clarify as on main: one PR
+            # by its number in words, by its link, and by 풀리퀘 with a number
+            # (3); a login that does not work in every service, with one fix
+            # (1); and a push over every branch, one command (1).
+            expected=1054,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1287,8 +1290,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # main (1). The structural fix adds three: update every service and
             # 모든 패키지 버전 올려줘 run as a graph on a change from the allow
             # list (a clarify on main) (2), and a hold on every PR stays on
-            # github-event-ops, as on main (1).
-            expected=1050,
+            # github-event-ops, as on main (1). Its review adds seven. Four run
+            # as a graph: a request ending said apart from its verb and a force
+            # push after a change (github-event-ops on main) (2), a past in a
+            # modifier that names the PRs (a fallback on main) (1), and a change
+            # with a report after it (ultrawork on main) (1). Three keep the
+            # skill they name, as on main: loop로, github-event-ops로, and use
+            # git-workflow: (3).
+            expected=1057,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

@@ -629,6 +629,9 @@ _FAULT: Final = re.compile(
     r"|(?:is|are|gets?|got)\s+(?:broken|corrupted|stuck)|times?\s+out|timed\s+out)\b"
     r"|깨져|깨지|깨졌|터져|터지|터졌|죽어|죽었|실패해|실패하|실패했|꼬여|꼬이|꼬였|(?:에러|오류)가?\s*(?:나|났|떠|뜨)"
     r"|충돌이?\s*(?:나|났)|데드락|교착"
+    # Something that does not work ("로그인이 안 돼", "버튼이 안 눌려", "모달이 안 떠", "먹통"); not a change made so that
+    # it does not ("중복 결제가 안 되게").
+    r"|안\s*(?:돼|됨|되(?!게|도록)|눌려|눌리|열려|열리|떠|뜨)|먹통"
 )
 _FIX_REQUEST: Final = re.compile(r"\b(?:fix|resolve|debug|repair)\b|고쳐|수정해|해결해")
 # Unless the concurrency word says how the work or the fixes run ("테스트가 실패하는데 병렬로 고쳐줘", "병렬로 각각
@@ -734,18 +737,27 @@ _EN_UNITS: Final = (
 )
 # A fault word that only describes the units ("실패하는 테스트", "the failing tests") names which units, not one fault.
 _FAULTY_UNIT: Final = re.compile(
-    rf"(?:실패하는|실패한|깨진|깨지는|터진|failing|failed|broken|flaky)\s+(?:{_KOREAN_UNIT}|{_EN_UNITS})"
+    r"(?:실패하는|실패한|실패했던|깨진|깨지는|깨졌던|터진|터졌던|충돌난|충돌났던|failing|failed|broken|flaky)\s+"
+    rf"(?:{_KOREAN_UNIT}|{_EN_UNITS})"
 )
 _EN_PARTS_IN_PARALLEL: Final = re.compile(
     r"^(?:please\s+)?(?:implement|build|develop|ship|write|add|create)\s+(?:the\s+)?\S+(?:,\s*\S+)*\s+(?:and|&)\s+\S+\s+"
     r"(?:features|endpoints|pages|screens|apis|modules|services|components)\s+(?:in\s+parallel|concurrently)\b"
 )
+_G: Final = unicodedata.normalize("NFKC", "ㄱ")
+# The owner writes some English change verbs inside a Korean request ("rebase까지 ㄱㄱ", "merge 해줘", "bump 해줘"): one is
+# a change where a Korean request ending, 까지 or 하고 follows it.
+_KOREAN_ENDING_AFTER_EN: Final = rf"(?=\s*(?:까지|하고|해|부탁|진행|{_G}|고고|$))"
+_EN_VERB_IN_KOREAN: Final = rf"(?<![a-z])(?:rebase|merge|bump|fix){_KOREAN_ENDING_AFTER_EN}"
+# A push is one command over everything ("모든 브랜치 push 해줘", as "모든 브랜치 푸시해줘"); said last, after a change, it is
+# that change's final step ("리뷰 코멘트 반영하고 force push ㄱㄱ").
+_PUSH_IN_KOREAN: Final = re.compile(rf"(?<![a-z])(?:force\s*)?push{_KOREAN_ENDING_AFTER_EN}")
 # The change verbs the router dispatches a graph on: a closed allow list. Reading, explaining, summarising,
 # measuring, comparing, surveying, sharing, notifying, checking, reviewing and auditing are not on it, and neither is
 # one command over everything (run, restart, push, deploy, format, delete, merge into one).
 _KOREAN_CHANGE_VERB: Final = (
     r"(?:고쳐|고치|수정|업데이트|업그레이드|올려|올리|교체|추가|옮겨|옮기|바꿔|바꾸|리베이스|반영|닫|적용|붙여|붙이|통일|만들"
-    r"|마이그레이션|변경|리팩터링|리팩토링|머지|이전|해결)"
+    rf"|마이그레이션|변경|리팩터링|리팩토링|머지|이전|해결|{_EN_VERB_IN_KOREAN})"
 )
 _EN_CHANGE_VERB: Final = (
     r"(?:fix|update|upgrade|migrate|refactor|port|convert|add|rename|rebase|close|merge|bump|address|resolve|implement"
@@ -767,11 +779,44 @@ _EN_OFFER: Final = re.compile(
 )
 _EN_LATER_CLAUSE_VERB: Final = re.compile(r"\band\s+(?:then\s+)?(?:just\s+)?([a-z]+)")
 _KOREAN_OFFER: Final = re.compile(rf"{_KOREAN_BREADTH_OBJECT}\s*(?:\S+\s+){{0,3}}\S*{_KOREAN_OFFER_VERB}")
-# An explicit request: a Korean request ending on the message's last word, or a chain of two or more change verbs
-# joined by 고 ("닫을건 닫고 리뷰반영할건 리뷰반영하고 rebase할건 리베이스하고"), or ㄱㄱ.
-_GO_GO: Final = unicodedata.normalize("NFKC", "ㄱㄱ")
-_KOREAN_REQUEST_END: Final = re.compile(rf"(?:해\s*줘|해\s*주세요|해\s*줄래|하자|줘|주세요|줄래|해라|{_GO_GO})\s*[.!~]*$")
+# An explicit request: a Korean request ending on the verb, the message's last word ("리베이스해줘", "리베이스해",
+# "올려놔"), or said as a word of its own right after the verb ("리베이스 해줘", "업데이트 좀 해 주세요", "업데이트
+# 부탁해", "고쳐 줘", "리베이스 ㄱ"); or a chain of two or more change verbs joined by 고 ("닫을건 닫고 리뷰반영할건
+# 리뷰반영하고 rebase할건 리베이스하고").
+_KOREAN_REQUEST_END: Final = re.compile(rf"(?:해\s*줘|해\s*주세요|해\s*줄래|하자|줘|주세요|줄래|해라|해|놔|둬|{_G}+|고고)\s*[.!~]*$")
+_KOREAN_BARE_REQUEST_END: Final = re.compile(
+    r"\s(?:(?:좀|꼭|다시|빨리|얼른|바로|제발)\s+)?"
+    rf"(?:(?:진행\s*)?해\s*(?:줘|주세요|줄래|놔|둬)?|줘|주세요|줄래|부탁(?:해|드려요|드립니다|합니다)?|(?:해\s*)?주시기\s*바랍니다"
+    rf"|바랍니다|놔|둬|{_G}+|고고)\s*[.!~]*$"
+)
+# The verb a bare ending is said after closes its word, or carries only its own ending ("고쳐", "만들어", "업데이트해",
+# "rebase까지"): not a clause before it ("리베이스하려고 해", "리베이스해야 해").
+_VERB_BEFORE_A_BARE_END: Final = r"(?:아|어|여|해|하)?(?:까지|도|만)?$"
 _KOREAN_CHAIN_END: Final = re.compile(r"고\s*[.!~]*$")
+
+
+def _korean_request_verb(folded: str) -> tuple[str, bool]:
+    """The word that holds a Korean request's verb, and whether a request ending said on its own follows it (the
+    word before it) rather than closing it (the last word); "" when the message makes no request."""
+    bare = _KOREAN_BARE_REQUEST_END.search(folded)
+    if bare:
+        words = folded[: bare.start()].split()
+        return (words[-1] if words else ""), True
+    return (folded.rstrip(" .!~").split()[-1] if _KOREAN_REQUEST_END.search(folded) else ""), False
+
+
+def _asks_for(folded: str, verbs: str) -> bool:
+    """Whether a Korean ``folded`` asks, in request form, for one of ``verbs``: on the request's own verb, a push after
+    a change, or a chain of two or more changes closed by 고 or ㄱ."""
+    verb, bare = _korean_request_verb(folded)
+    if re.search(rf"(?:{verbs}){_VERB_BEFORE_A_BARE_END}" if bare else verbs, verb):
+        return True  # the request is the change ("… 리베이스해줘", "… 리베이스 해줘", "… rebase까지 ㄱㄱ")
+    if _PUSH_IN_KOREAN.match(verb) and re.search(_KOREAN_CHANGE_VERB, folded):
+        return True  # "… 리뷰 코멘트 반영하고 force push ㄱㄱ"
+    closed = _KOREAN_CHAIN_END.search(folded) or folded.rstrip(" .!~").endswith(_G)
+    return bool(closed) and len(re.findall(_KOREAN_CHANGE_VERB, folded)) >= 2
+
+
 # The change verb is on the breadth object: right after it in Korean (a few words of its own between), or as an
 # English imperative whose object is the breadth phrase ("fix all the failing tests", "rebase all my open pull
 # requests"), a bare object on every unit ("add auth to every endpoint"), or a plural object in all of them ("update
@@ -800,23 +845,37 @@ _STOP_OR_HOLD: Final = re.compile(
 _CONDITION: Final = re.compile(
     r"(?<![화측전양단표방내외평])면(?=[\s,.!?~]|$)|거든|\b(?:if|when|once|after|unless|whenever|before)\b"
 )
-# - a completion said as a noun or a bare word ("브랜치들 다 정리됨", "upstream PR들 다 리뷰 반영 끝");
-_COMPLETED: Final = re.compile(r"됨(?=[\s,.!?~]|$)|(?<![가-힣])끝(?=[\s,.!?~]|$)|완료")
+# - a completion said as a noun or a bare word ("브랜치들 다 정리됨", "upstream PR들 다 리뷰 반영 끝", "테스트 수정 완료"),
+#   not one that names the units ("완료된 이슈들 전부 닫아줘") or asks for it ("… 리베이스 완료해줘");
+_COMPLETED: Final = re.compile(
+    r"됨(?=[\s,.!?~]|$)|(?<![가-힣])끝(?=[\s,.!?~]|$)|완료(?=[\s,.!?~]|$|됨|됐|되었|했|함|임|입니다|이에요|예요|요)"
+)
+# A pull request's address, written bare or as a link the caller passes (`reference_regions(...).links`: the
+# executable text has none).
+_PULL_REQUEST_ADDRESS: Final = re.compile(r"/pulls?/\d+|/merge_requests/\d+")
 # - one numbered pull request, or the person's own one ("PR 2232", "#2232", "2232번 PR", "내 PR", "pull request 2232",
 #   "files touched by PR 2232", "this PR", "이 PR"); 이 or 그 must open its word, so 버그 and 블로그 are no scope.
 _ONE_SCOPE: Final = re.compile(
     r"\bpr\s*#?\s*\d+|#\s*\d+|\d+\s*번\s*(?:pr|이슈)|(?<![가-힣])내\s*pr(?!\s*들)|\bpull\s+request\s+#?\d+"
+    # A pull request's address or its number said in words ("github.com/…/pull/2240", "PR number 2240", "2240번
+    # 풀리퀘", "풀 리퀘스트 2240").
+    rf"|{_PULL_REQUEST_ADDRESS.pattern}|\b(?:pr|pull\s+request)\s+(?:number|no\.?|num\.?)\s*#?\s*\d+|\bpr\s*번호\s*\d+"
+    r"|\d+\s*번?\s*풀\s*리퀘(?:스트)?|풀\s*리퀘(?:스트)?\s*#?\s*\d+"
     r"|\b(?:this|that)\s+(?:pr|pull\s+request|branch|commit|diff)\b|(?<![가-힣])(?:이|그)\s*(?:pr|브랜치|커밋)(?![a-z])"
     r"|\b(?:in|of|from|on)\s+(?:the|my)\s+(?:pr|pull\s+request|branch|commit|diff)\b|\btouched\s+by\b"
 )
-# A past: a syllable closing on ㅆ, other than 있 and 겠 ("리베이스했습니다", "머지했어요", "머지됐네", "닫혔네").
+# A past: a syllable closing on ㅆ, other than 있 and 겠 ("리베이스했습니다", "머지했어요", "머지됐네", "닫혔네"). A past
+# in a modifier names which units, and reports nothing ("내가 올렸던 PR들", "어제 실패했던 테스트", "충돌났던 브랜치들").
 _NOT_A_PAST: Final = frozenset("있겠")
 
 
 def _says_a_past(folded: str) -> bool:
     return any(
-        0 <= ord(character) - 0xAC00 < 11172 and (ord(character) - 0xAC00) % 28 == 20 and character not in _NOT_A_PAST
-        for character in folded
+        0 <= ord(character) - 0xAC00 < 11172
+        and (ord(character) - 0xAC00) % 28 == 20
+        and character not in _NOT_A_PAST
+        and folded[index + 1 : index + 2] != "던"
+        for index, character in enumerate(folded)
     )
 
 
@@ -831,14 +890,27 @@ _NO_WORK_ASKED: Final = re.compile(
     r"|without|but\s+not|never|only)\b|\band\s+list\b|\blist\s+(?:them|the|which|all)\b"
     r"|\b(?:the|this|that|a)\s+(?:\S+\s+){0,2}\S+(?<!s)\s+(?:in|on)\s+(?:all|every|each)\b"
 )
+# A change, then a report on what it did ("fix all the failing tests and tell me which ones were flaky"): the report
+# is the change's last clause, not a request of its own. Only after a change on the breadth object
+# (`_EN_CHANGE_ON_BREADTH`): a review or an audit that ends in a report asks only for the report ("review all open PRs
+# and just tell me which are safe").
+_EN_REPORT_TAIL: Final = re.compile(
+    r"(?:,\s*|\s+)and\s+(?:then\s+)?(?:tell\s+me|let\s+me\s+know|report|send\s+me|show\s+me)\b[^.?!]*[.!]?$"
+)
 # Parallel running is the work's subject, not its shape ("fix the race where uploads run in parallel across modules").
 _RUNTIME_PARALLEL: Final = re.compile(
     r"\b(?:run|runs|running|execute|executes|load|loads)\s+in\s+parallel\b|\brace(?:\s+condition)?s?\b|\bdeadlock"
 )
 # Work until a condition holds stays on the loop and ultrawork lanes ("… until every test passes", "다 통과할 때까지").
 _UNTIL: Final = re.compile(r"\buntil\b|\btill\b|때까지")
-# A retired engine's name, which opens a request for that engine as a skill's name does ("team 실패하는 테스트 다 고쳐").
+# A retired engine's name, which opens a request for that engine as a skill's name does ("team 실패하는 테스트 다 고쳐"),
+# and a name said in Korean ("루프로 모든 서비스 업데이트해줘").
 _RETIRED_ENGINE_NAMES: Final = frozenset({"team", "maestro", "ralph", "ultrapilot", "ultraprocess", "ultragoal"})
+_KOREAN_NAMES: Final = frozenset({"루프"})
+# A Korean particle on the name keeps it the name ("loop로", "refactor-plan으로", "github-event-ops에서"), and so does
+# OMH's own name before it ("omh loop …", "use omh github-event-ops …").
+_NAME_PARTICLE: Final = re.compile(r"(?:으로|로|을|를|에서|에게|한테|이랑|랑|와|과)$")
+_OMH_OPENER: Final = re.compile(r"^(?:use\s+)?(?:omh|oh-my-hermes(?:-agent)?)\s+")
 
 
 # The catalog's names, kept once the sidecar answered. A missing sidecar is not kept: the next call reads it again.
@@ -850,24 +922,30 @@ def _skill_names() -> frozenset[str]:
     if names is None:
         catalog = _skill_shortlist.catalog_skill_names()
         if not catalog:
-            return COINED_NAMES | _RETIRED_ENGINE_NAMES
-        names = _CATALOG_SKILL_NAMES.setdefault("names", catalog | COINED_NAMES | _RETIRED_ENGINE_NAMES)
+            return COINED_NAMES | _RETIRED_ENGINE_NAMES | _KOREAN_NAMES
+        names = _CATALOG_SKILL_NAMES.setdefault("names", catalog | COINED_NAMES | _RETIRED_ENGINE_NAMES | _KOREAN_NAMES)
     return names
 
 
 def _opens_with_a_skill_name(folded: str) -> bool:
-    """Whether ``folded`` opens with a skill's name, its label or a retired engine's: a request named for that skill."""
-    words = re.findall(r"[^\s,:]+", folded)[:3]
+    """Whether ``folded`` opens with a skill's name, its label or a retired engine's, with or without a Korean
+    particle: a request named for that skill."""
+    words = re.findall(r"[^\s,:]+", _OMH_OPENER.sub("", folded, count=1))[:3]
     names = _skill_names()
-    return any("-".join(words[:length]) in names or " ".join(words[:length]) in names for length in (1, 2, 3))
+    return any(
+        joined in names or _NAME_PARTICLE.sub("", joined) in names
+        for length in (1, 2, 3)
+        for joined in ("-".join(words[:length]), " ".join(words[:length]))
+    )
 
 
-def _hard_excluded(folded: str) -> bool:
+def _hard_excluded(folded: str, links: tuple[str, ...]) -> bool:
     """Whether ``folded`` is no request for work over many targets whatever else it says: a sigil (the invoked skill's
     work), a skill or engine named first, a stop or a hold, a condition, a past or a completion, one pull request's
-    scope, work until a condition, or parallel running as its subject."""
+    scope (in its words or its ``links``), work until a condition, or parallel running as its subject."""
     return bool(
         folded.startswith(("/", "$", "@", "./"))
+        or any(_PULL_REQUEST_ADDRESS.search(link.casefold()) for link in links)
         or _opens_with_a_skill_name(folded)
         or _STOP_OR_HOLD.search(folded)
         or _CONDITION.search(folded)
@@ -880,47 +958,42 @@ def _hard_excluded(folded: str) -> bool:
     )
 
 
-def _work_over_many_targets(text: str) -> bool:
+def _work_over_many_targets(text: str, links: tuple[str, ...]) -> bool:
     """Whether ``text`` asks, in request form, for an offer-list verb on a breadth object that names independent units
     (`_KOREAN_OFFER`, `_EN_OFFER`), or for two named parts in parallel, and nothing excludes it."""
     folded = _folded(text)
-    if _hard_excluded(folded) or _NO_WORK_ASKED.search(folded):
+    if _hard_excluded(folded, links):
+        return False
+    if _EN_CHANGE_ON_BREADTH.search(folded):
+        folded = _EN_REPORT_TAIL.sub("", folded)
+    if _NO_WORK_ASKED.search(folded):
         return False
     if _EN_PARTS_IN_PARALLEL.search(folded):
         return True
     if _EN_OFFER.search(folded):
         # Every clause after the first is a change or a review too, not a report ("… and send me a list").
         return all(re.fullmatch(_EN_OFFER_VERB, verb) for verb in _EN_LATER_CLAUSE_VERB.findall(folded))
-    if not _KOREAN_OFFER.search(folded):
-        return False
-    last = folded.rstrip(" .!~").split()[-1]
-    if _KOREAN_REQUEST_END.search(folded) and last != _GO_GO:
-        return bool(re.search(_KOREAN_OFFER_VERB, last))  # the request is the change or the review, not a summary
-    return (last == _GO_GO or bool(_KOREAN_CHAIN_END.search(folded))) and len(re.findall(_KOREAN_CHANGE_VERB, folded)) >= 2
+    # The request is the change or the review, not a summary.
+    return bool(_KOREAN_OFFER.search(folded)) and _asks_for(folded, _KOREAN_OFFER_VERB)
 
 
-def dispatches_dag_ulw(text: str) -> bool:
+def dispatches_dag_ulw(text: str, links: tuple[str, ...] = ()) -> bool:
     """Whether ``text`` gives the positive evidence the router dispatches a dag-ulw graph on, and the route hint starts
     one on: a change verb from the closed allow list (`_KOREAN_CHANGE_VERB`, `_EN_CHANGE_VERB`), on a breadth object
     that names independent units, in request form ("열린 PR들 전부 리베이스해줘", "fix all the failing tests", the owner's
     "pr들 전부 확인해서 닫을건 닫고 … 리베이스하고"), or two named parts asked for in parallel. Nothing hard-excluded
-    (`_hard_excluded`) qualifies, and neither does a request that only reads, reports or runs one command."""
+    (`_hard_excluded`) qualifies, and neither does a request that only reads, reports or runs one command. ``links``
+    are the message's links, which the executable text leaves out."""
     folded = _folded(text)
-    if not _work_over_many_targets(text) or _asks_to_be_told(text):
+    if not _work_over_many_targets(text, links) or _asks_to_be_told(text):
         return False
     plain = _FAULTY_UNIT.sub(" ", folded)
     if _FAULT.search(plain) and _FIX_REQUEST.search(plain) and not _PARALLEL_WORK.search(plain):
         return False  # one fault to fix, however wide ("모든 테스트가 깨졌어, 고쳐줘")
     if _EN_CHANGE_ON_BREADTH.search(folded) or _EN_PARTS_IN_PARALLEL.search(folded):
         return True
-    change = _KOREAN_CHANGE_ON_BREADTH.search(folded)
-    if not change:
-        return False
-    last = folded.rstrip(" .!~").split()[-1]
-    if _KOREAN_REQUEST_END.search(folded) and last != _GO_GO:
-        return bool(re.search(_KOREAN_CHANGE_VERB, last))  # the request is the change ("… 리베이스해줘")
-    # A chain of changes joined by 고, closed by 고 or ㄱㄱ ("닫을건 닫고 … 리베이스하고 ㄱㄱ").
-    return (last == _GO_GO or bool(_KOREAN_CHAIN_END.search(folded))) and len(re.findall(_KOREAN_CHANGE_VERB, folded)) >= 2
+    # A chain of changes joined by 고 counts too, closed by 고 or ㄱㄱ ("닫을건 닫고 … 리베이스하고 ㄱㄱ").
+    return bool(_KOREAN_CHANGE_ON_BREADTH.search(folded)) and _asks_for(folded, _KOREAN_CHANGE_VERB)
 
 
 def work_has_several_parts(text: str) -> bool:
@@ -950,12 +1023,12 @@ def work_is_split(text: str) -> bool:
     return not names_ultrawork(text) and not _asks_to_be_told(text) and _asks_for_a_split(text)
 
 
-def work_over_many_targets(text: str) -> bool:
+def work_over_many_targets(text: str, links: tuple[str, ...] = ()) -> bool:
     """Whether ``text`` asks for work over many targets without the evidence `dispatches_dag_ulw` needs ("review all
     open PRs", "PR들 전부 확인해서 정리해줘"): nothing hard-excluded, no question, and not one fault with one fix. The
     router may ask once with dag-ulw as the candidate, and the route hint offers it; neither starts a run."""
     folded = _folded(text)
-    if not _work_over_many_targets(text) or _asks_to_be_told(text):
+    if not _work_over_many_targets(text, links) or _asks_to_be_told(text):
         return False
     plain = _FAULTY_UNIT.sub(" ", folded)
     return not (_FAULT.search(plain) and _FIX_REQUEST.search(plain) and not _PARALLEL_WORK.search(plain))
