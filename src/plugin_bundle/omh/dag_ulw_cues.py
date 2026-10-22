@@ -841,9 +841,18 @@ _UNTIL: Final = re.compile(r"\buntil\b|\btill\b|때까지")
 _RETIRED_ENGINE_NAMES: Final = frozenset({"team", "maestro", "ralph", "ultrapilot", "ultraprocess", "ultragoal"})
 
 
-@lru_cache(maxsize=1)
+# The catalog's names, kept once the sidecar answered. A missing sidecar is not kept: the next call reads it again.
+_CATALOG_SKILL_NAMES: dict[str, frozenset[str]] = {}
+
+
 def _skill_names() -> frozenset[str]:
-    return (_skill_shortlist.catalog_skill_names() or frozenset()) | COINED_NAMES | _RETIRED_ENGINE_NAMES
+    names = _CATALOG_SKILL_NAMES.get("names")
+    if names is None:
+        catalog = _skill_shortlist.catalog_skill_names()
+        if not catalog:
+            return COINED_NAMES | _RETIRED_ENGINE_NAMES
+        names = _CATALOG_SKILL_NAMES.setdefault("names", catalog | COINED_NAMES | _RETIRED_ENGINE_NAMES)
+    return names
 
 
 def _opens_with_a_skill_name(folded: str) -> bool:

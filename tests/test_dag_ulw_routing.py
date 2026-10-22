@@ -10,6 +10,7 @@ data pipelines, `ulw` / `ultrawork` with `ultrawork`.
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from _local_package import load_local_package
 
@@ -248,6 +249,22 @@ class RouterTests(unittest.TestCase):
         # A review is offered, never dispatched: the allow list holds only changes.
         self.assertFalse(dispatches_dag_ulw("PR들 전부 리뷰해줘"))
         self.assertTrue(work_over_many_targets("PR들 전부 리뷰해줘"))
+
+    def test_a_missing_skill_catalog_is_not_kept(self) -> None:
+        # With no sidecar the catalog names are unknown, and that is not kept: once the sidecar answers, a request
+        # that opens with a catalog skill's name is that skill's again.
+        from omh.plugin_bundle.omh import dag_ulw_cues
+
+        dag_ulw_cues._CATALOG_SKILL_NAMES.clear()
+        try:
+            with mock.patch.object(dag_ulw_cues._skill_shortlist, "catalog_skill_names", return_value=None):
+                self.assertFalse(dag_ulw_cues._opens_with_a_skill_name("code-review 모든 패키지 버전 올려줘"))
+            with mock.patch.object(
+                dag_ulw_cues._skill_shortlist, "catalog_skill_names", return_value=frozenset({"code-review"})
+            ):
+                self.assertTrue(dag_ulw_cues._opens_with_a_skill_name("code-review 모든 패키지 버전 올려줘"))
+        finally:
+            dag_ulw_cues._CATALOG_SKILL_NAMES.clear()
 
     def test_no_new_work_over_many_targets_starts_or_offers_nothing(self) -> None:
         # Neither the router nor the hint starts dag-ulw, and no offer names it: a past or a completion, a stop or a
