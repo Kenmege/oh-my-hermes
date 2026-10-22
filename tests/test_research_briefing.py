@@ -55,6 +55,7 @@ def _sections() -> tuple[dict[str, object], ...]:
 def _briefing(**overrides: object) -> dict[str, object]:
     kwargs: dict[str, object] = {
         "audience": "human_briefing",
+        "language": "en",
         "question": "Which attention cache layout should the serving stack adopt?",
         "as_of": "2026-09-01",
         "output_formats": ("markdown", "page"),
@@ -96,6 +97,18 @@ class ResearchBriefingContractTests(unittest.TestCase):
         self.assertEqual(payload["claim_boundary"], BRIEFING_CLAIM_BOUNDARY)
         # Preparing a document is never rendering one.
         self.assertEqual(payload["export"], {"markdown": "prepared", "page": "prepared"})
+
+    def test_builder_refuses_omitted_language(self) -> None:
+        with self.assertRaisesRegex((TypeError, ValueError), "language"):
+            build_research_briefing(
+                audience="human_briefing", question="q", as_of="2026-10-22",
+                output_formats=("markdown",), sections=_sections(),
+            )
+        payload = _briefing()
+        del payload["language"]
+        for render in (render_research_briefing_markdown, render_research_briefing_page):
+            with self.assertRaisesRegex(ValueError, "language"):
+                render(payload)
 
     def test_audience_and_format_are_declared_not_inferred(self) -> None:
         with self.assertRaises(ValueError):
@@ -147,6 +160,26 @@ class ResearchBriefingContractTests(unittest.TestCase):
                 sections=({"role": "solution", "title": "A real title", "paragraphs": ("So what happens?",)},)
             )
 
+    def test_unsafe_or_malformed_source_urls_are_refused_at_every_entry(self) -> None:
+        urls = (
+            "javascript:alert(1)", "JaVaScRiPt:alert(1)", "data:text/html,<script>x</script>",
+            "file:///etc/passwd", "vbscript:msgbox(1)", "ftp://example.org/p", "//example.org/p",
+            "/relative", "https:///missing-host", "https://", "https://[invalid", "https://host:bad/p",
+            "https://example.org/\nx", "https://example.org/\tx", " https://example.org/p",
+            "https://example.org/\\evil", "https://user:password@example.org/p", 42,
+        )
+        for url in urls:
+            with self.subTest(url=url):
+                payload = _briefing()
+                source = dict(payload["sources"][0], url=url)
+                with self.assertRaisesRegex(ValueError, "url"):
+                    _briefing(sources=(source,))
+                payload["sources"] = [source]
+                self.assertTrue(any("url" in issue for issue in research_briefing_errors(payload)))
+                for render in (render_research_briefing_markdown, render_research_briefing_page):
+                    with self.assertRaisesRegex(ValueError, "url"):
+                        render(payload)
+
     def test_figures_and_sources_carry_their_basis_and_class(self) -> None:
         with self.assertRaises(ValueError):
             _briefing(figures=({"label": "x", "value": "1", "basis": "guessed"},))
@@ -180,6 +213,78 @@ class ResearchBriefingRenderTests(unittest.TestCase):
         # Appendices come after the body.
         self.assertLess(markdown.index("## Problem -"), markdown.index("## Appendix A"))
 
+    def test_source_urls_and_optional_ids_survive_both_renderers_as_visible_text(self) -> None:
+        from html import escape, unescape
+        from html.parser import HTMLParser
+
+        class PageText(HTMLParser):
+            def __init__(self) -> None:
+                super().__init__()
+                self.text: list[str] = []
+                self.links: list[str] = []
+
+            def handle_data(self, data: str) -> None:
+                self.text.append(data)
+
+            def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+                if tag == "a":
+                    self.links.append(dict(attrs)["href"])
+
+        for scheme in ("http", "https"):
+            for identifier in (None, "paper-1", '<img src=x onerror="alert(1)">'):
+                with self.subTest(scheme=scheme, identifier=identifier):
+                    source = dict(_briefing()["sources"][0])
+                    source.update(title='<script>alert(1)</script> [paper]',
+                                  url=f'{scheme}://example.org/p?q="<paper>"&x=1')
+                    if identifier is not None:
+                        source["id"] = identifier
+                    payload = _briefing(sources=(source,))
+                    markdown = render_research_briefing_markdown(payload)
+                    page = render_research_briefing_page(payload)
+                    parser = PageText()
+                    parser.feed(page)
+                    visible = "".join(parser.text)
+                    self.assertIn(source["url"], visible)  # Visible on paper, not only in href.
+                    self.assertIn(source["url"], parser.links)
+                    self.assertIn(escape(source["url"], quote=False), markdown)
+                    self.assertNotIn("<script>", page)
+                    self.assertNotIn("<script>", markdown)
+                    self.assertNotIn("<img", page)
+                    self.assertNotIn("<img", markdown)
+                    self.assertIn("@media print", page)
+                    if identifier is not None:
+                        self.assertIn(identifier, visible)
+                        self.assertIn(identifier, unescape(markdown))
+                    self.assertEqual(payload["sources"][0], source)
+
+    def test_english_temporal_receipt_and_capture_clock_are_preserved(self) -> None:
+        import json
+        from omh.workflows.temporal_source_receipts import as_of_date, build_temporal_source_receipt
+
+        receipt = build_temporal_source_receipt(
+            as_of=as_of_date("2026-06-01"), source_url="https://example.org/p",
+            source_class="upstream_official", evidence_kind="historical_capture",
+            retrieved_at="2026-09-08T10:00:00Z", capture_provider="web_archive",
+            capture_provider_class="archive_service", captured_at="2026-05-20T08:15:00Z",
+        )
+        before = json.dumps(receipt, sort_keys=True)
+        source = {"id": "paper_1", "title": "Official paper", "url": receipt["source_url"],
+                  "source_class": "upstream_official", "retrieved_on": "2026-09-08",
+                  "temporal_source_receipt": receipt}
+        payload = _briefing(sources=(source,))
+        for render in (render_research_briefing_markdown, render_research_briefing_page):
+            output = render(payload)
+            self.assertIn("retrieved 2026-09-08, historical capture 2026-05-20T08:15:00Z via web_archive", output)
+            self.assertIn("paper_1", output)
+            self.assertIn("https://example.org/p", output)
+        self.assertEqual(json.dumps(payload["sources"][0]["temporal_source_receipt"], sort_keys=True), before)
+        for changed in ({**source, "source_class": "practitioner"},
+                        {**source, "url": "https://other.example/p"},
+                        {**source, "temporal_source_receipt": {**receipt, "cutoff_relation": "after"}}):
+            with self.subTest(changed=changed):
+                with self.assertRaises(ValueError):
+                    _briefing(sources=(changed,))
+
     def test_page_is_self_contained_and_print_ready(self) -> None:
         page = render_research_briefing_page(_briefing())
         self.assertIn("<!DOCTYPE html>", page)
@@ -207,7 +312,105 @@ class ResearchBriefingRenderTests(unittest.TestCase):
         self.assertEqual(page, render_research_briefing_page(payload))
 
 
+_KO_CAPTIONS = {
+    "question": "질문", "as_of": "기준 시점", "learning_objectives": "학습 목표",
+    "assumed_knowledge": "사전 지식", "out_of_scope": "제외 범위", "figures": "수치",
+    "figure_value": "값", "figure_basis": "산출 근거", "figure_as_of": "측정 시점",
+    "glossary": "개념 사전", "traps": "주의 사항", "sources": "출처",
+    "basis_measured": "측정", "basis_assumed": "가정", "basis_derived": "계산",
+    "source_class_upstream_official": "공식 자료", "source_class_practitioner": "실무 자료",
+    "source_class_unattributed": "미확인 자료", "retrieved_on": "조회",
+    "live_page": "현재 페이지", "historical_capture": "과거 캡처",
+    "capture_time_unknown": "캡처 시각 미상", "capture_provider": "제공자",
+    "claim_boundary": "조사 브리핑은 준비된 의사결정 참고 자료이며 실행·검토·통합·병합 증거가 아닙니다. "
+                      "관찰된 파일 증거 없이 페이지는 PDF가 아닙니다.",
+}
+
+
 class ResearchBriefingLanguageTests(unittest.TestCase):
+    def test_non_english_scaffolding_cannot_fall_back_to_english(self) -> None:
+        for language in ("ko", "fr", "ja"):
+            with self.subTest(language=language):
+                with self.assertRaisesRegex(ValueError, "required.*non-English"):
+                    _briefing(language=language)
+        with self.assertRaisesRegex(ValueError, "required.*non-English"):
+            _briefing(language="ko", role_labels={"problem": "문제", "cost": "비용"},
+                      captions={"question": "질문", "as_of": "기준 시점", "glossary": "개념 사전"})
+
+    def test_every_rendered_caption_and_role_is_required(self) -> None:
+        payload = _briefing(language="ko", role_labels={"problem": "문제", "cost": "비용"},
+                            captions=_KO_CAPTIONS)
+        required = (
+            "question", "as_of", "learning_objectives", "assumed_knowledge", "out_of_scope",
+            "figures", "figure_value", "figure_basis", "figure_as_of", "basis_derived",
+            "glossary", "traps", "sources", "source_class_upstream_official", "retrieved_on", "claim_boundary",
+        )
+        for key in required:
+            with self.subTest(caption=key):
+                changed = dict(payload, captions={k: v for k, v in _KO_CAPTIONS.items() if k != key})
+                self.assertTrue(any(f"captions: {key!r} is required" in issue
+                                    for issue in research_briefing_errors(changed)))
+                for render in (render_research_briefing_markdown, render_research_briefing_page):
+                    with self.assertRaisesRegex(ValueError, "required.*non-English"):
+                        render(changed)
+        for role in ("problem", "cost"):
+            changed = dict(payload, role_labels={k: v for k, v in payload["role_labels"].items() if k != role})
+            self.assertTrue(any(f"role_labels: {role!r} is required" in issue
+                                for issue in research_briefing_errors(changed)))
+
+    def test_only_used_scaffolding_needs_translations(self) -> None:
+        payload = _briefing(
+            language="fr", sections=({"role": "problem", "title": "Charge", "paragraphs": ("Texte.",)},),
+            learning_objectives=(), assumed_knowledge=(), out_of_scope=(), figures=(), glossary=(), traps=(), sources=(),
+            role_labels={"problem": "Problème"},
+            captions={"question": "Question", "as_of": "Date", "claim_boundary": "Contexte préparé, pas une exécution."},
+        )
+        self.assertEqual(research_briefing_errors(payload), [])
+        for render in (render_research_briefing_markdown, render_research_briefing_page):
+            self.assertIn("Problème - Charge", render(payload))
+
+    def test_full_korean_scaffolding_includes_temporal_notes_and_boundary(self) -> None:
+        from omh.workflows.temporal_source_receipts import as_of_date, build_temporal_source_receipt
+
+        for kind, captured_at in (("live_page", ""), ("historical_capture", ""),
+                                  ("historical_capture", "2026-05-20T08:15:00Z")):
+            with self.subTest(kind=kind, captured_at=captured_at):
+                receipt = build_temporal_source_receipt(
+                    as_of=as_of_date("2026-06-01"), source_url="https://example.org/p", source_class="upstream_official",
+                    evidence_kind=kind, retrieved_at="2026-09-08T10:00:00Z",
+                    capture_provider="archive" if kind == "historical_capture" else "",
+                    capture_provider_class="archive_service" if kind == "historical_capture" else "none",
+                    captured_at=captured_at,
+                )
+                source = {"id": "문서-1", "title": "공식 문서", "url": "https://example.org/p",
+                          "source_class": "upstream_official", "retrieved_on": "2026-09-08",
+                          "temporal_source_receipt": receipt}
+                payload = _briefing(
+                    language="ko", title="서빙 스택의 캐시 선택", question="캐시 레이아웃 선택 기준",
+                    sections=({"role": "problem", "title": "입력 증가로 인한 부하 증가", "paragraphs": ("메모리 부하가 늘어납니다.",)},),
+                    learning_objectives=("구조 선택",), assumed_knowledge=("어텐션",), out_of_scope=("학습",),
+                    figures=({"label": "메모리", "value": "40 GB", "basis": "derived", "as_of": "2026-09-01"},),
+                    glossary=({"term": "캐시", "definition": "임시 저장소"},), traps=("품질 저하",),
+                    sources=(source,), role_labels={"problem": "문제"}, captions=_KO_CAPTIONS,
+                )
+                self.assertEqual(payload["sources"][0]["temporal_source_receipt"], receipt)
+                self.assertEqual(payload["claim_boundary"], BRIEFING_CLAIM_BOUNDARY)
+                for render in (render_research_briefing_markdown, render_research_briefing_page):
+                    output = render(payload)
+                    self.assertIn("문제 - 입력 증가로 인한 부하 증가", output)
+                    for label in ("학습 목표", "사전 지식", "제외 범위", "수치", "계산", "공식 자료", "조회", "출처"):
+                        self.assertIn(label, output)
+                    self.assertIn(_KO_CAPTIONS["claim_boundary"], output)
+                    for english in ("retrieved ", "historical capture", "capture time unknown", "live page",
+                                    " via ", "derived", "upstream_official", "Appendix", BRIEFING_CLAIM_BOUNDARY):
+                        self.assertNotIn(english, output)
+                    if kind == "live_page":
+                        self.assertIn("현재 페이지", output)
+                    else:
+                        self.assertIn("과거 캡처", output)
+                        self.assertIn("제공자 archive", output)
+                        self.assertIn(captured_at or "캡처 시각 미상", output)
+
     def test_scaffolding_labels_travel_with_the_payload(self) -> None:
         payload = _briefing(
             language="ko",
@@ -221,18 +424,31 @@ class ResearchBriefingLanguageTests(unittest.TestCase):
             ),
             figures=(),
             role_labels={"problem": "문제"},
-            captions={"question": "질문", "as_of": "기준 시점", "glossary": "부록 A 개념 사전"},
+            captions=_KO_CAPTIONS,
         )
         markdown = render_research_briefing_markdown(payload)
         self.assertIn("## 문제 - 입력 증가로 인한 부하 증가", markdown)
         self.assertIn("질문:", markdown)
         self.assertIn("기준 시점:", markdown)
-        self.assertIn("## 부록 A 개념 사전", markdown)
-        # Anything left unnamed falls back to English rather than failing.
-        self.assertIn("## Appendix C: sources", markdown)
+        self.assertIn("## 개념 사전", markdown)
+        self.assertIn("## 출처", markdown)
+        self.assertNotIn("Appendix", markdown)
         page = render_research_briefing_page(payload)
         self.assertIn('lang="ko"', page)
         self.assertIn("문제 - 입력 증가로 인한 부하 증가", page)
+
+    def test_translated_enum_labels_follow_the_validators_whitespace_policy(self) -> None:
+        payload = _briefing(
+            language="ko", role_labels={"problem": "문제"}, captions=_KO_CAPTIONS,
+            sections=({"role": " problem ", "title": "부하", "paragraphs": ("본문.",)},),
+            figures=({"label": "수치", "value": "1", "basis": " derived "},),
+            sources=({"title": "문서", "source_class": " upstream_official ", "retrieved_on": "2026-10-22"},),
+        )
+        for render in (render_research_briefing_markdown, render_research_briefing_page):
+            output = render(payload)
+            self.assertIn("문제 - 부하", output)
+            self.assertIn("계산", output)
+            self.assertIn("공식 자료", output)
 
     def test_unknown_label_keys_are_rejected(self) -> None:
         with self.assertRaises(ValueError):

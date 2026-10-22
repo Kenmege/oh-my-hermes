@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from html import escape
 from typing import Any
+from urllib.parse import urlsplit
 
 from .temporal_source_receipts import validate_temporal_source_receipt
 
@@ -51,8 +52,8 @@ BRIEFING_ROLE_LABELS = (
 #: The document body may be written in any language, and a Korean briefing with
 #: English section captions is a half-translated document. OMH does not own a
 #: translation table -- it would have to be maintained for every language the
-#: engine can write in -- so the caller supplies the labels it wants and the
-#: renderer falls back to English for anything it does not name.
+#: engine can write in -- so callers supply every rendered label for non-English
+#: documents. Only explicitly English documents may use the English defaults.
 BRIEFING_CAPTION_KEYS = (
     "question",
     "as_of",
@@ -66,6 +67,18 @@ BRIEFING_CAPTION_KEYS = (
     "glossary",
     "traps",
     "sources",
+    "basis_measured",
+    "basis_assumed",
+    "basis_derived",
+    "source_class_upstream_official",
+    "source_class_practitioner",
+    "source_class_unattributed",
+    "retrieved_on",
+    "live_page",
+    "historical_capture",
+    "capture_time_unknown",
+    "capture_provider",
+    "claim_boundary",
 )
 
 _DEFAULT_CAPTIONS = {
@@ -81,6 +94,17 @@ _DEFAULT_CAPTIONS = {
     "glossary": "Appendix A: glossary",
     "traps": "Appendix B: misconceptions and traps",
     "sources": "Appendix C: sources",
+    "basis_measured": "measured",
+    "basis_assumed": "assumed",
+    "basis_derived": "derived",
+    "source_class_upstream_official": "upstream_official",
+    "source_class_practitioner": "practitioner",
+    "source_class_unattributed": "unattributed",
+    "retrieved_on": "retrieved",
+    "live_page": "live page",
+    "historical_capture": "historical capture",
+    "capture_time_unknown": "capture time unknown",
+    "capture_provider": "via",
 }
 
 #: A figure is measured, assumed, or derived; the axis is separate from the
@@ -152,6 +176,7 @@ def research_briefing_errors(value: Any) -> list[str]:
 
     issues.extend(_label_errors(value.get("role_labels"), BRIEFING_ROLE_LABELS, "role_labels"))
     issues.extend(_label_errors(value.get("captions"), BRIEFING_CAPTION_KEYS, "captions"))
+    issues.extend(_translation_errors(value))
 
     export = value.get("export")
     if not isinstance(export, dict):
@@ -162,6 +187,50 @@ def research_briefing_errors(value: Any) -> list[str]:
                 issues.append(f"export status for {key!r} must be one of {', '.join(_EXPORT_STATUSES)}")
     if _text(value.get("claim_boundary")) != BRIEFING_CLAIM_BOUNDARY:
         issues.append("claim_boundary must be the exact briefing boundary sentence")
+    return issues
+
+
+def _translation_errors(value: dict[str, Any]) -> list[str]:
+    """Require caller-owned translations for the union of both renderers' labels.
+
+    This is a completeness check, not language detection or translation review.
+    The structured boundary and receipt vocabulary stay unchanged in the payload.
+    """
+    if not _text(value.get("language")) or _text(value["language"]).casefold() == "en":
+        return []
+    roles = {
+        _text(section.get("role")) for section in _rows(value.get("sections"))
+        if isinstance(section, dict) and _text(section.get("role")) in BRIEFING_ROLE_LABELS
+    }
+    keys = {"question", "as_of", "claim_boundary"}
+    for key in ("learning_objectives", "assumed_knowledge", "out_of_scope", "glossary", "traps", "sources"):
+        if _rows(value.get(key)):
+            keys.add(key)
+    if _rows(value.get("figures")):
+        keys.update(("figures", "figure_value", "figure_basis", "figure_as_of"))
+        for figure in _rows(value["figures"]):
+            if isinstance(figure, dict) and _text(figure.get("basis")) in BRIEFING_FIGURE_BASES:
+                keys.add(f"basis_{_text(figure['basis'])}")
+    for source in _rows(value.get("sources")):
+        if not isinstance(source, dict):
+            continue
+        keys.add("retrieved_on")
+        if _text(source.get("source_class")) in BRIEFING_SOURCE_CLASSES:
+            keys.add(f"source_class_{_text(source['source_class'])}")
+        receipt = source.get("temporal_source_receipt")
+        if isinstance(receipt, dict):
+            if receipt.get("evidence_kind") == "live_page":
+                keys.add("live_page")
+            else:
+                keys.update(("historical_capture", "capture_provider"))
+                if not _text(receipt.get("captured_at")):
+                    keys.add("capture_time_unknown")
+    issues: list[str] = []
+    for where, required in (("role_labels", roles), ("captions", keys)):
+        labels = value.get(where)
+        for key in sorted(required):
+            if not isinstance(labels, dict) or not _text(labels.get(key)):
+                issues.append(f"{where}: {key!r} is required for a non-English briefing")
     return issues
 
 
@@ -262,8 +331,27 @@ def _source_errors(sources: list[Any]) -> list[str]:
             issues.append(f"{where}: source_class must be one of {', '.join(BRIEFING_SOURCE_CLASSES)}")
         if not _text(source.get("retrieved_on")):
             issues.append(f"{where}: retrieved_on is required for a cited source")
+        if source.get("url") not in (None, "") and not _safe_source_url(source["url"]):
+            issues.append(f"{where}: url must be an absolute http or https URL without credentials or whitespace")
         issues.extend(f"{where}: {problem}" for problem in _source_receipt_errors(source))
     return issues
+
+
+def _safe_source_url(value: Any) -> bool:
+    """Validate navigation only; never fetch, repair, or normalize a citation."""
+    if not isinstance(value, str) or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in value):
+        return False
+    if "\\" in value:
+        return False
+    try:
+        parts = urlsplit(value)
+        return (
+            parts.scheme in ("http", "https") and bool(parts.hostname)
+            and parts.username is None and parts.password is None
+            and (parts.port is None or 0 < parts.port <= 65535)
+        )
+    except ValueError:
+        return False
 
 
 def _source_receipt_errors(source: dict[str, Any]) -> list[str]:
@@ -287,15 +375,16 @@ def _source_receipt_errors(source: dict[str, Any]) -> list[str]:
     return issues
 
 
-def _source_capture_note(source: dict[str, Any]) -> str:
+def _source_capture_note(value: Any, source: dict[str, Any]) -> str:
     """The capture clock, kept apart from the retrieval clock the line already carries."""
     receipt = source.get("temporal_source_receipt")
     if not isinstance(receipt, dict):
         return ""
     if receipt.get("evidence_kind") == "live_page":
-        return ", live page"
-    captured = _text(receipt.get("captured_at")) or "capture time unknown"
-    return f", historical capture {captured} via {receipt.get('capture_provider', '')}"
+        return f", {_caption(value, 'live_page')}"
+    captured = _text(receipt.get("captured_at")) or _caption(value, "capture_time_unknown")
+    return (f", {_caption(value, 'historical_capture')} {captured} "
+            f"{_caption(value, 'capture_provider')} {receipt.get('capture_provider', '')}")
 
 
 def build_research_briefing(
@@ -303,7 +392,7 @@ def build_research_briefing(
     audience: str,
     question: str,
     as_of: str,
-    language: str = "en",
+    language: str,
     output_formats: tuple[str, ...] = (),
     title: str = "",
     learning_objectives: tuple[str, ...] = (),
@@ -313,7 +402,7 @@ def build_research_briefing(
     figures: tuple[dict[str, Any], ...] = (),
     glossary: tuple[dict[str, str], ...] = (),
     traps: tuple[str, ...] = (),
-    sources: tuple[dict[str, str], ...] = (),
+    sources: tuple[dict[str, Any], ...] = (),
     role_labels: dict[str, str] | None = None,
     captions: dict[str, str] | None = None,
 ) -> dict[str, Any]:
@@ -358,11 +447,11 @@ def _caption(value: Any, key: str) -> str:
     captions = value.get("captions")
     if isinstance(captions, dict) and _text(captions.get(key)):
         return _text(captions[key])
-    return _DEFAULT_CAPTIONS[key]
+    return BRIEFING_CLAIM_BOUNDARY if key == "claim_boundary" else _DEFAULT_CAPTIONS[key]
 
 
 def _section_heading(value: Any, section: dict[str, Any]) -> str:
-    return f"{_role_label(value, str(section['role']))} - {section['title']}"
+    return f"{_role_label(value, _text(section['role']))} - {section['title']}"
 
 
 def render_research_briefing_markdown(value: Any) -> str:
@@ -392,7 +481,8 @@ def render_research_briefing_markdown(value: Any) -> str:
         lines.extend([f"## {_caption(value, 'figures')}", ""])
         for figure in figures:
             stamp = f", {figure['as_of']}" if _text(figure.get("as_of")) else ""
-            lines.append(f"- {figure['label']}: {figure['value']} ({figure['basis']}{stamp})")
+            basis = _caption(value, f"basis_{_text(figure['basis'])}")
+            lines.append(f"- {figure['label']}: {figure['value']} ({basis}{stamp})")
         lines.append("")
     glossary = _rows(value.get("glossary"))
     if glossary:
@@ -408,14 +498,41 @@ def render_research_briefing_markdown(value: Any) -> str:
     if sources:
         lines.extend([f"## {_caption(value, 'sources')}", ""])
         for source in sources:
-            location = f" - {source['url']}" if _text(source.get("url")) else ""
+            location = f" - {_markdown_source_text(source['url'])}" if _text(source.get("url")) else ""
+            identifier = f"[{_markdown_source_text(source['id'])}] " if _text(source.get("id")) else ""
             lines.append(
-                f"- {source['title']}{location} ({source['source_class']}, retrieved {source['retrieved_on']}"
-                f"{_source_capture_note(source)})"
+                f"- {identifier}{_markdown_source_text(source['title'])}{location} "
+                f"({_markdown_source_text(_caption(value, 'source_class_' + _text(source['source_class'])))}, "
+                f"{_markdown_source_text(_caption(value, 'retrieved_on'))} "
+                f"{_markdown_source_text(source['retrieved_on'])}"
+                f"{_markdown_source_text(_source_capture_note(value, source))})"
             )
         lines.append("")
-    lines.extend([f"> {value['claim_boundary']}", ""])
+    lines.extend([f"> {_caption(value, 'claim_boundary')}", ""])
     return "\n".join(lines)
+
+
+def _markdown_source_text(value: Any) -> str:
+    """Keep untrusted citation fields as text, not HTML or Markdown syntax."""
+    text = str(value)
+    return "".join(
+        f"&#{ord(char)};"
+        if char in "\\`*{}[]\n\r" or (
+            char == "_" and not (
+                0 < index < len(text) - 1 and text[index - 1].isalnum() and text[index + 1].isalnum()
+            )
+        )
+        else escape(char, quote=False)
+        for index, char in enumerate(text)
+    )
+
+
+def _page_source_location(source: dict[str, Any]) -> str:
+    """An inert navigation link whose visible URL also survives printing."""
+    url = source.get("url")
+    location = f' - <a href="{escape(str(url))}">{escape(str(url))}</a>' if _text(url) else ""
+    identifier = f"[{escape(str(source['id']))}] " if _text(source.get("id")) else ""
+    return f"{identifier}{escape(str(source['title']))}{location}"
 
 
 def _page_list(heading: str, rows: list[Any]) -> str:
@@ -452,7 +569,7 @@ def render_research_briefing_page(value: Any) -> str:
         "<tr><td>{label}</td><td>{amount}</td><td>{basis}</td><td>{stamp}</td></tr>".format(
             label=escape(str(figure.get("label", ""))),
             amount=escape(str(figure.get("value", ""))),
-            basis=escape(str(figure.get("basis", ""))),
+            basis=escape(_caption(value, f"basis_{_text(figure['basis'])}")),
             stamp=escape(str(figure.get("as_of", "") or "-")),
         )
         for figure in figures
@@ -483,11 +600,12 @@ def render_research_briefing_page(value: Any) -> str:
     source_block = (
         f"<section><h2>{escape(_caption(value, 'sources'))}</h2><ol>"
         + "".join(
-            "<li>{title}<span class=\"muted\"> &middot; {cls} &middot; retrieved {stamp}{capture}</span></li>".format(
-                title=escape(str(source.get("title", ""))),
-                cls=escape(str(source.get("source_class", ""))),
+            "<li>{title}<span class=\"muted\"> &middot; {cls} &middot; {retrieved} {stamp}{capture}</span></li>".format(
+                title=_page_source_location(source),
+                cls=escape(_caption(value, f"source_class_{_text(source['source_class'])}")),
+                retrieved=escape(_caption(value, "retrieved_on")),
                 stamp=escape(str(source.get("retrieved_on", ""))),
-                capture=escape(_source_capture_note(source)),
+                capture=escape(_source_capture_note(value, source)),
             )
             for source in sources
         )
@@ -567,7 +685,7 @@ def render_research_briefing_page(value: Any) -> str:
 {glossary_block}
 {_page_list(_caption(value, "traps"), _rows(value.get("traps")))}
 {source_block}
-<p class="boundary">{escape(str(value['claim_boundary']))}</p>
+<p class="boundary">{escape(_caption(value, 'claim_boundary'))}</p>
 </div>
 </body>
 </html>
