@@ -380,7 +380,11 @@ class RouterTests(unittest.TestCase):
                         "api, ui, docs 작업을 병렬로 나눠서 마이그레이션하고 결과 알려줘",
                         "tell me when done: split the api, ui and docs work into parallel lanes",
                         "결제, 주문, 배송 모듈을 병렬로 나눠서 리팩터링해줄래?", "api, ui, docs 작업을 병렬로 나눠서 구현해 주시겠어요?",
-                        "api, ui, docs 작업을 병렬로 나눠서 구현해줄 수 있어?"):
+                        "api, ui, docs 작업을 병렬로 나눠서 구현해줄 수 있어?", "결제/주문/배송 모듈 병렬로 나눠서 리팩터링해줘",
+                        "api, ui, docs 작업을 병렬로 나눠서 구현하고 어떻게 나눴는지 설명해줘", "이 api와 ui를 병렬로 나눠서 구현해줘",
+                        "split the api and the ui into parallel lanes and implement them",
+                        "split the migration into parallel lanes and verify each",
+                        "split the billing services into parallel lanes and migrate each one"):
             with self.subTest(message=message):
                 self.assertTrue(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
@@ -390,12 +394,32 @@ class RouterTests(unittest.TestCase):
                         "fan out across the services and give each a one-sentence summary",
                         "which way should I split the work into parallel lanes", "split this into parallel tasks: lint, test, build",
                         "여러 모듈에 걸친 결제 기능 구현해줘", "why don't we split the api, ui and docs work into parallel lanes",
-                        "maybe split the api, ui and docs work into parallel lanes", "split the translation work into parallel lanes"):
+                        "maybe split the api, ui and docs work into parallel lanes", "split the translation work into parallel lanes",
+                        # One named object split into parallel parts is one task (#2243 review).
+                        "이 함수 병렬로 나눠서 구현해줘", "이 파일 병렬로 나눠서 수정해줘", "로그인 페이지 하나 병렬로 나눠서 고쳐줘",
+                        "README 병렬로 나눠서 업데이트해줘", "이 스크립트를 병렬로 나눠서 개발해줘"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
                 offers = [hint for hint in awareness_route_hint(message)["hints"] if hint.get("workflow") == "dag-ulw"]
                 self.assertEqual([hint.get("next_action") for hint in offers], ["ask_one_clarification"])
+        # One named object with a fault to fix goes to the lane that fixes it, and starts no graph either.
+        message = "fan out the image resize into parallel workers and fix the crash"
+        self.assertFalse(dispatches_dag_ulw(message))
+        self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+
+    def test_a_request_taken_back_or_held_in_a_later_clause_starts_nothing(self) -> None:
+        # A clause after the request that takes it back, holds it, jokes or talks about it leaves only the whole message
+        # to read, as on main: nothing dispatches or starts (#2243 review). A last clause that asks for work of its own
+        # still lets the earlier one count ("모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘").
+        for message in ("PR들 전부 리베이스해줘, 아 잠깐만", "모든 서비스 업데이트해줘, 아니 잠깐", "레포들 전부 CI 고쳐줘, 근데 일단 대기",
+                        "레포들 전부 CI 고쳐줘, 말고 그냥 둬", "브랜치들 전부 리베이스해줘, 아니다 나중에 하자",
+                        "모든 서비스 node 22로 올려줘, 는 다음 주에 하자", "모든 서비스 업데이트해줘, 는 농담이고",
+                        "엔드포인트 전부 인증 붙여줘, 장난이야", "PR들 전부 머지해줘, 는 아니고 리뷰만 해줘", "PR들 전부 머지해줘, 같은 요청은 위험해"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        self.assertEqual(self._dag_ulw_starts("모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘")[:2], (True, True))
 
     def test_a_missing_skill_catalog_is_not_kept(self) -> None:
         # With no sidecar the catalog names are unknown, and that is not kept: once the sidecar answers, a request

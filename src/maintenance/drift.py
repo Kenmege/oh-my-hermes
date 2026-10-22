@@ -851,9 +851,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # to translate (a clarify whose hint started dag-ulw on main), a
             # proposed split and a question how to split (dag-ulw dispatches on
             # main) (3), and an unnumbered interval, a schedule (a dag-ulw
-            # dispatch on main) (1).
+            # dispatch on main) (1). Its review adds four: a request taken back
+            # and one called a joke in a later clause, a fallback and a clarify
+            # as on main (2), and one named function and one file split, which
+            # started dag-ulw on main (2).
             # Three domain-science vocabulary controls (+3).
-            expected=1074,
+            expected=1078,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1330,8 +1333,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # work (clarifies on main whose hint started dag-ulw) (2), a casual
             # imperative over every PR (a fallback on main) (1), a change aimed a
             # few words off and a change in one clause (clarifies on main) (2).
+            # Its review adds one: a split with a past inside an embedded
+            # question still runs as a graph, as on main (1).
             # Three unnamed domain-science interventions (+3).
-            expected=1080,
+            expected=1081,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

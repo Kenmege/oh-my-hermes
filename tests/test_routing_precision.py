@@ -55,9 +55,11 @@ class RoutingPrecisionTests(unittest.TestCase):
         # stays one scope (+1); two more schedule shapes, a count of files and a
         # count of PRs with no breadth word add four (+4); a noun with 마다, an
         # interval and PR 하나 add three (+3); a split of text, a proposed split,
-        # a question how to split and an unnumbered interval add four (+4).
+        # a question how to split and an unnumbered interval add four (+4); a
+        # request taken back or called a joke, and one function or file split,
+        # add four (+4).
         # Three science vocabulary controls remain direct answers.
-        self.assertEqual(payload["summary"]["case_count"], 1074)
+        self.assertEqual(payload["summary"]["case_count"], 1078)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -164,9 +166,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # said now runs as a graph (+3). Every deploy and every push stay, and
         # each service with 마다 runs as a graph (+3). Two splits that name the work,
         # a casual imperative, an aimed change and a change in one clause run as
-        # a graph (+5).
+        # a graph (+5). A split with a past in an embedded question runs (+1).
         # Three unnamed science requests render dedicated computation cards.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1080)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1081)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

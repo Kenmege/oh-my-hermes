@@ -874,9 +874,23 @@ def _korean_request_verb(folded: str) -> tuple[str, bool]:
     return (folded.rstrip(" .!~").split()[-1] if _KOREAN_REQUEST_END.search(folded) else ""), False
 
 
+# A clause after the request that takes it back, holds it or talks about it ("…해줘, 아 잠깐만", "…해줘, 말고 그냥 둬",
+# "…해줘, 는 농담이고", "…해줘, 같은 요청은 위험해", "…해줘, 아니다 나중에 하자") refers back to it.
+_BACK_REFERENCE: Final = re.compile(r"^(?:는|은|라고|이라고|같은|말고|란|이란|이런|그런)(?![가-힣])|^아니")
+
+
 def _korean_clauses(folded: str) -> list[str]:
-    """``folded``, then each clause of it between commas or semicolons."""
-    return [folded, *re.split(r"\s*[,;]\s*", folded)]
+    """``folded``, then each clause of it between commas or semicolons, read on its own only when the message itself
+    ends in a request of its own ("모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘"): a last clause that asks for
+    nothing or refers back to the request leaves only the whole message (`_BACK_REFERENCE`; a hold anywhere is a hard
+    exclude)."""
+    clauses = [clause for clause in re.split(r"\s*[,;]\s*", folded) if clause]
+    if len(clauses) < 2:
+        return [folded]
+    last = clauses[-1]
+    if not _korean_request_verb(last)[0] or _BACK_REFERENCE.match(last):
+        return [folded]
+    return [folded, *clauses]
 
 
 def _asks_for(folded: str, verbs: str) -> bool:
@@ -1011,7 +1025,8 @@ def _names_one_container(folded: str) -> bool:
 
 
 # A past: a syllable closing on ㅆ, other than 있 and 겠 ("리베이스했습니다", "머지했어요", "머지됐네", "닫혔네"). A past
-# in a modifier names which units, and reports nothing ("내가 올렸던 PR들", "어제 실패했던 테스트", "충돌났었던 브랜치들").
+# in a modifier names which units, and reports nothing ("내가 올렸던 PR들", "어제 실패했던 테스트", "충돌났었던 브랜치들"),
+# and neither does one in an embedded question ("어떻게 나눴는지 설명해줘", "리베이스했는지 확인하고").
 _NOT_A_PAST: Final = frozenset("있겠")
 
 
@@ -1025,6 +1040,7 @@ def _says_a_past(folded: str) -> bool:
         _closes_on_ss(character)
         and character not in _NOT_A_PAST
         and folded[index + 1 :].lstrip("었았였")[:1] != "던"
+        and folded[index + 1 :].lstrip("었았였")[:2] != "는지"
         for index, character in enumerate(folded)
     )
 
@@ -1175,6 +1191,39 @@ _EN_SPLIT_EVIDENCE: Final = re.compile(
     rf"|\b{_SPLIT_WORK_NOUN}\b[^.?!]*?,\s*(?:so\s+|just\s+|please\s+)?(?:split|fan\s+out)\b"
 )
 _KOREAN_WORK_VERB: Final = rf"(?:{_KOREAN_CHANGE_VERB}|구현|개발|통합)"
+# One named object split into parallel parts is one task, offered and not run ("이 함수 병렬로 나눠서 구현해줘", "로그인
+# 페이지 하나 병렬로 나눠서 고쳐줘", "README 병렬로 나눠서 업데이트해줘", "fan out the image resize into parallel workers"):
+# a demonstrative and its noun, a noun and 하나, a single file or function name, or "the" and a singular noun. Several
+# objects ("api, ui, docs 작업을", "결제/주문/배송 모듈", "분리기와 파서") and the work itself as what splits ("split the
+# migration into …") are not one object.
+_KOREAN_SPLIT_OBJECT: Final = re.compile(r"(?P<object>[^.!?]*?)\s*(?:을|를|은|는)?\s*(?:병렬로\s*나눠|나눠서\s*병렬로)")
+_EN_SPLIT_OBJECT: Final = re.compile(
+    r"\b(?:split|fan\s+out|break\s+(?:up|down)|parallelize)\s+(?P<object>(?:the|this|that|my|our)\s+[^,.!?]*?)\s+"
+    r"(?:into|across)\b"
+)
+_SEVERAL_OBJECTS: Final = re.compile(
+    r"[,/&]|\band\b|(?:와|과|랑|하고)(?:\s|$)|(?<![가-힣])(?:및|모든|전체|여러|각)(?![가-힣])|들(?:\s|$)"
+)
+
+
+def _splits_one_object(request: str) -> bool:
+    """Whether ``request`` splits one named object into parallel parts (`_KOREAN_SPLIT_OBJECT`, `_EN_SPLIT_OBJECT`)."""
+    korean = _KOREAN_SPLIT_OBJECT.search(request) if re.search(r"[가-힣]", request) else None
+    english = None if korean else _EN_SPLIT_OBJECT.search(request)
+    found = korean or english
+    if not found or _SEVERAL_OBJECTS.search(found.group("object")):
+        return False
+    words = found.group("object").split()
+    if english:
+        return not words[-1].endswith("s") and not re.fullmatch(_SPLIT_WORK_NOUN, words[-1])
+    return bool(
+        words
+        and (
+            (words[0] in ("이", "그", "저") and len(words) <= 3)
+            or words[-1].endswith("하나")
+            or (len(words) == 1 and not re.search(r"[가-힣]", words[0]))
+        )
+    )
 
 
 # What a split request may carry besides the work: a request put as a question ("can you split …?", "… 구현해줄래?"), a
@@ -1188,9 +1237,12 @@ _KOREAN_REPORT_TAIL: Final = re.compile(
 
 def _splits_named_work(text: str, folded: str, links: tuple[str, ...]) -> bool:
     """Whether ``text`` asks to split named work into parallel parts (`_EN_SPLIT_EVIDENCE`, a Korean work verb in
-    request form), rather than to split text, to propose a split (no imperative), or to be told how."""
+    request form), rather than to split text or one named object (`_splits_one_object`), to propose a split (no
+    imperative), or to be told how."""
     request = _EN_DONE_OPENER.sub("", folded, count=1)
     if not work_is_split(text) or _hard_excluded(request, links):
+        return False
+    if _splits_one_object(request):
         return False
     if _REQUEST_AS_QUESTION.search(request):
         request = request.rstrip(" ?？")
