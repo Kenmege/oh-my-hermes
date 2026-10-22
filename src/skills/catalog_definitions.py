@@ -578,7 +578,7 @@ _DEFINITIONS = [
                 "Classify the goal as task, project, ambition, external-wait, or unclear inside the loop, then keep progressing until a real permission, evidence, verification, context, budget, or external-wait gate appears.",
                 "A mid-run user message is an interjection, not a stop: answer it briefly and, in the same reply, continue the run — re-read the phase todo when one is active and dispatch or advance the next pending step, or name the armed wait it is waiting on -- handle, bound completion signal, deadline -- instead of re-reading status. Only the user's explicit stop or cancel, or the engine's own completion gate, ends the run; when the interjection changes scope, say so and update the declared plan or todo instead of silently abandoning it. A mid-run message is the latest steering for the active task, not automatically a replacement objective: it replaces the objective when the user says so and steers the current one otherwise.",
                 "A follow-up that needs new authority, materially expands the scope, or changes external state not already authorized is described first and started only on the user's approval; persistence never broadens the authorized scope. A refused escalation gets a safer alternative inside the boundary, or the authorization the boundary asks for — never a workaround or an indirect execution.",
-                "The closing brief scales to the change: one or two sentences plus the observed validation for a simple change, more only when the complexity earns it. Lead with the result or decision; omit abandoned approaches unless they explain a tradeoff the reader needs; narrate no internal bookkeeping (todo transitions, follow-up declarations, waits). Required closing lines stay outside this scaling: the observed run summary, and any prepared-not-observed or unmerged work, are stated whatever the brief's length.",
+                ENGINE_CLOSING_BRIEF_RULE,
                 "Expose core OMH roles: interviewer, planner, researcher, builder, reviewer, and loop controller.",
                 "Route tiny direct tasks to one-cycle delivery surfaces instead of forcing loop overhead.",
                 "Reframe a north-star ambition into a bounded arena, observable problem, next loop goal, and next verification without shrinking its ambition.",
@@ -670,7 +670,7 @@ _DEFINITIONS = [
         },
         portable_override_shadows={
             "do_not_use_when": "e62a657bc560a98ec06add69e143b2d65ce7a3c488d953d60cfacd1e1104645e",
-            "quality_bar": "177832d2c680eaa5c2393fa0e9da9741c498409272a2643e5589387e36623041",
+            "quality_bar": "90edd0deb38ffcd944e953f6838260541903af85583ca4554b521758daf5b1ed",
             "expected_outputs": "780eec788fe069700b05a39880a50a3813715f50fcd6401cb6fe486f1750616d",
             "artifact_expectations": "a0b60b9744a8ba2ea968e39cb84e90f2bc7125aaa4f40cee0996c658eeddc7ff",
             "final_checklist": "0e74ac3a35cd511b7db3310dc8040cfd5340bef69e367ee912228348616aa2c4",
@@ -1237,7 +1237,7 @@ _DEFINITIONS = [
             ENGINE_INTERJECTION_RESUME_RULE,
             ENGINE_FOLLOW_UP_AUTHORITY_RULE,
             ENGINE_CLOSING_BRIEF_RULE,
-            "Close a completed run with the localized run summary: call `omh_run_summary` with the conversation's language and print its summary_text verbatim as the final lines (elapsed seconds, token usage, and models used from observed host accounting — never numbers the model estimated); when the tool reports a non-observed status (no session id, no accounting row), print an explicit run-summary not_available line instead of omitting it or estimating the numbers.",
+            "For a completed run, call `omh_run_summary` in the conversation's language; print its summary_text verbatim before any specific next-action question, from observed host accounting — never numbers the model estimated; when the tool reports a non-observed status (no session id, no accounting row), print an explicit run-summary not_available line instead of omitting it or estimating the numbers.",
             "[capability:single_owner_persistence] Do not enter a finish-until-done loop until scope, acceptance criteria, and verification commands are concrete.",
             "[capability:single_owner_persistence] For single-owner coding edits, prepare and track the selected runtime path instead of implying unobserved work happened or hiding execution inside chat narration.",
             "[capability:single_owner_persistence] Report single-owner completion only from observed execution and verification evidence, with remaining risks named.",
@@ -1296,7 +1296,7 @@ _DEFINITIONS = [
             "Worker ACK, dispatch, result, review, CI, and merge evidence are observed or explicitly missing.",
             "Integration verification ran after lane results before the final status claims completion.",
             "Changed behavior was exercised through the real user surface after diagnostics and relevant tests passed, and every spawned QA resource has a cleanup receipt.",
-            "The closing brief ends with the observed `omh_run_summary` line (elapsed seconds and token usage) or an explicit run-summary not_available statement — never a model-estimated number.",
+            "Include the observed `omh_run_summary` line (elapsed seconds and token usage) or run-summary not_available before any specific next-action question — never a model-estimated number.",
             "[capability:coordinated_scope] The integrated status names which coordination lanes are observed, blocked, or still prepared_not_observed.",
             "[capability:coordinated_scope] Coordination teardown is explicit: released lanes are named and closed instead of lingering as implicit owners.",
             "[capability:durable_checkpoint] The goal_status_card/v1 or goal_continuation/v1 names the next action and the final status says complete, blocked, or continue with the exact remaining checkpoint.",
@@ -1345,8 +1345,8 @@ _DEFINITIONS = [
                 "Choose the wait strategy before starting long-running work and bind it to a completion signal the host exposes, never to a status loop: a command that fits one tool call runs once in the foreground with a duration-sized timeout; a longer terminal command runs in the background with completion notification armed and no process-status polling; a delegated lane relies on its delivered result while the parent continues independent work or ends the turn; a CI, PR, deploy, file, port, log-line, or external-session condition uses the host's monitor when observed, else exactly ONE bounded watcher or adaptive backoff outside model turns. Record the handle and observation mode at dispatch; every armed wait needs a hard deadline, a cancellation path, and a fallback naming the missing capability. Each wait closes in one terminal state with bounded evidence; an unbounded idle or busy-wait is a defect and a lost notification times out. One decision-changing midpoint peek and any user-requested status check stay allowed; neither is the wait mechanism. Ladder and terminal states: shared rail.",
                 "A mid-run user message is an interjection, not a stop: answer it briefly and, in the same reply, continue the run — re-read the phase todo when one is active and dispatch or advance the next pending step, or name the armed wait it is waiting on -- handle, bound completion signal, deadline -- instead of re-reading status. Only the user's explicit stop or cancel, or the engine's own completion gate, ends the run; when the interjection changes scope, say so and update the declared plan or todo instead of silently abandoning it. A mid-run message is the latest steering for the active task, not automatically a replacement objective: it replaces the objective when the user says so and steers the current one otherwise.",
                 "A follow-up that needs new authority, materially expands the scope, or changes external state not already authorized is described first and started only on the user's approval; persistence never broadens the authorized scope. A refused escalation gets a safer alternative inside the boundary, or the authorization the boundary asks for — never a workaround or an indirect execution.",
-                "The closing brief scales to the change: one or two sentences plus the observed validation for a simple change, more only when the complexity earns it. Lead with the result or decision; omit abandoned approaches unless they explain a tradeoff the reader needs; narrate no internal bookkeeping (todo transitions, follow-up declarations, waits). Required closing lines stay outside this scaling: the observed run summary, and any prepared-not-observed or unmerged work, are stated whatever the brief's length.",
-                "Close with observed host accounting when available, or explicitly report run-summary not_available. Never estimate token counts, elapsed time, or models used.",
+                ENGINE_CLOSING_BRIEF_RULE,
+                "Close with observed host accounting when available, or explicitly report run-summary not_available, before any specific next-action question. Never estimate token counts, elapsed time, or models used.",
                 "[capability:single_owner_persistence] Do not enter a finish-until-done loop until scope, acceptance criteria, and verification commands are concrete.",
                 "[capability:single_owner_persistence] For single-owner coding edits, prepare and track the selected runtime path instead of implying unobserved work happened or hiding execution inside chat narration.",
                 "[capability:single_owner_persistence] Report single-owner completion only from observed execution and verification evidence, with remaining risks named.",
@@ -1393,10 +1393,10 @@ _DEFINITIONS = [
             ),
         },
         portable_override_shadows={
-            "quality_bar": "ead94c17a79d078cd7148af8fa7fb4d01bae566bf196c12da352663da0952c3a",
+            "quality_bar": "80baaf4695cd81d0f5c24c6a2fe54fe820b2b1d3fe656d83f9579ad36a8712c5",
             "safety_rules": "f5a8f74812425af82829bc083dac62883a283ed8acfa5bc299a594c107ccd4f7",
             "opening_steps": "632f26cd6eeb333b99ad0312a3c568a456d6e36c66d510b6af201ae25f65abf0",
-            "final_checklist": "aa86ffc317352fb5f4a3cfa3dac07f436232e87055edb9a6adc7bf8b70896366",
+            "final_checklist": "95ac04078f55d2c16dfc5f8a7d0a2ca5e833cae7ae1f2a0c03856687557762d5",
             "why_this_exists": "537b436c502275cd7aea748406d5018300d92d31fe670a4c3b48090058b4c0c6",
         },
     ),
@@ -1558,8 +1558,8 @@ _DEFINITIONS = [
             "Entered from an `ulw-work` lane, own that lane's handoff only -- lane framing, disjointness, "
             "integration verification, and the closing brief stay with `ulw-work`; report back in that lane's "
             "evidence vocabulary.",
-            "Close with the localized `omh_run_summary` summary_text verbatim as the final lines, or an explicit "
-            "run-summary not_available line -- never an estimated number.",
+            "Close with the localized `omh_run_summary` summary_text verbatim, or an explicit "
+            "run-summary not_available line, before any specific next-action question -- never an estimated number.",
         ),
         why_this_exists=(
             "`maestro` exists so a handoff to an already-chosen external coding CLI carries that CLI's own "
@@ -7004,7 +7004,7 @@ _DEFINITIONS = [
                 "Do not start this engine as an automatic continuation of another skill's output: an accepted plan, a clarified brief, or a routing recommendation is planning evidence, not permission. Unless the user explicitly invoked this engine themselves, restate in one line what will start (engine, scope, selected executor) and wait for the user's explicit go-ahead first.",
                 "A mid-run user message is an interjection, not a stop: answer it briefly and, in the same reply, continue the run — re-read the phase todo when one is active and dispatch or advance the next pending step, or name the armed wait it is waiting on -- handle, bound completion signal, deadline -- instead of re-reading status. Only the user's explicit stop or cancel, or the engine's own completion gate, ends the run; when the interjection changes scope, say so and update the declared plan or todo instead of silently abandoning it. A mid-run message is the latest steering for the active task, not automatically a replacement objective: it replaces the objective when the user says so and steers the current one otherwise.",
                 "A follow-up that needs new authority, materially expands the scope, or changes external state not already authorized is described first and started only on the user's approval; persistence never broadens the authorized scope. A refused escalation gets a safer alternative inside the boundary, or the authorization the boundary asks for — never a workaround or an indirect execution.",
-                "The closing brief scales to the change: one or two sentences plus the observed validation for a simple change, more only when the complexity earns it. Lead with the result or decision; omit abandoned approaches unless they explain a tradeoff the reader needs; narrate no internal bookkeeping (todo transitions, follow-up declarations, waits). Required closing lines stay outside this scaling: the observed run summary, and any prepared-not-observed or unmerged work, are stated whatever the brief's length.",
+                ENGINE_CLOSING_BRIEF_RULE,
                 "Generate hostile scenarios from changed behavior and known risk areas.",
                 "Report pass/fail evidence separately from proposed fixes.",
                 "Delegate code mutations discovered by QA to the selected coding executor.",
@@ -7014,7 +7014,7 @@ _DEFINITIONS = [
             ),
         },
         portable_override_shadows={
-            "quality_bar": "fd505892259dccd760f846ec347c2472bcff73f48faecef4313417d31c28c034",
+            "quality_bar": "a8376dad9d82ab8f240c6368c424abc4b793cf0953174364252a84014a7f0321",
         },
     ),
     SkillDefinition(
