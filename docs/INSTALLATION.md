@@ -331,7 +331,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   columns) the composer is a bare `❯ …` row with no rule. A `/name` you type
   that names one of Hermes' commands or skills is drawn bold in the skill
   colour, in the composer, in your prompt once it is sent and on the
-  `↳ you:` row; a path such as `src/a.py`, a `/name` nothing answers to and
+  `↳ you:` row; a resumed session's prompts are drawn again once Hermes
+  names the session's commands and skills, when that moves one of the
+  prompts a redraw prints. A
+  path such as `src/a.py`, a `/name` nothing answers to and
   a word with a slash inside it stay plain. While you pick from a
   list (a question answered by picking, or the `/sessions`, `/rewind` or bare
   `/model` picker) or search the history with Ctrl+R, the
@@ -466,8 +469,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   its subagents as Claude Code's agent list does: `● main`, then one row per
   agent, its mark (a spinner while it runs, `○` done, `✗` failed, `▪`
   interrupted, `◌` waiting for a worker), a short title (its goal up to the
-  first field label such as `DELIVERABLE:` or the end of its first sentence;
-  a dag lane keeps its own label), and on the right the model it runs on, how long
+  first field label such as `DELIVERABLE:` or the end of its first sentence,
+  which an abbreviation such as `e.g.` does not end; a dag lane keeps its own
+  label), and on the right the model it runs on, how long
   it has run, how many tools it called and how many output tokens it wrote
   (`deepseek-v4.1-flash · 12s · 3 tools · ↓1.2k`; `deepseek-v4.1-flash ·
   waiting 35s` while it waits, the model once a frame names it). The token
@@ -697,7 +701,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   it). A shell call whose heredoc feeds an interpreter its script
   (`python3 - <<'PY'`, `uv run python - <<'PY'`, `bash <<EOF`) names the
   interpreter and counts the script's lines and the commands around it
-  (`terminal(python3 script · 23 lines)`); any other command fed a heredoc
+  (`terminal(python3 script · 23 lines)`), one a line: another heredoc's
+  body, a comment and a `\` continuation add none; any other command fed a heredoc
   (`cat > a.py <<'EOF'`, `git commit -F - <<'MSG'`) shows its own first
   line, and Ctrl+O shows the command. A failed call (a red `✗` on a red rail) shows its error's first line,
   or, when it failed by its exit code alone (a test

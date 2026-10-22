@@ -100,7 +100,7 @@ from . import gateway_contract as contract
 from .gateway_contract import TOOL_CALL_BRIDGE
 from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
 from .style import Line, Span, Style, fill
-from .slash import slash_spans
+from .slash import slash_spans, slash_token_ranges
 from .theme import TOOL_FAMILIES, Theme, kind_style, on_band
 from .width import line_width, truncate, truncate_left, truncate_line
 
@@ -176,8 +176,10 @@ class UserBlock:
     text: str
     done: bool = True
     from_queue: bool = False
-    # The command and skill names a `/name` token in `text` resolved to as it was sent, drawn bold in their colour.
+    # The command and skill names a `/name` token in `text` resolved to as it was sent, drawn bold in their colour;
+    # for a prompt from the session's history (`recorded`), the names its catalog has (`resolve_recorded_prompts`).
     known: frozenset[str] = frozenset()
+    recorded: bool = False
 
 
 @dataclass
@@ -422,9 +424,14 @@ _GOAL_MARKERS = re.compile(
 SHELL_TOOLS = TOOL_FAMILIES["shell"]
 SCRIPT_INTERPRETERS = frozenset({"python", "python3", "node", "bash", "sh", "zsh", "ruby", "perl"})
 _VERSIONED_PYTHON = re.compile(r"python3\.\d+")
-# A heredoc's opener at the end of its line (`<<'PY'`, `<<-EOF`), never a here-string (`<<<`) or a shift
-# (`$((1<<3))`); group 1 is `<<-`'s dash (its terminator may be indented with tabs), group 3 the terminator.
-_HEREDOC_OPENER = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_]\w*)\2\s*$")
+# A heredoc's opener at the end of its line (`<<'PY'`, `<<-EOF`), never a here-string (`<<<`: no `<` before the
+# two, and the word after them refuses a third) or a shift (`$((1<<3))`); `dash` is `<<-`'s (its terminator may be
+# indented with tabs), `word` the terminator.
+_HEREDOC = r"(?<!<)<<(?P<dash>-?)\s*(?P<quote>['\"]?)(?P<word>[A-Za-z_]\w*)(?P=quote)"
+_HEREDOC_OPENER = re.compile(_HEREDOC + r"\s*$")
+# A line as `_command_lines` reads it, left to right: arithmetic (`$(( 1 << n ))`, `((x << y))`) and a quoted string
+# (`"a << b c"`, `'<<EOF'`), where `<<` is never a heredoc, then an `opener` anywhere (`cat <<'EOF' > notes.md`).
+_SHELL_SPANS = re.compile(r"\$?\(\(.*?\)\)|'[^']*'|\"(?:[^\"\\]|\\.)*\"|(?P<opener>" + _HEREDOC + ")")
 _COMMAND_SEPARATOR = re.compile(r"&&|\|\||;|\|")
 _ENV_ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=\S*")
 UV_RUN_VALUE_OPTIONS = frozenset({"--with", "--python", "-p", "--project", "--directory", "--group", "--extra",
@@ -452,15 +459,41 @@ def _script_interpreter(segment: str) -> str:
     return name if name in SCRIPT_INTERPRETERS or _VERSIONED_PYTHON.fullmatch(name) else ""
 
 
+def _ends_heredoc(line: str, opener: re.Match[str]) -> bool:
+    """Whether `line` is the terminator `opener` names (tab-indented after `<<-`)."""
+    return (line.lstrip("\t") if opener["dash"] else line).rstrip() == opener["word"]
+
+
+def _command_lines(lines: list[str]) -> int:
+    """The commands among shell lines, one a line: a line ending in `\\` and the next are one, and a blank line, a `#`
+    comment and a heredoc's body (up to its terminator) are none."""
+    count = at = 0
+    while at < len(lines):
+        line, at = lines[at], at + 1
+        while line.endswith("\\") and at < len(lines):
+            line, at = line[:-1] + lines[at], at + 1
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        count += 1
+        for opener in (span for span in _SHELL_SPANS.finditer(line) if span["opener"]):
+            while at < len(lines) and not _ends_heredoc(lines[at], opener):
+                at += 1
+            at += 1
+    return count
+
+
 def _heredoc_summary(payload: dict[str, Any]) -> str:
     """`python3 script · 23 lines` for a shell call whose heredoc feeds an interpreter its script, with
     `+ N commands` for the commands around it; "" for any other call, which shows its own command (`_call_summary`).
 
     The heredoc's opener may be on any line (`set -e` before it, `cd /repo &&`
     before the interpreter); the script is the lines between it and its
-    terminator. Another command fed a heredoc (`cat > a.py <<'EOF'`,
-    `git commit -F - <<'MSG'`, `gh pr create --body-file - <<'EOF'`), a
-    here-string (`<<<`) and a shift (`$((1<<3))`) are not scripts.
+    terminator. The commands counted are those chained before the interpreter
+    and the lines around the script as `_command_lines` counts them, so another
+    heredoc's body, a continued line and a comment add none. Another command
+    fed a heredoc (`cat > a.py <<'EOF'`, `git commit -F - <<'MSG'`,
+    `gh pr create --body-file - <<'EOF'`), a here-string (`<<<`) and a shift
+    (`$((1<<3))`) are not scripts.
     """
     args = payload.get("args")
     command = as_text(args.get("command")) if isinstance(args, dict) else ""
@@ -472,15 +505,17 @@ def _heredoc_summary(payload: dict[str, Any]) -> str:
     if found is None:
         return ""
     index, opener = found
-    segments = _COMMAND_SEPARATOR.split(lines[index][: opener.start()])
+    head = index
+    while head and lines[head - 1].endswith("\\"):  # the opener's command, continued from the lines above
+        head -= 1
+    continued = "".join(line[:-1] for line in lines[head:index])
+    segments = _COMMAND_SEPARATOR.split(continued + lines[index][: opener.start()])
     interpreter = _script_interpreter(segments[-1])
-    terminator = next((at for at in range(index + 1, len(lines))
-                       if (lines[at].lstrip("\t") if opener[1] else lines[at]).rstrip() == opener[3]), None)
+    terminator = next((at for at in range(index + 1, len(lines)) if _ends_heredoc(lines[at], opener)), None)
     if not interpreter or terminator is None:
         return ""
     body = terminator - index - 1
-    others = (len(segments) - 1 + sum(1 for line in lines[:index] if line.strip())
-              + sum(1 for line in lines[terminator + 1 :] if line.strip()))
+    others = len(segments) - 1 + _command_lines(lines[:head]) + _command_lines(lines[terminator + 1 :])
     around = f" + {others} command{'' if others == 1 else 's'}" if others else ""
     return f"{interpreter} script · {body} line{'' if body == 1 else 's'}{around}"
 
@@ -1100,9 +1135,26 @@ class Transcript:
             handler(event.payload if isinstance(event.payload, dict) else {})
             self._version += 1
 
-    def add_user(self, text: str, from_queue: bool = False, known: frozenset[str] = frozenset()) -> None:
-        """Your prompt; `known` names the commands and skills a `/name` in it is drawn for (`slash.known_names`)."""
-        self._append(UserBlock(text, from_queue=from_queue, known=known))
+    def add_user(
+        self, text: str, from_queue: bool = False, known: frozenset[str] = frozenset(), recorded: bool = False
+    ) -> None:
+        """Your prompt; `known` names the commands and skills a `/name` in it is drawn for (`slash.known_names`);
+        `recorded` for one from the session's history."""
+        self._append(UserBlock(text, from_queue=from_queue, known=known, recorded=recorded))
+
+    def resolve_recorded_prompts(self, known: frozenset[str], width: int, theme: Theme, max_rows: int) -> bool:
+        """The history's prompts take `known`, the session's catalog, which answers after they are drawn (`App.startup`
+        draws a resumed session's history at once); True when a `/name` resolves otherwise now in one that
+        `retake_tail(width, theme, max_rows)` prints again, so a full redraw shows it. One above that tail is
+        only in /history, which draws it with `known` from now on."""
+        moved = -1
+        for index, block in enumerate(self.blocks):
+            if isinstance(block, UserBlock) and block.recorded and block.known != known:
+                if slash_token_ranges(block.text, block.known) != slash_token_ranges(block.text, known):
+                    moved = index
+                block.known = known
+                self._version += 1
+        return moved >= 0 and moved >= self._tail_start(width, theme, max_rows)
 
     def add_steer(self, text: str, agent: str = "") -> SteerBlock:
         """A steer the person just sent, held until Hermes answers and the transcript reaches a block boundary.
@@ -1618,6 +1670,13 @@ class Transcript:
         opens with one row counting them, blocks `BLOCK_CAP` dropped included.
         """
         self.retake()
+        cut = self._tail_start(width, theme, max_rows)
+        self._cursor = cut
+        self._left_out = cut + self.dropped
+        self._drop_past_cap()  # before the take, so the row names how many /history still holds
+
+    def _tail_start(self, width: int, theme: Theme, max_rows: int) -> int:
+        """The first block `retake_tail(width, theme, max_rows)` keeps."""
         end = len(self.blocks) - (1 if self.blocks and not self.blocks[-1].done else 0)
         cut, rows = end, 0
         while cut > 0:
@@ -1626,9 +1685,7 @@ class Transcript:
                 break
             rows += height
             cut -= 1
-        self._cursor = cut
-        self._left_out = cut + self.dropped
-        self._drop_past_cap()  # before the take, so the row names how many /history still holds
+        return cut
 
     def live_lines(self, width: int, theme: Theme, max_rows: int | None = None, now: float | None = None) -> list[Line]:
         """Everything not yet taken, as it shows now: the streaming tail, live thinking, running tools.

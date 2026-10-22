@@ -64,6 +64,21 @@ All notable changes will be documented here.
   and lead their figures with the model, which stays longest as the row
   narrows. The agent log's tool rows take the same hues.
 
+- **A resumed `/skill` prompt, the heredoc command count and short agent
+  titles read right in the OMH TUI (#2223 review follow-ups).** A session
+  resumed at launch printed its history before Hermes named the session's
+  commands and skills, so a resumed `/dag-ulw go` stayed plain for the whole
+  session while the TUI's own `/model` was bold. Once that catalog answers, a
+  resumed prompt whose `/name` it resolves otherwise is drawn again, with the
+  full redraw a resize does; when no resumed prompt the redraw would print
+  changes, nothing is redrawn. The heredoc summary counts one command a line around the script,
+  and another heredoc's body, a `#` comment and a `\` continuation count
+  none: `python3 - <<PY … PY` followed by `cat > notes.md <<EOF` with three
+  lines read `+ 5 commands` and now reads `+ 1 command`. An agent's short
+  title no longer ends at an abbreviation (`e.g.`, `i.e.`, `etc.`, `vs.`,
+  `cf.`): `Fix e.g. the bug. Then …` read `Fix e.g` and now reads
+  `Fix e.g. the bug`.
+
 - **Native Hermes children receive their own model calibration (#2214).** A
   separate child-only system prompt section selects one exact-model override,
   family block, or generic fallback from the child's own session model, never

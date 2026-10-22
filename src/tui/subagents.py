@@ -310,7 +310,11 @@ def _mark(agent: Agent, theme: Theme, spinner_frame: int) -> Span:
 # list, so `README:` or `JSON:` in a title stays.
 FIELD_LABELS = ("TASK", "DELIVERABLE", "SCOPE", "VERIFY", "STOP WHEN")
 _FIELD_LABEL = re.compile(r"\s(?:" + "|".join(re.escape(label) for label in FIELD_LABELS) + r"):(?:\s|$)")
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s")
+# An abbreviation's dot ends no sentence (`Fix e.g. the bug`); a dot inside a word (`v1.2`) has no space after it.
+TITLE_ABBREVIATIONS = ("e.g.", "i.e.", "etc.", "vs.", "cf.")
+_SENTENCE_END = re.compile(
+    "".join(rf"(?<!\b{re.escape(word)})" for word in TITLE_ABBREVIATIONS) + r"(?<=[.!?])\s", re.IGNORECASE
+)
 
 
 def short_title(goal: str) -> str:
