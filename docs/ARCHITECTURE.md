@@ -247,7 +247,28 @@ pasting it into the goal, and the `coding-handling` harness and
 `platform="subagent"` that Hermes gives a `delegate_task` child, and
 `omh doctor` reads the installed Hermes for that literal
 (`plugin_delegation_protocol`), so a rename shows as a warning rather than as
-children quietly losing the protocol. The `pre_tool_call` hook enforces
+children quietly losing the protocol.
+
+A separate `omh.child-calibration` section renders one model-matched worker
+calibration for every native child (`platform == "subagent"`), using only that
+child's own `session_info.model`: exact-model override (including declared
+aliases and dated snapshots), then derived family, then generic. Missing or
+unknown models still receive generic guidance; parent configuration, provider
+labels, and remembered main-agent identity do not select the child's block.
+Native children receive it at **every effort**, including low, unknown, and
+absent effort, because Hermes' section metadata does not reliably expose
+reasoning effort. Fanout's separate route policy is unchanged: only `high`,
+`xhigh`, or `max` receives calibration, with exact-model override before the
+recorded route family and generic fallback; `family_only` skips the override
+for the measurement arm. Both paths read the same stdlib-only definitions and
+resolver in `plugin_bundle/omh/calibration.py`, re-exported by the coding
+control plane. The historical `High-effort calibration:` label and all
+delegation protocol bytes remain unchanged. The bounded section is registered
+once per host manager without rewriting delegate arguments or goals. Hermes
+freezes it into newly built prompts; existing restored prompts are not
+retroactively changed, and third-party sections still share the host's budget.
+
+The `pre_tool_call` hook enforces
 user-authored toolcall rules (a matching rule returns the host's block
 directive). An unknown `[omh-role:...]` marker in a delegate goal is warned in
 the child's own turn by `pre_llm_call`, since Hermes reads only `action` from a

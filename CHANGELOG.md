@@ -4,6 +4,17 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Native Hermes children receive their own model calibration (#2214).** A
+  separate child-only system prompt section selects one exact-model override,
+  family block, or generic fallback from the child's own session model, never
+  parent configuration. It applies at every native-child effort, including low,
+  unknown, or absent effort, because section metadata does not reliably expose
+  reasoning effort. Fanout retains its `high`/`xhigh`/`max` threshold, recorded
+  family fallback, and family-only measurement arm. The standalone plugin and
+  coding control plane share the same stdlib-only calibration definitions and
+  resolver; protocol text, goals, and existing calibration wording are unchanged.
+  The section reaches newly built prompts, not already frozen resumed prompts.
+
 ## 4.0.1 - 2026-10-22
 
 - **`omh doctor`'s real-loader probe can observe a load on Windows, and on the

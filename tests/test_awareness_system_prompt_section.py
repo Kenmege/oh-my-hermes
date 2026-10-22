@@ -37,7 +37,7 @@ _HOST_HEADING = "## Plugin Context: "
 # Every section the plugin registers, sorted: Hermes renders sections in
 # sorted-id order whatever order they were registered in. The delegation
 # protocol's own contract is `tests/test_delegation_protocol_section.py`.
-_OMH_SECTION_IDS = ["omh.awareness", "omh.delegation-protocol"]
+_OMH_SECTION_IDS = ["omh.awareness", "omh.child-calibration", "omh.delegation-protocol"]
 
 # No OMH vocabulary and no skill candidate line either (`skill_shortlist`), so
 # a section session's turn on it has nothing of its own to inject.
