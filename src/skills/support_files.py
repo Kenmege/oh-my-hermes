@@ -24,7 +24,7 @@ def validate_support_path(relative: str) -> str:
     for part in parts:
         if not re.fullmatch(r"[A-Za-z0-9._-]+", part) or part in (".", "..") or part.endswith(".") or part.split(".")[0].upper() in reserved:
             raise ValueError(f"unsafe support path: {relative!r}")
-    if parts[-1] != "LICENSE.upstream" and Path(parts[-1]).suffix not in (".md", ".json", ".html", ".css", ".js", ".mjs", ".py"):
+    if parts[-1] != "LICENSE.upstream" and Path(parts[-1]).suffix not in (".md", ".json", ".html", ".css", ".js", ".mjs", ".py", ".swift", ".sh"):
         raise ValueError("support is restricted to declared UTF-8 text types")
     return relative
 

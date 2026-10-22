@@ -1,5 +1,10 @@
 # Brief and locale decisions
 
+Craft depth for the brief (what to ask and not ask, concept candidates, the
+`concept.md` form, time/credit estimates, research prompts) is in
+`references/craft-brief.md`. This page decides language and locale; where the
+craft text assumes Korean content, this page's resolution wins.
+
 ## Intake before aesthetics
 
 Recover supplied objective, audience, channel, source revision, brand permissions,

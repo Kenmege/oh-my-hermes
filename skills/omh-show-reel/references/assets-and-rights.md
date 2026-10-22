@@ -1,6 +1,8 @@
 # Assets, brand and consent register
 
-Record asset_id, source locator/revision/date, local safe reference, SHA-256,
+Image generation, real photos, cutouts and post-processing are in
+`references/craft-images.md`; `prep_images.py` removes letterboxes, resizes and
+(macOS, opt-in) cuts out subjects. Record asset_id, source locator/revision/date, local safe reference, SHA-256,
 file type/dimensions/duration, rights holder, license, permitted modification,
 usage/channel/territory limits, consent and verification status. Prefer supplied,
 official and rights-cleared sources. Verify downloaded bytes are the expected

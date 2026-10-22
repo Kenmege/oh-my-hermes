@@ -2,28 +2,34 @@
 
 ## Companion decision
 
-This release ships a selected optional local companion, NOT a core render
-command or full upstream runtime. Read `toolkit/README.md` with a file reader
+This release ships an optional local companion, NOT a core render command: the
+upstream engine (`engine.js`, `fx.js`, example `scenes.js`) unmodified below its
+attribution notice, upstream-derived scripts, and an OMH capture adapter that keeps
+upstream's render quality flags. Read `toolkit/README.md` with a file reader
 relative to the loaded skill directory (`skill_dir` on native Hermes); portable
 hosts use their own base directory and ordinary file tools. No companion import,
 process, socket, dependency setup or font download occurs during OMH discovery,
 projection, installation, update, routing or doctor.
 
-The method prose is original. Selected motion/audio/capture helpers are modified
-MIT derivatives of revfactory/showreel revision
+The method prose is original; the `references/craft-*.md` pages are complete
+English translations of the upstream references. The engine, motion/audio/capture
+helpers and QA tools are MIT files from revfactory/showreel revision
 64521220a2f8e91cb9894400c48c15b7f45205d6, Copyright (c) 2026 Minho Hwang
 (revfactory). Every distribution carries `toolkit/LICENSE.upstream`, per-file
 notices and `toolkit/upstream-manifest.json` with original/local hashes and
 modification status. Preserve all of them in the source kit. Asset/font/voice
-rights are independent. This is not vendored wholesale upstream runtime parity.
+rights are independent. The engine is upstream's; the capture adapter is not
+upstream's Playwright renderer (no workers, chunks or resume).
 
 Explicit operator invocation, after confirming a new output workspace and local
 prerequisites (paths are examples, never auto-run):
 
 ```sh
-python toolkit/scripts/new_project.py NEW_PROJECT --font /approved/font.ttf --duration 12 --fps 30 --language en --direction ltr
-python toolkit/scripts/timeline.py NEW_PROJECT/timing.json
-node toolkit/scripts/render.mjs --dir NEW_PROJECT/reel --out NEW_PROJECT/gallery.mp4 --browser /approved/chrome-headless-shell --dependency-root /approved/node_modules --ffmpeg /approved/ffmpeg --ffprobe /approved/ffprobe
+python toolkit/scripts/new_project.py NEW_PROJECT --font /approved/font.ttf --ratio 16:9 --duration 60 --language en --direction ltr
+python toolkit/scripts/timeline.py NEW_PROJECT/script.json --music-analysis audio/music/analysis.json
+node toolkit/scripts/render.mjs --dir NEW_PROJECT/reel --out NEW_PROJECT/out/draft.mp4 --scale 0.5 --browser /approved/chrome-headless-shell --dependency-root /approved/node_modules --ffmpeg /approved/ffmpeg --ffprobe /approved/ffprobe
+node toolkit/scripts/render.mjs --dir NEW_PROJECT/reel --out NEW_PROJECT/out/video.mp4 --sub 4 --browser /approved/chrome-headless-shell --dependency-root /approved/node_modules --ffmpeg /approved/ffmpeg --ffprobe /approved/ffprobe
+python toolkit/scripts/contact_sheet.py --video NEW_PROJECT/out/draft.mp4 --every 1 --out NEW_PROJECT/qa/sheet_draft.png
 python toolkit/scripts/synth_music.py toolkit/examples/music-spec.json --out NEW_PROJECT/score.wav
 python toolkit/scripts/mix.py NEW_PROJECT/mix-spec.json --out NEW_PROJECT/mix.wav --ffmpeg /approved/ffmpeg
 python toolkit/scripts/qa_check.py NEW_PROJECT/final.mp4 --audio-mode music-only --ffmpeg /approved/ffmpeg --ffprobe /approved/ffprobe
@@ -31,17 +37,23 @@ python toolkit/scripts/qa_check.py NEW_PROJECT/final.mp4 --audio-mode music-only
 
 These flags are the companion's tested adapter, not a new OMH command. Initialization
 preserves an existing authored project by refusing it. The exact-frame adapter is
-explicitly Puppeteer (not Playwright), serial-only, allowlisted loopback assets,
-no external requests or range access, no resume/chunks/blur; partial frames are
-never a final success. Tested capture execution is macOS with explicitly supplied
+explicitly Puppeteer (not Playwright), serial capture piped to FFmpeg, allowlisted
+loopback assets served from the project root, no external requests or range access,
+no resume/chunks/workers; `--sub N` averages N sub-frame captures per frame (shutter
+blur), `--scale` above 1 supersamples back to the page size, CRF defaults to 16.
+Without FFmpeg zscale pass `--color swscale` (upstream's matrix/range conversion).
+Partial frames are never a final success. Tested capture execution is macOS with explicitly supplied
 Chrome headless-shell; Linux/Windows execution is HOLD, while installation of the
 text data stays portable. Full Chrome headless surface capture stalled on the
 observed host; missing tool/font/glyph and untested paths must not be certified.
 
-Use callable examples from `references/motion-techniques.md`, audio/stem contracts
-from `references/audio-production.md`, and actual composition/revision gates from
-`references/art-direction.md`. The initialized four-technique gallery teaches APIs,
-not the film's storyboard, and a small gallery never fulfills a commissioned film.
+Use the engine contract in `references/motion-techniques.md` with the full API in
+`references/craft-engine.md` and verified technique code in
+`references/craft-techniques.md` and `references/craft-techniques-2.md`,
+audio/stem contracts from
+`references/audio-production.md`, and composition/revision gates from
+`references/art-direction.md`. `reel/_example_scenes.js` teaches the API, not the
+film's storyboard, and an example never fulfills a commissioned film.
 Capture receipts bind exact input/font/tool versions, seek times, cleanup, decoded
 frames and converted color. Keep technical versus artistic/playback/listening
 verdicts separate; source code and measurements are not hearing or artistic review.

@@ -1,47 +1,45 @@
-# Callable techniques, not a stock film
+# Engine contract and craft techniques
 
-Read the local `toolkit/README.md`, then the selected example script with a file
-reader. Helpers are callable parameterized source, not scripts OMH executes.
-`REEL.prog/kf/spring/rand` use absolute time/seed. `__seek(seconds)`, `__ready`,
-`__error`, `__meta` are the local host-capture contract, not a runtime RPC.
+Read the local `toolkit/README.md`, then `references/craft-engine.md` (engine API,
+scene authoring, WebGL and 3D, splitting work across agents) and
+`references/craft-techniques.md` with `references/craft-techniques-2.md`
+(verified technique code with the sync, first frame, flash and determinism
+rules) before writing a scene. `new_project.py`
+copies upstream's engine unmodified: `reel/engine.js` (`REEL`), `reel/fx.js`
+(`FX` layers), `reel/_example_scenes.js` (an API example, not loaded) and an empty
+`reel/scenes.js`. Helpers are source the scene calls, not scripts OMH executes.
 
-## Kinetic type as meaning
+## The contract the capture adapter checks
 
-`kineticPose(t,{start,duration,stagger,index,rise})` returns mask/position/opacity
-and spring settling. Apply it to intact native-script runs by default; a semantic
-phrase may move as a unit. Use per-run `lang`/`dir` and isolated literal LTR tokens.
-Never split/reverse Arabic to imitate Latin stagger. Anticipation and settling
-should express weight and arrival, not make essential text unreadable. Measure
-reading time from actual delivery-size moving samples, not a character formula.
+- The screen is a pure function of absolute time `t`. No `Math.random`,
+  `Date.now`, CSS transition/animation, or state carried from the previous frame;
+  use `REEL.rand(i, salt)` and `REEL.noise(t, seed)`. Precompute accumulating
+  simulations in `setup` at fixed steps and read them by time in `render`.
+- `REEL.config`, `REEL.scene({id,start,end,setup,render})`, `REEL.overlay`,
+  `REEL.preload`/`REEL.img`, `REEL.cue`/`bar`/`beat`/`level`/`charTimes` read
+  `reel/timeline.js`. Put times on cues, not literals, so re-timed audio carries
+  the picture with it. Put hard cuts at `cue - 0.5 / fps` so the `--sub` shutter
+  does not blend both states into the cue frame.
+- `window.__seek(t)`, `__ready` and `__meta` are the host capture contract, not a
+  runtime RPC. The adapter refuses running animations, page errors, external
+  requests, undeclared files and glyphs the declared fonts do not cover.
 
-## Depth, lighting and occlusion
+## Native scripts in motion
 
-`depthGeometry` parameterizes grid count/seed/projection/center; `FX.project` and
-`FX.light` are independent helpers. Sorted disjoint grid boxes occlude and react
-to a moving light. This painter ordering does not solve arbitrary intersecting
-meshes. Use scale/camera/negative space to expose the meaningful relation, not a
-city/HUD imposed on every brand. An approved image/capture can be the focal plane;
-do not manufacture live product evidence from authored geometry.
+`REEL.split(el, 'char')` segments graphemes, which suits Hangul, CJK and Latin
+kinetic type. Never split or reverse Arabic or another shaping script to imitate
+a Latin stagger: animate intact runs or `split(el, 'word')`, with per-run
+`lang`/`dir` and isolated literal LTR tokens. Anticipation and settling express
+weight and arrival; they must not make essential text unreadable. Measure reading
+time from delivery-size moving samples, not a character formula.
 
-## Seeded geometric particles
+## Concept first, techniques second
 
-`particleGeometry` samples a seeded disk and evaluates closed-form drag/gravity
-at absolute time. Change sample geometry, palette and forces for the concept;
-there is no accumulating simulation or frame history. The teaching fixture is not
-a claimed glyph-particle engine. Geometry/density must preserve hierarchy; noisy
-motion does not repair a weak story. Repeated shuffled seeks must yield identical
-decoded pixels at the same times in the pinned environment.
-
-## Semantic match transform
-
-`matchGeometry` carries measured `{x,y,w,h}` from one composition to the next.
-Read a meaningful object's actual authored/DOM bounds, preserve its focal point,
-and decide why it changes scale/role across the cut. A decorative box expansion
-between unrelated headline cards is not continuity. Inspect same-time poses,
-consecutive motion frames and both cut boundaries after rebuilding a segment.
-
-The gallery is a local initialized worked example of four different techniques,
-not a film template or a mandatory effect list. Choosing none is valid if an
-explicitly selected renderer/medium better serves the concept. Pin source/tool/
-font hashes, compare a parameter/seed variant and shuffled seeks, and report the
-actual executed fixture rather than extrapolating to all locales or platforms.
+The technique catalog is verified code, not a menu: a film assembled only from it
+looks like every other film made with this skill. Start from the segment's art
+direction in `concept.md`; take a technique when the concept needs that exact
+expression and adapt its palette, type and motion, otherwise build new. Adjacent
+segments should differ in at least two of medium, palette, typeface, motion and
+texture. Repeated shuffled seeks must yield identical decoded pixels at the same
+times in the pinned environment; report the executed fixture rather than
+extrapolating to every locale or platform.

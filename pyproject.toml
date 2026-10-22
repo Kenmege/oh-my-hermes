@@ -105,13 +105,17 @@ packages = [
 # Closed optional companion data, not packages/imported production modules.
 "omh.skills" = [
   "show_reel_toolkit/README.md", "show_reel_toolkit/LICENSE.upstream", "show_reel_toolkit/upstream-manifest.json",
-  "show_reel_toolkit/assets/engine/engine.js", "show_reel_toolkit/assets/engine/fx.js", "show_reel_toolkit/assets/engine/index.html",
+  "show_reel_toolkit/assets/engine/engine.js", "show_reel_toolkit/assets/engine/fx.js", "show_reel_toolkit/assets/engine/scenes.js",
+  "show_reel_toolkit/assets/engine/index.html",
   "show_reel_toolkit/scripts/new_project.py", "show_reel_toolkit/scripts/render.mjs", "show_reel_toolkit/scripts/font-coverage.mjs",
   "show_reel_toolkit/scripts/timeline.py", "show_reel_toolkit/scripts/synth_music.py", "show_reel_toolkit/scripts/mix.py",
   "show_reel_toolkit/scripts/motion_check.py", "show_reel_toolkit/scripts/qa_check.py",
-  "show_reel_toolkit/examples/techniques/kinetic-type.js", "show_reel_toolkit/examples/techniques/depth-light.js",
-  "show_reel_toolkit/examples/techniques/particles.js", "show_reel_toolkit/examples/techniques/match-transform.js", "show_reel_toolkit/examples/techniques/gallery.js",
+  "show_reel_toolkit/scripts/contact_sheet.py", "show_reel_toolkit/scripts/finish.py", "show_reel_toolkit/scripts/preflight.py",
+  "show_reel_toolkit/scripts/prep_images.py", "show_reel_toolkit/scripts/music_tools.py", "show_reel_toolkit/scripts/tools/cutout.swift",
+  "show_reel_toolkit/scripts/eleven.py", "show_reel_toolkit/scripts/narrate.py", "show_reel_toolkit/scripts/codex_ref_image.sh",
+  "show_reel_toolkit/assets/sfx_presets.json",
   "show_reel_toolkit/examples/timing.json", "show_reel_toolkit/examples/music-spec.json", "show_reel_toolkit/examples/README.md",
+  "show_reel_craft/*.md",
 ]
 "omh.skins" = ["*.yaml"]
 "omh.tui" = ["frontend/dist/*.js"]
