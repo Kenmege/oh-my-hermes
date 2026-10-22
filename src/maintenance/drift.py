@@ -807,7 +807,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # omh-code-review? (a question that names the skill) (5); the
             # Chinese question case moved from /omh-code-review to /omh-plan,
             # since after code-review "what is this" asks for the review.
-            expected=1023,
+            # A stop of a run word the first table lacked, in Japanese or as
+            # a Korean compound, and a question about using the skill add
+            # four, each dispatched on main: /ulw-research stop the research,
+            # /ulw-loop ループを止めて, /omh-code-review 코드 리뷰 취소 (their
+            # skill), and /omh-code-review 어떻게 써? (OMH's intro card) (4).
+            expected=1027,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1228,7 +1233,15 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # on main (2), and /omh-code-review 这是什么 and
             # /omh-paper-learning what is it?, which got OMH's intro card on
             # main (2).
-            expected=1024,
+            # A skill with no determiner or with "a", or a name after an
+            # article, names a thing, so the skill runs, as on main: /omh-docs
+            # what is a skill?, /omh-skill-scout what can a skill do?,
+            # /omh-frontend what does the frontend do?, /ulw-research what is
+            # the research about?, /ulw-context what is the context? (5). So
+            # do a Korean stop verb before its object, /ulw-work 취소해 주문,
+            # and an own-run word inside a domain noun, /ulw-loop 무한 루프
+            # 멈춰, as on main (2).
+            expected=1031,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

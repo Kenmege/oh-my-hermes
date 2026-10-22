@@ -8,12 +8,15 @@ alike.
 
 from __future__ import annotations
 
+import time
 import unittest
+from unittest import mock
 
 from _local_package import load_local_package
 
 load_local_package()
 
+from omh.plugin_bundle.omh import dag_ulw_cues  # noqa: E402
 from omh.plugin_bundle.omh.awareness import awareness_route_hint  # noqa: E402
 from omh.plugin_bundle.omh.hermes_session_commands import person_request_text  # noqa: E402
 from omh.plugin_bundle.omh.invocation_cues import META, STATUS, STOP, invoked_instruction  # noqa: E402
@@ -35,6 +38,12 @@ OWN_RUN_STOPS = (
     "/omh-code-review 리뷰 취소", "/omh-plan stop planning", "/omh-plan cancel the plan", "/ulw-plan stop the plan",
     "/ulw-interview 인터뷰 그만", "/omh-app-debugging stop debugging", "/omh-app-debugging stop the investigation",
     "/ulw-loop 그만해 비싸", "/ulw-loop 멈춰 너무 오래 걸려", "/ulw-loop no stop", "/omh-frontend stop omh-frontend",
+    "/omh-backend stop backend", "/omh-plan 취소해 필요 없어", "/ulw-work 그만해 내가 할게", "/omh-code-review 코드 리뷰 취소",
+    "/ulw-research stop the research", "/ulw-research 리서치 그만", "/omh-production-audit stop the audit",
+    "/omh-tech-debt-audit 감사 중단", "/ulw-qa stop the qa run", "/omh-data-analysis cancel the analysis",
+    "/omh-codebase-onboarding stop the tour", "/omh-build-failure-triage stop triaging", "/omh-paper-learning stop learning",
+    "/ulw-loop ループを止めて", "/omh-code-review レビューをキャンセル", "/ulw-loop 停止循环", "/omh-code-review 取消审查",
+    "/ulw-plan 计划取消",
 )
 # A question about the skill itself.
 META_QUESTIONS = (
@@ -42,6 +51,8 @@ META_QUESTIONS = (
     "/ulw-plan 何これ", "/omh-plan 这是什么", "/omh-app-debugging what does this do?", "/ulw-plan what is ulw-plan?",
     "/omh-code-review what is omh-code-review?", "/omh-code-review what does this skill do?",
     "/omh-code-review 이 스킬 뭐야?", "/omh-paper-learning what does this skill do?",
+    # How to use the skill, after any skill.
+    "/omh-code-review 어떻게 써?", "/omh-code-review how do I use it?", "/omh-paper-learning 어떻게 써?",
 )
 # How the run stands, after a skill whose work is not that status.
 STATUS_REQUESTS = (
@@ -74,6 +85,15 @@ REQUESTS = (
     ("/omh-code-review how is it?", "code-review"), ("/omh-code-review what is it?", "code-review"),
     ("/omh-code-review 这是什么", "code-review"), ("/omh-codebase-onboarding what does this do?", "codebase-onboarding"),
     ("/omh-paper-learning what does this mean?", "paper-learning"), ("/omh-paper-learning what is it?", "paper-learning"),
+    # A skill with no determiner or with "a" is any skill, and a name after an article is a thing, not the skill.
+    ("/omh-docs what is a skill?", "product-docs"), ("/omh-docs 스킬이 뭐야?", "product-docs"),
+    ("/omh-skill-scout what can a skill do?", "skill-scout"), ("/omh-frontend what does the frontend do?", "frontend"),
+    ("/ulw-research what is the research about?", "research"), ("/ulw-context what is the context?", "context"),
+    ("/ulw-context how much context is left?", "context"),
+    # A stop verb before a task noun, a domain word that shares an own-run noun, and a stop of something else.
+    ("/ulw-work 취소해 주문", "ultrawork"), ("/ulw-loop 무한 루프 멈춰", "loop"),
+    ("/ulw-research stop the research paper from leaking", "research"), ("/ulw-work 取消订单", "ultrawork"),
+    ("/ulw-work サーバーを止めて", "ultrawork"),
 )
 
 
@@ -120,6 +140,29 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(invoked_instruction("ultrawork", "算了一下成本"), "")
         # The cancel skill's work is the stop.
         self.assertEqual(invoked_instruction("cancel", "stop"), "")
+        # A Korean stop then a noun is a stop of that thing; then a predicate, a stop said with why.
+        self.assertEqual(invoked_instruction("ultrawork", "취소해 주문"), "")
+        self.assertEqual(invoked_instruction("plan", "취소해 필요 없어"), STOP)
+        self.assertEqual(invoked_instruction("code-review", "코드 리뷰 취소"), STOP)
+        self.assertEqual(invoked_instruction("loop", "무한 루프 멈춰"), "")
+
+    def test_a_long_clause_is_read_in_linear_time(self) -> None:
+        # A Korean stop with why is read on its first few words: the clause's length adds no searches.
+        calls: list[int] = []
+        pattern = dag_ulw_cues._KOREAN_STOP_VERB_END
+
+        class Counting:
+            def search(self, text: str) -> object:
+                calls.append(len(text))
+                return pattern.search(text)
+
+        with mock.patch.object(dag_ulw_cues, "_KOREAN_STOP_VERB_END", Counting()):
+            self.assertEqual(invoked_instruction("loop", "결제 " * 15_000), "")
+        self.assertLessEqual(len(calls), dag_ulw_cues._KOREAN_STOP_WORDS_MAX)
+        self.assertLess(sum(calls), 200)
+        started = time.perf_counter()
+        invoked_instruction("ultrawork", "결제 모듈 리팩터링 " * 3_000)  # 30k characters, no punctuation
+        self.assertLess(time.perf_counter() - started, 5.0)  # a generous bound; the reading takes milliseconds
 
     def test_a_question_about_this_after_a_skill_that_judges_material_is_its_work(self) -> None:
         for name in ("code-review", "codebase-onboarding", "paper-learning"):

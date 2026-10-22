@@ -7550,6 +7550,38 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "code-review",
     ),
+    RoutingPrecisionCase(
+        "explicit-ulw-research-stop-of-the-research-is-answered",
+        "/ulw-research stop the research stops the research run, it starts none",
+        "/ulw-research stop the research",
+        "answer_directly",
+        "direct_answer",
+        "research",
+    ),
+    RoutingPrecisionCase(
+        "explicit-ulw-loop-japanese-stop-of-the-loop-is-answered",
+        "/ulw-loop ループを止めて stops the loop, in Japanese",
+        "/ulw-loop ループを止めて",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "explicit-omh-code-review-korean-stop-of-the-code-review-is-answered",
+        "/omh-code-review 코드 리뷰 취소 cancels the code review, it starts none",
+        "/omh-code-review 코드 리뷰 취소",
+        "answer_directly",
+        "direct_answer",
+        "code-review",
+    ),
+    RoutingPrecisionCase(
+        "explicit-omh-code-review-how-to-use-it-is-answered",
+        "/omh-code-review 어떻게 써? asks how to use the skill, it reviews nothing",
+        "/omh-code-review 어떻게 써?",
+        "answer_directly",
+        "direct_answer",
+        "code-review",
+    ),
     # A stop, cancel or status word for the dag-ulw run in progress starts no new run; Hermes' route hint points it
     # at the run's own omh_dag cancel or status. The shortlist may still list dag-ulw; the route answers directly.
     RoutingPrecisionCase(
@@ -17263,6 +17295,50 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "/omh-codebase-onboarding what does this do? asks about the codebase",
         "/omh-codebase-onboarding what does this do?",
         "dispatch", "codebase-onboarding", "prepare_codebase_onboarding", "codebase_onboarding",
+    ),
+    # "a skill", a bare "스킬" and a name after an article name a thing, not the invoked skill: the skill's work.
+    RoutingInterventionCase(
+        "explicit-omh-docs-what-is-a-skill-is-its-work",
+        "/omh-docs what is a skill? asks the docs about skills",
+        "/omh-docs what is a skill?",
+        "dispatch", "product-docs", "run_hermes_research", "web_research",
+    ),
+    RoutingInterventionCase(
+        "explicit-skill-scout-what-can-a-skill-do-is-its-work",
+        "/omh-skill-scout what can a skill do? is the scout's question",
+        "/omh-skill-scout what can a skill do?",
+        "dispatch", "skill-scout", "prepare_skill_scout", "skill_scout",
+    ),
+    RoutingInterventionCase(
+        "explicit-frontend-what-does-the-frontend-do-is-its-work",
+        "/omh-frontend what does the frontend do? asks about the person's frontend",
+        "/omh-frontend what does the frontend do?",
+        "dispatch", "frontend", "prepare_frontend_handoff", "frontend_handoff",
+    ),
+    RoutingInterventionCase(
+        "explicit-ulw-research-what-is-the-research-about-is-its-work",
+        "/ulw-research what is the research about? asks about the research",
+        "/ulw-research what is the research about?",
+        "dispatch", "research", "run_hermes_research", "web_research",
+    ),
+    RoutingInterventionCase(
+        "explicit-ulw-context-what-is-the-context-is-its-work",
+        "/ulw-context what is the context? asks for the context",
+        "/ulw-context what is the context?",
+        "dispatch", "context", "prepare_project_terms_context", "project_terms_context",
+    ),
+    # A Korean stop verb before a task noun, and an own-run word inside a domain noun, are work.
+    RoutingInterventionCase(
+        "explicit-ulw-work-korean-cancel-the-order-dispatches",
+        "/ulw-work 취소해 주문 is cancel the order, the work",
+        "/ulw-work 취소해 주문",
+        "dispatch", "ultrawork", "forward_plan_to_selected_workflow", "plan",
+    ),
+    RoutingInterventionCase(
+        "explicit-ulw-loop-korean-stop-the-infinite-loop-dispatches",
+        "/ulw-loop 무한 루프 멈춰 stops an infinite loop in the code, the loop's goal",
+        "/ulw-loop 무한 루프 멈춰",
+        "dispatch", "loop", "ask_goal_boundary", "loop",
     ),
     RoutingInterventionCase(
         "work-with-dag-ulw-dispatches",

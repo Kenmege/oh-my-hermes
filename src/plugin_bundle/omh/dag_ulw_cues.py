@@ -29,7 +29,7 @@ import re
 import unicodedata
 from typing import Final
 
-from .name_report_cues import asks_after_the_name, asks_for_something, reports_on_the_name
+from .name_report_cues import _predicate_like, asks_after_the_name, asks_for_something, reports_on_the_name
 
 DAG_ULW: Final = "dag-ulw"
 
@@ -216,6 +216,7 @@ def _run_stop_source(names: str = "", nouns: str = "") -> str:
     "리뷰 취소") as alternations that may also be the stop's object."""
     objects = [r"it|this|that|now|please|everything|all|the\s+(?:run|dag|graph|job)"]
     korean_nouns = [_KOREAN_RUN_NOUN]
+    own = "|".join(words for words in (names, nouns) if words)
     if names:
         objects.append(rf"(?:{names})(?:\s+(?:run|job|session))?")
         korean_nouns.append(names)
@@ -224,6 +225,10 @@ def _run_stop_source(names: str = "", nouns: str = "") -> str:
         korean_nouns.append(nouns)
     run_object = rf"(?:\s+(?:{'|'.join(objects)}))*"
     run_noun = rf"(?:{'|'.join(korean_nouns)})"
+    # The skill's own run in Japanese and Chinese, before or after the stop ("ループを止めて", "停止循环", "计划取消").
+    ja_noun = rf"作業|実行|これ|それ{'|' + own if own else ''}"
+    zh_after = rf"运行|执行|任务|吧{'|' + own if own else ''}"
+    zh_before = rf"|^(?:{own})(?:停止|取消|中止)吧?[。.!！]*$" if own else ""
     korean_run_phrase = (
         rf"(?:(?:{_KOREAN_RUN_MODIFIER}\s*){{0,2}}{run_noun}\s*(?:을|를|은|는|도)?\s*)?(?:{_KOREAN_STOP_ADVERB}\s*){{0,2}}"
     )
@@ -233,9 +238,9 @@ def _run_stop_source(names: str = "", nouns: str = "") -> str:
         rf"(?:{_KOREAN_STOP_NOUN}(?:{_KOREAN_VERB_TAIL}|{_KOREAN_PARTICLE_TAIL}|{_KOREAN_STOP_ACT}(?:{_KOREAN_PARTICLE_TAIL})?)?"
         rf"|(?:멈춰(?:라)?|멈추(?:세요|자)?|그만(?:\s*(?:돌려|돌리자))?)(?:{_KOREAN_VERB_TAIL}|{_KOREAN_PARTICLE_TAIL})?"
         rf"|꺼\s*(?:줘|주세요|라)?\s*요?)\s*[.!?~]*$"
-        r"|^(?:作業を?|実行を?|これを?|それを?)?(?:停止|中止|キャンセル)(?:して)?(?:ください)?[。.!！]*$"
-        r"|^(?:止めて|やめて)(?:ください)?[。.!！]*$"
-        r"|^(?:请)?(?:停止|取消|停下|中止)(?:运行|执行|任务|吧)?[。.!！]*$"
+        rf"|^(?:(?:{ja_noun})を?)?(?:停止|中止|キャンセル)(?:して)?(?:ください)?[。.!！]*$"
+        rf"|^(?:(?:{ja_noun})を)?(?:止めて|やめて)(?:ください)?[。.!！]*$"
+        rf"|^(?:请)?(?:停止|取消|停下|中止)(?:{zh_after})?[。.!！]*${zh_before}"
         r"|^(?:别做了|不要做了|算了|停一下)吧?[。.!！]*$"
     )
 
@@ -256,11 +261,15 @@ def _run_stop_alone(names: tuple[str, ...], nouns: tuple[str, ...]) -> re.Patter
 
 _STOP_WORD: Final = re.compile(r"stop|cancel|abort|halt|kill|멈춰|그만|그만해|취소|중단|중지|정지")
 # A Korean stop said as a verb, then why ("그만해 비싸", "멈춰 너무 오래 걸려"), as "stop, too expensive" says it with a
-# comma. A bare stop noun is not a verb: after "취소" the words may be its object ("취소 버튼"). Neither is a why that
-# names work or asks how or why (`stops_the_run`).
+# comma. A bare stop noun is not a verb: after "취소" the words may be its object ("취소 버튼"). The why closes on a
+# predicate: a noun after the stop is its object ("취소해 주문", "cancel the order"), and so is a why that names work or
+# asks how or why (`stops_the_run`). The stop is a few words at most (`_KOREAN_STOP_WORDS_MAX`).
 _KOREAN_STOP_VERB_END: Final = re.compile(
     rf"(?:(?:멈춰(?:라)?|멈추(?:세요|자))(?:{_KOREAN_VERB_TAIL})?|(?:그만|{_KOREAN_STOP_NOUN})(?:{_KOREAN_VERB_TAIL}))$"
 )
+_KOREAN_STOP_WORDS_MAX: Final = 6
+# Clause endings `_predicate_like` does not read as one ("그만해 내가 할게").
+_KOREAN_CLAUSE_ENDINGS: Final = ("게", "걸", "거든", "잖아", "니까", "는데", "던데")
 # A word that only answers or interrupts before the stop ("no stop", "no, stop", "잠깐 멈춰").
 _INTERJECTION: Final = re.compile(r"^(?:no|nope|wait|ok|okay|아니|아니야|잠깐|야)(?:\s*[,!.]+\s*|\s+)(?=\S)")
 # What the skill is, in Japanese and Chinese, which `asks_after_the_name` does not read.
@@ -307,11 +316,16 @@ def stops_the_run(rest: str, *, names: tuple[str, ...] = (), nouns: tuple[str, .
     if alone.match(first):
         return True
     words = first.split()
-    for cut in range(1, len(words)):
+    for cut in range(1, min(len(words), _KOREAN_STOP_WORDS_MAX + 1)):
+        if not _KOREAN_STOP_VERB_END.search(" ".join(words[max(0, cut - 2) : cut])):  # "그만 해줘"
+            continue
         stop, why = " ".join(words[:cut]), " ".join(words[cut:])
-        if _KOREAN_STOP_VERB_END.search(stop) and alone.match(stop):
+        if alone.match(stop):
             # Not a why that asks how or why, which asks about stopping ("취소해줘 왜 안 돼": `_asks_about_stopping`).
-            return not (asks_for_something(", " + why) or _KOREAN_WORK_WORD.search(why) or _KOREAN_HOW.search(why))
+            last = words[-1].rstrip(".!?~")
+            return (_predicate_like(last) or last.endswith(_KOREAN_CLAUSE_ENDINGS)) and not (
+                asks_for_something(", " + why) or _KOREAN_WORK_WORD.search(why) or _KOREAN_HOW.search(why)
+            )
     return False
 
 

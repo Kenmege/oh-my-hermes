@@ -16,7 +16,8 @@ to run it. It is answered instead only when the instruction is about the skill o
   "이 스킬 뭐야?"), or about dag-ulw ("/ulw-loop dag-ulw가 뭐야?"; a report on it, "/ulw-work dag-ulw is broken", is
   work). After a skill whose work is to explain or judge what the person points at (`MATERIAL_IS_THE_WORK`), a
   question about "this" or "it" is about that material, so only a question that names the skill is about the skill
-  ("/omh-code-review how is it?" reviews, "/omh-code-review what is omh-code-review?" is answered).
+  ("/omh-code-review how is it?" reviews, "/omh-code-review what is omh-code-review?" is answered). A question
+  about using the skill is about the skill after any skill ("/omh-code-review 어떻게 써?").
 
 Every other instruction runs the skill, a question with a task object included: "/omh-code-review is it safe to
 merge?", "/ulw-plan how should we migrate billing?", "/research is rust faster than go?", "/omh-app-debugging why did
@@ -45,7 +46,12 @@ from . import skill_shortlist as _skill_shortlist
 # The skills whose own work is answering how a run stands, so a status request after their sigil runs them:
 # `QUESTION_IS_THE_WORK` but app-debugging, whose work is diagnosing a failure and whose status questions are answered
 # (lead's ruling on #2221), and the ops command board, whose work is the operations status.
-STATUS_IS_THE_WORK: Final = (QUESTION_IS_THE_WORK - {"app-debugging"}) | {"ops-observability-card"}
+STATUS_IS_THE_WORK: Final = (QUESTION_IS_THE_WORK - {"app-debugging"}) | {
+    "ops-observability-card",
+    # The context budget's own work is how much of it is left ("/ulw-context how much context is left?").
+    "context",
+    "context-budget-review",
+}
 # The skill whose own work is the stop, so a stop after its sigil runs it, as on origin/main ("/omh-cancel stop").
 STOP_IS_THE_WORK: Final = frozenset({"cancel"})
 # The skills whose work is to explain or judge the material the person points at: after one of these, "what is it?"
@@ -55,19 +61,38 @@ MATERIAL_IS_THE_WORK: Final = frozenset({"code-review", "codebase-onboarding", "
 # The words for a skill's own run, by a word of its name or label: "/ulw-loop stop the loop", "/omh-plan stop
 # planning", "/omh-app-debugging stop the investigation", "/ulw-work stop ultrawork". A word that names what the skill
 # works on is no run of it ("/omh-data-pipelines stop the pipelines" is work), so only these words count.
+# Korean, Japanese and Chinese forms ride along, and a Korean compound only where it names the skill itself ("코드
+# 리뷰"): "무한 루프 멈춰" stops an infinite loop in the code, which is work.
+_DEBUGGING: Final = ("debugging", "debug", "investigation", "디버깅", "デバッグ", "调试")
+_LEARNING: Final = ("learning", "학습")
 _RUN_WORDS: Final = {
-    "loop": ("loop", "looping", "루프"),
-    "review": ("review", "reviewing", "리뷰"),
-    "plan": ("plan", "planning", "계획", "플랜"),
-    "interview": ("interview", "interviewing", "인터뷰"),
-    "debugging": ("debugging", "debug", "investigation", "디버깅"),
-    "debug": ("debugging", "debug", "investigation", "디버깅"),
+    "loop": ("loop", "looping", "루프", "ループ", "循环"),
+    "review": ("review", "reviewing", "리뷰", "코드 리뷰", "코드리뷰", "レビュー", "审查"),
+    "plan": ("plan", "planning", "계획", "플랜", "計画", "プラン", "计划"),
+    "interview": ("interview", "interviewing", "인터뷰", "インタビュー", "访谈"),
+    "debugging": _DEBUGGING,
+    "debug": _DEBUGGING,
     "work": ("work", "working"),
     "ulw": ("ulw", "ultrawork"),
     "ultrawork": ("ultrawork", "ulw"),
+    "research": ("research", "researching", "리서치", "조사", "リサーチ", "调研"),
+    "audit": ("audit", "auditing", "감사", "監査", "审计"),
+    "qa": ("qa",),
+    "analysis": ("analysis", "analyzing", "분석", "分析"),
+    "triage": ("triage", "triaging", "트리아지"),
+    "onboarding": ("onboarding", "tour", "온보딩", "투어"),
+    "learning": _LEARNING,
+    "learn": _LEARNING,
 }
-# The skill named as "this skill" or "이 스킬", which a question about the skill reads as "it".
-_THE_SKILL: Final = re.compile(r"\b(?:(?:this|the|that|your)\s+)?skill\b|(?:(?:이|그|저)\s*)?스킬")
+# The skill named as "this skill" or "이 스킬", which a question about the skill reads as "it". A skill with no
+# determiner, or with "a", is any skill ("/omh-docs what is a skill?", "스킬이 뭐야?").
+_THE_SKILL: Final = re.compile(r"\b(?:this|the|that|your)\s+skill\b|(?:이|그|저)\s*스킬")
+# A question about using the skill, which is about the skill after any skill ("/omh-code-review 어떻게 써?").
+_USAGE: Final = re.compile(
+    r"^(?:how\s+(?:do|can|should)\s+(?:i|we)\s+use\s+(?:it|this)|how\s+to\s+use\s+(?:it|this)"
+    r"|(?:이거\s*)?어떻게\s*(?:써|쓰는\s*거야|사용해|사용하는\s*거야)|사용법(?:\s*알려\s*줘)?"
+    r"|使い方(?:は)?|どうやって使う(?:の)?|怎么用)\s*[?？。]*$"
+)
 
 STOP: Final = "stop"
 STATUS: Final = "status"
@@ -95,7 +120,10 @@ def _names_as_it(folded: str, names: tuple[str, ...]) -> str:
     skill by name reads as one about it ("what is omh-code-review?" as "what is it?")."""
     it = "이거" if re.search(r"[가-힣]", folded) else "it"
     for written in sorted(names, key=len, reverse=True):
-        folded = re.sub(rf"(?<![a-z0-9_-]){re.escape(written)}(?![a-z0-9_-])", it, folded)
+        # After an article the word names a thing, not the skill ("what does the frontend do?", "the research").
+        folded = re.sub(
+            rf"(?<![a-z0-9_-])(?<!\bthe )(?<!\ban )(?<!\ba ){re.escape(written)}(?![a-z0-9_-])", it, folded
+        )
     return _THE_SKILL.sub(it, folded)
 
 
@@ -108,6 +136,8 @@ def invoked_instruction(name: str, rest: str) -> str:
     if asks_how_the_run_stands(rest):
         return "" if name in STATUS_IS_THE_WORK else STATUS
     folded = unicodedata.normalize("NFKC", rest).casefold().strip(" ,:")
+    if _USAGE.match(folded):
+        return META
     named = _names_as_it(folded, names)
     if named != folded and asks_after_the_name(named, run_state=False):
         return META  # "what is omh-code-review?", "what does this skill do?", "이 스킬 뭐야?"

@@ -37,8 +37,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # five: four Japanese or Chinese stops or questions, and a status
         # request after /dag-ulw in Hermes' scaffold (+5). A stop of the
         # invoked skill's own run, a Korean stop said with why, a Chinese bare
-        # stop and a question that names the skill add five (+5).
-        self.assertEqual(payload["summary"]["case_count"], 1023)
+        # stop and a question that names the skill add five (+5), and stops
+        # of more run words, in Japanese and as a Korean compound, and a
+        # question about using the skill four more (+4).
+        self.assertEqual(payload["summary"]["case_count"], 1027)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -101,8 +103,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # a Japanese and a Chinese question about the skill, and a status
         # request in Hermes' scaffold after /dag-ulw (+4). Five stops of the
         # invoked skill's own run or questions that name it are answered
-        # directly (+5).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 324)
+        # directly (+5), and so are four more own-run stops and a question
+        # about using the skill (+4).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 328)
         # show-reel's README-link control is answered as a file lookup (+1).
         self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
@@ -122,8 +125,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # work they are (+13). Two stops of something other than the skill's
         # own run, a stop after the cancel skill, and four this/it questions
         # after a skill that explains or judges what the person points at run
-        # their skill (+7).
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1024)
+        # their skill (+7). Five questions about "a skill" or a name after
+        # an article, a Korean stop verb before its object, and an own-run
+        # word inside a domain noun run their skill (+7).
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1031)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )
