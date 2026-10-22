@@ -30,6 +30,18 @@ All notable changes will be documented here.
   as Hermes' own TUI shows it, and commands that print output keep their
   echo. The same line sent twice still shows twice and is sent twice.
 
+- **A skill command sent over a picked rewind replaces the picked prompt.**
+  With a rewind picked (Esc Esc or `/rewind`), a line starting with `/` ran
+  as a command. A skill's prompt then went as a plain `prompt.submit` without
+  `truncate_before_row_id`, so Hermes kept the prompt you meant to replace and
+  everything after it, and the rewind stayed picked for the next prompt. A
+  prompt a command sends (a skill, `/plan`) now goes in the picked prompt's
+  place, as a typed prompt does: the session is cut there, the screen is
+  redrawn from the cut, and the rewind clears. A command that only prints
+  (`/help`, `/usage`) runs and leaves the rewind picked. A rewind cancelled
+  before Hermes builds the command's prompt, or picked after the command went,
+  cuts nothing.
+
 ## 4.0.1 - 2026-10-22
 
 - **`omh doctor`'s real-loader probe can observe a load on Windows, and on the

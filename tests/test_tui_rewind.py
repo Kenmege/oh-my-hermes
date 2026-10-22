@@ -7,6 +7,8 @@ the composer, and sending it sends `prompt.submit` with
 `truncate_before_row_id` and `confirm_truncate`, so Hermes drops that prompt
 and everything after it, and the screen is redrawn from the cut. Answers are
 the recorded Hermes 6c61c3e27d frames in `tests/fixtures/tui_gateway/parity.jsonl`.
+A command sent over a picked rewind that sends a prompt (a skill) sends it in
+the picked prompt's place; one that only prints leaves the rewind picked.
 """
 
 from __future__ import annotations
@@ -14,14 +16,15 @@ from __future__ import annotations
 import unittest
 
 from _tui_lines import line_text, lines_text
+from test_tui_command_output import SKILL_LINE, SKILL_REFUSAL, SKILL_TURN
 from test_tui_gateway_contract import recorded_rows
-from test_tui_modes import SID, answer, make_app, notices, type_text
+from test_tui_modes import PLAN_PROMPT, SID, answer, make_app, notices, type_text
 from omh.tui.app import DOUBLE_ESCAPE_SECONDS, App
 from omh.tui.gateway import Event, Response
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, Key
 from omh.tui.rewind_picker import CLOSE, PICK, RewindPicker, rewind_rows
 from omh.tui.theme import DEFAULT_THEME
-from omh.tui.transcript import NOTICE_WARN, AssistantBlock, UserBlock
+from omh.tui.transcript import NOTICE_WARN, AssistantBlock, CommandBlock, NoticeBlock, UserBlock
 
 
 def recorded_result(segment: str) -> dict:
@@ -164,15 +167,20 @@ class DoubleEscapeTests(unittest.TestCase):
         self.assertEqual(client.calls, [("session.interrupt", {"session_id": SID})])
 
 
+def picked(row: int = 0) -> tuple[App, object]:
+    """An app with the prompt `row` places from the newest picked to rewind to, back in the composer."""
+    app, client = make_app()
+    app._rewind("")
+    answer(app, client, HISTORY)
+    for _ in range(row):
+        app._on_input(Key(DOWN))
+    app._on_input(Key(ENTER))
+    return app, client
+
+
 class RewindTests(unittest.TestCase):
     def picked(self, row: int = 0) -> tuple[App, object]:
-        app, client = make_app()
-        app._rewind("")
-        answer(app, client, HISTORY)
-        for _ in range(row):
-            app._on_input(Key(DOWN))
-        app._on_input(Key(ENTER))
-        return app, client
+        return picked(row)
 
     def test_the_picked_prompt_comes_back_into_the_composer_to_edit(self) -> None:
         app, _client = self.picked()
@@ -355,6 +363,109 @@ class RewindTests(unittest.TestCase):
         answer(app, client, {"count": 0, "messages": []})
         self.assertIsNone(app.rewind_picker)
         self.assertIn("No prompt to rewind to", notices(app)[-1])
+
+
+class RewindCommandTests(unittest.TestCase):
+    """A slash command sent with a rewind picked: the prompt it sends replaces the picked one; the rest leave it picked."""
+
+    def send(self, app: App, line: str) -> int:
+        """Send `line` from the composer in place of the picked prompt's text; the number of calls made before it."""
+        app._set_composer("")
+        calls = len(app.client.calls)  # type: ignore[attr-defined]
+        type_text(app, line)
+        app._on_input(Key(ENTER))
+        return calls
+
+    def users(self, app: App) -> list[str]:
+        return [block.text for block in app.transcript.blocks if isinstance(block, UserBlock)]
+
+    def test_a_skill_command_sends_its_prompt_in_the_picked_ones_place_and_clears_the_rewind(self) -> None:
+        app, client = picked()
+        start = self.send(app, SKILL_LINE)
+        answer(app, client, error=SKILL_REFUSAL)
+        answer(app, client, SKILL_TURN)
+        self.assertEqual([method for method, _params in client.calls[start:]], ["slash.exec", "command.dispatch", "prompt.submit"])
+        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": SKILL_TURN["message"],
+                                                              "truncate_before_row_id": 7, "confirm_truncate": True}))
+        self.assertIsNone(app.rewind)
+        self.assertEqual(self.users(app), [TODO_PROMPT, SKILL_LINE])  # redrawn from the cut, the skill's one row
+        self.assertFalse([block for block in app.transcript.blocks if isinstance(block, CommandBlock)])
+        self.assertNotIn("rewind", line_text(app._info_line(100)))
+
+    def test_a_built_in_command_that_sends_a_prompt_sends_it_in_the_picked_ones_place(self) -> None:
+        app, client = picked()
+        self.send(app, "/plan fix the flaky test")
+        answer(app, client, error={"code": 4018, "message": "pending-input command"})
+        answer(app, client, {"type": "send", "message": PLAN_PROMPT})
+        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": PLAN_PROMPT,
+                                                              "truncate_before_row_id": 7, "confirm_truncate": True}))
+        self.assertIsNone(app.rewind)
+        self.assertEqual(self.users(app), [TODO_PROMPT, PLAN_PROMPT])  # what Hermes stores, as a resumed session shows
+
+    def test_what_the_dispatch_says_goes_under_the_new_row_after_the_cut(self) -> None:
+        notice = "⚡ Loading 2 stacked skills: dag-ulw, review"
+        app, client = picked()
+        self.send(app, "/dag-ulw /review fix it")
+        answer(app, client, error=SKILL_REFUSAL)
+        answer(app, client, {**SKILL_TURN, "notice": notice, "display": "/dag-ulw /review fix it"})
+        self.assertEqual(client.calls[-1][1]["truncate_before_row_id"], 7)
+        row, said = [block for block in app.transcript.blocks if isinstance(block, (UserBlock, NoticeBlock))][-2:]
+        self.assertEqual((row.text, said.text), ("/dag-ulw /review fix it", notice))
+
+    def test_a_skill_reached_through_an_alias_still_replaces_the_picked_prompt(self) -> None:
+        app, client = picked()
+        self.send(app, "/ulw check every upstream pr")
+        answer(app, client, {"type": "alias", "target": "dag-ulw"})
+        self.assertEqual(client.calls[-1], ("slash.exec", {"command": "dag-ulw check every upstream pr", "session_id": SID}))
+        answer(app, client, error=SKILL_REFUSAL)
+        answer(app, client, SKILL_TURN)
+        self.assertEqual(client.calls[-1][1].get("truncate_before_row_id"), 7)
+        self.assertIsNone(app.rewind)
+
+    def test_a_command_that_only_prints_runs_and_leaves_the_rewind_picked(self) -> None:
+        for line in ("/help", "/usage"):
+            with self.subTest(command=line):
+                app, client = picked()
+                start = self.send(app, line)
+                if len(client.calls) > start:
+                    answer(app, client, {"output": "Session cost: $0.01"})
+                self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
+                self.assertIsNotNone(app.rewind)
+                self.assertIn("rewind", line_text(app._info_line(100)))
+                self.send(app, "an edited prompt")  # the rewind still goes with the next prompt
+                self.assertEqual(client.calls[-1][1].get("truncate_before_row_id"), 7)
+                self.assertIsNone(app.rewind)
+
+    def test_a_rewind_cancelled_while_the_dispatch_is_out_cuts_nothing(self) -> None:
+        app, client = picked()
+        self.send(app, SKILL_LINE)
+        answer(app, client, error=SKILL_REFUSAL)
+        esc(app)  # Esc cancels the picked rewind before Hermes builds the skill's prompt
+        answer(app, client, SKILL_TURN)
+        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": SKILL_TURN["message"]}))
+
+    def test_a_rewind_picked_after_the_command_went_is_not_its(self) -> None:
+        app, client = make_app(rows=40)
+        type_text(app, SKILL_LINE)
+        app._on_input(Key(ENTER))
+        answer(app, client, error=SKILL_REFUSAL)
+        app._rewind("")
+        answer(app, client, HISTORY)
+        app._on_input(Key(ENTER))  # picked while the skill's dispatch is out
+        app._on_response(Response(2, SKILL_TURN, None))
+        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": SKILL_TURN["message"]}))
+        self.assertIsNotNone(app.rewind)
+
+    def test_a_turn_started_before_hermes_answered_gives_the_command_back_and_cuts_nothing(self) -> None:
+        app, client = picked()
+        self.send(app, SKILL_LINE)
+        answer(app, client, error=SKILL_REFUSAL)
+        app.turn_pending = True  # a turn started between the send and Hermes' answer
+        answer(app, client, SKILL_TURN)
+        self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
+        self.assertEqual(app.composer.text, SKILL_LINE)  # what was typed, not the skill body Hermes built
+        self.assertIn("between turns", notices(app, NOTICE_WARN)[-1])
+        self.assertIsNone(app.rewind)
 
 
 class DocumentedRewindTests(unittest.TestCase):

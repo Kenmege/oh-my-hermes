@@ -2685,24 +2685,26 @@ class App(ModesMixin, AgentViewMixin):
             return
         self._route_slash(SlashInvocation("export", arg, None), 0)
 
-    def _send_rewind(self, text: str, shown: str = "") -> None:
+    def _send_rewind(self, text: str, shown: str = "", typed: str = "", notice: str = "") -> None:
         """Send `text` in place of the picked prompt: Hermes drops it and what came after, and the screen restarts there.
 
         The transcript is rebuilt from the history above the cut (as a resumed
         session's is drawn), the new prompt goes as `prompt.submit` with
         `truncate_before_row_id` and `confirm_truncate`, and the screen is
         redrawn. Plan mode does not wrap it: a truncation is a `prompt.submit`.
+        For a prompt a command sent, `typed` is the command, which a refusal
+        to send gives back, and `notice` what it said, under the new row.
         """
         rewind, self.rewind = self.rewind, None
         if rewind is None:
             return
         if self._busy():  # a turn started meanwhile: the row it names may be gone by its end
             self.transcript.add_notice(REWIND_BUSY_NOTICE, NOTICE_WARN)
-            self._set_composer(text)
+            self._set_composer(typed or text)
             return
         kept = self.transcript  # the screen before the cut, put back if Hermes refuses it
         self._restart_transcript(list(rewind.before))
-        self._submit_prompt(text, shown, truncate=rewind.row_id, before_cut=kept)
+        self._submit_prompt(text, shown, truncate=rewind.row_id, before_cut=kept, notice=notice)
         self._full_redraw()
 
     def _restart_transcript(self, messages: list[dict[str, Any]]) -> None:
@@ -2909,7 +2911,8 @@ class App(ModesMixin, AgentViewMixin):
             sent = parse_slash(text)
             if sent is None or sent.name != invocation.name:
                 sent = invocation
-            self._run_slash(sent, echo=f"/{invocation.text}")  # a picked rewind or agent stays picked under a command
+            # A picked rewind or agent stays picked under a command; a prompt the command sends replaces the rewind's.
+            self._run_slash(replace(sent, rewound=self.rewind is not None), echo=f"/{invocation.text}")
         elif self.agent_steer is not None:
             self._steer_agent(text)
         elif self.rewind is not None:
@@ -3326,7 +3329,7 @@ class App(ModesMixin, AgentViewMixin):
             target = as_text(result.get("target")).lstrip("/")
             aliased = parse_slash(f"/{target} {invocation.arg}") if target and depth == 0 else None
             if aliased is not None:
-                self._run_slash(aliased, depth + 1)
+                self._run_slash(replace(aliased, rewound=invocation.rewound), depth + 1)
             else:
                 self.transcript.add_notice(f"/{invocation.name}: the alias did not resolve.", NOTICE_WARN)
             return
@@ -3336,13 +3339,18 @@ class App(ModesMixin, AgentViewMixin):
         sends = kind in ("send", "skill") and bool(message.strip())
         shows_command = kind == "skill" or bool(display)  # a built-in's bare send (/plan, /retry) shows what it sends
         echo = self.transcript.withdraw_command() if sends and shows_command and self.sid else None
-        if echo is not None:
+        rewinds = sends and invocation.rewound and self.rewind is not None
+        if echo is not None or rewinds:
             # One row for the skill the person ran: the prompt's, with Hermes' `display` for it (`/name arg`) or else
             # the echo's text, never the skill body sent; the dispatch's notice goes under it. The prompt is then the
-            # person's, as a typed one is: its call is not the echo's.
+            # person's, as a typed one is: its call is not the echo's. Sent with a rewind picked, it goes in place
+            # of the picked prompt, as a typed one then does, and the screen restarts at the cut with it.
             with self._for_command(None):
-                shown = display or echo.command
-                self._send_prompt(message, shown, typed=invocation.typed, hold=invocation.held, notice=notice)
+                shown = display or (echo.command if echo is not None else invocation.shown)
+                if rewinds:
+                    self._send_rewind(message, shown, typed=invocation.typed, notice=notice)
+                else:
+                    self._send_prompt(message, shown, typed=invocation.typed, hold=invocation.held, notice=notice)
             return
         if notice:
             self.transcript.add_notice(notice)
