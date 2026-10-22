@@ -158,6 +158,31 @@ never fabricated participants. Domain contracts and portable references are
 shared with the catalog; Hermes-coupled references are not shipped. Progressive
 specialist contracts are inlined, retaining their portable procedure references.
 
+### Code-review return compatibility
+
+Both distributions ship optional finding-validation, architecture-delta, and
+risk-selection references. Load them for candidate confirmation, changed
+contracts/dependencies or extraction proposals, and risk-based inspection depth;
+selection is not dispatch authority or evidence a check ran. The extraction
+rubric is also reachable from the existing structure lens and smell baseline.
+
+The review return now requires `spec_axis`, `could_not_assess`, and
+`verification_gaps`. The spec object is either `assessed` with non-empty
+claim/requirements/verdict/evidence rows, or `not_assessed` with a reason.
+The two arrays may be empty. Gap rows carry `path`, `line_range`, and `evidence`
+without `priority`, `confidence`, or `severity`; ordinary findings retain their
+ranked contract. A `ship` still requires non-empty checked-clean coverage. Consumers
+of old optional fields or string spec results must update before using the
+stricter contract; useful extra annotations remain allowed.
+
+Schema checks reject blank evidence and malformed positive line syntax, not
+invented files, inverted/out-of-bounds ranges, unread code, or false claims.
+Native same-turn schema records and later completion-message manual checks
+remain distinct. These instructions and shape fixtures do not measure live
+Hermes/host compliance, semantic accuracy, detection rates, false positives, or
+review cost; no runtime validator, new tool, dependency, or automatic execution
+was added.
+
 ### When a replaced catalog section moves
 
 A definition's `portable_overrides` entry **replaces** that catalog section in
