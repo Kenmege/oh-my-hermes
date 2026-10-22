@@ -171,7 +171,16 @@ from . import dag_block
 from .panels import HudPoller, HudSnapshot, dag_page_lines, hud_chips, panel_lines, plan_state, plan_text
 from .dag_pager import DagPager
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
-from .screen import CARRIAGE_RETURN, CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion, cursor_up
+from .screen import (
+    CARRIAGE_RETURN,
+    CLEAR_SCREEN_AND_SCROLLBACK,
+    CURSOR_HOME,
+    ERASE_SCROLLBACK,
+    HIDE_CURSOR,
+    SHOW_CURSOR,
+    LiveRegion,
+    cursor_up,
+)
 from .session_picker import KEYS as SESSION_PICKER_KEYS
 from .session_picker import PICK, SessionPicker, session_rows
 from .rewind_picker import KEYS as REWIND_PICKER_KEYS
@@ -1445,7 +1454,7 @@ class App(ModesMixin, AgentViewMixin):
         self.theme = build_theme(self._skin(), self._surface())
 
     def clear_launch_screen(self, row: int | None) -> None:
-        """Push the rows above the cursor into the terminal's scrollback and start the region on the screen's top row.
+        """Push the rows above the cursor off the screen, erase the scrollback, and start the region on the top row.
 
         From the cursor's row, `rows - 1` line feeds reach the screen's last
         row and then scroll exactly the rows above the cursor off the top, into
@@ -1453,14 +1462,19 @@ class App(ModesMixin, AgentViewMixin):
         cursor back to the top row, which is where the first frame starts (the
         row the cursor was on is erased by that frame, as at any launch). With
         `row` 1 (the launch's cursor position report put the cursor on the top
-        row) nothing is above it, and nothing is written. Nothing is erased:
-        what the screen showed stays one scroll up.
+        row) nothing is above it, and nothing is pushed. Then ED 3 erases the
+        scrollback, those rows and the shell's older output with them, so
+        scrolling up stops at the session's top row (the owner, 2026-10-22),
+        as it does after a full redraw (`_full_redraw`) and at the start of
+        Hermes' own TUI in its default alternate-screen mode (its main-screen
+        native mode, `display.tui_native`, writes only a line feed). A
+        terminal that ignores ED 3 keeps them one scroll up.
         """
         rows = self.size[1]
         if rows < 2 or self.region.height:
             return
-        if row != 1:
-            self.terminal.write("\n" * (rows - 1) + cursor_up(rows - 1) + CARRIAGE_RETURN)
+        push = "" if row == 1 else "\n" * (rows - 1) + cursor_up(rows - 1) + CARRIAGE_RETURN
+        self.terminal.write(push + ERASE_SCROLLBACK)
         self.region = LiveRegion(self.terminal.write, at_top=True)
 
     def adopt_cursor_row(self, row: int | None) -> None:
@@ -4500,7 +4514,8 @@ def _run(
         with terminal:
             background, typed, row = terminal.query_background()
             app.adopt_background(background, environ)
-            app.clear_launch_screen(row)  # started: the shell's rows and the launcher's warnings go one scroll up
+            # Started: the shell's rows and the launcher's warnings are pushed off the screen and erased with the scrollback.
+            app.clear_launch_screen(row)
             code = app.run(typed)
     finally:
         if app.client is not client:  # a gateway spawned after a crash; the caller reaps the first one

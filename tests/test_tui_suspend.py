@@ -21,6 +21,7 @@ from test_tui_modes import drawn, make_app, type_text
 from omh.tui import app as app_module
 from omh.tui import terminal as terminal_module
 from omh.tui.keys import CHAR, DOWN, Key
+from omh.tui.screen import CLEAR_SCREEN_AND_SCROLLBACK, ERASE_SCROLLBACK
 from omh.tui.terminal import BRACKETED_PASTE_ON, RESTORE_SEQUENCE, Terminal
 
 CTRL_Z = Key(CHAR, "z", ctrl=True)
@@ -59,6 +60,29 @@ class AppSuspendTests(unittest.TestCase):
         drawn(app)
         self.assertEqual(app.region.last_row(24), 23)  # certain from the first frame after: pinned
         self.assertEqual(app.composer.text, "a draftbx")  # in the order typed: the read's key, then the query's
+
+    def test_continued_it_erases_nothing_so_what_the_shell_printed_stays_one_scroll_up(self) -> None:
+        # Only the launch erases the scrollback (`clear_launch_screen`). A job continued after a stop draws under what
+        # the shell printed while it was stopped and erases nothing, so that output stays readable above the session.
+        app, _client = make_app(rows=24, cols=80)
+        terminal = app.terminal
+        drawn(app)
+        written = len(terminal.writes)  # type: ignore[attr-defined]
+        real = terminal.suspend
+
+        def suspend() -> bool:
+            stopped = "".join(f"$ while stopped {n}\r\n" for n in range(30))
+            terminal.screen.feed(stopped)  # type: ignore[attr-defined]  # the person's shell, until `fg`
+            return real()
+
+        terminal.suspend = suspend  # type: ignore[method-assign]
+        terminal.cursor_row = 24  # type: ignore[attr-defined]
+        app._on_input(CTRL_Z)
+        drawn(app)
+        after = "".join(terminal.writes[written:])  # type: ignore[attr-defined]
+        self.assertNotIn(ERASE_SCROLLBACK, after)
+        self.assertNotIn(CLEAR_SCREEN_AND_SCROLLBACK, after)
+        self.assertIn("$ while stopped 0", terminal.screen.scrollback)  # type: ignore[attr-defined]
 
     def test_the_shells_title_is_back_while_the_job_is_stopped_and_ours_after(self) -> None:
         app, _client = make_app()

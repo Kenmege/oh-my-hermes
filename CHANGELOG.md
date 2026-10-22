@@ -14,6 +14,22 @@ All notable changes will be documented here.
   coding control plane share the same stdlib-only calibration definitions and
   resolver; protocol text, goals, and existing calibration wording are unchanged.
   The section reaches newly built prompts, not already frozen resumed prompts.
+- **Scrolling up in the OMH TUI stops at the top of the session.** The
+  launch scrolled your shell's rows and the launcher's warnings into the
+  terminal's scrollback and kept them there, so the wheel walked from the
+  TUI's logo straight into the shell history from before `omh` started; in
+  Terminal.app all 80 rows of a test shell history were still above the
+  session. The launch now erases the scrollback (ED 3) right after that
+  push, as every full redraw (a resize, Ctrl+L, `/redraw`, `/theme`, a
+  session switch, a rewind) already does and as Hermes' own TUI does in its
+  default alternate-screen mode, and the same run measured 0 of them. The
+  TUI still runs on the main screen, so scrolling, selecting and copying
+  stay your terminal's own, and when you quit the session stays above your
+  shell's prompt, as any output does. A terminal that ignores ED 3 keeps the
+  earlier rows one scroll up, as before. A default iTerm2 asks once whether
+  a control sequence may clear the scrollback and keeps it until you choose
+  Always Allow (a resize or Ctrl+L could already ask the same), and inside
+  tmux ED 3 clears that pane's history, as `tmux clear-history` does.
 
 - **A skill command typed once in the OMH TUI shows as one input row.**
   `/dag-ulw <request>` printed `> /dag-ulw <request>` twice: the command's
