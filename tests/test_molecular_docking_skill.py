@@ -178,6 +178,26 @@ class PrerequisiteTests(unittest.TestCase):
             self.assertEqual(sentinel.read_text(), "unchanged")
             self.assertEqual((receptor.read_bytes(), ligand.read_bytes()), original)
 
+    def test_receptor_and_ligand_must_be_different_files_however_spelled(self):
+        helper = load_helper()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receptor, ligand = self.inputs(root)
+            (root / "sub").mkdir()
+            hard_link = root / "hard-link.pdbqt"
+            os.link(receptor, hard_link)
+            for same in (receptor, root / "sub" / ".." / receptor.name, hard_link):
+                stderr = io.StringIO()
+                with self.subTest(ligand=same), contextlib.redirect_stderr(stderr):
+                    self.assertEqual(helper.main(self.argv(receptor, same, root / "refused") + ["--validate-only"]), 2)
+                    self.assertIn("receptor and ligand must be different files", stderr.getvalue())
+            self.assertFalse((root / "refused").exists())
+            missing = root / "missing.pdbqt"
+            self.assertTrue(helper.same_file(missing, root / "sub" / ".." / missing.name))
+            self.assertFalse(helper.same_file(missing, receptor))
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(helper.main(self.argv(receptor, ligand, root / "validated") + ["--validate-only"]), 0)
+
     def test_only_macos_system_aliases_are_trusted(self):
         helper = load_helper()
         with tempfile.TemporaryDirectory() as directory:
