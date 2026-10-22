@@ -157,13 +157,12 @@ class ResearchCitationLedgerTests(unittest.TestCase):
                     self.hermes[name],
                 )
         self.assertIn(
-            "Only the parent's reset under First Steps touches that file, so an id names the same source in every "
-            "lane's findings",
+            "Use parent-only serialized writes: lanes return observed source entries and quote refs; "
+            "the parent registers URLs, attaches quotes, and remaps lane ids before drafting.",
             body,
         )
         self.assertIn(
-            "a delegated lane gets terminal, file, and web tools by default but cannot load the skill, so it works "
-            "from the two paths its brief carries.",
+            "Lanes never write the shared ledger.",
             body,
         )
 

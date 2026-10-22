@@ -294,6 +294,7 @@ class ConsumerPreservationTests(unittest.TestCase):
         receipt = _capture()
         before = temporal_source_receipt_fingerprint(receipt)
         briefing = build_research_briefing(
+            language="en",
             audience="coding_agent_handoff",
             question="What did the vendor pricing page say as of 2026-06-01?",
             as_of="2026-06-01",
@@ -325,6 +326,7 @@ class ConsumerPreservationTests(unittest.TestCase):
     def test_research_briefing_refuses_a_citation_that_contradicts_its_receipt(self) -> None:
         receipt = _capture()
         base = {
+            "language": "en",
             "audience": "coding_agent_handoff",
             "question": "q",
             "as_of": "2026-06-01",
