@@ -25,6 +25,18 @@ class ParseSlashTests(unittest.TestCase):
     def test_surrounding_whitespace_is_ignored(self) -> None:
         self.assertEqual(slash.parse_slash("  /history  ").command.name, "history")
 
+    def test_the_tuis_own_commands_and_aliases_resolve_in_any_case_and_keep_the_typed_name(self) -> None:
+        # Hermes matches a command whatever its case (slash.exec lowercases the name), so the TUI matches its own.
+        for text, name in (("/Rewind", "rewind"), ("/HELP", "help"), ("/EXIT", "quit"), ("/Detail on", "details"),
+                           ("/Cost", "cost")):
+            with self.subTest(text=text):
+                invocation = slash.parse_slash(text)
+                self.assertEqual(invocation.command.name, name)
+                self.assertEqual(invocation.name, text[1:].split()[0])  # the echo and Hermes get what was typed
+
+    def test_an_unknown_name_in_capitals_is_still_no_command_of_the_tuis(self) -> None:
+        self.assertIsNone(slash.parse_slash("/Foo bar").command)
+
 
 class RouteTableTests(unittest.TestCase):
     def test_names_and_aliases_are_unique_across_the_table(self) -> None:
@@ -104,6 +116,10 @@ class CompletionTests(unittest.TestCase):
         names = [c.name for c in slash.completions("mo", slash.catalog_pairs(self.CATALOG))]
         self.assertEqual(names, ["model", "moa", "omh-model"])
 
+    def test_a_prefix_in_any_case_offers_the_same_names(self) -> None:
+        names = [c.name for c in slash.completions("MO", slash.catalog_pairs(self.CATALOG))]
+        self.assertEqual(names, ["model", "moa", "omh-model"])
+
     def test_part_of_a_skill_name_finds_the_skill(self) -> None:
         # Every OMH skill is `omh-*` or `ulw-*`, so a prefix alone never reaches one by its own word.
         catalog = [("/omh-codebase-uml", "Draw UML from the code"), ("/ulw-umbrella", "Umbrella"), ("/uml-sketch", "x")]
@@ -134,6 +150,16 @@ class CatalogReaderTests(unittest.TestCase):
         }
         self.assertEqual(slash.catalog_categories(catalog), [("Session", ["/retry"]), ("Info", ["/whoami"])])
         self.assertEqual(slash.catalog_categories({"categories": "nope"}), [])
+
+    def test_a_catalog_name_is_the_same_name_in_any_case(self) -> None:
+        # A typed name resolves whatever its case, so a catalog row differing from a TUI command only in case is that
+        # command, and a catalog name with capitals is matched lowercased.
+        catalog = {"categories": [{"name": "Session", "pairs": [["/Model", "Hermes' model"], ["/retry", "Retry"]]}]}
+        self.assertEqual(slash.catalog_categories(catalog), [("Session", ["/retry"])])
+        names = [c.name for c in slash.completions("", [("/Rewind", "Hermes' rewind"), ("/My-Skill", "A skill")])]
+        self.assertEqual([name for name in names if name.lower() == "rewind"], ["rewind"])
+        known = slash.known_names([("/My-Skill", "A skill")])
+        self.assertEqual(slash.slash_token_ranges("/my-skill go", known), [(0, 9)])
 
     def test_the_skill_count_is_a_positive_integer_or_zero(self) -> None:
         for value, expected in ((144, 144), (0, 0), (-1, 0), (True, 0), ("3", 0), (None, 0)):

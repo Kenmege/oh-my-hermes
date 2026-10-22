@@ -184,6 +184,9 @@ def parse_slash(text: str) -> SlashInvocation | None:
 
     Only a leading `/` followed by a command name counts; `/` alone, `//x`,
     and a path like `/usr/bin` with a slash inside the name are ordinary text.
+    The TUI's own commands and their aliases resolve whatever their case, as
+    Hermes resolves its own (`/Rewind` is `/rewind`); `name` keeps the
+    spelling typed, for the echo and for what goes to Hermes.
     """
     stripped = text.strip()
     if not stripped.startswith("/") or stripped.startswith("//"):
@@ -191,7 +194,7 @@ def parse_slash(text: str) -> SlashInvocation | None:
     head, _, arg = stripped[1:].partition(" ")
     if not head or "/" in head:
         return None
-    return SlashInvocation(name=head, arg=arg.strip(), command=_BY_NAME.get(head))
+    return SlashInvocation(head, arg.strip(), _BY_NAME.get(head.lower()))
 
 
 def plan_invocation(text: str) -> SlashInvocation:
@@ -220,20 +223,23 @@ def completions(prefix: str, catalog_pairs: Iterable[tuple[str, str]] = ()) -> l
     In each group the TUI's own come first, then the gateway catalog, so
     `/uml` still finds `omh-codebase-uml` after every name that starts with
     it. Catalog entries the TUI routes to Hermes or drops are left out, so the
-    menu only offers what will run here.
+    menu only offers what will run here. Case is ignored, as a typed name's is.
     """
     local = [Completion(command.name, command.summary) for command in COMMANDS if command.route in (LOCAL, RENAMED)]
     seen = {completion.name for completion in local}
     gateway: list[Completion] = []
     for raw_name, summary in catalog_pairs:
         name = raw_name.lstrip("/")
-        if name in seen or name in _BY_NAME:
+        if name.lower() in seen or name.lower() in _BY_NAME:
             continue
-        seen.add(name)
+        seen.add(name.lower())
         gateway.append(Completion(name, summary))
     offered = local + gateway
-    leading = [completion for completion in offered if completion.name.startswith(prefix)]
-    inner = [completion for completion in offered if prefix in completion.name and not completion.name.startswith(prefix)]
+    key = prefix.lower()
+    leading = [completion for completion in offered if completion.name.lower().startswith(key)]
+    inner = [
+        completion for completion in offered if key in completion.name.lower() and not completion.name.lower().startswith(key)
+    ]
     return leading + inner
 
 
@@ -242,13 +248,18 @@ _SLASH_TOKEN = re.compile(r"(?<!\S)/([A-Za-z0-9][\w.:-]*)(?!\S)")
 
 
 def known_names(catalog_pairs: Iterable[tuple[str, str]] = ()) -> frozenset[str]:
-    """Every name a typed `/name` resolves to here: what completion offers, the TUI's commands and the catalog's."""
-    return frozenset(completion.name for completion in completions("", catalog_pairs))
+    """Every name a typed `/name` resolves to here: what completion offers, the TUI's commands and the catalog's.
+
+    Lowercased: a typed name is matched whatever its case, as Hermes matches
+    its commands and skills (`slash.exec` lowercases the name before it routes).
+    """
+    return frozenset(completion.name.lower() for completion in completions("", catalog_pairs))
 
 
 def slash_token_ranges(text: str, known: frozenset[str]) -> list[tuple[int, int]]:
-    """(start, end) of each `/name` token in `text` whose name is in `known`; an unknown `/foo` and a path are none."""
-    return [(found.start(), found.end()) for found in _SLASH_TOKEN.finditer(text) if found.group(1) in known]
+    """(start, end) of each `/name` token in `text` whose name, lowercased, is in `known`; an unknown `/foo` and a path
+    are none."""
+    return [(found.start(), found.end()) for found in _SLASH_TOKEN.finditer(text) if found.group(1).lower() in known]
 
 
 def slash_spans(
@@ -293,7 +304,7 @@ def catalog_categories(catalog: Mapping[str, object]) -> list[tuple[str, list[st
         names = [
             pair_name
             for pair_name, _summary in catalog_pairs(category)
-            if pair_name.lstrip("/") not in _BY_NAME
+            if pair_name.lstrip("/").lower() not in _BY_NAME
         ]
         if names:
             rows.append((name, names))

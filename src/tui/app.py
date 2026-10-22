@@ -2859,8 +2859,9 @@ class App(ModesMixin, AgentViewMixin):
         if entries:
             typed, invocation = self.composer.text[1:], parse_slash(self.composer.text)
             name = entries[min(self.menu_index, len(entries) - 1)].name
-            whole = typed in {entry.name for entry in entries} or (invocation is not None and invocation.command is not None)
-            if name == typed or (whole and self.menu_index == 0):
+            whole = typed.lower() in {entry.name.lower() for entry in entries}  # a name in any case, as it resolves
+            whole = whole or (invocation is not None and invocation.command is not None)
+            if name.lower() == typed.lower() or (whole and self.menu_index == 0):
                 return False
         else:
             word = at_token(self.composer.text, self.composer.caret)[1]

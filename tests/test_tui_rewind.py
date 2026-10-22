@@ -356,6 +356,14 @@ class RewindTests(unittest.TestCase):
         app._on_input(Key(ENTER))
         self.assertEqual(client.calls[calls], ("prompt.submit", {"session_id": SID, "text": "a plain prompt"}))
 
+    def test_rewind_typed_in_capitals_lists_the_prompts_too(self) -> None:
+        app, client = make_app()
+        type_text(app, "/Rewind")
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [("session.history", {"session_id": SID})])  # not Hermes' slash.exec
+        answer(app, client, HISTORY)
+        self.assertIsNotNone(app.rewind_picker)
+
     def test_rewind_waits_for_the_turn_to_end(self) -> None:
         app, client = make_app(busy=True)
         type_text(app, "/rewind")
