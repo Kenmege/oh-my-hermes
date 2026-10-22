@@ -163,7 +163,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # said now runs as a graph (+3). Every deploy and every push stay, and
         # each service with 마다 runs as a graph (+3).
         # Three unnamed science requests render dedicated computation cards.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1075)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1083)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )
