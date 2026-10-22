@@ -894,6 +894,9 @@ def _dag_nodes(
         }
         if unchecked:
             entry["handoff_checked"] = False
+        cycle = node.get("cycle")
+        if isinstance(cycle, int) and not isinstance(cycle, bool) and cycle > 0:
+            entry["cycle"] = cycle  # a repair node's repair cycle of the node it repairs (`dag_run.repair`)
         order += 1
         child = info["child"]
         if isinstance(child, Mapping):

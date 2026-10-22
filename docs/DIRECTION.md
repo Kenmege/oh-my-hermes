@@ -136,7 +136,9 @@ OMH is:
   is the rail and kind colours the owner picked on 2026-10-22 (a `┃` rail per
   transcript block with no fill, a call's state in its mark's glyph and colour
   as the dag view draws it, its name in its tool family's hue, the composer
-  between two full-width rules with no side edges)
+  between two full-width rules with no side edges); in a dag run the agent
+  view under the composer is a folding tree of the run's nodes, each with
+  what its child is doing now
 
 OMH is not:
 

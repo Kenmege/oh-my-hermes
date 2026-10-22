@@ -168,6 +168,7 @@ from .model_picker import KEYS as MODEL_PICKER_KEYS
 from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows
 from . import dag_block
+from .dag_tree import TreeState
 from .panels import HudPoller, HudSnapshot, dag_page_lines, hud_chips, panel_lines, plan_state, plan_text
 from .dag_pager import DagPager
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
@@ -1235,6 +1236,11 @@ class App(ModesMixin, AgentViewMixin):
         self.roster = Roster()  # the running turn's subagents
         self.list_selected: str | None = None  # the agent list's highlighted row while the list has the keys
         self.listed: tuple[str, ...] = ()  # the agent id of each list row as the agent view last drew them, top first
+        self.tree_selected: str | None = None  # the dag tree's highlighted row while the tree has the keys
+        self.tree_folds: dict[str, bool] = {}  # the dag tree's rows the person folded (False) or opened (True)
+        self.tree_run = ""  # the run those folds belong to (`dag_tree.run_key`); a new run, or session, starts none
+        self.tree_state: TreeState | None = None  # what the tree's keys need, as the agent view last drew it
+        self.tree_size = (0, 0)  # the width and the rows the agent view last drew the tree in
         self.log_agent = ""  # the agent whose log the pager shows; "" for every other pager
         self.tail_asked_at: float | None = None  # when the last `subagent.tail` went out
         self.tail_open = False  # that call has no answer yet
@@ -3548,6 +3554,7 @@ class App(ModesMixin, AgentViewMixin):
         self.goal = None
         self.retired_plan, self.plan_seen_open = "", False
         self._clear_roster()
+        self.tree_folds, self.tree_run = {}, ""  # a run of the same name in the next session starts unfolded
         self._adopt_session(result, fallback_stored)
         return declined
 
@@ -3963,6 +3970,7 @@ class App(ModesMixin, AgentViewMixin):
         snapshot = self.poller.take()
         if snapshot is not None and snapshot.session_id == self.stored_id:
             self.hud = snapshot
+            self._prune_kept_lanes()  # a run a new turn read as open may be over in this payload
             self.roster.ingest_tokens(snapshot.output_tokens)
             self.dirty = True
             self._retire_finished_plan()
@@ -4040,7 +4048,8 @@ class App(ModesMixin, AgentViewMixin):
             rows=rows,
             min_height=max(self.region.height - len(stable), 0) if pinned else 0,
             composer=None if self._composer_hidden() else self.composer,
-            composer_blank=self.list_selected is not None,  # the list under the info line has the keys
+            # the list, or the dag tree, under the info line has the keys
+            composer_blank=self.list_selected is not None or self.tree_selected is not None,
             info=self._info_line(cols),
             tail=self._tail(cols),
             slot=self._slot_lines(cols, rows),
@@ -4085,7 +4094,7 @@ class App(ModesMixin, AgentViewMixin):
         self.frame_budget = frame.budget
         if busy:
             self.view_hold = (wanted, frame.budget.agents, self._working_rows())
-        self._take_clickable(frame.budget, self.listed)
+        self._take_clickable(frame.budget, self._clickable_rows())
 
     def _place_menu(self, rows: int, flushed: int, frame: Frame) -> bool:
         """Where the open completion menu goes with `frame`; True when that changed, so the frame is built again.
@@ -4126,7 +4135,7 @@ class App(ModesMixin, AgentViewMixin):
         """Whether the composer takes the keys for a prompt: no question, picker, search or agent list has them."""
         return (
             self.slot is None and self.picker is None and self.search is None and self.rewind_picker is None
-            and self.model_picker is None and self.list_selected is None
+            and self.model_picker is None and self.list_selected is None and self.tree_selected is None
         )
 
     def _composer_hidden(self) -> bool:
@@ -4166,6 +4175,8 @@ class App(ModesMixin, AgentViewMixin):
             say = picker_keys
         elif self.list_selected is not None:
             say, say_style = self._agent_list_say()
+        elif self.tree_selected is not None:
+            say, say_style = self._tree_say()
         elif steered is not None:
             say, say_style = tuple(form.format(name=steered.name) for form in STEER_SAY), self.theme.muted
         elif self.rewind is not None:
@@ -4181,7 +4192,8 @@ class App(ModesMixin, AgentViewMixin):
         room = cols - inset - chip_column(self._display_mode(), self.theme)
         if isinstance(say, tuple):
             room -= cell_width(LABEL_SEPARATOR + say[max(len(say) - 2, 0)])
-        chip = self._agent_chip(room) if self.list_selected is None or self.slot is not None else ()
+        listing = self.list_selected is not None or self.tree_selected is not None
+        chip = self._agent_chip(room) if not listing or self.slot is not None else ()
         line = info_line(
             mode=self._display_mode(),
             busy=self._busy(),

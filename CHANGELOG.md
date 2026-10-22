@@ -4,6 +4,36 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A dag run's view under the composer is a folding tree that says what each
+  child is doing (the owner's ask of 2026-10-22).** Each node is one header
+  row: a `▾`/`▸` fold triangle, its state glyph (the running spinner in the
+  running blue, a red `✗` once failed), its label in bold, and `category ·
+  model:effort · status · ↓tokens` at the right edge. Under an open node,
+  two `›` rows show its child's latest call
+  (`terminal(gh pr checkout 138300)`) and its latest other line: a thinking
+  line, Hermes' progress line (the tool names of its last five calls) or its
+  reply, whichever came last, never repeating the call above it. A repair
+  hangs under the node it repairs as `↻ repair N`, N its repair cycle (the
+  delegation graph now carries a repair node's `cycle`), so a second repair
+  reads `repair 2` after the first one's nodes leave the drawing. Running
+  and failed nodes open, and so does a node with one of them under it; done
+  and waiting ones stay shut, and a blank row sets each open layer apart.
+  The agents no node names close the tree as `other agents`. A run taller
+  than the view's third of the screen shuts its quiet layers, folds a busy
+  layer's quiet nodes into one `▸ N more` row, then shuts open nodes, before
+  a last row counts what is cut. Down gives the tree the keys: ↑↓ move, ←/→
+  and Space fold, and Enter, `x` and `s` open the highlighted node's child's
+  log, interrupt it and steer it as the agent list does. A new turn keeps
+  the open run's lanes, so their rows stay without waiting for the next
+  frame, and drops them on the first payload that shows the run over. When
+  rows run short, the shut all-done layers are cut before anything else, so
+  running and failed nodes keep the rows. A fold lasts as long as its run:
+  a new run, or another session, starts with none. A click on a tree row
+  highlights it, and on a node's row opens its agent's log. In a dag run
+  Down opens the agent list only when fewer than three rows are left for
+  the tree, and the info line's count leaves out a superseded repair
+  attempt's lane.
+
 - **The OMH TUI's transcript tells blocks, states and tools apart at a glance
   (the rail and kind colours the owner picked on 2026-10-22).** On v4.0.1 a
   tool's name, its arguments, its duration and its `⎿` results were all one

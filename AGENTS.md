@@ -270,7 +270,15 @@ PR without the chat history.
   the info line, always expanded while there are agents, as the owner asked
   on 2026-10-21; the list Down opens on its rows; one agent's log) read with
   `subagent.tail` only, the tail of the log
-  the person opened. Two keys in the agent list act on the highlighted
+  the person opened. In a dag run the agent view is a folding tree, as the
+  owner asked on 2026-10-22: a header row per node (a fold triangle, its
+  state glyph, its label, then category, model:effort, status and tokens),
+  under an open node its child's latest call and latest line (thinking,
+  Hermes' progress line or its reply), running and failed nodes open, layers
+  set apart by blank rows, folded to fit the view's cap before a count row
+  cuts it; Down gives the tree the keys (the arrows and Space fold), and a new
+  turn keeps the open run's lanes in the roster. Two keys in the agent list,
+  and in the tree on the highlighted node's child, act on that
   agent, and only on the person's keypress: `x` interrupts it
   (`subagent.interrupt`) once a second `x` confirms, and `s` steers it
   (`subagent.steer`) with text the person then types and sends; the TUI

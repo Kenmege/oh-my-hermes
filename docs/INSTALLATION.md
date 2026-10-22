@@ -487,23 +487,57 @@ run and approval decision stays Hermes'; the screen is OMH's.
   theirs and the rest are counted on its last row (`○ 3 done`, or `+4 more ·
   1 waiting · 3 done`); in two rows or fewer `● main` gives its row up
   first. While the conversation's delegation graph is a DAG run (a lane
-  waits on another, or a lane delegates), the view draws its tree instead
-  (`DAG · <name> · N nodes · …`, `◆ main`, one row per lane with its
-  category, model and state, and its output tokens where the row has room,
-  `+N more nodes` where they do not fit, the running lanes kept), and `/dag`
-  shows it with boxes. Once every lane has
+  waits on another, or a lane delegates), the view is the run's folding tree
+  instead: the graph's header (`DAG · <name> · N nodes · …`), a row per layer
+  (`▾ layer 2 · 4 nodes · 2 running`) with a blank row between two layers
+  when either is open, and a row per node: a `▾`/`▸` fold triangle where
+  something is under it, its state glyph (the spinner while it runs), its
+  label, and its category, model, state and output tokens at the right edge.
+  Under an open node two `›` rows say what its child is doing: its latest
+  call (`terminal(gh pr checkout 138300)`) and its latest other line, a
+  thinking line, Hermes' progress line (the names of its last five calls) or
+  its reply, whichever came last, never repeating the call above it. While
+  a child waits on its model, Hermes sends its spinner text (`(°ロ°)
+  pondering...`) as that child's thinking line, with nothing marking it as
+  such, and the tree shows it as sent. A
+  repair hangs under the node it repairs (`↻ repair 2 · …` in its second
+  repair cycle), and the agents no node names close the tree as `other
+  agents`. Running and failed nodes are open, and so is a node with one of
+  them under it; the rest are shut. A tree taller than its rows shuts its
+  quiet layers, then folds a busy layer's quiet nodes into one `▸ N more ·
+  …` row, then shuts open nodes from the bottom (one over a running repair
+  stays open). What still does not fit is cut: the shut all-done layers go
+  first, so running and failed nodes keep the rows, then the rows from the
+  bottom, and the last row counts what is cut (`… N more nodes · ↓ to
+  browse`). A new turn keeps the open run's agents, so the rows under its
+  nodes stay. Your folds last as long as the run: a new run, or another
+  session, starts with none. `/dag` shows the
+  graph with boxes. Once every lane has
   settled the tree is one line (`DAG · <name> · done 5/6 · 1 failed`).
+
+  ![A dag run's folding tree under the OMH TUI composer: layer 1's accepted inventory shut, layer 2's two running groups open with each child's latest call and line under it, the failed group 3 with its error and the repair running beneath it, group 4 ready, and the verification waiting in layer 3](../assets/omh-tui-dag-tree.png)
+
   With no live subagent the view shows the HUD's agents block (`● main │ 3
   agents · 1 running`, then its rows). On a terminal under 6 rows or 20
   columns there is no view, and the info line keeps the count. Down on an empty composer
   gives the view's rows the keys as a list you pick from, as from a picker:
   the composer's rows are drawn blank while it is open, so nothing on the
-  screen moves; the list scrolls when there are more agents than rows, and in
-  a DAG run it takes the tree's own rows (padded with blank rows, or
-  scrolled) until Esc brings the tree back; and
+  screen moves; the list scrolls when there are more agents than rows; and
   the info line says its keys (`↑↓ select
-  · ⏎ log · x interrupt · s steer · esc back`). Esc, Left, `q` or Ctrl+C closes it and
-  the composer comes back on its row as you left it; any other key does
+  · ⏎ log · x interrupt · s steer · esc back`). In a DAG run Down gives
+  the keys to the tree instead, on its first running node, the same way:
+  ↑↓ move over its rows, ← shuts the highlighted row (or, shut, goes to its
+  parent), → and Space open it (an `N more` row gives way to the nodes it
+  held), a fold you make stays, the rows scroll between `… N more nodes
+  above` and `below`, and Enter, `x` and `s` act on the highlighted node's
+  agent as they do in the list (`↑↓ select · ←/→ or space fold · ⏎ log · x
+  interrupt · s steer · esc back`); on a layer's row, or a node no agent ran
+  for, they do nothing. A click on a tree row highlights it, and on a node's
+  row opens its agent's log. With fewer than three rows for the tree, Down
+  opens the list instead. Esc, `q` or Ctrl+C closes the list or the tree,
+  and so does Left in the list (in the tree Left shuts a row or goes to its
+  parent, and never closes the tree); the composer comes back on its row as
+  you left it; any other key does
   nothing while the list is open, so nothing typed there lands in the
   composer. Enter, or a click on its row,
   opens that agent's log on the alternate screen (its thinking lines, tool
@@ -857,7 +891,7 @@ Esc closes it):
 | Ctrl+R | Searches the input history; Ctrl+R again finds an older match, Enter puts it in the composer, Esc leaves the composer as it was |
 | Ctrl+X | Opens the `/sessions` picker |
 | ↑ | On an empty composer with prompts queued, takes them back into the composer to edit; a queued shell line comes back on its own |
-| ↓ | On an empty composer while the agent view under the info line shows subagents, gives its rows the keys as the agent list |
+| ↓ | On an empty composer while the agent view under the info line shows subagents, gives its rows the keys as the agent list; in a DAG run, to its folding tree |
 | ← / → | Move by a character; with Ctrl or Alt, by a word (Alt+B and Alt+F too) |
 | Home / End, Ctrl+A / Ctrl+E | Go to the start or the end of the line |
 | Backspace / Delete | Delete a character, or a paste chip whole; Backspace on an empty composer removes the last attached image |

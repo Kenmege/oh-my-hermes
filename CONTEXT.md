@@ -346,8 +346,12 @@ recorded edges listed exactly under `Dependencies`, and a `Node details` card
 per running or stuck node and for `/dag`'s highlighted one; or a compact tree
 when no box fits or the edges loop; the tree nests a node a dag-ulw run added
 (a repair or an extend) under where it came from. The
-OMH TUI draws it as its tree in the agent view under the info line, and
-`/dag` opens the boxes full screen, live and keyboard-driven (highlight, fold,
+OMH TUI draws it in the agent view under the info line: a dag run as a
+folding tree (a header row per node, under an open one its child's latest
+call and latest line, running and failed nodes open, layers set apart by
+blank rows, folded to fit the view's cap before a count row cuts it; Down
+gives it the keys, and Enter, `x` and `s` act on a node's child as in the
+agent list), any other graph as its tree. `/dag` opens the boxes full screen, live and keyboard-driven (highlight, fold,
 details), sending nothing anywhere; `omh hud --graph` prints the boxes. A
 chat reply never carries the boxes: on Slack, Discord, Telegram, Mattermost
 and Matrix,

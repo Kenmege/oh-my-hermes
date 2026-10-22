@@ -166,6 +166,26 @@ class GraphTests(unittest.TestCase):
         self.assertIn(("d:export:verify", "d:export:fix2", "repair"),
                       {(edge["from"], edge["to"], edge["kind"]) for edge in graph["edges"]})
 
+    def test_a_repair_node_carries_the_repair_cycle_it_belongs_to(self) -> None:
+        # The second repair of `verify` (fix2, repairing fix, which repaired verify) is cycle 2 of verify; fix, the
+        # first cycle's node that was never accepted, leaves the drawing, so counting the repair edges would say 1.
+        with homes() as home:
+            defined(home)
+            for node in ("api", "ui"):
+                write_handoff(home, node)
+                call(action="settle", run="export", node=node, outcome="accepted")
+            call(action="settle", run="export", node="verify", outcome="failed")
+            call(action="repair", run="export", node="verify", nodes=[
+                {"id": "fix", "label": "Fix export", "category": "quick", "prompt": PROMPT}])
+            first = build_delegation_graph(home.omh, home.hermes, PARENT)
+            call(action="settle", run="export", node="fix", outcome="failed")
+            call(action="repair", run="export", node="fix", nodes=[
+                {"id": "fix2", "label": "Fix export again", "category": "quick", "prompt": PROMPT}])
+            second = build_delegation_graph(home.omh, home.hermes, PARENT)
+        self.assertEqual({node["id"]: node["cycle"] for node in first["nodes"] if "cycle" in node}, {"d:export:fix": 1})
+        self.assertEqual({node["id"]: node["cycle"] for node in second["nodes"] if "cycle" in node},
+                         {"d:export:fix2": 2})
+
     def test_added_nodes_hang_below_where_they_came_from(self) -> None:
         with homes() as home:
             defined(home)
