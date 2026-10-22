@@ -47,10 +47,13 @@ from . import skill_shortlist as _skill_shortlist
 # ("/omh-running-work-board status"). After any other skill a status request gets OMH's status card, a skill whose
 # work is diagnosing, triaging, auditing or ending a run included ("/omh-cancel 상태 보여줘", "/omh-app-debugging is it
 # running?"). Decided from each skill's description; `QUESTION_IS_THE_WORK` is the bare-name reading's, and wider.
+# doctor's own work is the install's health, which the status card does not show: on a drifted install the card says
+# "OMH setup gaps: 0" while doctor reports local_modifications and guidance_projection (#2221 L4), so "/omh-doctor
+# status" runs doctor.
 STATUS_IS_THE_WORK: Final = frozenset(
     {"running-work-board", "deploy-and-monitor", "verification-gate", "ops-observability-card",
      "live-incident-response", "context-budget-review", "harness-session-inventory", "skill-health", "run-efficiency",
-     "agent-ops-review"}
+     "agent-ops-review", "doctor"}
 )
 # The skill whose own work is the stop, so a stop after its sigil runs it, as on origin/main ("/omh-cancel stop").
 STOP_IS_THE_WORK: Final = frozenset({"cancel"})

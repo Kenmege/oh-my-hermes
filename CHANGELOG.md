@@ -4,6 +4,17 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`/omh-doctor status` runs doctor (#2221 L4).** After a slash skill, a
+  status question shows OMH's status card. The exception is a skill whose
+  own work is that status, and doctor is now one of them. The card counts
+  setup gaps but not install health: on an install whose managed skill
+  file had drifted, it read "OMH setup gaps: 0" while doctor reported
+  `local_modifications` and `guidance_projection`. A stop after
+  `/omh-doctor` is still a stop, a question about the skill is still
+  answered, and the bare `/omh-doctor` runs as before. Every skill in that
+  status-is-the-work set now has a routing case and a test that turns red
+  if it is dropped from the set.
+
 - **The route hint no longer starts dag-ulw on a split the router only asks
   about (#2232 follow-ups).** A split into parallel parts ("fan out across the
   services …", "split … into parallel lanes", "병렬로 나눠서 …") started a

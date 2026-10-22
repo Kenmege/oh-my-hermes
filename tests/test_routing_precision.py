@@ -168,7 +168,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # a casual imperative, an aimed change and a change in one clause run as
         # a graph (+5). A split with a past in an embedded question runs (+1).
         # Three unnamed science requests render dedicated computation cards.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1081)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1089)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )
