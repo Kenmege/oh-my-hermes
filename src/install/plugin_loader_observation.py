@@ -77,7 +77,9 @@ def observe_real_loader_registration(
             # Forward slashes, the way `omh setup` writes the setting: a
             # backslash path would need YAML escaping and reads differently to
             # the text scan the plugin's standalone lane uses.
-            binding = Path(str(omh_home)).as_posix()
+            # `Path.as_posix()` keeps backslashes on POSIX hosts, so spell the
+            # separator out rather than trusting the running platform.
+            binding = str(omh_home).replace("\\", "/")
             config_lines.extend(
                 [
                     "  entries:",
