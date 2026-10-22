@@ -1500,16 +1500,14 @@ class PlanModeTests(unittest.TestCase):
         shown = [block.text for block in app.transcript.blocks if isinstance(block, UserBlock)]
         self.assertEqual(shown, ["/plan fix the flaky test"])
 
-    def test_a_typed_slash_plan_in_normal_mode_shows_as_typed_and_sends_what_hermes_built(self) -> None:
+    def test_a_typed_slash_plan_in_normal_mode_keeps_showing_what_hermes_built(self) -> None:
         app, client = make_app()
         type_text(app, "/plan fix the flaky test")
         app._on_input(Key(ENTER))
         answer(app, client, error={"code": contract.NOT_MINE, "message": "pending-input command"})
         answer(app, client, {"type": "send", "message": PLAN_PROMPT})
-        self.assertEqual(client.calls[2], ("prompt.submit", {"session_id": SID, "text": PLAN_PROMPT}))
-        self.assertFalse([block for block in app.transcript.blocks if isinstance(block, CommandBlock)])
         shown = [block.text for block in app.transcript.blocks if isinstance(block, UserBlock)]
-        self.assertEqual(shown, ["/plan fix the flaky test"])  # one row, its prompt's; never the scaffold
+        self.assertEqual(shown, [PLAN_PROMPT])
 
     def test_normal_and_accept_send_the_prompt_as_typed(self) -> None:
         for mode in (MODE_NORMAL, MODE_ACCEPT):

@@ -1061,7 +1061,7 @@ class Transcript:
         if self.blocks and self.blocks[-1] is block:
             self.blocks.pop()
         else:
-            self._held.remove(block)
+            self._held = [held for held in self._held if held is not block]  # by identity: echoes of one line are equal
         self._version += 1
         return block
 

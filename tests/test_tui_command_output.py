@@ -245,15 +245,40 @@ class SkillCommandRowTests(unittest.TestCase):
         self.assertEqual(client.named("prompt.submit"), [])
         self.assertEqual([line.shown for line in app.queued], ["/dag-ulw /review fix it"])
         group = app.transcript.blocks[-1]
-        self.assertFalse(group.done)  # the notice waits under the running call instead of closing it
+        self.assertFalse(group.done)  # nothing closed the running call
         self.assertEqual(group.tools[0].status, "running")
-        self.assertFalse([block for block in app.transcript.blocks if isinstance(block, CommandBlock)])
+        self.assertFalse([block for block in app.transcript.blocks if isinstance(block, (CommandBlock, NoticeBlock))])
+        self.assertEqual([line.notice for line in app.queued], [notice])  # it waits with its prompt, not in this turn
         app._on_event(Event("tool.complete", SID, {"tool_id": "t1", "name": "terminal", "result": {"output": "ok"}}))
         app._on_event(Event("message.complete", SID, {"text": "done"}))
         self.assertEqual(len(client.named("prompt.submit")), 1)
         self.assertEqual(notices(app), [notice])
-        (row,) = prompt_rows(app)
-        self.assertTrue(row.startswith("> /dag-ulw /review fix it") and row.endswith("from queue"), row)
+        row, notice_block = app.transcript.blocks[-2:]  # the drained row, then what the dispatch said, under it
+        self.assertEqual((type(row), row.text, row.from_queue), (UserBlock, "/dag-ulw /review fix it", True))
+        self.assertEqual((type(notice_block), notice_block.text), (NoticeBlock, notice))
+        (shown,) = prompt_rows(app)
+        self.assertTrue(shown.startswith("> /dag-ulw /review fix it") and shown.endswith("from queue"), shown)
+
+    def test_two_skill_commands_of_one_line_answered_out_of_order_are_two_rows(self) -> None:
+        # Hermes runs slash.exec and command.dispatch on its RPC pool, so the second dispatch can answer first.
+        app, client = make_app(rows=40)
+        app.turn_pending = True
+        app._on_event(Event("message.start", SID, {}))
+        app._on_event(Event("tool.start", SID, {"tool_id": "t1", "name": "terminal", "context": "make test"}))
+        send(app, SKILL_LINE)
+        send(app, SKILL_LINE)
+        app._on_response(Response(1, None, SKILL_REFUSAL))
+        app._on_response(Response(2, None, SKILL_REFUSAL))
+        self.assertEqual([method for method, _params in client.calls[2:]], ["command.dispatch"] * 2)
+        app._on_response(Response(4, SKILL_TURN, None))  # the second submission's dispatch
+        app._on_response(Response(3, SKILL_TURN, None))
+        self.assertFalse([block for block in app.transcript.blocks if isinstance(block, CommandBlock)])
+        app._on_event(Event("tool.complete", SID, {"tool_id": "t1", "name": "terminal", "result": {"output": "ok"}}))
+        end_turn(app)  # the first queued prompt's turn
+        end_turn(app)  # the second's
+        self.assertEqual(len(client.named("prompt.submit")), 2)
+        self.assertFalse([block for block in app.transcript.blocks if isinstance(block, CommandBlock)])
+        self.assertEqual(len(prompt_rows(app)), 2)
 
     def test_a_refused_prompt_says_so_as_for_a_typed_one_and_repeats_no_echo(self) -> None:
         app, client = make_app(rows=40)
@@ -291,26 +316,26 @@ class SkillCommandRowTests(unittest.TestCase):
                 self.assertEqual(prompt_rows(app), [f"> {line}"])
                 self.assertEqual(client.named("prompt.submit"), [])
 
-    def test_a_prompt_hermes_names_no_display_for_shows_as_typed_and_goes_as_built(self) -> None:
-        # A typed /plan sends the scaffold Hermes built, with no `display`: the row is what the person typed.
+    def test_a_skill_hermes_names_no_display_for_shows_as_typed(self) -> None:
         app, client = make_app(rows=40)
-        send(app, "/plan fix the flaky test")
-        answer(app, client, error={"code": contract.NOT_MINE, "message": "pending-input command"})
-        answer(app, client, {"type": "send", "message": PLAN_PROMPT})
-        self.assertEqual(prompt_rows(app), ["> /plan fix the flaky test"])
-        self.assertNotIn("PLAN MODE", "\n".join(drawn(app)))
-        self.assertEqual(client.named("command.dispatch"), [{"name": "plan", "arg": "fix the flaky test", "session_id": SID}])
-        self.assertEqual(client.named("prompt.submit"), [{"session_id": SID, "text": PLAN_PROMPT}])
+        run_skill(app, client, turn={key: value for key, value in SKILL_TURN.items() if key != "display"})
+        self.assertEqual(prompt_rows(app), [f"> {SKILL_LINE}"])
+        self.assertEqual(client.named("prompt.submit"), [{"session_id": SID, "text": SKILL_TURN["message"]}])
 
-    def test_the_same_display_less_command_sent_twice_is_two_rows_and_two_prompts(self) -> None:
-        app, client = make_app(rows=40)
-        for _ in range(2):
-            send(app, "/plan fix the flaky test")
-            answer(app, client, error={"code": contract.NOT_MINE, "message": "pending-input command"})
-            answer(app, client, {"type": "send", "message": PLAN_PROMPT})
-            end_turn(app)
-        self.assertEqual(prompt_rows(app), ["> /plan fix the flaky test"] * 2)
-        self.assertEqual(client.named("prompt.submit"), [{"session_id": SID, "text": PLAN_PROMPT}] * 2)
+    def test_a_built_in_send_with_no_display_keeps_its_echo_above_what_it_sends(self) -> None:
+        # Hermes' own TUI shows the built message for such a send, and so does a resumed session.
+        for line, answers, sent in (
+            ("/plan fix the flaky test", ({"error": {"code": contract.NOT_MINE, "message": "pending-input command"}},
+                                          {"result": {"type": "send", "message": PLAN_PROMPT}}), PLAN_PROMPT),
+            ("/retry", ({"result": {"type": "send", "message": "fix the flaky test"}},), "fix the flaky test"),
+        ):
+            with self.subTest(command=line):
+                app, client = make_app(rows=40)
+                send(app, line)
+                for reply in answers:
+                    answer(app, client, reply.get("result"), reply.get("error"))
+                self.assertEqual(prompt_rows(app), [f"> {line}", f"> {sent.splitlines()[0]}"])
+                self.assertEqual(client.named("prompt.submit"), [{"session_id": SID, "text": sent}])
 
 
 class DetailsViewTests(unittest.TestCase):
