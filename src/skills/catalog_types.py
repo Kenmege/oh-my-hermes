@@ -331,8 +331,8 @@ _MAESTRO_RESULT_INTEGRATION_FINAL_CHECKLIST_NOTE = (
 # carries the equivalent checklist line; the absence here was an omission, not
 # a deliberate difference between the two engines.
 _MAESTRO_RUN_SUMMARY_FINAL_CHECKLIST_NOTE = (
-    "The closing brief ends with the observed `omh_run_summary` summary_text verbatim, or an explicit "
-    "run-summary not_available line -- never a model-estimated number."
+    "The closing brief includes the observed `omh_run_summary` summary_text verbatim, or an explicit "
+    "run-summary not_available line, before any specific next-action question -- never a model-estimated number."
 )
 
 _HANDOFF_RECOVERY_NOTES = (
@@ -512,18 +512,16 @@ ENGINE_FOLLOW_UP_AUTHORITY_RULE = (
     "or the authorization the boundary asks for — never a workaround or an indirect execution."
 )
 # Closing brief: detail scales with the change, the result leads, the reader
-# is not walked through abandoned paths or task bookkeeping, and a stop at a
-# boundary ends with the next action offered, not with a refusal.
+# is not walked through abandoned paths or task bookkeeping. Material gaps and
+# observed accounting precede a specific question only when one is useful.
 ENGINE_CLOSING_BRIEF_RULE = (
-    "The closing brief scales to the change: one or two sentences plus the observed validation for a "
-    "simple change, more only when the complexity earns it. Lead with the result or decision, in the "
-    "user's words; omit "
-    "abandoned approaches unless they explain a tradeoff the reader needs; narrate no internal "
-    "bookkeeping (todo transitions, waits). When the work stops at a boundary or at a decision the "
-    "user owns, end with the next action offered as a question, and state what was left undone as the "
-    "option it leaves open, never as a refusal. Required closing lines stay outside this scaling: the "
-    "observed run summary, and any prepared-not-observed or unmerged work, are stated whatever the "
-    "brief's length."
+    "The closing brief scales to the change: one or two sentences for a simple change. "
+    "Lead with the result and validation; omit abandoned approaches unless they explain a tradeoff, and "
+    "internal bookkeeping. Disclose requested-but-not-done work and material prepared/unmerged work; "
+    "omit unrelated non-action footers. Required accounting stays outside this scaling. Order: result -> "
+    "relevant evidence/limits -> observed accounting (when required) -> specific question (if useful). "
+    "For a real unresolved user decision or a useful briefing discussion, offer one specific, content-linked "
+    "question. Completed work needs no question; discussion grants no authority. Never estimate usage."
 )
 
 # Hermes bundles the document producers (`skills/productivity/{powerpoint,pdf,
