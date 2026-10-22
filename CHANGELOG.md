@@ -14,6 +14,18 @@ All notable changes will be documented here.
   coding control plane share the same stdlib-only calibration definitions and
   resolver; protocol text, goals, and existing calibration wording are unchanged.
   The section reaches newly built prompts, not already frozen resumed prompts.
+- **Scrolling up in the OMH TUI stops at the top of the session.** The
+  launch scrolled your shell's rows and the launcher's warnings into the
+  terminal's scrollback and kept them there, so the wheel walked from the
+  TUI's logo straight into the shell history from before `omh` started; in
+  Terminal.app all 80 rows of a test shell history were still above the
+  session. The launch now erases the scrollback (ED 3) right after that
+  push, as every full redraw (a resize, Ctrl+L, `/redraw`, `/theme`, a
+  session switch, a rewind) and Hermes' own TUI already do, and the same
+  run measured 0 of them. The TUI still runs on the main screen, so
+  scrolling, selecting and copying stay your terminal's own, and when you
+  quit the session stays above your shell's prompt, as any output does. A
+  terminal that ignores ED 3 keeps the earlier rows one scroll up, as before.
 
 ## 4.0.1 - 2026-10-22
 

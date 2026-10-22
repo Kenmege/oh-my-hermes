@@ -62,7 +62,7 @@ from omh.tui.gateway import GatewayClient, GatewayUnavailable, ServerRequest, ga
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
 from omh.tui.launch import FALLBACK_EXIT, FALLBACK_SENTINEL_ENV
 from omh.tui.modes import ACCEPT_LABEL, IDLE_HINT, PLAN_LABEL, STEER_COMMAND_HINT, STEER_KEY_HINT, info_line
-from omh.tui.screen import CLEAR_SCREEN_AND_SCROLLBACK
+from omh.tui.screen import CLEAR_SCREEN_AND_SCROLLBACK, ERASE_SCROLLBACK
 from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME, theme_named
 from omh.tui.width import line_width
@@ -484,6 +484,20 @@ class StartupRefusalTests(AppTestCase):
         self.assertEqual(run.terminal.entered, 0)
         with self.assertRaises(GatewayUnavailable):  # its input was closed: the child is being reaped
             run.clients[0].request("session.list", {"limit": 1})
+
+
+# What `Terminal.query_background` writes before the first frame: the background, the cursor's row, the attributes.
+STARTUP_QUERY = (
+    terminal_module.BACKGROUND_QUERY + terminal_module.CURSOR_POSITION_QUERY + terminal_module.DEVICE_ATTRIBUTES_QUERY
+)
+
+
+class WireTerminal(ScriptedTerminal):
+    """Writes the startup query's bytes as the real terminal does, so the launch's own writes show in their order."""
+
+    def query_background(self) -> tuple[str | None, bytes, int | None]:
+        self.write(STARTUP_QUERY)
+        return super().query_background()
 
 
 class SignalledTerminal(ScriptedTerminal):
@@ -1590,18 +1604,24 @@ class OpeningTests(AppTestCase):
                 self.assertEqual(screen[status + 1 :], [""] * (33 - status), screen)
                 self.assertLess(status, 33)
 
-    def test_launched_on_a_screen_holding_output_it_starts_on_the_top_row_with_that_output_one_scroll_up(self) -> None:
-        # The owner, round 4: the launcher's warnings may stay, but not on the screen the TUI opens on. Whatever row
-        # the shell left the cursor on, reported or not, the rows above it go to scrollback, nothing is erased, and the
-        # first frame starts on the top row, so a menu closing leaves the composer where it was.
+    def test_launched_on_a_screen_holding_output_it_starts_on_the_top_row_and_erases_the_scrollback(self) -> None:
+        # The owner, 2026-10-22: scrolling up must stop at the top of the session, not walk into the shell's history.
+        # Whatever row the shell left the cursor on, reported or not, the rows above it are pushed off the screen,
+        # ED 3 then erases the scrollback (the pushed rows and the shell's older output with them, as a full redraw
+        # does), and the first frame starts on the top row, so a menu closing leaves the composer where it was.
+        older = [f"$ older {n}" for n in range(80)]
         shell = [f"$ shell {n}" for n in range(40)]
         for row, label in ((34, "the last row, reported"), (None, "the last row, not reported"), (12, "mid-screen")):
             with self.subTest(launch=label):
                 run = self.prepare(
                     Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), rows=34, cols=110
                 )
+                run.terminal = WireTerminal(34, 110)
+                # The shell's earlier output in scrollback, its `clear`, then the rows above the cursor on `row`.
+                run.terminal.screen.feed("".join(f"{line}\r\n" for line in older) + "\x1b[H\x1b[J")
                 printed = shell[: (row or 34) - 1]
                 run.terminal.screen.feed("".join(f"{line}\r\n" for line in printed))  # the cursor on `row`, at column 0
+                self.assertEqual(run.terminal.screen.scrollback, older[:47])
                 run.terminal.cursor_row = row
                 rows: dict[str, int] = {}
 
@@ -1622,24 +1642,37 @@ class OpeningTests(AppTestCase):
                 self.run_main(run)
                 self.assert_clean_run(run)
                 first = run.terminal.captures["first"]
-                self.assertEqual(run.terminal.screen.scrollback, printed)  # in order, one scroll up, and nothing else
-                self.assertFalse([line for line in first if line.startswith("$ shell")], first)
+                history = run.terminal.screen.history()
+                self.assertFalse([line for line in history if line.startswith(("$ shell", "$ older"))], history)
+                self.assertEqual(history[: LOGO_ROWS - 1], LOGO[:-1])  # scrolling up stops at the logo
                 self.assertEqual(first[: LOGO_ROWS - 1], LOGO[:-1])  # the logo opens the top row
                 self.assertEqual(rows["after"], rows["before"])
                 self.assertEqual(rows["before"], LOGO_ROWS + 3)  # the logo, the banner and its blank row, the top edge
                 writes = "".join(run.terminal.writes)
-                self.assertNotIn("\x1b[2J", writes)  # nothing erased: no ED 2, and no ED 3 for the scrollback
-                self.assertNotIn("\x1b[3J", writes)
+                # The startup query, the push, ED 3 once, then the first frame. No ED 2: the push leaves only the
+                # cursor's own row on the screen, the top row, which the first frame paints over.
+                launch = STARTUP_QUERY + "\n" * 33 + "\x1b[33A\r" + ERASE_SCROLLBACK
+                self.assertEqual(writes[: len(launch)], launch)
+                self.assertEqual(writes.count(ERASE_SCROLLBACK), 1)
+                self.assertNotIn("\x1b[2J", writes)
 
-    def test_launched_on_the_top_row_nothing_is_pushed_and_nothing_is_written_for_it(self) -> None:
+    def test_launched_on_the_top_row_nothing_is_pushed_and_the_scrollback_is_still_erased(self) -> None:
+        # The cursor on the top row leaves nothing above it on the screen, but a shell's `clear` leaves its earlier
+        # output in scrollback, one scroll up from the session's top: ED 3 erases it all the same.
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.terminal = WireTerminal()
+        run.terminal.screen.feed("".join(f"$ older {n}\r\n" for n in range(40)) + "\x1b[H\x1b[J")
+        self.assertTrue(run.terminal.screen.scrollback)
         run.terminal.cursor_row = 1
         run.terminal.script(Step(b"\x04", when=run.terminal.idle, capture="first", label="idle"))
         self.run_main(run)
         self.assert_clean_run(run)
         self.assertEqual(run.terminal.screen.scrollback, [])
         self.assertTrue(run.terminal.captures["first"][0].startswith("⚚ OH-MY-HERMES"))
-        self.assertNotIn("\n" * 23, "".join(run.terminal.writes))
+        writes = "".join(run.terminal.writes)
+        self.assertEqual(writes[: len(STARTUP_QUERY + ERASE_SCROLLBACK)], STARTUP_QUERY + ERASE_SCROLLBACK)
+        self.assertEqual(writes.count(ERASE_SCROLLBACK), 1)
+        self.assertNotIn("\n" * 23, writes)
 
     def test_the_banner_stays_one_row_and_keeps_the_end_of_a_long_path(self) -> None:
         from omh.tui.app import banner_lines
@@ -2428,7 +2461,7 @@ class KeyTests(AppTestCase):
             Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers())
         )
         terminal = run.terminal
-        cleared = "\x1b[3J"
+        cleared = CLEAR_SCREEN_AND_SCROLLBACK  # the launch's own ED 3 comes alone, without ED 2
         terminal.script(
             self.submit(run, "Reply with exactly the word: ok"),
             Step(b"\x0c", when=lambda: "later." in terminal.history() and terminal.idle(), label="the reply"),

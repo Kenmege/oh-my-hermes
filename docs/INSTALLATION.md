@@ -424,12 +424,16 @@ run and approval decision stays Hermes'; the screen is OMH's.
   composer was, the caret at the end of what you typed), it comes back as
   you left it.
   As it starts, the TUI scrolls what your terminal showed above its cursor
-  (your shell, the launcher's warnings) up into the terminal's own
-  scrollback, erasing nothing, and opens on the top row of a clean screen:
-  scroll up to read what was there, until a full redraw (a resize, Ctrl+L,
-  `/redraw`, switching or resuming a session) clears the scrollback with
-  the rest. A launch that falls back to Hermes' own
-  terminal leaves the screen as it was.
+  (your shell, the launcher's warnings) off the screen, erases the
+  terminal's scrollback (ED 3), as a full redraw (a resize, Ctrl+L,
+  `/redraw`, switching or resuming a session) and Hermes' own TUI already
+  do, and opens on the top row of a clean screen, so scrolling up stops at
+  the top of the session instead of reaching your shell's history. When you
+  quit, the session stays above your shell's prompt, as any output does. A
+  terminal that ignores ED 3, such as iTerm2 when its profile stops escape
+  sequences from clearing the history, keeps what was there one scroll up.
+  A launch that falls back to Hermes' own terminal leaves the screen as it
+  was.
 - A notice Hermes sends outside the transcript (the agent still starting, a
   credit warning, a provider that could not be reached) takes one row above
   the queued prompts, in its level's colour with a glyph. The next one
