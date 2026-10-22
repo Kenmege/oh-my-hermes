@@ -53,8 +53,10 @@ A determiner after the name starts a clause of its own, so the name before it st
 build is broken", "dag ulw the build that broke"), and so does a Korean noun of its own before a present-tense
 predicate ("dag ulw 결제 모듈이 느려"). A colon or comma after the name addresses the skill ("ultrawork: the build is
 broken"). A sigil, ``use``, ``run``, ``please`` or a polite opener before the name is the caller's to read: those
-stay invocations. Callers pass the executable text after the name. Stdlib only: the plugin bundle loads this file
-with Hermes' interpreter (#1623).
+stay invocations. After a sigil only a report does: `stops_or_asks(name, rest)` is the stop and the question of
+`about_the_skill` without its report, so "/ultrawork stop" and "/ralplan what does this do?" start no run while
+"/ultrawork broke my build" still runs it. Callers pass the executable text after the name. Stdlib only: the plugin
+bundle loads this file with Hermes' interpreter (#1623).
 """
 
 from __future__ import annotations
@@ -258,8 +260,8 @@ _EN_ABOUT_IT: Final = frozenset(
      "did", "can", "could", "should", "will", "would", "has", "have", "had", "'s", "s", "the", "a", "to", "of", "for",
      "with", "about", "up", "there", "here", "now", "next", "work", "works", "working", "use", "using", "cost",
      "costs", "mean", "means", "doing", "done", "take", "takes", "cancel", "stop", "finish", "finished", "running",
-     "left", "happen", "happened", "happening", "going", "go", "get", "got", "help", "wrong", "much", "long", "status",
-     "then", "anyway", "exactly", "even", "supposed", "be", "need", "start", "started", "started?", "on"}
+     "left", "happen", "happened", "happening", "going", "go", "get", "got", "help", "wrong", "much", "many", "long",
+     "status", "then", "anyway", "exactly", "even", "supposed", "be", "need", "start", "started", "started?", "on"}
 )
 _KO_ABOUT_IT: Final = re.compile(
     r"^(?:이거|이건|이게|그거|그건|그게|저거|얘|쟤|나|내가|우리|이제|지금|다|써|쓰는|쓰면|써야|쓰는\s*거|사용|사용해|사용하는|돌아|돌아가|"
@@ -429,20 +431,28 @@ def asks_after_the_name(rest: str, *, about_anything: bool = False, run_state: b
     if re.search(r"[가-힣]", folded):
         if not any(_KO_WH.match(word) for word in words) or _KO_EMBEDDED_QUESTION.search(words[-1]):
             return False
-        return about_anything or all(
-            _KO_WH.match(word) or (run_state and (word in _KO_ADVERBS or _KO_OWN_WORD.match(word) or _has_past(word)))
-            or (_KO_ABOUT_IT.match(word) and (run_state or not _KO_RUN_STATE.match(word)))
-            for word in words
-        )
+        return about_anything or _only_about_the_skill(folded, run_state=run_state)
     words = _EN_WORD.findall(folded)
     if not ({"now what", "what now", "what next"} & {" ".join(pair) for pair in zip(words, words[1:])}) and not (
         words and words[0] in _EN_WH and not (len(words) > 1 and words[1] in _EN_EMBEDDED_SUBJECT)
     ):
         return False
+    return about_anything or _only_about_the_skill(folded, run_state=run_state)
+
+
+def _only_about_the_skill(folded: str, *, run_state: bool) -> bool:
+    """Whether every word of ``folded`` is one a question about the skill itself is made of: a question word, the
+    words about it, and, with ``run_state``, adverbs, its own output and how its run stands."""
+    if re.search(r"[가-힣]", folded):
+        return all(
+            _KO_WH.match(word) or (run_state and (word in _KO_ADVERBS or _KO_OWN_WORD.match(word) or _has_past(word)))
+            or (_KO_ABOUT_IT.match(word) and (run_state or not _KO_RUN_STATE.match(word)))
+            for word in _words(folded)
+        )
     about_it = _EN_ABOUT_IT if run_state else _EN_ABOUT_IT - _EN_RUN_STATE
-    return about_anything or all(
+    return all(
         word in _EN_WH or word in about_it or (run_state and (word in _EN_ADVERBS or word in _EN_OWN_WORDS))
-        for word in words
+        for word in _EN_WORD.findall(folded)
     )
 
 
@@ -462,10 +472,13 @@ def stops_the_name(rest: str) -> bool:
     return len(parts) == 2 and bool(parts[1]) and stops_the_name(parts[0]) and not asks_for_something(", " + parts[1])
 
 
-def about_the_skill(name: str, rest: str) -> bool:
-    """Whether ``rest``, the words after a skill's bare name as the message writes it (``name``), stop its run, ask
-    about it, or report on it, rather than ask to run it. A report counts only after a name that can mean nothing
-    but the skill (`COINED_NAMES`, or a name with its hyphens)."""
+def stops_or_asks(name: str, rest: str, *, invoked: bool = False) -> bool:
+    """Whether ``rest``, the words after a skill's name as the message writes it (``name``), stop its run or ask about
+    it: `about_the_skill` without its report reading. After a sigil (``invoked``: "/ultrawork stop", "/ralplan what
+    does this do?") the name is the person's own invocation, and this is all that keeps it from running; a report
+    after a sigil stays a command ("/ultrawork broke the build"). There the name can only mean the skill, so a
+    yes-or-no question made only of the words about it asks about any skill, not an engine's alone ("/omh-plan is it
+    running?"), and a question about how its run stands does so for every skill, `QUESTION_IS_THE_WORK` included."""
     written = _folded(name)
     key = written.replace(" ", "-")
     run_only = key in RUN_ONLY_SKILLS
@@ -473,16 +486,35 @@ def about_the_skill(name: str, rest: str) -> bool:
         r"\b(?:should|shall|best\s+way|how\s+(?:do|can|could|would)\s+(?:we|i))\b|어떻게\s*(?:\S+\s+)?(?:나눠|나누|해야|하면|할까|진행)",
         _folded(rest),
     )
+    # After a sigil Hermes has loaded the skill itself, so how its own run stands is a question about it even for a
+    # skill whose work is answering such questions ("/omh-app-debugging why did the run stop?"): the loaded skill
+    # still guides the answer, and no route starts a second run of it.
     if stops_the_name(rest) or asks_after_the_name(
         rest,
         about_anything=run_only or (written in COINED_NAMES and not deliberates),
-        run_state=key not in QUESTION_IS_THE_WORK,
+        run_state=invoked or key not in QUESTION_IS_THE_WORK,
     ):
         return True
     # A1: a yes-or-no question after an engine's name asks about it, as one after dag-ulw's does ("ultrawork safe
     # to use on prod?", "ultrawork still running?", "ultrawork 써도 돼?").
-    if (run_only or written in COINED_NAMES) and _folded(rest).endswith(("?", "？")) and not asks_for_something(rest):
+    question = _folded(rest).endswith(("?", "？")) and not asks_for_something(rest)
+    if question and (run_only or written in COINED_NAMES):
         return True
+    if not (invoked and question):
+        return False
+    # A question the bare name's report reading answers is answered after the sigil too ("/omh-app-debugging is it
+    # running?", "/omh-app-debugging 왜 멈췄어?"): a report is a command after a sigil, a question about it is not.
+    reads_reports = ("-" in written and " " not in written) or written in COINED_NAMES  # as `about_the_skill` does
+    return (reads_reports and reports_on_the_name(rest)) or _only_about_the_skill(_folded(rest), run_state=True)
+
+
+def about_the_skill(name: str, rest: str) -> bool:
+    """Whether ``rest``, the words after a skill's bare name as the message writes it (``name``), stop its run, ask
+    about it (`stops_or_asks`), or report on it, rather than ask to run it. A report counts only after a name that
+    can mean nothing but the skill (`COINED_NAMES`, or a name with its hyphens)."""
+    if stops_or_asks(name, rest):
+        return True
+    written = _folded(name)
     if re.search(rf"(?<![a-z0-9_-]){re.escape(written)}(?![a-z0-9_-])", _folded(rest)):
         return False  # the name again: "ultrawork failed again, ultrawork it again"
     return (("-" in written and " " not in written) or written in COINED_NAMES) and reports_on_the_name(rest)

@@ -6,8 +6,9 @@ verb glued to it ("dag ulw해줘"). A message invokes the skill when the name op
 with dag ulw"), or when a Korean run ending follows it ("결제 모듈 dag ulw로 고쳐줘"). A negated mention never does
 ("don't use dag ulw", "dag ulw 말고"), and neither does a question about the skill ("dag ulw는 뭐야?",
 "dag ulw 설명해줘", "dag ulw 결과 알려줘", "how does dag-ulw handle repairs?"): those are answered, the
-way a question about any other skill is. A word for the run in progress ("dag ulw stop", "dag ulw 취소",
-"dag ulw 상태 보여줘") never does either: it points at that run's `omh_dag` cancel or status. A Korean stop noun
+way a question about any other skill is, and so is one after the sigil ("/dag-ulw 이게 뭐야?"). A word for the
+run in progress ("dag ulw stop", "dag ulw 취소", "dag ulw 상태 보여줘", "dag ulw 뭐 남았어?") never does either: it
+points at that run's `omh_dag` cancel or status. A Korean stop noun
 after other words ("dag ulw 주문 취소"), or an English stop word beside them ("dag ulw cancel order"), is neither a run
 nor a cancel until the person says which. A complaint or a question after the bare name is answered too ("dag ulw
 broke my build", "dag ulw 결제 api 뭐야"): `name_report_cues` reads it, for every skill's name.
@@ -197,6 +198,9 @@ _STATUS: Final = re.compile(
     rf"{_NAME}[\s,:]*(?:status|progress|logs?)(?:\s+(?:please|now|of\s+the\s+(?:run|dag|graph)))*\s*[.!?]*$"
     rf"|{_NAME}[\s,:]*(?:의\s*)?(?:상태|진행\s*상황|진행\s*상태|진행도|로그)\s*(?:좀\s*)?"
     rf"(?:보여|알려|확인|어때|어떻게|는\s*[?？]|[?？]|$)"
+    # What is left of the run is how it stands ("dag ulw 뭐 남았어?", "dag ulw what's left?").
+    rf"|{_NAME}[\s,:]*(?:뭐|얼마나|몇\s*개)\s*(?:더\s*)?남았(?:어|나|니|어요|나요|습니까)?\s*[.!?？]*$"
+    rf"|{_NAME}[\s,:]*(?:what'?s|what\s+is|how\s+much\s+is)\s+(?:still\s+)?left\s*[.!?]*$"
 )
 
 
@@ -208,8 +212,11 @@ def dag_ulw_control(text: str) -> str:
     """``cancel`` or ``status`` when ``text`` says that word to dag-ulw about the run in progress,
     ``cancel_or_run`` when another Korean stop word follows the name with no work after it (`_STOP_AFTER_NAME`), an
     English stop word comes with other words and no work (`_EN_STOP_AFTER_NAME`), or a stop of the run is followed
-    by more work (`_STOP_THEN_WORK`), else ""."""
+    by more work (`_STOP_THEN_WORK`), else "". After the sigil the same words read the same ("/dag-ulw cancel order"
+    asks, as "dag ulw cancel order" does)."""
     folded = _folded(text)
+    if _SIGIL_LEAD.match(folded):
+        folded = folded.lstrip("$./")
     if _STOP.search(folded):
         return "cancel"
     first = re.match(r"^(.*?)\s*[,;.!?~]+\s*(\S.*)$", folded)
@@ -228,6 +235,13 @@ def dag_ulw_control(text: str) -> str:
     if (_KOREAN_PAST.search(after) or _KOREAN_PRESSED.match(after)) and _KOREAN_STILL_RUNNING.search(after):
         return "cancel"
     return "" if _asks_about_stopping(stop) else "cancel_or_run"
+
+
+def run_control_words(rest: str) -> str:
+    """`dag_ulw_control`'s verdict on ``rest``, words said to any skill's run after its name ("/ulw-work 작업 중단해줘",
+    "/omh-code-review stop the review", "/ulw-loop 상태 보여줘"): a stop or a status word for a run reads the same
+    whichever skill's run it is, so every explicit invocation shares dag-ulw's vocabulary for them."""
+    return dag_ulw_control(f"{DAG_ULW} {rest}")
 
 
 def _ends_in_its_own_request(after: str) -> bool:
@@ -294,7 +308,7 @@ def asks_about_dag_ulw(text: str) -> bool:
     folded = _folded(text)
     if not re.search(_NAME, folded):
         return False
-    if _ASKED_ABOUT.search(folded) or _SIGIL_QUESTION.match(folded):
+    if _ASKED_ABOUT.search(folded) or _SIGIL_QUESTION.match(folded) or _sigil_asks(folded):
         return True
     if _asks_about_stopping(_STOP_AFTER_NAME.search(folded)):
         return True  # "dag ulw 취소 어떻게 해", "dag ulw 멈출 수 있어", "dag ulw 취소됐어?"
@@ -306,20 +320,72 @@ def asks_about_dag_ulw(text: str) -> bool:
 
 
 _SIGIL_LEAD: Final = re.compile(rf"^(?:\$|\./|/){_NAME}")
+# Further skills stacked after the sigil ("/dag-ulw /ulw-plan what is it?"): Hermes loads each, and the words after
+# the last one are the instruction.
+_STACKED_SIGILS: Final = re.compile(r"(?:\s+(?:\$|\./|/)[a-z0-9][a-z0-9_-]*)+(?=\s|$)")
+# A Korean question that asks for the work to be done for the person, with 주다 ("구현해줄 수 있어?", "나눠서 해주실래요?",
+# "고쳐주시겠어요?"): a polite request, as "can you dag ulw the migration?" is.
+_KOREAN_ASKS_TO_BE_DONE: Final = re.compile(r"(?:줄|주실)\s*(?:수\s*있|래|거)|주시겠|줄래")
+# Work proposed as a question is a request for it ("can we split the api, ui and docs work into parallel lanes?").
+_PROPOSED: Final = re.compile(r"^(?:can|could|shall)\s+we\b")
+
+
+def _sigil_asks(folded: str) -> bool:
+    """Whether the instruction after a sigil, and after any skills stacked on it, is a question rather than a command.
+
+    A question word opens it in English (`_SIGIL_QUESTION`), or it asks a question and asks for nothing
+    (`asks_after_the_name`: "/dag-ulw 이게 뭐야?", "/dag-ulw 어떻게 써?", "/dag-ulw we committed a secret, what now"), or
+    it weighs the run against another way (`_WEIGHED`). In any language it is a question when it ends
+    in a question mark and asks for nothing, as after the bare name ("/dag-ulw CI 통과했어?", "/dag-ulw did the sweep
+    finish?", "/dag-ulw Kubernetes是什么？"). A request that holds a question word stays one ("/dag-ulw 왜 깨졌는지
+    찾아서 고쳐줘"), and so does one that opens on a request verb, is asked politely or is proposed ("/dag-ulw migrate
+    the billing service?", "/dag-ulw 나눠서 구현해줄 수 있어?", "/dag-ulw can you dag ulw the migration?", "/dag-ulw can
+    we split the work into parallel lanes?").
+    """
+    lead = _SIGIL_LEAD.match(folded)
+    if not lead:
+        return False
+    if _WEIGHED.search(folded):
+        return True  # it weighs the run against another way, as a polite question does ("/dag-ulw … or should I …?")
+    rest = folded[lead.end() :]
+    stacked = _STACKED_SIGILS.match(rest)
+    if stacked:
+        rest = rest[stacked.end() :]
+        if _SIGIL_QUESTION.match(f"/{DAG_ULW} {rest.strip()}"):
+            return True
+    rest = rest.strip(" ,:")
+    if asks_after_the_name(rest, about_anything=True) or _ASKED_ABOUT.search(rest):
+        return True  # _ASKED_ABOUT: the name again, asked about ("/dag-ulw can you explain dag ulw?")
+    # ", " makes the opening clause one `asks_for_something` reads too: "/dag-ulw migrate the billing service?" opens
+    # on a request verb, so it is a request with a question mark.
+    return rest.endswith(("?", "？")) and not (
+        asks_for_something(f", {rest}") or _KOREAN_ASKS_TO_BE_DONE.search(rest) or _PROPOSED.match(rest)
+    )
+
+
+def asks_after_the_sigil(text: str) -> bool:
+    """Whether ``text`` opens with the `dag-ulw` sigil and asks a question after it, and after any skills stacked on
+    it ("/dag-ulw what is it?", "/dag-ulw 이게 뭐야?", "/dag-ulw /ulw-plan what is it?"): the stacked skills are not
+    invoked either."""
+    folded = _folded(text)
+    return bool(_SIGIL_LEAD.match(folded)) and bool(_SIGIL_QUESTION.match(folded) or _sigil_asks(folded))
 
 
 def invokes_dag_ulw(text: str) -> bool:
     """Whether ``text`` (the executable part of a message) asks to run `dag-ulw`.
 
     A sigil (``/dag-ulw``, ``$dag-ulw``) is a command whatever follows it, as it is for every skill, except a word
-    for the run in progress (`dag_ulw_control`) or a question about the skill or about stopping it: stopping,
-    checking or asking never starts a run.
+    for the run in progress (`dag_ulw_control`), a question after it, in English or Korean and after any skills
+    stacked on it (`_sigil_asks`), or a question about stopping it: stopping, checking or asking never starts a run.
+    Hermes sends every `/dag-ulw` turn this way, so it is the form that runs.
     """
     folded = _folded(text)
     if not folded or _NEGATED.search(folded) or dag_ulw_control(folded):
         return False
     if _SIGIL_LEAD.match(folded):
-        return not (_SIGIL_QUESTION.match(folded) or _asks_about_stopping(_STOP_AFTER_NAME.search(folded)))
+        return not (
+            _SIGIL_QUESTION.match(folded) or _sigil_asks(folded) or _asks_about_stopping(_STOP_AFTER_NAME.search(folded))
+        )
     if asks_about_dag_ulw(folded):
         return False
     return bool(_LEAD.match(folded) or _WITH.search(folded) or _KOREAN_RUN.search(folded))

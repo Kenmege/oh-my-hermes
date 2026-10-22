@@ -30,8 +30,15 @@ from .reference_regions import executable_routing_text
 from .jev_addressing import jev_addressed_skill
 from .localization import normalized_phrase, phrase_is_spoken, routing_terms, routing_tokens
 from .materials_cues import OFFICE_FILE_MATERIAL_PHRASES
-from ..plugin_bundle.omh.dag_ulw_cues import DAG_ULW, asks_about_dag_ulw, dag_ulw_control, declines_dag_ulw, invokes_dag_ulw
-from ..plugin_bundle.omh.name_report_cues import about_the_skill
+from ..plugin_bundle.omh.dag_ulw_cues import (
+    DAG_ULW,
+    asks_about_dag_ulw,
+    dag_ulw_control,
+    declines_dag_ulw,
+    invokes_dag_ulw,
+    run_control_words,
+)
+from ..plugin_bundle.omh.name_report_cues import about_the_skill, stops_or_asks
 from ..plugin_bundle.omh.request_lead import after_courtesy
 from ..plugin_bundle.omh.spend_signals import (
     SPEND_EVERYDAY_SENSE_ANCHORS,
@@ -6177,8 +6184,8 @@ def _ordinary_explicit_skill_invocation(
             first = first[len(prefix) :].strip(":,")
             used_prefix = True
             break
-    if not used_prefix and bare_name_reports_or_asks(stripped, names):
-        return None
+    if bare_name_reports_or_asks(stripped, names):
+        return None  # a report, a stop or a question after the name; after a sigil, a stop or a question only
     if (
         first in names
         and not (
@@ -6205,15 +6212,25 @@ def _ordinary_explicit_skill_invocation(
 
 
 def bare_name_reports_or_asks(stripped: str, names: set[str]) -> str | None:
-    """The skill a message opens with, bare, when the words after its name report on it or ask about it.
+    """The skill a message opens with when the words after its name report on it or ask about it.
 
     "ultrawork broke my build", "ralplan 때문에 빌드 깨졌어", "code-review 결과가 이상해" and "ultrawork 이거 어떻게
     써" open with a skill's name and are about that skill: a complaint or a question, not a request to run it
     (`name_report_cues.about_the_skill`; a report counts only after a name that can mean nothing but the skill). A
-    sigil keeps the name a command, and so does a colon or comma right after it ("ultrawork: the build is broken").
-    dag-ulw reads its own two-word name in `dag_ulw_cues`.
+    colon or comma right after the name keeps it a command ("ultrawork: the build is broken").
+
+    After a sigil the name is the person's own invocation, which keeps a report a command ("/ultrawork broke the
+    build") but not a stop or a question ("/ultrawork stop", "/ralplan what does this do?",
+    `name_report_cues.stops_or_asks`): an explicit invocation never starts a run on either. Hermes sends every
+    slash skill this way. dag-ulw reads its own two-word name in `dag_ulw_cues`.
     """
     words = stripped.split()
+    sigil = next(
+        (prefix for prefix in sorted(EXPLICIT_INVOCATION_PREFIXES, key=len, reverse=True) if words and words[0].startswith(prefix)),
+        "",
+    )
+    if sigil:
+        words[0] = words[0][len(sigil) :]
     # The longest name first, written with its hyphens or with spaces ("code-review", "code review").
     for length in (3, 2, 1):
         if len(words) <= length or words[length - 1].endswith((":", ",")):
@@ -6223,8 +6240,23 @@ def bare_name_reports_or_asks(stripped: str, names: set[str]) -> str | None:
         if name == DAG_ULW:
             return None  # read by `dag_ulw_cues`, whose stop and status words point at the run in progress
         if name in names:
-            return name if about_the_skill(" ".join(words[:length]), " ".join(words[length:])) else None
+            written, rest = " ".join(words[:length]), " ".join(words[length:])
+            if not sigil:
+                return name if about_the_skill(written, rest) else None
+            return name if _invoked_skill_answered(written, rest, names) else None
     return None
+
+
+def _invoked_skill_answered(written: str, rest: str, names: set[str]) -> bool:
+    """After a sigil: a stop or a question about the skill (`stops_or_asks`), a stop or status word for its run
+    (`run_control_words`: "/ulw-work 작업 중단해줘"), or a question or report about another skill ("/ulw-loop
+    dag-ulw가 뭐야?"). Each is answered; none starts the skill the sigil names."""
+    return (
+        stops_or_asks(written, rest, invoked=True)
+        or bool(run_control_words(rest))
+        or asks_about_dag_ulw(rest)
+        or bool(bare_name_reports_or_asks(rest, names))
+    )
 
 
 # `research` is the one routable name that is also a transitive English verb a

@@ -31,7 +31,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # show-reel adds sixteen noun/reference controls, nine that
         # dispatched it under its first grammar, three asked first sentences
         # and two causatives (a relative clause, `on`) (+30).
-        self.assertEqual(payload["summary"]["case_count"], 993)
+        # Hermes' slash-skill scaffold adds four controls (+4), and a question
+        # after the /dag-ulw sigil six (+6), and a stop or a question after an
+        # explicit invocation eleven (+11).
+        self.assertEqual(payload["summary"]["case_count"], 1014)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -84,7 +87,14 @@ class RoutingPrecisionTests(unittest.TestCase):
         # from its third (+1).
         # show-reel's quoted-translation and film-plot controls are answered
         # directly (+2).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 297)
+        # Hermes' slash-skill scaffold adds a question and a status word after
+        # /dag-ulw, and another skill's slash turn with and without an
+        # instruction, each answered directly (+4). A Korean question, whether
+        # CI passed, a question after a skill stacked on it, and a Korean
+        # question in Hermes' scaffold, each after the /dag-ulw sigil, are
+        # answered directly (+4). Eleven stops or questions after an explicit
+        # invocation are answered directly (+11).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 316)
         # show-reel's README-link control is answered as a file lookup (+1).
         self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
@@ -93,7 +103,12 @@ class RoutingPrecisionTests(unittest.TestCase):
         # show-reel adds fourteen production/owner interventions, six that
         # keep a film inside another skill's request with that skill, and two
         # chained requests that keep their owner (+22).
-        self.assertEqual(payload["summary"]["intervention_case_count"], 991)
+        # Hermes' slash-skill scaffold adds /dag-ulw with a request and bare,
+        # and /ulw-plan with a request, each routed as typed (+3). Four
+        # requests after the /dag-ulw sigil that hold a question word or are
+        # asked politely still dispatch (+4), and so do five real requests
+        # after an explicit invocation (+5).
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1003)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

@@ -24,7 +24,7 @@ This is a Hermes-native `dag-ulw` workflow skill.
 ## First Steps
 
 - Start at once; there is no plan approval. Write the goal criteria in one line.
-- Plan the graph and call `omh_dag action=define` with each node's id, label, category, prompt, depends_on and write_scope; fix every refusal and read the lint before going on.
+- Plan the graph and call `omh_dag action=define` with each node's id, label, category, prompt, depends_on and write_scope; fix every refusal and read the lint before going on. Never `delegate_task` before `define` returns its calls.
 - Keep the plan todo as the run's layers in ONE tool: `todo_list` when `todo_list` is in your tool list or tool_search finds it (OMH mirrors it), else `omh_todo`. One item per layer, named for what it delivers, never a list of its nodes (the panel draws those); advance it as each layer settles.
 - For each call `omh_dag` returns, run its route (`omh_delegate_route`, set or fallback as given), then `delegate_task` with the tasks unchanged; never more calls than it returned. Then end the turn with one status line; never wait or poll.
 - On each completion read the node's handoff file and call `omh_dag action=settle` (accepted, failed, or blocked; a provider error is failed with provider_error). Dispatch what it returns in the same turn.
@@ -101,7 +101,7 @@ Quality bar:
 
 Handoff policy:
 
-Hermes owns the plan, the dispatch, the settling and the verdict; every node runs as Hermes' own `delegate_task` child, routed per category with `omh_delegate_route`. OMH's `omh_dag` tool only keeps the graph. Coding nodes go to an external coding CLI only when the person chose that owner within the last day through `omh chat` or `omh coding` (Hermes chat records no choice); then `omh_dag` lists them under `export`. Otherwise no external CLI runs.
+Hermes owns the plan, the dispatch, the settling and the verdict; every node runs as Hermes' own `delegate_task` child, routed per category with `omh_delegate_route`. OMH's `omh_dag` tool keeps the graph, and only its calls start nodes: a `delegate_task` without the `[dag:<run>/<node>]` marker it returned is no node of the run. Coding nodes go to an external coding CLI only when the person chose that owner within the last day through `omh chat` or `omh coding` (Hermes chat records no choice); then `omh_dag` lists them under `export`. Otherwise no external CLI runs.
 
 Required inputs:
 

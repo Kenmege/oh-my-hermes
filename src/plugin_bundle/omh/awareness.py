@@ -9,13 +9,15 @@ import unicodedata
 from .boundary_phrase import contains_boundary_phrase as _contains_boundary_phrase
 from .dag_ulw_cues import (
     asks_about_dag_ulw,
+    asks_after_the_sigil,
     big_work_for_dag_ulw,
     dag_ulw_control,
     invokes_dag_ulw,
     reports_or_asks_after_the_name,
+    run_control_words,
     work_is_split,
 )
-from .name_report_cues import about_the_skill
+from .name_report_cues import about_the_skill, stops_or_asks
 from .data_share_cues import DATA_SHARE_REVIEW_PHRASES, data_share_phrases_said, data_share_request_admitted
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES as _CODING_DELIVERY_REQUEST_PHRASES,
@@ -6400,9 +6402,10 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
         # nothing reads as a request to start one (the router answers the same message directly). A stop noun that
         # may name the work instead ("dag ulw 주문 취소") asks which, as the router does.
         hints = [_dag_ulw_control_hint(control)] if hint_limit else []
-    elif _opens_with_a_report_on_a_name(routing_normalized):
+    elif _opens_with_a_report_on_a_name(routing_normalized) or _invoked_name_stops_or_asks(routing_normalized):
         # A complaint or a question about the skill the message opens with ("ultrawork broke my build", "research
-        # how does it work", "code-review 결과가 이상해"): the router answers it, so no hint offers a run either.
+        # how does it work", "code-review 결과가 이상해"), or a stop or a question after the sigil that invokes it
+        # ("/ulw-work stop"): the router answers it, so no hint offers a run either.
         hints = []
     hints = [_route_hint_with_coding_route_decision(hint, routing_normalized) for hint in hints]
     hints = [_route_hint_with_action_labels(hint) for hint in hints]
@@ -7720,6 +7723,8 @@ def _direct_workflow_invocation_hint(
     direct_prefix_workflow = _direct_workflow_prefix(routing_normalized)
     if not mentioned and not direct_prefix_workflow:
         return {}
+    if not direct_prefix_workflow and asks_after_the_sigil(routing_normalized):
+        return {}  # "/dag-ulw /ulw-plan what is it?": a question, so no skill stacked on the sigil is invoked either
     structural = {str(item) for item in getattr(intent, "structural_cues", ())}
     direct_omh_form = routing_normalized.strip().startswith(("use omh ", "use oh-my-hermes ", "use oh-my-hermes-agent "))
     if not direct_prefix_workflow and "workflow_marker" not in structural and not direct_omh_form:
@@ -8140,6 +8145,27 @@ def _workflow_names_a_message_may_open_with() -> tuple[str, ...]:
         *_ULW_RETIRED_WORKFLOWS,
     }
     return tuple(sorted({form for name in names for form in (name, name.replace("-", " "))}, key=len, reverse=True))
+
+
+def _invoked_name_stops_or_asks(normalized: str) -> bool:
+    """Whether a sigil invokes a workflow by name and the words after it stop its run or ask about it
+    ("/ulw-work stop", "/ralplan what does this do?", "/ulw-work 작업 중단해줘", "/ulw-loop dag-ulw가 뭐야?"): the
+    router's `bare_name_reports_or_asks` read on a sigil (`_invoked_skill_answered`), so the hint calls nothing
+    explicitly invoked either. dag-ulw reads its own sigil (`dag_ulw_cues`)."""
+    text = normalized.strip()
+    match = re.match(r"^(?:\$|\./|/|@)([a-z0-9][a-z0-9_-]*)(?=\s)", text)
+    if not match:
+        return False
+    name = _canonical_workflow_by_display_name().get(match.group(1), match.group(1))
+    if name == "dag-ulw" or name not in _workflow_names_a_message_may_open_with():
+        return False
+    rest = text[match.end() :].strip()
+    return (
+        stops_or_asks(name, rest, invoked=True)
+        or bool(run_control_words(rest))
+        or asks_about_dag_ulw(rest)
+        or _opens_with_a_report_on_a_name(rest)
+    )
 
 
 def _opens_with_a_report_on_a_name(normalized: str) -> bool:

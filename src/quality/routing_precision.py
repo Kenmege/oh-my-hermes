@@ -33,6 +33,32 @@ class RoutingPrecisionCase:
 ROUTE_QUESTION_ASKED = "asked"
 
 
+# A short stand-in for a skill's body, written with the words that picked the
+# route when Hermes' whole slash-skill turn was read as the person's: on that
+# reading `/dag-ulw <request>` dispatched `ultrawork`.
+_SLASH_SKILL_BODY = (
+    "Use ulw-plan for a reviewed plan, ulw-work for a coding handoff and dag-ulw for a graph; omh routing fix, "
+    "review, CI and merge evidence stay separate."
+)
+
+
+def _slash_skill_turn(skill: str, instruction: str = "") -> str:
+    """The turn Hermes sends for `/<skill> <instruction>`, as `_build_skill_message` writes it."""
+    lines = [
+        f'[IMPORTANT: The user has invoked the "{skill}" skill, indicating they want you to follow its '
+        "instructions. The full skill content is loaded below.]",
+        "",
+        f"# {skill}\n\n{_SLASH_SKILL_BODY}",
+        "",
+        f"[Skill directory: /home/user/.hermes/skills/{skill}]",
+        "Resolve any relative paths in this skill (e.g. `scripts/foo.js`, `templates/config.yaml`) against that "
+        "directory, then run them with the terminal tool using the absolute path.",
+    ]
+    if instruction:
+        lines += ["", f"The user has provided the following instruction alongside the skill invocation: {instruction}"]
+    return "\n".join(lines)
+
+
 @dataclass(frozen=True)
 class RoutingInterventionCase:
     id: str
@@ -7274,6 +7300,179 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "dag ulw 결과 알려줘",
         "answer_directly",
         "direct_answer",
+    ),
+    # Hermes sends a slash skill as its whole body in a frame. The turn routes on the invocation as typed, so a
+    # question or a status word after `/dag-ulw` starts no run; any other skill's turn is that skill's, with no OMH
+    # route over it.
+    RoutingPrecisionCase(
+        "slash-skill-dag-ulw-question-is-answered",
+        "A question after /dag-ulw, sent as Hermes' skill scaffold, gets an answer, not a run",
+        _slash_skill_turn("dag-ulw", "what is it?"),
+        "answer_directly",
+        "direct_answer",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "slash-skill-dag-ulw-status-starts-no-run",
+        "A status word after /dag-ulw, sent as Hermes' skill scaffold, starts no run",
+        _slash_skill_turn("dag-ulw", "상태 보여줘"),
+        "answer_directly",
+        "direct_answer",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "slash-skill-of-another-skill-gets-no-omh-route",
+        "Another skill's slash turn is that skill's: its OMH words route nothing",
+        _slash_skill_turn("github-pr-workflow", "rebase my open PRs"),
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "bare-slash-skill-of-another-skill-gets-no-omh-route",
+        "Another skill invoked bare is that skill's: its OMH words route nothing",
+        _slash_skill_turn("github-pr-workflow"),
+        "answer_directly",
+        "direct_answer",
+    ),
+    # A question after the /dag-ulw sigil, in Korean as in English and after a skill stacked on it, starts no run:
+    # Hermes sends every /dag-ulw turn as a sigil, so this is the form that runs.
+    RoutingPrecisionCase(
+        "korean-question-after-dag-ulw-sigil-is-answered",
+        "/dag-ulw followed by a Korean question is answered, not run",
+        "/dag-ulw 이게 뭐야?",
+        "answer_directly",
+        "direct_answer",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "korean-how-to-use-after-dag-ulw-sigil-starts-no-run",
+        "/dag-ulw followed by how to use it starts no run",
+        "/dag-ulw 어떻게 써?",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "korean-whats-left-after-dag-ulw-sigil-starts-no-run",
+        "/dag-ulw followed by what is left asks how the run stands, not for a new one",
+        "/dag-ulw 뭐 남았어?",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "korean-past-question-after-dag-ulw-sigil-is-answered",
+        "/dag-ulw followed by whether the work went through is answered, not run",
+        "/dag-ulw CI 통과했어?",
+        "answer_directly",
+        "direct_answer",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "question-after-a-skill-stacked-on-dag-ulw-is-answered",
+        "A question after a skill stacked on /dag-ulw invokes neither",
+        "/dag-ulw /ulw-plan what is it?",
+        "answer_directly",
+        "direct_answer",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "slash-skill-dag-ulw-korean-question-is-answered",
+        "A Korean question after /dag-ulw, sent as Hermes' skill scaffold, is answered, not run",
+        _slash_skill_turn("dag-ulw", "이게 뭐야?"),
+        "answer_directly",
+        "direct_answer",
+        "dag-ulw",
+    ),
+    # An explicit invocation whose instruction is a stop or a question about the skill starts no run, as the bare
+    # name's does: the router's explicit-invocation rule reads it first (`bare_name_reports_or_asks` after a sigil).
+    RoutingPrecisionCase(
+        "explicit-ulw-work-stop-is-answered",
+        "/ulw-work stop is about the run, not a new one",
+        "/ulw-work stop",
+        "answer_directly",
+        "direct_answer",
+        "ultrawork",
+    ),
+    RoutingPrecisionCase(
+        "explicit-ulw-loop-stop-is-answered",
+        "/ulw-loop stop is about the loop, not a new one",
+        "/ulw-loop stop",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "explicit-ulw-interview-stop-is-answered",
+        "/ulw-interview stop is about the interview, not a new one",
+        "/ulw-interview stop",
+        "answer_directly",
+        "direct_answer",
+        "deep-interview",
+    ),
+    RoutingPrecisionCase(
+        "explicit-omh-plan-stop-is-answered",
+        "/omh-plan stop is about the plan, not a new one",
+        "/omh-plan stop",
+        "answer_directly",
+        "direct_answer",
+        "plan",
+    ),
+    RoutingPrecisionCase(
+        "explicit-omh-code-review-stop-is-answered",
+        "/omh-code-review stop is about the review, not a new one",
+        "/omh-code-review stop",
+        "answer_directly",
+        "direct_answer",
+        "code-review",
+    ),
+    RoutingPrecisionCase(
+        "explicit-omh-app-debugging-stop-is-answered",
+        "/omh-app-debugging stop is about the investigation, not a new one",
+        "/omh-app-debugging stop",
+        "answer_directly",
+        "direct_answer",
+        "app-debugging",
+    ),
+    RoutingPrecisionCase(
+        "explicit-ulw-plan-question-is-answered",
+        "/ulw-plan what does this do? asks about the skill, it starts no plan",
+        "/ulw-plan what does this do?",
+        "answer_directly",
+        "direct_answer",
+        "ralplan",
+    ),
+    RoutingPrecisionCase(
+        "explicit-ulw-work-korean-stop-is-answered",
+        "/ulw-work 그만 stops, in Korean, and starts nothing",
+        "/ulw-work 그만",
+        "answer_directly",
+        "direct_answer",
+        "ultrawork",
+    ),
+    RoutingPrecisionCase(
+        "explicit-ulw-plan-korean-question-is-answered",
+        "/ulw-plan 이게 뭐야? asks about the skill, in Korean",
+        "/ulw-plan 이게 뭐야?",
+        "answer_directly",
+        "direct_answer",
+        "ralplan",
+    ),
+    RoutingPrecisionCase(
+        "explicit-app-debugging-run-question-is-answered",
+        "/omh-app-debugging asking why the run stopped is about the run, so the loaded skill answers it, no new run",
+        "/omh-app-debugging why did the run stop?",
+        "answer_directly",
+        "direct_answer",
+        "app-debugging",
+    ),
+    RoutingPrecisionCase(
+        "slash-skill-ulw-work-stop-is-answered",
+        "/ulw-work stop, sent as Hermes' skill scaffold, starts no run",
+        _slash_skill_turn("ulw-work", "stop"),
+        "answer_directly",
+        "direct_answer",
+        "ultrawork",
     ),
     # A stop, cancel or status word for the dag-ulw run in progress starts no new run; Hermes' route hint points it
     # at the run's own omh_dag cancel or status. The shortlist may still list dag-ulw; the route answers directly.
@@ -16780,6 +16979,81 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "The /dag-ulw slash form starts a dag-ulw run",
         "/dag-ulw build the search feature end to end",
         "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    # The same slash command as Hermes sends it, the skill's body in a frame: routed on the invocation as typed.
+    RoutingInterventionCase(
+        "slash-skill-dag-ulw-request-dispatches",
+        "/dag-ulw sent as Hermes' skill scaffold starts a dag-ulw run, not the workflows its body names",
+        _slash_skill_turn("dag-ulw", "migrate the billing service: update the API, the UI and the docs, then verify"),
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "bare-slash-skill-dag-ulw-dispatches",
+        "/dag-ulw alone, sent as Hermes' skill scaffold, starts a dag-ulw run",
+        _slash_skill_turn("dag-ulw"),
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "slash-skill-ulw-plan-request-dispatches",
+        "/ulw-plan sent as Hermes' skill scaffold reaches the reviewed plan",
+        _slash_skill_turn("ulw-plan", "plan the billing migration"),
+        "dispatch", "ralplan", "forward_plan_to_selected_workflow", "plan",
+    ),
+    # A request after the sigil that holds a question word, or is asked politely, still starts the run.
+    RoutingInterventionCase(
+        "dag-ulw-sigil-request-to-find-why-dispatches",
+        "/dag-ulw with a request to find why something broke and fix it starts a run",
+        "/dag-ulw 왜 깨졌는지 찾아서 고쳐줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "dag-ulw-sigil-request-to-see-what-is-wrong-dispatches",
+        "/dag-ulw with a request to see what is wrong and tidy the PRs starts a run",
+        "/dag-ulw 뭐가 문제인지 보고 PR들 정리해",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "dag-ulw-sigil-many-pr-request-dispatches",
+        "/dag-ulw over every upstream PR, close, address review or rebase each, starts a run",
+        "/dag-ulw 내가 올린 upstream pr들 전부 확인해서 닫을건 닫고 리뷰반영할건 리뷰반영하고 rebase할건 리베이스하고 ㄱㄱ",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "dag-ulw-sigil-polite-korean-request-dispatches",
+        "/dag-ulw with work asked politely as a question still starts a run",
+        "/dag-ulw api, ui, docs 작업을 병렬로 나눠서 구현해줄 수 있어?",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    # A real request after an explicit invocation still runs it, a stop word that names the work included.
+    RoutingInterventionCase(
+        "explicit-ulw-plan-request-dispatches",
+        "/ulw-plan with a request reaches the reviewed plan",
+        "/ulw-plan plan the billing migration",
+        "dispatch", "ralplan", "forward_plan_to_selected_workflow", "plan",
+    ),
+    RoutingInterventionCase(
+        "explicit-omh-code-review-request-dispatches",
+        "/omh-code-review with its target reaches the review",
+        "/omh-code-review this PR",
+        "dispatch", "code-review", "choose_executor", "handoff",
+    ),
+    RoutingInterventionCase(
+        "explicit-ulw-loop-request-dispatches",
+        "/ulw-loop with a goal reaches the loop",
+        "/ulw-loop fix the flaky test until green",
+        "dispatch", "loop", "ask_goal_boundary", "loop",
+    ),
+    RoutingInterventionCase(
+        "explicit-app-debugging-request-with-a-question-word-dispatches",
+        "/omh-app-debugging asked to find out why a test fails is its work",
+        "/omh-app-debugging find out why the login test fails",
+        "dispatch", "app-debugging", "prepare_root_cause_investigation", "root_cause_investigation",
+    ),
+    RoutingInterventionCase(
+        "explicit-ulw-work-stop-word-in-the-work-dispatches",
+        "/ulw-work with a stop word that names the work is a request",
+        "/ulw-work stop the flaky retry from hiding failures",
+        "dispatch", "ultrawork", "forward_plan_to_selected_workflow", "plan",
     ),
     RoutingInterventionCase(
         "work-with-dag-ulw-dispatches",

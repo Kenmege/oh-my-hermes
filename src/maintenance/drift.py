@@ -783,7 +783,21 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # noun (9); a first sentence asked rather than told and a
             # causative over a definite film with a relative clause (2); two
             # more asked first sentences and a causative with `on` (3).
-            expected=993,
+            # Hermes' slash-skill scaffold read as the invocation typed adds
+            # four, each dispatched on main from the skill body Hermes pasted
+            # in: a question and a status word after /dag-ulw, and another
+            # skill's slash turn with and without an instruction (4).
+            # A question after the /dag-ulw sigil adds six, each dispatched
+            # dag-ulw on main: a Korean question, how to use it, what is left,
+            # whether CI passed, a question after a skill stacked on it, and a
+            # Korean question in Hermes' scaffold (6).
+            # A stop or a question after an explicit invocation adds ten, each
+            # dispatched its skill on main: /ulw-work, /ulw-loop,
+            # /ulw-interview, /omh-plan, /omh-code-review and
+            # /omh-app-debugging stop, /ulw-plan what does this do?, /ulw-work
+            # 그만, /ulw-plan 이게 뭐야?, and /ulw-work stop in Hermes' scaffold
+            # (10), and /omh-app-debugging why did the run stop? (1).
+            expected=1014,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1169,7 +1183,20 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # skill (15). Five more production requests (zh courtesy, the
             # shortest request, make/cut/produce) and two chained requests
             # that keep their owner (7).
-            expected=991,
+            # Hermes' slash-skill scaffold read as the invocation typed adds
+            # three, each routed to ultrawork on main from the skill body
+            # Hermes pasted in: /dag-ulw with a request and bare, and /ulw-plan
+            # with a request (3).
+            # A request after the /dag-ulw sigil that holds a question word or
+            # is asked politely still dispatches: find why it broke and fix
+            # it, see what is wrong and tidy the PRs, the owner's many-PR
+            # turn, and a polite Korean request (4).
+            # A real request after an explicit invocation still dispatches:
+            # /ulw-plan with a request, /omh-code-review this PR, /ulw-loop
+            # with a goal, and /ulw-work with a stop word that names the
+            # work (4), and /omh-app-debugging asked to find out why a test
+            # fails (1).
+            expected=1003,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

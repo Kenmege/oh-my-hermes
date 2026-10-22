@@ -14,6 +14,48 @@ All notable changes will be documented here.
   coding control plane share the same stdlib-only calibration definitions and
   resolver; protocol text, goals, and existing calibration wording are unchanged.
   The section reaches newly built prompts, not already frozen resumed prompts.
+- **A Hermes slash-skill turn routes on what the person typed, not on the
+  skill body Hermes pasted in.** Hermes sends `/dag-ulw <text>` to every hook
+  as the skill's whole `SKILL.md` inside a frame, and OMH routed that body as
+  the person's words: the owner's `/dag-ulw` turn got ulw-work and ulw-plan
+  hints, and never the "call omh_dag define" one. `person_request_text` now
+  reads the frame back the way Hermes' own `describe_skill_invocation` does
+  (one skill, a bundle or stacked `/a /b`, a bare invocation, a runtime note,
+  a shared session's sender prefix), so a skill of OMH's own routes as
+  `/<skill> <instruction>`. Another skill's turn is a host-command turn and
+  gets no OMH route hint: the person chose that skill. Only a turn that opens
+  with the frame's exact first line is read this way, so typed messages route
+  as before. A dag-ulw turn's first `delegate_task` with no `[dag:` marker,
+  before the conversation has a run, is now sent back to
+  `omh_dag action=define` once; `omh_dag status` with no run says to start
+  with `define`; and the dag-ulw skill says never to `delegate_task` before
+  `define` returns its calls.
+- **A question, a status word or a stop after `/dag-ulw` starts no run, in
+  Korean as in English.** Every Hermes `/dag-ulw` turn now routes as the
+  sigil form, and that form read only English question words: `/dag-ulw 이게
+  뭐야?`, `/dag-ulw 어떻게 써?`, `/dag-ulw CI 통과했어?`, `/dag-ulw /ulw-plan what
+  is it?` and `/dag-ulw cancel order` dispatched a graph run. A question after
+  the sigil (and after any skills stacked on it) is now answered, `뭐 남았어?`
+  and `what's left?` read as status, an English stop word with other words
+  asks which as it does after the bare name, and a capability question that
+  names dag-ulw gets the answer, not dag-ulw's run card. A request that holds a
+  question word, opens on a request verb, or is asked politely still runs
+  (`/dag-ulw 왜 깨졌는지 찾아서 고쳐줘`, `/dag-ulw migrate the billing service?`,
+  `/dag-ulw 나눠서 구현해줄 수 있어?`).
+- **An explicit skill invocation never starts a run on a stop or a question.**
+  `/ulw-work stop`, `/ulw-loop stop`, `/ulw-interview stop`, `/omh-plan stop`,
+  `/omh-code-review stop`, `/omh-app-debugging stop`, `/ulw-work 그만` and
+  `/ulw-plan what does this do?` dispatched the skill they named, typed or as
+  Hermes' slash-skill turn: the router's explicit-invocation rule read a
+  sigil as a command before its stop and question guards. One shared rule now
+  reads the words after a sigil: a stop or a question about the skill
+  (`name_report_cues.stops_or_asks`), a stop word for its run (`작업
+  중단해줘`, `stop the review`, `주문 취소`) and a question about another skill
+  are answered, and a status word shows the status card; Hermes' route hint
+  calls nothing explicitly invoked. A report after a sigil (`/ultrawork broke
+  my build`) and a real request (`/ulw-work stop the flaky retry from hiding
+  failures`, `/omh-code-review this PR`, `/omh-app-debugging find out why the
+  login test fails`) still run the skill.
 
 ## 4.0.1 - 2026-10-22
 

@@ -789,7 +789,11 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 67130
 # 509135 -> 512944: only the new `show-reel` capability row, including its
 # optional companion guidance (+3809); no existing row changed. Re-derived
 # from the producer; no eager toolkit bytes or headroom.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 512944
+# 512944 -> 513064: the `dag-ulw` row's handoff policy says only `omh_dag`'s
+# calls start nodes, and a `delegate_task` without the marker they carry is no
+# node of the run, where it said the tool "only keeps the graph" (+120).
+# Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 513064
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
