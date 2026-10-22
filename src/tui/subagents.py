@@ -462,10 +462,12 @@ class Roster:
         self.kept = frozenset(self.agents)
         self.evicted = 0
 
-    def drop_kept(self, keep: frozenset[str]) -> frozenset[str]:
-        """Drop the agents `clear` kept whose dag node is no longer in `keep` (the run is over, or another run is
-        drawn); the ids dropped. An agent that arrived in this turn is never one of them."""
-        dropped = frozenset(key for key in self.kept if key in self.agents and self.agents[key].dag_node not in keep)
+    def drop_kept(self, runs: frozenset[str]) -> frozenset[str]:
+        """Drop the agents `clear` kept whose dag node belongs to one of `runs` (`d:<run>`, the runs a payload shows
+        over), a node that left the drawing since (a superseded repair) included; the ids dropped. An agent that
+        arrived in this turn is never one of them."""
+        dropped = frozenset(key for key in self.kept
+                            if key in self.agents and self.agents[key].dag_node.rpartition(":")[0] in runs)
         for key in dropped:
             del self.agents[key]
             self._wrapped.pop(key, None)

@@ -531,8 +531,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   · ⏎ log · x interrupt · s steer · esc back`). In a DAG run Down gives
   the keys to the tree instead, on its first running node, the same way:
   ↑↓ move over its rows, ← shuts the highlighted row (or, shut, goes to its
-  parent), → and Space open it (an `N more` row gives way to the nodes it
-  held), a fold you make stays, the rows scroll between `… N more nodes
+  parent), → opens it and Space flips it (an `N more` row gives way to
+  the nodes it held), a fold you make stays, the rows scroll between `… N more nodes
   above` and `below`, and Enter, `x` and `s` act on the highlighted node's
   agent as they do in the list (`↑↓ select · ←/→ or space fold · ⏎ log · x
   interrupt · s steer · esc back`); on a layer's row, or a node no agent ran
