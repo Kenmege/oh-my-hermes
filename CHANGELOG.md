@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`NO_COLOR` turns off colour in the whole OMH TUI (#2223 review item
+  17).** With `NO_COLOR` set to any non-empty value (no-color.org), only the
+  motion and the delegation graph used to honour it, and the transcript,
+  composer, agent view, pager and pickers still painted truecolour: 326
+  colour codes in the redesign's scene A and 486 in scene B. Now the app's
+  theme drops every colour, as does the skin's logo and a box graph drawn
+  in the transcript, so both scenes write none. Bold, dim, underline and reverse stay;
+  a menu's or list's highlighted row, which only its background marked, is
+  reversed as well as bold, and every state keeps the glyph it already
+  carries. With `NO_COLOR` unset or empty nothing changes: both scenes are
+  byte-identical to before.
+
 - **A dag run's view under the composer is a folding tree that says what each
   child is doing (the owner's ask of 2026-10-22).** Each node is one header
   row: a `▾`/`▸` fold triangle, its state glyph (the running spinner in the

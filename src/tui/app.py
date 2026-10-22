@@ -207,7 +207,7 @@ from .slash import (
     parse_slash,
     plan_invocation,
 )
-from .style import CSI, Line, Span, Style, color_depth
+from .style import CSI, NO_COLOR, TRUECOLOR, Line, Span, Style, color_depth
 from .subagents import Hit, Roster
 from .terminal import Terminal, background_from_colorfgbg, colorfgbg_names_dark, terminal_name, terminal_supported
 from .theme import (
@@ -219,6 +219,7 @@ from .theme import (
     logo_lines,
     surface_for,
     theme_named,
+    without_colour,
 )
 from .transcript import (
     NOTICE_ERROR,
@@ -865,9 +866,12 @@ def banner_lines(*, cwd: str, resumed: str, theme: Theme, width: int) -> list[Li
     return [truncate_line(header(path), width), ()]
 
 
-def banner_logo(skin: SkinTheme, background: str | None, width: int, rows: int) -> list[Line]:
-    """The skin's block logo and a blank row, for above the banner; nothing narrower than the logo or under LOGO_MIN_ROWS."""
+def banner_logo(skin: SkinTheme, background: str | None, width: int, rows: int, depth: str = TRUECOLOR) -> list[Line]:
+    """The skin's block logo and a blank row, for above the banner; nothing narrower than the logo or under LOGO_MIN_ROWS.
+    At the `NO_COLOR` depth the logo keeps its bold and drops its colours."""
     logo = logo_lines(skin, background)
+    if depth == NO_COLOR:
+        logo = [tuple(Span(span.text, replace(span.style, depth=NO_COLOR)) for span in row) for row in logo]
     if not logo or rows < LOGO_MIN_ROWS or width < max(line_width(row) for row in logo):
         return []
     return [*logo, ()]
@@ -1114,7 +1118,7 @@ class App(ModesMixin, AgentViewMixin):
         self.motion = not reduced_motion(environ)
         self.color_depth = color_depth(environ)  # what the delegation graph is painted at
         self.poller = poller
-        self.theme = theme
+        self.theme = self._painted(theme)
         self.clock = clock
         self.wall_clock = wall_clock
         self.pick_model_chains = pick_model_chains
@@ -1466,7 +1470,7 @@ class App(ModesMixin, AgentViewMixin):
         named = environ or {}
         self.background = answered or background_from_colorfgbg(named)
         self.background_named_dark = self.background is None and colorfgbg_names_dark(named)
-        self.theme = build_theme(self._skin(), self._surface())
+        self.theme = self._painted(build_theme(self._skin(), self._surface()))
 
     def clear_launch_screen(self, row: int | None) -> None:
         """Push the rows above the cursor off the screen, erase the scrollback, and start the region on the top row.
@@ -1500,6 +1504,10 @@ class App(ModesMixin, AgentViewMixin):
         """
         if row is not None and 1 <= row <= self.size[1] and not self.region.height:
             self.region = LiveRegion(self.terminal.write, start_row=row - 1)
+
+    def _painted(self, theme: Theme) -> Theme:
+        """`theme` as this terminal paints it: without colour at the `NO_COLOR` depth (`style.color_depth`)."""
+        return without_colour(theme) if self.color_depth == NO_COLOR else theme
 
     def _skin(self) -> SkinTheme:
         return theme_for_name(self.theme.name) or default_theme()
@@ -3805,7 +3813,7 @@ class App(ModesMixin, AgentViewMixin):
         else:
             self.transcript.add_notice(f"No theme named {arg}. Available: {', '.join(theme_names())}.", NOTICE_WARN)
             return
-        self.theme = build_theme(self._skin(), self._surface())
+        self.theme = self._painted(build_theme(self._skin(), self._surface()))
         if choice in BACKGROUND_MODES:
             self.transcript.add_notice(f"Theme {self.theme.name} {self._background_text()}.")
         else:
@@ -4028,7 +4036,7 @@ class App(ModesMixin, AgentViewMixin):
         stable = self.transcript.take_stable_lines(cols, self.theme)
         prompt_row = self.transcript.prompt_row
         if self.banner_facts is not None:
-            head = banner_logo(self._skin(), self._surface(), cols, rows) if self.logo_due else []
+            head = banner_logo(self._skin(), self._surface(), cols, rows, self.color_depth) if self.logo_due else []
             head += banner_lines(**self.banner_facts, theme=self.theme, width=cols)
             stable = head + stable
             prompt_row = None if prompt_row is None else prompt_row + len(head)

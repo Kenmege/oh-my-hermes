@@ -826,6 +826,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
     and no sweep, every spinner holds its first frame, and while a turn runs
     the screen repaints once a second for the elapsed time instead of ten
     times.
+  - `NO_COLOR` set to anything but an empty value (no-color.org) also draws
+    the whole TUI without colour: the transcript, the composer and info
+    line, the agent view and the dag tree, the pager, the pickers, the diff
+    and the logo. Bold, dim, underline and reverse stay, the highlighted
+    row of a menu or a list is reversed, and every state keeps its glyph.
 - Images: drag an image file onto the terminal, press Ctrl+V for an image on
   the clipboard, or type `/image <path>`. Each one shows as a chip on the row
   above the input (`📎 shot.png 1280×720`) and goes with the next message you
