@@ -841,9 +841,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # schedule over every PR (1), the tests of one PR singled out by a
             # modifier and of the current branch (2), and one fault said as
             # 안 돌아가 and as a symptom clause (2). PR 3 without a counter
-            # stays one numbered PR, a clarify as on main (1).
+            # stays one numbered PR, a clarify as on main (1). Its third
+            # review adds four, each a clarify or a fallback as on main: a
+            # frequency schedule and cron with a particle (2), and a count of
+            # files and a count of PRs with no breadth word (2).
             # Three domain-science vocabulary controls (+3).
-            expected=1063,
+            expected=1067,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1309,9 +1312,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # the PR just opened on code-review (4). Three run as a graph: 몽땅,
             # for each of my PRs:, and upgrade해줘 (a fallback or a clarify on
             # main) (3). PR 3개 is a count of PRs and runs as a graph (a
-            # fallback on main) (1).
+            # fallback on main) (1). Its third review adds three: twice a day
+            # stays on github-event-ops and my latest pull request on
+            # ultrawork, as on main (2), and the same sweep now runs as a graph
+            # (a clarify on main) (1).
             # Three unnamed domain-science interventions (+3).
-            expected=1069,
+            expected=1072,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

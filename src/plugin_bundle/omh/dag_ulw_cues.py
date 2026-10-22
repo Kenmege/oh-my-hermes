@@ -723,12 +723,15 @@ def _asks_to_be_told(text: str) -> bool:
 # - `work_over_many_targets`, a breadth word on such units with a request that may be work but is not that evidence
 #   ("review all open PRs"): the router may only ask once with dag-ulw as the candidate, and the hint offers it.
 _KOREAN_UNIT: Final = r"(?:pr|prs|pull\s*request|레포|리포|저장소|서비스|모듈|패키지|컴포넌트|엔드포인트|테스트|이슈|파일|페이지|브랜치)"
-# A count of units is many of them ("PR 3개", "PR 5건", "PR 3개의"), unless one is picked out of it ("PR 3개 중 하나").
-_KOREAN_COUNT: Final = r"(?:두|세|네|다섯|여러|[2-9]|\d{2,})\s*(?:개|건)(?!\s*중)"
+# A count of units is breadth only for PRs, repos and branches, and only with a breadth word after it ("PR 3개 전부",
+# "PR 5개 다", "레포 3개 전부"; lead decision on the #2232 review). A count of anything else, or one with no breadth
+# word, is a small single task ("파일 2개 수정해줘", "테스트 3개 고쳐줘", "PR 3개 리베이스해줘"). A count is never one
+# PR's number either (`_ONE_SCOPE`).
+_KOREAN_COUNTED_UNIT: Final = r"(?:pr|pull\s*request|풀\s*리퀘(?:스트)?|레포|리포|repo|브랜치|branch)"
+_KOREAN_COUNT: Final = r"(?:두|세|네|다섯|여러|[2-9]|\d{2,})\s*(?:개|건)"
 _KOREAN_BREADTH_OBJECT: Final = (
-    rf"(?:(?<![가-힣])(?:마이크로)?{_KOREAN_UNIT}(?:들)?\s*(?:{_KOREAN_COUNT}\s*)?(?:을|를|은|는)?\s*"
-    rf"(?:전부|모두|다|싹|몽땅|하나하나|각각)(?![가-힣])"
-    rf"|(?<![가-힣])(?:마이크로)?{_KOREAN_UNIT}(?:들)?\s*{_KOREAN_COUNT}(?:의|을|를|은|는)?(?![가-힣])"
+    rf"(?:(?<![가-힣])(?:마이크로)?{_KOREAN_UNIT}(?:들)?\s*(?:을|를|은|는)?\s*(?:전부|모두|다|싹|몽땅|하나하나|각각)(?![가-힣])"
+    rf"|(?<![가-힣a-z]){_KOREAN_COUNTED_UNIT}(?:들)?\s*{_KOREAN_COUNT}\s*(?:을|를|은|는)?\s*(?:전부|모두|다|몽땅)(?![가-힣])"
     rf"|(?<![가-힣])(?:모든|전체|각)\s*(?:마이크로)?{_KOREAN_UNIT}(?:들)?(?:을|를|에|의|에서)?)"
 )
 _EN_UNITS: Final = (
@@ -905,14 +908,27 @@ _COMPLETED: Final = re.compile(
 )
 # - a recurring schedule, which stays on ulw-loop, Hermes' /loop or an automation ("매일 아침 PR들 전부 리베이스해줘", "30분마다
 #   …", "PR 올릴 때마다 …", "rebase all my open PRs every hour", "update every service nightly");
+# The shapes a schedule takes, not a word list: a recurring period (매일, 매주, <time>마다, every <time>, each <time>), a
+# frequency over a period (2시간에 한 번씩, 일주일에 한 번, 하루 두 번, 주 2회, 2회씩, twice a day, 3 times a week), an
+# alternating period (격일, 격주, 격월), a clock time (9시에, at 9am), and a scheduler named for it (cron, 크론, 스케줄,
+# schedule로, 스케줄 걸어서, 예약해서). A one-off request in the now stays work ("지금 바로", "이번에 한 번만", "now").
+_KOREAN_NUMBER: Final = r"(?:\d+|한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|몇)"
+_TIME_UNIT_KO: Final = r"(?:초|분|시간|일|주일|주|달|개월|년|해)"
+_TIME_UNIT_EN: Final = (
+    r"(?:second|minute|min|hour|day|week|month|year|morning|afternoon|evening|night|weekday|weekend|monday|tuesday"
+    r"|wednesday|thursday|friday|saturday|sunday)"
+)
 _SCHEDULE: Final = re.compile(
-    r"(?<![가-힣])매(?:일|주|달|월|년|시간|분)(?![가-힣])|(?<![가-힣])매일(?=아침|밤|저녁|오전|오후)|하루에\s*한\s*번|주기적|정기적"
-    r"|때마다|(?:\d+\s*(?:초|분|시간|일|주|달|개월)|아침|저녁|밤|새벽|점심|오전|오후|주말|평일|[월화수목금토일]요일|하루|이틀|날|주|달"
+    r"(?<![가-힣])매(?:일|주|달|월|년|시간|분)(?![가-힣])|(?<![가-힣])매일(?=아침|밤|저녁|오전|오후)|주기적|정기적|때마다"
+    r"|(?:\d+\s*(?:초|분|시간|일|주|달|개월)|아침|저녁|밤|새벽|점심|오전|오후|주말|평일|[월화수목금토일]요일|하루|이틀|날|주|달"
     r"|해|시간)\s*마다|\d{1,2}\s*시(?:\s*\d{1,2}\s*분)?\s*(?:에|마다|정각)"
-    r"|\bevery\s+(?:\d+\s+|other\s+)?(?:second|minute|min|hour|day|week|month|year|morning|afternoon|evening|night"
-    r"|weekday|weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?\b"
+    rf"|(?:(?<![가-힣]){_KOREAN_NUMBER}|일)\s*{_TIME_UNIT_KO}\s*에\s*{_KOREAN_NUMBER}\s*번|하루\s*(?:에\s*)?{_KOREAN_NUMBER}\s*번"
+    r"|(?<![가-힣])(?:주|월|연|하루)\s*\d+\s*회|\d+\s*회\s*씩|(?<![가-힣])격(?:일|주|월)(?:로|으로|에|마다|씩)?(?![가-힣])"
+    r"|(?<![a-z])cron(?![a-z])|크론|스케줄(?!러)|schedule(?=\s*(?:으로|로|에|을|를|걸))|예약(?:해서|으로|을\s*걸)"
+    rf"|\bevery\s+(?:\d+\s+|other\s+)?{_TIME_UNIT_EN}s?\b|\beach\s+{_TIME_UNIT_EN}\b"
+    r"|\b(?:once|twice|thrice|(?:\d+|two|three|four|five|several)\s+times)\s+(?:a|per|each|every)\s+(?:hour|day|week|month|year)\b"
     r"|\b(?:hourly|daily|nightly|weekly|monthly|periodically)\b|\bat\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\b"
-    r"|\bon\s+a\s+schedule\b|\bcron\b"
+    r"|\bon\s+a\s+schedule\b"
 )
 # A pull request's address, written bare or as a link the caller passes (`reference_regions(...).links`: the
 # executable text has none).
@@ -933,6 +949,8 @@ _ONE_SCOPE: Final = re.compile(
     r"|\d+\s*번?\s*풀\s*리퀘(?:스트)?|풀\s*리퀘(?:스트)?\s*#?\s*\d+(?!\d|\s*(?:개|건))"
     r"|\b(?:this|that)\s+(?:pr|pull\s+request|branch|commit|diff)\b|(?<![가-힣])(?:이|그)\s*(?:pr|브랜치|커밋)(?![a-z])"
     r"|\b(?:in|of|from|on)\s+(?:the|my)\s+(?:pr|pull\s+request|branch|commit|diff)\b|\btouched\s+by\b"
+    # One PR picked out by an adjective or a possessive, never a plural ("my latest pull request", "the last PR").
+    r"|\b(?:my|the|your|our)\s+(?:latest|last|newest|most\s+recent|current)\s+(?:pr|pull\s+request)\b"
 )
 # - one PR or one branch singled out by a modifier, with the breadth on what is inside it ("어제 내가 연 PR 테스트 전부",
 #   "방금 올린 PR 파일들 전부", "feature/x 브랜치 테스트 전부", "현재 브랜치 테스트 전부"): no 들 and no breadth word on the PR

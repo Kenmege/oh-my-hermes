@@ -241,8 +241,13 @@ class RouterTests(unittest.TestCase):
                         "모든 서비스 업데이트 부탁", "충돌났었던 브랜치들 전부 리베이스해줘", "모든 패키지 upgrade해줘",
                         "PR들 전부 확인해서 close할 건 close하고 리베이스하고", "PR들 몽땅 리베이스해줘", "모든 패키지 최신화해줘",
                         "for each of my PRs: rebase onto main and fix the conflicts", "for every open PR, rebase it onto main",
-                        # A number with a counter is a count of PRs, many of them.
-                        "PR 3개 전부 리베이스해줘", "PR 5개 다 머지해줘", "PR 3개 리베이스해줘"):
+                        # A count of PRs, repos or branches with a breadth word after it is many of them.
+                        "PR 3개 전부 리베이스해줘", "PR 5개 다 머지해줘", "레포 3개 전부 의존성 올려줘", "풀리퀘 3개 전부 리베이스해줘",
+                        # The same request now is no schedule.
+                        "rebase every open PR now", "지금 바로 열린 PR들 전부 리베이스해줘", "이번에 한 번만 열린 PR들 전부 리베이스해줘",
+                        # A change aimed so a thing does not happen, with 수정 as with 고쳐.
+                        "모든 페이지 버튼 안 보이게 수정해줘", "모든 페이지 링크 안 열리게 수정해줘", "모든 서비스 로그 안 찍히게 수정해줘",
+                        "모든 페이지 더블클릭 안 되게 수정해줘"):
             with self.subTest(message=message):
                 self.assertTrue(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
@@ -274,7 +279,12 @@ class RouterTests(unittest.TestCase):
                         "pull 951 테스트들 다 고쳐줘", "fix all the failing tests on feature/dag-default",
                         "fix all the failing tests on the current branch", "현재 브랜치 테스트 전부 고쳐줘", "어제 내가 연 PR 테스트 전부 고쳐줘",
                         # A PR number without a counter stays one scope, the numbered twins of "PR 3개".
-                        "PR 3 테스트 전부 고쳐줘", "3번 PR 테스트 전부 고쳐줘", "#3 테스트 전부 고쳐줘"):
+                        "PR 3 테스트 전부 고쳐줘", "3번 PR 테스트 전부 고쳐줘", "#3 테스트 전부 고쳐줘",
+                        # A schedule in its other shapes, and one PR picked out by an adjective (#2232 review 3).
+                        "2시간에 한 번씩 레포들 전부 의존성 올려줘", "하루 두 번 열린 PR들 전부 리베이스해줘",
+                        "rebase every open PR each morning", "격주로 모든 서비스 로그 포맷 고쳐줘", "cron으로 모든 서비스 업데이트해줘",
+                        "주 2회 모든 패키지 업데이트해줘", "update all services twice a day", "스케줄 걸어서 모든 서비스 업데이트해줘",
+                        "fix every test in my latest pull request"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 router, hint, _candidate = self._dag_ulw_starts(message)
@@ -318,6 +328,22 @@ class RouterTests(unittest.TestCase):
         self.assertFalse(dispatches_dag_ulw(regions.executable_text, regions.links))
         self.assertFalse(work_over_many_targets(regions.executable_text, regions.links))
         self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+
+    def test_a_count_is_breadth_only_on_prs_repos_or_branches_with_a_breadth_word(self) -> None:
+        # Lead decision on the #2232 review: "PR 3개 전부" and "PR 5개 다" are many PRs, while a count of anything else,
+        # or a count with no breadth word, is a small single task that starts nothing, as on main.
+        for message in ("PR 3개 전부 리베이스해줘", "PR 5개 다 머지해줘", "레포 3개 전부 의존성 올려줘", "브랜치 2개 모두 main에 리베이스해줘"):
+            with self.subTest(message=message):
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
+        for message in ("파일 2개 수정해줘", "테스트 3개 고쳐줘", "파일 두 개 이름 바꿔줘", "이슈 2건 닫아줘", "PR 2개 머지해줘",
+                        "엔드포인트 2개 인증 붙여줘", "서비스 세 개 node 22로 올려줘", "PR 3개 리베이스해줘", "파일 2개 전부 수정해줘",
+                        "테스트 3개 다 고쳐줘", "서비스 세 개 다 업데이트해줘", "PR 3개 중 하나 리베이스해줘"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertFalse(work_over_many_targets(message))
+                router, hint, candidate = self._dag_ulw_starts(message)
+                self.assertEqual((router, hint), (False, False))
+                self.assertNotEqual(candidate, "dag-ulw")
 
     def test_a_missing_skill_catalog_is_not_kept(self) -> None:
         # With no sidecar the catalog names are unknown, and that is not kept: once the sidecar answers, a request

@@ -52,9 +52,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # One PR in other words, a "does not work" fault and a push over every
         # branch add five (+5); a schedule, one PR or branch singled out and a
         # fault in other words add five more (+5); PR 3 without a counter
-        # stays one scope (+1).
+        # stays one scope (+1); two more schedule shapes, a count of files and a
+        # count of PRs with no breadth word add four (+4).
         # Three science vocabulary controls remain direct answers.
-        self.assertEqual(payload["summary"]["case_count"], 1063)
+        self.assertEqual(payload["summary"]["case_count"], 1067)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -157,8 +158,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # Four request forms run as a graph and four named skills keep the
         # request (+8); three more forms run as a graph and four requests
         # stay where main sends them (+7); a count of PRs runs as a graph (+1).
+        # A twice-a-day schedule and my latest pull request stay, and a sweep
+        # said now runs as a graph (+3).
         # Three unnamed science requests render dedicated computation cards.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1069)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1072)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

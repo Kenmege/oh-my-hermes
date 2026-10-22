@@ -32,14 +32,19 @@ All notable changes will be documented here.
   change (`리뷰 코멘트 반영하고 force push ㄱㄱ`); `모든 브랜치 push 해줘` is one
   command. More request forms count: `해줘요`, `해주세용`, `해 놔줘`, `시켜줘`,
   `올리자`, `리베이스 고`, `부탁`, `upgrade해줘`, `몽땅`, `최신화`, and `for each of my
-  PRs: …`; a number with a counter is a count of PRs (`PR 3개 전부 리베이스해줘`),
-  while `PR 3`, `3번 PR` and `#3` stay one PR. A past in a modifier names the units (`내가 올렸던 PR들 전부
+  PRs: …`. A count is many only for PRs, repos or branches with a breadth word
+  after it (`PR 3개 전부 리베이스해줘`, `PR 5개 다 머지해줘`); `PR 3개 리베이스해줘`,
+  `파일 2개 수정해줘` and `테스트 3개 다 고쳐줘` stay small single tasks, and `PR 3`,
+  `3번 PR` and `#3` stay one PR. A past in a modifier names the units (`내가 올렸던 PR들 전부
   리베이스해줘`, `충돌났었던 브랜치들`), and a report after an English change is
   its tail (`fix all the failing tests and tell me which ones were flaky`). A
   stop or a hold, a
-  condition, a past or a completion as the predicate, a recurring schedule
-  (`매일 아침`, `30분마다`, `every hour`, `nightly`, `cron`), one pull request (its
-  number, `PR number 2240`, `2240번 풀리퀘`, `pull 951`, its link, or one singled
+  condition, a past or a completion as the predicate, a recurring schedule in
+  any of its shapes (`매일 아침`, `30분마다`, `2시간에 한 번씩`, `하루 두 번`, `주 2회`,
+  `격주로`, `every hour`, `each morning`, `twice a day`, `nightly`, `cron으로`,
+  `스케줄 걸어서`), one pull request (its
+  number, `PR number 2240`, `2240번 풀리퀘`, `pull 951`, `my latest pull
+  request`, its link, or one singled
   out by a modifier: `어제 내가 연 PR 테스트 전부`), one branch (`feature/x`,
   `현재 브랜치`, `this branch`), one fault with one fix in any words (`안 돌아가`,
   `안 먹어`, `돌지 않아`, `페이지가 하얗게 나와 고쳐줘`; `안 되게 고쳐줘` is a
