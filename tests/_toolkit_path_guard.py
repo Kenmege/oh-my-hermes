@@ -10,13 +10,26 @@ alias every macOS user's temp dir (`/var/folders/...`) and `/tmp` was refused.
 The refusals run with `sys.platform` patched to darwin, so a Linux or Windows
 run still exercises the macOS branch. `os.readlink` is patched for the alias
 table because only root can make a top-level link to test against.
+
+CI has no alias above its temp dir, so nothing there walks a guard through a
+trusted /tmp. The composition case mocks that walk, so it runs on every POSIX
+host. A trusted /tmp must let /tmp/u/f.json through, and it must not exempt
+a link below it: /tmp/u/link, as the file or as a folder, is still refused.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import unittest
 from unittest import mock
 
+
+# The composition case spells POSIX paths; Windows would resolve /tmp onto a drive.
+POSIX_ONLY = unittest.skipUnless(os.name == "posix", "the composition case spells POSIX paths")
+COMPOSED_LINKS = frozenset({Path("/tmp"), Path("/tmp/u/link")})
+COMPOSED_ACCEPTED = Path("/tmp/u/f.json")
+COMPOSED_REFUSED = (Path("/tmp/u/link"), Path("/tmp/u/link/f.json"))
 
 # (platform, top-level component, link text, trusted); `alias_fixture` adds the look-alike.
 ALIAS_CASES = (
@@ -66,3 +79,14 @@ def assert_only_system_aliases_trusted(test, guard, system_alias, root, refusal,
         with test.subTest(platform=platform, part=part, link=link_text), \
                 mock.patch("sys.platform", platform), mock.patch("os.readlink", return_value=link_text):
             test.assertIs(system_alias(Path(part)), trusted)
+
+
+def assert_alias_does_not_exempt_links_below(test, guard, refusal):
+    with mock.patch("sys.platform", "darwin"), \
+            mock.patch.object(Path, "is_symlink", lambda self: self in COMPOSED_LINKS), \
+            mock.patch("os.readlink", return_value="private/tmp"):
+        with test.subTest(composed=COMPOSED_ACCEPTED):
+            guard(COMPOSED_ACCEPTED)
+        for path in COMPOSED_REFUSED:
+            with test.subTest(composed=path), test.assertRaisesRegex(ValueError, refusal):
+                guard(path)
