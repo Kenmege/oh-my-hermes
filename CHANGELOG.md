@@ -14,6 +14,38 @@ All notable changes will be documented here.
   coding control plane share the same stdlib-only calibration definitions and
   resolver; protocol text, goals, and existing calibration wording are unchanged.
   The section reaches newly built prompts, not already frozen resumed prompts.
+- **Scrolling up in the OMH TUI stops at the top of the session.** The
+  launch scrolled your shell's rows and the launcher's warnings into the
+  terminal's scrollback and kept them there, so the wheel walked from the
+  TUI's logo straight into the shell history from before `omh` started; in
+  Terminal.app all 80 rows of a test shell history were still above the
+  session. The launch now erases the scrollback (ED 3) right after that
+  push, as every full redraw (a resize, Ctrl+L, `/redraw`, `/theme`, a
+  session switch, a rewind) already does and as Hermes' own TUI does in its
+  default alternate-screen mode, and the same run measured 0 of them. The
+  TUI still runs on the main screen, so scrolling, selecting and copying
+  stay your terminal's own, and when you quit the session stays above your
+  shell's prompt, as any output does. A terminal that ignores ED 3 keeps the
+  earlier rows one scroll up, as before. A default iTerm2 asks once whether
+  a control sequence may clear the scrollback and keeps it until you choose
+  Always Allow (a resize or Ctrl+L could already ask the same), and inside
+  tmux ED 3 clears that pane's history, as `tmux clear-history` does.
+
+- **A skill command typed once in the OMH TUI shows as one input row.**
+  `/dag-ulw <request>` printed `> /dag-ulw <request>` twice: the command's
+  echo, then the prompt the skill sends, which shows Hermes' `display` for
+  the turn. Hermes got one `command.dispatch` and one `prompt.submit` either
+  way; only the screen doubled. Once `command.dispatch` answers with a skill's
+  prompt, the TUI takes the echo back and the prompt row is the input. That
+  row shows Hermes' `display`, the same row a resumed or rewound session
+  draws for the turn, or the line as typed when Hermes names none. A dispatch
+  notice, such as stacked skills loading, goes under that row, also when the
+  prompt waits behind a running turn. A refused prompt reads as one for a
+  typed prompt. A built-in command that sends a prompt with no `display`
+  (`/plan`, `/retry`, `/learn`, `/init`) keeps its echo above what it sends,
+  as Hermes' own TUI shows it, and commands that print output keep their
+  echo. The same line sent twice still shows twice and is sent twice.
+
 - **A Hermes slash-skill turn routes on what the person typed, not on the
   skill body Hermes pasted in.** Hermes sends `/dag-ulw <text>` to every hook
   as the skill's whole `SKILL.md` inside a frame, and OMH routed that body as

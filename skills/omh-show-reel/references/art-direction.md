@@ -1,7 +1,9 @@
 # Independent artistic acceptance and the weakest-scene rebuild
 
-Before an expensive render, compare three distinct narrative/visual concepts,
-not palette swaps. For each useful reference record exact source/locator, revision
+How to set art direction per segment, the predictable screens to avoid, motion
+principles, rhythm, typography, safe areas and transitions are in
+`references/craft-design.md`. Before an expensive render, compare three distinct
+narrative/visual concepts, not palette swaps. For each useful reference record exact source/locator, revision
 or inspection date, what composition/motion/sound decision it informs, rights and
 limits. A supplied pinned reference can be enough; do not invent a trend claim or
 seek unrelated references just to fill a quota. Never confuse imitation with

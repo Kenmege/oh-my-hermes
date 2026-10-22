@@ -171,7 +171,16 @@ from . import dag_block
 from .panels import HudPoller, HudSnapshot, dag_page_lines, hud_chips, panel_lines, plan_state, plan_text
 from .dag_pager import DagPager
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
-from .screen import CARRIAGE_RETURN, CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion, cursor_up
+from .screen import (
+    CARRIAGE_RETURN,
+    CLEAR_SCREEN_AND_SCROLLBACK,
+    CURSOR_HOME,
+    ERASE_SCROLLBACK,
+    HIDE_CURSOR,
+    SHOW_CURSOR,
+    LiveRegion,
+    cursor_up,
+)
 from .session_picker import KEYS as SESSION_PICKER_KEYS
 from .session_picker import PICK, SessionPicker, session_rows
 from .rewind_picker import KEYS as REWIND_PICKER_KEYS
@@ -604,6 +613,7 @@ class QueuedLine(NamedTuple):
     typed: str = ""  # "" puts `text` back
     shell: bool = False
     chips: tuple[tuple[str, str], ...] = ()  # the paste chips in `shown` (label, text), for Up to put back as chips
+    notice: str = ""  # what the skill command that sent it said (Hermes' dispatch notice), shown under its row
 
 
 @dataclass(frozen=True)
@@ -1444,7 +1454,7 @@ class App(ModesMixin, AgentViewMixin):
         self.theme = build_theme(self._skin(), self._surface())
 
     def clear_launch_screen(self, row: int | None) -> None:
-        """Push the rows above the cursor into the terminal's scrollback and start the region on the screen's top row.
+        """Push the rows above the cursor off the screen, erase the scrollback, and start the region on the top row.
 
         From the cursor's row, `rows - 1` line feeds reach the screen's last
         row and then scroll exactly the rows above the cursor off the top, into
@@ -1452,14 +1462,19 @@ class App(ModesMixin, AgentViewMixin):
         cursor back to the top row, which is where the first frame starts (the
         row the cursor was on is erased by that frame, as at any launch). With
         `row` 1 (the launch's cursor position report put the cursor on the top
-        row) nothing is above it, and nothing is written. Nothing is erased:
-        what the screen showed stays one scroll up.
+        row) nothing is above it, and nothing is pushed. Then ED 3 erases the
+        scrollback, those rows and the shell's older output with them, so
+        scrolling up stops at the session's top row (the owner, 2026-10-22),
+        as it does after a full redraw (`_full_redraw`) and at the start of
+        Hermes' own TUI in its default alternate-screen mode (its main-screen
+        native mode, `display.tui_native`, writes only a line feed). A
+        terminal that ignores ED 3 keeps them one scroll up.
         """
         rows = self.size[1]
         if rows < 2 or self.region.height:
             return
-        if row != 1:
-            self.terminal.write("\n" * (rows - 1) + cursor_up(rows - 1) + CARRIAGE_RETURN)
+        push = "" if row == 1 else "\n" * (rows - 1) + cursor_up(rows - 1) + CARRIAGE_RETURN
+        self.terminal.write(push + ERASE_SCROLLBACK)
         self.region = LiveRegion(self.terminal.write, at_top=True)
 
     def adopt_cursor_row(self, row: int | None) -> None:
@@ -2927,30 +2942,34 @@ class App(ModesMixin, AgentViewMixin):
             self._send_prompt(text, shown=shown, hold=hold, chips=chips)
 
     def _send_prompt(
-        self, text: str, shown: str = "", typed: str = "", hold: bool = False, chips: tuple[tuple[str, str], ...] = ()
+        self, text: str, shown: str = "", typed: str = "", hold: bool = False, chips: tuple[tuple[str, str], ...] = (),
+        notice: str = "",
     ) -> None:
         """Send `text`, or queue it behind the running turn; `typed` is what Up puts back in the composer.
 
-        `hold` queues it behind a running turn whatever the busy mode.
+        `hold` queues it behind a running turn whatever the busy mode. `notice` goes under its row (`_submit_prompt`).
         """
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
         if self._busy() and (hold or self.busy_mode == BUSY_QUEUE):
-            self.queued.append(QueuedLine(text, shown, typed, chips=chips))
+            self.queued.append(QueuedLine(text, shown, typed, chips=chips, notice=notice))
             return
-        self._submit_prompt(text, shown)
+        self._submit_prompt(text, shown, notice=notice)
 
     def _submit_prompt(
         self, text: str, shown: str = "", queued: bool = False, truncate: int | None = None,
-        before_cut: Transcript | None = None,
+        before_cut: Transcript | None = None, notice: str = "",
     ) -> None:
         """Send one prompt; `queued` says the queue sent it.
 
         `truncate` names the row a rewind cuts the session before, and
         `before_cut` the transcript from before that cut, which a refusal puts back.
+        `notice` is what the skill command that sent it said, under its row whenever it goes.
         """
         self.transcript.add_user(shown or text, from_queue=queued)
+        if notice:
+            self.transcript.add_aside(NoticeBlock(notice))
         if not queued:
             self.queue_held = False  # the person started a turn: the queue goes on behind it
         self.sticky = shown or text
@@ -3020,7 +3039,7 @@ class App(ModesMixin, AgentViewMixin):
             if line.shell:
                 self._run_shell(line.text[len(SHELL_PREFIX) :].strip(), drain_after=True, echo=line.shown)
             else:
-                self._submit_prompt(line.text, line.shown, queued=True)
+                self._submit_prompt(line.text, line.shown, queued=True, notice=line.notice)
 
     # ── `!` shell lines ──
 
@@ -3326,12 +3345,24 @@ class App(ModesMixin, AgentViewMixin):
                 self.transcript.add_notice(f"/{invocation.name}: the alias did not resolve.", NOTICE_WARN)
             return
         notice = as_text(result.get("notice")).strip()
+        message = as_text(result.get("message"))
+        display = as_text(result.get("display")).strip()
+        sends = kind in ("send", "skill") and bool(message.strip())
+        shows_command = kind == "skill" or bool(display)  # a built-in's bare send (/plan, /retry) shows what it sends
+        echo = self.transcript.withdraw_command() if sends and shows_command and self.sid else None
+        if echo is not None:
+            # One row for the skill the person ran: the prompt's, with Hermes' `display` for it (`/name arg`) or else
+            # the echo's text, never the skill body sent; the dispatch's notice goes under it. The prompt is then the
+            # person's, as a typed one is: its call is not the echo's.
+            with self._for_command(None):
+                shown = display or echo.command
+                self._send_prompt(message, shown, typed=invocation.typed, hold=invocation.held, notice=notice)
+            return
         if notice:
             self.transcript.add_notice(notice)
-        message = as_text(result.get("message"))
         if kind in ("send", "skill"):
             if message.strip():
-                shown = as_text(result.get("display")).strip() or invocation.shown
+                shown = display or invocation.shown
                 self._send_prompt(message, shown, typed=invocation.typed, hold=invocation.held)
             else:
                 self.transcript.add_notice(f"/{invocation.name}: empty message", NOTICE_WARN)
@@ -4483,7 +4514,8 @@ def _run(
         with terminal:
             background, typed, row = terminal.query_background()
             app.adopt_background(background, environ)
-            app.clear_launch_screen(row)  # started: the shell's rows and the launcher's warnings go one scroll up
+            # Started: the shell's rows and the launcher's warnings are pushed off the screen and erased with the scrollback.
+            app.clear_launch_screen(row)
             code = app.run(typed)
     finally:
         if app.client is not client:  # a gateway spawned after a crash; the caller reaps the first one

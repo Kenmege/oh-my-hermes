@@ -1,5 +1,8 @@
 # Concepts, source evidence and segment direction
 
+Structure, reference structures by use, length benchmarks, copy and pronunciation
+rules and the script.json form are in `references/craft-story.md`.
+
 ## Verify before illustrating
 
 In `show_reel_source_asset_register/v1`, bind each claim_id to a locator, date,

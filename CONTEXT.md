@@ -15,7 +15,9 @@ This repo — a deterministic wrapper orchestration layer installed next to
 Hermes Agent: skill catalog, router, prepared-handoff generator, and
 metadata-only status surfaces. Makes no LLM, API, or network calls, with one
 scoped exception: the opt-in `omh_jev_ask` tool sends typed questions to Jev
-with the user's own key when the user names Jev in that turn.
+with the user's own key when the user names Jev in that turn. (The `show-reel`
+skill also ships opt-in provider scripts that the user, not OMH, runs with
+their own key.)
 _Avoid_: Hermes plugin (that is one distribution surface, not the product),
 coding executor, Hermes patch
 

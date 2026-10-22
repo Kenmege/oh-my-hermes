@@ -93,7 +93,8 @@ AUTOWRAP_OFF = f"{CSI}?7l"
 AUTOWRAP_ON = f"{CSI}?7h"
 # Home, erase the screen, erase the scrollback (xterm `CSI 3 J`): the start of a full redraw.
 CURSOR_HOME = f"{CSI}H"
-CLEAR_SCREEN_AND_SCROLLBACK = f"{CSI}H{CSI}2J{CSI}3J"
+ERASE_SCROLLBACK = f"{CSI}3J"  # ED 3: the terminal's saved lines, not the screen
+CLEAR_SCREEN_AND_SCROLLBACK = f"{CSI}H{CSI}2J{ERASE_SCROLLBACK}"
 # One synchronized update: the terminal holds the screen until the end mark, then shows the frame at once.
 SYNC_BEGIN = f"{CSI}?2026h"
 SYNC_END = f"{CSI}?2026l"

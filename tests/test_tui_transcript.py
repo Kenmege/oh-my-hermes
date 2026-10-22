@@ -1231,6 +1231,55 @@ class CommandOutputTests(LoopTestCase):
         self.assertEqual((block.command, block.done), ("/model", True))
 
 
+class WithdrawCommandTests(LoopTestCase):
+    """`withdraw_command` takes back the open echo only while it has printed nothing, and only that echo."""
+
+    def run_call(self) -> None:
+        self.step(ev("message.start"))
+        self.step(ev("tool.start", tool_id="t1", name="terminal", context="make test"))
+
+    def test_an_open_echo_goes_before_it_is_printed(self) -> None:
+        block = self.transcript.add_command("/dag-ulw fix it")
+        self.assertEqual(self.step(), [])
+        self.assertIn("> /dag-ulw fix it", self.live())
+        self.assertIs(self.transcript.withdraw_command(), block)
+        self.assertEqual(self.step(), [])
+        self.assertEqual((self.transcript.blocks, self.live()), ([], []))
+
+    def test_an_echo_held_under_a_running_call_leaves_the_tail_at_once(self) -> None:
+        self.run_call()
+        block = self.transcript.add_command("/dag-ulw fix it")
+        self.assertIn("> /dag-ulw fix it", self.live())
+        self.assertIs(self.transcript.withdraw_command(), block)
+        self.assertNotIn("> /dag-ulw fix it", self.live())  # the tail drawn before is not reused
+        self.step()
+
+    def test_an_echo_with_output_under_it_stays(self) -> None:
+        block = self.transcript.add_command("/usage")
+        self.transcript.add_output("Session cost: $0.01")
+        self.assertIsNone(self.transcript.withdraw_command())
+        self.assertEqual(self.transcript.blocks, [block])
+
+    def test_a_closed_echo_stays(self) -> None:
+        block = self.transcript.add_command("/dag-ulw fix it")
+        self.transcript.close_command(block)
+        self.step()
+        self.assertIsNone(self.transcript.withdraw_command())
+        self.assertEqual(self.transcript.blocks, [block])
+
+    def test_of_two_held_echoes_of_one_line_the_open_one_goes(self) -> None:
+        self.run_call()
+        first = self.transcript.add_command("/dag-ulw fix it")
+        second = self.transcript.add_command("/dag-ulw fix it")  # equal as dataclasses: the same text
+        self.assertIs(self.transcript.withdraw_command(), second)
+        self.transcript.close_command(first)
+        self.transcript.apply(ev("tool.complete", tool_id="t1", name="terminal", result={"output": "ok"}))
+        self.transcript.apply(ev("message.complete", text="done", status="complete"))  # writes what was held
+        echoes = [block for block in self.transcript.blocks if isinstance(block, CommandBlock)]
+        self.assertEqual(len(echoes), 1)
+        self.assertIs(echoes[0], first)
+
+
 class ToolOutputTests(LoopTestCase):
     """Each tool row shows the first lines of what the tool printed; a failed one, its error's first line."""
 

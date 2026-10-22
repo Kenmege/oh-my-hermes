@@ -2,6 +2,12 @@
 
 ## Observable review ladder
 
+Tools: `render.mjs --stills`/`--every` for style frames, `contact_sheet.py` for
+`--every`, `--times` and `--around` cut strips, `motion_check.py` for unintended
+freezes and flashes, `finish.py` for master/share/poster/SRT. The critique method,
+technical checklist, how to read a sheet and the delivery report form are in
+`references/craft-qa.md`.
+
 Render actual style frames at representative script/scene states, then a moving
 draft, a contact sheet and consecutive transition strips. Inspect at intended
 delivery-size (including actual mobile/chat thumbnail scale when applicable),

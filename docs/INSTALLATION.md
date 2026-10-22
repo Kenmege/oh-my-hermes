@@ -424,12 +424,23 @@ run and approval decision stays Hermes'; the screen is OMH's.
   composer was, the caret at the end of what you typed), it comes back as
   you left it.
   As it starts, the TUI scrolls what your terminal showed above its cursor
-  (your shell, the launcher's warnings) up into the terminal's own
-  scrollback, erasing nothing, and opens on the top row of a clean screen:
-  scroll up to read what was there, until a full redraw (a resize, Ctrl+L,
-  `/redraw`, switching or resuming a session) clears the scrollback with
-  the rest. A launch that falls back to Hermes' own
-  terminal leaves the screen as it was.
+  (your shell, the launcher's warnings) off the screen, erases the
+  terminal's scrollback (ED 3), as a full redraw (a resize, Ctrl+L,
+  `/redraw`, switching or resuming a session) already does and as Hermes'
+  own TUI does in its default alternate-screen mode (its main-screen native
+  mode, `display.tui_native`, erases nothing), and opens on the top row of
+  a clean screen, so scrolling up stops at the top of the session instead
+  of reaching your shell's history. When you quit, the session stays above
+  your shell's prompt, as any output does. A terminal that ignores ED 3
+  keeps what was there one scroll up. iTerm2 asks first: while its
+  app-wide Advanced setting "Prevent CSI 3 J from clearing scrollback
+  history?" is unset, as it is by default, it shows "A control sequence
+  attempted to clear scrollback history. Allow this in the future?" and
+  keeps the history until you choose Always Allow (a resize or Ctrl+L,
+  which already erase the scrollback, can show the same prompt). Inside
+  tmux, ED 3 clears that pane's history, as `tmux clear-history` does. A
+  launch that falls back to Hermes' own terminal leaves the screen as it
+  was.
 - A notice Hermes sends outside the transcript (the agent still starting, a
   credit warning, a provider that could not be reached) takes one row above
   the queued prompts, in its level's colour with a glyph. The next one
@@ -913,6 +924,10 @@ A slash command you run is echoed in the transcript as `> /name arg` (but
 `/model`, `/keys`, `/history`, `/logs`, `/dag` or `/redraw`, which only open a picker
 or a pager, or repaint, and print nothing to attribute), and what it prints stays there, under it after `⎿`, in the terminal's scrollback
 (each command's output under its own echo, also when you send a second command before the first answers).
+A skill command (`/<skill> <request>`) is one row: its echo gives way to the row of the prompt the skill sends
+once Hermes answers. That row shows the command, as Hermes names it for the turn (the row a resumed session shows)
+or else as you typed it, not the expanded skill prompt that is sent; an echo already written to the scrollback
+before Hermes answered stays, with the prompt's row under it.
 Typed during a turn, the echo and its output wait under what is running and are written after it, as a
 steer is, so a command never cuts off a running tool call or splits a reply; one Hermes has not finished
 answering when the turn ends is written above that turn's done line with what it printed so far, and
