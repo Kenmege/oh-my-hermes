@@ -32,6 +32,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+import re
+
+from .style import Span, Style
 
 LOCAL = "local"
 HERMES = "hermes"
@@ -232,6 +235,34 @@ def completions(prefix: str, catalog_pairs: Iterable[tuple[str, str]] = ()) -> l
     leading = [completion for completion in offered if completion.name.startswith(prefix)]
     inner = [completion for completion in offered if prefix in completion.name and not completion.name.startswith(prefix)]
     return leading + inner
+
+
+# A `/name` token: whitespace or the line's edge on both sides, so a path (`/Users/x`) or `a/b` is none.
+_SLASH_TOKEN = re.compile(r"(?<!\S)/([A-Za-z0-9][\w.:-]*)(?!\S)")
+
+
+def known_names(catalog_pairs: Iterable[tuple[str, str]] = ()) -> frozenset[str]:
+    """Every name a typed `/name` resolves to here: what completion offers, the TUI's commands and the catalog's."""
+    return frozenset(completion.name for completion in completions("", catalog_pairs))
+
+
+def slash_token_ranges(text: str, known: frozenset[str]) -> list[tuple[int, int]]:
+    """(start, end) of each `/name` token in `text` whose name is in `known`; an unknown `/foo` and a path are none."""
+    return [(found.start(), found.end()) for found in _SLASH_TOKEN.finditer(text) if found.group(1) in known]
+
+
+def slash_spans(
+    text: str, known: frozenset[str], style: Style, token_style: Style, ranges: list[tuple[int, int]] | None = None
+) -> tuple[Span, ...]:
+    """`text` in `style`, each `/name` token whose name is in `known` (`slash_token_ranges`, or the `ranges` given) in
+    `token_style`."""
+    spans: list[Span] = []
+    at = 0
+    for start, end in slash_token_ranges(text, known) if ranges is None else ranges:
+        spans += [Span(text[at:start], style), Span(text[start:end], token_style)]
+        at = end
+    spans.append(Span(text[at:], style))
+    return tuple(span for span in spans if span.text)
 
 
 def catalog_pairs(catalog: Mapping[str, object]) -> list[tuple[str, str]]:

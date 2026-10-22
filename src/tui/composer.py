@@ -97,7 +97,7 @@ from .keys import (
 from .style import DEFAULT_STYLE, Line, Span, Style
 from .width import TAB_CELLS, cell_width, cluster_width, clusters, is_control
 
-PROMPT = "> "
+PROMPT = "❯ "
 MASK = "•"
 NEWLINE = "\n"
 TAB_CHAR = "\t"
@@ -622,8 +622,11 @@ class Composer:
         prompt: str = PROMPT,
         prompt_style: Style = DEFAULT_STYLE,
         chip_style: Style = DEFAULT_STYLE,
+        marks: Sequence[tuple[int, int]] = (),
+        mark_style: Style = DEFAULT_STYLE,
     ) -> tuple[list[Line], tuple[int, int]]:
-        """The visible rows at `width` cells, and the caret as (row, col) within them; paste chips in `chip_style`."""
+        """The visible rows at `width` cells, and the caret as (row, col) within them; paste chips in `chip_style`,
+        and the `marks` (str index ranges of the text, such as a `/name` that resolves) in `mark_style`."""
         prompt_cells = cell_width(prompt)
         avail = max(width - prompt_cells, 1)
         self._avail = avail
@@ -640,8 +643,8 @@ class Composer:
         for number in range(scroll, min(len(rows), scroll + visible)):
             lead = Span(prompt, prompt_style) if number == 0 else indent
             start, end = rows[number].start, rows[number].end
-            if chips:
-                body_spans = _chip_styled(shown, shape.bounds, start, end, chips, chip_style)
+            if chips or marks:
+                body_spans = _chip_styled(shown, shape.bounds, start, end, chips, chip_style, marks, mark_style)
                 lines.append((lead, *body_spans))
                 continue
             body = "".join(shown[start:end])
@@ -650,13 +653,16 @@ class Composer:
 
 
 def _chip_styled(
-    shown: Sequence[str], bounds: Sequence[int], start: int, end: int, chips: Sequence[tuple[int, int]], style: Style
+    shown: Sequence[str], bounds: Sequence[int], start: int, end: int, chips: Sequence[tuple[int, int]], style: Style,
+    marks: Sequence[tuple[int, int]] = (), mark_style: Style = DEFAULT_STYLE,
 ) -> list[Span]:
-    """Clusters `start` to `end` as spans, the ones inside a chip (by str index) in `style`."""
+    """Clusters `start` to `end` as spans, the ones inside a chip (by str index) in `style`, inside a mark in
+    `mark_style`."""
     spans: list[Span] = []
     for index in range(start, end):
         inside = any(chip_start <= bounds[index] < chip_end for chip_start, chip_end in chips)
-        wanted = style if inside else DEFAULT_STYLE
+        marked = not inside and any(mark_start <= bounds[index] < mark_end for mark_start, mark_end in marks)
+        wanted = style if inside else mark_style if marked else DEFAULT_STYLE
         if spans and spans[-1].style == wanted:
             spans[-1] = Span(spans[-1].text + shown[index], wanted)
         else:

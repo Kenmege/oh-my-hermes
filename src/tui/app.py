@@ -116,7 +116,7 @@ from ..skin_pack import (
 )
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
-from .frame import BOX_INSET, MODE_NORMAL, MODE_SHELL, Frame, build_frame, sticky_line
+from .frame import INFO_INSET, MODE_NORMAL, MODE_SHELL, Frame, build_frame, sticky_line
 from .history import SEARCH_ACCEPT, SEARCH_CANCEL, SEARCH_HINTS, HistorySearch, append_entry, history_path, load_history
 from .gateway import (
     Event,
@@ -171,7 +171,16 @@ from . import dag_block
 from .panels import HudPoller, HudSnapshot, dag_page_lines, hud_chips, panel_lines, plan_state, plan_text
 from .dag_pager import DagPager
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
-from .screen import CARRIAGE_RETURN, CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion, cursor_up
+from .screen import (
+    CARRIAGE_RETURN,
+    CLEAR_SCREEN_AND_SCROLLBACK,
+    CURSOR_HOME,
+    ERASE_SCROLLBACK,
+    HIDE_CURSOR,
+    SHOW_CURSOR,
+    LiveRegion,
+    cursor_up,
+)
 from .session_picker import KEYS as SESSION_PICKER_KEYS
 from .session_picker import PICK, SessionPicker, session_rows
 from .rewind_picker import KEYS as REWIND_PICKER_KEYS
@@ -192,6 +201,7 @@ from .slash import (
     catalog_skill_count,
     completions,
     dropped_notice,
+    known_names,
     hermes_notice,
     parse_slash,
     plan_invocation,
@@ -699,7 +709,7 @@ def goal_line(goal: Mapping[str, Any] | None, width: int, theme: Theme) -> Line 
     else:
         glyph, label, detail = "⊙", "goal", turns
     line = (
-        Span(f"{glyph} {label}", theme.accent if glyph == "⊙" else theme.warn),
+        Span(f"{glyph} {label}", theme.running if glyph == "⊙" else theme.warn),  # an active goal runs
         Span(f" · {detail} · ", theme.muted),
         Span(words(goal.get(contract.GOAL_TITLE)), theme.text),
     )
@@ -844,7 +854,7 @@ def banner_lines(*, cwd: str, resumed: str, theme: Theme, width: int) -> list[Li
     def header(path: str) -> Line:
         shown = [*facts, path] if path else facts
         return (
-            Span(BANNER_BRAND, theme.heading),
+            Span(BANNER_BRAND, theme.brand),
             Span(f" v{__version__}", theme.muted),
             *(span for fact in shown for span in (Span(" · ", theme.dim), Span(fact, theme.text))),
         )
@@ -918,7 +928,7 @@ def attachment_from(result: Mapping[str, Any]) -> Attachment | None:
 def attachment_line(attachments: Sequence[Attachment], width: int, theme: Theme) -> Line:
     """`📎 shot.png 1280×720 · notes.png  Backspace removes`, cut to `width` (the hint goes first)."""
     labels = " · ".join(f"{item.name} {item.size}".strip() for item in attachments)
-    return truncate_line((Span(f"{ATTACH_ICON} {labels}", theme.accent), Span(f"  {ATTACH_HINT}", theme.hint)), width)
+    return truncate_line((Span(f"{ATTACH_ICON} {labels}", theme.text), Span(f"  {ATTACH_HINT}", theme.hint)), width)
 
 
 def path_items(result: Mapping[str, Any]) -> list[PathItem]:
@@ -1152,6 +1162,9 @@ class App(ModesMixin, AgentViewMixin):
         self.busy_mode = BUSY_QUEUE
         # What `commands.catalog` last said, bound to the live session: completion and `/help` read it.
         self.catalog: list[tuple[str, str]] = []
+        # Every name a typed `/name` resolves to (`slash.known_names`): drawn bold in its colour in the composer,
+        # your prompt's row and the `↳ you:` reminder. The TUI's own commands until the catalog arrives.
+        self.known_slash = known_names()
         self.catalog_categories: list[tuple[str, list[str]]] = []
         self.skill_count = 0
         self.catalog_warning = ""  # the last warning shown, so a re-read repeats none
@@ -1327,7 +1340,7 @@ class App(ModesMixin, AgentViewMixin):
                 self.transcript.add_recorded_tools(tools)
                 tools = []
             if role == "user":
-                self.transcript.add_user(text)
+                self.transcript.add_user(text, known=self.known_slash)
             else:
                 self.transcript.add_assistant(text)
         if tools:
@@ -1363,6 +1376,7 @@ class App(ModesMixin, AgentViewMixin):
         own bundled skills collide in, so they are kept for `/help` instead.
         """
         self.catalog = catalog_pairs(result)
+        self.known_slash = known_names(self.catalog)
         self.catalog_categories = catalog_categories(result)
         self.skill_count = catalog_skill_count(result)
         warning = as_text(result.get("warning")).strip()
@@ -1447,7 +1461,7 @@ class App(ModesMixin, AgentViewMixin):
         self.theme = build_theme(self._skin(), self._surface())
 
     def clear_launch_screen(self, row: int | None) -> None:
-        """Push the rows above the cursor into the terminal's scrollback and start the region on the screen's top row.
+        """Push the rows above the cursor off the screen, erase the scrollback, and start the region on the top row.
 
         From the cursor's row, `rows - 1` line feeds reach the screen's last
         row and then scroll exactly the rows above the cursor off the top, into
@@ -1455,14 +1469,19 @@ class App(ModesMixin, AgentViewMixin):
         cursor back to the top row, which is where the first frame starts (the
         row the cursor was on is erased by that frame, as at any launch). With
         `row` 1 (the launch's cursor position report put the cursor on the top
-        row) nothing is above it, and nothing is written. Nothing is erased:
-        what the screen showed stays one scroll up.
+        row) nothing is above it, and nothing is pushed. Then ED 3 erases the
+        scrollback, those rows and the shell's older output with them, so
+        scrolling up stops at the session's top row (the owner, 2026-10-22),
+        as it does after a full redraw (`_full_redraw`) and at the start of
+        Hermes' own TUI in its default alternate-screen mode (its main-screen
+        native mode, `display.tui_native`, writes only a line feed). A
+        terminal that ignores ED 3 keeps them one scroll up.
         """
         rows = self.size[1]
         if rows < 2 or self.region.height:
             return
-        if row != 1:
-            self.terminal.write("\n" * (rows - 1) + cursor_up(rows - 1) + CARRIAGE_RETURN)
+        push = "" if row == 1 else "\n" * (rows - 1) + cursor_up(rows - 1) + CARRIAGE_RETURN
+        self.terminal.write(push + ERASE_SCROLLBACK)
         self.region = LiveRegion(self.terminal.write, at_top=True)
 
     def adopt_cursor_row(self, row: int | None) -> None:
@@ -2961,7 +2980,7 @@ class App(ModesMixin, AgentViewMixin):
         `before_cut` the transcript from before that cut, which a refusal puts back.
         `notice` is what the skill command that sent it said, under its row whenever it goes.
         """
-        self.transcript.add_user(shown or text, from_queue=queued)
+        self.transcript.add_user(shown or text, from_queue=queued, known=self.known_slash)
         if notice:
             self.transcript.add_aside(NoticeBlock(notice))
         if not queued:
@@ -4028,6 +4047,7 @@ class App(ModesMixin, AgentViewMixin):
             below=self.menu_under,  # read after `_slot_lines` made it
             agents=self._agent_view(cols, rows),
             tail_floor=self._working_rows(),
+            known_slash=self.known_slash,
             text_question=self.slot is not None and not self.slot.picking,
             slot_caret=self._slot_caret(),  # read after `_slot_lines` drew the picker it comes from
             theme=self.theme,
@@ -4057,7 +4077,7 @@ class App(ModesMixin, AgentViewMixin):
             frame = build()
         # The rows above the region once the flush below and this frame are drawn: transcript rows.
         if self._sticky_needed(self.region.rows_above(rows, len(stable), frame.height)):
-            frame = build(sticky=sticky_line(self.sticky, cols, self.theme))
+            frame = build(sticky=sticky_line(self.sticky, cols, self.theme, self.known_slash))
         # Flushed before the frame, the lines cover the region's top rows, where the lines leaving
         # the tail were drawn (a settled tool group is those same rows, moved above the region), and
         # the frame is drawn under them. Flush and frame are one write, so no screen between them shows.
@@ -4147,11 +4167,11 @@ class App(ModesMixin, AgentViewMixin):
         elif self.list_selected is not None:
             say, say_style = self._agent_list_say()
         elif steered is not None:
-            say, say_style = tuple(form.format(name=steered.name) for form in STEER_SAY), self.theme.accent
+            say, say_style = tuple(form.format(name=steered.name) for form in STEER_SAY), self.theme.muted
         elif self.rewind is not None:
             say, say_style = tuple(form.format(ordinal=self.rewind.ordinal) for form in REWIND_SAY), self.theme.warn
         elif self.tell_draft is not None:
-            say, say_style = TELL_SAY, self.theme.accent
+            say, say_style = TELL_SAY, self.theme.muted
         elif self.exit_armed_at is not None and self.clock() - self.exit_armed_at <= EXIT_CONFIRM_SECONDS:
             say = EXIT_HINT
         elif armed is not None and self.clock() - armed[1] <= DOUBLE_ESCAPE_SECONDS:
@@ -4180,9 +4200,9 @@ class App(ModesMixin, AgentViewMixin):
         return (Span(" " * inset), *line) if inset and line else line
 
     def _info_inset(self) -> int:
-        """Cells before the info line's text: `BOX_INSET` under the box, where the box's text starts; none on a tiny
-        terminal, which draws no box."""
-        return 0 if is_tiny(self.size[1], self.size[0]) else BOX_INSET
+        """Cells before the info line's text: `INFO_INSET` under the composer's rule; none on a tiny
+        terminal, which draws no rule."""
+        return 0 if is_tiny(self.size[1], self.size[0]) else INFO_INSET
 
     def _newline_keys_due(self) -> bool:
         """Whether the info line names the keys that add a line: the draft spans lines (typed, or a pasted chip of them)
@@ -4267,7 +4287,7 @@ class App(ModesMixin, AgentViewMixin):
         if self._busy() and self.waiting_since is not None:
             # The turn waits on the person: no spinner, and one clock, the wait's.
             waited = elapsed_text(now - self.waiting_since)
-            row = (Span(WAITING_GLYPH, self.theme.accent), Span(STATE_WAITING, self.theme.text),
+            row = (Span(WAITING_GLYPH, self.theme.user), Span(STATE_WAITING, self.theme.text),
                    Span(f" ({waited})", self.theme.muted))
             lines.append(truncate_line(row, cols))
         elif self._busy() and self.interrupting:
@@ -4290,7 +4310,7 @@ class App(ModesMixin, AgentViewMixin):
             if self.effort in contract.REASONING_LEVELS and self.effort != "none":  # `none` is thinking off
                 effort = THINKING_EFFORT.format(self.effort)
             interrupt = INTERRUPT_HINT if self._esc_interrupts() else ""  # else Esc means something else now
-            lead = (Span(WORKING_GLYPHS[frame % len(WORKING_GLYPHS)], self.theme.accent), Span(" "),
+            lead = (Span(WORKING_GLYPHS[frame % len(WORKING_GLYPHS)], self.theme.running), Span(" "),
                     *working_spans(text, frame, self.theme))
             # A narrow row drops whole facts, the effort first (the info line says it where it has room), then the
             # tokens, the time, and the interrupt last; only a verb too long for the row alone is cut at the edge.
@@ -4523,7 +4543,8 @@ def _run(
         with terminal:
             background, typed, row = terminal.query_background()
             app.adopt_background(background, environ)
-            app.clear_launch_screen(row)  # started: the shell's rows and the launcher's warnings go one scroll up
+            # Started: the shell's rows and the launcher's warnings are pushed off the screen and erased with the scrollback.
+            app.clear_launch_screen(row)
             code = app.run(typed)
     finally:
         if app.client is not client:  # a gateway spawned after a crash; the caller reaps the first one

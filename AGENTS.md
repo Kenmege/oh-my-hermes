@@ -29,9 +29,10 @@ Do not turn OMH into a hidden Hermes runtime patch, transport bot, network
 service, LLM router, or secret coding executor. The one sanctioned execution
 surface is the explicit opt-in fanout dispatch bridge described under
 Implementation Boundaries — operator-invoked, local-only, fully observed,
-never hidden and never a default. The one sanctioned network call is the
-`omh_jev_ask` tool, also described there — user-requested per turn, never a
-default. The OMH TUI that bare `omh` opens is a terminal frontend over Hermes'
+never hidden and never a default. The one sanctioned network call OMH makes is
+the `omh_jev_ask` tool, also described there — user-requested per turn, never a
+default. The `show-reel` toolkit's opt-in provider scripts reach a provider
+only when the user runs them with their own key; OMH never runs them. The OMH TUI that bare `omh` opens is a terminal frontend over Hermes'
 own gateway, not an execution surface; its boundary is stated there too.
 
 ## Command Audience
@@ -161,10 +162,20 @@ PR without the chat history.
   OMH never writes. Stdlib only, HTTPS only, a fixed two-host route table, no
   redirects, bounded bodies, no retry after a sent request times out. It
   persists no key, `state`, question text, or reply; one metadata-only ledger
-  row per ask. `src/plugin_bundle/omh/jev_ask_client.py` is the only network
-  client in `src/` and only `tools/jev_ask_tool.py` may import it. Third-party
-  Jev plugins are still never called, and `omh doctor` still reads no
-  credential value.
+  row per ask. `src/plugin_bundle/omh/jev_ask_client.py` is the only
+  in-process network client in `src/` and only `tools/jev_ask_tool.py` may
+  import it. Third-party Jev plugins are still never called, and `omh doctor`
+  still reads no credential value.
+- Opt-in show-reel provider scripts (owner approval, PR for show-reel
+  upstream parity): `src/skills/show_reel_toolkit/scripts/eleven.py` and
+  `narrate.py` (ElevenLabs TTS/STT/SFX/music by spawning `curl`, key from
+  `ELEVENLABS_API_KEY` only and passed on curl's stdin) and
+  `codex_ref_image.sh` (the user's signed-in codex CLI) ship as inert package
+  data. Only the user runs them, with their own credential; without it they
+  exit 2 and send nothing. OMH core, install, update, routing and doctor never
+  import or execute them; `eleven.py` is in INVARIANT 1's
+  `PROCESS_SPAWN_ALLOWLIST` and the companion-nonexecution tests cover both
+  Python scripts.
 - The OMH TUI is the frontend bare `omh` opens. `omh` runs the user's own
   `hermes --tui` with `HERMES_TUI_DIR` pointing at OMH's packaged frontend, so
   Hermes' launcher still resolves the profile, resume target, working
@@ -247,7 +258,15 @@ PR without the chat history.
   not take waits in the TUI's own queue for the running turn to
   end, whatever the busy mode, so it never interrupts that turn.
   A steer Hermes does not answer within 120 s goes back to the
-  composer and is never re-sent. The subagent views (the agent view under
+  composer and is never re-sent. Its look is the rail and kind colours the
+  owner picked on 2026-10-22: each transcript block on a `┃` rail with no
+  fill (grey for the person's prompt, the skin's accent for a reply, a
+  call's state colour for the call), a call's state in its mark's glyph and
+  colour as the dag view draws it (running blue `○`, done green `●`, failed
+  red `✗`), its name in its tool family's hue at 4.5:1 on dark and light,
+  consecutive skill loads and tool-detail reads folded into one row, and the
+  composer between two full-width rules with no side edges; none of it
+  changes what the TUI sends or answers. The subagent views (the agent view under
   the info line, always expanded while there are agents, as the owner asked
   on 2026-10-21; the list Down opens on its rows; one agent's log) read with
   `subagent.tail` only, the tail of the log

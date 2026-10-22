@@ -28,7 +28,7 @@ from _delegation_state import PARENT, dispatched, homes, route, start  # noqa: E
 from _tui_lines import line_text  # noqa: E402
 from omh.cli import main  # noqa: E402
 from omh.plugin_bundle.omh.delegation_snapshot import messenger_snapshot  # noqa: E402
-from omh.plugin_bundle.omh.delegation_view import Focus, cells, render_delegation_view  # noqa: E402
+from omh.plugin_bundle.omh.delegation_view import ASCII, UNICODE, Focus, cells, render_delegation_view  # noqa: E402
 from omh.skin_pack import SKIN_THEMES, default_theme, hex_to_rgb, skin_colors  # noqa: E402
 from omh.tui import style as style_module  # noqa: E402
 from omh.tui.app import App  # noqa: E402
@@ -212,11 +212,12 @@ class GradientTests(unittest.TestCase):
                             self.assertGreaterEqual(contrast_ratio(dag_style(role, theme).fg, surface), TEXT_CONTRAST)
                         self.assertGreaterEqual(contrast_ratio(dag_style(f"node:{state}", theme).fg, surface),
                                                 EDGE_CONTRAST - 0.01)
-        # The default palette, measured: (word, mark) against its dark stand-in and against white.
+        # The default palette, measured: (word, mark) against its dark stand-in and against white. Waiting is the
+        # TUI's neutral grey since the rail and kind colours (2026-10-22), no longer a tint of the skin's accent.
         expected = {
-            None: {"running": (4.78, 4.48), "dispatched": (4.67, 3.69), "selected": (4.51, 3.89), "waiting": (4.56, 3.5)},
+            None: {"running": (4.78, 4.48), "dispatched": (4.67, 3.69), "selected": (4.51, 3.89), "waiting": (5.66, 3.15)},
             "#FFFFFF": {"running": (4.9, 3.68), "dispatched": (4.86, 4.47), "selected": (4.63, 4.23),
-                        "waiting": (4.71, 4.71)},
+                        "waiting": (6.11, 3.04)},
         }
         for background, ratios in expected.items():
             theme = build_theme(default_theme(), background)
@@ -234,7 +235,7 @@ class GradientTests(unittest.TestCase):
             "selected": ("\x1b[38;2;139;92;246m", "\x1b[38;5;99m", "\x1b[94m", ""),
             "dispatched": ("\x1b[38;2;99;102;241m", "\x1b[38;5;63m", "\x1b[94m", ""),
             "failed": ("\x1b[38;2;239;83;80m", "\x1b[38;5;203m", "\x1b[91m", ""),
-            "waiting": ("\x1b[38;2;62;124;138m", "\x1b[38;5;66m", "\x1b[90m", ""),
+            "waiting": ("\x1b[38;2;101;109;119m", "\x1b[38;5;242m", "\x1b[90m", ""),  # the neutral grey
             "done": ("", "", "", ""),
         }
         for state, sequences in expected.items():
@@ -244,6 +245,18 @@ class GradientTests(unittest.TestCase):
         # At 16 colours selected and running both reach bright blue: the `>` before the title still says which.
         selected = render_delegation_view(dag_export_run(), width=100, focus=Focus(node="d:r1:button"))
         self.assertIn("[-] > Export button", selected.text())
+
+    def test_at_16_colours_running_selected_and_dispatched_share_bright_blue_and_differ_by_glyph(self) -> None:
+        # #2223 review (the lead's call): the 16-colour table keeps one bright blue for the three, and the glyph
+        # carries the difference: running `●` (`*`), dispatched `◌` (`o`), and the selection's `>` before its title.
+        theme = build_theme(default_theme(), "#1E1E1E")
+        self.assertEqual({dag_style(f"node:{state}", theme, depth=COLOR_16).sgr()
+                          for state in ("running", "selected", "dispatched")}, {"\x1b[94m"})
+        for charset in (UNICODE, ASCII):
+            with self.subTest(charset=charset.name):
+                self.assertEqual(len({charset.glyphs["running"], charset.glyphs["dispatched"]}), 2)
+        selected = render_delegation_view(dag_export_run(), width=100, focus=Focus(node="d:r1:button"))
+        self.assertIn("> Export button", selected.text())
 
     def test_no_line_is_ever_dark_on_a_dark_background_or_light_on_a_light_one(self) -> None:
         # Done is the terminal's own foreground, which no palette can set too dark or too light: it is not measured.

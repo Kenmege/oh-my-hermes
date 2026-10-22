@@ -21,7 +21,7 @@ import unittest
 from unittest.mock import patch
 
 from _tui_gateway_replay import Scenario, spans
-from _tui_lines import INFO_INSET, box_edges, box_inner, line_text, lines_text
+from _tui_lines import composer_text, INFO_INSET, line_text, lines_text, rule_edges, RULE_ROW
 from test_tui_app import (
     INTERRUPTED,
     LIVE_ID,
@@ -955,8 +955,8 @@ class HermesOwnApprovalsTests(unittest.TestCase):
         # Hermes has approvals off on its own: Shift+Tab only turns plan back off, and the line says so.
         self.assertTrue(info_row_of(screen).startswith(INFO_INSET + "⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ plan off)"),
                         screen)
-        top, bottom = box_edges(80)
-        self.assertEqual((screen.count(top), screen.count(bottom)), (1, 1))  # no mode recolours or redraws the box
+        top, bottom = rule_edges(80)  # the composer's two rules are the same row, above and under it
+        self.assertEqual(screen.count(top), 2)  # no mode recolours or redraws the composer's rules
         short, _client = make_app(rows=9)
         session_info(short, yolo=True)
         short._on_input(SHIFT_TAB)
@@ -1357,7 +1357,7 @@ class RedrawTailTests(unittest.TestCase):
             app._draw_history(messages)
         taken = [line for line in app.transcript.take_stable_lines(80, DEFAULT_THEME) if line]
         self.assertEqual(taken[0][0].text, "⋯ 37 earlier messages · /history shows all")
-        self.assertEqual([line_text(line) for line in taken[1:]], ["> question 37", "> question 38", "> question 39"])
+        self.assertEqual([line_text(line) for line in taken[1:]], ["┃ ❯ question 37", "┃ ❯ question 38", "┃ ❯ question 39"])  # each prompt on its rail
 
 
 class CallExpiryTests(unittest.TestCase):
@@ -1840,8 +1840,8 @@ def drawn(app: App) -> list[str]:
 
 
 def composer_index(screen: list[str]) -> int:
-    """The composer's first row: the one under the box's top edge (terminals of 6 rows and 20 columns or more)."""
-    return next(index for index, line in enumerate(screen) if line.startswith("╭")) + 1
+    """The composer's first row: the one under the top rule (terminals of 6 rows and 20 columns or more)."""
+    return next(index for index, line in enumerate(screen) if line.startswith(RULE_ROW)) + 1
 
 
 def queue(app: App, *prompts: str) -> None:
@@ -1926,7 +1926,7 @@ class QueueTests(unittest.TestCase):
         queue(app, "fix the failing test", "then update the changelog")
         screen = drawn(app)
         top = composer_index(screen)
-        self.assertEqual(screen[top - 1], box_edges(80)[0])
+        self.assertEqual(screen[top - 1], rule_edges(80)[0])
         self.assertEqual(screen[top - 3].rstrip(), "⧗ fix the failing test")
         self.assertTrue(screen[top - 2].startswith("⧗ then update the changelog"))
         self.assertTrue(screen[top - 2].rstrip().endswith("↑ edit"))
@@ -2073,7 +2073,7 @@ class QueueTests(unittest.TestCase):
 
 
 class InfoLineModeTests(unittest.TestCase):
-    """The info line under the composer says the mode at every height and width; the box never changes with it."""
+    """The info line under the composer says the mode at every height and width; the rules never change with it."""
 
     def info(self, mode: str, rows: int, cols: int = 80) -> str:
         app, _client = make_app(rows=rows, cols=cols)
@@ -2082,8 +2082,8 @@ class InfoLineModeTests(unittest.TestCase):
         return info_row_of(drawn(app))
 
     def test_every_height_with_an_info_line_says_the_mode_on_it(self) -> None:
-        # From 3 rows: a 2-row terminal has room for the composer alone and draws no info line at all. Under the box
-        # the line starts where the box's text does; a tiny terminal draws no box, and there it starts on the edge.
+        # From 3 rows: a 2-row terminal has room for the composer alone and draws no info line at all. Under the rules
+        # the line starts where the composer's text does; a tiny terminal draws no rules, and there it starts on the edge.
         for rows in (3, 5, 6, 7, 9, 10, 24):
             with self.subTest(rows=rows):
                 inset = INFO_INSET if rows >= MIN_ROWS else ""
@@ -2222,7 +2222,7 @@ class ModeReplayTests(AppTestCase):
             # The replay holds this turn open until it sees session.interrupt.
             Step(b"second prompt\rthird prompt\r", when=running, label="running"),
             Step(b"\x1b[A", when=terminal.shows("⧗ third prompt"), capture="queued", label="queued"),
-            Step(b"\x03", when=terminal.shows("│ > second prompt"), capture="recalled", label="recalled"),
+            Step(b"\x03", when=terminal.shows("❯ second prompt"), capture="recalled", label="recalled"),
             Step(b"\x03", when=lambda: not terminal.shows("third prompt")(), label="cleared"),
             Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(), label="end"),
         )
@@ -2236,7 +2236,7 @@ class ModeReplayTests(AppTestCase):
         self.assertTrue(queued[top - 2].rstrip().endswith("↑ edit"))
         self.assertIn("↑ edit queued", info_row_of(queued))  # the rows above say how many; the line, the key
         self.assertNotIn("⧗", "\n".join(recalled))
-        self.assertEqual(box_inner(recalled[composer_index(recalled) + 1]).strip(), "third prompt")
+        self.assertEqual(composer_text(recalled[composer_index(recalled) + 1]).strip(), "third prompt")
         self.assertNotIn("queued", info_row_of(recalled))
 
     def test_ctrl_t_shows_the_effort_hermes_confirmed_on_the_info_line(self) -> None:
@@ -2273,10 +2273,10 @@ class ModeReplayTests(AppTestCase):
                 {"key": "yolo", "session_id": LIVE_ID, "value": "off"},
             ],
         )
-        top, bottom = box_edges(80)
-        for name in ("normal", "accept", "plan"):  # the box is the same in every mode
+        top, _bottom = rule_edges(80)  # the composer's two rules are the same row, above and under it
+        for name in ("normal", "accept", "plan"):  # the rules are the same in every mode
             screen = terminal.captures[name]
-            self.assertEqual((screen.count(top), screen.count(bottom)), (1, 1), screen)
+            self.assertEqual(screen.count(top), 2, screen)
 
     def test_a_plan_mode_prompt_reaches_hermes_as_the_prompt_slash_plan_builds(self) -> None:
         answers = (
@@ -2300,7 +2300,7 @@ class ModeReplayTests(AppTestCase):
         self.assertEqual(dispatch["params"], {"name": "plan", "arg": "fix the flaky test", "session_id": LIVE_ID})
         (submitted,) = run.calls("prompt.submit")
         self.assertEqual(submitted["params"], {"session_id": LIVE_ID, "text": PLAN_PROMPT})
-        self.assertIn("> /plan fix the flaky test", terminal.history())
+        self.assertIn("❯ /plan fix the flaky test", terminal.history())
         self.assertNotIn("PLAN MODE", terminal.history())
 
 

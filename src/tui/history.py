@@ -200,7 +200,7 @@ class HistorySearch:
         self.caret = None
         if max_rows <= 0:
             return []
-        query = truncate_line((Span(SEARCH_LABEL, theme.accent), Span(self.query)), width)
+        query = truncate_line((Span(SEARCH_LABEL, theme.muted), Span(self.query)), width)
         found = self.matches()
         match = self.current()
         if match is None:

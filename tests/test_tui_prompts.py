@@ -449,7 +449,7 @@ class SlotBarTests(unittest.TestCase):
             with self.subTest(method=method):
                 rows = slot(method, params).lines(60, DEFAULT_THEME, max_rows=6)
                 self.assertTrue(rows)
-                self.assertEqual(bar_styles(rows), {DEFAULT_THEME.accent})
+                self.assertEqual(bar_styles(rows), {DEFAULT_THEME.muted})  # a question is no state: grey
                 self.assertTrue(all(line_width(row) <= 60 for row in rows))
 
 

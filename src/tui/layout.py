@@ -7,9 +7,9 @@ Top to bottom the region holds:
     streaming tail  the last rows of the live transcript block
     slot            panel, completion menu or server-request prompt (one at a time); under a
                     panel or menu, or alone, the app's rows for the queued prompts
-    top rule        the composer box's top edge
+    top rule        the full-width rule above the composer
     composer        1..composer_cap(rows) input rows, the caret parked here
-    bottom rule     the composer box's bottom edge
+    bottom rule     the full-width rule under the composer
     menu below      the completion menu, where the app draws it under the composer instead of in the slot
     info line       the input mode or the keys that matter now, then model, context and effort
     agent view      the subagents (or the delegation tree) while there are any, always expanded
@@ -143,8 +143,8 @@ def slot_cap(rows: int, cols: int) -> int:
 def choice_cap(rows: int, cols: int) -> int:
     """The most rows a slot may take while the composer is hidden: `slot_cap` and a one-row composer frame's rows.
 
-    The frame is the box's top edge, its one input row and its bottom edge where the
-    terminal draws one; below `MIN_ROWS` rows or `MIN_COLS` columns it is the
+    The frame is the top rule, its one input row and the bottom rule where the
+    terminal draws them; below `MIN_ROWS` rows or `MIN_COLS` columns it is the
     input row alone.
     """
     frame = min(1, composer_cap(rows))
