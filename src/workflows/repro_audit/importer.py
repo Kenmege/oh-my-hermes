@@ -9,6 +9,10 @@ class _Number(str):
     """Original JSON number token (not a user-supplied JSON string)."""
 
 
+class _Integer(_Number):
+    """Original integer token, distinct from decimal/exponent tokens."""
+
+
 def _parse_native(raw):
     def pairs(items):
         result = {}
@@ -22,7 +26,7 @@ def _parse_native(raw):
     def integer(token):
         if len(token.lstrip('-')) > 1234:
             _fail('input_limit_exceeded', '/results')
-        return int(token)
+        return _Integer(token)
     try:
         value = json.loads(raw.decode('utf-8'), object_pairs_hook=pairs,
                            parse_float=_Number, parse_int=integer, parse_constant=constant)
@@ -61,7 +65,7 @@ def import_harness(raw, metric):
         _fail('missing_or_ambiguous_metric', '/results/hellaswag')
     key = keys[0]
     score = task[key]
-    if type(score) not in (int, _Number):
+    if type(score) not in (_Integer, _Number):
         _fail('invalid_numeric', '/results/hellaswag')
     # The normalized decimal grammar is checked by core; never round a float.
     token = str(score)
@@ -85,9 +89,9 @@ def import_harness(raw, metric):
     for obj, pointer in ((config, '/config/num_fewshot'), (task_config, '/configs/hellaswag/num_fewshot')):
         if type(obj) is dict and 'num_fewshot' in obj:
             fewshot = obj['num_fewshot']
-            if type(fewshot) is not int or not 0 <= fewshot <= 2147483647:
+            if type(fewshot) is not _Integer or not 0 <= int(fewshot) <= 2147483647:
                 _fail('invalid_fewshot', '/results')
-            candidates.append(fewshot)
+            candidates.append(int(fewshot))
             pointers.append(pointer)
     if candidates:
         if len(set(candidates)) != 1:

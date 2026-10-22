@@ -52,6 +52,59 @@ class AuditSurface(unittest.TestCase):
 
 @unittest.skipUnless(SUPPORTED, 'audit filesystem requires macOS/Linux')
 class NativeImport(AuditSurface):
+    def test_negative_zero_source_token_is_preserved(self):
+        source = self.root / 'source.json'
+        raw = b'{"results":{"hellaswag":{"acc":-0}}}'
+        source.write_bytes(raw)
+        out = self.root / 'out'
+        p = self.cli('import-harness', '--results', source, '--metric', 'acc', '--out', out)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        review = json.loads((out / 'import-review.json').read_text())
+        self.assertEqual(review['source_number_token'], '-0')
+        actual = json.loads((out / 'actual.json').read_text())
+        self.assertEqual(actual['score']['raw_value'], '-0')
+        self.assertEqual(source.read_bytes(), raw)
+
+    def test_source_token_boundaries_and_integer_fewshot_claims(self):
+        for token, value in (('0', '0'), ('1', '1'), ('0.1200', '0.1200'),
+                             ('1.20e-1', '0.120')):
+            for fewshot in ('0', '5', '-0'):
+                with self.subTest(token=token, fewshot=fewshot):
+                    source = self.root / 'source.json'
+                    raw = ('{"results":{"hellaswag":{"acc":' + token + '}},'
+                           '"config":{"num_fewshot":' + fewshot + '}}').encode()
+                    source.write_bytes(raw)
+                    out = self.root / (token + '-' + fewshot)
+                    p = self.cli('import-harness', '--results', source, '--metric', 'acc', '--out', out)
+                    self.assertEqual(p.returncode, 0, p.stderr)
+                    review = json.loads((out / 'import-review.json').read_text())
+                    self.assertEqual(review['source_number_token'], token)
+                    actual = json.loads((out / 'actual.json').read_text())
+                    self.assertEqual(actual['score']['raw_value'], value)
+                    count = actual['values']['fewshot.count']['value']
+                    self.assertIs(type(count), int)
+                    self.assertEqual(count, int(fewshot))
+                    extract = json.loads((out / 'artifacts/harness-extract.json').read_text())
+                    self.assertIs(type(extract['num_fewshot']), int)
+                    self.assertEqual(extract['num_fewshot'], int(fewshot))
+                    self.assertEqual(source.read_bytes(), raw)
+
+    def test_noninteger_fewshot_tokens_are_refused(self):
+        for field in ('"config":{"num_fewshot":%s}',
+                      '"configs":{"hellaswag":{"num_fewshot":%s}}'):
+            for i, token in enumerate(('true', 'false', '"0"', '"5"', '0.0', '5.0', '0e0', '5e0')):
+                with self.subTest(field=field, token=token):
+                    source = self.root / 'source.json'
+                    raw = ('{"results":{"hellaswag":{"acc":-0}},' + field % token + '}').encode()
+                    source.write_bytes(raw)
+                    out = self.root / ('bad-' + str(i) + ('-task' if 'configs' in field else '-global'))
+                    p = self.cli('import-harness', '--results', source, '--metric', 'acc', '--out', out)
+                    self.assertEqual(p.returncode, 2, p.stderr)
+                    self.assertIn('invalid_fewshot', (out / 'validation.json').read_text())
+                    self.assertEqual([x.name for x in out.iterdir()], ['validation.json'])
+                    self.assertNotIn('Traceback', p.stderr)
+                    self.assertEqual(source.read_bytes(), raw)
+
     def test_unselected_structural_limits_and_ambiguous_filters_reject(self):
         base = '{"results":{"hellaswag":{"acc":0.2}},"ignored":%s}'
         raws = [base % ('[' * 40 + '0' + ']' * 40), base % ('1' * 1300),
