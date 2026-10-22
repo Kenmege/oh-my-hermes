@@ -287,6 +287,8 @@ def _ends_in_a_past(word: str) -> bool:
         return False
     code = ord(word[-2]) - 0xAC00
     return word[-1] in "어아" and 0 <= code < 11172 and code % 28 == 20
+
+
 _KOREAN_FILLER_REASON: Final = re.compile(
     r"^(?:(?:일단|잠깐만?|제발|좀|그냥|지금|빨리|당장|얼른|바로|멈춰|그만|그만해|취소|중단)\s*)+$"
 )
@@ -721,7 +723,8 @@ def _asks_to_be_told(text: str) -> bool:
 # runtime behaviour asked for ("make the test runner execute tests in parallel").
 _KOREAN_UNIT: Final = r"(?:pr|prs|pull\s*request|레포|리포|저장소|서비스|모듈|패키지|컴포넌트|엔드포인트|테스트|이슈|파일|페이지|브랜치)"
 _KOREAN_BREADTH_WORK: Final = re.compile(
-    rf"{_KOREAN_UNIT}(?:들)?\s*(?:을|를|은|는)?\s*(?:전부|모두|다|싹|하나하나|각각)(?![가-힣])\s*(?:\S+\s+){{0,3}}"
+    rf"(?<![가-힣])(?:마이크로)?{_KOREAN_UNIT}(?:들)?\s*(?:(?:두|세|네|다섯|여러|\d+)\s*개\s*)?(?:을|를|은|는)?\s*"
+    r"(?:전부|모두|다|싹|하나하나|각각)(?![가-힣])\s*(?:\S+\s+){0,3}"
     r"\S*(?:해\s*(?:줘|주세요)|해서|하고|고쳐|확인|처리|정리|업데이트|올려|닫|머지|리베이스|반영|리뷰|봐\s*줘|줘|ㄱㄱ)"
     rf"|(?:모든|전체|각)\s*(?:마이크로)?{_KOREAN_UNIT}(?:들)?\s*(?:을|를|에|의|에서)?\s+(?:\S+\s+){{0,3}}?\S*(?:해\s*(?:줘|주세요)|해서|하고|줘|ㄱㄱ)"
 )
@@ -758,7 +761,7 @@ _NO_WORK_ASKED: Final = re.compile(
     r"|\b(?:tell\s+me|let\s+me\s+know|report|summari[sz]e|show\s+me|status|which\s+(?:ones|are|is)|do\s+not|don'?t"
     r"|without|but\s+not|never|only)\b|\band\s+list\b|\blist\s+(?:them|the|which|all)\b"
     # One thing in many places is one fix ("fix the bug in all three services", "update the readme in all repos").
-    r"|\b(?:the|this|that|a)\s+(?:\S+\s+){0,2}\S+\s+in\s+(?:all|every|each)\b"
+    r"|\b(?:the|this|that|a)\s+(?:\S+\s+){0,2}\S+(?<!s)\s+in\s+(?:all|every|each)\b"
 )
 # Work inside one pull request, branch or commit is that one's ("review all the files in this PR", "이 PR에 있는 파일 전부").
 _ONE_SCOPE: Final = re.compile(
@@ -771,7 +774,7 @@ _ONLY_READS_OR_ONE_COMMAND: Final = re.compile(
     r"확인|체크|봐\s*줘|돌려|실행|포맷|포매팅|지워|삭제|제거|\b(?:check|look\s+at|go\s+through|run|execute|format|lint|delete|test)\b"
 )
 _WRITES: Final = re.compile(
-    r"닫|머지|리베이스|반영|고쳐|수정|업데이트|올려|교체|추가|옮겨|바꿔|정리|라벨|달아|적용|붙여"
+    r"닫|머지|리베이스|반영|고쳐|수정|업데이트|올려|교체|추가|옮겨|바꿔|정리|라벨|달아|적용|붙여|통일|만들"
     r"|\b(?:close|merge|rebase|fix|update|upgrade|migrate|refactor|port|convert|add|remove|rename|address|bump|label"
     r"|resolve|implement|build|leave\s+comments|comment)\b"
 )
@@ -785,10 +788,15 @@ _UNTIL: Final = re.compile(r"\buntil\b|\btill\b|때까지")
 _RETIRED_ENGINE_NAMES: Final = frozenset({"team", "maestro", "ralph", "ultrapilot", "ultraprocess", "ultragoal"})
 
 
+@lru_cache(maxsize=1)
+def _skill_names() -> frozenset[str]:
+    return (_skill_shortlist.catalog_skill_names() or frozenset()) | COINED_NAMES | _RETIRED_ENGINE_NAMES
+
+
 def _opens_with_a_skill_name(folded: str) -> bool:
     """Whether ``folded`` opens with a skill's name, its label or a retired engine's: a request named for that skill."""
     words = re.findall(r"[^\s,:]+", folded)[:3]
-    names = (_skill_shortlist.catalog_skill_names() or frozenset()) | COINED_NAMES | _RETIRED_ENGINE_NAMES
+    names = _skill_names()
     return any("-".join(words[:length]) in names or " ".join(words[:length]) in names for length in (1, 2, 3))
 
 

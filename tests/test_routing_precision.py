@@ -46,7 +46,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # sigil's stop add eight (+8).
         # Multi-part work to dag-ulw adds three controls (+3).
         # A negated sweep, a status lookup and one PR's files add three (+3).
-        self.assertEqual(payload["summary"]["case_count"], 1042)
+        # A report-only review, a past, a single command and a stop with a
+        # declarative reason add four (+4).
+        self.assertEqual(payload["summary"]["case_count"], 1046)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -113,7 +115,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # about using the skill (+4), and a question that names the skill by
         # its label (+1), and so are the eight stops and questions above (+8).
         # A Korean stop then a negation is answered directly (+1).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 338)
+        # A stop with a declarative reason is answered directly (+1).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 339)
         # show-reel's README-link control is answered as a file lookup (+1).
         self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
@@ -141,7 +144,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # card (+2), and so does /omh-cancel 상태 보여줘 (+1).
         # Multi-part work to dag-ulw adds six graph runs, three single tasks that
         # stay, agent-ops-review's status and a stop with a loanword object (+11).
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1046)
+        # One fix in many places stays on ultrawork (+1).
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1047)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

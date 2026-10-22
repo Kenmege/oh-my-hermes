@@ -827,8 +827,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # which dispatched ultrawork on main (1).
             # The review of #2232 adds three: a sweep asked not to happen, the
             # status of every open PR, and every file of one PR start no
-            # graph run, as on main (3).
-            expected=1042,
+            # graph run, as on main (3). Its probes add four more: every PR
+            # reviewed only to be told which are safe, every PR said to be
+            # checked, and every test run as one command start no graph run,
+            # as on main (3); /ulw-work 멈춰 필요 없다 is a stop, as on main (1).
+            expected=1046,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1274,8 +1277,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # file, in Korean and English, and tests running in parallel (3).
             # /omh-agent-ops-review status runs the review, as on main (1),
             # and /ulw-work 멈춰 리뷰어 runs ultrawork, which main answered:
-            # its 어 ending read the loanword as a reason (1).
-            expected=1046,
+            # its 어 ending read the loanword as a reason (1). The review adds
+            # one: fix the bug in all three services stays on ultrawork, as on
+            # main (1).
+            expected=1047,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

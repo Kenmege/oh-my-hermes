@@ -221,7 +221,10 @@ class RouterTests(unittest.TestCase):
                         # that opens with a skill's name or a retired engine's.
                         "review all the files in this PR", "fix all the tests in this PR", "전체 테스트 돌려줘",
                         "모든 파일 포맷팅해줘", "fix all the failing tests until the suite is green",
-                        "모든 테스트 통과할 때까지 다 고쳐줘", "team 실패하는 테스트 다 고쳐", "ask 실패하는 테스트 다 고쳐"):
+                        "모든 테스트 통과할 때까지 다 고쳐줘", "team 실패하는 테스트 다 고쳐", "ask 실패하는 테스트 다 고쳐",
+                        # One fix in many places, and a unit word inside another word ("프로파일", "고객서비스").
+                        "fix the bug in all three services", "update the copyright year in all files", "프로파일 전부 지워줘",
+                        "고객서비스 전부 개선해줘"):
             with self.subTest(message=message):
                 self.assertNotEqual(route_chat_message(message, source="discord")["selected_skill"], "dag-ulw")
 
