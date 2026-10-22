@@ -19,7 +19,7 @@ load_local_package()
 from omh.plugin_bundle.omh import dag_ulw_cues  # noqa: E402
 from omh.plugin_bundle.omh.awareness import awareness_route_hint  # noqa: E402
 from omh.plugin_bundle.omh.hermes_session_commands import person_request_text  # noqa: E402
-from omh.plugin_bundle.omh.invocation_cues import META, STATUS, STOP, invoked_instruction  # noqa: E402
+from omh.plugin_bundle.omh.invocation_cues import META, STATUS, STATUS_IS_THE_WORK, STOP, invoked_instruction  # noqa: E402
 from omh.quality.routing_precision import _slash_skill_turn  # noqa: E402
 from omh.routing.chat import route_chat_message  # noqa: E402
 from omh.wrapper.contract import build_chat_interaction_payload  # noqa: E402
@@ -30,6 +30,8 @@ STOPS = (
     "/omh-app-debugging stop", "/ulw-work cancel", "/ulw-work 그만", "/ulw-work 취소해줘", "/ulw-work 이거 취소",
     "$ulw-work stop", "/ralplan 멈춰", "/ulw-work 停止", "/ulw-plan 止めて", "/omh-plan 取消",
     "/ulw-work 别做了", "/ulw-work 不要做了", "/ulw-loop 算了", "/omh-plan 停一下",
+    # doctor runs on a status request (#2221 L4), and a stop after it is still a stop.
+    "/omh-doctor 멈춰", "/omh-doctor stop",
 )
 # A stop whose object is the invoked skill's own run, or its name, and a stop said with why.
 OWN_RUN_STOPS = (
@@ -72,7 +74,7 @@ STATUS_REQUESTS = (
     # ulw-context aligns project terms; its status is no work of its own.
     "/ulw-context status", "/ulw-context how much context is left?",
     # A skill whose job is not reporting a state: its status is the status card's to show.
-    "/omh-cancel 상태 보여줘", "/omh-doctor status",
+    "/omh-cancel 상태 보여줘",
 )
 # Everything else runs the skill: a stop verb with a task object, a question with one, and a status request to a
 # skill whose own work that status is.
@@ -117,6 +119,24 @@ REQUESTS = (
     ("/ulw-research stop the research paper from leaking", "research"), ("/ulw-work 取消订单", "ultrawork"),
     ("/ulw-work サーバーを止めて", "ultrawork"),
 )
+
+# Each skill whose own work is a run's status (`invocation_cues.STATUS_IS_THE_WORK`, #2221 L3): a status request after
+# its sigil, and the awareness hint it keeps. Five carry no hint of their own on their sigil whatever follows it
+# (measured on 7c129aca9: "/omh-running-work-board show the board for this repo" hints nothing), so the router alone
+# pins those; the hinted six are pinned by both. doctor joined for #2221 L4: the status card shows no install health.
+STATUS_IS_THE_WORK_REQUESTS = {
+    "running-work-board": ("/omh-running-work-board status", ""),
+    "deploy-and-monitor": ("/omh-deploy-and-monitor 상태 보여줘", ""),
+    "verification-gate": ("/omh-verification-gate is it done?", "verification-gate"),
+    "ops-observability-card": ("/omh-ops-observability-card is it running?", ""),
+    "live-incident-response": ("/omh-live-incident-response status", "live-incident-response"),
+    "context-budget-review": ("/omh-context-budget-review 끝났어?", "context-budget-review"),
+    "harness-session-inventory": ("/omh-harness-session-inventory show me the status", ""),
+    "skill-health": ("/omh-skill-health 상태 보여줘", "skill-health"),
+    "run-efficiency": ("/omh-run-efficiency status", "run-efficiency"),
+    "agent-ops-review": ("/omh-agent-ops-review status", ""),
+    "doctor": ("/omh-doctor status", "doctor"),
+}
 
 
 def _forms(message: str) -> tuple[tuple[str, str], ...]:
@@ -236,6 +256,29 @@ class RouteTests(unittest.TestCase):
                     self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", skill))
                     interaction = build_chat_interaction_payload(text, source="discord")
                     self.assertEqual(interaction["route"]["selected_skill"], skill)
+
+
+class StatusIsTheWorkTests(unittest.TestCase):
+    def test_every_member_runs_on_a_status_request_after_its_sigil(self) -> None:
+        self.assertEqual(set(STATUS_IS_THE_WORK_REQUESTS), STATUS_IS_THE_WORK)  # a new member brings its case here
+        for skill, (message, hinted) in STATUS_IS_THE_WORK_REQUESTS.items():
+            self.assertEqual(invoked_instruction(skill, message.split(maxsplit=1)[1]), "")
+            for form, text in _forms(message):
+                with self.subTest(skill=skill, form=form):
+                    route = route_chat_message(text, source="discord")
+                    self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", skill))
+                    self.assertEqual(awareness_route_hint(text)["primary_workflow"], hinted)
+
+    def test_doctor_runs_on_its_status_and_its_bare_sigil_and_answers_a_question_about_it(self) -> None:
+        # #2221 L4: the status request joined doctor's work; its bare sigil runs it as before, and a question about the
+        # skill is still answered (its stops are in STOPS).
+        for text in ("/omh-doctor 상태 보여줘", "/omh-doctor"):
+            with self.subTest(text=text):
+                route = route_chat_message(text, source="discord")
+                self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "doctor"))
+                self.assertEqual(awareness_route_hint(text)["primary_workflow"], "doctor")
+        self.assertEqual(invoked_instruction("doctor", "이게 뭐야"), META)
+        self.assertNotEqual(route_chat_message("/omh-doctor 이게 뭐야", source="discord")["action"], "dispatch")
 
 
 if __name__ == "__main__":

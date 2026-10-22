@@ -113,6 +113,26 @@ class ClosingTests(unittest.TestCase):
         self.assertEqual(_kinds(payload), [("decision_without_question", "needs your approval")])
         self.assertEqual(payload["closing"]["kind"], "decision_without_question")
 
+    def test_factual_negatives_and_completed_answers_need_no_question(self) -> None:
+        # Task-aware relevance belongs in the maintained guidance, not a global
+        # past-tense ban. These include direct answers, actual gaps and ordinary
+        # completion; a clean text lint is not proof of briefing usefulness.
+        for reply in (
+            "요청하신 설치는 완료하지 못했습니다. 접근 오류가 발생했습니다.",
+            "설치했나요? 아니요, 설치하지 않았습니다.",
+            "요청한 원문을 읽지 못했습니다. 접근 오류가 발생했습니다.",
+            "The requested check failed; the result remains unverified.",
+            "Did you install it? No, I did not install it.",
+            "The requested source could not be retrieved.",
+            "검증을 통과했습니다.",
+            "The checks passed.",
+        ):
+            with self.subTest(reply=reply):
+                self.assertTrue(build_reply_lint(reply)["ok"])
+        approval = "요청하신 설치는 완료하지 못했습니다. 권한 승인이 필요합니다."
+        self.assertEqual(build_reply_lint(approval)["closing"]["kind"], "decision_without_question")
+        self.assertTrue(build_reply_lint(approval + " 설치 권한을 승인하시겠어요?")["ok"])
+
     def test_a_korean_question_ending_counts_without_a_question_mark(self) -> None:
         self.assertTrue(closing_has_question("어느 쪽으로 진행할까요"))
         self.assertTrue(closing_has_question("revert PR을 열까요?"))
