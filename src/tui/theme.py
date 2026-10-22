@@ -67,7 +67,7 @@ like any transcript row.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 from functools import lru_cache
 
 from ..skin_pack import (
@@ -80,7 +80,7 @@ from ..skin_pack import (
     theme_for_skin_name,
 )
 from .escapes import strip_escapes
-from .style import Line, Span, Style
+from .style import NO_COLOR, Line, Span, Style
 
 TEXT_CONTRAST = 4.5  # WCAG 2 body text
 EDGE_CONTRAST = 3.0  # WCAG 2 non-text: a rule, an edge, a secondary mark
@@ -369,9 +369,28 @@ def logo_lines(skin: SkinTheme, background: str | None = None) -> list[Line]:
 
 @lru_cache(maxsize=32)
 def on_band(theme: Theme, band: Style) -> Theme:
-    """`theme`'s roles measured against `band`'s background, for the words and marks drawn on that band."""
+    """`theme`'s roles measured against `band`'s background, for the words and marks drawn on that band; still
+    without colour when `theme` is (`without_colour`)."""
     skin = theme_for_name(theme.name) or default_theme()
-    return build_theme(skin, band.bg)
+    built = build_theme(skin, band.bg)
+    return without_colour(built) if theme.text.depth == NO_COLOR else built
+
+
+def without_colour(theme: Theme) -> Theme:
+    """`theme` painted at the `NO_COLOR` depth (no-color.org): every style keeps its bold, dim, italic, underline and
+    reverse, and the menu's current row and the pager's footer bar (`status`), which only their background told
+    apart, are reversed."""
+
+    def plain(value: object) -> object:
+        if isinstance(value, Style):
+            return replace(value, depth=NO_COLOR)
+        if isinstance(value, tuple):
+            return tuple(plain(item) for item in value)
+        return value
+
+    painted = replace(theme, **{field.name: plain(getattr(theme, field.name)) for field in fields(theme)})
+    return replace(painted, menu_current=replace(painted.menu_current, reverse=True),
+                   status=replace(painted.status, reverse=True))
 
 
 def theme_named(value: str, background: str | None = None) -> Theme:

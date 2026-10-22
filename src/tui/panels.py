@@ -58,7 +58,7 @@ from urllib.parse import quote
 from ..plugin_bundle.omh.hud_text import elapsed_text, todo_unchanged_text
 from ..version import __version__
 from .escapes import strip_escapes
-from .style import TRUECOLOR, Line, Span, Style
+from .style import NO_COLOR, TRUECOLOR, Line, Span, Style
 from .theme import Theme
 from .width import cell_width, clusters, truncate, truncate_line
 
@@ -1120,7 +1120,8 @@ def dag_style(role: str, theme: Theme, level: int = 0, levels: int = 1, depth: s
             "unknown": theme.dim, "group": theme.hint, "more": theme.muted, "": theme.text,
             "frontier": theme.dim, "dependency": theme.text,
         }.get(kind, theme.muted)
-    return replace(style, depth=depth) if depth != style.depth else style
+    # A theme without colour (`theme.without_colour`) stays so at any depth asked for.
+    return replace(style, depth=depth) if depth != style.depth and style.depth != NO_COLOR else style
 
 
 def node_style(state: str, theme: Theme, words: bool = False) -> Style:

@@ -744,7 +744,7 @@ def _notice_style(level: str, theme: Theme) -> tuple[str, Style]:
 
 def _banded(rows: list[Line], band: Style) -> list[Line]:
     """`rows` on `band`: every span on its background and an erase to the right edge, so a copy has no trailing spaces."""
-    return [(*(Span(span.text, replace(span.style, bg=band.bg)) for span in row), fill(band)) for row in rows]
+    return [(*(Span(span.text, replace(span.style, bg=band.bg, depth=band.depth)) for span in row), fill(band)) for row in rows]
 
 
 def _outcome_band(level: str, theme: Theme) -> Style | None:
