@@ -812,7 +812,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # four, each dispatched on main: /ulw-research stop the research,
             # /ulw-loop ループを止めて, /omh-code-review 코드 리뷰 취소 (their
             # skill), and /omh-code-review 어떻게 써? (OMH's intro card) (4).
-            expected=1027,
+            # A question that names the skill by its label adds one,
+            # dispatched its skill on main: /ulw-loop what is ulw-loop? (1).
+            expected=1028,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1240,8 +1242,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # the research about?, /ulw-context what is the context? (5). So
             # do a Korean stop verb before its object, /ulw-work 취소해 주문,
             # and an own-run word inside a domain noun, /ulw-loop 무한 루프
-            # 멈춰, as on main (2).
-            expected=1031,
+            # 멈춰, as on main (2). A single common word that is a skill's
+            # name is its material, not the skill: /omh-rust what is rust?,
+            # which got OMH's intro card on main (1).
+            expected=1032,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

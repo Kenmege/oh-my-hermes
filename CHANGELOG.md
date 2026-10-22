@@ -171,10 +171,13 @@ All notable changes will be documented here.
   `/omh-paper-learning what is it?` run the skill; only a question that names
   the skill (`what is omh-code-review?`, `what does this skill do?`, `이 스킬
   뭐야?`) or asks how to use it (`어떻게 써?`, `how do I use it?`) is answered
-  about it, after any skill. "a skill", a bare `스킬` and a name after an
-  article name a thing, so `/omh-docs what is a skill?` and `/omh-frontend
-  what does the frontend do?` run their skill, and `/ulw-context how much
-  context is left?` runs the context skill, whose work that status is. An
+  about it, after any skill. Only the skill's hyphenated or coined name
+  names it (`what is omh-rust?`, `what is ulw-loop?`): "a skill", a bare
+  `스킬`, a name after an article and a name that is a single common word
+  name a thing, so `/omh-docs what is a skill?`, `/omh-frontend what does the
+  frontend do?` and `/omh-rust what is rust?` run their skill, and
+  `/ulw-context how much context is left?` runs the context skill, whose work
+  that status is. An
   invoked skill's `omh-` label no longer makes its words an OMH intro or
   quickstart question: `/omh-paper-learning what is it?` got OMH's intro card
   on origin/main.
@@ -184,7 +187,7 @@ All notable changes will be documented here.
   a run.
 - In the frozen acceptance set's 1,725 labeled explicit invocations, typed
   and as Hermes' turn, no stop, status or question-about-the-skill row starts
-  a run (origin/main started one on 906 of 953), and none of the 772 labeled
+  a run (origin/main started one on 904 of 949), and none of the 776 labeled
   work rows is answered instead of run; four questions about the run after
   `/dag-ulw` are answered and three stop verbs with an object after it ask
   once, by dag-ulw's own reading. Rows outside that set are not measured.

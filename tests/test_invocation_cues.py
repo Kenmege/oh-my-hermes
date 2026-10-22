@@ -53,6 +53,8 @@ META_QUESTIONS = (
     "/omh-code-review 이 스킬 뭐야?", "/omh-paper-learning what does this skill do?",
     # How to use the skill, after any skill.
     "/omh-code-review 어떻게 써?", "/omh-code-review how do I use it?", "/omh-paper-learning 어떻게 써?",
+    # The skill named by its label or its hyphenated name.
+    "/omh-rust what is omh-rust?", "/ulw-loop what is ulw-loop?", "/omh-plan what is omh-plan?",
 )
 # How the run stands, after a skill whose work is not that status.
 STATUS_REQUESTS = (
@@ -90,6 +92,8 @@ REQUESTS = (
     ("/omh-skill-scout what can a skill do?", "skill-scout"), ("/omh-frontend what does the frontend do?", "frontend"),
     ("/ulw-research what is the research about?", "research"), ("/ulw-context what is the context?", "context"),
     ("/ulw-context how much context is left?", "context"),
+    # A single common word that is a skill's name is its material: the language, not the skill.
+    ("/omh-rust what is rust?", "rust"), ("/omh-rust how does rust work?", "rust"),
     # A stop verb before a task noun, a domain word that shares an own-run noun, and a stop of something else.
     ("/ulw-work 취소해 주문", "ultrawork"), ("/ulw-loop 무한 루프 멈춰", "loop"),
     ("/ulw-research stop the research paper from leaking", "research"), ("/ulw-work 取消订单", "ultrawork"),
@@ -174,6 +178,11 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(invoked_instruction("code-review", "what is omh-code-review?"), META)
         self.assertEqual(invoked_instruction("code-review", "how should we structure code-review here?"), "")
         self.assertEqual(invoked_instruction("ultrawork", "what does this do?"), META)
+        # Only a name in its skill form names the skill; a common word that is also its name does not.
+        self.assertEqual(invoked_instruction("rust", "what is rust?"), "")
+        self.assertEqual(invoked_instruction("rust", "what is omh-rust?"), META)
+        self.assertEqual(invoked_instruction("loop", "what is ulw-loop?"), META)
+        self.assertEqual(invoked_instruction("ultrawork", "what is ultrawork?"), META)
 
 
 class RouteTests(unittest.TestCase):

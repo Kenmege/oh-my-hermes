@@ -6186,11 +6186,14 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
     localized_normalized = unicodedata.normalize("NFKC", routing_text).casefold()
     diagnostic_status = _diagnostic_status_context(normalized)
     diagnostic_eval = _prefers_diagnostic_workflow_learning_hint(matching_message, intent)
-    routing_normalized = _with_canonical_display_names(
+    # The words as written, before display labels fold to workflow names: a label after a sigil still names the
+    # skill there ("/ulw-loop what is ulw-loop?", `_invoked_name_stops_or_asks`).
+    routing_written = (
         localized_normalized
         if diagnostic_eval or not diagnostic_status
         else _without_diagnostic_status_lines(localized_normalized)
     )
+    routing_normalized = _with_canonical_display_names(routing_written)
     tokens = set(re.findall(r"[a-z0-9][a-z0-9_-]*", routing_normalized))
     # A loop on a timer that is Hermes' `/loop`, or a code or media loop: the
     # same function on the same executable text the chat router reads, so the
@@ -6402,7 +6405,7 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
         # nothing reads as a request to start one (the router answers the same message directly). A stop noun that
         # may name the work instead ("dag ulw 주문 취소") asks which, as the router does.
         hints = [_dag_ulw_control_hint(control)] if hint_limit else []
-    elif _opens_with_a_report_on_a_name(routing_normalized) or _invoked_name_stops_or_asks(routing_normalized):
+    elif _opens_with_a_report_on_a_name(routing_normalized) or _invoked_name_stops_or_asks(routing_written):
         # A complaint or a question about the skill the message opens with ("ultrawork broke my build", "research
         # how does it work", "code-review 결과가 이상해"), or a stop, a status request or a question about the skill
         # after the sigil that invokes it ("/ulw-work stop"): the router answers it, so no hint offers a run either.

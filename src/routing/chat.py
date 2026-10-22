@@ -2164,14 +2164,15 @@ def _route_chat_message_cached(
         ).to_dict()
     executable_message = executable_routing_text(message)
     routing_message = _with_canonical_display_names(scrub_diagnostic_status_text(executable_message))
+    invocation = _invocation_as_written(scrub_diagnostic_status_text(executable_message), routing_message)
     if not routing_message.strip():
         return _direct_answer_decision(message, source=source, min_confidence=min_confidence).to_dict()
     # A complaint or a question that opens with a skill's bare name ("ultrawork broke my build", "code-review 결과가
     # 이상해", "ralph broke my build", "ultrawork 이거 어떻게 써") is about that skill, not a request to run it. It is
     # answered, as a question about dag-ulw is, before a fast path or the scorer reads the name as the skill's own
     # phrase. The route hint reads the same functions (`awareness._opens_with_a_report_on_a_name`).
-    answered_skill = bare_name_reports_or_asks(routing_message.strip(), _names_a_message_may_open_with())
-    if answered_skill and _invoked_status_word(routing_message, answered_skill):
+    answered_skill = bare_name_reports_or_asks(invocation.strip(), _names_a_message_may_open_with())
+    if answered_skill and _invoked_status_word(invocation, answered_skill):
         # A status word after a sigil ("/ulw-loop 상태 보여줘"): how the work stands, the status card's to show.
         return _omh_status_decision(message, source=source, min_confidence=min_confidence).to_dict()
     if answered_skill or reports_or_asks_after_the_name(routing_message):
@@ -6973,11 +6974,25 @@ def _invoked_status_word(routing_message: str, skill: str) -> bool:
     return len(parts) == 2 and invoked_instruction(skill, parts[1]) == INVOKED_STATUS
 
 
+def _invocation_as_written(written: str, routing_message: str) -> str:
+    """A sigil invocation with only the skill's name folded to its canonical name (`_with_canonical_display_names`),
+    the words after it as the person wrote them: a label said in them still names the skill ("/omh-rust what is
+    omh-rust?"), where the fold would leave a common word ("rust"). Any other message, or a fold that changed more
+    than the name, is ``routing_message``."""
+    folded, typed = routing_message.strip().split(maxsplit=1), written.strip().split(maxsplit=1)
+    if not routing_message.strip().startswith(EXPLICIT_INVOCATION_PREFIXES) or len(folded) < 2 or len(typed) < 2:
+        return routing_message
+    if _with_canonical_display_names(typed[0]) != folded[0]:
+        return routing_message
+    return f"{folded[0]} {typed[1]}"
+
+
 def invoked_skill_stops_or_asks(message: str) -> bool:
     """Whether a sigil invokes a skill and the words after its name stop its run or ask about it ("/omh-plan stop",
     "/ulw-plan what does this do?"): the router answers it directly (`bare_name_reports_or_asks`), and a wrapper must
     not turn that answer into a workflow picker either."""
-    routing_message = _with_canonical_display_names(executable_routing_text(message)).strip()
+    executable = executable_routing_text(message)
+    routing_message = _invocation_as_written(executable, _with_canonical_display_names(executable)).strip()
     return routing_message.startswith(EXPLICIT_INVOCATION_PREFIXES) and bool(
         bare_name_reports_or_asks(routing_message, _names_a_message_may_open_with())
     )
@@ -6999,7 +7014,8 @@ def invoked_skill_instruction(message: str) -> str:
 def invoked_skill_asks_status(message: str) -> bool:
     """Whether a sigil invokes a skill and the words after its name ask how its run stands ("/ulw-work status"): the
     router sends it to OMH's status card (`_invoked_status_word`), and the wrapper renders that card."""
-    routing_message = _with_canonical_display_names(executable_routing_text(message)).strip()
+    executable = executable_routing_text(message)
+    routing_message = _invocation_as_written(executable, _with_canonical_display_names(executable)).strip()
     skill = bare_name_reports_or_asks(routing_message, _names_a_message_may_open_with())
     return bool(skill) and _invoked_status_word(routing_message, skill)
 

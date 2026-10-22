@@ -40,7 +40,7 @@ from .dag_ulw_cues import (
     reports_on_dag_ulw,
     stops_the_run,
 )
-from .name_report_cues import QUESTION_IS_THE_WORK, asks_after_the_name
+from .name_report_cues import COINED_NAMES, QUESTION_IS_THE_WORK, asks_after_the_name
 from . import skill_shortlist as _skill_shortlist
 
 # The skills whose own work is answering how a run stands, so a status request after their sigil runs them:
@@ -117,9 +117,11 @@ def _own_run(name: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
 
 def _names_as_it(folded: str, names: tuple[str, ...]) -> str:
     """``folded`` with the skill's names and "this skill" read as "it" ("이거" in Korean), so a question about the
-    skill by name reads as one about it ("what is omh-code-review?" as "what is it?")."""
+    skill by name reads as one about it ("what is omh-code-review?" as "what is it?"). Only a name in its skill form
+    counts, hyphenated or coined: a single common word that is also a skill's name names what it is about ("/omh-rust
+    what is rust?", "/omh-frontend how does frontend routing work?")."""
     it = "이거" if re.search(r"[가-힣]", folded) else "it"
-    for written in sorted(names, key=len, reverse=True):
+    for written in sorted((name for name in names if "-" in name or name in COINED_NAMES), key=len, reverse=True):
         # After an article the word names a thing, not the skill ("what does the frontend do?", "the research").
         folded = re.sub(
             rf"(?<![a-z0-9_-])(?<!\bthe )(?<!\ban )(?<!\ba ){re.escape(written)}(?![a-z0-9_-])", it, folded

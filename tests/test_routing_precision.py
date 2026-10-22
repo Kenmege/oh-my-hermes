@@ -39,8 +39,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # invoked skill's own run, a Korean stop said with why, a Chinese bare
         # stop and a question that names the skill add five (+5), and stops
         # of more run words, in Japanese and as a Korean compound, and a
-        # question about using the skill four more (+4).
-        self.assertEqual(payload["summary"]["case_count"], 1027)
+        # question about using the skill four more (+4), and a question that
+        # names the skill by its label one (+1).
+        self.assertEqual(payload["summary"]["case_count"], 1028)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -104,8 +105,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # request in Hermes' scaffold after /dag-ulw (+4). Five stops of the
         # invoked skill's own run or questions that name it are answered
         # directly (+5), and so are four more own-run stops and a question
-        # about using the skill (+4).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 328)
+        # about using the skill (+4), and a question that names the skill by
+        # its label (+1).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 329)
         # show-reel's README-link control is answered as a file lookup (+1).
         self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
@@ -127,8 +129,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # after a skill that explains or judges what the person points at run
         # their skill (+7). Five questions about "a skill" or a name after
         # an article, a Korean stop verb before its object, and an own-run
-        # word inside a domain noun run their skill (+7).
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1031)
+        # word inside a domain noun run their skill (+7), and so does a
+        # question about rust after /omh-rust (+1).
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1032)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

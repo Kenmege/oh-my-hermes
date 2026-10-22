@@ -7575,6 +7575,14 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "code-review",
     ),
     RoutingPrecisionCase(
+        "explicit-ulw-loop-question-naming-its-label-is-answered",
+        "/ulw-loop what is ulw-loop? names the skill by its label, it starts no loop",
+        "/ulw-loop what is ulw-loop?",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
         "explicit-omh-code-review-how-to-use-it-is-answered",
         "/omh-code-review 어떻게 써? asks how to use the skill, it reviews nothing",
         "/omh-code-review 어떻게 써?",
@@ -17326,6 +17334,12 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "/ulw-context what is the context? asks for the context",
         "/ulw-context what is the context?",
         "dispatch", "context", "prepare_project_terms_context", "project_terms_context",
+    ),
+    RoutingInterventionCase(
+        "explicit-rust-question-about-rust-is-its-work",
+        "/omh-rust what is rust? asks about the language, the skill's material, not about the skill",
+        "/omh-rust what is rust?",
+        "dispatch", "rust", "prepare_rust_handoff", "rust_contract",
     ),
     # A Korean stop verb before a task noun, and an own-run word inside a domain noun, are work.
     RoutingInterventionCase(
