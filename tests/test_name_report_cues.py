@@ -175,8 +175,8 @@ class SigilTests(unittest.TestCase):
         "/ulw-work stop", "/ulw-loop stop", "/ulw-interview stop", "/omh-plan stop", "/omh-code-review stop",
         "/omh-app-debugging stop", "/ulw-plan what does this do?", "/ulw-plan what is it?", "/ulw-work 그만",
         "/ulw-work 취소해줘", "/ulw-plan 이게 뭐야?", "/ultrawork still running?", "$ulw-work stop", "/ralplan 멈춰",
-        # How the run stands, even for a skill whose work answers such questions: Hermes has loaded the skill already.
-        "/omh-app-debugging why did the run stop?", "/omh-app-debugging is it running?",
+        # A diagnosis skill's status and meta questions; only its diagnosis questions are its work.
+        "/omh-app-debugging is it running?", "/omh-app-debugging 끝났어?", "/omh-app-debugging what does this do?",
     )
     REQUESTS = (
         ("/ulw-plan plan the billing migration", "ralplan"), ("/omh-code-review this PR", "code-review"),
@@ -184,6 +184,8 @@ class SigilTests(unittest.TestCase):
         ("/ulw-work stop the flaky retry from hiding failures", "ultrawork"),
         ("/ralplan how should we split the billing refactor", "ralplan"),
         ("/omh-app-debugging find out why the login test fails", "app-debugging"),
+        ("/omh-app-debugging why did the run stop?", "app-debugging"), ("/omh-app-debugging 왜 멈췄어?", "app-debugging"),
+        ("/omh-app-debugging what's wrong", "app-debugging"),
         ("/research is rust faster than go?", "research"), ("/ultrawork broke my build", "ultrawork"),
     )
 
@@ -207,6 +209,11 @@ class SigilTests(unittest.TestCase):
                     self.assertEqual(awareness_route_hint(text)["hints"], [])
                     interaction = build_chat_interaction_payload(text, source="discord")
                     self.assertEqual(interaction["next_action"], "answer_directly")
+
+    def test_a_question_that_is_the_skills_own_work_keeps_its_route(self) -> None:
+        # What is running is the board's work, not a question about the board.
+        route = route_chat_message("/omh-running-work-board what's running?", source="discord")
+        self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "running-work-board"))
 
     def test_a_status_word_after_a_sigil_shows_the_status_card(self) -> None:
         for message in ("/ulw-loop 상태 보여줘", "/ulw-work status", "/omh-code-review 진행상황 알려줘"):

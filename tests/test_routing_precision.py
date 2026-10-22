@@ -33,8 +33,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # and two causatives (a relative clause, `on`) (+30).
         # Hermes' slash-skill scaffold adds four controls (+4), and a question
         # after the /dag-ulw sigil six (+6), and a stop or a question after an
-        # explicit invocation eleven (+11).
-        self.assertEqual(payload["summary"]["case_count"], 1014)
+        # explicit invocation twelve (+12).
+        self.assertEqual(payload["summary"]["case_count"], 1015)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -92,9 +92,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # instruction, each answered directly (+4). A Korean question, whether
         # CI passed, a question after a skill stacked on it, and a Korean
         # question in Hermes' scaffold, each after the /dag-ulw sigil, are
-        # answered directly (+4). Eleven stops or questions after an explicit
-        # invocation are answered directly (+11).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 316)
+        # answered directly (+4). Twelve stops or questions after an explicit
+        # invocation are answered directly (+12).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 317)
         # show-reel's README-link control is answered as a file lookup (+1).
         self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
@@ -106,9 +106,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # Hermes' slash-skill scaffold adds /dag-ulw with a request and bare,
         # and /ulw-plan with a request, each routed as typed (+3). Four
         # requests after the /dag-ulw sigil that hold a question word or are
-        # asked politely still dispatch (+4), and so do five real requests
-        # after an explicit invocation (+5).
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1003)
+        # asked politely still dispatch (+4), and so do six real requests
+        # or diagnosis questions after an explicit invocation (+6).
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1004)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

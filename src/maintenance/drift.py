@@ -796,8 +796,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # /ulw-interview, /omh-plan, /omh-code-review and
             # /omh-app-debugging stop, /ulw-plan what does this do?, /ulw-work
             # 그만, /ulw-plan 이게 뭐야?, and /ulw-work stop in Hermes' scaffold
-            # (10), and /omh-app-debugging why did the run stop? (1).
-            expected=1014,
+            # (10). Its app-debugging follow-up answers that skill's status
+            # questions and keeps its diagnosis questions its work: /omh-app-
+            # debugging is it running? and 끝났어? (2).
+            expected=1015,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1195,8 +1197,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # /ulw-plan with a request, /omh-code-review this PR, /ulw-loop
             # with a goal, and /ulw-work with a stop word that names the
             # work (4), and /omh-app-debugging asked to find out why a test
-            # fails (1).
-            expected=1003,
+            # fails or why the run stopped, a diagnosis question (2).
+            expected=1004,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

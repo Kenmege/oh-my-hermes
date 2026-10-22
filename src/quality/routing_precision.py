@@ -7459,9 +7459,17 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "ralplan",
     ),
     RoutingPrecisionCase(
-        "explicit-app-debugging-run-question-is-answered",
-        "/omh-app-debugging asking why the run stopped is about the run, so the loaded skill answers it, no new run",
-        "/omh-app-debugging why did the run stop?",
+        "explicit-app-debugging-korean-done-question-is-answered",
+        "/omh-app-debugging asking, in Korean, whether it finished is a status question, not a diagnosis",
+        "/omh-app-debugging 끝났어?",
+        "answer_directly",
+        "direct_answer",
+        "app-debugging",
+    ),
+    RoutingPrecisionCase(
+        "explicit-app-debugging-status-question-is-answered",
+        "/omh-app-debugging asking whether it is running is a status question, not a diagnosis to start",
+        "/omh-app-debugging is it running?",
         "answer_directly",
         "direct_answer",
         "app-debugging",
@@ -17042,6 +17050,12 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "/ulw-loop with a goal reaches the loop",
         "/ulw-loop fix the flaky test until green",
         "dispatch", "loop", "ask_goal_boundary", "loop",
+    ),
+    RoutingInterventionCase(
+        "explicit-app-debugging-why-question-is-its-work",
+        "/omh-app-debugging asking why the run stopped is a diagnosis question, the skill's own work",
+        "/omh-app-debugging why did the run stop?",
+        "dispatch", "app-debugging", "prepare_root_cause_investigation", "root_cause_investigation",
     ),
     RoutingInterventionCase(
         "explicit-app-debugging-request-with-a-question-word-dispatches",

@@ -411,6 +411,17 @@ QUESTION_IS_THE_WORK: Final = frozenset(
      "verification-gate", "app-debugging", "build-failure-triage", "native-debugging", "failure-signal-audit",
      "production-audit", "workspace-audit", "security-event-response", "deploy-and-monitor", "run-efficiency"}
 )
+# Of those, a skill whose work is diagnosing a failure: after its sigil only a diagnosis question is its work
+# (`diagnoses`); how its run stands and what it is are questions about it ("/omh-app-debugging is it running?").
+DIAGNOSIS_IS_THE_WORK: Final = frozenset({"app-debugging"})
+# A diagnosis question asks why or what causes something, or names a failure symptom.
+_EN_DIAGNOSIS: Final = frozenset(
+    {"why", "cause", "causes", "causing", "caused", "wrong", "fail", "fails", "failed", "failing", "failure",
+     "failures", "crash", "crashes", "crashed", "crashing", "error", "errors", "broken", "break", "breaks", "broke",
+     "bug", "bugs", "hang", "hangs", "hung", "stuck", "freeze", "freezes", "froze", "leak", "leaks", "slow",
+     "timeout", "timeouts", "exception", "exceptions", "panic", "panics", "regression", "flaky"}
+)
+_KO_DIAGNOSIS: Final = re.compile(r"^(?:왜|어디서|어디가|원인)")
 _EN_RUN_STATE: Final = frozenset(
     {"up", "there", "here", "now", "next", "doing", "done", "finished", "finish", "running", "left", "happen",
      "happened", "happening", "going", "go", "get", "got", "wrong", "status", "then", "anyway", "exactly", "even",
@@ -478,7 +489,7 @@ def stops_or_asks(name: str, rest: str, *, invoked: bool = False) -> bool:
     does this do?") the name is the person's own invocation, and this is all that keeps it from running; a report
     after a sigil stays a command ("/ultrawork broke the build"). There the name can only mean the skill, so a
     yes-or-no question made only of the words about it asks about any skill, not an engine's alone ("/omh-plan is it
-    running?"), and a question about how its run stands does so for every skill, `QUESTION_IS_THE_WORK` included."""
+    running?"). A diagnosis skill (`DIAGNOSIS_IS_THE_WORK`) keeps only its diagnosis questions as its work there."""
     written = _folded(name)
     key = written.replace(" ", "-")
     run_only = key in RUN_ONLY_SKILLS
@@ -486,13 +497,18 @@ def stops_or_asks(name: str, rest: str, *, invoked: bool = False) -> bool:
         r"\b(?:should|shall|best\s+way|how\s+(?:do|can|could|would)\s+(?:we|i))\b|어떻게\s*(?:\S+\s+)?(?:나눠|나누|해야|하면|할까|진행)",
         _folded(rest),
     )
-    # After a sigil Hermes has loaded the skill itself, so how its own run stands is a question about it even for a
-    # skill whose work is answering such questions ("/omh-app-debugging why did the run stop?"): the loaded skill
-    # still guides the answer, and no route starts a second run of it.
-    if stops_the_name(rest) or asks_after_the_name(
-        rest,
-        about_anything=run_only or (written in COINED_NAMES and not deliberates),
-        run_state=invoked or key not in QUESTION_IS_THE_WORK,
+    if stops_the_name(rest):
+        return True
+    # After a sigil a diagnosis skill's own work is a diagnosis question ("/omh-app-debugging why did the run
+    # stop?"); how its run stands is a question about it there, as it is for a skill whose work answers no question.
+    if invoked and key in DIAGNOSIS_IS_THE_WORK:
+        if diagnoses(rest):
+            return False
+        run_state = True
+    else:
+        run_state = key not in QUESTION_IS_THE_WORK
+    if asks_after_the_name(
+        rest, about_anything=run_only or (written in COINED_NAMES and not deliberates), run_state=run_state
     ):
         return True
     # A1: a yes-or-no question after an engine's name asks about it, as one after dag-ulw's does ("ultrawork safe
@@ -505,7 +521,18 @@ def stops_or_asks(name: str, rest: str, *, invoked: bool = False) -> bool:
     # A question the bare name's report reading answers is answered after the sigil too ("/omh-app-debugging is it
     # running?", "/omh-app-debugging 왜 멈췄어?"): a report is a command after a sigil, a question about it is not.
     reads_reports = ("-" in written and " " not in written) or written in COINED_NAMES  # as `about_the_skill` does
-    return (reads_reports and reports_on_the_name(rest)) or _only_about_the_skill(_folded(rest), run_state=True)
+    return (reads_reports and reports_on_the_name(rest)) or _only_about_the_skill(_folded(rest), run_state=run_state)
+
+
+def diagnoses(rest: str) -> bool:
+    """Whether ``rest`` asks a diagnosis question: why, where it fails or what causes something ("왜", "어디서",
+    "원인"), or a failure symptom it names (`_KO_COMPLAINT`, `_KO_COMPLAINT_NOUN`, `_EN_DIAGNOSIS`)."""
+    folded = _folded(rest)
+    if re.search(r"[가-힣]", folded):
+        return bool(_KO_COMPLAINT.search(folded)) or any(
+            _KO_DIAGNOSIS.match(word) or _KO_COMPLAINT_NOUN.match(word) for word in _words(folded)
+        )
+    return bool(_EN_DIAGNOSIS & set(_EN_WORD.findall(folded)))
 
 
 def about_the_skill(name: str, rest: str) -> bool:
