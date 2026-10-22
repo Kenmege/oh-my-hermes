@@ -212,11 +212,12 @@ class GradientTests(unittest.TestCase):
                             self.assertGreaterEqual(contrast_ratio(dag_style(role, theme).fg, surface), TEXT_CONTRAST)
                         self.assertGreaterEqual(contrast_ratio(dag_style(f"node:{state}", theme).fg, surface),
                                                 EDGE_CONTRAST - 0.01)
-        # The default palette, measured: (word, mark) against its dark stand-in and against white.
+        # The default palette, measured: (word, mark) against its dark stand-in and against white. Waiting is the
+        # TUI's neutral grey since the rail and kind colours (2026-10-22), no longer a tint of the skin's accent.
         expected = {
-            None: {"running": (4.78, 4.48), "dispatched": (4.67, 3.69), "selected": (4.51, 3.89), "waiting": (4.56, 3.5)},
+            None: {"running": (4.78, 4.48), "dispatched": (4.67, 3.69), "selected": (4.51, 3.89), "waiting": (5.66, 3.15)},
             "#FFFFFF": {"running": (4.9, 3.68), "dispatched": (4.86, 4.47), "selected": (4.63, 4.23),
-                        "waiting": (4.71, 4.71)},
+                        "waiting": (6.11, 3.04)},
         }
         for background, ratios in expected.items():
             theme = build_theme(default_theme(), background)
@@ -234,7 +235,7 @@ class GradientTests(unittest.TestCase):
             "selected": ("\x1b[38;2;139;92;246m", "\x1b[38;5;99m", "\x1b[94m", ""),
             "dispatched": ("\x1b[38;2;99;102;241m", "\x1b[38;5;63m", "\x1b[94m", ""),
             "failed": ("\x1b[38;2;239;83;80m", "\x1b[38;5;203m", "\x1b[91m", ""),
-            "waiting": ("\x1b[38;2;62;124;138m", "\x1b[38;5;66m", "\x1b[90m", ""),
+            "waiting": ("\x1b[38;2;101;109;119m", "\x1b[38;5;242m", "\x1b[90m", ""),  # the neutral grey
             "done": ("", "", "", ""),
         }
         for state, sequences in expected.items():

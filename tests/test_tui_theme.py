@@ -40,7 +40,9 @@ class ThemeTests(unittest.TestCase):
             for background in (None, *LIGHT_BACKGROUNDS):
                 theme = build_theme(skin, background)
                 for field in fields(theme):
-                    if field.name in ("name", "text", "user"):
+                    # `tool` joined the terminal's own foreground with the rail and kind colours (2026-10-22): a call's
+                    # name is bold in its family's hue (`kinds`, tested below), else the default foreground.
+                    if field.name in ("name", "text", "user", "tool"):
                         continue
                     if background is None and field.name in BAND_ROLES:
                         continue  # no band is painted over a background nobody reported
@@ -99,7 +101,9 @@ class ThemeTests(unittest.TestCase):
 
     def test_roles_follow_the_palette(self) -> None:
         amber = theme_named("amber")
-        self.assertEqual(amber.accent.fg, skin_colors("omh-amber")["ui_accent"])
+        # The palette's accent is the banner title's alone; `accent` is state (running), the delegation view's blue.
+        self.assertEqual(amber.brand.fg, skin_colors("omh-amber")["ui_accent"])
+        self.assertEqual(amber.accent, amber.dag_words[-1])
         self.assertEqual(amber.diff_add.bg, skin_colors("omh-amber")["diff_added"])
         # A colour that clears the background is the palette's own; amber's comments (3.6:1) are lifted for reading.
         for role in ("syntax_keyword", "syntax_string", "syntax_number"):
@@ -133,12 +137,22 @@ class ThemeTests(unittest.TestCase):
 
     def test_a_palette_that_clears_the_background_keeps_its_own_colours(self) -> None:
         sky = theme_named("sky")
-        self.assertEqual(sky.rule.fg, skin_colors("omh")["input_rule"])
-        self.assertEqual(sky.accent.fg, skin_colors("omh")["ui_accent"])
-        self.assertNotEqual(sky.muted.fg, skin_colors("omh")["banner_dim"])  # 3.5:1, lifted for text
-        crimson = theme_named("crimson")
-        self.assertNotEqual(crimson.rule.fg, skin_colors("omh-crimson")["input_rule"])
-        self.assertNotEqual(theme_named("sky", "#FFFFFF").accent.fg, skin_colors("omh")["ui_accent"])  # 2.0:1 on white
+        self.assertEqual(sky.brand.fg, skin_colors("omh")["ui_accent"])
+        self.assertEqual(sky.syntax_string.fg, skin_colors("omh")["syntax_string"])
+        self.assertNotEqual(theme_named("sky", "#FFFFFF").brand.fg, skin_colors("omh")["ui_accent"])  # 2.0:1 on white
+
+    def test_the_chrome_is_neutral_grey_on_every_palette(self) -> None:
+        # The rail and kind colours (2026-10-22): hue says state, a tool's family or the brand; the transcript's
+        # chrome (a call's arguments, what it printed, its glyphs, the composer's rules) is one neutral grey per role,
+        # the same on every palette, lifted only as far as its floor takes.
+        for background in ("#0E151E", "#FFFFFF"):
+            chrome = {(role, getattr(build_theme(skin, background), role).fg)
+                      for skin in SKIN_THEMES for role in ("muted", "faint", "hint", "dim", "rule")}
+            with self.subTest(background=background):
+                self.assertEqual(len({role for role, _colour in chrome}), len(chrome))  # one colour per role
+                for _role, colour in chrome:
+                    red, green, blue = hex_to_rgb(colour)
+                    self.assertLessEqual(max(red, green, blue) - min(red, green, blue), 24, colour)  # grey, not a hue
 
     def test_names_resolve_by_short_or_skin_name_and_default_otherwise(self) -> None:
         self.assertEqual(theme_named("omh-crimson").name, "crimson")

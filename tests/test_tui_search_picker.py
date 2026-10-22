@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import unittest
 
-from _tui_lines import INFO_INSET, line_text, lines_text
+from _tui_lines import INFO_INSET, line_text, lines_text, RULE_ROW
 from test_tui_modes import make_app, type_text
 from omh.tui.history import SEARCH_HINT, SEARCH_LABEL, HistorySearch
 from omh.tui.keys import CHAR, ENTER, ESCAPE, LEFT, Key, Paste
@@ -38,8 +38,8 @@ class SearchStandsWhereTheComposerWasTests(unittest.TestCase):
     def test_the_composer_and_its_box_are_not_drawn_while_searching(self) -> None:
         app, _client = searching()
         rows = screen(app)
-        self.assertFalse(any(row.startswith("│ > half typed") for row in rows), rows)
-        self.assertFalse(any(row.startswith(("╭", "╰")) for row in rows), rows)
+        self.assertFalse(any(row.startswith("❯ half typed") for row in rows), rows)
+        self.assertFalse(any(row.startswith(RULE_ROW) for row in rows), rows)
         self.assertTrue(any(row.startswith(SEARCH_LABEL.rstrip()) for row in rows), rows)
 
     def test_the_caret_is_at_the_end_of_the_query_on_the_search_row(self) -> None:
@@ -56,7 +56,7 @@ class SearchStandsWhereTheComposerWasTests(unittest.TestCase):
         app, _client = make_app()
         type_text(app, "half typed")
         before = screen(app)
-        composer_row = next(index for index, row in enumerate(before) if row.startswith("│ > half typed"))
+        composer_row = next(index for index, row in enumerate(before) if row.startswith("❯ half typed"))
         app.composer.history = ["ls -la"]
         app._on_input(CTRL_R)
         during = screen(app)
@@ -67,7 +67,7 @@ class SearchStandsWhereTheComposerWasTests(unittest.TestCase):
         self.assertEqual(info - 1, composer_row)
         app._on_input(Key(ESCAPE))
         after = screen(app)
-        self.assertTrue(after[composer_row].startswith("│ > half typed"), after)
+        self.assertTrue(after[composer_row].startswith("❯ half typed"), after)
 
     def test_the_info_line_says_the_search_keys(self) -> None:
         app, _client = searching()
@@ -113,7 +113,7 @@ class SearchRowsTests(unittest.TestCase):
         search = HistorySearch(["ls -la"], "")
         search.handle_key(Key(CHAR, "l"))
         rows = lines_text(search.lines(80, DEFAULT_THEME, 4))
-        self.assertEqual([row.rstrip() for row in rows], ["> ls -la  1/1", SEARCH_LABEL + "l"])
+        self.assertEqual([row.rstrip() for row in rows], ["❯ ls -la  1/1", SEARCH_LABEL + "l"])
         self.assertEqual(search.caret, (1, cell_width(SEARCH_LABEL + "l")))
 
 

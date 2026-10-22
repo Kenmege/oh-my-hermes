@@ -2,7 +2,7 @@
 
 The composer shows the mode while the line starts with `!` (the info line's
 label "! shell (not sent to the model)", and the prompt mark in the accent;
-the box stays as it is); sending it echoes `> !cmd` and shows what the command printed and
+the rules stay as they are); sending it echoes `> !cmd` and shows what the command printed and
 its exit code, or Hermes' refusal. It never becomes a prompt. During a turn
 it waits in the queue, as a slash command waits in Claude Code, and runs
 when the turn ends. Answers are the recorded Hermes 6c61c3e27d frames in
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import unittest
 
-from _tui_lines import INFO_INSET, box_edges, line_text
+from _tui_lines import INFO_INSET, rule_edges, line_text
 from test_tui_gateway_contract import recorded_rows
 from test_tui_modes import SID, answer, drawn, make_app, notices, type_text
 from omh.skin_pack import SKIN_THEMES
@@ -51,15 +51,15 @@ class ShellModeTests(unittest.TestCase):
         from omh.skin_pack import hex_to_rgb
 
         def mark_colour(screen: list[str]) -> tuple[int, ...]:
-            row = next(index for index, line in enumerate(screen) if line.startswith("│ > "))
-            attrs = app.terminal.screen.attrs_at(row, 2)  # type: ignore[attr-defined]
+            row = next(index for index, line in enumerate(screen) if line.startswith("❯ "))
+            attrs = app.terminal.screen.attrs_at(row, 0)  # type: ignore[attr-defined]  # the mark, no side before it
             return tuple(attrs[attrs.index(38) + 2 : attrs.index(38) + 5])
 
         app, _client = make_app()
         type_text(app, "!ls")
         screen = drawn(app)
         self.assertTrue(info_row_of(screen).startswith(INFO_INSET + SHELL_LABEL), screen)
-        self.assertTrue(set(box_edges(80)) <= set(screen))  # the box as in every mode
+        self.assertTrue(set(rule_edges(80)) <= set(screen))  # the rules as in every mode
         self.assertEqual(mark_colour(screen), hex_to_rgb(DEFAULT_THEME.accent.fg))  # the mark says it, not only the label
         app.composer.replace(0, len(app.composer.text), "ls")
         screen = drawn(app)
@@ -86,7 +86,7 @@ class ShellModeTests(unittest.TestCase):
         self.assertEqual(app.transcript.blocks[-1].parts, [("partial", OUTPUT_FAILED), ("exit 3", NOTICE_ERROR)])
         theme = build_theme(SKIN_THEMES[0], "#FFFFFF")
         rows = block_rows(app.transcript.blocks[-1], 80, theme)
-        self.assertEqual([line_text(row) for row in rows], ["> " + "!" + params["command"], "  ⎿  partial", "     ✗ exit 3"])
+        self.assertEqual([line_text(row) for row in rows], ["❯ " + "!" + params["command"], "  ⎿  partial", "     ✗ exit 3"])
         for row in rows[1:]:  # what it printed and its exit line, one red region as a failed tool's output
             self.assertEqual({span.style.bg for span in row}, {theme.error_band.bg})
         self.assertEqual({span.style.bg for span in rows[0]}, {None})  # the echo is no outcome

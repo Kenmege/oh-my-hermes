@@ -247,7 +247,15 @@ PR without the chat history.
   not take waits in the TUI's own queue for the running turn to
   end, whatever the busy mode, so it never interrupts that turn.
   A steer Hermes does not answer within 120 s goes back to the
-  composer and is never re-sent. The subagent views (the agent view under
+  composer and is never re-sent. Its look is the rail and kind colours the
+  owner picked on 2026-10-22: each transcript block on a `┃` rail with no
+  fill (grey for the person's prompt, the skin's accent for a reply, a
+  call's state colour for the call), a call's state in its mark's glyph and
+  colour as the dag view draws it (running blue `○`, done green `●`, failed
+  red `✗`), its name in its tool family's hue at 4.5:1 on dark and light,
+  consecutive skill loads and tool-detail reads folded into one row, and the
+  composer between two full-width rules with no side edges; none of it
+  changes what the TUI sends or answers. The subagent views (the agent view under
   the info line, always expanded while there are agents, as the owner asked
   on 2026-10-21; the list Down opens on its rows; one agent's log) read with
   `subagent.tail` only, the tail of the log

@@ -44,7 +44,7 @@ from _tui_gateway_replay import (
     replay_env,
     spans,
 )
-from _tui_lines import INFO_INSET, box_inner, line_text
+from _tui_lines import composer_text, INFO_INSET, line_text, RULE_ROW, rule_rows
 from _vt_screen import VTScreen
 from omh.tui import terminal as terminal_module
 from omh.skin_pack import default_theme, hex_to_rgb, theme_for_name, write_theme_choice
@@ -73,11 +73,11 @@ STORED_ID = "20261013_115656_e709ea"
 LIVE_ID = "b6af062a"
 APPROVAL_STORED_ID = "20261013_115811_9850e7"
 ROTATED_ID = "20261013_130000_rotated"
-RULE_MARK = "────"  # in both edges of the composer's box
-BOX_MARK = "╭─"  # the composer box's top edge: one per frame
+RULE_MARK = "────"  # in both of the composer's rules
+BOX_MARK = RULE_ROW  # one of the composer's rules: two per frame, above and under it
 # The working row's clock, `(12s · …` or `(1m 4s)`: on screen while a turn runs or waits on the person.
 WORKING_CLOCK = re.compile(r"\(\d+(?:m \d+)?s(?: · |\))")
-# Between the composer and the info line on these 24-row terminals: the box's bottom edge.
+# Between the composer and the info line on these 24-row terminals: the bottom rule.
 UNDER_COMPOSER = 1
 # Only the session call is awaited. The catalog is read after the session, naming it, so project-local skills
 # are listed for its workspace; a fresh session then asks for the stored sessions, to name the last one.
@@ -248,17 +248,17 @@ class ScriptedTerminal:
         return lambda: needle in "\n".join(self.screen.lines())
 
     def prompt_foreground(self) -> tuple[int, ...]:
-        """The colour of the composer's `>`, read off the screen: the last row of the box that starts with one."""
+        """The colour of the composer's `❯`, read off the screen: the last row that starts with one, at its first cell."""
         rows = self.screen.lines()
-        row = next(index for index in range(len(rows) - 1, -1, -1) if rows[index].startswith("│ > "))
-        attrs = self.screen.attrs_at(row, 2)
+        row = next(index for index in range(len(rows) - 1, -1, -1) if rows[index].startswith("❯ "))
+        attrs = self.screen.attrs_at(row, 0)
         start = attrs.index(38)
         return tuple(attrs[start + 2 : start + 5])
 
     def box_foreground(self) -> tuple[int, ...]:
-        """The colour of the composer box's top edge, read off the screen."""
+        """The colour of the composer's top rule, read off the screen."""
         rows = self.screen.lines()
-        row = next(index for index, line in enumerate(rows) if line.startswith("╭"))
+        row = next(index for index, line in enumerate(rows) if line.startswith(RULE_ROW))
         attrs = self.screen.attrs_at(row, 0)
         start = attrs.index(38)
         return tuple(attrs[start + 2 : start + 5])
@@ -553,9 +553,9 @@ class SessionTests(AppTestCase):
         self.assertTrue(screen[info].startswith(INFO_INSET + IDLE_HINT), screen)
         self.assertIn("deepseek/deepseek-v4.1-flash-ultrafast · ", screen[info])
         composer = info - 1 - UNDER_COMPOSER
-        self.assertEqual(box_inner(screen[composer]), "> Ask Hermes anything", screen)
+        self.assertEqual(composer_text(screen[composer]), "❯ Ask Hermes anything", screen)
         self.assertTrue(screen[composer - 1].startswith(BOX_MARK), screen)
-        self.assertTrue(screen[composer + 1].startswith("╰─"), screen)
+        self.assertTrue(screen[composer + 1].startswith(RULE_ROW), screen)
         self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
         self.assertEqual(run.calls("config.get")[0]["params"], {"key": "full"})
         self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": STORED_ID})
@@ -582,9 +582,9 @@ class SessionTests(AppTestCase):
         (submitted,) = run.calls("prompt.submit")
         self.assertEqual(submitted["params"], {"session_id": LIVE_ID, "text": prompt})
         history = run.terminal.history()
-        self.assertIn(f"> {prompt}", history)
+        self.assertIn(f"❯ {prompt}", history)
         self.assertIn("I'm Hermes, your agent", history)
-        self.assertLess(history.index(f"> {prompt}"), history.index("I'm Hermes"))
+        self.assertLess(history.index(f"❯ {prompt}"), history.index("I'm Hermes"))
 
     def test_input_during_a_turn_is_queued_and_sent_when_the_turn_ends(self) -> None:
         run = self.prepare(
@@ -605,8 +605,8 @@ class SessionTests(AppTestCase):
         self.assertEqual(first["params"], {"session_id": LIVE_ID, "text": "first prompt"})
         self.assertEqual(second["params"], {"session_id": LIVE_ID, "text": "second prompt", "queued": True})
         history = run.terminal.history()
-        self.assertLess(history.index("> first prompt"), history.index("later."))
-        self.assertLess(history.index("later."), history.index("> second prompt"))
+        self.assertLess(history.index("┃ ❯ first prompt"), history.index("later."))
+        self.assertLess(history.index("later."), history.index("❯ second prompt"))
 
     def test_ctrl_c_during_a_turn_sends_session_interrupt(self) -> None:
         run = self.prepare(
@@ -748,7 +748,7 @@ class SessionTests(AppTestCase):
         self.assertEqual(first["params"], {"session_id": LIVE_ID, "text": "first prompt"})
         self.assertEqual(second["params"], {"session_id": LIVE_ID, "text": "second prompt", "queued": True})
         history = terminal.history()
-        self.assertLess(history.index(TURN_CANCELLED), history.index("> second prompt"))
+        self.assertLess(history.index(TURN_CANCELLED), history.index("❯ second prompt"))
 
     def test_a_refused_submit_sends_the_next_queued_prompt(self) -> None:
         answers = (
@@ -831,7 +831,7 @@ class SessionTests(AppTestCase):
                 screen = run.terminal.captures[name]
                 self.assertEqual(len(screen), rows)
                 drawn = [line for line in screen if line]
-                self.assertEqual(sum(BOX_MARK in line for line in screen), 1, screen)
+                self.assertEqual(sum(BOX_MARK in line for line in screen), 2, screen)  # one frame: its two rules
                 self.assertEqual(sum(RULE_MARK in line for line in screen), 2, screen)
                 # The redrawn session (the banner, and at 100 columns the logo above it, since the whole session
                 # fits the redraw) and the region (top edge, composer, bottom edge, info line), nothing else.
@@ -870,7 +870,7 @@ class SessionTests(AppTestCase):
         self.assert_clean_run(run)
         screen = run.terminal.captures["final"]
         everything = run.terminal.screen.scrollback + screen
-        self.assertEqual(sum(BOX_MARK in line for line in everything), 1, everything)
+        self.assertEqual(sum(BOX_MARK in line for line in everything), 2, everything)  # one frame: its two rules
         self.assertEqual(sum(line.startswith("⚚ OH-MY-HERMES") for line in everything), 1, everything)
         self.assertTrue(screen[0].startswith("⚚ OH-MY-HERMES"), screen[:2])
         self.assertTrue(all(len(line) <= 60 for line in everything))
@@ -1096,7 +1096,7 @@ class PromptSlotTests(AppTestCase):
             Step(when=terminal.shows("Which color do you prefer?"), label="the clarify slot"),
             Step(b"blue\r", when=self.armed(run, "the clarify slot"), label="armed"),
             Step(b"\x1b[A", when=lambda: terminal.idle() and not terminal.shows("1. red")(), label="idle"),
-            Step(b"\x03\x04", when=lambda: composer_row(terminal.screen.lines()) == "> Ask me red or blue.",
+            Step(b"\x03\x04", when=lambda: composer_row(terminal.screen.lines()) == "❯ Ask me red or blue.",
                  label="the recalled prompt"),
         )
         self.run_main(run)
@@ -1160,7 +1160,7 @@ class SlashCommandTests(AppTestCase):
             self.submit(run, "Reply with exactly the word: ok"),
             Step(b"/hist", when=lambda: "later." in terminal.history() and terminal.idle(), label="reply"),
             Step(b"\t", when=terminal.shows("/history"), capture="menu", label="the completion menu"),
-            Step(b"\r", when=terminal.shows("│ > /history"), label="the completed command"),
+            Step(b"\r", when=terminal.shows("❯ /history"), label="the completed command"),
             Step(b"q", when=lambda: terminal.screen.alternate, capture="pager", label="the pager"),
             Step(b"\x04", when=lambda: not terminal.screen.alternate and terminal.idle(), capture="back", label="back"),
         )
@@ -1628,7 +1628,7 @@ class OpeningTests(AppTestCase):
                 def composer_row(name: str, run: object = run, rows: dict[str, int] = rows) -> Callable[[], bool]:
                     def note() -> bool:
                         screen = run.terminal.screen.lines()  # type: ignore[attr-defined]
-                        rows[name] = next(index for index, line in enumerate(screen) if line.startswith("│ > Ask Hermes"))
+                        rows[name] = next(index for index, line in enumerate(screen) if line.startswith("❯ Ask Hermes"))
                         return True
                     return note
 
@@ -1740,18 +1740,19 @@ class OpeningTests(AppTestCase):
         self.assertTrue(history[LOGO_ROWS].startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {STORED_ID}"))
         self.assertEqual(run.calls("session.list"), [])  # a resumed session needs no pointer to the last one
         self.assertEqual(
-            history[LOGO_ROWS + 2 : LOGO_ROWS + 12],
-            [
-                "> What is in this repo?",
+            history[LOGO_ROWS + 2 : LOGO_ROWS + 13],
+            [  # each block on its rail, and a blank row between two calls, as for a live turn
+                "┃ ❯ What is in this repo?",
                 "",
-                "⏺ Let me look.",
+                "┃ ● Let me look.",
                 "",
-                "⏺ terminal(ls -la)",
-                "⏺ read_file(README.md)",
+                "┃ ● terminal(ls -la)",
                 "",
-                "⏺ It is oh-my-hermes.",
+                "┃ ● read_file(README.md)",
                 "",
-                "> Thanks",
+                "┃ ● It is oh-my-hermes.",
+                "",
+                "┃ ❯ Thanks",
             ],
         )
         text = "\n".join(history)
@@ -1917,7 +1918,7 @@ class LocalCommandTests(AppTestCase):
     def test_keys_typed_while_the_background_query_waited_reach_the_composer(self) -> None:
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
         run.terminal.typed_during_query = b"hi"
-        run.terminal.script(Step(b"\x15\x04", when=run.terminal.shows("│ > hi"), label="the early keys"))
+        run.terminal.script(Step(b"\x15\x04", when=run.terminal.shows("❯ hi"), label="the early keys"))
         self.run_main(run)
         self.assert_clean_run(run)
 
@@ -1996,7 +1997,7 @@ class LocalCommandTests(AppTestCase):
         self.assertIn("/yolo included", pager)
         # The banner no longer says it, so /help is where the way back to Hermes' own terminal stays.
         self.assertIn("Bare `hermes` opens Hermes' own terminal.", pager)
-        self.assertIn("> /help\n  ⎿  OMH TUI commands:", terminal.history())
+        self.assertIn("❯ /help\n  ⎿  OMH TUI commands:", terminal.history())
         self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
 
     def test_reload_skills_rescans_in_the_gateway_and_the_new_skill_completes(self) -> None:
@@ -2049,10 +2050,10 @@ class LocalCommandTests(AppTestCase):
         self.assert_clean_run(run)
         history = terminal.screen.history()
         listed = history.index("  ⎿  Queued (sent one at a time as each turn ends):")
-        self.assertEqual(history[listed - 1], "> /queue")
+        self.assertEqual(history[listed - 1], "❯ /queue")
         self.assertEqual(history[listed + 1], "     1. second prompt")
-        self.assertIn("> second prompt  ⧗ from queue", history[listed:])  # the queue sent it once the turn ended
-        self.assertLess(history.index("> first prompt"), listed)
+        self.assertIn("┃ ❯ second prompt  ⧗ from queue", history[listed:])  # the queue sent it once the turn ended
+        self.assertLess(history.index("┃ ❯ first prompt"), listed)
 
     def test_steer_and_interrupt_modes_send_input_during_a_turn_at_once(self) -> None:
         for mode in ("steer", "interrupt"):
@@ -2121,8 +2122,8 @@ def info_row_of(screen: list[str]) -> str:
 
 
 def composer_row(screen: list[str]) -> str:
-    """What a one-row composer shows inside the box: the row above the box's bottom edge, sides taken off."""
-    return box_inner(screen[info_index(screen) - 1 - UNDER_COMPOSER])
+    """What a one-row composer shows: the row above its bottom rule, trailing blanks dropped."""
+    return composer_text(screen[info_index(screen) - 1 - UNDER_COMPOSER])
 
 
 def resumed_other(messages: list[dict] | None = None) -> dict:
@@ -2156,11 +2157,11 @@ class AttachmentTests(AppTestCase):
         self.assertEqual(attach["params"], {"session_id": LIVE_ID, "path": "./shot.png"})
         before, chip = terminal.captures["before"], terminal.captures["chip"]
         status = info_index(chip)
-        # The chip row sits between the box's top edge and the input, and the region grew by it.
+        # The chip row sits between the top rule and the input, and the region grew by it.
         self.assertEqual(status, info_index(before) + 3)  # the command's echo and the spacer under it, the chip
         composer = status - 1 - UNDER_COMPOSER
-        self.assertTrue(box_inner(chip[composer]).startswith(">"), chip)
-        self.assertEqual(box_inner(chip[composer - 1]), "📎 shot.png 1280×720  Backspace removes")  # inside the box
+        self.assertTrue(composer_text(chip[composer]).startswith("❯"), chip)
+        self.assertEqual(composer_text(chip[composer - 1]), "📎 shot.png 1280×720  Backspace removes")  # under the rule
         self.assertIn(RULE_MARK, chip[composer - 2])
         self.assertEqual(len(run.calls("prompt.submit")), 1)
         self.assertNotIn("📎 shot.png", "\n".join(terminal.captures["after"]))  # the echo above still names it
@@ -2201,7 +2202,7 @@ class AttachmentTests(AppTestCase):
             Step(bracketed("/fixture/project/drop.png"), when=terminal.idle, label="idle"),
             Step(bracketed("/fixture/project/notes.txt"), when=terminal.shows("drop.png 800×600"), capture="image",
                  label="the image chip"),
-            Step(bracketed(" and hello"), when=terminal.shows(f"│ > {file_ref}"), label="the file reference"),
+            Step(bracketed(" and hello"), when=terminal.shows(f"❯ {file_ref}"), label="the file reference"),
             Step(bracketed("line one\nline two"), when=terminal.shows("and hello"), capture="typed",
                  label="the unmatched paste"),
             Step(b"\x03\x04", when=terminal.shows("line two"), label="the multi-line paste"),
@@ -2215,8 +2216,8 @@ class AttachmentTests(AppTestCase):
             {"session_id": LIVE_ID, "text": " and hello"},
         ])
         # An image drop is queued by the gateway: a chip, and nothing typed (the placeholder is drawn, not typed).
-        self.assertEqual(composer_row(terminal.captures["image"]), "> Ask Hermes anything")
-        self.assertEqual(composer_row(terminal.captures["typed"]), f"> {file_ref} and hello")
+        self.assertEqual(composer_row(terminal.captures["image"]), "❯ Ask Hermes anything")
+        self.assertEqual(composer_row(terminal.captures["typed"]), f"❯ {file_ref} and hello")
 
     def test_backspace_on_an_empty_composer_detaches_the_last_image(self) -> None:
         answers = (
@@ -2236,7 +2237,7 @@ class AttachmentTests(AppTestCase):
         self.assert_clean_run(run)
         (detach,) = run.calls("image.detach")
         self.assertEqual(detach["params"], {"session_id": LIVE_ID, "path": "/fixture/project/shot.png"})
-        self.assertTrue(composer_row(terminal.captures["gone"]).startswith(">"))
+        self.assertTrue(composer_row(terminal.captures["gone"]).startswith("❯"))
 
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
@@ -2284,7 +2285,7 @@ class SessionSwitchTests(AppTestCase):
         self.assertLess(methods.index("session.resume"), methods.index("session.close"))
         shown = terminal.history()
         self.assertTrue(shown.startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {OTHER_STORED_ID}"), shown[:200])
-        self.assertIn("> Split the router in two", shown)
+        self.assertIn("❯ Split the router in two", shown)
         self.assertIn("Done: chat.py and recommend.py.", shown)
         self.assertNotIn("I'm Hermes, your agent", shown)  # the old transcript went with the redraw
         self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": OTHER_STORED_ID})
@@ -2347,12 +2348,12 @@ class KeyTests(AppTestCase):
         terminal.script(
             self.submit(run, "Write the numbers from 1 to 300, one per line, nothing else."),
             Step(b"draft", when=self.running(run), capture="running", label="running"),
-            Step(b"\x1b", when=terminal.shows("│ > draft"), label="the draft"),
+            Step(b"\x1b", when=terminal.shows("❯ draft"), label="the draft"),
             # The replay holds the turn open until it sees session.interrupt, so a turn still running
             # well after that Esc proves the Esc sent nothing.
-            Step(b"\x15", when=lambda: terminal.shows("│ > draft")() and time.monotonic() - terminal.fired["the draft"] > 0.4,
+            Step(b"\x15", when=lambda: terminal.shows("❯ draft")() and time.monotonic() - terminal.fired["the draft"] > 0.4,
                  capture="after the first esc", label="the draft after Esc"),
-            Step(b"\x1b", when=lambda: not terminal.shows("│ > draft")(), label="the empty composer"),
+            Step(b"\x1b", when=lambda: not terminal.shows("❯ draft")(), label="the empty composer"),
             Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(), label="end"),
         )
         self.run_main(run)
@@ -2392,7 +2393,7 @@ class KeyTests(AppTestCase):
             Step(b"look at @sr", when=terminal.idle, label="idle"),
             Step(b"\t", when=terminal.shows(" app.py"), capture="menu", label="the path menu"),
             # Past the debounce, so a re-ask for the accepted file would have gone out by now.
-            Step(b"\x03\x04", when=lambda: terminal.shows("│ > look at @file:src/app.py")()
+            Step(b"\x03\x04", when=lambda: terminal.shows("❯ look at @file:src/app.py")()
                  and time.monotonic() - terminal.fired["the path menu"] > 0.5, capture="accepted",
                  label="the accepted path"),
         )
@@ -2403,7 +2404,7 @@ class KeyTests(AppTestCase):
         self.assertEqual(asked["params"], {"word": "@sr", "session_id": LIVE_ID})
         menu = terminal.captures["menu"]
         # The launch starts the region on the top row, so it knows its place and the menu opens under the composer.
-        bottom = next(index for index, line in enumerate(menu) if line.startswith("╰"))
+        bottom = rule_rows(menu)[1]
         self.assertTrue(menu[bottom + 1].startswith(" app.py"), menu)
         self.assertTrue(menu[bottom + 2].startswith(" src/"), menu)
         self.assertIn("dir", menu[bottom + 2])
@@ -2452,8 +2453,8 @@ class KeyTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         details = "\n".join(terminal.captures["details"])
-        self.assertIn("> Reply with exactly the word: ok", details)
-        self.assertIn("⏺ ok", details)
+        self.assertIn("❯ Reply with exactly the word: ok", details)
+        self.assertIn("┃ ● ok", details)
         self.assertIn("history · ", details)
 
     def test_ctrl_l_redraws_the_session_from_memory(self) -> None:

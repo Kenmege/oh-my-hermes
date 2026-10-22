@@ -457,7 +457,12 @@ unanswered, a running turn is reported lost and never re-sent), and past that
 it exits as before; Ctrl+Z stops its process group, the gateway with it, as
 Hermes' own CLI's Ctrl+Z does. Layout, input, rendering and
 the OMH panels are OMH's; every model call, tool run and approval decision is
-the gateway's. Shift+Tab may turn on Hermes' per-session yolo, so Hermes stops
+the gateway's. Its look is the rail and kind colours the owner picked on
+2026-10-22: each transcript block on a `┃` rail with no fill, a call's state
+in its mark's glyph and colour as the dag view draws it (running blue `○`,
+done green `●`, failed red `✗`), its name in its tool family's hue,
+consecutive skill loads folded into one row, and the composer between two
+full-width rules with no side edges. Shift+Tab may turn on Hermes' per-session yolo, so Hermes stops
 asking for approvals in that one session (a `config.set` naming the session,
 never `approvals.mode`), and the TUI sends that session an explicit off before
 it leaves it. Every deny the person gives an approval also interrupts the

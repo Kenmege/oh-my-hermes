@@ -19,11 +19,15 @@ by `live_lines()` equal `history_lines(details=False)` at the same width
 Only the LAST block can still change; appending any block first closes the
 one before it, so a block is flushed only after every block above it.
 
-Assistant text opens with `⏺ ` in the text colour on its first row, and every
-later row of that reply, however many flushes it arrives in, is indented to
-match, so a reply reads as one block beside the dim `> ` of the prompt above it.
+Assistant text opens with a bold `● ` in the text colour on its first row, and
+every later row of that reply, however many flushes it arrives in, is indented
+to match, so a reply reads as one block beside the dim `❯ ` of the prompt above
+it. Three kinds of block hang on a rail in the left gutter (`RAIL`, `┃` and a
+space, which a terminal draws to the full cell height, so a block's rail is one
+line): your prompt's in dim grey, each tool call's in its state's colour, and a
+reply's in the skin's accent, the banner's colour (`Theme.brand`). Nothing has a band behind it.
 
-A slash command the person runs is a block of its own: `> /name arg` in the
+A slash command the person runs is a block of its own: `❯ /name arg` in the
 hint colour, then what it printed under `⎿`, each part in its level's colour
 and, for a warning or an error, its glyph. Its echo stays live while the
 command may still print (`close_command` ends that); what it says meanwhile
@@ -39,9 +43,16 @@ so a reply that ends there leaves nothing to take back) and fully at
 `message.complete`; the markdown state (an open fence) carries across the
 flush boundary; thinking flushes as ONE collapsed row ("▸ thought for 4.2s");
 a tool group flushes when the next block arrives (message text, thinking) or
-at `message.complete`, as one row per call (`⏺ name(argument summary)`, the
-`⏺` in its state's colour) with what it printed under `⎿`, no header over
-them; a read or a load says in one line what it read instead (`_read_summary`). A
+at `message.complete`, as one row per call (`● name(argument summary)`, the
+mark a shape and a colour per state, `TOOL_MARKS`, and the name bold in its
+tool family's hue, `TOOL_FAMILIES`) with what it printed under `⎿`, a blank row
+between two calls, no header over them; a read or a load says in one line what
+it read instead (`_read_summary`). A run of consecutive plumbing calls
+(`PLUMBING_TOOLS`: loading a skill, reading tool details) folds into one row,
+`● Loaded 4 skills + tool details · a, b, c, d  3.5s` (a failed one keeps its own
+row, and the details view unfolds the run), and a shell call that
+feeds a script through a heredoc reads `terminal(python3 script · 23 lines)`
+(`_heredoc_summary`). A
 `tool.generating` row (`◌`) is a draft: a `tool.start` takes over the first
 unclaimed draft of its name, or else the first unclaimed draft of the
 `tool_call` bridge (`gateway_contract.TOOL_CALL_BRIDGE`), whose call starts
@@ -89,7 +100,8 @@ from . import gateway_contract as contract
 from .gateway_contract import TOOL_CALL_BRIDGE
 from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
 from .style import Line, Span, Style, fill
-from .theme import Theme, on_band
+from .slash import slash_spans
+from .theme import KIND_FAMILIES, Theme, on_band
 from .width import line_width, truncate, truncate_left, truncate_line
 
 TOOL_GENERATING = "generating"
@@ -121,7 +133,7 @@ DROPPED_NOTICE = "⋯ {earlier} no longer held"
 # longer has them.
 BLOCK_CAP = 2000
 
-USER_MARK = "> "  # dim, before your prompt's dim text, with no band behind it
+USER_MARK = "❯ "  # the composer's mark (`composer.PROMPT`), dim, before your prompt's dim text, on no band
 FROM_QUEUE_TAG = "⧗ from queue"  # on a prompt the queue sent once the turn before it ended
 # A steer the person sent: SENT until Hermes answers, then QUEUED (Hermes took it: it reads it after its next
 # tool call, or sends it as the next prompt while compressing, and says the same for both) or REFUSED.
@@ -142,10 +154,16 @@ OUTPUT_MORE = "… +{count} {noun} · ctrl+o shows all"
 SHOWS_ALL = " · ctrl+o shows all"
 COLLAPSED_MARK = "▸"
 EXPANDED_MARK = "▾"
-ASSISTANT_MARK = "⏺ "
+ASSISTANT_MARK = "● "
 ASSISTANT_INDENT = "  "
-TOOL_MARK = "⏺"  # every call that started: the accent while it runs, then green done or red failed or denied
-# (dim for a resumed session's call, whose outcome its record does not keep)
+# A call's mark by its state: a shape of its own for each, in its state's colour, so the colour is never the only
+# signal. Running in the accent (the delegation view's running blue), done green, failed or denied red; dim for a
+# call cut off, one still being written, and a resumed session's call, whose outcome its record does not keep.
+TOOL_MARKS = {
+    TOOL_RUNNING: "○", TOOL_OK: "●", TOOL_ERROR: "✗", TOOL_DENIED: "✗", TOOL_INTERRUPTED: "▪", TOOL_RECORDED: "●",
+    TOOL_GENERATING: "◌",
+}
+RAIL = "┃ "  # the left rail of a prompt, a tool call or a reply, in the block's colour, and a space
 # A running tool's mark alternates the accent and dim this often, counted from its own start, so calls that run
 # side by side pulse each on its own. Only the live region is drawn with a clock; scrollback gets the settled mark.
 PULSE_SECONDS = 0.5
@@ -158,6 +176,8 @@ class UserBlock:
     text: str
     done: bool = True
     from_queue: bool = False
+    # The command and skill names a `/name` token in `text` resolved to as it was sent, drawn bold in their colour.
+    known: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -394,7 +414,31 @@ _GOAL_MARKERS = re.compile(
 )
 
 
+# The shell tools whose heredoc script is summarised by its interpreter and length.
+SHELL_TOOLS = frozenset({"terminal", "process", "execute_code"})
+
+
+def _heredoc_summary(payload: dict[str, Any]) -> str:
+    """A shell call that feeds a script through a heredoc, as `<interpreter> script · N lines`; "" for any other.
+
+    N counts the script's lines, between the line that opens the heredoc and
+    its terminator; the interpreter is the command's first word.
+    """
+    args = payload.get("args")
+    command = as_text(args.get("command")) if isinstance(args, dict) else ""
+    head, marker, _rest = command.partition("<<")
+    lines = command.rstrip("\n").split("\n")
+    if as_text(payload.get("name")) not in SHELL_TOOLS or not marker or len(lines) < 3:
+        return ""
+    words = head.split()
+    body = len(lines) - 2
+    return f"{words[0] if words else 'shell'} script · {body} line{'' if body == 1 else 's'}"
+
+
 def _args_summary(payload: dict[str, Any]) -> str:
+    script = _heredoc_summary(payload)
+    if script:
+        return script
     summary = _call_summary(payload)
     return _GOAL_MARKERS.sub("", summary).strip() if as_text(payload.get("name")) == "delegate_task" else summary
 
@@ -567,14 +611,23 @@ def _text_rows(
 
 
 def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
-    """Your prompt behind a dim `>`, in the muted colour on no band, as Claude Code shows it; `⧗ from queue` when the
-    queue sent it."""
-    rows = _text_rows(block.text, theme.muted, (Span(USER_MARK, theme.dim),), (Span(" " * len(USER_MARK)),), width)
+    """Your prompt on a dim rail, behind a dim `❯`, in the muted colour on no band; a `/name` that resolved to a
+    command or skill bold in its colour (`slash_spans`); `⧗ from queue` when the queue sent it."""
+    inner = width - len(RAIL)
+    first, rest = (Span(USER_MARK, theme.dim),), (Span(" " * len(USER_MARK)),)
+    rows: list[Line] = []
+    for index, source in enumerate(_display_lines(block.text)):
+        if _is_blank(source):
+            rows.append(())
+            continue
+        spans = slash_spans(clean_text(source), block.known, theme.muted, theme.slash)
+        rows.extend(wrap_prefixed(spans, first if index == 0 else rest, rest, inner))
     if block.from_queue and rows:
         tag: Line = (Span(COLUMN_GAP + FROM_QUEUE_TAG, theme.muted),)
-        if line_width(rows[0]) + line_width(tag) <= width:
+        if line_width(rows[0]) + line_width(tag) <= inner:
             rows[0] = (*rows[0], *tag)
-    return rows
+    return [(*_rail(theme.dim), *row) for row in rows]
+
 
 
 def _awaits_answer(block: Block) -> bool:
@@ -683,15 +736,18 @@ def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool)
 
 
 def _marked(rows: list[Line], opens_block: bool, theme: Theme) -> list[Line]:
-    """Assistant rows behind the reply's margin: `⏺ ` on the block's first row, an indent on every other one."""
-    first: Line = (Span(ASSISTANT_MARK, theme.text),)  # what it said; what it did is in the tool colour
+    """Assistant rows on the reply's rail in the skin's accent: a bold `● ` on the block's first row, an indent on
+    every other one, and the rail alone on a blank row, so a reply's rail is one line."""
+    first: Line = (Span(ASSISTANT_MARK, replace(theme.text, bold=True)),)  # what it said; a call's mark is its state
     rest: Line = (Span(ASSISTANT_INDENT),)
-    return [(*(first if opens_block and index == 0 else rest), *row) if row else () for index, row in enumerate(rows)]
+    rail = _rail(theme.brand)
+    return [(*rail, *(first if opens_block and index == 0 else rest), *row) if row else rail[:1]
+            for index, row in enumerate(rows)]
 
 
 def _reply_width(width: int) -> int:
-    """The cells left for reply text beside its margin."""
-    return max(1, width - len(ASSISTANT_INDENT))
+    """The cells left for reply text beside its rail and margin."""
+    return max(1, width - len(RAIL) - len(ASSISTANT_INDENT))
 
 
 def _assistant_rows(block: AssistantBlock, width: int, theme: Theme) -> list[Line]:
@@ -732,18 +788,23 @@ def _pulse_dim(tool: ToolRow, now: float | None) -> bool:
     return int(max(0.0, now - tool.started_at) / PULSE_SECONDS) % 2 == 1
 
 
-def _tool_mark(status: str, theme: Theme, dim: bool = False) -> Span:
+def _rail(style: Style) -> Line:
+    return (Span(RAIL[0], style), Span(RAIL[1:]))
+
+
+def _state_style(status: str, theme: Theme, dim: bool = False) -> Style:
+    """A call's state as a colour: its mark's and its rail's."""
     if status == TOOL_OK:
-        return Span(TOOL_MARK, theme.ok)
+        return theme.ok
     if status in (TOOL_ERROR, TOOL_DENIED):
-        return Span(TOOL_MARK, theme.error)  # the line under a denial says it was denied
+        return theme.error  # the line under a denial says it was denied
     if status == TOOL_RUNNING:
-        return Span(TOOL_MARK, theme.dim if dim else theme.accent)
-    if status == TOOL_RECORDED:
-        return Span(TOOL_MARK, theme.dim)
-    if status == TOOL_INTERRUPTED:
-        return Span("▪", theme.dim)
-    return Span("◌", theme.dim)
+        return theme.dim if dim else theme.accent
+    return theme.dim
+
+
+def _tool_mark(status: str, theme: Theme, dim: bool = False) -> Span:
+    return Span(TOOL_MARKS.get(status, TOOL_MARKS[TOOL_GENERATING]), _state_style(status, theme, dim))
 
 
 def _is_path(text: str) -> bool:
@@ -752,13 +813,13 @@ def _is_path(text: str) -> bool:
 
 
 def _tool_row(tool: ToolRow, width: int, theme: Theme, now: float | None = None) -> Line:
-    """One line per call: `⏺ name(args summary)` and its duration; the mark pulses while it runs, given `now`, and
+    """One line per call: `● name(args summary)` and its duration; the mark pulses while it runs, given `now`, and
     the summary is cut first (a path from the left)."""
     mark = _tool_mark(tool.status, theme, tool.status == TOOL_RUNNING and _pulse_dim(tool, now))
-    head: Line = (mark, Span(" "), Span(tool.name, theme.tool))
+    head: Line = (mark, Span(" "), Span(tool.name, kind_style(tool.name, theme)))
     tail: Line = ()
     if tool.duration_s is not None:
-        tail = (Span(COLUMN_GAP + _seconds(tool.duration_s), theme.muted),)
+        tail = (Span(COLUMN_GAP + _seconds(tool.duration_s), theme.faint),)
     room = width - line_width(head) - line_width(tail) - len("()")
     args: Line = ()
     if tool.args_summary and room > 1:
@@ -781,10 +842,9 @@ def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> lis
     failed = tool.status in (TOOL_ERROR, TOOL_DENIED)
     shown = output if expanded else output[-TOOL_OUTPUT_ROWS:] if failed else output[:TOOL_OUTPUT_ROWS]
     hidden = len(output) - len(shown) + tool.output_more
-    style = theme.error if failed else theme.muted
-    first, rest = _output_leads(theme)
-    texts = [Span(line, style) for line in shown]
-    more = [Span(f"… +{hidden} line{'' if hidden == 1 else 's'}{SHOWS_ALL}", theme.muted)] if hidden else []
+    first, rest = _output_leads(theme)  # a failure's lines too: its mark and its rail say it failed
+    texts = [Span(line, theme.faint) for line in shown]
+    more = [Span(f"… +{hidden} line{'' if hidden == 1 else 's'}{SHOWS_ALL}", theme.faint)] if hidden else []
     ordered = [*more, *texts] if failed else [*texts, *more]
     return [truncate_line((*(rest if index else first), span), width) for index, span in enumerate(ordered)]
 
@@ -799,26 +859,111 @@ def _answer_rows(text: str, level: str, width: int, theme: Theme) -> list[Line]:
     return _banded(rows, band) if band is not None else rows
 
 
+# The tool families a call's name is coloured by (`Theme.kinds`, in `theme.KIND_FAMILIES` order); a name in none
+# keeps the terminal's foreground, bold. Hermes' browser tools all start `browser_`.
+TOOL_FAMILIES = {
+    "skill": frozenset({"skill_view", "skills_list", "skill_manage", "tool_describe", "tool_search", "tool_call",
+                        "todo_list", "memory", "clarify", "session_search"}),
+    "shell": SHELL_TOOLS,
+    "file": frozenset({"read_file", "write_file", "patch", "search_files"}),
+    "web": frozenset({"web_search", "web_extract"}),
+    "dag": frozenset({"delegate_task", "omh_dag", "omh_team"}),
+}
+# The plumbing calls a run of which folds into one row: loading a skill (or a file in one), reading tool details.
+PLUMBING_TOOLS = frozenset({"skill_view", "tool_describe"})
+SKILL_TOOL = "skill_view"
+FOLD_LABEL_SEPARATOR = " → "  # how Hermes labels a skill_view that read a file in a skill: `skill → references/x.md`
+
+
+def tool_family(name: str) -> str:
+    """The family a tool's name belongs to (`TOOL_FAMILIES`), or "" for none."""
+    if name.startswith("browser_"):
+        return "web"
+    return next((family for family, names in TOOL_FAMILIES.items() if name in names), "")
+
+
+def kind_style(name: str, theme: Theme) -> Style:
+    """A call's name: bold, in its family's hue, else in the terminal's foreground."""
+    family = tool_family(name)
+    return theme.kinds[KIND_FAMILIES.index(family)] if family and theme.kinds else theme.tool
+
+
+def _folds(tool: ToolRow) -> bool:
+    """Whether a call joins a run of plumbing calls: a failed or refused one keeps its row and says why."""
+    return tool.name in PLUMBING_TOOLS and tool.status not in (TOOL_ERROR, TOOL_DENIED)
+
+
+def _units(tools: list[ToolRow], fold: bool = True) -> list[list[ToolRow]]:
+    """The calls as rows: each run of consecutive plumbing calls one unit (`fold`), every other call a unit of its
+    own."""
+    units: list[list[ToolRow]] = []
+    for tool in tools:
+        if fold and _folds(tool) and units and _folds(units[-1][-1]):
+            units[-1].append(tool)
+        else:
+            units.append([tool])
+    return units
+
+
+def _unit_status(unit: list[ToolRow]) -> str:
+    """A folded run's state: the first of failed, denied, running, drafted, cut off a member is in, else its last's."""
+    statuses = {tool.status for tool in unit}
+    return next((status for status in (TOOL_ERROR, TOOL_DENIED, TOOL_RUNNING, TOOL_GENERATING, TOOL_INTERRUPTED)
+                 if status in statuses), unit[-1].status)
+
+
+def _loaded_label(tool: ToolRow) -> str:
+    """A skill_view's skill, and the file it read in it: `omh-routing/skill-common-rail.md`."""
+    skill, _arrow, file = tool.args_summary.partition(FOLD_LABEL_SEPARATOR)
+    return f"{skill}/{file.rsplit('/', 1)[-1]}" if file else skill
+
+
+def _folded_row(unit: list[ToolRow], width: int, theme: Theme, now: float | None) -> Line:
+    """One row for a run of plumbing calls: `● Loaded 4 skills + tool details · a, b, c, d  3.5s`.
+
+    The time is the members' summed, once none is running; the names are
+    cut first. What each member printed (`loaded skill …`) is not repeated.
+    """
+    status = _unit_status(unit)
+    running = next((tool for tool in unit if tool.status == TOOL_RUNNING), None)
+    mark = _tool_mark(status, theme, running is not None and _pulse_dim(running, now))
+    skills = [tool for tool in unit if tool.name == SKILL_TOOL]
+    words = f"Loaded {len(skills)} skill{'' if len(skills) == 1 else 's'}" if skills else "Read tool details"
+    if skills and any(tool.name != SKILL_TOOL for tool in unit):
+        words += " + tool details"
+    head: Line = (mark, Span(" "), Span(words, kind_style(SKILL_TOOL, theme)))
+    durations = [tool.duration_s for tool in unit if tool.duration_s is not None]
+    tail: Line = (Span(COLUMN_GAP + _seconds(sum(durations)), theme.faint),) if durations and running is None else ()
+    names = ", ".join(_loaded_label(tool) for tool in skills)
+    room = width - line_width(head) - line_width(tail) - len(LABEL_SEPARATOR)
+    args: Line = (Span(LABEL_SEPARATOR + truncate(names, room), theme.muted),) if names and room > 1 else ()
+    return truncate_line((*head, *args, *tail), width)
+
+
 def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: float | None = None) -> list[Line]:
-    """Each call's own row (what ran, on what), what the person answered it right under that, and what it printed
-    under them; a group with no call shows nothing."""
+    """Each call on a rail in its state's colour: its own row (what ran, on what), what the person answered it right
+    under that, and what it printed under them, a blank row between two calls; a run of plumbing calls is one row,
+    unfolded again by `expanded`. A group with no call shows nothing."""
+    inner = width - len(RAIL)
     rows: list[Line] = []
-    band = theme.error_band if theme.error_band.bg is not None else None
-    for tool in group.tools:
-        failed = band is not None and tool.status in (TOOL_ERROR, TOOL_DENIED)  # a settled mark: nothing pulses on a band
-        roles = on_band(theme, band) if failed else theme
-        own = [_tool_row(tool, width, roles, now)]
-        if expanded and tool.summary and tool.summary not in tool.output[:1]:  # a failure's line is said once
-            summary_first, summary_rest = _output_leads(roles)  # read against its band
-            own.extend(wrap_prefixed((Span(tool.summary, roles.muted),), summary_first, summary_rest, width))
-        lines = tool.diff_lines(hold=not group.done) if tool.inline_diff else ()
-        if not lines:
-            own.extend(_output_rows(tool, width, roles, expanded))
-        shown = _banded(own, band) if failed and band is not None else own
-        answers = [row for text, level in tool.answers for row in _answer_rows(text, level, width, theme)]
-        rows.extend([shown[0], *answers, *shown[1:]])
-        if lines:  # a diff keeps its own bands
-            rows.extend(diff_rows(lines, width, theme, full=expanded, lead=_output_leads(theme)[0]))
+    for unit in _units(group.tools, fold=not expanded):
+        status = _unit_status(unit)
+        if not expanded and _folds(unit[0]):
+            own = [_folded_row(unit, inner, theme, now)]
+        else:
+            tool = unit[0]
+            own = [_tool_row(tool, inner, theme, now)]
+            own += [row for text, level in tool.answers for row in _answer_rows(text, level, inner, theme)]
+            if expanded and tool.summary and tool.summary not in tool.output[:1]:  # a failure's line is said once
+                summary_first, summary_rest = _output_leads(theme)
+                own.extend(wrap_prefixed((Span(tool.summary, theme.faint),), summary_first, summary_rest, inner))
+            lines = tool.diff_lines(hold=not group.done) if tool.inline_diff else ()
+            if lines:  # a diff keeps its own bands
+                own.extend(diff_rows(lines, inner, theme, full=expanded, lead=_output_leads(theme)[0]))
+            else:
+                own.extend(_output_rows(tool, inner, theme, expanded))
+        rail = _rail(_state_style(status, theme))
+        rows.extend([*([()] if rows else []), *((*rail, *row) for row in own)])
     return rows
 
 
@@ -916,8 +1061,9 @@ class Transcript:
             handler(event.payload if isinstance(event.payload, dict) else {})
             self._version += 1
 
-    def add_user(self, text: str, from_queue: bool = False) -> None:
-        self._append(UserBlock(text, from_queue=from_queue))
+    def add_user(self, text: str, from_queue: bool = False, known: frozenset[str] = frozenset()) -> None:
+        """Your prompt; `known` names the commands and skills a `/name` in it is drawn for (`slash.known_names`)."""
+        self._append(UserBlock(text, from_queue=from_queue, known=known))
 
     def add_steer(self, text: str, agent: str = "") -> SteerBlock:
         """A steer the person just sent, held until Hermes answers and the transcript reaches a block boundary.
@@ -1072,7 +1218,7 @@ class Transcript:
 
     def add_recorded_tools(self, messages: list[dict[str, Any]]) -> None:
         """A resumed session's tool calls (its history's `role: tool` messages) as one settled group, each drawn as a
-        live call is (`⏺ name(args)`) with a dim mark, since the record keeps no outcome, and an edit's diff under
+        live call is (`● name(args)`) with a dim mark, since the record keeps no outcome, and an edit's diff under
         it where Hermes kept the one it showed live (`display_metadata.tool_result_metadata.inline_diff`)."""
         rows = []
         for message in messages:

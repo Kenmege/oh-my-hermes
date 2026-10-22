@@ -16,7 +16,7 @@ import re
 import unittest
 
 from _tui_gateway_replay import Scenario, recorded_answer, spans
-from _tui_lines import INFO_INSET, lines_text
+from _tui_lines import INFO_INSET, lines_text, RULE_ROW
 from test_tui_agent_view import STARTS, VIEW, agent_app, agent_event, relay, screen_info_index, view_rows
 from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, Step, startup_answers, info_index
 from test_tui_modes import SID, RecordingClient, answer, composer_index, drawn, make_app, notices, queue, steers, type_text
@@ -30,7 +30,7 @@ from omh.tui.agent_view import (
 )
 from omh.tui.app import SLOT_ARM_SECONDS, App
 from omh.tui.layout import AGENT_VIEW_ROWS, agent_view_cap
-from omh.tui.frame import BOX_INSET, MODE_NORMAL
+from omh.tui.frame import INFO_INSET as INFO_INSET_CELLS, MODE_NORMAL
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Paste
 from omh.tui.modes import IDLE_HINT
@@ -57,11 +57,11 @@ def under_the_frame(app: App) -> list[str]:
 
 
 def info_left(row: str) -> str:
-    """The info line's left side, after the inset it starts with under the box: its right side (model, context,
+    """The info line's left side, after the inset it starts with under the composer: its right side (model, context,
     effort) stands 3 cells or more away."""
     if not row.startswith(INFO_INSET):
-        raise AssertionError(f"the info line does not start {BOX_INSET} cells in: {row!r}")
-    return re.split(r" {3,}", row[BOX_INSET:])[0]
+        raise AssertionError(f"the info line does not start {INFO_INSET_CELLS} cells in: {row!r}")
+    return re.split(r" {3,}", row[INFO_INSET_CELLS:])[0]
 
 
 def focused(**options: object) -> tuple[App, RecordingClient]:
@@ -233,8 +233,8 @@ class ListFocusTests(unittest.TestCase):
         resting, status = composer_index(before), screen_info_index(app, before)
         app._on_input(Key(DOWN))
         during = drawn(app)
-        self.assertFalse([row for row in during if row.startswith("│ > ")], during)  # no composer
-        self.assertFalse([row for row in during if row.startswith(("╭", "╰"))], during)  # no box
+        self.assertFalse([row for row in during if row.startswith("❯ ")], during)  # no composer
+        self.assertFalse([row for row in during if row.startswith(RULE_ROW)], during)  # no box
         self.assertEqual(during[resting - 1 : resting + 2], ["", "", ""], "its rows stay, drawn blank")
         self.assertEqual(screen_info_index(app, during), status)
         self.assertEqual(info_left(during[status]), AGENT_LIST_HINT)  # the info line says the list's keys
@@ -420,9 +420,9 @@ class AgentLogTests(unittest.TestCase):
                 "running · 0s · 3 tools · deepseek-v4.1-flash",
                 "",
                 "▸ I will grep for old_api first",
-                "⏺ search_files  old_api",
-                "⏺ read_file  src/api/client.py",
-                "⏺ terminal",
+                "● search_files  old_api",
+                "● read_file  src/api/client.py",
+                "● terminal",
             ],
         )
         assert app.pager is not None
@@ -449,7 +449,7 @@ class AgentLogTests(unittest.TestCase):
         agent_event(app, "tool", tool_name="read_file", tool_preview="src/a.py", tool_count=1)
         agent_event(app, "tool", SECOND, tool_name="terminal", tool_count=1)  # another agent's: not this log's
         drawn(app)
-        self.assertEqual(paged(app)[1:], ["running · 4s · 1 tool · deepseek-v4.1-flash", "", "⏺ read_file  src/a.py"])
+        self.assertEqual(paged(app)[1:], ["running · 4s · 1 tool · deepseek-v4.1-flash", "", "● read_file  src/a.py"])
         agent_event(app, "complete", status="completed", summary="three call sites", duration_seconds=5.0, tool_count=1)
         drawn(app)
         self.assertEqual(paged(app)[1], "completed · 5s · 1 tool · deepseek-v4.1-flash")
@@ -1261,7 +1261,7 @@ class AgentReplayTests(AppTestCase):
         self.assertEqual(info_left(rows[status]), AGENT_LIST_HINT)
         self.assertTrue(rows[status].endswith("effort default"), rows[status])
         # The composer's rows are blank while the list has the keys: no box anywhere on the screen.
-        self.assertFalse([row for row in rows if row.startswith(("╭", "╰"))], rows)
+        self.assertFalse([row for row in rows if row.startswith(RULE_ROW)], rows)
         self.assertEqual(captures["log"][0], "find usages of old_api in src/ and list every call site")
         self.assertEqual(captures["second"][0], "read the diff for risks")
         # Back on the second agent, the list's last row: the screen's last row that is not blank.

@@ -9,9 +9,9 @@ are bold and comments italic as well as coloured, so the `mono` palette, whose
 keyword and text colours nearly match, still tells them apart.
 
 The terminal's background decides the rest. Body text (`text`, `user`, the
-reply) has no colour of its own: it is the terminal's
-default foreground, which is readable on whatever background the person
-chose. Every other role is measured against that background
+reply) and a tool call's name (`tool`, bold) have no colour of their own: they
+are the terminal's default foreground, which is readable on whatever
+background the person chose. Every other role is measured against that background
 (`build_theme(skin, background)`: the colour the terminal reported, or the
 palette's status-bar background, the dark stand-in, when it reported none).
 A role a person reads as text reaches WCAG's 4.5:1 (`TEXT_ROLES`); a role
@@ -24,6 +24,19 @@ diff bands are tints of the palette's word colours over the background, so
 the default foreground stays readable on them; a dark diff band names its own
 text colour (`banner_text`), since the dark it assumes may be a guess. `dim` is
 for decoration glyphs; words go on `muted` or `hint`.
+
+Hue is kept for what it says (owner's pick of 2026-10-22, the rail with kind
+colours), so the transcript's chrome is neutral grey: a call's arguments on
+`muted`, the dimmer duration and what it printed on `faint` (and `hint`), its
+glyphs and the composer's rules on `dim` and `rule`, each lifted from a fixed
+neutral grey (`NEUTRAL_GREYS`) toward white or black only as far as its floor
+takes. State is hue: `accent`, a running call and everything that says a turn
+or an agent is running, is the blue a running node takes in the delegation
+view (`dag_edge_end`, lifted to 4.5:1), `ok` green and `error` red. The
+palette's own accent is the banner title's alone (`brand`). A call's name is
+drawn in its tool family's hue (`kinds`, in `KIND_FAMILIES` order, from
+`KIND_HUES`), kept clear of every state hue, and a `/name` that resolves to a
+command or skill takes the skill hue, bold (`slash`).
 
 Outcomes sit on bands (`ok_band` behind what the person allowed,
 `error_band` behind a denial or a failure): light tints of the palette's diff
@@ -83,14 +96,26 @@ LIGHT_STATUS_SHARE = 0.85
 # The delegation view's edge gradient, top to bottom, for a palette that names none of these tokens.
 DAG_EDGE_STOPS = {"dag_edge_start": "#8B5CF6", "dag_edge_mid": "#6366F1", "dag_edge_end": "#3B82F6"}
 DAG_EDGE_STEPS = 9  # an odd count, so the middle stop is a step of its own
-# The roles a person reads as text: each reaches TEXT_CONTRAST against the background. `text` and `user` are not
-# here because they are the terminal's own foreground.
+# The roles a person reads as text: each reaches TEXT_CONTRAST against the background. `text`, `user` and `tool`
+# are not here because they are the terminal's own foreground.
 TEXT_ROLES = (
-    "accent", "label", "ok", "warn", "error", "tool", "thinking", "heading", "code", "link", "quote",
-    "syntax_keyword", "syntax_string", "syntax_number", "syntax_comment", "hint", "muted", "mode_accept", "mode_plan",
+    "accent", "label", "ok", "warn", "error", "thinking", "heading", "code", "link", "quote",
+    "syntax_keyword", "syntax_string", "syntax_number", "syntax_comment", "hint", "muted", "faint", "mode_accept",
+    "mode_plan", "brand", "slash",
 )
 # The roles drawn only as a glyph or an edge: each reaches EDGE_CONTRAST.
 GLYPH_ROLES = ("dim", "rule", "prompt")
+# The transcript's neutral greys, (on a dark background, on a light one): a call's arguments (`muted`), the dimmer
+# words under and beside it (`faint`, `hint`, thinking), and its glyphs and the composer's rules (`dim`, `rule`).
+NEUTRAL_GREYS = {"muted": ("#9198A1", "#59636E"), "faint": ("#7D8590", "#6E7781"), "glyph": ("#545D68", "#8C959F")}
+# The tool families a call's name is coloured by, and each family's hue (on a dark background, on a light one).
+# Each keeps 23 degrees of OKLCH hue or more from the state hues (running blue, failed red, done green), the
+# banner's turquoise and the delegation view's selected violet; tests/test_tui_theme.py holds each to 4.5:1.
+KIND_FAMILIES = ("skill", "shell", "file", "web", "dag")
+KIND_HUES = {
+    "skill": ("#D58CF0", "#9E58B8"), "shell": ("#E3B341", "#996C00"), "file": ("#F8A87E", "#AB6239"),
+    "web": ("#C5DE70", "#687C00"), "dag": ("#F778BA", "#BF4588"),
+}
 
 
 @dataclass(frozen=True)
@@ -131,6 +156,10 @@ class Theme:
     error_band: Style  # behind a denial or a failure: a denied approval, a failed tool row and its lines, an error notice
     dag_edges: tuple[Style, ...]  # the delegation view's edges, top layer to bottom (`DAG_EDGE_STEPS` of them)
     dag_words: tuple[Style, ...]  # the same steps lifted to TEXT_CONTRAST: a box's title and status words
+    faint: Style  # a call's duration and what it printed, dimmer than its arguments on `muted`
+    brand: Style  # the banner's title, bold: the palette's accent, which no other role uses
+    kinds: tuple[Style, ...]  # a call's name, bold, in its tool family's hue, in `KIND_FAMILIES` order
+    slash: Style  # a `/name` that resolves to a command or skill, bold, in the composer and your prompt's rows
 
 
 def _channel(value: int) -> float:
@@ -207,6 +236,14 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
     def read(key: str) -> str:
         return _lifted(c[key], ink, surface, TEXT_CONTRAST)
 
+    side = 1 if light else 0
+
+    def grey(key: str, minimum: float) -> str:
+        return _lifted(NEUTRAL_GREYS[key][side], BLACK if light else WHITE, surface, minimum)
+
+    def hue(family: str) -> str:
+        return _lifted(KIND_HUES[family][side], ink, surface, TEXT_CONTRAST)
+
     def mark(key: str) -> str:
         return _lifted(c[key], ink, surface, EDGE_CONTRAST)
 
@@ -235,15 +272,15 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
     return Theme(
         name=skin.short_name,
         text=Style(),
-        dim=Style(fg=mark("banner_dim")),
-        accent=Style(fg=read("ui_accent")),
+        dim=Style(fg=grey("glyph", EDGE_CONTRAST)),
+        accent=Style(fg=read("dag_edge_end")),
         label=Style(fg=read("ui_label")),
         ok=Style(fg=read("ui_ok")),
         warn=Style(fg=read("ui_warn")),
         error=Style(fg=read("ui_error")),
-        tool=Style(fg=read("ui_tool")),
-        thinking=Style(fg=read("ui_thinking"), italic=True),
-        rule=Style(fg=mark("input_rule")),
+        tool=Style(bold=True),
+        thinking=Style(fg=grey("faint", TEXT_CONTRAST), italic=True),
+        rule=Style(fg=grey("glyph", EDGE_CONTRAST)),
         prompt=Style(fg=mark("prompt"), bold=True),
         user=Style(bold=True),
         heading=Style(fg=read("banner_title"), bold=True),
@@ -261,8 +298,8 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         status=on_bar("status_bar_text"),
         menu=Style(fg=c["banner_text"], bg=c["completion_menu_bg"]),
         menu_current=Style(fg=c["banner_text"], bg=c["completion_menu_current_bg"], bold=True),
-        hint=Style(fg=read("banner_dim")),
-        muted=Style(fg=read("banner_dim")),
+        hint=Style(fg=grey("faint", TEXT_CONTRAST)),
+        muted=Style(fg=grey("muted", TEXT_CONTRAST)),
         mode_accept=Style(fg=read("ui_warn")),
         mode_plan=Style(fg=read("ui_ok")),
         ok_band=ok_band,
@@ -275,6 +312,10 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
             Style(fg=_lifted(colour, ink, surface, TEXT_CONTRAST))
             for colour in _gradient([c[key] for key in DAG_EDGE_STOPS], DAG_EDGE_STEPS)
         ),
+        faint=Style(fg=grey("faint", TEXT_CONTRAST)),
+        brand=Style(fg=read("ui_accent"), bold=True),
+        kinds=tuple(Style(fg=hue(family), bold=True) for family in KIND_FAMILIES),
+        slash=Style(fg=hue("skill"), bold=True),
     )
 
 

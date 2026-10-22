@@ -116,7 +116,7 @@ from ..skin_pack import (
 )
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
-from .frame import BOX_INSET, MODE_NORMAL, MODE_SHELL, Frame, build_frame, sticky_line
+from .frame import INFO_INSET, MODE_NORMAL, MODE_SHELL, Frame, build_frame, sticky_line
 from .history import SEARCH_ACCEPT, SEARCH_CANCEL, SEARCH_HINTS, HistorySearch, append_entry, history_path, load_history
 from .gateway import (
     Event,
@@ -200,6 +200,7 @@ from .slash import (
     catalog_skill_count,
     completions,
     dropped_notice,
+    known_names,
     hermes_notice,
     parse_slash,
     plan_invocation,
@@ -851,7 +852,7 @@ def banner_lines(*, cwd: str, resumed: str, theme: Theme, width: int) -> list[Li
     def header(path: str) -> Line:
         shown = [*facts, path] if path else facts
         return (
-            Span(BANNER_BRAND, theme.heading),
+            Span(BANNER_BRAND, theme.brand),
             Span(f" v{__version__}", theme.muted),
             *(span for fact in shown for span in (Span(" · ", theme.dim), Span(fact, theme.text))),
         )
@@ -1159,6 +1160,9 @@ class App(ModesMixin, AgentViewMixin):
         self.busy_mode = BUSY_QUEUE
         # What `commands.catalog` last said, bound to the live session: completion and `/help` read it.
         self.catalog: list[tuple[str, str]] = []
+        # Every name a typed `/name` resolves to (`slash.known_names`): drawn bold in its colour in the composer,
+        # your prompt's row and the `↳ you:` reminder. The TUI's own commands until the catalog arrives.
+        self.known_slash = known_names()
         self.catalog_categories: list[tuple[str, list[str]]] = []
         self.skill_count = 0
         self.catalog_warning = ""  # the last warning shown, so a re-read repeats none
@@ -1370,6 +1374,7 @@ class App(ModesMixin, AgentViewMixin):
         own bundled skills collide in, so they are kept for `/help` instead.
         """
         self.catalog = catalog_pairs(result)
+        self.known_slash = known_names(self.catalog)
         self.catalog_categories = catalog_categories(result)
         self.skill_count = catalog_skill_count(result)
         warning = as_text(result.get("warning")).strip()
@@ -2967,7 +2972,7 @@ class App(ModesMixin, AgentViewMixin):
         `before_cut` the transcript from before that cut, which a refusal puts back.
         `notice` is what the skill command that sent it said, under its row whenever it goes.
         """
-        self.transcript.add_user(shown or text, from_queue=queued)
+        self.transcript.add_user(shown or text, from_queue=queued, known=self.known_slash)
         if notice:
             self.transcript.add_aside(NoticeBlock(notice))
         if not queued:
@@ -4019,6 +4024,7 @@ class App(ModesMixin, AgentViewMixin):
             below=self.menu_under,  # read after `_slot_lines` made it
             agents=self._agent_view(cols, rows),
             tail_floor=self._working_rows(),
+            known_slash=self.known_slash,
             text_question=self.slot is not None and not self.slot.picking,
             slot_caret=self._slot_caret(),  # read after `_slot_lines` drew the picker it comes from
             theme=self.theme,
@@ -4048,7 +4054,7 @@ class App(ModesMixin, AgentViewMixin):
             frame = build()
         # The rows above the region once the flush below and this frame are drawn: transcript rows.
         if self._sticky_needed(self.region.rows_above(rows, len(stable), frame.height)):
-            frame = build(sticky=sticky_line(self.sticky, cols, self.theme))
+            frame = build(sticky=sticky_line(self.sticky, cols, self.theme, self.known_slash))
         # Flushed before the frame, the lines cover the region's top rows, where the lines leaving
         # the tail were drawn (a settled tool group is those same rows, moved above the region), and
         # the frame is drawn under them. Flush and frame are one write, so no screen between them shows.
@@ -4171,9 +4177,9 @@ class App(ModesMixin, AgentViewMixin):
         return (Span(" " * inset), *line) if inset and line else line
 
     def _info_inset(self) -> int:
-        """Cells before the info line's text: `BOX_INSET` under the box, where the box's text starts; none on a tiny
-        terminal, which draws no box."""
-        return 0 if is_tiny(self.size[1], self.size[0]) else BOX_INSET
+        """Cells before the info line's text: `INFO_INSET` under the composer's rule; none on a tiny
+        terminal, which draws no rule."""
+        return 0 if is_tiny(self.size[1], self.size[0]) else INFO_INSET
 
     def _newline_keys_due(self) -> bool:
         """Whether the info line names the keys that add a line: the draft spans lines (typed, or a pasted chip of them)

@@ -1,7 +1,7 @@
 """Motion in the OMH TUI: the marks that tell said from done, the running tool's pulse, the working row's sweep.
 
-A reply opens with `⏺` in the text colour, and each tool call with a `⏺` in
-its state's colour, its name in the tool colour. A running tool's `⏺` alternates the accent and dim every
+A reply opens with a bold `●` in the text colour, and each tool call with its state's mark in its state's
+colour, its name in its tool family's hue. A running tool's `○` alternates the running blue and dim every
 `PULSE_SECONDS` from its own start, only in the live region: scrollback
 gets the settled mark. The working row's verb carries a highlight that
 sweeps across it. `OMH_TUI_REDUCED_MOTION=1` (or `NO_COLOR`) stops all of
@@ -10,6 +10,7 @@ it, and the screen then repaints once a second while a turn runs.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import unittest
 from unittest import mock
 
@@ -43,6 +44,7 @@ from omh.tui.transcript import (
     ToolRow,
     Transcript,
     block_rows,
+    kind_style,
 )
 from omh.tui.width import truncate_left
 
@@ -60,26 +62,30 @@ def ev(kind: str, **payload: object) -> Event:
 
 
 def mark(line: tuple) -> object:
-    """The span of a tool row's mark (its first)."""
-    return line[0]
+    """The span of a tool row's mark: after its rail (`┃` and a space)."""
+    return line[2]
 
 
 class SaidAndDoneTests(unittest.TestCase):
-    def test_a_reply_opens_in_the_text_colour_and_each_call_is_named_in_the_tool_colour(self) -> None:
+    def test_a_reply_opens_in_the_text_colour_and_each_call_is_named_in_its_familys_hue(self) -> None:
         reply = block_rows(AssistantBlock("hello", done=True), 40, THEME)[0]
-        self.assertEqual((reply[0].text, reply[0].style), ("⏺ ", THEME.text))
+        self.assertEqual((reply[2].text, reply[2].style), ("● ", replace(THEME.text, bold=True)))
         group = ToolGroup([ToolRow("a", "read_file", status=TOOL_OK), ToolRow("b", "terminal", status=TOOL_OK)], done=True)
-        rows = block_rows(group, 40, THEME)
-        self.assertEqual([(row[2].text, row[2].style) for row in rows], [("read_file", THEME.tool), ("terminal", THEME.tool)])
-        self.assertNotEqual(THEME.text, THEME.tool)
+        rows = [row for row in block_rows(group, 40, THEME) if row]  # a blank row between two calls
+        self.assertEqual([(row[4].text, row[4].style) for row in rows],
+                         [("read_file", kind_style("read_file", THEME)), ("terminal", kind_style("terminal", THEME))])
+        self.assertNotEqual(kind_style("read_file", THEME), kind_style("terminal", THEME))
 
     def test_every_tool_state_is_told_apart_by_its_marks_glyph_or_colour(self) -> None:
         marks, lines = {}, {}
         for status in (TOOL_RUNNING, TOOL_OK, TOOL_ERROR, TOOL_DENIED, TOOL_INTERRUPTED, TOOL_GENERATING):
             rows = block_rows(ToolGroup([ToolRow("a", "terminal", status=status)], done=True), 40, THEME)
             marks[status], lines[status] = mark(rows[0]), line_text(rows[-1])
-        # Claude Code's one glyph for every call that started, in its state's colour.
-        self.assertEqual({marks[status].text for status in (TOOL_RUNNING, TOOL_OK, TOOL_ERROR, TOOL_DENIED)}, {"⏺"})
+        # A shape of its own for each state, in its state's colour, so the colour is never the only signal.
+        self.assertEqual({status: marks[status].text for status in (TOOL_RUNNING, TOOL_OK, TOOL_ERROR)},
+                         {TOOL_RUNNING: "○", TOOL_OK: "●", TOOL_ERROR: "✗"})
+        self.assertEqual({status: marks[status].style for status in (TOOL_RUNNING, TOOL_OK, TOOL_ERROR)},
+                         {TOOL_RUNNING: THEME.accent, TOOL_OK: THEME.ok, TOOL_ERROR: THEME.error})
         # A denial shows the failure's red mark, and says so on its line.
         self.assertEqual(marks[TOOL_DENIED], marks[TOOL_ERROR])
         self.assertTrue(lines[TOOL_DENIED].endswith("⎿  denied"), lines[TOOL_DENIED])
@@ -107,7 +113,7 @@ class PulseTests(unittest.TestCase):
         transcript, clock = self.started()
         clock.now += PULSE_SECONDS / 2
         transcript.apply(ev("tool.start", tool_id="t2", name="read_file", context="a.py"))
-        first, second = transcript.live_lines(80, THEME, now=100.0 + PULSE_SECONDS + 0.1)
+        first, second = [row for row in transcript.live_lines(80, THEME, now=100.0 + PULSE_SECONDS + 0.1) if row]
         self.assertEqual((mark(first).style, mark(second).style), (THEME.dim, THEME.accent))
 
     def test_the_tail_renders_again_only_when_a_mark_turns(self) -> None:
@@ -157,9 +163,9 @@ class PulseTests(unittest.TestCase):
         with mock.patch.object(app.transcript, "take_stable_lines", recorded):
             app._render()
         history = app.terminal.screen.history() + app.terminal.screen.lines()  # type: ignore[attr-defined]
-        self.assertTrue(any(line.startswith("⏺ terminal") for line in history), history)
-        self.assertTrue(any(line.startswith("⏺ read_file") for line in history), history)
-        calls = [row for row in flushed if row and row[0].text == "⏺" and len(row) > 2 and row[2].text in ("terminal", "read_file")]
+        self.assertTrue(any(line.startswith("┃ ● terminal") for line in history), history)
+        self.assertTrue(any(line.startswith("┃ ✗ read_file") for line in history), history)
+        calls = [row for row in flushed if len(row) > 4 and row[0].text == "┃" and row[4].text in ("terminal", "read_file")]
         self.assertEqual([mark(row).style for row in calls], [THEME.ok, THEME.error])  # settled, never a frame of a pulse
 
     def test_a_take_in_the_middle_of_a_pulse_writes_no_frame_of_it(self) -> None:
@@ -177,7 +183,7 @@ class PulseTests(unittest.TestCase):
         app._render()
         history = app.terminal.screen.history()  # type: ignore[attr-defined]  # scrollback and the screen
         rows = [line for line in history if "terminal" in line and "sleep 9" in line]
-        self.assertEqual([row.split()[0] for row in rows], ["▪"], history)  # the settled mark, not a frame of ⏺
+        self.assertEqual([row.split()[1] for row in rows], ["▪"], history)  # the settled mark, not a frame of ○
 
 
 class SweepTests(unittest.TestCase):
@@ -306,7 +312,7 @@ class DocumentedMotionTests(unittest.TestCase):
         from pathlib import Path
 
         prose = " ".join((Path(__file__).resolve().parents[1] / "docs/INSTALLATION.md").read_text(encoding="utf-8").split())
-        self.assertIn(f"pulsing between the accent and dim every {PULSE_SECONDS:g} s from its own start", prose)
+        self.assertIn(f"pulsing between the blue and dim every {PULSE_SECONDS:g} s from its own start", prose)  # the accent
         self.assertIn("`OMH_TUI_REDUCED_MOTION=1`, or `NO_COLOR`, stops the motion", prose)
         self.assertEqual((TICK_SECONDS, REDUCED_TICK_SECONDS), (0.1, 1.0))  # "once a second ... instead of ten times"
 

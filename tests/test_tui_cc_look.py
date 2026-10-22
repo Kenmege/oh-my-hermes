@@ -1,10 +1,12 @@
-"""Round 4, the Claude Code look in the transcript: per-call `⏺` rows, results under `⎿`, the working row.
+"""Round 4, the Claude Code look in the transcript: per-call rows, results under `⎿`, the working row; since the
+rail and kind colours (2026-10-22) each block hangs on a `┃` rail.
 
-Each tool call is one row: a `⏺` in its state's colour (the accent while it
-runs, green once done, red when it failed or was denied), the tool's name and
-what it ran on in parentheses, its duration at the end. What it printed goes
-under `  ⎿  `; a read or a load says in one line what it read instead of
-echoing its first lines. Result shapes are Hermes 6c61c3e27d's
+Each tool call is one row on a rail in its state's colour: its state's mark
+(`○` running blue, `●` done green, `✗` failed or denied red), the tool's name
+bold in its family's hue and what it ran on in parentheses, its duration at
+the end. What it printed goes under `  ⎿  `; a read or a load says in one
+line what it read instead of echoing its first lines (in the details view,
+where a run of loads is unfolded). Result shapes are Hermes 6c61c3e27d's
 (`tools/file_tools.py`, `tools/skills_tool.py`, `tools/file_operations_common.py`).
 
 While a turn runs the working row reads `✶ Synthesizing… (1m 24s · ↓4.2k
@@ -12,8 +14,8 @@ tokens · thinking with high effort · esc to interrupt)`: a glyph that turns,
 Hermes' activity as a verb with its kaomoji and dots taken off, and under it
 one tip a turn (`  ⎿  Tip: …`) where the rows allow.
 
-Your prompt reads `> 오마이 헤르메스란`: a dim `>` and dim text with no band, as
-a command's echo does. A turn closes with a dim `  ✻ 5s · 3 tools · ↓1.3k`
+Your prompt reads `┃ ❯ 오마이 헤르메스란`: a dim rail, the composer's dim `❯` and
+dim text with no band, as a command's echo does (with no rail). A turn closes with a dim `  ✻ 5s · 3 tools · ↓1.3k`
 and no rule after it.
 """
 
@@ -24,7 +26,7 @@ from pathlib import Path
 import unittest
 from unittest import mock
 
-from _tui_lines import line_text, lines_text
+from _tui_lines import RULE_ROW, line_text, lines_text
 from test_tui_modes import drawn, make_app, show_mode, type_text
 from omh.skin_pack import SKIN_THEMES
 from omh.tui.app import (
@@ -63,6 +65,7 @@ from omh.tui.transcript import (
     TurnSummaryBlock,
     UserBlock,
     block_rows,
+    kind_style,
 )
 from omh.tui.width import line_width
 
@@ -81,32 +84,40 @@ class Clock:
         return self.now
 
 
-def completed(name: str, result: object, context: str = "x") -> list[str]:
-    """The rows a call that completed with `result` flushes."""
+def completed(name: str, result: object, context: str = "x", details: bool = False) -> list[str]:
+    """The rows a call that completed with `result` flushes, or the details view shows (`details`)."""
     transcript = Transcript(clock=Clock())
     transcript.apply(Event("message.start", SID, {}))
     transcript.apply(Event("tool.start", SID, {"tool_id": "t", "name": name, "context": context}))
     transcript.apply(Event("tool.complete", SID, {"tool_id": "t", "name": name, "duration_s": 0.2, "result": result}))
     transcript.apply(Event("message.complete", SID, {"text": "", "status": "complete"}))
+    if details:
+        return lines_text(transcript.history_lines(60, THEME, details=True))
     return lines_text(transcript.take_stable_lines(60, THEME))
 
 
 class ToolRowTests(unittest.TestCase):
     def test_a_call_is_its_mark_then_its_name_and_what_it_ran_on_in_parentheses(self) -> None:
         (row,) = rows_of(ToolRow("t", "terminal", "rm -rf ./tmp-cache", TOOL_OK, duration_s=1.9))
-        self.assertEqual(line_text(row), "⏺ terminal(rm -rf ./tmp-cache)  1.9s")
-        self.assertEqual(row[0], Span("⏺", THEME.ok))
-        self.assertEqual([span.style for span in row if span.text == "terminal"], [THEME.tool])
-        self.assertEqual(row[-1].style, THEME.muted)  # the duration
+        self.assertEqual(line_text(row), "┃ ● terminal(rm -rf ./tmp-cache)  1.9s")
+        self.assertEqual(row[:3], (Span("┃", THEME.ok), Span(" "), Span("●", THEME.ok)))  # the rail, then the mark
+        self.assertEqual([span.style for span in row if span.text == "terminal"], [kind_style("terminal", THEME)])
+        self.assertEqual(row[-1].style, THEME.faint)  # the duration, under the args' grey
 
-    def test_the_mark_is_green_done_red_failed_or_denied_and_the_accent_while_it_runs(self) -> None:
-        for status, style in ((TOOL_OK, THEME.ok), (TOOL_ERROR, THEME.error), (TOOL_DENIED, THEME.error),
-                              (TOOL_RUNNING, THEME.accent)):
+    def test_the_mark_and_the_rail_are_green_done_red_failed_or_denied_and_blue_while_it_runs(self) -> None:
+        # The DAG border rule: running blue, failed red, done green, and each state its own glyph, so the colour
+        # is never the only thing that says it.
+        for status, glyph, style in ((TOOL_OK, "●", THEME.ok), (TOOL_ERROR, "✗", THEME.error),
+                                     (TOOL_DENIED, "✗", THEME.error), (TOOL_RUNNING, "○", THEME.accent)):
             with self.subTest(status=status):
-                row = rows_of(ToolRow("t", "terminal", "ls", status, started_at=0.0, duration_s=0.1))[0]
-                self.assertEqual(row[0], Span("⏺", style))
+                rows = rows_of(ToolRow("t", "terminal", "ls", status, started_at=0.0, duration_s=0.1, output=("x",)))
+                self.assertEqual(rows[0][2], Span(glyph, style))
+                self.assertEqual({row[0] for row in rows}, {Span("┃", style)})  # one rail down the whole call
+        self.assertEqual(THEME.accent.fg, THEME.dag_words[-1].fg)  # the running blue is the graph's running node's
         running = ToolRow("t", "terminal", "ls", TOOL_RUNNING, started_at=0.0)
-        self.assertEqual(rows_of(running, now=PULSE_SECONDS * 1.5)[0][0], Span("⏺", THEME.dim))  # its dim half
+        pulsed = rows_of(running, now=PULSE_SECONDS * 1.5)[0]
+        self.assertEqual(pulsed[2], Span("○", THEME.dim))  # its dim half; the rail holds still
+        self.assertEqual(pulsed[0], Span("┃", THEME.accent))
         self.assertFalse([row for row in rows_of(ToolRow("t", "terminal", "ls", TOOL_OK)) if "✓" in line_text(row)])
 
     def test_on_a_light_terminal_each_mark_reads_against_what_it_sits_on(self) -> None:
@@ -114,37 +125,38 @@ class ToolRowTests(unittest.TestCase):
             theme = build_theme(skin, "#FFFFFF")
             for status in (TOOL_OK, TOOL_ERROR, TOOL_DENIED, TOOL_RUNNING):
                 row = rows_of(ToolRow("t", "terminal", "ls", status, started_at=0.0), theme=theme)[0]
-                ground = row[0].style.bg or "#FFFFFF"  # a failure's row is on the red band
                 with self.subTest(theme=skin.short_name, status=status):
-                    self.assertGreaterEqual(contrast_ratio(row[0].style.fg, ground), 3.0)
+                    self.assertEqual({span.style.bg for span in row}, {None})  # no band behind a call
+                    for span in (row[0], row[2]):  # the rail and the mark
+                        self.assertGreaterEqual(contrast_ratio(span.style.fg, "#FFFFFF"), 3.0)
 
     def test_a_call_with_nothing_to_show_has_no_parentheses(self) -> None:
         (row,) = rows_of(ToolRow("t", "todo_list", "", TOOL_OK, duration_s=0.0))
-        self.assertEqual(line_text(row), "⏺ todo_list  0.0s")
+        self.assertEqual(line_text(row), "┃ ● todo_list  0.0s")
 
     def test_a_long_argument_is_cut_inside_its_parentheses_and_a_path_from_the_left(self) -> None:
         (row,) = rows_of(ToolRow("t", "terminal", "x" * 200, TOOL_OK, duration_s=12.0), width=40)
-        self.assertEqual(line_text(row), "⏺ terminal(" + "x" * 20 + "…)  12.0s")
+        self.assertEqual(line_text(row), "┃ ● terminal(" + "x" * 18 + "…)  12.0s")  # the rail takes two cells
         self.assertEqual(line_width(row), 40)
-        (row,) = rows_of(ToolRow("t", "read_file", "/repo/a/very/deep/tree/of/dirs/file.py", TOOL_OK), width=30)
-        self.assertEqual(line_text(row), "⏺ read_file(…/of/dirs/file.py)")
+        (row,) = rows_of(ToolRow("t", "read_file", "/repo/a/very/deep/tree/of/dirs/file.py", TOOL_OK), width=32)
+        self.assertEqual(line_text(row), "┃ ● read_file(…/of/dirs/file.py)")
 
     def test_what_it_printed_goes_under_the_result_mark_with_the_rest_counted(self) -> None:
         tool = ToolRow("t", "terminal", "seq 5", TOOL_OK, duration_s=0.1, output=("1", "2", "3", "4", "5"))
         self.assertEqual(
             lines_text(rows_of(tool)),
-            ["⏺ terminal(seq 5)  0.1s", "  ⎿  1", "     2", "     3", "     … +2 lines · ctrl+o shows all"],
+            ["┃ ● terminal(seq 5)  0.1s", "┃   ⎿  1", "┃      2", "┃      3", "┃      … +2 lines · ctrl+o shows all"],
         )
         failed = ToolRow("t", "terminal", "pytest", TOOL_ERROR, duration_s=2.0, output=("a", "b", "c", "1 failed"))
-        self.assertEqual(lines_text(rows_of(failed))[1:], ["  ⎿  … +1 line · ctrl+o shows all", "     b", "     c",
-                                                           "     1 failed"])
+        self.assertEqual(lines_text(rows_of(failed))[1:], ["┃   ⎿  … +1 line · ctrl+o shows all", "┃      b",
+                                                           "┃      c", "┃      1 failed"])
 
     def test_a_diff_hangs_under_the_result_mark(self) -> None:
         diff = "a/src/app.py → b/src/app.py\n@@ -1,2 +1,2 @@\n import os\n-print('a')\n+print('b')"
         tool = ToolRow("t", "patch", "src/app.py", TOOL_OK, duration_s=0.3, inline_diff=diff.encode("utf-8"))
         shown = [row.rstrip() for row in lines_text(rows_of(tool))]
-        self.assertEqual(shown, ["⏺ patch(src/app.py)  0.3s", "  ⎿  src/app.py", "   1  import os",
-                                 "   2 -print('a')", "   2 +print('b')"])
+        self.assertEqual(shown, ["┃ ● patch(src/app.py)  0.3s", "┃   ⎿  src/app.py", "┃    1  import os",
+                                 "┃    2 -print('a')", "┃    2 +print('b')"])
         self.assertEqual(DIFF_INDENT, len("  ⎿  "))  # the code starts where a result's words do
 
     def test_the_lead_takes_only_an_indent_and_a_narrow_diff_has_none_to_take(self) -> None:
@@ -160,47 +172,53 @@ class SummarisedReadTests(unittest.TestCase):
     def test_a_read_file_says_how_many_lines_it_read(self) -> None:
         content = "     1|# OMH\n     2|line\n     3|end\n"
         self.assertEqual(completed("read_file", {"content": content, "total_lines": 715}),
-                         ["⏺ read_file(x)  0.2s", "  ⎿  Read 3 lines"])
-        self.assertEqual(completed("read_file", {"content": "     1|one", "total_lines": 1})[1], "  ⎿  Read 1 line")
+                         ["┃ ● read_file(x)  0.2s", "┃   ⎿  Read 3 lines"])
+        self.assertEqual(completed("read_file", {"content": "     1|one", "total_lines": 1})[1], "┃   ⎿  Read 1 line")
 
     def test_a_binary_read_or_a_failed_call_is_not_summarised(self) -> None:
-        self.assertEqual(completed("read_file", {"error": "File not found: x"})[1:], ["  ⎿  File not found: x"])
+        self.assertEqual(completed("read_file", {"error": "File not found: x"})[1:], ["┃   ⎿  File not found: x"])
         binary = completed("read_file", {"content": "", "is_binary": True, "error": None})
         self.assertNotIn("Read", "\n".join(binary))
         # Hermes' SearchResult always carries total_count, a failed search too: its error is what it says.
-        self.assertEqual(completed("search_files", {"total_count": 0, "error": "rg failed"})[1:], ["  ⎿  rg failed"])
+        self.assertEqual(completed("search_files", {"total_count": 0, "error": "rg failed"})[1:], ["┃   ⎿  rg failed"])
 
     def test_a_skill_view_names_the_skill_it_loaded(self) -> None:
+        # In the transcript a load is folded into its `Loaded N skills` row; the details view unfolds it.
         loaded = {"success": True, "name": "omh-docs", "content": "---\nname: omh-docs\n---\n# body"}
-        self.assertEqual(completed("skill_view", loaded)[1:], ["  ⎿  loaded skill omh-docs"])
+        self.assertEqual(completed("skill_view", loaded, "omh-docs"), ["┃ ● Loaded 1 skill · omh-docs  0.2s"])
+        self.assertEqual(completed("skill_view", loaded, details=True)[1:], ["┃   ⎿  loaded skill omh-docs"])
         stub = {"success": True, "status": "unchanged", "name": "omh-docs", "file": "SKILL.md", "dedup": True}
-        self.assertEqual(completed("skill_view", stub)[1:], ["  ⎿  loaded skill omh-docs"])
+        self.assertEqual(completed("skill_view", stub, details=True)[1:], ["┃   ⎿  loaded skill omh-docs"])
         linked = {"success": True, "name": "omh-docs", "file": "references/api.md", "content": "# api"}
-        self.assertEqual(completed("skill_view", linked)[1:], ["  ⎿  loaded references/api.md from skill omh-docs"])
+        self.assertEqual(completed("skill_view", linked, details=True)[1:],
+                         ["┃   ⎿  loaded references/api.md from skill omh-docs"])
 
     def test_a_search_says_how_many_it_found(self) -> None:
         matches = [{"path": "a.py", "line": 1, "content": "needle"}]
-        self.assertEqual(completed("search_files", {"total_count": 12, "matches": matches * 12})[1:], ["  ⎿  12 matches"])
-        self.assertEqual(completed("search_files", {"total_count": 1, "matches": matches})[1:], ["  ⎿  1 match"])
-        self.assertEqual(completed("search_files", {"total_count": 3, "files": ["a", "b", "c"]})[1:], ["  ⎿  3 files"])
+        self.assertEqual(completed("search_files", {"total_count": 12, "matches": matches * 12})[1:],
+                         ["┃   ⎿  12 matches"])
+        self.assertEqual(completed("search_files", {"total_count": 1, "matches": matches})[1:], ["┃   ⎿  1 match"])
+        self.assertEqual(completed("search_files", {"total_count": 3, "files": ["a", "b", "c"]})[1:],
+                         ["┃   ⎿  3 files"])
         capped = {"total_count": 50, "matches_text": "a.py\n  1: x", "truncated": True, "total_count_is_lower_bound": True}
-        self.assertEqual(completed("search_files", capped)[1:], ["  ⎿  50+ matches"])
-        self.assertEqual(completed("search_files", {"total_count": 0})[1:], ["  ⎿  0 matches"])
+        self.assertEqual(completed("search_files", capped)[1:], ["┃   ⎿  50+ matches"])
+        self.assertEqual(completed("search_files", {"total_count": 0})[1:], ["┃   ⎿  0 matches"])
 
     def test_a_search_keeps_hermes_warning_under_its_count(self) -> None:
         # 6c61c3e27d tools/file_operations_search.py: a zero-match probe's hint, the line-oriented note.
         warned = {"total_count": 0, "warning": "0 results found. Note: search is line-oriented.\nUse context=N."}
         self.assertEqual(completed("search_files", warned)[1:],
-                         ["  ⎿  0 matches", "     0 results found. Note: search is line-oriented."])
+                         ["┃   ⎿  0 matches", "┃      0 results found. Note: search is line-oriented."])
 
     def test_the_details_view_shows_the_same_one_line(self) -> None:
         transcript = Transcript(clock=Clock())
         transcript.apply(Event("tool.start", SID, {"tool_id": "t", "name": "read_file", "context": "a.py"}))
         transcript.apply(Event("tool.complete", SID, {"tool_id": "t", "name": "read_file", "result": {"content": "a\nb"}}))
-        self.assertEqual(lines_text(transcript.history_lines(60, THEME, details=True))[1:], ["  ⎿  Read 2 lines"])
+        self.assertEqual(lines_text(transcript.history_lines(60, THEME, details=True))[1:], ["┃   ⎿  Read 2 lines"])
 
     def test_terminal_output_keeps_its_lines(self) -> None:
-        self.assertEqual(completed("terminal", {"output": "hello\nworld", "exit_code": 0})[1:], ["  ⎿  hello", "     world"])
+        self.assertEqual(completed("terminal", {"output": "hello\nworld", "exit_code": 0})[1:],
+                         ["┃   ⎿  hello", "┃      world"])
 
 
 class WorkingVerbTests(unittest.TestCase):
@@ -383,26 +401,27 @@ class PromptRowTests(unittest.TestCase):
         for theme in (THEME, build_theme(SKIN_THEMES[0], "#1E1E1E"), build_theme(SKIN_THEMES[0], "#FFFFFF")):
             rows = block_rows(UserBlock("first line\nsecond line"), 40, theme)
             with self.subTest(theme=theme.name):
-                self.assertEqual(lines_text(rows), ["> first line", "  second line"])
-                self.assertEqual(rows[0][0], Span("> ", theme.dim))
-                self.assertEqual({span.style for row in rows for span in row[1:]}, {theme.muted})  # after the lead
+                self.assertEqual(lines_text(rows), ["┃ ❯ first line", "┃   second line"])
+                self.assertEqual({row[0] for row in rows}, {Span("┃", theme.dim)})  # a grey rail down the prompt
+                self.assertEqual(rows[0][2], Span("❯ ", theme.dim))
+                self.assertEqual({span.style for row in rows for span in row[3:]}, {theme.muted})  # after the lead
                 self.assertEqual({span.style.bg for row in rows for span in row}, {None})  # no band, no fill
 
     def test_a_prompt_the_queue_sent_says_so_in_the_same_dim(self) -> None:
         (row,) = block_rows(UserBlock("next one", from_queue=True), 40, THEME)
-        self.assertEqual(line_text(row), "> next one  ⧗ from queue")
+        self.assertEqual(line_text(row), "┃ ❯ next one  ⧗ from queue")
         self.assertEqual(row[-1].style, THEME.muted)
 
     def test_the_sticky_reminder_and_the_queue_read_apart_from_a_prompt(self) -> None:
         prompt = line_text(block_rows(UserBlock("fix it"), 40, THEME)[0])
         sticky = line_text(sticky_line("fix it", 40, THEME))
         (queued,) = lines_text(queue_lines(["fix it"], 40, 3, THEME))
-        self.assertEqual([prompt[:2], sticky[:7], queued[:2]], ["> ", "↳ you: ", "⧗ "])
+        self.assertEqual([prompt[:4], sticky[:7], queued[:2]], ["┃ ❯ ", "↳ you: ", "⧗ "])
 
     def test_a_command_echoes_as_a_prompt_does_in_the_hint_colour(self) -> None:
         rows = block_rows(CommandBlock("/model", [("Current model: x", NOTICE_INFO)], done=True), 40, THEME)
-        self.assertEqual(lines_text(rows), ["> /model", "  ⎿  Current model: x"])
-        self.assertEqual((rows[0][0], rows[0][1].style), (Span("> ", THEME.dim), THEME.hint))
+        self.assertEqual(lines_text(rows), ["❯ /model", "  ⎿  Current model: x"])  # no rail: what OMH ran itself
+        self.assertEqual((rows[0][0], rows[0][1].style), (Span("❯ ", THEME.dim), THEME.hint))
 
 
 class DoneLineTests(unittest.TestCase):
@@ -435,20 +454,20 @@ class DoneLineTests(unittest.TestCase):
 
 
 class InfoLineInsetTests(unittest.TestCase):
-    def test_the_info_line_starts_where_the_boxs_text_does(self) -> None:
+    def test_the_info_line_starts_where_the_composers_text_does(self) -> None:
         app, _client = make_app(rows=24, cols=80)
         screen = [row for row in drawn(app) if row]
         composer, info = screen[-3], screen[-1]
-        self.assertTrue(composer.startswith("│ > "), screen)
-        self.assertEqual(info.index("?"), composer.index(">"))  # under the box's text, two cells in
+        self.assertTrue(composer.startswith(PROMPT), screen)
+        self.assertEqual(info.index("?"), len(PROMPT))  # under the composer's text, two cells in
         self.assertTrue(info.startswith("  ? for shortcuts"), info)
         self.assertEqual(line_width(app._info_line(80)), 80)  # the right side still ends on the last cell
 
-    def test_a_tiny_terminal_draws_no_box_and_the_line_starts_on_the_edge(self) -> None:
+    def test_a_tiny_terminal_draws_no_rules_and_the_line_starts_on_the_edge(self) -> None:
         app, _client = make_app(rows=5, cols=80)
         screen = [row for row in drawn(app) if row]
         self.assertTrue(screen[-1].startswith("? for shortcuts"), screen)
-        self.assertFalse([row for row in screen if row.startswith("╭")], screen)
+        self.assertFalse([row for row in screen if row.startswith(RULE_ROW)], screen)
 
 
 class ShortcutsHintTests(unittest.TestCase):
@@ -483,7 +502,7 @@ class ShortcutsHintTests(unittest.TestCase):
 
 
 class PromptMarkTests(unittest.TestCase):
-    """One mark for what you type (review B, NIT-3): the composer's `>`, the echo's, a picker's filter row's, and the
+    """One mark for what you type (review B, NIT-3): the composer's `❯`, the echo's, a picker's filter row's, and the
     history search's match row's."""
 
     def test_the_filter_row_and_the_search_match_use_the_composers_mark(self) -> None:
@@ -503,7 +522,7 @@ RESUME_CWD = "/fixture/demo"
 
 
 class ResumedHistoryTests(unittest.TestCase):
-    """A resumed session's calls are drawn by the live rows' code: `⏺ name(args)`, the edit's diff under `⎿`."""
+    """A resumed session's calls are drawn by the live rows' code: `● name(args)`, the edit's diff under `⎿`."""
 
     def history(self, width: int = 100) -> list:
         app, _client = make_app(rows=40, cols=width)
@@ -511,18 +530,22 @@ class ResumedHistoryTests(unittest.TestCase):
         app._draw_history(RESUME)
         return [line for line in app.transcript.take_stable_lines(width, THEME)]
 
-    def test_each_recorded_call_is_one_row_with_a_neutral_mark_and_no_blank_row_between(self) -> None:
+    def test_each_recorded_call_is_one_row_with_a_neutral_mark_and_a_blank_row_between_as_live(self) -> None:
+        # Since the rail and kind colours (2026-10-22) a live turn puts a blank row between two calls; a record too.
         lines = self.history()
         texts = lines_text(lines)
-        first, after = texts.index("⏺ read_file(README.md)"), texts.index("⏺ terminal(sleep 6 + 1 command)")
-        self.assertEqual(texts[first + 1 : first + 3], ["⏺ read_file(calc.py)", "⏺ patch(calc.py)"])
-        self.assertTrue(all(text.strip() for text in texts[first:after]), texts)  # the diff, and no blank row
-        self.assertEqual(texts[after : after + 3], ["⏺ terminal(sleep 6 + 1 command)", "⏺ terminal(ls does-not-exist)", ""])
-        self.assertTrue(texts[after + 3].startswith("⏺ Done — div added to calc.py"), texts)
-        calls = [lines[index] for index in (first, first + 1, first + 2, after, after + 1)]
-        # The record says what ran, not how it ended: neither green nor red.
-        self.assertEqual({row[0] for row in calls}, {Span("⏺", THEME.dim)})
-        self.assertNotIn("·", "".join(texts[first : after + 2]))  # no old-style `· name  args` row
+        first, after = texts.index("┃ ● read_file(README.md)"), texts.index("┃ ● terminal(sleep 6 + 1 command)")
+        self.assertEqual(texts[first + 1 : first + 5], ["", "┃ ● read_file(calc.py)", "", "┃ ● patch(calc.py)"])
+        diff = texts[first + 5 : after - 1]
+        self.assertTrue(diff and all(text.startswith("┃ ") for text in diff), texts)  # the diff, on the edit's rail
+        self.assertEqual(texts[after - 1 : after + 4],
+                         ["", "┃ ● terminal(sleep 6 + 1 command)", "", "┃ ● terminal(ls does-not-exist)", ""])
+        self.assertTrue(texts[after + 4].startswith("┃ ● Done — div added to calc.py"), texts)
+        calls = [lines[index] for index in (first, first + 2, first + 4, after, after + 2)]
+        # The record says what ran, not how it ended: neither green nor red, its rail and its mark grey.
+        self.assertEqual({row[0] for row in calls}, {Span("┃", THEME.dim)})
+        self.assertEqual({row[2] for row in calls}, {Span("●", THEME.dim)})
+        self.assertNotIn("·", "".join(texts[first : after + 3]))  # no old-style `· name  args` row
 
     def test_a_record_whose_result_metadata_is_not_a_mapping_draws_its_row_alone(self) -> None:
         for junk in ("inline_diff", ["inline_diff"], 7):
@@ -530,12 +553,12 @@ class ResumedHistoryTests(unittest.TestCase):
                 app, _client = make_app(rows=40, cols=100)
                 app._draw_history([{"role": "tool", "name": "patch", "context": "calc.py", "tool_call_id": "c1",
                                     "display_metadata": {"tool_result_metadata": junk}}])
-                self.assertEqual(lines_text(app.transcript.take_stable_lines(100, THEME)), ["⏺ patch(calc.py)"])
+                self.assertEqual(lines_text(app.transcript.take_stable_lines(100, THEME)), ["┃ ● patch(calc.py)"])
 
     def test_the_edit_shows_the_diff_a_live_call_shows(self) -> None:
         texts = lines_text(self.history())
-        start = texts.index("⏺ patch(calc.py)") + 1
-        recorded = texts[start : texts.index("⏺ terminal(sleep 6 + 1 command)")]
+        start = texts.index("┃ ● patch(calc.py)") + 1
+        recorded = texts[start : texts.index("┃ ● terminal(sleep 6 + 1 command)") - 1]  # up to the blank row
         patch = next(message for message in RESUME if message.get("name") == "patch")
         transcript = Transcript(clock=Clock())
         transcript.cwd = RESUME_CWD
@@ -545,9 +568,9 @@ class ResumedHistoryTests(unittest.TestCase):
         transcript.apply(Event("tool.complete", SID, {"tool_id": "t", "name": "patch", "inline_diff": inline_diff}))
         transcript.apply(Event("message.complete", SID, {"text": "", "status": "complete"}))
         live = lines_text(transcript.take_stable_lines(100, THEME))
-        self.assertTrue(live[0].startswith("⏺ patch(calc.py)"), live)
+        self.assertTrue(live[0].startswith("┃ ● patch(calc.py)"), live)
         self.assertEqual(recorded, live[1:])
-        self.assertTrue(recorded and recorded[0].startswith("  ⎿  "), recorded)
+        self.assertTrue(recorded and recorded[0].startswith("┃   ⎿  "), recorded)
 
 
 def installation() -> str:
@@ -563,15 +586,15 @@ class DocumentedLookTests(unittest.TestCase):
         content = "\n".join(f"{number:6}|x" for number in range(1, 716))
         said = [
             completed("read_file", {"content": content})[1],
-            completed("skill_view", {"success": True, "name": "omh-docs", "content": "x"})[1],
-            completed("skill_view", {"success": True, "name": "omh-docs", "file": "references/api.md"})[1],
+            completed("skill_view", {"success": True, "name": "omh-docs", "content": "x"}, details=True)[1],
+            completed("skill_view", {"success": True, "name": "omh-docs", "file": "references/api.md"}, details=True)[1],
             completed("search_files", {"total_count": 12, "matches": []})[1],
             completed("search_files", {"total_count": 3, "files": ["a", "b", "c"]})[1],
             completed("search_files", {"total_count": 50, "matches": [], "total_count_is_lower_bound": True})[1],
         ]
         for line in said:
             with self.subTest(line=line):
-                self.assertTrue(f"`{line.removeprefix('  ⎿  ')}`" in prose, line)
+                self.assertTrue(f"`{line.removeprefix('┃   ⎿  ')}`" in prose, line)
 
     def test_installation_shows_the_working_row_the_code_draws(self) -> None:
         prose = installation()
@@ -598,7 +621,7 @@ class DocumentedLookTests(unittest.TestCase):
         self.assertTrue(f"(`{line_text(done).strip()}`)" in prose, line_text(done))
         echo = block_rows(CommandBlock("/model", done=True), 80, THEME)[0]
         self.assertTrue(f"(`{line_text(echo)}`)" in prose, line_text(echo))
-        self.assertTrue("a dim `>` and dim text with no band behind it" in prose)
+        self.assertTrue("the composer's dim `❯` and dim text with no band behind it" in prose)
 
 
 if __name__ == "__main__":
