@@ -7742,7 +7742,7 @@ def _direct_workflow_invocation_hint(
         "workflow": workflow,
         "lane": lane,
         "next_action": next_action,
-        "reason": "The user requested this OMH workflow; admitted production is not overridden by source vocabulary.",
+        "reason": "The user explicitly invoked this OMH workflow; admitted production is not overridden by source vocabulary.",
         "fallback_action": "run_the_named_workflow_or_show_picker_if_unavailable",
         "matched_cues": ["direct workflow invocation"],
         "adjacent_workflows": [],
