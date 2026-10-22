@@ -185,6 +185,37 @@ class CommandEchoTests(unittest.TestCase):
         self.assertFalse([entry for entry in app.transcript.blocks if isinstance(entry, (CommandBlock, NoticeBlock))])
 
 
+class CommandCaseTests(unittest.TestCase):
+    """A TUI command typed in any case is the TUI's own, as Hermes matches its own names whatever their case."""
+
+    def test_help_in_capitals_shows_the_tuis_help_under_the_echo_as_typed(self) -> None:
+        app, client = make_app(rows=24, cols=200)
+        send(app, "/HELP")
+        block = last(app)
+        self.assertEqual(block.command, "/HELP")
+        self.assertIn("OMH TUI commands:", block.parts[0][0])
+        self.assertEqual(client.calls, [])
+
+    def test_steer_in_capitals_steers_the_running_turn(self) -> None:
+        app, client = make_app(busy=True)
+        send(app, "/Steer use the other file")
+        self.assertEqual(client.calls, [("session.steer", {"session_id": SID, "text": "use the other file"})])
+
+    def test_a_renamed_command_in_capitals_runs_its_hermes_name(self) -> None:
+        app, client = make_app()
+        send(app, "/Cost")
+        self.assertEqual(client.calls, [("slash.exec", {"command": "usage", "session_id": SID})])
+
+    def test_an_unknown_name_and_a_skill_in_capitals_still_go_to_hermes_as_typed(self) -> None:
+        # Unchanged: Hermes lowercases the name itself. A whole skill name typed bare is sent, not completed.
+        for line in ("/Foo bar", "/Dag-ulw check the prs", "/Dag-ulw"):
+            with self.subTest(line=line):
+                app, client = make_app()
+                app.catalog = [("/dag-ulw", "Graph work"), ("/dag-ulw-extra", "Another")]
+                send(app, line)
+                self.assertEqual(client.calls, [("slash.exec", {"command": line[1:], "session_id": SID})])
+
+
 class SkillCommandRowTests(unittest.TestCase):
     """A skill command is one input row, its prompt's, with one dispatch and one prompt sent.
 

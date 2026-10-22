@@ -96,6 +96,17 @@ All notable changes will be documented here.
   (again) after the command went, cuts nothing and stays picked for the next
   prompt.
 
+- **The OMH TUI's own commands work typed in any case.** `/Rewind`, `/HELP`
+  or `/Steer <text>` used to miss the TUI's command table, which matched the
+  name exactly, and went to Hermes as typed. Hermes matches its commands
+  whatever their case, but it cannot open the TUI's rewind list or show its
+  help, so the command did not do what it does in lower case. The TUI's
+  commands and their aliases now resolve whatever their case, as Hermes'
+  do; the echo keeps what you typed. The completion menu, the `/name`
+  highlight and `/help`'s Hermes list match names the same way, so `/Dag-ulw`
+  is highlighted as the skill Hermes runs for it. A name the TUI does not
+  have, and a skill, still go to Hermes as typed.
+
 ## 4.0.1 - 2026-10-22
 
 - **`omh doctor`'s real-loader probe can observe a load on Windows, and on the

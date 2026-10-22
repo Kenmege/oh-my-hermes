@@ -302,6 +302,13 @@ class SlashTokenTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(slash_token_ranges(text, KNOWN), [])
 
+    def test_a_known_name_in_any_case_is_a_token_since_it_runs_as_typed(self) -> None:
+        # Hermes lowercases a typed name before it routes it and finds a skill by its lowercased name
+        # (methods_tools.py `slash.exec`, `_dispatch_skill`), and the TUI resolves its own commands the same way.
+        self.assertEqual(slash_token_ranges("/Dag-ulw go", KNOWN), [(0, 8)])
+        self.assertEqual(slash_token_ranges("then /REWIND", known_names()), [(5, 12)])
+        self.assertEqual(slash_token_ranges("/Foo bar", known_names()), [])
+
     def test_the_names_are_what_runs_here(self) -> None:
         names = known_names([("/dag-ulw", "Graph work"), ("/update", "Hermes' own")])
         self.assertTrue({"dag-ulw", "model", "help"} <= names)
