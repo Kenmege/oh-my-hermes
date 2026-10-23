@@ -284,3 +284,18 @@ class MidGreyContrastTests(unittest.TestCase):
                 short += [(skin.short_name, background, role, round(contrast_ratio(fg, surface), 2), floor)
                           for role, fg, floor in inks if contrast_ratio(fg, surface) < floor]
         self.assertEqual(short[:12], [], f"{len(short)} inks under their floor")
+
+    def test_a_short_ink_on_a_light_background_goes_on_toward_black(self) -> None:
+        # No shipped palette needs the lift's second leg on a light background, so the sweep never runs it there: a
+        # leg that always went to white would pass it. Here the ink given, a mid grey, is short on a light background
+        # (one well inside the light side, and one just past the black/white crossover) and the lift must go darker.
+        from omh.tui.theme import BLACK, TEXT_CONTRAST, _lifted, contrast_ratio
+
+        for background, toward in (("#BBBBBB", "#777777"), ("#767676", "#9A9A9A")):
+            with self.subTest(background=background):
+                self.assertTrue(is_light(background))
+                self.assertLess(contrast_ratio(toward, background), TEXT_CONTRAST)
+                lifted = _lifted("#CCCCCC", toward, background, TEXT_CONTRAST)
+                self.assertGreaterEqual(contrast_ratio(lifted, background), TEXT_CONTRAST)
+                self.assertGreater(contrast_ratio(lifted, "#FFFFFF"), contrast_ratio(toward, "#FFFFFF"), "darker")
+                self.assertLess(contrast_ratio(lifted, BLACK), contrast_ratio(toward, BLACK), "toward black")
