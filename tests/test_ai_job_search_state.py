@@ -281,21 +281,26 @@ class Lenient(strict):
     @classmethod
     def fromisoformat(cls, value):
         if value[10:] == 'T24:00:00':
-            return strict.fromisoformat(value[:10] + 'T00:00:00') + datetime.timedelta(days=1)
+            midnight = strict.fromisoformat(value[:10] + 'T00:00:00')
+            try:
+                return midnight + datetime.timedelta(days=1)
+            except OverflowError:  # 3.14 refuses 9999-12-31T24:00:00 with ValueError
+                raise ValueError('year must be in 1..9999, not 10000') from None
         return strict.fromisoformat(value)
 datetime.datetime = Lenient
 runpy.run_path(script, run_name='__main__')
 '''
         job_id = self.merge()["inserted_job_ids"][0]
         for runner in (None, lenient):
-            for day in ("2026-02-28", "2026-10-23", "2026-10-24", "2026-12-31"):
+            for day in ("2026-02-28", "2026-10-23", "2026-10-24", "2026-12-31", "9999-12-31"):
                 instant = day + "T24:00:00Z"
                 value = capture()
                 value["sources"][0]["retrieved_at"] = instant
-                with self.subTest(instant=instant, lenient=runner is not None):
+                with self.subTest(instant=instant, lenient=runner is not None, command="validate"):
                     result = self.cli("validate", "--input", self.write_capture(value),
                                       exit=2, runner=runner)
                     self.assertEqual(result["error"]["code"], "invalid_timestamp")
+                with self.subTest(instant=instant, lenient=runner is not None, command="transition"):
                     result = self.transition(job_id, "draft", "draft_artifact", time=instant,
                                              exit=2, runner=runner)
                     self.assertEqual(result["error"]["code"], "invalid_timestamp")
