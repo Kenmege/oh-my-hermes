@@ -178,6 +178,22 @@ class DrawTests(unittest.TestCase):
                     self.assertEqual(top, (Span(AURA_RULE * 80, replace(theme.rule, bold=True)),))
                     self.assertEqual(top, bottom)
 
+    def test_every_moving_aura_reads_on_every_skin_and_grey(self) -> None:
+        # The review of d8337c891: unlifted, a band colour near the background's dark/light flip fell to 3.72:1 (sky,
+        # #787878) while the aura still moved. Every step and every band colour of a moving aura keeps TEXT_CONTRAST.
+        from omh.skin_pack import SKIN_THEMES
+        from omh.tui.theme import TEXT_CONTRAST, aura_moves, build_theme, contrast_ratio, surface_for
+
+        backgrounds = [f"#{level:02X}{level:02X}{level:02X}" for level in range(0x50, 0xE1, 4)] + ["#0D1117", "#FFFFFF"]
+        for skin in SKIN_THEMES:
+            for background in backgrounds:
+                theme = build_theme(skin, background)
+                if not aura_moves(theme):
+                    continue
+                surface = surface_for(skin, background)
+                low = min(contrast_ratio(style.fg, surface) for style in (*theme.aura, *theme.aura_glint))
+                self.assertGreaterEqual(low, TEXT_CONTRAST, f"{skin.short_name} on {background}")
+
     def test_a_masked_draft_or_one_holding_a_paste_has_none(self) -> None:
         aura = set(DEFAULT_THEME.aura) | set(DEFAULT_THEME.aura_glint)
         masked = Composer(masked=True)

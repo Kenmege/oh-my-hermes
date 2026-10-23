@@ -297,9 +297,10 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
     status_ink = BLACK if is_light(status_bg) else c["banner_text"]
     aura_steps = [_lifted(colour, ink, surface, TEXT_CONTRAST)
                   for colour in _gradient([stop[side] for stop in AURA_STOPS], AURA_STEPS)]
-    # Each band colour is its lifted step mixed toward `AURA_GLINT`, the far end from the background: never less
-    # contrast than the step it starts from.
-    glint_steps = [_mix(colour, AURA_GLINT[side], AURA_GLINT_SHARE) for colour in aura_steps]
+    # Each band colour is its lifted step mixed toward `AURA_GLINT`, lifted again: near the background's dark/light
+    # flip the step is already near the ink and the mix can pull it back toward the background.
+    glint_steps = [_lifted(_mix(colour, AURA_GLINT[side], AURA_GLINT_SHARE), ink, surface, TEXT_CONTRAST)
+                   for colour in aura_steps]
     moving = min(contrast_ratio(step, glint) for step, glint in zip(aura_steps, glint_steps, strict=True)) \
         >= AURA_GLINT_MIN_CONTRAST
 
