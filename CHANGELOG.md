@@ -5,13 +5,14 @@ All notable changes will be documented here.
 ## Unreleased
 
 - **A `dag-ulw` in the composer glows.** Typing `dag-ulw`, `dag ulw` or
-  `/dag-ulw` in the TUI's composer draws the word in a moving purple
-  gradient (the skill violet, the dag magenta and a lavender) and gives the
-  composer's rules the same glow, the way Claude Code marks `ultrathink`.
-  It adds no rows and leaves the caret and the cells alone, ticks only
-  while the word is there on a truecolor terminal, stands still at 256 or
-  16 colours, and is plain bold with `NO_COLOR`. The word takes the glow in
-  place of its `/name` colour.
+  `/dag-ulw` in the TUI's composer runs the word's letters through violet,
+  magenta, pink and lavender with a brighter band sweeping through them,
+  and draws the composer's rules heavy in the same gradient with a band
+  travelling along them, the way Claude Code marks `ultrathink`. It adds no
+  rows and leaves the caret and the cells alone, ticks only while the word
+  is there on a truecolor terminal, stands still at 256 or 16 colours, and
+  is bold without colour with `NO_COLOR`. The word takes the glow in place
+  of its `/name` colour.
 
 - **The dag-ulw TUI reads at a glance on a big run.** The owner's GIF review
   and an audit at 100×30, 150×42 and 200×50 found the transcript flooded by

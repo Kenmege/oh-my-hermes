@@ -14,7 +14,7 @@ alone, and below `layout.MIN_ROWS` rows or `layout.MIN_COLS` columns the input
 rows have no rule at all. A `/name` in the draft that resolves to a command or
 skill (`known_slash`, `slash.known_names`) is drawn bold in its colour
 (`Theme.slash`). A `dag-ulw` token in the draft is drawn in the aura instead
-(`aura`), and the rules take its gradient while it is there. While the composer holds a `!` line for Hermes' shell the
+(`aura`), and the rules are drawn heavy in its gradient while it is there. While the composer holds a `!` line for Hermes' shell the
 prompt mark is drawn bold in the shell family's hue instead of the prompt colour; the rules
 stay as they are. The info line under the bottom rule is a line the app
 builds, its text `INFO_INSET` cells in; the frame only places it. The agent
@@ -59,7 +59,7 @@ from dataclasses import dataclass, replace
 from .aura import aura_ranges, aura_rule, aura_style
 from .composer import PROMPT, Composer
 from .layout import BLANK, Budget, allocate, caret_row, compose, composer_cap
-from .style import TRUECOLOR, Line, Span
+from .style import TRUECOLOR, Line, Span, Style
 from .slash import slash_spans, slash_token_ranges
 from .theme import DEFAULT_THEME, KIND_FAMILIES, Theme
 from .width import cell_width, line_width, truncate, truncate_line
@@ -132,22 +132,26 @@ def build_frame(
     (`layout.allocate`): the working row while a turn runs. `known_slash`
     names the commands and skills a `/name` in the draft is drawn for (none
     in a draft holding a paste chip). `aura` is the phase a `dag-ulw` token's
-    gradient stands at (`aura`), painted at `aura_depth`: the token, over its
-    `/name` colour, and both rules take it while the draft holds one.
+    gradient and its band stand at (`aura`), painted at `aura_depth`: the
+    token, over its `/name` colour, and both rules, drawn heavy, while the
+    draft holds one.
     """
     cap = composer_cap(rows)
     composer_lines: list[Line] = []
     glow: list[tuple[int, int]] = []
+    base: tuple[Style, ...] = ()
+    glint: tuple[Style, ...] = ()
     caret_line = caret_col = 0
     if composer is not None:
         chips = [truncate_line(attachments, cols)] if attachments is not None and cap >= 2 else []
         mark = theme.kinds[KIND_FAMILIES.index("shell")] if mode == MODE_SHELL else theme.prompt
         marks = slash_token_ranges(composer.text, known_slash) if known_slash and not composer.pastes else []
         glow = aura_ranges(composer.text) if theme.aura and not composer.pastes and not composer.masked else []
-        steps = tuple(replace(style, depth=aura_depth) for style in theme.aura) if aura_depth != TRUECOLOR else theme.aura
+        base, glint = (tuple(replace(style, depth=aura_depth) for style in styles) if aura_depth != TRUECOLOR
+                       else styles for styles in (theme.aura, theme.aura_glint))
         input_lines, (caret_line, caret_col) = composer.render(
             cols, cap - len(chips), prompt, mark, theme.muted, marks, theme.slash,
-            glow, lambda offset: aura_style(steps, offset, aura),
+            glow, lambda offset, length: aura_style(base, glint, offset, length, aura),
         )
         if placeholder and not composer.text and input_lines:
             input_lines[0] = truncate_line((*input_lines[0], Span(placeholder, theme.hint)), cols)
@@ -168,10 +172,8 @@ def build_frame(
         tail_floor=tail_floor,
     )
     rule = rule_line(cols, theme)
-    if glow and not composer_blank and theme.aura_rule:
-        lit = tuple(replace(style, depth=aura_depth) for style in theme.aura_rule) if aura_depth != TRUECOLOR \
-            else theme.aura_rule
-        rule = aura_rule(cols, lit, RULE, aura)
+    if glow and not composer_blank:
+        rule = aura_rule(cols, base, glint, aura)
     lines = compose(
         budget,
         sticky=sticky,

@@ -625,11 +625,12 @@ class Composer:
         marks: Sequence[tuple[int, int]] = (),
         mark_style: Style = DEFAULT_STYLE,
         glow: Sequence[tuple[int, int]] = (),
-        glow_style: Callable[[int], Style] | None = None,
+        glow_style: Callable[[int, int], Style] | None = None,
     ) -> tuple[list[Line], tuple[int, int]]:
         """The visible rows at `width` cells, and the caret as (row, col) within them; paste chips in `chip_style`,
         the `marks` (str index ranges of the text, such as a `/name` that resolves) in `mark_style`, and the `glow`
-        ranges (`aura`) a style a character, `glow_style(offset)` with `offset` from the range's start, over a mark."""
+        ranges (`aura`) a style a character, `glow_style(offset, length)` with `offset` from the range's start in a range
+        `length` long, over a mark."""
         prompt_cells = cell_width(prompt)
         avail = max(width - prompt_cells, 1)
         self._avail = avail
@@ -659,7 +660,7 @@ class Composer:
 def _chip_styled(
     shown: Sequence[str], bounds: Sequence[int], start: int, end: int, chips: Sequence[tuple[int, int]], style: Style,
     marks: Sequence[tuple[int, int]] = (), mark_style: Style = DEFAULT_STYLE,
-    glow: Sequence[tuple[int, int]] = (), glow_style: Callable[[int], Style] | None = None,
+    glow: Sequence[tuple[int, int]] = (), glow_style: Callable[[int, int], Style] | None = None,
 ) -> list[Span]:
     """Clusters `start` to `end` as spans, the ones inside a chip (by str index) in `style`, inside a glow range in
     `glow_style` of their offset in it, inside a mark in `mark_style`."""
@@ -667,7 +668,8 @@ def _chip_styled(
     for index in range(start, end):
         inside = any(chip_start <= bounds[index] < chip_end for chip_start, chip_end in chips)
         lit = None if inside or glow_style is None else next(
-            (glow_style(bounds[index] - lit_start) for lit_start, lit_end in glow if lit_start <= bounds[index] < lit_end),
+            (glow_style(bounds[index] - lit_start, lit_end - lit_start) for lit_start, lit_end in glow
+             if lit_start <= bounds[index] < lit_end),
             None)
         marked = not inside and any(mark_start <= bounds[index] < mark_end for mark_start, mark_end in marks)
         wanted = style if inside else lit if lit is not None else mark_style if marked else DEFAULT_STYLE

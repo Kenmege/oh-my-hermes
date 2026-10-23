@@ -13,7 +13,7 @@ from _local_package import load_local_package
 load_local_package()
 
 from omh.tui.app import IDLE_READ_SECONDS, TICK_SECONDS  # noqa: E402
-from omh.tui.aura import aura_ranges  # noqa: E402
+from omh.tui.aura import AURA_RULE, RULE_GLINT_CELLS, aura_ranges  # noqa: E402
 from omh.tui.composer import Composer  # noqa: E402
 from omh.tui.frame import RULE, build_frame  # noqa: E402
 from omh.tui.keys import BACKSPACE, ENTER, Key, Paste  # noqa: E402
@@ -39,7 +39,7 @@ def frame_for(text: str, *, aura: int = 0, depth: str = TRUECOLOR, theme=DEFAULT
 def rows_of(frame) -> tuple[tuple[Span, ...], tuple[Span, ...], tuple[Span, ...]]:
     """The top rule, the composer's first row and the bottom rule."""
     lines = list(frame.lines)
-    top = next(index for index, line in enumerate(lines) if line and line[0].text.startswith(RULE))
+    top = next(index for index, line in enumerate(lines) if line and line[0].text.startswith((RULE, AURA_RULE)))
     return lines[top], lines[top + 1], lines[top + 2]
 
 
@@ -71,41 +71,46 @@ class KeywordTests(unittest.TestCase):
 
 
 class DrawTests(unittest.TestCase):
-    def test_the_token_takes_the_gradient_a_step_a_cell_over_its_slash_colour(self) -> None:
-        top, row, bottom = rows_of(frame_for("please /dag-ulw migrate then /plan"))
-        text = text_of(row)
-        lit = styles_over(row, text, "/dag-ulw")
-        self.assertEqual(lit, list(DEFAULT_THEME.aura[:8]), "one step a cell from the first, bold")
-        self.assertTrue(all(style.bold for style in lit))
-        self.assertEqual(styles_over(row, text, "/plan"), [DEFAULT_THEME.slash] * 5, "another /name keeps its colour")
-        self.assertNotIn(DEFAULT_THEME.slash, styles_over(row, text, "migrate"))
+    def test_the_token_runs_through_the_hues_in_every_frame_over_its_slash_colour(self) -> None:
+        theme = DEFAULT_THEME
+        for phase in range(12):
+            with self.subTest(phase=phase):
+                _top, row, _bottom = rows_of(frame_for("please /dag-ulw migrate then /plan", aura=phase))
+                text = text_of(row)
+                lit = styles_over(row, text, "/dag-ulw")
+                self.assertTrue(all(style.bold for style in lit))
+                hues = {style.fg for style in lit}
+                self.assertGreaterEqual(len(hues), 6, "violet to lavender across the eight cells, every frame")
+                self.assertEqual(lit[0].fg in {theme.aura[0].fg, theme.aura_glint[0].fg}, True)
+                self.assertEqual(lit[-1].fg in {theme.aura[-1].fg, theme.aura_glint[-1].fg}, True)
+                self.assertEqual(styles_over(row, text, "/plan"), [theme.slash] * 5, "another /name keeps its colour")
 
-    def test_the_rules_take_the_gradient_at_a_rules_contrast_in_the_same_cells(self) -> None:
-        plain_top, plain_row, plain_bottom = rows_of(frame_for("migrate every service", cols=83))
-        top, row, bottom = rows_of(frame_for("dag ulw migrate every service", cols=83))
-        for rule, plain in ((top, plain_top), (bottom, plain_bottom)):
-            self.assertEqual(text_of(rule), text_of(plain), "the same rule characters, full width")
-            self.assertEqual({span.style for span in plain}, {DEFAULT_THEME.rule})
-            self.assertTrue({span.style for span in rule} <= set(DEFAULT_THEME.aura_rule))
-            self.assertGreater(len({span.style for span in rule}), 4, "a gradient, not one colour")
+    def test_a_brighter_band_sweeps_through_the_letters(self) -> None:
+        glint = set(DEFAULT_THEME.aura_glint)
+        lit_cells = []
+        for phase in range(12):
+            _top, row, _bottom = rows_of(frame_for("dag-ulw", aura=phase))
+            lit = styles_over(row, text_of(row), "dag-ulw")
+            lit_cells.append(tuple(at for at, style in enumerate(lit) if style in glint))
+        self.assertEqual(lit_cells[:4], [(), (0,), (0, 1), (1, 2)], "it enters from the left, a cell a phase")
+        self.assertEqual(lit_cells[7:10], [(5, 6), (6,), ()], "and leaves at the right")
+        self.assertEqual(lit_cells[11], lit_cells[0], "and comes round again")
+
+    def test_both_rules_are_heavy_in_the_gradient_with_a_travelling_band_and_go_back_after(self) -> None:
+        self.assertEqual((RULE, AURA_RULE), ("─", "━"))
+        plain_top, _row, plain_bottom = rows_of(frame_for("migrate every service", cols=83))
+        self.assertEqual({text_of(plain_top), text_of(plain_bottom)}, {RULE * 83})
+        bands = []
+        for phase in (0, 5):
+            top, _row, bottom = rows_of(frame_for("dag ulw migrate every service", cols=83, aura=phase))
+            self.assertEqual(top, bottom, "both rules, the same glow")
+            self.assertEqual(text_of(top), AURA_RULE * 83, "heavy, full width, in the same cells")
+            self.assertGreaterEqual(len({span.style.fg for span in top}), 8, "a gradient across the width")
+            cells = [span.style for span in top for _char in span.text]
+            bands.append([at for at, style in enumerate(cells) if style in set(DEFAULT_THEME.aura_glint)])
+        self.assertEqual(len(bands[1]), RULE_GLINT_CELLS)
+        self.assertNotEqual(bands[0], bands[1], "the band travels along it")
         self.assertEqual(len(frame_for("dag ulw migrate").lines), len(frame_for("migrate").lines), "no row added")
-
-    def test_it_reads_on_a_dark_and_a_light_background(self) -> None:
-        from omh.tui.theme import build_theme, contrast_ratio, default_theme, surface_for
-
-        for background in ("#0D1117", "#FFFFFF", "#3A3A3A", "#DDDDDD"):
-            with self.subTest(background=background):
-                theme = build_theme(default_theme(), background)
-                surface = surface_for(default_theme(), background)
-                self.assertGreaterEqual(min(contrast_ratio(style.fg, surface) for style in theme.aura), 4.5)
-                self.assertGreaterEqual(min(contrast_ratio(style.fg, surface) for style in theme.aura_rule), 3.0)
-                self.assertEqual(len(theme.aura), 16, "nine steps there and seven back: it wraps without a seam")
-
-    def test_the_gradient_moves_one_step_a_phase(self) -> None:
-        first, second = (rows_of(frame_for("dag-ulw", aura=phase)) for phase in (0, 1))
-        styles = [styles_over(row, text_of(row), "dag-ulw") for _top, row, _bottom in (first, second)]
-        self.assertEqual(styles[1][1:], styles[0][:-1])
-        self.assertNotEqual(first[0], second[0], "the rule moves with it")
 
     def test_256_and_16_colours_paint_it_at_their_depth_and_no_colour_leaves_it_bold(self) -> None:
         for depth, code in ((COLOR_256, "38;5;"), (COLOR_16, "")):
@@ -118,12 +123,24 @@ class DrawTests(unittest.TestCase):
         plain = without_colour(DEFAULT_THEME)
         top, row, bottom = rows_of(frame_for("dag-ulw", theme=plain, depth=NO_COLOR))
         lit = styles_over(row, text_of(row), "dag-ulw")
-        self.assertTrue(all(style.bold for style in lit))
+        self.assertTrue(all(style.bold for style in (*lit, *(span.style for span in (*top, *bottom)))))
         self.assertTrue(all("38;" not in style.sgr() for style in lit), "no colour")
         self.assertTrue(all("38;" not in span.style.sgr() for span in (*top, *bottom)))
+        self.assertEqual(text_of(top), AURA_RULE * 80)
+
+    def test_it_reads_on_a_dark_and_a_light_background(self) -> None:
+        from omh.tui.theme import build_theme, contrast_ratio, default_theme, surface_for
+
+        for background in ("#0D1117", "#FFFFFF", "#3A3A3A", "#DDDDDD", "#808080", "#5A5A5A", "#A8A8A8"):
+            with self.subTest(background=background):
+                theme = build_theme(default_theme(), background)
+                surface = surface_for(default_theme(), background)
+                styles = (*theme.aura, *theme.aura_glint)
+                self.assertGreaterEqual(min(contrast_ratio(style.fg, surface) for style in styles), 4.5)
+                self.assertEqual(len(theme.aura), len(theme.aura_glint))
 
     def test_a_masked_draft_or_one_holding_a_paste_has_none(self) -> None:
-        aura = set(DEFAULT_THEME.aura) | set(DEFAULT_THEME.aura_rule)
+        aura = set(DEFAULT_THEME.aura) | set(DEFAULT_THEME.aura_glint)
         masked = Composer(masked=True)
         masked.replace(0, 0, "dag-ulw")
         pasted = composer_with("dag-ulw ")
@@ -131,14 +148,16 @@ class DrawTests(unittest.TestCase):
         for composer in (masked, pasted):
             frame = build_frame(cols=80, rows=24, composer=composer, info=(), theme=DEFAULT_THEME, aura=3)
             self.assertFalse([span for line in frame.lines for span in line if span.style in aura])
+            self.assertFalse([line for line in frame.lines if AURA_RULE in text_of(line)])
 
     def test_the_caret_and_the_cells_are_the_drafts_own(self) -> None:
         for text in ("/dag-ulw migrate every service", "한글 작업 dag ulw 서비스 이전", "x" * 70 + " dag-ulw " + "y" * 30):
             with self.subTest(text=text[:20]):
-                lit = frame_for(text, cols=60)
+                lit = frame_for(text, cols=60, aura=4)
                 plain = build_frame(cols=60, rows=24, composer=composer_with(text), info=(), theme=DEFAULT_THEME)
                 self.assertEqual(lit.cursor, plain.cursor)
-                self.assertEqual([text_of(line) for line in lit.lines], [text_of(line) for line in plain.lines])
+                self.assertEqual([text_of(line).replace(AURA_RULE, RULE) for line in lit.lines],
+                                 [text_of(line).replace(AURA_RULE, RULE) for line in plain.lines])
                 self.assertTrue(all(line_width(line) <= 60 for line in lit.lines))
 
 
@@ -196,7 +215,7 @@ class AppTests(unittest.TestCase):
 
     def test_it_ends_the_frame_the_token_goes_or_the_prompt_is_sent(self) -> None:
         app, client, _clock = self.app()
-        aura = set(app.theme.aura) | set(app.theme.aura_rule)
+        aura = set(app.theme.aura) | set(app.theme.aura_glint)
 
         def lit() -> bool:
             app._render()
