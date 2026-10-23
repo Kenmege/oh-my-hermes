@@ -348,6 +348,48 @@ class RefusedRatherThanMisroutedTest(PerConversationRouteTestCase):
         self.assertEqual((refusal["session_id"], refusal["live_route_writer"]), ("C", "B"))
         self.assertEqual(self.keys(), QUICK)
 
+    def test_a_dispatch_with_nothing_to_change_goes_ahead_when_the_lock_is_busy(self) -> None:
+        # The #2258 review's probe: a person edited the keys after B's route,
+        # so the unlocked read finds nothing to take out. The lock timing out
+        # must not turn that into a refusal in the name of an empty writer.
+        self.top_level("B", "C")
+        self.set_route("B", "B-t1", "quick")
+        config = self.hermes_home / "config.yaml"
+        config.write_text(config.read_text(encoding="utf-8").replace("quick-head", "person-edit"), encoding="utf-8")
+        edited = {**QUICK, "model": "person-edit"}
+        self.assertIsNone(self.dispatch("C", "C-t1"))
+
+        lock = _awareness_delivery_lock(delegation_route_restore_path(self.omh_home))
+        with mock.patch.object(delegation_route_restore, "_DISPATCH_LOCK_SECONDS", 0.05), lock:
+            directive = self.dispatch("C", "C-t2")
+
+        self.assertIsNone(directive)
+        self.assertEqual(self.keys(), edited)
+
+    def test_an_unresolved_lineage_goes_ahead_named_when_the_lock_is_busy(self) -> None:
+        self.set_route("B", "B-t1", "quick")
+        lock = _awareness_delivery_lock(delegation_route_restore_path(self.omh_home))
+        with mock.patch.object(delegation_route_restore, "_DISPATCH_LOCK_SECONDS", 0.05), lock, \
+                self.assertLogs("omh.delegation_route", level="WARNING"):
+            result = self.dispatch("C", "C-t1")
+
+        self.assertNotIn("action", result)
+        self.assertEqual(result["omh_route_fallback"]["status"], "lineage_unresolved")
+        self.assertEqual(self.keys(), QUICK)
+
+    def test_a_refusal_never_names_an_empty_writer(self) -> None:
+        # A host that names no session records its route by task alone.
+        self.top_level("C")
+        self.set_route(None, "B-t1", "quick")
+
+        refusal = self.blocked("C", "C-t1")
+
+        self.assertEqual(refusal["status"], "other_session_route_live")
+        self.assertEqual(refusal["live_route_writer"], "")
+        self.assertNotIn("session ''", refusal["error"])
+        self.assertIn("another conversation", refusal["error"])
+        self.assertEqual(self.keys(), QUICK)
+
 
 class UnresolvedLineageTest(PerConversationRouteTestCase):
     def test_a_caller_whose_row_cannot_be_read_leaves_the_route_alone(self) -> None:
@@ -610,6 +652,82 @@ class ReleaseCoherenceTest(PerConversationRouteTestCase):
         self.assertEqual(exhausted["conversation_route"]["status"], "released", exhausted)
         self.assertIsNone(self.dispatch("A", "A-t1"))
         self.assertEqual(self.keys(), {})
+
+    def release_fails(self):
+        failing = mock.patch.object(delegation_route_restore, "_release_locked", side_effect=PermissionError("denied"))
+        return failing, self.assertLogs("omh.delegation_route", level="WARNING")
+
+    def test_a_clear_whose_release_fails_does_not_come_back_on_the_same_task(self) -> None:
+        # The #2258 review's probe: the keys were cleared, the release write
+        # failed, and the same task's next dispatch put the route back.
+        self.top_level("A")
+        self.set_route("A", "A-t1", "deep")
+        failing, logged = self.release_fails()
+        with failing, logged:
+            cleared = self.tool("A", "A-t1", action="clear")
+
+        self.assertEqual(cleared["status"], "cleared", cleared)
+        self.assertEqual(cleared["conversation_route"]["status"], "error", cleared)
+        self.assertEqual(set(load_conversation_routes(self.omh_home)), {"A"})
+        self.assertIsNone(self.dispatch("A", "A-t1"))
+        self.assertEqual(self.keys(), {})
+        status = self.tool("A", "A-t1", action="status")
+        self.assertIn("conversation_route", status)
+        self.assertIsNone(status["conversation_route"])
+
+    def test_an_exhausted_chain_whose_release_fails_does_not_come_back(self) -> None:
+        # For exhaustion the route put back was the model that just failed.
+        self.top_level("A")
+        self.set_route("A", "A-t1", "deep")
+        self.assertEqual(self.tool("A", "A-t1", action="fallback")["status"], "fell_back")
+        failing, logged = self.release_fails()
+        with failing, logged:
+            exhausted = self.tool("A", "A-t1", action="fallback")
+
+        self.assertEqual(exhausted["status"], "exhausted_to_inherit", exhausted)
+        self.assertEqual(exhausted["conversation_route"]["status"], "error", exhausted)
+        self.assertIsNone(self.dispatch("A", "A-t1"))
+        self.assertEqual(self.keys(), {})
+
+    def test_a_failed_release_after_a_compression_split_does_not_come_back(self) -> None:
+        # The release takes the whole conversation's entries, so the stamp of
+        # a continuation retires an entry its parent session wrote.
+        self.sessions(compacted("A0", at=1050.0), row("A1", parent="A0", started_at=1050.0))
+        self.set_route("A0", None, "deep")
+        failing, logged = self.release_fails()
+        with failing, logged:
+            cleared = self.tool("A1", None, action="clear")
+
+        self.assertEqual(cleared["status"], "cleared", cleared)
+        self.assertIsNone(self.dispatch("A1", ""))
+        self.assertEqual(self.keys(), {})
+
+    def test_a_route_set_after_a_failed_release_still_comes_back(self) -> None:
+        # The stamp retires only what was written before it.
+        self.top_level("A", "B")
+        self.set_route("A", "A-t1", "deep")
+        failing, logged = self.release_fails()
+        with failing, logged:
+            self.tool("A", "A-t1", action="clear")
+        with mock.patch.object(delegation_route_restore.time, "time", return_value=time.time() + 1):
+            self.set_route("A", "A-t1", "quick")
+            self.set_route("B", "B-t1", "deep")
+
+        self.assertIsNone(self.dispatch("A", "A-t1"))
+
+        self.assertEqual(self.keys(), QUICK)
+
+    def test_another_sessions_failed_release_keeps_this_sessions_route(self) -> None:
+        self.top_level("A", "B")
+        self.set_route("A", "A-t1", "deep")
+        self.set_route("B", "B-t1", "quick")
+        failing, logged = self.release_fails()
+        with failing, logged:
+            self.tool("B", "B-t1", action="clear")
+
+        self.assertIsNone(self.dispatch("A", "A-t1"))
+
+        self.assertEqual(self.keys(), DEEP)
 
     def test_another_sessions_clear_keeps_this_sessions_route(self) -> None:
         self.set_route("B", "B-t1", "quick")

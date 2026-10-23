@@ -1734,7 +1734,12 @@ session-start restore that takes it back, and one older than six hours is
 ignored. When OMH cannot put the right route in place (another writer holds
 the lock for two seconds, or the write is refused), the `delegate_task` call
 is refused with `route_overwritten_by_other_session`, `route_not_applied` or
-`other_session_route_live`, naming both sessions, and no child starts. Two
+`other_session_route_live`, naming both sessions, and no child starts. A
+dispatch whose unlocked read found nothing to change goes ahead when the lock
+is busy. A `clear` or an exhausted chain whose release of the conversation's
+entry fails does not bring the route back: the dispatch ignores an entry
+written before the `cleared` or `exhausted_to_inherit` provenance record of
+its own conversation. Two
 cases are left in place as before: a route whose writer recorded no
 conversation entry, such as one written by an older OMH that is still
 running, and any route when the dispatching session's own `state.db` row

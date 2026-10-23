@@ -230,6 +230,9 @@ BASELINE_ORIGIN_OMH_LEFTOVER = "omh_leftover"
 # `exhausted_to_inherit` describe one being taken out, so they say nothing
 # about what the keys hold now.
 _ROUTE_LEAVING_ORIGINS = ("head", "explicit", "fallback")
+# The two that the tool appends after a `clear` or a chain exhaustion took a
+# conversation's own route out of the keys.
+_ROUTE_TAKING_ORIGINS = ("cleared", "exhausted_to_inherit")
 
 # The liveness verdicts that let a restore proceed, as an explicit allow-set
 # rather than an inequality against "live". An inequality is how this went
@@ -1146,7 +1149,8 @@ def _release_reported(
     except OSError as exc:
         _LOG.warning(
             "OMH could not release a conversation's delegation route after restoring the keys "
-            "(%s); a later dispatch of the same task may put it back",
+            "(%s); only the provenance record of this clear keeps a later dispatch of the same "
+            "task from putting it back",
             type(exc).__name__,
         )
         return {"status": "error", "error_type": type(exc).__name__}
@@ -1310,6 +1314,7 @@ def _dispatch_plan(
         if entry["config_path"] == config_path
         and now - entry["written_at"] <= LIVE_TUI_SESSION_FRESH_SECONDS
     ]
+    entries = _not_taken_out(entries, omh_home, conversation)
     current = read_delegation_route(hermes_home)
     record_live = bool(record) and current == record["written"]
     plan: dict[str, Any] = {
@@ -1367,6 +1372,42 @@ def _dispatch_plan(
     if lineage is None:
         return {**plan, "action": "none", "status": "lineage_unresolved"}
     return {**plan, "action": "restore_baseline", "status": "baseline_restored_for_dispatch"}
+
+
+def _not_taken_out(
+    entries: list[dict[str, Any]], omh_home: str | Path | None, conversation: Callable[[], set[str]]
+) -> list[dict[str, Any]]:
+    """`entries` less those a later `clear` or chain exhaustion of their own conversation took out.
+
+    That release runs in the restore's lock and deletes them. When its write
+    fails the entry stays, and the same task's next dispatch put the cleared
+    route -- or, for exhaustion, the failing model -- back (#2258 review). The
+    stamp is the `cleared` / `exhausted_to_inherit` provenance record the tool
+    appends after the restore, so this costs no write of its own: an entry
+    written before such a record, by its session or by another session of
+    the caller's conversation, is ignored. The record names a session and no
+    task, so an entry of a host that names no session is not covered, and a
+    record the unlocked provenance append dropped covers nothing.
+    """
+    if not entries:
+        return entries
+    stamps = [
+        (record["session_id"], record["written_at"])
+        for record in load_delegation_route_provenance(omh_home)
+        if record["origin"] in _ROUTE_TAKING_ORIGINS and record.get("session_id")
+    ]
+
+    def taken_out(entry: Mapping[str, Any]) -> bool:
+        return any(
+            at >= entry["written_at"]
+            and (
+                session == entry["session_id"]
+                or (bool(entry["session_id"]) and {session, entry["session_id"]} <= conversation())
+            )
+            for session, at in stamps
+        )
+
+    return [entry for entry in entries if not taken_out(entry)] if stamps else entries
 
 
 # Plan statuses an unlocked read may return on: each says the keys already
@@ -1456,7 +1497,15 @@ def prepare_dispatch_route(
             _discard_restore_record(record_path)
             return {"status": decided["status"], "displaced_writer": decided["live_writer"]}
     except TimeoutError:
-        return _dispatch_refusal(peek, session_id, "lock_unavailable")
+        if peek["action"] != "none":
+            return _dispatch_refusal(peek, session_id, "lock_unavailable")
+        # The unlocked read found nothing to change, so the keys go to the
+        # child as they are, which is what every dispatch did before
+        # conversation routes existed. Refusing here blocked a dispatch that
+        # would have gone ahead, in another session's name (#2258 review).
+        if peek["status"] == "lineage_unresolved":
+            return _lineage_fallback(peek, session_id)
+        return {"status": peek["status"], "lock_unavailable": True}
     except (OSError, ValueError) as exc:
         return _dispatch_refusal(peek, session_id, type(exc).__name__)
 
@@ -1584,7 +1633,7 @@ def conversation_route_for(
 
     own = [
         entry
-        for entry in load_conversation_routes(omh_home).values()
+        for entry in _not_taken_out(list(load_conversation_routes(omh_home).values()), omh_home, conversation)
         if entry["config_path"] == config_path
         and tick - entry["written_at"] <= LIVE_TUI_SESSION_FRESH_SECONDS
         and _owned_by_caller(entry["session_id"], entry["task_id"], task_id, conversation)
@@ -1617,8 +1666,9 @@ def _dispatch_refusal(plan: Mapping[str, Any], session_id: str, reason: str) -> 
         )
     else:
         status = "other_session_route_live"
+        setter = f"session {other!r}" if other else "another conversation"
         error = (
-            f"Not dispatched: the delegation.* keys hold the route session {other!r} set for its "
+            f"Not dispatched: the delegation.* keys hold the route {setter} set for its "
             f"own delegate_task, and OMH could not put this profile's default back ({reason}). "
             "Dispatching now would run the child on that session's route. Call delegate_task "
             "again, or route this lane yourself with omh_delegate_route set first."
