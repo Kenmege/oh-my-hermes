@@ -659,20 +659,22 @@ class RouterTests(unittest.TestCase):
         # (D)). Router and hint read the same, on work over many targets and on a split.
         kinds = {
             "gratitude": ("thanks a bunch", "thx so much!!", "much obliged", "I'd appreciate it", "you're the best",
-                          "you rock, seriously!!"),
+                          "you rock, seriously!!", "bear with me"),
             "sign-off": ("have a good one", "talk soon", "regards", "catch you later", "later gators", "see ya", "take care"),
             "wish": ("fingers crossed", "really hope it goes smoothly", "hope it lands cleanly", "wish me luck", "good luck",
                      "hope there are no conflicts", "let's hope it sticks", "would love a clean run",
-                     "got a good feeling about this one"),
+                     "got a good feeling about this one", "here's to a clean run", "may the build be green"),
             "back-reference": ("as discussed", "like we agreed", "same as last time", "per our chat",
-                               "same deal as before", "following the plan from last sprint"),
+                               "same deal as before", "following the plan from last sprint", "consistent with the RFC",
+                               "like we did for billing"),
             "attribution": ("my manager asked for it", "legal approved it", "the PM requested this", "approved by the CTO",
-                            "boss said go for it"),
+                            "boss said go for it", "the PM's request", "it's for the audit", "at the request of QA",
+                            "for the release team", "on behalf of legal"),
             "aside": ("fwiw the tests are flaky", "btw, CI is slow today", "also, the new keyboard is lovely",
                       "off topic, the new sofa arrived", "random but my cat just sneezed",
                       "on another note, the release notes look great", "incidentally the build cache is warm"),
             "no pressure": ("no worries", "no rush at all", "take your time", "whenever works", "not urgent",
-                            "nothing pressing about it"),
+                            "nothing pressing about it", "no deadline"),
         }
         # Each refusal shares its clause with a keep kind, so the class alone holds it.
         refusals = ("run the tests too thanks",  # a new request
@@ -708,6 +710,25 @@ class RouterTests(unittest.TestCase):
                 with self.subTest(message=f"{work}, {tail}"):
                     self.assertFalse(dispatches_dag_ulw(f"{work}, {tail}"))
                     self.assertEqual(self._dag_ulw_starts(f"{work}, {tail}")[:2], (False, False))
+        # Adversarial twins: a refusal dressed in a keep kind's own stem holds, the refusal check running first,
+        # whichever kind it borrows (#2243 follow-up).
+        twins = ("boss said hold off", "approved by the CTO but not yet", "legal is fine with it but hold on",
+                 "this came from the client, cancel it", "it's for the audit, so hold off", "on behalf of legal, hold off",
+                 "at the request of QA, cancel that", "for the security team, but not yet", "Sam's request, but let's wait",
+                 "like we agreed, scrap it", "like we hashed out, hold off for now", "same as the earlier convo, never mind",
+                 "consistent with the RFC, but scrap it", "like we did for billing, not yet",
+                 "fingers crossed but let's not", "keeping my toes crossed but let's wait",
+                 "here's to a clean run but let's not", "may the build be green, but wait",
+                 "may it be green but I am backing out", "hope it lands but I would rather wait",
+                 "not in a hurry, actually don't", "whatever pace works, actually forget it",
+                 "no deadline, but don't start yet", "bear with me, not sure yet", "you rock, seriously, but scratch that",
+                 "also, I am calling it off", "side note, I'm calling the whole thing off", "fyi backing out of this",
+                 "side note, I'm cancelling that",
+                 "need to confirm it's safe on my side")
+        for tail in twins:
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
         # A remark after a colon list's last item goes through the same gate: a status in either order holds, and a
         # dismissal holds.
         for message in ("for each open PR: rebase, merge, merged already", "for each open PR: rebase, merge, already merged",

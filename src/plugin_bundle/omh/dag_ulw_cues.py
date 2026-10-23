@@ -1120,7 +1120,9 @@ _THINKING_ALOUD: Final = re.compile(
 )
 _RETRACTS: Final = re.compile(
     r"\b(?:scrap\w*|scratch\w*|forget\w*|disregard\w*|ignor\w*|strike|retract\w*|nix\w*|belay|withdraw\w*|pretend\w*|undo\w*"
-    r"|cancel\w*|abort\w*|call\w*\s+(?:it\s+|this\s+|that\s+)?off|skip\w*|shelv\w*|park\w*|pass\s+on\s+(?:it|this|that)"
+    r"|cancel\w*|abort\w*|call\w*\s+(?:\w+\s+){0,3}?off|skip\w*|shelv\w*|park\w*|pass\s+on\s+(?:it|this|that)"
+    r"|back\w*\s+out|pull\w*\s+(?:out|the\s+plug)|bail\w*|drop\w*\s+(?:it|this|that)|walk\w*\s+(?:it\s+|that\s+)?back"
+    r"|rescind\w*|revok\w*"
     r"|hang\s+on|hold\s+up|stand\s*by|sit\s+tight"
     r"|take\s+(?:it|that|this|all\s+that)\s+back|on\s+(?:second\s+thought|reflection))\b"
 )
@@ -1153,7 +1155,7 @@ _ASKER_INTENT: Final = re.compile(
 )
 _QUESTION: Final = re.compile(
     r"[?？]|^(?:what|why|how|which|who|where|whether|is|are|am|was|were|do|does|did|should|shall|could|would(?!\s+love\b)|can|will"
-    r"|may|might|must)(?![\w'])|\b(?:curious|wondering|wdyt|wyt|hbu|wbu)\b"
+    r"|may(?!\s+(?:the|it|this|our|all|your)\b)|might|must)(?![\w'])|\b(?:curious|wondering|wdyt|wyt|hbu|wbu)\b"
 )
 # A negation anywhere in a remark is read as one of the work, whatever it negates ("…, not yet", "…, not gonna do
 # it", "…, we won't do this", "…, let's not", "…, can't decide", "…, not entirely convinced").
@@ -1164,13 +1166,13 @@ _NEGATION: Final = re.compile(
 # A warning about the work is no harmless aside ("…, fwiw last time this broke CI", "…, careful, prod is fragile").
 _WARNS: Final = re.compile(
     r"\b(?:broke|break(?:s|ing)?|blew\s+up|blow\s+up|went\s+down|outage|incident|regress\w*|careful|beware|watch\s+out"
-    r"|caution|danger\w*|yikes|fragile|bricked|bit\s+us|burned\s+us|could|might|may|los[et]|losing|corrupt\w*|wipe\w*"
+    r"|caution|danger\w*|yikes|fragile|bricked|bit\s+us|burned\s+us|could|might|(?<=\s)may|los[et]|losing|corrupt\w*|wipe\w*"
     r"|data\s+loss)\b"
 )
 _GRATITUDE: Final = re.compile(
     r"\b(?:thanks?|thank\s*(?:you|u|ya|ye)|thx|thnx|tnx|tx|ty|tysm|tyvm|ta|cheers|appreciat\w*|grateful|thankful|obliged"
     r"|kudos|much\s+love|bless\s+you|you\s+rock|you(?:'re|\s+are)\s+(?:the\s+best|a\s+(?:star|legend|lifesaver|gem|hero))"
-    r"|legend|lifesaver|owe\s+you|(?:big|much|so\s+much)\s+love|props|shout[-\s]?out|hats\s+off)\b"
+    r"|legend|lifesaver|owe\s+you|(?:big|much|so\s+much)\s+love|props|shout[-\s]?out|hats\s+off|bear\s+with\s+(?:me|us))\b"
     r"|^(?:awesome|amazing|great|perfect|nice|sweet|lovely|brilliant|excellent|wonderful|fantastic)\W*$"
 )
 _SIGN_OFF: Final = re.compile(
@@ -1183,7 +1185,8 @@ _WISH: Final = re.compile(
     r"^(?:i\s+|we\s+|and\s+|so\s+|let'?s\s+)?(?:(?:really|so|truly|just|sure)\s+)?(?:hope|hoping|here'?s\s+hoping|wish|wishing"
     r"|(?:(?:keeping|keep|got)\s+(?:my\s+|our\s+|the\s+)?)?(?:fingers|toes)\s+(?:\w+\s+){0,2}crossed|pray\w*|knock\s+on\s+wood|touch\s+wood"
     r"|(?:good|best\s+of)\s+luck|(?:i'?d\s+|would\s+)love|keen|excited|eager|stoked|can'?t\s+wait|looking\s+forward|wouldn'?t\s+mind"
-    r"|optimistic|(?:got\s+a\s+)?good\s+feeling|feeling\s+(?:good|positive|optimistic))\b"
+    r"|optimistic|(?:got\s+a\s+)?good\s+feeling|feeling\s+(?:good|positive|optimistic)|here'?s\s+to|may\s+(?:the|it|this|our|all|your)"
+    r"|cheers\s+to)\b"
 )
 _BACK_REFERENCE: Final = re.compile(
     r"\b(?:as|like|per|what|how|the\s+way)\s+(?:(?:we|i|you|they)\s+(?:\w+\s+)?(?:discussed|agreed|said|mentioned|planned|talked|decided"
@@ -1195,6 +1198,7 @@ _BACK_REFERENCE: Final = re.compile(
     r"|\b(?:same\s+(?:\w+\s+)?as|like)\s+(?:(?:the\s+)?(?:last|earlier|previous|prior|original|usual)\s+\w+|before|usual|always)\b"
     r"|\bsame\s+(?:\w+\s+)?as\s+the\s+\w+|\b(?:as|like)\s+in\s+the\s+\w+"
     r"|\bfollowing\s+(?:up\s+on|the\s+\w+)\b|\bper\s+(?:our|the|my|your|yesterday'?s|today'?s|last\s+week'?s)\s+\w+"
+    r"|\b(?:consistent|in\s+line|in\s+keeping)\s+with\b|\b(?:like|as)\s+(?:we|i|they)\s+(?:did|do|handled|did\s+it)\b"
 )
 _ATTRIBUTION: Final = re.compile(
     r"^(?!(?:i|we|you)\b)(?:\w+(?:'s)?\s+){1,4}?(?:asked|requested|wants?|wanted|needs?|needed|approved|okayed|ok'?d|signed\s+off"
@@ -1205,7 +1209,13 @@ _ATTRIBUTION: Final = re.compile(
     r"|\b(?:it|this|that|the\s+\w+)\s+(?:came|comes|is|'s)\s+(?:straight\s+|directly\s+)?from\s+(?:the\s+)?\w+|\bit'?s\s+from\s+(?:the\s+)?\w+"
     r"|\b(?:gave|got|has|have|had)\s+(?:\w+\s+)?(?:green\s*light|thumbs\s+up|go[-\s]ahead|blessing|sign[-\s]?off|ok|okay)\b"
     r"|\bper\s+(?:the\s+)?(?:cto|ceo|cfo|vp|pm|po|boss|lead|manager|team|qa|legal|security|client|customer|product|design|ops)\b"
+    r"|\b(?!(?:my|our|your)\b)\w+'s\s+(?:request|ask|call|orders?)\b|\bat\s+(?:the\s+)?(?:\w+'s\s+)?request(?:\s+of)?\b"
+    r"|\bon\s+behalf\s+of\b|\b(?:it'?s|this\s+is|that'?s|all)\s+for\s+(?:the\s+)?\w+"
+    r"|^for\s+(?:the\s+)?(?:\w+\s+)?(?:team|cto|ceo|pm|po|lead|manager|client|customer|boss|qa|legal|security|audit|release|launch|demo"
+    r"|board|folks|squad|crew|org)\b"
 )
+# A contrast after a wish turns to what follows it ("…, fingers crossed but let's not").
+_CONTRAST: Final = re.compile(r"\b(?:but|though|although|however|except|yet)\b")
 # An aside marker, by meaning: the remark that follows is on something else ("…, fyi …", "…, btw …", "…, also …", "…, oh
 # and …", "…, off topic, …", "…, random but …", "…, tangent, …", "…, unrelated but …", "…, on another note, …",
 # "…, incidentally …").
@@ -1226,7 +1236,8 @@ _KEEP_IDIOM: Final = re.compile(
 # No pressure is no refusal, whatever words it borrows from one ("…, no worries", "…, take your time", "…, whenever
 # works", "…, nothing urgent"): it is read off before the refusals are, and before the whole-text condition.
 _NO_PRESSURE: Final = re.compile(
-    r"\b(?:(?:no|zero|0)\s+(?:\w+\s+)?(?:rush|pressure|worries|hurry|stress|problem|biggie|big\s+deal|panic|drama|urgency)"
+    r"\b(?:(?:no|zero|0)\s+(?:\w+\s+)?(?:rush|pressure|worries|hurry|stress|problem|biggie|big\s+deal|panic|drama|urgency"
+    r"|deadline|hard\s+deadline|eta|timeline)"
     r"|not\s+(?:urgent|a\s+big\s+deal|in\s+a\s+(?:hurry|rush))|nothing\s+(?:urgent|pressing)|take\s+your\s+(?:sweet\s+)?time"
     r"|all\s+good(?:\s+on\s+\w+)?|breathing\s+room|plenty\s+of\s+time|don'?t\s+sweat(?:\s+(?:it|the\s+\w+))?"
     r"|(?:go\s+)?at\s+(?:your|whatever|any|its)\s+(?:own\s+)?(?:pace|leisure|convenience|speed)(?:\s+works)?|easy\s+does\s+it"
@@ -1256,7 +1267,7 @@ def _refuses(clause: str) -> bool:
         or _WEIGHS.search(bare)
         or _ASKER_INTENT.search(bare)
         or _QUESTION.search(bare)
-        or (_NEGATION.search(bare) and not _WISH.match(bare))
+        or (_NEGATION.search(bare) and not (_WISH.match(bare) and not _CONTRAST.search(bare)))
     )
 
 

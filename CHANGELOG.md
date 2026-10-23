@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A remark after a request is read by its kind, more widely (#2243
+  follow-up).** A retraction is read by its verb stem (`…, side note, I'm
+  cancelling that`, `…, fyi backing out of this`, `…, calling the whole
+  thing off`), a stated precondition holds (`…, need to confirm it's safe on
+  my side`), and a contrast after a wish turns to what follows (`…, fingers
+  crossed but let's not`): each holds where it started a graph run before.
+  Who asked needs someone other than the speaker as its subject, or a
+  passive (`…, approved by the CTO`). More remarks keep the request: an
+  aside marker of any kind (`…, also, …`, `…, off topic, …`), a request on
+  someone's behalf or for a purpose (`…, the PM's request`, `…, at the
+  request of QA`, `…, on behalf of legal`, `…, it's for the audit`), a toast
+  (`…, here's to a clean run`, `…, may the build be green`), a
+  back-reference (`…, consistent with the RFC`, `…, like we did for
+  billing`), `…, no deadline` and `…, bear with me`.
+
 - **A cleared or exhausted delegation route stays gone (#2251
   follow-up).** `clear` and chain exhaustion now release the conversation's
   own route inside the same lock as the restore, after it. Before, the
