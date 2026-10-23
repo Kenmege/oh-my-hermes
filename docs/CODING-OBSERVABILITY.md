@@ -381,7 +381,9 @@ What it shows, and what it leaves as `?`:
     per layer with its counts, the boxes the moment changed (the first layer
     at define, the added nodes at a repair or an extend, each naming the
     nodes it waits on), and `… N more nodes · /dag shows the whole graph`;
-    its end is its tally and the nodes that failed or are stuck. A box grows
+    its end is the whole run's tally, the lanes the graph's node cap left
+    out included, and the nodes that failed or are stuck. A layer the cap
+    left no node of keeps its row (`layer 4 · 0 of 161 nodes`). A box grows
     toward its title up to 48 cells, and a title longer still is cut in its
     middle, at words, so its end stays.
 

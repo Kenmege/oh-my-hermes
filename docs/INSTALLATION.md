@@ -500,7 +500,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   instead: the graph's header (`DAG · <name> · N nodes · E edges · …`, the
   run's lanes and the edges between them, main and its dispatches not
   counted), a row per layer (`▾ layer 2 · 4 nodes · 2 running`; `28 of 640
-  nodes` where the graph's node cap left some out) with a blank row between
+  nodes` where the graph's node cap left some out, `▸ layer 4 · 0 of 161
+  nodes` for a layer it left none of) with a blank row between
   two layers when either is open, and a row per node: a `▾`/`▸` fold
   triangle where something is under it, its state glyph (the spinner while
   it runs), its title, and its category, model, state and output tokens. The
@@ -530,7 +531,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   session, starts with none. `/dag` shows the
   graph with boxes. Once every lane has
   settled and the turn has ended, the tree is one line (`DAG · <name> · done
-  5/6 · 1 failed`); while the turn still runs, it stays.
+  5/6 · 1 failed`); while the turn still runs, it stays. On the screen's
+  bottom rows the tree keeps the most rows it took this turn, blank under it
+  where it shrank, so the rows between the transcript and the working row
+  never open up mid-run.
 
   ![A dag run's folding tree under the OMH TUI composer: layer 1's accepted inventory shut, layer 2's two running groups open with each child's latest call and line under it, the failed group 3 with its error and the repair running beneath it, group 4 ready, and the verification waiting in layer 3](../assets/omh-tui-dag-tree.png)
 

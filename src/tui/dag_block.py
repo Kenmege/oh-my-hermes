@@ -144,6 +144,12 @@ def _layer_lines(graph: Mapping[str, Any], width: int, theme: Theme) -> list[Lin
     for node in sorted(_lanes(graph), key=lambda node: int(node.get("order") or 0)):
         groups.setdefault(str(node.get("group") or ""), []).append(node)
     hidden_by_group = graph.get("hidden_by_group") if isinstance(graph.get("hidden_by_group"), Mapping) else {}
+    order = graph.get("group_order") if isinstance(graph.get("group_order"), list) else []
+    emptied = [group for group in order if isinstance(group, str) and group not in groups and hidden_by_group.get(group)]
+    if emptied:  # a layer the graph reader's cap emptied keeps its row (`0 of 161 nodes`), in the run's order
+        rank = {group: at for at, group in enumerate(order)}
+        groups = dict(sorted({**groups, **{group: [] for group in emptied}}.items(),
+                             key=lambda pair: rank.get(pair[0], len(rank))))
     lines: list[Line] = []
     for group, members in groups.items():
         hidden = hidden_by_group.get(group, 0) if isinstance(hidden_by_group.get(group, 0), int) else 0
@@ -155,6 +161,25 @@ def _layer_lines(graph: Mapping[str, Any], width: int, theme: Theme) -> list[Lin
         said += [f"{counts[state]:,} {state}" for state in STATE_ORDER if counts.get(state)]
         lines.append(truncate_line((Span(INDENT), Span(FACT_SEPARATOR.join(said), theme.muted)), width))
     return lines
+
+
+def _whole_tally(graph: Mapping[str, Any]) -> str:
+    """`DAG · <name> · 1,002 nodes · 998 done · 4 failed`: the whole run's lanes by state, the ones the graph
+    reader's cap left out (`hidden_by_state`) included, so a big run's end does not tally only what was kept."""
+    from ..plugin_bundle.omh.delegation_view import STATE_ORDER, _state
+    from .dag_tree import FACT_SEPARATOR
+
+    counts: dict[str, int] = {}
+    for node in _lanes(graph):
+        counts[_state(node)] = counts.get(_state(node), 0) + 1
+    by_state = graph.get("hidden_by_state") if isinstance(graph.get("hidden_by_state"), Mapping) else {}
+    for state, count in by_state.items():
+        if isinstance(count, int) and not isinstance(count, bool):
+            word = state if state in STATE_ORDER else "unknown"
+            counts[word] = counts.get(word, 0) + count
+    total = _lane_count(graph)
+    said = ["DAG", str(graph.get("name") or "delegation"), f"{total:,} node{'' if total == 1 else 's'}"]
+    return FACT_SEPARATOR.join(said + [f"{counts[state]:,} {state}" for state in STATE_ORDER if counts.get(state)])
 
 
 def _frontier(block: DagBlock) -> list[Mapping[str, Any]]:
@@ -172,16 +197,21 @@ def _condensed(block: DagBlock, width: int, theme: Theme) -> list[Line]:
 
     graph = block.graph
     lanes = _lanes(graph)
+    ended = block.title.startswith(END)
     lines = [truncate_line((Span(f"{INDENT}dag-ulw {block.title}", theme.muted),), width),
-             truncate_line((Span(INDENT), Span(header_text(graph), dag_style("header", theme))), width)]
-    if block.title.startswith(END):
+             truncate_line((Span(INDENT), Span(_whole_tally(graph) if ended else header_text(graph),
+                                               dag_style("header", theme))), width)]
+    if ended:
         stopped = [node for node in lanes if node.get("state") in ("failed", "stuck")]
         for node in stopped[:CONDENSED_FAILURES]:
             mark = UNICODE.glyphs.get(str(node.get("state")), "✗")
             lines.append(truncate_line((Span(f"{INDENT}{mark} "), Span(str(node.get("title") or ""), dag_style(
                 f"glyph:{node.get('state')}", theme)), Span(f" · {node.get('state')}", theme.muted)), width))
-        if len(stopped) > CONDENSED_FAILURES:
-            lines.append(truncate_line((Span(f"{INDENT}… {len(stopped) - CONDENSED_FAILURES:,} more"),), width))
+        by_state = graph.get("hidden_by_state") if isinstance(graph.get("hidden_by_state"), Mapping) else {}
+        more = max(len(stopped) - CONDENSED_FAILURES, 0) + sum(
+            count for state, count in by_state.items() if state in ("failed", "stuck") and isinstance(count, int))
+        if more > 0:
+            lines.append(truncate_line((Span(f"{INDENT}… {more:,} more"),), width))
         return lines
     lines += _layer_lines(graph, width, theme)
     shown = _frontier(block)[:CONDENSED_BOXES]

@@ -90,6 +90,7 @@ OPEN_STATES = frozenset({"running", "stuck", "failed"})  # open by default; a la
 MIN_TITLE_CELLS = 12
 TITLE_CAP = 52  # a node title's cells at most: a PR title's length, with room left for the figure columns
 SHORT_LABEL = 24  # a label narrower than this reads with its prompt's first clause after it (`node_title`)
+WORD_CUT_SHARE = 7  # tenths of a title's cells a cut at a word boundary keeps at least (`clamp_title`)
 FACT_SEPARATOR = " · "
 BLANK, YIELDS = "blank", "yields"  # a row's mark for the cut: a blank row; a shut layer whose every node is done
 
@@ -214,6 +215,14 @@ def _items(graph: Mapping[str, Any], roster: Roster, now: float) -> list[_Item]:
         layer = _Item(key, 0, label=label)
         layer.kids = [node_item(member, 1, key) for member in members]
         layers.append(layer)
+    hidden = graph.get("hidden_by_group") if isinstance(graph.get("hidden_by_group"), Mapping) else {}
+    order = graph.get("group_order") if isinstance(graph.get("group_order"), list) else []
+    drawn = {layer.label for layer in layers}
+    emptied = [label for label in order if isinstance(label, str) and label not in drawn and hidden.get(label)]
+    if emptied:  # a layer the graph reader's cap emptied keeps its row (`▸ layer 4 · 0 of 161 nodes`), in its place
+        rank = {label: at for at, label in enumerate(order)}
+        layers += [_Item(f"{LAYER_KEY}{label}", 0, label=label) for label in emptied]
+        layers.sort(key=lambda layer: rank.get(layer.label, len(rank)))
     others = _others(by_id, roster, {agent.subagent_id for agent in agents.values()})
     if others:
         group = _Item(OTHERS_KEY, 0, label=OTHERS)
@@ -323,13 +332,15 @@ def _figure_parts(node: Mapping[str, Any]) -> tuple[str, str, str, str]:
 
 
 def clamp_title(text: str, cells: int) -> str:
-    """`text` whole when it fits `cells`, else cut at its last word boundary in the second half and closed with "…":
-    never cut mid-word without it."""
+    """`text` whole when it fits `cells`, else cut at its last word boundary and closed with "…"; a long token that
+    would leave less than `WORD_CUT_SHARE` tenths of the cells is cut itself, never mid-word without the "…"."""
     if cell_width(text) <= cells:
         return text
     cut = truncate(text, max(cells - 1, 1), ellipsis="")
     space = cut.rfind(" ")
-    if text[len(cut):len(cut) + 1] != " " and space >= cells // 2:  # the cut ends inside a word: back to its start
+    # The cut ends inside a word: back to its start, unless that leaves less than `WORD_CUT_SHARE` tenths of the
+    # cells, as before a long token (a path, a PR list); then the token itself is cut.
+    if text[len(cut):len(cut) + 1] != " " and space > 0 and cell_width(cut[:space]) >= cells * WORD_CUT_SHARE // 10:
         cut = cut[:space]
     return cut.rstrip(" ,;:·-—(") + "…"
 

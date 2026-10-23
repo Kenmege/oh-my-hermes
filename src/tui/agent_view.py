@@ -146,6 +146,7 @@ class AgentViewMixin:
         if valid and graph_is_dag(payload):
             cap = self._view_cap(rows, cols, rows // 3, room)
             lines = self._tree_view(payload, cols, cap)
+            lines += [()] * self._tree_held_rows(len(lines), cap, rows)
             if self.list_selected is None:
                 return lines
             listed, self.listed = self.roster.list_lines(cols, self.theme, self.list_selected, frame, len(lines), now)
@@ -161,6 +162,17 @@ class AgentViewMixin:
         if not valid:
             return []
         return self._hud_view(payload, cols, self._view_cap(rows, cols, agent_view_keep(payload, cols), room))
+
+    def _tree_held_rows(self, drawn: int, cap: int, rows: int) -> int:
+        """Blank rows under a tree that shrank while the turn runs on the screen's bottom rows: the tree keeps the
+        most rows it took this turn (in `cap`), so a layer that shuts mid-run leaves its rows under the tree, not as
+        a blank band between the transcript and the working row (rows the content gives up stay, `layout`). The
+        hold ends with the turn, and above the bottom rows, where the composer follows the content."""
+        if not self._busy() or self.region.last_row(rows) != rows - 1:
+            self.tree_hold = 0
+            return 0
+        self.tree_hold = max(self.tree_hold, drawn)
+        return max(min(self.tree_hold, cap) - drawn, 0)
 
     def _run_summary(self, graph: Mapping[str, Any]) -> str:
         """`panels.dag_run_summary` once the turn has ended; "" while it runs, so a run whose every lane settled

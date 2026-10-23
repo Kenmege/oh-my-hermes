@@ -227,6 +227,29 @@ class DefaultFoldTests(unittest.TestCase):
         self.assertIn("  ▾ layer 2 · 4 of 604 nodes · 2 running · 1 failed · 1 waiting", shown)
         self.assertIn("  ▾ layer 1 · 1 node · 1 done", shown)
 
+    def test_a_layer_the_cap_emptied_keeps_its_row_in_its_place(self) -> None:
+        # scene_final under the 48-node cap drew 3 layers of a 4-layer run: the cut layer had no row at all.
+        built = sweep()
+        for item in built["nodes"]:
+            if item.get("group") == "layer 3":
+                item["group"] = "layer 4"
+        built.update(hidden_nodes=161, hidden_by_group={"layer 3": 161},
+                     group_order=["layer 1", "layer 2", "layer 3", "layer 4"])
+        app, _client = make_app(busy=True, rows=72, cols=120, clock=lambda: 0.0)
+        with_graph(app, built)
+        layers = [row for row in (left(row) for row in view_text(app)) if "layer" in row]
+        self.assertEqual([re.sub(r" · .*", "", row) for row in layers],
+                         ["  ▾ layer 1", "  ▾ layer 2", "  ▸ layer 3", "  ▾ layer 4"])
+        self.assertIn("  ▸ layer 3 · 0 of 161 nodes", layers)
+
+    def test_a_long_token_is_cut_itself_rather_than_leaving_most_of_the_title_empty(self) -> None:
+        from omh.tui.dag_tree import TITLE_CAP, clamp_title
+
+        title = "Run the gateway retry test in tools/hermes_cli/gateway_retry_backoff_spec.py"
+        self.assertEqual(clamp_title(title, TITLE_CAP), "Run the gateway retry test in tools/hermes_cli/gate…")
+        self.assertEqual(clamp_title("Rebase each PR on main and run the full CI suite on it", TITLE_CAP),
+                         "Rebase each PR on main and run the full CI suite on…", "a word boundary past 70% stays")
+
     def test_a_node_no_child_ran_for_has_no_triangle_and_one_with_no_frame_yet_has_no_detail(self) -> None:
         app, _client = tree_app(children=False)
         shown = [left(row) for row in view_text(app)]

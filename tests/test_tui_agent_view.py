@@ -631,6 +631,32 @@ class DagViewTests(unittest.TestCase):
         self.assertEqual(view_text(self.ended(self.tree_app(40, export_run(done, staged=True)))),
                          ["  DAG · export feature · done 5/5"])
 
+    def test_a_tree_that_shrinks_mid_run_keeps_its_rows_on_the_bottom_rows_until_the_turn_ends(self) -> None:
+        # The mid-run blank band (2026-10-23 audit): a tree that drew fewer rows while the turn ran gave them up, and
+        # on the bottom rows they stayed blank between the transcript and the working row. The tree keeps them,
+        # blank under it, until the turn ends.
+        from _delegation_graphs import parallel
+
+        def run(lanes: int) -> dict:
+            graph = parallel(lanes)
+            graph["edges"] = [{"from": "root", "to": "l0", "kind": "dispatch"}] + [
+                {"from": "l0", "to": f"l{number}", "kind": "depends_on"} for number in range(1, lanes)]
+            return graph
+
+        app = self.tree_app(40, run(8))
+        pinned(app)
+        tall = view_rows(app)
+        with_graph(app, run(3))  # the graph reader now keeps fewer of the run's lanes
+        held = view_text(app)
+        self.assertEqual(len(held), tall)
+        tree = len(held)
+        while tree and not held[tree - 1].strip():
+            tree -= 1
+        self.assertLess(tree, tall, "the tree itself shrank; its rows stay under it, blank")
+        self.assertTrue(held[tree - 1].strip().startswith("⠋ Lane 2 migrate"), held)
+        app.turn_pending = False
+        self.assertLess(view_rows(app), tall, "the hold ends with the turn")
+
     def test_down_in_a_dag_run_gives_the_tree_the_keys_in_its_own_rows_and_nothing_moves(self) -> None:
         from _delegation_graphs import parallel
         from omh.tui.keys import DOWN, ESCAPE

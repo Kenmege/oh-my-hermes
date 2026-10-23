@@ -130,19 +130,30 @@ class BlockTests(unittest.TestCase):
         self.assertTrue(any("Fix" in line for line in tree[failed + 1:failed + 4]), tree)
 
     def test_a_node_carries_its_prompts_first_clause_as_its_summary(self) -> None:
-        """Mutation: drop the summary from `_dag_nodes`, or stop the clause at the first field label."""
+        """Mutation: drop the summary from `_dag_nodes`, clean the prompt before cutting its clause, or keep `TASK:`.
+
+        dag-ulw writes a node prompt one field a line (TASK, DELIVERABLE, SCOPE, VERIFY, STOP WHEN; its SKILL.md):
+        cleaned first, the line ends go and the task runs into `DELIVERABLE:`."""
+        from omh.plugin_bundle.omh.delegation_graph import _prompt_summary
+
         long_task = "Move every caller of the old exporter onto the new streaming writer and delete the shim afterwards"
-        nodes = [node("api", label="Export API", prompt="TASK: Add the CSV endpoint to the API. Keep the JSON one."
-                      "\nDELIVERABLE: a change\nVERIFY: run `make test`, exit 0"),
-                 node("ui", label="Export button", prompt="Wire the button to the endpoint VERIFY: click it"),
+        nodes = [node("api", label="Export API", prompt="TASK: Rebase the branch onto main\nDELIVERABLE: green CI"
+                      "\nSCOPE: src/api.py\nVERIFY: run `make test`, exit 0\nSTOP WHEN: green"),
+                 node("ui", label="Export button", prompt="TASK:\n  Wire the button to the endpoint\r\nDELIVERABLE: "
+                      "a button\r\nSTOP WHEN: it exports"),
+                 node("docs", label="Export docs", prompt="TASK: Add the CSV endpoint to the API. Keep the JSON one."),
+                 node("cli", label="Export CLI", prompt="Document the flag VERIFY: run `omh --help`"),
                  node("move", label="Move callers", prompt=f"TASK: {long_task}\nSTOP WHEN: green")]
         with homes() as home:
             slots_table(home)
             call(action="define", run="export", name="export feature", nodes=nodes)
             built = build_delegation_graph(home.omh, home.hermes, PARENT)
         summaries = {item["dag_node"]: item.get("summary") for item in built["nodes"] if item.get("dag_node")}
-        self.assertEqual(summaries, {"api": "Add the CSV endpoint to the API", "ui": "Wire the button to the endpoint",
+        self.assertEqual(summaries, {"api": "Rebase the branch onto main", "ui": "Wire the button to the endpoint",
+                                     "docs": "Add the CSV endpoint to the API", "cli": "Document the flag",
                                      "move": long_task[:80]})
+        self.assertEqual(_prompt_summary("   \n"), "")
+        self.assertEqual(_prompt_summary(None), "")
 
     def test_the_end_block_and_the_collapsed_run_say_a_handoff_was_not_checked(self) -> None:
         """Mutation: drop the word from the graph's node, or leave the one-line summary as it was."""
@@ -234,6 +245,18 @@ class CondensedTests(unittest.TestCase):
         self.assertEqual(condensed[3].strip(), "layer 2 · 40 of 640 nodes · 40 waiting")
         self.assertEqual(condensed[-1].strip(), "… 641 more nodes · /dag shows the whole graph")
 
+    def test_a_layer_the_cap_emptied_keeps_its_row_in_its_place(self) -> None:
+        big = big_run((4, 40, 9))
+        for item in big["nodes"]:
+            if item.get("group") == "layer 3":
+                item["group"] = "layer 4"  # layer 3 is the one the graph reader's cap emptied
+        big.update(hidden_nodes=161, hidden_by_group={"layer 3": 161},
+                   group_order=["layer 1", "layer 2", "layer 3", "layer 4"])
+        condensed = self._text(dag_block.DagBlock("plan", big))
+        self.assertEqual([line.strip() for line in condensed[2:6]], [
+            "layer 1 · 4 nodes · 4 waiting", "layer 2 · 40 nodes · 40 waiting", "layer 3 · 0 of 161 nodes",
+            "layer 4 · 9 nodes · 9 waiting"])
+
     def test_a_repair_draws_the_nodes_it_added_naming_what_they_wait_on(self) -> None:
         big = big_run((4, 40, 1), {"n1": "done", "n6": "failed", "n7": "running"})
         condensed = self._text(dag_block.DagBlock("repair · +1 node", big, added=("n7",)))
@@ -248,8 +271,13 @@ class CondensedTests(unittest.TestCase):
         states.update(n2="failed", n9="stuck")
         condensed = self._text(dag_block.DagBlock("end · failed", big_run((4, 40, 1), states)))
         self.assertEqual([line.strip() for line in condensed], [
-            "dag-ulw end · failed", "DAG · service migration · 45 nodes · 41 edges · 1 stuck · 1 failed · 43 done",
+            "dag-ulw end · failed", "DAG · service migration · 45 nodes · 1 stuck · 1 failed · 43 done",
             "✗ Migrate service 2 config · failed", "! Migrate service 9 config · stuck"])
+        # The tally is the whole run's: lanes the graph reader's cap left out count, by the state they ended in.
+        capped = {**big_run((4, 40, 1), states), "hidden_nodes": 965, "hidden_by_state": {"done": 963, "failed": 2}}
+        self.assertEqual([line.strip() for line in self._text(dag_block.DagBlock("end · failed", capped))], [
+            "dag-ulw end · failed", "DAG · service migration · 1,010 nodes · 1 stuck · 3 failed · 1,006 done",
+            "✗ Migrate service 2 config · failed", "! Migrate service 9 config · stuck", "… 2 more"])
         # A small run's end is its boxes in their final states: they are the tally.
         small = self._text(dag_block.DagBlock("end · failed", big_run((2, 1), {"n1": "done", "n2": "failed",
                                                                                "n3": "done"})))

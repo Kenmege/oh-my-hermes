@@ -11,17 +11,19 @@ All notable changes will be documented here.
   Dependencies list and the Node details to `/dag`. A run of up to 12 lanes
   still prints every box and arrow; a bigger one prints its header, a row
   per layer, the boxes the moment changed and
-  `… N more nodes · /dag shows the whole graph`, and its end is its tally
-  and its failed or stuck nodes. Tree titles take the prompt's first clause after a short label,
-  cut at a word past 52 cells, and the figures stand in fixed columns. Boxes
+  `… N more nodes · /dag shows the whole graph`, and its end is the whole
+  run's tally and its failed or stuck nodes. A layer the node cap emptied
+  keeps its row. Tree titles take the task line of a node's prompt after a
+  short label, cut at a word past 52 cells, and the figures stand in fixed
+  columns. Boxes
   grow to 48 cells and cut a long title in its middle. Counts are the run's
   lanes and the edges between them, with thousands separators and `B`/`T`
   token tiers, a capped layer reads `28 of 640 nodes`, and the agents chip
   counts the running lanes. The launch fills the screen with the composer
   on the bottom rows, the composer keeps its rules and a
   `↑↓ browsing · esc to type` hint while the tree has the keys, and a run
-  that settles mid-turn keeps its tree until the turn ends instead of
-  leaving a blank band above the composer.
+  that settles or shrinks mid-turn keeps its rows until the turn ends
+  instead of leaving a blank band above the composer.
 
 - **`/omh-doctor status` runs doctor (#2221 L4).** After a slash skill, a
   status question shows OMH's status card. The exception is a skill whose

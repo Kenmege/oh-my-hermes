@@ -1255,6 +1255,7 @@ class App(ModesMixin, AgentViewMixin):
         # The rows the agent view wanted, the rows it got and the tail's working rows in the last frame drawn while a
         # turn ran (`_held_view_rows`).
         self.view_hold: tuple[int, int, int] | None = None
+        self.tree_hold = 0  # the most rows the dag tree took this turn on the bottom rows (`_tree_held_rows`)
         # Until the first prompt the region reaches the screen's last row (`_render`): the launch's logo and banner on
         # top, the composer on the bottom rows, the rows between them empty.
         self.launch_layout = True

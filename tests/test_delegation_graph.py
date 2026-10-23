@@ -269,6 +269,9 @@ class StructureTests(unittest.TestCase):
         cut = _cut({"nodes": [{"id": "root", "kind": "root"}, *lanes], "edges": []}, 6)
         self.assertEqual(cut["hidden_by_group"], {"layer 1": 10, "layer 2": 5})
         self.assertEqual(cut["hidden_nodes"], 15)
+        # Layer 1 lost every node: its place stays known, and so do the states the cut lanes ended in.
+        self.assertEqual(cut["group_order"], ["layer 1", "layer 2"])
+        self.assertEqual(cut["hidden_by_state"], {"done": 10, "waiting": 5})
 
     def test_a_settled_graph_goes_quiet_after_the_linger(self) -> None:
         with homes() as home:
