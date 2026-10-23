@@ -657,6 +657,64 @@ class DagViewTests(unittest.TestCase):
         app.turn_pending = False
         self.assertLess(view_rows(app), tall, "the hold ends with the turn")
 
+    @staticmethod
+    def chained(lanes: int) -> dict:
+        """`lanes` running lanes, the first a layer of its own and the rest after it: a dag run's tree."""
+        from _delegation_graphs import parallel
+
+        graph = parallel(lanes)
+        graph["edges"] = [{"from": "root", "to": "l0", "kind": "dispatch"}] + [
+            {"from": "l0", "to": f"l{number}", "kind": "depends_on"} for number in range(1, lanes)]
+        return graph
+
+    @staticmethod
+    def held(app: App) -> int:
+        """The blank rows under the tree's last drawn row."""
+        rows = view_text(app)
+        under = 0
+        while under < len(rows) and not rows[len(rows) - 1 - under].strip():
+            under += 1
+        return under
+
+    def test_the_hold_ends_with_a_turn_that_draws_no_tree_and_on_a_new_session(self) -> None:
+        # The review of 2fb605957: the hold was dropped only where a tree, or its summary line, was drawn between
+        # turns. A turn that ended with the graph gone (a settled graph that went quiet) left it, and the next turn's
+        # first tree drew the old height's rows blank under it (20 held, 15 of them blank).
+        app = self.tree_app(40, self.chained(8))
+        pinned(app)
+        view_rows(app)  # a frame drawn on the bottom rows: the tree's height is held from here
+        with_graph(app, self.chained(3))
+        self.assertGreater(self.held(app), 0)
+        with_graph(app, None)
+        app.turn_pending = False
+        self.assertEqual(view_text(app), [], "between the turns no tree is drawn")
+        app.turn_pending = True  # the next turn, and a smaller run, with the region still on the bottom rows
+        with_graph(app, self.chained(2))
+        self.assertEqual(app.region.last_row(40), 39)
+        self.assertEqual(self.held(app), 0)
+        # A new session drops a hold too, before anything is drawn.
+        app.tree_hold = 20
+        app.turn_pending = False
+        client = app.client
+        type_text(app, "/new")
+        app._on_input(Key(ENTER))
+        answer(app, client, {"session_id": "live-2", "stored_session_id": "stored-2", "info": {}})
+        self.assertEqual(app.tree_hold, 0)
+
+    def test_the_held_rows_never_pass_the_views_cap(self) -> None:
+        # A taller composer or a slot lowers the view's cap mid-turn: the hold gives way, so the composer and the
+        # info line stay on the screen.
+        app = self.tree_app(24, self.chained(8))
+        pinned(app)
+        view_rows(app)
+        with_graph(app, self.chained(2))
+        self.assertGreater(self.held(app), 0)
+        self.assertLessEqual(len(app._agent_view(120, 24, 3)), 3)
+        app.composer.replace(0, len(app.composer.text), "\n".join(f"draft line {number}" for number in range(6)))
+        screen = drawn(app)
+        self.assertTrue(any(row.startswith("❯ draft line 0") for row in screen), screen)
+        self.assertLessEqual(len(view_text(app)), app.frame_budget.agents)
+
     def test_down_in_a_dag_run_gives_the_tree_the_keys_in_its_own_rows_and_nothing_moves(self) -> None:
         from _delegation_graphs import parallel
         from omh.tui.keys import DOWN, ESCAPE

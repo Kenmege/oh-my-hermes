@@ -140,6 +140,8 @@ class AgentViewMixin:
         """
         self.listed = ()
         self.tree_state = None
+        if not self._busy():
+            self.tree_hold = 0  # whatever the view draws between turns, the next turn's tree starts from its own rows
         payload = self.hud.payload if self.hud is not None else None
         valid = isinstance(payload, Mapping) and not payload.get("error")  # else the slot says the reader failed
         frame, now = self._spinner_frame(), self.clock()
@@ -167,7 +169,9 @@ class AgentViewMixin:
         """Blank rows under a tree that shrank while the turn runs on the screen's bottom rows: the tree keeps the
         most rows it took this turn (in `cap`), so a layer that shuts mid-run leaves its rows under the tree, not as
         a blank band between the transcript and the working row (rows the content gives up stay, `layout`). The
-        hold ends with the turn, and above the bottom rows, where the composer follows the content."""
+        hold ends with the turn (`_agent_view`, whatever the view then draws), at the next prompt and on a session
+        change (`_clear_roster`), and above the bottom rows, where the composer follows the content; it never passes
+        `cap`, which a taller composer or a slot can lower mid-turn."""
         if not self._busy() or self.region.last_row(rows) != rows - 1:
             self.tree_hold = 0
             return 0
@@ -687,10 +691,11 @@ class AgentViewMixin:
 
     def _clear_roster(self) -> None:
         """Drop the agents and every piece of tail bookkeeping and pending action that names them, and the view's
-        hold (`_held_view_rows`). The open dag run's lanes stay (`_open_dag_nodes`): their children outlive the turn
+        holds (`_held_view_rows`, `_tree_held_rows`). The open dag run's lanes stay (`_open_dag_nodes`): their children outlive the turn
         that sent them, and the tree's rows under each node read them."""
         self.roster.clear(self._open_dag_nodes())
         self.view_hold = None
+        self.tree_hold = 0
         self._drop_agent_actions()
 
     def _prune_kept_lanes(self) -> None:

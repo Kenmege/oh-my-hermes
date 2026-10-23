@@ -152,6 +152,8 @@ class BlockTests(unittest.TestCase):
         self.assertEqual(summaries, {"api": "Rebase the branch onto main", "ui": "Wire the button to the endpoint",
                                      "docs": "Add the CSV endpoint to the API", "cli": "Document the flag",
                                      "move": long_task[:80]})
+        self.assertEqual(_prompt_summary("Task: Fix the flaky test\nDELIVERABLE: green"), "Fix the flaky test")
+        self.assertEqual(_prompt_summary("task: fix the flaky test"), "fix the flaky test")
         self.assertEqual(_prompt_summary("   \n"), "")
         self.assertEqual(_prompt_summary(None), "")
 

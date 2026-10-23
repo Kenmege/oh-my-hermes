@@ -131,14 +131,15 @@ _PROMPT_CLAUSE_END = re.compile(r"\s(?:TASK|DELIVERABLE|SCOPE|VERIFY|STOP WHEN|C
 
 
 def _prompt_summary(prompt: object) -> str:
-    """A dag node prompt's first clause, without a leading `TASK:`, in `SUMMARY_LIMIT` characters; "" for none.
+    """A dag node prompt's first clause, without a leading `TASK:` (any case), in `SUMMARY_LIMIT` characters; "" for
+    none.
 
     The clause is cut from the raw prompt and only then cleaned (`_text`): cleaning first drops the line ends that
     separate dag-ulw's one-field-a-line prompt, and the task would run into `DELIVERABLE:`.
     """
     if not isinstance(prompt, str):
         return ""
-    raw = re.sub(r"^\s*TASK:\s*", "", prompt.strip())
+    raw = re.sub(r"^\s*TASK:\s*", "", prompt.strip(), flags=re.IGNORECASE)
     return _text(_PROMPT_CLAUSE_END.split(raw, maxsplit=1)[0], 2000).strip().rstrip(".")[:SUMMARY_LIMIT]
 
 
