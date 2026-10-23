@@ -3518,6 +3518,9 @@ def _ask_provider_entitlements(args: argparse.Namespace, paths: OmhPaths, langua
         options,
         selected=preselected,
         exclusive={_PROVIDER_SKIP_CHOICE},
+        # Typing only the "other" row's number asks for a name. It must not
+        # untick the found rows, which would record them as excluded.
+        additive={_PROVIDER_OTHER_CHOICE},
         use_color=use_color,
         language=language,
     )
@@ -4137,6 +4140,7 @@ def _ask_multi_choice(
     use_color: bool,
     language: str = "en",
     exclusive: set[str] | None = None,
+    additive: set[str] | None = None,
 ) -> list[str]:
     """Tick any number of options; returns the ticked values in option order.
 
@@ -4148,6 +4152,12 @@ def _ask_multi_choice(
     A value in `exclusive` may only be chosen alone. Picked beside anything
     else it is contradictory, so both paths refuse and ask again rather than
     resolving it by a rule the operator cannot see.
+
+    A value in `additive` is an action row, not an answer about the other
+    rows. A typed answer replaces the ticked set, so a typed answer that names
+    only additive rows would otherwise clear every pre-ticked row. Instead, it
+    is added to the ticked rows. The keyboard menu needs no such rule, because
+    ticking a row there never clears another.
 
     There is deliberately no "none" token: a caller that needs "none of these"
     as an answer gives the list a row that says so, which is legible next to
@@ -4186,6 +4196,12 @@ def _ask_multi_choice(
                 print(_color(tr(language, "invalid_selection", valid=valid), "31", use_color))
                 continue
             picked = [value for index, value in enumerate(resolved) if value not in resolved[:index]]
+            if additive and set(picked) <= additive:
+                picked = [
+                    option["value"]
+                    for option in normalized
+                    if option["choice"] in ticked or option["value"] in picked
+                ]
         conflict = _exclusive_choice_conflict(picked, exclusive)
         if conflict:
             print(_color(tr(language, "exclusive_selection", label=labels_by_value[conflict]), "31", use_color))
@@ -4265,6 +4281,16 @@ def _keyboard_multi_choice(
     A value in `exclusive` may only be confirmed alone. Enter on a
     contradictory tick set keeps the menu up with the reason appended, so the
     operator fixes it in place instead of losing the list.
+
+    Digits build a row number, because keys arrive one at a time. On a list
+    with more than nine rows, toggling on each digit made `1` then `7` toggle
+    row 1 and then row 7, never row 17. Row 1 was a found provider, so it was
+    silently recorded as excluded. A digit that a further digit could still
+    extend (`1` when row 17 exists) therefore only moves the cursor. The next
+    digit completes the number, Space toggles the row under the cursor as
+    usual, and Enter toggles the pending row and then confirms, as a lone `1`
+    then Enter always did. A number nothing can extend toggles at once, so a
+    list of up to nine rows behaves exactly as before.
     """
     exclusive = exclusive or set()
     ticked = set(ticked)
@@ -4272,6 +4298,8 @@ def _keyboard_multi_choice(
     rendered_option_rows = 0
     first_render = True
     error = ""
+    choices = [option["choice"] for option in options]
+    pending = ""
     while True:
         lines = _choice_menu_lines(
             title,
@@ -4302,6 +4330,23 @@ def _keyboard_multi_choice(
         key = _read_tui_key()
         if key in {"\x03", "\x04"}:
             raise KeyboardInterrupt
+        if len(key) == 1 and key in "0123456789":
+            number = pending + key
+            if not any(choice.startswith(number) for choice in choices):
+                number = key
+            pending = ""
+            if not any(choice.startswith(number) for choice in choices):
+                continue
+            if number in choices:
+                cursor = choices.index(number)
+            if any(choice.startswith(number) and choice != number for choice in choices):
+                pending = number
+            else:
+                ticked ^= {number}
+            continue
+        if pending in choices and key in {"\r", "\n"}:
+            ticked ^= {pending}
+        pending = ""
         if key in {"\x1b[A", "k"}:
             cursor = (cursor - 1) % len(options)
             continue

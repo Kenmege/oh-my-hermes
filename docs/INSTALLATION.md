@@ -1762,7 +1762,10 @@ provider id the list does not show: after Enter you type each id (each is
 asked for its kind, since OMH knows nothing about it) and an empty line ends
 the list. Left unticked, Enter on the list ends the step without that
 prompt. Like skip it is never pre-ticked, and ticked beside skip the prompt
-asks again. Then, when the Claude Code CLI is
+asks again. Picking it never unticks another row. In the typed menu, where a
+typed answer otherwise replaces the ticked rows, an answer naming only this
+row is added to them. In the arrow-key menu, a two-digit row number is typed
+as its two digits. Then, when the Claude Code CLI is
 on PATH, you are asked whether you have a Claude Code subscription. The
 answers are recorded in `~/.omh/routing/providers.json`
 (`provider_entitlements/v1`):

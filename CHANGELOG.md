@@ -12,7 +12,11 @@ All notable changes will be documented here.
   row is ticked; it keeps the duplicate and invalid-id checks and the kind
   menu, and an empty line still ends it. The row is never pre-ticked, it is
   refused beside skip like any other row, and it is never written to
-  `~/.omh/routing/providers.json`.
+  `~/.omh/routing/providers.json`. In the typed menu, typing only that row's
+  number adds it to the ticked rows; it does not replace them, so found
+  providers are not recorded as excluded. In the arrow-key menu, digits now
+  build a row number: `1` then `7` ticks row 17. Before, it toggled row 1 and
+  then row 7, which silently excluded a found provider.
 
 - **`/omh-doctor status` runs doctor (#2221 L4).** After a slash skill, a
   status question shows OMH's status card. The exception is a skill whose

@@ -10,7 +10,7 @@ import argparse
 import io
 import json
 import unittest
-from contextlib import redirect_stdout
+from contextlib import ExitStack, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -470,6 +470,44 @@ class MultiChoicePromptTests(unittest.TestCase):
             )
         self.assertEqual(chosen, ["openrouter"])
         self.assertIn("cannot be combined", out.getvalue())
+
+    LONG_OPTIONS = [
+        {"choice": str(index), "value": f"row{index}", "label": f"row {index}", "description": ""} for index in range(1, 19)
+    ]
+
+    def _keys(self, keys: list[str], selected: list[str], options=None) -> list[str]:
+        stream = iter(keys)
+        with patch.object(setup_module, "_keyboard_menu_available", return_value=True), patch.object(
+            setup_module, "_read_tui_key", side_effect=lambda: next(stream)
+        ), redirect_stdout(io.StringIO()):
+            chosen = setup_module._ask_multi_choice(
+                "Which?", ["pick some"], options or self.LONG_OPTIONS, selected=selected, use_color=False, language="en"
+            )
+        with self.assertRaises(StopIteration):
+            next(stream)
+        return chosen
+
+    def test_keyboard_digits_build_a_two_digit_row_number(self) -> None:
+        # Before: `1` unticked row 1 and `7` ticked row 7.
+        self.assertEqual(self._keys(["1", "7", "\r"], ["row1"]), ["row1", "row17"])
+        self.assertEqual(self._keys(["1", "0", "\r"], []), ["row10"])
+
+    def test_keyboard_digit_nothing_can_extend_toggles_at_once(self) -> None:
+        # No row 2x exists, so `2` is complete; `9`, `3` are two rows.
+        self.assertEqual(self._keys(["2", "\r"], []), ["row2"])
+        self.assertEqual(self._keys(["9", "3", "\r"], []), ["row3", "row9"])
+        # On a short list every digit is complete, exactly as before.
+        self.assertEqual(self._keys(["1", "3", "\r"], ["og"], options=self.OPTIONS), ["openrouter"])
+
+    def test_keyboard_pending_digit_is_toggled_by_space_or_enter_once(self) -> None:
+        # `1` waits for a second digit with the cursor on row 1.
+        self.assertEqual(self._keys(["1", "\r"], []), ["row1"])
+        self.assertEqual(self._keys(["1", " ", "\r"], []), ["row1"])
+        self.assertEqual(self._keys(["1", "\r"], ["row1"]), [])
+        # An arrow abandons it: nothing toggles, the cursor moves on from row 1.
+        self.assertEqual(self._keys(["1", "\x1b[B", " ", "\r"], []), ["row2"])
+        # A digit that cannot extend it starts a new number instead.
+        self.assertEqual(self._keys(["1", "9", "\r"], []), ["row9"])
 
     def test_values_are_accepted_and_an_unknown_token_re_asks(self) -> None:
         self.assertEqual(self._typed(["zai"], []), ["zai"])
@@ -1016,25 +1054,84 @@ class SetupInterviewTests(unittest.TestCase):
             _parsed, status = load_provider_entitlements(paths.omh_home)
             self.assertEqual(status, "applied")
 
-    def test_other_ticked_alone_with_nothing_typed_never_writes_the_sentinel(self) -> None:
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            paths = self._paths(root)
-            self._config(paths, "providers:\n  og:\n    base_url: x\n")
-            with patch.object(
+    def _drive_real_menu(self, paths, *, keys: list[str] | None, typed: str) -> dict:
+        """The real step and the real menu: the typed fallback, or the keyboard menu when `keys` is given."""
+        stack = [
+            patch.object(
                 setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
-            ), patch.object(
-                setup_module, "_ask_multi_choice", return_value=[setup_module._PROVIDER_OTHER_CHOICE]
-            ), patch.object(setup_module, "_ask", return_value=""), patch.object(
-                setup_module, "_use_color", return_value=False
-            ), redirect_stdout(io.StringIO()):
-                setup_module._ask_provider_entitlements(argparse.Namespace(), paths, "en")
-            raw = provider_entitlements_path(paths.omh_home).read_text(encoding="utf-8")
-            document = json.loads(raw)
-            self.assertEqual(document["providers"], {})
-            # The found row the operator left unticked is still the only exclusion.
-            self.assertEqual(document["excluded_providers"], ["og"])
-            self.assertNotIn(setup_module._PROVIDER_OTHER_CHOICE, raw)
+            ),
+            patch.object(setup_module, "_keyboard_menu_available", return_value=keys is not None),
+            patch.object(setup_module, "_use_color", return_value=False),
+            patch.object(setup_module.sys, "stdin", io.StringIO(typed)),
+        ]
+        if keys is not None:
+            key_stream = iter(keys)
+            stack.append(patch.object(setup_module, "_read_tui_key", side_effect=lambda: next(key_stream)))
+        out = io.StringIO()
+        with ExitStack() as entered:
+            for manager in stack:
+                entered.enter_context(manager)
+            entered.enter_context(redirect_stdout(out))
+            setup_module._ask_provider_entitlements(argparse.Namespace(), paths, "en")
+        raw = provider_entitlements_path(paths.omh_home).read_text(encoding="utf-8")
+        self.assertNotIn(setup_module._PROVIDER_OTHER_CHOICE, raw)
+        return json.loads(raw)
+
+    def _other_row_number(self, paths) -> str:
+        options, _preselected, _kinds = setup_module._provider_entitlement_options(
+            setup_module._provider_candidates(paths), {}, "en"
+        )
+        number = next(option["choice"] for option in options if option["value"] == setup_module._PROVIDER_OTHER_CHOICE)
+        # The case that matters: a row number with two digits.
+        self.assertGreaterEqual(int(number), 10)
+        return number
+
+    def test_typing_only_the_other_row_number_keeps_the_found_rows(self) -> None:
+        """The typed menu replaces the ticked set, but not for the "other" row.
+
+        Typing just that row's number is how a person "ticks Other" in the
+        typed menu. A plain replace would untick every found row and record
+        them all as excluded, so routing would stop counting providers the
+        operator holds.
+        """
+        with TemporaryDirectory() as tmp, patch.dict("os.environ", {}, clear=True):
+            paths = self._paths(Path(tmp))
+            self._config(paths, "providers:\n  og:\n    base_url: x\n  zai:\n    base_url: y\n")
+            other = self._other_row_number(paths)
+            document = self._drive_real_menu(paths, keys=None, typed=f"{other}\nwork-relay\n1\n\n")
+        self.assertEqual(document["providers"], {"og": "gateway", "work-relay": "gateway", "zai": "zai"})
+        self.assertNotIn("excluded_providers", document)
+
+    def test_typing_other_with_nothing_named_changes_nothing_else(self) -> None:
+        with TemporaryDirectory() as tmp, patch.dict("os.environ", {}, clear=True):
+            paths = self._paths(Path(tmp))
+            self._config(paths, "providers:\n  og:\n    base_url: x\n")
+            other = self._other_row_number(paths)
+            document = self._drive_real_menu(paths, keys=None, typed=f"{other}\n\n")
+        self.assertEqual(document["providers"], {"og": "gateway"})
+        self.assertNotIn("excluded_providers", document)
+
+    def test_typed_numbers_beside_other_still_replace_the_ticked_set(self) -> None:
+        # Only an answer naming nothing but "other" merges. Naming a row too
+        # keeps the replace semantics, so `zai` is cleared here as asked.
+        with TemporaryDirectory() as tmp, patch.dict("os.environ", {}, clear=True):
+            paths = self._paths(Path(tmp))
+            self._config(paths, "providers:\n  og:\n    base_url: x\n  zai:\n    base_url: y\n")
+            other = self._other_row_number(paths)
+            document = self._drive_real_menu(paths, keys=None, typed=f"1,{other}\n\n")
+        self.assertEqual(document["providers"], {"og": "gateway"})
+        self.assertEqual(document["excluded_providers"], ["zai"])
+
+    def test_typing_the_other_row_number_on_the_keyboard_menu_ticks_it(self) -> None:
+        """Keys arrive one at a time; `1` then `7` must reach row 17, not rows 1 and 7."""
+        with TemporaryDirectory() as tmp, patch.dict("os.environ", {}, clear=True):
+            paths = self._paths(Path(tmp))
+            self._config(paths, "providers:\n  og:\n    base_url: x\n  zai:\n    base_url: y\n")
+            other = self._other_row_number(paths)
+            # The kind menu after the name is a keyboard menu too: Enter takes its default, gateway.
+            document = self._drive_real_menu(paths, keys=[*other, "\r", "\r"], typed="work-relay\n\n")
+        self.assertEqual(document["providers"], {"og": "gateway", "work-relay": "gateway", "zai": "zai"})
+        self.assertNotIn("excluded_providers", document)
 
     def test_other_beside_skip_is_refused_like_any_row_beside_skip(self) -> None:
         """Skip stays exclusive: "other" and "leave everything" contradict each other.
