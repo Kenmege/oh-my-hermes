@@ -161,9 +161,19 @@ All notable changes will be documented here.
   `… we deployed next week`). A colon list after a
   breadth head is one request when every item opens on a verb of work (`for each
   open PR: rebase, squash, merge`); an item that opens on a status or carries a
-  hedge ends it (`…: done, done, conflict`, `…, too risky though`). Anything else after it keeps nothing
-  (`…해줘, 아 잠깐만`, `…해줘, 해도 되나`, `…해줘, 확인해줘`, `…, what do you think`,
-  `…, not sure though`, `…, never mind`, `… — jk`, `… or maybe not`). A past
+  hedge ends it (`…: done, done, conflict`, `…, too risky though`). After a
+  Korean request anything else keeps nothing, and the message is read whole, as
+  on main (`…해줘, 아 잠깐만`, `…해줘, 해도 되나`, `…해줘, 확인해줘`). After an English
+  request a remark keeps it by default, in any words: thanks or a sign-off
+  (`…, thanks a bunch`, `…, much obliged`), a back-reference (`…, as
+  discussed`), a wish (`…, fingers crossed`), no pressure (`…, no worries`),
+  who asked (`…, my manager asked for it`) or an aside (`…, fwiw the tests are
+  flaky`). A new request keeps nothing as before (`…, run the tests`, `…, let
+  me check first`), and so does a refusal, each a class by meaning: a hold, a
+  joke or a take-back (`…, never mind`, `… — jk`, `… or maybe not`), a status,
+  something asked before the work, a hedge (`…, not sure though`),
+  deliberation (`…, what do you think`), a person's modal (`…, we'll see`), a
+  question, a negation of the work (`…, not yet`), a deferral or a condition. A past
   inside an embedded question (`어떻게 나눴는지 설명해줘`), a report after a -고 work
   verb (`… 고치고 뭘 고쳤는지 보고해줘`) and a change aimed so a thing does not happen
   a few words off (`… 안 되게끔 수정해줘`) count too.

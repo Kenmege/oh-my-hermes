@@ -881,10 +881,10 @@ def _korean_request_verb(folded: str) -> tuple[str, bool]:
 # sequencing connective and asks for more work (`_follows_on`: "…해줘, 그 다음 테스트 돌려줘", "…해줘, 끝나고 문서도
 # 정리해줘", "…해줘, 패키지마다 changelog도 써줘", "…, then integrate the findings"). No clause after the request may hold,
 # cancel or joke about it (`_HOLD`), and every clause between must keep it too (`_keeps_the_request`); a clause that opens
-# on a back-reference ("…해줘, 는 아니고 리뷰해줘") is neither a keeper nor a follow-on. Anything else after the request keeps
-# nothing: a Korean message is then read whole, as on main ("…해줘,
-# 해도 되나", "…해줘, 이거 맞아?", "…해줘, 확인해줘"), and an English one starts nothing ("…, what do you think", "…, not
-# sure though", "…, fwiw last time this broke CI": `_trails_off`).
+# on a back-reference ("…해줘, 는 아니고 리뷰해줘") is neither a keeper nor a follow-on. Anything else after a Korean
+# request keeps nothing, and the message is read whole, as on main ("…해줘, 해도 되나", "…해줘, 이거 맞아?", "…해줘,
+# 확인해줘"). After an English request a remark keeps it too, and only a refusal or a new request does not ("…, what do
+# you think", "…, not sure though", "…, run the tests": `_remarks_keep_the_request`, `_trails_off`).
 _CLAUSE_BREAK: Final = re.compile(r"\s*(?:[,;—–…]|\.{2,}|\s-\s)\s*")
 _INTENSIFIER: Final = r"(?:(?:최대한|가능한(?:\s*한)?|되도록|좀|진짜|정말|제발|너무|완전)\s*)?"
 _TIME_WORD: Final = (
@@ -919,17 +919,22 @@ _KOREAN_CONNECTIVE: Final = re.compile(
     rf"|(?:각\s*)?(?:{_KOREAN_UNIT}|풀\s*리퀘(?:스트)?)(?:들)?\s*마다)\s+"
 )
 _FOLLOW_ON_VERB: Final = rf"(?:{_KOREAN_OFFER_VERB}|갱신|써|작성|확인|(?<!되)돌려|실행|시작|진행|정리)"
-_EN_FOLLOW_ON: Final = re.compile(
-    r"^(?:and\s+then|and|then|after\s+that|next|afterwards)\s*,?\s+(?:please\s+|just\s+|also\s+)*"
+_EN_FOLLOW_ON_VERB: Final = (
     rf"(?:{_EN_OFFER_VERB}|integrate|develop|ship|test|run|rerun|deploy|write|document|verify|check|clean\s+up|push|tag"
-    r"|release)\b"
+    r"|release)"
+)
+_EN_FOLLOW_ON: Final = re.compile(
+    rf"^(?:and\s+then|and|then|after\s+that|next|afterwards)\s*,?\s+(?:please\s+|just\s+|also\s+)*{_EN_FOLLOW_ON_VERB}\b"
 )
 # A colon list after a breadth head is one request, not trailing clauses, when every item opens on a verb of work
 # ("for each of my upstream PRs: rebase, resolve conflicts, push", "for each open PR: rebase, squash, merge"): any word
 # but a read, a report, a hold, a negation, a hedge or a function word (`_NOT_A_WORK_VERB`).
-_NOT_A_WORK_VERB: Final = (
+_READ_OR_HOLD_VERB: Final = (
     r"(?:check|review|look|list|see|read|inspect|audit|scan|summari[sz]e|explain|describe|comment|report|tell|show|send"
-    r"|let|ping|notify|message|wait|hold|pause|stop|halt|cancel|skip|leave|don'?t|do|does|not|no|never|nothing|none"
+    r"|let|ping|notify|message|wait|hold|pause|stop|halt|cancel|skip|leave)"
+)
+_NOT_A_WORK_VERB: Final = (
+    rf"(?:{_READ_OR_HOLD_VERB}|don'?t|do|does|not|no|never|nothing|none"
     r"|maybe|perhaps|probably|possibly|might|may|could|would|should|will|can|is|are|was|were|be|it|this|that|these"
     r"|those|the|a|an|i|we|you|they|my|our|your|what|which|who|why|how|when|where|if|whether|though|but|although"
     r"|unless|so|because|since|or|also|just|only|lol|haha|hmm|idk|imo|imho|tbh|fwiw|btw|fyi|ok|okay|yes|yeah|nah"
@@ -1067,6 +1072,77 @@ _ASKS_BEFORE_THE_WORK: Final = re.compile(
 )
 
 
+# After an English request a trailing clause keeps it by default when it is a remark (lead decision on the #2243
+# review: a closed keeper list dropped every politeness form and aside it did not name): thanks or a sign-off in any
+# words ("…, thanks a bunch", "…, much obliged", "…, I'd appreciate it"), a back-reference ("…, as discussed"), a wish
+# ("…, fingers crossed"), no pressure ("…, no worries", "…, not urgent"), who asked ("…, my manager asked for it") or
+# an aside ("…, fwiw the tests are flaky"). A remark asks for nothing more (`_EN_ASKS_FOR_MORE`: a new unconnected
+# request stays as before, "…, run the tests", "…, let me check first", "…, and give me your two cents"), and carries
+# none of the refusals, each a class by meaning: a hold or a joke (`_HOLD`, read on every clause, and `_LAUGH_ALONE`),
+# a take-back (`_EN_TAKE_BACK`), a status of the work (`_STATUS_ALONE`), something asked before the work
+# (`_BEFORE_THE_WORK`), a hedge about wanting it (`_HEDGE`), deliberation (`_WEIGHS`), a person's modal or intention
+# (`_ASKER_INTENT`), a question (`_QUESTION`), or a negation of doing the work (`_NEGATES_THE_WORK`); no pressure is
+# read off first (`_NO_PRESSURE`). A deferral and a condition are refused before it, on the whole text
+# (`_hard_excluded`). A Korean message keeps the keepers alone, since main reads it whole.
+_EN_ASKS_FOR_MORE: Final = re.compile(
+    rf"^(?:and\s+|then\s+|also\s+|please\s+|pls\s+|just\s+|so\s+)*(?:{_EN_FOLLOW_ON_VERB}|{_READ_OR_HOLD_VERB}(?!\s+(?:you|ya)\b)"
+    r"|[a-z]+\s+me)\b"
+)
+_HEDGE: Final = re.compile(
+    r"\b(?:maybe|perhaps|probably|possibly|not\s+sure|unsure|i\s+guess|i\s+suppose|idk|dunno|or\s+whatever|or\s+something"
+    r"|kinda|sorta|hmm+|eh|meh|nah|nope|rather\s+not|second\s+thoughts?|on\s+the\s+fence|not\s+convinced|scared|nervous"
+    r"|afraid|risky|though|ugh|not\s+my\s+call|someone\s+else'?s)\b"
+)
+# A clause that is only a laugh after the work is a joke about it ("…, lol"), while a laugh inside a remark is not
+# ("…, long day lol"); a clause that is only a status says the work is done or where it stands ("…: done, done,
+# conflict", "…, all done"); and a clause that ends on first or beforehand asks for something before the work ("…, let
+# me check first", "…: the billing one first").
+_LAUGH_ALONE: Final = re.compile(r"(?:lol|lmao|rofl|haha+|hehe+)\s*[.!]*")
+_STATUS_ALONE: Final = re.compile(rf"(?:all\s+|already\s+)?{_STATUS_WORD}\s*[.!]*")
+_BEFORE_THE_WORK: Final = re.compile(r"\b(?:first|beforehand)\s*[.!]*$")
+_WEIGHS: Final = re.compile(rf"\b(?!take\s+care\b|feel\s+free\b){_DELIBERATION}\b")
+_ASKER_INTENT: Final = re.compile(
+    rf"\b(?:i|you|we)(?:'(?:d|ll)\b|'re\s+going\b|\s+(?!ha(?:ve|s)\s+(?!to\b)){_MODAL_OR_INTENT})"
+    r"(?!\s+(?:\w+\s+)?(?:appreciate|be\s+(?:\w+\s+)?(?:grateful|thankful)|owe\s+you)\b)"
+)
+_QUESTION: Final = re.compile(
+    r"[?？]|^(?:what|why|how|which|who|where|whether|is|are|am|was|were|do|does|did|should|shall|could|would|can|will"
+    r"|may|might|must|has|have)(?![\w'])|\b(?:curious|wondering)\b"
+)
+_NEGATES_THE_WORK: Final = re.compile(
+    r"\b(?:don'?t|do\s+not|doesn'?t|not\s+(?:yet|now|today|anymore)|never|hold\s+off)\b"
+)
+# No pressure is no refusal, whatever words it borrows from one ("…, no worries", "…, no rush"): it is read off before
+# the refusals are.
+_NO_PRESSURE: Final = re.compile(r"\b(?:no\s+(?:rush|pressure|worries|hurry|stress)|not\s+urgent)\b")
+
+
+def _is_a_remark(clause: str) -> bool:
+    """Whether a trailing English ``clause`` is a remark: it asks for nothing more and carries no refusal."""
+    clause = _NO_PRESSURE.sub("", clause).strip()
+    return not (
+        _EN_ASKS_FOR_MORE.match(clause)
+        or _EN_TAKE_BACK.match(clause)
+        or _LAUGH_ALONE.fullmatch(clause)
+        or _STATUS_ALONE.fullmatch(clause)
+        or _BEFORE_THE_WORK.search(clause)
+        or _HEDGE.search(clause)
+        or _WEIGHS.search(clause)
+        or _ASKER_INTENT.search(clause)
+        or _QUESTION.search(clause)
+        or _NEGATES_THE_WORK.search(clause)
+    )
+
+
+def _remarks_keep_the_request(trailing: list[str]) -> bool:
+    """Whether every clause after an English request keeps it: a keeper (`_KEEPER_CLAUSE`), a follow-on
+    (`_follows_on`) or a remark (`_is_a_remark`), with no hold or joke in any of them (`_HOLD`)."""
+    return all(
+        not _HOLD.search(clause) and bool(_KEEPER_CLAUSE.fullmatch(clause) or _follows_on(clause) or _is_a_remark(clause))
+        for clause in trailing
+    )
+
+
 def _closed(folded: str) -> tuple[str, str]:
     """``folded`` read two ways: the request, with a confirmation tag that ends it and a report on the result after a
     change read off (`_FINAL_CONFIRMATION_TAG`, `_EN_REPORT_TAIL`); and the whole text for the hard excludes, with only
@@ -1095,8 +1171,9 @@ def _reads_as_an_english_request(text: str) -> bool:
 
 
 def _trails_off(folded: str) -> bool:
-    """Whether an English request is followed by a clause that does not keep it (`_keeps_the_request`): the request is
-    the shortest run of clauses that reads as one (`_reads_as_an_english_request`), and every clause after it is read."""
+    """Whether an English request is followed by a clause that does not keep it (`_remarks_keep_the_request`): the
+    request is the shortest run of clauses that reads as one (`_reads_as_an_english_request`), and every clause after
+    it is read."""
     if re.search(r"[가-힣]", folded):
         return False  # a Korean message is read whole instead (`_korean_clauses`)
     cuts = sorted([*_CLAUSE_BREAK.finditer(folded), *_LIST_COLON.finditer(folded)], key=lambda cut: cut.start())
@@ -1109,7 +1186,7 @@ def _trails_off(folded: str) -> bool:
             # the rest of a colon list: items that open on a verb of work, with no hedge or hold in them
             while trailing and _is_a_work_item(trailing[0]):
                 trailing = trailing[1:]
-        return not _keeps_the_request(trailing)
+        return not _remarks_keep_the_request(trailing)
     return False
 
 

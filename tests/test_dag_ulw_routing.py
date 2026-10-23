@@ -441,7 +441,7 @@ class RouterTests(unittest.TestCase):
                         "브랜치들 전부 리베이스해줘, 팀장님이 시킨 거야", "모든 서비스 업데이트해줘, 잘 모르겠지만", "PR들 전부 리베이스해줘, 확신은 없어",
                         "모든 패키지 업데이트해줘, 좀 위험할 수도", "PR들 전부 머지해줘, 걱정되네",
                         "레포들 전부 CI 고쳐줘, 지난번에 이거 하다 CI 깨졌어",
-                        "rebase all open PRs, what do you think", "fix all the failing tests, my boss asked",
+                        "rebase all open PRs, what do you think",
                         "merge all open PRs, I'm scared though", "update every service, not sure", "rebase all open PRs, maybe tomorrow",
                         "update every service, is that ok?", "update every service, should I?", "rebase all open PRs, if that makes sense",
                         "update every service, is this right?", "update every service, not sure though",
@@ -577,6 +577,7 @@ class RouterTests(unittest.TestCase):
                         "fix all the failing tests, right away", "rebase all open PRs, no rush", "update every service, go ahead",
                         "fix all the failing tests, let's go", "rebase all open PRs, cheers", "update every service, ty",
                         "fix all the failing tests, appreciated", "rebase all open PRs, right now",
+                        "fix all the failing tests, my boss asked",
                         # A plain report tail on the work, a final confirmation tag on any request, a colon list whose
                         # items each open on a verb of work, and a per-unit spec with any nouns, by shape.
                         "migrate every package to pnpm, then ping me with the results",
@@ -651,6 +652,33 @@ class RouterTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertTrue(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
+
+    def test_a_trailing_remark_keeps_the_request_and_a_refusal_does_not(self) -> None:
+        # After an English request, a remark keeps it by default, in any words; only a refusal class or a new request
+        # does not (#2243 review). Router and hint read the same, on work over many targets and on a split.
+        keeps = ("thanks a bunch", "much obliged", "I'd appreciate it", "regards", "as discussed", "fingers crossed",
+                 "no worries", "not urgent", "my manager asked for it", "fwiw the tests are flaky",
+                 "long day lol", "see ya")
+        refusals = ("and give me your two cents",  # a new request
+                    "haha jk, thanks",  # a joke
+                    "scratch that, thanks",  # a take-back
+                    "lol",  # only a laugh
+                    "done, done, conflict",  # only a status
+                    "the billing one first",  # something before the work
+                    "not sure",  # a hedge
+                    "thoughts welcome",  # deliberation
+                    "we'll see",  # a person's modal
+                    "is that ok",  # a question
+                    "not yet")  # a negation of the work
+        for work in ("rebase all open PRs", "update every service to node 22", "split the migration into parallel lanes"):
+            for tail in keeps:
+                with self.subTest(message=f"{work}, {tail}"):
+                    self.assertTrue(dispatches_dag_ulw(f"{work}, {tail}"))
+                    self.assertEqual(self._dag_ulw_starts(f"{work}, {tail}")[:2], (True, True))
+            for tail in refusals:
+                with self.subTest(message=f"{work}, {tail}"):
+                    self.assertFalse(dispatches_dag_ulw(f"{work}, {tail}"))
+                    self.assertEqual(self._dag_ulw_starts(f"{work}, {tail}")[:2], (False, False))
 
     def test_the_router_size_cue_follows_the_cue_readers_refusals(self) -> None:
         # The router's size-cue path dispatches dag-ulw only where the cue reader would start: a held, deferred or
