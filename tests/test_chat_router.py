@@ -36,6 +36,121 @@ from _route_owner import dispatched_or_asked, route_owner, route_owner_harness, 
 
 
 class AiJobSearchActorRoutingTests(unittest.TestCase):
+    def test_modified_search_purposes_exclude_career_consumers(self):
+        from omh.wrapper.contract import build_chat_interaction_payload
+
+        for purpose in (
+            "to actively recruit nurses",
+            "to discreetly hire conservators",
+            "to more effectively source interpreters",
+            "in order to systematically screen laboratory technicians",
+            "to rapidly and responsibly recruit archivists",
+            "to very carefully hire librarians",
+        ):
+            for prefix in ("", "Use ai-job-search to "):
+                message = f"{prefix}Help the company run a job search {purpose}."
+                with self.subTest(message=message):
+                    self.assertNotIn("ai-job-search", [row["skill"] for row in recommend_skills(message)])
+                    decision = route_chat_message(message, source="discord")
+                    self.assertNotEqual((decision["action"], decision["selected_skill"]),
+                                        ("dispatch", "ai-job-search"))
+                    interaction = build_chat_interaction_payload(message, source="discord")
+                    self.assertNotEqual(interaction["chat_response"]["kind"], "ai_job_search")
+                    self.assertNotEqual(interaction["next_action"], "prepare_ai_job_search")
+
+    def test_modified_hiring_in_target_or_background_is_not_search_purpose(self):
+        from omh.wrapper.contract import build_chat_interaction_payload
+
+        for message in (
+            "Help with my job search to find a role at a company that plans to actively recruit nurses.",
+            "Help with my job search for a company aiming to discreetly hire conservators.",
+            "Help with my job search at a hospital preparing to systematically screen technicians.",
+            "Our company plans to rapidly recruit nurses; help with my job search for my next role.",
+            "Help a recruiter with her job search to find her next role at a company hiring nurses.",
+            "Help with my job search, not to actively recruit nurses but to find my next role.",
+            'Help with my job search; the example says "job search to actively recruit nurses".',
+        ):
+            with self.subTest(message=message):
+                self.assertIn("ai-job-search", [row["skill"] for row in recommend_skills(message)])
+                decision = route_chat_message(message, source="discord")
+                self.assertEqual((decision["action"], decision["selected_skill"]), ("dispatch", "ai-job-search"))
+                interaction = build_chat_interaction_payload(message, source="discord")
+                self.assertEqual(interaction["chat_response"]["kind"], "ai_job_search")
+                self.assertEqual(interaction["next_action"], "prepare_ai_job_search")
+
+    def test_modified_hiring_purpose_reference_is_not_executable(self):
+        from omh.wrapper.contract import build_chat_interaction_payload
+
+        for message in (
+            'Translate "Help the company run a job search to actively recruit nurses." into Japanese.',
+            'Explain this quotation: "Use ai-job-search to run a job search to discreetly hire conservators."',
+        ):
+            with self.subTest(message=message):
+                decision = route_chat_message(message, source="discord")
+                self.assertNotEqual((decision["action"], decision["selected_skill"]), ("dispatch", "ai-job-search"))
+                interaction = build_chat_interaction_payload(message, source="discord")
+                self.assertNotEqual(interaction["chat_response"]["kind"], "ai_job_search")
+                self.assertNotEqual(interaction["next_action"], "prepare_ai_job_search")
+
+    def test_requested_professional_hiring_objectives_exclude_career_cards(self):
+        from omh.wrapper.contract import build_chat_interaction_payload
+
+        for message in (
+            "Help the company run a job search to recruit candidates.",
+            "Help the company run a job search to recruit nurses.",
+            "Use ai-job-search to help the company run a job search to recruit nurses.",
+            "Help a hiring team run a job search campaign to recruit library staff.",
+            "Help a hiring manager run a job search campaign to recruit library staff.",
+            "A hospital wants a job search campaign to recruit nurses.",
+            "Help a hiring coordinator run a job search campaign to recruit laboratory technicians.",
+            "A museum needs a job search to recruit conservators.",
+            "Help the company run a job search to hire interpreters.",
+            "We need to recruit nurses; organize a job search campaign.",
+        ):
+            with self.subTest(message=message):
+                decision = route_chat_message(message, source="discord")
+                self.assertTrue(decision["action"] == "clarify" or
+                                (decision["action"], decision["selected_skill"]) == ("dispatch", "people-ops"),
+                                decision)
+                interaction = build_chat_interaction_payload(message, source="discord")
+                self.assertNotEqual(interaction["chat_response"]["kind"], "ai_job_search")
+                self.assertNotEqual(interaction["next_action"], "prepare_ai_job_search")
+
+    def test_personal_search_survives_background_hiring_predicates(self):
+        from omh.wrapper.contract import build_chat_interaction_payload
+
+        for message in (
+            "Help a hiring manager with her own job search campaign for her next role.",
+            "We are hiring at work, but help with my job search for my next role.",
+            "We’re hiring at work, but help with my job search for my next role.",
+            "I am hiring a career coach; help with my job search for my next role.",
+            "We're hiring at work, but help with my job search for my next role.",
+            "I'm hiring a resume editor; help with my job search for my next role.",
+            "I’m hiring a tutor; help with my job search for my next role.",
+            "Our hospital is hiring nurses; help with my job search for my next role.",
+        ):
+            with self.subTest(message=message):
+                decision = route_chat_message(message, source="discord")
+                self.assertEqual((decision["action"], decision["selected_skill"]), ("dispatch", "ai-job-search"))
+                interaction = build_chat_interaction_payload(message, source="discord")
+                self.assertEqual(interaction["chat_response"]["kind"], "ai_job_search")
+                self.assertEqual(interaction["next_action"], "prepare_ai_job_search")
+
+    def test_explicit_organizational_sourcing_still_excludes_owned_campaign(self):
+        from omh.wrapper.contract import build_chat_interaction_payload
+
+        for message in (
+            "I am hiring; help with a job search campaign to find candidates.",
+            "Help that employer run their job search campaign to find candidates.",
+            "I am hiring; help with my job search campaign to find candidates.",
+        ):
+            with self.subTest(message=message):
+                decision = route_chat_message(message, source="discord")
+                self.assertNotEqual((decision["action"], decision["selected_skill"]), ("dispatch", "ai-job-search"))
+                interaction = build_chat_interaction_payload(message, source="discord")
+                self.assertNotEqual(interaction["chat_response"]["kind"], "ai_job_search")
+                self.assertNotEqual(interaction["next_action"], "prepare_ai_job_search")
+
     def test_employer_hiring_never_dispatches_candidate_cards(self):
         from omh.wrapper.contract import build_chat_interaction_payload
 
