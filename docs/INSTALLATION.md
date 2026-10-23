@@ -1757,8 +1757,12 @@ unless nothing is linked. It is exclusive — ticked beside a provider the
 prompt asks again rather than guessing which half you meant — and it is
 never pre-ticked.
 
-After the list you can type any further provider id (that one is asked for
-its kind, since OMH knows nothing about it), and, when the Claude Code CLI is
+The row just above it is **Other provider — type its name**. Tick it to add a
+provider id the list does not show: after Enter you type each id (each is
+asked for its kind, since OMH knows nothing about it) and an empty line ends
+the list. Left unticked, Enter on the list ends the step without that
+prompt. Like skip it is never pre-ticked, and ticked beside skip the prompt
+asks again. Then, when the Claude Code CLI is
 on PATH, you are asked whether you have a Claude Code subscription. The
 answers are recorded in `~/.omh/routing/providers.json`
 (`provider_entitlements/v1`):

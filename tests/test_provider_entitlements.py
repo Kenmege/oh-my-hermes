@@ -503,6 +503,9 @@ class MultiChoicePromptTests(unittest.TestCase):
             "provider_opengateway_desc",
             "provider_skip_label",
             "provider_skip_desc",
+            "provider_other_label",
+            "provider_other_desc",
+            "provider_add_prompt",
             "provider_entitlements_skipped",
             "exclusive_selection",
         )
@@ -748,14 +751,14 @@ class SetupInterviewTests(unittest.TestCase):
             with patch.object(
                 setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
             ), patch.object(setup_module, "_ask_yes_no", return_value=True), patch.object(
-                setup_module, "_ask_multi_choice", return_value=["og"]
+                setup_module, "_ask_multi_choice", return_value=["og", setup_module._PROVIDER_OTHER_CHOICE]
             ), patch.object(setup_module, "_ask_single_choice", return_value="openrouter"), patch.object(
                 setup_module, "_ask", side_effect=lambda *a, **k: next(extra)
             ), patch.object(setup_module, "_use_color", return_value=False):
                 setup_module._ask_provider_entitlements(args, paths, "en")
             document = json.loads(provider_entitlements_path(paths.omh_home).read_text(encoding="utf-8"))
             # A provider outside the family vocabulary is still reachable by
-            # name after the list, and still gets its kind menu. The YAML merge
+            # name once "other provider" is ticked, and still gets its kind menu. The YAML merge
             # key `<<` is never offered; the bad id and the duplicate are skipped.
             self.assertEqual(document["providers"], {"og": "gateway", "work-relay": "openrouter"})
             parsed, status = load_provider_entitlements(paths.omh_home)
@@ -774,7 +777,9 @@ class SetupInterviewTests(unittest.TestCase):
             out = io.StringIO()
             with patch.object(
                 setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
-            ), patch.object(setup_module, "_ask_multi_choice", return_value=["og"]), patch.object(
+            ), patch.object(
+                setup_module, "_ask_multi_choice", return_value=["og", setup_module._PROVIDER_OTHER_CHOICE]
+            ), patch.object(
                 setup_module, "_ask", side_effect=lambda *a, **k: next(extra)
             ), patch.object(setup_module, "_use_color", return_value=False), redirect_stdout(out):
                 setup_module._ask_provider_entitlements(args, paths, "en")
@@ -796,9 +801,9 @@ class SetupInterviewTests(unittest.TestCase):
             out = io.StringIO()
             with patch.object(
                 setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
-            ), patch.object(setup_module, "_ask_multi_choice", return_value=["og"]), patch.object(
-                setup_module, "_use_color", return_value=False
-            ), patch.object(setup_module.sys, "stdin", io.StringIO("\x1b[B\x1b[A\x1b[B\x1b[\n")), redirect_stdout(out):
+            ), patch.object(
+                setup_module, "_ask_multi_choice", return_value=["og", setup_module._PROVIDER_OTHER_CHOICE]
+            ), patch.object(setup_module, "_use_color", return_value=False), patch.object(setup_module.sys, "stdin", io.StringIO("\x1b[B\x1b[A\x1b[B\x1b[\n")), redirect_stdout(out):
                 setup_module._ask_provider_entitlements(args, paths, "en")
             printed = out.getvalue()
             self.assertNotIn("skipped.", printed)
@@ -925,6 +930,142 @@ class SetupInterviewTests(unittest.TestCase):
 
         self.assertFalse(is_provider_id_token(setup_module._PROVIDER_SKIP_CHOICE))
 
+    def test_the_other_row_sits_before_skip_and_is_never_pre_ticked_or_a_kind(self) -> None:
+        # A pre-ticked "other" would bring back the second prompt it makes optional.
+        options, preselected, kinds = setup_module._provider_entitlement_options(
+            [("og", "gateway", "config")], {"og": "gateway"}, "en"
+        )
+        values = [option["value"] for option in options]
+        self.assertEqual(values[-2:], [setup_module._PROVIDER_OTHER_CHOICE, setup_module._PROVIDER_SKIP_CHOICE])
+        self.assertEqual(options[-2]["label"], tr("en", "provider_other_label"))
+        self.assertNotIn(setup_module._PROVIDER_OTHER_CHOICE, preselected)
+        self.assertNotIn(setup_module._PROVIDER_OTHER_CHOICE, kinds)
+        from omh.plugin_bundle.omh.hermes_delegation import is_provider_id_token
+
+        # Not a provider id, so no record can name it: a document that did is
+        # refused by the reader and offers nothing to pre-tick.
+        self.assertFalse(is_provider_id_token(setup_module._PROVIDER_OTHER_CHOICE))
+        with TemporaryDirectory() as tmp:
+            _write(
+                provider_entitlements_path(Path(tmp)),
+                {
+                    "schema_version": PROVIDER_ENTITLEMENTS_SCHEMA_VERSION,
+                    "providers": {setup_module._PROVIDER_OTHER_CHOICE: "gateway"},
+                    "subscription_clis": [],
+                },
+            )
+            parsed, status = load_provider_entitlements(Path(tmp))
+        self.assertIsNone(parsed)
+        self.assertTrue(status.startswith("invalid:"), status)
+
+    def test_enter_on_the_list_without_other_asks_nothing_more(self) -> None:
+        """The owner report: Enter on the list looked done while a prompt waited.
+
+        With "other provider" left unticked the list is the whole step -- the
+        add-by-name prompt is never put on screen.
+        """
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = self._paths(root)
+            self._config(paths, "providers:\n  og:\n    base_url: x\n")
+            out = io.StringIO()
+            with patch.object(
+                setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
+            ), patch.object(setup_module, "_ask_multi_choice", return_value=["og"]), patch.object(
+                # "" so a regression that asks anyway ends the loop and fails
+                # the assertion below instead of hanging.
+                setup_module, "_ask", return_value=""
+            ) as free_form, patch.object(setup_module, "_ask_single_choice") as kind_menu, patch.object(
+                setup_module, "_use_color", return_value=False
+            ), redirect_stdout(out):
+                setup_module._ask_provider_entitlements(argparse.Namespace(), paths, "en")
+            free_form.assert_not_called()
+            kind_menu.assert_not_called()
+            self.assertNotIn(tr("en", "provider_add_prompt"), out.getvalue())
+            document = json.loads(provider_entitlements_path(paths.omh_home).read_text(encoding="utf-8"))
+            self.assertEqual(document["providers"], {"og": "gateway"})
+
+    def test_ticking_other_runs_the_add_loop_and_records_the_kind(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = self._paths(root)
+            self._config(paths, "providers:\n  og:\n    base_url: x\n")
+            typed = iter(["work-relay", ""])
+            prompts: list[str] = []
+
+            def ask(prompt, **_kwargs):
+                prompts.append(prompt)
+                return next(typed)
+
+            with patch.object(
+                setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
+            ), patch.object(
+                setup_module, "_ask_multi_choice", return_value=["og", setup_module._PROVIDER_OTHER_CHOICE]
+            ), patch.object(setup_module, "_ask", side_effect=ask), patch.object(
+                setup_module, "_ask_single_choice", return_value="openrouter"
+            ) as kind_menu, patch.object(setup_module, "_use_color", return_value=False), redirect_stdout(io.StringIO()):
+                setup_module._ask_provider_entitlements(argparse.Namespace(), paths, "en")
+            # The loop runs once per typed name and ends on the empty answer.
+            self.assertEqual(prompts, [tr("en", "provider_add_prompt")] * 2)
+            kind_menu.assert_called_once()
+            raw = provider_entitlements_path(paths.omh_home).read_text(encoding="utf-8")
+            document = json.loads(raw)
+            self.assertEqual(document["providers"], {"og": "gateway", "work-relay": "openrouter"})
+            # The sentinel picked the loop; it is never a provider.
+            self.assertNotIn(setup_module._PROVIDER_OTHER_CHOICE, raw)
+            _parsed, status = load_provider_entitlements(paths.omh_home)
+            self.assertEqual(status, "applied")
+
+    def test_other_ticked_alone_with_nothing_typed_never_writes_the_sentinel(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = self._paths(root)
+            self._config(paths, "providers:\n  og:\n    base_url: x\n")
+            with patch.object(
+                setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
+            ), patch.object(
+                setup_module, "_ask_multi_choice", return_value=[setup_module._PROVIDER_OTHER_CHOICE]
+            ), patch.object(setup_module, "_ask", return_value=""), patch.object(
+                setup_module, "_use_color", return_value=False
+            ), redirect_stdout(io.StringIO()):
+                setup_module._ask_provider_entitlements(argparse.Namespace(), paths, "en")
+            raw = provider_entitlements_path(paths.omh_home).read_text(encoding="utf-8")
+            document = json.loads(raw)
+            self.assertEqual(document["providers"], {})
+            # The found row the operator left unticked is still the only exclusion.
+            self.assertEqual(document["excluded_providers"], ["og"])
+            self.assertNotIn(setup_module._PROVIDER_OTHER_CHOICE, raw)
+
+    def test_other_beside_skip_is_refused_like_any_row_beside_skip(self) -> None:
+        """Skip stays exclusive: "other" and "leave everything" contradict each other.
+
+        Driven through the real typed-fallback list with the real rows, so the
+        refusal is the list's own rule, not a fake's.
+        """
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = self._paths(root)
+            self._config(paths, "providers:\n  og:\n    base_url: x\n")
+            options, _preselected, _kinds = setup_module._provider_entitlement_options(
+                [("og", "gateway", "config")], {}, "en"
+            )
+            other, skip = options[-2]["choice"], options[-1]["choice"]
+            typed = iter([f"{other},{skip}", skip])
+            out = io.StringIO()
+            with patch.object(
+                setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
+            ), patch.object(setup_module, "_keyboard_menu_available", return_value=False), patch.object(
+                setup_module, "_ask", side_effect=lambda *a, **k: next(typed)
+            ), patch.object(setup_module, "_use_color", return_value=False), redirect_stdout(out):
+                args = argparse.Namespace()
+                setup_module._ask_provider_entitlements(args, paths, "en")
+            self.assertIn(tr("en", "exclusive_selection", label=tr("en", "provider_skip_label")), out.getvalue())
+            # The second answer, skip alone, is honoured: nothing written, and
+            # no add prompt was reached.
+            self.assertIsNone(args._provider_entitlements)
+            self.assertFalse(provider_entitlements_path(paths.omh_home).exists())
+            self.assertNotIn(tr("en", "provider_add_prompt"), out.getvalue())
+
     def test_opengateway_is_always_offered_and_never_duplicated(self) -> None:
         """OMH's own gateway is discoverable before its key is configured.
 
@@ -936,9 +1077,11 @@ class SetupInterviewTests(unittest.TestCase):
         self.assertNotIn("opengateway", PROVIDER_FAMILY_VOCABULARY)
         options, preselected, kinds = setup_module._provider_entitlement_options([], {}, "en")
         values = [option["value"] for option in options]
-        # Last real row, immediately before skip, and not pre-ticked when the
-        # env key is absent.
-        self.assertEqual(values[-2:], ["opengateway", setup_module._PROVIDER_SKIP_CHOICE])
+        # Last real row, immediately before "other" and skip, and not
+        # pre-ticked when the env key is absent.
+        self.assertEqual(
+            values[-3:], ["opengateway", setup_module._PROVIDER_OTHER_CHOICE, setup_module._PROVIDER_SKIP_CHOICE]
+        )
         self.assertEqual(kinds["opengateway"], "gateway")
         self.assertEqual(preselected, [])
         # Detected through its env-key name it becomes a normal pre-ticked

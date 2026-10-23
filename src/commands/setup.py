@@ -3283,6 +3283,10 @@ _OPENGATEWAY_PROVIDER_ID = "opengateway"
 # rejects a leading underscore, so this can never collide with one, and it is
 # never written to the document.
 _PROVIDER_SKIP_CHOICE = "__skip__"
+# The "a provider not listed here" row. Same guarantees as the skip row: not a
+# provider id, never pre-ticked, never written. Ticking it is what opens the
+# add-by-name prompt, so Enter on the list ends the step unless it is ticked.
+_PROVIDER_OTHER_CHOICE = "__other__"
 
 
 def _provider_entitlement_options(
@@ -3294,9 +3298,9 @@ def _provider_entitlement_options(
     """Rows for the provider multi-select: `(options, pre-ticked ids, kind per id)`.
 
     Order is found-here first, then whatever the operator recorded last time,
-    then the rest of the family vocabulary, then OpenGateway, then the skip
-    row -- so the rows that matter lead and the two always-present rows sit
-    where the eye ends up. A pre-ticked row is a DEFAULT, not a finding:
+    then the rest of the family vocabulary, then OpenGateway, then the
+    "other provider" row, then the skip row -- so the rows that matter lead
+    and the always-present rows sit where the eye ends up. A pre-ticked row is a DEFAULT, not a finding:
     EXECUTOR_AUTH_SIGNALS_CLAIM_BOUNDARY holds here too -- a config key or a
     variable name is not an account, a tier, or a quota. Every pre-ticked row
     stays clearable, and only what the operator leaves ticked is written, so
@@ -3306,9 +3310,10 @@ def _provider_entitlement_options(
     recorded last time, minus the found rows they cleared last time
     (`excluded_providers`). A found row is what routing already counts on
     its own, so it arrives ticked even on a re-run; clearing it is what
-    writes the exclusion that makes routing stop. The skip row is never
-    pre-ticked -- "leave everything as it is" has to be chosen, never
-    defaulted into.
+    writes the exclusion that makes routing stop. The skip and "other" rows
+    are never pre-ticked -- "leave everything as it is" has to be chosen,
+    never defaulted into, and a pre-ticked "other" would bring back the
+    second prompt it exists to make optional.
     """
     from ..plugin_bundle.omh.hermes_delegation import (
         MULTI_VENDOR_PROVIDER_KINDS,
@@ -3353,9 +3358,14 @@ def _provider_entitlement_options(
         order.append(_OPENGATEWAY_PROVIDER_ID)
         kinds[_OPENGATEWAY_PROVIDER_ID] = PROVIDER_KIND_GATEWAY
         descriptions[_OPENGATEWAY_PROVIDER_ID] = tr(language, "provider_opengateway_desc")
+    order.append(_PROVIDER_OTHER_CHOICE)
+    descriptions[_PROVIDER_OTHER_CHOICE] = tr(language, "provider_other_desc")
     order.append(_PROVIDER_SKIP_CHOICE)
     descriptions[_PROVIDER_SKIP_CHOICE] = tr(language, "provider_skip_desc")
-    labels = {_PROVIDER_SKIP_CHOICE: tr(language, "provider_skip_label")}
+    labels = {
+        _PROVIDER_OTHER_CHOICE: tr(language, "provider_other_label"),
+        _PROVIDER_SKIP_CHOICE: tr(language, "provider_skip_label"),
+    }
     options = [
         {
             "choice": str(index + 1),
@@ -3367,7 +3377,7 @@ def _provider_entitlement_options(
     ]
     detected_ids = {provider_id for provider_id, _kind, _source in candidates}
     preselect = set(previous_providers) | (detected_ids - set(previous_excluded))
-    preselect.discard(_PROVIDER_SKIP_CHOICE)
+    preselect -= {_PROVIDER_OTHER_CHOICE, _PROVIDER_SKIP_CHOICE}
     return options, [provider_id for provider_id in order if provider_id in preselect], kinds
 
 
@@ -3416,6 +3426,13 @@ def _ask_provider_entitlements(args: argparse.Namespace, paths: OmhPaths, langua
     this; keeping both would have been two ways to say the same thing, and the
     one inside the list is the one the operator can see next to what it
     declines.
+
+    The row just above it, "other provider", is the only way into the
+    add-by-name prompt. That prompt used to follow the list unconditionally,
+    so Enter on the list looked like the end of the step while a second,
+    easy-to-miss prompt still waited for its own Enter. Now Enter on the list
+    ends the step unless the operator ticked "other". Ticking it beside skip is
+    refused like any other row beside skip.
 
     Every account is different, and the shipped chains cannot know which of
     their entries this operator can actually reach. The answer is recorded as
@@ -3512,10 +3529,13 @@ def _ask_provider_entitlements(args: argparse.Namespace, paths: OmhPaths, langua
         args._provider_entitlements = None
         print(tr(language, "provider_entitlements_skipped"))
         return
-    providers = {provider_id: kind_by_id[provider_id] for provider_id in chosen}
+    providers = {
+        provider_id: kind_by_id[provider_id] for provider_id in chosen if provider_id != _PROVIDER_OTHER_CHOICE
+    }
     # Providers Hermes reaches some other way (a builtin with a key OMH does
-    # not recognize, a gateway named only in a route) can be added by name.
-    while True:
+    # not recognize, a gateway named only in a route) can be added by name,
+    # once the operator ticked the "other provider" row asking for that.
+    while _PROVIDER_OTHER_CHOICE in chosen:
         extra = _ask(tr(language, "provider_add_prompt"), default="", use_color=use_color).strip()
         if not extra:
             break

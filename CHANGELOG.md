@@ -4,6 +4,16 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh setup`'s provider step ends on one Enter.** After the provider
+  list, a second prompt, `Add another provider by name (Enter to skip)`,
+  always followed and waited for its own Enter. The step looked finished
+  while it was still blocked. The list now has an **Other provider -- type
+  its name** row just above skip. The name prompt appears only when that
+  row is ticked; it keeps the duplicate and invalid-id checks and the kind
+  menu, and an empty line still ends it. The row is never pre-ticked, it is
+  refused beside skip like any other row, and it is never written to
+  `~/.omh/routing/providers.json`.
+
 - **`/omh-doctor status` runs doctor (#2221 L4).** After a slash skill, a
   status question shows OMH's status card. The exception is a skill whose
   own work is that status, and doctor is now one of them. The card counts
