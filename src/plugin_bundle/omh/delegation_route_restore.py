@@ -170,6 +170,7 @@ stated at its real strength here, in the changelog, and in the docs.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import secrets
 import sqlite3
@@ -210,6 +211,9 @@ _MAX_CONVERSATION_ROUTES = 64
 # what is at stake is which model a child runs on, and the hook's own budget
 # is the host's `plugins.hook_callback_timeout` (30 s by default).
 _DISPATCH_LOCK_SECONDS = 2.0
+# Hermes routes plugin loggers into its own log files; a fallback here is
+# not a failure the call sees, so the log is where an operator finds it.
+_LOG = logging.getLogger("omh.delegation_route")
 # How far up a delegate child's `_delegate_from` chain the dispatch looks for
 # the conversation it was delegated from; the same bound the delegation
 # ledger walks (`delegation_ledger.ROOT_WALK_LIMIT`).
@@ -545,32 +549,6 @@ def _release_locked(
     return {"status": "released", "released": len(routes) - len(kept)}
 
 
-def release_conversation_route(
-    omh_home: str | Path | None = None,
-    *,
-    task_id: str = "",
-    conversation: Collection[str] = (),
-) -> dict[str, Any]:
-    """Drop the calling conversation's own routes, and nobody else's.
-
-    `clear` and chain exhaustion call this with the whole conversation,
-    because they say this conversation wants no route any more. The turn end
-    releases inside the restore's own lock instead (`restore_delegation_baseline`).
-    A tool call can wait, so this takes the dispatch's lock budget.
-    """
-    if not conversation_routes_path(omh_home).exists():
-        return {"status": "none_recorded", "fast_path": True}
-    try:
-        with _awareness_delivery_lock(
-            delegation_route_restore_path(omh_home), timeout_seconds=_DISPATCH_LOCK_SECONDS
-        ):
-            return _release_locked(omh_home, task_id=task_id, conversation=conversation)
-    except TimeoutError:
-        return {"status": "lock_unavailable", "error_type": "TimeoutError"}
-    except (OSError, ValueError) as exc:
-        return {"status": "error", "error_type": type(exc).__name__}
-
-
 def _routable_subset(applied: Mapping[str, Any]) -> dict[str, str]:
     """The three routable keys of a writer result, as a later read returns them.
 
@@ -890,6 +868,8 @@ def restore_delegation_baseline(
     unrecorded_clear: str = "",
     expected_previous: Mapping[str, str] | None = None,
     release_writer: str | None = None,
+    release_task: str | None = None,
+    release_conversation: Collection[str] | None = None,
     now: float | None = None,
 ) -> dict[str, Any]:
     """Put the recorded baseline back, when OMH still owns the value.
@@ -920,17 +900,25 @@ def restore_delegation_baseline(
     `not_last_writer`, `writer_live`, `lock_unavailable`, or `error`.
 
     `release_writer` is the turn end's: the session whose own conversation
-    routes end with this task. They are dropped inside the same lock as the
-    restore, so the two cannot come apart -- a release that timed out after
-    a restore succeeded left the route recorded, and the gateway's next
-    turn, whose task is the same session id, put it back (#2251 review).
+    routes end with this task. `clear` and chain exhaustion pass
+    `release_conversation` and `release_task` instead: the caller's whole
+    conversation, which says it wants no route any more. Either way the
+    caller's routes are dropped inside the same lock as the restore, and only
+    after it, so the two cannot come apart: a release that timed out after a
+    restore succeeded left the route recorded, and the next dispatch of the
+    same task put it back (#2251 review); a release BEFORE a restore that
+    was then refused dropped the record of a route still in the keys. A
+    restore that ends in `error` releases nothing. Other sessions' routes are
+    never released by these callers.
     An automatic restore (turn end, session start) that takes a record out
     also drops that writer's conversation routes, so a route whose keys are
     gone cannot come back at a later dispatch.
     """
     record_path = delegation_route_restore_path(omh_home)
     # A release has work to do even when no record does.
-    must_release = release_writer is not None and conversation_routes_path(omh_home).exists()
+    must_release = (
+        release_writer is not None or release_conversation is not None
+    ) and conversation_routes_path(omh_home).exists()
     if not unrecorded_clear and not record_path.exists() and not must_release:
         # The common case by far: every turn of every session reaches here,
         # and almost none of them has a route to take back. One `stat`, no
@@ -963,19 +951,17 @@ def restore_delegation_baseline(
         # The caller's conversation set, read before the lock so the lock is
         # held only for the file work (#2177's identity: the session plus
         # its compression continuations).
-        release = (
-            {release_writer}
-            | conversation_session_ids(hermes_home or runtime_paths.default_hermes_home(), release_writer)
-            if release_writer
-            else set()
-        )
+        if release_conversation is not None:
+            release = release_conversation
+        elif release_writer:
+            release = {release_writer} | conversation_session_ids(
+                hermes_home or runtime_paths.default_hermes_home(), release_writer
+            )
+        else:
+            release = set()
+    task = release_task if release_task is not None else (require_writer_task or "")
     try:
         with _awareness_delivery_lock(record_path) as mechanism:
-            released = (
-                _release_locked(omh_home, task_id=require_writer_task or "", conversation=release)
-                if release is not None
-                else None
-            )
             result = _restore_locked(
                 hermes_home,
                 omh_home,
@@ -990,8 +976,10 @@ def restore_delegation_baseline(
                 expected_previous=expected_previous,
                 now=now,
             )
-            if released is not None:
-                result["conversation_route"] = released
+            if release is not None and result.get("status") != "error":
+                result["conversation_route"] = _release_reported(
+                    omh_home, task_id=task, conversation=release
+                )
             return result
     except TimeoutError:
         return {
@@ -1145,6 +1133,25 @@ def _restore_locked(
     }
 
 
+def _release_reported(
+    omh_home: str | Path | None, *, task_id: str, conversation: Collection[str]
+) -> dict[str, Any]:
+    """`_release_locked`, with a write failure named rather than raised.
+
+    The restore has already written the keys by now, so failing the whole
+    call would report an error over a write that happened.
+    """
+    try:
+        return _release_locked(omh_home, task_id=task_id, conversation=conversation)
+    except OSError as exc:
+        _LOG.warning(
+            "OMH could not release a conversation's delegation route after restoring the keys "
+            "(%s); a later dispatch of the same task may put it back",
+            type(exc).__name__,
+        )
+        return {"status": "error", "error_type": type(exc).__name__}
+
+
 def _release_writer(omh_home: str | Path | None, record: Mapping[str, Any], unrecorded_clear: str) -> str:
     """After an AUTOMATIC restore took a record out, drop its writer's routes too.
 
@@ -1162,7 +1169,13 @@ def _release_writer(omh_home: str | Path | None, record: Mapping[str, Any], unre
     except OSError as exc:
         # The keys are already back; failing the restore over its bookkeeping
         # would report an error over a write that happened. The age bound in
-        # `_dispatch_plan` still retires the entry.
+        # `_dispatch_plan` still retires the entry, but not silently: the
+        # hooks turn `unreleased` into a degradation, and it is logged here.
+        _LOG.warning(
+            "OMH restored the delegation keys but could not release the writer's conversation "
+            "route (%s); the six-hour bound will retire it",
+            type(exc).__name__,
+        )
         return f"unreleased: {type(exc).__name__}"
     return "released"
 
@@ -1322,6 +1335,11 @@ def _dispatch_plan(
         return {**plan, "action": "none", "status": "no_conversation_route"}
     lineage = ancestors()
     if lineage:
+        # A corrupt `_delegate_from` cycle must not make the caller its own
+        # ancestor: it would then inherit its own stale route from an
+        # earlier task, the one thing the task-first ownership rule refuses.
+        lineage = lineage - conversation()
+    if lineage:
         inherited = [entry for entry in entries if entry["session_id"] in lineage]
         if inherited:
             route = max(inherited, key=lambda entry: entry["written_at"])
@@ -1417,6 +1435,8 @@ def prepare_dispatch_route(
         with _awareness_delivery_lock(record_path, timeout_seconds=_DISPATCH_LOCK_SECONDS) as mechanism:
             decided = plan()
             if decided["action"] == "none":
+                if decided["status"] == "lineage_unresolved":
+                    return _lineage_fallback(decided, session_id)
                 return {"status": decided["status"]}
             if decided["action"] == "reapply":
                 return _reapply_route(
@@ -1496,6 +1516,91 @@ def _reapply_route(
     }
 
 
+def _lineage_fallback(plan: Mapping[str, Any], session_id: str) -> dict[str, Any]:
+    """The dispatch goes ahead on another conversation's route, and says so.
+
+    Its own `state.db` row could not be read, so it might be that route's
+    worker, and stripping the route would be the regression #2254's review
+    found. Blocking would refuse every dispatch of a session whose row is
+    missing. So the call proceeds as it did before #2251 and the fallback
+    is named: in the hook's result (which Hermes passes over, since it has
+    no `action`) and in the log, which is where an operator looks.
+    """
+    other = str(plan.get("live_writer", "") or "")
+    _LOG.warning(
+        "OMH could not read the state.db row of session %r, so its delegate_task runs on the "
+        "delegation route session %r set rather than on the profile default",
+        session_id,
+        other,
+    )
+    return {
+        "status": "lineage_unresolved",
+        "session_id": session_id,
+        "live_route_writer": other,
+        "dispatched_on_other_route": True,
+        "note": (
+            "This session's state.db row could not be read, so OMH could not tell whether it was "
+            "delegated from the session whose route is in the delegation.* keys, and left that "
+            "route in place."
+        ),
+    }
+
+
+# What `dispatch_route_directive` attaches, without blocking, for a dispatch
+# that goes ahead on a fallback.
+DISPATCH_ROUTE_NOTES = frozenset({"lineage_unresolved"})
+
+
+def conversation_route_for(
+    hermes_home: str | Path | None = None,
+    *,
+    omh_home: str | Path | None = None,
+    session_id: str = "",
+    task_id: str = "",
+    now: float | None = None,
+) -> dict[str, Any] | None:
+    """The caller's own conversation route, as its next dispatch would find it.
+
+    `action=status` reports it beside the profile-wide keys, which may hold
+    another session's route. The same ownership rule and age bound as the
+    dispatch; `in_keys` says whether the keys hold it right now. None when
+    this conversation has no route of its own in this task.
+    """
+    if not conversation_routes_path(omh_home).exists():
+        return None
+    config_path = str(delegation_config_path(hermes_home))
+    task_id = str(task_id or "")[:_MAX_ID_CHARS]
+    session_id = str(session_id or "")[:_MAX_ID_CHARS]
+    tick = float(now if now is not None else time.time())
+    home = hermes_home or runtime_paths.default_hermes_home()
+    cache: dict[str, set[str]] = {}
+
+    def conversation() -> set[str]:
+        if "conversation" not in cache:
+            cache["conversation"] = (
+                {session_id} | conversation_session_ids(home, session_id) if session_id else set()
+            )
+        return cache["conversation"]
+
+    own = [
+        entry
+        for entry in load_conversation_routes(omh_home).values()
+        if entry["config_path"] == config_path
+        and tick - entry["written_at"] <= LIVE_TUI_SESSION_FRESH_SECONDS
+        and _owned_by_caller(entry["session_id"], entry["task_id"], task_id, conversation)
+    ]
+    if not own:
+        return None
+    entry = max(own, key=lambda item: item["written_at"])
+    return {
+        "route": dict(entry["route"]),
+        "session_id": entry["session_id"],
+        "task_id": entry["task_id"],
+        "written_at": entry["written_at"],
+        "in_keys": read_delegation_route(hermes_home) == entry["route"],
+    }
+
+
 def _dispatch_refusal(plan: Mapping[str, Any], session_id: str, reason: str) -> dict[str, Any]:
     """The typed result a dispatch that must not go ahead is refused with."""
     other = str(plan.get("live_writer", "") or "")
@@ -1536,10 +1641,13 @@ def dispatch_route_directive(
     task_id: str,
     omh_home: str | Path | None,
     hermes_home: str | Path | None,
-) -> dict[str, str] | None:
-    """`pre_tool_call`'s directive for a `delegate_task` spawn: None, or a block.
+) -> dict[str, Any] | None:
+    """`pre_tool_call`'s answer for a `delegate_task` spawn.
 
-    `list`, `steer` and `stop` start no child, so they read no route.
+    None, a block, or -- for a dispatch that goes ahead on a fallback -- a
+    note with no `action` (`omh_route_fallback`), which Hermes passes over
+    and the caller returns so the fallback is named. `list`, `steer` and
+    `stop` start no child, so they read no route.
     """
     if tool_name != "delegate_task":
         return None
@@ -1550,6 +1658,8 @@ def dispatch_route_directive(
     result = prepare_dispatch_route(
         hermes_home, omh_home=omh_home, session_id=session_id, task_id=task_id
     )
+    if result.get("status") in DISPATCH_ROUTE_NOTES:
+        return {"omh_route_fallback": result}
     if result.get("status") not in DISPATCH_ROUTE_REFUSALS:
         return None
     return {"action": "block", "message": json.dumps(result, sort_keys=True)}

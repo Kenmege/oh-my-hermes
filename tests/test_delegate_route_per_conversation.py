@@ -150,7 +150,7 @@ class RouteSurvivesAnotherSessionTest(PerConversationRouteTestCase):
 
         # B was the last writer, so its turn end put the baseline back...
         self.assertEqual(ended["route_restore"]["status"], "cleared", ended)
-        self.assertEqual(ended["route_restore"]["conversation_route"]["released"], 1)
+        self.assertEqual(ended["route_restore"]["writer_routes"], "released")
         self.assertEqual(self.keys(), {})
         # ...and A's dispatch still runs on A's route.
         self.assertIsNone(self.dispatch("A", "A-t1"))
@@ -357,17 +357,44 @@ class UnresolvedLineageTest(PerConversationRouteTestCase):
         self.set_route("B", "B-t1", "quick")
         record = load_route_restore_record(self.omh_home)
 
-        self.assertIsNone(self.dispatch("C", "C-t1"))
+        with self.assertLogs("omh.delegation_route", level="WARNING") as logged:
+            result = self.dispatch("C", "C-t1")
 
+        # Not blocked (no `action`), but named: in the hook result and the log.
+        self.assertNotIn("action", result)
+        fallback = result["omh_route_fallback"]
+        self.assertEqual(fallback["status"], "lineage_unresolved")
+        self.assertEqual((fallback["session_id"], fallback["live_route_writer"]), ("C", "B"))
+        self.assertTrue(fallback["dispatched_on_other_route"])
+        self.assertIn("'C'", logged.output[0])
         self.assertEqual(self.keys(), QUICK)
         self.assertEqual(load_route_restore_record(self.omh_home), record)
 
     def test_no_state_db_at_all_leaves_the_route_alone(self) -> None:
         self.set_route("B", "B-t1", "quick")
 
-        self.assertIsNone(self.dispatch("C", "C-t1"))
+        with self.assertLogs("omh.delegation_route", level="WARNING"):
+            result = self.dispatch("C", "C-t1")
 
+        self.assertEqual(result["omh_route_fallback"]["status"], "lineage_unresolved")
         self.assertEqual(self.keys(), QUICK)
+
+    def test_an_approve_keeps_its_action_and_carries_the_fallback(self) -> None:
+        self.set_route("B", "B-t1", "quick")
+        approve = {"action": "approve", "message": "repeat", "rule_key": "k"}
+        with mock.patch(
+            "omh.plugin_bundle.omh.hooks.tool_hooks.repeat_call_directive", return_value=approve
+        ), self.assertLogs("omh.delegation_route", level="WARNING"):
+            result = self.dispatch("C", "C-t1")
+
+        self.assertEqual(result["action"], "approve")
+        self.assertEqual(result["omh_route_fallback"]["status"], "lineage_unresolved")
+
+    def test_a_resolved_unrouted_dispatch_carries_no_note(self) -> None:
+        self.top_level("B", "C")
+        self.set_route("B", "B-t1", "quick")
+
+        self.assertIsNone(self.dispatch("C", "C-t1"))
 
 
 class NestedDelegationTest(PerConversationRouteTestCase):
@@ -435,7 +462,7 @@ class GatewayStaleRouteTest(PerConversationRouteTestCase):
         ended = self.end_turn("S", "S")
 
         self.assertEqual(ended["route_restore"]["status"], "cleared", ended)
-        self.assertEqual(ended["route_restore"]["conversation_route"]["released"], 1)
+        self.assertEqual(ended["route_restore"]["writer_routes"], "released")
         # The next turn dispatches without setting a route.
         self.assertIsNone(self.dispatch("S", "S"))
         self.assertEqual(self.keys(), {})
@@ -541,6 +568,125 @@ class RecordingIdentityTest(PerConversationRouteTestCase):
 
         self.assertEqual(ended["route_restore"]["conversation_route"]["released"], 1, ended)
         self.assertFalse(conversation_routes_path(self.omh_home).exists())
+
+
+class ReleaseCoherenceTest(PerConversationRouteTestCase):
+    """The caller's own release and the restore it follows cannot come apart."""
+
+    def test_clear_releases_in_the_restores_own_lock(self) -> None:
+        self.top_level("A")
+        self.set_route("A", "A-t1", "deep")
+        real = delegation_route_restore._awareness_delivery_lock
+        with mock.patch.object(delegation_route_restore, "_awareness_delivery_lock", wraps=real) as lock:
+            cleared = self.tool("A", "A-t1", action="clear")
+
+        self.assertEqual(cleared["status"], "cleared", cleared)
+        self.assertEqual(cleared["conversation_route"]["status"], "released", cleared)
+        self.assertEqual(lock.call_count, 1)
+        # The same task's next dispatch does not put the cleared route back.
+        self.assertIsNone(self.dispatch("A", "A-t1"))
+        self.assertEqual(self.keys(), {})
+
+    def test_a_clear_that_cannot_take_the_lock_releases_nothing(self) -> None:
+        # The probe's shape: before, the restore could succeed and a second
+        # lock for the release time out, so a "cleared" route came back.
+        self.set_route("A", "A-t1", "deep")
+        with _awareness_delivery_lock(delegation_route_restore_path(self.omh_home)):
+            cleared = self.tool("A", "A-t1", action="clear")
+
+        self.assertEqual(cleared["status"], "lock_unavailable", cleared)
+        self.assertNotIn("conversation_route", cleared)
+        self.assertEqual(self.keys(), DEEP)
+        self.assertEqual(set(load_conversation_routes(self.omh_home)), {"A"})
+
+    def test_an_exhausted_chain_does_not_come_back_on_the_same_task(self) -> None:
+        self.top_level("A")
+        self.set_route("A", "A-t1", "deep")
+        self.assertEqual(self.tool("A", "A-t1", action="fallback")["status"], "fell_back")
+
+        exhausted = self.tool("A", "A-t1", action="fallback")
+
+        self.assertEqual(exhausted["status"], "exhausted_to_inherit", exhausted)
+        self.assertEqual(exhausted["conversation_route"]["status"], "released", exhausted)
+        self.assertIsNone(self.dispatch("A", "A-t1"))
+        self.assertEqual(self.keys(), {})
+
+    def test_another_sessions_clear_keeps_this_sessions_route(self) -> None:
+        self.set_route("B", "B-t1", "quick")
+
+        cleared = self.tool("C", "C-t1", action="clear")
+
+        self.assertEqual(cleared["writer_routes"], "kept", cleared)
+        self.assertEqual(cleared["conversation_route"]["released"], 0, cleared)
+        self.assertEqual(set(load_conversation_routes(self.omh_home)), {"B"})
+
+    def test_a_refused_turn_end_restore_keeps_the_route_recorded(self) -> None:
+        self.top_level("A")
+        self.set_route("A", "A-t1", "deep")
+        refused = {"status": "error", "error": "config changed during route read"}
+        with mock.patch.object(delegation_route_restore, "_put_baseline_back", return_value=refused):
+            ended = self.end_turn("A", "A-t1")
+
+        self.assertEqual(ended["route_restore"]["status"], "error", ended)
+        self.assertNotIn("conversation_route", ended["route_restore"])
+        # The keys still hold the route, and so does the record of it.
+        self.assertEqual(self.keys(), DEEP)
+        self.assertEqual(set(load_conversation_routes(self.omh_home)), {"A"})
+        # The next turn end does both.
+        ended = self.end_turn("A", "A-t1")
+        self.assertEqual(ended["route_restore"]["status"], "cleared", ended)
+        self.assertFalse(conversation_routes_path(self.omh_home).exists())
+
+    def test_a_session_start_release_that_fails_is_reported(self) -> None:
+        old = time.time() - 3 * 24 * 3600
+        with mock.patch.object(delegation_route_restore.time, "time", return_value=old):
+            self.set_route("S", "S", "quick")
+        with mock.patch.object(
+            delegation_route_restore, "_release_locked", side_effect=PermissionError("denied")
+        ), self.assertLogs("omh.delegation_route", level="WARNING"):
+            started = on_session_start(session_id="NEW", **self.homes())
+
+        self.assertEqual(started["route_restore"]["status"], "cleared", started)
+        self.assertEqual(started["route_restore"]["writer_routes"], "unreleased: PermissionError")
+        components = started["omh_degradation"]["components"]
+        self.assertEqual(components[0]["error_type"], "PermissionError", started)
+
+
+class LineageCycleTest(PerConversationRouteTestCase):
+    def test_a_corrupt_cycle_does_not_make_a_session_its_own_parent(self) -> None:
+        # A route from an earlier turn is not this turn's (task-first); a
+        # `_delegate_from` cycle through A must not hand it back as a parent's.
+        self.sessions(
+            row("A", delegate_from="P", last_activity_at=time.time()),
+            row("P", delegate_from="A", last_activity_at=time.time()),
+        )
+        self.set_route("A", "A-t1", "deep")
+
+        self.assertIsNone(self.dispatch("A", "A-t2"))
+
+        self.assertEqual(self.keys(), {})
+
+
+class StatusTest(PerConversationRouteTestCase):
+    def status(self, session: str, task: str) -> dict:
+        return self.tool(session, task, action="status")
+
+    def test_status_reports_this_conversations_route_beside_the_keys(self) -> None:
+        self.set_route("A", "A-t1", "deep")
+        self.set_route("B", "B-t1", "quick")
+
+        mine = self.status("A", "A-t1")
+
+        self.assertEqual(mine["route"]["model"], "quick-head")
+        self.assertEqual(mine["conversation_route"]["route"], DEEP)
+        self.assertFalse(mine["conversation_route"]["in_keys"])
+        self.assertTrue(self.status("B", "B-t1")["conversation_route"]["in_keys"])
+
+    def test_status_without_a_route_of_ones_own_says_none(self) -> None:
+        self.set_route("B", "B-t1", "quick")
+
+        self.assertIsNone(self.status("C", "C-t1")["conversation_route"])
+        self.assertIsNone(self.status("B", "B-t2")["conversation_route"])
 
 
 if __name__ == "__main__":

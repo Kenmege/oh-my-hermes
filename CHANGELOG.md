@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A cleared or exhausted delegation route stays gone (#2251
+  follow-up).** `clear` and chain exhaustion now release the conversation's
+  own route inside the same lock as the restore, after it. Before, the
+  release took a second lock. When that lock timed out, the cleared route,
+  or the model that had just failed, came back at the next dispatch of the
+  same task. A turn-end restore whose write is refused now keeps the route
+  recorded, because the keys still hold it. A session-start restore that
+  cannot release a gone writer's route reports a degradation instead of
+  leaving it to the six-hour bound. A `delegate_task` that runs on another
+  session's route because its own `state.db` row cannot be read now says so,
+  in the hook result and in Hermes' log. A corrupt `_delegate_from` cycle can
+  no longer make a session inherit its own stale route.
+  `omh_delegate_route action=status` reports the conversation's own route
+  beside the profile-wide keys.
+
 - **A delegation route belongs to the conversation that set it (#2251).**
   The three `delegation.*` keys are shared by every session on a profile.
   When session A ran `omh_delegate_route set` and session B set its own route

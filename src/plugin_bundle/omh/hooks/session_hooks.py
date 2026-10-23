@@ -239,7 +239,24 @@ def _attach_restore_degradation(payload: dict[str, object], restore: dict[str, o
     `not_last_writer` and `writer_live` are the restore working: each is a
     decision not to touch a value, and reporting them as degradation would put
     a permanent warning in front of every healthy session.
+
+    A restore that put the keys back but could not release the writer's
+    conversation route (`writer_routes: unreleased: <type>`) is a failure
+    too, reported here rather than left to the six-hour bound that retires
+    the entry; likewise a turn end whose own release failed.
     """
+    writer_routes = str(restore.get("writer_routes", ""))
+    if writer_routes.startswith("unreleased: "):
+        payload["omh_degradation"] = degradation_payload(
+            [(COMPONENT_DELEGATION_ROUTE_RESTORE, writer_routes.removeprefix("unreleased: "))]
+        )
+        return
+    conversation_route = restore.get("conversation_route")
+    if isinstance(conversation_route, dict) and conversation_route.get("status") == "error":
+        payload["omh_degradation"] = degradation_payload(
+            [(COMPONENT_DELEGATION_ROUTE_RESTORE, str(conversation_route.get("error_type", "error")))]
+        )
+        return
     if str(restore.get("status", "")) not in ("error", "lock_unavailable"):
         return
     # `error_type` and not `error`: the degradation field is documented as a
