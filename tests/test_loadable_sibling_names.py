@@ -32,6 +32,7 @@ _BACKTICKED = re.compile(r"`([^`]+)`")
 # lost one changes this table.
 EXPECTED_BUNDLED_DEFERRALS = {
     "agent-board": ("sdlc-review",),
+    "ai-job-search": ("grounded-citations",),
     "ai-slop-cleaner": ("simplify-code",),
     "app-debugging": ("systematic-debugging",),
     "biomedical-evidence": ("grounded-citations",),

@@ -34,6 +34,86 @@ from omh.plugin_bundle.omh.awareness import awareness_route_hint, awareness_rout
 from omh.skills.catalog import primary_harness_for_skill, routable_definitions
 from _route_owner import dispatched_or_asked, route_owner, route_owner_harness, shortlist_skills
 
+
+class AiJobSearchActorRoutingTests(unittest.TestCase):
+    def test_employer_hiring_never_dispatches_candidate_cards(self):
+        from omh.wrapper.contract import build_chat_interaction_payload
+
+        for message in (
+            "Help our employer recruiting team run a job search campaign.",
+            "Help our recruiting team run a job search campaign.",
+            "We need to hire librarians; help us run a job search campaign.",
+            "Run a job search campaign to find candidates for our company.",
+            "Help our client recruit candidates through a job search campaign.",
+            "Help the employer recruiting team run a job search campaign.",
+            "Help an employer recruiting team run a job search campaign.",
+            "Help this company run a job search campaign to find candidates.",
+            "Help that employer recruiting team run a job search campaign.",
+            "Help a recruitment agency run a job search campaign to find candidates.",
+            "I am hiring; help me run a job search campaign for library staff.",
+            "Help Acme's recruitment department plan a job search campaign.",
+            "A regional employer needs a job search campaign to source applicants.",
+            "The staffing agency wants a job search campaign to recruit archivists.",
+            "We're hiring librarians; help plan a job search campaign.",
+            "Help a recruiter run a job search campaign to find candidates.",
+            "I'm hiring; help run a job search campaign for archivists.",
+            "We’re hiring; help run a job search campaign for archivists.",
+            "Use ai-job-search to help our company run a job search campaign to find candidates.",
+            "/omh-ai-job-search help a recruitment agency run a job search campaign to find candidates.",
+            "Help that employer run their job search campaign to find candidates.",
+            "I am hiring; help with my job search campaign to find candidates.",
+        ):
+            with self.subTest(message=message):
+                decision = route_chat_message(message, source="discord")
+                self.assertTrue(decision["action"] == "clarify" or
+                                (decision["action"], decision["selected_skill"]) == ("dispatch", "people-ops"),
+                                decision)
+                interaction = build_chat_interaction_payload(message, source="discord")
+                self.assertNotEqual(interaction["chat_response"]["kind"], "ai_job_search")
+                self.assertNotEqual(interaction["next_action"], "prepare_ai_job_search")
+
+    def test_recruiter_candidate_and_employer_target_keep_career_cards(self):
+        from omh.wrapper.contract import build_chat_interaction_payload
+
+        for message in (
+            "I am a recruiter; help with my job search for my next role.",
+            "Help with my job search for a role on an employer recruiting team.",
+            "Tailor my resume to this employer recruiting team posting using my supplied facts.",
+            "I work on our recruiting team; help with my job search for my own next role.",
+            'Help with my job search; the example says "our employer recruiting team runs a job search campaign".',
+            "Help a recruitment agency employee run his own job search campaign.",
+            "Help a recruiter with her job search for her next role.",
+            "Help a person with their job search for a role at a company.",
+            "Help with my job search for an employer that is hiring librarians.",
+            "I am not hiring; help with a job search for my next role.",
+            "Use ai-job-search to tailor my resume to a supplied posting.",
+            "Help an employer with a job search.",
+            "Help a recruiter with a job search.",
+        ):
+            with self.subTest(message=message):
+                decision = route_chat_message(message, source="discord")
+                self.assertEqual((decision["action"], decision["selected_skill"]), ("dispatch", "ai-job-search"))
+                interaction = build_chat_interaction_payload(message, source="discord")
+                self.assertEqual(interaction["chat_response"]["kind"], "ai_job_search")
+                self.assertEqual(interaction["next_action"], "prepare_ai_job_search")
+
+    def test_employer_reference_is_not_an_actor_request(self):
+        from omh.wrapper.contract import build_chat_interaction_payload
+
+        for message in (
+            'Translate "Help our employer recruiting team run a job search campaign." into Japanese.',
+            'Explain the phrase "our recruiting team runs a job search campaign".',
+            'Summarize this sentence: "Help our employer recruiting team run a job search campaign."',
+            'Explain this quotation: "I am hiring; help run a job search campaign."',
+            '```text\nHelp that employer run a job search campaign.\n```\nTranslate the above into French.',
+            'Do not use ai-job-search; explain what a recruiter does.',
+        ):
+            with self.subTest(message=message):
+                decision = route_chat_message(message, source="discord")
+                self.assertNotEqual(decision["action"], "dispatch")
+                interaction = build_chat_interaction_payload(message, source="discord")
+                self.assertNotEqual(interaction["chat_response"]["kind"], "ai_job_search")
+
 # Rows re-pinned to a clarify by shortlist-first routing (dispatch only on
 # strong evidence). Only these rows may pass as a clarify whose first
 # candidate is the expected skill; every other row must still dispatch.
