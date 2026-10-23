@@ -4,6 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The dag-ulw TUI reads at a glance on a big run.** The owner's GIF review
+  and an audit at 100×30, 150×42 and 200×50 found the transcript flooded by
+  147–219 rows per print under the 48-node cap, and a tree whose short titles
+  left the figures ragged at the right edge. A print now leaves the
+  Dependencies list and the Node details to `/dag`. A run of up to 12 lanes
+  still prints every box and arrow; a bigger one prints its header, a row
+  per layer, the boxes the moment changed and
+  `… N more nodes · /dag shows the whole graph`, and its end is the whole
+  run's tally and its failed or stuck nodes. A layer the node cap emptied
+  keeps its row. Tree titles take the task line of a node's prompt after a
+  short label, cut at a word past 52 cells, and the figures stand in fixed
+  columns. Boxes
+  grow to 48 cells and cut a long title in its middle. Counts are the run's
+  lanes and the edges between them, with thousands separators and `B`/`T`
+  token tiers, a capped layer reads `28 of 640 nodes`, and the agents chip
+  counts the running lanes. The launch fills the screen with the composer
+  on the bottom rows, the composer keeps its rules and a
+  `↑↓ browsing · esc to type` hint while the tree has the keys, and a run
+  that settles or shrinks mid-turn keeps its rows until the turn ends
+  instead of leaving a blank band above the composer.
+
 - **`omh setup`'s provider step ends on one Enter.** After the provider
   list, a second prompt, `Add another provider by name (Enter to skip)`,
   always followed and waited for its own Enter. The step looked finished

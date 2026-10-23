@@ -66,6 +66,7 @@ RULE = "─"  # the composer's rules, above and under it, full width
 INFO_INSET = 2  # cells before the info line's text, under the rule
 STICKY_PREFIX = "↳ you: "
 STICKY_CUT = "…"  # where the reminder's prompt is cut
+BROWSING_HINT = "↑↓ browsing · esc to type"  # in the composer's place while the agent list or the dag tree has the keys
 
 MODE_NORMAL = "normal"
 MODE_ACCEPT = "accept"
@@ -119,9 +120,10 @@ def build_frame(
     under the bottom edge, above the info line: the completion menu where the
     app puts it under the composer. `agents` is the agent view, drawn under
     the info line as the region's last rows, sized by its producer to
-    `layout.agent_view_cap`. `composer_blank` draws the composer's rows, its
-    rules included, as blank rows of the same count, with no caret: the agent
-    list under them has the keys, and nothing moves as it opens or closes.
+    `layout.agent_view_cap`. `composer_blank` keeps the composer's rules and
+    draws its rows as the dim `BROWSING_HINT` and blank rows of the same
+    count, with no caret: the agent list or the dag tree under them has the
+    keys, and nothing moves as it opens or closes.
     `tail_floor` is the tail's last rows the agent view leaves it
     (`layout.allocate`): the working row while a turn runs. `known_slash`
     names the commands and skills a `/name` in the draft is drawn for (none
@@ -160,9 +162,9 @@ def build_frame(
         sticky=sticky,
         tail=tail,
         slot=slot,
-        rule=BLANK if composer_blank else rule_line(cols, theme),
-        composer=[BLANK] * len(composer_lines) if composer_blank else composer_lines,
-        bottom_rule=BLANK if composer_blank else rule_line(cols, theme),
+        rule=rule_line(cols, theme),
+        composer=_browsing_rows(len(composer_lines), cols, theme) if composer_blank else composer_lines,
+        bottom_rule=rule_line(cols, theme),
         info=truncate_line(info, cols),
         below=below,
         agents=agents,
@@ -179,6 +181,13 @@ def build_frame(
         height=budget.total,
         budget=budget,
     )
+
+
+def _browsing_rows(count: int, cols: int, theme: Theme) -> list[Line]:
+    """The composer's rows while a list under it has the keys: the hint, dim, then blank rows; as many as it had."""
+    if count <= 0:
+        return []
+    return [truncate_line((Span(" " * INFO_INSET), Span(BROWSING_HINT, theme.hint)), cols), *[BLANK] * (count - 1)]
 
 
 def rule_line(width: int, theme: Theme = DEFAULT_THEME) -> Line:

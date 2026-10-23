@@ -37,7 +37,7 @@ SIZES = [(rows, cols) for rows in (12, 24, 30, 40, 50) for cols in (40, 80, 100,
 GRAPHS = {"three lanes": parallel(3), "owner mock-up": owner_mock(), "six lanes": parallel(6), "twelve": parallel(12)}
 
 MOCK_24x80 = """\
-  DAG · ulw-work hud-graph · 5 nodes · 6 edges · 2 running · 1 waiting · 1 done
+  DAG · ulw-work hud-graph · 4 nodes · 3 edges · 2 running · 1 waiting · 1 done
   ◆ main · opus-5-5:high
   ├─ ● Refresh HUD docs    writing  opus-5-5:medium    running 2m 10s
   ├─ ✓ Polish HUD CLI      quick    glm-5.3-flash:low  done 1m 2s

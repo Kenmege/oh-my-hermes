@@ -136,7 +136,7 @@ Node details
 """
 
 NESTED34TREE = """\
-DAG · delegation · 7 nodes · 6 ed…
+DAG · delegation · 6 nodes · 4 ed…
 3 running · 2 dispatched · 1 done
 ◆ main · opus-5-5:high
 ├─ ● Port the auth module
@@ -154,7 +154,7 @@ DAG · delegation · 7 nodes · 6 ed…
 """
 
 NESTED40BUDGET = """\
-DAG · delegation · 7 nodes · 6 edges
+DAG · delegation · 6 nodes · 4 edges
 3 running · 2 dispatched · 1 done
 ◆ main · opus-5-5:high
 ├─ ● Port the auth module
@@ -172,7 +172,7 @@ DAG · delegation · 7 nodes · 6 edges
 """
 
 EXPORT_TREE_CUT_8 = """\
-DAG · export feature · 6 nodes · 7 edges · 1 running · 1 failed · 1 dispatched · 1 waiting · 1 done
+DAG · export feature · 5 nodes · 6 edges · 1 running · 1 failed · 1 dispatched · 1 waiting · 1 done
 ◆ main · opus-5-5:high
 ├─ layer 2
 │  ├─ ● Export button    unspecified-high  glm-5.3:low        running 21s
@@ -182,7 +182,7 @@ DAG · export feature · 6 nodes · 7 edges · 1 running · 1 failed · 1 dispat
 """
 
 EXPORT_TREE_CUT_6 = """\
-DAG · export feature · 6 nodes · 7 edges · 1 running · 1 failed · 1 dispatched · 1 waiting · 1 done
+DAG · export feature · 5 nodes · 6 edges · 1 running · 1 failed · 1 dispatched · 1 waiting · 1 done
 ◆ main · opus-5-5:high
 ├─ layer 2
 │  ├─ ● Export button    unspecified-high  glm-5.3:low        running 21s
@@ -191,7 +191,7 @@ DAG · export feature · 6 nodes · 7 edges · 1 running · 1 failed · 1 dispat
 """
 
 LAYER_CUT_7 = """\
-DAG · delegation · 7 nodes · 6 edges · 1 running · 5 waiting
+DAG · delegation · 6 nodes · 5 edges · 1 running · 5 waiting
 ◆ main · opus-5-5:high
 ├─ layer 1
 │  └─ ● Schema           deep   opus-5-5:high      running 30s
@@ -348,7 +348,7 @@ class BoxTests(unittest.TestCase):
     def test_a_node_added_mid_run_says_where_it_came_from(self) -> None:
         boxes = box_lines(render_delegation_view(dag_export_repair_run(), width=100))
         self.assertEqual(boxes["d:r1:csv"][0], "+ CSV export", "an extend")
-        self.assertEqual(boxes["d:r1:csv-fix"][0], "↻ CSV export, with the head…", "a repair")
+        self.assertEqual(boxes["d:r1:csv-fix"][0], "↻ CSV export … header row", "a repair")
         self.assertEqual(boxes["d:r1:verify"][0], "Verify export")
         ascii_boxes = box_lines(render_delegation_view(dag_export_repair_run(), width=100, charset="ascii"))
         self.assertEqual((ascii_boxes["d:r1:csv"][0], ascii_boxes["d:r1:csv-fix"][0][:4]), ("+ CSV export", "~ CS"))
@@ -478,6 +478,17 @@ class BoxTests(unittest.TestCase):
         self.assertEqual(text(fanout, width=80).splitlines()[1], "fanout fanout-0123456789ab · 1/1",
                          "a root that names no model adds nothing")
 
+    def test_the_header_counts_the_runs_lanes_and_the_edges_between_them_with_separators(self) -> None:
+        from omh.plugin_bundle.omh.delegation_view import header_text
+
+        # main is the drawing's root, not a node of the run, and its dispatch edges are not the run's edges.
+        self.assertEqual(header_text(dag_export_run()),
+                         "DAG · export feature · 5 nodes · 6 edges · 1 running · 1 failed · 1 dispatched · 1 waiting · "
+                         "1 done")
+        wide = {**parallel(1200), "hidden_nodes": 1500}
+        self.assertEqual(header_text(wide), "DAG · delegation · 1,200 nodes · 0 edges · 1,200 running · "
+                                            "+1,500 more nodes")
+
     def test_frontiers_sit_side_by_side_and_say_so(self) -> None:
         view = render_delegation_view(dag_export_run(), width=120)
         rows = {node_id: (top, bottom) for node_id, top, bottom in view.boxes}
@@ -549,7 +560,9 @@ class BoxTests(unittest.TestCase):
         long = dag_export_run()
         long["nodes"][2]["title"] = "Export button with a confirmation dialog and a keyboard shortcut"
         view = render_delegation_view(long, width=60)
-        self.assertEqual(box_lines(view)[BUTTON][0], "Export button with a confirma…")
+        # The box grows toward its title (`BOX_INNER_MAX`), and a title still too long is cut in its middle, at word
+        # boundaries, so its end, which tells two titles apart, stays.
+        self.assertEqual(box_lines(view)[BUTTON][0], "Export button with a … and a keyboard shortcut")
         self.assertEqual(section(view, "Node details")[:2],
                          ["  ● Export button with a confirmation dialog and a keyboard", "    shortcut"])
 
@@ -797,10 +810,16 @@ class ReviewTests(unittest.TestCase):
         focus = Focus(node="d:r1:cli", folded=frozenset({"d:r1:api", "d:r1:cli"}))
         unicode_boxes = box_lines(render_delegation_view(dag_export_run(), width=140, focus=focus))
         self.assertEqual(unicode_boxes["d:r1:api"], ["[+] ✓ Export API · Accepted"])
-        self.assertEqual(unicode_boxes["d:r1:cli"], ["[+] > ✗ Export CLI f… · Failed"], "past 30 cells the title gives way")
+        self.assertEqual(unicode_boxes["d:r1:cli"], ["[+] > ✗ Export CLI flag · Failed"])
         ascii_boxes = box_lines(render_delegation_view(dag_export_run(), width=140, focus=focus, charset="ascii"))
         self.assertEqual(ascii_boxes["d:r1:api"], ["[+] + Export API - Accepted"])
-        self.assertEqual(ascii_boxes["d:r1:cli"], ["[+] > x Export CLI... - Failed"])
+        self.assertEqual(ascii_boxes["d:r1:cli"], ["[+] > x Export CLI flag - Failed"])
+        longer = dag_export_run()
+        longer["nodes"][4]["title"] = "Export CLI flag for every output format we ship today"
+        self.assertEqual(box_lines(render_delegation_view(longer, width=140, focus=focus))["d:r1:cli"],
+                         ["[+] > ✗ Export CLI flag for eve… · Failed"], "past the box the title gives way")
+        self.assertEqual(box_lines(render_delegation_view(longer, width=140, focus=focus, charset="ascii"))["d:r1:cli"],
+                         ["[+] > x Export CLI flag for e... - Failed"])
         # A folded, selected box whose one line is the widest of the drawing measures all of it: `[+] > ✓ ` is 8
         # cells, then the title, then ` · Accepted`, so nothing is cut while the width allows.
         alone = graph([root(), lane("a", "Export API", "quick", "m", "", "done", status="accepted", elapsed=12)],
@@ -863,9 +882,15 @@ class OutputTokenTests(unittest.TestCase):
             ["✓ Accepted 12s · ↓5.6k", "● Running 21s · ↓1.2k", "◌ Handed out", "✗ Failed 8s · ↓800"],
         )
         ascii_drawn = text(with_tokens(dag_export_run(), EXPORT_COUNTS), width=80, charset="ascii")
-        self.assertIn("| * Running 21s - out 1.2k       |", ascii_drawn)
-        self.assertIn("| + Accepted 12s - out 5.6k      |", ascii_drawn)
+        self.assertIn("| * Running 21s - out 1.2k        |", ascii_drawn)
+        self.assertIn("| + Accepted 12s - out 5.6k       |", ascii_drawn)
         self.assertTrue(ascii_drawn.isascii())
+
+    def test_a_count_reads_in_four_characters_and_a_unit_up_to_trillions(self) -> None:
+        from omh.plugin_bundle.omh.hud_text import compact_count
+
+        self.assertEqual([compact_count(value) for value in (950, 1234, 3_000_000, 70_049_332_364, 1_234_567_890_123)],
+                         ["950", "1.2k", "3M", "70B", "1.2T"])
 
     def test_a_box_count_shows_while_its_status_line_fits_and_drops_out_whole(self) -> None:
         # Measured as it reads, beside the status as it reads: the box keeps its width, the count comes and goes.

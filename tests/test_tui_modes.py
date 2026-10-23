@@ -114,6 +114,7 @@ def make_app(*, busy: bool = False, rows: int = 24, cols: int = 80, **options: o
     app = App(ScriptedTerminal(rows, cols), client, options.pop("environ", {}), poller=FakePoller(), **options)  # type: ignore[arg-type]
     app.sid = SID
     app.turn_pending = busy
+    app.launch_layout = False  # a session past its launch; the launch's full-screen frame is OpeningTests' (real loop)
     return app, client
 
 

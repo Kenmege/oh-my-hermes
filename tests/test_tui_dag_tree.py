@@ -116,13 +116,14 @@ def tree_app(rows: int = 72, cols: int = 120, nodes: dict = NODES, children: boo
 
 
 def left(row: str) -> str:
-    """A row up to its right-hand figures (three spaces or more after its text starts), its indent kept."""
+    """A row up to its right-hand figures (two spaces or more after its text starts: the figure columns start two
+    cells after the title column), its indent kept."""
     body = row.lstrip(" ")
-    return row[: len(row) - len(body)] + re.split(r" {3,}", body.rstrip())[0] if body else ""
+    return row[: len(row) - len(body)] + re.split(r" {2,}", body.rstrip())[0] if body else ""
 
 
 def right(row: str) -> str:
-    parts = re.split(r" {3,}", row.strip())
+    parts = re.split(r" {2,}", row.strip(), maxsplit=1)
     return parts[-1] if len(parts) > 1 else ""
 
 
@@ -145,7 +146,7 @@ def down_to(app, key: str) -> None:
 
 
 DEFAULT = [  # the tree's rows up to their right-hand figures, at 120x72 (a cap of 24 rows: all of it fits)
-    "  DAG · sweep · 8 nodes · 10 edges · 3 running · 1 failed · 2 waiting · 1 done",
+    "  DAG · sweep · 7 nodes · 9 edges · 3 running · 1 failed · 2 waiting · 1 done",
     "  ▾ layer 1 · 1 node · 1 done",
     "    ▸ ✓ Inventory rlaope PRs",
     "",
@@ -178,10 +179,76 @@ class DefaultFoldTests(unittest.TestCase):
 
     def test_a_header_row_ends_on_category_model_status_and_tokens(self) -> None:
         app, _client = tree_app()
-        rows = {left(row): right(row) for row in view_text(app)}
+        rows = {left(row): " · ".join(part.strip() for part in right(row).split("·")) for row in view_text(app)}
         self.assertEqual(rows["    ▾ ⠋ PR group 1: #138300 #107931"], "deep · gpt-6.1-sol:high · running 2m 12s · ↓1.3k")
         self.assertEqual(rows["    ▸ ✓ Inventory rlaope PRs"], "quick · kimi-k3-ultrafast:low · accepted 48s · ↓900")
         self.assertEqual(rows["      · Verify handoffs"], "deep · gpt-6.1-sol:high · waits on 4 lanes")
+
+    def test_the_figures_stand_in_columns_two_cells_after_the_title_column(self) -> None:
+        # The owner's GIF review (2026-10-23): figures pushed to the right edge, each row's own width, read as a
+        # ragged column. They start at one column two cells after the widest title, each padded to its widest value.
+        app, _client = tree_app()
+        headers = [row for row in view_text(app) if right(row)]
+        separators = [[at for at, char in enumerate(row) if char == "·" and at > len(left(row))] for row in headers]
+        self.assertEqual(len({row.index(right(row)) for row in headers}), 1, headers)  # one start column
+        self.assertEqual(len({tuple(found[:3]) for found in separators if len(found) >= 3}), 1, headers)  # aligned
+        title_end = max(len(left(row)) for row in headers)
+        self.assertEqual(headers[0].index(right(headers[0])), title_end + 2, headers)  # right after the titles
+
+    def test_a_short_label_reads_with_its_prompts_first_clause_in_52_cells_cut_at_a_word(self) -> None:
+        # The owner's GIF review (2026-10-23): "Inventory rlaope PRs" alone says too little. A label under
+        # `SHORT_LABEL` cells takes its prompt's first clause after it; the title stops at `TITLE_CAP` cells, at a word.
+        from omh.tui.dag_tree import SHORT_LABEL, TITLE_CAP, clamp_title, node_title
+
+        built = sweep()
+        by_key = {item.get("dag_node"): item for item in built["nodes"]}
+        by_key["inventory"]["summary"] = "List every open PR by the author into inventory.json"
+        by_key["group-1"]["summary"] = "Rebase both PRs onto main and add the missing test"
+        by_key["verify"]["summary"] = "Verify handoffs"
+        app, _client = make_app(busy=True, rows=72, cols=160, clock=lambda: 0.0)
+        with_graph(app, built)
+        shown = [left(row) for row in view_text(app)]
+        self.assertIn("      ✓ Inventory rlaope PRs · List every open PR by the…", shown)
+        self.assertIn("      ⠋ PR group 1: #138300 #107931", shown, f"{SHORT_LABEL} cells or more: the label alone")
+        self.assertIn("      · Verify handoffs", shown, "a summary the label already says is not repeated")
+        whole = "Inventory rlaope PRs · List every open PR by the author into inventory.json"
+        self.assertEqual(node_title(by_key["inventory"]), clamp_title(whole, TITLE_CAP))
+        self.assertLessEqual(len(node_title(by_key["inventory"])), TITLE_CAP)
+        self.assertGreater(len("Inventory rlaope PRs · List every open PR by the author"), TITLE_CAP, "cut at a word")
+        self.assertEqual(clamp_title("Apply review on #58281 · part two", 30), "Apply review on #58281 · part…")
+        self.assertEqual(clamp_title("Apply review on #58281 part two", 24), "Apply review on #58281…")
+        self.assertEqual(clamp_title("Antidisestablishmentarianism", 12), "Antidisesta…", "no word to cut at")
+
+    def test_a_layer_the_graph_reader_cut_says_what_it_shows_of_how_many(self) -> None:
+        # Under the graph's node cap a layer's count read as its total (`28 nodes` of 640).
+        app, _client = make_app(busy=True, rows=72, cols=120, clock=lambda: 0.0)
+        with_graph(app, {**sweep(), "hidden_nodes": 600, "hidden_by_group": {"layer 2": 600}})
+        shown = [left(row) for row in view_text(app)]
+        self.assertIn("  ▾ layer 2 · 4 of 604 nodes · 2 running · 1 failed · 1 waiting", shown)
+        self.assertIn("  ▾ layer 1 · 1 node · 1 done", shown)
+
+    def test_a_layer_the_cap_emptied_keeps_its_row_in_its_place(self) -> None:
+        # scene_final under the 48-node cap drew 3 layers of a 4-layer run: the cut layer had no row at all.
+        built = sweep()
+        for item in built["nodes"]:
+            if item.get("group") == "layer 3":
+                item["group"] = "layer 4"
+        built.update(hidden_nodes=161, hidden_by_group={"layer 3": 161},
+                     group_order=["layer 1", "layer 2", "layer 3", "layer 4"])
+        app, _client = make_app(busy=True, rows=72, cols=120, clock=lambda: 0.0)
+        with_graph(app, built)
+        layers = [row for row in (left(row) for row in view_text(app)) if "layer" in row]
+        self.assertEqual([re.sub(r" · .*", "", row) for row in layers],
+                         ["  ▾ layer 1", "  ▾ layer 2", "  ▸ layer 3", "  ▾ layer 4"])
+        self.assertIn("  ▸ layer 3 · 0 of 161 nodes", layers)
+
+    def test_a_long_token_is_cut_itself_rather_than_leaving_most_of_the_title_empty(self) -> None:
+        from omh.tui.dag_tree import TITLE_CAP, clamp_title
+
+        title = "Run the gateway retry test in tools/hermes_cli/gateway_retry_backoff_spec.py"
+        self.assertEqual(clamp_title(title, TITLE_CAP), "Run the gateway retry test in tools/hermes_cli/gate…")
+        self.assertEqual(clamp_title("Rebase each PR on main and run the full CI suite on it", TITLE_CAP),
+                         "Rebase each PR on main and run the full CI suite on…", "a word boundary past 70% stays")
 
     def test_a_node_no_child_ran_for_has_no_triangle_and_one_with_no_frame_yet_has_no_detail(self) -> None:
         app, _client = tree_app(children=False)
@@ -821,6 +888,7 @@ class StaleFrameTests(unittest.TestCase):
         app._on_input(Key(DOWN))
         nodes = {key: (*values[:5], "done", "accepted", *values[7:]) for key, values in NODES.items()}
         with_graph(app, sweep(nodes))
+        app.turn_pending = False  # the run ended and the turn with it: the tree folds to its summary line
         drawn(app)
         app._on_input(Key(DOWN))
         self.assertIsNone(app.tree_selected)
@@ -859,22 +927,39 @@ class TreeMouseTests(unittest.TestCase):
         app, _client = tree_app()
         settled(app)
         app._on_input(Key(DOWN))
-        click(app, 10, row_of(app, "DAG · sweep · 8 nodes"))
+        click(app, 10, row_of(app, "DAG · sweep · 7 nodes"))
         self.assertEqual(app.tree_selected, node_id("group-1"))
         self.assertIsNone(app.pager)
 
 
 class TreeChipTests(unittest.TestCase):
-    def test_the_count_leaves_out_a_superseded_lane(self) -> None:
+    def test_the_count_is_the_runs_running_lanes(self) -> None:
+        # During a dag run the chip counts the lanes running now, as the tree draws them (2026-10-23): the roster
+        # holds every child the run started, an attempt the graph no longer draws and a helper beside it too.
         app, _client = tree_app()
-        drawn_before = mode_row(app)
-        self.assertIn("5 agents", drawn_before)
+        graph = app.hud.payload["delegation_graph"]
+        running = sum(1 for node in graph["nodes"] if node.get("kind") != "root" and node.get("state") == "running")
+        self.assertIn(f"{running} agent{'' if running == 1 else 's'}", mode_row(app))
         agent_event(app, "start", "sa-old-fix", goal=f"Resolve the registry conflict [dag:{RUN}/group-3-fix-0]",
                     child_session_id="20261022_134612_00000000")  # an attempt the graph no longer draws
-        self.assertEqual(len(app.roster.agents), 6)
-        self.assertIn("5 agents", mode_row(app))
         agent_event(app, "start", "sa-helper", goal="look something up", child_session_id="helper-session")
-        self.assertIn("6 agents", mode_row(app), "a helper beside the run is counted: the tree draws it")
+        self.assertIn(f"{running} agent{'' if running == 1 else 's'}", mode_row(app))
+        for node in graph["nodes"]:
+            if node.get("kind") != "root":
+                node["state"] = "done"
+        app.turn_pending = False
+        self.assertIsNone(re.search(r"\d+ agents?", mode_row(app)), mode_row(app))  # a run over: no count
+
+    def test_a_count_of_a_thousand_or_more_has_separators(self) -> None:
+        built = sweep()
+        for number in range(1200):
+            built["nodes"].append(lane(f"d:{RUN}:extra-{number}", f"Extra lane {number}", "quick", KIMI, "low",
+                                       "running", order=100 + number, group="layer 2"))
+            built["edges"].append({"from": node_id("inventory"), "to": f"d:{RUN}:extra-{number}",
+                                   "kind": "depends_on"})
+        app, _client = make_app(busy=True, rows=72, cols=120, clock=lambda: 0.0)
+        with_graph(app, built)
+        self.assertIn("1,203 agents", mode_row(app))
 
 
 def mixed(done: bool = True) -> dict:
