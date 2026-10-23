@@ -371,21 +371,21 @@ What it shows, and what it leaves as `?`:
     label, without its `[dag:<run>/<node>]` marker. The tree collapses a
     finished run to its one summary line once the turn has ended. The
     transcript keeps the run's graph as boxes, as `omh hud --graph` draws
-    them (with Dependencies and Node details), at define, at each repair and
-    extend with the added nodes marked (`↻` a repair, `+` an extend round),
-    and once at the end, when the turn that ended the run is over and the run
-    still is; where no box fits the width it is the tree. A print taller than
-    about one screen (the rows the composer, the working rows and the agent
-    view leave) is condensed: the header, one row per layer with its counts,
-    the boxes the moment changed (the first layer at define, the added nodes
-    at a repair or an extend, each naming the nodes it waits on), and
-    `… N more nodes · /dag shows the whole graph`; `/dag` keeps the
-    Dependencies and the Node details. A big run's end is its tally and the
-    nodes that failed or are stuck. A box grows toward its title up to 48
-    cells, and a title longer still is cut in its middle, at words, so its
-    end stays.
+    them, at define, at each repair and extend with the added nodes marked
+    (`↻` a repair, `+` an extend round), and once at the end, when the turn
+    that ended the run is over and the run still is; where no box fits the
+    width it is the tree. A print holds no Dependencies list and no Node
+    details: the arrows draw every edge, and `/dag` keeps both. A run of up
+    to 12 lanes prints every box, at its end too, where the boxes' final
+    states are the tally. A bigger run prints condensed: the header, one row
+    per layer with its counts, the boxes the moment changed (the first layer
+    at define, the added nodes at a repair or an extend, each naming the
+    nodes it waits on), and `… N more nodes · /dag shows the whole graph`;
+    its end is its tally and the nodes that failed or are stuck. A box grows
+    toward its title up to 48 cells, and a title longer still is cut in its
+    middle, at words, so its end stays.
 
-    ![The dag-ulw plan block in the OMH TUI transcript: Export API handed out as the start node, the button, the docs and the CLI flag waiting on it in the next frontier, and the verification node waiting on all three, with the Dependencies list under them](../assets/omh-tui-dag-ulw-plan-block.png)
+    ![The dag-ulw plan block in the OMH TUI transcript: Export API handed out as the start node, the button, the docs and the CLI flag waiting on it in the next frontier, and the verification node waiting on all three](../assets/omh-tui-dag-ulw-plan-block.png)
 
     ![A dag-ulw run in the OMH TUI mid-run: the two done layers shut, the verification node open with its child's last call and reply, the extend round hanging under it, the CSV node blocked with its child's reason, its repair running beneath it and the CSV docs beside it, each with its child's check and its own line under it, and the plan holding one item per layer](../assets/omh-tui-dag-ulw-run.png)
 

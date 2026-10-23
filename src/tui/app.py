@@ -149,7 +149,7 @@ from .keys import (
 )
 from .launch import request_fallback
 from .agent_view import AGENT_STEER_LEFT_UNANSWERED_NOTICE, STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
-from .layout import Budget, agent_view_cap, choice_cap, is_tiny, slot_cap
+from .layout import Budget, choice_cap, is_tiny, slot_cap
 from .markdown import clean_text
 from .modes import (
     HERMES_OWN_CYCLE,
@@ -283,10 +283,6 @@ RESIZE_SETTLE_SECONDS = 0.15
 # A full redraw (a resize, Ctrl+L, /redraw, a switch, a resumed session) prints the transcript's last this many
 # rows; the blocks above them are counted on one row instead (`Transcript.retake_tail`) and /history shows them.
 REDRAW_TAIL_ROWS = 3000
-# A dag run's print in the transcript is drawn whole while it takes no more than the screen's rows less the
-# agent view's usual rows and these (the composer, its rules, the info line, the working rows); else condensed.
-DAG_PRINT_RESERVED_ROWS = 7
-DAG_PRINT_MIN_ROWS = 12
 EXIT_CONFIRM_SECONDS = 2.0
 # Esc pressed twice within this long: with text, clears it into this session's history; on an empty composer
 # between turns, opens the rewind picker. The info line says what the second press will do.
@@ -2094,8 +2090,7 @@ class App(ModesMixin, AgentViewMixin):
         self.dag_end_due.pop(run, None)
         graph = self._read_dag_graph()
         if graph is not None:
-            self.transcript.add_aside(dag_block.DagBlock(title, graph, max_rows=self._dag_print_rows(),
-                                                         added=tuple(_added)))
+            self.transcript.add_aside(dag_block.DagBlock(title, graph, added=tuple(_added)))
 
     def _dag_ends_due(self) -> None:
         """The run ends this turn reached, each printed once if its run is still over as the turn ends."""
@@ -2103,13 +2098,7 @@ class App(ModesMixin, AgentViewMixin):
         for title in due.values():
             graph = self._read_dag_graph()
             if graph is not None and not graph.get("dag_open"):
-                self.transcript.add_aside(dag_block.DagBlock(title, graph, max_rows=self._dag_print_rows()))
-
-    def _dag_print_rows(self) -> int:
-        """The rows a run's printed graph may take whole: about one screen, less the composer, the info line, the
-        working rows and the agent view's usual rows (`dag_block`: a bigger graph prints condensed)."""
-        rows, cols = self.size[1], self.size[0]
-        return max(rows - agent_view_cap(rows, cols) - DAG_PRINT_RESERVED_ROWS, DAG_PRINT_MIN_ROWS)
+                self.transcript.add_aside(dag_block.DagBlock(title, graph))
 
     def _read_dag_graph(self) -> Mapping[str, Any] | None:
         return self.read_dag_graph(self.environ.get("OMH_HOME") or None, self.environ.get("HERMES_HOME") or None,

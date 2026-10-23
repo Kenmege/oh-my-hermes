@@ -118,11 +118,12 @@ class BlockTests(unittest.TestCase):
         block = dag_block.DagBlock("repair · +1 node", repaired)
         boxes, tree = self._text(block, 140), self._text(block, 24)
         self.assertEqual(boxes[0].strip(), "dag-ulw repair · +1 node")
-        # As boxes: the drawing's own repair mark, a parents line naming the node it repairs, and the repair edge
-        # under Dependencies; the block adds no mark of its own, so none is doubled.
+        # As boxes: the drawing's own repair mark, a parents line naming the node it repairs and the arrow into its
+        # box; the block adds no mark of its own, so none is doubled. No Dependencies list: the arrows are the edges.
         added = next(index for index, line in enumerate(boxes) if "↻ Fix the button" in line)
         self.assertIn("← Export button", boxes[added + 3])
-        self.assertIn("Export button → Fix the button (repair)", "\n".join(boxes))
+        self.assertIn("▼", boxes[added - 2])
+        self.assertNotIn("Dependencies", "\n".join(boxes))
         self.assertFalse([line for line in boxes if "+ " in line and "Fix" in line], boxes)
         # As the tree: nested under the node it repairs.
         failed = next(index for index, line in enumerate(tree) if "Export bu" in line)
@@ -185,22 +186,37 @@ def big_run(sizes: tuple[int, ...], states: dict[str, str] | None = None) -> dic
 
 
 class CondensedTests(unittest.TestCase):
-    """A print bigger than about one screen is condensed: its header, a row per layer, the boxes the moment changed
-    and how many nodes it leaves to `/dag`; a big run's end is its tally and the nodes that stopped."""
+    """A run of up to `SMALL_GRAPH_LANES` lanes prints every box; a bigger one is condensed: its header, a row per
+    layer, the boxes the moment changed and how many nodes it leaves to `/dag`; a big run's end is its tally and the
+    nodes that stopped. Neither prints Dependencies or Node details, which `/dag` keeps."""
 
     @staticmethod
     def _text(block: dag_block.DagBlock, width: int = 140) -> list[str]:
         return ["".join(span.text for span in line) for line in block_rows(block, width, THEME)]
 
-    def test_a_print_that_fits_is_drawn_whole_and_a_bigger_one_condensed(self) -> None:
-        small, big = big_run((2, 1)), big_run((4, 40, 1))
-        whole = self._text(dag_block.DagBlock("plan", small))
-        self.assertEqual(self._text(dag_block.DagBlock("plan", small, max_rows=len(whole))), whole, "it fits")
-        self.assertIn("Dependencies", "\n".join(whole))
-        unbounded = self._text(dag_block.DagBlock("plan", big))
-        condensed = self._text(dag_block.DagBlock("plan", big, max_rows=30))
-        self.assertGreater(len(unbounded), 100)
-        self.assertLessEqual(len(condensed), 30)
+    def test_twelve_lanes_print_every_box_and_thirteen_condense(self) -> None:
+        self.assertEqual(dag_block.SMALL_GRAPH_LANES, 12)
+        small = self._text(dag_block.DagBlock("plan", big_run((4, 7, 1))))
+        text = "\n".join(small)
+        self.assertEqual([index for index in range(1, 14) if f"Migrate service {index} config " in text],
+                         list(range(1, 13)), "every box")
+        self.assertIn("┌", text)
+        self.assertTrue(any("│" in line and "Waiting" in line for line in small))
+        for gone in ("Dependencies", "Node details", "more nodes", "layer 1 ·"):
+            self.assertNotIn(gone, text)
+        big = self._text(dag_block.DagBlock("plan", big_run((4, 8, 1))))
+        self.assertEqual([line.strip() for line in big[:5]], [
+            "dag-ulw plan", "DAG · service migration · 13 nodes · 9 edges · 13 waiting",
+            "layer 1 · 4 nodes · 4 waiting", "layer 2 · 8 nodes · 8 waiting", "layer 3 · 1 node · 1 waiting"])
+        self.assertEqual(big[-1].strip(), "… 9 more nodes · /dag shows the whole graph")
+        # Lanes the graph reader left out count: 12 drawn and 1 hidden is a run of 13.
+        hidden = self._text(dag_block.DagBlock("plan", {**big_run((4, 7, 1)), "hidden_nodes": 1}))
+        self.assertEqual(hidden[-1].strip(), "… 9 more nodes · /dag shows the whole graph")
+
+    def test_a_big_print_is_condensed_whatever_the_screen(self) -> None:
+        big = big_run((4, 40, 1))
+        condensed = self._text(dag_block.DagBlock("plan", big))
+        self.assertLessEqual(len(condensed), 20)
         self.assertEqual([line.strip() for line in condensed[:5]], [
             "dag-ulw plan", "DAG · service migration · 45 nodes · 41 edges · 45 waiting",
             "layer 1 · 4 nodes · 4 waiting", "layer 2 · 40 nodes · 40 waiting", "layer 3 · 1 node · 1 waiting"])
@@ -214,13 +230,13 @@ class CondensedTests(unittest.TestCase):
 
     def test_a_layer_cut_by_the_graph_reader_says_what_it_kept_of_how_many(self) -> None:
         big = {**big_run((4, 40, 1)), "hidden_by_group": {"layer 2": 600}, "hidden_nodes": 600}
-        condensed = self._text(dag_block.DagBlock("plan", big, max_rows=30))
+        condensed = self._text(dag_block.DagBlock("plan", big))
         self.assertEqual(condensed[3].strip(), "layer 2 · 40 of 640 nodes · 40 waiting")
         self.assertEqual(condensed[-1].strip(), "… 641 more nodes · /dag shows the whole graph")
 
     def test_a_repair_draws_the_nodes_it_added_naming_what_they_wait_on(self) -> None:
         big = big_run((4, 40, 1), {"n1": "done", "n6": "failed", "n7": "running"})
-        condensed = self._text(dag_block.DagBlock("repair · +1 node", big, max_rows=30, added=("n7",)))
+        condensed = self._text(dag_block.DagBlock("repair · +1 node", big, added=("n7",)))
         self.assertEqual(condensed[3].strip(), "layer 2 · 40 nodes · 1 running · 1 failed · 38 waiting")
         boxes = [line for line in condensed if "│" in line]
         self.assertEqual([line.strip(" │") for line in boxes], [
@@ -230,10 +246,16 @@ class CondensedTests(unittest.TestCase):
     def test_a_big_runs_end_is_its_tally_and_the_nodes_that_stopped(self) -> None:
         states = {f"n{index}": "done" for index in range(1, 46)}
         states.update(n2="failed", n9="stuck")
-        condensed = self._text(dag_block.DagBlock("end · failed", big_run((4, 40, 1), states), max_rows=30))
+        condensed = self._text(dag_block.DagBlock("end · failed", big_run((4, 40, 1), states)))
         self.assertEqual([line.strip() for line in condensed], [
             "dag-ulw end · failed", "DAG · service migration · 45 nodes · 41 edges · 1 stuck · 1 failed · 43 done",
             "✗ Migrate service 2 config · failed", "! Migrate service 9 config · stuck"])
+        # A small run's end is its boxes in their final states: they are the tally.
+        small = self._text(dag_block.DagBlock("end · failed", big_run((2, 1), {"n1": "done", "n2": "failed",
+                                                                               "n3": "done"})))
+        self.assertEqual(sum("┌" in line for line in small), 2, "two frontiers of boxes")
+        self.assertEqual([word for word in ("✓ Done", "✗ Failed") if any(word in line for line in small)],
+                         ["✓ Done", "✗ Failed"])
 
 
 def turn_ended() -> Event:
@@ -275,10 +297,7 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self._titles(app), ["plan", "repair · +1 node", "end · done", "extend · +2 nodes"])
         self.assertEqual(dag_run.DAG_SCHEMA_VERSION, "omh_dag/v1")
 
-    def test_each_print_may_take_about_one_screen_whole_and_a_repair_names_what_it_added(self) -> None:
-        from omh.tui.app import DAG_PRINT_MIN_ROWS, DAG_PRINT_RESERVED_ROWS
-        from omh.tui.layout import agent_view_cap
-
+    def test_a_repair_print_names_the_nodes_it_added(self) -> None:
         with homes() as home:
             results = run_results(home)
             graph = build_delegation_graph(home.omh, home.hermes, PARENT)
@@ -288,11 +307,8 @@ class AppTests(unittest.TestCase):
         app._on_event(turn_ended())
         blocks = [block for block in app.transcript.blocks + app.transcript._held
                   if isinstance(block, dag_block.DagBlock)]
-        screen = 60 - agent_view_cap(60, 140) - DAG_PRINT_RESERVED_ROWS
-        self.assertEqual([(block.title, block.max_rows, block.added) for block in blocks], [
-            ("plan", screen, ()), ("repair · +1 node", screen, ("ui-fix",)), ("end · done", screen, ())])
-        app.size = (140, 16)
-        self.assertEqual(app._dag_print_rows(), DAG_PRINT_MIN_ROWS, "a short screen still prints a small graph whole")
+        self.assertEqual([(block.title, block.added) for block in blocks], [
+            ("plan", ()), ("repair · +1 node", ("ui-fix",)), ("end · done", ())])
 
     def test_an_end_the_same_turn_extends_prints_nothing_and_the_last_end_prints_once(self) -> None:
         with homes() as home:

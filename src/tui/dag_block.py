@@ -21,14 +21,15 @@ messenger: a chat reply carries its three moments and no boxes.
 `topology_lines` is the other half of a run's picture: `/dag` closes the
 whole graph with the run's critical path and bottlenecks.
 
-A print that fits about one screen (`DagBlock.max_rows`: the rows the
-composer, the working rows and the agent view leave) is drawn whole, as
-above. A bigger graph prints condensed (`_condensed`): its header, one row
-per layer with its counts, the boxes of the frontier the moment changed (the
+The print holds no Dependencies list and no Node details: the arrows draw
+every edge, and `/dag` keeps both. A run of up to `SMALL_GRAPH_LANES` lanes
+prints every box, at its end too, where the boxes' final states are the
+tally. A bigger run prints condensed (`_condensed`): its header, one row per
+layer with its counts, the boxes of the frontier the moment changed (the
 first layer at ``define``, the added nodes at ``repair`` and ``extend``),
-and `… N more nodes · /dag shows the whole graph`; no Dependencies and no
-Node details, which `/dag` keeps. A big run's end is its tally and the
-nodes that failed or are stuck.
+and `… N more nodes · /dag shows the whole graph`; its end is its tally and
+the nodes that failed or are stuck. The switch is the lane count, never the
+terminal's height: the owner sees a small run's graph whole.
 """
 
 from __future__ import annotations
@@ -53,7 +54,6 @@ class DagBlock:
     title: str  # what the moment is: "plan", "repair · +1 node", "extend · +3 nodes", "end · done"
     graph: Mapping[str, Any]
     done: bool = True
-    max_rows: int | None = None  # the rows a whole print may take; a bigger one prints condensed (None: always whole)
     added: tuple[str, ...] = ()  # the dag node ids a repair or an extend added: the boxes a condensed print draws
 
 
@@ -102,18 +102,22 @@ def read_graph(omh_home: str | None, hermes_home: str | None, session: str) -> M
 
 
 def rows(block: DagBlock, width: int, theme: Theme) -> list[Line]:
-    """The block's rows: its moment, then the graph as boxes, or the tree where boxes do not fit ``width``."""
-    from ..plugin_bundle.omh.delegation_view import render_delegation_view
+    """The block's rows: its moment, then the graph as boxes without Dependencies and Node details, or the tree
+    where boxes do not fit ``width``; condensed past `SMALL_GRAPH_LANES` lanes."""
+    from ..plugin_bundle.omh.delegation_view import UNICODE, _box_view, render_delegation_view
     from .panels import dag_line
 
-    view = render_delegation_view(block.graph, width=max(8, width - len(INDENT)), layout="box")
+    if _lane_count(block.graph) > SMALL_GRAPH_LANES:
+        return _condensed(block, width, theme)
     lines = [truncate_line((Span(f"{INDENT}dag-ulw {block.title}", theme.muted),), width)]
-    lines += [truncate_line((Span(INDENT), *dag_line(row, view.levels, theme)), width) for row in view.lines]
-    if block.max_rows is None or len(lines) <= block.max_rows:
-        return lines
-    return _condensed(block, width, theme)
+    drawn = _box_view(block.graph, max(8, width - len(INDENT)), UNICODE, sections=0)
+    if drawn is not None:
+        return lines + [truncate_line((Span(INDENT), *dag_line(row, 1, theme)), width) for row in drawn.lines]
+    view = render_delegation_view(block.graph, width=max(8, width - len(INDENT)), layout="tree")
+    return lines + [truncate_line((Span(INDENT), *dag_line(row, view.levels, theme)), width) for row in view.lines]
 
 
+SMALL_GRAPH_LANES = 12  # a run of up to this many lanes prints every box; a bigger one prints condensed
 CONDENSED_BOXES = 6  # the frontier boxes a condensed print draws at most
 CONDENSED_FAILURES = 8  # the failed or stuck nodes a condensed end lists at most
 MORE_NOTE = "/dag shows the whole graph"
@@ -122,6 +126,12 @@ MORE_NOTE = "/dag shows the whole graph"
 def _lanes(graph: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     nodes = graph.get("nodes") if isinstance(graph.get("nodes"), list) else []
     return [node for node in nodes if isinstance(node, Mapping) and node.get("kind") != "root"]
+
+
+def _lane_count(graph: Mapping[str, Any]) -> int:
+    """The run's lanes, the ones the graph reader left out (`hidden_nodes`) included."""
+    hidden = graph.get("hidden_nodes")
+    return len(_lanes(graph)) + (hidden if isinstance(hidden, int) and not isinstance(hidden, bool) else 0)
 
 
 def _layer_lines(graph: Mapping[str, Any], width: int, theme: Theme) -> list[Line]:
@@ -189,7 +199,7 @@ def _condensed(block: DagBlock, width: int, theme: Theme) -> list[Line]:
         if drawn is not None and tops:
             lines.append(())
             lines += [truncate_line((Span(INDENT), *dag_line(row, 1, theme)), width) for row in drawn.lines[min(tops):]]
-    total = len(lanes) + (graph.get("hidden_nodes") if isinstance(graph.get("hidden_nodes"), int) else 0)
+    total = _lane_count(graph)
     if total > len(shown):
         lines.append(truncate_line((Span(f"{INDENT}… {total - len(shown):,} more nodes · {MORE_NOTE}", theme.muted),),
                                    width))

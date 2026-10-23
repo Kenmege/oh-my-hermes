@@ -7,11 +7,12 @@ All notable changes will be documented here.
 - **The dag-ulw TUI reads at a glance on a big run.** The owner's GIF review
   and an audit at 100×30, 150×42 and 200×50 found the transcript flooded by
   147–219 rows per print under the 48-node cap, and a tree whose short titles
-  left the figures ragged at the right edge. A print taller than about one
-  screen is now condensed to its header, a row per layer, the boxes the
-  moment changed and `… N more nodes · /dag shows the whole graph`; a big
-  run's end is its tally and its failed or stuck nodes. Smaller prints are
-  unchanged. Tree titles take the prompt's first clause after a short label,
+  left the figures ragged at the right edge. A print now leaves the
+  Dependencies list and the Node details to `/dag`. A run of up to 12 lanes
+  still prints every box and arrow; a bigger one prints its header, a row
+  per layer, the boxes the moment changed and
+  `… N more nodes · /dag shows the whole graph`, and its end is its tally
+  and its failed or stuck nodes. Tree titles take the prompt's first clause after a short label,
   cut at a word past 52 cells, and the figures stand in fixed columns. Boxes
   grow to 48 cells and cut a long title in its middle. Counts are the run's
   lanes and the edges between them, with thousands separators and `B`/`T`
