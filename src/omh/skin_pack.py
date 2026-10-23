@@ -3,7 +3,8 @@
 Each theme is a Hermes skin document shipped in ``omh/skins/``, read straight
 off its YAML (`skin_colors`), so the OMH TUI and the pickers paint with what a
 theme declares. The choice lives under the OMH home (`theme_store_path`) and
-`effective_theme` is the one order every reader follows.
+`effective_theme` is the one order every reader follows. The launch look the
+OMH TUI opens with (`read_launch_choice`) is saved in the same record.
 
 Earlier versions also installed every theme file into ``$HERMES_HOME/skins/``
 and selected one through `display.skin`, so bare `hermes` wore it.
@@ -120,6 +121,17 @@ def theme_store_path(omh_home: Path) -> Path:
     return Path(omh_home) / "tui" / "theme.json"
 
 
+def _theme_store_record(omh_home: Path) -> dict[str, object]:
+    """The saved record under the OMH home, or {} when there is none this module wrote (unreadable, another schema)."""
+    try:
+        record = json.loads(theme_store_path(omh_home).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    if not isinstance(record, dict) or record.get("schema_version") != THEME_STORE_SCHEMA:
+        return {}
+    return record
+
+
 def read_theme_choice(omh_home: Path) -> SkinTheme | None:
     """The theme saved for this OMH home, or None when none is saved.
 
@@ -127,20 +139,35 @@ def read_theme_choice(omh_home: Path) -> SkinTheme | None:
     schema, an unknown name), so a damaged file costs the person their saved
     choice, never the TUI's start.
     """
-    try:
-        record = json.loads(theme_store_path(omh_home).read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return None
-    if not isinstance(record, dict) or record.get("schema_version") != THEME_STORE_SCHEMA:
-        return None
-    name = record.get("theme")
+    name = _theme_store_record(omh_home).get("theme")
     return theme_for_name(name) if isinstance(name, str) else None
 
 
 def write_theme_choice(omh_home: Path, theme: SkinTheme) -> Path:
-    """Save the theme the OMH TUI opens with; the path it was written to."""
+    """Save the theme the OMH TUI opens with; the path it was written to. The launch look saved beside it stays."""
+    return _write_theme_store(omh_home, "theme", theme.short_name)
+
+
+def read_launch_choice(omh_home: Path) -> str | None:
+    """The launch look saved for this OMH home (`launch`, beside the theme), as written; None when none is saved.
+
+    The OMH TUI owns the names (`tui.theme.LAUNCH_PRESETS`) and says when a
+    saved one is not among them, so the raw text comes back here.
+    """
+    name = _theme_store_record(omh_home).get("launch")
+    return name if isinstance(name, str) else None
+
+
+def write_launch_choice(omh_home: Path, name: str) -> Path:
+    """Save the launch look the OMH TUI opens with; the path it was written to. The theme saved beside it stays."""
+    return _write_theme_store(omh_home, "launch", name)
+
+
+def _write_theme_store(omh_home: Path, key: str, value: str) -> Path:
     path = theme_store_path(omh_home)
-    atomic_write_json(path, {"schema_version": THEME_STORE_SCHEMA, "theme": theme.short_name})
+    kept = {name: _theme_store_record(omh_home).get(name) for name in ("theme", "launch") if name != key}
+    record = {"schema_version": THEME_STORE_SCHEMA, **{name: v for name, v in kept.items() if isinstance(v, str)}}
+    atomic_write_json(path, {**record, key: value})
     return path
 
 

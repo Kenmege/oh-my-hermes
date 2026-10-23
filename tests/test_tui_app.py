@@ -831,13 +831,17 @@ class SessionTests(AppTestCase):
                 screen = run.terminal.captures[name]
                 self.assertEqual(len(screen), rows)
                 drawn = [line for line in screen if line]
-                self.assertEqual(sum(BOX_MARK in line for line in screen), 2, screen)  # one frame: its two rules
-                self.assertEqual(sum(RULE_MARK in line for line in screen), 2, screen)
+                self.assertEqual(sum(line.startswith(BOX_MARK) for line in screen), 2, screen)  # one frame: its rules
+                self.assertEqual(sum(line.startswith(RULE_MARK) for line in screen), 2, screen)
                 # The redrawn session (the banner, and at 100 columns the logo above it, since the whole session
-                # fits the redraw) and the region (top edge, composer, bottom edge, info line), nothing else.
+                # fits the redraw) and the region (the launch card, refitted, then top edge, composer, bottom edge,
+                # info line), nothing else: one card, its boxes all closed.
                 logo = LOGO[:-1] if cols >= 100 else []
+                card = [line for line in drawn if line[:1] in ("╭", "│", "╰")]
+                self.assertEqual(sum(line.startswith("╭─ session") for line in screen), 1 if card else 0, screen)
+                self.assertEqual(sum(line.count("╭") for line in card), sum(line.count("╰") for line in card), screen)
                 self.assertEqual(drawn[: len(logo)], logo, screen)
-                self.assertEqual(len(drawn), 5 + len(logo), screen)
+                self.assertEqual(len(drawn), 5 + len(logo) + len(card), screen)
                 self.assertTrue(drawn[len(logo)].startswith("⚚ OH-MY-HERMES"), screen)
                 self.assertTrue(all(len(line) <= cols for line in screen))
 
@@ -870,7 +874,8 @@ class SessionTests(AppTestCase):
         self.assert_clean_run(run)
         screen = run.terminal.captures["final"]
         everything = run.terminal.screen.scrollback + screen
-        self.assertEqual(sum(BOX_MARK in line for line in everything), 2, everything)  # one frame: its two rules
+        self.assertEqual(sum(line.startswith(BOX_MARK) for line in everything), 2, everything)  # one frame: its rules
+        self.assertEqual(sum(line.startswith("╭─ session") for line in everything), 1, everything)  # one launch card
         self.assertEqual(sum(line.startswith("⚚ OH-MY-HERMES") for line in everything), 1, everything)
         self.assertTrue(screen[0].startswith("⚚ OH-MY-HERMES"), screen[:2])
         self.assertTrue(all(len(line) <= 60 for line in everything))
@@ -1604,7 +1609,10 @@ class OpeningTests(AppTestCase):
         start = run.terminal.captures["start"]
         rule = info_index(start) - 2 - UNDER_COMPOSER
         self.assertTrue(start[LOGO_ROWS].startswith(f"⚚ OH-MY-HERMES v{__version__} · ~/project"), start)
-        self.assertEqual(start[LOGO_ROWS + 1 : rule], [""] * (rule - LOGO_ROWS - 1), start)  # empty in between
+        # In between: the launch card right under the banner's blank row, then empty rows down to the composer.
+        card_end = max(index for index, line in enumerate(start[:rule]) if line.startswith("╰"))
+        self.assertTrue(start[LOGO_ROWS + 2].startswith("╭─ session"), start)
+        self.assertEqual(start[card_end + 1 : rule], [""] * (rule - card_end - 1), start)
         turn = run.terminal.captures["turn"]
         self.assertTrue(any(line.startswith("  ✻ ") for line in turn[:rule]), turn)  # the turn above the composer
 
@@ -1924,8 +1932,8 @@ class LocalCommandTests(AppTestCase):
         )
         terminal = run.terminal  # answers no OSC 11
         terminal.script(
-            self.submit(run, "/theme"),
-            Step(b"\x04", when=terminal.shows("picks the background it is measured"), label="the summary"),
+            self.submit(run, "/theme auto"),
+            Step(b"\x04", when=terminal.shows("COLORFGBG"), label="the background notice"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
@@ -1957,8 +1965,7 @@ class LocalCommandTests(AppTestCase):
             Step(b"/theme amber\r", when=note("light", "on a light background"), label="light"),
             Step(b"/theme dark\r", when=note("amber", "Theme amber"), label="amber"),
             Step(b"/theme auto\r", when=note("dark", "on a dark background"), label="dark"),
-            Step(b"/theme\r", when=note("auto", "follows the terminal"), label="auto"),
-            Step(b"\x04", when=terminal.shows("picks the background it is measured"), label="the summary"),
+            Step(b"\x04", when=note("auto", "follows the terminal"), label="auto"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
@@ -1975,14 +1982,16 @@ class LocalCommandTests(AppTestCase):
             self.submit(run, "/theme crimson"),
             Step(b"/theme nope\r", when=lambda: terminal.idle() and "applies to this session" in terminal.history()
                  and not seen.append(terminal.box_foreground()), label="the switch notice"),
-            Step(b"\x04", when=terminal.shows("No theme named nope"), label="the unknown-theme notice"),
+            Step(b"\x04", when=terminal.shows("No theme or launch look named nope"), label="the unknown-theme notice"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
         self.assertEqual(seen[-1], hex_to_rgb(theme_named("crimson").rule.fg))
         history = terminal.history()
         self.assertIn("Theme crimson applies to this session", history)
-        self.assertIn("No theme named nope. Available: sky, amber, crimson, mono.", history)
+        said = " ".join(word for word in history.split() if word != "┃")  # it wraps on the echo's rail
+        self.assertIn("No theme or launch look named nope. Themes: sky, amber, crimson, mono. "
+                      "Launch looks: spectrum, violet, gold, graphite.", said)
 
     def test_help_lists_local_commands_the_hermes_catalog_by_category_and_keys_in_the_transcript(self) -> None:
         run = self.prepare(

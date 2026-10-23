@@ -4,6 +4,24 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The launch has a look of its own, and a card.** The owner asked for new
+  logo colours and for more than the logo, like the skills box in Hermes'
+  own session panel. A fresh session's launch now draws the logo, the
+  banner's title and a launch card in one of four launch looks: `spectrum`
+  (the default: the logo swept through the five tool-kind hues, a box per
+  section), `violet`, `gold` and `graphite`. The card names the model and
+  effort, the new session, the last session with its `/resume` id, the first
+  keys, and the skills Hermes has. OMH's skills are grouped by capability
+  family, with the ulw lanes on their own row, and Hermes' own skills by
+  category. It fills in as `session.info` and `session.list` answer, sits
+  under the banner until the first prompt, then stays in scrollback above
+  it. `/theme` alone opens a picker that previews each look as you move
+  (on the logo and the card at launch, in a compact preview later); Enter
+  keeps it under the OMH home, and `/theme <look>` keeps one at once.
+  The logo is coloured cell by cell, with a darker drop shadow, at 3:1 or
+  more on dark and light backgrounds. The skin file Hermes' banner reads is
+  unchanged.
+
 - **A `dag-ulw` in the composer glows.** Typing `dag-ulw`, `dag ulw` or
   `/dag-ulw` in the TUI's composer runs the word's letters through violet,
   magenta, pink and lavender with a brighter band sweeping through them,

@@ -2,8 +2,11 @@
 
 The rows are the `banner_logo` of the shipped skin (read through the
 package, as `skin_colors` reads the palette), its Rich markup taken off and
-each row painted in the skin's gradient colour, lifted to the 3:1 a
-graphical mark needs on the terminal's background. It shows from
+each cell painted in the launch look's colours (`theme.LAUNCH_PALETTES`: a
+ramp per row, a sweep across the columns, or graphite's grey, white and
+turquoise), a drop-shadow glyph darker than its face, every glyph lifted to
+the 3:1 a graphical mark needs on the terminal's background. The skin's own
+row colours stay in its file for Hermes' banner. It shows from
 `LOGO_MIN_ROWS` rows and as many columns as the logo is wide, goes to
 scrollback with the banner, comes back with a full redraw only on top of the
 whole session it opened, and is not shown again for `/new` or a switch.
@@ -21,7 +24,16 @@ from test_tui_theme import DARK_BACKGROUNDS, LIGHT_BACKGROUNDS, contrast
 from omh.skin_pack import SKIN_THEMES, default_theme, logo_from_text, skin_colors, skin_logo
 from omh.tui.app import BANNER_BRAND, LOGO_MIN_ROWS, App, banner_logo
 from omh.tui.gateway import Response
-from omh.tui.theme import logo_lines
+from omh.tui.theme import (
+    DEFAULT_LAUNCH,
+    KIND_HUES,
+    LAUNCH_PALETTES,
+    LAUNCH_PRESETS,
+    LOGO_BLOCK,
+    is_light,
+    launch_palette,
+    logo_lines,
+)
 from omh.tui.width import line_width
 
 SKY_GRADIENT = ["#B8F4FF", "#7FDBFF", "#40D6DE", "#00CED1", "#0FA3AF", "#0B7E8A"]
@@ -46,8 +58,19 @@ def shown(app: App) -> list[str]:
     return screen.history() + screen.lines()
 
 
+def painted(look: str = DEFAULT_LAUNCH, background: str | None = None, skin=None):
+    skin = skin or default_theme()
+    surface = background or skin_colors(skin.skin_name)["status_bar_bg"]
+    return logo_lines(skin, background, launch_palette(look, surface))
+
+
 def logo_text() -> list[str]:
-    return [line_text(row) for row in logo_lines(default_theme())]
+    return [line_text(row) for row in painted()]
+
+
+def cells(row) -> list[tuple[str, str]]:
+    """(character, colour) per cell of one logo row."""
+    return [(char, span.style.fg) for span in row for char in span.text]
 
 
 class ReaderTests(unittest.TestCase):
@@ -56,7 +79,7 @@ class ReaderTests(unittest.TestCase):
             with self.subTest(skin=skin.short_name):
                 rows = skin_logo(skin.skin_name)
                 self.assertEqual(len(rows), 6)
-                self.assertEqual({line_width(row) for row in logo_lines(skin)}, {LOGO_WIDTH})
+                self.assertEqual({line_width(row) for row in painted(skin=skin)}, {LOGO_WIDTH})
                 for text, colour, _bold in rows:
                     self.assertNotIn("[", text)
                     self.assertNotIn("]", text)
@@ -72,31 +95,62 @@ class ReaderTests(unittest.TestCase):
 
 
 class PaintTests(unittest.TestCase):
-    def test_every_row_reaches_three_to_one_on_every_background(self) -> None:
-        for skin in SKIN_THEMES:
+    def test_every_glyph_of_every_look_reaches_three_to_one_on_every_background(self) -> None:
+        for look in LAUNCH_PRESETS:
             for background in (None, *LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
-                surface = background or skin_colors(skin.skin_name)["status_bar_bg"]
-                for number, row in enumerate(logo_lines(skin, background)):
-                    with self.subTest(skin=skin.short_name, background=background, row=number):
-                        self.assertGreaterEqual(contrast(row[0].style.fg, surface), 3.0)
+                surface = background or skin_colors(default_theme().skin_name)["status_bar_bg"]
+                for number, row in enumerate(painted(look, background)):
+                    with self.subTest(look=look, background=background, row=number):
+                        worst = min(contrast(colour, surface) for char, colour in cells(row) if char != " ")
+                        self.assertGreaterEqual(worst, 3.0)
 
-    def test_the_skins_colour_stays_wherever_it_already_reaches_three_to_one(self) -> None:
-        # Sky's last row is 3.43:1 on its dark stand-in: a mark keeps it; lifting to text contrast would not.
-        for skin in SKIN_THEMES:
-            for background in (None, *LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
-                surface = background or skin_colors(skin.skin_name)["status_bar_bg"]
-                painted = [row[0].style.fg for row in logo_lines(skin, background)]
-                for number, (_text, colour, _bold) in enumerate(skin_logo(skin.skin_name)):
-                    if contrast(colour, surface) >= 3.0:
-                        with self.subTest(skin=skin.short_name, background=background, row=number):
-                            self.assertEqual(painted[number], colour)
-        self.assertEqual([row[0].style.fg for row in logo_lines(default_theme())], SKY_GRADIENT)
-        self.assertEqual(len({row[0].style.fg for row in logo_lines(default_theme(), "#FFFFFF")}), 6)  # still a gradient
+    def test_a_shadow_glyph_is_drawn_darker_than_the_face_of_its_row_on_a_dark_background(self) -> None:
+        for look in ("violet", "gold"):  # a ramp per row: one face colour, one shadow colour on each row
+            with self.subTest(look=look):
+                row = painted(look, "#0E151E")[2]
+                faces = {colour for char, colour in cells(row) if char == LOGO_BLOCK}
+                shadows = {colour for char, colour in cells(row) if char not in (LOGO_BLOCK, " ")}
+                self.assertEqual(len(faces), 1)
+                self.assertEqual(len(shadows), 1)
+                self.assertGreater(contrast(faces.pop(), "#0E151E"), contrast(shadows.pop(), "#0E151E"))
+
+    def test_spectrum_sweeps_the_kind_hues_across_the_columns(self) -> None:
+        row = painted("spectrum", "#0E151E")[2]
+        faces = [colour for char, colour in cells(row) if char == LOGO_BLOCK]
+        self.assertGreater(len(set(faces)), 40)  # a colour per column, not per row
+        self.assertEqual(faces[0], KIND_HUES["skill"][0])  # the sweep starts on the skill hue, left
+        self.assertNotEqual(faces[0], faces[-1])
+
+    def test_a_ramp_keeps_each_rows_colour_where_it_already_reaches_three_to_one(self) -> None:
+        for look in ("violet", "gold"):
+            for background in ("#0E151E", "#FFFFFF"):
+                palette = launch_palette(look, background)
+                for number, row in enumerate(painted(look, background)[:5]):  # the sixth row is all shadow
+                    faces = {colour for char, colour in cells(row) if char == LOGO_BLOCK}
+                    with self.subTest(look=look, background=background, row=number):
+                        self.assertEqual(faces, {palette.faces[number]})
+
+    def test_graphite_draws_grey_oh_my_white_hermes_and_only_the_hyphens_in_colour(self) -> None:
+        dark = LAUNCH_PALETTES["graphite"][0]
+        row = cells(painted("graphite", "#0E151E")[2])
+        sparks = [index for index, (char, colour) in enumerate(row) if colour == dark.spark]
+        self.assertEqual(len(sparks), 10)  # two hyphens' five block cells; the H's crossbars are not hyphens
+        self.assertEqual(row[0][1], dark.greys[2])  # O
+        self.assertEqual(row[-2][1], dark.whites[2])  # S, the last block cell
+
+    def test_a_light_background_takes_each_looks_light_set(self) -> None:
+        for look in LAUNCH_PRESETS:
+            with self.subTest(look=look):
+                self.assertIs(launch_palette(look, "#FFFFFF"), LAUNCH_PALETTES[look][1])
+                self.assertIs(launch_palette(look, "#0E151E"), LAUNCH_PALETTES[look][0])
+                self.assertTrue(is_light("#FFFFFF"))
+        # The kind hues' light lime is an olive; spectrum's light sweep ends on its own lime instead.
+        self.assertNotEqual(LAUNCH_PALETTES["spectrum"][1].sweep[-1], KIND_HUES["web"][1])
 
     def test_no_escape_sequence_or_control_character_from_the_skin_reaches_the_terminal(self) -> None:
         planted = [("a\x1b[31mb\x07c\x1b]0;title\x07d\u009b2Je", "#123456", False)]
         with mock.patch("omh.tui.theme.skin_logo", return_value=planted):
-            (row,) = logo_lines(default_theme())
+            (row,) = painted()
         self.assertEqual(line_text(row), "abcde")
 
 
