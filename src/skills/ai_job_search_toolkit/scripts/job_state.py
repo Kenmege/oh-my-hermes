@@ -287,6 +287,13 @@ def decode(raw):
     return value
 
 
+def require_supported_platform():
+    require(bool(getattr(os, "O_NOFOLLOW", 0)) and bool(getattr(os, "O_DIRECTORY", 0))
+            and all(fn in os.supports_dir_fd for fn in (os.open, os.stat, os.unlink, os.rename))
+            and os.stat in os.supports_follow_symlinks,
+            "unsupported_platform", "Required POSIX no-follow/dir-fd primitives unavailable; Windows is unsupported")
+
+
 def safe_path(value):
     require(type(value) is str and bool(value), "unsafe_path", "An explicit path is required")
     require("\\" not in value, "unsafe_path", "Backslash paths are unsupported")
@@ -660,6 +667,7 @@ def main(argv=None):
             transition.add_argument("--" + flag, required=True)
         transition.add_argument("--corrects-event", default=None)
         args = parser.parse_args(argv)
+        require_supported_platform()
         value = None
         if args.command in {"validate", "merge"}:
             value = batch_check(decode(read_bytes(safe_path(args.input), INPUT_LIMIT)))

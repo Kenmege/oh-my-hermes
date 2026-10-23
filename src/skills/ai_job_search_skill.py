@@ -225,11 +225,11 @@ Reuse available native retrieval, document and citation tools; no new provider, 
 retrieval, external sync, recurring job or outreach is authorized by this method.
 
 ## Actually execute the companion
-Read toolkit/README.md for complete schema, limits and evidence types. Use the host
-terminal with an available Python >=3.11, an explicit approved cwd and finite timeout
-(default 40 seconds). In the installed skill directory, replace PYTHON with that
-interpreter and /PRIVATE with the approved private absolute path; JOB_ID must come
-from parsed merge output. These are operator commands, not new OMH CLI operations:
+Read toolkit/README.md for schema, limits and evidence types. Use the host terminal,
+Python >=3.11 on macOS/Linux, an approved cwd and a finite timeout (default 40s).
+Windows or absent no-follow/dir-fd support: unsupported_platform, exit 2, no write.
+In the installed skill directory substitute PYTHON, the approved private absolute
+/PRIVATE path and JOB_ID from merge output (operator commands, not OMH CLI):
 
 ```sh
 PYTHON toolkit/scripts/job_state.py validate --input /PRIVATE/jobs.json

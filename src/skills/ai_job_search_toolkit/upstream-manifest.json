@@ -7,7 +7,7 @@
     },
     "README.md": {
       "license": "MIT",
-      "local_sha256": "309e210e10db1ccc8aa624970591060118619dd27b9301ac06c99f73f6678534",
+      "local_sha256": "72bf64a190cefe089455d2fd44e0586c56b642b7f8b6765e69ff51fbb2a2e22c",
       "origin": "original"
     },
     "examples/synthetic-captures.json": {
@@ -17,7 +17,7 @@
     },
     "scripts/job_state.py": {
       "license": "MIT",
-      "local_sha256": "74b5078da3ce38eaf8699bcc62f292d175bee679f2bab4f5536f153fbd78639f",
+      "local_sha256": "f19045d1d5d5e4f079b3b596261a88d67f80480968c408d55927f779f4f7cf69",
       "origin": "original"
     }
   },

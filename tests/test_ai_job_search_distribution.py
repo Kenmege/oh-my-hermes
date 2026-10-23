@@ -13,6 +13,7 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
+from _platform_support import requires_posix, requires_secure_dir_io, requires_symlinks
 from _local_package import load_local_package
 load_local_package()
 
@@ -119,6 +120,7 @@ class AiJobSearchDistributionTests(unittest.TestCase):
         self.assertEqual((target.parent / 'edited-retired.py').read_bytes(), b'edited')
         self.assertEqual((target.parent / 'unowned.py').read_bytes(), b'old')
 
+    @requires_symlinks
     def test_local_source_closed_and_linked_protection(self):
         """Explicit local sources must match the one closed owner inventory."""
         tap = self.write_tap()
@@ -164,6 +166,7 @@ class AiJobSearchDistributionTests(unittest.TestCase):
             self.assertEqual([(row['name'], row['disposition']) for row in forced['hermes_edited_skills']], [(OWNER, 'replaced')])
             self.assertEqual(body.read_bytes(), original)
 
+    @requires_posix
     def test_six_portable_host_adapters(self):
         for host in ('cursor', 'claude', 'codex', 'opencode', 'openclaw', 'pi'):
             with self.subTest(host=host):
@@ -225,8 +228,9 @@ print('inert discovery, routing, install/update and doctor observed')
         result = self.run_command([sys.executable, '-P', '-c', code, str(self.root)], cwd=ROOT)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    @requires_secure_dir_io
     def test_package_only_helper(self):
-        result = self.run_command(['uv', 'build', '--offline', '--out-dir', str(self.root / 'dist')], cwd=ROOT)
+        result = self.run_command(['uv', 'build', '--out-dir', str(self.root / 'dist')], cwd=ROOT)
         self.assertEqual(result.returncode, 0, result.stderr)
         wheels = list((self.root / 'dist').glob('*.whl'))
         sdists = list((self.root / 'dist').glob('*.tar.gz'))

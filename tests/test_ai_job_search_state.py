@@ -11,6 +11,8 @@ import sys
 import tempfile
 import unittest
 
+from _platform_support import requires_secure_dir_io
+
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLKIT = ROOT / "src/skills/ai_job_search_toolkit"
@@ -38,6 +40,51 @@ def capture():
     }
 
 
+class UnsupportedPlatformTests(unittest.TestCase):
+    def test_missing_safe_io_primitives_refuse_before_paths_without_writes(self):
+        runner = ("import os, runpy, sys\n"
+                  "primitive = sys.argv.pop(1)\n"
+                  "if primitive == 'dir_fd': os.supports_dir_fd = set()\n"
+                  "else: setattr(os, primitive, 0)\n"
+                  "sys.argv = sys.argv[1:]\n"
+                  "runpy.run_path(sys.argv[0], run_name='__main__')\n")
+        with tempfile.TemporaryDirectory(dir=SCRATCH) as temporary:
+            root = Path(temporary)
+            for key in ('home', 'tmp', 'hermes', 'omh'):
+                directory = root / key
+                directory.mkdir()
+                (directory / '.git').write_text('invalid git barrier\n', encoding='utf-8')
+            env = {'PATH': os.defpath, 'HOME': str(root / 'home'), 'TMPDIR': str(root / 'tmp'),
+                   'HERMES_HOME': str(root / 'hermes'), 'OMH_HOME': str(root / 'omh')}
+            before = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+            for primitive in ('O_NOFOLLOW', 'O_DIRECTORY', 'dir_fd'):
+                for command in ('validate', 'merge', 'summary', 'transition'):
+                    with self.subTest(primitive=primitive, command=command):
+                        args = [command]
+                        if command in ('validate', 'merge'):
+                            args += ['--input', r'C:\private\captures.json']
+                        if command != 'validate':
+                            args += ['--workspace', str(root / 'new-workspace')]
+                        if command == 'transition':
+                            args += ['--job-id', 'job-' + '0' * 64, '--state', 'draft',
+                                     '--evidence-type', 'draft_artifact', '--evidence-ref', 'drafts/resume.md',
+                                     '--occurred-at', '2026-10-23T03:00:00Z']
+                        result = subprocess.run([sys.executable, '-I', '-B', '-c', runner, primitive,
+                                                 str(SCRIPT), *args], cwd=root, env=env,
+                                                capture_output=True, text=True, timeout=15)
+                        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                        self.assertEqual(result.stdout, '')
+                        payload = json.loads(result.stderr)
+                        self.assertEqual(payload['schema'], 'ai_job_search_error/v1')
+                        self.assertFalse(payload['ok'])
+                        self.assertEqual(payload['error']['code'], 'unsupported_platform')
+                        self.assertIn('no-follow/dir-fd', payload['error']['message'])
+                        self.assertEqual({str(p.relative_to(root)): p.read_bytes()
+                                          for p in root.rglob('*') if p.is_file()}, before)
+                        self.assertFalse((root / 'new-workspace').exists())
+
+
+@requires_secure_dir_io
 class JobStateTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="job-state-test-", dir=SCRATCH)

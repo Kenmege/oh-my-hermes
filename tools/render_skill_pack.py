@@ -84,6 +84,12 @@ def main():
         if not args.write:
             parser.error("--refresh-provenance requires --write after source audit")
         atomic_write_text(ROOT / "src/skills/show_reel_toolkit/upstream-manifest.json", json.dumps(provenance_manifest(), ensure_ascii=False, indent=2, sort_keys=True)+"\n")
+        career_root = ROOT / "src/skills/ai_job_search_toolkit"
+        career_manifest = career_root / "upstream-manifest.json"
+        career = json.loads(career_manifest.read_text(encoding="utf-8"))
+        for relative, entry in career["files"].items():
+            entry["local_sha256"] = sha256_file(checked(career_root, relative))
+        atomic_write_text(career_manifest, json.dumps(career, ensure_ascii=False, indent=2, sort_keys=True)+"\n")
     result = materialize(args.root, write=args.write)
     print(json.dumps(result, indent=2))
     raise SystemExit(0 if result["ok"] else 1)

@@ -1,6 +1,10 @@
 # Offline vacancy identity and application state
 
 Operator/host reference for the explicitly invoked Python 3.11+ companion.
+Supported hosts: POSIX (macOS/Linux) with O_NOFOLLOW, O_DIRECTORY and safe dir_fd
+operations. Windows is unsupported. All four commands return unsupported_platform
+(exit 2) before path validation or any write when required primitives are absent;
+there is no unsafe fallback. Evidence references still forbid backslashes.
 This is an original, standard-library-only implementation, not an upstream
 crawler or tracker port. It opens no network connection, spawns no process,
 imports no OMH/provider code, reads no career documents, and sends nothing.
