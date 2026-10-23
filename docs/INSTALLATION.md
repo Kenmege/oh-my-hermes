@@ -945,6 +945,7 @@ Esc closes it):
 | ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions`, `/rewind` or `/model` list, move, take the highlighted row (switch to that session, put that prompt in the composer to send again, or switch this session to that model), or close it; typing filters the list |
 | ↑ / ↓, Enter, Esc, ←, q, Ctrl+C | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; any other key does nothing there |
 | x, s | In the agent list, on an agent: x twice interrupts it; s steers it with the next line you send (Esc cancels) |
+| ↑ / ↓ or a click, Enter, Esc | In the `/theme` picker, preview a launch look (spectrum, violet, gold, graphite) on the logo and the card, keep it, or put the one in use back; `/theme <look>` keeps one at once |
 | Click | On a row of the agent list, opens that agent's log (on main, only leaves the list) |
 | ← / →, q or Esc | In an agent's log, show the agent before or after, or go back; the pager's keys scroll it |
 | Tab / n, Shift+Tab / p, Space / Enter, d | In `/dag`, highlight the next or the previous box, fold or unfold the highlighted one, or show or hide Node details; ↑ / ↓, PageUp / PageDown and g / G scroll, q or Esc leaves |
@@ -1137,6 +1138,25 @@ fallback marker at the path `omh` named, which `omh` removes.
 
 The OMH TUI opens with the theme `omh theme use` saved under the OMH home
 (see [TUI Themes](#tui-themes)); `/theme <name>` switches the open session only.
+
+A fresh session's launch draws the block logo, the banner's title and a
+launch card in one launch look: `spectrum` (the logo swept through the tool
+kind hues, a box per section, the default), `violet` (one box), `gold` (one
+box in two columns) or `graphite` (grey and white with turquoise hyphens, a
+rule above and below). The card sits under the banner until your first
+prompt, then stays in scrollback above it. It names the model and effort,
+the new session, the last stored session with its `/resume` id, the first
+keys, and the skills Hermes has: OMH's grouped by capability family with
+the ulw lanes on a row of their own, and Hermes' own by category. It fills
+in as Hermes answers, and on a short terminal it drops rows, the last ones
+first, never reaching the composer. `/theme` alone opens a picker that
+previews each look on the logo and the card as you move (arrow keys, `j`/`k`
+or a click; once the launch has scrolled away, a compact preview above the
+list shows it); Enter keeps the highlighted look, Esc puts the one in use
+back, and `/theme <look>` (Tab completes the name) keeps one at once. The look is saved beside the theme, as
+`launch` in `<omh_home>/tui/theme.json`; a saved name OMH does not have is
+said once and `spectrum` is used. The looks are OMH's own colours: the skin
+file Hermes' banner reads is unchanged.
 Before its first frame it asks the terminal for its background colour (OSC 11,
 in the same wait as the cursor-position query, at most 0.1 s; a terminal that
 does not answer can still say light or
@@ -2437,6 +2457,9 @@ Rules worth knowing:
   it. The palette is measured against the terminal's background as the
   session opens, and `/theme auto|light|dark` chooses that background for
   the open session (see [The OMH TUI](#the-omh-tui)).
+- **The launch look is saved in the same record.** `/theme` in the OMH TUI
+  writes `launch` beside `theme` in `<omh_home>/tui/theme.json`; either
+  write keeps the other.
 - **Bare `hermes` keeps its own skin.** `display.skin` is yours; OMH reads it
   only for the fallback above and never writes it.
 

@@ -133,6 +133,65 @@ TOOL_FAMILIES = {
 }
 
 
+# The launch looks (`launch_card`), in the order the /theme picker lists them; the first is the default. Each is the
+# block logo's colouring and the card's three colours, on a dark background and on a light one (the same hues at a
+# lower OKLCH lightness, rather than the dark set mixed toward black, which greys a tint out). They are OMH's own:
+# the skin's `banner_*` keys, which Hermes' own banner reads, stay as the skin file has them.
+LAUNCH_PRESETS = ("spectrum", "violet", "gold", "graphite")
+DEFAULT_LAUNCH = LAUNCH_PRESETS[0]
+
+
+@dataclass(frozen=True)
+class LogoPalette:
+    """One launch look's colours: the logo's (a ramp per row, a sweep across the columns, or graphite's grey OH-MY-,
+    white HERMES and coloured hyphens), then the card's title (`brand`), labels and edges."""
+
+    brand: str
+    label: str
+    edge: str
+    faces: tuple[str, ...] = ()  # one colour per logo row, top first
+    sweep: tuple[str, ...] = ()  # stops across the logo's columns, left first
+    greys: tuple[str, ...] = ()  # graphite: OH-MY-, per row
+    whites: tuple[str, ...] = ()  # graphite: HERMES, per row
+    spark: str = ""  # graphite: the two hyphens
+
+
+LAUNCH_PALETTES: dict[str, tuple[LogoPalette, LogoPalette]] = {
+    "spectrum": (
+        LogoPalette("#F778BA", "#F8A87E", "#4A4F66",
+                    sweep=tuple(KIND_HUES[kind][0] for kind in ("skill", "dag", "file", "shell", "web"))),
+        # The kind hues' light column ends in an olive lime (#687C00); the sweep's own light stops keep each hue's
+        # chroma instead, the lime at OKLCH 132 degrees.
+        LogoPalette("#B53C80", "#BF4306", "#8C93A8", sweep=("#974BB2", "#B53C80", "#BF4306", "#986600", "#4E8302")),
+    ),
+    "violet": (
+        LogoPalette("#D9A8FF", "#D58CF0", "#6E5A85",
+                    faces=("#EAE3FF", "#E2C8FF", "#DAAEFA", "#DE93E8", "#E278CF", "#E35AAE")),
+        LogoPalette("#7447C8", "#8A3FD1", "#9A8AB4",
+                    faces=("#7447C8", "#8843C0", "#9940B6", "#A93CA8", "#B73A98", "#C33887")),
+    ),
+    "gold": (
+        LogoPalette("#F2C14E", "#E5B655", "#7B6540",
+                    faces=("#FFEEBB", "#F9DB8E", "#EFC972", "#E5B655", "#DBA334", "#C98A10")),
+        LogoPalette("#9A6700", "#925D00", "#A08A5C",
+                    faces=("#A77601", "#A06E05", "#996502", "#925D00", "#8B5505", "#844E04")),
+    ),
+    "graphite": (
+        LogoPalette("#F0F6FC", "#C2C8CE", "#3D444D",
+                    greys=("#9198A1", "#878E97", "#7D8590", "#737B86", "#6A717C", "#636A74"),
+                    whites=("#F0F6FC", "#E3E9EF", "#D3D9DF", "#C2C8CE", "#B1B8BF", "#A2A9B0"), spark="#00CED1"),
+        LogoPalette("#1F2328", "#464B50", "#8C959F",
+                    greys=("#7C8186", "#767B80", "#70757A", "#6A6F74", "#65696F", "#5F6469"),
+                    whites=("#202429", "#2D3135", "#393E42", "#464B50", "#54595E", "#62676C"), spark="#008A8D"),
+    ),
+}
+LOGO_BLOCK = "█"
+# How far a drop-shadow glyph (the logo's box-drawing characters) is pulled from its face colour toward the background.
+LOGO_SHADOW_SHARE = 0.55
+# A sweep's row shading: the top rows lit (mixed toward white), the bottom rows shaded (toward black).
+LOGO_SWEEP_SHADE = {0: (WHITE, 0.30), 1: (WHITE, 0.14), 4: (BLACK, 0.12), 5: (BLACK, 0.26)}
+
+
 @dataclass(frozen=True)
 class Theme:
     name: str
@@ -347,24 +406,116 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
     )
 
 
-def logo_lines(skin: SkinTheme, background: str | None = None) -> list[Line]:
-    """The skin's block logo (`skin_pack.skin_logo`), each row in its own colour, measured against `background`.
+def launch_palette(name: str, surface: str) -> LogoPalette:
+    """The launch look `name`'s colours for `surface` (its light set on a light one); the default look's for an
+    unknown name."""
+    dark, light = LAUNCH_PALETTES.get(name, LAUNCH_PALETTES[DEFAULT_LAUNCH])
+    return light if is_light(surface) else dark
 
-    A row keeps the skin's gradient colour where it reaches the 3:1 a
-    graphical mark needs and moves toward the ink only as far as that takes,
-    as every glyph role does; a row the skin gives no colour takes
-    `banner_title`. Escape sequences and control characters are taken out of
-    the text, so a skin file never writes to the terminal.
+
+def _logo_hyphens(rows: list[str]) -> set[int]:
+    """The columns of the logo's two hyphens: a `█████╗` on the third row over a `╚════╝` on the fourth (an H's
+    crossbar has the H's own legs under it instead)."""
+    found: set[int] = set()
+    if len(rows) < 4:
+        return found
+    start = rows[2].find("█████╗")
+    while start != -1:
+        if rows[3][start : start + 6] == "╚════╝":
+            found.update(range(start, start + 6))
+        start = rows[2].find("█████╗", start + 1)
+    return found
+
+
+def _logo_face(palette: LogoPalette, row: int, col: int, sweep: list[str], hyphens: set[int], split: int) -> str:
+    if palette.faces:
+        return palette.faces[min(row, len(palette.faces) - 1)]
+    if sweep:
+        toward, share = LOGO_SWEEP_SHADE.get(row, (WHITE, 0.0))
+        return _mix(sweep[min(col, len(sweep) - 1)], toward, share)
+    if col in hyphens:
+        return palette.spark
+    ramp = palette.greys if col < split else palette.whites
+    return ramp[min(row, len(ramp) - 1)]
+
+
+def logo_lines(skin: SkinTheme, background: str | None, palette: LogoPalette) -> list[Line]:
+    """The skin's block logo (`skin_pack.skin_logo`) in a launch look's colours, cell by cell, against `background`.
+
+    The skin gives the rows and their bold; `palette` the colours. A block
+    glyph takes its face colour; a box-drawing glyph, the drop shadow, takes
+    that colour pulled `LOGO_SHADOW_SHARE` toward the background. Every glyph
+    is then lifted to the 3:1 a graphical mark needs, as every glyph role is.
+    Escape sequences and control characters are taken out of the text, so a
+    skin file never writes to the terminal.
     """
     c = _palette(skin)
     surface = surface_for(skin, background)
     ink = BLACK if is_light(surface) else c["banner_text"]
+    source = skin_logo(skin.skin_name)
+    rows = ["".join(char for char in strip_escapes(text) if char.isprintable()) for text, _colour, _bold in source]
+    width = max((len(row) for row in rows), default=0)
+    sweep = _gradient(list(palette.sweep), max(width, 2)) if palette.sweep else []
+    hyphens = _logo_hyphens(rows)
+    split = max(hyphens) + 1 if hyphens else width // 2  # OH-MY- ends with its second hyphen
     lines: list[Line] = []
-    for text, colour, bold in skin_logo(skin.skin_name):
-        shown = "".join(char for char in strip_escapes(text) if char.isprintable())
-        fg = _lifted(colour if hex_to_rgb(colour) else c["banner_title"], ink, surface, EDGE_CONTRAST)
-        lines.append((Span(shown, Style(fg=fg, bold=bold)),))
+    for index, (text, (_text, _colour, bold)) in enumerate(zip(rows, source, strict=True)):
+        spans: list[Span] = []
+        for col, char in enumerate(text):
+            face = _logo_face(palette, index, col, sweep, hyphens, split)
+            if char not in (LOGO_BLOCK, " "):
+                face = _mix(face, surface, LOGO_SHADOW_SHARE)
+            style = Style(fg=_lifted(face, ink, surface, EDGE_CONTRAST), bold=bold)
+            if spans and spans[-1].style == style:
+                spans[-1] = Span(spans[-1].text + char, style)
+            else:
+                spans.append(Span(char, style))
+        lines.append(tuple(spans))
     return lines
+
+
+def launch_wordmark(text: str, skin: SkinTheme, background: str | None, palette: LogoPalette) -> Line:
+    """`text` (the brand) in a launch look's logo colours, a colour per character, each lifted to 4.5:1 and bold:
+    the middle row's colour of a ramp, a sweep across the characters, or graphite's grey, turquoise hyphens and
+    white."""
+    c = _palette(skin)
+    surface = surface_for(skin, background)
+    ink = BLACK if is_light(surface) else c["banner_text"]
+    sweep = _gradient(list(palette.sweep), max(len(text), 2)) if palette.sweep else []
+    split = text.rfind("-")
+    spans: list[Span] = []
+    for index, char in enumerate(text):
+        if palette.faces:
+            colour = palette.faces[min(2, len(palette.faces) - 1)]
+        elif sweep:
+            colour = sweep[index]
+        elif char == "-":
+            colour = palette.spark
+        else:
+            colour = (palette.greys if index < split else palette.whites)[2]
+        spans.append(Span(char, Style(fg=_lifted(colour, ink, surface, TEXT_CONTRAST), bold=True)))
+    return tuple(spans)
+
+
+@dataclass(frozen=True)
+class LaunchStyles:
+    """A launch look's card colours as styles: its title (bold, 4.5:1), its labels (bold, 4.5:1), its edges (3:1)."""
+
+    brand: Style
+    label: Style
+    edge: Style
+
+
+def launch_styles(skin: SkinTheme, background: str | None, palette: LogoPalette) -> LaunchStyles:
+    """`palette`'s card colours measured against `background`, lifted only as far as their floors take."""
+    c = _palette(skin)
+    surface = surface_for(skin, background)
+    ink = BLACK if is_light(surface) else c["banner_text"]
+    return LaunchStyles(
+        brand=Style(fg=_lifted(palette.brand, ink, surface, TEXT_CONTRAST), bold=True),
+        label=Style(fg=_lifted(palette.label, ink, surface, TEXT_CONTRAST), bold=True),
+        edge=Style(fg=_lifted(palette.edge, ink, surface, EDGE_CONTRAST)),
+    )
 
 
 @lru_cache(maxsize=32)

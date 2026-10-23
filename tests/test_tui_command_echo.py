@@ -17,8 +17,8 @@ from omh.tui.slash import COMMANDS, LOCAL
 from omh.tui.transcript import AssistantBlock
 
 # The bare commands with nothing to attribute, and the ones that print and keep their echo.
-QUIET = ("keys", "history", "rewind", "sessions", "logs", "dag", "redraw", "model")
-ECHOED = ("help", "todos", "queue", "copy", "theme", "details", "export", "effort", "omh-model", "reload-skills", "image",
+QUIET = ("keys", "history", "rewind", "sessions", "logs", "dag", "redraw", "model", "theme")
+ECHOED = ("help", "todos", "queue", "copy", "details", "export", "effort", "omh-model", "reload-skills", "image",
           "paste", "new", "quit", "steer")
 
 
@@ -30,7 +30,7 @@ class EchoTests(unittest.TestCase):
         self.assertEqual(quiet, set(QUIET))
 
     def test_a_bare_picker_or_pager_command_leaves_no_echo(self) -> None:
-        for name in ("keys", "history", "rewind", "sessions", "logs", "redraw"):
+        for name in ("keys", "history", "rewind", "sessions", "logs", "redraw", "theme"):
             with self.subTest(name=name):
                 app, client = make_app()
                 client.stderr_tail = lambda: []  # type: ignore[attr-defined]  # /logs reads it
