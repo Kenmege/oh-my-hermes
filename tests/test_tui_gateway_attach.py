@@ -23,6 +23,7 @@ from unittest.mock import patch
 
 from _module_patch import patch_modules
 from _test_temp_root import make_test_tempdir
+from five_issue_process_fixture import fixture_system_environment
 from omh.tui.attach import gateway_attach as attach
 from omh.tui.attach.gateway_attach import TO_CLIENT, TO_OWNER, Adapter, LocalImage
 from omh.tui.gateway import GATEWAY_SCRIPT, GatewayClient, GatewayUnavailable, ServerRequest, gateway_spawn
@@ -539,8 +540,8 @@ class ImageTests(AdapterCase):
         adapter = self.adapter(files=FakeFiles(clipboard=saved))
         self.opened(adapter)
         [(_, answer)] = adapter.from_client(_call(29, "clipboard.paste", {"session_id": SID}))
-        self.assertEqual(answer["result"], {"attached": True, "path": "/hermes/cache/images/clip_1.png",
-                                            "name": "clip_1.png", "count": 1})
+        # The owner reads the path as a path on its own filesystem (`Path(item['path'])`), so it is the native one.
+        self.assertEqual(answer["result"], {"attached": True, "path": str(saved[0]), "name": "clip_1.png", "count": 1})
         [(_, empty)] = self.adapter().from_client(_call(30, "clipboard.paste", {"session_id": SID}))
         self.assertIn("error", empty)  # no view of that session on this connection
         adapter = self.adapter()
@@ -709,8 +710,12 @@ class ScriptTests(unittest.TestCase):
         home = root / "home"
         home.mkdir()
         _write(root / "src", {"tui_gateway/__init__.py": "", "tui_gateway/entry.py": FAKE_STDIO_ENTRY, **files})
-        environ = {"HERMES_PYTHON": sys.executable, "HERMES_PYTHON_SRC_ROOT": str(root / "src"),
-                   "HERMES_HOME": str(home), "HERMES_CWD": str(root), "PATH": "/usr/bin:/bin", **(env or {})}
+        # Windows' runtime prerequisites (SYSTEMROOT and kin) and nothing else of this process: without SYSTEMROOT a
+        # Windows child cannot load Winsock, so `import asyncio` fails (WinError 10106). The TUI itself hands its
+        # child the launcher's whole environment (`gateway_spawn`), so this reduction is the fixture's own.
+        environ = {**fixture_system_environment(), "HERMES_PYTHON": sys.executable,
+                   "HERMES_PYTHON_SRC_ROOT": str(root / "src"), "HERMES_HOME": str(home), "HERMES_CWD": str(root),
+                   "PATH": os.environ.get("PATH", ""), **(env or {})}
         return home, environ
 
     def client(self, environ: dict[str, str]) -> GatewayClient:

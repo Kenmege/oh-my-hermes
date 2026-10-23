@@ -108,6 +108,12 @@ class GatewaySpawnTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(child[name], LAUNCHER_ENV[name])
 
+    def test_windows_system_variables_reach_the_child(self) -> None:
+        # Without SYSTEMROOT a Windows child cannot load Winsock and `import asyncio` fails (WinError 10106).
+        system = {"SYSTEMROOT": r"C:\Windows", "SystemDrive": "C:", "WINDIR": r"C:\Windows", "COMSPEC": r"C:\cmd.exe"}
+        child = gateway_spawn({**LAUNCHER_ENV, **system}).env
+        self.assertEqual({name: child.get(name) for name in system}, system)
+
     def test_the_callers_environment_is_not_mutated(self) -> None:
         env = {**LAUNCHER_ENV, "OMH_TUI_PYTHON": "/omh/venv/bin/python"}
         before = dict(env)

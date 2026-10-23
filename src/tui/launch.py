@@ -54,6 +54,8 @@ FALLBACK_EXIT = 75
 FALLBACK_SENTINEL_ENV = "OMH_TUI_FALLBACK_SENTINEL"
 # How much of the TUI's reason the marker keeps (`request_fallback`).
 FALLBACK_REASON_BYTES = 4096
+# Windows opens a descriptor in text mode unless told otherwise, which rewrites line ends and stops at Ctrl+Z.
+_BINARY = getattr(os, "O_BINARY", 0)
 # The directory the TUI's interpreter imports `omh` from when its own path
 # does not already import it from there (`omh_import_root`). `omh` always sets
 # it, so a value left in the person's environment never picks the tree.
@@ -214,7 +216,8 @@ def request_fallback(environ: Mapping[str, str], reason: str = "") -> int:
     path = environ.get(FALLBACK_SENTINEL_ENV, "")
     if path:
         try:
-            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _BINARY | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(path, flags, 0o600)
         except OSError:
             return FALLBACK_EXIT
         try:
@@ -229,7 +232,7 @@ def request_fallback(environ: Mapping[str, str], reason: str = "") -> int:
 def fallback_reason(sentinel: Path) -> list[str]:
     """The lines the TUI wrote into the fallback marker (`request_fallback`), printable characters only."""
     try:
-        descriptor = os.open(sentinel, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        descriptor = os.open(sentinel, os.O_RDONLY | _BINARY | getattr(os, "O_NOFOLLOW", 0))
     except OSError:
         return []
     try:

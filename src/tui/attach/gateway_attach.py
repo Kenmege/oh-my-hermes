@@ -973,7 +973,10 @@ async def relay(api: AttachApi, url: str, protocols: list[str], adapter: Adapter
             # close grace, so the drain does not end on that SIGTERM; it ends at DRAIN_SECONDS, inside the TUI's
             # terminate grace, before the kill.
             loop = asyncio.get_running_loop()
-            loop.add_signal_handler(signal.SIGTERM, lambda: None)
+            try:
+                loop.add_signal_handler(signal.SIGTERM, lambda: None)
+            except NotImplementedError:  # Windows' event loop has no signal handlers; there SIGTERM ends the drain
+                pass
             deadline = loop.time() + DRAIN_SECONDS
             while adapter.waiting() and not owner.done() and loop.time() < deadline:
                 await asyncio.sleep(0.05)
