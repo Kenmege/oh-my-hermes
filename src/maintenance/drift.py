@@ -847,10 +847,32 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # files and a count of PRs with no breadth word (2). Its fourth
             # review adds three, each a clarify or a fallback as on main: a
             # noun with 마다, an interval, and PR 하나 (3).
+            # The dag-ulw follow-ups add four, each a clarify: a split of text
+            # to translate (a clarify whose hint started dag-ulw on main), a
+            # proposed split and a question how to split (dag-ulw dispatches on
+            # main) (3), and an unnumbered interval, a schedule (a dag-ulw
+            # dispatch on main) (1). Its review adds four: a request taken back
+            # and one called a joke in a later clause, a fallback and a clarify
+            # as on main (2), and one named function and one file split, which
+            # started dag-ulw on main (2). An English request followed by jk
+            # starts nothing, where main dispatched dag-ulw (1). A Korean request
+            # followed by a doubt, which is no keeper and asks for no work,
+            # clarifies as on main (1). An English request followed by a
+            # question that is no keeper clarifies, where main dispatched
+            # dag-ulw (1). A colon list that ends in a wait and a confirmation
+            # tag followed by a take-back clarify, where main dispatched
+            # dag-ulw (2). A report tail that asks whether and a colon list of
+            # reads clarify, as on main (2). A tail asking why not clarifies as on
+            # main, and a deferral in English and in Korean, a colon list ending
+            # in a hedge and a colon list of statuses clarify, where main
+            # dispatched dag-ulw (5). A rebase of every PR in a bit clarifies,
+            # where main dispatched dag-ulw (1). A report tail asking for concerns
+            # and a future time after a past clause clarify, where main
+            # dispatched dag-ulw (2).
             # Three domain-science vocabulary controls (+3).
             # Career actor repair adds five employer requests and two references.
             # Normalized actor/objective follow-up adds seven employer contrasts.
-            expected=1089,
+            expected=1112,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1322,7 +1344,27 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # (a clarify on main) (1). Its fourth review adds three: 배포마다
             # stays on toolbelt-readiness and on every push on ultrawork, as on
             # main (2), and 각 서비스마다 runs as a graph, each service and no
-            # schedule (a fallback on main) (1).
+            # schedule (a fallback on main) (1). The dag-ulw follow-ups add five,
+            # each a dag-ulw graph: a fan out and a Korean split that name the
+            # work (clarifies on main whose hint started dag-ulw) (2), a casual
+            # imperative over every PR (a fallback on main) (1), a change aimed a
+            # few words off and a change in one clause (clarifies on main) (2).
+            # Its review adds one: a split with a past inside an embedded
+            # question still runs as a graph, as on main (1), and an urgency after
+            # a request takes nothing back (a fallback on main) (1). Its next
+            # review adds five, each a dag-ulw graph: an urgency with an
+            # intensifier and a follow-on after 그리고 (fallbacks on main) (2), a
+            # count after a demonstrative, a split rewritten and a split fixed
+            # then reported (clarifies on main whose hint started dag-ulw) (3).
+            # Its last review adds three English keepers that run as on main: a
+            # report tail with ping me, a colon list of changes and a per-unit
+            # spec (3). The shapes behind them add five, each a dag-ulw graph: a
+            # final ok? and two report tails (clarifies on main) (3), a
+            # per-unit spec with any noun and a colon list with any work verb
+            # (dispatches on main) (2). A deadline by tonight and a send me the
+            # diff tail run as a graph, as on main (2). Two report tails by their
+            # opening and a time inside a past clause run as a graph, as on
+            # main (3).
             # Three unnamed domain-science interventions (+3).
             # #2221 L3: every STATUS_IS_THE_WORK member gets a status request
             # after its sigil that runs it; the seven without one before
@@ -1333,7 +1375,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # install drift, and /omh-doctor status runs doctor (+1).
             # Career actor repair retains five personal/target/quoted controls.
             # Actor/objective follow-up adds two third-person candidate controls.
-            expected=1095,
+            expected=1120,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

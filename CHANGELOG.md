@@ -131,6 +131,74 @@ All notable changes will be documented here.
   to check the whole goal, not only local VERIFY. Contract tests establish
   instruction delivery, not live-agent compliance or artistic quality.
 
+- **The route hint no longer starts dag-ulw on a split the router only asks
+  about (#2232 follow-ups).** A split into parallel parts ("fan out across the
+  services …", "split … into parallel lanes", "병렬로 나눠서 …") started a
+  dag-ulw run from the hint on 36 survey rows while the router only clarified.
+  Now named work asked to split runs as a graph on both: a work verb after the
+  split (`fan out across the services and migrate each one`, `…, then
+  integrate`, `모듈을 병렬로 나눠서 리팩터링해줘`) or a work noun as what splits (`the
+  migration is big, split it into parallel lanes`), in an imperative, a
+  polite request, or after `tell me when done:`. A split of text to translate,
+  a proposal or a plan said (`how about we …`, `my plan is to …`, `maybe …`), a
+  question how to split, a report, breadth alone, or one named object (`이 함수
+  병렬로 나눠서 구현해줘`, `README 병렬로 나눠서 …`, `fan out the image resize into
+  parallel workers …`, `the checkout page: split it into parallel parts …`) is
+  asked about on the router and offered in the hint, never started; a count or
+  들 after a demonstrative is several objects (`이 세 서비스 …`). More Korean
+  request forms count (`닫아`, `고쳐`, `올려라`, `주라`, `고고싱`, `놔라`, `해주십쇼`,
+  `요망`, `…해 주시면 감사하겠습니다`), breadth words `쭉` and `하나도 빠짐없이`, `… fix
+  them all`, and `rewrite` and `reimplement` are changes. What follows a request
+  in a later clause keeps it only on positive evidence, in Korean and English:
+  a keeper by shape (an urgency or a deadline, a start cue, thanks or
+  politeness, with an intensifier or a request ending: `…해줘, 최대한 빨리`,
+  `…해줘, 금요일까지`, `…해줘, 지금 바로`, `…해줘, 부탁할게`, `…, by friday please`,
+  `…, no rush`, a per-unit spec such as `…, one commit per package` or `…, a
+  separate PR per repo`), or a follow-on after a sequencing connective that
+  asks for more work (`…해줘, 그리고 README도 갱신해줘`, `…해줘, 그 다음 테스트 돌려줘`,
+  `모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘`, `…, then run the tests`), with no
+  hold or joke in any clause after the request. A final `…, ok?` on any request
+  and a report on the result, by its opening (tell, ping, notify, message, show
+  or send me, let me know, report back, then which, any, the ones, each, when,
+  once or a result noun: after a quantifier the clause turns on its subject (the
+  targets with any finite verb report, `… which ones can't be upgraded`; a person
+  with a modal or an intention asks, `… which ones you'd skip`; a bare infinitive
+  asks), `when`/`once` needs a completion that ends the tail, and deliberation is
+  no report: `… and report any that fail`, `… and
+  let me know which ones break`, `…, and notify me when it's done`; not `…, and
+  send me any concerns`, `…, then tell me which ones you'd recommend`), are read off before
+  the request is; any other `let me …` and a tail that asks for anything before
+  the work (`…, then tell me why we shouldn't`, `…, then tell me the risks
+  first`) hold it. Every hard exclude reads the whole text, and a deferral is
+  one (`… later`, `… in a bit`, `… tomorrow`, `… tonight`, `… next week`, `PR들 전부 나중에 …`;
+  `… by tonight` and `…, 내일까지` are deadlines and run, and a time inside a past
+  clause, `… we deployed on monday`, is none either, while a time ahead of now is,
+  `… we deployed next week`). A colon list after a
+  breadth head is one request when every item opens on a verb of work (`for each
+  open PR: rebase, squash, merge`); an item that opens on a status or carries a
+  hedge ends it (`…: done, done, conflict`, `…, too risky though`). After a
+  Korean request anything else keeps nothing, and the message is read whole, as
+  on main (`…해줘, 아 잠깐만`, `…해줘, 해도 되나`, `…해줘, 확인해줘`). After an English
+  request a remark keeps it only when it is of a keep kind, in any words and
+  with any intensifier: gratitude (`…, thanks a bunch`, `…, thx so much!!`,
+  `…, much obliged`), a sign-off (`…, have a good one`), a wish (`…, fingers
+  crossed`, `…, wish me luck`), a back-reference (`…, as discussed`, `…, same
+  as last time`), who asked (`…, my manager asked for it`), an aside marker
+  and a harmless statement (`…, fwiw the tests are flaky`), or no pressure
+  (`…, no worries`, `…, take your time`, `…, whenever works`). An unknown
+  remark holds, so the request is offered, not started, and a refusal class
+  holds even inside a keep kind: a new request (`…, run the tests`), a hold, a
+  joke or a retraction (`…, never mind`, `…, forget I said that`), a status,
+  something asked before the work, a warning (`…, fwiw last time this broke
+  CI`), a hedge or thinking aloud (`…, not sure though`, `…, spitballing`),
+  deliberation or the decision handed back (`…, what do you think`, `…, your
+  call`), a person's modal (`…, we'll see`), a question, a negation (`…, not
+  yet`), a deferral or a condition. A past
+  inside an embedded question (`어떻게 나눴는지 설명해줘`), a report after a -고 work
+  verb (`… 고치고 뭘 고쳤는지 보고해줘`) and a change aimed so a thing does not happen
+  a few words off (`… 안 되게끔 수정해줘`) count too.
+  `일정 간격으로` is a schedule.
+
 - **`NO_COLOR` turns off colour in the whole OMH TUI (#2223 review item
   17).** With `NO_COLOR` set to any non-empty value (no-color.org), only the
   motion and the delegation graph used to honour it. The transcript,

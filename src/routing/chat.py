@@ -48,6 +48,8 @@ from ..plugin_bundle.omh.dag_ulw_cues import (
     dag_ulw_control,
     dispatches_dag_ulw,
     reports_or_asks_after_the_name,
+    refuses_dag_ulw,
+    splits_without_evidence,
     work_over_many_targets,
 )
 from ..plugin_bundle.omh.invocation_cues import STATUS as INVOKED_STATUS
@@ -2669,8 +2671,18 @@ def _route_chat_message_cached(
         candidate_skill = "dag-ulw"
         candidate_harness = primary_harness_for_skill(candidate_skill)
         # A confident `ultrawork` score held back only because everyday words carried it is dispatched too: the
-        # several-parts phrase is the request's own word for the job, which is the evidence the hold asked for.
-        if action == "dispatch" or reason == WEAK_DISPATCH_EVIDENCE_REASON:
+        # several-parts phrase is the request's own word for the job, which is the evidence the hold asked for. A
+        # split that names no work to split is asked about instead, as the route hint offers it (rule A).
+        if splits_without_evidence(routing_message, reference_regions(message).links):
+            selected_skill = _ROUTER_SKILL
+            action = "clarify"
+            reason = "A split into parallel parts with no work named to split: ask before running it as a dag-ulw graph."
+        elif refuses_dag_ulw(routing_message, reference_regions(message).links):
+            # The size cue never outruns the cue reader: what it holds, defers or asks about first is asked about here.
+            selected_skill = _ROUTER_SKILL
+            action = "clarify"
+            reason = "Several parts asked for, but the request holds, defers or asks before the work: ask before a dag-ulw run."
+        elif action == "dispatch" or reason == WEAK_DISPATCH_EVIDENCE_REASON:
             selected_skill = candidate_skill
             action = "dispatch"
             ambiguity_kind = ""

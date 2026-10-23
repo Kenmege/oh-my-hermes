@@ -24,6 +24,7 @@ from omh.plugin_bundle.omh.dag_ulw_cues import (  # noqa: E402
     dag_ulw_control,
     declines_dag_ulw,
     dispatches_dag_ulw,
+    refuses_dag_ulw,
     invokes_dag_ulw,
     work_over_many_targets,
 )
@@ -230,6 +231,7 @@ class RouterTests(unittest.TestCase):
                         "열린 PR들 전부 리뷰 코멘트 반영하고 force push ㄱㄱ", "PR들 전부 rebase 해줘",
                         # A change, then a report on it.
                         "fix all the failing tests and tell me which ones were flaky",
+                        "fix all the failing tests and report which ones were flaky",
                         # Many PRs or branches stay many: 들, a breadth word or 모든 on the PR or the branch itself.
                         "열린 PR 전부 리베이스해줘", "main 브랜치에 PR들 전부 머지해줘", "모든 PR 테스트 고쳐줘",
                         # A change aimed so a thing does not happen, or units a fault describes, are no fault.
@@ -243,6 +245,13 @@ class RouterTests(unittest.TestCase):
                         "for each of my PRs: rebase onto main and fix the conflicts", "for every open PR, rebase it onto main",
                         # A count of PRs, repos or branches with a breadth word after it is many of them.
                         "PR 3개 전부 리베이스해줘", "PR 5개 다 머지해줘", "레포 3개 전부 의존성 올려줘", "풀리퀘 3개 전부 리베이스해줘",
+                        # More breadth words, casual imperatives and request endings, a change asked in one clause,
+                        # and a change aimed so a thing does not happen a few words off (#2232 follow-ups).
+                        "PR들 쭉 리베이스해줘", "PR들 하나도 빠짐없이 리베이스해줘", "take the failing tests and fix them all",
+                        "PR들 전부 닫아", "모든 테스트 고쳐", "모든 패키지 버전 올려라", "PR들 전부 리베이스해주라", "PR들 전부 리베이스 고고싱",
+                        "모든 패키지 업데이트해놔라", "모든 서비스 업데이트해주십쇼", "모든 서비스 업데이트 요망",
+                        "모든 서비스 업데이트해 주시면 감사하겠습니다", "모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘",
+                        "모든 페이지 더블클릭 안 되게끔 수정해줘", "모든 서비스에서 중복 결제가 안 되게 수정해줘",
                         # The same request now is no schedule.
                         "rebase every open PR now", "지금 바로 열린 PR들 전부 리베이스해줘", "이번에 한 번만 열린 PR들 전부 리베이스해줘",
                         # A change aimed so a thing does not happen, with 수정 as with 고쳐.
@@ -290,7 +299,7 @@ class RouterTests(unittest.TestCase):
                         "반나절마다 PR들 전부 리베이스해줘", "스프린트마다 모든 패키지 올려줘", "배포마다 모든 서비스 설정 업데이트해줘",
                         "매 분기마다 모든 레포 라이선스 업데이트해줘", "매 스프린트 모든 패키지 올려줘", "3일 간격으로 모든 서비스 업데이트해줘",
                         "fix all failing tests on every push", "rebase all open PRs on each merge", "자정에 PR들 전부 리베이스해줘",
-                        "하루 걸러 모든 서비스 업데이트해줘", "우리 팀 PR 하나 테스트 다 고쳐줘"):
+                        "하루 걸러 모든 서비스 업데이트해줘", "우리 팀 PR 하나 테스트 다 고쳐줘", "일정 간격으로 PR들 전부 리베이스해줘"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 router, hint, _candidate = self._dag_ulw_starts(message)
@@ -362,6 +371,372 @@ class RouterTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
 
+    def test_a_split_starts_only_where_the_router_dispatches_it(self) -> None:
+        # Rule A for the size cues: named work asked to split into parallel parts dispatches dag-ulw on the router and
+        # starts it in the hint; a split of text, a proposal, a plan said, a report, a question or breadth alone is
+        # asked about on the router and offered in the hint, never started by the hint alone.
+        for message in ("fan out across the services and migrate each one to the new logger",
+                        "the migration is big, split it into parallel lanes", "결제, 주문, 배송 모듈을 병렬로 나눠서 리팩터링해줘",
+                        "문장 분리기와 문단 파서 작업을 병렬로 나눠서 구현해줘", "can you split the api, ui and docs work into parallel lanes?",
+                        "analyze API and UI in parallel, then integrate the findings",
+                        "api, ui, docs 작업을 병렬로 나눠서 마이그레이션하고 결과 알려줘",
+                        "tell me when done: split the api, ui and docs work into parallel lanes",
+                        "결제, 주문, 배송 모듈을 병렬로 나눠서 리팩터링해줄래?", "api, ui, docs 작업을 병렬로 나눠서 구현해 주시겠어요?",
+                        "api, ui, docs 작업을 병렬로 나눠서 구현해줄 수 있어?", "결제/주문/배송 모듈 병렬로 나눠서 리팩터링해줘",
+                        "api, ui, docs 작업을 병렬로 나눠서 구현하고 어떻게 나눴는지 설명해줘", "이 api와 ui를 병렬로 나눠서 구현해줘",
+                        "split the api and the ui into parallel lanes and implement them",
+                        "split the migration into parallel lanes and verify each",
+                        "split the billing services into parallel lanes and migrate each one",
+                        # A count or 들 after a demonstrative is several objects; a topic said first that is several
+                        # objects still runs; rewrite is a change; a report after a -고 work verb is the work's tail.
+                        "이 세 서비스 병렬로 나눠서 마이그레이션해줘", "이 두 모듈 병렬로 나눠서 리팩터링해줘",
+                        "이 3개 모듈 병렬로 나눠서 리팩터링해줘", "the api and ui work: split it into parallel lanes and implement them",
+                        "split the parser and lexer modules into parallel lanes and rewrite them",
+                        "결제, 정산 모듈 병렬로 나눠서 고치고 뭘 고쳤는지 보고해줘"):
+            with self.subTest(message=message):
+                self.assertTrue(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
+        for message in ("split the paragraphs into parallel parts for translation", "문단 하나를 병렬로 나눠서 번역해줘",
+                        "how about we fan out across the services and migrate each one",
+                        "my plan is to split the api, ui and docs work into parallel lanes",
+                        "fan out across the services and give each a one-sentence summary",
+                        "which way should I split the work into parallel lanes", "split this into parallel tasks: lint, test, build",
+                        "여러 모듈에 걸친 결제 기능 구현해줘", "why don't we split the api, ui and docs work into parallel lanes",
+                        "maybe split the api, ui and docs work into parallel lanes", "split the translation work into parallel lanes",
+                        # One named object split into parallel parts is one task (#2243 review).
+                        "이 함수 병렬로 나눠서 구현해줘", "이 파일 병렬로 나눠서 수정해줘", "로그인 페이지 하나 병렬로 나눠서 고쳐줘",
+                        "README 병렬로 나눠서 업데이트해줘", "이 스크립트를 병렬로 나눠서 개발해줘",
+                        # One object said first as the topic the split refers back to, a rewrite of one object, and a
+                        # report after a word with no work verb in it.
+                        "the checkout page: split it into parallel parts and fix it",
+                        "the login form: split it into parallel parts and fix it",
+                        "split the paragraph parser into parallel lanes and rewrite it",
+                        "결제, 정산 모듈 병렬로 나눠서 보고 뭘 고칠지 보고해줘"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+                offers = [hint for hint in awareness_route_hint(message)["hints"] if hint.get("workflow") == "dag-ulw"]
+                self.assertEqual([hint.get("next_action") for hint in offers], ["ask_one_clarification"])
+        # One named object with a fault to fix goes to the lane that fixes it, and starts no graph either.
+        message = "fan out the image resize into parallel workers and fix the crash"
+        self.assertFalse(dispatches_dag_ulw(message))
+        self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+
+    def test_a_request_taken_back_or_held_in_a_later_clause_starts_nothing(self) -> None:
+        # A clause after the request keeps it only on positive evidence (#2243 review): a keeper or a follow-on with a
+        # sequencing connective. Anything else after it, in Korean or English, leaves nothing to dispatch or start.
+        for message in ("PR들 전부 리베이스해줘, 아 잠깐만", "모든 서비스 업데이트해줘, 아니 잠깐", "레포들 전부 CI 고쳐줘, 근데 일단 대기",
+                        "레포들 전부 CI 고쳐줘, 말고 그냥 둬", "브랜치들 전부 리베이스해줘, 아니다 나중에 하자",
+                        "모든 서비스 node 22로 올려줘, 는 다음 주에 하자", "모든 서비스 업데이트해줘, 는 농담이고",
+                        "엔드포인트 전부 인증 붙여줘, 장난이야", "PR들 전부 머지해줘, 는 아니고 리뷰만 해줘", "PR들 전부 머지해줘, 같은 요청은 위험해",
+                        "rebase all open PRs, never mind", "update every service — jk", "fix all the failing tests, scratch that",
+                        "rebase all open PRs, or not", "update every service, actually don't", "fix all the failing tests, wait",
+                        "PR들 전부 리베이스해줘, 음 아니야", "모든 서비스 업데이트해줘, 아냐 내가 할게", "레포들 전부 CI 고쳐줘, 아 이건 좀 아닌가",
+                        "PR들 전부 머지해줘, 아 근데 잠시만", "rebase all open PRs, lol jk", "update every service — wait, no",
+                        "fix all the failing tests... or maybe not", "rebase all open PRs or maybe not",
+                        # A trailing remark that is no keeper and asks for no work keeps nothing either, listed or not:
+                        # hesitation, worry, a question about the request, doubt or a side note.
+                        "PR들 전부 머지해줘, 하고 싶은데 무서워", "모든 서비스 업데이트해줘, 해도 되나", "레포들 전부 CI 고쳐줘, 이거 맞아?",
+                        "모든 서비스 업데이트해줘, 어떻게 생각해", "PR들 전부 리베이스해줘, 나중에 해줘", "모든 패키지 업데이트해줘, 근데 괜찮을까",
+                        "브랜치들 전부 리베이스해줘, 팀장님이 시킨 거야", "모든 서비스 업데이트해줘, 잘 모르겠지만", "PR들 전부 리베이스해줘, 확신은 없어",
+                        "모든 패키지 업데이트해줘, 좀 위험할 수도", "PR들 전부 머지해줘, 걱정되네",
+                        "레포들 전부 CI 고쳐줘, 지난번에 이거 하다 CI 깨졌어",
+                        "rebase all open PRs, what do you think",
+                        "merge all open PRs, I'm scared though", "update every service, not sure", "rebase all open PRs, maybe tomorrow",
+                        "update every service, is that ok?", "update every service, should I?", "rebase all open PRs, if that makes sense",
+                        "update every service, is this right?", "update every service, not sure though",
+                        "fix all the failing tests, is that safe", "rebase all open PRs, hmm, risky maybe",
+                        "update every service, though I doubt it's worth it", "fix all the failing tests, fwiw last time this broke CI",
+                        "update every service... not sure", "update every service, then we'll see",
+                        # Work narrowed to itself alone, an undo, or work in place of the request keeps nothing.
+                        "PR들 전부 리베이스해줘, 확인만 해줘", "PR들 전부 리베이스해줘, 리뷰만 해줘", "PR들 전부 리베이스해줘, 그냥 되돌려줘",
+                        "PR들 전부 머지해줘, 는 아니고 리뷰해줘", "PR들 전부 머지해줘, 말고 리뷰해줘", "PR들 전부 머지해줘, 아니 리뷰해줘",
+                        "PR들 전부 리베이스해줘, 그리고 확인만 해줘", "PR들 전부 머지해줘, 그 다음 되돌려줘",
+                        # A follow-on keeps the request only after a sequencing connective, with no hold or joke in it or in
+                        # a clause between, and only on more work: a bare follow-on or a report falls back.
+                        "PR들 전부 리베이스해줘, 장난이고 테스트 돌려줘", "모든 서비스 업데이트해줘, 아 잠깐 다시 확인해줘",
+                        "PR들 전부 머지해줘, 아니 잠깐, 로그 먼저 확인해줘", "브랜치들 전부 리베이스해줘, 아 그거 말고 테스트만 돌려줘",
+                        "PR들 전부 머지해줘, 아니 잠깐, 그리고 로그 확인해줘", "PR들 전부 리베이스해줘, 그리고 농담이고 테스트 돌려줘",
+                        "PR들 전부 리베이스해줘, 테스트 돌려줘", "모든 서비스 업데이트해줘, 확인해줘", "rebase all open PRs, run the tests",
+                        "PR들 전부 리베이스해줘, 그리고 결과 알려줘", "모든 서비스 업데이트해줘, 끝나면 대시보드도 봐 줘",
+                        # A confirmation tag keeps the request only as the message's last words; a colon list holds
+                        # only items that open on a verb of work; a report tail keeps nothing that asks, sets a
+                        # condition or holds; a per-unit spec keeps nothing that follows it.
+                        "split the api, ui and docs work into parallel lanes, ok? actually no",
+                        "rebase all my open PRs, ok? actually no", "is it ok to rebase all my open PRs?",
+                        "rebase all my open PRs, ok? or not", "is it alright to update every service?",
+                        "update every service, right? or should we wait",
+                        "for each of my upstream PRs: rebase, then wait", "for each of my upstream PRs: rebase, not sure though",
+                        "for each open PR: check, report, nothing else", "for each open PR: review, comment, don't merge",
+                        "for each open PR: rebase, idk", "for each open PR: rebase, maybe later",
+                        "for each of my upstream PRs: rebase, merge jk, push",
+                        "for each of my upstream PRs: rebase, resolve conflicts, push, lol jk",
+                        "migrate every package to pnpm, then tell me whether we even need to",
+                        "rebase all open PRs, and let me know if I should",
+                        "update every service, then tell me which one to start with?",
+                        "fix all the failing tests, and ping me if it breaks", "fix all the failing tests, then ping me, never mind",
+                        "update every service, one PR per service, not sure", "rebase all open PRs, one commit maybe",
+                        # A tail that holds, is the person's own step, or asks for anything before the work or about
+                        # whether to do it is no report on the result; every hard exclude reads the whole text.
+                        "rebase all open PRs, then tell me why we shouldn't", "update every service, and let me check with the team first",
+                        "migrate every package to pnpm, and let me get sign-off before anything",
+                        "rebase all open PRs, then tell me the risks first",
+                        "update every service, and tell me what would break before you do",
+                        "fix all the failing tests, then show me how you would do it first",
+                        "rebase all open PRs, and let me get sign-off from the team", "update every service, then let me run it by the team",
+                        "bump all the packages, and let me think about it", "rebase all open PRs, then tell me which ones should be merged",
+                        "update every service, then send me the list of risks first", "fix all the failing tests, then tell me if it's worth it",
+                        "fix all the failing tests and tell me why we shouldn't",
+                        "rebase all open PRs, then let me know which ones conflicted after the freeze",
+                        "update every service, and send me the diff tomorrow",
+                        "bump every package and let me know which ones break, jk",
+                        "update every service and report any that fail?", "convert all the tests to pytest and tell me whether any fail",
+                        # A deferral past now, in English or Korean, wherever it is said.
+                        "rebase all the open PRs later, ok?", "rebase all the open PRs tomorrow, ok?", "update every service next week, ok?",
+                        "update every service tonight, alright?", "rebase all open PRs on monday, okay?",
+                        "fix all the failing tests later, right?", "bump every package eventually, ok?",
+                        "migrate every package to pnpm some other time, ok?", "rebase all the open PRs tomorrow",
+                        "update every service this weekend", "fix all the failing tests at some point",
+                        "bump all the packages after the freeze", "update every service, tonight", "PR들 전부 나중에 리베이스해줘",
+                        "모든 서비스 내일 업데이트해줘", "PR들 전부 다음 주에 리베이스해줘", "모든 패키지 언젠가 업데이트해줘",
+                        "레포들 전부 주말에 CI 고쳐줘", "브랜치들 전부 월요일에 리베이스해줘",
+                        "rebase all open PRs in a bit", "update every service in a while", "fix all the failing tests later on",
+                        "bump all the packages down the line", "migrate every package to pnpm when I get a chance",
+                        "rebase all the PRs I opened, tomorrow", "update every service we deployed, next week",
+                        "rebase all the PRs I opened — tomorrow",
+                        # A colon list ends at an item that opens on a status or a hedge, or carries one anywhere.
+                        "for each open PR: rebase, squash, merge, too risky though",
+                        "for every repo: bump deps, regenerate lockfiles, someday", "for each repo: bump deps, open PRs, eh, rather not",
+                        "for all services: upgrade node, redeploy, someone else's call though",
+                        "for each package: bump the version, publish, nope", "rebase all my open PRs: done, done, conflict",
+                        "rebase all my open PRs: all done", "for each repo: bump deps, tested, shipped", "for each open PR: rebase, merge, ugh",
+                        "for every service: upgrade node, redeploy, meh", "for each package: bump, publish, not my call",
+                        "for each open PR: rebase, squash, maybe merge", "update every service: green, green, failed",
+                        "for every repo: bump deps, lol", "update every service: the billing one first",
+                        "rebase all open PRs, then tell me which ones failed and which you want to retry",
+                        "update every service, then tell me which ones failed first",                        # A person subject with a modal or an intention, a bare infinitive, and a time ahead of now.
+                        "rebase all open PRs, then tell me which ones you'd skip",
+                        "update every service, and tell me every branch you plan to delete",
+                        "rebase all open PRs, then tell me which ones we should keep",
+                        "bump all the packages, and tell me any you want to leave",
+                        "rebase all open PRs, then tell me which ones to keep",
+                        "update every service, and tell me what to drop",
+                        "rebase all open PRs, then tell me which ones you would skip",
+                        "update every service, and tell me which ones they'll drop",
+                        "update every service we deployed in 3 days", "rebase all open PRs in a few hours",
+                        "모든 서비스 이따가 업데이트해줘", "rebase all the PRs we opened next friday",
+                        "rebase all the PRs we opened, next friday",
+                        # No report: a deliberation noun or verb, an infinitive, modal or intention after the quantifier, a bare quantifier, a when that is no completion; a time ahead of now after a past clause.
+                        "rebase all open PRs, then tell me your reasons", "update every service, and send me any concerns",
+                        "bump all the packages, then tell me your thoughts on it",
+                        "migrate every package to pnpm, and let me know any objections",
+                        "rebase all open PRs, then tell me the pros and cons",
+                        "update every service, and tell me your approach",
+                        "fix all the failing tests, and send me the alternatives",
+                        "rebase all open PRs, then tell me what you think",
+                        "update every service, and tell me which ones you'd recommend",
+                        "rebase all open PRs, then tell me the ones to merge",
+                        "update every service, and tell me which ones we should keep",
+                        "bump all the packages, then tell me which ones you would drop",
+                        "migrate every package to pnpm, and tell me what you'll change",
+                        "rebase all open PRs, then tell me the ones we plan to close",
+                        "update every service, and tell me which ones you want to skip",
+                        "rebase all open PRs, then tell me which ones", "update every service, and tell me any",
+                        "bump all the packages, then send me those",
+                        "rebase all open PRs, and notify me when it's ready to merge",
+                        "update every service, and ping me when you're about to deploy",
+                        "bump all the packages, and tell me once we plan to land it",
+                        "migrate every package to pnpm, and let me know when you have a plan",
+                        "update every service, and tell me when you're going to start",
+                        "rebase all the PRs we opened tomorrow", "update every service we deployed next week",
+                        "fix all the tests that broke later", "rebase all the PRs we opened, tomorrow",
+                        "update every service we shipped in a bit", "PR들 전부 배포한 거 내일 리베이스해줘", "모든 서비스 배포한 다음 주에 업데이트해줘",
+                        "모든 패키지 업데이트한 나중에 다시 올려줘"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        # Keepers by shape (an urgency or a deadline, a start cue, thanks or politeness, with an intensifier or a
+        # request ending of their own) and a follow-on after a sequencing connective keep it.
+        for message in ("모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘", "모든 서비스 업데이트해줘, 그리고 CI도 고쳐줘",
+                        "PR들 전부 리베이스해줘, 그 다음 테스트 돌려줘", "모든 서비스 업데이트해줘, 끝나고 문서도 정리해줘",
+                        "PR들 전부 리베이스해줘, 그리고 결과 리포트 써줘", "모든 패키지 업데이트해줘, 다음으로 CI 다시 실행해줘",
+                        "레포들 전부 CI 고쳐줘, 그리고 README도 갱신해줘", "모든 서비스 업데이트해줘, 급해, 그리고 CI도 고쳐줘",
+                        "rebase all open PRs, then run the tests", "fix all the failing tests, and then rebase all open PRs",
+                        "PR들 전부 리베이스해줘, 급해", "PR들 전부 리베이스해줘, 급함", "PR들 전부 리베이스해줘, 급합니다",
+                        "모든 서비스 업데이트해줘, 빨리", "모든 서비스 업데이트해줘, 얼른", "모든 서비스 업데이트해줘, 최대한 빨리",
+                        "모든 패키지 업데이트해줘, 서둘러줘", "PR들 전부 리베이스해줘, 가능한 빨리 부탁드려요",
+                        "모든 서비스 업데이트해줘, 오늘 안에", "PR들 전부 리베이스해줘, 내일까지", "모든 패키지 업데이트해줘, 이번 주 안에",
+                        "모든 서비스 업데이트해줘, 금요일까지", "PR들 전부 리베이스해줘, 오늘까지는", "모든 서비스 업데이트해줘, 내일 오전까지",
+                        "모든 서비스 업데이트해줘, 부탁해", "모든 서비스 업데이트해줘, 부탁드려요", "PR들 전부 리베이스해줘, 부탁할게",
+                        "PR들 전부 리베이스해줘, 고마워", "PR들 전부 리베이스해줘, 고맙다", "PR들 전부 리베이스해줘, 감사",
+                        "모든 서비스 업데이트해줘, 감사합니다", "PR들 전부 리베이스해줘, 바로 시작해", "PR들 전부 리베이스해줘, 지금 바로",
+                        "모든 서비스 업데이트해줘, 당장", "PR들 전부 리베이스해줘, 가자", "모든 서비스 업데이트해줘, ㄱㄱ",
+                        "rebase all open PRs, asap", "rebase all open PRs by EOD", "update every service today",
+                        "update every service, please", "fix all the failing tests, thanks", "fix all the failing tests, thank you",
+                        "rebase all open PRs, go", "rebase all open PRs, by friday please", "update every service, urgently",
+                        "fix all the failing tests, right away", "rebase all open PRs, no rush", "update every service, go ahead",
+                        "fix all the failing tests, let's go", "rebase all open PRs, cheers", "update every service, ty",
+                        "fix all the failing tests, appreciated", "rebase all open PRs, right now",
+                        "fix all the failing tests, my boss asked",
+                        # A plain report tail on the work, a final confirmation tag on any request, a colon list whose
+                        # items each open on a verb of work, and a per-unit spec with any nouns, by shape.
+                        "migrate every package to pnpm, then ping me with the results",
+                        "migrate every package to pnpm, then tell me which ones conflicted",
+                        "rebase all open PRs, and notify me when it's done",
+                        "update every service to node 22, and then send me the diff summary",
+                        "fix all the failing tests, then let me know which ones were flaky",
+                        "upgrade all packages, and message me once they're merged",
+                        "split the api, ui and docs work into parallel lanes, ok?", "rebase all my open PRs, ok?",
+                        "update every service to node 22, okay?", "fix all the failing tests, alright?",
+                        "migrate every package to pnpm, right?", "upgrade all modules to the new api, ok?",
+                        "for each of my upstream PRs: rebase, resolve conflicts, push", "for each open PR: rebase, squash, merge",
+                        "for every repo: bump the version, tag, deploy", "for each package: upgrade, rebuild, publish",
+                        "for all services: rename the logger, re-run codegen, push",
+                        "update every service, one PR per service", "bump all the packages, one commit per package",
+                        "update every repo's CI config, a separate PR per repo",
+                        "migrate every package to pnpm, a single changelog entry per package",
+                        "fix all the failing tests, one branch for each module",
+                        "update every service, each in its own branch", "rebase all open PRs, per repo",
+                        # A report on the result by its positive shapes, and a deadline, which is no deferral.
+                        "update every service, and send me the diff", "rebase all open PRs, and let me know",
+                        "bump all the packages, and let me know once they're all merged",
+                        "fix all the failing tests and report which ones were flaky", "rebase all my open PRs, then send me the links",
+                        "update every repo's CI config, and tell me which ones changed", "update every service by tonight",
+                        "rebase all open PRs, by friday", "rebase all open PRs now", "모든 서비스 업데이트해줘, 다음 주 월요일까지",
+                        "update all services and report back",
+                        # A report tail by its opening, any words after it, and a time inside a clause with a past verb
+                        # of its own, which is no deferral.
+                        "update every service to node 22 and report any that fail", "bump every package and let me know which ones break",
+                        "convert all the tests to pytest and send me the ones that fail",
+                        "upgrade every service to node 22 and report the ones that error out",
+                        "convert all the tests to pytest, and show me the ones that failed",
+                        "rebase all open PRs and tell me each one that needs a manual fix",
+                        "migrate every package to pnpm, then ping me about anything that looks off",
+                        "update every repo's CI config and send me those that still go red",
+                        "fix all the failing tests, and tell me every one that stays flaky",
+                        "bump all the packages and notify me after the last one lands",
+                        "upgrade every service and ping me once the last one is merged",
+                        "update every service we deployed on monday", "rebase all the PRs that failed yesterday",
+                        "rebase all the PRs we opened on monday", "update every service we shipped over the weekend",
+                        "월요일에 배포한 서비스 전부 업데이트해줘", "지난 월요일에 배포한 서비스 전부 업데이트해줘",
+                        # The targets as the subject take any finite verb; a person with a plain verb reports.
+                        "upgrade every package, then tell me which ones can't be upgraded",
+                        "bump all the packages, and tell me any that won't build",
+                        "rebase all open PRs, and tell me every package that needs to be rebuilt",
+                        "rebase all open PRs, then tell me the ones that couldn't merge",
+                        "update every service to node 22, and tell me which ones will break",
+                        "migrate every package to pnpm, then tell me the ones you changed",
+                        "update every service, and send me every file we touched",
+                        "fix all the failing tests, then tell me which ones I broke",
+                        "migrate every package to pnpm, then tell me what changed",
+                        # Report tails by follower shape and a weekday inside a past clause.
+                        "update every service to node 22 and report any that fail",
+                        "bump every package and let me know which ones break",
+                        "convert all the tests to pytest and send me the ones that fail",
+                        "upgrade every service to node 22 and report the ones that error out",
+                        "convert all the tests to pytest, and show me the ones that failed",
+                        "rebase all open PRs and tell me each one that needs a manual fix",
+                        "update every repo's CI config and send me those that still go red",
+                        "fix all the failing tests, and tell me every one that stays flaky",
+                        "migrate every package to pnpm, then tell me which files changed",
+                        "rebase all open PRs, then tell me which ones conflict",
+                        "bump all the packages and tell me all the failures",
+                        "update every service, and send me the errors",
+                        "bump all the packages and notify me after the last one lands",
+                        "upgrade every service and ping me once the last one is merged",
+                        "rebase all open PRs, and notify me when it's done",
+                        "update every service and let me know once they're all merged",
+                        "update every service, and let me know", "update all services and report back",
+                        "rebase all open PRs, then send me the links", "update every service we deployed on monday",
+                        "월요일에 배포한 서비스 전부 업데이트해줘", "rebase all the PRs we opened over the weekend"):
+            with self.subTest(message=message):
+                self.assertTrue(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
+
+    def test_a_trailing_remark_keeps_the_request_only_by_kind(self) -> None:
+        # After an English request, a trailing remark keeps it only when it is of a keep kind, in any words and with
+        # any intensifier; a refusal class applies first, and an unknown remark holds (#2243 review, lead decision
+        # (D)). Router and hint read the same, on work over many targets and on a split.
+        kinds = {
+            "gratitude": ("thanks a bunch", "thx so much!!", "much obliged", "I'd appreciate it", "you're the best"),
+            "sign-off": ("have a good one", "talk soon", "regards", "catch you later", "later gators", "see ya", "take care"),
+            "wish": ("fingers crossed", "really hope it goes smoothly", "hope it lands cleanly", "wish me luck", "good luck",
+                     "hope there are no conflicts", "let's hope it sticks", "would love a clean run",
+                     "got a good feeling about this one"),
+            "back-reference": ("as discussed", "like we agreed", "same as last time", "per our chat",
+                               "same deal as before", "following the plan from last sprint"),
+            "attribution": ("my manager asked for it", "legal approved it", "the PM requested this"),
+            "aside": ("fwiw the tests are flaky", "btw, CI is slow today"),
+            "no pressure": ("no worries", "no rush at all", "take your time", "whenever works", "not urgent",
+                            "nothing pressing about it"),
+        }
+        # Each refusal shares its clause with a keep kind, so the class alone holds it.
+        refusals = ("run the tests too thanks",  # a new request
+                    "haha jk thanks",  # a hold or a joke
+                    "btw lol",  # only a laugh
+                    "fyi all done",  # only a status
+                    "btw umm",  # only a hesitation
+                    "thanks but the billing one first",  # something before the work
+                    "btw this could break prod",  # a warning
+                    "fwiw last time this broke CI",  # a warning
+                    "thanks but still deciding",  # a hedge
+                    "btw just spitballing",  # thinking aloud
+                    "thanks but forget I said that",  # a retraction
+                    "thanks but your call",  # the decision handed back
+                    "no rush shelve it",  # a verb on the request itself
+                    "thanks and thoughts welcome",  # deliberation
+                    "thanks we'll see",  # a person's modal
+                    "can we do both thanks",  # a question
+                    "thanks not yet")  # a negation
+        unknown = ("long day lol", "unrelated but i love this new keyboard", "peace")
+        for work in ("rebase all open PRs", "update every service to node 22", "split the migration into parallel lanes"):
+            for kind, tails in kinds.items():
+                for tail in tails:
+                    with self.subTest(kind=kind, message=f"{work}, {tail}"):
+                        self.assertTrue(dispatches_dag_ulw(f"{work}, {tail}"))
+                        self.assertEqual(self._dag_ulw_starts(f"{work}, {tail}")[:2], (True, True))
+            for tail in (*refusals, *unknown):
+                with self.subTest(message=f"{work}, {tail}"):
+                    self.assertFalse(dispatches_dag_ulw(f"{work}, {tail}"))
+                    self.assertEqual(self._dag_ulw_starts(f"{work}, {tail}")[:2], (False, False))
+        # A remark after a colon list's last item goes through the same gate: a status in either order holds, and a
+        # dismissal holds.
+        for message in ("for each open PR: rebase, merge, merged already", "for each open PR: rebase, merge, already merged",
+                        "for each open PR: rebase, merge, not my problem",
+                        "for each repo: bump deps, tested locally, shipped to staging"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        self.assertEqual(self._dag_ulw_starts("for each open PR: rebase, squash, merge, thanks a ton")[:2], (True, True))
+
+    def test_the_router_size_cue_follows_the_cue_readers_refusals(self) -> None:
+        # The router's size-cue path dispatches dag-ulw only where the cue reader would start: a held, deferred or
+        # asking request is asked about on the router and never started by the hint (#2243 review).
+        for message in ("refactor the logging in all modules in parallel, then tell me which ones you'd skip",
+                        "refactor the logging in all modules in parallel, then tell me which ones to keep",
+                        "rewrite the error handling across all services in parallel, then tell me which ones we should keep",
+                        "refactor the logging in all modules in parallel, and notify me when it's ready to merge",
+                        "refactor the logging in all modules in parallel, then send me your misgivings",
+                        "refactor the logging in all modules in parallel next week",
+                        "refactor the logging in all modules in parallel, next week",
+                        "모든 모듈의 로깅을 병렬로 리팩터링해줘 다음 주에"):
+            with self.subTest(message=message):
+                self.assertTrue(refuses_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        # A fault said in the past is no past when the message ends asking to fix it; a report, a question or a hold
+        # after the fault keeps it held, and another past stays one.
+        self.assertFalse(refuses_dag_ulw("api 모듈과 ui 모듈 테스트가 깨졌어, 동시에 고쳐줘"))
+        self.assertTrue(self._dag_ulw_starts("api 모듈과 ui 모듈 테스트가 깨졌어, 동시에 고쳐줘")[0])
+        for message in ("api 모듈과 ui 모듈 테스트가 깨졌어", "api 모듈과 ui 모듈 테스트가 깨졌어, 왜 그래?",
+                        "api 모듈과 ui 모듈 테스트가 깨졌어, 아직 고치지 마", "모든 서비스 배포했어, 이제 다 업데이트해줘"):
+            with self.subTest(message=message):
+                self.assertTrue(refuses_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        # With nothing refused, the size cue still dispatches.
+        message = "refactor the logging in all modules in parallel, then tell me which ones failed"
+        self.assertFalse(refuses_dag_ulw(message))
+        self.assertTrue(self._dag_ulw_starts(message)[0])
+
     def test_a_missing_skill_catalog_is_not_kept(self) -> None:
         # With no sidecar the catalog names are unknown, and that is not kept: once the sidecar answers, a request
         # that opens with a catalog skill's name is that skill's again.
@@ -423,7 +798,8 @@ class RouterTests(unittest.TestCase):
                         "모든 페이지가 하얗게 나와 고쳐줘", "모든 테스트가 돌지 않아 고쳐줘", "모든 서비스에서 로그인이 안 돼 수정 부탁",
                         "모든 서비스 업데이트 해 놨어", "PR들 몽땅 머지됐어", "모든 패키지 최신화 완료",
                         "for each of my PRs, tell me the status", "for each of my PRs: summarize the changes",
-                        "PR들 몽땅 리베이스할까?", "PR 3개 중 하나 리베이스해줘"):
+                        "PR들 몽땅 리베이스할까?", "PR 3개 중 하나 리베이스해줘", "PR들 전부 머지하지마", "PR들 전부 고쳐?",
+                        "PR들 쭉 리베이스했어"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertFalse(work_over_many_targets(message))

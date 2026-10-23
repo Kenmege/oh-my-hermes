@@ -13,6 +13,7 @@ from .dag_ulw_cues import (
     big_work_for_dag_ulw,
     dag_ulw_control,
     dispatches_dag_ulw,
+    sized_without_evidence,
     invokes_dag_ulw,
     reports_or_asks_after_the_name,
     work_is_split,
@@ -6310,6 +6311,14 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
                 next_action = _coding_delivery_route_hint_next_action(matching_message, next_action)
             workflow, next_action = _ulw_retired_hint_target(workflow, next_action, routing_normalized)
             big_work = workflow == "ultrawork" and big_work_for_dag_ulw(matching_message)
+            if big_work and sized_without_evidence(matching_message, reference_regions(message).links):
+                # Big by a split with no work named, or by breadth alone: the router does not dispatch it on that, so
+                # the hint offers it (rule A).
+                if not any(hint.get("workflow") == "dag-ulw" for hint in hints):
+                    hints.append(_dag_ulw_offer_hint())
+                if len(hints) >= hint_limit:
+                    break
+                continue
             if big_work:
                 # The router's own reading (`dag_ulw_cues`): ultrawork-shaped work in several parts runs as a graph.
                 workflow, next_action = "dag-ulw", _DIRECT_WORKFLOW_NEXT_ACTIONS["dag-ulw"]
@@ -6352,11 +6361,9 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
             and not matching_message.rstrip().endswith(("?", "？"))
             and getattr(intent, "intent_class", "") not in {"meta_discussion", "feedback_signal"}
         ):
-            if work_is_split(matching_message):
-                # Work split into parts that no rule named ("split this into parallel work lanes"), as before.
-                hints.append(_dag_ulw_by_size_hint())
-            elif work_over_many_targets(matching_message, links):
-                # Work over many targets without the router's evidence ("review all open PRs"): offered, not started.
+            if work_is_split(matching_message) or work_over_many_targets(matching_message, links):
+                # Work split into parts, or over many targets, without the router's evidence ("split the paragraphs
+                # into parallel parts for translation", "review all open PRs"): offered, not started.
                 hints.append(_dag_ulw_offer_hint())
         domain_signal = _specialist_domain_route_signal(matching_message)
         domain_operator_override = (
@@ -8160,12 +8167,12 @@ def _dag_ulw_control_hint(control: str) -> dict[str, object]:
 
 _DAG_ULW_OFFER_HINT_ID = "dag_ulw_offer"
 _DAG_ULW_OFFER_REASON = (
-    "The request may be work over many targets for a dag-ulw graph, but it gives no change to run on each; it starts "
-    "no run until the user says so."
+    "The request may be work in several parts or over many targets for a dag-ulw graph, but it gives no change to run "
+    "on each; it starts no run until the user says so."
 )
 _DAG_ULW_OFFER_RESPONSE = (
-    "Do not define a run yet: ask one short question whether to run this as a dag-ulw graph over those targets, then "
-    "do what the answer says."
+    "Do not define a run yet: ask one short question whether to run this as a dag-ulw graph over those parts or "
+    "targets, then do what the answer says."
 )
 
 

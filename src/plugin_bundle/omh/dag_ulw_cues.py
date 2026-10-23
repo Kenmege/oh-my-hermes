@@ -730,7 +730,8 @@ _KOREAN_UNIT: Final = r"(?:pr|prs|pull\s*request|레포|리포|저장소|서비�
 _KOREAN_COUNTED_UNIT: Final = r"(?:pr|pull\s*request|풀\s*리퀘(?:스트)?|레포|리포|repo|브랜치|branch)"
 _KOREAN_COUNT: Final = r"(?:두|세|네|다섯|여러|[2-9]|\d{2,})\s*(?:개|건)"
 _KOREAN_BREADTH_OBJECT: Final = (
-    rf"(?:(?<![가-힣])(?:마이크로)?{_KOREAN_UNIT}(?:들)?\s*(?:을|를|은|는)?\s*(?:전부|모두|다|싹|몽땅|하나하나|각각)(?![가-힣])"
+    rf"(?:(?<![가-힣])(?:마이크로)?{_KOREAN_UNIT}(?:들)?\s*(?:을|를|은|는)?\s*(?:전부|모두|다|싹|몽땅|쭉|하나하나|각각"
+    rf"|(?:하나도\s*)?빠짐없이)(?![가-힣])"
     rf"|(?<![가-힣a-z]){_KOREAN_COUNTED_UNIT}(?:들)?\s*{_KOREAN_COUNT}\s*(?:을|를|은|는)?\s*(?:전부|모두|다|몽땅)(?![가-힣])"
     rf"|(?<![가-힣])(?:모든|전체|각)\s*(?:마이크로)?{_KOREAN_UNIT}(?:들)?(?:을|를|에|의|에서)?)"
 )
@@ -759,10 +760,10 @@ _FIX_VERB: Final = re.compile(r"\b(?:fix|resolve|debug|repair)\b|고쳐|고치|�
 
 def _closes_a_clause(word: str) -> bool:
     """Whether a Korean predicate ``word`` closes its clause, as a symptom does ("안 돌아가", "느려", "나와", "안됨"), rather
-    than aiming the change (…게, …도록: "안 되게 고쳐줘", "쓰지 않게"), going on to more (…고), or describing a noun (…는,
-    …던, …은, a final ㄴ: "안 돌아가는 테스트")."""
+    than aiming the change (…게, …게끔, …도록: "안 되게 고쳐줘", "안 되게끔 수정해줘", "쓰지 않게"), going on to more (…고), or
+    describing a noun (…는, …던, …은, a final ㄴ: "안 돌아가는 테스트")."""
     code = ord(word[-1]) - 0xAC00
-    return not (word.endswith(("게", "도록", "고", "는", "던", "은")) or (0 <= code < 11172 and code % 28 == 4))
+    return not (word.endswith(("게", "게끔", "도록", "고", "는", "던", "은")) or (0 <= code < 11172 and code % 28 == 4))
 
 
 def _one_fault(folded: str) -> bool:
@@ -806,7 +807,7 @@ _KOREAN_CHANGE_VERB: Final = (
 )
 _EN_CHANGE_VERB: Final = (
     r"(?:fix|update|upgrade|migrate|refactor|port|convert|add|rename|rebase|close|merge|bump|address|resolve|implement"
-    r"|build|replace|move|apply|patch)"
+    r"|build|replace|move|apply|patch|rewrite|reimplement)"
 )
 # The verbs a request may be offered dag-ulw on, without starting it: the change verbs, and reviewing or triaging
 # each unit ("review all open PRs", "PR들 전부 리뷰해줘").
@@ -823,25 +824,38 @@ _EN_BREADTH: Final = (
 _EN_FOR_EACH: Final = (
     rf"for\s+(?:each|every|all)\s+(?:of\s+)?(?:the\s+|my\s+|our\s+)?(?:\S+\s+){{0,2}}?{_EN_UNITS}\b\s*[:,]?\s*(?:please\s+)?"
 )
+_EN_PLURAL_UNITS: Final = (
+    r"(?:prs|pull\s+requests|repos|repositories|(?:micro)?services|modules|packages|components|endpoints|tests|issues|files"
+    r"|pages|apps|branches)"
+)
 _EN_OFFER: Final = re.compile(
     rf"^(?:please\s+)?{_POLITE_OPENER}?(?:{_EN_OFFER_VERB}\b[^.?!]*?{_EN_BREADTH}"
     rf"|(?:check|go\s+through|look\s+at)\b[^.?!]*?{_EN_BREADTH}[^.?!]*?\band\s+(?:then\s+)?{_EN_CHANGE_VERB}\b"
     rf"|{_EN_FOR_EACH}{_EN_OFFER_VERB}\b)"
+    rf"|\b{_EN_PLURAL_UNITS}\b[^.?!]*?\b{_EN_OFFER_VERB}\s+them\s+all\b"
 )
 _EN_LATER_CLAUSE_VERB: Final = re.compile(r"\band\s+(?:then\s+)?(?:just\s+)?([a-z]+)")
-_KOREAN_OFFER: Final = re.compile(rf"{_KOREAN_BREADTH_OBJECT}\s*(?:\S+\s+){{0,3}}\S*{_KOREAN_OFFER_VERB}")
+_KOREAN_OFFER: Final = re.compile(
+    rf"{_KOREAN_BREADTH_OBJECT}\s*(?:\S+\s+){{0,3}}\S*{_KOREAN_OFFER_VERB}"
+    rf"|{_KOREAN_BREADTH_OBJECT}\s*(?:\S+\s+){{0,4}}\S*(?:게|게끔|도록)\s+(?:좀\s+)?\S*{_KOREAN_OFFER_VERB}"
+)
 # An explicit request: a Korean request ending on the verb, the message's last word ("리베이스해줘", "리베이스해줘요",
 # "리베이스해", "올려놔", "올리자", "리베이스해주셈"), or said as a word of its own right after the verb ("리베이스 해줘",
 # "업데이트 좀 해 주세요", "업데이트 해 놔줘", "업데이트 시켜줘", "업데이트 부탁", "고쳐 줘", "리베이스 ㄱ", "리베이스 고"); or a
 # chain of two or more change verbs joined by 고 ("닫을건 닫고 리뷰반영할건 리뷰반영하고 rebase할건 리베이스하고").
-_KOREAN_GIVE: Final = r"(?:줘요|줘|주세요|주세용|주셈|줄래)"
+_KOREAN_GIVE: Final = r"(?:줘요|줘|주세요|주세용|주셈|주라|주십쇼|주십시오|줄래)"
+# A casual imperative of a change verb closes a request on its own ("PR들 전부 닫아", "모든 테스트 고쳐", "모든 패키지
+# 올려라").
+_KOREAN_PLAIN_IMPERATIVE: Final = r"(?:닫아|고쳐|올려|바꿔|옮겨|붙여|만들어|넣어)(?:라)?"
 _KOREAN_REQUEST_END: Final = re.compile(
-    rf"(?:해\s*{_KOREAN_GIVE}|하자|{_KOREAN_GIVE}|해라|해|놔|둬|자|{_G}+|고고)\s*[.!~]*$"
+    rf"(?:해\s*{_KOREAN_GIVE}|하자|{_KOREAN_GIVE}|해라|해|놔라|둬라|놔|둬|자|{_KOREAN_PLAIN_IMPERATIVE}|{_G}+|고고싱|고고)"
+    r"\s*[.!~]*$"
 )
 _KOREAN_BARE_REQUEST_END: Final = re.compile(
     r"\s(?:(?:좀|꼭|다시|빨리|얼른|바로|제발)\s+)?"
     rf"(?:(?:진행\s*)?해\s*(?:{_KOREAN_GIVE}|(?:놔|둬)\s*{_KOREAN_GIVE}?)?|{_KOREAN_GIVE}|시켜\s*{_KOREAN_GIVE}?|하자"
-    rf"|부탁(?:해요|해|드려요|드립니다|합니다|요)?|(?:해\s*)?주시기\s*바랍니다|바랍니다|(?:놔|둬)\s*{_KOREAN_GIVE}?|{_G}+|고고|고)"
+    rf"|부탁(?:해요|해|드려요|드립니다|합니다|요)?|(?:해\s*)?주시기\s*바랍니다|바랍니다|(?:해\s*)?주시면\s*감사하겠습니다|요망"
+    rf"|(?:놔|둬)(?:라|\s*{_KOREAN_GIVE})?|{_G}+|고고싱|고고|고)"
     r"\s*[.!~]*$"
 )
 # The verb a bare ending is said after closes its word, or carries only its own ending ("고쳐", "만들어", "업데이트해",
@@ -858,6 +872,464 @@ def _korean_request_verb(folded: str) -> tuple[str, bool]:
         words = folded[: bare.start()].split()
         return (words[-1] if words else ""), True
     return (folded.rstrip(" .!~").split()[-1] if _KOREAN_REQUEST_END.search(folded) else ""), False
+
+
+# What follows a request in a later clause is read on positive evidence only (lead decision on the #2243 review). A
+# clause after the request keeps it when it is a keeper by shape (`_KEEPER_CLAUSE`: an urgency or a deadline, a start
+# cue, thanks or politeness, with an intensifier or a request ending of its own: "…해줘, 최대한 빨리", "…해줘,
+# 금요일까지", "…해줘, 지금 바로", "…해줘, 부탁할게", "…, by friday please", "…, no rush"), or a follow-on that opens with a
+# sequencing connective and asks for more work (`_follows_on`: "…해줘, 그 다음 테스트 돌려줘", "…해줘, 끝나고 문서도
+# 정리해줘", "…해줘, 패키지마다 changelog도 써줘", "…, then integrate the findings"). No clause after the request may hold,
+# cancel or joke about it (`_HOLD`), and every clause between must keep it too (`_keeps_the_request`); a clause that opens
+# on a back-reference ("…해줘, 는 아니고 리뷰해줘") is neither a keeper nor a follow-on. Anything else after a Korean
+# request keeps nothing, and the message is read whole, as on main ("…해줘, 해도 되나", "…해줘, 이거 맞아?", "…해줘,
+# 확인해줘"). After an English request a remark keeps it too, and only a refusal or a new request does not ("…, what do
+# you think", "…, not sure though", "…, run the tests": `_remarks_keep_the_request`, `_trails_off`).
+_CLAUSE_BREAK: Final = re.compile(r"\s*(?:[,;—–…]|\.{2,}|\s-\s)\s*")
+_INTENSIFIER: Final = r"(?:(?:최대한|가능한(?:\s*한)?|되도록|좀|진짜|정말|제발|너무|완전)\s*)?"
+_TIME_WORD: Final = (
+    r"(?:오늘|내일|모레|글피|이번\s*주|다음\s*주|이번\s*달|다음\s*달|주말|월말|연말|[월화수목금토일]요일|오전|오후|점심|저녁|아침|밤"
+    r"|퇴근\s*전|퇴근|\d+\s*(?:시|일)(?:\s*\d+\s*분)?|eod)"
+)
+_KEEPER_WORD: Final = (
+    rf"(?:{_INTENSIFIER}(?:빨리|얼른|급히|서둘러|빠르게|신속히)|{_INTENSIFIER}급(?:해|해요|함|합니다|하다)"
+    rf"|{_TIME_WORD}(?:\s*{_TIME_WORD})*\s*(?:까지(?:는|만)?|안에|중으로|중에|내로|이내)"
+    rf"|지금(?:\s*바로)?|바로|당장|즉시|(?:바로\s*|지금\s*)?시작(?:해|하자)?|가자|고고|{_G}+"
+    r"|부탁\S*|고마\S*|고맙\S*|감사\S*|땡큐"
+    r"|asap|urgent(?:ly)?|quickly|right\s+away|no\s+rush|today|(?:right\s+)?now|go(?:\s+ahead)?|let'?s\s+go"
+    r"|by\s+(?:the\s+)?(?:eod|eow|cob|end\s+of\s+(?:the\s+)?(?:day|week|month|sprint)|today|tonight|tomorrow(?:\s+morning)?"
+    r"|noon|midnight|(?:this\s+|next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|weekend)"
+    r"|\d{1,2}(?::\d{2})?\s*(?:am|pm)?)"
+    r"|please|pls|plz|thanks(?:\s+(?:a\s+lot|so\s+much|in\s+advance))?|thank\s+you(?:\s+so\s+much)?|thx|ty|cheers"
+    r"|(?:much\s+)?appreciated"
+    # how the work is cut per unit, by shape ("one PR per service", "a separate PR per repo", "one commit per package",
+    # "per repo", "each in its own branch")
+    r"|(?:(?:with|in|as|using)\s+)?(?:one|a|a\s+single|a\s+separate|one\s+separate|its\s+own|their\s+own|separate)"
+    r"\s+(?:[a-z][\w-]*\s+){0,2}?[a-z][\w-]*\s+(?:per|for\s+each|for\s+every)\s+[a-z][\w-]*"
+    r"|(?:one\s+)?per\s+[a-z][\w-]*|each\s+(?:in|on)\s+(?:its|their)\s+own\s+[a-z][\w-]*)"
+)
+_KEEPER_CLAUSE: Final = re.compile(
+    rf"{_KEEPER_WORD}(?:\s*(?:and\s+)?{_KEEPER_WORD})*(?:\s*(?:해\s*{_KOREAN_GIVE}|해요|해|{_KOREAN_GIVE}|요))?\s*[.!~]*"
+)
+# A follow-on opens with a sequencing connective (끝나면 is a condition, not one), or on each of the units ("패키지마다"),
+# and asks for more work: a Korean work verb in request form, not narrowed to that work alone ("확인만") or undoing the
+# request ("되돌려줘"), or an English one ("…, then run the tests", "…, and then integrate").
+_KOREAN_CONNECTIVE: Final = re.compile(
+    r"^(?:그리고(?:\s*나서)?|그\s*다음(?:에|엔|으로)?|그\s*담에|다음으로|이어서|끝나고(?:\s*나서)?|그러고\s*나서|그\s*(?:뒤|후)에"
+    rf"|(?:각\s*)?(?:{_KOREAN_UNIT}|풀\s*리퀘(?:스트)?)(?:들)?\s*마다)\s+"
+)
+_FOLLOW_ON_VERB: Final = rf"(?:{_KOREAN_OFFER_VERB}|갱신|써|작성|확인|(?<!되)돌려|실행|시작|진행|정리)"
+_EN_FOLLOW_ON_VERB: Final = (
+    rf"(?:{_EN_OFFER_VERB}|integrate|develop|ship|test|run|rerun|deploy|write|document|verify|check|clean\s+up|push|tag"
+    r"|release)"
+)
+_EN_FOLLOW_ON: Final = re.compile(
+    rf"^(?:and\s+then|and|then|after\s+that|next|afterwards)\s*,?\s+(?:please\s+|just\s+|also\s+)*{_EN_FOLLOW_ON_VERB}\b"
+)
+# A colon list after a breadth head is one request, not trailing clauses, when every item opens on a verb of work
+# ("for each of my upstream PRs: rebase, resolve conflicts, push", "for each open PR: rebase, squash, merge"): any word
+# but a read, a report, a hold, a negation, a hedge or a function word (`_NOT_A_WORK_VERB`).
+_READ_OR_HOLD_VERB: Final = (
+    r"(?:check|review|look|list|see|read|inspect|audit|scan|summari[sz]e|explain|describe|comment|report|tell|show|send"
+    r"|let|ping|notify|message|wait|hold|pause|stop|halt|cancel|skip|leave)"
+)
+_NOT_A_WORK_VERB: Final = (
+    rf"(?:{_READ_OR_HOLD_VERB}|don'?t|do|does|not|no|never|nothing|none"
+    r"|maybe|perhaps|probably|possibly|might|may|could|would|should|will|can|is|are|was|were|be|it|this|that|these"
+    r"|those|the|a|an|i|we|you|they|my|our|your|what|which|who|why|how|when|where|if|whether|though|but|although"
+    r"|unless|so|because|since|or|also|just|only|lol|haha|hmm|idk|imo|imho|tbh|fwiw|btw|fyi|ok|okay|yes|yeah|nah"
+    r"|sure|thanks|thank|please|all|every|each|both|some|any|most|everything|everyone)"
+)
+# An item that opens on a status is a report on the unit, not work ("done", "failed", "green", "conflict", "rebased").
+_STATUS_WORD: Final = (
+    r"(?:done|failed|failing|passing|passed|green|red|ok|fine|good|blocked|stuck|broken|gone|conflict(?:s|ing)?|clean"
+    r"|dirty|stale|pending|wip|[a-z]+(?<!e)ed)"
+)
+_EN_LIST_ITEM: Final = re.compile(rf"^(?:and\s+)?(?:please\s+)?(?!(?:{_NOT_A_WORK_VERB}|{_STATUS_WORD})\b)[a-z][a-z-]*\b")
+# A hedge or a refusal anywhere in an item ends the list and holds the request ("…, too risky though", "…, someday",
+# "…, eh, rather not", "…, someone else's call though", "…, nope").
+_HEDGE_IN_AN_ITEM: Final = re.compile(
+    r"\b(?:maybe|perhaps|though|eventually|some\s*day|nope|nah|rather|not\s+my\s+call|someone\s+else'?s|not\s+sure"
+    r"|too|risky|idk|eh|meh|ugh)\b"
+)
+# The head: the request so far ends in the first item of a colon list after a breadth word; a colon after a whole
+# request opens a list too ("rebase all my open PRs: done, done, conflict"), and a colon between digits is a time.
+_EN_LIST_HEAD: Final = re.compile(rf"(?:{_EN_BREADTH}|\bfor\s+(?:each|every|all)\b|\b{_EN_PLURAL_UNITS}\b)[^:,.!?]*:[^,]*$")
+_LIST_COLON: Final = re.compile(r"\s*(?<!\d):(?!\d)\s*")
+_HOLD: Final = re.compile(
+    r"농담|장난|됐어|됐고|(?<![가-힣])(?:아냐|아니야|아니다|아니|잠깐만?|잠시만?|말고)(?![가-힣])"
+    r"|\b(?:jk|j/k|kidding|never\s*mind|nvm|wait|hold\s+on)\b"
+)
+_EN_TAKE_BACK: Final = re.compile(
+    r"^(?:oh\s+|um\s+|no\s+)?(?:never\s*mind|nvm|jk|j/k|just\s+kidding|kidding|scratch\s+that|or\s+not|actually\s+(?:don'?t|no)"
+    r"|don'?t|wait|hold\s+on|cancel\s+that|forget\s+(?:it|that)|not\s+now|later)\b"
+)
+_EN_TAKE_BACK_AT_THE_END: Final = re.compile(
+    r"\b(?:jk|j/k|just\s+kidding|nvm|never\s*mind|or\s+(?:maybe\s+)?not)\s*[.!]*$"
+)
+
+
+def _takes_it_back(folded: str) -> bool:
+    """Whether the last clause of a request takes it back (`_EN_TAKE_BACK`), or its last words do with no clause
+    break before them ("rebase all open PRs or maybe not"): a guard on top of `_keeps_the_request`."""
+    clauses = [clause for clause in _CLAUSE_BREAK.split(folded) if clause]
+    return (len(clauses) > 1 and bool(_EN_TAKE_BACK.match(clauses[-1]))) or bool(_EN_TAKE_BACK_AT_THE_END.search(folded))
+
+
+def _follows_on(clause: str) -> bool:
+    """Whether ``clause`` opens with a sequencing connective and asks for more work (`_KOREAN_CONNECTIVE`,
+    `_EN_FOLLOW_ON`)."""
+    connective = _KOREAN_CONNECTIVE.match(clause)
+    if connective:
+        verb, _bare = _korean_request_verb(clause[connective.end():])
+        return bool(verb) and bool(re.search(_FOLLOW_ON_VERB, verb)) and not verb.endswith("만")
+    return bool(_EN_FOLLOW_ON.match(clause))
+
+
+def _keeps_the_request(trailing: list[str]) -> bool:
+    """Whether every clause after a request keeps it: a keeper (`_KEEPER_CLAUSE`) or a follow-on (`_follows_on`), with
+    no hold or joke in any of them (`_HOLD`)."""
+    return all(
+        not _HOLD.search(clause) and bool(_KEEPER_CLAUSE.fullmatch(clause) or _follows_on(clause)) for clause in trailing
+    )
+
+
+def _korean_clauses(folded: str) -> list[str]:
+    """``folded``, then each clause of it, read on its own only when the clauses after the first one in request form
+    keep the request (`_keeps_the_request`): otherwise only the whole message is read, as on main ("모든 패키지
+    업데이트해줘, 패키지마다 changelog도 써줘" and "PR들 전부 리베이스해줘, 급해" run, "PR들 전부 리베이스해줘, 아 잠깐만" does
+    not)."""
+    clauses = [clause for clause in _CLAUSE_BREAK.split(folded) if clause]
+    request = next((index for index, clause in enumerate(clauses) if _korean_request_verb(clause)[0]), len(clauses))
+    if request >= len(clauses) - 1 or not _keeps_the_request(clauses[request + 1 :]):
+        return [folded]
+    return [folded, *clauses]
+
+
+# What a request may end with besides the work, read off before it is read: one confirmation tag that ends the message
+# ("…, ok?", "…, alright?"), and a report on the result, by its opening: tell, ping, notify, message, show or send me,
+# let me know, or report (back), alone or followed by which, what, any, the ones, those, each, all, every, when, once,
+# after or a result noun, and any words after that ("… and report any that fail", "… and let me know which ones break",
+# "…, and send me the ones that fail", "…, then ping me with the results", "…, and notify me when it's done"). Any
+# other "let me <verb>" is the person's own step ("…, and let me check with the team first"), and a tail that asks for
+# anything before the work or about whether to do it is no report ("…, then tell me why we shouldn't", "…, then tell me the risks first", "…, and tell me what
+# would break before you do"): both stay trailing clauses that keep nothing (`_trails_off`).
+_FINAL_CONFIRMATION_TAG: Final = re.compile(r"\s*,\s*(?:ok|okay|alright|right)\s*[?？]+\s*$")
+_DONE_CLAUSE: Final = (
+    r"(?:when|once|after)\s+(?:[a-z']+\s+){0,3}?(?:(?:is|are|has|have)\s+)?(?:been\s+|all\s+)?"
+    r"(?:done|finished|finishes|complete[ds]?|merged|lands?|landed|green|through|ready|over|deployed|shipped|in|passes"
+    r"|passed)\b"
+)
+_RESULT_NOUN: Final = (
+    r"(?:results?|diffs?|links?|list|summary|summaries|counts?|report|status|outcome|changes|numbers?|output|logs?"
+    r"|failures?|errors?|files?|tests?|conflicts?|warnings?)"
+)
+# Deliberation is never a result, by meaning: reasons, objections, concerns, thoughts, opinions, doubts, pros and cons,
+# a plan or an approach, risks, alternatives, and the verbs that weigh ("what you think", "which ones you'd recommend").
+_DELIBERATION: Final = (
+    r"(?:reasons?|objections?|concerns?|thoughts?|opinions?|doubts?|pros|cons|plans?|approach(?:es)?|risks?|alternatives?"
+    r"|options?|ideas?|feedback|take|views?|worries|worry|caveats?|trade-?offs?|considerations?|pushback|questions?"
+    r"|suggestions?|recommendations?|advice|preferences?|misgivings?|reservations?|hesitations?|qualms?|fears?"
+    r"|apprehensions?|feelings?|input|perspectives?|angles?|stance|positions?|viewpoints?|outlook|judg(?:e)?ments?"
+    r"|assessments?|evaluations?|estimates?|guess(?:es)?|hunch(?:es)?|instincts?|intuitions?|impressions?|rationale"
+    r"|justifications?|arguments?|pitfalls?|downsides?|upsides?|drawbacks?|benefits?|merits?|strategy|strategies"
+    r"|proposals?|think|reckon|feel|suggest|recommend|prefer|propose|advise|believe|expect|consider|weigh|suppose"
+    r"|imagine|wonder|doubt|favou?r|lean)"
+)
+# After a quantifier the report's clause turns on its subject. With the targets as the subject (the quantifier
+# itself, or that/which/who) any finite verb reports on them, modal or negated too ("which ones break", "any that won't
+# build", "every package that needs to be rebuilt", "which ones will break"). With a person as the subject, a modal,
+# an intention or a weighing verb asks before the work ("which ones you'd skip", "every branch you plan to delete",
+# "which ones we should keep"), while a plain verb reports ("the ones you changed", "every file we touched"). A bare
+# infinitive right after the quantifier asks ("which ones to keep", "what to drop").
+_PERSON: Final = r"(?:i|you|we|they|he|she)"
+_MODAL_OR_INTENT: Final = (
+    r"(?:would|could|should|might|must|shall|will|can|may|wo?n'?t|can'?t|couldn'?t|shouldn'?t|wouldn'?t|plans?|planning"
+    r"|wants?|intends?|means?|going|gonna|needs?|ha(?:ve|s)|ought)\b"
+)
+_REPORT_FOLLOWER: Final = (
+    r"(?:which|what|any|anything|all|every|each|the\s+ones|those)"
+    rf"(?>(?:\s+(?:of\s+)?(?:the\s+)?(?!(?:{_DELIBERATION}|that|which|who|{_PERSON}|to|[a-z]+ed|broke|went|ran|did|made"
+    r"|built|wrote)\b)[a-z][\w-]*)?)(?:\s+(?:that|which|who))?"
+    rf"(?:\s+(?!(?:to|{_DELIBERATION}|{_PERSON}|ones?)\b)[a-z][\w'-]*"
+    rf"|\s+{_PERSON}\s+(?!(?:to|{_DELIBERATION})\b|{_MODAL_OR_INTENT})[a-z][\w-]*)\b"
+)
+# Anywhere in the tail, a person with a modal or an intention, or deliberation, asks before the work ("which ones
+# failed and which you want to retry", "which ones you'd recommend").
+_NOT_A_REPORT: Final = re.compile(
+    rf"\b{_PERSON}(?:'(?:d|ll)\b|'re\s+going\b|\s+{_MODAL_OR_INTENT})|\b{_DELIBERATION}\b"
+)
+_REPORT_OPENER: Final = r"(?:(?:tell|ping|notify|message|show|send)\s+me|let\s+me\s+know|report(?:\s+back)?)"
+_EN_REPORT_TAIL: Final = re.compile(
+    r"(?:,\s*|\s+)(?:and\s+then|and|then)\s+(?:also\s+|just\s+|please\s+)*"
+    rf"(?:let\s+me\s+know|report(?:\s+back)?|{_REPORT_OPENER}\s+"
+    rf"(?:(?P<done>{_DONE_CLAUSE})|(?:(?:about|on|with|of)\s+)?{_REPORT_FOLLOWER}[^?]*?"
+    rf"|(?:with\s+)?(?:(?:the|a|an|all\s+the|any|all)\s+)?(?:[a-z][\w-]*\s+){{0,2}}?{_RESULT_NOUN}\b[^?]*?))"
+    r"\s*[.!]*$"
+)
+_ASKS_BEFORE_THE_WORK: Final = re.compile(
+    r"[?？]|\b(?:why|would|should|could|risks?|how\s+(?:you|we|i|to|it)|first|before|beforehand|whether|if|unless)\b"
+)
+
+
+# What follows an English request in a later clause keeps it only as a remark of a keep kind (lead decision (D) on
+# the #2243 review). A leaked refusal costs a paid graph start and a missed keeper only an offer, so an unknown remark
+# holds; and a keep kind is a word family with light structure, which tolerates intensifiers ("…, thanks a ton",
+# "…, cheers mate", "…, so grateful!!"), where the old closed list matched a phrase whole:
+# - gratitude (`_GRATITUDE`): "…, thanks a bunch", "…, much obliged", "…, I'd appreciate it", "…, you're the best";
+# - a sign-off (`_SIGN_OFF`): "…, have a good one", "…, talk soon", "…, regards";
+# - a wish (`_WISH`): "…, fingers crossed", "…, hope it goes smoothly", "…, wish me luck", "…, good luck";
+# - a back-reference (`_BACK_REFERENCE`): "…, as discussed", "…, like we agreed", "…, same as last time", "…, per our
+#   chat";
+# - who asked (`_ATTRIBUTION`): "…, my manager asked for it", "…, legal approved it", "…, requested by QA";
+# - an aside marker and the statement after it (`_ASIDE_MARKER`): "…, fwiw the tests are flaky", "…, btw, CI is slow";
+# - no pressure (`_NO_PRESSURE`): "…, no worries", "…, take your time", "…, whenever works", "…, not urgent".
+# The keepers by shape stay a fast path (`_KEEPER_CLAUSE`: an urgency, a deadline, a start cue, a per-unit spec), and a
+# follow-on keeps it too (`_follows_on`). The refusal classes apply first, each by meaning, so a keep kind that carries
+# one holds ("…, btw, not sure about this", "…, fwiw last time this broke CI"):
+# - a new request (`_EN_ASKS_FOR_MORE`: "…, run the tests", "…, let me check first"), a hold or a joke (`_HOLD`, read
+#   on every clause; `_LAUGH_ALONE`), a retraction (`_RETRACTS`; a take-back as the last clause is read on the whole
+#   text, `_takes_it_back`), a verb on the request itself (`_ACTS_ON_IT`);
+# - a status alone (`_STATUS_ALONE`), something asked before the work (`_BEFORE_THE_WORK`), a warning (`_WARNS`);
+# - a hedge about wanting it (`_HEDGE`), thinking aloud (`_THINKING_ALOUD`), a hesitation alone (`_HESITATION`);
+# - deliberation (`_WEIGHS`), the decision handed back (`_HANDS_IT_BACK`), a person's modal or intention
+#   (`_ASKER_INTENT`), a question (`_QUESTION`);
+# - a negation outside a wish (`_NEGATION`), once no pressure is read off.
+# A deferral and a condition are refused before it, on the whole text (`_hard_excluded`; no pressure is read off there
+# too, so "…, whenever works" is none). A Korean message keeps the keepers alone, since main reads it whole.
+_EN_ASKS_FOR_MORE: Final = re.compile(
+    rf"^(?:and\s+|then\s+|also\s+|please\s+|pls\s+|just\s+|so\s+)*(?!let'?s\s+hope\b)(?:{_EN_FOLLOW_ON_VERB}|{_READ_OR_HOLD_VERB}(?!\s+(?:you|ya)\b)"
+    r"|(?!(?:wish|bless|excuse)\b)[a-z]+\s+me)\b"
+)
+_HEDGE: Final = re.compile(
+    r"\b(?:ma+y+b+e+|perhaps|probably|possibly|not\s+sure|unsure|uncertain|undecided|indecisive|i\s+guess|i\s+suppose|idk"
+    r"|dunno|who\s+(?:knows|can\s+say)|or\s+whatever|or\s+something|kinda|sorta|hmm+|eh|meh|nah|nope|rather\s+not|torn"
+    r"|iffy|deciding|uneasy|wary|hesitant|reluctant|skeptical|sceptical|50\s*/\s*50|fifty[-\s]fifty|object(?:ing|ion)?"
+    r"|second[-\s]+(?:thoughts?|guess\w*)|on\s+the\s+fence|not\s+convinced|doubt\w*|scared|nervous|afraid|risky|though"
+    r"|ugh|not\s+my\s+call|someone\s+else'?s)\b"
+)
+# Thinking aloud offers an idea, not a request ("…, thinking out loud", "…, just musing", "…, spitballing"); a
+# retraction cancels what was said, by its verb ("…, scrap that", "…, forget I said that", "…, ignore that",
+# "…, pretend I didn't say it", "…, on reflection no"); handing the decision back asks before the work ("…, your call",
+# "…, up to you", "…, up to the team", "…, you decide"); and a clause that is only a hesitation hesitates ("…, umm",
+# "…, welp").
+_THINKING_ALOUD: Final = re.compile(
+    r"\b(?:think\w*|musing|muse|brainstorm\w*|spitball\w*|toying|ponder\w*|mull\w*|riffing|wondering|weighing|debating"
+    r"|consider\w*|inkling|hunch|brainwave|off\s+the\s+top\s+of\s+my\s+head|gut\s+(?:says|feeling|check|call))\b"
+)
+_RETRACTS: Final = re.compile(
+    r"\b(?:scrap|scratch|forget|disregard|ignore|strike|retract\w*|nix|belay|withdraw\w*|pretend|undo|hang\s+on|hold\s+up|stand\s*by|sit\s+tight"
+    r"|take\s+(?:it|that|this|all\s+that)\s+back|on\s+(?:second\s+thought|reflection))\b"
+)
+_HANDS_IT_BACK: Final = re.compile(
+    r"\byour\s+(?:call|choice|pick|decision|preference)\b|\byou\s+(?:decide|choose|pick)\b|\bup\s+to\s+(?!date\b)\w+"
+    r"|\bdealer'?s\s+choice\b|\bwhatever\s+you\b"
+)
+_HESITATION: Final = re.compile(r"(?:u+h+m*|u+m+|e+r+m*|e+h+|h+m+|h+r+m+|w+e+l+p+|m+e+h+|m{2,}|a+h+|o+o+f+)\W*")
+# A verb said on the request itself acts on it, as a retraction or a new request does ("…, shelve it", "…, park it for
+# now", "…, scrap it", "…, nix that"), except a wish or thanks ("…, hope it goes smoothly", "…, love it").
+_ACTS_ON_IT: Final = re.compile(
+    r"^(?:just\s+|maybe\s+|so\s+|and\s+)?(?!(?:hope|hoping|wish|love|bless|thank|thanks|appreciate)\b)[a-z]+\s+"
+    r"(?:it|that|this|everything|all\s+(?:of\s+)?(?:it|that|this))\b"
+)
+# A clause that is only a laugh after the work is a joke about it ("…, lol"), while a laugh inside a remark is not
+# ("…, long day lol"); a clause that is only a status says the work is done or where it stands ("…: done, done,
+# conflict", "…, all done"); and a clause that ends on first or beforehand asks for something before the work ("…, let
+# me check first", "…: the billing one first").
+_LAUGH_ALONE: Final = re.compile(r"(?:lol|lmao|rofl|haha+|hehe+)\s*[.!]*")
+_STATUS_ALONE: Final = re.compile(rf"(?:all\s+|already\s+)?{_STATUS_WORD}(?:\s+already)?\s*[.!]*")
+_BEFORE_THE_WORK: Final = re.compile(r"\b(?:first|beforehand)\s*[.!]*$")
+_WEIGHS: Final = re.compile(rf"(?<!\bper\sthe\s)(?<!\bsame\s)(?<!\bgood\s)\b(?!take\s+care\b|feel\s+free\b){_DELIBERATION}\b")
+_ASKER_INTENT: Final = re.compile(
+    rf"\b(?:i|you|we)(?:'(?:d|ll)\b|'re\s+going\b|\s+(?!ha(?:ve|s)\s+(?!to\b)){_MODAL_OR_INTENT})"
+    r"(?!\s+(?:\w+\s+)?(?:appreciate|be\s+(?:\w+\s+)?(?:grateful|thankful)|owe\s+you)\b)"
+)
+_QUESTION: Final = re.compile(
+    r"[?？]|^(?:what|why|how|which|who|where|whether|is|are|am|was|were|do|does|did|should|shall|could|would(?!\s+love\b)|can|will"
+    r"|may|might|must)(?![\w'])|\b(?:curious|wondering|wdyt|wyt|hbu|wbu)\b"
+)
+# A negation anywhere in a remark is read as one of the work, whatever it negates ("…, not yet", "…, not gonna do
+# it", "…, we won't do this", "…, let's not", "…, can't decide", "…, not entirely convinced").
+_NEGATION: Final = re.compile(
+    r"\b(?:not|no|never|nothing|none|nope|neither|nor|without|hold\s+off|\w+n['’]t"
+    r"|dont|wont|cant|didnt|doesnt|isnt|arent|wasnt|shouldnt|wouldnt|couldnt|havent|hasnt)\b"
+)
+# A warning about the work is no harmless aside ("…, fwiw last time this broke CI", "…, careful, prod is fragile").
+_WARNS: Final = re.compile(
+    r"\b(?:broke|break(?:s|ing)?|blew\s+up|blow\s+up|went\s+down|outage|incident|regress\w*|careful|beware|watch\s+out"
+    r"|caution|danger\w*|yikes|fragile|bricked|bit\s+us|burned\s+us|could|might|may|los[et]|losing|corrupt\w*|wipe\w*"
+    r"|data\s+loss)\b"
+)
+_GRATITUDE: Final = re.compile(
+    r"\b(?:thanks?|thank\s*(?:you|u|ya|ye)|thx|thnx|tnx|tx|ty|tysm|tyvm|ta|cheers|appreciat\w*|grateful|thankful|obliged"
+    r"|kudos|much\s+love|bless\s+you|you\s+rock|you(?:'re|\s+are)\s+(?:the\s+best|a\s+(?:star|legend|lifesaver|gem|hero))"
+    r"|legend|lifesaver|owe\s+you|(?:big|much|so\s+much)\s+love|props|shout[-\s]?out|hats\s+off)\b"
+    r"|^(?:awesome|amazing|great|perfect|nice|sweet|lovely|brilliant|excellent|wonderful|fantastic)\W*$"
+)
+_SIGN_OFF: Final = re.compile(
+    r"\b(?:have\s+a\s+(?:\w+\s+)?(?:one|day|weekend|evening|night|week|afternoon|morning)|talk\s+soon|ttyl|signing\s+off"
+    r"|regards|best\s+wishes|all\s+the\s+best|take\s+care|see\s+(?:ya|you)|cya|bye|good\s*night|peace\s+out"
+    r"|over\s+and\s+out|(?:catch|see|talk|speak)\s+(?:you\s+|ya\s+)?later|laters|later\s+gators?)\b"
+    r"|^(?:hey|hi|hello|hiya|yo|howdy|morning|good\s+(?:morning|afternoon|evening))\b"
+)
+_WISH: Final = re.compile(
+    r"^(?:i\s+|we\s+|and\s+|so\s+|let'?s\s+)?(?:(?:really|so|truly|just|sure)\s+)?(?:hope|hoping|here'?s\s+hoping|wish|wishing"
+    r"|fingers\s+(?:\w+\s+){0,2}crossed|pray\w*|knock\s+on\s+wood|touch\s+wood|(?:good|best\s+of)\s+luck|(?:i'?d\s+|would\s+)love"
+    r"|keen|excited|eager|stoked|can'?t\s+wait|looking\s+forward|wouldn'?t\s+mind|optimistic"
+    r"|(?:got\s+a\s+)?good\s+feeling|feeling\s+(?:good|positive|optimistic))\b"
+)
+_BACK_REFERENCE: Final = re.compile(
+    r"\b(?:as|like|per|what|how|the\s+way)\s+(?:(?:we|i|you|they)\s+(?:\w+\s+)?(?:discussed|agreed|said|mentioned|planned|talked|decided"
+    r"|spoke|chatted|covered|sorted|settled|aligned|landed|went\s+over|figured|mapped|outlined|scoped|laid)|(?:discussed|agreed"
+    r"|mentioned|planned|promised|usual|always|before))\b"
+    r"|\b(?:we|they)\s+(?:all\s+)?(?:agreed|discussed|settled\s+on|decided\s+on|mapped\s+(?:it\s+)?out|laid\s+(?:it\s+)?out)\b"
+    r"|\b(?:like|as|per)\s+the\s+\w+\s+(?:says|said|states|describes|spells\s+out)\b"
+    r"|\b(?:same\s+(?:\w+\s+)?as|like)\s+(?:(?:the\s+)?last\s+\w+|before|usual|always)\b|\b(?:as|like)\s+in\s+the\s+\w+"
+    r"|\bfollowing\s+(?:up\s+on|the\s+\w+)\b|\bper\s+(?:our|the|my|your|yesterday'?s|today'?s|last\s+week'?s)\s+\w+"
+)
+_ATTRIBUTION: Final = re.compile(
+    r"\b(?:asked|requested|wants?|wanted|needs?|needed|approved|okayed|ok'?d|signed\s+off|flagged|greenlit|insisted"
+    r"|ordered|mandated|cleared|blessed|backed|endorsed|sanctioned|authori[sz]ed)\b|\bper\s+\w+'?s\s+request\b"
+    r"|\b\w+'?s\s+orders\b|\bgave\s+(?:it\s+|this\s+)?the\s+nod\b|\b(?:it'?s|this\s+is)\s+from\s+(?:the\s+)?\w+"
+    r"|\b(?:gave|got|has|have|had)\s+(?:\w+\s+)?(?:green\s*light|thumbs\s+up|go[-\s]ahead|blessing|sign[-\s]?off|ok|okay)\b"
+    r"|\bper\s+(?:the\s+)?(?:cto|ceo|cfo|vp|pm|po|boss|lead|manager|team|qa|legal|security|client|customer|product|design|ops)\b"
+)
+_ASIDE_MARKER: Final = re.compile(
+    r"^(?:just\s+(?:an?\s+)?)?(?:fyi|btw|by\s+the\s+way|ps|psa|p\.s\.?|(?:side|quick|random)\s*note|note|for\s+what\s+it'?s\s+worth|fwiw"
+    r"|for\s+the\s+record"
+    r"|heads\s+up|nb|jsyk|just\s+so\s+you\s+know|fun\s+fact|(?:random\s+)?aside)\b"
+)
+# A sign-off that says later, a back-reference to before and a plan named are no deferral, take-back, condition or
+# deliberation ("…, catch you later", "…, later gators", "…, same deal as before", "…, following the plan from last
+# sprint"): they are read off before the whole-text checks and the refusals, as no pressure is.
+_KEEP_IDIOM: Final = re.compile(
+    r"\b(?:(?:catch|see|talk|speak)\s+(?:you\s+|ya\s+)?later|laters|later\s+gators?|(?:same\s+(?:\w+\s+)?as|like)\s+before"
+    r"|(?:the|our|same)\s+plan(?:\s+from\s+(?:last\s+)?\w+)?)\b"
+)
+# No pressure is no refusal, whatever words it borrows from one ("…, no worries", "…, take your time", "…, whenever
+# works", "…, nothing urgent"): it is read off before the refusals are, and before the whole-text condition.
+_NO_PRESSURE: Final = re.compile(
+    r"\b(?:(?:no|zero|0)\s+(?:\w+\s+)?(?:rush|pressure|worries|hurry|stress|problem|biggie|big\s+deal)|not\s+(?:urgent|a\s+big\s+deal)"
+    r"|nothing\s+(?:urgent|pressing)|take\s+your\s+(?:sweet\s+)?time|all\s+good(?:\s+on\s+\w+)?|breathing\s+room|plenty\s+of\s+time|at\s+your\s+(?:own\s+)?(?:pace|leisure|convenience)|easy\s+does\s+it"
+    r"|low\s+prio(?:rity)?|(?:chill|relaxed|easy|loose|flexible)\s+(?:pace|timeline|deadline|schedule)(?:\s+is\s+fine)?"
+    r"|(?:chill|relaxed|easygoing|easy-going)(?:\s+about\s+(?:\w+\s+){0,2}\w+)?"
+    r"|happy\s+(?:for\s+it\s+)?to\s+(?:wait|take\s+(?:a\s+bit|a\s+while|its\s+time|longer)))\b"
+    r"(?:\s+(?:on|with|for|about)\s+(?:this|it|that)(?:\s+one)?\b)?|\bwhenever\b[^,;]*"
+)
+
+
+def _refuses(clause: str) -> bool:
+    """Whether a trailing English ``clause`` carries a refusal class: a laugh, a status or a hesitation that is the whole
+    clause, or any other class once no pressure and the keep idioms are read off."""
+    bare = _KEEP_IDIOM.sub("", _NO_PRESSURE.sub("", clause)).strip()
+    return bool(
+        _LAUGH_ALONE.fullmatch(clause)
+        or _STATUS_ALONE.fullmatch(clause)
+        or _HESITATION.fullmatch(clause)
+        or _EN_ASKS_FOR_MORE.match(bare)
+        or _BEFORE_THE_WORK.search(bare)
+        or _WARNS.search(bare)
+        or _HEDGE.search(bare)
+        or _THINKING_ALOUD.search(bare)
+        or _RETRACTS.search(bare)
+        or _HANDS_IT_BACK.search(bare)
+        or _ACTS_ON_IT.match(bare)
+        or _WEIGHS.search(bare)
+        or _ASKER_INTENT.search(bare)
+        or _QUESTION.search(bare)
+        or (_NEGATION.search(bare) and not _WISH.match(bare))
+    )
+
+
+def _of_a_keep_kind(clause: str) -> bool:
+    """Whether a trailing English ``clause`` is a remark of a keep kind."""
+    return bool(
+        _GRATITUDE.search(clause)
+        or _SIGN_OFF.search(clause)
+        or _WISH.match(clause)
+        or _BACK_REFERENCE.search(clause)
+        or _ATTRIBUTION.search(clause)
+        or _NO_PRESSURE.search(clause)
+    )
+
+
+def _remarks_keep_the_request(trailing: list[str]) -> bool:
+    """Whether the clauses after an English request keep it: each is a keeper by shape (`_KEEPER_CLAUSE`), a follow-on
+    (`_follows_on`) or a remark of a keep kind with no refusal in it, and an aside marker opens a statement that runs to
+    the message's end with no refusal in it (`_ASIDE_MARKER`). No clause may hold or joke (`_HOLD`); anything else
+    holds."""
+    for index, clause in enumerate(trailing):
+        if _HOLD.search(clause):
+            return False
+        if _ASIDE_MARKER.match(clause):
+            return not any(
+                _HOLD.search(rest) or _refuses(_ASIDE_MARKER.sub("", rest, count=1).strip()) for rest in trailing[index:]
+            )
+        if not (
+            _KEEPER_CLAUSE.fullmatch(clause)
+            or _follows_on(clause)
+            or (_of_a_keep_kind(clause) and not _refuses(clause))
+        ):
+            return False
+    return True
+
+
+def _closed(folded: str) -> tuple[str, str]:
+    """``folded`` read two ways: the request, with a confirmation tag that ends it and a report on the result after a
+    change read off (`_FINAL_CONFIRMATION_TAG`, `_EN_REPORT_TAIL`); and the whole text for the hard excludes, with only
+    that report's own time clause read off ("…, and notify me when it's done": that when is the report's)."""
+    untagged = _FINAL_CONFIRMATION_TAG.sub("", folded, count=1)
+    tail = _EN_REPORT_TAIL.search(untagged)
+    if not tail or _NOT_A_REPORT.search(tail.group()) or _ASKS_BEFORE_THE_WORK.search(tail.group()) or _HOLD.search(tail.group()):
+        return untagged, folded
+    head = untagged[: tail.start()]
+    changes = _EN_CHANGE_ON_BREADTH.search(head) or _EN_PARTS_IN_PARALLEL.search(head)
+    changes = changes or (_EN_OFFER.search(head) and re.match(rf"(?:please\s+)?{_POLITE_OPENER}?{_EN_CHANGE_VERB}\b", head))
+    if not changes and not (_EN_SPLIT_REQUEST.search(head) and _EN_SPLIT_EVIDENCE.search(head)):
+        return untagged, folded
+    done = tail.span("done") if tail.group("done") else None
+    return head, (folded[: done[0]] + folded[done[1] :] if done else folded)
+
+
+def _reads_as_an_english_request(text: str) -> bool:
+    """Whether ``text`` alone reads as an English request for work over many targets or split into parallel parts."""
+    return bool(
+        _EN_CHANGE_ON_BREADTH.search(text)
+        or _EN_OFFER.search(text)
+        or _EN_PARTS_IN_PARALLEL.search(text)
+        or (_EN_SPLIT_REQUEST.search(text) and _EN_SPLIT_EVIDENCE.search(text))
+    )
+
+
+def _trails_off(folded: str) -> bool:
+    """Whether an English request is followed by a clause that does not keep it (`_remarks_keep_the_request`): the
+    request is the shortest run of clauses that reads as one (`_reads_as_an_english_request`), and every clause after
+    it is read."""
+    if re.search(r"[가-힣]", folded):
+        return False  # a Korean message is read whole instead (`_korean_clauses`)
+    cuts = sorted([*_CLAUSE_BREAK.finditer(folded), *_LIST_COLON.finditer(folded)], key=lambda cut: cut.start())
+    for cut in cuts:
+        head = folded[: cut.start()]
+        if not _reads_as_an_english_request(head):
+            continue
+        trailing = [clause for clause in _CLAUSE_BREAK.split(folded[cut.end() :]) if clause]
+        if ":" in cut.group() or _EN_LIST_HEAD.search(head):
+            # the rest of a colon list: items that open on a verb of work, with no hedge or hold in them
+            while trailing and _is_a_work_item(trailing[0]):
+                trailing = trailing[1:]
+        return not _remarks_keep_the_request(trailing)
+    return False
+
+
+def _is_a_work_item(item: str) -> bool:
+    """Whether a colon list ``item`` opens on a verb of work (`_EN_LIST_ITEM`) with no hedge, refusal or hold in it, and
+    is no status in either order (`_STATUS_ALONE`: "already merged")."""
+    return (
+        bool(_EN_LIST_ITEM.match(item))
+        and not _HEDGE_IN_AN_ITEM.search(item)
+        and not _HOLD.search(item)
+        and not _STATUS_ALONE.fullmatch(item)
+    )
 
 
 def _asks_for(folded: str, verbs: str) -> bool:
@@ -877,7 +1349,11 @@ def _asks_for(folded: str, verbs: str) -> bool:
 # requests"), a bare object on every unit ("add auth to every endpoint"), or a plural object in all of them ("update
 # the dependencies in all services"). A singular object in many places is one change ("fix the login bug on every
 # page", "update the license header in every file").
-_KOREAN_CHANGE_ON_BREADTH: Final = re.compile(rf"{_KOREAN_BREADTH_OBJECT}\s*(?:\S+\s+){{0,3}}\S*{_KOREAN_CHANGE_VERB}")
+# A clause that aims the change may sit between them, a few words longer ("모든 서비스에서 중복 결제가 안 되게 수정해줘").
+_KOREAN_CHANGE_ON_BREADTH: Final = re.compile(
+    rf"{_KOREAN_BREADTH_OBJECT}\s*(?:\S+\s+){{0,3}}\S*{_KOREAN_CHANGE_VERB}"
+    rf"|{_KOREAN_BREADTH_OBJECT}\s*(?:\S+\s+){{0,4}}\S*(?:게|게끔|도록)\s+(?:좀\s+)?\S*{_KOREAN_CHANGE_VERB}"
+)
 _EN_CHANGE_ON_BREADTH: Final = re.compile(
     rf"^(?:please\s+)?{_POLITE_OPENER}?{_EN_CHANGE_VERB}\s+"
     rf"(?:(?:all|every|each)\s+(?:of\s+)?(?:the\s+|my\s+|our\s+)?(?:\S+\s+){{0,2}}?{_EN_UNITS}\b"
@@ -887,6 +1363,8 @@ _EN_CHANGE_ON_BREADTH: Final = re.compile(
     # A read first, then a change on the same targets by pronoun ("go through all my open PRs and rebase them").
     rf"|^(?:please\s+)?{_POLITE_OPENER}?(?:go\s+through|check|look\s+at)\b[^.?!]*?{_EN_BREADTH}[^.?!]*?"
     rf"\band\s+(?:then\s+)?{_EN_CHANGE_VERB}\s+(?:them|each(?:\s+one)?|all\s+of\s+them)\b"
+    # Plural units, then a change on them all ("take the failing tests and fix them all", "open PRs: rebase them all").
+    rf"|\b{_EN_PLURAL_UNITS}\b[^.?!]*?\b{_EN_CHANGE_VERB}\s+them\s+all\b"
     rf"|^(?:please\s+)?{_EN_FOR_EACH}{_EN_CHANGE_VERB}\b"
 )
 
@@ -899,8 +1377,44 @@ _STOP_OR_HOLD: Final = re.compile(
 # - a condition ("테스트 다 통과하면 머지해줘", "PR 다 올렸으면 리뷰 요청해줘", "if all the tests pass, merge"); a noun that ends in
 #   면 (화면, 측면, 전면) is no condition;
 _CONDITION: Final = re.compile(
-    r"(?<![화측전양단표방내외평])면(?=[\s,.!?~]|$)|거든|\b(?:if|when|once|after|unless|whenever|before)\b"
+    r"(?<![화측전양단표방내외평])면(?=[\s,.!?~]|$)(?!\s*감사)|거든|\b(?:if|when|once|after|unless|whenever|before)\b"
 )
+# - a deferral of the work past now ("rebase all the open PRs later", "update every service tonight", "… next week",
+#   "… on monday", "PR들 전부 나중에 리베이스해줘", "모든 서비스 내일 업데이트해줘"); a deadline is none ("… by tonight",
+#   "…해줘, 내일까지"), and now, today and asap keep;
+_DEFERRAL: Final = re.compile(
+    r"(?<!\bby\s)\b(?:later|tomorrow|tonight|next\s+(?:week|month|sprint|quarter|year|time|monday|tuesday|wednesday"
+    r"|thursday|friday|saturday|sunday)|on\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|the\s+weekend)"
+    r"|this\s+weekend|over\s+the\s+weekend|eventually|some\s+other\s+time|another\s+time|at\s+some\s+point"
+    r"|after\s+the\s+freeze|some\s*day|in\s+a\s+(?:bit|while)|later\s+on|down\s+the\s+line|when\s+i\s+get\s+a\s+chance"
+    r"|in\s+(?:\d+|a\s+few|a\s+couple(?:\s+of)?|two|three|four|five|several)\s+(?:minutes?|hours?|days?|weeks?))\b"
+    r"|(?<![가-힣])(?:나중에|이따가?|언젠가|(?:이번\s*)?주말에|내일|모레|다음\s*(?:주|달|번)(?:에)?|[월화수목금토일]요일에)"
+    rf"(?!(?:\s*{_TIME_WORD})*\s*(?:까지|안에|중으로|중에|내로|이내))"
+)
+# A weekday inside a clause with a past verb of its own says when that happened, not when to work ("update every
+# service we deployed on monday", "지난 월요일에 배포한 서비스 전부 업데이트해줘", "월요일에 배포한 서비스 전부 …").
+_PAST_VERB: Final = re.compile(
+    r"(?:[a-z]+(?<!e)ed|broke|went|ran|did|made|built|wrote|sent|took|got|put|set|found|began|came|saw|left|lost|split"
+    r"|shipped)"
+)
+_KOREAN_PAST_AROUND: Final = re.compile(r"지난\s*$")
+# The times a past clause may carry: a weekday or the weekend, which point back as well as ahead ("we deployed on
+# monday", "월요일에 배포한"); tomorrow, next week, later or 나중에 never point back.
+_BACKWARD_TIME: Final = re.compile(r"on\s+\S+|over\s+the\s+weekend|[월화수목금토일]요일에|주말에")
+_KOREAN_PAST_RELATIVE_AFTER: Final = re.compile(r"\s*\S*(?:한|했던|된|됐던|던)(?=\s|$)")
+
+
+def _says_a_deferral(folded: str) -> bool:
+    """Whether ``folded`` puts the work past now (`_DEFERRAL`), outside a clause with a past verb of its own."""
+    for match in _DEFERRAL.finditer(folded):
+        if not _BACKWARD_TIME.fullmatch(match.group()):
+            return True  # a time ahead of now is a deferral whatever clause it sits in
+        if any(_PAST_VERB.fullmatch(word) for word in folded[: match.start()].split()[-3:]):
+            continue
+        if _KOREAN_PAST_AROUND.search(folded[: match.start()]) or _KOREAN_PAST_RELATIVE_AFTER.match(folded[match.end() :]):
+            continue
+        return True
+    return False
 # - a completion said as a noun or a bare word ("브랜치들 다 정리됨", "upstream PR들 다 리뷰 반영 끝", "테스트 수정 완료"),
 #   not one that names the units ("완료된 이슈들 전부 닫아줘") or asks for it ("… 리베이스 완료해줘");
 _COMPLETED: Final = re.compile(
@@ -928,7 +1442,7 @@ _SCHEDULE: Final = re.compile(
     r"(?<![가-힣])매(?:일|주|달|월|년|시간|분)(?![가-힣])|(?<![가-힣])매일(?=아침|밤|저녁|오전|오후)|(?<![가-힣])매\s+(?=\S)"
     r"|주기적|정기적|\d{1,2}\s*시(?:\s*\d{1,2}\s*분)?\s*(?:에|마다|정각)|(?<![가-힣])(?:자정|정오|새벽)(?:에|마다)?(?![가-힣])"
     rf"|(?:(?<![가-힣]){_KOREAN_NUMBER}|일)\s*{_TIME_UNIT_KO}\s*에\s*{_KOREAN_NUMBER}\s*번|하루\s*(?:에\s*)?{_KOREAN_NUMBER}\s*번"
-    rf"|{_KOREAN_NUMBER}\s*{_TIME_UNIT_KO}\s*간격|(?:하루|이틀|사흘|나흘|한\s*주|일주일|\d+\s*일)\s*걸러"
+    rf"|{_KOREAN_NUMBER}\s*{_TIME_UNIT_KO}\s*간격|(?:일정한?|정해진|규칙적인?)\s*간격|(?:하루|이틀|사흘|나흘|한\s*주|일주일|\d+\s*일)\s*걸러"
     r"|(?<![가-힣])(?:주|월|연|하루)\s*\d+\s*회|\d+\s*회\s*씩|(?<![가-힣])격(?:일|주|월)(?:로|으로|에|마다|씩)?(?![가-힣])"
     r"|(?<![a-z])cron(?![a-z])|크론|스케줄(?!러)|schedule(?=\s*(?:으로|로|에|을|를|걸))|예약(?:해서|으로|을\s*걸)"
     rf"|\bevery\s+(?:\d+\s+|other\s+)?{_TIME_UNIT_EN}s?\b|\beach\s+{_TIME_UNIT_EN}\b"
@@ -986,7 +1500,8 @@ def _names_one_container(folded: str) -> bool:
 
 
 # A past: a syllable closing on ㅆ, other than 있 and 겠 ("리베이스했습니다", "머지했어요", "머지됐네", "닫혔네"). A past
-# in a modifier names which units, and reports nothing ("내가 올렸던 PR들", "어제 실패했던 테스트", "충돌났었던 브랜치들").
+# in a modifier names which units, and reports nothing ("내가 올렸던 PR들", "어제 실패했던 테스트", "충돌났었던 브랜치들"),
+# and neither does one in an embedded question ("어떻게 나눴는지 설명해줘", "리베이스했는지 확인하고").
 _NOT_A_PAST: Final = frozenset("있겠")
 
 
@@ -996,31 +1511,37 @@ def _closes_on_ss(character: str) -> bool:
 
 
 def _says_a_past(folded: str) -> bool:
+    """Whether ``folded`` says a past: the work done, not asked for. A fault said in the past is no such past when the
+    message ends asking to fix it (`_asks_to_fix_a_fault`: "api 모듈과 ui 모듈 테스트가 깨졌어, 동시에 고쳐줘")."""
+    faults = [match.span() for match in _FAULT.finditer(folded)] if _asks_to_fix_a_fault(folded) else []
     return any(
         _closes_on_ss(character)
         and character not in _NOT_A_PAST
         and folded[index + 1 :].lstrip("었았였")[:1] != "던"
+        and folded[index + 1 :].lstrip("었았였")[:2] != "는지"
+        and not any(start <= index < end for start, end in faults)
         for index, character in enumerate(folded)
     )
+
+
+def _asks_to_fix_a_fault(folded: str) -> bool:
+    """Whether ``folded`` reports a fault (`_FAULT`) and its last clause asks, in request form, to fix it
+    (`_FIX_REQUEST`)."""
+    last = [clause for clause in _CLAUSE_BREAK.split(folded) if clause][-1:] or [folded]
+    request = _korean_request_verb(last[0])[0] or re.match(r"(?:please\s+)?(?:fix|resolve|repair|debug)\b", last[0])
+    return bool(_FAULT.search(folded) and request and _FIX_REQUEST.search(last[0]))
 
 
 # Words that ask for no work, or only a report: a negation, no need, a lookup or a status, a question ("PR들 전부
 # 머지하지 마", "PR들 전부 알려줘", "모든 서비스 상태 확인해줘", "check the status of all open PRs", "review all open PRs and
 # just tell me which are safe"), and one thing in many places ("fix the bug in all three services").
 _NO_WORK_ASKED: Final = re.compile(
-    r"했다|됐다|했음|됐음|했잖아|했는데|했지만|했더니|지\s*마|지\s*말|안\s*해|필요\s*없|도\s*돼|도\s*된다|도\s*괜찮"
+    r"했다|됐다|했음|됐음|했잖아|했는데|했지만|했더니|지\s*마(?!다)|지\s*말|안\s*해|필요\s*없|도\s*돼|도\s*된다|도\s*괜찮"
     r"|알려\s*줘|알려\s*주세요|보여\s*줘|찾아|링크\s*(?:줘|주세요|보내)|읽어|상태|몇\s*개|목록|리스트|어때|뭐야|[?？]"
     r"|pr\s*들?\s*(?:을|를)?\s*(?:전부|모두|다)\s*정리"
     r"|\b(?:tell\s+me|let\s+me\s+know|report|summari[sz]e|show\s+me|status|which\s+(?:ones|are|is)|do\s+not|don'?t"
     r"|without|but\s+not|never|only)\b|\band\s+list\b|\blist\s+(?:them|the|which|all)\b"
     r"|\b(?:the|this|that|a)\s+(?:\S+\s+){0,2}\S+(?<!s)\s+(?:in|on)\s+(?:all|every|each)\b"
-)
-# A change, then a report on what it did ("fix all the failing tests and tell me which ones were flaky"): the report
-# is the change's last clause, not a request of its own. Only after a change on the breadth object
-# (`_EN_CHANGE_ON_BREADTH`): a review or an audit that ends in a report asks only for the report ("review all open PRs
-# and just tell me which are safe").
-_EN_REPORT_TAIL: Final = re.compile(
-    r"(?:,\s*|\s+)and\s+(?:then\s+)?(?:tell\s+me|let\s+me\s+know|report|send\s+me|show\s+me)\b[^.?!]*[.!]?$"
 )
 # Parallel running is the work's subject, not its shape ("fix the race where uploads run in parallel across modules").
 _RUNTIME_PARALLEL: Final = re.compile(
@@ -1078,7 +1599,7 @@ def _names_a_skill_as_the_instrument(folded: str) -> bool:
     )
 
 
-def _hard_excluded(folded: str, links: tuple[str, ...]) -> bool:
+def _hard_excluded(folded: str, links: tuple[str, ...], request: str | None = None) -> bool:
     """Whether ``folded`` is no request for work over many targets whatever else it says: a sigil (the invoked skill's
     work), a skill or engine named first or as the instrument, a stop or a hold, a condition, a past or a completion,
     one pull request's or one branch's scope (in its words or its ``links``), a recurring schedule, work until a
@@ -1089,12 +1610,15 @@ def _hard_excluded(folded: str, links: tuple[str, ...]) -> bool:
         or _opens_with_a_skill_name(folded)
         or _names_a_skill_as_the_instrument(folded)
         or _STOP_OR_HOLD.search(folded)
-        or _CONDITION.search(folded)
+        or _CONDITION.search(_KEEP_IDIOM.sub("", _NO_PRESSURE.sub("", folded)))
+        or _says_a_deferral(_KEEP_IDIOM.sub("", folded))
         or _COMPLETED.search(folded)
         or _says_a_past(folded)
         or _ONE_SCOPE.search(folded)
         or _names_one_container(folded)
         or _says_a_schedule(folded)
+        or _takes_it_back(_KEEP_IDIOM.sub("", folded))
+        or _trails_off(folded if request is None else request)
         or _UNTIL.search(folded)
         or _RUNTIME_PARALLEL.search(folded)
         or names_ultrawork(folded)
@@ -1104,11 +1628,9 @@ def _hard_excluded(folded: str, links: tuple[str, ...]) -> bool:
 def _work_over_many_targets(text: str, links: tuple[str, ...]) -> bool:
     """Whether ``text`` asks, in request form, for an offer-list verb on a breadth object that names independent units
     (`_KOREAN_OFFER`, `_EN_OFFER`), or for two named parts in parallel, and nothing excludes it."""
-    folded = _folded(text)
-    if _hard_excluded(folded, links):
+    folded, whole = _closed(_folded(text))
+    if _hard_excluded(whole, links, folded):
         return False
-    if _EN_CHANGE_ON_BREADTH.search(folded):
-        folded = _EN_REPORT_TAIL.sub("", folded)
     if _NO_WORK_ASKED.search(folded):
         return False
     if _EN_PARTS_IN_PARALLEL.search(folded):
@@ -1116,26 +1638,168 @@ def _work_over_many_targets(text: str, links: tuple[str, ...]) -> bool:
     if _EN_OFFER.search(folded):
         # Every clause after the first is a change or a review too, not a report ("… and send me a list").
         return all(re.fullmatch(_EN_OFFER_VERB, verb) for verb in _EN_LATER_CLAUSE_VERB.findall(folded))
-    # The request is the change or the review, not a summary.
-    return bool(_KOREAN_OFFER.search(folded)) and _asks_for(folded, _KOREAN_OFFER_VERB)
+    # The request is the change or the review, not a summary, in the message or in one clause of it.
+    return any(
+        _KOREAN_OFFER.search(clause) and _asks_for(clause, _KOREAN_OFFER_VERB) for clause in _korean_clauses(folded)
+    )
+
+
+# Work asked to split into parallel parts, with the work named: the split itself (`work_is_split`), asked for, and a
+# work verb after it ("fan out across the services and migrate each one", "…, then integrate", "모듈을 병렬로 나눠서
+# 리팩터링해줘") or a work noun as what splits ("split the migration into parallel lanes", "this refactor is too big for
+# one agent, fan out across the services"). Not text to translate ("split the paragraphs into parallel parts for
+# translation", "문단을 병렬로 나눠서 번역해줘"), not a proposal or a plan said ("how about we …", "why not …", "my plan is
+# to …", "the goal is to …", "maybe …": no imperative, `_EN_SPLIT_REQUEST`), and nothing hard-excluded or asking for no
+# work (rule A for the size cues).
+_SPLIT_TEXT: Final = re.compile(r"\btranslat|번역")
+_SPLIT_WORK_NOUN: Final = r"(?:migration|refactor(?:ing)?|rewrite|work|implementation|port|upgrade)"
+# The split asked for: an imperative, whatever its verb ("split …", "fan out …", "do the api and the ui in parallel …",
+# "analyze API and UI in parallel, then integrate"), put politely, after a clause ("…, fan out across the services",
+# "tell me when done: split …"), or said as what the person wants ("what we need is to split …"). A sentence that
+# opens on a determiner, a pronoun, a question word or an auxiliary is no imperative.
+_EN_SPLIT_REQUEST: Final = re.compile(
+    rf"^(?:please\s+)?(?:{_POLITE_OPENER}|(?:can|could|shall)\s+we\s+|let'?s\s+)?(?:just\s+)?"
+    r"(?!(?:the|a|an|this|that|these|those|my|our|your|their|its|we|i|you|it|they|there|here|which|what|who|why|how"
+    r"|when|where|is|are|was|were|am|do\s+(?:you|we|i)|does|did|should|would|could|can|will|shall|may|might|must|if"
+    r"|so|and|but|or|maybe|perhaps)\b)[a-z]+\b"
+    r"|[,:]\s*(?:so\s+|just\s+|please\s+)?(?:fan\s+out|split)\b"
+    r"|^(?:what\s+(?:i|we)\s+(?:want|need)\s+is\s+to|(?:i|we)\s+(?:want|need)\s+(?:you\s+)?to)\s+(?:fan\s+out|split)\b"
+)
+_EN_SPLIT_EVIDENCE: Final = re.compile(
+    rf"(?:\band|\bthen|,\s*then)\s+(?:then\s+)?(?:{_EN_CHANGE_VERB}|integrate|develop|ship)\b"
+    rf"|\bsplit\s+(?:the\s+|this\s+|that\s+|our\s+|my\s+)?(?:\S+\s+){{0,6}}?{_SPLIT_WORK_NOUN}\s+into\b"
+    r"|\binto\s+parallel\s+work\b"
+    rf"|\b{_SPLIT_WORK_NOUN}\b[^.?!]*?,\s*(?:so\s+|just\s+|please\s+)?(?:split|fan\s+out)\b"
+)
+_KOREAN_WORK_VERB: Final = rf"(?:{_KOREAN_CHANGE_VERB}|구현|개발|통합)"
+# One named object split into parallel parts is one task, offered and not run ("이 함수 병렬로 나눠서 구현해줘", "로그인
+# 페이지 하나 병렬로 나눠서 고쳐줘", "README 병렬로 나눠서 업데이트해줘", "fan out the image resize into parallel workers"):
+# a demonstrative and its noun, a noun and 하나, a single file or function name, or "the" and a singular noun. Several
+# objects ("api, ui, docs 작업을", "결제/주문/배송 모듈", "분리기와 파서") and the work itself as what splits ("split the
+# migration into …") are not one object.
+_KOREAN_SPLIT_OBJECT: Final = re.compile(r"(?P<object>[^.!?]*?)\s*(?:을|를|은|는)?\s*(?:병렬로\s*나눠|나눠서\s*병렬로)")
+_EN_SPLIT_OBJECT: Final = re.compile(
+    r"\b(?:split|fan\s+out|break\s+(?:up|down)|parallelize)\s+(?P<object>(?:the|this|that|my|our)\s+[^,.!?]*?)\s+"
+    r"(?:into|across)\b"
+)
+# The object said first, as the topic the split refers back to ("the checkout page: split it into parallel parts …").
+_EN_SPLIT_TOPIC: Final = re.compile(
+    r"^(?P<object>(?:(?:the|this|that|my|our)\s+)?[^,:.!?]+?)\s*:\s*(?:please\s+|just\s+)?"
+    r"(?:split|fan\s+out|break\s+(?:up|down)|parallelize)\s+(?:it|this)\s+(?:into|across)\b"
+)
+_SEVERAL_OBJECTS: Final = re.compile(
+    r"[,/&]|\band\b|(?:와|과|랑|하고)(?:\s|$)|(?<![가-힣])(?:및|모든|전체|여러|각)(?![가-힣])|들(?:\s|$)"
+    r"|(?<![가-힣])(?:두|세|네|다섯|여섯|일곱|여덟|아홉|열|몇)(?![가-힣])|\d+\s*개"
+)
+
+
+def _splits_one_object(request: str) -> bool:
+    """Whether ``request`` splits one named object into parallel parts (`_KOREAN_SPLIT_OBJECT`, `_EN_SPLIT_OBJECT`,
+    `_EN_SPLIT_TOPIC`)."""
+    korean = _KOREAN_SPLIT_OBJECT.search(request) if re.search(r"[가-힣]", request) else None
+    english = None if korean else (_EN_SPLIT_OBJECT.search(request) or _EN_SPLIT_TOPIC.search(request))
+    found = korean or english
+    if not found or _SEVERAL_OBJECTS.search(found.group("object")):
+        return False
+    words = found.group("object").split()
+    if english:
+        return not words[-1].endswith("s") and not re.fullmatch(_SPLIT_WORK_NOUN, words[-1])
+    return bool(
+        words
+        and (
+            (words[0] in ("이", "그", "저") and len(words) <= 3)
+            or words[-1].endswith("하나")
+            or (len(words) == 1 and not re.search(r"[가-힣]", words[0]))
+        )
+    )
+
+
+# What a split request may carry besides the work: a request put as a question ("can you split …?", "… 구현해줄래?"), a
+# "tell me when done" before it, and a report on the work after it ("…, then tell me which failed", "… 구현하고 나눈 방법
+# 설명해줘"): the work asked for is still the split.
+_EN_DONE_OPENER: Final = re.compile(r"^tell\s+me\s+when\s+(?:it'?s\s+|you'?re\s+)?done\s*[:,]\s*")
+_KOREAN_REPORT_TAIL: Final = re.compile(
+    r"(?P<work>\S*(?:고|해서))\s+(?:\S+\s+){0,3}\S*(?:설명|알려|보고|공유)\S*\s*[.!~]*$"
+)
+
+
+def _splits_named_work(text: str, folded: str, links: tuple[str, ...]) -> bool:
+    """Whether ``text`` asks to split named work into parallel parts (`_EN_SPLIT_EVIDENCE`, a Korean work verb in
+    request form), rather than to split text or one named object (`_splits_one_object`), to propose a split (no
+    imperative), or to be told how."""
+    request, whole = _closed(_EN_DONE_OPENER.sub("", folded, count=1))
+    if not work_is_split(text) or _hard_excluded(whole, links, request):
+        return False
+    if _splits_one_object(request):
+        return False
+    if _REQUEST_AS_QUESTION.search(request):
+        request = request.rstrip(" ?？")
+        if re.search(rf"{_KOREAN_WORK_VERB}\S*\s*{_KOREAN_ASKS_TO_BE_DONE.pattern}", request):
+            return not _SPLIT_TEXT.search(request) and not _one_fault(request)  # "… 구현해 주시겠어요?"
+    tail = _KOREAN_REPORT_TAIL.search(request)
+    if tail and re.search(_KOREAN_WORK_VERB, tail.group("work")):
+        return not _SPLIT_TEXT.search(request) and not _one_fault(request)  # "… 구현하고 변경 내용 설명해줘"
+    if _NO_WORK_ASKED.search(request) or _SPLIT_TEXT.search(request):
+        return False
+    if _one_fault(request):
+        return False
+    if re.search(r"[가-힣]", request):
+        return _asks_for(request, _KOREAN_WORK_VERB)
+    return bool(_EN_SPLIT_REQUEST.search(request) and _EN_SPLIT_EVIDENCE.search(request))
+
+
+def refuses_dag_ulw(text: str, links: tuple[str, ...] = ()) -> bool:
+    """Whether the cue reader refuses ``text`` whatever its size: a hard exclude on the whole text, or a clause after
+    the request that keeps nothing (`_hard_excluded` over `_closed`). The router's and the hint's size-cue paths read
+    this, so neither starts a run the cue reader holds."""
+    request, whole = _closed(_folded(text))
+    return _hard_excluded(whole, links, request)
+
+
+def splits_without_evidence(text: str, links: tuple[str, ...] = ()) -> bool:
+    """Whether ``text`` asks for a split (`work_is_split`) without naming the work to split (`_splits_named_work`):
+    the router asks about dag-ulw instead of dispatching it, and the route hint offers it, rather than either starting a
+    run ("split the paragraphs into parallel parts for translation", "how about we split the work into parallel
+    lanes")."""
+    return work_is_split(text) and not _splits_named_work(text, _folded(text), links)
+
+
+def sized_without_evidence(text: str, links: tuple[str, ...] = ()) -> bool:
+    """Whether ``text`` is big work by size (`big_work_for_dag_ulw`) only through a split with no work named
+    (`splits_without_evidence`) or a breadth phrase alone ("여러 모듈에 걸친 결제 기능 구현해줘"), without the evidence
+    `dispatches_dag_ulw` needs: the route hint offers dag-ulw there instead of starting it (rule A)."""
+    if not big_work_for_dag_ulw(text) or dispatches_dag_ulw(text, links):
+        return False
+    if splits_without_evidence(text, links) or refuses_dag_ulw(text, links):
+        return True
+    folded = _cue_text(text)
+    return _contains(folded, BREADTH_CUES) and not _asks_for_a_split(text) and not _contains(folded, CONCURRENCY_CUES)
 
 
 def dispatches_dag_ulw(text: str, links: tuple[str, ...] = ()) -> bool:
     """Whether ``text`` gives the positive evidence the router dispatches a dag-ulw graph on, and the route hint starts
     one on: a change verb from the closed allow list (`_KOREAN_CHANGE_VERB`, `_EN_CHANGE_VERB`), on a breadth object
     that names independent units, in request form ("열린 PR들 전부 리베이스해줘", "fix all the failing tests", the owner's
-    "pr들 전부 확인해서 닫을건 닫고 … 리베이스하고"), or two named parts asked for in parallel. Nothing hard-excluded
-    (`_hard_excluded`) qualifies, and neither does a request that only reads, reports or runs one command. ``links``
-    are the message's links, which the executable text leaves out."""
+    "pr들 전부 확인해서 닫을건 닫고 … 리베이스하고"), two named parts asked for in parallel, or named work asked to split
+    into parallel parts (`_splits_named_work`). Nothing hard-excluded (`_hard_excluded`) qualifies, and neither does a
+    request that only reads, reports or runs one command. ``links`` are the message's links, which the executable text
+    leaves out."""
     folded = _folded(text)
+    if _splits_named_work(text, folded, links):
+        return True
+    folded = _closed(folded)[0]
     if not _work_over_many_targets(text, links) or _asks_to_be_told(text):
         return False
     if _one_fault(folded):
         return False  # one fault to fix, however wide ("모든 테스트가 깨졌어, 고쳐줘", "모든 테스트가 안 돌아가 고쳐줘")
     if _EN_CHANGE_ON_BREADTH.search(folded) or _EN_PARTS_IN_PARALLEL.search(folded):
         return True
-    # A chain of changes joined by 고 counts too, closed by 고 or ㄱㄱ ("닫을건 닫고 … 리베이스하고 ㄱㄱ").
-    return bool(_KOREAN_CHANGE_ON_BREADTH.search(folded)) and _asks_for(folded, _KOREAN_CHANGE_VERB)
+    # A chain of changes joined by 고 counts too, closed by 고 or ㄱㄱ ("닫을건 닫고 … 리베이스하고 ㄱㄱ"), and so does one
+    # clause of the message that asks for the change ("모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘").
+    return any(
+        _KOREAN_CHANGE_ON_BREADTH.search(clause) and _asks_for(clause, _KOREAN_CHANGE_VERB)
+        for clause in _korean_clauses(folded)
+    )
 
 
 def work_has_several_parts(text: str) -> bool:

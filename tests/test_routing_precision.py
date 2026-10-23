@@ -54,11 +54,21 @@ class RoutingPrecisionTests(unittest.TestCase):
         # fault in other words add five more (+5); PR 3 without a counter
         # stays one scope (+1); two more schedule shapes, a count of files and a
         # count of PRs with no breadth word add four (+4); a noun with 마다, an
-        # interval and PR 하나 add three (+3).
+        # interval and PR 하나 add three (+3); a split of text, a proposed split,
+        # a question how to split and an unnumbered interval add four (+4); a
+        # request taken back or called a joke, and one function or file split,
+        # add four (+4); an English request followed by jk adds one (+1), and a
+        # Korean request followed by a doubt one more (+1), and an English one
+        # followed by a question one more (+1). A colon list ending in a wait and a
+        # confirmation tag followed by a take-back add two (+2), and a report tail
+        # that asks whether and a colon list of reads two more (+2). A tail asking
+        # why not, two deferrals and two colon lists that hold add five (+5), and
+        # a deferral in a bit one more (+1), and a tail asking for concerns and a
+        # future time after a past clause two more (+2).
         # Three science vocabulary controls remain direct answers.
         # Career actor repair adds five employer requests and two references.
         # Actor/objective follow-up adds seven employer contrasts.
-        self.assertEqual(payload["summary"]["case_count"], 1089)
+        self.assertEqual(payload["summary"]["case_count"], 1112)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -164,10 +174,20 @@ class RoutingPrecisionTests(unittest.TestCase):
         # stay where main sends them (+7); a count of PRs runs as a graph (+1).
         # A twice-a-day schedule and my latest pull request stay, and a sweep
         # said now runs as a graph (+3). Every deploy and every push stay, and
-        # each service with 마다 runs as a graph (+3).
+        # each service with 마다 runs as a graph (+3). Two splits that name the work,
+        # a casual imperative, an aimed change and a change in one clause run as
+        # a graph (+5). A split with a past in an embedded question runs (+1), and
+        # so does a request with an urgency after it (+1). An urgency with an
+        # intensifier, a follow-on after 그리고, a count after a demonstrative, a
+        # split rewritten and a split fixed then reported run as a graph (+5). A
+        # report tail with ping me, a colon list of changes and a per-unit spec run
+        # as a graph (+3). A final ok?, two report tails, a per-unit spec with any
+        # noun and a colon list with any work verb run as a graph (+5). A deadline
+        # and a send me the diff tail run as a graph (+2). Two report tails by their
+        # opening and a time inside a past clause run as a graph (+3).
         # Three unnamed science requests render dedicated computation cards.
         # Career actor repair retains five personal/target/quoted controls.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1095)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1120)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )
