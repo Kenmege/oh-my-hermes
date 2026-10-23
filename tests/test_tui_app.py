@@ -1577,9 +1577,10 @@ class OpeningTests(AppTestCase):
         self.assertEqual(screen[LOGO_ROWS + 1], "")
         self.assertEqual(run.terminal.screen.scrollback, [])
 
-    def test_the_composer_follows_the_banner_and_then_the_turn_with_no_blank_rows_but_a_spacer(self) -> None:
-        # Claude Code's input box follows what was printed: no screen of blank rows over the composer at the start
-        # or after a turn, only the one spacer row every block opens with, and nothing under the info line.
+    def test_the_launch_fills_the_screen_and_the_composer_stays_on_the_bottom_rows(self) -> None:
+        # The owner, 2026-10-23: the TUI opens full screen, the logo and the banner on top and the composer on the
+        # bottom rows with the rows between them empty, and the turn's output fills them from the top while the
+        # composer stays where it is. Nothing under the info line.
         run = self.prepare(
             Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers()),
             rows=34,
@@ -1593,16 +1594,32 @@ class OpeningTests(AppTestCase):
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        for name, above in (("start", f"⚚ OH-MY-HERMES v{__version__} · ~/project"), ("turn", "  ✻ ")):
+        for name in ("start", "turn"):
             with self.subTest(capture=name):
                 screen = run.terminal.captures[name]
                 status = info_index(screen)
                 rule = status - 2 - UNDER_COMPOSER
                 self.assertIn(RULE_MARK, screen[rule], screen)
-                self.assertEqual(screen[rule - 1], "", screen)
-                self.assertTrue(screen[rule - 2].startswith(above), screen)
-                self.assertEqual(screen[status + 1 :], [""] * (33 - status), screen)
-                self.assertLess(status, 33)
+                self.assertEqual(status, 33, screen)  # the info line on the last row, the composer right above it
+        start = run.terminal.captures["start"]
+        rule = info_index(start) - 2 - UNDER_COMPOSER
+        self.assertTrue(start[LOGO_ROWS].startswith(f"⚚ OH-MY-HERMES v{__version__} · ~/project"), start)
+        self.assertEqual(start[LOGO_ROWS + 1 : rule], [""] * (rule - LOGO_ROWS - 1), start)  # empty in between
+        turn = run.terminal.captures["turn"]
+        self.assertTrue(any(line.startswith("  ✻ ") for line in turn[:rule]), turn)  # the turn above the composer
+
+    def test_only_the_launch_fills_the_screen_a_redraw_after_the_first_prompt_follows_the_content(self) -> None:
+        from omh.tui.screen import LiveRegion
+        from test_tui_modes import composer_index, drawn, make_app, type_text
+
+        app, _client = make_app(rows=30, cols=100)
+        app.launch_layout = True
+        app.region = LiveRegion(app.terminal.write, at_top=True)
+        self.assertGreater(composer_index(drawn(app)), 20, "the launch: the composer on the bottom rows")
+        type_text(app, "hi")
+        app._on_input(Key(ENTER, ""))
+        app._full_redraw()
+        self.assertLess(composer_index(drawn(app)), 10, "after the first prompt the composer follows the content")
 
     def test_launched_on_a_screen_holding_output_it_starts_on_the_top_row_and_erases_the_scrollback(self) -> None:
         # The owner, 2026-10-22: scrolling up must stop at the top of the session, not walk into the shell's history.
@@ -1647,7 +1664,7 @@ class OpeningTests(AppTestCase):
                 self.assertEqual(history[: LOGO_ROWS - 1], LOGO[:-1])  # scrolling up stops at the logo
                 self.assertEqual(first[: LOGO_ROWS - 1], LOGO[:-1])  # the logo opens the top row
                 self.assertEqual(rows["after"], rows["before"])
-                self.assertEqual(rows["before"], LOGO_ROWS + 3)  # the logo, the banner and its blank row, the top edge
+                self.assertEqual(rows["before"], 33 - 1 - UNDER_COMPOSER)  # the bottom rows: composer, rule, info
                 writes = "".join(run.terminal.writes)
                 # The startup query, the push, ED 3 once, then the first frame. No ED 2: the push leaves only the
                 # cursor's own row on the screen, the top row, which the first frame paints over.
@@ -2157,8 +2174,9 @@ class AttachmentTests(AppTestCase):
         self.assertEqual(attach["params"], {"session_id": LIVE_ID, "path": "./shot.png"})
         before, chip = terminal.captures["before"], terminal.captures["chip"]
         status = info_index(chip)
-        # The chip row sits between the top rule and the input, and the region grew by it.
-        self.assertEqual(status, info_index(before) + 3)  # the command's echo and the spacer under it, the chip
+        # The chip row sits between the top rule and the input; the launch put the composer on the bottom rows, and
+        # it stays there, the chip taking a row above the input.
+        self.assertEqual(status, info_index(before))
         composer = status - 1 - UNDER_COMPOSER
         self.assertTrue(composer_text(chip[composer]).startswith("❯"), chip)
         self.assertEqual(composer_text(chip[composer - 1]), "📎 shot.png 1280×720  Backspace removes")  # under the rule
@@ -2403,11 +2421,11 @@ class KeyTests(AppTestCase):
         (asked,) = run.calls("complete.path")
         self.assertEqual(asked["params"], {"word": "@sr", "session_id": LIVE_ID})
         menu = terminal.captures["menu"]
-        # The launch starts the region on the top row, so it knows its place and the menu opens under the composer.
-        bottom = rule_rows(menu)[1]
-        self.assertTrue(menu[bottom + 1].startswith(" app.py"), menu)
-        self.assertTrue(menu[bottom + 2].startswith(" src/"), menu)
-        self.assertIn("dir", menu[bottom + 2])
+        # The launch puts the composer on the bottom rows, so the menu opens above it, over its top rule.
+        top = rule_rows(menu)[0]
+        self.assertTrue(menu[top - 2].startswith(" app.py"), menu)
+        self.assertTrue(menu[top - 1].startswith(" src/"), menu)
+        self.assertIn("dir", menu[top - 1])
         accepted = terminal.captures["accepted"]
         self.assertFalse(any(line.startswith(" src/") for line in accepted), accepted)
 

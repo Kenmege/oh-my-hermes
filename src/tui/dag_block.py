@@ -20,6 +20,15 @@ messenger: a chat reply carries its three moments and no boxes.
 
 `topology_lines` is the other half of a run's picture: `/dag` closes the
 whole graph with the run's critical path and bottlenecks.
+
+A print that fits about one screen (`DagBlock.max_rows`: the rows the
+composer, the working rows and the agent view leave) is drawn whole, as
+above. A bigger graph prints condensed (`_condensed`): its header, one row
+per layer with its counts, the boxes of the frontier the moment changed (the
+first layer at ``define``, the added nodes at ``repair`` and ``extend``),
+and `… N more nodes · /dag shows the whole graph`; no Dependencies and no
+Node details, which `/dag` keeps. A big run's end is its tally and the
+nodes that failed or are stuck.
 """
 
 from __future__ import annotations
@@ -44,6 +53,8 @@ class DagBlock:
     title: str  # what the moment is: "plan", "repair · +1 node", "extend · +3 nodes", "end · done"
     graph: Mapping[str, Any]
     done: bool = True
+    max_rows: int | None = None  # the rows a whole print may take; a bigger one prints condensed (None: always whole)
+    added: tuple[str, ...] = ()  # the dag node ids a repair or an extend added: the boxes a condensed print draws
 
 
 def moment(payload: Mapping[str, Any], ended: set[tuple[str, int]]) -> tuple[str, str, list[str]] | None:
@@ -98,6 +109,90 @@ def rows(block: DagBlock, width: int, theme: Theme) -> list[Line]:
     view = render_delegation_view(block.graph, width=max(8, width - len(INDENT)), layout="box")
     lines = [truncate_line((Span(f"{INDENT}dag-ulw {block.title}", theme.muted),), width)]
     lines += [truncate_line((Span(INDENT), *dag_line(row, view.levels, theme)), width) for row in view.lines]
+    if block.max_rows is None or len(lines) <= block.max_rows:
+        return lines
+    return _condensed(block, width, theme)
+
+
+CONDENSED_BOXES = 6  # the frontier boxes a condensed print draws at most
+CONDENSED_FAILURES = 8  # the failed or stuck nodes a condensed end lists at most
+MORE_NOTE = "/dag shows the whole graph"
+
+
+def _lanes(graph: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    nodes = graph.get("nodes") if isinstance(graph.get("nodes"), list) else []
+    return [node for node in nodes if isinstance(node, Mapping) and node.get("kind") != "root"]
+
+
+def _layer_lines(graph: Mapping[str, Any], width: int, theme: Theme) -> list[Line]:
+    """One row per layer, in the run's order, its counts in the header's words: `layer 2 · 640 nodes · 12 running ·
+    160 done`."""
+    from ..plugin_bundle.omh.delegation_view import STATE_ORDER, _state
+    from .dag_tree import FACT_SEPARATOR
+
+    groups: dict[str, list[Mapping[str, Any]]] = {}
+    for node in sorted(_lanes(graph), key=lambda node: int(node.get("order") or 0)):
+        groups.setdefault(str(node.get("group") or ""), []).append(node)
+    hidden_by_group = graph.get("hidden_by_group") if isinstance(graph.get("hidden_by_group"), Mapping) else {}
+    lines: list[Line] = []
+    for group, members in groups.items():
+        hidden = hidden_by_group.get(group, 0) if isinstance(hidden_by_group.get(group, 0), int) else 0
+        total = len(members) + hidden
+        counts: dict[str, int] = {}
+        for node in members:
+            counts[_state(node)] = counts.get(_state(node), 0) + 1
+        said = [group or "lanes", f"{len(members):,} of {total:,} nodes" if hidden else f"{total:,} node{'' if total == 1 else 's'}"]
+        said += [f"{counts[state]:,} {state}" for state in STATE_ORDER if counts.get(state)]
+        lines.append(truncate_line((Span(INDENT), Span(FACT_SEPARATOR.join(said), theme.muted)), width))
+    return lines
+
+
+def _frontier(block: DagBlock) -> list[Mapping[str, Any]]:
+    """The lanes the moment changed: the ones it added, else the first layer (the plan's start)."""
+    lanes = sorted(_lanes(block.graph), key=lambda node: int(node.get("order") or 0))
+    if block.added:
+        return [node for node in lanes if str(node.get("dag_node") or "") in block.added]
+    first = str(lanes[0].get("group") or "") if lanes else ""
+    return [node for node in lanes if str(node.get("group") or "") == first]
+
+
+def _condensed(block: DagBlock, width: int, theme: Theme) -> list[Line]:
+    from ..plugin_bundle.omh.delegation_view import UNICODE, _box_view, header_text
+    from .panels import dag_line, dag_style
+
+    graph = block.graph
+    lanes = _lanes(graph)
+    lines = [truncate_line((Span(f"{INDENT}dag-ulw {block.title}", theme.muted),), width),
+             truncate_line((Span(INDENT), Span(header_text(graph), dag_style("header", theme))), width)]
+    if block.title.startswith(END):
+        stopped = [node for node in lanes if node.get("state") in ("failed", "stuck")]
+        for node in stopped[:CONDENSED_FAILURES]:
+            mark = UNICODE.glyphs.get(str(node.get("state")), "✗")
+            lines.append(truncate_line((Span(f"{INDENT}{mark} "), Span(str(node.get("title") or ""), dag_style(
+                f"glyph:{node.get('state')}", theme)), Span(f" · {node.get('state')}", theme.muted)), width))
+        if len(stopped) > CONDENSED_FAILURES:
+            lines.append(truncate_line((Span(f"{INDENT}… {len(stopped) - CONDENSED_FAILURES:,} more"),), width))
+        return lines
+    lines += _layer_lines(graph, width, theme)
+    shown = _frontier(block)[:CONDENSED_BOXES]
+    if shown:
+        # The shown boxes are drawn under their parents, so each names the nodes it waits on, as in the whole print;
+        # the rows above the first shown box are not printed.
+        ids = {str(node.get("id")) for node in shown}
+        edges = [edge for edge in graph.get("edges") or [] if isinstance(edge, Mapping) and edge.get("to") in ids]
+        uppers = {str(edge.get("from")) for edge in edges}
+        context = [node for node in graph.get("nodes") or [] if isinstance(node, Mapping)
+                   and (node.get("kind") == "root" or str(node.get("id")) in uppers - ids)]
+        sub = {**graph, "nodes": [*context, *shown], "hidden_nodes": 0, "edges": edges}
+        drawn = _box_view(sub, max(8, width - len(INDENT)), UNICODE, sections=0)
+        tops = [top for node_id, top, _bottom in drawn.boxes if node_id in ids] if drawn is not None else []
+        if drawn is not None and tops:
+            lines.append(())
+            lines += [truncate_line((Span(INDENT), *dag_line(row, 1, theme)), width) for row in drawn.lines[min(tops):]]
+    total = len(lanes) + (graph.get("hidden_nodes") if isinstance(graph.get("hidden_nodes"), int) else 0)
+    if total > len(shown):
+        lines.append(truncate_line((Span(f"{INDENT}… {total - len(shown):,} more nodes · {MORE_NOTE}", theme.muted),),
+                                   width))
     return lines
 
 

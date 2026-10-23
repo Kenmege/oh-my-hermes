@@ -149,7 +149,7 @@ from .keys import (
 )
 from .launch import request_fallback
 from .agent_view import AGENT_STEER_LEFT_UNANSWERED_NOTICE, STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
-from .layout import Budget, choice_cap, is_tiny, slot_cap
+from .layout import Budget, agent_view_cap, choice_cap, is_tiny, slot_cap
 from .markdown import clean_text
 from .modes import (
     HERMES_OWN_CYCLE,
@@ -283,6 +283,10 @@ RESIZE_SETTLE_SECONDS = 0.15
 # A full redraw (a resize, Ctrl+L, /redraw, a switch, a resumed session) prints the transcript's last this many
 # rows; the blocks above them are counted on one row instead (`Transcript.retake_tail`) and /history shows them.
 REDRAW_TAIL_ROWS = 3000
+# A dag run's print in the transcript is drawn whole while it takes no more than the screen's rows less the
+# agent view's usual rows and these (the composer, its rules, the info line, the working rows); else condensed.
+DAG_PRINT_RESERVED_ROWS = 7
+DAG_PRINT_MIN_ROWS = 12
 EXIT_CONFIRM_SECONDS = 2.0
 # Esc pressed twice within this long: with text, clears it into this session's history; on an empty composer
 # between turns, opens the rewind picker. The info line says what the second press will do.
@@ -1255,6 +1259,9 @@ class App(ModesMixin, AgentViewMixin):
         # The rows the agent view wanted, the rows it got and the tail's working rows in the last frame drawn while a
         # turn ran (`_held_view_rows`).
         self.view_hold: tuple[int, int, int] | None = None
+        # Until the first prompt the region reaches the screen's last row (`_render`): the launch's logo and banner on
+        # top, the composer on the bottom rows, the rows between them empty.
+        self.launch_layout = True
         self.mouse_off_at: float | None = None  # when `_set_mouse` last turned reports off; None before that
         self.wake: int | None = None  # the gateway client's wake descriptor, which `run` selects on with the input
         self.input_at = 0.0  # when input last arrived, on `clock`
@@ -2087,7 +2094,8 @@ class App(ModesMixin, AgentViewMixin):
         self.dag_end_due.pop(run, None)
         graph = self._read_dag_graph()
         if graph is not None:
-            self.transcript.add_aside(dag_block.DagBlock(title, graph))
+            self.transcript.add_aside(dag_block.DagBlock(title, graph, max_rows=self._dag_print_rows(),
+                                                         added=tuple(_added)))
 
     def _dag_ends_due(self) -> None:
         """The run ends this turn reached, each printed once if its run is still over as the turn ends."""
@@ -2095,7 +2103,13 @@ class App(ModesMixin, AgentViewMixin):
         for title in due.values():
             graph = self._read_dag_graph()
             if graph is not None and not graph.get("dag_open"):
-                self.transcript.add_aside(dag_block.DagBlock(title, graph))
+                self.transcript.add_aside(dag_block.DagBlock(title, graph, max_rows=self._dag_print_rows()))
+
+    def _dag_print_rows(self) -> int:
+        """The rows a run's printed graph may take whole: about one screen, less the composer, the info line, the
+        working rows and the agent view's usual rows (`dag_block`: a bigger graph prints condensed)."""
+        rows, cols = self.size[1], self.size[0]
+        return max(rows - agent_view_cap(rows, cols) - DAG_PRINT_RESERVED_ROWS, DAG_PRINT_MIN_ROWS)
 
     def _read_dag_graph(self) -> Mapping[str, Any] | None:
         return self.read_dag_graph(self.environ.get("OMH_HOME") or None, self.environ.get("HERMES_HOME") or None,
@@ -2998,6 +3012,7 @@ class App(ModesMixin, AgentViewMixin):
         `notice` is what the skill command that sent it said, under its row whenever it goes.
         """
         self.transcript.add_user(shown or text, from_queue=queued, known=self.known_slash)
+        self.launch_layout = False
         if notice:
             self.transcript.add_aside(NoticeBlock(notice))
         if not queued:
@@ -4053,11 +4068,17 @@ class App(ModesMixin, AgentViewMixin):
         # becomes pad rows at its top and the composer stays on the bottom rows; above it, the region follows the
         # content. Where the region's place is not certain it counts as above.
         pinned = self.region.last_row(rows) == rows - 1
+        min_height = max(self.region.height - len(stable), 0) if pinned else 0
+        top = self.region.top_row(rows)
+        if not pinned and self.launch_layout and top is not None:
+            # Until the first prompt the launch fills the screen: the rows under the banner pad the region down to the
+            # last row, so the composer stands on the bottom rows from the first frame and the pinned rule keeps it.
+            min_height = max(rows - min(top + len(stable), rows - 1), 0)
         build = partial(
             build_frame,
             cols=cols,
             rows=rows,
-            min_height=max(self.region.height - len(stable), 0) if pinned else 0,
+            min_height=min_height,
             composer=None if self._composer_hidden() else self.composer,
             # the list, or the dag tree, under the info line has the keys
             composer_blank=self.list_selected is not None or self.tree_selected is not None,

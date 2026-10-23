@@ -339,8 +339,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   list (a question answered by picking, or the `/sessions`, `/rewind` or bare
   `/model` picker) or search the history with Ctrl+R, the
   composer and its rules are not drawn and the list or the search stands in
-  their place, right above the info line. While the agent list has the keys
-  the composer's rows are drawn blank instead, so nothing moves. A question and the agent list show
+  their place, right above the info line. While the agent list or the dag
+  tree has the keys the composer keeps its rules and its row says
+  `↑↓ browsing · esc to type` instead of the prompt, so nothing moves. A question and the agent list show
   no caret; a picker shows it at the end of its filter row and the search at
   the end of its query, where what you type (an input method's composition
   too) appears. The banner above the
@@ -352,7 +353,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   (100 columns) and 24 rows tall, the start shows the logo above the banner,
   each row in the theme's gradient made to read on the terminal's
   background; `/new` and a switched session do not repeat it, and a full
-  redraw shows it again only on top of the whole session.
+  redraw shows it again only on top of the whole session. Until the first
+  prompt the start fills the screen: the logo and the banner on top, the
+  composer and the info line on the bottom rows, the rows between them empty.
 - The info line under the composer, two cells in so it starts under the
   composer's text (on the edge on a terminal too small for the rules), says, on
   the left, the input mode or the keys that matter right now, and on the right the model, how full the
@@ -485,18 +488,27 @@ run and approval decision stays Hermes'; the screen is OMH's.
   new one counts every session it wrote in.
   The info line counts them (`2 agents · ↓ agents`; the count alone where
   the line is too narrow for both, or where Down would not open the list:
-  while you type, while a question or a picker is open). The view stays
+  while you type, while a question or a picker is open). During a DAG run the
+  count is the run's running lanes (`1,204 agents`), and it goes once none
+  runs or the run is over. The view stays
   while agents outlive the turn, each one's mark saying whether it still
   runs. With more agents than the view has rows, the running ones keep
   theirs and the rest are counted on its last row (`○ 3 done`, or `+4 more ·
   1 waiting · 3 done`); in two rows or fewer `● main` gives its row up
   first. While the conversation's delegation graph is a DAG run (a lane
   waits on another, or a lane delegates), the view is the run's folding tree
-  instead: the graph's header (`DAG · <name> · N nodes · …`), a row per layer
-  (`▾ layer 2 · 4 nodes · 2 running`) with a blank row between two layers
-  when either is open, and a row per node: a `▾`/`▸` fold triangle where
-  something is under it, its state glyph (the spinner while it runs), its
-  label, and its category, model, state and output tokens at the right edge.
+  instead: the graph's header (`DAG · <name> · N nodes · E edges · …`, the
+  run's lanes and the edges between them, main and its dispatches not
+  counted), a row per layer (`▾ layer 2 · 4 nodes · 2 running`; `28 of 640
+  nodes` where the graph's node cap left some out) with a blank row between
+  two layers when either is open, and a row per node: a `▾`/`▸` fold
+  triangle where something is under it, its state glyph (the spinner while
+  it runs), its title, and its category, model, state and output tokens. The
+  title is the node's label, followed by its prompt's first clause when the
+  label is under 24 cells, cut at a word with `…` past 52 cells. The figures
+  stand in columns two cells after the widest title, each as wide as its
+  widest value; where the row is too narrow the tokens go first, then the
+  category, then the model.
   Under an open node two `›` rows say what its child is doing: its latest
   call (`terminal(gh pr checkout 138300)`) and its latest other line, a
   thinking line, Hermes' progress line (the names of its last five calls) or
@@ -517,7 +529,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   nodes stay. Your folds last as long as the run: a new run, or another
   session, starts with none. `/dag` shows the
   graph with boxes. Once every lane has
-  settled the tree is one line (`DAG · <name> · done 5/6 · 1 failed`).
+  settled and the turn has ended, the tree is one line (`DAG · <name> · done
+  5/6 · 1 failed`); while the turn still runs, it stays.
 
   ![A dag run's folding tree under the OMH TUI composer: layer 1's accepted inventory shut, layer 2's two running groups open with each child's latest call and line under it, the failed group 3 with its error and the repair running beneath it, group 4 ready, and the verification waiting in layer 3](../assets/omh-tui-dag-tree.png)
 
@@ -525,8 +538,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   agents · 1 running`, then its rows). On a terminal under 6 rows or 20
   columns there is no view, and the info line keeps the count. Down on an empty composer
   gives the view's rows the keys as a list you pick from, as from a picker:
-  the composer's rows are drawn blank while it is open, so nothing on the
-  screen moves; the list scrolls when there are more agents than rows; and
+  the composer keeps its rules and says `↑↓ browsing · esc to type` while it
+  is open, so nothing on the screen moves; the list scrolls when there are
+  more agents than rows; and
   the info line says its keys (`↑↓ select
   · ⏎ log · x interrupt · s steer · esc back`). In a DAG run Down gives
   the keys to the tree instead, on its first running node, the same way:

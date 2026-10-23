@@ -255,7 +255,20 @@ class StructureTests(unittest.TestCase):
             ids = {item["id"] for item in graph["nodes"]}
             self.assertLessEqual(len(graph["nodes"]), GRAPH_NODE_LIMIT)
             self.assertEqual(graph["hidden_nodes"], GRAPH_NODE_LIMIT + 21 - len(graph["nodes"]))
+            self.assertEqual(sum(graph["hidden_by_group"].values()), graph["hidden_nodes"])
             self.assertTrue(all(edge["from"] in ids and edge["to"] in ids for edge in graph["edges"]))
+
+    def test_a_cut_says_what_each_group_lost(self) -> None:
+        """So a dag run's layer under the cap reads `5 of 10 nodes`, not a total of 5."""
+        from omh.plugin_bundle.omh.delegation_graph import _cut
+
+        lanes = [{"id": f"{state}-{index}", "kind": "lane", "state": state, "order": order, "group": group}
+                 for order, (index, state, group) in enumerate(
+                     [(index, "done", "layer 1") for index in range(10)]
+                     + [(index, "waiting", "layer 2") for index in range(10)], start=1)]
+        cut = _cut({"nodes": [{"id": "root", "kind": "root"}, *lanes], "edges": []}, 6)
+        self.assertEqual(cut["hidden_by_group"], {"layer 1": 10, "layer 2": 5})
+        self.assertEqual(cut["hidden_nodes"], 15)
 
     def test_a_settled_graph_goes_quiet_after_the_linger(self) -> None:
         with homes() as home:

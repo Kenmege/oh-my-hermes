@@ -14,6 +14,7 @@ from _local_package import load_local_package
 
 load_local_package()
 
+from _delegation_graphs import graph, lane, root  # noqa: E402
 from _delegation_state import PARENT, homes  # noqa: E402
 from omh.plugin_bundle.omh import dag_run  # noqa: E402
 from omh.plugin_bundle.omh.delegation_graph import build_delegation_graph  # noqa: E402
@@ -127,6 +128,21 @@ class BlockTests(unittest.TestCase):
         failed = next(index for index, line in enumerate(tree) if "Export bu" in line)
         self.assertTrue(any("Fix" in line for line in tree[failed + 1:failed + 4]), tree)
 
+    def test_a_node_carries_its_prompts_first_clause_as_its_summary(self) -> None:
+        """Mutation: drop the summary from `_dag_nodes`, or stop the clause at the first field label."""
+        long_task = "Move every caller of the old exporter onto the new streaming writer and delete the shim afterwards"
+        nodes = [node("api", label="Export API", prompt="TASK: Add the CSV endpoint to the API. Keep the JSON one."
+                      "\nDELIVERABLE: a change\nVERIFY: run `make test`, exit 0"),
+                 node("ui", label="Export button", prompt="Wire the button to the endpoint VERIFY: click it"),
+                 node("move", label="Move callers", prompt=f"TASK: {long_task}\nSTOP WHEN: green")]
+        with homes() as home:
+            slots_table(home)
+            call(action="define", run="export", name="export feature", nodes=nodes)
+            built = build_delegation_graph(home.omh, home.hermes, PARENT)
+        summaries = {item["dag_node"]: item.get("summary") for item in built["nodes"] if item.get("dag_node")}
+        self.assertEqual(summaries, {"api": "Add the CSV endpoint to the API", "ui": "Wire the button to the endpoint",
+                                     "move": long_task[:80]})
+
     def test_the_end_block_and_the_collapsed_run_say_a_handoff_was_not_checked(self) -> None:
         """Mutation: drop the word from the graph's node, or leave the one-line summary as it was."""
         from omh.tui.panels import dag_run_summary
@@ -147,6 +163,77 @@ class BlockTests(unittest.TestCase):
         text = self._text(dag_block.DagBlock("end · done", graph), 140)
         self.assertEqual(sum("Handoff not checked" in line for line in text), 1, text)
         self.assertEqual(dag_run_summary(graph), "DAG · export feature · done 3/3 · 1 handoff not checked")
+
+
+def big_run(sizes: tuple[int, ...], states: dict[str, str] | None = None) -> dict:
+    """A dag run's graph with ``sizes[i]`` nodes in layer ``i + 1``, each after the first node of the layer above;
+    ``states`` sets a node's state by its dag node id (``n<order>``), the rest wait."""
+    nodes, edges, above = [root()], [], ""
+    order = 0
+    for layer, size in enumerate(sizes, 1):
+        first = ""
+        for _index in range(size):
+            order += 1
+            key = f"n{order}"
+            nodes.append({**lane(f"d:r1:{key}", f"Migrate service {order} config", "quick", "glm-5.3-flash", "low",
+                                 (states or {}).get(key, "waiting"), order=order, group=f"layer {layer}"),
+                          "dag_node": key})
+            edges.append((above or "root", f"d:r1:{key}", "depends_on" if above else "dispatch"))
+            first = first or f"d:r1:{key}"
+        above = first
+    return graph(nodes, edges, name="service migration")
+
+
+class CondensedTests(unittest.TestCase):
+    """A print bigger than about one screen is condensed: its header, a row per layer, the boxes the moment changed
+    and how many nodes it leaves to `/dag`; a big run's end is its tally and the nodes that stopped."""
+
+    @staticmethod
+    def _text(block: dag_block.DagBlock, width: int = 140) -> list[str]:
+        return ["".join(span.text for span in line) for line in block_rows(block, width, THEME)]
+
+    def test_a_print_that_fits_is_drawn_whole_and_a_bigger_one_condensed(self) -> None:
+        small, big = big_run((2, 1)), big_run((4, 40, 1))
+        whole = self._text(dag_block.DagBlock("plan", small))
+        self.assertEqual(self._text(dag_block.DagBlock("plan", small, max_rows=len(whole))), whole, "it fits")
+        self.assertIn("Dependencies", "\n".join(whole))
+        unbounded = self._text(dag_block.DagBlock("plan", big))
+        condensed = self._text(dag_block.DagBlock("plan", big, max_rows=30))
+        self.assertGreater(len(unbounded), 100)
+        self.assertLessEqual(len(condensed), 30)
+        self.assertEqual([line.strip() for line in condensed[:5]], [
+            "dag-ulw plan", "DAG · service migration · 45 nodes · 41 edges · 45 waiting",
+            "layer 1 · 4 nodes · 4 waiting", "layer 2 · 40 nodes · 40 waiting", "layer 3 · 1 node · 1 waiting"])
+        text = "\n".join(condensed)
+        for gone in ("Dependencies", "Node details"):
+            self.assertNotIn(gone, text)
+        # At define, the boxes are the first layer's, the plan's start.
+        self.assertEqual([index for index in range(1, 46) if f"Migrate service {index} config " in text],
+                         [1, 2, 3, 4])
+        self.assertEqual(condensed[-1].strip(), "… 41 more nodes · /dag shows the whole graph")
+
+    def test_a_layer_cut_by_the_graph_reader_says_what_it_kept_of_how_many(self) -> None:
+        big = {**big_run((4, 40, 1)), "hidden_by_group": {"layer 2": 600}, "hidden_nodes": 600}
+        condensed = self._text(dag_block.DagBlock("plan", big, max_rows=30))
+        self.assertEqual(condensed[3].strip(), "layer 2 · 40 of 640 nodes · 40 waiting")
+        self.assertEqual(condensed[-1].strip(), "… 641 more nodes · /dag shows the whole graph")
+
+    def test_a_repair_draws_the_nodes_it_added_naming_what_they_wait_on(self) -> None:
+        big = big_run((4, 40, 1), {"n1": "done", "n6": "failed", "n7": "running"})
+        condensed = self._text(dag_block.DagBlock("repair · +1 node", big, max_rows=30, added=("n7",)))
+        self.assertEqual(condensed[3].strip(), "layer 2 · 40 nodes · 1 running · 1 failed · 38 waiting")
+        boxes = [line for line in condensed if "│" in line]
+        self.assertEqual([line.strip(" │") for line in boxes], [
+            "Migrate service 7 config", "quick · glm-5.3-flash:low", "● Running", "← Migrate service 1 conf…"])
+        self.assertEqual(condensed[-1].strip(), "… 44 more nodes · /dag shows the whole graph")
+
+    def test_a_big_runs_end_is_its_tally_and_the_nodes_that_stopped(self) -> None:
+        states = {f"n{index}": "done" for index in range(1, 46)}
+        states.update(n2="failed", n9="stuck")
+        condensed = self._text(dag_block.DagBlock("end · failed", big_run((4, 40, 1), states), max_rows=30))
+        self.assertEqual([line.strip() for line in condensed], [
+            "dag-ulw end · failed", "DAG · service migration · 45 nodes · 41 edges · 1 stuck · 1 failed · 43 done",
+            "✗ Migrate service 2 config · failed", "! Migrate service 9 config · stuck"])
 
 
 def turn_ended() -> Event:
@@ -187,6 +274,25 @@ class AppTests(unittest.TestCase):
         app._on_event(turn_ended())
         self.assertEqual(self._titles(app), ["plan", "repair · +1 node", "end · done", "extend · +2 nodes"])
         self.assertEqual(dag_run.DAG_SCHEMA_VERSION, "omh_dag/v1")
+
+    def test_each_print_may_take_about_one_screen_whole_and_a_repair_names_what_it_added(self) -> None:
+        from omh.tui.app import DAG_PRINT_MIN_ROWS, DAG_PRINT_RESERVED_ROWS
+        from omh.tui.layout import agent_view_cap
+
+        with homes() as home:
+            results = run_results(home)
+            graph = build_delegation_graph(home.omh, home.hermes, PARENT)
+        app = self._app([graph])
+        for index, key in enumerate(("define", "repair", "end")):
+            app._on_event(completed(results[key], tool_id=f"t{index}"))
+        app._on_event(turn_ended())
+        blocks = [block for block in app.transcript.blocks + app.transcript._held
+                  if isinstance(block, dag_block.DagBlock)]
+        screen = 60 - agent_view_cap(60, 140) - DAG_PRINT_RESERVED_ROWS
+        self.assertEqual([(block.title, block.max_rows, block.added) for block in blocks], [
+            ("plan", screen, ()), ("repair · +1 node", screen, ("ui-fix",)), ("end · done", screen, ())])
+        app.size = (140, 16)
+        self.assertEqual(app._dag_print_rows(), DAG_PRINT_MIN_ROWS, "a short screen still prints a small graph whole")
 
     def test_an_end_the_same_turn_extends_prints_nothing_and_the_last_end_prints_once(self) -> None:
         with homes() as home:

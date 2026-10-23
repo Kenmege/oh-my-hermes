@@ -369,12 +369,21 @@ What it shows, and what it leaves as `?`:
     The agent view and the
     transcript's `delegate_task` rows name a node's child by the node's
     label, without its `[dag:<run>/<node>]` marker. The tree collapses a
-    finished run to its one summary line. The transcript keeps the run's
-    graph as boxes, as `omh hud --graph` draws them (with Dependencies and
-    Node details), at define, at each repair and extend with the added nodes
-    marked (`↻` a repair, `+` an extend round), and once at the end, when the
-    turn that ended the run is over and the run still is; where no box fits
-    the width it is the tree.
+    finished run to its one summary line once the turn has ended. The
+    transcript keeps the run's graph as boxes, as `omh hud --graph` draws
+    them (with Dependencies and Node details), at define, at each repair and
+    extend with the added nodes marked (`↻` a repair, `+` an extend round),
+    and once at the end, when the turn that ended the run is over and the run
+    still is; where no box fits the width it is the tree. A print taller than
+    about one screen (the rows the composer, the working rows and the agent
+    view leave) is condensed: the header, one row per layer with its counts,
+    the boxes the moment changed (the first layer at define, the added nodes
+    at a repair or an extend, each naming the nodes it waits on), and
+    `… N more nodes · /dag shows the whole graph`; `/dag` keeps the
+    Dependencies and the Node details. A big run's end is its tally and the
+    nodes that failed or are stuck. A box grows toward its title up to 48
+    cells, and a title longer still is cut in its middle, at words, so its
+    end stays.
 
     ![The dag-ulw plan block in the OMH TUI transcript: Export API handed out as the start node, the button, the docs and the CLI flag waiting on it in the next frontier, and the verification node waiting on all three, with the Dependencies list under them](../assets/omh-tui-dag-ulw-plan-block.png)
 
