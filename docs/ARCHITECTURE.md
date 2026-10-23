@@ -2868,8 +2868,9 @@ element of `grant()` called on such an object, and always with the literal
 only on `self` inside a method of a class the script defines, and `self` is
 bound nowhere else; `type` is not used outside annotations. `os.environ` is
 read and copied, but written only as the `TERMINAL_CWD` set-and-restore and
-emptied only of `LAUNCH_POLICY_ENV`, which is assigned once, at module level,
-as the literal tuple the gate pins, and whose loop name is never rebound. That blocks the
+emptied only of `LAUNCH_POLICY_ENV`, which is bound once, at module level,
+as the literal tuple the gate pins (no parameter, `except` or `with` alias,
+comprehension, import, `def` or `class` binds it anywhere else), and whose loop name is never rebound. That blocks the
 realistic drift of a later edit that calls another Hermes, network or
 subprocess helper. It is not a sandbox: an allowed Hermes function called with
 other arguments is not caught, and it does not check where the grant's url

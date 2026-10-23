@@ -906,8 +906,8 @@ class HermesScriptPolicy:
     `private_attributes`, each with its reason. `os.environ` is read freely
     and copied with `dict(...)`, set or removed only under `environ_key`, and
     otherwise only emptied of the names a `for` over the module constant
-    `environ_removals[0]` walks, whose one assignment is the literal tuple
-    `environ_removals[1]`.
+    `environ_removals[0]` walks, whose one binding anywhere is a module-level
+    assignment of the literal tuple `environ_removals[1]`.
     """
 
     modules: dict[str, frozenset[str]]
@@ -933,7 +933,7 @@ class HermesScriptPolicy:
 # `grant`; `connect` goes only into its `dial=`; `.dial` is called only on the `attach_api()` result, with the url
 # that object's `grant()` returned and `proxy=None`; no private attribute of anything but a method's own `self` is
 # read; `type` is not used outside annotations; and `os.environ` changes only as the `TERMINAL_CWD` set-and-restore
-# and the removal of `LAUNCH_POLICY_ENV`, pinned to its literal tuple. It is not a
+# and the removal of `LAUNCH_POLICY_ENV`, pinned to its literal tuple and bound nowhere else. It is not a
 # sandbox: an allowed Hermes function called with other arguments is not caught, and the url dialled is whatever
 # Hermes' grant returns; the gate does not check that destination.
 HERMES_INTERPRETER_SCRIPTS: dict[str, HermesScriptPolicy] = {
@@ -1273,15 +1273,31 @@ def _environ_problems(tree: ast.Module, parents: dict[int, ast.AST], policy: Her
                   and use.args == [node] and not use.keywords):
             problems.append(f"line {node.lineno}: `os.environ` as a value other than `dict(os.environ)`")
     constant, pinned = policy.environ_removals
-    stores = [node for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id == constant
-              and not isinstance(node.ctx, ast.Load)]
+    stores = [node for node in ast.walk(tree) if _binds(node, constant)]
     for store in stores:
         assign = parents.get(id(store))
         literal = isinstance(assign, ast.Assign) and assign.targets == [store] and parents.get(id(assign)) is tree
         if not (literal and len(stores) == 1 and _literal_strings(assign.value) == pinned):
-            problems.append(f"line {store.lineno}: `{constant}` assigned other than once, at module level, "
+            problems.append(f"line {store.lineno}: `{constant}` bound other than once, at module level, "
                             f"as the pinned literal tuple")
     return problems
+
+
+def _binds(node: ast.AST, name: str) -> bool:
+    """`node` binds `name` in its scope: an assignment, loop, `with` or comprehension target, a parameter, an
+    `except ... as`, an import alias, a `def` or `class`, or a `match` capture. A loop over `name` then reads the
+    module-level binding, since no other scope has one of its own."""
+    if isinstance(node, ast.Name):
+        return node.id == name and not isinstance(node.ctx, ast.Load)
+    if isinstance(node, ast.arg):
+        return node.arg == name
+    if isinstance(node, ast.alias):
+        return (node.asname or node.name.partition(".")[0]) == name
+    if isinstance(node, ast.MatchMapping):
+        return node.rest == name
+    if isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar, *_FUNCTIONS, ast.ClassDef)):
+        return getattr(node, "name", None) == name
+    return False
 
 
 def _literal_strings(value: ast.AST) -> tuple[str, ...] | None:
@@ -1643,13 +1659,33 @@ class NoNetworkClientInSource(unittest.TestCase):
             "def go(api):\n    url, protocols = api.grant()\n    return api.dial(url, proxy='http://evil:8080')":
             "without `proxy=None`",
             "def go(api, how):\n    url, protocols = api.grant()\n    return api.dial(url, proxy=how)": "without `proxy=None`",
-            # the launch-policy removal: its constant is the pinned literal, assigned once, and its loop name kept
+            # the launch-policy removal: its constant is the pinned literal, bound once, and its loop name kept
             "LAUNCH_POLICY_ENV = ('PATH', 'HERMES_HOME')": "as the pinned literal tuple",
             "LAUNCH_POLICY_ENV = ('HERMES_MODEL',) + ('HERMES_HOME',)": "as the pinned literal tuple",
             "PINNED\nLAUNCH_POLICY_ENV += ('HERMES_HOME',)": "as the pinned literal tuple",
             "PINNED\ndef f():\n    LAUNCH_POLICY_ENV = ('HERMES_HOME',)": "as the pinned literal tuple",
             "for name in LAUNCH_POLICY_ENV:\n    name = 'PATH'\n    os.environ.pop(name, None)": "os.environ.pop",
             "for name in LAUNCH_POLICY_ENV:\n    for name in ('PATH',):\n        os.environ.pop(name, None)": "os.environ.pop",
+            # no other scope binds the name, so a loop over it reads the pinned module-level tuple
+            "PINNED\ndef strip(LAUNCH_POLICY_ENV):\n    for name in LAUNCH_POLICY_ENV:\n        os.environ.pop(name, None)\n"
+            "strip(('PATH', 'HERMES_HOME'))": "as the pinned literal tuple",
+            "PINNED\nstrip = lambda LAUNCH_POLICY_ENV: [os.environ.pop(name, None) for name in LAUNCH_POLICY_ENV]":
+            "as the pinned literal tuple",
+            "PINNED\ndef strip(*LAUNCH_POLICY_ENV):\n    for name in LAUNCH_POLICY_ENV:\n        os.environ.pop(name, None)":
+            "as the pinned literal tuple",
+            "PINNED\ntry:\n    pass\nexcept Exception as LAUNCH_POLICY_ENV:\n    for name in LAUNCH_POLICY_ENV:\n"
+            "        os.environ.pop(name, None)": "as the pinned literal tuple",
+            "PINNED\n[os.environ.pop(name, None) for LAUNCH_POLICY_ENV in [('PATH',)] for name in LAUNCH_POLICY_ENV]":
+            "as the pinned literal tuple",
+            "PINNED\nwith open('names') as LAUNCH_POLICY_ENV:\n    for name in LAUNCH_POLICY_ENV:\n"
+            "        os.environ.pop(name, None)": "as the pinned literal tuple",
+            "PINNED\ndef f():\n    for LAUNCH_POLICY_ENV in [('PATH',)]:\n        for name in LAUNCH_POLICY_ENV:\n"
+            "            os.environ.pop(name, None)": "as the pinned literal tuple",
+            "PINNED\ndef f():\n    if (LAUNCH_POLICY_ENV := ('PATH',)):\n        for name in LAUNCH_POLICY_ENV:\n"
+            "            os.environ.pop(name, None)": "as the pinned literal tuple",
+            "PINNED\nfrom os import sep as LAUNCH_POLICY_ENV": "as the pinned literal tuple",
+            "PINNED\nclass LAUNCH_POLICY_ENV:\n    pass": "as the pinned literal tuple",
+            "PINNED\nmatch ('PATH',):\n    case LAUNCH_POLICY_ENV:\n        pass": "as the pinned literal tuple",
             # `self` is a method's own, never bound elsewhere
             "self = asyncio.get_running_loop()\nself._ssock": "`self` assigned",
             "def peek(self):\n    return self._ssock\npeek(asyncio.get_running_loop())": "not a method",

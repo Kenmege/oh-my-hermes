@@ -357,8 +357,8 @@ PR without the chat history.
   attribute is read except on `self` inside a method of a class it defines,
   and `self` is bound nowhere else; `type` is not used outside annotations;
   and `os.environ` changes only as the `TERMINAL_CWD` set-and-restore and the
-  removal of `LAUNCH_POLICY_ENV`, whose one module-level assignment is pinned
-  to its literal tuple. That blocks the realistic drift of a later
+  removal of `LAUNCH_POLICY_ENV`, whose one binding anywhere, a module-level
+  assignment, is pinned to its literal tuple. That blocks the realistic drift of a later
   edit calling another Hermes, network or subprocess helper; it is not a
   sandbox, and does not catch an allowed Hermes function called with other
   arguments, or check where the grant's url points. Ctrl+Z stops the process group,

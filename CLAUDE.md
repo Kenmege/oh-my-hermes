@@ -42,7 +42,7 @@ flows: one `AttachApi`, built in `attach_api()` with its own nested `grant`;
 result, with the url that object's `grant()` returned and the literal
 `proxy=None`; private attributes only on `self` in the script's own methods;
 and `os.environ` written only as the `TERMINAL_CWD` set-and-restore and the
-removal of `LAUNCH_POLICY_ENV`, pinned to its literal tuple. It is not a sandbox: an allowed
+removal of `LAUNCH_POLICY_ENV`, pinned to its literal tuple and bound nowhere else. It is not a sandbox: an allowed
 Hermes function called with other arguments, and where the grant's url points,
 are beyond it.
 
