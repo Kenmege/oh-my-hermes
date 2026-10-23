@@ -384,7 +384,13 @@ class RouterTests(unittest.TestCase):
                         "api, ui, docs 작업을 병렬로 나눠서 구현하고 어떻게 나눴는지 설명해줘", "이 api와 ui를 병렬로 나눠서 구현해줘",
                         "split the api and the ui into parallel lanes and implement them",
                         "split the migration into parallel lanes and verify each",
-                        "split the billing services into parallel lanes and migrate each one"):
+                        "split the billing services into parallel lanes and migrate each one",
+                        # A count or 들 after a demonstrative is several objects; a topic said first that is several
+                        # objects still runs; rewrite is a change; a report after a -고 work verb is the work's tail.
+                        "이 세 서비스 병렬로 나눠서 마이그레이션해줘", "이 두 모듈 병렬로 나눠서 리팩터링해줘",
+                        "이 3개 모듈 병렬로 나눠서 리팩터링해줘", "the api and ui work: split it into parallel lanes and implement them",
+                        "split the parser and lexer modules into parallel lanes and rewrite them",
+                        "결제, 정산 모듈 병렬로 나눠서 고치고 뭘 고쳤는지 보고해줘"):
             with self.subTest(message=message):
                 self.assertTrue(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
@@ -397,7 +403,13 @@ class RouterTests(unittest.TestCase):
                         "maybe split the api, ui and docs work into parallel lanes", "split the translation work into parallel lanes",
                         # One named object split into parallel parts is one task (#2243 review).
                         "이 함수 병렬로 나눠서 구현해줘", "이 파일 병렬로 나눠서 수정해줘", "로그인 페이지 하나 병렬로 나눠서 고쳐줘",
-                        "README 병렬로 나눠서 업데이트해줘", "이 스크립트를 병렬로 나눠서 개발해줘"):
+                        "README 병렬로 나눠서 업데이트해줘", "이 스크립트를 병렬로 나눠서 개발해줘",
+                        # One object said first as the topic the split refers back to, a rewrite of one object, and a
+                        # report after a word with no work verb in it.
+                        "the checkout page: split it into parallel parts and fix it",
+                        "the login form: split it into parallel parts and fix it",
+                        "split the paragraph parser into parallel lanes and rewrite it",
+                        "결제, 정산 모듈 병렬로 나눠서 보고 뭘 고칠지 보고해줘"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
@@ -409,34 +421,67 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
 
     def test_a_request_taken_back_or_held_in_a_later_clause_starts_nothing(self) -> None:
-        # A last clause that cancels, holds, takes back, jokes about or remarks on the request, in Korean or English,
-        # leaves nothing to dispatch or start (#2243 review).
+        # A clause after the request keeps it only on positive evidence (#2243 review): a keeper or a follow-on with a
+        # sequencing connective. Anything else after it, in Korean or English, leaves nothing to dispatch or start.
         for message in ("PR들 전부 리베이스해줘, 아 잠깐만", "모든 서비스 업데이트해줘, 아니 잠깐", "레포들 전부 CI 고쳐줘, 근데 일단 대기",
                         "레포들 전부 CI 고쳐줘, 말고 그냥 둬", "브랜치들 전부 리베이스해줘, 아니다 나중에 하자",
                         "모든 서비스 node 22로 올려줘, 는 다음 주에 하자", "모든 서비스 업데이트해줘, 는 농담이고",
                         "엔드포인트 전부 인증 붙여줘, 장난이야", "PR들 전부 머지해줘, 는 아니고 리뷰만 해줘", "PR들 전부 머지해줘, 같은 요청은 위험해",
                         "rebase all open PRs, never mind", "update every service — jk", "fix all the failing tests, scratch that",
                         "rebase all open PRs, or not", "update every service, actually don't", "fix all the failing tests, wait",
-                        # A trailing remark that is no keeper and asks for no work keeps nothing either, listed or not.
+                        "PR들 전부 리베이스해줘, 음 아니야", "모든 서비스 업데이트해줘, 아냐 내가 할게", "레포들 전부 CI 고쳐줘, 아 이건 좀 아닌가",
+                        "PR들 전부 머지해줘, 아 근데 잠시만", "rebase all open PRs, lol jk", "update every service — wait, no",
+                        "fix all the failing tests... or maybe not", "rebase all open PRs or maybe not",
+                        # A trailing remark that is no keeper and asks for no work keeps nothing either, listed or not:
+                        # hesitation, worry, a question about the request, doubt or a side note.
                         "PR들 전부 머지해줘, 하고 싶은데 무서워", "모든 서비스 업데이트해줘, 해도 되나", "레포들 전부 CI 고쳐줘, 이거 맞아?",
                         "모든 서비스 업데이트해줘, 어떻게 생각해", "PR들 전부 리베이스해줘, 나중에 해줘", "모든 패키지 업데이트해줘, 근데 괜찮을까",
-                        "브랜치들 전부 리베이스해줘, 팀장님이 시킨 거야",
+                        "브랜치들 전부 리베이스해줘, 팀장님이 시킨 거야", "모든 서비스 업데이트해줘, 잘 모르겠지만", "PR들 전부 리베이스해줘, 확신은 없어",
+                        "모든 패키지 업데이트해줘, 좀 위험할 수도", "PR들 전부 머지해줘, 걱정되네",
+                        "레포들 전부 CI 고쳐줘, 지난번에 이거 하다 CI 깨졌어",
+                        "rebase all open PRs, what do you think", "fix all the failing tests, my boss asked",
+                        "merge all open PRs, I'm scared though", "update every service, not sure", "rebase all open PRs, maybe tomorrow",
+                        "update every service, is that ok?", "update every service, should I?", "rebase all open PRs, if that makes sense",
+                        "update every service, is this right?", "update every service, not sure though",
+                        "fix all the failing tests, is that safe", "rebase all open PRs, hmm, risky maybe",
+                        "update every service, though I doubt it's worth it", "fix all the failing tests, fwiw last time this broke CI",
+                        "update every service... not sure", "update every service, then we'll see",
                         # Work narrowed to itself alone, an undo, or work in place of the request keeps nothing.
                         "PR들 전부 리베이스해줘, 확인만 해줘", "PR들 전부 리베이스해줘, 리뷰만 해줘", "PR들 전부 리베이스해줘, 그냥 되돌려줘",
-                        "PR들 전부 머지해줘, 는 아니고 리뷰해줘", "PR들 전부 머지해줘, 말고 리뷰해줘", "PR들 전부 머지해줘, 아니 리뷰해줘"):
+                        "PR들 전부 머지해줘, 는 아니고 리뷰해줘", "PR들 전부 머지해줘, 말고 리뷰해줘", "PR들 전부 머지해줘, 아니 리뷰해줘",
+                        "PR들 전부 리베이스해줘, 그리고 확인만 해줘", "PR들 전부 머지해줘, 그 다음 되돌려줘",
+                        # A follow-on keeps the request only after a sequencing connective, with no hold or joke in it or in
+                        # a clause between, and only on more work: a bare follow-on or a report falls back.
+                        "PR들 전부 리베이스해줘, 장난이고 테스트 돌려줘", "모든 서비스 업데이트해줘, 아 잠깐 다시 확인해줘",
+                        "PR들 전부 머지해줘, 아니 잠깐, 로그 먼저 확인해줘", "브랜치들 전부 리베이스해줘, 아 그거 말고 테스트만 돌려줘",
+                        "PR들 전부 머지해줘, 아니 잠깐, 그리고 로그 확인해줘", "PR들 전부 리베이스해줘, 그리고 농담이고 테스트 돌려줘",
+                        "PR들 전부 리베이스해줘, 테스트 돌려줘", "모든 서비스 업데이트해줘, 확인해줘", "rebase all open PRs, run the tests",
+                        "PR들 전부 리베이스해줘, 그리고 결과 알려줘", "모든 서비스 업데이트해줘, 끝나면 대시보드도 봐 줘"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
-        # The closed set of keepers (an urgency or a deadline, thanks or politeness, a start cue) and a request for work
-        # that follows keep it.
+        # Keepers by shape (an urgency or a deadline, a start cue, thanks or politeness, with an intensifier or a
+        # request ending of their own) and a follow-on after a sequencing connective keep it.
         for message in ("모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘", "모든 서비스 업데이트해줘, 그리고 CI도 고쳐줘",
-                        "PR들 전부 리베이스해줘, 급해", "PR들 전부 리베이스해줘, 급함", "모든 서비스 업데이트해줘, 빨리",
-                        "모든 서비스 업데이트해줘, 얼른", "모든 서비스 업데이트해줘, 오늘 안에", "PR들 전부 리베이스해줘, 내일까지",
-                        "모든 패키지 업데이트해줘, 이번 주 안에", "모든 서비스 업데이트해줘, 부탁해", "모든 서비스 업데이트해줘, 부탁드려요",
-                        "PR들 전부 리베이스해줘, 고마워", "PR들 전부 리베이스해줘, 감사", "PR들 전부 리베이스해줘, 바로 시작해",
-                        "PR들 전부 리베이스해줘, 지금 해", "rebase all open PRs, asap", "rebase all open PRs by EOD",
-                        "update every service today", "update every service, please", "fix all the failing tests, thanks",
-                        "fix all the failing tests, thank you", "rebase all open PRs, go"):
+                        "PR들 전부 리베이스해줘, 그 다음 테스트 돌려줘", "모든 서비스 업데이트해줘, 끝나고 문서도 정리해줘",
+                        "PR들 전부 리베이스해줘, 그리고 결과 리포트 써줘", "모든 패키지 업데이트해줘, 다음으로 CI 다시 실행해줘",
+                        "레포들 전부 CI 고쳐줘, 그리고 README도 갱신해줘", "모든 서비스 업데이트해줘, 급해, 그리고 CI도 고쳐줘",
+                        "rebase all open PRs, then run the tests", "fix all the failing tests, and then rebase all open PRs",
+                        "PR들 전부 리베이스해줘, 급해", "PR들 전부 리베이스해줘, 급함", "PR들 전부 리베이스해줘, 급합니다",
+                        "모든 서비스 업데이트해줘, 빨리", "모든 서비스 업데이트해줘, 얼른", "모든 서비스 업데이트해줘, 최대한 빨리",
+                        "모든 패키지 업데이트해줘, 서둘러줘", "PR들 전부 리베이스해줘, 가능한 빨리 부탁드려요",
+                        "모든 서비스 업데이트해줘, 오늘 안에", "PR들 전부 리베이스해줘, 내일까지", "모든 패키지 업데이트해줘, 이번 주 안에",
+                        "모든 서비스 업데이트해줘, 금요일까지", "PR들 전부 리베이스해줘, 오늘까지는", "모든 서비스 업데이트해줘, 내일 오전까지",
+                        "모든 서비스 업데이트해줘, 부탁해", "모든 서비스 업데이트해줘, 부탁드려요", "PR들 전부 리베이스해줘, 부탁할게",
+                        "PR들 전부 리베이스해줘, 고마워", "PR들 전부 리베이스해줘, 고맙다", "PR들 전부 리베이스해줘, 감사",
+                        "모든 서비스 업데이트해줘, 감사합니다", "PR들 전부 리베이스해줘, 바로 시작해", "PR들 전부 리베이스해줘, 지금 바로",
+                        "모든 서비스 업데이트해줘, 당장", "PR들 전부 리베이스해줘, 가자", "모든 서비스 업데이트해줘, ㄱㄱ",
+                        "rebase all open PRs, asap", "rebase all open PRs by EOD", "update every service today",
+                        "update every service, please", "fix all the failing tests, thanks", "fix all the failing tests, thank you",
+                        "rebase all open PRs, go", "rebase all open PRs, by friday please", "update every service, urgently",
+                        "fix all the failing tests, right away", "rebase all open PRs, no rush", "update every service, go ahead",
+                        "fix all the failing tests, let's go", "rebase all open PRs, cheers", "update every service, ty",
+                        "fix all the failing tests, appreciated", "rebase all open PRs, right now", "update every service, tonight"):
             with self.subTest(message=message):
                 self.assertTrue(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))

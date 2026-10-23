@@ -857,9 +857,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # started dag-ulw on main (2). An English request followed by jk
             # starts nothing, where main dispatched dag-ulw (1). A Korean request
             # followed by a doubt, which is no keeper and asks for no work,
-            # clarifies as on main (1).
+            # clarifies as on main (1). An English request followed by a
+            # question that is no keeper clarifies, where main dispatched
+            # dag-ulw (1).
             # Three domain-science vocabulary controls (+3).
-            expected=1080,
+            expected=1081,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1338,7 +1340,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # few words off and a change in one clause (clarifies on main) (2).
             # Its review adds one: a split with a past inside an embedded
             # question still runs as a graph, as on main (1), and an urgency after
-            # a request takes nothing back (a fallback on main) (1).
+            # a request takes nothing back (a fallback on main) (1). Its next
+            # review adds five, each a dag-ulw graph: an urgency with an
+            # intensifier and a follow-on after 그리고 (fallbacks on main) (2), a
+            # count after a demonstrative, a split rewritten and a split fixed
+            # then reported (clarifies on main whose hint started dag-ulw) (3).
             # Three unnamed domain-science interventions (+3).
             # #2221 L3: every STATUS_IS_THE_WORK member gets a status request
             # after its sigil that runs it; the seven without one before
@@ -1347,7 +1353,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # harness-session-inventory, skill-health, run-efficiency) (+7).
             # #2221 L4: doctor joins the set, since the status card shows no
             # install drift, and /omh-doctor status runs doctor (+1).
-            expected=1090,
+            expected=1095,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

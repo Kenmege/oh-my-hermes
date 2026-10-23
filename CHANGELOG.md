@@ -35,19 +35,25 @@ All notable changes will be documented here.
   a proposal or a plan said (`how about we …`, `my plan is to …`, `maybe …`), a
   question how to split, a report, breadth alone, or one named object (`이 함수
   병렬로 나눠서 구현해줘`, `README 병렬로 나눠서 …`, `fan out the image resize into
-  parallel workers …`) is asked about on the router and offered in the hint,
-  never started. More Korean request forms
-  count (`닫아`, `고쳐`, `올려라`, `주라`, `고고싱`, `놔라`, `해주십쇼`, `요망`, `…해 주시면
-  감사하겠습니다`), breadth words `쭉` and `하나도 빠짐없이`, `… fix them all`, a change
-  in one clause when the message ends in a request for more work (`모든 패키지
-  업데이트해줘, 패키지마다 changelog도 써줘`) or in one of a closed set of keepers: an
-  urgency or a deadline (`급해`, `빨리`, `오늘 안에`, `내일까지`), thanks or politeness
-  (`고마워`, `부탁해`), or a start cue (`바로 시작해`). Any other Korean last clause
-  keeps nothing (`…해줘, 아 잠깐만`, `…해줘, 는 농담이고`, `…해줘, 해도 되나`, `…해줘,
-  팀장님이 시킨 거야`), and an English take-back (`…, never mind`, `… — jk`, `…,
-  scratch that`) starts nothing while `…, asap`, `…, please` and `… by EOD` run.
-  A past inside an embedded question (`어떻게 나눴는지 설명해줘`) and a change aimed
-  so a thing does not happen a few words off (`… 안 되게끔 수정해줘`) count too.
+  parallel workers …`, `the checkout page: split it into parallel parts …`) is
+  asked about on the router and offered in the hint, never started; a count or
+  들 after a demonstrative is several objects (`이 세 서비스 …`). More Korean
+  request forms count (`닫아`, `고쳐`, `올려라`, `주라`, `고고싱`, `놔라`, `해주십쇼`,
+  `요망`, `…해 주시면 감사하겠습니다`), breadth words `쭉` and `하나도 빠짐없이`, `… fix
+  them all`, and `rewrite` and `reimplement` are changes. What follows a request
+  in a later clause keeps it only on positive evidence, in Korean and English:
+  a keeper by shape (an urgency or a deadline, a start cue, thanks or
+  politeness, with an intensifier or a request ending: `…해줘, 최대한 빨리`,
+  `…해줘, 금요일까지`, `…해줘, 지금 바로`, `…해줘, 부탁할게`, `…, by friday please`,
+  `…, no rush`), or a follow-on after a sequencing connective that asks for more
+  work (`…해줘, 그리고 README도 갱신해줘`, `…해줘, 그 다음 테스트 돌려줘`, `모든 패키지
+  업데이트해줘, 패키지마다 changelog도 써줘`, `…, then run the tests`), with no hold or
+  joke in any clause after the request. Anything else after it keeps nothing
+  (`…해줘, 아 잠깐만`, `…해줘, 해도 되나`, `…해줘, 확인해줘`, `…, what do you think`,
+  `…, not sure though`, `…, never mind`, `… — jk`, `… or maybe not`). A past
+  inside an embedded question (`어떻게 나눴는지 설명해줘`), a report after a -고 work
+  verb (`… 고치고 뭘 고쳤는지 보고해줘`) and a change aimed so a thing does not happen
+  a few words off (`… 안 되게끔 수정해줘`) count too.
   `일정 간격으로` is a schedule.
 
 - **`NO_COLOR` turns off colour in the whole OMH TUI (#2223 review item

@@ -7935,6 +7935,14 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "dag-ulw",
     ),
     RoutingPrecisionCase(
+        "english-request-followed-by-a-remark-is-not-a-graph-run",
+        "A rebase of every PR followed by a question that is no keeper and asks for no work: no graph run, where main dispatched one",
+        "rebase all open PRs, what do you think",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
         "one-named-function-split-is-asked-not-run",
         "One function split into parallel parts is one task: dag-ulw is asked about, not run",
         "이 함수 병렬로 나눠서 구현해줘",
@@ -18027,6 +18035,36 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "korean-urgency-after-the-request-runs-as-a-graph",
         "An urgency after a rebase of every PR takes nothing back: a dag-ulw graph",
         "PR들 전부 리베이스해줘, 급해",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-urgency-with-an-intensifier-runs-as-a-graph",
+        "An urgency with an intensifier after a rebase of every PR is a keeper by shape: a dag-ulw graph",
+        "PR들 전부 리베이스해줘, 최대한 빨리",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-follow-on-after-a-connective-runs-as-a-graph",
+        "A CI fix on every repo, then a README refresh after 그리고: a dag-ulw graph",
+        "레포들 전부 CI 고쳐줘, 그리고 README도 갱신해줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-count-after-a-demonstrative-split-runs-as-a-graph",
+        "Three services named by a demonstrative and a count are several objects: a dag-ulw graph",
+        "이 세 서비스 병렬로 나눠서 마이그레이션해줘",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "english-split-then-rewrite-runs-as-a-graph",
+        "Two modules split into parallel lanes and rewritten: a dag-ulw graph",
+        "split the parser and lexer modules into parallel lanes and rewrite them",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "korean-split-fix-then-report-runs-as-a-graph",
+        "Two modules split and fixed, then a report on what was fixed: a dag-ulw graph",
+        "결제, 정산 모듈 병렬로 나눠서 고치고 뭘 고쳤는지 보고해줘",
         "dispatch", "dag-ulw", "start_dag_run", "dag_run",
     ),
     RoutingInterventionCase(

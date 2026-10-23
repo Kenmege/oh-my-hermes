@@ -807,7 +807,7 @@ _KOREAN_CHANGE_VERB: Final = (
 )
 _EN_CHANGE_VERB: Final = (
     r"(?:fix|update|upgrade|migrate|refactor|port|convert|add|rename|rebase|close|merge|bump|address|resolve|implement"
-    r"|build|replace|move|apply|patch)"
+    r"|build|replace|move|apply|patch|rewrite|reimplement)"
 )
 # The verbs a request may be offered dag-ulw on, without starting it: the change verbs, and reviewing or triaging
 # each unit ("review all open PRs", "PR들 전부 리뷰해줘").
@@ -874,52 +874,120 @@ def _korean_request_verb(folded: str) -> tuple[str, bool]:
     return (folded.rstrip(" .!~").split()[-1] if _KOREAN_REQUEST_END.search(folded) else ""), False
 
 
-# An earlier clause is read on its own only when the last clause keeps the request: it asks for work of its own ("…해줘,
-# 그리고 CI도 고쳐줘", "…해줘, 패키지마다 changelog도 써줘"), with no particle at its start referring back to the request
-# ("…해줘, 는 아니고 리뷰만 해줘"), no 만 narrowing it to that work alone ("…해줘, 확인만 해줘") and no undoing it ("…해줘,
-# 그냥 되돌려줘"), or it is one of a closed set of keepers: an urgency or a deadline, thanks or
-# politeness, a start cue ("…해줘, 급해", "…해줘, 오늘 안에", "…해줘, 고마워", "…해줘, 바로 시작해"). Anything else after the
-# request is not read as keeping it ("…해줘, 아 잠깐만", "…해줘, 해도 되나", "…해줘, 이거 맞아?"), as on main. An English
-# request whose last clause takes it back starts nothing either (`_EN_TAKE_BACK`: "…, never mind", "… — jk").
-_CLAUSE_BREAK: Final = re.compile(r"\s*(?:[,;—–]|\s-\s)\s*")
-_KEEPER: Final = (
-    r"(?:급해|급해요|급함|빨리|얼른|오늘\s*안에|오늘\s*중으로|내일까지|이번\s*주\s*안에|asap|by\s+eod|today|부탁해|부탁해요|부탁드려요"
-    r"|부탁드립니다|부탁|고마워|고마워요|감사|감사해요|감사합니다|please|pls|thanks|thank\s+you|thx|바로\s*시작해|지금\s*해|go)"
+# What follows a request in a later clause is read on positive evidence only (lead decision on the #2243 review). A
+# clause after the request keeps it when it is a keeper by shape (`_KEEPER_CLAUSE`: an urgency or a deadline, a start
+# cue, thanks or politeness, with an intensifier or a request ending of its own: "…해줘, 최대한 빨리", "…해줘,
+# 금요일까지", "…해줘, 지금 바로", "…해줘, 부탁할게", "…, by friday please", "…, no rush"), or a follow-on that opens with a
+# sequencing connective and asks for more work (`_follows_on`: "…해줘, 그 다음 테스트 돌려줘", "…해줘, 끝나고 문서도
+# 정리해줘", "…해줘, 패키지마다 changelog도 써줘", "…, then integrate the findings"). No clause after the request may hold,
+# cancel or joke about it (`_HOLD`), and every clause between must keep it too (`_keeps_the_request`); a clause that opens
+# on a back-reference ("…해줘, 는 아니고 리뷰해줘") is neither a keeper nor a follow-on. Anything else after the request keeps
+# nothing: a Korean message is then read whole, as on main ("…해줘,
+# 해도 되나", "…해줘, 이거 맞아?", "…해줘, 확인해줘"), and an English one starts nothing ("…, what do you think", "…, not
+# sure though", "…, fwiw last time this broke CI": `_trails_off`).
+_CLAUSE_BREAK: Final = re.compile(r"\s*(?:[,;—–…]|\.{2,}|\s-\s)\s*")
+_INTENSIFIER: Final = r"(?:(?:최대한|가능한(?:\s*한)?|되도록|좀|진짜|정말|제발|너무|완전)\s*)?"
+_TIME_WORD: Final = (
+    r"(?:오늘|내일|모레|글피|이번\s*주|다음\s*주|이번\s*달|다음\s*달|주말|월말|연말|[월화수목금토일]요일|오전|오후|점심|저녁|아침|밤"
+    r"|퇴근\s*전|퇴근|\d+\s*(?:시|일)(?:\s*\d+\s*분)?|eod)"
 )
-_KOREAN_KEEPER: Final = re.compile(rf"(?:(?:좀|진짜|정말|너무)\s+)?{_KEEPER}(?:\s+{_KEEPER})*\s*[.!~]*")
-_BACK_REFERENCE: Final = re.compile(r"^(?:는|은|라고|이라고|같은|말고|란|이란|이런|그런)(?![가-힣])|^아니")
-_FOLLOW_ON_VERB: Final = rf"(?:{_KOREAN_OFFER_VERB}|써|작성|확인|(?<!되)돌려|실행|시작|진행|정리)"
+_KEEPER_WORD: Final = (
+    rf"(?:{_INTENSIFIER}(?:빨리|얼른|급히|서둘러|빠르게|신속히)|{_INTENSIFIER}급(?:해|해요|함|합니다|하다)"
+    rf"|{_TIME_WORD}(?:\s*{_TIME_WORD})*\s*(?:까지(?:는|만)?|안에|중으로|중에|내로|이내)"
+    rf"|지금(?:\s*바로)?|바로|당장|즉시|(?:바로\s*|지금\s*)?시작(?:해|하자)?|가자|고고|{_G}+"
+    r"|부탁\S*|고마\S*|고맙\S*|감사\S*|땡큐"
+    r"|asap|urgent(?:ly)?|quickly|right\s+away|no\s+rush|today|tonight|(?:right\s+)?now|go(?:\s+ahead)?|let'?s\s+go"
+    r"|by\s+(?:the\s+)?(?:eod|eow|cob|end\s+of\s+(?:the\s+)?(?:day|week|month|sprint)|today|tonight|tomorrow(?:\s+morning)?"
+    r"|noon|midnight|(?:this\s+|next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|weekend)"
+    r"|\d{1,2}(?::\d{2})?\s*(?:am|pm)?)"
+    r"|please|pls|plz|thanks(?:\s+(?:a\s+lot|so\s+much|in\s+advance))?|thank\s+you(?:\s+so\s+much)?|thx|ty|cheers"
+    r"|(?:much\s+)?appreciated)"
+)
+_KEEPER_CLAUSE: Final = re.compile(
+    rf"{_KEEPER_WORD}(?:\s*(?:and\s+)?{_KEEPER_WORD})*(?:\s*(?:해\s*{_KOREAN_GIVE}|해요|해|{_KOREAN_GIVE}|요))?\s*[.!~]*"
+)
+# A follow-on opens with a sequencing connective (끝나면 is a condition, not one), or on each of the units ("패키지마다"),
+# and asks for more work: a Korean work verb in request form, not narrowed to that work alone ("확인만") or undoing the
+# request ("되돌려줘"), or an English one ("…, then run the tests", "…, and then integrate").
+_KOREAN_CONNECTIVE: Final = re.compile(
+    r"^(?:그리고(?:\s*나서)?|그\s*다음(?:에|엔|으로)?|그\s*담에|다음으로|이어서|끝나고(?:\s*나서)?|그러고\s*나서|그\s*(?:뒤|후)에"
+    rf"|(?:각\s*)?(?:{_KOREAN_UNIT}|풀\s*리퀘(?:스트)?)(?:들)?\s*마다)\s+"
+)
+_FOLLOW_ON_VERB: Final = rf"(?:{_KOREAN_OFFER_VERB}|갱신|써|작성|확인|(?<!되)돌려|실행|시작|진행|정리)"
+_EN_FOLLOW_ON: Final = re.compile(
+    r"^(?:and\s+then|and|then|after\s+that|next|afterwards)\s*,?\s+(?:please\s+|just\s+|also\s+)*"
+    rf"(?:{_EN_OFFER_VERB}|integrate|develop|ship|test|run|rerun|deploy|write|document|verify|check|clean\s+up|push|tag"
+    r"|release|tell\s+me|let\s+me\s+know|report|send\s+me|show\s+me)\b"
+)
+_HOLD: Final = re.compile(
+    r"농담|장난|됐어|됐고|(?<![가-힣])(?:아냐|아니야|아니다|아니|잠깐만?|잠시만?|말고)(?![가-힣])"
+    r"|\b(?:jk|j/k|kidding|never\s*mind|nvm|wait|hold\s+on)\b"
+)
 _EN_TAKE_BACK: Final = re.compile(
     r"^(?:oh\s+|um\s+|no\s+)?(?:never\s*mind|nvm|jk|j/k|just\s+kidding|kidding|scratch\s+that|or\s+not|actually\s+(?:don'?t|no)"
     r"|don'?t|wait|hold\s+on|cancel\s+that|forget\s+(?:it|that)|not\s+now|later)\b"
 )
+_EN_TAKE_BACK_AT_THE_END: Final = re.compile(
+    r"\b(?:jk|j/k|just\s+kidding|nvm|never\s*mind|or\s+(?:maybe\s+)?not)\s*[.!]*$"
+)
 
 
 def _takes_it_back(folded: str) -> bool:
-    """Whether the last clause of an English request takes it back (`_EN_TAKE_BACK`)."""
+    """Whether the last clause of a request takes it back (`_EN_TAKE_BACK`), or its last words do with no clause
+    break before them ("rebase all open PRs or maybe not"): a guard on top of `_keeps_the_request`."""
     clauses = [clause for clause in _CLAUSE_BREAK.split(folded) if clause]
-    return len(clauses) > 1 and bool(_EN_TAKE_BACK.match(clauses[-1]))
+    return (len(clauses) > 1 and bool(_EN_TAKE_BACK.match(clauses[-1]))) or bool(_EN_TAKE_BACK_AT_THE_END.search(folded))
 
 
-def _keeps_the_request(clause: str) -> bool:
-    """Whether a last ``clause`` keeps the request before it: a keeper (`_KOREAN_KEEPER`), or a request of its own that
-    asks for more work (`_FOLLOW_ON_VERB`, not that work alone: "확인만") and does not refer back (`_BACK_REFERENCE`)."""
-    if _KOREAN_KEEPER.fullmatch(clause):
-        return True
-    verb, _bare = _korean_request_verb(clause)
-    return (
-        bool(verb) and bool(re.search(_FOLLOW_ON_VERB, verb)) and not verb.endswith("만") and not _BACK_REFERENCE.match(clause)
+def _follows_on(clause: str) -> bool:
+    """Whether ``clause`` opens with a sequencing connective and asks for more work (`_KOREAN_CONNECTIVE`,
+    `_EN_FOLLOW_ON`)."""
+    connective = _KOREAN_CONNECTIVE.match(clause)
+    if connective:
+        verb, _bare = _korean_request_verb(clause[connective.end():])
+        return bool(verb) and bool(re.search(_FOLLOW_ON_VERB, verb)) and not verb.endswith("만")
+    return bool(_EN_FOLLOW_ON.match(clause))
+
+
+def _keeps_the_request(trailing: list[str]) -> bool:
+    """Whether every clause after a request keeps it: a keeper (`_KEEPER_CLAUSE`) or a follow-on (`_follows_on`), with
+    no hold or joke in any of them (`_HOLD`)."""
+    return all(
+        not _HOLD.search(clause) and bool(_KEEPER_CLAUSE.fullmatch(clause) or _follows_on(clause)) for clause in trailing
     )
 
 
 def _korean_clauses(folded: str) -> list[str]:
-    """``folded``, then each clause of it, read on its own only when the last clause keeps the request
-    (`_keeps_the_request`): otherwise only the whole message is read, as on main ("모든 패키지 업데이트해줘, 패키지마다
-    changelog도 써줘" and "PR들 전부 리베이스해줘, 급해" run, "PR들 전부 리베이스해줘, 아 잠깐만" does not)."""
+    """``folded``, then each clause of it, read on its own only when the clauses after the first one in request form
+    keep the request (`_keeps_the_request`): otherwise only the whole message is read, as on main ("모든 패키지
+    업데이트해줘, 패키지마다 changelog도 써줘" and "PR들 전부 리베이스해줘, 급해" run, "PR들 전부 리베이스해줘, 아 잠깐만" does
+    not)."""
     clauses = [clause for clause in _CLAUSE_BREAK.split(folded) if clause]
-    if len(clauses) < 2 or not _keeps_the_request(clauses[-1]):
+    request = next((index for index, clause in enumerate(clauses) if _korean_request_verb(clause)[0]), len(clauses))
+    if request >= len(clauses) - 1 or not _keeps_the_request(clauses[request + 1 :]):
         return [folded]
     return [folded, *clauses]
+
+
+def _reads_as_an_english_request(text: str) -> bool:
+    """Whether ``text`` alone reads as an English request for work over many targets or split into parallel parts."""
+    return bool(
+        _EN_CHANGE_ON_BREADTH.search(text)
+        or _EN_OFFER.search(text)
+        or _EN_PARTS_IN_PARALLEL.search(text)
+        or (_EN_SPLIT_REQUEST.search(text) and _EN_SPLIT_EVIDENCE.search(text))
+    )
+
+
+def _trails_off(folded: str) -> bool:
+    """Whether an English request is followed by a clause that does not keep it (`_keeps_the_request`): the request is
+    the shortest run of clauses that reads as one (`_reads_as_an_english_request`), and every clause after it is read."""
+    if re.search(r"[가-힣]", folded):
+        return False  # a Korean message is read whole instead (`_korean_clauses`)
+    for cut in _CLAUSE_BREAK.finditer(folded):
+        if _reads_as_an_english_request(folded[: cut.start()]):
+            return not _keeps_the_request([clause for clause in _CLAUSE_BREAK.split(folded[cut.end() :]) if clause])
+    return False
 
 
 def _asks_for(folded: str, verbs: str) -> bool:
@@ -1166,6 +1234,7 @@ def _hard_excluded(folded: str, links: tuple[str, ...]) -> bool:
         or _names_one_container(folded)
         or _says_a_schedule(folded)
         or _takes_it_back(folded)
+        or _trails_off(folded)
         or _UNTIL.search(folded)
         or _RUNTIME_PARALLEL.search(folded)
         or names_ultrawork(folded)
@@ -1231,15 +1300,22 @@ _EN_SPLIT_OBJECT: Final = re.compile(
     r"\b(?:split|fan\s+out|break\s+(?:up|down)|parallelize)\s+(?P<object>(?:the|this|that|my|our)\s+[^,.!?]*?)\s+"
     r"(?:into|across)\b"
 )
+# The object said first, as the topic the split refers back to ("the checkout page: split it into parallel parts …").
+_EN_SPLIT_TOPIC: Final = re.compile(
+    r"^(?P<object>(?:(?:the|this|that|my|our)\s+)?[^,:.!?]+?)\s*:\s*(?:please\s+|just\s+)?"
+    r"(?:split|fan\s+out|break\s+(?:up|down)|parallelize)\s+(?:it|this)\s+(?:into|across)\b"
+)
 _SEVERAL_OBJECTS: Final = re.compile(
     r"[,/&]|\band\b|(?:와|과|랑|하고)(?:\s|$)|(?<![가-힣])(?:및|모든|전체|여러|각)(?![가-힣])|들(?:\s|$)"
+    r"|(?<![가-힣])(?:두|세|네|다섯|여섯|일곱|여덟|아홉|열|몇)(?![가-힣])|\d+\s*개"
 )
 
 
 def _splits_one_object(request: str) -> bool:
-    """Whether ``request`` splits one named object into parallel parts (`_KOREAN_SPLIT_OBJECT`, `_EN_SPLIT_OBJECT`)."""
+    """Whether ``request`` splits one named object into parallel parts (`_KOREAN_SPLIT_OBJECT`, `_EN_SPLIT_OBJECT`,
+    `_EN_SPLIT_TOPIC`)."""
     korean = _KOREAN_SPLIT_OBJECT.search(request) if re.search(r"[가-힣]", request) else None
-    english = None if korean else _EN_SPLIT_OBJECT.search(request)
+    english = None if korean else (_EN_SPLIT_OBJECT.search(request) or _EN_SPLIT_TOPIC.search(request))
     found = korean or english
     if not found or _SEVERAL_OBJECTS.search(found.group("object")):
         return False
@@ -1261,7 +1337,7 @@ def _splits_one_object(request: str) -> bool:
 # 설명해줘"): the work asked for is still the split.
 _EN_DONE_OPENER: Final = re.compile(r"^tell\s+me\s+when\s+(?:it'?s\s+|you'?re\s+)?done\s*[:,]\s*")
 _KOREAN_REPORT_TAIL: Final = re.compile(
-    r"(?P<work>\S*(?:하고|해서))\s+(?:\S+\s+){0,3}\S*(?:설명|알려|보고|공유)\S*\s*[.!~]*$"
+    r"(?P<work>\S*(?:고|해서))\s+(?:\S+\s+){0,3}\S*(?:설명|알려|보고|공유)\S*\s*[.!~]*$"
 )
 
 
