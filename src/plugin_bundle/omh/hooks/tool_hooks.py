@@ -11,6 +11,7 @@ from typing import Protocol, runtime_checkable
 from ..degradation import runtime_binding_degradation
 from ..approval_bypass import record_approval_bypass
 from ..dag_define_gate import delegate_before_define_directive
+from ..delegation_route_restore import dispatch_route_directive
 from ..host_observation import host_session_id, observe_plugin_hook_call
 from ..jev_consent import arm_tool_call as arm_jev_tool_call
 from ..jev_consent import disarm_tool_call as disarm_jev_tool_call
@@ -333,6 +334,21 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
     )
     if team_directive is not None:
         return dict(team_directive)
+    # Last of the gates, so it writes only for a call nothing above refused:
+    # a `delegate_task` spawn runs on the route its OWN conversation set,
+    # which is put back in the profile-wide `delegation.*` keys here if
+    # another session replaced it, and is refused rather than dispatched on
+    # that session's route when it cannot be (#2251).
+    route_directive = dispatch_route_directive(
+        tool_name=kwargs.get("tool_name"),
+        tool_input=tool_input,
+        session_id=host_session_id(kwargs),
+        task_id=str(kwargs.get("task_id", "") or "").strip(),
+        omh_home=omh_home,
+        hermes_home=hermes_home,
+    )
+    if route_directive is not None:
+        return dict(route_directive)
     # Only the normal host loop invokes native Kanban tools. Correlation runs
     # after OMH's user veto; it never dispatches or grants a native permission.
     bridge = _agent_board_bridge()

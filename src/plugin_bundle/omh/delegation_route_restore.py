@@ -90,6 +90,32 @@ position out of the live `delegation.*` values, which a turn-end restore
 empties, so it now recovers that position from the newest provenance record
 the calling conversation wrote. See `delegate_route_tool`.
 
+## A route is one conversation's; the keys are only where Hermes reads it
+
+The three keys are one per profile and every session on it reads them, so a
+route written by one conversation was the route of whichever session
+dispatched next. Two sessions routing close together lost the earlier one's
+route between its `set` and its `delegate_task`, and the child ran on the
+other session's model with nothing reported (#2251). A released Hermes gives
+a plugin no other way to name a child's model: the model-facing
+`delegate_task` takes no model or provider, and its handler resolves the
+child from `delegation.*` alone.
+
+So each route is also recorded as the route of the conversation that set it,
+in `conversation-routes.json`, under the same lock as the keys. `pre_tool_call`
+for `delegate_task` then puts the DISPATCHING conversation's intent into the
+keys just before Hermes reads them (`prepare_dispatch_route`): its own route
+when it set one in this task, and otherwise the baseline in place of another
+conversation's route. Whatever another session set, cleared, fell back to or
+restored in between, the dispatch runs on its own route. A dispatch that
+cannot be made to run on its own route is refused, never sent on another's.
+
+What this does not close, stated at its real size: the hook releases the lock
+before Hermes reads the keys, so another session's dispatch or `set` landing
+between the two -- the hook-to-handler gap, not the model's round trip that
+the race used to span -- still wins. Only a per-call route from Hermes
+removes it.
+
 ## Ownership, liveness, locking
 
 Every restore is gated on the recorded write. The file's current three keys
@@ -141,7 +167,7 @@ import os
 import secrets
 import time
 from pathlib import Path
-from typing import Any, Collection, Mapping
+from typing import Any, Callable, Collection, Mapping
 
 from . import runtime_paths
 from .awareness_delivery import LOCK_MECHANISM_NONE, _awareness_delivery_lock
@@ -152,7 +178,8 @@ from .delegation_routing import (
     read_delegation_route,
     write_delegation_route,
 )
-from .hermes_delegation import load_delegation_route_provenance
+from .hermes_delegation import append_delegation_route_provenance, load_delegation_route_provenance
+from .kanban_board_reader import conversation_session_ids
 from .live_session import (
     COMPACTION_END_REASON,
     LIVE_TUI_SESSION_FRESH_SECONDS,
@@ -162,8 +189,18 @@ from .live_session import (
 
 DELEGATION_ROUTE_RESTORE_SCHEMA_VERSION = "delegation_route_restore/v2"
 DELEGATION_ROUTE_RESTORE_FILE = "route-restore.json"
+CONVERSATION_ROUTES_SCHEMA_VERSION = "delegation_conversation_routes/v1"
+CONVERSATION_ROUTES_FILE = "conversation-routes.json"
 _MAX_ID_CHARS = 160
 _MAX_CONFIG_PATH_CHARS = 4096
+# A conversation's route lives as long as its task, so an entry older than
+# the liveness bound belongs to a session that is gone; the count bound
+# keeps a busy gateway from growing the file without limit.
+_MAX_CONVERSATION_ROUTES = 64
+# `pre_tool_call` may wait for the lock longer than a tool's 0.1 s budget:
+# what is at stake is which model a child runs on, and the hook's own budget
+# is the host's `plugins.hook_callback_timeout` (30 s by default).
+_DISPATCH_LOCK_SECONDS = 2.0
 
 # Where a baseline came from. `person` is an observation of the file before
 # OMH first wrote it; `omh_leftover` says the file already held a route OMH
@@ -337,6 +374,10 @@ def load_route_restore_record(omh_home: str | Path | None = None) -> dict[str, A
 def _write_restore_record(path: Path, record: dict[str, Any]) -> None:
     payload = dict(record)
     payload["claim_boundary"] = RESTORE_CLAIM_BOUNDARY
+    _write_private_json(path, payload)
+
+
+def _write_private_json(path: Path, payload: dict[str, Any]) -> None:
     temp = path.with_name(f".{path.name}.{os.getpid()}-{secrets.token_hex(8)}.tmp")
     created = False
     try:
@@ -357,6 +398,148 @@ def _discard_restore_record(path: Path) -> None:
         path.unlink()
     except FileNotFoundError:
         return
+
+
+def conversation_routes_path(omh_home: str | Path | None = None) -> Path:
+    return delegation_route_restore_path(omh_home).with_name(CONVERSATION_ROUTES_FILE)
+
+
+def _valid_conversation_route(session_id: object, raw: object) -> dict[str, Any] | None:
+    if not isinstance(raw, dict) or not _valid_identifier(session_id) or not session_id:
+        return None
+    route = _valid_route_mapping(raw.get("route"))
+    written_at = _valid_timestamp(raw.get("written_at"))
+    task_id = _valid_identifier(raw.get("task_id", ""))
+    config_path = _valid_identifier(raw.get("config_path", ""), _MAX_CONFIG_PATH_CHARS)
+    if not route or written_at is None or task_id is None or not config_path:
+        return None
+    return {
+        "config_path": config_path,
+        "route": route,
+        "session_id": session_id,
+        "task_id": task_id,
+        "written_at": written_at,
+    }
+
+
+def load_conversation_routes(omh_home: str | Path | None = None) -> dict[str, dict[str, Any]]:
+    """Each conversation's own route, by the session that set it; `{}` when none.
+
+    An unreadable file reads as "no conversation has a route", which is the
+    behaviour before this record existed: a dispatch then runs on whatever
+    the keys hold. A malformed entry is dropped alone, since one session's
+    bad entry says nothing about another's.
+    """
+    try:
+        raw = json.loads(conversation_routes_path(omh_home).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return {}
+    if not isinstance(raw, dict) or raw.get("schema_version") != CONVERSATION_ROUTES_SCHEMA_VERSION:
+        return {}
+    routes = raw.get("routes")
+    if not isinstance(routes, dict):
+        return {}
+    cleaned: dict[str, dict[str, Any]] = {}
+    for session_id, entry in routes.items():
+        valid = _valid_conversation_route(session_id, entry)
+        if valid is not None:
+            cleaned[session_id] = valid
+    return cleaned
+
+
+def _write_conversation_routes(omh_home: str | Path | None, routes: dict[str, dict[str, Any]]) -> None:
+    path = conversation_routes_path(omh_home)
+    if not routes:
+        _discard_restore_record(path)
+        return
+    _write_private_json(
+        path,
+        {
+            "schema_version": CONVERSATION_ROUTES_SCHEMA_VERSION,
+            "routes": {
+                session_id: {key: value for key, value in entry.items() if key != "session_id"}
+                for session_id, entry in routes.items()
+            },
+            "claim_boundary": (
+                "The route each conversation asked omh_delegate_route for, so its own "
+                "delegate_task dispatch can be put back on it. It is not evidence that "
+                "any dispatch ran or which model a child used."
+            ),
+        },
+    )
+
+
+def _store_conversation_route(
+    omh_home: str | Path | None,
+    *,
+    session_id: str,
+    task_id: str,
+    config_path: str,
+    route: dict[str, str],
+    written_at: float,
+) -> str:
+    """Record `route` as this session's; the caller holds `route_write_lock`.
+
+    Like `_store_record`, a failure is named rather than raised: the route is
+    already in the keys, and without this entry the dispatch runs on whatever
+    the keys hold, which is how every dispatch ran before it existed.
+    """
+    if not session_id:
+        return "unrecorded: no session"
+    routes = {
+        key: entry
+        for key, entry in load_conversation_routes(omh_home).items()
+        if written_at - entry["written_at"] <= LIVE_TUI_SESSION_FRESH_SECONDS
+    }
+    routes[session_id] = {
+        "config_path": config_path,
+        "route": dict(route),
+        "session_id": session_id,
+        "task_id": task_id,
+        "written_at": written_at,
+    }
+    newest = sorted(routes.values(), key=lambda entry: entry["written_at"])[-_MAX_CONVERSATION_ROUTES:]
+    try:
+        _write_conversation_routes(omh_home, {entry["session_id"]: entry for entry in newest})
+    except OSError as exc:
+        return f"unrecorded: {type(exc).__name__}"
+    return "recorded"
+
+
+def release_conversation_route(
+    omh_home: str | Path | None = None,
+    *,
+    task_id: str = "",
+    conversation: Collection[str] = (),
+) -> dict[str, Any]:
+    """Drop the calling conversation's own routes, and nobody else's.
+
+    The turn end passes its task and its session; `clear` and chain
+    exhaustion pass the whole conversation, because they say this
+    conversation wants no route any more. An entry goes when its task is the
+    caller's or its session is in the caller's conversation.
+    """
+    path = conversation_routes_path(omh_home)
+    if not path.exists():
+        return {"status": "none_recorded", "fast_path": True}
+    try:
+        with _awareness_delivery_lock(delegation_route_restore_path(omh_home)):
+            routes = load_conversation_routes(omh_home)
+            kept = {
+                session_id: entry
+                for session_id, entry in routes.items()
+                if not (
+                    (task_id and entry["task_id"] == task_id)
+                    or session_id in conversation
+                )
+            }
+            if len(kept) != len(routes) or not kept:
+                _write_conversation_routes(omh_home, kept)
+            return {"status": "released", "released": len(routes) - len(kept)}
+    except TimeoutError:
+        return {"status": "lock_unavailable", "error_type": "TimeoutError"}
+    except (OSError, ValueError) as exc:
+        return {"status": "error", "error_type": type(exc).__name__}
 
 
 def _routable_subset(applied: Mapping[str, Any]) -> dict[str, str]:
@@ -496,78 +679,39 @@ def write_route_with_baseline(
     `unrecorded: <reason>`), plus `lock_enforced`. A lock this writer could
     not take returns `status: error` with `lock_unavailable`, so the caller
     reports a refusal rather than a route.
+
+    A routed write is also recorded as the route of the calling session's
+    conversation (`conversation_route`), so its own next dispatch can be put
+    back on it whatever another session writes in between.
     """
     record_path = delegation_route_restore_path(omh_home)
     tick = float(now if now is not None else time.time())
     config_path = str(delegation_config_path(hermes_home))
+    session_id = str(session_id or "")[:_MAX_ID_CHARS]
+    task_id = str(task_id or "")[:_MAX_ID_CHARS]
     try:
         with _awareness_delivery_lock(record_path) as mechanism:
-            enforced = mechanism != LOCK_MECHANISM_NONE
-            previous = read_delegation_route(hermes_home)
-            record = load_route_restore_record(omh_home)
-            if record and record["config_path"] != config_path:
-                # The record describes another profile's config. Treat this
-                # one as unrecorded rather than acting on a statement that
-                # was never about it.
-                record = {}
-            result = write_delegation_route(
+            result = _write_route_locked(
                 hermes_home,
+                omh_home,
+                enforced=mechanism != LOCK_MECHANISM_NONE,
+                config_path=config_path,
+                tick=tick,
+                session_id=session_id,
+                task_id=task_id,
                 model=model,
                 reasoning_effort=reasoning_effort,
                 provider=provider,
                 expected_previous=expected_previous,
-                guard_route_endpoint=True,
             )
-            result["lock_enforced"] = enforced
-            if result.get("status") != "routed":
-                return result
-            written = _routable_subset(result.get("applied") or {})
-            if record and record["written"] == previous:
-                # OMH still owned the value it is overwriting: the baseline
-                # already describes what the person had.
-                baseline = record["baseline"]
-                captured_at = record["baseline_captured_at"]
-                origin = record["baseline_origin"]
-                note = "baseline_retained"
-            else:
-                # Either nothing was recorded, or someone changed the keys
-                # since OMH last wrote them. Both mean this write is over a
-                # value OMH cannot prove it recorded -- so a baseline is
-                # captured, unless provenance says OMH wrote that value
-                # itself and only failed to record it.
-                stem = "baseline_recaptured" if record else "baseline_captured"
-                verdict = leftover_verdict(previous, omh_home)
-                if verdict == LEFTOVER_MATCH:
-                    baseline, origin = {}, BASELINE_ORIGIN_OMH_LEFTOVER
-                    note = f"{stem}_over_omh_leftover"
-                else:
-                    baseline, origin = previous, BASELINE_ORIGIN_PERSON
-                    note = (
-                        f"{stem}_provenance_unavailable"
-                        if verdict == LEFTOVER_UNANSWERED
-                        else stem
-                    )
-                captured_at = tick
-            result["route_restore"] = _store_record(
-                record_path,
-                note=note,
-                config_path=config_path,
-                baseline=baseline,
-                baseline_captured_at=captured_at,
-                baseline_origin=origin,
-                written=written,
-                writer_session_id=str(session_id or "")[:_MAX_ID_CHARS],
-                writer_task_id=str(task_id or "")[:_MAX_ID_CHARS],
-                written_at=tick,
-            )
-            result["baseline_origin"] = origin
-            if origin == BASELINE_ORIGIN_OMH_LEFTOVER:
-                result["baseline_note"] = (
-                    "The delegation.* keys already held the exact route OMH last "
-                    "wrote, so they were treated as OMH's own leftover and the "
-                    "baseline is 'no keys'. If a person had pinned that same "
-                    "model, provider and effort by hand, nothing on disk "
-                    "distinguishes the two and their pin will not come back."
+            if result.get("status") == "routed":
+                result["conversation_route"] = _store_conversation_route(
+                    omh_home,
+                    session_id=session_id,
+                    task_id=task_id,
+                    config_path=config_path,
+                    route=_routable_subset(result.get("applied") or {}),
+                    written_at=tick,
                 )
             return result
     except TimeoutError:
@@ -588,6 +732,91 @@ def write_route_with_baseline(
             "error_type": type(exc).__name__,
             "route_restore": "unrecorded: bookkeeping unavailable",
         }
+
+
+def _write_route_locked(
+    hermes_home: str | Path | None,
+    omh_home: str | Path | None,
+    *,
+    enforced: bool,
+    config_path: str,
+    tick: float,
+    session_id: str,
+    task_id: str,
+    model: str,
+    reasoning_effort: str,
+    provider: str,
+    expected_previous: Mapping[str, str] | None,
+) -> dict[str, Any]:
+    """The route write and its baseline bookkeeping; the caller holds the lock."""
+    record_path = delegation_route_restore_path(omh_home)
+    previous = read_delegation_route(hermes_home)
+    record = load_route_restore_record(omh_home)
+    if record and record["config_path"] != config_path:
+        # The record describes another profile's config. Treat this
+        # one as unrecorded rather than acting on a statement that
+        # was never about it.
+        record = {}
+    result = write_delegation_route(
+        hermes_home,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        provider=provider,
+        expected_previous=expected_previous,
+        guard_route_endpoint=True,
+    )
+    result["lock_enforced"] = enforced
+    if result.get("status") != "routed":
+        return result
+    written = _routable_subset(result.get("applied") or {})
+    if record and record["written"] == previous:
+        # OMH still owned the value it is overwriting: the baseline
+        # already describes what the person had.
+        baseline = record["baseline"]
+        captured_at = record["baseline_captured_at"]
+        origin = record["baseline_origin"]
+        note = "baseline_retained"
+    else:
+        # Either nothing was recorded, or someone changed the keys
+        # since OMH last wrote them. Both mean this write is over a
+        # value OMH cannot prove it recorded -- so a baseline is
+        # captured, unless provenance says OMH wrote that value
+        # itself and only failed to record it.
+        stem = "baseline_recaptured" if record else "baseline_captured"
+        verdict = leftover_verdict(previous, omh_home)
+        if verdict == LEFTOVER_MATCH:
+            baseline, origin = {}, BASELINE_ORIGIN_OMH_LEFTOVER
+            note = f"{stem}_over_omh_leftover"
+        else:
+            baseline, origin = previous, BASELINE_ORIGIN_PERSON
+            note = (
+                f"{stem}_provenance_unavailable"
+                if verdict == LEFTOVER_UNANSWERED
+                else stem
+            )
+        captured_at = tick
+    result["route_restore"] = _store_record(
+        record_path,
+        note=note,
+        config_path=config_path,
+        baseline=baseline,
+        baseline_captured_at=captured_at,
+        baseline_origin=origin,
+        written=written,
+        writer_session_id=session_id,
+        writer_task_id=task_id,
+        written_at=tick,
+    )
+    result["baseline_origin"] = origin
+    if origin == BASELINE_ORIGIN_OMH_LEFTOVER:
+        result["baseline_note"] = (
+            "The delegation.* keys already held the exact route OMH last "
+            "wrote, so they were treated as OMH's own leftover and the "
+            "baseline is 'no keys'. If a person had pinned that same "
+            "model, provider and effort by hand, nothing on disk "
+            "distinguishes the two and their pin will not come back."
+        )
+    return result
 
 
 def _store_record(path: Path, *, note: str, **fields: Any) -> str:
@@ -775,13 +1004,7 @@ def restore_delegation_baseline(
                     "lock_enforced": enforced,
                 }
             baseline = record["baseline"]
-            result = write_delegation_route(
-                hermes_home,
-                model=baseline.get("model", ""),
-                reasoning_effort=baseline.get("reasoning_effort", ""),
-                provider=baseline.get("provider", ""),
-                expected_previous=current,
-            )
+            result = _put_baseline_back(hermes_home, baseline, current)
             if result.get("status") not in ("routed", "cleared"):
                 return {
                     "status": "error",
@@ -818,6 +1041,288 @@ def restore_delegation_baseline(
             "error_type": type(exc).__name__,
             "trigger": trigger,
         }
+
+
+def _put_baseline_back(
+    hermes_home: str | Path | None, baseline: Mapping[str, str], current: Mapping[str, str]
+) -> dict[str, Any]:
+    return write_delegation_route(
+        hermes_home,
+        model=baseline.get("model", ""),
+        reasoning_effort=baseline.get("reasoning_effort", ""),
+        provider=baseline.get("provider", ""),
+        expected_previous=current,
+    )
+
+
+# What `prepare_dispatch_route` returns when the dispatch must not go ahead.
+# A routed conversation whose route could not be put back is told whose route
+# holds the keys; a conversation with no route of its own is told that
+# another session's route is in the keys and could not be taken out.
+DISPATCH_ROUTE_REFUSALS = frozenset(
+    {"route_overwritten_by_other_session", "route_not_applied", "other_session_route_live"}
+)
+
+
+def _owned_by_caller(
+    item_session: str, item_task: str, task_id: str, conversation: Callable[[], set[str]]
+) -> bool:
+    """Is a route record or entry the dispatching conversation's own?
+
+    The rule `_writer_matches` applies at the turn end, so a route lives as
+    long at the dispatch as it does there: a recorded task decides alone, and
+    it is what survives a compression split. A TUI turn is one task, so a
+    route set in an earlier turn is not this dispatch's. Only an item with no
+    task falls back to the session, asked of the whole conversation (#2177).
+    """
+    if item_task:
+        return item_task == task_id
+    return bool(item_session) and item_session in conversation()
+
+
+def _dispatch_plan(
+    hermes_home: str | Path | None,
+    omh_home: str | Path | None,
+    *,
+    config_path: str,
+    task_id: str,
+    conversation: Callable[[], set[str]],
+) -> dict[str, Any]:
+    """What the keys must hold for this dispatch, read from the three stores.
+
+    `action` is `none`, `reapply` (the caller's route is not in the keys) or
+    `restore_baseline` (the caller has no route and the keys hold another
+    conversation's). A route whose writer recorded no conversation entry --
+    an older OMH still running, or an entry that failed to write -- is left
+    for a caller with no route, as every route was before: taking it out
+    would remove a route its owner cannot put back.
+    """
+    record = load_route_restore_record(omh_home)
+    if record and record["config_path"] != config_path:
+        record = {}
+    entries = [
+        entry
+        for entry in load_conversation_routes(omh_home).values()
+        if entry["config_path"] == config_path
+    ]
+    current = read_delegation_route(hermes_home)
+    record_live = bool(record) and current == record["written"]
+    record_is_callers = bool(record) and _owned_by_caller(
+        record["writer_session_id"], record["writer_task_id"], task_id, conversation
+    )
+    plan: dict[str, Any] = {
+        "record": record,
+        "current": current,
+        "live_writer": record["writer_session_id"] if record_live else "",
+    }
+    own = [
+        entry
+        for entry in entries
+        if _owned_by_caller(entry["session_id"], entry["task_id"], task_id, conversation)
+    ]
+    if own:
+        route = max(own, key=lambda entry: entry["written_at"])
+        plan["entry"] = route
+        if current == route["route"]:
+            return {**plan, "action": "none", "status": "route_in_place"}
+        return {**plan, "action": "reapply", "status": "route_reapplied"}
+    if not record_live or record_is_callers:
+        return {**plan, "action": "none", "status": "no_conversation_route"}
+    writer_has_entry = any(
+        (entry["task_id"] and entry["task_id"] == record["writer_task_id"])
+        or entry["session_id"] == record["writer_session_id"]
+        for entry in entries
+    )
+    if not writer_has_entry:
+        return {**plan, "action": "none", "status": "unrecorded_writer"}
+    return {**plan, "action": "restore_baseline", "status": "baseline_restored_for_dispatch"}
+
+
+def prepare_dispatch_route(
+    hermes_home: str | Path | None = None,
+    *,
+    omh_home: str | Path | None = None,
+    session_id: str = "",
+    task_id: str = "",
+    now: float | None = None,
+) -> dict[str, Any]:
+    """Put the dispatching conversation's own route in the keys, or refuse.
+
+    `pre_tool_call` runs this for every `delegate_task` spawn. The plan is
+    read first without the lock, so a dispatch whose keys already hold its
+    own route -- every single-session dispatch -- takes no lock and writes
+    nothing; anything else is re-read and acted on under the lock. A status
+    in `DISPATCH_ROUTE_REFUSALS` means the keys could not be made to hold
+    this dispatch's route, and the caller must not dispatch.
+    """
+    record_path = delegation_route_restore_path(omh_home)
+    if not record_path.exists() and not conversation_routes_path(omh_home).exists():
+        return {"status": "no_conversation_route", "fast_path": True}
+    config_path = str(delegation_config_path(hermes_home))
+    task_id = str(task_id or "")[:_MAX_ID_CHARS]
+    session_id = str(session_id or "")[:_MAX_ID_CHARS]
+    members: list[set[str]] = []
+
+    def conversation() -> set[str]:
+        if not members:
+            members.append(
+                {session_id}
+                | conversation_session_ids(hermes_home or runtime_paths.default_hermes_home(), session_id)
+                if session_id
+                else set()
+            )
+        return members[0]
+
+    def plan() -> dict[str, Any]:
+        return _dispatch_plan(
+            hermes_home, omh_home, config_path=config_path, task_id=task_id, conversation=conversation
+        )
+
+    peek = plan()
+    if peek["action"] == "none":
+        return {"status": peek["status"], "fast_path": True}
+    try:
+        with _awareness_delivery_lock(record_path, timeout_seconds=_DISPATCH_LOCK_SECONDS) as mechanism:
+            decided = plan()
+            if decided["action"] == "none":
+                return {"status": decided["status"]}
+            if decided["action"] == "reapply":
+                return _reapply_route(
+                    hermes_home,
+                    omh_home,
+                    decided,
+                    enforced=mechanism != LOCK_MECHANISM_NONE,
+                    config_path=config_path,
+                    tick=float(now if now is not None else time.time()),
+                    session_id=session_id,
+                    task_id=task_id,
+                    conversation=conversation,
+                )
+            written = _put_baseline_back(hermes_home, decided["record"]["baseline"], decided["current"])
+            if written.get("status") not in ("routed", "cleared"):
+                return _dispatch_refusal(
+                    decided, session_id, f"write refused: {written.get('error', 'unknown')}"
+                )
+            _discard_restore_record(record_path)
+            return {"status": decided["status"], "displaced_writer": decided["live_writer"]}
+    except TimeoutError:
+        return _dispatch_refusal(peek, session_id, "lock_unavailable")
+    except (OSError, ValueError) as exc:
+        return _dispatch_refusal(peek, session_id, type(exc).__name__)
+
+
+def _reapply_route(
+    hermes_home: str | Path | None,
+    omh_home: str | Path | None,
+    decided: Mapping[str, Any],
+    *,
+    enforced: bool,
+    config_path: str,
+    tick: float,
+    session_id: str,
+    task_id: str,
+    conversation: Callable[[], set[str]],
+) -> dict[str, Any]:
+    """Write the caller's own route back over whatever replaced it.
+
+    The baseline bookkeeping is the route write's own, so a route this puts
+    back over another conversation's keeps the person's baseline, and the
+    record names this caller as the writer, which is what lets this turn's
+    end take the route back out. Its provenance record is appended again so
+    the newest record names the route really in the keys: the leftover check
+    and the HUD label both read the newest one.
+    """
+    route = decided["entry"]["route"]
+    result = _write_route_locked(
+        hermes_home,
+        omh_home,
+        enforced=enforced,
+        config_path=config_path,
+        tick=tick,
+        session_id=session_id,
+        task_id=task_id,
+        model=route.get("model", ""),
+        reasoning_effort=route.get("reasoning_effort", ""),
+        provider=route.get("provider", ""),
+        expected_previous=decided["current"],
+    )
+    if result.get("status") != "routed":
+        return _dispatch_refusal(
+            decided, session_id, f"write refused: {result.get('error', 'unknown')}"
+        )
+    owners = conversation() | {decided["entry"]["session_id"]}
+    provenance = newest_written_provenance(omh_home, session_ids=owners)
+    route_provenance = "not_found"
+    if provenance and provenance_route_keys(provenance) == route:
+        route_provenance = append_delegation_route_provenance(
+            {**provenance, "written_at": tick, "session_id": session_id or provenance.get("session_id", "")},
+            omh_home,
+        )
+    return {
+        "status": decided["status"],
+        "route": dict(route),
+        "displaced_writer": decided["live_writer"],
+        "route_provenance": route_provenance,
+        "lock_enforced": enforced,
+    }
+
+
+def _dispatch_refusal(plan: Mapping[str, Any], session_id: str, reason: str) -> dict[str, Any]:
+    """The typed result a dispatch that must not go ahead is refused with."""
+    other = str(plan.get("live_writer", "") or "")
+    if plan.get("action") == "reapply":
+        status = "route_overwritten_by_other_session" if other and other != session_id else "route_not_applied"
+        model = str(plan["entry"]["route"].get("model", ""))
+        error = (
+            f"Not dispatched: this conversation routed delegate_task to {model!r}, but OMH could "
+            f"not put that route back in the delegation.* keys ({reason})"
+            + (f", which hold the route session {other!r} set" if status != "route_not_applied" else "")
+            + ". Dispatching now would run the child on a route this conversation did not choose. "
+            "Call delegate_task again; if this repeats, call omh_delegate_route set first."
+        )
+    else:
+        status = "other_session_route_live"
+        error = (
+            f"Not dispatched: the delegation.* keys hold the route session {other!r} set for its "
+            f"own delegate_task, and OMH could not put this profile's default back ({reason}). "
+            "Dispatching now would run the child on that session's route. Call delegate_task "
+            "again, or route this lane yourself with omh_delegate_route set first."
+        )
+    return {
+        "status": status,
+        "error": error,
+        "session_id": session_id,
+        "live_route_writer": other,
+        "reason": reason,
+        "dispatched": False,
+    }
+
+
+def dispatch_route_directive(
+    *,
+    tool_name: object,
+    tool_input: object,
+    session_id: str,
+    task_id: str,
+    omh_home: str | Path | None,
+    hermes_home: str | Path | None,
+) -> dict[str, str] | None:
+    """`pre_tool_call`'s directive for a `delegate_task` spawn: None, or a block.
+
+    `list`, `steer` and `stop` start no child, so they read no route.
+    """
+    if tool_name != "delegate_task":
+        return None
+    args = tool_input if isinstance(tool_input, Mapping) else {}
+    action = str(args.get("action", "") or "").strip().lower()
+    if action not in ("", "spawn"):
+        return None
+    result = prepare_dispatch_route(
+        hermes_home, omh_home=omh_home, session_id=session_id, task_id=task_id
+    )
+    if result.get("status") not in DISPATCH_ROUTE_REFUSALS:
+        return None
+    return {"action": "block", "message": json.dumps(result, sort_keys=True)}
 
 
 def _writer_matches(

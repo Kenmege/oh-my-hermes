@@ -14,7 +14,7 @@ from ..degradation import (
     runtime_binding_degradation,
 )
 from ..delegation_ledger import observe_subagent_start, observe_subagent_stop
-from ..delegation_route_restore import restore_delegation_baseline
+from ..delegation_route_restore import release_conversation_route, restore_delegation_baseline
 from ..engagement_nudges import record_engagement_observer_failure
 from ..host_observation import host_session_id, observe_plugin_hook_call
 from ..team_observer import observe_team_dispatch, observe_team_return
@@ -149,12 +149,22 @@ def on_session_end(**kwargs) -> dict[str, object] | None:
     # session id mid-turn while the task id stays put (`_writer_matches`).
     # In TUI and CLI a task is one turn; on every gateway platform the task
     # id is the session id, so there the scope is the session.
+    writer_session = host_session_id(kwargs)
+    writer_task = str(kwargs.get("task_id", "") or "").strip()
     restore = _restore_route(
         hermes_home,
         home,
         trigger="turn_end",
-        writer_session=host_session_id(kwargs),
-        writer_task=str(kwargs.get("task_id", "") or "").strip(),
+        writer_session=writer_session,
+        writer_task=writer_task,
+    )
+    # This conversation's own route ends with its task too, and only its
+    # own: another session's route stays recorded for that session's next
+    # dispatch, whatever this restore did to the keys (#2251).
+    restore["conversation_route"] = release_conversation_route(
+        home,
+        task_id=writer_task,
+        conversation={writer_session} if writer_session else set(),
     )
     runtime_dir = home / "runtime"
     if not runtime_dir.exists():
