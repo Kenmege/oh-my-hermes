@@ -343,13 +343,16 @@ PR without the chat history.
   The frontend opens no socket and makes no network call, strips the sidecar
   and attach URLs from the child's environment, and reaps the child when it
   exits, SIGTERM and SIGHUP included; the child's only connections are the
-  two above, to the person's own Hermes home, and INVARIANT 2 holds it to a
-  closed list measured from it (`HERMES_INTERPRETER_SCRIPTS`, which the owner
-  approved as asyncio and websockets only, loopback to the person's own
-  gateway): every import it makes, Hermes' functions named one by one, the
-  `asyncio` names it uses and `websockets.asyncio.client.connect`, with no
-  reflection, no module passed as a value, and no connection, resolver or
-  subprocess factory reached through any object. Ctrl+Z stops the process group,
+  two above, to the person's own Hermes home (the WebSocket goes to the URL
+  the gateway's grant names). INVARIANT 2 holds it to a closed allow list
+  measured from it (`HERMES_INTERPRETER_SCRIPTS`, which the owner approved as
+  asyncio and websockets only, loopback to the person's own gateway): the
+  imports it makes, Hermes' functions named one by one, the `asyncio` names it
+  uses, `websockets.asyncio.client.connect`, and a list of attribute and
+  reflection names it may not use. That blocks the realistic drift of a later
+  edit calling another Hermes, network or subprocess helper; it is not a
+  sandbox, and does not catch a deliberate private-attribute trick, an allowed
+  name called with other arguments, or where the WebSocket goes. Ctrl+Z stops the process group,
   the gateway child with it, as Hermes' own CLI's Ctrl+Z does, and fg continues
   both; a shared gateway, which is not in that group, goes on. Stopped for
   longer than the shared gateway waits on a send (30 s) while it streams a

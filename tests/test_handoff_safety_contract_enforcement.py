@@ -901,8 +901,12 @@ class HermesScriptPolicy:
 # Not core omh: scripts that run on Hermes' own interpreter, as a child the OMH TUI spawns by path, and that no
 # module in `src/` imports. The owner approved the one listed here (2026-10-23, PR #2249) as "asyncio + websockets
 # only, loopback to the user's own gateway": it reaches the gateway through the Hermes functions listed below and
-# dials one WebSocket with `websockets.asyncio.client.connect`; the asyncio it uses is an event loop and nothing that
-# opens a connection or a process. `_hermes_script_violations` holds it to exactly this list.
+# dials one WebSocket with `websockets.asyncio.client.connect`, to the URL the gateway's grant names; the asyncio it
+# uses is an event loop and nothing that opens a connection or a process. `_hermes_script_violations` holds it to
+# this closed allow list of imports, attributes and names, which blocks the realistic drift of a later edit calling
+# another Hermes, network or subprocess helper. It is not a sandbox: a deliberate private-attribute trick
+# (`loop._sock_connect`, `type(x)()`) or an allowed name called with other arguments is not caught, and the gate
+# does not check where the WebSocket goes.
 HERMES_INTERPRETER_SCRIPTS: dict[str, HermesScriptPolicy] = {
     "src/tui/attach/gateway_attach.py": HermesScriptPolicy(
         modules={
@@ -941,8 +945,8 @@ HERMES_INTERPRETER_SCRIPTS: dict[str, HermesScriptPolicy] = {
             "the OMH TUI's gateway child (AGENTS.md, the OMH TUI bullet). On a Hermes that has the shared-gateway "
             "attach API it does what Hermes' own Ink TUI does: Hermes' `ensure_gateway_runtime` finds the "
             "profile's gateway or starts one, Hermes' `connect_private` mints a session ticket over the home's "
-            "private control socket, and `websockets.asyncio.client.connect` dials the loopback WebSocket "
-            "`gateway_ws_target` names. It relays what the TUI sends and what the gateway sends back."
+            "private control socket, and `websockets.asyncio.client.connect` dials the WebSocket URL "
+            "`gateway_ws_target` builds from that grant. It relays what the TUI sends and what the gateway sends back."
         ),
     ),
 }
@@ -964,7 +968,11 @@ HERMES_SCRIPT_GETATTR_NAMES = frozenset({"getattr", "hasattr"})
 
 
 def _hermes_script_violations(tree: ast.Module, policy: HermesScriptPolicy) -> list[str]:
-    """Every way `tree` steps outside `policy`, one line each; [] when it stays inside it."""
+    """Every way `tree` steps outside `policy`'s allow list, one line each; [] when it stays inside it.
+
+    A static check of names, not a sandbox: what an allowed call is given, or a private attribute it reaches
+    by a route no list names, is beyond it.
+    """
     problems: list[str] = []
     parents = {id(child): node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
     module_names: set[str] = set()
