@@ -1002,33 +1002,29 @@ def _korean_clauses(folded: str) -> list[str]:
 
 
 # What a request may end with besides the work, read off before it is read: one confirmation tag that ends the message
-# ("…, ok?", "…, alright?"), and a report on the result, by its positive shapes only: "let me know", alone or with when
-# or once it is done or which ones did what ("…, and let me know", "…, and let me know once they're merged"), or tell,
-# ping, notify, message, show, send or report with the same, or with a result noun ("…, then ping me with the results",
-# "…, and send me the diff", "…, then tell me which ones conflicted"), or a bare report ("… and report back"). Any
+# ("…, ok?", "…, alright?"), and a report on the result, by its opening: tell, ping, notify, message, show or send me,
+# let me know, or report (back), alone or followed by which, what, any, the ones, those, each, all, every, when, once,
+# after or a result noun, and any words after that ("… and report any that fail", "… and let me know which ones break",
+# "…, and send me the ones that fail", "…, then ping me with the results", "…, and notify me when it's done"). Any
 # other "let me <verb>" is the person's own step ("…, and let me check with the team first"), and a tail that asks for
 # anything before the work or about whether to do it is no report ("…, then tell me why we shouldn't", "…, then tell me the risks first", "…, and tell me what
 # would break before you do"): both stay trailing clauses that keep nothing (`_trails_off`).
 _FINAL_CONFIRMATION_TAG: Final = re.compile(r"\s*,\s*(?:ok|okay|alright|right)\s*[?？]+\s*$")
 _DONE_CLAUSE: Final = (
-    r"(?:when|once|after)\s+(?:(?:it|they|you|that|this|everything|each(?:\s+one)?|all\s+of\s+them)"
-    r"(?:'s|'re|'ve|\s+is|\s+are|\s+has|\s+have)?\s+)?(?:been\s+|all\s+)?"
-    r"(?:done|finished|complete(?:d)?|merged|landed|green|through|ready|over|deployed|shipped|in)\b"
-)
-_RESULT_VERB: Final = (
-    r"(?:failed|fail|conflicted|conflict|changed|broke|broken|merged|passed|succeeded|flaked|flaky|landed|skipped"
-    r"|errored|timed\s+out|regressed|went\s+wrong|moved|updated|bumped|rebased|fixed|needed)"
+    r"(?:when|once|after)\s+(?:[a-z']+\s+){0,3}?(?:(?:is|are|has|have)\s+)?(?:been\s+|all\s+)?"
+    r"(?:done|finished|finishes|complete[ds]?|merged|lands?|landed|green|through|ready|over|deployed|shipped|in|passes"
+    r"|passed)\b"
 )
 _RESULT_NOUN: Final = (
     r"(?:results?|diffs?|links?|list|summary|summaries|counts?|report|status|outcome|changes|numbers?|output|logs?)"
 )
+_REPORT_OPENER: Final = r"(?:(?:tell|ping|notify|message|show|send)\s+me|let\s+me\s+know|report(?:\s+back)?)"
 _EN_REPORT_TAIL: Final = re.compile(
     r"(?:,\s*|\s+)(?:and\s+then|and|then)\s+(?:also\s+|just\s+|please\s+)*"
-    rf"(?:report(?:\s+back)?|let\s+me\s+know(?:\s+(?P<done>{_DONE_CLAUSE})|\s+(?:which|what)\b[^?]*?\b{_RESULT_VERB}\b[^?]*?)?"
-    r"|(?:(?:tell|ping|notify|message|show|send)\s+me|report(?:\s+back)?)\s+"
-    rf"(?:(?P<done_too>{_DONE_CLAUSE})|(?:which|what)\b[^?]*?\b{_RESULT_VERB}\b[^?]*?"
-    rf"|(?:with\s+)?(?:(?:the|a|an|all\s+the)\s+)?(?:[a-z][\w-]*\s+){{0,2}}?{_RESULT_NOUN}\b"
-    r"(?:\s+(?:of|for|from|on)\s+[^?]*?)?))"
+    rf"(?:let\s+me\s+know|report(?:\s+back)?|{_REPORT_OPENER}\s+"
+    rf"(?:(?P<done>{_DONE_CLAUSE})|(?:(?:about|on|with|of)\s+)?(?:when|once|after|which|what|any|anything|the\s+ones|those"
+    r"|each|all|every)\b"
+    rf"|(?:with\s+)?(?:(?:the|a|an|all\s+the)\s+)?(?:[a-z][\w-]*\s+){{0,2}}?{_RESULT_NOUN}\b)[^?]*?)"
     r"\s*[.!]*$"
 )
 _ASKS_BEFORE_THE_WORK: Final = re.compile(
@@ -1048,8 +1044,8 @@ def _closed(folded: str) -> tuple[str, str]:
     changes = _EN_CHANGE_ON_BREADTH.search(head) or _EN_PARTS_IN_PARALLEL.search(head)
     if not changes and not (_EN_SPLIT_REQUEST.search(head) and _EN_SPLIT_EVIDENCE.search(head)):
         return untagged, folded
-    done = "done" if tail.group("done") else "done_too" if tail.group("done_too") else ""
-    return head, (folded[: tail.start(done)] + folded[tail.end(done) :] if done else folded)
+    done = tail.span("done") if tail.group("done") else None
+    return head, (folded[: done[0]] + folded[done[1] :] if done else folded)
 
 
 def _reads_as_an_english_request(text: str) -> bool:
@@ -1140,10 +1136,29 @@ _DEFERRAL: Final = re.compile(
     r"(?<!\bby\s)\b(?:later|tomorrow|tonight|next\s+(?:week|month|sprint|quarter|year|time|monday|tuesday|wednesday"
     r"|thursday|friday|saturday|sunday)|on\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|the\s+weekend)"
     r"|this\s+weekend|over\s+the\s+weekend|eventually|some\s+other\s+time|another\s+time|at\s+some\s+point"
-    r"|after\s+the\s+freeze|some\s*day)\b"
+    r"|after\s+the\s+freeze|some\s*day|in\s+a\s+(?:bit|while)|later\s+on|down\s+the\s+line|when\s+i\s+get\s+a\s+chance)\b"
     r"|(?<![가-힣])(?:나중에|언젠가|(?:이번\s*)?주말에|내일|모레|다음\s*(?:주|달|번)(?:에)?|[월화수목금토일]요일에)"
     rf"(?!(?:\s*{_TIME_WORD})*\s*(?:까지|안에|중으로|중에|내로|이내))"
 )
+# A time inside a clause with a past verb of its own says when that happened, not when to work ("update every service
+# we deployed on monday", "지난 월요일에 배포한 서비스 전부 업데이트해줘", "월요일에 배포한 서비스 전부 …").
+_PAST_VERB: Final = re.compile(
+    r"(?:[a-z]+(?<!e)ed|broke|went|ran|did|made|built|wrote|sent|took|got|put|set|found|began|came|saw|left|lost|split"
+    r"|shipped)"
+)
+_KOREAN_PAST_AROUND: Final = re.compile(r"지난\s*$")
+_KOREAN_PAST_RELATIVE_AFTER: Final = re.compile(r"\s*\S*(?:한|했던|된|됐던|던)(?=\s|$)")
+
+
+def _says_a_deferral(folded: str) -> bool:
+    """Whether ``folded`` puts the work past now (`_DEFERRAL`), outside a clause with a past verb of its own."""
+    for match in _DEFERRAL.finditer(folded):
+        if any(_PAST_VERB.fullmatch(word) for word in folded[: match.start()].split()[-3:]):
+            continue
+        if _KOREAN_PAST_AROUND.search(folded[: match.start()]) or _KOREAN_PAST_RELATIVE_AFTER.match(folded[match.end() :]):
+            continue
+        return True
+    return False
 # - a completion said as a noun or a bare word ("브랜치들 다 정리됨", "upstream PR들 다 리뷰 반영 끝", "테스트 수정 완료"),
 #   not one that names the units ("완료된 이슈들 전부 닫아줘") or asks for it ("… 리베이스 완료해줘");
 _COMPLETED: Final = re.compile(
@@ -1328,7 +1343,7 @@ def _hard_excluded(folded: str, links: tuple[str, ...], request: str | None = No
         or _names_a_skill_as_the_instrument(folded)
         or _STOP_OR_HOLD.search(folded)
         or _CONDITION.search(folded)
-        or _DEFERRAL.search(folded)
+        or _says_a_deferral(folded)
         or _COMPLETED.search(folded)
         or _says_a_past(folded)
         or _ONE_SCOPE.search(folded)

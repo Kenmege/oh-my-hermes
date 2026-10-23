@@ -865,9 +865,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # reads clarify, as on main (2). A tail asking why not clarifies as on
             # main, and a deferral in English and in Korean, a colon list ending
             # in a hedge and a colon list of statuses clarify, where main
-            # dispatched dag-ulw (5).
+            # dispatched dag-ulw (5). A rebase of every PR in a bit clarifies,
+            # where main dispatched dag-ulw (1).
             # Three domain-science vocabulary controls (+3).
-            expected=1090,
+            expected=1091,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1357,7 +1358,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # final ok? and two report tails (clarifies on main) (3), a
             # per-unit spec with any noun and a colon list with any work verb
             # (dispatches on main) (2). A deadline by tonight and a send me the
-            # diff tail run as a graph, as on main (2).
+            # diff tail run as a graph, as on main (2). Two report tails by their
+            # opening and a time inside a past clause run as a graph, as on
+            # main (3).
             # Three unnamed domain-science interventions (+3).
             # #2221 L3: every STATUS_IS_THE_WORK member gets a status request
             # after its sigil that runs it; the seven without one before
@@ -1366,7 +1369,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # harness-session-inventory, skill-health, run-efficiency) (+7).
             # #2221 L4: doctor joins the set, since the status card shows no
             # install drift, and /omh-doctor status runs doctor (+1).
-            expected=1105,
+            expected=1108,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

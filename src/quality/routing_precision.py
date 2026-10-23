@@ -7943,6 +7943,14 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "dag-ulw",
     ),
     RoutingPrecisionCase(
+        "english-deferral-in-a-bit-is-not-a-graph-run",
+        "A rebase of every PR in a bit is no work now: no graph run, where main dispatched one",
+        "rebase all open PRs in a bit",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
         "english-report-tail-asking-why-is-not-a-graph-run",
         "A rebase of every PR, then a question why not, asks before the work: no graph run, as on main",
         "rebase all open PRs, then tell me why we shouldn't",
@@ -18112,6 +18120,24 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "korean-urgency-with-an-intensifier-runs-as-a-graph",
         "An urgency with an intensifier after a rebase of every PR is a keeper by shape: a dag-ulw graph",
         "PR들 전부 리베이스해줘, 최대한 빨리",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "english-report-any-that-fail-runs-as-a-graph",
+        "An update of every service, then a report on any that fail: a dag-ulw graph, as on main",
+        "update every service to node 22 and report any that fail",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "english-let-me-know-which-ones-break-runs-as-a-graph",
+        "A bump of every package, then let me know which ones break: a dag-ulw graph, as on main",
+        "bump every package and let me know which ones break",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "english-time-in-a-past-clause-runs-as-a-graph",
+        "A time inside a past relative clause says when they were deployed, not when to work: a dag-ulw graph, as on main",
+        "update every service we deployed on monday",
         "dispatch", "dag-ulw", "start_dag_run", "dag_run",
     ),
     RoutingInterventionCase(
