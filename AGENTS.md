@@ -349,10 +349,19 @@ PR without the chat history.
   asyncio and websockets only, loopback to the person's own gateway): the
   imports it makes, Hermes' functions named one by one, the `asyncio` names it
   uses, `websockets.asyncio.client.connect`, and a list of attribute and
-  reflection names it may not use. That blocks the realistic drift of a later
+  reflection names it may not use. The script builds exactly one `AttachApi`,
+  in `attach_api()`, with that function's own nested `grant`; `connect` goes
+  only into its `dial` slot; `dial` is called only on an object traced, by
+  name, to `attach_api()`'s result, with the url `grant()` returned on that
+  same object, and always with the literal `proxy=None`; no `_`-prefixed
+  attribute is read except on `self` inside a method of a class it defines,
+  and `self` is bound nowhere else; `type` is not used outside annotations;
+  and `os.environ` changes only as the `TERMINAL_CWD` set-and-restore and the
+  removal of `LAUNCH_POLICY_ENV`, whose one module-level assignment is pinned
+  to its literal tuple. That blocks the realistic drift of a later
   edit calling another Hermes, network or subprocess helper; it is not a
-  sandbox, and does not catch a deliberate private-attribute trick, an allowed
-  name called with other arguments, or where the WebSocket goes. Ctrl+Z stops the process group,
+  sandbox, and does not catch an allowed Hermes function called with other
+  arguments, or check where the grant's url points. Ctrl+Z stops the process group,
   the gateway child with it, as Hermes' own CLI's Ctrl+Z does, and fg continues
   both; a shared gateway, which is not in that group, goes on. Stopped for
   longer than the shared gateway waits on a send (30 s) while it streams a

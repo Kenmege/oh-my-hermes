@@ -126,6 +126,11 @@ OPEN_TIMEOUT_SECONDS = 10
 DRAIN_SECONDS = 1.5
 
 
+def _whole(value: object) -> bool:
+    """An int that is not a bool, as a JSON integer arrives."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _truthy(value: str | None) -> bool:
     return (value or "").strip().lower() in TRUTHY
 
@@ -536,7 +541,7 @@ class Adapter:
 
     def _steer(self, request_id: object, params: dict[str, Any]) -> list[Action]:
         state = self._state(params)
-        if state is None or type(state.generation) is not int:
+        if state is None or not _whole(state.generation):
             return [_reply(request_id, {"status": "rejected"})]  # no turn known to steer: the TUI queues the text
         params["execution_generation"] = state.generation
         return [self._forward(request_id, "session.steer", params, translated=False)]
@@ -561,7 +566,7 @@ class Adapter:
                 for row in (result.get("sessions") or []) if isinstance(result, dict) else []:
                     if isinstance(row, dict) and row.get("id") not in seen:
                         rows.append(row)
-                kept = rows[:limit] if type(limit) is int and limit > 0 else rows
+                kept = rows[:limit] if _whole(limit) and limit > 0 else rows
                 return [_reply(request_id, {"sessions": kept})]
 
             return [self._call("session.list", {**params, "scope": "stored"}, on_stored)]
@@ -726,9 +731,9 @@ class Adapter:
         state = self.sessions.setdefault(session_id, _Session())
         if isinstance(result.get("subscription_id"), str):
             state.subscription_id = result["subscription_id"]
-        if snapshot and type(result.get("execution_generation")) is int:
+        if snapshot and _whole(result.get("execution_generation")):
             state.generation = result["execution_generation"]
-        if snapshot and type(result.get("authority_epoch")) is int:
+        if snapshot and _whole(result.get("authority_epoch")):
             state.epoch = result["authority_epoch"]
         info = result.get("info")
         if isinstance(info, dict) and isinstance(info.get("cwd"), str) and info["cwd"]:
@@ -746,7 +751,7 @@ class Adapter:
 
     def _note_generation(self, session_id: object, generation: object) -> None:
         state = self.sessions.get(session_id) if isinstance(session_id, str) else None
-        if state is not None and type(generation) is int and (type(state.generation) is not int or generation > state.generation):
+        if state is not None and _whole(generation) and (not _whole(state.generation) or generation > state.generation):
             state.generation = generation
 
     def _stale(self, session_id: object, kind: object, params: Mapping[str, Any], payload: Mapping[str, Any]) -> bool:
@@ -765,9 +770,9 @@ class Adapter:
         epoch = params.get("authority_epoch", payload.get("authority_epoch"))
         if state is None:
             return False
-        if type(epoch) is int and type(state.epoch) is int and epoch != state.epoch:
+        if _whole(epoch) and _whole(state.epoch) and epoch != state.epoch:
             return True
-        return type(generation) is int and type(state.generation) is int and generation < state.generation
+        return _whole(generation) and _whole(state.generation) and generation < state.generation
 
     def _state(self, params: Mapping[str, Any]) -> _Session | None:
         session_id = params.get("session_id")
@@ -1018,7 +1023,8 @@ def main() -> int:
     if api is None:
         return run_stdio_entry()
     try:
-        options, tool_progress = launch_options(os.environ), launch_tool_progress(os.environ)
+        launch = dict(os.environ)  # a copy: what reads it cannot change this process's environment
+        options, tool_progress = launch_options(launch), launch_tool_progress(launch)
     except ValueError as error:
         _say(str(error))
         return 1
