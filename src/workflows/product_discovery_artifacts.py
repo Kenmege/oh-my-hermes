@@ -5,10 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from datetime import datetime
 from typing import Any, Final
 
 from ..system.append_only_store import RAW_OR_HIDDEN_KEYS, opaque_ref
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 DISCOVERY_DECISION_FRAME_SCHEMA_VERSION: Final = "discovery_decision_frame/v1"
@@ -91,7 +91,7 @@ def _stamp(value: str, field: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{field} must be a string")
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise ValueError(f"{field} must be an ISO-8601 timestamp") from exc
     if parsed.tzinfo is None:

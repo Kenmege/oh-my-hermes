@@ -7,8 +7,9 @@ clock. This adapter retains source-finder vocabulary without replacing its
 source_candidate contract; temporal receipts belong to coverage assessment.
 """
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import timezone
 import math
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 def _text(maximum=2048, empty=False):
@@ -194,7 +195,7 @@ def _timestamp(value, path, errors):
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     try:
-        stamp = datetime.fromisoformat(text)
+        stamp = strict_fromisoformat(text)
         if stamp.tzinfo is None:
             stamp = stamp.replace(tzinfo=timezone.utc)
         return stamp.astimezone(timezone.utc)

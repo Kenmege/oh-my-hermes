@@ -7,6 +7,7 @@ from typing import Final
 
 from ..system.local_store import read_json_object_result, utc_now
 from ..system.paths import OmhPaths
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 EXECUTOR_AUTH_SIGNALS_SCHEMA_VERSION: Final[str] = "executor_auth_signals/v1"
 
@@ -123,7 +124,7 @@ def _age_seconds(observed_at: str) -> int | None:
     if not observed_at:
         return None
     try:
-        observed = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+        observed = strict_fromisoformat(observed_at.replace("Z", "+00:00"))
     except ValueError:
         return None
     return max(0, int((datetime.now(timezone.utc) - observed).total_seconds()))

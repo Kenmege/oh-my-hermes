@@ -8,6 +8,7 @@ from typing import Callable, Final, TypeAlias
 from ..skills.catalog import routable_skill_names
 from ..skills.catalog_types import omh_skill_display_name
 from ..system.metadata_safety import is_sensitive_metadata_text
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
@@ -170,7 +171,7 @@ def _parsed_timestamp(value: JsonValue | None) -> datetime | None:
     if not isinstance(value, str) or not value.strip():
         return None
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else None

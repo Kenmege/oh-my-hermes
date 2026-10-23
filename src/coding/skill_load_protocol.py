@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 from typing import Final, cast
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 SKILL_LOAD_OBSERVATION_SCHEMA_VERSION: Final = "skill_load_observation/v1"
 HERMES_SKILL_INVENTORY_SCHEMA_VERSION: Final = "hermes_skill_inventory/v1"
@@ -222,7 +223,7 @@ def set_digest(values: Sequence[str]) -> str:
 def parse_time(value: object) -> datetime:
     if not isinstance(value, str) or not value.endswith("Z"):
         raise ValueError("timestamp must be UTC")
-    parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    parsed = strict_fromisoformat(value[:-1] + "+00:00")
     if parsed.tzinfo is None:
         raise ValueError("timestamp must have timezone")
     return parsed.astimezone(timezone.utc)

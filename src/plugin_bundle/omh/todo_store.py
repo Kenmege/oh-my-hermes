@@ -41,6 +41,7 @@ from .todo_templates import (
     template_items,
     template_phase_labels,
 )
+from .iso_datetime import strict_fromisoformat
 
 TODO_SCHEMA_VERSION = "omh_todo/v1"
 TODO_FILENAME = "todo.json"
@@ -329,7 +330,7 @@ def _validated_stamp(value: object, state: str, name: str) -> str:
         raise TodoValidationError(f"todo item {name} must be a timestamp string")
     safe = strip_control_characters(value)
     try:
-        datetime.fromisoformat(safe.replace("Z", "+00:00"))
+        strict_fromisoformat(safe.replace("Z", "+00:00"))
     except ValueError as error:
         raise TodoValidationError(f"todo item {name} must be an ISO timestamp") from error
     if len(safe) > MAX_TODO_STAMP_CHARS:
@@ -494,7 +495,7 @@ def _stamp_epoch(value: object) -> float | None:
     if not isinstance(value, str) or not value:
         return None
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
     return (parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)).timestamp()

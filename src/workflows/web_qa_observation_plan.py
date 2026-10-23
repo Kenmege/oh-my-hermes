@@ -23,6 +23,7 @@ import math
 import re
 from typing import Final, NoReturn, TypeGuard
 from urllib.parse import urlsplit, urlunsplit
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 WEB_QA_OBSERVATION_PLAN_SCHEMA_VERSION: Final = "web_qa_observation_plan/v1"
 REQUIRED_CHANNELS: Final = (
@@ -807,7 +808,7 @@ def _utc_timestamp(value: object, field: str) -> str:
     if not isinstance(value, str):
         _fail(f"{field} must be a UTC timestamp")
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         _fail(f"{field} must be a UTC timestamp")
     if parsed.tzinfo is None:

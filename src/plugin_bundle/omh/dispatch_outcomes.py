@@ -25,6 +25,7 @@ import re
 import stat
 from pathlib import Path
 from typing import Any
+from .iso_datetime import strict_fromisoformat
 
 try:  # The shared unit vocabulary, whenever the OMH package is importable.
     from omh.coding.unit_execution_state import (
@@ -262,7 +263,7 @@ def _parse_timestamp(value: Any) -> datetime | None:
     if not text:
         return None
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

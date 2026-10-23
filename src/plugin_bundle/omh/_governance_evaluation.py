@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from ._governance_safety import evaluate_renderable_strings
 from ._governance_overrides import validate_stale_override
+from .iso_datetime import strict_fromisoformat
 
 
 def stable_artifact_identity(artifact: dict[str, object]) -> dict[str, object]:
@@ -221,7 +222,7 @@ def evaluate_memory_replay(
         if expires_at_str:
             try:
                 expires_str = str(expires_at_str).replace("Z", "+00:00")
-                expires_at = datetime.fromisoformat(expires_str)
+                expires_at = strict_fromisoformat(expires_str)
                 
                 if now_utc >= expires_at:
                     retention_class = retention.get("class", "standard")
@@ -247,7 +248,7 @@ def evaluate_memory_replay(
     open_ceiling_str = staleness.get("open_expires_at") if resolution_open else None
     if open_ceiling_str:
         try:
-            open_ceiling = datetime.fromisoformat(str(open_ceiling_str).replace("Z", "+00:00"))
+            open_ceiling = strict_fromisoformat(str(open_ceiling_str).replace("Z", "+00:00"))
             if open_ceiling.tzinfo is None:
                 open_ceiling = open_ceiling.replace(tzinfo=timezone.utc)
             if now_utc >= open_ceiling:
@@ -274,7 +275,7 @@ def evaluate_memory_replay(
         if reval_deadline_str:
             try:
                 reval_str = str(reval_deadline_str).replace("Z", "+00:00")
-                reval_deadline = datetime.fromisoformat(reval_str)
+                reval_deadline = strict_fromisoformat(reval_str)
 
                 if now_utc >= reval_deadline and not resolution_open:
                     if stale_override:

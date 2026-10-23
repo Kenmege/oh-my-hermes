@@ -22,6 +22,7 @@ from .memory_store import (
     ensure_memory_directory,
     run_memory_operation,
 )
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 BATCH_CANDIDATE_SCHEMA_VERSION, BATCH_REVIEW_SCHEMA_VERSION, BATCH_RECEIPT_SCHEMA_VERSION = "memory_update_batch_candidate/v1", "memory_update_batch_review/v1", "memory_update_batch_receipt/v1"
 _LEGACY_BATCH_SCHEMA_VERSION, _OPS, _DECISIONS = "memory_update_batch/v1", frozenset({"keep", "forget", "update", "change_scope", "dismiss_conflict"}), frozenset({"remember", "refuse", "defer"})
@@ -966,4 +967,4 @@ def _stamp(value: datetime) -> str:
 
 
 def _parse_time(value: str) -> datetime:
-    return _utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
+    return _utc(strict_fromisoformat(value.replace("Z", "+00:00")))

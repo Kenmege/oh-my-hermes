@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
@@ -10,6 +9,7 @@ import re
 from ..local_store import atomic_write_json, ensure_dir
 from ..paths import OmhPaths
 from ..system.metadata_safety import require_opaque_metadata_ref
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 PROVIDER_PROFILE_POSTURE_INPUT_SCHEMA_VERSION = "provider_profile_posture_input/v1"
@@ -150,7 +150,7 @@ def _host_observations(raw: object) -> tuple[HostObservation, ...]:
         if not isinstance(observed_at, str) or not observed_at.endswith("Z"):
             raise ValueError("host observation observed_at must be an ISO-8601 UTC timestamp")
         try:
-            datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+            strict_fromisoformat(observed_at.replace("Z", "+00:00"))
         except ValueError as exc:
             raise ValueError("host observation observed_at must be an ISO-8601 UTC timestamp") from exc
         observations.append(HostObservation(kind, reference, observed_at))

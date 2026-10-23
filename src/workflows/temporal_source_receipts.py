@@ -45,6 +45,7 @@ from datetime import datetime, time, timezone
 from typing import Any
 
 from ..system.metadata_safety import is_sensitive_metadata_text, require_opaque_metadata_ref
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 TEMPORAL_SOURCE_RECEIPT_SCHEMA_VERSION = "temporal_source_receipt/v1"
@@ -607,7 +608,7 @@ def _parse_stamp(value: Any) -> datetime | None:
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     try:
-        parsed = datetime.fromisoformat(text)
+        parsed = strict_fromisoformat(text)
     except ValueError:
         return None
     if parsed.tzinfo is None:

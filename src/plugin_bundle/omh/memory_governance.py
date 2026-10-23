@@ -10,6 +10,7 @@ import hashlib
 import json
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
+from .iso_datetime import strict_fromisoformat
 
 __all__ = [
     "PROJECT_MEMORY_RECORD_SCHEMA_VERSION",
@@ -300,7 +301,7 @@ def _parse_deadline(raw: object) -> tuple[datetime | None, str]:
     if not text:
         return None, DEADLINE_ABSENT
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(text.replace("Z", "+00:00"))
     except (ValueError, TypeError):
         return None, DEADLINE_UNREADABLE
     if parsed.tzinfo is None:

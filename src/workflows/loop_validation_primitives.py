@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from datetime import datetime
 from typing import Final
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 MAX_METADATA_TEXT: Final = 320
@@ -97,7 +97,7 @@ def is_utc_rfc3339(value: object) -> bool:
     if not isinstance(value, str) or _UTC_RFC3339.fullmatch(value) is None:
         return False
     try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return False
     return True

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
 from pathlib import Path
 import re
 from typing import Final, TypeAlias
@@ -13,6 +12,7 @@ from .executor_local_workflow_selection import (
     is_workflow,
     observation_time_relation,
 )
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 EXECUTOR_CAPABILITY_SNAPSHOT_SCHEMA_VERSION: Final = "executor_capability_snapshot/v3"
@@ -438,7 +438,7 @@ def _is_timestamp(value: JsonValue | None) -> bool:
     if not isinstance(value, str) or not value.strip():
         return False
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return False
     return parsed.tzinfo is not None

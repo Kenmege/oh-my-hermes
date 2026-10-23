@@ -42,7 +42,7 @@ posts a comment, resets an executor, or touches the session.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import timezone
 import contextlib
 import hashlib
 import json
@@ -63,6 +63,7 @@ from .agent_debug_report import (
     agent_debug_reference_errors,
     agent_debug_report_errors,
 )
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 AGENT_FAILURE_CAPTURE_SCHEMA_VERSION = "agent_failure_capture/v1"
@@ -1037,7 +1038,7 @@ def _epoch(value: Any) -> float | None:
     if not isinstance(value, str) or not value.strip():
         return None
     try:
-        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.strip().replace("Z", "+00:00"))
     except ValueError:
         return None
     if parsed.tzinfo is None:

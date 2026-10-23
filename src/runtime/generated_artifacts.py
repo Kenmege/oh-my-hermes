@@ -93,6 +93,7 @@ from ..system.local_store import read_json_object_result
 from ..system.paths import OmhPaths, project_artifact_dir
 from ..workflows.hermes_planning import read_hermes_plan_artifact
 from ..workflows.operations import SURFACES as OPERATION_SURFACES
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 GENERATED_ARTIFACT_SCHEMA_VERSION = "generated_artifact/v1"
@@ -916,7 +917,7 @@ def _parse_stamp(value: str) -> datetime | None:
     if not text:
         return None
     try:
-        return _as_utc(datetime.fromisoformat(text.replace("Z", "+00:00")))
+        return _as_utc(strict_fromisoformat(text.replace("Z", "+00:00")))
     except ValueError:
         pass
     for pattern in ("%Y-%m-%dT%H%M%S%fZ", "%Y%m%dT%H%M%S%fZ", "%Y%m%dT%H%M%SZ"):

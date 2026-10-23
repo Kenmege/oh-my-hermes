@@ -95,6 +95,7 @@ from .hermes_ops import (
     build_scheduled_ops_blueprint,
     nested_status_boundary_errors,
 )
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 RECURRING_INTENT_SCHEMA_VERSION = "hermes_recurring_intent/v1"
@@ -1763,7 +1764,7 @@ def _stamp(value: datetime | str | None) -> str:
         value = datetime.now(timezone.utc)
     if isinstance(value, str):
         try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return _slugify(value)[:32] or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         return _stamp(parsed)

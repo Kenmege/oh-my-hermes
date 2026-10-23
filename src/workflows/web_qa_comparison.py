@@ -15,6 +15,7 @@ import re
 from typing import Final, NoReturn
 
 from .web_qa_observation import WebQaObservationError, build_web_qa_observation
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 WEB_QA_COMPARISON_SCHEMA_VERSION: Final = "web_qa_comparison/v1"
 HOST_DEPLOYMENT_OBSERVATION_SCHEMA_VERSION: Final = "host_deployment_observation/v1"
@@ -491,7 +492,7 @@ def _time(value: object) -> datetime:
     if not isinstance(value, str):
         _fail("timestamp must be UTC")
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise WebQaComparisonError("timestamp must be UTC") from exc
     if parsed.tzinfo is None:

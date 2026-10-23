@@ -40,6 +40,7 @@ from .product_discovery_artifacts import (
     missing_audience_evidence_refs,
 )
 from .product_discovery_artifact_validation import validate_product_discovery_artifact
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 PRODUCT_DISCOVERY_STORE_NAME: Final = "product_discovery_artifacts.jsonl"
@@ -470,7 +471,7 @@ def read_product_discovery_artifacts(paths: OmhPaths, *, discovery_id: str) -> l
 
 
 def _time(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return strict_fromisoformat(value.replace("Z", "+00:00"))
 
 
 def _stamp(value: str, field: str) -> None:

@@ -20,6 +20,7 @@ from .memory_governance import (
     contains_credential_like_material,
     stable_artifact_identity,
 )
+from .iso_datetime import strict_fromisoformat
 
 PROJECT_MEMORY_RECALL_PACK_SCHEMA_VERSION = "project_memory_recall_pack/v1"
 
@@ -675,7 +676,7 @@ def _normalize_evaluator_timestamps(artifact: dict[str, Any]) -> dict[str, Any]:
 
 def _parse_utc_naive_as_utc(value: str) -> datetime | None:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
     if parsed.tzinfo is None:
@@ -1552,7 +1553,7 @@ def _parse_utc(value: str) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+        return strict_fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
     except ValueError:
         return None
 

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
 from decimal import Decimal
 import hashlib
 import json
@@ -12,6 +11,7 @@ from typing import Final, TypeGuard
 from .lifecycle_growth_artifacts import validate_experiment
 from .lifecycle_growth_launch import build_launch_audience_review
 from .lifecycle_growth_values import artifact_shape_errors, metadata_ref
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 CANONICAL_SCHEMA: Final = "lifecycle_assignment_configuration/v1"
 CONFIGURATION_BOUNDARY: Final = (
@@ -83,7 +83,7 @@ def timestamp(value: object) -> str:
     if not isinstance(value, str) or re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z", value) is None:
         raise ConfigurationInputError("configuration_timestamp_invalid")
     try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise ConfigurationInputError("configuration_timestamp_invalid") from exc
     return value

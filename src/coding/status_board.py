@@ -72,6 +72,7 @@ from .routing_observation import (
 from ..catalogs.briefing_vocabulary import status_board_copy
 from ..system.display_width import display_width, pad_to_width
 from ..catalogs.model_vendor_glyphs import vendor_glyph
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 CODING_STATUS_BOARD_SCHEMA_VERSION: Final[str] = "omh_coding_status_board/v1"
 
@@ -892,7 +893,7 @@ def _parse_timestamp(value: str) -> datetime | None:
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     try:
-        parsed = datetime.fromisoformat(text)
+        parsed = strict_fromisoformat(text)
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else None

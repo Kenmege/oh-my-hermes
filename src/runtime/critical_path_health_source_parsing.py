@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import timezone
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 ObjectMapping = Mapping[str, object]
@@ -39,7 +40,7 @@ def string_values(value: object) -> list[str] | None:
 def timestamp_ms(value: object) -> int | None:
     """Convert one timezone-aware ISO-8601 observation timestamp to milliseconds."""
     try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
     if parsed.tzinfo is None:

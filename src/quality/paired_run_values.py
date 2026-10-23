@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import hashlib
 import json
 import re
 from typing import Final, Protocol, Sequence
 
 from ..system.metadata_safety import require_opaque_metadata_ref
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 _UTC_Z: Final = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
 _DIGEST: Final = re.compile(r"^[0-9a-f]{64}$")
@@ -70,7 +70,7 @@ def is_utc_z(value: str | None) -> bool:
     if value is None or _UTC_Z.fullmatch(value) is None:
         return False
     try:
-        datetime.fromisoformat(value.removesuffix("Z") + "+00:00")
+        strict_fromisoformat(value.removesuffix("Z") + "+00:00")
     except ValueError:
         return False
     return True

@@ -12,6 +12,7 @@ from typing import Final, NoReturn
 from urllib.parse import urlsplit
 
 from .web_qa_observation_plan import REQUIRED_CHANNELS, WebQaObservationPlanError, parse_normalized_web_qa_observation_plan
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 WEB_QA_OBSERVATION_SCHEMA_VERSION: Final = "web_qa_observation_run/v1"
 HOST_RECEIPT_SCHEMA_VERSION: Final = "host_web_qa_adapter_receipt/v1"
@@ -576,7 +577,7 @@ def _utc(value: object, field: str) -> str:
     if not isinstance(value, str):
         _fail(f"{field} must be UTC")
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         _fail(f"{field} must be UTC")
     if parsed.tzinfo is None:

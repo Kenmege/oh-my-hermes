@@ -5,6 +5,7 @@ from hashlib import sha256
 from typing import Mapping
 
 from ..catalogs.specialists import SpecialistDefinition, recommend_specialist, specialist_for_skill
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 SPECIALIST_WORK_QUALITY_SCHEMA_VERSION = "specialist_work_quality/v1"
@@ -238,7 +239,7 @@ def _parse_timestamp(value: str) -> datetime | None:
     if not value:
         return None
     try:
-        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        timestamp = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
     return timestamp.replace(tzinfo=timezone.utc) if timestamp.tzinfo is None else timestamp.astimezone(timezone.utc)

@@ -6,6 +6,7 @@ from typing import Any, Final
 from ..paths import OmhPaths
 from ..runtime.artifacts import list_wrapper_session_records, summarize_delegated_coding_status
 from .goal_ledger import build_goal_completion_gate, read_goal_ledger
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 GOAL_JOURNEY_SCHEMA_VERSION = "goal_journey/v1"
@@ -403,7 +404,7 @@ def _parse_time(value: str) -> datetime | None:
     if not value:
         return None
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
     return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)

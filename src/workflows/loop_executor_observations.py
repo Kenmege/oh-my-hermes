@@ -10,6 +10,7 @@ from typing import Final, TypedDict
 
 from ..coding.executor_capability_snapshots import JsonValue
 from ..system.metadata_safety import is_sensitive_metadata_text
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 OBSERVATION_SCHEMA: Final = "loop_executor_goal_observation/v1"
 MAX_OBSERVATIONS: Final = 128
@@ -73,7 +74,7 @@ def observed_time(value: JsonValue) -> datetime:
     if not isinstance(value, str) or len(value) > 40:
         raise LoopDriverError("driver_invalid_observed_at")
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise LoopDriverError("driver_invalid_observed_at") from exc
     if parsed.tzinfo is None:

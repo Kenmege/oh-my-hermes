@@ -17,6 +17,7 @@ from ..targets import read_target_registry_result
 from .hermes_model_settings import HERMES_AUX_ALIASES, read_hermes_model_settings
 from .hermes_processes import HERMES_PROCESS_SCHEMA_VERSION, observe_hermes_processes
 from .hermes_sessions import hermes_state_watch_paths, observe_hermes_sessions
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 MENUBAR_STATUS_SCHEMA_VERSION = "menubar_status/v2"
@@ -872,7 +873,7 @@ def _parse_datetime(value: str) -> datetime | None:
         return None
     normalized = value.replace("Z", "+00:00")
     try:
-        parsed = datetime.fromisoformat(normalized)
+        parsed = strict_fromisoformat(normalized)
     except ValueError:
         return None
     if parsed.tzinfo is None:

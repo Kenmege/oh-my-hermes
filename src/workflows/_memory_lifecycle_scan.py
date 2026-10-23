@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..plugin_bundle.omh.memory_governance import contains_credential_like_material
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$")
 
@@ -35,7 +36,7 @@ def stamp(value: datetime) -> str:
 
 def parse_time(value: object) -> datetime | None:
     try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
     return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)

@@ -55,6 +55,7 @@ from ..system.append_only_store import (
 from ..system.local_store import file_lock, read_jsonl_objects, utc_now
 from ..system.metadata_safety import is_sensitive_metadata_text
 from ..system.paths import OmhPaths
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 SESSION_ACTIVITY_RECEIPT_SCHEMA_VERSION = "session_activity_receipt/v1"
@@ -541,7 +542,7 @@ def parse_utc_stamp(value: Any) -> datetime | None:
     if not text.endswith("Z"):
         return None
     try:
-        parsed = datetime.fromisoformat(text[:-1] + "+00:00")
+        parsed = strict_fromisoformat(text[:-1] + "+00:00")
     except ValueError:
         return None
     return parsed.astimezone(timezone.utc)

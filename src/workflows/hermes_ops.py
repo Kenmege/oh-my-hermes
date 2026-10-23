@@ -10,6 +10,7 @@ from ..local_store import atomic_write_json, ensure_dir, read_json_object, read_
 from ..paths import OmhPaths
 from ..plugin_bundle.omh.native_tools import NATIVE_CRON_TOOL
 from ..skills.catalog import installable_skill_definitions, omh_skill_display_name
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 # Hermes ships its own "Automation Blueprints": a skill whose frontmatter
@@ -832,7 +833,7 @@ def _stamp(value: datetime | str | None) -> str:
         value = datetime.now(timezone.utc)
     if isinstance(value, str):
         try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return _slugify(value)[:32] or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         return _stamp(parsed)

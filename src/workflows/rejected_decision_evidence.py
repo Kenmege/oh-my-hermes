@@ -16,6 +16,7 @@ from ..plugin_bundle.omh.memory_governance import (
     canonical_payload_digest,
 )
 from ..system.metadata_safety import is_sensitive_metadata_text, redact_metadata_text
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 ALLOWED_SCOPE_KINDS = frozenset({"project", "target", "thread", "run"})
@@ -218,7 +219,7 @@ def safe_string(value: object) -> str:
 
 def _timestamp(value: str) -> datetime | None:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
     return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)

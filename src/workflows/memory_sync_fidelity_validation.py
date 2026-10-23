@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 import re
 from typing import TypeGuard
 
 from ..system.metadata_safety import require_opaque_metadata_ref
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 # Unknown means unstated; not_observed means a claim lacks an observation.
@@ -86,7 +86,7 @@ def observed_at(value: object) -> str:
     if not isinstance(value, str) or not value.endswith("Z"):
         raise ValueError("observed trial observed_at must be an ISO-8601 UTC timestamp")
     try:
-        _ = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        _ = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise ValueError("observed trial observed_at must be an ISO-8601 UTC timestamp") from exc
     return value

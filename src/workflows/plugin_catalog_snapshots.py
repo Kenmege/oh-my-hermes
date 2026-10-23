@@ -53,6 +53,7 @@ from ..system.metadata_safety import (
     is_secret_value_shaped,
     is_sensitive_metadata_text,
 )
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 PLUGIN_CATALOG_SNAPSHOT_SCHEMA_VERSION: Final = "plugin_catalog_snapshot/v1"
@@ -399,7 +400,7 @@ def _parse_stamp(value: object) -> datetime | None:
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     try:
-        parsed = datetime.fromisoformat(text)
+        parsed = strict_fromisoformat(text)
     except ValueError:
         return None
     if parsed.tzinfo is None:

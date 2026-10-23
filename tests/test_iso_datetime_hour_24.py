@@ -1,0 +1,435 @@
+"""Hour 24 is refused at every timestamp site on every supported Python.
+
+CPython 3.14 reads ``T24:00:00`` as the next day's midnight; 3.11 to 3.13
+raise. #2261 found a toolkit script that relied on the refusal; the audit after
+it routed every site whose text can arrive from outside OMH's own clock through
+``omh.plugin_bundle.omh.iso_datetime.strict_fromisoformat``.
+
+Three layers:
+
+* the helper itself, on the real interpreter and under the 3.14 reading;
+* one case per routed site (``SITES``), run under both readings by
+  ``_hour_24.assert_hour_24_refused`` so CI's 3.11/3.13 lanes reach the 3.14
+  path, with a control proving each site's result depends on the refusal;
+* a gate that re-derives every ``fromisoformat`` call in ``src/`` from source.
+  A call is either routed through the guard and has its case here, or is a
+  ``date.fromisoformat`` (unchanged in 3.14), or carries a recorded reason in
+  ``UNGUARDED``. A new raw call fails until it takes one of those three.
+"""
+
+from __future__ import annotations
+
+import ast
+import importlib
+import json
+import runpy
+import unittest
+from collections import Counter
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+from unittest import mock
+
+from _hour_24 import HOUR_24, Lenient, Strict, assert_hour_24_refused
+from _local_package import load_local_package
+
+load_local_package()
+from omh.plugin_bundle.omh import memory_governance as governance  # noqa: E402
+from omh.plugin_bundle.omh.iso_datetime import strict_fromisoformat  # noqa: E402
+from test_memory_governance_admission import _approved_artifact, _evaluate, _iso  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE = ROOT / "src"
+RECONCILE = SOURCE / "skills/biomedical_evidence_toolkit/scripts/reconcile.py"
+UTC = timezone.utc
+NOON = datetime(2020, 1, 1, 12, tzinfo=UTC)
+NEXT_MIDNIGHT = datetime(2020, 1, 2, tzinfo=UTC)
+
+# The one definition of the guard per package boundary: the bundle module the
+# `omh` package also imports, and the standalone toolkit script's own copy.
+GUARD_DEFINITIONS = {
+    ("src/plugin_bundle/omh/iso_datetime.py", "strict_fromisoformat"),
+    ("src/skills/biomedical_evidence_toolkit/scripts/reconcile.py", "strict_fromisoformat"),
+}
+
+# Raw `datetime.fromisoformat` calls the audit left in place, and why.
+UNGUARDED = {
+    ("src/coding/hermes_child_receipts.py", "load_hermes_child_receipt"):
+        "re-reads observed_at only after validate_routing_observation (guarded) accepted it",
+    ("src/maintenance/doctor.py", "_awareness_delivery_check"):
+        "first_attempted_at is the hook's own strftime clock (llm_hooks record_awareness_delivery)",
+    ("src/maintenance/hermes_gateway.py", "_installed_at_epoch"):
+        "installed_at is written by the installer's utc_now()",
+    ("src/maintenance/update_check_recovery.py", "evaluate_update_check"):
+        "parses now.isoformat() built two lines above",
+    ("src/maintenance/update_check_state.py", "interval_elapsed"):
+        "last_checked_at is only ever written from evaluate_update_check's now_iso",
+    ("src/plugin_bundle/omh/completion_store.py", "_checkpoint"):
+        "todo updated_at is stamped by todo_store on every write, never taken from input",
+    ("src/plugin_bundle/omh/egress_attempt_receipts.py", "AttemptStore._validate_row"):
+        "re-validates rows the store wrote itself with _utc_now()",
+    ("src/plugin_bundle/omh/memory_session_lens.py", "_published_before"):
+        "published_at is stamped by memory_provider's _utc_now()",
+    ("src/plugin_bundle/omh/native_todo.py", "_held_by_omh_todo"):
+        "todo updated_at is stamped by todo_store on every write, never taken from input",
+    ("src/plugin_bundle/omh/project_identity.py", "_explicit"):
+        "created_at is written once by _create from datetime.now().isoformat()",
+    ("src/plugin_bundle/omh/work_resume.py", "_timestamp"):
+        "reads only todo updated_at, stamped by todo_store on every write",
+    ("src/skills/ai_job_search_toolkit/scripts/job_state.py", "timestamp"):
+        "guarded in place by the exact round trip #2261 added",
+    ("src/workflows/lifecycle_growth_configuration_identity.py", "observation_order"):
+        "observed_at already passed lifecycle_growth_configuration_values.timestamp (guarded)",
+    ("src/workflows/memory.py", "last_prefetch_status"):
+        "served_at is stamped by memory_prefetch_receipt from the clock",
+    ("src/workflows/memory_project_identity.py", "migrate_project_identity"):
+        "created_at is now.isoformat() from the same call, or the receipt that call wrote",
+    ("src/workflows/memory_project_identity.py", "rollback_project_identity_migration"):
+        "created_at is read back from the receipt migrate_project_identity wrote",
+    ("src/workflows/memory_sync_fidelity_receipts.py", "SyncReceipt.clock"):
+        "observed_at already passed memory_sync_fidelity_validation.observed_at (guarded)",
+    ("src/workflows/web_qa_observation.py", "_parse"):
+        "only ever given the canonical output of _utc (guarded)",
+    ("src/workflows/web_qa_observation_plan.py", "_subject"):
+        "parses the canonical output of _utc_timestamp (guarded)",
+}
+
+
+def _clarification_record(stamp: str, field: str) -> dict[str, object]:
+    record: dict[str, object] = {
+        "schema_version": "fanout_clarification_request/v1", "fanout_id": "fanout-1", "unit_id": "unit-a",
+        "run_ref": "run-1", "base_sha": "0" * 40, "contract_digest": "sha256:" + "0" * 64,
+        "goal_attempt_id": "goal-1", "worktree_path": "unit-a", "attempt_id": "attempt-1",
+        "input_required": {
+            "decision_id": "pick-format", "question": "Which format?", "blocking_reason": "two formats fit",
+            "answer_shape": {"kind": "options", "options": ["json", "yaml"]},
+            "affected_unit_ids": ["unit-a"], "redacted_context": [],
+        },
+        "workspace": {}, "decision_id": "pick-format", "round": 1, "answer": None,
+        "request_event_ref": "", "answer_event_ref": None, "redispatch_event_ref": None,
+        "requested_at": "2020-01-01T00:00:00+00:00", "expires_at": "2020-01-02T00:00:00+00:00",
+        "state": "prepared_not_answered", "privacy": "bounded_decision_metadata", "history": [],
+    }
+    record[field] = stamp
+    return record
+
+
+def _with_errors(call: Callable[[str, str, list[str]], object]) -> Callable[[str], object]:
+    def run(stamp: str) -> object:
+        errors: list[str] = []
+        return call(stamp, "/stamp", errors), errors
+    return run
+
+
+def _capacity_input(stamp: str) -> str:
+    field = {"value": None, "class": "unknown", "source": "unknown", "observed_at": stamp}
+    return json.dumps({"schema_version": "route_capacity_input/v1", "context_window_tokens": field})
+
+
+def _expiring_artifact(stamp: str) -> dict[str, object]:
+    artifact, review = _approved_artifact()
+    artifact["retention"] = {**artifact["retention"], "expires_at": stamp}  # type: ignore[dict-item]
+    return _evaluate(artifact, review, now=NOON + timedelta(days=1))
+
+
+def _open_ceiling(stamp: str) -> dict[str, object]:
+    artifact, review = _approved_artifact()
+    artifact["staleness"] = {"resolution": "open", "open_expires_at": stamp}
+    return _evaluate(artifact, review, now=NOON + timedelta(days=1))
+
+
+def _revalidation_deadline(stamp: str) -> dict[str, object]:
+    artifact, review = _approved_artifact(revalidation={"deadline": stamp})
+    return _evaluate(artifact, review, now=NOON + timedelta(days=1))
+
+
+def _stale_override(module: Any, *, deadline: str, expires: str) -> dict[str, object]:
+    artifact, _review = _approved_artifact()
+    override = {
+        "artifact_identity": governance.stable_artifact_identity(artifact), "run_id": "run-1",
+        "confirmed_at": _iso(NOON), "revalidation_deadline": deadline, "expires_at": expires,
+    }
+    return module.validate_stale_override(override, artifact, NEXT_MIDNIGHT, NOON, "run-1")
+
+
+# (src path, enclosing function) -> (module, one case per guarded call in it).
+# Each case maps a stamp to the site's observable result.
+Case = Callable[[Any], Callable[[str], object]]
+SITES: dict[tuple[str, str], tuple[str, list[Case]]] = {
+    ("src/coding/action_gate.py", "_stamp_age_seconds._parse"): (
+        "omh.coding.action_gate", [lambda m: lambda s: m._stamp_age_seconds(s, "2020-01-03T00:00:00Z")]),
+    ("src/coding/executor_auth_signals.py", "_age_seconds"): (
+        "omh.coding.executor_auth_signals", [lambda m: m._age_seconds]),
+    ("src/coding/executor_capability_snapshots.py", "_is_timestamp"): (
+        "omh.coding.executor_capability_snapshots", [lambda m: m._is_timestamp]),
+    ("src/coding/executor_local_workflow_selection.py", "_parsed_timestamp"): (
+        "omh.coding.executor_local_workflow_selection", [lambda m: m._parsed_timestamp]),
+    ("src/coding/executor_progress.py", "_parse_time"): (
+        "omh.coding.executor_progress", [lambda m: m._parse_time]),
+    ("src/coding/fanout_clarification.py", "clarification_state"): (
+        "omh.coding.fanout_clarification",
+        [lambda m: lambda s: m.clarification_state({"state": "prepared_not_answered", "expires_at": s}, NOON)]),
+    ("src/coding/fanout_clarification_records.py", "parse_clarification_record"): (
+        "omh.coding.fanout_clarification_records",
+        [lambda m: lambda s: m.parse_clarification_record(_clarification_record(s, "requested_at"))]),
+    ("src/coding/fanout_status.py", "_parse_timestamp"): (
+        "omh.coding.fanout_status", [lambda m: m._parse_timestamp]),
+    ("src/coding/pre_handoff_readiness.py", "_stamp_age_seconds._parse"): (
+        "omh.coding.pre_handoff_readiness",
+        [lambda m: lambda s: m._stamp_age_seconds(s, "2020-01-03T00:00:00Z", 10**6)]),
+    ("src/coding/routing_observation.py", "validate_routing_observation"): (
+        "omh.coding.routing_observation", [lambda m: lambda s: m.validate_routing_observation({"observed_at": s})]),
+    ("src/coding/skill_load_protocol.py", "parse_time"): (
+        "omh.coding.skill_load_protocol", [lambda m: m.parse_time]),
+    ("src/coding/status_board.py", "_parse_timestamp"): (
+        "omh.coding.status_board", [lambda m: m._parse_timestamp]),
+    ("src/plugin_bundle/omh/_governance_evaluation.py", "evaluate_memory_replay"): (
+        "omh.plugin_bundle.omh._governance_evaluation",
+        [lambda m: _expiring_artifact, lambda m: _open_ceiling, lambda m: _revalidation_deadline]),
+    ("src/plugin_bundle/omh/_governance_overrides.py", "validate_stale_override"): (
+        "omh.plugin_bundle.omh._governance_overrides",
+        [lambda m: lambda s: _stale_override(m, deadline=s, expires=_iso(NOON + timedelta(hours=1))),
+         lambda m: lambda s: _stale_override(m, deadline=_iso(NEXT_MIDNIGHT), expires=s)]),
+    ("src/plugin_bundle/omh/activity_observer_events.py", "parse_stamp"): (
+        "omh.plugin_bundle.omh.activity_observer_events", [lambda m: m.parse_stamp]),
+    ("src/plugin_bundle/omh/context_budget_plan_capacity.py", "parse_route_capacity_input"): (
+        "omh.plugin_bundle.omh.context_budget_plan_capacity",
+        [lambda m: lambda s: m.parse_route_capacity_input(_capacity_input(s))]),
+    ("src/plugin_bundle/omh/dispatch_outcomes.py", "_parse_timestamp"): (
+        "omh.plugin_bundle.omh.dispatch_outcomes", [lambda m: m._parse_timestamp]),
+    ("src/plugin_bundle/omh/hermes_memory.py", "_parse_expires_at"): (
+        "omh.plugin_bundle.omh.hermes_memory", [lambda m: m._parse_expires_at]),
+    ("src/plugin_bundle/omh/memory_blocks.py", "_timestamp"): (
+        "omh.plugin_bundle.omh.memory_blocks", [lambda m: m._timestamp]),
+    ("src/plugin_bundle/omh/memory_governance.py", "_parse_deadline"): (
+        "omh.plugin_bundle.omh.memory_governance", [lambda m: m._parse_deadline]),
+    ("src/plugin_bundle/omh/memory_recall_support.py", "_parse_utc"): (
+        "omh.plugin_bundle.omh.memory_recall_support", [lambda m: m._parse_utc]),
+    ("src/plugin_bundle/omh/memory_recall_support.py", "_parse_utc_naive_as_utc"): (
+        "omh.plugin_bundle.omh.memory_recall_support", [lambda m: m._parse_utc_naive_as_utc]),
+    ("src/plugin_bundle/omh/memory_session_digest.py", "stamp_epoch"): (
+        "omh.plugin_bundle.omh.memory_session_digest", [lambda m: m.stamp_epoch]),
+    ("src/plugin_bundle/omh/owner_preference_record.py", "valid_timestamp"): (
+        "omh.plugin_bundle.omh.owner_preference_record", [lambda m: m.valid_timestamp]),
+    ("src/plugin_bundle/omh/runtime_reader.py", "_epoch_seconds"): (
+        "omh.plugin_bundle.omh.runtime_reader", [lambda m: m._epoch_seconds]),
+    ("src/plugin_bundle/omh/search_state.py", "_clock"): (
+        "omh.plugin_bundle.omh.search_state", [lambda m: m._clock]),
+    ("src/plugin_bundle/omh/todo_store.py", "_stamp_epoch"): (
+        "omh.plugin_bundle.omh.todo_store", [lambda m: m._stamp_epoch]),
+    ("src/plugin_bundle/omh/todo_store.py", "_validated_stamp"): (
+        "omh.plugin_bundle.omh.todo_store", [lambda m: lambda s: m._validated_stamp(s, "done", "done_at")]),
+    ("src/plugin_bundle/omh/tools/dag_tool.py", "_timestamp"): (
+        "omh.plugin_bundle.omh.tools.dag_tool", [lambda m: m._timestamp]),
+    ("src/quality/agent_debug_incident.py", "_epoch"): (
+        "omh.quality.agent_debug_incident", [lambda m: m._epoch]),
+    ("src/quality/capability_gap_scout.py", "_parse_timestamp"): (
+        "omh.quality.capability_gap_scout", [lambda m: m._parse_timestamp]),
+    ("src/quality/evidence_records.py", "_parse_timestamp"): (
+        "omh.quality.evidence_records", [lambda m: m._parse_timestamp]),
+    ("src/quality/paired_run_values.py", "is_utc_z"): (
+        "omh.quality.paired_run_values", [lambda m: m.is_utc_z]),
+    ("src/quality/specialist_work.py", "_parse_timestamp"): (
+        "omh.quality.specialist_work", [lambda m: m._parse_timestamp]),
+    ("src/runtime/critical_path_health_source_parsing.py", "timestamp_ms"): (
+        "omh.runtime.critical_path_health_source_parsing", [lambda m: m.timestamp_ms]),
+    ("src/runtime/generated_artifacts.py", "_parse_stamp"): (
+        "omh.runtime.generated_artifacts", [lambda m: m._parse_stamp]),
+    ("src/surfaces/hermes_processes.py", "_coerce_datetime"): (
+        "omh.surfaces.hermes_processes", [lambda m: m._coerce_datetime]),
+    ("src/surfaces/menubar_status.py", "_parse_datetime"): (
+        "omh.surfaces.menubar_status", [lambda m: m._parse_datetime]),
+    ("src/tui/panels.py", "_epoch"): ("omh.tui.panels", [lambda m: m._epoch]),
+    ("src/workflows/_memory_lifecycle_scan.py", "parse_time"): (
+        "omh.workflows._memory_lifecycle_scan", [lambda m: m.parse_time]),
+    ("src/workflows/_memory_migration_reactivation_data.py", "_time"): (
+        "omh.workflows._memory_migration_reactivation_data", [lambda m: m._time]),
+    ("src/workflows/_memory_store_validation.py", "parse_time"): (
+        "omh.workflows._memory_store_validation", [lambda m: m.parse_time]),
+    ("src/workflows/approval_receipts.py", "_parse_stamp"): (
+        "omh.workflows.approval_receipts", [lambda m: m._parse_stamp]),
+    ("src/workflows/decision_gate_receipts.py", "_timestamp"): (
+        "omh.workflows.decision_gate_receipts", [lambda m: m._timestamp]),
+    ("src/workflows/decision_gates.py", "_connector_receipt_errors"): (
+        "omh.workflows.decision_gates", [lambda m: lambda s: m._connector_receipt_errors({"observed_at": s})]),
+    ("src/workflows/decision_gates.py", "_connector_transaction_errors"): (
+        "omh.workflows.decision_gates", [lambda m: lambda s: m._connector_transaction_errors({"decided_at": s})]),
+    ("src/workflows/external_action_readiness.py", "_parse_stamp"): (
+        "omh.workflows.external_action_readiness", [lambda m: m._parse_stamp]),
+    ("src/workflows/goal_journey.py", "_parse_time"): ("omh.workflows.goal_journey", [lambda m: m._parse_time]),
+    ("src/workflows/hermes_ops.py", "_stamp"): ("omh.workflows.hermes_ops", [lambda m: m._stamp]),
+    ("src/workflows/lifecycle_growth_analysis.py", "_observed_time"): (
+        "omh.workflows.lifecycle_growth_analysis", [lambda m: m._observed_time]),
+    ("src/workflows/lifecycle_growth_configuration_values.py", "timestamp"): (
+        "omh.workflows.lifecycle_growth_configuration_values", [lambda m: m.timestamp]),
+    ("src/workflows/loop_executor_observations.py", "observed_time"): (
+        "omh.workflows.loop_executor_observations", [lambda m: m.observed_time]),
+    ("src/workflows/loop_validation_primitives.py", "is_utc_rfc3339"): (
+        "omh.workflows.loop_validation_primitives", [lambda m: m.is_utc_rfc3339]),
+    ("src/workflows/materials.py", "_stamp"): ("omh.workflows.materials", [lambda m: m._stamp]),
+    ("src/workflows/memory_batches.py", "_parse_time"): ("omh.workflows.memory_batches", [lambda m: m._parse_time]),
+    ("src/workflows/memory_sync_fidelity_validation.py", "observed_at"): (
+        "omh.workflows.memory_sync_fidelity_validation", [lambda m: m.observed_at]),
+    ("src/workflows/operations.py", "_stamp"): ("omh.workflows.operations", [lambda m: m._stamp]),
+    ("src/workflows/paper_learning.py", "_stamp"): ("omh.workflows.paper_learning", [lambda m: m._stamp]),
+    ("src/workflows/plugin_catalog_snapshots.py", "_parse_stamp"): (
+        "omh.workflows.plugin_catalog_snapshots", [lambda m: m._parse_stamp]),
+    ("src/workflows/product_discovery_artifacts.py", "_stamp"): (
+        "omh.workflows.product_discovery_artifacts", [lambda m: lambda s: m._stamp(s, "observed_at")]),
+    ("src/workflows/product_discovery_validation.py", "_time"): (
+        "omh.workflows.product_discovery_validation", [lambda m: m._time]),
+    ("src/workflows/production_readiness_structural.py", "_timestamp"): (
+        "omh.workflows.production_readiness_structural", [lambda m: m._timestamp]),
+    ("src/workflows/provider_profile_posture.py", "_host_observations"): (
+        "omh.workflows.provider_profile_posture",
+        [lambda m: lambda s: m._host_observations([{"kind": "host-kind", "reference": "host-ref", "observed_at": s}])]),
+    ("src/workflows/realtime_voice_trial_receipts.py", "_parse_stamp"): (
+        "omh.workflows.realtime_voice_trial_receipts", [lambda m: m._parse_stamp]),
+    ("src/workflows/recurring_intents.py", "_stamp"): ("omh.workflows.recurring_intents", [lambda m: m._stamp]),
+    ("src/workflows/rejected_decision_evidence.py", "_timestamp"): (
+        "omh.workflows.rejected_decision_evidence", [lambda m: m._timestamp]),
+    ("src/workflows/research_department.py", "_stamp"): ("omh.workflows.research_department", [lambda m: m._stamp]),
+    ("src/workflows/research_source_recovery.py", "_is_iso_timestamp"): (
+        "omh.workflows.research_source_recovery", [lambda m: m._is_iso_timestamp]),
+    ("src/workflows/sales_pipeline_gates.py", "parse_timestamp"): (
+        "omh.workflows.sales_pipeline_gates", [lambda m: m.parse_timestamp]),
+    ("src/workflows/search_amplification.py", "_stamp"): (
+        "omh.workflows.search_amplification", [lambda m: _with_errors(m._stamp)]),
+    ("src/workflows/search_evidence.py", "_timestamp"): (
+        "omh.workflows.search_evidence", [lambda m: _with_errors(m._timestamp)]),
+    ("src/workflows/session_activity_receipts.py", "parse_utc_stamp"): (
+        "omh.workflows.session_activity_receipts", [lambda m: m.parse_utc_stamp]),
+    ("src/workflows/temporal_source_receipts.py", "_parse_stamp"): (
+        "omh.workflows.temporal_source_receipts", [lambda m: m._parse_stamp]),
+    ("src/workflows/visual_summary.py", "_stamp"): ("omh.workflows.visual_summary", [lambda m: m._stamp]),
+    ("src/workflows/web_qa_comparison.py", "_time"): ("omh.workflows.web_qa_comparison", [lambda m: m._time]),
+    ("src/workflows/web_qa_motion_capture_store.py", "_utc"): (
+        "omh.workflows.web_qa_motion_capture_store", [lambda m: lambda s: m._utc(s, "captured_at")]),
+    ("src/workflows/web_qa_observation.py", "_utc"): (
+        "omh.workflows.web_qa_observation", [lambda m: lambda s: m._utc(s, "captured_at")]),
+    ("src/workflows/web_qa_observation_plan.py", "_utc_timestamp"): (
+        "omh.workflows.web_qa_observation_plan", [lambda m: lambda s: m._utc_timestamp(s, "starts_at")]),
+    ("src/workflows/workspace_bindings.py", "_parse_stamp"): (
+        "omh.workflows.workspace_bindings", [lambda m: m._parse_stamp]),
+}
+
+
+def fromisoformat_calls() -> tuple[Counter[tuple[str, str]], dict[tuple[str, str], set[str]]]:
+    """Every guarded call and every raw ``<receiver>.fromisoformat`` call in src/."""
+    guarded: Counter[tuple[str, str]] = Counter()
+    raw: dict[tuple[str, str], set[str]] = {}
+
+    def visit(node: ast.AST, scope: list[str], path: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                visit(child, [*scope, child.name], path)
+                continue
+            if isinstance(child, ast.Call):
+                key = (path, ".".join(scope))
+                if isinstance(child.func, ast.Name) and child.func.id == "strict_fromisoformat":
+                    guarded[key] += 1
+                elif isinstance(child.func, ast.Attribute) and child.func.attr == "fromisoformat":
+                    raw.setdefault(key, set()).add(ast.unparse(child.func.value))
+            visit(child, scope, path)
+
+    for source in sorted(SOURCE.rglob("*.py")):
+        path = source.relative_to(ROOT).as_posix()
+        visit(ast.parse(source.read_text(encoding="utf-8")), [], path)
+    return guarded, raw
+
+
+class HelperTests(unittest.TestCase):
+    def test_hour_24_is_refused_in_every_spelling_on_this_interpreter(self) -> None:
+        for text in ("2026-10-24T24:00:00", "2026-10-24T24:00:00Z", "2026-10-24T24:00:00+09:00",
+                     "2026-10-24 24:00", "2026-10-24T24", "20261024T240000", "2026-12-31T24:00:00.000000",
+                     "2026-W43-6T24:00", "2026W436T24", "2026-W43T24:00", "2026-W44-7T24:00"):
+            with self.subTest(text=text), self.assertRaisesRegex(ValueError, "hour must be in 0..23"):
+                strict_fromisoformat(text)
+
+    def test_every_other_input_reads_as_fromisoformat_reads_it(self) -> None:
+        for text in ("2026-10-25T00:00:00", "2026-10-25T00:00:00Z", "2026-10-24", "20261024", "2026-W43",
+                     "2026W43", "2026-W43-1T00:00", "2026W431T00", "2026-W43-6", "2027-01-01T00:00:00-05:00",
+                     "2026-10-24T23:59:59.999999+00:00", "2026-10-24T12:30", "2021-01-03T00:00"):
+            with self.subTest(text=text):
+                self.assertEqual(strict_fromisoformat(text), datetime.fromisoformat(text))
+        for text in ("2026-10-24T25:00:00", "2026-10-24T24:00:01", "2026-02-30T00:00:00", "not a time"):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                strict_fromisoformat(text)
+
+    def test_the_3_14_reading_is_refused_on_any_interpreter(self) -> None:
+        from omh.plugin_bundle.omh import iso_datetime
+
+        for text in ("2026-10-24T24:00:00", "2026-12-31T24:00:00+00:00", "2026-02-28 24:00:00"):
+            with self.subTest(text=text):
+                with mock.patch.object(iso_datetime, "datetime", Lenient):
+                    self.assertEqual(Lenient.fromisoformat(text).time(), datetime.min.time())
+                    with self.assertRaisesRegex(ValueError, "hour must be in 0..23"):
+                        strict_fromisoformat(text)
+                    midnight = text[:10] + "T00:00:00" + text[19:]
+                    self.assertEqual(strict_fromisoformat(midnight), datetime.fromisoformat(midnight))
+
+
+class SiteTests(unittest.TestCase):
+    def test_every_guarded_site_refuses_the_3_14_reading_of_hour_24(self) -> None:
+        for (path, function), (module_name, cases) in SITES.items():
+            module = importlib.import_module(module_name)
+            for index, case in enumerate(cases):
+                with self.subTest(site=f"{path}::{function}", case=index):
+                    assert_hour_24_refused(self, module, case(module))
+
+    def test_biomedical_reconcile_script_refuses_the_3_14_reading_of_hour_24(self) -> None:
+        def outcome(reading: type[datetime], call: str, args: tuple[object, ...], guarded: bool = True) -> object:
+            with mock.patch("datetime.datetime", reading):
+                api = runpy.run_path(str(RECONCILE))
+            function = api[call]
+            if not guarded:
+                function.__globals__["strict_fromisoformat"] = reading.fromisoformat
+            try:
+                return "returned", function(*args)
+            except ValueError as exc:
+                return "raised", str(exc)
+
+        cases = {
+            "timestamp": (HOUR_24,),
+            "freshness": (HOUR_24, "2020-01-05T00:00:00+00:00", "last_update_posted"),
+        }
+        for call, args in cases.items():
+            with self.subTest(call=call):
+                strict = outcome(Strict, call, args)
+                self.assertEqual(outcome(Lenient, call, args), strict)
+                self.assertNotEqual(outcome(Lenient, call, args, guarded=False), strict)
+
+
+class SourceGateTests(unittest.TestCase):
+    def test_every_fromisoformat_call_is_guarded_or_has_a_recorded_reason(self) -> None:
+        guarded, raw = fromisoformat_calls()
+        unexplained = sorted(
+            f"{path}::{function}"
+            for (path, function), receivers in raw.items()
+            if (path, function) not in GUARD_DEFINITIONS and (path, function) not in UNGUARDED
+            and receivers != {"date"}
+        )
+        self.assertEqual(unexplained, [], (
+            "CPython 3.14 reads T24:00:00 as the next midnight and 3.11-3.13 refuse it. Route these "
+            "calls through omh.plugin_bundle.omh.iso_datetime.strict_fromisoformat and add a case to "
+            "SITES, or record in UNGUARDED why their text can never come from outside OMH's own clock."
+        ))
+        stale = sorted(f"{p}::{f}" for p, f in {*UNGUARDED, *GUARD_DEFINITIONS} if (p, f) not in raw)
+        self.assertEqual(stale, [], "these entries no longer name a raw fromisoformat call")
+
+    def test_every_guarded_call_has_a_case(self) -> None:
+        guarded, _raw = fromisoformat_calls()
+        script = [key for key in guarded if key[0] == RECONCILE.relative_to(ROOT).as_posix()]
+        missing = sorted(
+            f"{path}::{function} ({count} calls, {len(SITES.get((path, function), ('', []))[1])} cases)"
+            for (path, function), count in guarded.items()
+            if (path, function) not in script and len(SITES.get((path, function), ("", []))[1]) < count
+        )
+        self.assertEqual(missing, [])
+        self.assertEqual(sorted(key for key in SITES if key not in guarded), [], "SITES names a call that is gone")
+        self.assertEqual(sorted(f for _p, f in script), ["freshness", "timestamp"])
+
+
+if __name__ == "__main__":
+    unittest.main()
