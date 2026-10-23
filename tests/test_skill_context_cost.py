@@ -64,6 +64,26 @@ class SkillContextCostTests(unittest.TestCase):
         self.assertNotIn("dispatch packet", serialized)
         self.assertNotIn("핸드오프", serialized)
 
+    def test_search_guidance_keeps_nested_fields_progressive_without_index_growth(self) -> None:
+        from omh.skills.skill_index import skill_index_chars
+        from omh.skills.skill_record import skill_record
+
+        # Pre-feature producer measurements, not token/latency estimates. This
+        # feature changes opening actions only, never indexed descriptions.
+        self.assertEqual(skill_index_chars(), 13_157)
+        baseline = {'research': 19_587, 'web-research': 11_495, 'source-finder': 9_221}
+        for name, before in baseline.items():
+            record = skill_record(name)
+            body = record.body().content
+            increment = len(body.encode('utf-8')) - before
+            with self.subTest(name=name):
+                self.assertGreater(increment, 0)
+                self.assertLessEqual(increment, 320)
+                self.assertNotIn('"$defs"', body)
+                references = [ref for ref in record.references() if '/search-' in ref.relative_path]
+                self.assertEqual(len(references), 3)
+                self.assertLessEqual(sum(len(ref.content.encode('utf-8')) for ref in references), 70_000)
+
 
 if __name__ == "__main__":
     unittest.main()
