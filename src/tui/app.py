@@ -1364,8 +1364,8 @@ class App(ModesMixin, AgentViewMixin):
         saved = read_launch_choice(home) if home is not None else None
         if saved is None:
             return
-        if saved in LAUNCH_PRESETS:
-            self.launch_look = saved
+        if saved.strip().lower() in LAUNCH_PRESETS:  # a hand-edited `GRAPHITE` is graphite; it is written lowercase
+            self.launch_look = saved.strip().lower()
         elif home is not None:
             self.transcript.add_notice(LAUNCH_UNKNOWN_NOTICE.format(name=saved, path=theme_store_path(home)), NOTICE_WARN)
 

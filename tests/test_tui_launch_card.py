@@ -264,6 +264,17 @@ class LaunchTests(unittest.TestCase):
         r, g, b = (int(LAUNCH_PALETTES["violet"][0].faces[2][i : i + 2], 16) for i in (1, 3, 5))
         self.assertIn(f"38;2;{r};{g};{b}", writes)  # the logo's third row in violet's ramp
 
+    def test_a_saved_look_is_read_whatever_its_case(self) -> None:
+        home = Path(tempfile.mkdtemp()) / ".omh"
+        theme_store_path(home).parent.mkdir(parents=True)
+        theme_store_path(home).write_text(json.dumps({"schema_version": THEME_STORE_SCHEMA, "launch": "GRAPHITE"}),
+                                          encoding="utf-8")
+        run = Launched(env={"OMH_HOME": str(home)})
+        self.assertEqual(run.app.launch_look, "graphite")
+        self.assertEqual(run.app.transcript.blocks, [])  # no unknown-look notice
+        run.app._theme("graphite")
+        self.assertEqual(json.loads(theme_store_path(home).read_text(encoding="utf-8"))["launch"], "graphite")
+
     def test_a_saved_look_omh_does_not_have_says_so_once_and_spectrum_is_used(self) -> None:
         run = Launched(look="neon")
         self.assertEqual(run.app.launch_look, "spectrum")
@@ -333,6 +344,23 @@ class SwitchTests(unittest.TestCase):
         run.screen()
         self.assertFalse(run.app.terminal.mouse_reporting)  # type: ignore[attr-defined]
         self.assertEqual(read_launch_choice(run.home), "graphite")
+
+    def test_esc_and_ctrl_c_close_the_picker_put_the_look_back_and_turn_reports_off(self) -> None:
+        for name, key in (("esc", Key(ESCAPE)), ("ctrl+c", Key(CHAR, "c", ctrl=True))):
+            with self.subTest(key=name):
+                run = Launched()
+                run.screen()
+                run.app._theme("")
+                run.screen()
+                self.assertTrue(run.app.terminal.mouse_reporting)  # type: ignore[attr-defined]
+                run.press(Key(DOWN), Key(DOWN))  # gold, previewed
+                self.assertEqual(run.app._shown_look(), "gold")
+                run.press(key)
+                self.assertIsNone(run.app.launch_picker)
+                self.assertEqual(run.app._shown_look(), "spectrum")  # the look from before the picker opened
+                run.screen()
+                self.assertFalse(run.app.terminal.mouse_reporting)  # type: ignore[attr-defined]
+                self.assertIsNone(read_launch_choice(run.home))
 
     def test_j_and_k_move_as_the_arrows_do(self) -> None:
         run = Launched()
