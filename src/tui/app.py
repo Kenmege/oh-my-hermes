@@ -311,7 +311,9 @@ REWIND_NONE_NOTICE = "No prompt to rewind to in this session yet."
 REWIND_REFUSED_NOTICE = "Hermes did not rewind: {reason}. The screen shows the session as Hermes still has it."
 # Said as Hermes refuses, over the screen from before the send, until Hermes' history redraws it.
 REWIND_KEPT_NOTICE = "Hermes did not rewind: {reason}. The screen is back to how it was before you sent."
-REWIND_UNREAD_NOTICE = "Hermes did not send the session's history ({reason}), so the screen stays as it was before you sent."
+# Said when the session was cut but the prompt that replaces the cut part did not go (only attached to a shared gateway).
+REWIND_CUT_NOTICE = "Hermes cut the session there but did not take the prompt: {reason}. The prompt is back in the composer."
+REWIND_UNREAD_NOTICE ="Hermes did not send the session's history ({reason}), so the screen stays as it was before you sent."
 REWIND_TURN_BACK_NOTICE = "/{name} went back in the session itself, so the rewind is cancelled."
 MODEL_BUSY_NOTICE = "Hermes switches the model between turns: let this one end, or interrupt it with Esc."
 TODOS_NONE_NOTICE = "No plan in this session yet: Hermes' todo tool writes one."
@@ -2754,26 +2756,39 @@ class App(ModesMixin, AgentViewMixin):
         self.transcript.cwd = cwd
         self._draw_history(messages)
 
-    def _on_rewind_refused(self, sid: str, kept: Transcript, error: dict[str, Any]) -> bool:
-        """Hermes kept its history: the turn never starts, and the screen goes back to `kept`, as it was before the send.
+    def _on_rewind_refused(
+        self, sid: str, kept: Transcript, error: dict[str, Any], text: str = "", images: Sequence[Attachment] = ()
+    ) -> bool:
+        """The rewound prompt did not start a turn: the screen goes back to `kept`, as it was before the send.
 
         Then it is redrawn from the history Hermes sends; if that read fails,
         or is not answered, the screen from before the send stays, and the
         notices say which. A prompt queued behind the rewind goes only once
-        that is settled, so the redraw does not wipe its echo.
+        that is settled, so the redraw does not wipe its echo. The images
+        sent with it come back as chips: Hermes still holds them for the next
+        prompt. An error whose `data` says `rewound` (the shared-gateway
+        child cut the session, then Hermes refused the prompt) is not
+        "Hermes kept its history": the notice says the cut happened, and the
+        prompt the person typed goes back into the composer.
         """
         if sid != self.sid:
             self._on_submit_error(error)
             return True
         reason = (as_text(error.get("message")) or "refused").strip().rstrip(".")
+        data = error.get("data")
+        cut = isinstance(data, dict) and data.get("rewound") is True
         self.transcript = kept
         self._full_redraw()
-        self.transcript.add_notice(REWIND_KEPT_NOTICE.format(reason=reason), NOTICE_WARN)
+        self.attachments.extend(images)
+        if cut:
+            self._draft().handle(Paste(text))
+        self.transcript.add_notice((REWIND_CUT_NOTICE if cut else REWIND_KEPT_NOTICE).format(reason=reason), NOTICE_WARN)
         self.turn_pending = False  # no turn starts; the queue waits for the history read
+        after = (REWIND_CUT_NOTICE if cut else REWIND_REFUSED_NOTICE).format(reason=reason)
         self._request(
             "session.history",
             {"session_id": sid},
-            lambda result: self._redraw_from_history(sid, result, REWIND_REFUSED_NOTICE.format(reason=reason)),
+            lambda result: self._redraw_from_history(sid, result, after),
             lambda history_error: self._history_unread(sid, history_error),
             lambda: self._history_unread(sid, {"message": f"no answer in {CALL_ANSWER_SECONDS:g} s"}),
         )
@@ -3010,6 +3025,7 @@ class App(ModesMixin, AgentViewMixin):
         self.busy_since = self.clock()
         self.turn_waited = 0.0
         self.turn_output_base = self.usage_output
+        sent_images = list(self.attachments)
         self.attachments.clear()  # the gateway sends its queued images with this turn
         params: dict[str, Any] = {"session_id": self.sid, "text": text}
         if queued:
@@ -3017,7 +3033,10 @@ class App(ModesMixin, AgentViewMixin):
         if truncate is not None:
             params.update(truncate_before_row_id=truncate, confirm_truncate=True)  # the person picked this row
             sid, kept = self.sid, before_cut or self.transcript
-            self._request("prompt.submit", params, lambda result: None, lambda error: self._on_rewind_refused(sid, kept, error))
+            self._request(
+                "prompt.submit", params, lambda result: None,
+                lambda error: self._on_rewind_refused(sid, kept, error, text, sent_images),
+            )
             return
         self._request("prompt.submit", params, lambda result: None, self._on_submit_error)
 

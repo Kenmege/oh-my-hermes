@@ -2828,7 +2828,7 @@ enforcement suite pins its exact argv, so changing it fails a test rather than
 quietly widening what the sentence covers.
 
 The plugin tool `omh_jev_ask` is the second place, and the only network client
-in `src/`: `plugin_bundle/omh/jev_ask_client.py` POSTs typed questions to Jev
+core omh has in `src/`: `plugin_bundle/omh/jev_ask_client.py` POSTs typed questions to Jev
 over one of two fixed HTTPS hosts (`api.typesafe.ai` with `TYPESAFE_API_KEY`,
 or `openrouter.ai` only when the operator also set `openrouter_route` in
 `<omh_home>/jev/settings.json`), refuses every redirect, bounds both bodies and

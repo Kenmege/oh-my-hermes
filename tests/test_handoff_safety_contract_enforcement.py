@@ -46,6 +46,7 @@ entry is a decision someone has to write down; that is the point.
 from __future__ import annotations
 
 import ast
+from dataclasses import dataclass
 import hashlib
 import itertools
 import json
@@ -878,20 +879,79 @@ NETWORK_CLIENT_BRIDGE_IMPORTERS: dict[str, frozenset[str]] = {
 }
 
 
+@dataclass(frozen=True)
+class HermesScriptPolicy:
+    """What one Hermes-interpreter script may reach of the network modules: names, not whole modules.
+
+    `asyncio_names` are the only `asyncio` attributes it may use (through
+    `import asyncio`); `from_imports` the only names it may import from each
+    `websockets` module. Every other network module, and any connection or
+    subprocess factory reached through any object, fails the gate.
+    """
+
+    asyncio_names: frozenset[str]
+    from_imports: dict[str, frozenset[str]]
+    reason: str
+
+
 # Not core omh: scripts that run on Hermes' own interpreter, as a child the OMH TUI spawns by path, and that no
-# module in `src/` imports. Each may import exactly the network modules listed beside it, and nothing lower-level:
-# what it connects to is reached through Hermes' own functions, and the reason says what that is.
-HERMES_INTERPRETER_SCRIPTS: dict[str, tuple[frozenset[str], str]] = {
-    "src/tui/attach/gateway_attach.py": (
-        frozenset({"asyncio", "websockets"}),
-        "the OMH TUI's gateway child (AGENTS.md, the OMH TUI bullet). On a Hermes that has the shared-gateway "
-        "attach API it does what Hermes' own Ink TUI does: Hermes' `ensure_gateway_runtime` finds or starts the "
-        "profile's gateway, Hermes' `connect_private` mints a session ticket over the home's private control "
-        "socket, and Hermes' own `websockets` client dials the loopback WebSocket `gateway_ws_target` names. It "
-        "relays what the TUI sends and what the gateway sends back, and opens no other connection.",
+# module in `src/` imports. The owner approved the one listed here (2026-10-23, PR #2249) as "asyncio + websockets
+# only, loopback to the user's own gateway": it reaches the gateway through Hermes' own functions and dials one
+# WebSocket with `websockets.asyncio.client.connect`; the asyncio it uses is an event loop and nothing that opens
+# a connection or a process. `_hermes_script_violations` holds it to exactly that.
+HERMES_INTERPRETER_SCRIPTS: dict[str, HermesScriptPolicy] = {
+    "src/tui/attach/gateway_attach.py": HermesScriptPolicy(
+        asyncio_names=frozenset({
+            "AbstractEventLoop", "FIRST_COMPLETED", "Queue", "create_task", "get_running_loop", "run", "sleep", "wait",
+        }),
+        from_imports={
+            "websockets.asyncio.client": frozenset({"connect"}),
+            "websockets.exceptions": frozenset({"WebSocketException"}),
+        },
+        reason=(
+            "the OMH TUI's gateway child (AGENTS.md, the OMH TUI bullet). On a Hermes that has the shared-gateway "
+            "attach API it does what Hermes' own Ink TUI does: Hermes' `ensure_gateway_runtime` finds the "
+            "profile's gateway or starts one, Hermes' `connect_private` mints a session ticket over the home's "
+            "private control socket, and `websockets.asyncio.client.connect` dials the loopback WebSocket "
+            "`gateway_ws_target` names. It relays what the TUI sends and what the gateway sends back."
+        ),
     ),
 }
 HERMES_INTERPRETER_SCRIPT_FORBIDDEN = frozenset({"http", "socket", "socketserver", "ssl", "urllib", "urllib3"})
+# Connection, server and subprocess factories: an event loop, a module or any object reaching one is refused.
+HERMES_SCRIPT_FORBIDDEN_ATTRIBUTES = frozenset({
+    "open_connection", "open_unix_connection", "start_server", "start_unix_server", "create_subprocess_exec",
+    "create_subprocess_shell", "create_connection", "create_unix_connection", "create_server", "create_unix_server",
+    "create_datagram_endpoint", "subprocess_exec", "subprocess_shell", "sock_connect", "connect_accepted_socket",
+})
+
+
+def _hermes_script_violations(tree: ast.Module, policy: HermesScriptPolicy) -> list[str]:
+    """Every way `tree` reaches the network beyond `policy`, one line each; [] when it stays inside it."""
+    problems: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                top = alias.name.split(".")[0]
+                if alias.name == "asyncio" and alias.asname in (None, "asyncio"):
+                    continue
+                if top in NETWORK_CLIENT_MODULES or top in HERMES_INTERPRETER_SCRIPT_FORBIDDEN:
+                    problems.append(f"line {node.lineno}: `import {alias.name}`")
+        elif isinstance(node, ast.ImportFrom) and not node.level:
+            module = node.module or ""
+            top = module.split(".")[0]
+            if top not in NETWORK_CLIENT_MODULES and top not in HERMES_INTERPRETER_SCRIPT_FORBIDDEN:
+                continue
+            allowed = policy.asyncio_names if module == "asyncio" else policy.from_imports.get(module, frozenset())
+            extra = sorted(alias.name for alias in node.names if alias.name not in allowed)
+            if extra:
+                problems.append(f"line {node.lineno}: `from {module} import {', '.join(extra)}`")
+        elif isinstance(node, ast.Attribute):
+            if node.attr in HERMES_SCRIPT_FORBIDDEN_ATTRIBUTES:
+                problems.append(f"line {node.lineno}: `.{node.attr}`")
+            elif isinstance(node.value, ast.Name) and node.value.id == "asyncio" and node.attr not in policy.asyncio_names:
+                problems.append(f"line {node.lineno}: `asyncio.{node.attr}`")
+    return problems
 
 
 def _module_stem(relative_path: str) -> str:
@@ -937,8 +997,8 @@ class NoNetworkClientInSource(unittest.TestCase):
                 top = module.split(".")[0]
                 if top not in NETWORK_CLIENT_MODULES:
                     continue
-                if top in HERMES_INTERPRETER_SCRIPTS.get(relative_path, (frozenset(), ""))[0]:
-                    continue  # runs on Hermes' interpreter only; its own tests below
+                if relative_path in HERMES_INTERPRETER_SCRIPTS:
+                    continue  # runs on Hermes' interpreter only; `_hermes_script_violations` holds it to its names
                 self.fail(
                     f"INVARIANT 2 (no network client in src/): {relative_path} line {lineno} imports "
                     f"`{module}`. Core omh makes no network calls -- that is the product boundary, not "
@@ -1060,22 +1120,64 @@ class NoNetworkClientInSource(unittest.TestCase):
                 f"imported by core omh; found {importers}. Run it by path, as `omh.tui.gateway` does.",
             )
 
-    def test_a_hermes_interpreter_script_imports_only_its_listed_network_modules(self) -> None:
+    def test_a_hermes_interpreter_script_uses_only_its_listed_network_names(self) -> None:
         trees = dict(_source_modules())
-        for script, (allowed, _reason) in HERMES_INTERPRETER_SCRIPTS.items():
+        for script, policy in HERMES_INTERPRETER_SCRIPTS.items():
             self.assertIn(script, trees, f"{script} is listed in HERMES_INTERPRETER_SCRIPTS but is not in src/")
-            tops = {module.split(".")[0] for module, _names, _lineno in _imported_modules(trees[script]) if module}
             self.assertEqual(
-                tops & HERMES_INTERPRETER_SCRIPT_FORBIDDEN,
-                set(),
-                f"INVARIANT 2: {script} may reach the gateway only through Hermes' own functions and {sorted(allowed)}.",
-            )
-            self.assertEqual(
-                sorted(allowed - tops),
+                _hermes_script_violations(trees[script], policy),
                 [],
-                f"INVARIANT 2: {script} no longer imports {sorted(allowed - tops)}; remove them from its "
-                f"HERMES_INTERPRETER_SCRIPTS entry in {THIS_TEST} rather than leave standing permission behind.",
+                f"INVARIANT 2: {script} may reach the network only through Hermes' own functions, "
+                f"`asyncio.{{{', '.join(sorted(policy.asyncio_names))}}}` and {policy.from_imports} "
+                f"(owner approval: asyncio + websockets only, loopback to the person's own gateway).",
             )
+
+    def test_a_hermes_interpreter_script_entry_names_nothing_it_no_longer_uses(self) -> None:
+        trees = dict(_source_modules())
+        for script, policy in HERMES_INTERPRETER_SCRIPTS.items():
+            used = {node.attr for node in ast.walk(trees[script]) if isinstance(node, ast.Attribute)
+                    and isinstance(node.value, ast.Name) and node.value.id == "asyncio"}
+            imported = {
+                (node.module, alias.name) for node in ast.walk(trees[script])
+                if isinstance(node, ast.ImportFrom) and node.module in policy.from_imports for alias in node.names
+            }
+            unused = sorted(policy.asyncio_names - used) + sorted(
+                f"{module}.{name}" for module, names in policy.from_imports.items() for name in names
+                if (module, name) not in imported
+            )
+            self.assertEqual(
+                unused,
+                [],
+                f"INVARIANT 2: {script} no longer uses {unused}; remove them from its HERMES_INTERPRETER_SCRIPTS "
+                f"entry in {THIS_TEST} rather than leave standing permission behind.",
+            )
+
+    def test_the_hermes_script_gate_refuses_every_way_past_its_names(self) -> None:
+        """The gate itself: a connection, a server, a subprocess or another client is refused however it is spelled."""
+        policy = HERMES_INTERPRETER_SCRIPTS["src/tui/attach/gateway_attach.py"]
+        refused = {
+            "asyncio.open_connection('h', 1)": ".open_connection",
+            "asyncio.start_unix_server(None, '/s')": "start_unix_server",
+            "asyncio.create_subprocess_exec('sh')": "create_subprocess_exec",
+            "asyncio.get_running_loop().create_connection(None, 'h', 1)": "create_connection",
+            "loop.create_unix_connection(None, '/s')": "create_unix_connection",
+            "asyncio.streams": "asyncio.streams",
+            "from asyncio import open_connection": "from asyncio import open_connection",
+            "import asyncio.streams": "import asyncio.streams",
+            "import asyncio as aio": "import asyncio",
+            "import websockets": "import websockets",
+            "from websockets.sync.client import connect": "from websockets.sync.client import connect",
+            "from websockets.asyncio.server import serve": "from websockets.asyncio.server import serve",
+            "import socket": "import socket",
+            "from http.client import HTTPConnection": "from http.client import HTTPConnection",
+        }
+        for source, named in refused.items():
+            with self.subTest(source=source):
+                problems = _hermes_script_violations(ast.parse(source), policy)
+                self.assertTrue(problems, f"the gate let `{source}` through")
+                self.assertIn(named, " ".join(problems))
+        allowed = "import asyncio\nasyncio.run(asyncio.wait([]))\nfrom websockets.asyncio.client import connect\n"
+        self.assertEqual(_hermes_script_violations(ast.parse(allowed), policy), [])
 
 
 # --------------------------------------------------------------------------

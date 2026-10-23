@@ -50,7 +50,12 @@ the stdio entry's in a closed set of places. `Adapter` translates those, after
   Ink answers it, so the TUI pastes the text.
 * An approval or one-question clarify arrives as an event and is answered
   with `approval.respond` / `clarify.respond`; here it is the server request
-  the TUI answers, and its `.settled` event a withdrawal.
+  the TUI answers, and its `.settled` event, or the session's detach, a
+  withdrawal.
+* A lifecycle event (`session.info`, `message.start`, `message.complete`, a
+  stamped `error`) from an older execution generation or another owner
+  epoch is dropped, as Ink's `fenceLifecycleEvent` drops it, so an
+  interrupted turn's late end does not end the next one.
 
 It keeps no frame beyond the call it is translating and writes nothing itself;
 the only file written for it is a pasted clipboard image, by Hermes' own
@@ -68,6 +73,7 @@ from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
+import signal
 import sys
 import threading
 from typing import Any
@@ -96,6 +102,8 @@ TOOL_PROGRESS_MODES = frozenset({"off", "new", "all", "verbose"})
 TOOL_PROGRESS_ENV = "HERMES_TUI_TOOL_PROGRESS"
 
 APPROVAL_CHOICES = frozenset({"once", "session", "always", "deny"})
+# The events Ink fences by execution generation and owner epoch (`gatewayCanonicalEvents.ts` `fenceLifecycleEvent`).
+LIFECYCLE_EVENTS = frozenset({"session.info", "message.start", "message.complete", "error"})
 # `useSessionLifecycle.ts`: the stamp of a view the TUI closes for good, applied once no other viewer is left.
 CLOSE_END_REASON = "tui_close"
 REFUSED = 4001  # the owner's own refusal code; not a drift code (4000, -32601), so the TUI keeps the session
@@ -113,7 +121,9 @@ TICKET_TIMEOUT_SECONDS = 5
 ENSURE_TIMEOUT_SECONDS = 30
 OPEN_TIMEOUT_SECONDS = 10
 # After the TUI closes its input: how long the answers to calls already sent (the last session's detach) may take.
-DRAIN_SECONDS = 2.0
+# The TUI waits 0.5 s, then terminates, then waits 2 s more before the kill (`app.CLOSE_GRACE_SECONDS`,
+# `app.TERMINATE_GRACE_SECONDS`): this ends inside that, and a loopback detach answers in milliseconds.
+DRAIN_SECONDS = 1.5
 
 
 def _truthy(value: str | None) -> bool:
@@ -229,28 +239,43 @@ class HermesFiles:
     Each method raises `ValueError` with the reason the TUI shows.
     """
 
-    def image(self, raw: str) -> LocalImage:
-        """`image.attach`'s path, with the text after it (`/image shot.png what is this?`)."""
+    def image(self, raw: str, cwd: str = "") -> LocalImage:
+        """`image.attach`'s path, with the text after it (`/image shot.png what is this?`).
+
+        A relative path is read against `cwd`, the session's workspace: Hermes'
+        helper reads it against `TERMINAL_CWD`, which this process removed
+        before it could start a gateway (`LAUNCH_POLICY_ENV`), so it is set for
+        the call only.
+        """
         try:
             from hermes_cli.cli_terminal_input import _resolve_attachment_path, _split_path_input
         except ImportError as error:
             raise ValueError(f"this Hermes has no attachment path helper ({error})") from None
-        path, remainder = _resolve_attachment_path(raw), ""
-        if path is None:
-            token, remainder = _split_path_input(raw)
-            path = _resolve_attachment_path(token)
+        previous = os.environ.get("TERMINAL_CWD")
+        if cwd:
+            os.environ["TERMINAL_CWD"] = cwd
+        try:
+            path, remainder = _resolve_attachment_path(raw), ""
+            if path is None:
+                token, remainder = _split_path_input(raw)
+                path = _resolve_attachment_path(token)
+        finally:
+            if previous is None:
+                os.environ.pop("TERMINAL_CWD", None)
+            else:
+                os.environ["TERMINAL_CWD"] = previous
         if path is None:
             raise ValueError(f"image not found: {raw.strip()}")
         return self.read(path, remainder)
 
-    def dropped_image(self, text: str) -> LocalImage | None:
+    def dropped_image(self, text: str, cwd: str = "") -> LocalImage | None:
         """The image a pasted path names, as `cli._detect_file_drop` finds it; None for anything else."""
         stripped = text.strip()
         unquoted = stripped[1:] if stripped[:1] in ("'", '"') else stripped
         if not unquoted.startswith(("/", "~", "./", "../", "file://")):
             return None
         try:
-            return self.image(stripped)
+            return self.image(stripped, cwd)
         except ValueError:
             return None
 
@@ -293,16 +318,24 @@ class _Shown:
 @dataclass
 class _Session:
     subscription_id: str = ""
-    generation: object = None
+    generation: object = None  # the execution generation it runs, from its snapshot and moved on by its events
+    epoch: object = None  # the owner epoch of its snapshot
     images: list[dict[str, str]] = field(default_factory=list)  # [{path, mime}] for the next prompt
+    cwd: str = ""  # its workspace, which a relative image path is read against
 
 
 def _reply(request_id: object, result: dict[str, Any]) -> Action:
     return TO_CLIENT, {"jsonrpc": "2.0", "id": request_id, "result": result}
 
 
-def _refuse(request_id: object, code: int, message: str) -> Action:
-    return TO_CLIENT, {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
+def _refuse(request_id: object, code: int, message: str, data: dict[str, Any] | None = None) -> Action:
+    error: dict[str, Any] = {"code": code, "message": message, **({"data": data} if data else {})}
+    return TO_CLIENT, {"jsonrpc": "2.0", "id": request_id, "error": error}
+
+
+def _withdrawal(session_id: object, request_id: str) -> Action:
+    """The stdio entry's withdrawal of a request it asked (`request.cancel`), matched by the TUI by id."""
+    return TO_CLIENT, _event("request.cancel", session_id, {"id": request_id, "request_ids": [request_id]})
 
 
 def _reason(error: dict[str, Any]) -> str:
@@ -328,9 +361,11 @@ class Adapter:
     """
 
     def __init__(self, options: dict[str, Any], tool_progress: str | None = None,
-                 files: HermesFiles | None = None, new_id: Callable[[], str] = lambda: uuid.uuid4().hex) -> None:
+                 files: HermesFiles | None = None, new_id: Callable[[], str] = lambda: uuid.uuid4().hex,
+                 cwd: str = "") -> None:
         self.options = options
         self.tool_progress = tool_progress
+        self.cwd = cwd  # the launch's workspace, for a session whose own is not known
         self.files = files or HermesFiles()
         self.new_id = new_id
         self.contract: dict[str, Any] | None = None  # `runtime.describe`'s session_create, once answered
@@ -423,32 +458,56 @@ class Adapter:
         return [self._forward(request_id, "session.resume", params)]
 
     def _close(self, request_id: object, params: dict[str, Any]) -> list[Action]:
+        session_id = params.get("session_id")
         state = self._state(params)
         if state is None or not state.subscription_id:
-            return [_reply(request_id, {})]  # this connection holds no view of it: nothing to leave
-        detach = {"session_id": params["session_id"], "subscription_id": state.subscription_id,
-                  "end_reason": CLOSE_END_REASON}
+            # This connection holds no view of it: nothing to leave, and nothing it asked can still be answered.
+            return [*self._withdraw_session(session_id), _reply(request_id, {})]
+        detach = {"session_id": session_id, "subscription_id": state.subscription_id, "end_reason": CLOSE_END_REASON}
         return [self._forward(request_id, "session.detach", detach)]
+
+    def _withdraw_session(self, session_id: object) -> list[Action]:
+        """Withdraw every prompt of a session this connection no longer views.
+
+        The owner stops sending it that session's `.settled` events once it
+        detaches, so a question left open here would wait behind the next
+        session's, and a decline sent for it later would stop that session's turn.
+        """
+        withdrawn = [request_id for request_id, shown in self.shown.items() if shown.session_id == session_id]
+        for request_id in withdrawn:
+            del self.shown[request_id]
+        return [_withdrawal(session_id, request_id) for request_id in withdrawn]
 
     def _submit(self, request_id: object, params: dict[str, Any]) -> list[Action]:
         row = params.pop("truncate_before_row_id", None)
         truncating = params.pop("confirm_truncate", None) is not None or row is not None
-        state = self._state(params)
-        if state is not None and state.images:
-            params["attachments"], state.images = state.images, []  # the stdio entry sent its queue with the turn
         params["input_id"] = self.new_id()
         if not truncating:
+            self._take_images(params)
             return [self._forward(request_id, "prompt.submit", params)]
         return [self._call("session.resume", {"session_id": params.get("session_id")},
                            lambda snapshot: self._rewind(request_id, row, params, snapshot))]
 
+    def _take_images(self, params: dict[str, Any]) -> list[dict[str, str]]:
+        """Move the session's queued images into this prompt, as the stdio entry sent its queue with the turn."""
+        state = self._state(params)
+        if state is None or not state.images:
+            return []
+        params["attachments"], state.images = state.images, []
+        return params["attachments"]
+
     def _rewind(self, request_id: object, row: object, submit: dict[str, Any], snapshot: dict[str, Any]) -> list[Action]:
-        """Cut the session before `row` at the revision just read (`session.mutate` rewind), then send the prompt."""
+        """Cut the session before `row` at the revision just read (`session.mutate` rewind), then send the prompt.
+
+        The queued images stay queued until the prompt goes, and come back to
+        the queue if Hermes refuses it. A prompt refused after the cut says
+        so (`data.rewound`), so the TUI does not report the history as kept.
+        """
         result = snapshot.get("result")
         if not isinstance(result, dict):
             error = snapshot.get("error") if isinstance(snapshot.get("error"), dict) else {}
             return [_refuse(request_id, REFUSED, f"Hermes did not read the session to rewind it ({_reason(error)})")]
-        self._note_view(result)
+        self._note_view(result, snapshot=True)
         mutate = {
             "session_id": submit.get("session_id"), "request_id": self.new_id(),
             "expected_revision": result.get("revision"), "expected_generation": result.get("execution_generation"),
@@ -459,7 +518,19 @@ class Adapter:
             error = reply.get("error")
             if isinstance(error, dict):
                 return [_refuse(request_id, REFUSED, f"Hermes did not rewind the session ({_reason(error)})")]
-            return [self._forward(request_id, "prompt.submit", submit)]
+            images = self._take_images(submit)
+
+            def on_submitted(answer: dict[str, Any]) -> list[Action]:
+                refused = answer.get("error")
+                if not isinstance(refused, dict):
+                    return self._answered("prompt.submit", {**answer, "id": request_id})
+                state = self._state(submit)
+                if state is not None:
+                    state.images = images + state.images
+                return [_refuse(request_id, REFUSED, f"Hermes cut the session, then refused the prompt ({_reason(refused)})",
+                                {"rewound": True})]
+
+            return [self._call("prompt.submit", submit, on_submitted)]
 
         return [self._call("session.mutate", mutate, on_rewound)]
 
@@ -499,9 +570,14 @@ class Adapter:
 
     # ── images ──
 
+    def _cwd(self, params: Mapping[str, Any]) -> str:
+        """The workspace a relative image path is read against: the session's, else the launch's."""
+        state = self._state(params)
+        return (state.cwd if state is not None else "") or self.cwd
+
     def _attach(self, request_id: object, params: dict[str, Any]) -> list[Action]:
         try:
-            image = self.files.image(str(params.get("path") or ""))
+            image = self.files.image(str(params.get("path") or ""), self._cwd(params))
         except ValueError as error:
             return [_refuse(request_id, NOT_FOUND, str(error))]
         return [self._stage(request_id, params.get("session_id"), image, lambda staged: {
@@ -509,7 +585,7 @@ class Adapter:
             "text": image.remainder or f"[User attached image: {image.path.name}]", **staged})]
 
     def _drop(self, request_id: object, params: dict[str, Any]) -> list[Action]:
-        image = self.files.dropped_image(str(params.get("text") or ""))
+        image = self.files.dropped_image(str(params.get("text") or ""), self._cwd(params))
         if image is None:
             return [_reply(request_id, {"matched": False})]
         return [self._stage(request_id, params.get("session_id"), image, lambda staged: {
@@ -592,21 +668,26 @@ class Adapter:
         if isinstance(request_id, str) and request_id in self.own:
             return self.own.pop(request_id)(frame)
         method = self.calls.pop(request_id, None)
+        if method is None:
+            return [(TO_CLIENT, frame)]
+        return self._answered(method, frame)
+
+    def _answered(self, method: str, frame: dict[str, Any]) -> list[Action]:
+        """The owner's answer to a TUI call this adapter translated, as the TUI reads it."""
         result = frame.get("result")
-        if method is None or not isinstance(result, dict):
+        if not isinstance(result, dict):
             return [(TO_CLIENT, frame)]
         if method in ("session.create", "session.resume"):
             return self._opened(method, frame, result)
         if method == "session.detach":
-            self._forget_view(result)
-            return [_reply(request_id, {})]
+            return [*self._forget_view(result), _reply(frame.get("id"), {})]
         if method == "prompt.submit" and isinstance(result.get("ref"), dict):
             self._note_generation(result["ref"].get("session_id"), result.get("execution_generation"))
         return [(TO_CLIENT, frame)]
 
     def _opened(self, method: str, frame: dict[str, Any], result: dict[str, Any]) -> list[Action]:
         session_id = result.get("session_id")
-        self._note_view(result)
+        self._note_view(result, snapshot=True)
         if isinstance(session_id, str) and session_id:
             self.current = session_id
         answer = {**frame, "result": snapshot_result(result)}
@@ -617,34 +698,72 @@ class Adapter:
             pin = {"key": "verbose", "session_id": session_id, "value": self.tool_progress}
 
             def on_pinned(reply: dict[str, Any]) -> list[Action]:
-                if isinstance(reply.get("error"), dict):
-                    reason = _reason(reply["error"])
-                    return [_refuse(frame.get("id"), REFUSED, f"Hermes did not take the launch's tool progress ({reason})")]
-                return actions
+                if not isinstance(reply.get("error"), dict):
+                    return actions
+                # The create is refused, so the session it made must not stay open on the shared gateway.
+                reason = _reason(reply["error"])
+                state = self.sessions.pop(session_id, None)
+                leave = {"session_id": session_id, "subscription_id": state.subscription_id if state else "",
+                         "end_reason": CLOSE_END_REASON}
+                return [self._call("session.detach", leave, lambda _answer: []),
+                        _refuse(frame.get("id"), REFUSED, f"Hermes did not take the launch's tool progress ({reason})")]
 
             return [self._call("config.set", pin, on_pinned)]  # before the TUI can send its first prompt
         return actions
 
-    def _note_view(self, result: dict[str, Any]) -> None:
-        """A create or resume snapshot: the connection's view of that session and the generation it runs."""
+    def _note_view(self, result: dict[str, Any], *, snapshot: bool = False) -> None:
+        """A create or resume snapshot: the connection's view of that session, its epoch and the generation it runs.
+
+        Only a snapshot replaces the epoch and the generation, as in Ink; events and receipts only move it on.
+        """
         session_id = result.get("session_id")
         if not isinstance(session_id, str) or not session_id:
             return
         state = self.sessions.setdefault(session_id, _Session())
         if isinstance(result.get("subscription_id"), str):
             state.subscription_id = result["subscription_id"]
-        self._note_generation(session_id, result.get("execution_generation"))
+        if snapshot and type(result.get("execution_generation")) is int:
+            state.generation = result["execution_generation"]
+        if snapshot and type(result.get("authority_epoch")) is int:
+            state.epoch = result["authority_epoch"]
+        info = result.get("info")
+        if isinstance(info, dict) and isinstance(info.get("cwd"), str) and info["cwd"]:
+            state.cwd = info["cwd"]
 
-    def _forget_view(self, result: dict[str, Any]) -> None:
+    def _forget_view(self, result: dict[str, Any]) -> list[Action]:
+        """A detach answer: the view is gone, and with it every prompt of that session still open here."""
         session_id = result.get("session_id")
-        if result.get("detached") is True and isinstance(session_id, str):
-            state = self.sessions.get(session_id)
-            if state is not None and state.subscription_id == result.get("subscription_id"):
-                del self.sessions[session_id]
+        if not isinstance(session_id, str):
+            return []
+        state = self.sessions.get(session_id)
+        if result.get("detached") is True and state is not None and state.subscription_id == result.get("subscription_id"):
+            del self.sessions[session_id]
+        return self._withdraw_session(session_id)
 
     def _note_generation(self, session_id: object, generation: object) -> None:
-        if isinstance(session_id, str) and type(generation) is int and session_id in self.sessions:
-            self.sessions[session_id].generation = generation
+        state = self.sessions.get(session_id) if isinstance(session_id, str) else None
+        if state is not None and type(generation) is int and (type(state.generation) is not int or generation > state.generation):
+            state.generation = generation
+
+    def _stale(self, session_id: object, kind: object, params: Mapping[str, Any], payload: Mapping[str, Any]) -> bool:
+        """Whether a lifecycle event belongs to a generation or owner epoch this session has moved past.
+
+        Ink's `fenceLifecycleEvent`: a late `message.complete` or `error`
+        from an interrupted turn must not end the turn that replaced it. An
+        `error` with no stamp (a build or call failure) is never fenced, nor
+        is an event whose generation is unstamped (Ink drops that too; here
+        the TUI still sees it, which keeps an owner that stamps less working).
+        """
+        if kind not in LIFECYCLE_EVENTS:
+            return False
+        state = self.sessions.get(session_id) if isinstance(session_id, str) else None
+        generation = params.get("execution_generation", payload.get("execution_generation"))
+        epoch = params.get("authority_epoch", payload.get("authority_epoch"))
+        if state is None:
+            return False
+        if type(epoch) is int and type(state.epoch) is int and epoch != state.epoch:
+            return True
+        return type(generation) is int and type(state.generation) is int and generation < state.generation
 
     def _state(self, params: Mapping[str, Any]) -> _Session | None:
         session_id = params.get("session_id")
@@ -655,6 +774,8 @@ class Adapter:
         kind = params.get("type")
         session_id = params.get("session_id")
         payload = params.get("payload") if isinstance(params.get("payload"), dict) else {}
+        if self._stale(session_id, kind, params, payload):
+            return []
         self._note_generation(session_id, params.get("execution_generation", payload.get("execution_generation")))
         if kind in ("approval.request", "clarify.request") and isinstance(session_id, str):
             request = self._ask(session_id, {**payload, "kind": kind.split(".")[0]})
@@ -666,8 +787,7 @@ class Adapter:
             ]
             for request_id in withdrawn:
                 del self.shown[request_id]
-            return [(TO_CLIENT, _event("request.cancel", session_id, {"id": request_id, "request_ids": [request_id]}))
-                    for request_id in withdrawn]
+            return [_withdrawal(session_id, request_id) for request_id in withdrawn]
         return [(TO_CLIENT, frame)]
 
     def _ask(self, session_id: str, prompt: dict[str, Any]) -> Action | None:
@@ -709,6 +829,7 @@ class AttachApi:
     grant: Callable[[], tuple[str, list[str]]]
     connect: Callable[..., Any]
     protocol: str
+    errors: tuple[type[Exception], ...]  # the WebSocket client's own failures (a refused upgrade, a bad URI)
 
 
 def attach_api() -> AttachApi | None:
@@ -723,6 +844,7 @@ def attach_api() -> AttachApi | None:
         from hermes_cli.gateway_runtime_discovery import connect_private
         from hermes_constants import get_hermes_home
         from websockets.asyncio.client import connect
+        from websockets.exceptions import WebSocketException
     except ImportError:
         return None
 
@@ -751,7 +873,7 @@ def attach_api() -> AttachApi | None:
         url, protocols = gateway_ws_target(endpoint, granted["ticket"])
         return url, list(protocols)
 
-    return AttachApi(grant=grant, connect=connect, protocol=GATEWAY_WS_PROTOCOL)
+    return AttachApi(grant=grant, connect=connect, protocol=GATEWAY_WS_PROTOCOL, errors=(WebSocketException,))
 
 
 def failure_message(receipt: object) -> str:
@@ -842,9 +964,14 @@ async def relay(api: AttachApi, url: str, protocols: list[str], adapter: Adapter
         client = asyncio.create_task(from_client())
         done, _ = await asyncio.wait({owner, client}, return_when=asyncio.FIRST_COMPLETED)
         if client in done and client.exception() is None:
-            # The TUI is leaving: the answers it still waits for (a detach) may arrive, then the socket closes.
-            deadline = asyncio.get_running_loop().time() + DRAIN_SECONDS
-            while adapter.waiting() and not owner.done() and asyncio.get_running_loop().time() < deadline:
+            # The TUI is leaving: the answers it still waits for (the last session's detach, which carries its
+            # close stamp) may arrive, then the socket closes. The TUI terminates a child still running after its
+            # close grace, so the drain does not end on that SIGTERM; it ends at DRAIN_SECONDS, inside the TUI's
+            # terminate grace, before the kill.
+            loop = asyncio.get_running_loop()
+            loop.add_signal_handler(signal.SIGTERM, lambda: None)
+            deadline = loop.time() + DRAIN_SECONDS
+            while adapter.waiting() and not owner.done() and loop.time() < deadline:
                 await asyncio.sleep(0.05)
             owner.cancel()
             return 0
@@ -876,7 +1003,10 @@ def main() -> int:
     except ImportError:
         pass
     else:
-        hermes_bootstrap.harden_import_path()
+        # Hermes from 2026-05-08 to 2026-06-23 has no `harden_import_path`; later ones also run it on import.
+        harden = getattr(hermes_bootstrap, "harden_import_path", None)
+        if callable(harden):
+            harden()
     api = attach_api()
     if api is None:
         return run_stdio_entry()
@@ -885,6 +1015,8 @@ def main() -> int:
     except ValueError as error:
         _say(str(error))
         return 1
+    cwd = next((os.environ[name] for name in ("HERMES_TUI_CWD", "HERMES_CWD", "TERMINAL_CWD") if os.environ.get(name)),
+               os.getcwd())
     for name in LAUNCH_POLICY_ENV:
         os.environ.pop(name, None)
     try:
@@ -894,8 +1026,8 @@ def main() -> int:
         _say(str(error))
         return 1
     try:
-        return asyncio.run(relay(api, url, protocols, Adapter(options, tool_progress)))
-    except (OSError, TimeoutError) as error:
+        return asyncio.run(relay(api, url, protocols, Adapter(options, tool_progress, cwd=cwd)))
+    except (OSError, TimeoutError, *api.errors) as error:  # a refused upgrade or ticket is the client's own error
         _say(f"could not reach Hermes' gateway: {error}")
         return 1
 

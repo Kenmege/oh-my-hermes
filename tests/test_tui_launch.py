@@ -232,8 +232,14 @@ class FallbackSentinelTests(unittest.TestCase):
             launch.request_fallback({launch.FALLBACK_SENTINEL_ENV: str(sentinel)}, said)
             self.assertEqual(launch.fallback_reason(sentinel), [
                 "omh: the Hermes gateway did not start: it exited", "  [gateway-exit] refused: [31mowned[0m"])
-            launch.request_fallback({launch.FALLBACK_SENTINEL_ENV: str(sentinel)}, "x" * (launch.FALLBACK_REASON_BYTES + 9))
-            self.assertEqual(launch.fallback_reason(sentinel), ["x" * launch.FALLBACK_REASON_BYTES])
+            # A long traceback keeps its end, where the cause is; a longer earlier reason leaves nothing behind.
+            long = "Traceback\n" + "x" * launch.FALLBACK_REASON_BYTES + "\nRuntimeError: the cause\n"
+            launch.request_fallback({launch.FALLBACK_SENTINEL_ENV: str(sentinel)}, long)
+            kept = launch.fallback_reason(sentinel)
+            self.assertEqual(kept[-1], "RuntimeError: the cause")
+            self.assertNotIn("Traceback", kept)
+            launch.request_fallback({launch.FALLBACK_SENTINEL_ENV: str(sentinel)}, "short\n")
+            self.assertEqual(launch.fallback_reason(sentinel), ["short"])
         self.assertEqual(launch.fallback_reason(sentinel), [])  # gone with its directory
 
     def test_an_empty_marker_has_no_reason(self) -> None:

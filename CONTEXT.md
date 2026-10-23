@@ -17,7 +17,9 @@ metadata-only status surfaces. Makes no LLM, API, or network calls, with one
 scoped exception: the opt-in `omh_jev_ask` tool sends typed questions to Jev
 with the user's own key when the user names Jev in that turn. (The `show-reel`
 skill also ships opt-in provider scripts that the user, not OMH, runs with
-their own key.)
+their own key. The OMH TUI's gateway child is not core OMH: it runs on Hermes'
+interpreter and reaches the person's own Hermes gateway over loopback, as
+Hermes' own TUI does.)
 _Avoid_: Hermes plugin (that is one distribution surface, not the product),
 coding executor, Hermes patch
 

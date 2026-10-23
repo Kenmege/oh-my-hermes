@@ -16,7 +16,7 @@ never patches Hermes. Pure Python 3.11+, zero runtime dependencies. Four scoped
 exceptions. `omh coding fanout dispatch` (explicit opt-in) spawns local agent
 CLIs as subprocesses — those CLIs make their own network calls; omh itself
 makes none there, and nothing executes without that explicit command. The
-`omh_jev_ask` plugin tool is the one place OMH itself opens a connection: it
+`omh_jev_ask` plugin tool is the one place core OMH itself opens a connection: it
 POSTs typed questions to Jev (TypeSafe, or OpenRouter only with the operator
 setting in `<omh_home>/jev/settings.json`) with the user's own key, only when
 the user named Jev in that turn and a key resolves. Stdlib only, HTTPS only, a

@@ -189,9 +189,11 @@ PR without the chat history.
   Hermes that has the shared-gateway attach API (Hermes 9595c3f345 and later
   refuse the stdio entry beside a running gateway) it reaches the profile's
   gateway as Hermes' own Ink TUI does, whether or not one was running: Hermes'
-  `ensure_gateway_runtime` finds it or starts it with idle exit, a session
-  ticket comes from the home's private control socket, and Hermes'
-  `websockets` client dials the loopback socket Hermes names. It translates
+  `ensure_gateway_runtime` finds it or starts it (an unmanaged gateway
+  daemon with idle exit, or the gateway service the person installed, which
+  Hermes starts through launchctl or systemd), a session ticket comes from
+  the home's private control socket, and `websockets.asyncio.client.connect`
+  dials the loopback socket Hermes names. It translates
   between the stdio wire and the gateway's canonical one only where they
   differ (the launch policy riding `session.create`, a detach for a close, a
   rewind as Hermes' revision-fenced `session.mutate`, images staged through
@@ -341,10 +343,15 @@ PR without the chat history.
   The frontend opens no socket and makes no network call, strips the sidecar
   and attach URLs from the child's environment, and reaps the child when it
   exits, SIGTERM and SIGHUP included; the child's only connections are the
-  two above, to the person's own Hermes home, and INVARIANT 2 pins its
-  imports (`HERMES_INTERPRETER_SCRIPTS`). Ctrl+Z stops the process group,
+  two above, to the person's own Hermes home, and INVARIANT 2 holds it to
+  the `asyncio` names and the `websockets.asyncio.client.connect` it uses
+  (`HERMES_INTERPRETER_SCRIPTS`, which the owner approved as asyncio and
+  websockets only, loopback to the person's own gateway). Ctrl+Z stops the process group,
   the gateway child with it, as Hermes' own CLI's Ctrl+Z does, and fg continues
-  both; a shared gateway, which is not in that group, goes on.
+  both; a shared gateway, which is not in that group, goes on. Stopped for
+  longer than the shared gateway waits on a send (30 s) while it streams a
+  turn, the child is dropped as a stalled peer, and at fg the TUI spawns it
+  again and resumes the session, as after any lost connection.
   OMH itself still makes no LLM call; every model call, and every other
   network call the gateway makes, is Hermes'. This is a foreground terminal
   the person launched, not a background runtime, a transport bot, or a third

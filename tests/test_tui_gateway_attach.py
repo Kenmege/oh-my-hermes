@@ -13,15 +13,18 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from pathlib import Path
 import sys
 import textwrap
+import types
 import unittest
+from unittest.mock import patch
 
 from _test_temp_root import make_test_tempdir
 from omh.tui.attach import gateway_attach as attach
 from omh.tui.attach.gateway_attach import TO_CLIENT, TO_OWNER, Adapter, LocalImage
-from omh.tui.gateway import GATEWAY_SCRIPT, GatewayClient, ServerRequest, gateway_spawn
+from omh.tui.gateway import GATEWAY_SCRIPT, GatewayClient, GatewayUnavailable, ServerRequest, gateway_spawn
 
 CONTRACT = {
     "sources": ["cli", "tui"],
@@ -61,13 +64,16 @@ class FakeFiles:
     def __init__(self, images: dict[str, LocalImage] | None = None, clipboard: tuple[Path, str] | None = None) -> None:
         self.images = images or {}
         self.pasted = clipboard
+        self.cwds: list[str] = []  # the workspace each lookup was read against
 
-    def image(self, raw: str) -> LocalImage:
+    def image(self, raw: str, cwd: str = "") -> LocalImage:
+        self.cwds.append(cwd)
         if raw not in self.images:
             raise ValueError(f"image not found: {raw}")
         return self.images[raw]
 
-    def dropped_image(self, text: str) -> LocalImage | None:
+    def dropped_image(self, text: str, cwd: str = "") -> LocalImage | None:
+        self.cwds.append(cwd)
         return self.images.get(text)
 
     def clipboard(self) -> tuple[Path, str] | None:
@@ -170,6 +176,17 @@ class LaunchPolicyTests(AdapterCase):
         [(target, answer)] = adapter.from_owner(_answer(pin["id"], {"key": "verbose", "value": "verbose"}))
         self.assertEqual((target, answer["id"], answer["result"]["session_id"]), (TO_CLIENT, 1, SID))
 
+    def test_a_refused_tool_progress_pin_leaves_the_created_session_before_refusing_the_create(self) -> None:
+        adapter = self.adapter(tool_progress="verbose")
+        adapter.from_client(_call(1, "session.create", {}))
+        pin = self.own_call(adapter.from_owner(_answer(1, {"session_id": SID, "subscription_id": "sub-1",
+                                                           "messages": []})), "config.set")
+        [(target, detach), (_, refusal)] = adapter.from_owner(_error(pin["id"], "invalid_params"))
+        self.assertEqual((target, detach["method"], detach["params"]), (TO_OWNER, "session.detach", {
+            "session_id": SID, "subscription_id": "sub-1", "end_reason": attach.CLOSE_END_REASON}))
+        self.assertEqual((refusal["id"], refusal["error"]["code"]), (1, attach.REFUSED))
+        self.assertNotIn(SID, adapter.sessions)
+
     def test_an_unknown_tool_progress_refuses_the_launch(self) -> None:
         self.assertEqual(attach.launch_tool_progress({"HERMES_TUI_TOOL_PROGRESS": " Verbose "}), "verbose")
         self.assertIsNone(attach.launch_tool_progress({}))
@@ -214,6 +231,45 @@ class SessionTranslationTests(AdapterCase):
         [(_, answer)] = adapter.from_owner(_answer(6, {"session_id": SID, "subscription_id": "sub-1", "detached": True}))
         self.assertEqual(answer, _answer(6, {}))
         self.assertNotIn(SID, adapter.sessions)
+
+    def test_a_closed_session_withdraws_its_open_prompts(self) -> None:
+        # Detached, the owner sends this connection no `.settled` for that session: a prompt left open here would
+        # wait behind the next session's, and a decline sent for it would stop that session's turn.
+        prompt = {"prompt_id": "p1", "execution_generation": 3, "command": "rm -rf x", "choices": ["once", "deny"]}
+        adapter = self.adapter()
+        self.opened(adapter)
+        adapter.from_owner(_event("approval.request", prompt))
+        adapter.from_owner(_event("approval.request", {**prompt, "prompt_id": "q1"}, session_id="local-other"))
+        adapter.from_client(_call(6, "session.close", {"session_id": SID}))
+        actions = adapter.from_owner(_answer(6, {"session_id": SID, "subscription_id": "sub-1", "detached": True}))
+        self.assertEqual(actions, [
+            (TO_CLIENT, _event("request.cancel", {"id": "omh-approval-p1", "request_ids": ["omh-approval-p1"]})),
+            (TO_CLIENT, _answer(6, {})),
+        ])
+        self.assertEqual(list(adapter.shown), ["omh-approval-q1"])  # another session's question stays
+        # A session this connection holds no view of is left at once, its prompts with it.
+        actions = adapter.from_client(_call(7, "session.close", {"session_id": "local-other"}))
+        self.assertEqual(actions[0][1]["params"]["type"], "request.cancel")
+        self.assertEqual(actions[-1], (TO_CLIENT, _answer(7, {})))
+        self.assertEqual(adapter.shown, {})
+
+    def test_a_late_lifecycle_event_of_an_older_generation_is_dropped(self) -> None:
+        # Ink's `fenceLifecycleEvent`: an interrupted turn's late `message.complete` must not end the next turn.
+        adapter = self.adapter()
+        self.opened(adapter, generation=3, authority_epoch=2)
+        newer = _event("message.start", {}, execution_generation=4, authority_epoch=2)
+        self.assertEqual(adapter.from_owner(newer), [(TO_CLIENT, newer)])
+        self.assertEqual(adapter.from_owner(_event("message.complete", {"text": "late"}, execution_generation=3,
+                                                   authority_epoch=2)), [])
+        self.assertEqual(adapter.from_owner(_event("error", {"message": "x"}, execution_generation=4,
+                                                   authority_epoch=1)), [])  # another owner epoch
+        current = _event("message.complete", {"text": "done"}, execution_generation=4, authority_epoch=2)
+        self.assertEqual(adapter.from_owner(current), [(TO_CLIENT, current)])
+        unstamped = _event("error", {"message": "agent build failed"})
+        self.assertEqual(adapter.from_owner(unstamped), [(TO_CLIENT, unstamped)])  # a failure that is no turn's
+        delta = _event("message.delta", {"text": "x"}, execution_generation=2)
+        self.assertEqual(adapter.from_owner(delta), [(TO_CLIENT, delta)])  # only the lifecycle events are fenced
+        self.assertEqual(adapter.sessions[SID].generation, 4)  # an older event never moves it back
 
     def test_a_prompt_gets_an_input_id(self) -> None:
         adapter = self.adapter()
@@ -277,9 +333,41 @@ class RewindTests(AdapterCase):
         self.assertEqual(mutate["params"], {
             "session_id": SID, "request_id": "id-3", "expected_revision": 9, "expected_generation": 5,
             "operation": "rewind", "payload": {"target_message_id": 41}})
-        [(target, submit)] = adapter.from_owner(_answer(mutate["id"], {"rewound_count": 2}))
-        self.assertEqual((target, submit["id"], submit["method"]), (TO_OWNER, 13, "prompt.submit"))
+        submit = self.own_call(adapter.from_owner(_answer(mutate["id"], {"rewound_count": 2})), "prompt.submit")
         self.assertEqual(submit["params"], {"session_id": SID, "text": "again", "input_id": "id-2"})
+        receipt = {"ref": {"session_id": SID}, "execution_generation": 6, "status": "started"}
+        [(target, answer)] = adapter.from_owner(_answer(submit["id"], receipt))
+        self.assertEqual((target, answer), (TO_CLIENT, _answer(13, receipt)))  # answered as the TUI's own call
+        self.assertEqual(adapter.sessions[SID].generation, 6)
+
+    def rewind_with_an_image(self) -> tuple[Adapter, dict]:
+        """A session with one staged image, and a rewind sent: the revision read, the cut asked for."""
+        adapter = self.adapter()
+        self.opened(adapter)
+        adapter.sessions[SID].images.append({"path": "/hermes/cache/images/upload_1.png", "mime": "image/png"})
+        read = self.own_call(adapter.from_client(_call(15, "prompt.submit", {
+            "session_id": SID, "text": "x", "truncate_before_row_id": 3, "confirm_truncate": True})), "session.resume")
+        mutate = self.own_call(adapter.from_owner(_answer(read["id"], {"revision": 1, "execution_generation": 1})),
+                               "session.mutate")
+        return adapter, mutate
+
+    def test_a_refused_cut_keeps_the_queued_images_for_the_next_prompt(self) -> None:
+        adapter, mutate = self.rewind_with_an_image()
+        adapter.from_owner(_error(mutate["id"], "revision_conflict"))
+        [(_, submit)] = adapter.from_client(_call(16, "prompt.submit", {"session_id": SID, "text": "again"}))
+        self.assertEqual(submit["params"]["attachments"],
+                         [{"path": "/hermes/cache/images/upload_1.png", "mime": "image/png"}])
+
+    def test_a_prompt_refused_after_the_cut_says_the_cut_happened_and_keeps_its_images(self) -> None:
+        adapter, mutate = self.rewind_with_an_image()
+        submit = self.own_call(adapter.from_owner(_answer(mutate["id"], {"rewound_count": 1})), "prompt.submit")
+        self.assertEqual(len(submit["params"]["attachments"]), 1)  # the images go with the prompt once the cut holds
+        [(target, refusal)] = adapter.from_owner(_error(submit["id"], "session_busy"))
+        self.assertEqual((target, refusal["id"]), (TO_CLIENT, 15))
+        self.assertEqual(refusal["error"]["data"], {"rewound": True})
+        self.assertIn("session_busy", refusal["error"]["message"])
+        self.assertEqual(adapter.sessions[SID].images,
+                         [{"path": "/hermes/cache/images/upload_1.png", "mime": "image/png"}])
 
     def test_a_refused_rewind_is_a_refusal_the_tui_keeps_its_session_through(self) -> None:
         adapter = self.adapter()
@@ -384,6 +472,34 @@ class ImageTests(AdapterCase):
                          [{"path": "/hermes/cache/images/upload_1.png", "mime": "image/png"}])
         [(_, submit)] = adapter.from_client(_call(22, "prompt.submit", {"session_id": SID, "text": "next"}))
         self.assertNotIn("attachments", submit["params"])  # sent once, with the turn it was queued for
+
+    def test_a_relative_image_path_is_read_against_the_sessions_workspace(self) -> None:
+        files = FakeFiles({"shot.png": self.IMAGE})
+        adapter = Adapter({}, files=files, new_id=_ids(), cwd="/launch")
+        [(_, describe)] = adapter.describe()
+        adapter.from_owner(_answer(describe["id"], {"session_create": CONTRACT}))
+        adapter.from_client(_call(30, "image.attach", {"session_id": "local-unknown", "path": "shot.png"}))
+        self.opened(adapter, info={"cwd": "/work/project"})
+        adapter.from_client(_call(31, "image.attach", {"session_id": SID, "path": "shot.png"}))
+        self.assertEqual(files.cwds, ["/launch", "/work/project"])
+
+    def test_hermes_path_helper_reads_against_the_workspace_and_leaves_the_environment_as_it_was(self) -> None:
+        seen: list[str | None] = []
+
+        def resolve(raw: str) -> Path | None:
+            seen.append(os.environ.get("TERMINAL_CWD"))
+            return None
+
+        helper = types.ModuleType("hermes_cli.cli_terminal_input")
+        helper._resolve_attachment_path = resolve  # type: ignore[attr-defined]
+        helper._split_path_input = lambda raw: (raw, "")  # type: ignore[attr-defined]
+        modules = {"hermes_cli": types.ModuleType("hermes_cli"), "hermes_cli.cli_terminal_input": helper}
+        with patch.dict(sys.modules, modules), patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("TERMINAL_CWD", None)
+            with self.assertRaises(ValueError):
+                attach.HermesFiles().image("shot.png", "/work/project")
+            self.assertNotIn("TERMINAL_CWD", os.environ)
+        self.assertEqual(seen, ["/work/project", "/work/project"])
 
     def test_a_detached_image_leaves_the_queue(self) -> None:
         adapter = self.adapter(files=FakeFiles({"shot.png": self.IMAGE}))
@@ -494,6 +610,9 @@ class connect:
         _log({"connect": url, "subprotocols": options.get("subprotocols"), "proxy": options.get("proxy", "unset")})
 
     async def __aenter__(self):
+        if os.environ.get("FAKE_OWNER_REFUSES"):
+            from websockets.exceptions import WebSocketException
+            raise WebSocketException("server rejected WebSocket connection: HTTP 403")
         return _Socket()
 
     async def __aexit__(self, *exc):
@@ -614,17 +733,31 @@ class ScriptTests(unittest.TestCase):
         ready = self.client(environ).start(ready_timeout=10)
         self.assertEqual(ready.payload, {"stdio": True})
 
+    ATTACH_API = {
+        "hermes_cli/__init__.py": "",
+        "hermes_cli/gateway_client.py": FAKE_CLIENT,
+        "hermes_cli/gateway_runtime.py": FAKE_RUNTIME,
+        "hermes_cli/gateway_runtime_discovery.py": FAKE_DISCOVERY,
+        "hermes_constants.py": "import os\nfrom pathlib import Path\n\ndef get_hermes_home():\n"
+                               "    return Path(os.environ['HERMES_HOME'])\n",
+        "websockets/__init__.py": "", "websockets/asyncio/__init__.py": "",
+        "websockets/asyncio/client.py": FAKE_OWNER,
+        "websockets/exceptions.py": "class WebSocketException(Exception):\n    pass\n",
+    }
+
+    def test_a_refused_upgrade_ends_with_the_childs_own_line_and_no_traceback(self) -> None:
+        _home, environ = self.hermes(self.ATTACH_API, env={"FAKE_OWNER_REFUSES": "1"})
+        client = self.client(environ)
+        with self.assertRaises(GatewayUnavailable) as raised:
+            client.start(ready_timeout=10)
+        tail = raised.exception.stderr_tail
+        self.assertIn("omh-attach: could not reach Hermes' gateway: server rejected WebSocket connection: HTTP 403",
+                      tail)
+        self.assertFalse([line for line in tail if "Traceback" in line], tail)
+
     def test_a_hermes_with_the_attach_api_is_attached_to_and_translated(self) -> None:
-        home, environ = self.hermes({
-            "hermes_cli/__init__.py": "",
-            "hermes_cli/gateway_client.py": FAKE_CLIENT,
-            "hermes_cli/gateway_runtime.py": FAKE_RUNTIME,
-            "hermes_cli/gateway_runtime_discovery.py": FAKE_DISCOVERY,
-            "hermes_constants.py": "import os\nfrom pathlib import Path\n\ndef get_hermes_home():\n"
-                                   "    return Path(os.environ['HERMES_HOME'])\n",
-            "websockets/__init__.py": "", "websockets/asyncio/__init__.py": "",
-            "websockets/asyncio/client.py": FAKE_OWNER,
-        }, env={"HERMES_MODEL": "gpt-x", "HERMES_TUI_CLIENT_ENV": json.dumps({"PATH": "/bin"})})
+        home, environ = self.hermes(self.ATTACH_API,
+                                    env={"HERMES_MODEL": "gpt-x", "HERMES_TUI_CLIENT_ENV": json.dumps({"PATH": "/bin"})})
         client = self.client(environ)
         ready = client.start(ready_timeout=10)
         self.assertEqual(ready.payload, {"skin": {"name": "fake"}})

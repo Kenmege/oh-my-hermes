@@ -207,8 +207,9 @@ def request_fallback(environ: Mapping[str, str], reason: str = "") -> int:
     exit code instead of opening Hermes' terminal. `reason` is what the TUI
     printed about why it did not start: Hermes' own TUI clears the screen it
     was printed on, so `omh` prints it again once that terminal closes
-    (`fallback_reason`). At most `FALLBACK_REASON_BYTES` of it are kept; a
-    marker whose reason could not be written still asks for the fallback.
+    (`fallback_reason`). Its last `FALLBACK_REASON_BYTES` are kept, since a
+    traceback's cause is at its end; a marker whose reason could not be
+    written still asks for the fallback.
     """
     path = environ.get(FALLBACK_SENTINEL_ENV, "")
     if path:
@@ -217,7 +218,7 @@ def request_fallback(environ: Mapping[str, str], reason: str = "") -> int:
         except OSError:
             return FALLBACK_EXIT
         try:
-            os.write(descriptor, reason.encode("utf-8", "replace")[:FALLBACK_REASON_BYTES])
+            os.write(descriptor, reason.encode("utf-8", "replace")[-FALLBACK_REASON_BYTES:])
         except OSError:
             pass
         finally:
