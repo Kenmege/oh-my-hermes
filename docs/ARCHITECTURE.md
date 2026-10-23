@@ -2851,9 +2851,14 @@ Ink TUI does, through Hermes' functions (`ensure_gateway_runtime`, the home's
 private control socket for a session ticket, Hermes' `websockets` client on the
 loopback socket `gateway_ws_target` names), and relays one TUI's frames; on any
 other Hermes it runs Hermes' stdio entry instead. INVARIANT 2 lists it in
-`HERMES_INTERPRETER_SCRIPTS` with exactly the two modules it may import
-(`asyncio`, `websockets`), refuses a lower-level client in it, and fails when
-any module in `src/` imports it.
+`HERMES_INTERPRETER_SCRIPTS` with a closed list measured from the script:
+every import it may make (the standard library modules, each with the
+attributes it uses, the `asyncio` event-loop names, Hermes' functions named one
+by one, and `websockets.asyncio.client.connect`). It refuses reflection
+(`getattr` past three receipt fields, `vars`, `globals`, dunder attributes), a
+module passed as a value, an attribute read through an imported name, and any
+connection, resolver or subprocess factory reached through any object. It fails
+on an entry the script no longer uses and when any module in `src/` imports it.
 
 Declared and not enforced, each naming what must land first: **workspace** —
 `workspace_binding_guard/v1` now refuses a second workspace-bound handoff on a

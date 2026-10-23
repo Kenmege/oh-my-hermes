@@ -688,6 +688,7 @@ class Adapter:
     def _opened(self, method: str, frame: dict[str, Any], result: dict[str, Any]) -> list[Action]:
         session_id = result.get("session_id")
         self._note_view(result, snapshot=True)
+        previous = self.current
         if isinstance(session_id, str) and session_id:
             self.current = session_id
         answer = {**frame, "result": snapshot_result(result)}
@@ -700,12 +701,15 @@ class Adapter:
             def on_pinned(reply: dict[str, Any]) -> list[Action]:
                 if not isinstance(reply.get("error"), dict):
                     return actions
-                # The create is refused, so the session it made must not stay open on the shared gateway.
+                # The create is refused, so the session it made must not stay open on the shared gateway, stay the
+                # one `shell.exec` runs in, or keep a question open in the TUI.
                 reason = _reason(reply["error"])
                 state = self.sessions.pop(session_id, None)
+                if self.current == session_id:
+                    self.current = previous
                 leave = {"session_id": session_id, "subscription_id": state.subscription_id if state else "",
                          "end_reason": CLOSE_END_REASON}
-                return [self._call("session.detach", leave, lambda _answer: []),
+                return [*self._withdraw_session(session_id), self._call("session.detach", leave, lambda _answer: []),
                         _refuse(frame.get("id"), REFUSED, f"Hermes did not take the launch's tool progress ({reason})")]
 
             return [self._call("config.set", pin, on_pinned)]  # before the TUI can send its first prompt
@@ -827,7 +831,7 @@ class AttachApi:
     """The parts of a Hermes install the attach needs; `attach_api` finds them or says there are none."""
 
     grant: Callable[[], tuple[str, list[str]]]
-    connect: Callable[..., Any]
+    dial: Callable[..., Any]  # `websockets.asyncio.client.connect`
     protocol: str
     errors: tuple[type[Exception], ...]  # the WebSocket client's own failures (a refused upgrade, a bad URI)
 
@@ -873,7 +877,7 @@ def attach_api() -> AttachApi | None:
         url, protocols = gateway_ws_target(endpoint, granted["ticket"])
         return url, list(protocols)
 
-    return AttachApi(grant=grant, connect=connect, protocol=GATEWAY_WS_PROTOCOL, errors=(WebSocketException,))
+    return AttachApi(grant=grant, dial=connect, protocol=GATEWAY_WS_PROTOCOL, errors=(WebSocketException,))
 
 
 def failure_message(receipt: object) -> str:
@@ -925,7 +929,7 @@ async def relay(api: AttachApi, url: str, protocols: list[str], adapter: Adapter
     0 when the TUI closed its input (the person left); 1 when the owner's side
     ended first, which the TUI reads as a gateway that exited on its own.
     """
-    async with api.connect(url, subprotocols=protocols, open_timeout=OPEN_TIMEOUT_SECONDS,
+    async with api.dial(url, subprotocols=protocols, open_timeout=OPEN_TIMEOUT_SECONDS,
                            max_size=None, proxy=None) as socket:
         if socket.subprotocol != api.protocol:
             _say(f"Hermes' gateway answered with protocol {socket.subprotocol!r}, not {api.protocol!r}")
@@ -999,14 +1003,14 @@ def run_stdio_entry() -> int:
 
 def main() -> int:
     try:
-        import hermes_bootstrap  # first, as in every Hermes entry point: it selects Hermes' dependency environment
+        # First, as in every Hermes entry point: importing it selects Hermes' dependency environment. Hermes from
+        # 2026-05-08 to 2026-06-23 has no `harden_import_path` (the import still ran the module); later ones also
+        # run it on import.
+        from hermes_bootstrap import harden_import_path
     except ImportError:
         pass
     else:
-        # Hermes from 2026-05-08 to 2026-06-23 has no `harden_import_path`; later ones also run it on import.
-        harden = getattr(hermes_bootstrap, "harden_import_path", None)
-        if callable(harden):
-            harden()
+        harden_import_path()
     api = attach_api()
     if api is None:
         return run_stdio_entry()

@@ -179,14 +179,19 @@ class LaunchPolicyTests(AdapterCase):
 
     def test_a_refused_tool_progress_pin_leaves_the_created_session_before_refusing_the_create(self) -> None:
         adapter = self.adapter(tool_progress="verbose")
+        adapter.current = "local-before"  # the session the TUI had open, as after a `/new` whose create failed
         adapter.from_client(_call(1, "session.create", {}))
+        prompt = {"kind": "approval", "prompt_id": "p1", "execution_generation": 0, "choices": ["once", "deny"]}
         pin = self.own_call(adapter.from_owner(_answer(1, {"session_id": SID, "subscription_id": "sub-1",
-                                                           "messages": []})), "config.set")
-        [(target, detach), (_, refusal)] = adapter.from_owner(_error(pin["id"], "invalid_params"))
+                                                           "messages": [], "prompts": [prompt]})), "config.set")
+        [(_, cancel), (target, detach), (_, refusal)] = adapter.from_owner(_error(pin["id"], "invalid_params"))
+        self.assertEqual(cancel, _event("request.cancel", {"id": "omh-approval-p1", "request_ids": ["omh-approval-p1"]}))
         self.assertEqual((target, detach["method"], detach["params"]), (TO_OWNER, "session.detach", {
             "session_id": SID, "subscription_id": "sub-1", "end_reason": attach.CLOSE_END_REASON}))
         self.assertEqual((refusal["id"], refusal["error"]["code"]), (1, attach.REFUSED))
         self.assertNotIn(SID, adapter.sessions)
+        self.assertEqual(adapter.shown, {})
+        self.assertEqual(adapter.current, "local-before")  # `shell.exec` never runs in the session just left
 
     def test_an_unknown_tool_progress_refuses_the_launch(self) -> None:
         self.assertEqual(attach.launch_tool_progress({"HERMES_TUI_TOOL_PROGRESS": " Verbose "}), "verbose")

@@ -35,7 +35,8 @@ interpreter as the child the TUI spawns by path, and nothing in `src/` imports
 it. On a Hermes with the shared-gateway attach API it reaches the person's own
 gateway over loopback the way Hermes' Ink TUI does, through Hermes' functions
 and Hermes' `websockets` client; INVARIANT 2's `HERMES_INTERPRETER_SCRIPTS`
-pins what it may import.
+holds it to a closed list of every import and name it may use, measured from
+the script (owner-approved as asyncio + websockets only, loopback).
 
 ## Build & Test
 
