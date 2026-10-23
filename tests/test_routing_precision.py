@@ -61,9 +61,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # Korean request followed by a doubt one more (+1), and an English one
         # followed by a question one more (+1). A colon list ending in a wait and a
         # confirmation tag followed by a take-back add two (+2), and a report tail
-        # that asks whether and a colon list of reads two more (+2).
+        # that asks whether and a colon list of reads two more (+2). A tail asking
+        # why not, two deferrals and two colon lists that hold add five (+5).
         # Three science vocabulary controls remain direct answers.
-        self.assertEqual(payload["summary"]["case_count"], 1085)
+        self.assertEqual(payload["summary"]["case_count"], 1090)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -176,9 +177,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # split rewritten and a split fixed then reported run as a graph (+5). A
         # report tail with ping me, a colon list of changes and a per-unit spec run
         # as a graph (+3). A final ok?, two report tails, a per-unit spec with any
-        # noun and a colon list with any work verb run as a graph (+5).
+        # noun and a colon list with any work verb run as a graph (+5). A deadline
+        # and a send me the diff tail run as a graph (+2).
         # Three unnamed science requests render dedicated computation cards.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1103)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1105)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

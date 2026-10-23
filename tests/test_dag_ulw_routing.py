@@ -474,7 +474,38 @@ class RouterTests(unittest.TestCase):
                         "rebase all open PRs, and let me know if I should",
                         "update every service, then tell me which one to start with?",
                         "fix all the failing tests, and ping me if it breaks", "fix all the failing tests, then ping me, never mind",
-                        "update every service, one PR per service, not sure", "rebase all open PRs, one commit maybe"):
+                        "update every service, one PR per service, not sure", "rebase all open PRs, one commit maybe",
+                        # A tail that holds, is the person's own step, or asks for anything before the work or about
+                        # whether to do it is no report on the result; every hard exclude reads the whole text.
+                        "rebase all open PRs, then tell me why we shouldn't", "update every service, and let me check with the team first",
+                        "migrate every package to pnpm, and let me get sign-off before anything",
+                        "rebase all open PRs, then tell me the risks first",
+                        "update every service, and tell me what would break before you do",
+                        "fix all the failing tests, then show me how you would do it first",
+                        "rebase all open PRs, and let me get sign-off from the team", "update every service, then let me run it by the team",
+                        "bump all the packages, and let me think about it", "rebase all open PRs, then tell me which ones should be merged",
+                        "update every service, then send me the list of risks first", "fix all the failing tests, then tell me if it's worth it",
+                        "fix all the failing tests and tell me why we shouldn't",
+                        "rebase all open PRs, then let me know which ones conflicted after the freeze",
+                        "update every service, and tell me which ones changed tomorrow",
+                        # A deferral past now, in English or Korean, wherever it is said.
+                        "rebase all the open PRs later, ok?", "rebase all the open PRs tomorrow, ok?", "update every service next week, ok?",
+                        "update every service tonight, alright?", "rebase all open PRs on monday, okay?",
+                        "fix all the failing tests later, right?", "bump every package eventually, ok?",
+                        "migrate every package to pnpm some other time, ok?", "rebase all the open PRs tomorrow",
+                        "update every service this weekend", "fix all the failing tests at some point",
+                        "bump all the packages after the freeze", "update every service, tonight", "PR들 전부 나중에 리베이스해줘",
+                        "모든 서비스 내일 업데이트해줘", "PR들 전부 다음 주에 리베이스해줘", "모든 패키지 언젠가 업데이트해줘",
+                        "레포들 전부 주말에 CI 고쳐줘", "브랜치들 전부 월요일에 리베이스해줘",
+                        # A colon list ends at an item that opens on a status or a hedge, or carries one anywhere.
+                        "for each open PR: rebase, squash, merge, too risky though",
+                        "for every repo: bump deps, regenerate lockfiles, someday", "for each repo: bump deps, open PRs, eh, rather not",
+                        "for all services: upgrade node, redeploy, someone else's call though",
+                        "for each package: bump the version, publish, nope", "rebase all my open PRs: done, done, conflict",
+                        "rebase all my open PRs: all done", "for each repo: bump deps, tested, shipped", "for each open PR: rebase, merge, ugh",
+                        "for every service: upgrade node, redeploy, meh", "for each package: bump, publish, not my call",
+                        "for each open PR: rebase, squash, maybe merge", "update every service: green, green, failed",
+                        "for every repo: bump deps, lol", "update every service: the billing one first"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
@@ -499,7 +530,7 @@ class RouterTests(unittest.TestCase):
                         "rebase all open PRs, go", "rebase all open PRs, by friday please", "update every service, urgently",
                         "fix all the failing tests, right away", "rebase all open PRs, no rush", "update every service, go ahead",
                         "fix all the failing tests, let's go", "rebase all open PRs, cheers", "update every service, ty",
-                        "fix all the failing tests, appreciated", "rebase all open PRs, right now", "update every service, tonight",
+                        "fix all the failing tests, appreciated", "rebase all open PRs, right now",
                         # A plain report tail on the work, a final confirmation tag on any request, a colon list whose
                         # items each open on a verb of work, and a per-unit spec with any nouns, by shape.
                         "migrate every package to pnpm, then ping me with the results",
@@ -518,7 +549,14 @@ class RouterTests(unittest.TestCase):
                         "update every repo's CI config, a separate PR per repo",
                         "migrate every package to pnpm, a single changelog entry per package",
                         "fix all the failing tests, one branch for each module",
-                        "update every service, each in its own branch", "rebase all open PRs, per repo"):
+                        "update every service, each in its own branch", "rebase all open PRs, per repo",
+                        # A report on the result by its positive shapes, and a deadline, which is no deferral.
+                        "update every service, and send me the diff", "rebase all open PRs, and let me know",
+                        "bump all the packages, and let me know once they're all merged",
+                        "fix all the failing tests and report which ones were flaky", "rebase all my open PRs, then send me the links",
+                        "update every repo's CI config, and tell me which ones changed", "update every service by tonight",
+                        "rebase all open PRs, by friday", "rebase all open PRs now", "모든 서비스 업데이트해줘, 다음 주 월요일까지",
+                        "update all services and report back"):
             with self.subTest(message=message):
                 self.assertTrue(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))

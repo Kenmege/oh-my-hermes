@@ -862,9 +862,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # dag-ulw (1). A colon list that ends in a wait and a confirmation
             # tag followed by a take-back clarify, where main dispatched
             # dag-ulw (2). A report tail that asks whether and a colon list of
-            # reads clarify, as on main (2).
+            # reads clarify, as on main (2). A tail asking why not clarifies as on
+            # main, and a deferral in English and in Korean, a colon list ending
+            # in a hedge and a colon list of statuses clarify, where main
+            # dispatched dag-ulw (5).
             # Three domain-science vocabulary controls (+3).
-            expected=1085,
+            expected=1090,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1353,7 +1356,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # spec (3). The shapes behind them add five, each a dag-ulw graph: a
             # final ok? and two report tails (clarifies on main) (3), a
             # per-unit spec with any noun and a colon list with any work verb
-            # (dispatches on main) (2).
+            # (dispatches on main) (2). A deadline by tonight and a send me the
+            # diff tail run as a graph, as on main (2).
             # Three unnamed domain-science interventions (+3).
             # #2221 L3: every STATUS_IS_THE_WORK member gets a status request
             # after its sigil that runs it; the seven without one before
@@ -1362,7 +1366,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # harness-session-inventory, skill-health, run-efficiency) (+7).
             # #2221 L4: doctor joins the set, since the status card shows no
             # install drift, and /omh-doctor status runs doctor (+1).
-            expected=1103,
+            expected=1105,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

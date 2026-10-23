@@ -896,7 +896,7 @@ _KEEPER_WORD: Final = (
     rf"|{_TIME_WORD}(?:\s*{_TIME_WORD})*\s*(?:까지(?:는|만)?|안에|중으로|중에|내로|이내)"
     rf"|지금(?:\s*바로)?|바로|당장|즉시|(?:바로\s*|지금\s*)?시작(?:해|하자)?|가자|고고|{_G}+"
     r"|부탁\S*|고마\S*|고맙\S*|감사\S*|땡큐"
-    r"|asap|urgent(?:ly)?|quickly|right\s+away|no\s+rush|today|tonight|(?:right\s+)?now|go(?:\s+ahead)?|let'?s\s+go"
+    r"|asap|urgent(?:ly)?|quickly|right\s+away|no\s+rush|today|(?:right\s+)?now|go(?:\s+ahead)?|let'?s\s+go"
     r"|by\s+(?:the\s+)?(?:eod|eow|cob|end\s+of\s+(?:the\s+)?(?:day|week|month|sprint)|today|tonight|tomorrow(?:\s+morning)?"
     r"|noon|midnight|(?:this\s+|next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|weekend)"
     r"|\d{1,2}(?::\d{2})?\s*(?:am|pm)?)"
@@ -933,11 +933,24 @@ _NOT_A_WORK_VERB: Final = (
     r"|maybe|perhaps|probably|possibly|might|may|could|would|should|will|can|is|are|was|were|be|it|this|that|these"
     r"|those|the|a|an|i|we|you|they|my|our|your|what|which|who|why|how|when|where|if|whether|though|but|although"
     r"|unless|so|because|since|or|also|just|only|lol|haha|hmm|idk|imo|imho|tbh|fwiw|btw|fyi|ok|okay|yes|yeah|nah"
-    r"|sure|thanks|thank|please)"
+    r"|sure|thanks|thank|please|all|every|each|both|some|any|most|everything|everyone)"
 )
-_EN_LIST_ITEM: Final = re.compile(rf"^(?:and\s+)?(?:please\s+)?(?!{_NOT_A_WORK_VERB}\b)[a-z][a-z-]*\b")
-# The head: the request so far ends in the first item of a colon list after a breadth word.
+# An item that opens on a status is a report on the unit, not work ("done", "failed", "green", "conflict", "rebased").
+_STATUS_WORD: Final = (
+    r"(?:done|failed|failing|passing|passed|green|red|ok|fine|good|blocked|stuck|broken|gone|conflict(?:s|ing)?|clean"
+    r"|dirty|stale|pending|wip|[a-z]+(?<!e)ed)"
+)
+_EN_LIST_ITEM: Final = re.compile(rf"^(?:and\s+)?(?:please\s+)?(?!(?:{_NOT_A_WORK_VERB}|{_STATUS_WORD})\b)[a-z][a-z-]*\b")
+# A hedge or a refusal anywhere in an item ends the list and holds the request ("…, too risky though", "…, someday",
+# "…, eh, rather not", "…, someone else's call though", "…, nope").
+_HEDGE_IN_AN_ITEM: Final = re.compile(
+    r"\b(?:maybe|perhaps|though|eventually|some\s*day|nope|nah|rather|not\s+my\s+call|someone\s+else'?s|not\s+sure"
+    r"|too|risky|idk|eh|meh|ugh)\b"
+)
+# The head: the request so far ends in the first item of a colon list after a breadth word; a colon after a whole
+# request opens a list too ("rebase all my open PRs: done, done, conflict"), and a colon between digits is a time.
 _EN_LIST_HEAD: Final = re.compile(rf"(?:{_EN_BREADTH}|\bfor\s+(?:each|every|all)\b|\b{_EN_PLURAL_UNITS}\b)[^:,.!?]*:[^,]*$")
+_LIST_COLON: Final = re.compile(r"\s*(?<!\d):(?!\d)\s*")
 _HOLD: Final = re.compile(
     r"농담|장난|됐어|됐고|(?<![가-힣])(?:아냐|아니야|아니다|아니|잠깐만?|잠시만?|말고)(?![가-힣])"
     r"|\b(?:jk|j/k|kidding|never\s*mind|nvm|wait|hold\s+on)\b"
@@ -988,29 +1001,55 @@ def _korean_clauses(folded: str) -> list[str]:
     return [folded, *clauses]
 
 
-# What a request may end with besides the work, stripped before it is read: one confirmation tag that ends the message
-# ("…, ok?", "…, alright?"), and a report on the change ("…, then tell me which ones conflicted", "…, and notify me
-# when it's done") with no question, condition or hold in it ("…, then tell me whether we even need to" and "…, and
-# let me know if I should" keep theirs).
+# What a request may end with besides the work, read off before it is read: one confirmation tag that ends the message
+# ("…, ok?", "…, alright?"), and a report on the result, by its positive shapes only: "let me know", alone or with when
+# or once it is done or which ones did what ("…, and let me know", "…, and let me know once they're merged"), or tell,
+# ping, notify, message, show, send or report with the same, or with a result noun ("…, then ping me with the results",
+# "…, and send me the diff", "…, then tell me which ones conflicted"), or a bare report ("… and report back"). Any
+# other "let me <verb>" is the person's own step ("…, and let me check with the team first"), and a tail that asks for
+# anything before the work or about whether to do it is no report ("…, then tell me why we shouldn't", "…, then tell me the risks first", "…, and tell me what
+# would break before you do"): both stay trailing clauses that keep nothing (`_trails_off`).
 _FINAL_CONFIRMATION_TAG: Final = re.compile(r"\s*,\s*(?:ok|okay|alright|right)\s*[?？]+\s*$")
-_EN_TELL_ME_TAIL: Final = re.compile(
-    r"\s*(?:,\s*|\s)(?:and\s+then|and|then)\s+(?:also\s+|just\s+)?(?:tell|ping|notify|message|let|show|send)\s+me\b"
-    r"(?P<rest>.*)$"
+_DONE_CLAUSE: Final = (
+    r"(?:when|once|after)\s+(?:(?:it|they|you|that|this|everything|each(?:\s+one)?|all\s+of\s+them)"
+    r"(?:'s|'re|'ve|\s+is|\s+are|\s+has|\s+have)?\s+)?(?:been\s+|all\s+)?"
+    r"(?:done|finished|complete(?:d)?|merged|landed|green|through|ready|over|deployed|shipped|in)\b"
 )
-_NOT_A_PLAIN_REPORT: Final = re.compile(r"[?？]|\b(?:if|whether)\b")
+_RESULT_VERB: Final = (
+    r"(?:failed|fail|conflicted|conflict|changed|broke|broken|merged|passed|succeeded|flaked|flaky|landed|skipped"
+    r"|errored|timed\s+out|regressed|went\s+wrong|moved|updated|bumped|rebased|fixed|needed)"
+)
+_RESULT_NOUN: Final = (
+    r"(?:results?|diffs?|links?|list|summary|summaries|counts?|report|status|outcome|changes|numbers?|output|logs?)"
+)
+_EN_REPORT_TAIL: Final = re.compile(
+    r"(?:,\s*|\s+)(?:and\s+then|and|then)\s+(?:also\s+|just\s+|please\s+)*"
+    rf"(?:report(?:\s+back)?|let\s+me\s+know(?:\s+(?P<done>{_DONE_CLAUSE})|\s+(?:which|what)\b[^?]*?\b{_RESULT_VERB}\b[^?]*?)?"
+    r"|(?:(?:tell|ping|notify|message|show|send)\s+me|report(?:\s+back)?)\s+"
+    rf"(?:(?P<done_too>{_DONE_CLAUSE})|(?:which|what)\b[^?]*?\b{_RESULT_VERB}\b[^?]*?"
+    rf"|(?:with\s+)?(?:(?:the|a|an|all\s+the)\s+)?(?:[a-z][\w-]*\s+){{0,2}}?{_RESULT_NOUN}\b"
+    r"(?:\s+(?:of|for|from|on)\s+[^?]*?)?))"
+    r"\s*[.!]*$"
+)
+_ASKS_BEFORE_THE_WORK: Final = re.compile(
+    r"[?？]|\b(?:why|would|should|could|risks?|how\s+(?:you|we|i|to|it)|first|before|beforehand|whether|if|unless)\b"
+)
 
 
-def _request_text(text: str) -> str:
-    """``text`` folded, without a confirmation tag that ends it (`_FINAL_CONFIRMATION_TAG`) or a plain report on the
-    change after it (`_EN_TELL_ME_TAIL`, kept when it asks, sets a condition or holds)."""
-    folded = _FINAL_CONFIRMATION_TAG.sub("", _folded(text), count=1)
-    tail = _EN_TELL_ME_TAIL.search(folded)
-    if not tail or _NOT_A_PLAIN_REPORT.search(tail.group("rest")) or _HOLD.search(tail.group("rest")):
-        return folded
-    head = folded[: tail.start()]
+def _closed(folded: str) -> tuple[str, str]:
+    """``folded`` read two ways: the request, with a confirmation tag that ends it and a report on the result after a
+    change read off (`_FINAL_CONFIRMATION_TAG`, `_EN_REPORT_TAIL`); and the whole text for the hard excludes, with only
+    that report's own time clause read off ("…, and notify me when it's done": that when is the report's)."""
+    untagged = _FINAL_CONFIRMATION_TAG.sub("", folded, count=1)
+    tail = _EN_REPORT_TAIL.search(untagged)
+    if not tail or _ASKS_BEFORE_THE_WORK.search(tail.group()) or _HOLD.search(tail.group()):
+        return untagged, folded
+    head = untagged[: tail.start()]
     changes = _EN_CHANGE_ON_BREADTH.search(head) or _EN_PARTS_IN_PARALLEL.search(head)
-    splits = _EN_SPLIT_REQUEST.search(head) and _EN_SPLIT_EVIDENCE.search(head)
-    return head if changes or splits else folded
+    if not changes and not (_EN_SPLIT_REQUEST.search(head) and _EN_SPLIT_EVIDENCE.search(head)):
+        return untagged, folded
+    done = "done" if tail.group("done") else "done_too" if tail.group("done_too") else ""
+    return head, (folded[: tail.start(done)] + folded[tail.end(done) :] if done else folded)
 
 
 def _reads_as_an_english_request(text: str) -> bool:
@@ -1028,14 +1067,23 @@ def _trails_off(folded: str) -> bool:
     the shortest run of clauses that reads as one (`_reads_as_an_english_request`), and every clause after it is read."""
     if re.search(r"[가-힣]", folded):
         return False  # a Korean message is read whole instead (`_korean_clauses`)
-    for cut in _CLAUSE_BREAK.finditer(folded):
-        if _reads_as_an_english_request(folded[: cut.start()]):
-            trailing = [clause for clause in _CLAUSE_BREAK.split(folded[cut.end() :]) if clause]
-            if _EN_LIST_HEAD.search(folded[: cut.start()]):
-                while trailing and _EN_LIST_ITEM.match(trailing[0]) and not _HOLD.search(trailing[0]):
-                    trailing = trailing[1:]  # the rest of the colon list of changes
-            return not _keeps_the_request(trailing)
+    cuts = sorted([*_CLAUSE_BREAK.finditer(folded), *_LIST_COLON.finditer(folded)], key=lambda cut: cut.start())
+    for cut in cuts:
+        head = folded[: cut.start()]
+        if not _reads_as_an_english_request(head):
+            continue
+        trailing = [clause for clause in _CLAUSE_BREAK.split(folded[cut.end() :]) if clause]
+        if ":" in cut.group() or _EN_LIST_HEAD.search(head):
+            # the rest of a colon list: items that open on a verb of work, with no hedge or hold in them
+            while trailing and _is_a_work_item(trailing[0]):
+                trailing = trailing[1:]
+        return not _keeps_the_request(trailing)
     return False
+
+
+def _is_a_work_item(item: str) -> bool:
+    """Whether a colon list ``item`` opens on a verb of work (`_EN_LIST_ITEM`) with no hedge, refusal or hold in it."""
+    return bool(_EN_LIST_ITEM.match(item)) and not _HEDGE_IN_AN_ITEM.search(item) and not _HOLD.search(item)
 
 
 def _asks_for(folded: str, verbs: str) -> bool:
@@ -1084,6 +1132,17 @@ _STOP_OR_HOLD: Final = re.compile(
 #   면 (화면, 측면, 전면) is no condition;
 _CONDITION: Final = re.compile(
     r"(?<![화측전양단표방내외평])면(?=[\s,.!?~]|$)(?!\s*감사)|거든|\b(?:if|when|once|after|unless|whenever|before)\b"
+)
+# - a deferral of the work past now ("rebase all the open PRs later", "update every service tonight", "… next week",
+#   "… on monday", "PR들 전부 나중에 리베이스해줘", "모든 서비스 내일 업데이트해줘"); a deadline is none ("… by tonight",
+#   "…해줘, 내일까지"), and now, today and asap keep;
+_DEFERRAL: Final = re.compile(
+    r"(?<!\bby\s)\b(?:later|tomorrow|tonight|next\s+(?:week|month|sprint|quarter|year|time|monday|tuesday|wednesday"
+    r"|thursday|friday|saturday|sunday)|on\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|the\s+weekend)"
+    r"|this\s+weekend|over\s+the\s+weekend|eventually|some\s+other\s+time|another\s+time|at\s+some\s+point"
+    r"|after\s+the\s+freeze|some\s*day)\b"
+    r"|(?<![가-힣])(?:나중에|언젠가|(?:이번\s*)?주말에|내일|모레|다음\s*(?:주|달|번)(?:에)?|[월화수목금토일]요일에)"
+    rf"(?!(?:\s*{_TIME_WORD})*\s*(?:까지|안에|중으로|중에|내로|이내))"
 )
 # - a completion said as a noun or a bare word ("브랜치들 다 정리됨", "upstream PR들 다 리뷰 반영 끝", "테스트 수정 완료"),
 #   not one that names the units ("완료된 이슈들 전부 닫아줘") or asks for it ("… 리베이스 완료해줘");
@@ -1201,13 +1260,6 @@ _NO_WORK_ASKED: Final = re.compile(
     r"|without|but\s+not|never|only)\b|\band\s+list\b|\blist\s+(?:them|the|which|all)\b"
     r"|\b(?:the|this|that|a)\s+(?:\S+\s+){0,2}\S+(?<!s)\s+(?:in|on)\s+(?:all|every|each)\b"
 )
-# A change, then a report on what it did ("fix all the failing tests and tell me which ones were flaky"): the report
-# is the change's last clause, not a request of its own. Only after a change on the breadth object
-# (`_EN_CHANGE_ON_BREADTH`): a review or an audit that ends in a report asks only for the report ("review all open PRs
-# and just tell me which are safe").
-_EN_REPORT_TAIL: Final = re.compile(
-    r"(?:,\s*|\s+)and\s+(?:then\s+)?(?:tell\s+me|let\s+me\s+know|report|send\s+me|show\s+me)\b[^.?!]*[.!]?$"
-)
 # Parallel running is the work's subject, not its shape ("fix the race where uploads run in parallel across modules").
 _RUNTIME_PARALLEL: Final = re.compile(
     r"\b(?:run|runs|running|execute|executes|load|loads)\s+in\s+parallel\b|\brace(?:\s+condition)?s?\b|\bdeadlock"
@@ -1264,7 +1316,7 @@ def _names_a_skill_as_the_instrument(folded: str) -> bool:
     )
 
 
-def _hard_excluded(folded: str, links: tuple[str, ...]) -> bool:
+def _hard_excluded(folded: str, links: tuple[str, ...], request: str | None = None) -> bool:
     """Whether ``folded`` is no request for work over many targets whatever else it says: a sigil (the invoked skill's
     work), a skill or engine named first or as the instrument, a stop or a hold, a condition, a past or a completion,
     one pull request's or one branch's scope (in its words or its ``links``), a recurring schedule, work until a
@@ -1276,13 +1328,14 @@ def _hard_excluded(folded: str, links: tuple[str, ...]) -> bool:
         or _names_a_skill_as_the_instrument(folded)
         or _STOP_OR_HOLD.search(folded)
         or _CONDITION.search(folded)
+        or _DEFERRAL.search(folded)
         or _COMPLETED.search(folded)
         or _says_a_past(folded)
         or _ONE_SCOPE.search(folded)
         or _names_one_container(folded)
         or _says_a_schedule(folded)
         or _takes_it_back(folded)
-        or _trails_off(folded)
+        or _trails_off(folded if request is None else request)
         or _UNTIL.search(folded)
         or _RUNTIME_PARALLEL.search(folded)
         or names_ultrawork(folded)
@@ -1292,11 +1345,9 @@ def _hard_excluded(folded: str, links: tuple[str, ...]) -> bool:
 def _work_over_many_targets(text: str, links: tuple[str, ...]) -> bool:
     """Whether ``text`` asks, in request form, for an offer-list verb on a breadth object that names independent units
     (`_KOREAN_OFFER`, `_EN_OFFER`), or for two named parts in parallel, and nothing excludes it."""
-    folded = _request_text(text)
-    if _hard_excluded(folded, links):
+    folded, whole = _closed(_folded(text))
+    if _hard_excluded(whole, links, folded):
         return False
-    if _EN_CHANGE_ON_BREADTH.search(folded):
-        folded = _EN_REPORT_TAIL.sub("", folded)
     if _NO_WORK_ASKED.search(folded):
         return False
     if _EN_PARTS_IN_PARALLEL.search(folded):
@@ -1393,8 +1444,8 @@ def _splits_named_work(text: str, folded: str, links: tuple[str, ...]) -> bool:
     """Whether ``text`` asks to split named work into parallel parts (`_EN_SPLIT_EVIDENCE`, a Korean work verb in
     request form), rather than to split text or one named object (`_splits_one_object`), to propose a split (no
     imperative), or to be told how."""
-    request = _EN_DONE_OPENER.sub("", folded, count=1)
-    if not work_is_split(text) or _hard_excluded(request, links):
+    request, whole = _closed(_EN_DONE_OPENER.sub("", folded, count=1))
+    if not work_is_split(text) or _hard_excluded(whole, links, request):
         return False
     if _splits_one_object(request):
         return False
@@ -1405,7 +1456,6 @@ def _splits_named_work(text: str, folded: str, links: tuple[str, ...]) -> bool:
     tail = _KOREAN_REPORT_TAIL.search(request)
     if tail and re.search(_KOREAN_WORK_VERB, tail.group("work")):
         return not _SPLIT_TEXT.search(request) and not _one_fault(request)  # "… 구현하고 변경 내용 설명해줘"
-    request = _EN_REPORT_TAIL.sub("", request)
     if _NO_WORK_ASKED.search(request) or _SPLIT_TEXT.search(request):
         return False
     if _one_fault(request):
@@ -1443,9 +1493,10 @@ def dispatches_dag_ulw(text: str, links: tuple[str, ...] = ()) -> bool:
     into parallel parts (`_splits_named_work`). Nothing hard-excluded (`_hard_excluded`) qualifies, and neither does a
     request that only reads, reports or runs one command. ``links`` are the message's links, which the executable text
     leaves out."""
-    folded = _request_text(text)
+    folded = _folded(text)
     if _splits_named_work(text, folded, links):
         return True
+    folded = _closed(folded)[0]
     if not _work_over_many_targets(text, links) or _asks_to_be_told(text):
         return False
     if _one_fault(folded):

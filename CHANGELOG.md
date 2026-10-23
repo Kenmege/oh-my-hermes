@@ -50,11 +50,17 @@ All notable changes will be documented here.
   asks for more work (`…해줘, 그리고 README도 갱신해줘`, `…해줘, 그 다음 테스트 돌려줘`,
   `모든 패키지 업데이트해줘, 패키지마다 changelog도 써줘`, `…, then run the tests`), with no
   hold or joke in any clause after the request. A final `…, ok?` on any request
-  and a plain report tail (`…, then tell me which ones conflicted`, `…, and notify
-  me when it's done`, not `…, then tell me whether …` or `…, and let me know if
-  …`) are read off before the request is. A colon list after a breadth head is
-  one request when every item opens on a verb of work (`for each open PR:
-  rebase, squash, merge`; not `…: review, comment, don't merge`). Anything else after it keeps nothing
+  and a report on the result, by its positive shapes (`…, and let me know`, `…,
+  then ping me with the results`, `…, and notify me when it's done`, `…, then
+  tell me which ones conflicted`, `…, and send me the diff`), are read off before
+  the request is; any other `let me …` and a tail that asks for anything before
+  the work (`…, then tell me why we shouldn't`, `…, then tell me the risks
+  first`) hold it. Every hard exclude reads the whole text, and a deferral is
+  one (`… later`, `… tomorrow`, `… tonight`, `… next week`, `PR들 전부 나중에 …`;
+  `… by tonight` and `…, 내일까지` are deadlines and run). A colon list after a
+  breadth head is one request when every item opens on a verb of work (`for each
+  open PR: rebase, squash, merge`); an item that opens on a status or carries a
+  hedge ends it (`…: done, done, conflict`, `…, too risky though`). Anything else after it keeps nothing
   (`…해줘, 아 잠깐만`, `…해줘, 해도 되나`, `…해줘, 확인해줘`, `…, what do you think`,
   `…, not sure though`, `…, never mind`, `… — jk`, `… or maybe not`). A past
   inside an embedded question (`어떻게 나눴는지 설명해줘`), a report after a -고 work
