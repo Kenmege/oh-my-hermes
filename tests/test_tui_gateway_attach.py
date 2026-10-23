@@ -21,6 +21,7 @@ import types
 import unittest
 from unittest.mock import patch
 
+from _module_patch import patch_modules
 from _test_temp_root import make_test_tempdir
 from omh.tui.attach import gateway_attach as attach
 from omh.tui.attach.gateway_attach import TO_CLIENT, TO_OWNER, Adapter, LocalImage
@@ -494,7 +495,7 @@ class ImageTests(AdapterCase):
         helper._resolve_attachment_path = resolve  # type: ignore[attr-defined]
         helper._split_path_input = lambda raw: (raw, "")  # type: ignore[attr-defined]
         modules = {"hermes_cli": types.ModuleType("hermes_cli"), "hermes_cli.cli_terminal_input": helper}
-        with patch.dict(sys.modules, modules), patch.dict(os.environ, {}, clear=False):
+        with patch_modules(modules), patch.dict(os.environ, {}, clear=False):
             os.environ.pop("TERMINAL_CWD", None)
             with self.assertRaises(ValueError):
                 attach.HermesFiles().image("shot.png", "/work/project")
