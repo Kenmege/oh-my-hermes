@@ -2857,12 +2857,19 @@ the attributes it uses, the `asyncio` event-loop names, Hermes' functions named
 one by one, and `websockets.asyncio.client.connect`), the names it may read
 with `getattr` (three receipt fields), and a list of attribute names it may not
 use (connection, resolver and subprocess factories, a socket's verbs, dunder
-names). It also follows three name flows: `connect` goes only into the
-`AttachApi(dial=...)` slot, and `api.dial` is called only with the url
-`api.grant()` returned, traced by name through the call that hands it on; no
-`_`-prefixed attribute of anything but `self` is read, and `type` is not used;
-`os.environ` is read and copied, but written only as the `TERMINAL_CWD`
-set-and-restore and emptied only of `LAUNCH_POLICY_ENV`. That blocks the
+names). It also follows name flows. The script builds exactly one
+`AttachApi(...)`, inside the module-level `attach_api()`, which returns it or
+None, and its `grant=` is the `grant` function defined in `attach_api()`.
+`connect` goes only into that construction's `dial=` slot. `.dial(...)` is
+called only on an object traced by name to `attach_api()`'s result, with a url
+traced by name, through the calls that hand it on (up to three), to the first
+element of `grant()` called on such an object, and always with the literal
+`proxy=None`, as Hermes' own client dials. A `_`-prefixed attribute is read
+only on `self` inside a method of a class the script defines, and `self` is
+bound nowhere else; `type` is not used outside annotations. `os.environ` is
+read and copied, but written only as the `TERMINAL_CWD` set-and-restore and
+emptied only of `LAUNCH_POLICY_ENV`, which is assigned once, at module level,
+as the literal tuple the gate pins, and whose loop name is never rebound. That blocks the
 realistic drift of a later edit that calls another Hermes, network or
 subprocess helper. It is not a sandbox: an allowed Hermes function called with
 other arguments is not caught, and it does not check where the grant's url
