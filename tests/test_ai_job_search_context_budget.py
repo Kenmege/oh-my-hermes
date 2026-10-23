@@ -1,8 +1,10 @@
 """Measured marginal cost of the complete career feature, not general budget slack.
 
-Baseline: 85673e100b7f9197eec1ab84925b4260ec12f681, measured with the same
-canonical producers in an isolated clean worktree. Receipts: task evidence
-budget-repair/{base,initial,candidate}-metrics-data.json. Hashes pin existing
+Baseline: 245d34d7135ba0fba18afbf7f4151d5c4f6a5f37 (integration main).
+Legacy body hashes match main's producer-derived digest fixture after restoring
+only the research lane cardinality; integration-1/merged-measurements.json
+records the combined repeated-byte measurement. The unchanged index, capability
+and registry pins retain their original 85673e100 measurements. Hashes pin existing
 content, not just its size, so removing a safeguard cannot finance this feature.
 """
 from __future__ import annotations
@@ -110,10 +112,10 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
                                if heading == 'Workflow Lane' and '**Research and company ops**' in body
                                else body for heading, body in parts)
             legacy_hashes[template.name] = hashlib.sha256(restored.encode()).hexdigest()
-        self.assertEqual(_digest(legacy_hashes), '3cd7cf87b071ffacf6ee27450753522ce75db99028698bfa891f090dc648f659')
+        self.assertEqual(_digest(legacy_hashes), 'd1c5273b31d9833daa48d770d1c728d9aabf98d14eb29802d25dcf8875cce2b5')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
-        self.assertEqual(legacy['repeated']['bytes'], 124345)
+        self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
         delta = current['repeated']['bytes'] - legacy['repeated']['bytes']
         self.assertEqual(delta, len(sections['Workflow Lane']) + len(sections['Runtime Evidence']))
         self.assertLessEqual(delta, REPEATED_DELTA_CAP)
@@ -128,7 +130,7 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         from omh.maintenance.drift import budget_metrics
         expected = {
             'skill_index_line_max_chars': 100,
-            'plugin_tool_schema_chars': 67130,
+            'plugin_tool_schema_chars': 68402,  # Main's registered search tool; unchanged here.
             'pre_llm_call_context_chars_max': 5780,
             'pre_llm_call_context_fallback_chars_max': 7216,
             'awareness_primer_markdown_chars': 3520,

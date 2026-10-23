@@ -92,7 +92,7 @@ DECISION_LIMIT: Final = 64
 
 GAP: Final = 2  # cells between two boxes of a row
 BOX_INNER_MIN: Final = 22  # a box's lines are cut down to this many cells, and no further: below it, the tree
-BOX_INNER_MAX: Final = 30  # and never drawn wider: `unspecified-high · glm-5.3:low` whole
+BOX_INNER_MAX: Final = 48  # and never drawn wider: a box grows toward its longest title, a PR title's length
 BOX_MIN_WIDTH: Final = BOX_INNER_MIN + 4
 SECTION_INDENT: Final = "  "
 TREE_WIDE_MIN: Final = 72  # below this a tree node takes two lines
@@ -367,25 +367,30 @@ def _category(node: Mapping[str, Any]) -> str:
     return clean_text(node.get("category")) or UNKNOWN_FIELD
 
 
+STATE_ORDER: Final = ("running", "stuck", "failed", "dispatched", "waiting", "interrupted", "unknown", "done")
+
+
 def header_parts(graph: Mapping[str, Any], charset: Charset = UNICODE) -> tuple[str, str]:
-    """``DAG · <name> · N nodes · E edges`` and the state counts, which follow it on one line when they fit."""
-    nodes = _nodes(graph)
-    edges = _edges(graph, {str(node["id"]) for node in nodes})
+    """``DAG · <name> · N nodes · E edges`` and the state counts, which follow it on one line when they fit.
+
+    The counts are the run's lanes and the edges between them: the `main` root and its dispatch edges are the
+    drawing's, not the run's. A count of 1,000 or more has thousands separators.
+    """
+    lanes = [node for node in _nodes(graph) if _state(node) != "root"]
+    edges = _edges(graph, {str(node["id"]) for node in lanes})
     sep = charset.separator
     counts: dict[str, int] = {}
-    for node in nodes:
+    for node in lanes:
         state = _state(node)
-        if state != "root":
-            counts[state] = counts.get(state, 0) + 1
-    order = ("running", "stuck", "failed", "dispatched", "waiting", "interrupted", "unknown", "done")
-    tally = [f"{counts[state]} {state}" for state in order if counts.get(state)]
+        counts[state] = counts.get(state, 0) + 1
+    tally = [f"{counts[state]:,} {state}" for state in STATE_ORDER if counts.get(state)]
     hidden = graph.get("hidden_nodes")
     if isinstance(hidden, int) and not isinstance(hidden, bool) and hidden > 0:
-        tally.append(f"+{hidden} more nodes")
+        tally.append(f"+{hidden:,} more nodes")
     name = clean_text(graph.get("name")) or "delegation"
-    node_word = "node" if len(nodes) == 1 else "nodes"
+    node_word = "node" if len(lanes) == 1 else "nodes"
     edge_word = "edge" if len(edges) == 1 else "edges"
-    return sep.join(["DAG", name, f"{len(nodes)} {node_word}", f"{len(edges)} {edge_word}"]), sep.join(tally)
+    return sep.join(["DAG", name, f"{len(lanes):,} {node_word}", f"{len(edges):,} {edge_word}"]), sep.join(tally)
 
 
 def header_text(graph: Mapping[str, Any], charset: Charset = UNICODE) -> str:
@@ -620,6 +625,35 @@ def _box_natural(
     return max(lead + cells(_origin_mark(node_id, shape, charset)) + cells(_title(node)), status, facts)
 
 
+def _middle_cut(text: str, width: int, ellipsis: str) -> str:
+    """``text`` in ``width`` cells, cut in the middle at word boundaries: its start, `` … ``, then its end, so the
+    part that tells two titles apart (`#58281 · part 3`, `(chat_name upstream sync)`) stays. Whole when it fits;
+    cut at its end (`fit`) where no word boundary leaves both halves a word."""
+    if cells(text) <= width:
+        return text
+    joint = f" {ellipsis} "
+    room = width - cells(joint)
+    if room < 8:
+        return fit(text, max(width, 1), ellipsis)
+    head_room = room - room * 2 // 5
+    head = ""
+    for char in text:
+        if cells(head + char) > head_room:
+            break
+        head += char
+    head = head[: head.rfind(" ")] if " " in head[len(head) // 2:] else head
+    tail = ""
+    for char in reversed(text[len(head):]):
+        if cells(tail) + cells(char) > room - cells(head):
+            break
+        tail = char + tail
+    tail = tail[tail.find(" ") + 1:] if " " in tail[: len(tail) // 2 + 1] else tail
+    head, tail = head.rstrip(" ,;:·-—("), tail.lstrip(" ·")
+    if not head or not tail:
+        return fit(text, max(width, 1), ellipsis)
+    return f"{head}{joint}{tail}"
+
+
 def _box_content(
     node_id: str, shape: _Frontiers, charset: Charset, inner: int, focus: Focus | None, spinner: str | None,
 ) -> list[tuple[Segment, ...]]:
@@ -646,7 +680,8 @@ def _box_content(
         room = inner - sum(cells(segment.text) for segment in (*head, *word))
         head.append(Segment(fit(title, max(room, cells(charset.ellipsis) + 1), charset.ellipsis), title_role))
         return [_fit_pieces([*head, *word], inner, charset)]
-    head.append(Segment(title, title_role))
+    room = inner - sum(cells(segment.text) for segment in head)
+    head.append(Segment(_middle_cut(title, room, charset.ellipsis) if cells(title) > room else title, title_role))
     lines = [head, _facts(node, charset)]
     status = [Segment(glyph, f"node:{state}"), Segment(" " + _capital(_status_text(node)), f"node-word:{state}")]
     tokens = f"{charset.separator}{_tokens_text(node, charset)}" if _tokens_text(node, charset) else ""

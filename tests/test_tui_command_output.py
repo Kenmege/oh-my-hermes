@@ -105,7 +105,7 @@ class CommandEchoTests(unittest.TestCase):
         self.assertTrue(block.done)
         self.assertEqual(block.command, "/theme nope")
         self.assertEqual(block.parts[0][1], NOTICE_WARN)
-        self.assertIn("No theme named nope", block.parts[0][0])
+        self.assertIn("No theme or launch look named nope", block.parts[0][0])
 
     def test_help_prints_whole(self) -> None:
         app, _client = make_app(rows=24, cols=200)

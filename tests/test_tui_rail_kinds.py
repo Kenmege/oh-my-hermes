@@ -449,12 +449,13 @@ class SlashTokenTests(unittest.TestCase):
             self.assertEqual(prompt_tokens(app), [["/dag-ulw"]])
 
     def test_the_composer_draws_a_known_name_bold_in_the_skill_hue(self) -> None:
-        frame = build_frame(cols=60, rows=24, composer=Composer(text="/dag-ulw go /foo src/a.py"),
+        # `/dag-ulw` itself is drawn in the aura (`test_tui_aura`), over its `/name` colour: `/model` stands for the rest.
+        frame = build_frame(cols=60, rows=24, composer=Composer(text="/model go /foo src/a.py"),
                             info=(Span("info"),), known_slash=KNOWN)
-        (row,) = [line for line in frame.lines if line_text(line).startswith("❯ /dag-ulw")]
-        self.assertEqual([span.text for span in row if span.style == THEME.slash], ["/dag-ulw"])
+        (row,) = [line for line in frame.lines if line_text(line).startswith("❯ /model")]
+        self.assertEqual([span.text for span in row if span.style == THEME.slash], ["/model"])
         self.assertEqual(THEME.slash, THEME.kinds[KIND_FAMILIES.index("skill")])  # a skill reads as its loads do
-        plain = build_frame(cols=60, rows=24, composer=Composer(text="/dag-ulw go"), info=(Span("info"),))
+        plain = build_frame(cols=60, rows=24, composer=Composer(text="/model go"), info=(Span("info"),))
         self.assertFalse([span for line in plain.lines for span in line if span.style == THEME.slash])
 
     def test_the_echoed_prompt_and_the_sticky_row_draw_it_too(self) -> None:

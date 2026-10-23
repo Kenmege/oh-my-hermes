@@ -88,6 +88,9 @@ AGENT_STATES = {RUNNING: "running", QUEUED: "waiting", INTERRUPTED: "interrupted
 MORE_KEY = "more:"  # + a layer's label: the row that layer's quiet nodes fold into
 OPEN_STATES = frozenset({"running", "stuck", "failed"})  # open by default; a layer holding one is never shut to fit
 MIN_TITLE_CELLS = 12
+TITLE_CAP = 52  # a node title's cells at most: a PR title's length, with room left for the figure columns
+SHORT_LABEL = 24  # a label narrower than this reads with its prompt's first clause after it (`node_title`)
+WORD_CUT_SHARE = 7  # tenths of a title's cells a cut at a word boundary keeps at least (`clamp_title`)
 FACT_SEPARATOR = " · "
 BLANK, YIELDS = "blank", "yields"  # a row's mark for the cut: a blank row; a shut layer whose every node is done
 
@@ -127,16 +130,6 @@ def run_key(graph: Mapping[str, Any]) -> str:
     return " ".join(sorted({node_id.rpartition(":")[0] for node_id in ids if node_id.startswith("d:")})) or (
         f"name:{graph.get('name')}"
     )
-
-
-def tree_agents(graph: Mapping[str, Any], roster: Roster) -> frozenset[str]:
-    """The roster's agents the tree draws: each node's child and the `other agents`, not a lane of this run the
-    graph no longer draws (a superseded repair attempt)."""
-    from ..plugin_bundle.omh.delegation_view import _tree_structure
-
-    by_id = _tree_structure(graph)[3]
-    bound = {agent.subagent_id for agent in _bound(by_id, roster).values()}
-    return frozenset(bound | {agent.subagent_id for agent in _others(by_id, roster, bound)})
 
 
 def _bound(by_id: Mapping[str, Mapping[str, Any]], roster: Roster) -> dict[str, Agent]:
@@ -222,6 +215,14 @@ def _items(graph: Mapping[str, Any], roster: Roster, now: float) -> list[_Item]:
         layer = _Item(key, 0, label=label)
         layer.kids = [node_item(member, 1, key) for member in members]
         layers.append(layer)
+    hidden = graph.get("hidden_by_group") if isinstance(graph.get("hidden_by_group"), Mapping) else {}
+    order = graph.get("group_order") if isinstance(graph.get("group_order"), list) else []
+    drawn = {layer.label for layer in layers}
+    emptied = [label for label in order if isinstance(label, str) and label not in drawn and hidden.get(label)]
+    if emptied:  # a layer the graph reader's cap emptied keeps its row (`▸ layer 4 · 0 of 161 nodes`), in its place
+        rank = {label: at for at, label in enumerate(order)}
+        layers += [_Item(f"{LAYER_KEY}{label}", 0, label=label) for label in emptied]
+        layers.sort(key=lambda layer: rank.get(layer.label, len(rank)))
     others = _others(by_id, roster, {agent.subagent_id for agent in agents.values()})
     if others:
         group = _Item(OTHERS_KEY, 0, label=OTHERS)
@@ -322,32 +323,95 @@ def _fitted(layers: Sequence[_Item], overrides: Mapping[str, bool], cap: int) ->
     return expanded
 
 
-def _figures(node: Mapping[str, Any]) -> list[str]:
-    """The header's figures, fullest first: `category · model:effort · status · ↓tokens`, then shorter forms."""
+def _figure_parts(node: Mapping[str, Any]) -> tuple[str, str, str, str]:
+    """The header's figures as columns: category, model:effort, status, ↓tokens ("" where the node has none)."""
     from ..plugin_bundle.omh.delegation_view import UNICODE, _status_text, _tokens_text, _tree_fields
 
     category, model = _tree_fields(node)
-    status, tokens = _status_text(node), _tokens_text(node, UNICODE)
-    forms = [[category, model, status, tokens], [category, model, status], [model, status], [status]]
-    return [FACT_SEPARATOR.join(part for part in form if part) for form in forms]
+    return category, model, _status_text(node), _tokens_text(node, UNICODE)
 
 
-def _node_row(item: _Item, expanded: bool, width: int, theme: Theme, frame: int) -> list[Span]:
+def clamp_title(text: str, cells: int) -> str:
+    """`text` whole when it fits `cells`, else cut at its last word boundary and closed with "…"; a long token that
+    would leave less than `WORD_CUT_SHARE` tenths of the cells is cut itself, never mid-word without the "…"."""
+    if cell_width(text) <= cells:
+        return text
+    cut = truncate(text, max(cells - 1, 1), ellipsis="")
+    space = cut.rfind(" ")
+    # The cut ends inside a word: back to its start, unless that leaves less than `WORD_CUT_SHARE` tenths of the
+    # cells, as before a long token (a path, a PR list); then the token itself is cut.
+    if text[len(cut):len(cut) + 1] != " " and space > 0 and cell_width(cut[:space]) >= cells * WORD_CUT_SHARE // 10:
+        cut = cut[:space]
+    return cut.rstrip(" ,;:·-—(") + "…"
+
+
+def node_title(node: Mapping[str, Any]) -> str:
+    """The title the tree shows: the node's label, and the first clause of its prompt (`summary`) when the label is
+    short, in `TITLE_CAP` cells at most (`clamp_title`)."""
+    label = str(node.get("title") or "untitled")
+    summary = str(node.get("summary") or "")
+    if summary and cell_width(label) < SHORT_LABEL and summary.casefold() not in label.casefold():
+        label = f"{label}{FACT_SEPARATOR}{summary}"
+    return clamp_title(label, TITLE_CAP)
+
+
+@dataclass(frozen=True)
+class _Columns:
+    """Where the node rows' parts go: the title column's width, then which figure columns show and how wide."""
+
+    title: int  # cells from the row's start to the end of the title column
+    shown: tuple[int, ...]  # indexes into `_figure_parts`, in order
+    widths: tuple[int, ...]  # each shown column's width
+
+
+def _prefix(item: _Item, expanded: bool, glyph: str) -> str:
+    lead = " " * (len(DAG_INDENT) + 2 + STEP * (item.depth - 1))
+    triangle = (OPEN if expanded else SHUT) if _foldable(item) else LEAF
+    origin = f"{item.origin}{FACT_SEPARATOR}" if item.origin else ""
+    return f"{lead}{triangle}{glyph} {origin}"
+
+
+def _columns(rows: Sequence[tuple[_Item, bool]], width: int) -> _Columns:
+    """The node rows' layout: titles in one column as wide as the widest shown, then the figures as columns each
+    padded to its widest value, starting at the same cell on every row. Where they do not fit `width`, whole
+    columns go from the right (tokens, then category, then model), and then the titles give way, down to
+    `MIN_TITLE_CELLS`."""
+    if not rows:
+        return _Columns(0, (), ())
+    prefixes = [cell_width(_prefix(item, expanded, "•")) for item, expanded in rows]
+    titles = [cell_width(node_title(item.node or {})) for item, _expanded in rows]
+    parts = [_figure_parts(item.node or {}) for item, _expanded in rows]
+    title = max(prefix + text for prefix, text in zip(prefixes, titles))
+    for shown in ((0, 1, 2, 3), (0, 1, 2), (1, 2), (2,), ()):
+        shown = tuple(index for index in shown if any(part[index] for part in parts))
+        widths = tuple(max(cell_width(part[index]) for part in parts) for index in shown)
+        block = sum(widths) + cell_width(FACT_SEPARATOR) * max(len(widths) - 1, 0)
+        room = width - (2 + block if widths else 0)
+        if room >= max(prefixes) + MIN_TITLE_CELLS or not widths:
+            return _Columns(min(title, room), shown, widths)
+    return _Columns(min(title, width), (), ())
+
+
+def _node_row(item: _Item, expanded: bool, width: int, theme: Theme, frame: int, columns: _Columns) -> list[Span]:
     from ..plugin_bundle.omh.delegation_view import UNICODE
 
     node = item.node or {}
     glyph = SPINNER_FRAMES[frame % len(SPINNER_FRAMES)] if item.state == "running" else UNICODE.glyphs.get(
         item.state, UNICODE.glyphs["unknown"])
-    lead = " " * (len(DAG_INDENT) + 2 + STEP * (item.depth - 1))
+    prefix = _prefix(item, expanded, glyph)
     triangle = (OPEN if expanded else SHUT) if _foldable(item) else LEAF
     origin = f"{item.origin}{FACT_SEPARATOR}" if item.origin else ""
-    fixed = cell_width(f"{lead}{triangle}{glyph} {origin}")
-    figure, room = "", width - fixed
-    for figure in [*_figures(node), ""]:  # ends on "", which always stays
-        room = width - fixed - (cell_width(f"  {figure}") if figure else 0)
-        if room >= MIN_TITLE_CELLS:
-            break
-    title = truncate(str(node.get("title") or "untitled"), max(room, 1))
+    lead = " " * (len(DAG_INDENT) + 2 + STEP * (item.depth - 1))
+    room = max(columns.title - cell_width(prefix), 1)
+    title = clamp_title(node_title(node), room)
+    parts = _figure_parts(node)
+    cells_shown = [parts[index] for index in columns.shown]
+    while cells_shown and not cells_shown[-1]:
+        cells_shown.pop()  # no trailing separator for a column this node has nothing in
+    figure = FACT_SEPARATOR.join(
+        text + " " * (columns.widths[at] - cell_width(text)) if at < len(cells_shown) - 1 else text
+        for at, text in enumerate(cells_shown)
+    )
     pad = " " * max(room - cell_width(title), 0)
     return [
         Span(lead), Span(triangle, theme.muted), Span(glyph, dag_style(f"glyph:{item.state}", theme)), Span(" "),
@@ -365,15 +429,19 @@ def _detail_row(item: _Item, row: LogRow, theme: Theme) -> list[Span]:
     return [*lead, Span(row.text, style)]
 
 
-def _layer_row(item: _Item, expanded: bool, theme: Theme) -> list[Span]:
+def _layer_row(item: _Item, expanded: bool, theme: Theme, hidden: int = 0) -> list[Span]:
+    """`▾ layer 2 · 4 nodes · 2 running`; `hidden` nodes the graph reader left out of the layer read as
+    `28 of 640 nodes`, so a capped graph's counts are not taken for the layer's."""
     counts: dict[str, int] = {}
     for kid in item.kids:
         word = "running" if kid.state in ("running", "stuck") else kid.state
         word = word if word in ("running", "failed", "done") else "waiting"
         counts[word] = counts.get(word, 0) + 1
     noun = "agent" if item.key == OTHERS_KEY else "node"
-    said = [f"{len(item.kids)} {noun}{'' if len(item.kids) == 1 else 's'}"]
-    said += [f"{counts[word]} {word}" for word in ("running", "failed", "waiting", "done") if counts.get(word)]
+    total = len(item.kids) + hidden
+    shown = f"{len(item.kids):,} of {total:,}" if hidden else f"{total:,}"
+    said = [f"{shown} {noun}{'' if total == 1 else 's'}"]
+    said += [f"{counts[word]:,} {word}" for word in ("running", "failed", "waiting", "done") if counts.get(word)]
     return [Span(DAG_INDENT), Span(OPEN if expanded else SHUT, theme.muted),
             Span(FACT_SEPARATOR.join([item.label or "lanes", *said]), theme.muted)]
 
@@ -423,16 +491,20 @@ def tree_lines(
 
     layers = _items(graph, roster, now)
     expanded = _fitted(layers, overrides, cap)
+    specs = list(_specs(layers, expanded))
+    columns = _columns([(item, expanded[item.key]) for kind, item, _detail in specs if kind == "node" and item], width)
+    hidden_by_group = graph.get("hidden_by_group") if isinstance(graph.get("hidden_by_group"), Mapping) else {}
     rows: list[_Row] = []
-    for kind, item, detail in _specs(layers, expanded):
+    for kind, item, detail in specs:
         if kind == "header":
             spans = [Span(DAG_INDENT), Span(header_text(graph), dag_style("header", theme))]
         elif kind == "blank" or item is None:
             spans = []
         elif kind == "layer":
-            spans = _layer_row(item, expanded[item.key], theme)
+            hidden = hidden_by_group.get(item.label, 0)
+            spans = _layer_row(item, expanded[item.key], theme, hidden if isinstance(hidden, int) else 0)
         elif kind == "node":
-            spans = _node_row(item, expanded[item.key], width, theme, frame)
+            spans = _node_row(item, expanded[item.key], width, theme, frame, columns)
         elif kind == "more":
             spans = _more_row(detail, theme)
         else:

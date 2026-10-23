@@ -30,7 +30,7 @@ from omh.tui.agent_view import (
 )
 from omh.tui.app import SLOT_ARM_SECONDS, App
 from omh.tui.layout import AGENT_VIEW_ROWS, agent_view_cap
-from omh.tui.frame import INFO_INSET as INFO_INSET_CELLS, MODE_NORMAL
+from omh.tui.frame import BROWSING_HINT, INFO_INSET as INFO_INSET_CELLS, MODE_NORMAL
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Paste
 from omh.tui.modes import IDLE_HINT
@@ -234,8 +234,9 @@ class ListFocusTests(unittest.TestCase):
         app._on_input(Key(DOWN))
         during = drawn(app)
         self.assertFalse([row for row in during if row.startswith("❯ ")], during)  # no composer
-        self.assertFalse([row for row in during if row.startswith(RULE_ROW)], during)  # no box
-        self.assertEqual(during[resting - 1 : resting + 2], ["", "", ""], "its rows stay, drawn blank")
+        # Its rows stay: the rules, and the browsing hint where the prompt was.
+        self.assertTrue(during[resting - 1].startswith(RULE_ROW) and during[resting + 1].startswith(RULE_ROW), during)
+        self.assertEqual(during[resting].strip(), BROWSING_HINT)
         self.assertEqual(screen_info_index(app, during), status)
         self.assertEqual(info_left(during[status]), AGENT_LIST_HINT)  # the info line says the list's keys
         self.assertEqual(during[status + 1 : status + 1 + len(app.listed)], under_the_frame(app)[:-1])
@@ -1260,8 +1261,9 @@ class AgentReplayTests(AppTestCase):
         # The list's keys, and on the right the effort the replayed config leaves unset (`default`).
         self.assertEqual(info_left(rows[status]), AGENT_LIST_HINT)
         self.assertTrue(rows[status].endswith("effort default"), rows[status])
-        # The composer's rows are blank while the list has the keys: no box anywhere on the screen.
-        self.assertFalse([row for row in rows if row.startswith(RULE_ROW)], rows)
+        # While the list has the keys the composer's rules stay and its row says how to browse: no prompt to type in.
+        self.assertFalse([row for row in rows if row.startswith("❯ ")], rows)
+        self.assertEqual([row.strip() for row in rows if BROWSING_HINT in row], [BROWSING_HINT])
         self.assertEqual(captures["log"][0], "find usages of old_api in src/ and list every call site")
         self.assertEqual(captures["second"][0], "read the diff for risks")
         # Back on the second agent, the list's last row: the screen's last row that is not blank.

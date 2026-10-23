@@ -22,7 +22,7 @@ class WheelSupportTests(unittest.TestCase):
     def test_built_wheel_contains_actual_companion_resources(self):
         with tempfile.TemporaryDirectory() as td:
             out = Path(td)
-            result = subprocess.run(["uv", "build", "--offline", "--wheel", "--out-dir", str(out)], cwd=ROOT, capture_output=True, text=True, timeout=120)
+            result = subprocess.run(["uv", "build", "--wheel", "--out-dir", str(out)], cwd=ROOT, capture_output=True, text=True, timeout=120)
             self.assertEqual(result.returncode, 0, result.stderr)
             wheels = list(out.glob("*.whl"))
             self.assertEqual(len(wheels), 1)

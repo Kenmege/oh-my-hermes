@@ -25,7 +25,7 @@ from test_tui_subagents import FIRST, FRAMES, SECOND, cells, payload
 from omh.tui.app import App
 from omh.tui.layout import AGENT_VIEW_ROWS, agent_view_cap
 from omh.tui.modes import chip_column, info_line, mode_label
-from omh.tui.frame import INFO_INSET as INFO_INSET_CELLS, MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
+from omh.tui.frame import BROWSING_HINT, INFO_INSET as INFO_INSET_CELLS, MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, ServerRequest
 from omh.tui.keys import BACKSPACE, CHAR, ENTER, Key
 from omh.tui.panels import SPINNER_FRAMES
@@ -597,22 +597,123 @@ class DagViewTests(unittest.TestCase):
         self.assertEqual(len(flat), 6)
         self.assertFalse([row for row in flat if "more" in row])
 
+    def ended(self, app: App) -> App:
+        app.turn_pending = False  # the turn is over: the run's tree folds now, not while the turn runs
+        return app
+
     def test_a_run_whose_every_lane_settled_is_one_summary_line(self) -> None:
         from _delegation_graphs import export_run
 
         done = {"api": "done", "ui": "done", "docs": "done", "cli": "done", "verify": "done"}
         for rows in (24, 40):
             with self.subTest(rows=rows):
-                self.assertEqual(view_text(self.tree_app(rows, export_run(done, staged=True))),
+                self.assertEqual(view_text(self.ended(self.tree_app(rows, export_run(done, staged=True)))),
                                  ["  DAG · export feature · done 5/5"])
                 failed = export_run({**done, "docs": "failed", "verify": "interrupted"}, staged=True)
-                self.assertEqual(view_text(self.tree_app(rows, failed)),
+                self.assertEqual(view_text(self.ended(self.tree_app(rows, failed))),
                                  ["  DAG · export feature · done 3/5 · 1 failed · 1 interrupted"])
         one_left = export_run({**done, "verify": "running"}, staged=True)
-        self.assertGreater(len(view_text(self.tree_app(40, one_left))), 1, "a lane still running keeps the tree")
+        self.assertGreater(len(view_text(self.ended(self.tree_app(40, one_left)))), 1, "a lane still running keeps the tree")
         unread = export_run(done, staged=True)
         unread["hidden_nodes"] = 2  # lanes the reader left out may still run
-        self.assertGreater(len(view_text(self.tree_app(40, unread))), 1)
+        self.assertGreater(len(view_text(self.ended(self.tree_app(40, unread)))), 1)
+
+    def test_a_run_that_settles_while_the_turn_runs_keeps_its_tree_until_the_turn_ends(self) -> None:
+        # The blank band (2026-10-23): on the bottom rows a view that folds mid-turn gives up its rows, which stay
+        # blank between the transcript and the working row until output fills them. The fold waits for the turn's
+        # end, when the run's end print and the turn's summary line fill them.
+        from _delegation_graphs import export_run
+
+        done = {"api": "done", "ui": "done", "docs": "done", "cli": "done", "verify": "done"}
+        running = view_text(self.tree_app(40, export_run(done, staged=True)))
+        self.assertGreater(len(running), 1, running)
+        self.assertTrue(running[0].startswith("  DAG · export feature · 5 nodes"), running)
+        self.assertEqual(view_text(self.ended(self.tree_app(40, export_run(done, staged=True)))),
+                         ["  DAG · export feature · done 5/5"])
+
+    def test_a_tree_that_shrinks_mid_run_keeps_its_rows_on_the_bottom_rows_until_the_turn_ends(self) -> None:
+        # The mid-run blank band (2026-10-23 audit): a tree that drew fewer rows while the turn ran gave them up, and
+        # on the bottom rows they stayed blank between the transcript and the working row. The tree keeps them,
+        # blank under it, until the turn ends.
+        from _delegation_graphs import parallel
+
+        def run(lanes: int) -> dict:
+            graph = parallel(lanes)
+            graph["edges"] = [{"from": "root", "to": "l0", "kind": "dispatch"}] + [
+                {"from": "l0", "to": f"l{number}", "kind": "depends_on"} for number in range(1, lanes)]
+            return graph
+
+        app = self.tree_app(40, run(8))
+        pinned(app)
+        tall = view_rows(app)
+        with_graph(app, run(3))  # the graph reader now keeps fewer of the run's lanes
+        held = view_text(app)
+        self.assertEqual(len(held), tall)
+        tree = len(held)
+        while tree and not held[tree - 1].strip():
+            tree -= 1
+        self.assertLess(tree, tall, "the tree itself shrank; its rows stay under it, blank")
+        self.assertTrue(held[tree - 1].strip().startswith("⠋ Lane 2 migrate"), held)
+        app.turn_pending = False
+        self.assertLess(view_rows(app), tall, "the hold ends with the turn")
+
+    @staticmethod
+    def chained(lanes: int) -> dict:
+        """`lanes` running lanes, the first a layer of its own and the rest after it: a dag run's tree."""
+        from _delegation_graphs import parallel
+
+        graph = parallel(lanes)
+        graph["edges"] = [{"from": "root", "to": "l0", "kind": "dispatch"}] + [
+            {"from": "l0", "to": f"l{number}", "kind": "depends_on"} for number in range(1, lanes)]
+        return graph
+
+    @staticmethod
+    def held(app: App) -> int:
+        """The blank rows under the tree's last drawn row."""
+        rows = view_text(app)
+        under = 0
+        while under < len(rows) and not rows[len(rows) - 1 - under].strip():
+            under += 1
+        return under
+
+    def test_the_hold_ends_with_a_turn_that_draws_no_tree_and_on_a_new_session(self) -> None:
+        # The review of 2fb605957: the hold was dropped only where a tree, or its summary line, was drawn between
+        # turns. A turn that ended with the graph gone (a settled graph that went quiet) left it, and the next turn's
+        # first tree drew the old height's rows blank under it (20 held, 15 of them blank).
+        app = self.tree_app(40, self.chained(8))
+        pinned(app)
+        view_rows(app)  # a frame drawn on the bottom rows: the tree's height is held from here
+        with_graph(app, self.chained(3))
+        self.assertGreater(self.held(app), 0)
+        with_graph(app, None)
+        app.turn_pending = False
+        self.assertEqual(view_text(app), [], "between the turns no tree is drawn")
+        app.turn_pending = True  # the next turn, and a smaller run, with the region still on the bottom rows
+        with_graph(app, self.chained(2))
+        self.assertEqual(app.region.last_row(40), 39)
+        self.assertEqual(self.held(app), 0)
+        # A new session drops a hold too, before anything is drawn.
+        app.tree_hold = 20
+        app.turn_pending = False
+        client = app.client
+        type_text(app, "/new")
+        app._on_input(Key(ENTER))
+        answer(app, client, {"session_id": "live-2", "stored_session_id": "stored-2", "info": {}})
+        self.assertEqual(app.tree_hold, 0)
+
+    def test_the_held_rows_never_pass_the_views_cap(self) -> None:
+        # A taller composer or a slot lowers the view's cap mid-turn: the hold gives way, so the composer and the
+        # info line stay on the screen.
+        app = self.tree_app(24, self.chained(8))
+        pinned(app)
+        view_rows(app)
+        with_graph(app, self.chained(2))
+        self.assertGreater(self.held(app), 0)
+        self.assertLessEqual(len(app._agent_view(120, 24, 3)), 3)
+        app.composer.replace(0, len(app.composer.text), "\n".join(f"draft line {number}" for number in range(6)))
+        screen = drawn(app)
+        self.assertTrue(any(row.startswith("❯ draft line 0") for row in screen), screen)
+        self.assertLessEqual(len(view_text(app)), app.frame_budget.agents)
 
     def test_down_in_a_dag_run_gives_the_tree_the_keys_in_its_own_rows_and_nothing_moves(self) -> None:
         from _delegation_graphs import parallel
@@ -634,8 +735,8 @@ class DagViewTests(unittest.TestCase):
                 app._on_input(Key(DOWN))
                 during = drawn(app)
                 self.assertEqual((screen_info_index(app, during), view_rows(app)), (info, height))
-                self.assertEqual(box_top(during), None)
-                self.assertEqual(during[info - 3 : info], ["", "", ""], "the composer's rows, blank")
+                self.assertEqual(box_top(during), box_top(before), "the composer's rules stay")
+                self.assertEqual(during[info - 2].strip(), BROWSING_HINT, "the composer's row says how to browse")
                 self.assertEqual(app.tree_selected, "l0", "on the first running lane")
                 self.assertEqual(app.listed, (), "the roster's list is not what Down opened")
                 self.assertEqual(during[info + 1].strip()[:5], "DAG ·", "the tree stays in its rows")

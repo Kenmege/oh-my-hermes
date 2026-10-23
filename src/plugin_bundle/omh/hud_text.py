@@ -32,8 +32,8 @@ def elapsed_text(seconds: float) -> str:
 
 
 def compact_count(value: float) -> str:
-    """`950`, `1.2k`, `3M`: a count in at most four characters and a unit."""
-    for size, suffix in ((1_000_000, "M"), (1_000, "k")):
+    """`950`, `1.2k`, `3M`, `70B`, `1.2T`: a count in at most four characters and a unit."""
+    for size, suffix in ((1_000_000_000_000, "T"), (1_000_000_000, "B"), (1_000_000, "M"), (1_000, "k")):
         if value >= size:
             return f"{value / size:.1f}".removesuffix(".0") + suffix
     return str(int(value))

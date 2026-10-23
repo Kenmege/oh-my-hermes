@@ -25,7 +25,7 @@ import unittest
 
 from _tui_lines import rule_edges, composer_text, composer_row, lines_text
 from omh.tui.composer import Composer
-from omh.tui.frame import build_frame, rule_line, sticky_line
+from omh.tui.frame import BROWSING_HINT, build_frame, rule_line, sticky_line
 from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_PLAN, MODE_SHELL
 from omh.tui.layout import (
     AGENT_VIEW_ROWS,
@@ -198,7 +198,7 @@ class AgentViewBudgetTests(unittest.TestCase):
         shown = build_frame(cols=40, rows=24, composer=composer, info=info, agents=agents)
         blank = build_frame(cols=40, rows=24, composer=composer, info=info, agents=agents, composer_blank=True)
         self.assertEqual(blank.height, shown.height)
-        self.assertEqual(lines_text(list(blank.lines)), ["", "", "", "keys", "● main", "▸ ⠋ agent"])
+        self.assertEqual(lines_text(list(blank.lines)), ["─" * 40, f"  {BROWSING_HINT}", "─" * 40, "keys", "● main", "▸ ⠋ agent"])
         self.assertIsNone(blank.cursor)
         self.assertEqual(lines_text(list(shown.lines))[3:], ["keys", "● main", "▸ ⠋ agent"])
 

@@ -59,6 +59,7 @@ from collections.abc import Callable, Mapping, Sequence
 import hashlib
 import json
 from pathlib import Path
+import re
 import sqlite3
 import time
 from typing import Any, Final
@@ -121,6 +122,25 @@ def graph_fingerprint(graph: Mapping[str, Any]) -> str:
 def session_tail(session_id: str) -> str:
     """A child session's short id as the native HUD rows name it (their `task_id`, `hermes_delegation`)."""
     return session_id.rsplit("_", 1)[-1][:8]
+
+
+SUMMARY_LIMIT: Final = 80
+# Where a dag node prompt's first clause ends: a field label (dag-ulw's node prompt: TASK, DELIVERABLE, SCOPE, VERIFY,
+# STOP WHEN, CONTEXT), a line end or a sentence's end.
+_PROMPT_CLAUSE_END = re.compile(r"\s(?:TASK|DELIVERABLE|SCOPE|VERIFY|STOP WHEN|CONTEXT):|\n|(?<=[.!?])\s")
+
+
+def _prompt_summary(prompt: object) -> str:
+    """A dag node prompt's first clause, without a leading `TASK:` (any case), in `SUMMARY_LIMIT` characters; "" for
+    none.
+
+    The clause is cut from the raw prompt and only then cleaned (`_text`): cleaning first drops the line ends that
+    separate dag-ulw's one-field-a-line prompt, and the task would run into `DELIVERABLE:`.
+    """
+    if not isinstance(prompt, str):
+        return ""
+    raw = re.sub(r"^\s*TASK:\s*", "", prompt.strip(), flags=re.IGNORECASE)
+    return _text(_PROMPT_CLAUSE_END.split(raw, maxsplit=1)[0], 2000).strip().rstrip(".")[:SUMMARY_LIMIT]
 
 
 def _text(value: object, limit: int = 160) -> str:
@@ -892,6 +912,9 @@ def _dag_nodes(
             "group": group, "waits_on": len(info["waits_on"]) if info["state"] == "waiting" else 0,
             "dag_node": node_id, "dag_origin": origin,
         }
+        summary = _prompt_summary(node.get("prompt"))
+        if summary:
+            entry["summary"] = summary  # the node prompt's first clause, beside a short label in the tree
         if unchecked:
             entry["handoff_checked"] = False
         cycle = node.get("cycle")
@@ -1148,10 +1171,29 @@ def _cut(graph: dict[str, Any], keep: int) -> dict[str, Any]:
                 changed = True
     kept = [node for node in nodes if node["id"] in kept_ids]
     edges = [edge for edge in graph["edges"] if edge["from"] in kept_ids and edge["to"] in kept_ids]
+    # What each group (a dag run's layer) lost, so its row reads `28 of 640 nodes`, not a total of 28; every group in
+    # the run's order, so a layer the cut emptied still has its row; and what the cut lanes' states were, so a run's
+    # end tallies the whole run.
+    hidden_by_group: dict[str, int] = {}
+    hidden_by_state: dict[str, int] = {}
+    group_order: list[str] = []
+    for node in sorted(nodes, key=lambda node: int(node.get("order") or 0)):
+        if node.get("kind") == "root":
+            continue
+        group = str(node.get("group") or "")
+        if group not in group_order:
+            group_order.append(group)
+        if node["id"] not in kept_ids:
+            state = str(node.get("state") or "unknown")
+            hidden_by_group[group] = hidden_by_group.get(group, 0) + 1
+            hidden_by_state[state] = hidden_by_state.get(state, 0) + 1
     return {
         **graph,
         "nodes": kept,
         "edges": edges,
         "layers": _layers(kept, edges),
         "hidden_nodes": len(nodes) - len(kept),
+        "hidden_by_group": hidden_by_group,
+        "hidden_by_state": hidden_by_state,
+        "group_order": group_order,
     }

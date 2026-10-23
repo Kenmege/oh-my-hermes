@@ -1160,6 +1160,7 @@ print(json.dumps(observed, ensure_ascii=False))
                     "omh_role",
                     "omh_route_answer",
                     "omh_run_summary",
+                    "omh_search",
                     "omh_source_trust",
                     "omh_status",
                     "omh_team",

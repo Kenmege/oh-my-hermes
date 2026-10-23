@@ -45,9 +45,10 @@ from typing import Any
 from . import gateway_contract as contract
 from .keys import BUTTON_LEFT, CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
 from .layout import Budget, agent_view_cap, is_tiny, max_height
-from .dag_tree import TreeState, run_key, tree_agents, tree_lines
+from .dag_tree import TreeState, run_key, tree_lines
 from .panels import (
-    DAG_INDENT, agent_view_count, agent_view_keep, dag_run_summary, dag_style, graph_is_dag, panel_lines,
+    DAG_INDENT, RUNNING_NODE_STATES, agent_view_count, agent_view_keep, dag_run_summary, dag_style, graph_is_dag,
+    panel_lines,
 )
 from .style import Line, Span, Style
 from .subagents import FINISHED_STATUSES, MAIN_ID, OPEN_MARK, RUNNING, Hit
@@ -139,12 +140,15 @@ class AgentViewMixin:
         """
         self.listed = ()
         self.tree_state = None
+        if not self._busy():
+            self.tree_hold = 0  # whatever the view draws between turns, the next turn's tree starts from its own rows
         payload = self.hud.payload if self.hud is not None else None
         valid = isinstance(payload, Mapping) and not payload.get("error")  # else the slot says the reader failed
         frame, now = self._spinner_frame(), self.clock()
         if valid and graph_is_dag(payload):
             cap = self._view_cap(rows, cols, rows // 3, room)
             lines = self._tree_view(payload, cols, cap)
+            lines += [()] * self._tree_held_rows(len(lines), cap, rows)
             if self.list_selected is None:
                 return lines
             listed, self.listed = self.roster.list_lines(cols, self.theme, self.list_selected, frame, len(lines), now)
@@ -161,11 +165,32 @@ class AgentViewMixin:
             return []
         return self._hud_view(payload, cols, self._view_cap(rows, cols, agent_view_keep(payload, cols), room))
 
+    def _tree_held_rows(self, drawn: int, cap: int, rows: int) -> int:
+        """Blank rows under a tree that shrank while the turn runs on the screen's bottom rows: the tree keeps the
+        most rows it took this turn (in `cap`), so a layer that shuts mid-run leaves its rows under the tree, not as
+        a blank band between the transcript and the working row (rows the content gives up stay, `layout`). The
+        hold ends with the turn (`_agent_view`, whatever the view then draws), at the next prompt and on a session
+        change (`_clear_roster`), and above the bottom rows, where the composer follows the content; it never passes
+        `cap`, which a taller composer or a slot can lower mid-turn."""
+        if not self._busy() or self.region.last_row(rows) != rows - 1:
+            self.tree_hold = 0
+            return 0
+        self.tree_hold = max(self.tree_hold, drawn)
+        return max(min(self.tree_hold, cap) - drawn, 0)
+
+    def _run_summary(self, graph: Mapping[str, Any]) -> str:
+        """`panels.dag_run_summary` once the turn has ended; "" while it runs, so a run whose every lane settled
+        mid-turn keeps its tree (each layer shut) until the turn ends. On the screen's bottom rows a view that
+        shrank there left its rows blank between the transcript and the working row, as rows the content gives up
+        stay (`layout`); at the turn's end the run's end print and the turn's summary line fill them."""
+        return "" if self._busy() else dag_run_summary(graph)
+
     def _tree_view(self, payload: Mapping[str, Any], cols: int, cap: int) -> list[Line]:
         """A dag run's folding tree (`dag_tree`) in `cap` rows, noting what its keys need in `tree_state`; a run whose
-        every lane settled is its one summary line (`panels.dag_run_summary`), and no tree has the keys then."""
+        every lane settled is its one summary line once the turn has ended (`_run_summary`), and no tree has the
+        keys then."""
         graph = payload["delegation_graph"]
-        summary = dag_run_summary(graph)
+        summary = self._run_summary(graph)
         keys_free = (
             self.slot is None and self.picker is None and self.rewind_picker is None and self.model_picker is None
             and self.search is None
@@ -362,28 +387,29 @@ class AgentViewMixin:
 
     def _agent_chip(self, room: int) -> Line:
         """The info line's count of the agents the view under it stands for, in `room` cells: `3 agents · ↓ agents`
-        while Down would open their list, else the count alone; nothing with no agent, or no room for the count."""
+        while Down would open their list, else the count alone; nothing with no agent, or no room for the count.
+
+        During a dag run the count is the run's running lanes (`1,204 agents`), the lanes its tree draws as running,
+        and the chip goes once none runs or the run is over: the roster holds every child the run ever started.
+        """
         payload = self.hud.payload if self.hud is not None else None
-        count = self.roster.count_text()
-        drawn = self._tree_drawn_agents(payload)
-        if count and drawn is not None:  # a superseded lane of the run is no agent the tree stands for
-            count = f"{len(drawn)}{'+' if self.roster.evicted else ''} agent{'' if len(drawn) == 1 else 's'}" if drawn else ""
-        if not count:
+        if isinstance(payload, Mapping) and not payload.get("error") and graph_is_dag(payload):
+            graph = payload["delegation_graph"]
+            lanes = graph.get("nodes") if isinstance(graph.get("nodes"), list) else []
+            running = sum(1 for node in lanes if isinstance(node, Mapping) and node.get("kind") != "root"
+                          and node.get("state") in RUNNING_NODE_STATES)
+            count = f"{running:,} agent{'' if running == 1 else 's'}" if running and not dag_run_summary(graph) else ""
+        else:
+            count = self.roster.count_text()
+        if not count and not graph_is_dag(payload):
             number = agent_view_count(payload)
-            count = f"{number} agent{'' if number == 1 else 's'}" if number else ""
+            count = f"{number:,} agent{'' if number == 1 else 's'}" if number else ""
         if not count:
             return ()
         opens = (self._list_available() or self._tree_available()) and not self.composer.text and not self._menu_rows()
         forms = [f"{count}{CHIP_SEPARATOR}{OPEN_MARK}", count] if opens else [count]
         shown = next((form for form in forms if cell_width(form) <= room), "")
         return (Span(shown, self.theme.hint),) if shown else ()
-
-    def _tree_drawn_agents(self, payload: Any) -> frozenset[str] | None:
-        """The roster's agents the dag run's tree draws (`dag_tree.tree_agents`); None while no tree is drawn."""
-        if not isinstance(payload, Mapping) or payload.get("error") or not graph_is_dag(payload):
-            return None
-        graph = payload["delegation_graph"]
-        return None if dag_run_summary(graph) else tree_agents(graph, self.roster)
 
     def _agent_list_say(self) -> tuple[tuple[str, ...], Style]:
         """What the info line says while the list is open: its keys, or, once `x` asked, the confirmation in warn."""
@@ -665,10 +691,11 @@ class AgentViewMixin:
 
     def _clear_roster(self) -> None:
         """Drop the agents and every piece of tail bookkeeping and pending action that names them, and the view's
-        hold (`_held_view_rows`). The open dag run's lanes stay (`_open_dag_nodes`): their children outlive the turn
+        holds (`_held_view_rows`, `_tree_held_rows`). The open dag run's lanes stay (`_open_dag_nodes`): their children outlive the turn
         that sent them, and the tree's rows under each node read them."""
         self.roster.clear(self._open_dag_nodes())
         self.view_hold = None
+        self.tree_hold = 0
         self._drop_agent_actions()
 
     def _prune_kept_lanes(self) -> None:

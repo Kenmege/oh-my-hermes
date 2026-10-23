@@ -234,6 +234,7 @@ def register(ctx: _PluginContext) -> None:
     from .tools.route_answer_tool import OMH_ROUTE_ANSWER_SCHEMA, omh_route_answer_handler
     from .tools.run_summary_tool import OMH_RUN_SUMMARY_SCHEMA, omh_run_summary_handler
     from .tools.source_trust_tool import OMH_SOURCE_TRUST_SCHEMA, omh_source_trust_handler
+    from .tools.search_tool import OMH_SEARCH_SCHEMA, omh_search_handler
     from .tools.status_tool import OMH_STATUS_SCHEMA, omh_status_handler
     from .tools.team_tool import OMH_TEAM_SCHEMA, omh_team_handler
     from .tools.todo_tool import OMH_TODO_SCHEMA, omh_todo_handler
@@ -384,6 +385,13 @@ def register(ctx: _PluginContext) -> None:
         OMH_SOURCE_TRUST_SCHEMA,
         omh_source_trust_handler,
         description=OMH_SOURCE_TRUST_SCHEMA["description"],
+    )
+    _ = ctx.register_tool(
+        "omh_search",
+        _TOOLSET,
+        OMH_SEARCH_SCHEMA,
+        omh_search_handler,
+        description=OMH_SEARCH_SCHEMA["description"],
     )
     _ = ctx.register_tool(
         "omh_status",

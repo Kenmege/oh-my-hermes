@@ -305,8 +305,12 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # 66952 -> 67130: `omh_dag` gains `extend` (+178): the action in the enum, one
 # sentence saying when (every node passed, the goal check finds work missing)
 # and its two-round limit, and what `node` names for it. Re-derived from the
-# producer.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 67130
+# the producer.
+# 67130 -> 68402: `omh_search` adds a compact 1272-character registered tool
+# schema rather than embedding its full nested contracts. The optional-tool
+# research hint is 695 characters and does not change registered system
+# sections. Independently remeasured across all 24 builtin schemas.
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 68402
 # PRE_LLM_CALL_CONTEXT_CHAR_LIMIT, PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT: moved with
 # their history to src/plugin_bundle/omh/turn_budget.py; imported at the top of this file.
 # 340000 -> 349637: three capability-skill sections were added by the domain

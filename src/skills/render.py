@@ -7924,6 +7924,8 @@ def _workflow_reference_markdown_cached() -> str:
         "",
         "The reference describes prompt-level Hermes workflow guidance and local evidence expectations. It does not claim hidden Hermes runtime behavior.",
         "",
+        "For natural-language search examples, support boundaries and unmeasured targets, see [Finding sources](SEARCH-AMPLIFICATION.md).",
+        "",
         "Workflow names are kept for compatibility, but each skill declares advisory wrapper guidance for whether Hermes should retain the work directly, ask the user to choose an executor/runtime profile, or prepare a coding handoff for coding-heavy execution.",
         "",
         "Exposure is the install contract: `install_visibility: true` surfaces generate `skills/<name>/SKILL.md`; router-only, harness-only, and agent-context surfaces stay routable references unless this document explicitly promotes them.",
