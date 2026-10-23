@@ -658,15 +658,19 @@ class RouterTests(unittest.TestCase):
         # any intensifier; a refusal class applies first, and an unknown remark holds (#2243 review, lead decision
         # (D)). Router and hint read the same, on work over many targets and on a split.
         kinds = {
-            "gratitude": ("thanks a bunch", "thx so much!!", "much obliged", "I'd appreciate it", "you're the best"),
+            "gratitude": ("thanks a bunch", "thx so much!!", "much obliged", "I'd appreciate it", "you're the best",
+                          "you rock, seriously!!"),
             "sign-off": ("have a good one", "talk soon", "regards", "catch you later", "later gators", "see ya", "take care"),
             "wish": ("fingers crossed", "really hope it goes smoothly", "hope it lands cleanly", "wish me luck", "good luck",
                      "hope there are no conflicts", "let's hope it sticks", "would love a clean run",
                      "got a good feeling about this one"),
             "back-reference": ("as discussed", "like we agreed", "same as last time", "per our chat",
                                "same deal as before", "following the plan from last sprint"),
-            "attribution": ("my manager asked for it", "legal approved it", "the PM requested this"),
-            "aside": ("fwiw the tests are flaky", "btw, CI is slow today"),
+            "attribution": ("my manager asked for it", "legal approved it", "the PM requested this", "approved by the CTO",
+                            "boss said go for it"),
+            "aside": ("fwiw the tests are flaky", "btw, CI is slow today", "also, the new keyboard is lovely",
+                      "off topic, the new sofa arrived", "random but my cat just sneezed",
+                      "on another note, the release notes look great", "incidentally the build cache is warm"),
             "no pressure": ("no worries", "no rush at all", "take your time", "whenever works", "not urgent",
                             "nothing pressing about it"),
         }
@@ -683,12 +687,17 @@ class RouterTests(unittest.TestCase):
                     "btw just spitballing",  # thinking aloud
                     "thanks but forget I said that",  # a retraction
                     "thanks but your call",  # the decision handed back
-                    "no rush shelve it",  # a verb on the request itself
+                    "no rush bin it",  # a verb on the request itself
                     "thanks and thoughts welcome",  # deliberation
                     "thanks we'll see",  # a person's modal
                     "can we do both thanks",  # a question
-                    "thanks not yet")  # a negation
-        unknown = ("long day lol", "unrelated but i love this new keyboard", "peace")
+                    "thanks not yet",  # a negation
+                    "oh and scrap that",  # a retraction after an aside marker
+                    "side note, I'm cancelling that",  # a retraction by its stem
+                    "thanks but need to confirm with legal",  # a precondition before the work
+                    "part of me says go for it",  # a hedge, though someone says
+                    "also, fix the lint")  # a new request after an aside marker, read by the follow-on rule
+        unknown = ("long day lol", "peace")
         for work in ("rebase all open PRs", "update every service to node 22", "split the migration into parallel lanes"):
             for kind, tails in kinds.items():
                 for tail in tails:
@@ -708,6 +717,8 @@ class RouterTests(unittest.TestCase):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
         self.assertEqual(self._dag_ulw_starts("for each open PR: rebase, squash, merge, thanks a ton")[:2], (True, True))
+        # A follow-on after an aside marker keeps the request, as the follow-on rule does anywhere.
+        self.assertEqual(self._dag_ulw_starts("rebase all open PRs, also, then run the tests")[:2], (True, True))
 
     def test_the_router_size_cue_follows_the_cue_readers_refusals(self) -> None:
         # The router's size-cue path dispatches dag-ulw only where the cue reader would start: a held, deferred or

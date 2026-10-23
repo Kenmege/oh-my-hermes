@@ -183,8 +183,10 @@ All notable changes will be documented here.
   with any intensifier: gratitude (`…, thanks a bunch`, `…, thx so much!!`,
   `…, much obliged`), a sign-off (`…, have a good one`), a wish (`…, fingers
   crossed`, `…, wish me luck`), a back-reference (`…, as discussed`, `…, same
-  as last time`), who asked (`…, my manager asked for it`), an aside marker
-  and a harmless statement (`…, fwiw the tests are flaky`), or no pressure
+  as last time`), who asked (`…, my manager asked for it`, `…, approved by the
+  CTO`), an aside marker of any kind and a harmless statement (`…, fwiw the
+  tests are flaky`, `…, also, the new keyboard is lovely`, `…, off topic, the
+  sofa arrived`), or no pressure
   (`…, no worries`, `…, take your time`, `…, whenever works`). An unknown
   remark holds, so the request is offered, not started, and a refusal class
   holds even inside a keep kind: a new request (`…, run the tests`), a hold, a
