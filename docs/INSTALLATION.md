@@ -1738,7 +1738,13 @@ is refused with `route_overwritten_by_other_session`, `route_not_applied` or
 cases are left in place as before: a route whose writer recorded no
 conversation entry, such as one written by an older OMH that is still
 running, and any route when the dispatching session's own `state.db` row
-cannot be read, since that session might be the route's child.
+cannot be read, since that session might be the route's child. That second
+case is not silent: the call still goes ahead, and the hook result carries
+`omh_route_fallback` (`lineage_unresolved`, naming both sessions) and Hermes'
+log gets a warning from `omh.delegation_route`. `action=status` reports the
+calling conversation's own route as `conversation_route`, beside the
+profile-wide keys in `route`, with `in_keys` saying whether the keys hold it
+now.
 
 One window remains: Hermes reads the keys after the hook returns, so a write
 by another session in that interval still wins. When another check asks a

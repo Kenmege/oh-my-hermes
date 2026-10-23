@@ -345,8 +345,12 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
     # that session's route when it cannot be (#2251). A gate above that asks
     # a person (`approve`) still runs it, through `_route_gated`.
     route_directive = _route_directive(kwargs, tool_input, omh_home, hermes_home)
-    if route_directive is not None:
+    if route_directive is not None and "action" in route_directive:
         return dict(route_directive)
+    # A dispatch that goes ahead on a fallback carries a note with no
+    # `action`, returned at the end so nothing between is skipped. Hermes
+    # passes over such a result; it is there to be read, not obeyed.
+    route_note = route_directive
     # Only the normal host loop invokes native Kanban tools. Correlation runs
     # after OMH's user veto; it never dispatches or grants a native permission.
     bridge = _agent_board_bridge()
@@ -368,7 +372,7 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
         session_id=session_id,
         escalation_allowed=escalation_allowed,
     )
-    return None
+    return dict(route_note) if route_note is not None else None
 
 
 def post_tool_call(**kwargs: object) -> dict[str, object] | None:
@@ -472,7 +476,7 @@ def post_tool_call(**kwargs: object) -> dict[str, object] | None:
 
 def _route_directive(
     kwargs: Mapping[str, object], tool_input: object, omh_home: str, hermes_home: str
-) -> dict[str, str] | None:
+) -> dict[str, object] | None:
     return dispatch_route_directive(
         tool_name=kwargs.get("tool_name"),
         tool_input=tool_input,
@@ -503,8 +507,10 @@ def _route_gated(
     """
     if directive.get("action") == "approve":
         route_directive = _route_directive(kwargs, tool_input, omh_home, hermes_home)
-        if route_directive is not None:
+        if route_directive is not None and "action" in route_directive:
             return dict(route_directive)
+        if route_directive is not None:
+            return {**directive, **route_directive}
     return dict(directive)
 
 

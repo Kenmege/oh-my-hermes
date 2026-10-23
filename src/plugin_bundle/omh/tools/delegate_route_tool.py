@@ -7,10 +7,10 @@ import time
 from typing import Any
 
 from ..delegation_route_restore import (
+    conversation_route_for,
     load_route_restore_record,
     newest_written_provenance,
     provenance_route_keys,
-    release_conversation_route,
     restore_delegation_baseline,
     write_route_with_baseline,
 )
@@ -130,19 +130,20 @@ def _clear_to_baseline(
     The value check still holds, so a key a person set by hand is safe
     either way. What IS scoped is the conversation route: only the caller's
     own is released, so another session whose route this took out of the
-    keys gets it back at its own next dispatch (#2251).
+    keys gets it back at its own next dispatch (#2251). The release runs in
+    the restore's own lock and only after it: released in a second lock, a
+    timeout there left the cleared route -- or, for exhaustion, the failing
+    model -- recorded, and the next dispatch of the same task put it back.
     """
-    result = restore_delegation_baseline(
+    return restore_delegation_baseline(
         hermes_home,
         omh_home=omh_home,
         trigger=trigger,
         unrecorded_clear=unrecorded_clear,
         expected_previous=expected_previous,
+        release_task=task_id,
+        release_conversation=conversation,
     )
-    result["conversation_route"] = release_conversation_route(
-        omh_home, task_id=task_id, conversation=conversation
-    )
-    return result
 
 
 def _conversation(hermes_home: Any, session_id: str) -> set[str]:
@@ -350,7 +351,13 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
             )
         payload: dict[str, Any] = {
             "status": "status",
+            # The profile-wide keys, which may hold another session's route.
             "route": route,
+            # This conversation's own route, the one its next delegate_task
+            # is put back on (#2251); None when it set none in this task.
+            "conversation_route": conversation_route_for(
+                hermes_home, omh_home=omh_home, session_id=session_id, task_id=task_id
+            ),
             # Where a direct delegation.base_url sends the child, whatever
             # provider the route names; None when no direct endpoint applies.
             "child_endpoint": read_child_endpoint(hermes_home),
