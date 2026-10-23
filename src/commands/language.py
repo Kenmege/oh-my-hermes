@@ -40,6 +40,8 @@ MESSAGES = {
     "en": {
         "menu_hint": "Use ↑/↓, Space/Enter, or a number. Colors are not required.",
         "menu_hint_multi": "↑/↓ to move, Space or a number to tick, Enter when done. Colors are not required.",
+        "menu_pending_row": "Row {row}_ -- type a second digit, or Space/Enter to choose row {row}.",
+        "menu_pending_row_multi": "Row {row}_ -- type a second digit, or Space/Enter to tick or untick row {row}.",
         "recommended": "recommended",
         "select": "Select",
         "select_multi": "Numbers, comma-separated (Enter keeps the ticked ones)",
@@ -355,6 +357,8 @@ MESSAGES = {
     "ko": {
         "menu_hint": "↑/↓, Space/Enter, 숫자로 선택할 수 있습니다. 색상 없이도 동작합니다.",
         "menu_hint_multi": "↑/↓로 이동, Space나 숫자로 선택/해제, 끝나면 Enter. 색상 없이도 동작합니다.",
+        "menu_pending_row": "{row}_번 -- 두 번째 숫자를 입력하거나, Space/Enter로 {row}번을 고르세요.",
+        "menu_pending_row_multi": "{row}_번 -- 두 번째 숫자를 입력하거나, Space/Enter로 {row}번을 선택/해제하세요.",
         "recommended": "추천",
         "select": "선택",
         "select_multi": "숫자를 쉼표로 구분해 입력하세요(Enter는 선택된 항목 유지)",
@@ -670,6 +674,8 @@ MESSAGES = {
     "ja": {
         "menu_hint": "↑/↓、Space/Enter、または数字で選択できます。色なしでも動作します。",
         "menu_hint_multi": "↑/↓ で移動、Space か数字でチェック、終わったら Enter。色なしでも動作します。",
+        "menu_pending_row": "{row}_ 番 -- 2 桁目を入力するか、Space/Enter で {row} 番を選びます。",
+        "menu_pending_row_multi": "{row}_ 番 -- 2 桁目を入力するか、Space/Enter で {row} 番のチェックを切り替えます。",
         "recommended": "推奨",
         "select": "選択",
         "select_multi": "番号をカンマ区切りで入力（Enter はチェック済みを維持）",
@@ -985,6 +991,8 @@ MESSAGES = {
     "zh": {
         "menu_hint": "可用 ↑/↓、Space/Enter 或数字选择。无颜色也可使用。",
         "menu_hint_multi": "↑/↓ 移动，Space 或数字勾选，完成后按 Enter。无颜色也可使用。",
+        "menu_pending_row": "第 {row}_ 项 -- 输入第二位数字，或按 Space/Enter 选择第 {row} 项。",
+        "menu_pending_row_multi": "第 {row}_ 项 -- 输入第二位数字，或按 Space/Enter 勾选或取消第 {row} 项。",
         "recommended": "推荐",
         "select": "选择",
         "select_multi": "输入编号，用逗号分隔（Enter 保留已勾选项）",

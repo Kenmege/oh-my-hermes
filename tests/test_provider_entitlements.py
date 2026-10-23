@@ -477,12 +477,34 @@ class MultiChoicePromptTests(unittest.TestCase):
 
     def _keys(self, keys: list[str], selected: list[str], options=None) -> list[str]:
         stream = iter(keys)
+        out = io.StringIO()
         with patch.object(setup_module, "_keyboard_menu_available", return_value=True), patch.object(
             setup_module, "_read_tui_key", side_effect=lambda: next(stream)
-        ), redirect_stdout(io.StringIO()):
+        ), redirect_stdout(out):
             chosen = setup_module._ask_multi_choice(
                 "Which?", ["pick some"], options or self.LONG_OPTIONS, selected=selected, use_color=False, language="en"
             )
+        self.rendered = out.getvalue()
+        # Every key went to this menu: nothing is left over for the next prompt.
+        with self.assertRaises(StopIteration):
+            next(stream)
+        return chosen
+
+    def _single_keys(self, keys: list[str], options=None, default_choice: str = "1") -> str:
+        stream = iter(keys)
+        out = io.StringIO()
+        with patch.object(setup_module, "_keyboard_menu_available", return_value=True), patch.object(
+            setup_module, "_read_tui_key", side_effect=lambda: next(stream)
+        ), redirect_stdout(out):
+            chosen = setup_module._ask_single_choice(
+                "Which one?",
+                ["pick one"],
+                options or self.LONG_OPTIONS,
+                default_choice=default_choice,
+                use_color=False,
+                language="en",
+            )
+        self.rendered = out.getvalue()
         with self.assertRaises(StopIteration):
             next(stream)
         return chosen
@@ -506,8 +528,57 @@ class MultiChoicePromptTests(unittest.TestCase):
         self.assertEqual(self._keys(["1", "\r"], ["row1"]), [])
         # An arrow abandons it: nothing toggles, the cursor moves on from row 1.
         self.assertEqual(self._keys(["1", "\x1b[B", " ", "\r"], []), ["row2"])
-        # A digit that cannot extend it starts a new number instead.
+        # A digit that cannot extend it starts a new number instead, the same
+        # rule as the single-choice menu: only Space or Enter acts on a
+        # pending row, and a digit always builds a number.
         self.assertEqual(self._keys(["1", "9", "\r"], []), ["row9"])
+        self.assertEqual(self._keys(["1", "9", "\r"], ["row1"]), ["row1", "row9"])
+
+    def test_a_pending_digit_is_shown_under_the_list(self) -> None:
+        """`1` on a long list ticks nothing yet, so the screen has to say why.
+
+        `1` `1` is row 11 -- the note after the first `1` says a second digit
+        builds the number, so row 11 is not ticked silently.
+        """
+        note = tr("en", "menu_pending_row_multi", row="1")
+        self.assertIn("Row 1_", note)
+        self.assertEqual(self._keys(["1", "1", "\r"], []), ["row11"])
+        self.assertIn(note, self.rendered)
+        self.assertIn("[x] row 11", self.rendered)
+        # The note goes away with the pending digit: the last frame drawn
+        # after the second `1` has no note in it.
+        self.assertNotIn(note, self.rendered.rsplit("\033[J", 1)[-1])
+        # A list of up to nine rows never shows it.
+        self._keys(["1", "\r"], [], options=self.OPTIONS)
+        self.assertNotIn("_ --", self.rendered)
+
+    def test_single_choice_digits_build_a_two_digit_row_number(self) -> None:
+        # Before: `1` returned row 1 at once and the `2` was left for the
+        # next prompt to read.
+        self.assertEqual(self._single_keys(["1", "2"]), "row12")
+        self.assertIn(tr("en", "menu_pending_row", row="1"), self.rendered)
+        # A number nothing can extend still answers at once.
+        self.assertEqual(self._single_keys(["5"]), "row5")
+        # A pending row is chosen by Space or Enter, with the cursor on it.
+        self.assertEqual(self._single_keys(["1", "\r"], default_choice="3"), "row1")
+        self.assertEqual(self._single_keys(["1", " "], default_choice="3"), "row1")
+        # An arrow abandons it and moves on from that row.
+        self.assertEqual(self._single_keys(["1", "\x1b[B", "\r"]), "row2")
+        # A digit no row continues starts a new number; `0` alone is nothing.
+        self.assertEqual(self._single_keys(["1", "9"]), "row9")
+        self.assertEqual(self._single_keys(["0", "4"]), "row4")
+
+    def test_single_choice_on_a_short_list_is_unchanged(self) -> None:
+        self.assertEqual(self._single_keys(["3"], options=self.OPTIONS), "openrouter")
+        self.assertEqual(self._single_keys(["9", "2"], options=self.OPTIONS), "zai")
+        self.assertNotIn("_ --", self.rendered)
+
+    def test_every_language_carries_the_pending_row_notes(self) -> None:
+        for code in LANGUAGE_CODES:
+            for key in ("menu_pending_row", "menu_pending_row_multi"):
+                with self.subTest(language=code, key=key):
+                    self.assertIn(key, MESSAGES[code])
+                    self.assertIn("17_", tr(code, key, row="17"))
 
     def test_values_are_accepted_and_an_unknown_token_re_asks(self) -> None:
         self.assertEqual(self._typed(["zai"], []), ["zai"])
@@ -1073,6 +1144,10 @@ class SetupInterviewTests(unittest.TestCase):
                 entered.enter_context(manager)
             entered.enter_context(redirect_stdout(out))
             setup_module._ask_provider_entitlements(argparse.Namespace(), paths, "en")
+        if keys is not None:
+            # Every key went to a menu: nothing is left over for the name prompt.
+            with self.assertRaises(StopIteration):
+                next(key_stream)
         raw = provider_entitlements_path(paths.omh_home).read_text(encoding="utf-8")
         self.assertNotIn(setup_module._PROVIDER_OTHER_CHOICE, raw)
         return json.loads(raw)
@@ -1132,6 +1207,25 @@ class SetupInterviewTests(unittest.TestCase):
             document = self._drive_real_menu(paths, keys=[*other, "\r", "\r"], typed="work-relay\n\n")
         self.assertEqual(document["providers"], {"og": "gateway", "work-relay": "gateway", "zai": "zai"})
         self.assertNotIn("excluded_providers", document)
+
+    def test_the_kind_menu_after_a_typed_name_takes_a_two_digit_row(self) -> None:
+        """The kind menu has more than nine rows; `1` `2` is row 12.
+
+        Before, `1` returned row 1 at once and the `2` stayed in the input
+        queue. The next "Provider name" prompt read it, and Enter recorded a
+        provider named `2`.
+        """
+        from omh.plugin_bundle.omh.hermes_delegation import PROVIDER_KIND_GATEWAY, PROVIDER_KIND_UNKNOWN
+
+        kinds = (PROVIDER_KIND_GATEWAY, *PROVIDER_FAMILY_VOCABULARY, PROVIDER_KIND_UNKNOWN)
+        self.assertGreaterEqual(len(kinds), 12)
+        with TemporaryDirectory() as tmp, patch.dict("os.environ", {}, clear=True):
+            paths = self._paths(Path(tmp))
+            self._config(paths, "providers:\n  og:\n    base_url: x\n")
+            other = self._other_row_number(paths)
+            document = self._drive_real_menu(paths, keys=[*other, "\r", "1", "2"], typed="work-relay\n\n")
+        self.assertEqual(document["providers"], {"og": "gateway", "work-relay": kinds[11]})
+        self.assertNotIn("2", document["providers"])
 
     def test_other_beside_skip_is_refused_like_any_row_beside_skip(self) -> None:
         """Skip stays exclusive: "other" and "leave everything" contradict each other.

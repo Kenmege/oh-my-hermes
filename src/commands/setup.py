@@ -3432,7 +3432,9 @@ def _ask_provider_entitlements(args: argparse.Namespace, paths: OmhPaths, langua
     so Enter on the list looked like the end of the step while a second,
     easy-to-miss prompt still waited for its own Enter. Now Enter on the list
     ends the step unless the operator ticked "other". Ticking it beside skip is
-    refused like any other row beside skip.
+    refused like any other row beside skip. Picking it never unticks a row: in
+    the typed menu an answer of only its number (`17`) keeps every pre-ticked
+    row, and in the keyboard menu `1` `7` reaches row 17.
 
     Every account is different, and the shipped chains cannot know which of
     their entries this operator can actually reach. The answer is recorded as
@@ -4230,6 +4232,8 @@ def _keyboard_single_choice(
     cursor = _default_choice_index(options, default_choice)
     rendered_option_rows = 0
     first_render = True
+    choices = [option["choice"] for option in options]
+    pending = ""
     while True:
         lines = _choice_menu_lines(
             title,
@@ -4241,6 +4245,10 @@ def _keyboard_single_choice(
             language=language,
         )
         option_lines = _choice_menu_option_lines(lines, intro_lines)
+        if pending:
+            note = _menu_pending_note(language, "menu_pending_row", pending, use_color)
+            option_lines = [*option_lines, note]
+            lines = [*lines, note]
         if first_render:
             sys.stdout.write("\n".join(lines) + "\n")
             first_render = False
@@ -4252,6 +4260,14 @@ def _keyboard_single_choice(
         key = _read_tui_key()
         if key in {"\x03", "\x04"}:
             raise KeyboardInterrupt
+        if len(key) == 1 and key in "0123456789":
+            pending, number = _menu_number_key(pending, key, choices)
+            if number:
+                return options[choices.index(number)]["value"]
+            if pending in choices:
+                cursor = choices.index(pending)
+            continue
+        pending = ""
         if key in {"\x1b[A", "k"}:
             cursor = (cursor - 1) % len(options)
             continue
@@ -4260,10 +4276,40 @@ def _keyboard_single_choice(
             continue
         if key in {"\r", "\n", " "}:
             return options[cursor]["value"]
-        for index, option in enumerate(options):
-            if key == option["choice"]:
-                cursor = index
-                return option["value"]
+
+
+def _menu_number_key(pending: str, key: str, choices: list[str]) -> tuple[str, str]:
+    """One digit key folded into the row number being typed: `(pending, complete)`.
+
+    Keys arrive one at a time, so on a list with more than nine rows, acting
+    on each digit made `1` then `7` act on row 1 and then on row 7, never on
+    row 17. In the single-choice menu the `7` then leaked into the next
+    prompt. A digit that a further digit could still extend (`1` when row 17
+    exists) is therefore held as `pending`. The menu moves the cursor to it
+    and shows a note saying so. A number nothing can extend is complete and
+    is acted on at once, so a list of up to nine rows behaves exactly as
+    before.
+
+    Only Space or Enter acts on a pending row; a digit always builds a
+    number. A digit that no row continues therefore starts a new number
+    (`1` then `9`, with no row 19, is row 9) rather than acting on row 1 as
+    well. Acting on row 1 would mean a keystroke the note just described as
+    "a second digit" picks row 1, which in the single-choice menu closes the
+    menu on a row nobody confirmed. An unusable digit (`0`) is ignored.
+    """
+    number = pending + key
+    if not any(choice.startswith(number) for choice in choices):
+        number = key
+    if not any(choice.startswith(number) for choice in choices):
+        return "", ""
+    if any(choice != number and choice.startswith(number) for choice in choices):
+        return number, ""
+    return "", number
+
+
+def _menu_pending_note(language: str, message_key: str, pending: str, use_color: bool) -> str:
+    """The line under a keyboard menu that shows the row number still being typed."""
+    return _color(f"  {tr(language, message_key, row=pending)}", "1;33", use_color)
 
 
 def _keyboard_multi_choice(
@@ -4282,15 +4328,12 @@ def _keyboard_multi_choice(
     contradictory tick set keeps the menu up with the reason appended, so the
     operator fixes it in place instead of losing the list.
 
-    Digits build a row number, because keys arrive one at a time. On a list
-    with more than nine rows, toggling on each digit made `1` then `7` toggle
-    row 1 and then row 7, never row 17. Row 1 was a found provider, so it was
-    silently recorded as excluded. A digit that a further digit could still
-    extend (`1` when row 17 exists) therefore only moves the cursor. The next
-    digit completes the number, Space toggles the row under the cursor as
-    usual, and Enter toggles the pending row and then confirms, as a lone `1`
-    then Enter always did. A number nothing can extend toggles at once, so a
-    list of up to nine rows behaves exactly as before.
+    Digits build a row number through `_menu_number_key`. Before that,
+    `1` then `7` toggled row 1, a found provider that was then silently
+    recorded as excluded. While a number is pending, the cursor sits on that
+    row and a note under the list says so. Space toggles the row under the
+    cursor as usual, and Enter toggles the pending row and then confirms, as
+    a lone `1` then Enter always did.
     """
     exclusive = exclusive or set()
     ticked = set(ticked)
@@ -4318,6 +4361,10 @@ def _keyboard_multi_choice(
             # the rows -- `rendered_option_rows` is measured after the append.
             option_lines = [*option_lines, _color(f"  {error}", "31", use_color)]
             lines = [*lines, option_lines[-1]]
+        if pending:
+            note = _menu_pending_note(language, "menu_pending_row_multi", pending, use_color)
+            option_lines = [*option_lines, note]
+            lines = [*lines, note]
         if first_render:
             sys.stdout.write("\n".join(lines) + "\n")
             first_render = False
@@ -4331,18 +4378,12 @@ def _keyboard_multi_choice(
         if key in {"\x03", "\x04"}:
             raise KeyboardInterrupt
         if len(key) == 1 and key in "0123456789":
-            number = pending + key
-            if not any(choice.startswith(number) for choice in choices):
-                number = key
-            pending = ""
-            if not any(choice.startswith(number) for choice in choices):
-                continue
-            if number in choices:
+            pending, number = _menu_number_key(pending, key, choices)
+            if number:
                 cursor = choices.index(number)
-            if any(choice.startswith(number) and choice != number for choice in choices):
-                pending = number
-            else:
                 ticked ^= {number}
+            elif pending in choices:
+                cursor = choices.index(pending)
             continue
         if pending in choices and key in {"\r", "\n"}:
             ticked ^= {pending}
@@ -4364,11 +4405,6 @@ def _keyboard_multi_choice(
             label = next(option["label"] for option in options if option["value"] == conflict)
             error = tr(language, "exclusive_selection", label=label)
             continue
-        for index, option in enumerate(options):
-            if key == option["choice"]:
-                cursor = index
-                ticked ^= {option["choice"]}
-                break
 
 
 def _choice_menu_lines(

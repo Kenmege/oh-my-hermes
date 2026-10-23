@@ -14,9 +14,14 @@ All notable changes will be documented here.
   refused beside skip like any other row, and it is never written to
   `~/.omh/routing/providers.json`. In the typed menu, typing only that row's
   number adds it to the ticked rows; it does not replace them, so found
-  providers are not recorded as excluded. In the arrow-key menu, digits now
-  build a row number: `1` then `7` ticks row 17. Before, it toggled row 1 and
-  then row 7, which silently excluded a found provider.
+  providers are not recorded as excluded. In the arrow-key menus (the
+  provider list and the single-choice menus, such as the provider-kind
+  menu), digits now build a row number: `1` then `7` is row 17. Before, the
+  list toggled row 1 and then row 7, which silently excluded a found
+  provider. The kind menu returned row 1 and left the `7` to be read by the
+  next "Provider name" prompt. While a digit could still be extended, a
+  note under the menu shows it (`Row 1_ -- type a second digit, or
+  Space/Enter ...`). Menus of up to nine rows behave as before.
 
 - **`/omh-doctor status` runs doctor (#2221 L4).** After a slash skill, a
   status question shows OMH's status card. The exception is a skill whose
