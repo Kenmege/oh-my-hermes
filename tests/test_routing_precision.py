@@ -63,9 +63,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # confirmation tag followed by a take-back add two (+2), and a report tail
         # that asks whether and a colon list of reads two more (+2). A tail asking
         # why not, two deferrals and two colon lists that hold add five (+5), and
-        # a deferral in a bit one more (+1).
+        # a deferral in a bit one more (+1), and a tail asking for concerns and a
+        # future time after a past clause two more (+2).
         # Three science vocabulary controls remain direct answers.
-        self.assertEqual(payload["summary"]["case_count"], 1091)
+        self.assertEqual(payload["summary"]["case_count"], 1093)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])

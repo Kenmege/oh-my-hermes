@@ -7943,6 +7943,22 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "dag-ulw",
     ),
     RoutingPrecisionCase(
+        "english-report-tail-asking-for-concerns-is-not-a-graph-run",
+        "An update of every service, then send me any concerns, asks for deliberation, not a result: no graph run, where main dispatched one",
+        "update every service, and send me any concerns",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "english-future-time-after-a-past-clause-is-not-a-graph-run",
+        "A time ahead of now after a past relative clause is still a deferral: no graph run, where main dispatched one",
+        "update every service we deployed next week",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
         "english-deferral-in-a-bit-is-not-a-graph-run",
         "A rebase of every PR in a bit is no work now: no graph run, where main dispatched one",
         "rebase all open PRs in a bit",

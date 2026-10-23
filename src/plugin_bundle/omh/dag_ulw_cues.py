@@ -1016,15 +1016,43 @@ _DONE_CLAUSE: Final = (
     r"|passed)\b"
 )
 _RESULT_NOUN: Final = (
-    r"(?:results?|diffs?|links?|list|summary|summaries|counts?|report|status|outcome|changes|numbers?|output|logs?)"
+    r"(?:results?|diffs?|links?|list|summary|summaries|counts?|report|status|outcome|changes|numbers?|output|logs?"
+    r"|failures?|errors?|files?|tests?|conflicts?|warnings?)"
+)
+# Deliberation is never a result, by meaning: reasons, objections, concerns, thoughts, opinions, doubts, pros and cons,
+# a plan or an approach, risks, alternatives, and the verbs that weigh ("what you think", "which ones you'd recommend").
+_DELIBERATION: Final = (
+    r"(?:reasons?|objections?|concerns?|thoughts?|opinions?|doubts?|pros|cons|plans?|approach(?:es)?|risks?|alternatives?"
+    r"|options?|ideas?|feedback|take|views?|worries|worry|caveats?|trade-?offs?|considerations?|pushback|questions?"
+    r"|suggestions?|recommendations?|advice|preferences?|think|reckon|feel|suggest|recommend|prefer|propose|advise"
+    r"|believe|expect)"
+)
+# After a quantifier the report's clause has an indicative verb ("which ones break", "any that fail", "which files
+# failed"): not an infinitive, a modal or an intention, whatever subject sits between ("the ones to merge", "which
+# ones we should merge", "what you'd change", "the ones we plan to drop").
+_NOT_INDICATIVE: Final = (
+    r"(?:to|would|could|should|might|must|may|will|shall|can|plan|plans|planning|want|wants|intend|intends|mean|means"
+    r"|going|gonna|need\s+to|needs\s+to|have\s+to|has\s+to|ought)\b|[a-z]+'(?:d|ll)\b"
+)
+_SUBJECT: Final = r"(?:we|you|i|they|it|he|she)"
+_REPORT_FOLLOWER: Final = (
+    r"(?:which|what|any|anything|all|every|each|the\s+ones|those)"
+    rf"(?:\s+(?:of\s+)?(?:the\s+)?(?!(?:{_DELIBERATION}|that|which|who|{_SUBJECT})\b|{_NOT_INDICATIVE})[a-z][\w-]*)?"
+    rf"(?:\s+(?:that|which|who))?(?:\s+{_SUBJECT}(?=\s))?\s+(?!{_NOT_INDICATIVE}|(?:{_DELIBERATION}|{_SUBJECT}|ones?)\b)"
+    r"[a-z][\w-]*\b"
+)
+# Anywhere in the tail, a modal, an intention or deliberation asks before the work ("which ones you'd recommend",
+# "the ones we plan to close", "which ones you want to skip").
+_NOT_A_REPORT: Final = re.compile(
+    r"\b(?:would|could|should|might|must|shall|will|can|may|plans?|planning|wants?|intends?|gonna|going\s+to|means?\s+to"
+    rf"|needs?\s+to|ha(?:ve|s)\s+to)\b|\b[a-z]+'(?:d|ll)\b|\b{_DELIBERATION}\b"
 )
 _REPORT_OPENER: Final = r"(?:(?:tell|ping|notify|message|show|send)\s+me|let\s+me\s+know|report(?:\s+back)?)"
 _EN_REPORT_TAIL: Final = re.compile(
     r"(?:,\s*|\s+)(?:and\s+then|and|then)\s+(?:also\s+|just\s+|please\s+)*"
     rf"(?:let\s+me\s+know|report(?:\s+back)?|{_REPORT_OPENER}\s+"
-    rf"(?:(?P<done>{_DONE_CLAUSE})|(?:(?:about|on|with|of)\s+)?(?:when|once|after|which|what|any|anything|the\s+ones|those"
-    r"|each|all|every)\b"
-    rf"|(?:with\s+)?(?:(?:the|a|an|all\s+the)\s+)?(?:[a-z][\w-]*\s+){{0,2}}?{_RESULT_NOUN}\b)[^?]*?)"
+    rf"(?:(?P<done>{_DONE_CLAUSE})|(?:(?:about|on|with|of)\s+)?{_REPORT_FOLLOWER}[^?]*?"
+    rf"|(?:with\s+)?(?:(?:the|a|an|all\s+the|any|all)\s+)?(?:[a-z][\w-]*\s+){{0,2}}?{_RESULT_NOUN}\b[^?]*?))"
     r"\s*[.!]*$"
 )
 _ASKS_BEFORE_THE_WORK: Final = re.compile(
@@ -1038,7 +1066,7 @@ def _closed(folded: str) -> tuple[str, str]:
     that report's own time clause read off ("…, and notify me when it's done": that when is the report's)."""
     untagged = _FINAL_CONFIRMATION_TAG.sub("", folded, count=1)
     tail = _EN_REPORT_TAIL.search(untagged)
-    if not tail or _ASKS_BEFORE_THE_WORK.search(tail.group()) or _HOLD.search(tail.group()):
+    if not tail or _NOT_A_REPORT.search(tail.group()) or _ASKS_BEFORE_THE_WORK.search(tail.group()) or _HOLD.search(tail.group()):
         return untagged, folded
     head = untagged[: tail.start()]
     changes = _EN_CHANGE_ON_BREADTH.search(head) or _EN_PARTS_IN_PARALLEL.search(head)
@@ -1140,19 +1168,24 @@ _DEFERRAL: Final = re.compile(
     r"|(?<![가-힣])(?:나중에|언젠가|(?:이번\s*)?주말에|내일|모레|다음\s*(?:주|달|번)(?:에)?|[월화수목금토일]요일에)"
     rf"(?!(?:\s*{_TIME_WORD})*\s*(?:까지|안에|중으로|중에|내로|이내))"
 )
-# A time inside a clause with a past verb of its own says when that happened, not when to work ("update every service
-# we deployed on monday", "지난 월요일에 배포한 서비스 전부 업데이트해줘", "월요일에 배포한 서비스 전부 …").
+# A weekday inside a clause with a past verb of its own says when that happened, not when to work ("update every
+# service we deployed on monday", "지난 월요일에 배포한 서비스 전부 업데이트해줘", "월요일에 배포한 서비스 전부 …").
 _PAST_VERB: Final = re.compile(
     r"(?:[a-z]+(?<!e)ed|broke|went|ran|did|made|built|wrote|sent|took|got|put|set|found|began|came|saw|left|lost|split"
     r"|shipped)"
 )
 _KOREAN_PAST_AROUND: Final = re.compile(r"지난\s*$")
+# The times a past clause may carry: a weekday or the weekend, which point back as well as ahead ("we deployed on
+# monday", "월요일에 배포한"); tomorrow, next week, later or 나중에 never point back.
+_BACKWARD_TIME: Final = re.compile(r"on\s+\S+|over\s+the\s+weekend|[월화수목금토일]요일에|주말에")
 _KOREAN_PAST_RELATIVE_AFTER: Final = re.compile(r"\s*\S*(?:한|했던|된|됐던|던)(?=\s|$)")
 
 
 def _says_a_deferral(folded: str) -> bool:
     """Whether ``folded`` puts the work past now (`_DEFERRAL`), outside a clause with a past verb of its own."""
     for match in _DEFERRAL.finditer(folded):
+        if not _BACKWARD_TIME.fullmatch(match.group()):
+            return True  # a time ahead of now is a deferral whatever clause it sits in
         if any(_PAST_VERB.fullmatch(word) for word in folded[: match.start()].split()[-3:]):
             continue
         if _KOREAN_PAST_AROUND.search(folded[: match.start()]) or _KOREAN_PAST_RELATIVE_AFTER.match(folded[match.end() :]):

@@ -52,14 +52,18 @@ All notable changes will be documented here.
   hold or joke in any clause after the request. A final `…, ok?` on any request
   and a report on the result, by its opening (tell, ping, notify, message, show
   or send me, let me know, report back, then which, any, the ones, each, when,
-  once or a result noun, and any words: `… and report any that fail`, `… and let
-  me know which ones break`, `…, and notify me when it's done`), are read off before
+  once or a result noun: a quantifier needs an indicative clause or a result noun
+  after it, `when`/`once` needs a completion that ends the tail, and a modal, an
+  intention or deliberation is no report: `… and report any that fail`, `… and
+  let me know which ones break`, `…, and notify me when it's done`; not `…, and
+  send me any concerns`, `…, then tell me which ones you'd recommend`), are read off before
   the request is; any other `let me …` and a tail that asks for anything before
   the work (`…, then tell me why we shouldn't`, `…, then tell me the risks
   first`) hold it. Every hard exclude reads the whole text, and a deferral is
   one (`… later`, `… in a bit`, `… tomorrow`, `… tonight`, `… next week`, `PR들 전부 나중에 …`;
   `… by tonight` and `…, 내일까지` are deadlines and run, and a time inside a past
-  clause, `… we deployed on monday`, is none either). A colon list after a
+  clause, `… we deployed on monday`, is none either, while a time ahead of now is,
+  `… we deployed next week`). A colon list after a
   breadth head is one request when every item opens on a verb of work (`for each
   open PR: rebase, squash, merge`); an item that opens on a status or carries a
   hedge ends it (`…: done, done, conflict`, `…, too risky though`). Anything else after it keeps nothing

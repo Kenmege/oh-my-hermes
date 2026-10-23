@@ -866,9 +866,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # main, and a deferral in English and in Korean, a colon list ending
             # in a hedge and a colon list of statuses clarify, where main
             # dispatched dag-ulw (5). A rebase of every PR in a bit clarifies,
-            # where main dispatched dag-ulw (1).
+            # where main dispatched dag-ulw (1). A report tail asking for concerns
+            # and a future time after a past clause clarify, where main
+            # dispatched dag-ulw (2).
             # Three domain-science vocabulary controls (+3).
-            expected=1091,
+            expected=1093,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

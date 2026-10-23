@@ -511,7 +511,35 @@ class RouterTests(unittest.TestCase):
                         "rebase all my open PRs: all done", "for each repo: bump deps, tested, shipped", "for each open PR: rebase, merge, ugh",
                         "for every service: upgrade node, redeploy, meh", "for each package: bump, publish, not my call",
                         "for each open PR: rebase, squash, maybe merge", "update every service: green, green, failed",
-                        "for every repo: bump deps, lol", "update every service: the billing one first"):
+                        "for every repo: bump deps, lol", "update every service: the billing one first",
+                        "rebase all open PRs, then tell me which ones failed and which you want to retry",
+                        "update every service, then tell me which ones failed first",
+                        # No report: a deliberation noun or verb, an infinitive, modal or intention after the quantifier, a bare quantifier, a when that is no completion; a time ahead of now after a past clause.
+                        "rebase all open PRs, then tell me your reasons", "update every service, and send me any concerns",
+                        "bump all the packages, then tell me your thoughts on it",
+                        "migrate every package to pnpm, and let me know any objections",
+                        "rebase all open PRs, then tell me the pros and cons",
+                        "update every service, and tell me your approach",
+                        "fix all the failing tests, and send me the alternatives",
+                        "rebase all open PRs, then tell me what you think",
+                        "update every service, and tell me which ones you'd recommend",
+                        "rebase all open PRs, then tell me the ones to merge",
+                        "update every service, and tell me which ones we should keep",
+                        "bump all the packages, then tell me which ones you would drop",
+                        "migrate every package to pnpm, and tell me what you'll change",
+                        "rebase all open PRs, then tell me the ones we plan to close",
+                        "update every service, and tell me which ones you want to skip",
+                        "rebase all open PRs, then tell me which ones", "update every service, and tell me any",
+                        "bump all the packages, then send me those",
+                        "rebase all open PRs, and notify me when it's ready to merge",
+                        "update every service, and ping me when you're about to deploy",
+                        "bump all the packages, and tell me once we plan to land it",
+                        "migrate every package to pnpm, and let me know when you have a plan",
+                        "update every service, and tell me when you're going to start",
+                        "rebase all the PRs we opened tomorrow", "update every service we deployed next week",
+                        "fix all the tests that broke later", "rebase all the PRs we opened, tomorrow",
+                        "update every service we shipped in a bit", "PR들 전부 배포한 거 내일 리베이스해줘", "모든 서비스 배포한 다음 주에 업데이트해줘",
+                        "모든 패키지 업데이트한 나중에 다시 올려줘"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
@@ -577,7 +605,27 @@ class RouterTests(unittest.TestCase):
                         "upgrade every service and ping me once the last one is merged",
                         "update every service we deployed on monday", "rebase all the PRs that failed yesterday",
                         "rebase all the PRs we opened on monday", "update every service we shipped over the weekend",
-                        "월요일에 배포한 서비스 전부 업데이트해줘", "지난 월요일에 배포한 서비스 전부 업데이트해줘"):
+                        "월요일에 배포한 서비스 전부 업데이트해줘", "지난 월요일에 배포한 서비스 전부 업데이트해줘",
+                        # Report tails by follower shape and a weekday inside a past clause.
+                        "update every service to node 22 and report any that fail",
+                        "bump every package and let me know which ones break",
+                        "convert all the tests to pytest and send me the ones that fail",
+                        "upgrade every service to node 22 and report the ones that error out",
+                        "convert all the tests to pytest, and show me the ones that failed",
+                        "rebase all open PRs and tell me each one that needs a manual fix",
+                        "update every repo's CI config and send me those that still go red",
+                        "fix all the failing tests, and tell me every one that stays flaky",
+                        "migrate every package to pnpm, then tell me which files changed",
+                        "rebase all open PRs, then tell me which ones conflict",
+                        "bump all the packages and tell me all the failures",
+                        "update every service, and send me the errors",
+                        "bump all the packages and notify me after the last one lands",
+                        "upgrade every service and ping me once the last one is merged",
+                        "rebase all open PRs, and notify me when it's done",
+                        "update every service and let me know once they're all merged",
+                        "update every service, and let me know", "update all services and report back",
+                        "rebase all open PRs, then send me the links", "update every service we deployed on monday",
+                        "월요일에 배포한 서비스 전부 업데이트해줘", "rebase all the PRs we opened over the weekend"):
             with self.subTest(message=message):
                 self.assertTrue(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
