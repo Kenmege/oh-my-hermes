@@ -58,6 +58,7 @@ from .catalog import (
     workflow_reference_definitions,
 )
 from .procedure_rendering import specialist_procedure_reference_markdown
+from .search_guidance import search_reference_templates
 from .dag_ulw_skill import dag_ulw_reference_templates
 from .market_research_skill import REFERENCE_CONTENT as MARKET_RESEARCH_REFERENCES
 from .show_reel_references import show_reel_reference_templates
@@ -274,6 +275,7 @@ REFERENCE_PRODUCERS: tuple[Callable[[], list[SkillReferenceTemplate]], ...] = (
     _full_contract_reference_templates,
     research_reference_templates,
     _market_research_reference_templates,
+    search_reference_templates,
     design_reference_templates,
     apple_design_reference_templates,
     award_bar_score_reference_templates,

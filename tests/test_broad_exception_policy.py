@@ -618,6 +618,16 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "shows `handoff not checked`. At the first hand-out it keeps this host's handoff path for the "
         "run, as before the backend was read.",
     ),
+    ClassifiedSite(
+        "src/plugin_bundle/omh/tools/search_tool.py",
+        "omh_search_handler",
+        INTENTIONAL,
+        "Unexpected failures from the delegated search backend become the distinct "
+        "`package_backend_error` result, separate from successful `result` output and the "
+        "`backend_unavailable` optional-dependency path. The handler exposes only that fixed "
+        "classification, never the exception message or raw backend body, so failure is surfaced "
+        "without leaking search content.",
+    ),
 )
 
 # Ruff reports one hit per handler; the inventory is keyed per enclosing
@@ -659,8 +669,11 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # dag-ulw handoff read inside a Docker or SSH terminal (a failure keeps the host
 # check at define, and at settle accepts with the handoff not checked, never
 # a refusal and never a file taken as there).
-EXPECTED_HANDLER_COUNT = 68
-EXPECTED_ANCHOR_COUNT = 60
+# 68 -> 69 / 60 -> 61: `search_tool.omh_search_handler`, which classifies
+# unexpected delegated search failures separately from success and optional
+# backend absence, without returning raw backend content.
+EXPECTED_HANDLER_COUNT = 69
+EXPECTED_ANCHOR_COUNT = 61
 
 
 class DerivedSite(NamedTuple):

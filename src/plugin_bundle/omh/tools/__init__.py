@@ -26,6 +26,7 @@ BUILTIN_TOOL_NAMES: tuple[str, ...] = (
     "omh_role",
     "omh_route_answer",
     "omh_run_summary",
+    "omh_search",
     "omh_source_trust",
     "omh_status",
     "omh_team",
@@ -59,6 +60,7 @@ def builtin_tool_schemas() -> tuple[dict[str, Any], ...]:
     from .role_tool import OMH_ROLE_SCHEMA
     from .route_answer_tool import OMH_ROUTE_ANSWER_SCHEMA
     from .run_summary_tool import OMH_RUN_SUMMARY_SCHEMA
+    from .search_tool import OMH_SEARCH_SCHEMA
     from .source_trust_tool import OMH_SOURCE_TRUST_SCHEMA
     from .status_tool import OMH_STATUS_SCHEMA
     from .team_tool import OMH_TEAM_SCHEMA
@@ -84,6 +86,7 @@ def builtin_tool_schemas() -> tuple[dict[str, Any], ...]:
         OMH_ROLE_SCHEMA,
         OMH_ROUTE_ANSWER_SCHEMA,
         OMH_RUN_SUMMARY_SCHEMA,
+        OMH_SEARCH_SCHEMA,
         OMH_SOURCE_TRUST_SCHEMA,
         OMH_STATUS_SCHEMA,
         OMH_TEAM_SCHEMA,

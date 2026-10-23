@@ -335,6 +335,15 @@ def portable_skill_names() -> tuple[str, ...]:
 # native campaign/TDD RPC guidance, route-capacity host injection, ecosystem
 # installation recipes, and progressive full-contracts (inlined for this target).
 PORTABLE_REFERENCE_PATHS = frozenset({
+    'web-research/references/search-method.md',
+    'source-finder/references/search-method.md',
+    'research/references/search-method.md',
+    'web-research/references/search-fields.md',
+    'source-finder/references/search-fields.md',
+    'research/references/search-fields.md',
+    'web-research/references/search-examples.md',
+    'source-finder/references/search-examples.md',
+    'research/references/search-examples.md',
     'market-research/references/procedure.md',
     'market-research/references/market-sizing.md',
     'market-research/references/customer-evidence.md',

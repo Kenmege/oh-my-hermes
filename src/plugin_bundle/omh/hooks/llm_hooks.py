@@ -18,6 +18,7 @@ from ..awareness import (
     awareness_route_hint_context_from_payload,
     route_hint_for_installed_skills,
     route_hint_without_engine_workflows,
+    search_helper_hint,
 )
 from ..context_brief import build_context_brief
 from ..degradation import (
@@ -731,6 +732,9 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
         )
         if route_hint_context:
             context_parts.append(route_hint_context)
+            helper_hint = search_helper_hint(rendered_route_hint, request_message)
+            if helper_hint:
+                context_parts.append(helper_hint)
         brief = payload.get("omh_context_brief")
         if isinstance(brief, dict):
             for row in brief.get("degradation", {}).get("components", []):
