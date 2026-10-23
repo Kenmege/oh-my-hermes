@@ -11,10 +11,11 @@ Three layers:
 * one case per routed site (``SITES``), run under both readings by
   ``_hour_24.assert_hour_24_refused`` so CI's 3.11/3.13 lanes reach the 3.14
   path, with a control proving each site's result depends on the refusal;
-* a gate that re-derives every ``fromisoformat`` call in ``src/`` from source.
-  A call is either routed through the guard and has its case here, or is a
-  ``date.fromisoformat`` (unchanged in 3.14), or carries a recorded reason in
-  ``UNGUARDED``. A new raw call fails until it takes one of those three.
+* a gate that re-derives every ``fromisoformat`` reference in ``src/`` from
+  source, calls and bare references (``parse = datetime.fromisoformat``) alike.
+  A reference is either a guard definition, a guarded call with its case here,
+  a ``date.fromisoformat`` (unchanged in 3.14), or a count pinned in
+  ``UNGUARDED`` with its reason. A new raw reference fails until it takes one.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from collections import Counter
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from unittest import mock
 
@@ -37,63 +39,76 @@ from _local_package import load_local_package
 load_local_package()
 from omh.plugin_bundle.omh import memory_governance as governance  # noqa: E402
 from omh.plugin_bundle.omh.iso_datetime import strict_fromisoformat  # noqa: E402
-from test_memory_governance_admission import _approved_artifact, _evaluate, _iso  # noqa: E402
+from _memory_governance_fixtures import _approved_artifact, _evaluate, _iso  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src"
 RECONCILE = SOURCE / "skills/biomedical_evidence_toolkit/scripts/reconcile.py"
+SEARCH_EVIDENCE = SOURCE / "workflows/search_evidence.py"
 UTC = timezone.utc
 NOON = datetime(2020, 1, 1, 12, tzinfo=UTC)
 NEXT_MIDNIGHT = datetime(2020, 1, 2, tzinfo=UTC)
 
-# The one definition of the guard per package boundary: the bundle module the
-# `omh` package also imports, and the standalone toolkit script's own copy.
+# The definitions of the guard, one per loading boundary: the bundle module the
+# `omh` package also imports, the standalone toolkit script, and
+# search_evidence.py, which tests/test_search_evidence.py loads by file path
+# with only the stdlib. Each holds exactly one raw call.
 GUARD_DEFINITIONS = {
-    ("src/plugin_bundle/omh/iso_datetime.py", "strict_fromisoformat"),
-    ("src/skills/biomedical_evidence_toolkit/scripts/reconcile.py", "strict_fromisoformat"),
+    ("src/plugin_bundle/omh/iso_datetime.py", "strict_fromisoformat"): 1,
+    ("src/skills/biomedical_evidence_toolkit/scripts/reconcile.py", "strict_fromisoformat"): 1,
+    ("src/workflows/search_evidence.py", "strict_fromisoformat"): 1,
 }
 
-# Raw `datetime.fromisoformat` calls the audit left in place, and why.
-UNGUARDED = {
+# Raw `datetime.fromisoformat` references the audit left in place: how many
+# each function holds, and why its text can never carry hour 24.
+UNGUARDED: dict[tuple[str, str], tuple[int, str]] = {
     ("src/coding/hermes_child_receipts.py", "load_hermes_child_receipt"):
-        "re-reads observed_at only after validate_routing_observation (guarded) accepted it",
+        (1, "re-reads observed_at only after validate_routing_observation (guarded) accepted it"),
     ("src/maintenance/doctor.py", "_awareness_delivery_check"):
-        "first_attempted_at is the hook's own strftime clock (llm_hooks record_awareness_delivery)",
+        (1, "first_attempted_at comes from record_awareness_delivery, whose one caller (hooks/llm_hooks.py) passes a strftime clock stamp"),
     ("src/maintenance/hermes_gateway.py", "_installed_at_epoch"):
-        "installed_at is written by the installer's utc_now()",
+        (1, "installed_at is written by utc_now() in install/manifest.py and install/plugin_pack.py; installer.py only carries it over"),
     ("src/maintenance/update_check_recovery.py", "evaluate_update_check"):
-        "parses now.isoformat() built two lines above",
+        (1, "parses now.isoformat() built two lines above"),
     ("src/maintenance/update_check_state.py", "interval_elapsed"):
-        "last_checked_at is only ever written from evaluate_update_check's now_iso",
+        (1, "last_checked_at is only written by update_check_recovery, from now_iso"),
     ("src/plugin_bundle/omh/completion_store.py", "_checkpoint"):
-        "todo updated_at is stamped by todo_store on every write, never taken from input",
+        (1, "todo updated_at is stamped by todo_store on every write, never taken from input"),
     ("src/plugin_bundle/omh/egress_attempt_receipts.py", "AttemptStore._validate_row"):
-        "re-validates rows the store wrote itself with _utc_now()",
+        (1, "re-validates rows the store wrote itself with _utc_now()"),
     ("src/plugin_bundle/omh/memory_session_lens.py", "_published_before"):
-        "published_at is stamped by memory_provider's _utc_now()",
+        (1, "published_at is stamped by memory_provider's _utc_now()"),
     ("src/plugin_bundle/omh/native_todo.py", "_held_by_omh_todo"):
-        "todo updated_at is stamped by todo_store on every write, never taken from input",
-    ("src/plugin_bundle/omh/project_identity.py", "_explicit"):
-        "created_at is written once by _create from datetime.now().isoformat()",
+        (1, "todo updated_at is stamped by todo_store on every write, never taken from input"),
     ("src/plugin_bundle/omh/work_resume.py", "_timestamp"):
-        "reads only todo updated_at, stamped by todo_store on every write",
+        (1, "reads only todo updated_at, stamped by todo_store on every write"),
     ("src/skills/ai_job_search_toolkit/scripts/job_state.py", "timestamp"):
-        "guarded in place by the exact round trip #2261 added",
+        (1, "guarded in place by the exact round trip #2261 added"),
     ("src/workflows/lifecycle_growth_configuration_identity.py", "observation_order"):
-        "observed_at already passed lifecycle_growth_configuration_values.timestamp (guarded)",
+        (1, "only given observations built by parse_observation, whose observed_at passed lifecycle_growth_configuration_values.timestamp (guarded)"),
     ("src/workflows/memory.py", "last_prefetch_status"):
-        "served_at is stamped by memory_prefetch_receipt from the clock",
+        (1, "served_at is formatted by memory_prefetch_receipt._stamp from a datetime, never copied from text"),
     ("src/workflows/memory_project_identity.py", "migrate_project_identity"):
-        "created_at is now.isoformat() from the same call, or the receipt that call wrote",
+        (1, "created_at is now.isoformat() from the same call, or the receipt that call wrote"),
     ("src/workflows/memory_project_identity.py", "rollback_project_identity_migration"):
-        "created_at is read back from the receipt migrate_project_identity wrote",
+        (1, "created_at is read back from the receipt migrate_project_identity wrote"),
     ("src/workflows/memory_sync_fidelity_receipts.py", "SyncReceipt.clock"):
-        "observed_at already passed memory_sync_fidelity_validation.observed_at (guarded)",
+        (1, "SyncReceipt is only built after observed_at passed memory_sync_fidelity_validation.observed_at (guarded)"),
     ("src/workflows/web_qa_observation.py", "_parse"):
-        "only ever given the canonical output of _utc (guarded)",
+        (1, "only ever given the canonical output of _utc (guarded)"),
     ("src/workflows/web_qa_observation_plan.py", "_subject"):
-        "parses the canonical output of _utc_timestamp (guarded)",
+        (2, "parses the canonical output of _utc_timestamp (guarded)"),
 }
+
+
+def _explicit_identity(module: Any, stamp: str) -> str:
+    with TemporaryDirectory() as tmp:
+        path = Path(tmp) / "project-identity.json"
+        path.write_text(json.dumps({
+            "schema_version": module.EXPLICIT_SCHEMA_VERSION, "identity": "prj:" + "0" * 64,
+            "created_at": stamp, "resolver_version": module.RESOLVER_VERSION,
+        }), encoding="utf-8")
+        return module._explicit(path)
 
 
 def _clarification_record(stamp: str, field: str) -> dict[str, object]:
@@ -212,6 +227,8 @@ SITES: dict[tuple[str, str], tuple[str, list[Case]]] = {
         "omh.plugin_bundle.omh.memory_session_digest", [lambda m: m.stamp_epoch]),
     ("src/plugin_bundle/omh/owner_preference_record.py", "valid_timestamp"): (
         "omh.plugin_bundle.omh.owner_preference_record", [lambda m: m.valid_timestamp]),
+    ("src/plugin_bundle/omh/project_identity.py", "_explicit"): (
+        "omh.plugin_bundle.omh.project_identity", [lambda m: lambda s: _explicit_identity(m, s)]),
     ("src/plugin_bundle/omh/runtime_reader.py", "_epoch_seconds"): (
         "omh.plugin_bundle.omh.runtime_reader", [lambda m: m._epoch_seconds]),
     ("src/plugin_bundle/omh/search_state.py", "_clock"): (
@@ -315,22 +332,26 @@ SITES: dict[tuple[str, str], tuple[str, list[Case]]] = {
 }
 
 
-def fromisoformat_calls() -> tuple[Counter[tuple[str, str]], dict[tuple[str, str], set[str]]]:
-    """Every guarded call and every raw ``<receiver>.fromisoformat`` call in src/."""
+def fromisoformat_references() -> tuple[Counter[tuple[str, str]], Counter[tuple[str, str]]]:
+    """Guarded calls, and raw ``<receiver>.fromisoformat`` references other than ``date.``, per function.
+
+    A raw reference counts whether it is called or not: ``map(datetime.fromisoformat, ...)``
+    and ``parse = datetime.fromisoformat`` reach the same unguarded parser.
+    """
     guarded: Counter[tuple[str, str]] = Counter()
-    raw: dict[tuple[str, str], set[str]] = {}
+    raw: Counter[tuple[str, str]] = Counter()
 
     def visit(node: ast.AST, scope: list[str], path: str) -> None:
         for child in ast.iter_child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 visit(child, [*scope, child.name], path)
                 continue
-            if isinstance(child, ast.Call):
-                key = (path, ".".join(scope))
-                if isinstance(child.func, ast.Name) and child.func.id == "strict_fromisoformat":
-                    guarded[key] += 1
-                elif isinstance(child.func, ast.Attribute) and child.func.attr == "fromisoformat":
-                    raw.setdefault(key, set()).add(ast.unparse(child.func.value))
+            key = (path, ".".join(scope))
+            if isinstance(child, ast.Call) and isinstance(child.func, ast.Name) and child.func.id == "strict_fromisoformat":
+                guarded[key] += 1
+            if (isinstance(child, ast.Attribute) and child.attr == "fromisoformat"
+                    and not (isinstance(child.value, ast.Name) and child.value.id == "date")):
+                raw[key] += 1
             visit(child, scope, path)
 
     for source in sorted(SOURCE.rglob("*.py")):
@@ -402,33 +423,60 @@ class SiteTests(unittest.TestCase):
 
 
 class SourceGateTests(unittest.TestCase):
-    def test_every_fromisoformat_call_is_guarded_or_has_a_recorded_reason(self) -> None:
-        guarded, raw = fromisoformat_calls()
-        unexplained = sorted(
-            f"{path}::{function}"
-            for (path, function), receivers in raw.items()
-            if (path, function) not in GUARD_DEFINITIONS and (path, function) not in UNGUARDED
-            and receivers != {"date"}
-        )
+    def test_every_raw_fromisoformat_reference_is_a_guard_or_has_a_pinned_reason(self) -> None:
+        _guarded, raw = fromisoformat_references()
+        expected = {**GUARD_DEFINITIONS, **{key: count for key, (count, _reason) in UNGUARDED.items()}}
+        unexplained = sorted(f"{path}::{function} ({count})" for (path, function), count in raw.items()
+                             if expected.get((path, function)) != count)
         self.assertEqual(unexplained, [], (
             "CPython 3.14 reads T24:00:00 as the next midnight and 3.11-3.13 refuse it. Route these "
-            "calls through omh.plugin_bundle.omh.iso_datetime.strict_fromisoformat and add a case to "
-            "SITES, or record in UNGUARDED why their text can never come from outside OMH's own clock."
+            "references through omh.plugin_bundle.omh.iso_datetime.strict_fromisoformat and add a case "
+            "to SITES, or pin their count in UNGUARDED with why their text never comes from outside "
+            "OMH's own clock."
         ))
-        stale = sorted(f"{p}::{f}" for p, f in {*UNGUARDED, *GUARD_DEFINITIONS} if (p, f) not in raw)
-        self.assertEqual(stale, [], "these entries no longer name a raw fromisoformat call")
+        stale = sorted(f"{p}::{f}" for p, f in expected if (p, f) not in raw)
+        self.assertEqual(stale, [], "these entries no longer name a raw fromisoformat reference")
 
-    def test_every_guarded_call_has_a_case(self) -> None:
-        guarded, _raw = fromisoformat_calls()
-        script = [key for key in guarded if key[0] == RECONCILE.relative_to(ROOT).as_posix()]
-        missing = sorted(
+    def test_the_gate_sees_references_that_are_not_calls(self) -> None:
+        source = "from datetime import date, datetime\ndef f(xs):\n    parse = datetime.fromisoformat\n" \
+                 "    return list(map(datetime.fromisoformat, xs)), date.fromisoformat(xs[0])\n"
+        with TemporaryDirectory() as tmp, mock.patch(f"{__name__}.SOURCE", Path(tmp)), \
+                mock.patch(f"{__name__}.ROOT", Path(tmp)):
+            (Path(tmp) / "probe.py").write_text(source, encoding="utf-8")
+            _guarded, raw = fromisoformat_references()
+        self.assertEqual(dict(raw), {("probe.py", "f"): 2})
+
+    def test_every_guarded_call_has_exactly_its_cases(self) -> None:
+        guarded, _raw = fromisoformat_references()
+        script = RECONCILE.relative_to(ROOT).as_posix()
+        mismatched = sorted(
             f"{path}::{function} ({count} calls, {len(SITES.get((path, function), ('', []))[1])} cases)"
             for (path, function), count in guarded.items()
-            if (path, function) not in script and len(SITES.get((path, function), ("", []))[1]) < count
+            if path != script and len(SITES.get((path, function), ("", []))[1]) != count
         )
-        self.assertEqual(missing, [])
+        self.assertEqual(mismatched, [])
         self.assertEqual(sorted(key for key in SITES if key not in guarded), [], "SITES names a call that is gone")
-        self.assertEqual(sorted(f for _p, f in script), ["freshness", "timestamp"])
+        self.assertEqual(sorted(f for p, f in guarded if p == script), ["freshness", "timestamp"])
+
+    def test_every_guard_copy_reads_as_the_bundle_helper_does(self) -> None:
+        copies = {
+            "reconcile.py": runpy.run_path(str(RECONCILE))["strict_fromisoformat"],
+            "search_evidence.py": runpy.run_path(str(SEARCH_EVIDENCE))["strict_fromisoformat"],
+        }
+        texts = ("2026-10-24T24:00:00", "2026-10-24T24:00:00Z".replace("Z", "+00:00"), "20261024T24",
+                 "2026-W43-6T24:00", "2026-W43T24", "2026-10-25T00:00:00", "2026-W43", "2026W431T00",
+                 "2026-10-24", "2026-10-24T12:30:00+09:00", "2026-10-24T25:00", "not a time")
+
+        def outcome(parse: Callable[[str], datetime], text: str) -> object:
+            try:
+                return parse(text)
+            except ValueError as exc:
+                return "raised: " + str(exc).split(",")[0]
+
+        for name, copy in copies.items():
+            for text in texts:
+                with self.subTest(copy=name, text=text):
+                    self.assertEqual(outcome(copy, text), outcome(strict_fromisoformat, text))
 
 
 if __name__ == "__main__":

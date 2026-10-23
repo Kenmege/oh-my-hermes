@@ -1,8 +1,11 @@
 """``datetime.fromisoformat`` that refuses hour 24 on every supported Python.
 
 CPython 3.14 reads ``2026-10-24T24:00:00`` as midnight of the next day, while
-3.11 to 3.13 raise ``hour must be in 0..23``. That is the only input the four
-interpreters parse differently. Hermes' gateway loads this bundle on 3.14 and
+3.11 to 3.13 raise ``hour must be in 0..23``. It is the only input 3.13 and
+3.14 parse differently, and the only one any of them accepts where another
+refuses. (3.13 also started keeping a sub-second-only UTC offset such as
+``+00:00:00.5`` that 3.11 and 3.12 drop; that moves a value by under a second
+and is left alone here.) Hermes' gateway loads this bundle on 3.14 and
 ``omh`` runs on whatever Python its venv was built with, so without this guard
 one stored stamp can be valid to one process and invalid to the other.
 
