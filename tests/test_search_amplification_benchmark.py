@@ -22,7 +22,7 @@ def benchmark():
 class CorpusTests(unittest.TestCase):
     def test_search_benchmark_split_is_disjoint(self):
         b = benchmark()
-        corpus = json.loads((FIXTURES / "corpus.json").read_text())
+        corpus = json.loads((FIXTURES / "corpus.json").read_text(encoding="utf-8"))
         summary = b.validate_corpus(corpus)
         self.assertEqual(summary["total"], 60)
         self.assertEqual(summary["splits"], {"dev": 30, "holdout": 30})
@@ -45,8 +45,8 @@ class CorpusTests(unittest.TestCase):
 class ReceiptTests(unittest.TestCase):
     def setUp(self):
         self.b = benchmark()
-        self.corpus = json.loads((FIXTURES / "corpus.json").read_text())
-        self.receipts = json.loads((FIXTURES / "algorithm_receipts.json").read_text())
+        self.corpus = json.loads((FIXTURES / "corpus.json").read_text(encoding="utf-8"))
+        self.receipts = json.loads((FIXTURES / "algorithm_receipts.json").read_text(encoding="utf-8"))
 
     def report(self, receipts=None):
         return self.b.reconcile(self.corpus, self.receipts if receipts is None else receipts,
@@ -236,7 +236,7 @@ class CliTests(unittest.TestCase):
         sys.addaudithook(pure_guard)
         try:
             with self.assertRaisesRegex(AssertionError, "file write"):
-                with (Path.home() / "benchmark-denial-probe").open("w"):
+                with (Path.home() / "benchmark-denial-probe").open("w", encoding="utf-8"):
                     pass
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(b.main(["validate"]), 0)

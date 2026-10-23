@@ -24,7 +24,7 @@ class PluginToolSurfaceTests(unittest.TestCase):
         self.assertEqual(set(ctx.tools), set(BUILTIN_TOOL_NAMES))
         self.assertEqual(set(ctx.tools), set(PROVIDED_TOOLS))
         self.assertEqual(set(ctx.tools), set(TOOL_FILE_STEMS))
-        manifest = Path(omh.__file__).with_name("plugin.yaml").read_text()
+        manifest = Path(omh.__file__).with_name("plugin.yaml").read_text(encoding="utf-8")
         self.assertEqual(set(ctx.tools), set(entry_values(read_plugin_manifest_entries(manifest), "provides_tools")[0].sequence))
         self.assertEqual([schema["name"] for schema in builtin_tool_schemas()], sorted(ctx.tools))
         for schema in builtin_tool_schemas():

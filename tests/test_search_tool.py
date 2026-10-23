@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from _local_package import load_local_package
+from _module_patch import patch_modules
 
 load_local_package()
 
@@ -329,7 +330,7 @@ class SearchToolTests(unittest.TestCase):
     def test_standalone_backend_absence_never_returns_a_pretend_plan(self):
         handler = registered(self)
         spec, caps = fixture()
-        with patch.dict("sys.modules", {"omh.workflows.search_amplification": None}):
+        with patch_modules({"omh.workflows.search_amplification": None}):
             result = json.loads(handler({"action": "plan", "payload": {"spec": spec, "capabilities": caps}},
                                         session_id=self.id(), user_task="request"))
         self.assertEqual(result["error"], "backend_unavailable")

@@ -1739,8 +1739,8 @@ _DEFINITIONS = [
         # Declare ownership before fan-out: readers return entries and only
         # the parent writes the run-private shared ledger at fan-in.
         opening_steps=(
-            "When Hermes' bundled `grounded-citations` skill is available, set the citation ledger up before the first retrieval: choose one run-private file, have the parent reset it once (`sources.py --ledger <path> reset`), and declare parent-only writes in every lane brief. No lane resets it.",
-            SEARCH_OPENING,
+            "When Hermes' bundled `grounded-citations` skill is available, set the citation ledger up before the first retrieval: choose one run-private file, have the parent reset it once (`sources.py --ledger <path> reset`), and declare parent-only writes in every lane brief. No lane resets it. "
+            + SEARCH_OPENING,
         ),
         do_not_use_when=(
             "The user asks for a full plan-to-PR delivery cycle; use `ultrawork` (its `delivery_boundary` capability) or a planning workflow after research instead.",

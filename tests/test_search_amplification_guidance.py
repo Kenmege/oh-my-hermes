@@ -4,6 +4,7 @@ from __future__ import annotations
 import unittest
 
 from _local_package import load_local_package
+from _module_patch import patch_modules
 
 load_local_package()
 
@@ -14,7 +15,7 @@ class SearchGuidanceTests(unittest.TestCase):
         from omh.skills.search_guidance import METHOD
         from omh.skills.search_payloads import fields_markdown
 
-        doc = (Path(__file__).resolve().parents[1] / 'docs/SEARCH-AMPLIFICATION.md').read_text()
+        doc = (Path(__file__).resolve().parents[1] / 'docs/SEARCH-AMPLIFICATION.md').read_text(encoding='utf-8')
         for text in (METHOD, doc):
             compact = ' '.join(text.split())
             for claim in ('operation flags', 'numeric UTC clock floor', 'last delivered state',
@@ -106,7 +107,7 @@ class SearchGuidanceTests(unittest.TestCase):
 
         path = Path(__file__).resolve().parents[1] / 'docs/SEARCH-AMPLIFICATION.md'
         self.assertTrue(path.is_file(), 'English user guide is missing')
-        doc = path.read_text()
+        doc = path.read_text(encoding='utf-8')
         for text in ('Find datasets for browser agent benchmarks', 'Native Hermes', 'Portable',
                      'Unsupported', 'AutoRAG MCP', 'process-local', 'session_id', 'user_task',
                      '256 sessions', '32 requests', 'unmeasured', '10 percentage points',
@@ -129,26 +130,25 @@ class SearchGuidanceTests(unittest.TestCase):
                     for relative, content in files.items():
                         path = Path(tmp) / relative
                         path.parent.mkdir(parents=True, exist_ok=True)
-                        path.write_text(content)
+                        path.write_text(content, encoding='utf-8')
                     base = Path(tmp) / omh_skill_display_name(name)
                     for path in base.rglob('*.md'):
-                        content = path.read_text()
+                        content = path.read_text(encoding='utf-8')
                         if 'search-' not in path.name and path.name != 'SKILL.md':
                             continue
                         for ref in re.findall(r'`(references/search-[a-z]+\.md)`', content):
                             self.assertTrue((base / ref).is_file(), (path, ref))
-                    schema = json.loads(re.findall(r'```json\n(.*?)\n```', (base / 'references/search-fields.md').read_text(), re.S)[0])
+                    schema = json.loads(re.findall(r'```json\n(.*?)\n```', (base / 'references/search-fields.md').read_text(encoding='utf-8'), re.S)[0])
                     refs = re.findall(r'"\$ref":\s*"([^"]+)"', json.dumps(schema))
                     self.assertTrue(refs)
                     for ref in refs:
                         self.assertTrue(ref.startswith('#/$defs/'), ref)
                         self.assertIn(ref.removeprefix('#/$defs/'), schema['$defs'])
-                    examples = (base / 'references/search-examples.md').read_text()
+                    examples = (base / 'references/search-examples.md').read_text(encoding='utf-8')
                     self.assertTrue(json.loads(re.findall(r'```json\n(.*?)\n```', examples, re.S)[0])['synthetic_only'])
 
     def test_helper_failures_match_the_documented_fallback(self):
         import json
-        from unittest.mock import patch
         from omh.plugin_bundle.omh.tools.search_tool import omh_search_handler
         from omh.skills.search_payloads import example_scenarios
         from omh.skills.search_guidance import METHOD
@@ -156,7 +156,7 @@ class SearchGuidanceTests(unittest.TestCase):
         args = example_scenarios()['scenarios'][0]['calls'][0]
         unavailable = json.loads(omh_search_handler(args))
         self.assertEqual(unavailable['error'], 'host_context_unavailable')
-        with patch.dict('sys.modules', {'omh.workflows.search_amplification': None}):
+        with patch_modules({'omh.workflows.search_amplification': None}):
             unavailable = json.loads(omh_search_handler(args, session_id=self.id(), user_task='Synthetic backend unavailable'))
         self.assertEqual(unavailable['error'], 'backend_unavailable')
         self.assertNotIn('result', unavailable)
@@ -178,7 +178,7 @@ class SearchGuidanceTests(unittest.TestCase):
                     if '/references/search-' in relative:
                         path = root / directory / relative
                         self.assertTrue(path.is_file(), relative)
-                        self.assertEqual(path.read_text(), content, relative)
+                        self.assertEqual(path.read_text(encoding='utf-8'), content, relative)
         for definition in builtin_definitions():
             if definition.procedure_steps:
                 refs = {template.relative_path: template.content for template in skill_record(definition.name).references()}
