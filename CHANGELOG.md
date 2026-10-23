@@ -164,16 +164,21 @@ All notable changes will be documented here.
   hedge ends it (`…: done, done, conflict`, `…, too risky though`). After a
   Korean request anything else keeps nothing, and the message is read whole, as
   on main (`…해줘, 아 잠깐만`, `…해줘, 해도 되나`, `…해줘, 확인해줘`). After an English
-  request a remark keeps it by default, in any words: thanks or a sign-off
-  (`…, thanks a bunch`, `…, much obliged`), a back-reference (`…, as
-  discussed`), a wish (`…, fingers crossed`), no pressure (`…, no worries`),
-  who asked (`…, my manager asked for it`) or an aside (`…, fwiw the tests are
-  flaky`). A new request keeps nothing as before (`…, run the tests`, `…, let
-  me check first`), and so does a refusal, each a class by meaning: a hold, a
-  joke or a take-back (`…, never mind`, `… — jk`, `… or maybe not`), a status,
-  something asked before the work, a hedge (`…, not sure though`),
-  deliberation (`…, what do you think`), a person's modal (`…, we'll see`), a
-  question, a negation of the work (`…, not yet`), a deferral or a condition. A past
+  request a remark keeps it only when it is of a keep kind, in any words and
+  with any intensifier: gratitude (`…, thanks a bunch`, `…, thx so much!!`,
+  `…, much obliged`), a sign-off (`…, have a good one`), a wish (`…, fingers
+  crossed`, `…, wish me luck`), a back-reference (`…, as discussed`, `…, same
+  as last time`), who asked (`…, my manager asked for it`), an aside marker
+  and a harmless statement (`…, fwiw the tests are flaky`), or no pressure
+  (`…, no worries`, `…, take your time`, `…, whenever works`). An unknown
+  remark holds, so the request is offered, not started, and a refusal class
+  holds even inside a keep kind: a new request (`…, run the tests`), a hold, a
+  joke or a retraction (`…, never mind`, `…, forget I said that`), a status,
+  something asked before the work, a warning (`…, fwiw last time this broke
+  CI`), a hedge or thinking aloud (`…, not sure though`, `…, spitballing`),
+  deliberation or the decision handed back (`…, what do you think`, `…, your
+  call`), a person's modal (`…, we'll see`), a question, a negation (`…, not
+  yet`), a deferral or a condition. A past
   inside an embedded question (`어떻게 나눴는지 설명해줘`), a report after a -고 work
   verb (`… 고치고 뭘 고쳤는지 보고해줘`) and a change aimed so a thing does not happen
   a few words off (`… 안 되게끔 수정해줘`) count too.

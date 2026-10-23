@@ -1072,75 +1072,206 @@ _ASKS_BEFORE_THE_WORK: Final = re.compile(
 )
 
 
-# After an English request a trailing clause keeps it by default when it is a remark (lead decision on the #2243
-# review: a closed keeper list dropped every politeness form and aside it did not name): thanks or a sign-off in any
-# words ("…, thanks a bunch", "…, much obliged", "…, I'd appreciate it"), a back-reference ("…, as discussed"), a wish
-# ("…, fingers crossed"), no pressure ("…, no worries", "…, not urgent"), who asked ("…, my manager asked for it") or
-# an aside ("…, fwiw the tests are flaky"). A remark asks for nothing more (`_EN_ASKS_FOR_MORE`: a new unconnected
-# request stays as before, "…, run the tests", "…, let me check first", "…, and give me your two cents"), and carries
-# none of the refusals, each a class by meaning: a hold or a joke (`_HOLD`, read on every clause, and `_LAUGH_ALONE`),
-# a take-back (`_EN_TAKE_BACK`), a status of the work (`_STATUS_ALONE`), something asked before the work
-# (`_BEFORE_THE_WORK`), a hedge about wanting it (`_HEDGE`), deliberation (`_WEIGHS`), a person's modal or intention
-# (`_ASKER_INTENT`), a question (`_QUESTION`), or a negation of doing the work (`_NEGATES_THE_WORK`); no pressure is
-# read off first (`_NO_PRESSURE`). A deferral and a condition are refused before it, on the whole text
-# (`_hard_excluded`). A Korean message keeps the keepers alone, since main reads it whole.
+# What follows an English request in a later clause keeps it only as a remark of a keep kind (lead decision (D) on
+# the #2243 review). A leaked refusal costs a paid graph start and a missed keeper only an offer, so an unknown remark
+# holds; and a keep kind is a word family with light structure, which tolerates intensifiers ("…, thanks a ton",
+# "…, cheers mate", "…, so grateful!!"), where the old closed list matched a phrase whole:
+# - gratitude (`_GRATITUDE`): "…, thanks a bunch", "…, much obliged", "…, I'd appreciate it", "…, you're the best";
+# - a sign-off (`_SIGN_OFF`): "…, have a good one", "…, talk soon", "…, regards";
+# - a wish (`_WISH`): "…, fingers crossed", "…, hope it goes smoothly", "…, wish me luck", "…, good luck";
+# - a back-reference (`_BACK_REFERENCE`): "…, as discussed", "…, like we agreed", "…, same as last time", "…, per our
+#   chat";
+# - who asked (`_ATTRIBUTION`): "…, my manager asked for it", "…, legal approved it", "…, requested by QA";
+# - an aside marker and the statement after it (`_ASIDE_MARKER`): "…, fwiw the tests are flaky", "…, btw, CI is slow";
+# - no pressure (`_NO_PRESSURE`): "…, no worries", "…, take your time", "…, whenever works", "…, not urgent".
+# The keepers by shape stay a fast path (`_KEEPER_CLAUSE`: an urgency, a deadline, a start cue, a per-unit spec), and a
+# follow-on keeps it too (`_follows_on`). The refusal classes apply first, each by meaning, so a keep kind that carries
+# one holds ("…, btw, not sure about this", "…, fwiw last time this broke CI"):
+# - a new request (`_EN_ASKS_FOR_MORE`: "…, run the tests", "…, let me check first"), a hold or a joke (`_HOLD`, read
+#   on every clause; `_LAUGH_ALONE`), a retraction (`_RETRACTS`; a take-back as the last clause is read on the whole
+#   text, `_takes_it_back`), a verb on the request itself (`_ACTS_ON_IT`);
+# - a status alone (`_STATUS_ALONE`), something asked before the work (`_BEFORE_THE_WORK`), a warning (`_WARNS`);
+# - a hedge about wanting it (`_HEDGE`), thinking aloud (`_THINKING_ALOUD`), a hesitation alone (`_HESITATION`);
+# - deliberation (`_WEIGHS`), the decision handed back (`_HANDS_IT_BACK`), a person's modal or intention
+#   (`_ASKER_INTENT`), a question (`_QUESTION`);
+# - a negation outside a wish (`_NEGATION`), once no pressure is read off.
+# A deferral and a condition are refused before it, on the whole text (`_hard_excluded`; no pressure is read off there
+# too, so "…, whenever works" is none). A Korean message keeps the keepers alone, since main reads it whole.
 _EN_ASKS_FOR_MORE: Final = re.compile(
-    rf"^(?:and\s+|then\s+|also\s+|please\s+|pls\s+|just\s+|so\s+)*(?:{_EN_FOLLOW_ON_VERB}|{_READ_OR_HOLD_VERB}(?!\s+(?:you|ya)\b)"
-    r"|[a-z]+\s+me)\b"
+    rf"^(?:and\s+|then\s+|also\s+|please\s+|pls\s+|just\s+|so\s+)*(?!let'?s\s+hope\b)(?:{_EN_FOLLOW_ON_VERB}|{_READ_OR_HOLD_VERB}(?!\s+(?:you|ya)\b)"
+    r"|(?!(?:wish|bless|excuse)\b)[a-z]+\s+me)\b"
 )
 _HEDGE: Final = re.compile(
-    r"\b(?:maybe|perhaps|probably|possibly|not\s+sure|unsure|i\s+guess|i\s+suppose|idk|dunno|or\s+whatever|or\s+something"
-    r"|kinda|sorta|hmm+|eh|meh|nah|nope|rather\s+not|second\s+thoughts?|on\s+the\s+fence|not\s+convinced|scared|nervous"
-    r"|afraid|risky|though|ugh|not\s+my\s+call|someone\s+else'?s)\b"
+    r"\b(?:ma+y+b+e+|perhaps|probably|possibly|not\s+sure|unsure|uncertain|undecided|indecisive|i\s+guess|i\s+suppose|idk"
+    r"|dunno|who\s+(?:knows|can\s+say)|or\s+whatever|or\s+something|kinda|sorta|hmm+|eh|meh|nah|nope|rather\s+not|torn"
+    r"|iffy|deciding|uneasy|wary|hesitant|reluctant|skeptical|sceptical|50\s*/\s*50|fifty[-\s]fifty|object(?:ing|ion)?"
+    r"|second[-\s]+(?:thoughts?|guess\w*)|on\s+the\s+fence|not\s+convinced|doubt\w*|scared|nervous|afraid|risky|though"
+    r"|ugh|not\s+my\s+call|someone\s+else'?s)\b"
+)
+# Thinking aloud offers an idea, not a request ("…, thinking out loud", "…, just musing", "…, spitballing"); a
+# retraction cancels what was said, by its verb ("…, scrap that", "…, forget I said that", "…, ignore that",
+# "…, pretend I didn't say it", "…, on reflection no"); handing the decision back asks before the work ("…, your call",
+# "…, up to you", "…, up to the team", "…, you decide"); and a clause that is only a hesitation hesitates ("…, umm",
+# "…, welp").
+_THINKING_ALOUD: Final = re.compile(
+    r"\b(?:think\w*|musing|muse|brainstorm\w*|spitball\w*|toying|ponder\w*|mull\w*|riffing|wondering|weighing|debating"
+    r"|consider\w*|inkling|hunch|brainwave|off\s+the\s+top\s+of\s+my\s+head|gut\s+(?:says|feeling|check|call))\b"
+)
+_RETRACTS: Final = re.compile(
+    r"\b(?:scrap|scratch|forget|disregard|ignore|strike|retract\w*|nix|belay|withdraw\w*|pretend|undo|hang\s+on|hold\s+up|stand\s*by|sit\s+tight"
+    r"|take\s+(?:it|that|this|all\s+that)\s+back|on\s+(?:second\s+thought|reflection))\b"
+)
+_HANDS_IT_BACK: Final = re.compile(
+    r"\byour\s+(?:call|choice|pick|decision|preference)\b|\byou\s+(?:decide|choose|pick)\b|\bup\s+to\s+(?!date\b)\w+"
+    r"|\bdealer'?s\s+choice\b|\bwhatever\s+you\b"
+)
+_HESITATION: Final = re.compile(r"(?:u+h+m*|u+m+|e+r+m*|e+h+|h+m+|h+r+m+|w+e+l+p+|m+e+h+|m{2,}|a+h+|o+o+f+)\W*")
+# A verb said on the request itself acts on it, as a retraction or a new request does ("…, shelve it", "…, park it for
+# now", "…, scrap it", "…, nix that"), except a wish or thanks ("…, hope it goes smoothly", "…, love it").
+_ACTS_ON_IT: Final = re.compile(
+    r"^(?:just\s+|maybe\s+|so\s+|and\s+)?(?!(?:hope|hoping|wish|love|bless|thank|thanks|appreciate)\b)[a-z]+\s+"
+    r"(?:it|that|this|everything|all\s+(?:of\s+)?(?:it|that|this))\b"
 )
 # A clause that is only a laugh after the work is a joke about it ("…, lol"), while a laugh inside a remark is not
 # ("…, long day lol"); a clause that is only a status says the work is done or where it stands ("…: done, done,
 # conflict", "…, all done"); and a clause that ends on first or beforehand asks for something before the work ("…, let
 # me check first", "…: the billing one first").
 _LAUGH_ALONE: Final = re.compile(r"(?:lol|lmao|rofl|haha+|hehe+)\s*[.!]*")
-_STATUS_ALONE: Final = re.compile(rf"(?:all\s+|already\s+)?{_STATUS_WORD}\s*[.!]*")
+_STATUS_ALONE: Final = re.compile(rf"(?:all\s+|already\s+)?{_STATUS_WORD}(?:\s+already)?\s*[.!]*")
 _BEFORE_THE_WORK: Final = re.compile(r"\b(?:first|beforehand)\s*[.!]*$")
-_WEIGHS: Final = re.compile(rf"\b(?!take\s+care\b|feel\s+free\b){_DELIBERATION}\b")
+_WEIGHS: Final = re.compile(rf"(?<!\bper\sthe\s)(?<!\bsame\s)(?<!\bgood\s)\b(?!take\s+care\b|feel\s+free\b){_DELIBERATION}\b")
 _ASKER_INTENT: Final = re.compile(
     rf"\b(?:i|you|we)(?:'(?:d|ll)\b|'re\s+going\b|\s+(?!ha(?:ve|s)\s+(?!to\b)){_MODAL_OR_INTENT})"
     r"(?!\s+(?:\w+\s+)?(?:appreciate|be\s+(?:\w+\s+)?(?:grateful|thankful)|owe\s+you)\b)"
 )
 _QUESTION: Final = re.compile(
-    r"[?？]|^(?:what|why|how|which|who|where|whether|is|are|am|was|were|do|does|did|should|shall|could|would|can|will"
-    r"|may|might|must|has|have)(?![\w'])|\b(?:curious|wondering)\b"
+    r"[?？]|^(?:what|why|how|which|who|where|whether|is|are|am|was|were|do|does|did|should|shall|could|would(?!\s+love\b)|can|will"
+    r"|may|might|must)(?![\w'])|\b(?:curious|wondering|wdyt|wyt|hbu|wbu)\b"
 )
-_NEGATES_THE_WORK: Final = re.compile(
-    r"\b(?:don'?t|do\s+not|doesn'?t|not\s+(?:yet|now|today|anymore)|never|hold\s+off)\b"
+# A negation anywhere in a remark is read as one of the work, whatever it negates ("…, not yet", "…, not gonna do
+# it", "…, we won't do this", "…, let's not", "…, can't decide", "…, not entirely convinced").
+_NEGATION: Final = re.compile(
+    r"\b(?:not|no|never|nothing|none|nope|neither|nor|without|hold\s+off|\w+n['’]t"
+    r"|dont|wont|cant|didnt|doesnt|isnt|arent|wasnt|shouldnt|wouldnt|couldnt|havent|hasnt)\b"
 )
-# No pressure is no refusal, whatever words it borrows from one ("…, no worries", "…, no rush"): it is read off before
-# the refusals are.
-_NO_PRESSURE: Final = re.compile(r"\b(?:no\s+(?:rush|pressure|worries|hurry|stress)|not\s+urgent)\b")
+# A warning about the work is no harmless aside ("…, fwiw last time this broke CI", "…, careful, prod is fragile").
+_WARNS: Final = re.compile(
+    r"\b(?:broke|break(?:s|ing)?|blew\s+up|blow\s+up|went\s+down|outage|incident|regress\w*|careful|beware|watch\s+out"
+    r"|caution|danger\w*|yikes|fragile|bricked|bit\s+us|burned\s+us|could|might|may|los[et]|losing|corrupt\w*|wipe\w*"
+    r"|data\s+loss)\b"
+)
+_GRATITUDE: Final = re.compile(
+    r"\b(?:thanks?|thank\s*(?:you|u|ya|ye)|thx|thnx|tnx|tx|ty|tysm|tyvm|ta|cheers|appreciat\w*|grateful|thankful|obliged"
+    r"|kudos|much\s+love|bless\s+you|you\s+rock|you(?:'re|\s+are)\s+(?:the\s+best|a\s+(?:star|legend|lifesaver|gem|hero))"
+    r"|legend|lifesaver|owe\s+you|(?:big|much|so\s+much)\s+love|props|shout[-\s]?out|hats\s+off)\b"
+    r"|^(?:awesome|amazing|great|perfect|nice|sweet|lovely|brilliant|excellent|wonderful|fantastic)\W*$"
+)
+_SIGN_OFF: Final = re.compile(
+    r"\b(?:have\s+a\s+(?:\w+\s+)?(?:one|day|weekend|evening|night|week|afternoon|morning)|talk\s+soon|ttyl|signing\s+off"
+    r"|regards|best\s+wishes|all\s+the\s+best|take\s+care|see\s+(?:ya|you)|cya|bye|good\s*night|peace\s+out"
+    r"|over\s+and\s+out|(?:catch|see|talk|speak)\s+(?:you\s+|ya\s+)?later|laters|later\s+gators?)\b"
+    r"|^(?:hey|hi|hello|hiya|yo|howdy|morning|good\s+(?:morning|afternoon|evening))\b"
+)
+_WISH: Final = re.compile(
+    r"^(?:i\s+|we\s+|and\s+|so\s+|let'?s\s+)?(?:(?:really|so|truly|just|sure)\s+)?(?:hope|hoping|here'?s\s+hoping|wish|wishing"
+    r"|fingers\s+(?:\w+\s+){0,2}crossed|pray\w*|knock\s+on\s+wood|touch\s+wood|(?:good|best\s+of)\s+luck|(?:i'?d\s+|would\s+)love"
+    r"|keen|excited|eager|stoked|can'?t\s+wait|looking\s+forward|wouldn'?t\s+mind|optimistic"
+    r"|(?:got\s+a\s+)?good\s+feeling|feeling\s+(?:good|positive|optimistic))\b"
+)
+_BACK_REFERENCE: Final = re.compile(
+    r"\b(?:as|like|per|what|how|the\s+way)\s+(?:(?:we|i|you|they)\s+(?:\w+\s+)?(?:discussed|agreed|said|mentioned|planned|talked|decided"
+    r"|spoke|chatted|covered|sorted|settled|aligned|landed|went\s+over|figured|mapped|outlined|scoped|laid)|(?:discussed|agreed"
+    r"|mentioned|planned|promised|usual|always|before))\b"
+    r"|\b(?:we|they)\s+(?:all\s+)?(?:agreed|discussed|settled\s+on|decided\s+on|mapped\s+(?:it\s+)?out|laid\s+(?:it\s+)?out)\b"
+    r"|\b(?:like|as|per)\s+the\s+\w+\s+(?:says|said|states|describes|spells\s+out)\b"
+    r"|\b(?:same\s+(?:\w+\s+)?as|like)\s+(?:(?:the\s+)?last\s+\w+|before|usual|always)\b|\b(?:as|like)\s+in\s+the\s+\w+"
+    r"|\bfollowing\s+(?:up\s+on|the\s+\w+)\b|\bper\s+(?:our|the|my|your|yesterday'?s|today'?s|last\s+week'?s)\s+\w+"
+)
+_ATTRIBUTION: Final = re.compile(
+    r"\b(?:asked|requested|wants?|wanted|needs?|needed|approved|okayed|ok'?d|signed\s+off|flagged|greenlit|insisted"
+    r"|ordered|mandated|cleared|blessed|backed|endorsed|sanctioned|authori[sz]ed)\b|\bper\s+\w+'?s\s+request\b"
+    r"|\b\w+'?s\s+orders\b|\bgave\s+(?:it\s+|this\s+)?the\s+nod\b|\b(?:it'?s|this\s+is)\s+from\s+(?:the\s+)?\w+"
+    r"|\b(?:gave|got|has|have|had)\s+(?:\w+\s+)?(?:green\s*light|thumbs\s+up|go[-\s]ahead|blessing|sign[-\s]?off|ok|okay)\b"
+    r"|\bper\s+(?:the\s+)?(?:cto|ceo|cfo|vp|pm|po|boss|lead|manager|team|qa|legal|security|client|customer|product|design|ops)\b"
+)
+_ASIDE_MARKER: Final = re.compile(
+    r"^(?:just\s+(?:an?\s+)?)?(?:fyi|btw|by\s+the\s+way|ps|psa|p\.s\.?|(?:side|quick|random)\s*note|note|for\s+what\s+it'?s\s+worth|fwiw"
+    r"|for\s+the\s+record"
+    r"|heads\s+up|nb|jsyk|just\s+so\s+you\s+know|fun\s+fact|(?:random\s+)?aside)\b"
+)
+# A sign-off that says later, a back-reference to before and a plan named are no deferral, take-back, condition or
+# deliberation ("…, catch you later", "…, later gators", "…, same deal as before", "…, following the plan from last
+# sprint"): they are read off before the whole-text checks and the refusals, as no pressure is.
+_KEEP_IDIOM: Final = re.compile(
+    r"\b(?:(?:catch|see|talk|speak)\s+(?:you\s+|ya\s+)?later|laters|later\s+gators?|(?:same\s+(?:\w+\s+)?as|like)\s+before"
+    r"|(?:the|our|same)\s+plan(?:\s+from\s+(?:last\s+)?\w+)?)\b"
+)
+# No pressure is no refusal, whatever words it borrows from one ("…, no worries", "…, take your time", "…, whenever
+# works", "…, nothing urgent"): it is read off before the refusals are, and before the whole-text condition.
+_NO_PRESSURE: Final = re.compile(
+    r"\b(?:(?:no|zero|0)\s+(?:\w+\s+)?(?:rush|pressure|worries|hurry|stress|problem|biggie|big\s+deal)|not\s+(?:urgent|a\s+big\s+deal)"
+    r"|nothing\s+(?:urgent|pressing)|take\s+your\s+(?:sweet\s+)?time|all\s+good(?:\s+on\s+\w+)?|breathing\s+room|plenty\s+of\s+time|at\s+your\s+(?:own\s+)?(?:pace|leisure|convenience)|easy\s+does\s+it"
+    r"|low\s+prio(?:rity)?|(?:chill|relaxed|easy|loose|flexible)\s+(?:pace|timeline|deadline|schedule)(?:\s+is\s+fine)?"
+    r"|(?:chill|relaxed|easygoing|easy-going)(?:\s+about\s+(?:\w+\s+){0,2}\w+)?"
+    r"|happy\s+(?:for\s+it\s+)?to\s+(?:wait|take\s+(?:a\s+bit|a\s+while|its\s+time|longer)))\b"
+    r"(?:\s+(?:on|with|for|about)\s+(?:this|it|that)(?:\s+one)?\b)?|\bwhenever\b[^,;]*"
+)
 
 
-def _is_a_remark(clause: str) -> bool:
-    """Whether a trailing English ``clause`` is a remark: it asks for nothing more and carries no refusal."""
-    clause = _NO_PRESSURE.sub("", clause).strip()
-    return not (
-        _EN_ASKS_FOR_MORE.match(clause)
-        or _EN_TAKE_BACK.match(clause)
-        or _LAUGH_ALONE.fullmatch(clause)
+def _refuses(clause: str) -> bool:
+    """Whether a trailing English ``clause`` carries a refusal class: a laugh, a status or a hesitation that is the whole
+    clause, or any other class once no pressure and the keep idioms are read off."""
+    bare = _KEEP_IDIOM.sub("", _NO_PRESSURE.sub("", clause)).strip()
+    return bool(
+        _LAUGH_ALONE.fullmatch(clause)
         or _STATUS_ALONE.fullmatch(clause)
-        or _BEFORE_THE_WORK.search(clause)
-        or _HEDGE.search(clause)
-        or _WEIGHS.search(clause)
-        or _ASKER_INTENT.search(clause)
-        or _QUESTION.search(clause)
-        or _NEGATES_THE_WORK.search(clause)
+        or _HESITATION.fullmatch(clause)
+        or _EN_ASKS_FOR_MORE.match(bare)
+        or _BEFORE_THE_WORK.search(bare)
+        or _WARNS.search(bare)
+        or _HEDGE.search(bare)
+        or _THINKING_ALOUD.search(bare)
+        or _RETRACTS.search(bare)
+        or _HANDS_IT_BACK.search(bare)
+        or _ACTS_ON_IT.match(bare)
+        or _WEIGHS.search(bare)
+        or _ASKER_INTENT.search(bare)
+        or _QUESTION.search(bare)
+        or (_NEGATION.search(bare) and not _WISH.match(bare))
+    )
+
+
+def _of_a_keep_kind(clause: str) -> bool:
+    """Whether a trailing English ``clause`` is a remark of a keep kind."""
+    return bool(
+        _GRATITUDE.search(clause)
+        or _SIGN_OFF.search(clause)
+        or _WISH.match(clause)
+        or _BACK_REFERENCE.search(clause)
+        or _ATTRIBUTION.search(clause)
+        or _NO_PRESSURE.search(clause)
     )
 
 
 def _remarks_keep_the_request(trailing: list[str]) -> bool:
-    """Whether every clause after an English request keeps it: a keeper (`_KEEPER_CLAUSE`), a follow-on
-    (`_follows_on`) or a remark (`_is_a_remark`), with no hold or joke in any of them (`_HOLD`)."""
-    return all(
-        not _HOLD.search(clause) and bool(_KEEPER_CLAUSE.fullmatch(clause) or _follows_on(clause) or _is_a_remark(clause))
-        for clause in trailing
-    )
+    """Whether the clauses after an English request keep it: each is a keeper by shape (`_KEEPER_CLAUSE`), a follow-on
+    (`_follows_on`) or a remark of a keep kind with no refusal in it, and an aside marker opens a statement that runs to
+    the message's end with no refusal in it (`_ASIDE_MARKER`). No clause may hold or joke (`_HOLD`); anything else
+    holds."""
+    for index, clause in enumerate(trailing):
+        if _HOLD.search(clause):
+            return False
+        if _ASIDE_MARKER.match(clause):
+            return not any(
+                _HOLD.search(rest) or _refuses(_ASIDE_MARKER.sub("", rest, count=1).strip()) for rest in trailing[index:]
+            )
+        if not (
+            _KEEPER_CLAUSE.fullmatch(clause)
+            or _follows_on(clause)
+            or (_of_a_keep_kind(clause) and not _refuses(clause))
+        ):
+            return False
+    return True
 
 
 def _closed(folded: str) -> tuple[str, str]:
@@ -1191,8 +1322,14 @@ def _trails_off(folded: str) -> bool:
 
 
 def _is_a_work_item(item: str) -> bool:
-    """Whether a colon list ``item`` opens on a verb of work (`_EN_LIST_ITEM`) with no hedge, refusal or hold in it."""
-    return bool(_EN_LIST_ITEM.match(item)) and not _HEDGE_IN_AN_ITEM.search(item) and not _HOLD.search(item)
+    """Whether a colon list ``item`` opens on a verb of work (`_EN_LIST_ITEM`) with no hedge, refusal or hold in it, and
+    is no status in either order (`_STATUS_ALONE`: "already merged")."""
+    return (
+        bool(_EN_LIST_ITEM.match(item))
+        and not _HEDGE_IN_AN_ITEM.search(item)
+        and not _HOLD.search(item)
+        and not _STATUS_ALONE.fullmatch(item)
+    )
 
 
 def _asks_for(folded: str, verbs: str) -> bool:
@@ -1473,14 +1610,14 @@ def _hard_excluded(folded: str, links: tuple[str, ...], request: str | None = No
         or _opens_with_a_skill_name(folded)
         or _names_a_skill_as_the_instrument(folded)
         or _STOP_OR_HOLD.search(folded)
-        or _CONDITION.search(folded)
-        or _says_a_deferral(folded)
+        or _CONDITION.search(_KEEP_IDIOM.sub("", _NO_PRESSURE.sub("", folded)))
+        or _says_a_deferral(_KEEP_IDIOM.sub("", folded))
         or _COMPLETED.search(folded)
         or _says_a_past(folded)
         or _ONE_SCOPE.search(folded)
         or _names_one_container(folded)
         or _says_a_schedule(folded)
-        or _takes_it_back(folded)
+        or _takes_it_back(_KEEP_IDIOM.sub("", folded))
         or _trails_off(folded if request is None else request)
         or _UNTIL.search(folded)
         or _RUNTIME_PARALLEL.search(folded)

@@ -653,32 +653,61 @@ class RouterTests(unittest.TestCase):
                 self.assertTrue(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
 
-    def test_a_trailing_remark_keeps_the_request_and_a_refusal_does_not(self) -> None:
-        # After an English request, a remark keeps it by default, in any words; only a refusal class or a new request
-        # does not (#2243 review). Router and hint read the same, on work over many targets and on a split.
-        keeps = ("thanks a bunch", "much obliged", "I'd appreciate it", "regards", "as discussed", "fingers crossed",
-                 "no worries", "not urgent", "my manager asked for it", "fwiw the tests are flaky",
-                 "long day lol", "see ya")
-        refusals = ("and give me your two cents",  # a new request
-                    "haha jk, thanks",  # a joke
-                    "scratch that, thanks",  # a take-back
-                    "lol",  # only a laugh
-                    "done, done, conflict",  # only a status
-                    "the billing one first",  # something before the work
-                    "not sure",  # a hedge
-                    "thoughts welcome",  # deliberation
-                    "we'll see",  # a person's modal
-                    "is that ok",  # a question
-                    "not yet")  # a negation of the work
+    def test_a_trailing_remark_keeps_the_request_only_by_kind(self) -> None:
+        # After an English request, a trailing remark keeps it only when it is of a keep kind, in any words and with
+        # any intensifier; a refusal class applies first, and an unknown remark holds (#2243 review, lead decision
+        # (D)). Router and hint read the same, on work over many targets and on a split.
+        kinds = {
+            "gratitude": ("thanks a bunch", "thx so much!!", "much obliged", "I'd appreciate it", "you're the best"),
+            "sign-off": ("have a good one", "talk soon", "regards", "catch you later", "later gators", "see ya", "take care"),
+            "wish": ("fingers crossed", "really hope it goes smoothly", "hope it lands cleanly", "wish me luck", "good luck",
+                     "hope there are no conflicts", "let's hope it sticks", "would love a clean run",
+                     "got a good feeling about this one"),
+            "back-reference": ("as discussed", "like we agreed", "same as last time", "per our chat",
+                               "same deal as before", "following the plan from last sprint"),
+            "attribution": ("my manager asked for it", "legal approved it", "the PM requested this"),
+            "aside": ("fwiw the tests are flaky", "btw, CI is slow today"),
+            "no pressure": ("no worries", "no rush at all", "take your time", "whenever works", "not urgent",
+                            "nothing pressing about it"),
+        }
+        # Each refusal shares its clause with a keep kind, so the class alone holds it.
+        refusals = ("run the tests too thanks",  # a new request
+                    "haha jk thanks",  # a hold or a joke
+                    "btw lol",  # only a laugh
+                    "fyi all done",  # only a status
+                    "btw umm",  # only a hesitation
+                    "thanks but the billing one first",  # something before the work
+                    "btw this could break prod",  # a warning
+                    "fwiw last time this broke CI",  # a warning
+                    "thanks but still deciding",  # a hedge
+                    "btw just spitballing",  # thinking aloud
+                    "thanks but forget I said that",  # a retraction
+                    "thanks but your call",  # the decision handed back
+                    "no rush shelve it",  # a verb on the request itself
+                    "thanks and thoughts welcome",  # deliberation
+                    "thanks we'll see",  # a person's modal
+                    "can we do both thanks",  # a question
+                    "thanks not yet")  # a negation
+        unknown = ("long day lol", "unrelated but i love this new keyboard", "peace")
         for work in ("rebase all open PRs", "update every service to node 22", "split the migration into parallel lanes"):
-            for tail in keeps:
-                with self.subTest(message=f"{work}, {tail}"):
-                    self.assertTrue(dispatches_dag_ulw(f"{work}, {tail}"))
-                    self.assertEqual(self._dag_ulw_starts(f"{work}, {tail}")[:2], (True, True))
-            for tail in refusals:
+            for kind, tails in kinds.items():
+                for tail in tails:
+                    with self.subTest(kind=kind, message=f"{work}, {tail}"):
+                        self.assertTrue(dispatches_dag_ulw(f"{work}, {tail}"))
+                        self.assertEqual(self._dag_ulw_starts(f"{work}, {tail}")[:2], (True, True))
+            for tail in (*refusals, *unknown):
                 with self.subTest(message=f"{work}, {tail}"):
                     self.assertFalse(dispatches_dag_ulw(f"{work}, {tail}"))
                     self.assertEqual(self._dag_ulw_starts(f"{work}, {tail}")[:2], (False, False))
+        # A remark after a colon list's last item goes through the same gate: a status in either order holds, and a
+        # dismissal holds.
+        for message in ("for each open PR: rebase, merge, merged already", "for each open PR: rebase, merge, already merged",
+                        "for each open PR: rebase, merge, not my problem",
+                        "for each repo: bump deps, tested locally, shipped to staging"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        self.assertEqual(self._dag_ulw_starts("for each open PR: rebase, squash, merge, thanks a ton")[:2], (True, True))
 
     def test_the_router_size_cue_follows_the_cue_readers_refusals(self) -> None:
         # The router's size-cue path dispatches dag-ulw only where the cue reader would start: a held, deferred or
