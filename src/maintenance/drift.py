@@ -861,9 +861,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # question that is no keeper clarifies, where main dispatched
             # dag-ulw (1). A colon list that ends in a wait and a confirmation
             # tag followed by a take-back clarify, where main dispatched
-            # dag-ulw (2).
+            # dag-ulw (2). A report tail that asks whether and a colon list of
+            # reads clarify, as on main (2).
             # Three domain-science vocabulary controls (+3).
-            expected=1083,
+            expected=1085,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1349,7 +1350,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # then reported (clarifies on main whose hint started dag-ulw) (3).
             # Its last review adds three English keepers that run as on main: a
             # report tail with ping me, a colon list of changes and a per-unit
-            # spec (3).
+            # spec (3). The shapes behind them add five, each a dag-ulw graph: a
+            # final ok? and two report tails (clarifies on main) (3), a
+            # per-unit spec with any noun and a colon list with any work verb
+            # (dispatches on main) (2).
             # Three unnamed domain-science interventions (+3).
             # #2221 L3: every STATUS_IS_THE_WORK member gets a status request
             # after its sigil that runs it; the seven without one before
@@ -1358,7 +1362,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # harness-session-inventory, skill-health, run-efficiency) (+7).
             # #2221 L4: doctor joins the set, since the status card shows no
             # install drift, and /omh-doctor status runs doctor (+1).
-            expected=1098,
+            expected=1103,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

@@ -230,6 +230,7 @@ class RouterTests(unittest.TestCase):
                         "열린 PR들 전부 리뷰 코멘트 반영하고 force push ㄱㄱ", "PR들 전부 rebase 해줘",
                         # A change, then a report on it.
                         "fix all the failing tests and tell me which ones were flaky",
+                        "fix all the failing tests and report which ones were flaky",
                         # Many PRs or branches stay many: 들, a breadth word or 모든 on the PR or the branch itself.
                         "열린 PR 전부 리베이스해줘", "main 브랜치에 PR들 전부 머지해줘", "모든 PR 테스트 고쳐줘",
                         # A change aimed so a thing does not happen, or units a fault describes, are no fault.
@@ -457,13 +458,23 @@ class RouterTests(unittest.TestCase):
                         "PR들 전부 머지해줘, 아니 잠깐, 그리고 로그 확인해줘", "PR들 전부 리베이스해줘, 그리고 농담이고 테스트 돌려줘",
                         "PR들 전부 리베이스해줘, 테스트 돌려줘", "모든 서비스 업데이트해줘, 확인해줘", "rebase all open PRs, run the tests",
                         "PR들 전부 리베이스해줘, 그리고 결과 알려줘", "모든 서비스 업데이트해줘, 끝나면 대시보드도 봐 줘",
-                        # A confirmation tag keeps the request only alone in the last clause; a colon list of changes
-                        # holds only change items; a per-unit spec keeps nothing that follows it.
+                        # A confirmation tag keeps the request only as the message's last words; a colon list holds
+                        # only items that open on a verb of work; a report tail keeps nothing that asks, sets a
+                        # condition or holds; a per-unit spec keeps nothing that follows it.
                         "split the api, ui and docs work into parallel lanes, ok? actually no",
+                        "rebase all my open PRs, ok? actually no", "is it ok to rebase all my open PRs?",
+                        "rebase all my open PRs, ok? or not", "is it alright to update every service?",
+                        "update every service, right? or should we wait",
                         "for each of my upstream PRs: rebase, then wait", "for each of my upstream PRs: rebase, not sure though",
+                        "for each open PR: check, report, nothing else", "for each open PR: review, comment, don't merge",
+                        "for each open PR: rebase, idk", "for each open PR: rebase, maybe later",
                         "for each of my upstream PRs: rebase, merge jk, push",
                         "for each of my upstream PRs: rebase, resolve conflicts, push, lol jk",
-                        "update every service, one PR per service, not sure"):
+                        "migrate every package to pnpm, then tell me whether we even need to",
+                        "rebase all open PRs, and let me know if I should",
+                        "update every service, then tell me which one to start with?",
+                        "fix all the failing tests, and ping me if it breaks", "fix all the failing tests, then ping me, never mind",
+                        "update every service, one PR per service, not sure", "rebase all open PRs, one commit maybe"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
@@ -489,10 +500,24 @@ class RouterTests(unittest.TestCase):
                         "fix all the failing tests, right away", "rebase all open PRs, no rush", "update every service, go ahead",
                         "fix all the failing tests, let's go", "rebase all open PRs, cheers", "update every service, ty",
                         "fix all the failing tests, appreciated", "rebase all open PRs, right now", "update every service, tonight",
-                        # A report tail on the work, a confirmation tag, a colon list of changes and a per-unit spec.
+                        # A plain report tail on the work, a final confirmation tag on any request, a colon list whose
+                        # items each open on a verb of work, and a per-unit spec with any nouns, by shape.
                         "migrate every package to pnpm, then ping me with the results",
-                        "split the api, ui and docs work into parallel lanes, ok?",
-                        "for each of my upstream PRs: rebase, resolve conflicts, push", "update every service, one PR per service",
+                        "migrate every package to pnpm, then tell me which ones conflicted",
+                        "rebase all open PRs, and notify me when it's done",
+                        "update every service to node 22, and then send me the diff summary",
+                        "fix all the failing tests, then let me know which ones were flaky",
+                        "upgrade all packages, and message me once they're merged",
+                        "split the api, ui and docs work into parallel lanes, ok?", "rebase all my open PRs, ok?",
+                        "update every service to node 22, okay?", "fix all the failing tests, alright?",
+                        "migrate every package to pnpm, right?", "upgrade all modules to the new api, ok?",
+                        "for each of my upstream PRs: rebase, resolve conflicts, push", "for each open PR: rebase, squash, merge",
+                        "for every repo: bump the version, tag, deploy", "for each package: upgrade, rebuild, publish",
+                        "for all services: rename the logger, re-run codegen, push",
+                        "update every service, one PR per service", "bump all the packages, one commit per package",
+                        "update every repo's CI config, a separate PR per repo",
+                        "migrate every package to pnpm, a single changelog entry per package",
+                        "fix all the failing tests, one branch for each module",
                         "update every service, each in its own branch", "rebase all open PRs, per repo"):
             with self.subTest(message=message):
                 self.assertTrue(dispatches_dag_ulw(message))

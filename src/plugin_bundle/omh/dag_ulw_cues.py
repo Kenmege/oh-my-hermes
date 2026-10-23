@@ -902,11 +902,12 @@ _KEEPER_WORD: Final = (
     r"|\d{1,2}(?::\d{2})?\s*(?:am|pm)?)"
     r"|please|pls|plz|thanks(?:\s+(?:a\s+lot|so\s+much|in\s+advance))?|thank\s+you(?:\s+so\s+much)?|thx|ty|cheers"
     r"|(?:much\s+)?appreciated"
-    # how the work is cut per unit ("one PR per service", "per repo", "each in its own branch")
-    rf"|one\s+{_EN_UNITS}\s+per\s+{_EN_UNITS}|per\s+{_EN_UNITS}|each\s+in\s+its\s+own\s+{_EN_UNITS})"
+    # how the work is cut per unit, by shape ("one PR per service", "a separate PR per repo", "one commit per package",
+    # "per repo", "each in its own branch")
+    r"|(?:(?:with|in|as|using)\s+)?(?:one|a|a\s+single|a\s+separate|one\s+separate|its\s+own|their\s+own|separate)"
+    r"\s+(?:[a-z][\w-]*\s+){0,2}?[a-z][\w-]*\s+(?:per|for\s+each|for\s+every)\s+[a-z][\w-]*"
+    r"|(?:one\s+)?per\s+[a-z][\w-]*|each\s+(?:in|on)\s+(?:its|their)\s+own\s+[a-z][\w-]*)"
 )
-# A confirmation tag alone closes the message without taking anything back ("…, ok?"), as its last clause only.
-_CONFIRMATION_TAG: Final = re.compile(r"(?:ok|okay|alright|right)\s*\?+")
 _KEEPER_CLAUSE: Final = re.compile(
     rf"{_KEEPER_WORD}(?:\s*(?:and\s+)?{_KEEPER_WORD})*(?:\s*(?:해\s*{_KOREAN_GIVE}|해요|해|{_KOREAN_GIVE}|요))?\s*[.!~]*"
 )
@@ -921,15 +922,22 @@ _FOLLOW_ON_VERB: Final = rf"(?:{_KOREAN_OFFER_VERB}|갱신|써|작성|확인|(?<
 _EN_FOLLOW_ON: Final = re.compile(
     r"^(?:and\s+then|and|then|after\s+that|next|afterwards)\s*,?\s+(?:please\s+|just\s+|also\s+)*"
     rf"(?:{_EN_OFFER_VERB}|integrate|develop|ship|test|run|rerun|deploy|write|document|verify|check|clean\s+up|push|tag"
-    r"|release|(?:ping|tell|notify|message|let|show|send)\s+me|report)\b"
+    r"|release)\b"
 )
-# A colon list of changes after a breadth head is one request, not trailing clauses ("for each of my upstream PRs:
-# rebase, resolve conflicts, push"): each item opens on a change verb.
-_EN_LIST_HEAD: Final = re.compile(
-    rf"(?:{_EN_BREADTH}|\bfor\s+(?:each|every|all)\b|\b{_EN_PLURAL_UNITS}\b)[^:,.!?]*:\s*(?:please\s+)?"
-    rf"(?:{_EN_CHANGE_VERB}|push|review)\b[^,]*$"
+# A colon list after a breadth head is one request, not trailing clauses, when every item opens on a verb of work
+# ("for each of my upstream PRs: rebase, resolve conflicts, push", "for each open PR: rebase, squash, merge"): any word
+# but a read, a report, a hold, a negation, a hedge or a function word (`_NOT_A_WORK_VERB`).
+_NOT_A_WORK_VERB: Final = (
+    r"(?:check|review|look|list|see|read|inspect|audit|scan|summari[sz]e|explain|describe|comment|report|tell|show|send"
+    r"|let|ping|notify|message|wait|hold|pause|stop|halt|cancel|skip|leave|don'?t|do|does|not|no|never|nothing|none"
+    r"|maybe|perhaps|probably|possibly|might|may|could|would|should|will|can|is|are|was|were|be|it|this|that|these"
+    r"|those|the|a|an|i|we|you|they|my|our|your|what|which|who|why|how|when|where|if|whether|though|but|although"
+    r"|unless|so|because|since|or|also|just|only|lol|haha|hmm|idk|imo|imho|tbh|fwiw|btw|fyi|ok|okay|yes|yeah|nah"
+    r"|sure|thanks|thank|please)"
 )
-_EN_LIST_ITEM: Final = re.compile(rf"^(?:and\s+)?(?:{_EN_CHANGE_VERB}|push|force[\s-]*push|review|resolve)\b")
+_EN_LIST_ITEM: Final = re.compile(rf"^(?:and\s+)?(?:please\s+)?(?!{_NOT_A_WORK_VERB}\b)[a-z][a-z-]*\b")
+# The head: the request so far ends in the first item of a colon list after a breadth word.
+_EN_LIST_HEAD: Final = re.compile(rf"(?:{_EN_BREADTH}|\bfor\s+(?:each|every|all)\b|\b{_EN_PLURAL_UNITS}\b)[^:,.!?]*:[^,]*$")
 _HOLD: Final = re.compile(
     r"농담|장난|됐어|됐고|(?<![가-힣])(?:아냐|아니야|아니다|아니|잠깐만?|잠시만?|말고)(?![가-힣])"
     r"|\b(?:jk|j/k|kidding|never\s*mind|nvm|wait|hold\s+on)\b"
@@ -962,9 +970,7 @@ def _follows_on(clause: str) -> bool:
 
 def _keeps_the_request(trailing: list[str]) -> bool:
     """Whether every clause after a request keeps it: a keeper (`_KEEPER_CLAUSE`) or a follow-on (`_follows_on`), with
-    no hold or joke in any of them (`_HOLD`); a confirmation tag may close them (`_CONFIRMATION_TAG`)."""
-    if trailing and _CONFIRMATION_TAG.fullmatch(trailing[-1]):
-        trailing = trailing[:-1]
+    no hold or joke in any of them (`_HOLD`)."""
     return all(
         not _HOLD.search(clause) and bool(_KEEPER_CLAUSE.fullmatch(clause) or _follows_on(clause)) for clause in trailing
     )
@@ -980,6 +986,31 @@ def _korean_clauses(folded: str) -> list[str]:
     if request >= len(clauses) - 1 or not _keeps_the_request(clauses[request + 1 :]):
         return [folded]
     return [folded, *clauses]
+
+
+# What a request may end with besides the work, stripped before it is read: one confirmation tag that ends the message
+# ("…, ok?", "…, alright?"), and a report on the change ("…, then tell me which ones conflicted", "…, and notify me
+# when it's done") with no question, condition or hold in it ("…, then tell me whether we even need to" and "…, and
+# let me know if I should" keep theirs).
+_FINAL_CONFIRMATION_TAG: Final = re.compile(r"\s*,\s*(?:ok|okay|alright|right)\s*[?？]+\s*$")
+_EN_TELL_ME_TAIL: Final = re.compile(
+    r"\s*(?:,\s*|\s)(?:and\s+then|and|then)\s+(?:also\s+|just\s+)?(?:tell|ping|notify|message|let|show|send)\s+me\b"
+    r"(?P<rest>.*)$"
+)
+_NOT_A_PLAIN_REPORT: Final = re.compile(r"[?？]|\b(?:if|whether)\b")
+
+
+def _request_text(text: str) -> str:
+    """``text`` folded, without a confirmation tag that ends it (`_FINAL_CONFIRMATION_TAG`) or a plain report on the
+    change after it (`_EN_TELL_ME_TAIL`, kept when it asks, sets a condition or holds)."""
+    folded = _FINAL_CONFIRMATION_TAG.sub("", _folded(text), count=1)
+    tail = _EN_TELL_ME_TAIL.search(folded)
+    if not tail or _NOT_A_PLAIN_REPORT.search(tail.group("rest")) or _HOLD.search(tail.group("rest")):
+        return folded
+    head = folded[: tail.start()]
+    changes = _EN_CHANGE_ON_BREADTH.search(head) or _EN_PARTS_IN_PARALLEL.search(head)
+    splits = _EN_SPLIT_REQUEST.search(head) and _EN_SPLIT_EVIDENCE.search(head)
+    return head if changes or splits else folded
 
 
 def _reads_as_an_english_request(text: str) -> bool:
@@ -1261,7 +1292,7 @@ def _hard_excluded(folded: str, links: tuple[str, ...]) -> bool:
 def _work_over_many_targets(text: str, links: tuple[str, ...]) -> bool:
     """Whether ``text`` asks, in request form, for an offer-list verb on a breadth object that names independent units
     (`_KOREAN_OFFER`, `_EN_OFFER`), or for two named parts in parallel, and nothing excludes it."""
-    folded = _folded(text)
+    folded = _request_text(text)
     if _hard_excluded(folded, links):
         return False
     if _EN_CHANGE_ON_BREADTH.search(folded):
@@ -1412,7 +1443,7 @@ def dispatches_dag_ulw(text: str, links: tuple[str, ...] = ()) -> bool:
     into parallel parts (`_splits_named_work`). Nothing hard-excluded (`_hard_excluded`) qualifies, and neither does a
     request that only reads, reports or runs one command. ``links`` are the message's links, which the executable text
     leaves out."""
-    folded = _folded(text)
+    folded = _request_text(text)
     if _splits_named_work(text, folded, links):
         return True
     if not _work_over_many_targets(text, links) or _asks_to_be_told(text):
