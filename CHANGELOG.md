@@ -52,9 +52,11 @@ All notable changes will be documented here.
   hold or joke in any clause after the request. A final `…, ok?` on any request
   and a report on the result, by its opening (tell, ping, notify, message, show
   or send me, let me know, report back, then which, any, the ones, each, when,
-  once or a result noun: a quantifier needs an indicative clause or a result noun
-  after it, `when`/`once` needs a completion that ends the tail, and a modal, an
-  intention or deliberation is no report: `… and report any that fail`, `… and
+  once or a result noun: after a quantifier the clause turns on its subject (the
+  targets with any finite verb report, `… which ones can't be upgraded`; a person
+  with a modal or an intention asks, `… which ones you'd skip`; a bare infinitive
+  asks), `when`/`once` needs a completion that ends the tail, and deliberation is
+  no report: `… and report any that fail`, `… and
   let me know which ones break`, `…, and notify me when it's done`; not `…, and
   send me any concerns`, `…, then tell me which ones you'd recommend`), are read off before
   the request is; any other `let me …` and a tail that asks for anything before

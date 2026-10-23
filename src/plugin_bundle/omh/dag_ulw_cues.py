@@ -1027,25 +1027,28 @@ _DELIBERATION: Final = (
     r"|suggestions?|recommendations?|advice|preferences?|think|reckon|feel|suggest|recommend|prefer|propose|advise"
     r"|believe|expect)"
 )
-# After a quantifier the report's clause has an indicative verb ("which ones break", "any that fail", "which files
-# failed"): not an infinitive, a modal or an intention, whatever subject sits between ("the ones to merge", "which
-# ones we should merge", "what you'd change", "the ones we plan to drop").
-_NOT_INDICATIVE: Final = (
-    r"(?:to|would|could|should|might|must|may|will|shall|can|plan|plans|planning|want|wants|intend|intends|mean|means"
-    r"|going|gonna|need\s+to|needs\s+to|have\s+to|has\s+to|ought)\b|[a-z]+'(?:d|ll)\b"
+# After a quantifier the report's clause turns on its subject. With the targets as the subject (the quantifier
+# itself, or that/which/who) any finite verb reports on them, modal or negated too ("which ones break", "any that won't
+# build", "every package that needs to be rebuilt", "which ones will break"). With a person as the subject, a modal,
+# an intention or a weighing verb asks before the work ("which ones you'd skip", "every branch you plan to delete",
+# "which ones we should keep"), while a plain verb reports ("the ones you changed", "every file we touched"). A bare
+# infinitive right after the quantifier asks ("which ones to keep", "what to drop").
+_PERSON: Final = r"(?:i|you|we|they|he|she)"
+_MODAL_OR_INTENT: Final = (
+    r"(?:would|could|should|might|must|shall|will|can|may|wo?n'?t|can'?t|couldn'?t|shouldn'?t|wouldn'?t|plans?|planning"
+    r"|wants?|intends?|means?|going|gonna|needs?|ha(?:ve|s)|ought)\b"
 )
-_SUBJECT: Final = r"(?:we|you|i|they|it|he|she)"
 _REPORT_FOLLOWER: Final = (
     r"(?:which|what|any|anything|all|every|each|the\s+ones|those)"
-    rf"(?:\s+(?:of\s+)?(?:the\s+)?(?!(?:{_DELIBERATION}|that|which|who|{_SUBJECT})\b|{_NOT_INDICATIVE})[a-z][\w-]*)?"
-    rf"(?:\s+(?:that|which|who))?(?:\s+{_SUBJECT}(?=\s))?\s+(?!{_NOT_INDICATIVE}|(?:{_DELIBERATION}|{_SUBJECT}|ones?)\b)"
-    r"[a-z][\w-]*\b"
+    rf"(?>(?:\s+(?:of\s+)?(?:the\s+)?(?!(?:{_DELIBERATION}|that|which|who|{_PERSON}|to|[a-z]+ed|broke|went|ran|did|made"
+    r"|built|wrote)\b)[a-z][\w-]*)?)(?:\s+(?:that|which|who))?"
+    rf"(?:\s+(?!(?:to|{_DELIBERATION}|{_PERSON}|ones?)\b)[a-z][\w'-]*"
+    rf"|\s+{_PERSON}\s+(?!(?:to|{_DELIBERATION})\b|{_MODAL_OR_INTENT})[a-z][\w-]*)\b"
 )
-# Anywhere in the tail, a modal, an intention or deliberation asks before the work ("which ones you'd recommend",
-# "the ones we plan to close", "which ones you want to skip").
+# Anywhere in the tail, a person with a modal or an intention, or deliberation, asks before the work ("which ones
+# failed and which you want to retry", "which ones you'd recommend").
 _NOT_A_REPORT: Final = re.compile(
-    r"\b(?:would|could|should|might|must|shall|will|can|may|plans?|planning|wants?|intends?|gonna|going\s+to|means?\s+to"
-    rf"|needs?\s+to|ha(?:ve|s)\s+to)\b|\b[a-z]+'(?:d|ll)\b|\b{_DELIBERATION}\b"
+    rf"\b{_PERSON}(?:'(?:d|ll)\b|'re\s+going\b|\s+{_MODAL_OR_INTENT})|\b{_DELIBERATION}\b"
 )
 _REPORT_OPENER: Final = r"(?:(?:tell|ping|notify|message|show|send)\s+me|let\s+me\s+know|report(?:\s+back)?)"
 _EN_REPORT_TAIL: Final = re.compile(
@@ -1164,8 +1167,9 @@ _DEFERRAL: Final = re.compile(
     r"(?<!\bby\s)\b(?:later|tomorrow|tonight|next\s+(?:week|month|sprint|quarter|year|time|monday|tuesday|wednesday"
     r"|thursday|friday|saturday|sunday)|on\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|the\s+weekend)"
     r"|this\s+weekend|over\s+the\s+weekend|eventually|some\s+other\s+time|another\s+time|at\s+some\s+point"
-    r"|after\s+the\s+freeze|some\s*day|in\s+a\s+(?:bit|while)|later\s+on|down\s+the\s+line|when\s+i\s+get\s+a\s+chance)\b"
-    r"|(?<![가-힣])(?:나중에|언젠가|(?:이번\s*)?주말에|내일|모레|다음\s*(?:주|달|번)(?:에)?|[월화수목금토일]요일에)"
+    r"|after\s+the\s+freeze|some\s*day|in\s+a\s+(?:bit|while)|later\s+on|down\s+the\s+line|when\s+i\s+get\s+a\s+chance"
+    r"|in\s+(?:\d+|a\s+few|a\s+couple(?:\s+of)?|two|three|four|five|several)\s+(?:minutes?|hours?|days?|weeks?))\b"
+    r"|(?<![가-힣])(?:나중에|이따가?|언젠가|(?:이번\s*)?주말에|내일|모레|다음\s*(?:주|달|번)(?:에)?|[월화수목금토일]요일에)"
     rf"(?!(?:\s*{_TIME_WORD})*\s*(?:까지|안에|중으로|중에|내로|이내))"
 )
 # A weekday inside a clause with a past verb of its own says when that happened, not when to work ("update every
