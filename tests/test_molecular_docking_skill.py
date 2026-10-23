@@ -191,6 +191,13 @@ class PrerequisiteTests(unittest.TestCase):
                 with self.subTest(ligand=same), contextlib.redirect_stderr(stderr):
                     self.assertEqual(helper.main(self.argv(receptor, same, root / "refused") + ["--validate-only"]), 2)
                     self.assertIn("receptor and ligand must be different files", stderr.getvalue())
+            # A ligand symlinked to the receptor is refused as a symlink: `checked_path` reads both before `same_file`.
+            link = root / "link.pdbqt"
+            link.symlink_to(receptor)
+            stderr = io.StringIO()
+            with self.subTest(ligand=link), contextlib.redirect_stderr(stderr):
+                self.assertEqual(helper.main(self.argv(receptor, link, root / "refused") + ["--validate-only"]), 2)
+                self.assertIn("symlink paths are not accepted", stderr.getvalue())
             self.assertFalse((root / "refused").exists())
             missing = root / "missing.pdbqt"
             self.assertTrue(helper.same_file(missing, root / "sub" / ".." / missing.name))
