@@ -17,7 +17,13 @@ All notable changes will be documented here.
   request of QA`, `…, on behalf of legal`, `…, it's for the audit`), a toast
   (`…, here's to a clean run`, `…, may the build be green`), a
   back-reference (`…, consistent with the RFC`, `…, like we did for
-  billing`), `…, no deadline` and `…, bear with me`.
+  billing`), `…, no deadline` and `…, bear with me`. A toast, a wish, a
+  back-reference or an attribution keeps only when what it carries is clean:
+  a negation of doing the work holds wherever it is said (`…, here's to not
+  doing it`, `…, here's to letting sleeping services lie`, `…, the team lead
+  asked us to leave it`, `…, cheers don't bother`), while a negated outcome
+  keeps (`…, hope nothing breaks`, `…, btw it won't touch prod`, `…, fwiw no
+  exceptions`).
 
 - **A cleared or exhausted delegation route stays gone (#2251
   follow-up).** `clear` and chain exhaustion now release the conversation's

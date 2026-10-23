@@ -1094,7 +1094,8 @@ _ASKS_BEFORE_THE_WORK: Final = re.compile(
 # - a hedge about wanting it (`_HEDGE`), thinking aloud (`_THINKING_ALOUD`), a hesitation alone (`_HESITATION`);
 # - deliberation (`_WEIGHS`), the decision handed back (`_HANDS_IT_BACK`), a person's modal or intention
 #   (`_ASKER_INTENT`), a question (`_QUESTION`);
-# - a negation outside a wish (`_NEGATION`), once no pressure is read off.
+# - a negation of doing the work (`_NOT_DOING`), or a contrast that turns against the request (`_TURNS_AGAINST`); a
+#   negated outcome keeps, and a warning or a retraction said under a negation is none (`_NEGATED_BEFORE`).
 # A deferral and a condition are refused before it, on the whole text (`_hard_excluded`; no pressure is read off there
 # too, so "…, whenever works" is none). A Korean message keeps the keepers alone, since main reads it whole.
 _EN_ASKS_FOR_MORE: Final = re.compile(
@@ -1102,7 +1103,8 @@ _EN_ASKS_FOR_MORE: Final = re.compile(
     r"|(?!(?:wish|bless|excuse)\b)[a-z]+\s+me)\b"
 )
 _HEDGE: Final = re.compile(
-    r"\b(?:ma+y+b+e+|perhaps|probably|possibly|not\s+sure|unsure|uncertain|undecided|indecisive|i\s+guess|i\s+suppose|idk"
+    r"\b(?:ma+y+b+e+|perhaps|probably|possibly|not\s+(?:\w+\s+)?(?:sure|certain|convinced|positive|confident|clear|decided|settled)"
+    r"|unsure|uncertain|undecided|indecisive|i\s+guess|i\s+suppose|idk"
     r"|dunno|who\s+(?:knows|can\s+say)|or\s+whatever|or\s+something|kinda|sorta|hmm+|eh|meh|nah|nope|rather\s+not|torn"
     r"|iffy|deciding|uneasy|wary|hesitant|reluctant|skeptical|sceptical|50\s*/\s*50|fifty[-\s]fifty|object(?:ing|ion)?"
     r"|part\s+of\s+me|in\s+two\s+minds|of\s+two\s+minds"
@@ -1134,7 +1136,7 @@ _HESITATION: Final = re.compile(r"(?:u+h+m*|u+m+|e+r+m*|e+h+|h+m+|h+r+m+|w+e+l+p
 # A verb said on the request itself acts on it, as a retraction or a new request does ("…, shelve it", "…, park it for
 # now", "…, scrap it", "…, nix that"), except a wish or thanks ("…, hope it goes smoothly", "…, love it").
 _ACTS_ON_IT: Final = re.compile(
-    r"^(?:just\s+|maybe\s+|so\s+|and\s+)?(?!(?:hope|hoping|wish|love|bless|thank|thanks|appreciate)\b)[a-z]+\s+"
+    r"^(?:just\s+|maybe\s+|so\s+|and\s+)?(?!(?:hope|hoping|wish|love|bless|thank|thanks|appreciate|may)\b)[a-z]+\s+"
     r"(?:it|that|this|everything|all\s+(?:of\s+)?(?:it|that|this))\b"
 )
 # A clause that is only a laugh after the work is a joke about it ("…, lol"), while a laugh inside a remark is not
@@ -1157,11 +1159,10 @@ _QUESTION: Final = re.compile(
     r"[?？]|^(?:what|why|how|which|who|where|whether|is|are|am|was|were|do|does|did|should|shall|could|would(?!\s+love\b)|can|will"
     r"|may(?!\s+(?:the|it|this|our|all|your)\b)|might|must)(?![\w'])|\b(?:curious|wondering|wdyt|wyt|hbu|wbu)\b"
 )
-# A negation anywhere in a remark is read as one of the work, whatever it negates ("…, not yet", "…, not gonna do
-# it", "…, we won't do this", "…, let's not", "…, can't decide", "…, not entirely convinced").
-_NEGATION: Final = re.compile(
-    r"\b(?:not|no|never|nothing|none|nope|neither|nor|without|hold\s+off|\w+n['’]t"
-    r"|dont|wont|cant|didnt|doesnt|isnt|arent|wasnt|shouldnt|wouldnt|couldnt|havent|hasnt)\b"
+# A negation said before a warning or a retraction negates it: "…, hope nothing breaks", "…, fingers crossed we don't
+# regress", "…, fyi don't skip any" warn and take back nothing.
+_NEGATED_BEFORE: Final = re.compile(
+    r"\b(?:not|no|nothing|never|without|\w+n['’]t|dont|wont|cant|doesnt|isnt|wouldnt|shouldnt)\s+(?:\w+\s+){0,2}$"
 )
 # A warning about the work is no harmless aside ("…, fwiw last time this broke CI", "…, careful, prod is fragile").
 _WARNS: Final = re.compile(
@@ -1199,6 +1200,7 @@ _BACK_REFERENCE: Final = re.compile(
     r"|\bsame\s+(?:\w+\s+)?as\s+the\s+\w+|\b(?:as|like)\s+in\s+the\s+\w+"
     r"|\bfollowing\s+(?:up\s+on|the\s+\w+)\b|\bper\s+(?:our|the|my|your|yesterday'?s|today'?s|last\s+week'?s)\s+\w+"
     r"|\b(?:consistent|in\s+line|in\s+keeping)\s+with\b|\b(?:like|as)\s+(?:we|i|they)\s+(?:did|do|handled|did\s+it)\b"
+    r"|^agreed\s+(?:in|at|during|over)\s+(?:the\s+)?\w+"
 )
 _ATTRIBUTION: Final = re.compile(
     r"^(?!(?:i|we|you)\b)(?:\w+(?:'s)?\s+){1,4}?(?:asked|requested|wants?|wanted|needs?|needed|approved|okayed|ok'?d|signed\s+off"
@@ -1206,6 +1208,7 @@ _ATTRIBUTION: Final = re.compile(
     r"|\b(?:as\s+)?(?:requested|approved|okayed|signed\s+off|cleared|blessed|backed|endorsed|ordered|mandated|greenlit"
     r"|authori[sz]ed|asked\s+for)\s+(?:by|in)\b|\bper\s+\w+'?s\s+request\b|\b\w+'?s\s+orders\b|\bgave\s+(?:it\s+|this\s+)?the\s+nod\b"
     r"|^(?!(?:i|we|you)\b)(?:\w+(?:'s)?\s+){1,4}?(?:is|are|'s|'re)\s+(?:fine|ok|okay|good|happy|cool)\s+with\s+(?:it|this|that)\b"
+    r"|^(?!(?:it|that|this|there|what|who)'s)\w+'s\s+(?:fine|ok|okay|good|happy|cool)\s+with\s+(?:it|this|that)\b"
     r"|\b(?:it|this|that|the\s+\w+)\s+(?:came|comes|is|'s)\s+(?:straight\s+|directly\s+)?from\s+(?:the\s+)?\w+|\bit'?s\s+from\s+(?:the\s+)?\w+"
     r"|\b(?:gave|got|has|have|had)\s+(?:\w+\s+)?(?:green\s*light|thumbs\s+up|go[-\s]ahead|blessing|sign[-\s]?off|ok|okay)\b"
     r"|\bper\s+(?:the\s+)?(?:cto|ceo|cfo|vp|pm|po|boss|lead|manager|team|qa|legal|security|client|customer|product|design|ops)\b"
@@ -1214,8 +1217,11 @@ _ATTRIBUTION: Final = re.compile(
     r"|^for\s+(?:the\s+)?(?:\w+\s+)?(?:team|cto|ceo|pm|po|lead|manager|client|customer|boss|qa|legal|security|audit|release|launch|demo"
     r"|board|folks|squad|crew|org)\b"
 )
-# A contrast after a wish turns to what follows it ("…, fingers crossed but let's not").
-_CONTRAST: Final = re.compile(r"\b(?:but|though|although|however|except|yet)\b")
+# A contrast followed by a negation turns against the request ("…, fingers crossed but let's not", "…, thanks but
+# no", "…, approved by the CTO but not yet").
+_TURNS_AGAINST: Final = re.compile(
+    r"\b(?:but|though|although|however|except|yet)\b[^,;]*?\b(?:not|no|never|nope|nah|\w+n['’]t|dont|wont|cant)\b"
+)
 # An aside marker, by meaning: the remark that follows is on something else ("…, fyi …", "…, btw …", "…, also …", "…, oh
 # and …", "…, off topic, …", "…, random but …", "…, tangent, …", "…, unrelated but …", "…, on another note, …",
 # "…, incidentally …").
@@ -1248,9 +1254,57 @@ _NO_PRESSURE: Final = re.compile(
 )
 
 
+# Negating or abandoning the work itself, which a wish never excuses ("…, here's to not doing it", "…, cheers to not
+# touching it", "…, here's to leaving it alone", "…, hope we just let it be"); a negated outcome is no such thing
+# ("…, here's to no conflicts", "…, hope it doesn't break").
+_NOT_DOING: Final = re.compile(
+    r"\bnot\s+(?:even\s+|just\s+|really\s+)?(?!(?:fail|break|crash|explod|regress|flak|conflict|tim|blow|los|corrupt|wip|leak)\w*)"
+    r"(?:\w+ing|do|touch|bother|start|proceed|ship|merge|run)\b"
+    r"|\bnot\s+(?:yet|now|today|tonight|right\s+now|anymore|this\s+(?:time|sprint|week))\b|\blet'?s\s+not\b|\bno\s+thank(?:s|\s+you)\b"
+    r"|\b(?:not|never|\w+n['’]t)\b[^,;.]*\byet\b"
+    r"|\b(?:haven'?t|hasn'?t|have\s+not|has\s+not|didn'?t|not)\s+(?:\w+\s+)?(?:cleared|checked|confirmed|verified|asked|validated"
+    r"|tested|approved|signed\s+off|run\s+it\s+by)\b"
+    r"|\bdon'?t\s+(?:bother|start|proceed|go\s+ahead|do\s+(?:it|this|that|anything)|touch\s+(?:it|this|that|them|anything))\b"
+    r"|\b(?:we|i|you)\s+(?:won'?t|wouldn'?t|don'?t|shouldn'?t|can'?t|do\s+not|will\s+not)\s+(?:need|have|want|bother|do|go|start"
+    r"|touch|proceed|run|ship|merge)\b"
+    r"|\b(?:asked|told|want|wants|wanted)\s+(?:us|me|you)\s+not\s+to\b|\bhold\s+off\b|\bno\s+need\b(?!\s+to\s+(?:rush|hurry|stress))"
+    r"|\b(?:nobody|no\s+one|none\s+of\s+us)\s+(?:asked|wants|needs|requested)\b"
+    r"|\blea(?:ve|ving)\s+(?:it|this|that|them|everything)(?:\s+(?:alone|be|as\s+is|untouched|for\s+now))?\s*[.!]*$"
+    r"|\blea(?:ve|ving)\s+(?:it|this|that|them|everything)\s+(?:alone|be|as\s+is|untouched|for\s+now)\b"
+    r"|\blet(?:ting|s)?\s+(?:\w+\s+){1,3}?(?:be|lie|slide)\b|\bnever\s+(?:touch|do|bother|start|run|ship|merge)\w*"
+)
+
+
+def _unnegated(pattern: re.Pattern[str], text: str) -> bool:
+    """Whether ``pattern`` matches ``text`` somewhere no negation said just before it negates (`_NEGATED_BEFORE`)."""
+    return any(not _NEGATED_BEFORE.search(text[: match.start()]) for match in pattern.finditer(text))
+
+
+def _statement_refuses(clause: str) -> bool:
+    """Whether the statement a keep kind's opener sets off with a colon or a dash refuses, read on its own as an
+    aside's is: after a toast or a wish (`_WISH`), a back-reference (`_BACK_REFERENCE`) or an attribution
+    (`_ATTRIBUTION`) ("…, legal's request: leave it alone", "…, as discussed: hold off"). An object said straight on is
+    read with its opener (`_refuses` on the whole clause, `_NOT_DOING`), since its first word is no verb ("…, may the
+    build be green")."""
+    for opener in (_WISH.match(clause), _BACK_REFERENCE.search(clause), _ATTRIBUTION.search(clause)):
+        if not opener:
+            continue
+        rest = clause[opener.end() :]
+        set_off = _STATEMENT_SET_OFF.match(rest)
+        if set_off and rest[set_off.end() :].strip() and _refuses(rest[set_off.end() :].strip()):
+            return True
+    return False
+
+
+_STATEMENT_SET_OFF: Final = re.compile(r"\s*[:;—–]\s*|\s+-\s+")
+
+
 def _refuses(clause: str) -> bool:
     """Whether a trailing English ``clause`` carries a refusal class: a laugh, a status or a hesitation that is the whole
-    clause, or any other class once no pressure and the keep idioms are read off."""
+    clause, or any other class once no pressure and the keep idioms are read off. A negation refuses only when it
+    negates doing the work (`_NOT_DOING`) or turns against the request after a contrast (`_TURNS_AGAINST`); a negated
+    outcome, side effect or constraint keeps ("…, hope nothing breaks", "…, btw it won't touch prod", "…, fwiw no
+    exceptions")."""
     bare = _KEEP_IDIOM.sub("", _NO_PRESSURE.sub("", clause)).strip()
     return bool(
         _LAUGH_ALONE.fullmatch(clause)
@@ -1258,16 +1312,17 @@ def _refuses(clause: str) -> bool:
         or _HESITATION.fullmatch(clause)
         or _EN_ASKS_FOR_MORE.match(bare)
         or _BEFORE_THE_WORK.search(bare)
-        or _WARNS.search(bare)
+        or _unnegated(_WARNS, bare)
         or _HEDGE.search(bare)
         or _THINKING_ALOUD.search(bare)
-        or _RETRACTS.search(bare)
+        or _unnegated(_RETRACTS, bare)
         or _HANDS_IT_BACK.search(bare)
         or _ACTS_ON_IT.match(bare)
         or _WEIGHS.search(bare)
         or _ASKER_INTENT.search(bare)
         or _QUESTION.search(bare)
-        or (_NEGATION.search(bare) and not (_WISH.match(bare) and not _CONTRAST.search(bare)))
+        or _NOT_DOING.search(bare)
+        or _TURNS_AGAINST.search(bare)
     )
 
 
@@ -1305,7 +1360,7 @@ def _remarks_keep_the_request(trailing: list[str]) -> bool:
         if not (
             _KEEPER_CLAUSE.fullmatch(clause)
             or _follows_on(clause)
-            or (_of_a_keep_kind(clause) and not _refuses(clause))
+            or (_of_a_keep_kind(clause) and not _refuses(clause) and not _statement_refuses(clause))
         ):
             return False
     return True

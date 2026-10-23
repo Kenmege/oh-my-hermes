@@ -729,6 +729,43 @@ class RouterTests(unittest.TestCase):
             with self.subTest(message=f"rebase all open PRs, {tail}"):
                 self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
                 self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
+        # A keep kind whose opener carries a statement (a toast or a wish, a back-reference, an attribution) keeps only
+        # when the statement is clean: the refusal classes run on the statement too, and negating or abandoning the work
+        # is refused even inside a wish (#2265 review).
+        for tail in ("here's to not doing it", "here's to not bothering", "here's to leaving it alone",
+                     "cheers to not touching it", "cheers to just letting it be", "hope we just leave it be",
+                     "as discussed we're leaving it as is", "legal's request: leave it alone", "may we never touch it again",
+                     "as we discussed we're not doing it", "on behalf of legal, leave it be",
+                     # a statement set off by a colon is read on its own, as an aside's is
+                     "fingers crossed: bin it", "as discussed: is that ok", "the PM's request: run the full suite",
+                     # a negation of doing the work, in a keep kind
+                     "thanks but let's not", "cheers don't bother", "thanks we won't need to", "fwiw we're not doing this",
+                     "legal asked us not to", "thanks hold off", "thanks but no", "cheers I don't want it anymore",
+                     "here's to letting sleeping services lie", "the team lead asked us to leave it",
+                     "hope we leave it as is for now",
+                     # a precondition not yet met, and a hedge on certainty
+                     "fyi, I haven't cleared this with anyone yet", "thanks, not entirely certain it's needed",
+                     "btw we haven't heard back yet", "fyi I haven't checked with legal"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
+        for tail in ("here's to a green build", "cheers to a clean rebase", "may it merge cleanly", "hope it merges",
+                     "hope there are no conflicts", "legal's fine with it", "agreed in standup",
+                     # a negated outcome, side effect or constraint keeps
+                     "hope nothing breaks", "fwiw no exceptions", "btw it won't touch prod", "here's to no more confusion",
+                     # leaving it better, running, to someone or with a note is no abandoning
+                     "hope we leave it better than we found it", "hope we leave a note in the changelog",
+                     "fingers crossed we leave it running green", "hope they leave it to me",
+                     # a retraction stem under a negation takes nothing back
+                     "fyi no cancelling halfway"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertTrue(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
+        # Any "don't" or "do not" in the message reads as no work asked, before the remark gate, as on main: a negated
+        # outcome said with it holds too (a known limit, outside the remark gate).
+        for tail in ("fingers crossed we don't regress", "fyi don't skip any"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
         # A remark after a colon list's last item goes through the same gate: a status in either order holds, and a
         # dismissal holds.
         for message in ("for each open PR: rebase, merge, merged already", "for each open PR: rebase, merge, already merged",
