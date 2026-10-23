@@ -225,6 +225,22 @@ class FallbackSentinelTests(unittest.TestCase):
             self.assertTrue(sentinel.is_file())
             self.assertEqual(launch.request_fallback({launch.FALLBACK_SENTINEL_ENV: str(sentinel)}), launch.FALLBACK_EXIT)
 
+    def test_the_marker_carries_what_the_tui_said_for_omh_to_say_again(self) -> None:
+        # Hermes' own TUI clears the screen the reason was printed on; `omh` prints it again once that closes.
+        said = "omh: the Hermes gateway did not start: it exited\n  [gateway-exit] refused: \x1b[31mowned\x1b[0m\n\n"
+        with launch.fallback_sentinel() as sentinel:
+            launch.request_fallback({launch.FALLBACK_SENTINEL_ENV: str(sentinel)}, said)
+            self.assertEqual(launch.fallback_reason(sentinel), [
+                "omh: the Hermes gateway did not start: it exited", "  [gateway-exit] refused: [31mowned[0m"])
+            launch.request_fallback({launch.FALLBACK_SENTINEL_ENV: str(sentinel)}, "x" * (launch.FALLBACK_REASON_BYTES + 9))
+            self.assertEqual(launch.fallback_reason(sentinel), ["x" * launch.FALLBACK_REASON_BYTES])
+        self.assertEqual(launch.fallback_reason(sentinel), [])  # gone with its directory
+
+    def test_an_empty_marker_has_no_reason(self) -> None:
+        with launch.fallback_sentinel() as sentinel:
+            sentinel.touch()  # what the frontend shim writes
+            self.assertEqual(launch.fallback_reason(sentinel), [])
+
     def test_request_fallback_without_a_name_or_a_place_still_returns_the_code(self) -> None:
         self.assertEqual(launch.request_fallback({}), launch.FALLBACK_EXIT)
         with TemporaryDirectory() as tmp:

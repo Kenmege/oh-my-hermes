@@ -2843,6 +2843,18 @@ that one file through `NETWORK_CLIENT_BRIDGES`, fails on a stale entry, and
 fails when any module other than the tool imports the bridge. The coding
 delegation lane is unchanged by it.
 
+The OMH TUI's gateway child, `tui/attach/gateway_attach.py`, is the third, and
+it is not core omh: nothing in `src/` imports it, and it runs only on Hermes'
+own interpreter, as the child the TUI spawns by path. On a Hermes that has the
+shared-gateway attach API it reaches the person's own gateway the way Hermes'
+Ink TUI does, through Hermes' functions (`ensure_gateway_runtime`, the home's
+private control socket for a session ticket, Hermes' `websockets` client on the
+loopback socket `gateway_ws_target` names), and relays one TUI's frames; on any
+other Hermes it runs Hermes' stdio entry instead. INVARIANT 2 lists it in
+`HERMES_INTERPRETER_SCRIPTS` with exactly the two modules it may import
+(`asyncio`, `websockets`), refuses a lower-level client in it, and fails when
+any module in `src/` imports it.
+
 Declared and not enforced, each naming what must land first: **workspace** —
 `workspace_binding_guard/v1` now refuses a second workspace-bound handoff on a
 reserved workspace or branch before one is enabled, but `allowed_targets` is

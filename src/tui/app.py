@@ -4520,6 +4520,28 @@ def _say(stream: TextIO, text: str) -> None:
     stream.flush()
 
 
+class _Told:
+    """`main`'s stderr, keeping what it said there: a fallback hands that to `omh` (`request_fallback`).
+
+    Hermes' own TUI, which `omh` opens next, clears the screen those lines
+    were on, so `omh` says them again once it closes.
+    """
+
+    def __init__(self, stream: TextIO) -> None:
+        self.stream = stream
+        self.lines: list[str] = []
+
+    def write(self, text: str) -> int:
+        self.lines.append(text)
+        return self.stream.write(text)
+
+    def flush(self) -> None:
+        self.stream.flush()
+
+    def said(self) -> str:
+        return "".join(self.lines)
+
+
 def _start_gateway(client: GatewayClient, stderr: TextIO) -> Event | None:
     """The gateway's ready event, or None after saying why it did not start."""
     try:
@@ -4536,7 +4558,7 @@ def _start_gateway(client: GatewayClient, stderr: TextIO) -> Event | None:
 def _run(
     client: GatewayClient,
     environ: Mapping[str, str],
-    stderr: TextIO,
+    stderr: _Told,
     open_terminal: Callable[[], TerminalLike],
     make_poller: Callable[[str | None, str | None], PollerLike],
     make_client: Callable[..., GatewayClient] | None = None,
@@ -4547,7 +4569,7 @@ def _run(
     """
     ready = _start_gateway(client, stderr)
     if ready is None:
-        return request_fallback(environ)
+        return request_fallback(environ, stderr.said())
     terminal = open_terminal()
     app = App(
         terminal,
@@ -4561,7 +4583,7 @@ def _run(
         app.startup()
     except (GatewayCallError, GatewayTimeout, GatewayUnavailable) as error:
         _say(stderr, f"omh: the OMH TUI could not open a Hermes session: {error}")
-        return request_fallback(environ)
+        return request_fallback(environ, stderr.said())
     try:
         with terminal:
             background, typed, row = terminal.query_background()
@@ -4590,10 +4612,10 @@ def main(
     """Start the OMH TUI and return its exit code (`FALLBACK_EXIT` when it could not start)."""
     stdin = sys.stdin if stdin is None else stdin
     stdout = sys.stdout if stdout is None else stdout
-    stderr = sys.stderr if stderr is None else stderr
+    stderr = _Told(sys.stderr if stderr is None else stderr)
     if not terminal_supported(stdin, stdout, environ):
         _say(stderr, "omh: this terminal cannot run the OMH TUI; opening Hermes' own terminal instead.")
-        return request_fallback(environ)
+        return request_fallback(environ, stderr.said())
     if attach_refused(environ):
         _say(stderr, attach_message(environ))
         return 1
@@ -4601,7 +4623,7 @@ def main(
         client = make_client(gateway_spawn(environ))
     except GatewayUnavailable as error:
         _say(stderr, f"omh: the Hermes gateway did not start: {error}")
-        return request_fallback(environ)
+        return request_fallback(environ, stderr.said())
     previous_handlers = _install_exit_signals()
     try:
         # The terminal picks its key reports from the environment the TUI was given (TERM_PROGRAM and kin).

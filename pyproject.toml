@@ -62,6 +62,7 @@ packages = [
   "omh.plugin_bundle.omh.tools",
   "omh.skins",
   "omh.tui",
+  "omh.tui.attach",
   "omh.profiles",
   "omh.quality",
   "omh.routing",
@@ -98,6 +99,7 @@ packages = [
 "omh.surfaces" = "src/surfaces"
 "omh.system" = "src/system"
 "omh.tui" = "src/tui"
+"omh.tui.attach" = "src/tui/attach"
 "omh.workflows" = "src/workflows"
 "omh.wrapper" = "src/wrapper"
 

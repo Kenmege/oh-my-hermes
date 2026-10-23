@@ -878,6 +878,22 @@ NETWORK_CLIENT_BRIDGE_IMPORTERS: dict[str, frozenset[str]] = {
 }
 
 
+# Not core omh: scripts that run on Hermes' own interpreter, as a child the OMH TUI spawns by path, and that no
+# module in `src/` imports. Each may import exactly the network modules listed beside it, and nothing lower-level:
+# what it connects to is reached through Hermes' own functions, and the reason says what that is.
+HERMES_INTERPRETER_SCRIPTS: dict[str, tuple[frozenset[str], str]] = {
+    "src/tui/attach/gateway_attach.py": (
+        frozenset({"asyncio", "websockets"}),
+        "the OMH TUI's gateway child (AGENTS.md, the OMH TUI bullet). On a Hermes that has the shared-gateway "
+        "attach API it does what Hermes' own Ink TUI does: Hermes' `ensure_gateway_runtime` finds or starts the "
+        "profile's gateway, Hermes' `connect_private` mints a session ticket over the home's private control "
+        "socket, and Hermes' own `websockets` client dials the loopback WebSocket `gateway_ws_target` names. It "
+        "relays what the TUI sends and what the gateway sends back, and opens no other connection.",
+    ),
+}
+HERMES_INTERPRETER_SCRIPT_FORBIDDEN = frozenset({"http", "socket", "socketserver", "ssl", "urllib", "urllib3"})
+
+
 def _module_stem(relative_path: str) -> str:
     return relative_path.rsplit("/", 1)[-1].removesuffix(".py")
 
@@ -921,6 +937,8 @@ class NoNetworkClientInSource(unittest.TestCase):
                 top = module.split(".")[0]
                 if top not in NETWORK_CLIENT_MODULES:
                     continue
+                if top in HERMES_INTERPRETER_SCRIPTS.get(relative_path, (frozenset(), ""))[0]:
+                    continue  # runs on Hermes' interpreter only; its own tests below
                 self.fail(
                     f"INVARIANT 2 (no network client in src/): {relative_path} line {lineno} imports "
                     f"`{module}`. Core omh makes no network calls -- that is the product boundary, not "
@@ -1025,6 +1043,39 @@ class NoNetworkClientInSource(unittest.TestCase):
                 continue
             tops = {module.split(".")[0] for module, _names, _lineno in _imported_modules(tree) if module}
             self.assertEqual(tops & {"http", "socket", "ssl"}, set(), relative_path)
+
+    def test_a_hermes_interpreter_script_is_imported_by_nothing_in_src(self) -> None:
+        """Core omh never imports it: it imports Hermes and a WebSocket client, and runs only as Hermes' child."""
+        for script in HERMES_INTERPRETER_SCRIPTS:
+            stem = _module_stem(script)
+            importers = sorted(
+                relative_path
+                for relative_path, tree in _source_modules()
+                if relative_path != script and _imports_module_named(tree, stem)
+            )
+            self.assertEqual(
+                importers,
+                [],
+                f"INVARIANT 2: {script} runs on Hermes' interpreter as the OMH TUI's child and must not be "
+                f"imported by core omh; found {importers}. Run it by path, as `omh.tui.gateway` does.",
+            )
+
+    def test_a_hermes_interpreter_script_imports_only_its_listed_network_modules(self) -> None:
+        trees = dict(_source_modules())
+        for script, (allowed, _reason) in HERMES_INTERPRETER_SCRIPTS.items():
+            self.assertIn(script, trees, f"{script} is listed in HERMES_INTERPRETER_SCRIPTS but is not in src/")
+            tops = {module.split(".")[0] for module, _names, _lineno in _imported_modules(trees[script]) if module}
+            self.assertEqual(
+                tops & HERMES_INTERPRETER_SCRIPT_FORBIDDEN,
+                set(),
+                f"INVARIANT 2: {script} may reach the gateway only through Hermes' own functions and {sorted(allowed)}.",
+            )
+            self.assertEqual(
+                sorted(allowed - tops),
+                [],
+                f"INVARIANT 2: {script} no longer imports {sorted(allowed - tops)}; remove them from its "
+                f"HERMES_INTERPRETER_SCRIPTS entry in {THIS_TEST} rather than leave standing permission behind.",
+            )
 
 
 # --------------------------------------------------------------------------
