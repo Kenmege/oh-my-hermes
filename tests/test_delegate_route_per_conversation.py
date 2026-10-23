@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -34,7 +35,7 @@ from omh.plugin_bundle.omh.delegation_route_restore import (
 )
 from omh.plugin_bundle.omh.delegation_routing import read_delegation_route
 from omh.plugin_bundle.omh.hermes_delegation import load_delegation_route_provenance
-from omh.plugin_bundle.omh.hooks.session_hooks import on_session_end
+from omh.plugin_bundle.omh.hooks.session_hooks import on_session_end, on_session_start
 from omh.plugin_bundle.omh.hooks.tool_hooks import pre_tool_call
 from omh.plugin_bundle.omh.tools.delegate_route_tool import omh_delegate_route_handler
 
@@ -77,17 +78,24 @@ class PerConversationRouteTestCase(unittest.TestCase):
         chains.parent.mkdir(parents=True)
         chains.write_text(json.dumps(CHAINS), encoding="utf-8")
 
+    def sessions(self, *rows: dict) -> None:
+        """The `state.db` rows Hermes writes before a session's first tool call."""
+        write_sessions(self.hermes_home, *rows)
+
+    def top_level(self, *ids: str) -> None:
+        self.sessions(*(row(session_id, last_activity_at=time.time()) for session_id in ids))
+
     def homes(self) -> dict[str, str]:
         return {"omh_home": str(self.omh_home), "hermes_home": str(self.hermes_home)}
 
-    def tool(self, session: str, task: str | None, **args) -> dict:
-        """One `omh_delegate_route` call; `task=None` is a host that passed no task."""
-        dispatch = {"session_id": session}
+    def tool(self, session: str | None, task: str | None, **args) -> dict:
+        """One `omh_delegate_route` call; `None` is a keyword the host did not pass."""
+        dispatch = {} if session is None else {"session_id": session}
         if task is not None:
             dispatch["task_id"] = task
         return json.loads(omh_delegate_route_handler({**args, **self.homes()}, **dispatch))
 
-    def set_route(self, session: str, task: str | None, category: str) -> None:
+    def set_route(self, session: str | None, task: str | None, category: str) -> None:
         result = self.tool(session, task, action="set", category=category)
         self.assertEqual(result["status"], "routed", result)
         self.assertEqual(result["conversation_route"], "recorded", result)
@@ -224,6 +232,7 @@ class ContinuationTest(PerConversationRouteTestCase):
 
 class UnroutedDispatchTest(PerConversationRouteTestCase):
     def test_a_session_that_set_no_route_does_not_run_on_another_sessions(self) -> None:
+        self.top_level("B", "C")
         self.set_route("B", "B-t1", "quick")
 
         self.assertIsNone(self.dispatch("C", "C-t1"))
@@ -238,6 +247,7 @@ class UnroutedDispatchTest(PerConversationRouteTestCase):
     def test_a_route_from_an_earlier_turn_is_not_this_turns(self) -> None:
         # TUI: a route lives one turn. A restore missed at that turn's end
         # (the keys still hold it) is not a route for the next turn's dispatch.
+        self.top_level("A")
         self.set_route("A", "A-t1", "deep")
 
         self.assertIsNone(self.dispatch("A", "A-t2"))
@@ -247,6 +257,7 @@ class UnroutedDispatchTest(PerConversationRouteTestCase):
     def test_a_route_whose_writer_recorded_no_conversation_is_left_alone(self) -> None:
         # An older OMH still running, or an entry that failed to write: the
         # owner could not put its route back, so nobody else takes it out.
+        self.top_level("B", "C")
         self.set_route("B", "B-t1", "quick")
         conversation_routes_path(self.omh_home).unlink()
         record = load_route_restore_record(self.omh_home)
@@ -328,6 +339,7 @@ class RefusedRatherThanMisroutedTest(PerConversationRouteTestCase):
         self.assertEqual(self.keys(), QUICK)
 
     def test_an_unrouted_dispatch_that_cannot_clear_another_route_is_refused(self) -> None:
+        self.top_level("B", "C")
         self.set_route("B", "B-t1", "quick")
 
         refusal = self.blocked("C", "C-t1")
@@ -335,6 +347,200 @@ class RefusedRatherThanMisroutedTest(PerConversationRouteTestCase):
         self.assertEqual(refusal["status"], "other_session_route_live")
         self.assertEqual((refusal["session_id"], refusal["live_route_writer"]), ("C", "B"))
         self.assertEqual(self.keys(), QUICK)
+
+
+class UnresolvedLineageTest(PerConversationRouteTestCase):
+    def test_a_caller_whose_row_cannot_be_read_leaves_the_route_alone(self) -> None:
+        # It might be that route's child, so the keys are not stripped: the
+        # behaviour before conversation routes existed.
+        self.top_level("B")
+        self.set_route("B", "B-t1", "quick")
+        record = load_route_restore_record(self.omh_home)
+
+        self.assertIsNone(self.dispatch("C", "C-t1"))
+
+        self.assertEqual(self.keys(), QUICK)
+        self.assertEqual(load_route_restore_record(self.omh_home), record)
+
+    def test_no_state_db_at_all_leaves_the_route_alone(self) -> None:
+        self.set_route("B", "B-t1", "quick")
+
+        self.assertIsNone(self.dispatch("C", "C-t1"))
+
+        self.assertEqual(self.keys(), QUICK)
+
+
+class NestedDelegationTest(PerConversationRouteTestCase):
+    """`max_spawn_depth` > 1: an orchestrator child dispatches its own workers."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.sessions(
+            row("P", last_activity_at=time.time()),
+            row("B", last_activity_at=time.time()),
+            row("O", parent="P", source="subagent", delegate_from="P", started_at=1050.0),
+            row("W", parent="O", source="subagent", delegate_from="O", started_at=1060.0),
+        )
+
+    def test_workers_under_a_routed_parent_run_on_the_parents_route(self) -> None:
+        self.set_route("P", "P-t1", "deep")
+        self.assertIsNone(self.dispatch("P", "P-t1"))
+
+        self.assertIsNone(self.dispatch("O", "O-task"))
+
+        self.assertEqual(self.keys(), DEEP)
+        record = load_route_restore_record(self.omh_home)
+        self.assertEqual((record["writer_session_id"], record["writer_task_id"]), ("P", "P-t1"))
+
+    def test_a_deeper_worker_still_finds_the_routed_ancestor(self) -> None:
+        self.set_route("P", "P-t1", "deep")
+        self.set_route("B", "B-t1", "quick")
+
+        self.assertIsNone(self.dispatch("W", "W-task"))
+
+        self.assertEqual(self.keys(), DEEP)
+
+    def test_the_parents_route_comes_back_over_another_sessions_and_stays_the_parents(self) -> None:
+        self.set_route("P", "P-t1", "deep")
+        self.set_route("B", "B-t1", "quick")
+
+        self.assertIsNone(self.dispatch("O", "O-task"))
+
+        self.assertEqual(self.keys(), DEEP)
+        # Written on the parent's behalf, so the parent's own turn end takes
+        # it back out, and the child's does not.
+        record = load_route_restore_record(self.omh_home)
+        self.assertEqual((record["writer_session_id"], record["writer_task_id"]), ("P", "P-t1"))
+        self.assertEqual(self.end_turn("O", "O-task")["route_restore"]["status"], "not_last_writer")
+        self.assertEqual(self.end_turn("P", "P-t1")["route_restore"]["status"], "cleared")
+        self.assertEqual(self.keys(), {})
+
+    def test_a_parent_route_written_without_a_conversation_entry_is_left_for_its_workers(self) -> None:
+        self.set_route("P", "P-t1", "deep")
+        conversation_routes_path(self.omh_home).unlink()
+
+        self.assertIsNone(self.dispatch("O", "O-task"))
+
+        self.assertEqual(self.keys(), DEEP)
+        self.assertTrue(delegation_route_restore_path(self.omh_home).exists())
+
+
+class GatewayStaleRouteTest(PerConversationRouteTestCase):
+    """Gateway shape: the task id IS the session id, so every turn shares it."""
+
+    def test_the_turn_end_releases_the_route_with_the_restore(self) -> None:
+        self.top_level("S")
+        self.set_route("S", "S", "deep")
+
+        ended = self.end_turn("S", "S")
+
+        self.assertEqual(ended["route_restore"]["status"], "cleared", ended)
+        self.assertEqual(ended["route_restore"]["conversation_route"]["released"], 1)
+        # The next turn dispatches without setting a route.
+        self.assertIsNone(self.dispatch("S", "S"))
+        self.assertEqual(self.keys(), {})
+
+    def test_a_turn_end_that_cannot_take_the_lock_releases_nothing_and_restores_nothing(self) -> None:
+        # One lock for both, so they cannot come apart: before, a release
+        # that timed out after a restore succeeded left the route recorded,
+        # and the next turn's dispatch wrote it back.
+        self.top_level("S")
+        self.set_route("S", "S", "deep")
+        with _awareness_delivery_lock(delegation_route_restore_path(self.omh_home)):
+            ended = self.end_turn("S", "S")
+
+        self.assertEqual(ended["route_restore"]["status"], "lock_unavailable", ended)
+        self.assertNotIn("conversation_route", ended["route_restore"])
+        self.assertEqual(set(load_conversation_routes(self.omh_home)), {"S"})
+        self.assertEqual(self.keys(), DEEP)
+
+    def test_the_session_start_restore_releases_a_dead_writers_route(self) -> None:
+        old = time.time() - 3 * 24 * 3600
+        with mock.patch.object(delegation_route_restore.time, "time", return_value=old):
+            self.set_route("S", "S", "quick")
+
+        started = on_session_start(session_id="NEW", **self.homes())
+
+        self.assertEqual(started["route_restore"]["status"], "cleared", started)
+        self.assertEqual(started["route_restore"]["writer_routes"], "released")
+        self.assertEqual(load_conversation_routes(self.omh_home), {})
+        self.top_level("S")
+        self.assertIsNone(self.dispatch("S", "S"))
+        self.assertEqual(self.keys(), {})
+
+    def test_an_entry_older_than_the_liveness_bound_is_not_a_route(self) -> None:
+        # Nothing has stored a route since (a store prunes old entries), so
+        # the entry is still on disk; only its age says it is gone.
+        self.top_level("S", "T")
+        old = time.time() - 3 * 24 * 3600
+        with mock.patch.object(delegation_route_restore.time, "time", return_value=old):
+            self.set_route("S", "S", "quick")
+        with mock.patch.object(delegation_route_restore.time, "time", return_value=old + 1):
+            self.set_route("T", "T", "deep")
+        self.assertEqual(set(load_conversation_routes(self.omh_home)), {"S", "T"})
+
+        self.assertIsNone(self.dispatch("S", "S"))
+
+        # S's three-day-old route is not written back over the keys.
+        self.assertEqual(self.keys(), DEEP)
+
+
+class ApprovalGateTest(PerConversationRouteTestCase):
+    """An earlier OMH gate that asks a person (`approve`) still gets the route gate."""
+
+    def approved(self, session: str, task: str) -> dict | None:
+        approve = {"action": "approve", "message": "repeat", "rule_key": "k"}
+        with mock.patch(
+            "omh.plugin_bundle.omh.hooks.tool_hooks.repeat_call_directive", return_value=approve
+        ):
+            return self.dispatch(session, task)
+
+    def test_an_approved_dispatch_runs_on_its_own_route(self) -> None:
+        self.set_route("A", "A-t1", "deep")
+        self.set_route("B", "B-t1", "quick")
+
+        directive = self.approved("A", "A-t1")
+
+        self.assertEqual(directive["action"], "approve")
+        self.assertEqual(self.keys(), DEEP)
+
+    def test_a_route_refusal_wins_over_the_approve(self) -> None:
+        self.set_route("A", "A-t1", "deep")
+        self.set_route("B", "B-t1", "quick")
+        lock = _awareness_delivery_lock(delegation_route_restore_path(self.omh_home))
+        with mock.patch.object(delegation_route_restore, "_DISPATCH_LOCK_SECONDS", 0.05), lock:
+            directive = self.approved("A", "A-t1")
+
+        self.assertEqual(directive["action"], "block")
+        self.assertEqual(json.loads(directive["message"])["status"], "route_overwritten_by_other_session")
+        self.assertEqual(self.keys(), QUICK)
+
+
+class RecordingIdentityTest(PerConversationRouteTestCase):
+    def test_a_host_that_names_no_session_is_recorded_by_its_task(self) -> None:
+        self.set_route(None, "T1", "deep")
+        self.assertEqual(set(load_conversation_routes(self.omh_home)), {"task:T1"})
+        self.set_route("B", "B-t1", "quick")
+
+        self.assertIsNone(self.dispatch("", "T1"))
+
+        self.assertEqual(self.keys(), DEEP)
+
+    def test_a_route_with_no_identity_says_it_was_not_recorded(self) -> None:
+        result = self.tool(None, None, action="set", category="deep")
+
+        self.assertEqual(result["status"], "routed", result)
+        self.assertEqual(result["conversation_route"], "unrecorded: no session or task")
+        self.assertIn("will not be put back", result["conversation_route_note"])
+
+    def test_the_turn_end_releases_an_entry_recorded_before_a_compression_split(self) -> None:
+        self.sessions(compacted("A0", at=1050.0), row("A1", parent="A0", started_at=1050.0))
+        self.set_route("A0", None, "deep")
+
+        ended = self.end_turn("A1", "A-t9")
+
+        self.assertEqual(ended["route_restore"]["conversation_route"]["released"], 1, ended)
+        self.assertFalse(conversation_routes_path(self.omh_home).exists())
 
 
 if __name__ == "__main__":

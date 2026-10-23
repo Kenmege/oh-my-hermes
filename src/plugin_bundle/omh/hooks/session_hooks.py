@@ -14,7 +14,7 @@ from ..degradation import (
     runtime_binding_degradation,
 )
 from ..delegation_ledger import observe_subagent_start, observe_subagent_stop
-from ..delegation_route_restore import release_conversation_route, restore_delegation_baseline
+from ..delegation_route_restore import restore_delegation_baseline
 from ..engagement_nudges import record_engagement_observer_failure
 from ..host_observation import host_session_id, observe_plugin_hook_call
 from ..team_observer import observe_team_dispatch, observe_team_return
@@ -157,14 +157,11 @@ def on_session_end(**kwargs) -> dict[str, object] | None:
         trigger="turn_end",
         writer_session=writer_session,
         writer_task=writer_task,
-    )
-    # This conversation's own route ends with its task too, and only its
-    # own: another session's route stays recorded for that session's next
-    # dispatch, whatever this restore did to the keys (#2251).
-    restore["conversation_route"] = release_conversation_route(
-        home,
-        task_id=writer_task,
-        conversation={writer_session} if writer_session else set(),
+        # This conversation's own route ends with its task too, and only its
+        # own: another session's route stays recorded for that session's next
+        # dispatch, whatever this restore did to the keys (#2251). Released
+        # inside the restore's lock, so the two cannot come apart.
+        release_writer=writer_session,
     )
     runtime_dir = home / "runtime"
     if not runtime_dir.exists():
@@ -206,6 +203,7 @@ def _restore_route(
     writer_session: str | None = None,
     writer_task: str | None = None,
     orphaned: bool = False,
+    release_writer: str | None = None,
 ) -> dict[str, object]:
     """Call the restore and never let its failure reach the host as a raise.
 
@@ -223,6 +221,7 @@ def _restore_route(
             require_writer_session=writer_session,
             require_writer_task=writer_task,
             require_writer_not_live=orphaned,
+            release_writer=release_writer,
         )
     except (OSError, ValueError, TypeError) as exc:
         return {

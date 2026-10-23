@@ -12,11 +12,14 @@ All notable changes will be documented here.
   is now also recorded per conversation in
   `~/.omh/routing/conversation-routes.json`. Just before Hermes reads the
   keys for a `delegate_task`, `pre_tool_call` puts the dispatching
-  conversation's own route back. A conversation that set no route gets the
-  profile's default, not another session's live route. If OMH cannot do that,
-  the call is refused with a typed status naming both sessions, and no child
-  starts. A dispatch on a session's own route still writes nothing. A small
-  window remains, because Hermes reads the keys after the hook returns.
+  conversation's own route back. A delegate child's workers get the route of
+  the conversation the child was delegated from, as they did before. A
+  conversation that set no route gets the profile's default, not another
+  session's live route. If OMH cannot do that, the call is refused with a
+  typed status naming both sessions, and no child starts. A dispatch on a
+  session's own route still writes nothing. A small window remains, because
+  Hermes reads the keys after the hook returns. A wait for a person to
+  approve the call is part of that window.
 
 - **The launch has a look of its own, and a card.** The owner asked for new
   logo colours and for more than the logo, like the skills box in Hermes'
