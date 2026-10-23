@@ -81,6 +81,9 @@ def timestamp(value):
         parsed = datetime.fromisoformat(match[1])
     except ValueError:
         raise Refusal("invalid_timestamp", "Invalid calendar timestamp") from None
+    # Python 3.14 reads T24:00:00 as the next midnight; 3.11-3.13 refuse it.
+    # Requiring an exact round trip refuses it on every supported interpreter.
+    require(parsed.isoformat() == match[1], "invalid_timestamp", "Invalid calendar timestamp")
     offset_hour, offset_minute = int(match[5] or 0), int(match[6] or 0)
     require(offset_hour < 24 and offset_minute < 60,
             "invalid_timestamp", "Invalid timezone offset")

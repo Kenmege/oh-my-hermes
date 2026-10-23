@@ -269,6 +269,41 @@ runpy.run_path(script, run_name='__main__')
                 self.assertEqual(result["error"]["code"], "invalid_timestamp")
                 self.assertEqual((self.workspace / "state.json").read_bytes(), old)
 
+    def test_hour_24_refused_on_every_interpreter(self):
+        # CPython 3.14 parses T24:00:00 as the next midnight; 3.11-3.13 refuse it.
+        # This runner gives older interpreters the 3.14 reading, so CI on 3.11
+        # and 3.13 exercises the same guard a 3.14 venv depends on.
+        lenient = '''
+import datetime, runpy, sys
+script = sys.argv.pop(1)
+strict = datetime.datetime
+class Lenient(strict):
+    @classmethod
+    def fromisoformat(cls, value):
+        if value[10:] == 'T24:00:00':
+            return strict.fromisoformat(value[:10] + 'T00:00:00') + datetime.timedelta(days=1)
+        return strict.fromisoformat(value)
+datetime.datetime = Lenient
+runpy.run_path(script, run_name='__main__')
+'''
+        job_id = self.merge()["inserted_job_ids"][0]
+        for runner in (None, lenient):
+            for day in ("2026-02-28", "2026-10-23", "2026-10-24", "2026-12-31"):
+                instant = day + "T24:00:00Z"
+                value = capture()
+                value["sources"][0]["retrieved_at"] = instant
+                with self.subTest(instant=instant, lenient=runner is not None):
+                    result = self.cli("validate", "--input", self.write_capture(value),
+                                      exit=2, runner=runner)
+                    self.assertEqual(result["error"]["code"], "invalid_timestamp")
+                    result = self.transition(job_id, "draft", "draft_artifact", time=instant,
+                                             exit=2, runner=runner)
+                    self.assertEqual(result["error"]["code"], "invalid_timestamp")
+            # The midnight that hour 24 would have meant stays valid.
+            value = capture()
+            value["sources"][0]["retrieved_at"] = "2026-10-25T00:00:00Z"
+            self.cli("validate", "--input", self.write_capture(value), runner=runner)
+
     def test_exact_fractional_timestamp_order_and_offset_equality(self):
         prefix = "2026-10-23T02:00:00."
         long_fraction = "1" + "0" * (4096 - len(prefix) - len("1Z") - 1)

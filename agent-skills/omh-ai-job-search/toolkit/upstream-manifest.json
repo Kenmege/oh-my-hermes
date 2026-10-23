@@ -17,7 +17,7 @@
     },
     "scripts/job_state.py": {
       "license": "MIT",
-      "local_sha256": "f19045d1d5d5e4f079b3b596261a88d67f80480968c408d55927f779f4f7cf69",
+      "local_sha256": "dc4344420ec9f4b4c1c3582b5ec0dcf58dc241ce7d3648f1926cec7d94dc0e4b",
       "origin": "original"
     }
   },

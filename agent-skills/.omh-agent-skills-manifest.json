@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "db40e4f020ffeceffe40bca412770df48239de2430a1637227b011d78586d60b",
+  "catalog_revision": "2f9f42557f5062525aab756602ff7223b9c5ef19e403121d988163684bd46c72",
   "files": {
     "omh-accessibility-audit/SKILL.md": "65f1e0ce5395420440d4bca184e1fef09650a70a5ac80e4972baa241da839669",
     "omh-accessibility-audit/references/a11y-rules.md": "cd7e0404576923cfd3bcec9e055b1de7a78f3fc55971fd033598aac1043e4469",
@@ -19,8 +19,8 @@
     "omh-ai-job-search/toolkit/LICENSE.upstream": "accbf0accb87b7b905dd7ee0c7013075f0453637acf354ddae6fc0e4d8282e8e",
     "omh-ai-job-search/toolkit/README.md": "72bf64a190cefe089455d2fd44e0586c56b642b7f8b6765e69ff51fbb2a2e22c",
     "omh-ai-job-search/toolkit/examples/synthetic-captures.json": "34a730f3487d32d5acba6148ac13604751835466bd36660f713407f7d3c18aa3",
-    "omh-ai-job-search/toolkit/scripts/job_state.py": "f19045d1d5d5e4f079b3b596261a88d67f80480968c408d55927f779f4f7cf69",
-    "omh-ai-job-search/toolkit/upstream-manifest.json": "15e83bd0b41fdd8fc399b12383b4e2b1d18904cca75e88650aeba9c15affefe8",
+    "omh-ai-job-search/toolkit/scripts/job_state.py": "dc4344420ec9f4b4c1c3582b5ec0dcf58dc241ce7d3648f1926cec7d94dc0e4b",
+    "omh-ai-job-search/toolkit/upstream-manifest.json": "c68a628b0fdf353605d47217618660972da8b9034a8c203ec7464609aea72fba",
     "omh-ai-slop-cleaner/SKILL.md": "49b8c6380996e20c8059ec3d1eb0be2a912190b5799bbc2659a8c5512c68a3b7",
     "omh-ai-slop-cleaner/references/cleanup-passes.md": "2265e33fb7ea2acf1b2d23b20dbbba8ead04c155e0314f7a69e8b4825aa61ffd",
     "omh-ai-slop-cleaner/references/prose-lexicon.md": "efd209984c3e5823995484dd5b6e38e3161a059db9e841b4599dbbd330417ee5",
