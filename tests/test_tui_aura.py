@@ -287,14 +287,17 @@ class AppTests(unittest.TestCase):
         aura = set(app.theme.aura) | set(app.theme.aura_glint)
         for holder in ("list_selected", "tree_selected"):
             with self.subTest(holder=holder):
-                setattr(app, holder, "sa-1" if holder == "list_selected" else "d:run:node")
+                if holder == "list_selected":
+                    app.list_selected = "sa-1"
+                else:
+                    app.tree_selected = "d:run:node"
                 self.assertFalse(app._aura_live())
                 frame = build_frame(cols=80, rows=24, composer=app.composer, info=(), theme=app.theme, aura=3,
                                     composer_blank=True)
                 self.assertFalse([line for line in frame.lines if AURA_RULE in text_of(line)], "the rules are plain")
                 self.assertFalse([span for line in frame.lines for span in line if span.style in aura])
                 app._on_input(Key(ESCAPE))
-                setattr(app, holder, None)  # Esc gives the keys back (the list and the tree each close on it)
+                app.list_selected = app.tree_selected = None  # Esc gives the keys back (each closes on it)
                 self.assertTrue(app._aura_live())
 
     def test_it_ends_the_frame_the_token_goes_or_the_prompt_is_sent(self) -> None:
