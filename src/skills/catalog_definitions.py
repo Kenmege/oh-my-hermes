@@ -66,6 +66,7 @@ from .show_reel_skill import DEFINITION as SHOW_REEL_DEFINITION
 from .geospatial_analysis_skill import DEFINITION as GEOSPATIAL_ANALYSIS_DEFINITION
 from .biomedical_evidence_skill import DEFINITION as BIOMEDICAL_EVIDENCE_DEFINITION
 from .molecular_docking_skill import DEFINITION as MOLECULAR_DOCKING_DEFINITION
+from .ai_job_search_skill import DEFINITION as AI_JOB_SEARCH_DEFINITION
 
 from .catalog_types import (
     ADAPTATION_QUALITY_READ_RULE,
@@ -11791,6 +11792,7 @@ _DEFINITIONS.extend(
         GEOSPATIAL_ANALYSIS_DEFINITION,
         BIOMEDICAL_EVIDENCE_DEFINITION,
         MOLECULAR_DOCKING_DEFINITION,
+        AI_JOB_SEARCH_DEFINITION,
         *JEV_DEFINITIONS,
     )
 )

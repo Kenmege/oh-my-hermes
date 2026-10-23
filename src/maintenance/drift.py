@@ -848,7 +848,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # review adds three, each a clarify or a fallback as on main: a
             # noun with 마다, an interval, and PR 하나 (3).
             # Three domain-science vocabulary controls (+3).
-            expected=1070,
+            # Career actor repair adds five employer requests and two references.
+            # Normalized actor/objective follow-up adds seven employer contrasts.
+            expected=1089,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1329,7 +1331,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # harness-session-inventory, skill-health, run-efficiency) (+7).
             # #2221 L4: doctor joins the set, since the status card shows no
             # install drift, and /omh-doctor status runs doctor (+1).
-            expected=1083,
+            # Career actor repair retains five personal/target/quoted controls.
+            # Actor/objective follow-up adds two third-person candidate controls.
+            expected=1095,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1343,7 +1347,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # `market-research` adds one.
             # show-reel adds one installable motion-production method.
             # Three optional executable science methods (+3).
-            expected=150,
+            expected=151,
             sites=(
                 "docs/README.md",
                 # The docs index quotes the count in prose and

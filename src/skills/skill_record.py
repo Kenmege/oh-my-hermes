@@ -66,6 +66,7 @@ from .review_methods import review_method_reference_templates
 from .geospatial_analysis_skill import geospatial_analysis_reference_templates
 from .biomedical_evidence_skill import biomedical_evidence_reference_templates
 from .molecular_docking_skill import molecular_docking_reference_templates
+from .ai_job_search_skill import ai_job_search_reference_templates
 from .render import (
     SkillReferenceTemplate,
     SkillTemplate,
@@ -269,6 +270,7 @@ REFERENCE_PRODUCERS: tuple[Callable[[], list[SkillReferenceTemplate]], ...] = (
     geospatial_analysis_reference_templates,
     biomedical_evidence_reference_templates,
     molecular_docking_reference_templates,
+    ai_job_search_reference_templates,
     idea_to_deploy_reference_templates,
     llm_app_dev_reference_templates,
     _procedure_reference_templates,

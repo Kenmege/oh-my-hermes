@@ -8,6 +8,7 @@ NEXT_ACTION_LABELS: dict[str, str] = {
     "prepare_geospatial_analysis": "prepare CRS-safe polygon computation",
     "prepare_biomedical_evidence": "prepare public evidence reconciliation",
     "prepare_molecular_docking": "prepare bounded standalone docking",
+    "prepare_ai_job_search": "prepare evidence-grounded career work",
     "answer_clarification": "asking the needed clarification",
     "answer_directly": "answering directly in chat",
     "answer_file_lookup": "answering as a file or text lookup",

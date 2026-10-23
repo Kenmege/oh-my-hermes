@@ -1,5 +1,6 @@
 TARGETS = frozenset(
     {
+        "ai-job-search",
         "finance-analysis",
         "legal-compliance-review",
         "sales-development",
@@ -17,6 +18,17 @@ TARGETS = frozenset(
 )
 
 DOMAIN_REVIEW_CONTRACTS = {
+    "ai-job-search": {
+        "outputs": ("profile.md and preferences.md", "jobs.json and shortlist.md", "versioned application drafts and review.md",
+                    "interview-prep.md and optional skill-gaps.md", "evidence-bound tracker and next actions"),
+        "steps": ("career_frame", "career_discover", "career_draft", "career_track"),
+        "checks": {
+            "career_scope": {"action", "private_workspace", "fact_refs", "unknowns"},
+            "career_sources": {"receipts", "freshness", "source_outcome", "verified_job_count"},
+            "career_claims": {"requirement", "evidence_ref", "gaps", "review_mode"},
+            "career_state": {"application_version", "event_evidence", "helper_exit", "read_back"},
+        },
+    },
     "geospatial-analysis": {
         "outputs": ("result GeoJSON", "measured summary JSON", "replay and provenance manifest"),
         "steps": ("gis_validate", "gis_intersect", "gis_reconcile"),

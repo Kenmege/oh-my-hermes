@@ -45,7 +45,14 @@ class SkillContextCostTests(unittest.TestCase):
         # Three science methods carry their lane/evidence rails: 122343
         # producer bytes. 126000 retains approximately 3% headroom; toolkit
         # bytes remain on-demand and do not enter this measurement.
-        self.assertLess(profile["repeated"]["bytes"], 126_000)
+        # 126,000 -> 127,943: clean 85673e100 measures 124,345; adding the
+        # career method measures 126,288. The exact +1,943 is only mandatory
+        # Workflow Lane (497) and Runtime Evidence (1,446), not copied optional
+        # method text. Preserve the old allowance (1,655 bytes), rather than
+        # expanding to the roughly 3% headroom prior entries permitted.
+        # The feature-cost regression pins legacy body bytes, bounds these
+        # two sections and also enforces (current - 1,943) < 126,000.
+        self.assertLess(profile["repeated"]["bytes"], 127_943)
 
     def test_ulw_context_reports_bounded_static_body_and_progressive_references(self) -> None:
         payload = skill_context_cost_payload()
@@ -70,7 +77,7 @@ class SkillContextCostTests(unittest.TestCase):
 
         # Pre-feature producer measurements, not token/latency estimates. This
         # feature changes opening actions only, never indexed descriptions.
-        self.assertEqual(skill_index_chars(), 13_157)
+        self.assertEqual(skill_index_chars(), 13_243)  # Career adds its bounded 86-character entry.
         baseline = {'research': 19_587, 'web-research': 11_495, 'source-finder': 9_221}
         for name, before in baseline.items():
             record = skill_record(name)

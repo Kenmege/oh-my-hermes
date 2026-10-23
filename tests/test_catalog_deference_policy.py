@@ -313,9 +313,10 @@ NON_SKILL_BACKTICKS = frozenset(
 # no sibling gains a statement pointing back. Five cases, five pairs, one
 # owner.
 # Three science owners add four statements and six sibling pairs.
-EXPECTED_DEFERENCE_CASES = 402
-EXPECTED_DEFERENCE_PAIRS = 418
-EXPECTED_DEFERRING_OWNERS = 118
+# Career work defers employer-side hiring to people-ops; re-derived from the catalog.
+EXPECTED_DEFERENCE_CASES = 403
+EXPECTED_DEFERENCE_PAIRS = 419
+EXPECTED_DEFERRING_OWNERS = 119
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.
