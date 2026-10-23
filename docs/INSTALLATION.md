@@ -335,7 +335,13 @@ run and approval decision stays Hermes'; the screen is OMH's.
   names the session's commands and skills, when that moves one of the
   prompts a redraw prints. A
   path such as `src/a.py`, a `/name` nothing answers to and
-  a word with a slash inside it stay plain. While you pick from a
+  a word with a slash inside it stay plain. While the draft holds `dag-ulw`,
+  `dag ulw` or `/dag-ulw` (any case, as a whole word), the word shimmers in
+  a purple gradient that moves across its letters and the composer's two
+  rules glow in the same gradient; it ends the moment the word goes or the
+  prompt is sent. It moves only on a truecolor terminal with motion on; at
+  256 or 16 colours it stands still, and with `NO_COLOR` the word is bold
+  and the rules are plain. While you pick from a
   list (a question answered by picking, or the `/sessions`, `/rewind` or bare
   `/model` picker) or search the history with Ctrl+R, the
   composer and its rules are not drawn and the list or the search stands in

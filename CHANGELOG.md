@@ -4,6 +4,15 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A `dag-ulw` in the composer glows.** Typing `dag-ulw`, `dag ulw` or
+  `/dag-ulw` in the TUI's composer draws the word in a moving purple
+  gradient (the skill violet, the dag magenta and a lavender) and gives the
+  composer's rules the same glow, the way Claude Code marks `ultrathink`.
+  It adds no rows and leaves the caret and the cells alone, ticks only
+  while the word is there on a truecolor terminal, stands still at 256 or
+  16 colours, and is plain bold with `NO_COLOR`. The word takes the glow in
+  place of its `/name` colour.
+
 - **The dag-ulw TUI reads at a glance on a big run.** The owner's GIF review
   and an audit at 100×30, 150×42 and 200×50 found the transcript flooded by
   147–219 rows per print under the 48-node cap, and a tree whose short titles

@@ -149,6 +149,7 @@ from .keys import (
 )
 from .launch import request_fallback
 from .agent_view import AGENT_STEER_LEFT_UNANSWERED_NOTICE, STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
+from .aura import aura_ranges
 from .layout import Budget, choice_cap, is_tiny, slot_cap
 from .markdown import clean_text
 from .modes import (
@@ -1619,7 +1620,7 @@ class App(ModesMixin, AgentViewMixin):
             due.append(now + READ_TIMEOUT_SECONDS)
         if self.redraw_at is not None:
             due.append(self.redraw_at)
-        elif self._busy() or self._panel_live():
+        elif self._busy() or self._panel_live() or self._aura_live():
             due.append(self.last_render + self._tick_seconds())
         if self.path_due is not None and self.sid:
             due.append(self.path_due)
@@ -4014,6 +4015,17 @@ class App(ModesMixin, AgentViewMixin):
         payload = self.hud.payload if self.hud is not None else None
         return isinstance(payload, Mapping) and bool(payload.get("active"))
 
+    def _aura_live(self) -> bool:
+        """Whether the composer's `dag-ulw` aura moves now (`aura`): a token in the draft it draws, at the truecolor
+        depth, with motion on. Only then does the loop tick for it; the gradient stands still at 256 or 16 colours
+        and with reduced motion, and there is none at the `NO_COLOR` depth, so nothing ticks while it would not move.
+        """
+        composer = self.composer
+        return (
+            self.motion and self.color_depth == TRUECOLOR and not composer.pastes and not composer.masked
+            and not self._composer_hidden() and bool(aura_ranges(composer.text))
+        )
+
     def _render_when_due(self) -> None:
         if self.terminal.resized():  # one that came during this step's work: no frame is drawn at the old size
             self._on_resize()
@@ -4021,7 +4033,7 @@ class App(ModesMixin, AgentViewMixin):
         if self.redraw_at is not None:
             return  # the screen is mid-reflow; the settled redraw paints it
         now = self.clock()
-        due = (self._busy() or self._panel_live()) and now - self.last_render >= self._tick_seconds()
+        due = (self._busy() or self._panel_live() or self._aura_live()) and now - self.last_render >= self._tick_seconds()
         if not (self.dirty or due):
             return
         self.dirty = False
@@ -4079,6 +4091,8 @@ class App(ModesMixin, AgentViewMixin):
             agents=self._agent_view(cols, rows),
             tail_floor=self._working_rows(),
             known_slash=self.known_slash,
+            aura=self._spinner_frame() if self._aura_live() else 0,
+            aura_depth=self.color_depth,
             text_question=self.slot is not None and not self.slot.picking,
             slot_caret=self._slot_caret(),  # read after `_slot_lines` drew the picker it comes from
             theme=self.theme,
