@@ -441,7 +441,12 @@ class InterviewCannotRecordAFamilyForADetectedRowTests(unittest.TestCase):
                 setup_module,
                 "_detect_external_cli_profiles",
                 return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}},
-            ), patch.object(setup_module, "_ask_multi_choice", return_value=ticked), patch.object(
+            ), patch.object(
+                setup_module,
+                "_ask_multi_choice",
+                # Typing a name is only offered once "other provider" is ticked.
+                return_value=[*ticked, setup_module._PROVIDER_OTHER_CHOICE] if typed else ticked,
+            ), patch.object(
                 setup_module, "_ask_single_choice", side_effect=lambda title, *a, **k: (menus.append(title), "deepseek")[1]
             ), patch.object(
                 setup_module, "_ask", side_effect=lambda *a, **k: next(typed_answers)

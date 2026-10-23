@@ -3283,6 +3283,10 @@ _OPENGATEWAY_PROVIDER_ID = "opengateway"
 # rejects a leading underscore, so this can never collide with one, and it is
 # never written to the document.
 _PROVIDER_SKIP_CHOICE = "__skip__"
+# The "a provider not listed here" row. Same guarantees as the skip row: not a
+# provider id, never pre-ticked, never written. Ticking it is what opens the
+# add-by-name prompt, so Enter on the list ends the step unless it is ticked.
+_PROVIDER_OTHER_CHOICE = "__other__"
 
 
 def _provider_entitlement_options(
@@ -3294,9 +3298,9 @@ def _provider_entitlement_options(
     """Rows for the provider multi-select: `(options, pre-ticked ids, kind per id)`.
 
     Order is found-here first, then whatever the operator recorded last time,
-    then the rest of the family vocabulary, then OpenGateway, then the skip
-    row -- so the rows that matter lead and the two always-present rows sit
-    where the eye ends up. A pre-ticked row is a DEFAULT, not a finding:
+    then the rest of the family vocabulary, then OpenGateway, then the
+    "other provider" row, then the skip row -- so the rows that matter lead
+    and the always-present rows sit where the eye ends up. A pre-ticked row is a DEFAULT, not a finding:
     EXECUTOR_AUTH_SIGNALS_CLAIM_BOUNDARY holds here too -- a config key or a
     variable name is not an account, a tier, or a quota. Every pre-ticked row
     stays clearable, and only what the operator leaves ticked is written, so
@@ -3306,9 +3310,10 @@ def _provider_entitlement_options(
     recorded last time, minus the found rows they cleared last time
     (`excluded_providers`). A found row is what routing already counts on
     its own, so it arrives ticked even on a re-run; clearing it is what
-    writes the exclusion that makes routing stop. The skip row is never
-    pre-ticked -- "leave everything as it is" has to be chosen, never
-    defaulted into.
+    writes the exclusion that makes routing stop. The skip and "other" rows
+    are never pre-ticked -- "leave everything as it is" has to be chosen,
+    never defaulted into, and a pre-ticked "other" would bring back the
+    second prompt it exists to make optional.
     """
     from ..plugin_bundle.omh.hermes_delegation import (
         MULTI_VENDOR_PROVIDER_KINDS,
@@ -3353,9 +3358,14 @@ def _provider_entitlement_options(
         order.append(_OPENGATEWAY_PROVIDER_ID)
         kinds[_OPENGATEWAY_PROVIDER_ID] = PROVIDER_KIND_GATEWAY
         descriptions[_OPENGATEWAY_PROVIDER_ID] = tr(language, "provider_opengateway_desc")
+    order.append(_PROVIDER_OTHER_CHOICE)
+    descriptions[_PROVIDER_OTHER_CHOICE] = tr(language, "provider_other_desc")
     order.append(_PROVIDER_SKIP_CHOICE)
     descriptions[_PROVIDER_SKIP_CHOICE] = tr(language, "provider_skip_desc")
-    labels = {_PROVIDER_SKIP_CHOICE: tr(language, "provider_skip_label")}
+    labels = {
+        _PROVIDER_OTHER_CHOICE: tr(language, "provider_other_label"),
+        _PROVIDER_SKIP_CHOICE: tr(language, "provider_skip_label"),
+    }
     options = [
         {
             "choice": str(index + 1),
@@ -3367,7 +3377,7 @@ def _provider_entitlement_options(
     ]
     detected_ids = {provider_id for provider_id, _kind, _source in candidates}
     preselect = set(previous_providers) | (detected_ids - set(previous_excluded))
-    preselect.discard(_PROVIDER_SKIP_CHOICE)
+    preselect -= {_PROVIDER_OTHER_CHOICE, _PROVIDER_SKIP_CHOICE}
     return options, [provider_id for provider_id in order if provider_id in preselect], kinds
 
 
@@ -3416,6 +3426,15 @@ def _ask_provider_entitlements(args: argparse.Namespace, paths: OmhPaths, langua
     this; keeping both would have been two ways to say the same thing, and the
     one inside the list is the one the operator can see next to what it
     declines.
+
+    The row just above it, "other provider", is the only way into the
+    add-by-name prompt. That prompt used to follow the list unconditionally,
+    so Enter on the list looked like the end of the step while a second,
+    easy-to-miss prompt still waited for its own Enter. Now Enter on the list
+    ends the step unless the operator ticked "other". Ticking it beside skip is
+    refused like any other row beside skip. Picking it never unticks a row: in
+    the typed menu an answer of only its number (`17`) keeps every pre-ticked
+    row, and in the keyboard menu `1` `7` reaches row 17.
 
     Every account is different, and the shipped chains cannot know which of
     their entries this operator can actually reach. The answer is recorded as
@@ -3501,6 +3520,9 @@ def _ask_provider_entitlements(args: argparse.Namespace, paths: OmhPaths, langua
         options,
         selected=preselected,
         exclusive={_PROVIDER_SKIP_CHOICE},
+        # Typing only the "other" row's number asks for a name. It must not
+        # untick the found rows, which would record them as excluded.
+        additive={_PROVIDER_OTHER_CHOICE},
         use_color=use_color,
         language=language,
     )
@@ -3512,10 +3534,13 @@ def _ask_provider_entitlements(args: argparse.Namespace, paths: OmhPaths, langua
         args._provider_entitlements = None
         print(tr(language, "provider_entitlements_skipped"))
         return
-    providers = {provider_id: kind_by_id[provider_id] for provider_id in chosen}
+    providers = {
+        provider_id: kind_by_id[provider_id] for provider_id in chosen if provider_id != _PROVIDER_OTHER_CHOICE
+    }
     # Providers Hermes reaches some other way (a builtin with a key OMH does
-    # not recognize, a gateway named only in a route) can be added by name.
-    while True:
+    # not recognize, a gateway named only in a route) can be added by name,
+    # once the operator ticked the "other provider" row asking for that.
+    while _PROVIDER_OTHER_CHOICE in chosen:
         extra = _ask(tr(language, "provider_add_prompt"), default="", use_color=use_color).strip()
         if not extra:
             break
@@ -4117,6 +4142,7 @@ def _ask_multi_choice(
     use_color: bool,
     language: str = "en",
     exclusive: set[str] | None = None,
+    additive: set[str] | None = None,
 ) -> list[str]:
     """Tick any number of options; returns the ticked values in option order.
 
@@ -4128,6 +4154,12 @@ def _ask_multi_choice(
     A value in `exclusive` may only be chosen alone. Picked beside anything
     else it is contradictory, so both paths refuse and ask again rather than
     resolving it by a rule the operator cannot see.
+
+    A value in `additive` is an action row, not an answer about the other
+    rows. A typed answer replaces the ticked set, so a typed answer that names
+    only additive rows would otherwise clear every pre-ticked row. Instead, it
+    is added to the ticked rows. The keyboard menu needs no such rule, because
+    ticking a row there never clears another.
 
     There is deliberately no "none" token: a caller that needs "none of these"
     as an answer gives the list a row that says so, which is legible next to
@@ -4166,6 +4198,12 @@ def _ask_multi_choice(
                 print(_color(tr(language, "invalid_selection", valid=valid), "31", use_color))
                 continue
             picked = [value for index, value in enumerate(resolved) if value not in resolved[:index]]
+            if additive and set(picked) <= additive:
+                picked = [
+                    option["value"]
+                    for option in normalized
+                    if option["choice"] in ticked or option["value"] in picked
+                ]
         conflict = _exclusive_choice_conflict(picked, exclusive)
         if conflict:
             print(_color(tr(language, "exclusive_selection", label=labels_by_value[conflict]), "31", use_color))
@@ -4194,6 +4232,8 @@ def _keyboard_single_choice(
     cursor = _default_choice_index(options, default_choice)
     rendered_option_rows = 0
     first_render = True
+    choices = [option["choice"] for option in options]
+    pending = ""
     while True:
         lines = _choice_menu_lines(
             title,
@@ -4205,6 +4245,10 @@ def _keyboard_single_choice(
             language=language,
         )
         option_lines = _choice_menu_option_lines(lines, intro_lines)
+        if pending:
+            note = _menu_pending_note(language, "menu_pending_row", pending, use_color)
+            option_lines = [*option_lines, note]
+            lines = [*lines, note]
         if first_render:
             sys.stdout.write("\n".join(lines) + "\n")
             first_render = False
@@ -4216,6 +4260,14 @@ def _keyboard_single_choice(
         key = _read_tui_key()
         if key in {"\x03", "\x04"}:
             raise KeyboardInterrupt
+        if len(key) == 1 and key in "0123456789":
+            pending, number = _menu_number_key(pending, key, choices)
+            if number:
+                return options[choices.index(number)]["value"]
+            if pending in choices:
+                cursor = choices.index(pending)
+            continue
+        pending = ""
         if key in {"\x1b[A", "k"}:
             cursor = (cursor - 1) % len(options)
             continue
@@ -4224,10 +4276,40 @@ def _keyboard_single_choice(
             continue
         if key in {"\r", "\n", " "}:
             return options[cursor]["value"]
-        for index, option in enumerate(options):
-            if key == option["choice"]:
-                cursor = index
-                return option["value"]
+
+
+def _menu_number_key(pending: str, key: str, choices: list[str]) -> tuple[str, str]:
+    """One digit key folded into the row number being typed: `(pending, complete)`.
+
+    Keys arrive one at a time, so on a list with more than nine rows, acting
+    on each digit made `1` then `7` act on row 1 and then on row 7, never on
+    row 17. In the single-choice menu the `7` then leaked into the next
+    prompt. A digit that a further digit could still extend (`1` when row 17
+    exists) is therefore held as `pending`. The menu moves the cursor to it
+    and shows a note saying so. A number nothing can extend is complete and
+    is acted on at once, so a list of up to nine rows behaves exactly as
+    before.
+
+    Only Space or Enter acts on a pending row; a digit always builds a
+    number. A digit that no row continues therefore starts a new number
+    (`1` then `9`, with no row 19, is row 9) rather than acting on row 1 as
+    well. Acting on row 1 would mean a keystroke the note just described as
+    "a second digit" picks row 1, which in the single-choice menu closes the
+    menu on a row nobody confirmed. An unusable digit (`0`) is ignored.
+    """
+    number = pending + key
+    if not any(choice.startswith(number) for choice in choices):
+        number = key
+    if not any(choice.startswith(number) for choice in choices):
+        return "", ""
+    if any(choice != number and choice.startswith(number) for choice in choices):
+        return number, ""
+    return "", number
+
+
+def _menu_pending_note(language: str, message_key: str, pending: str, use_color: bool) -> str:
+    """The line under a keyboard menu that shows the row number still being typed."""
+    return _color(f"  {tr(language, message_key, row=pending)}", "1;33", use_color)
 
 
 def _keyboard_multi_choice(
@@ -4245,6 +4327,13 @@ def _keyboard_multi_choice(
     A value in `exclusive` may only be confirmed alone. Enter on a
     contradictory tick set keeps the menu up with the reason appended, so the
     operator fixes it in place instead of losing the list.
+
+    Digits build a row number through `_menu_number_key`. Before that,
+    `1` then `7` toggled row 1, a found provider that was then silently
+    recorded as excluded. While a number is pending, the cursor sits on that
+    row and a note under the list says so. Space toggles the row under the
+    cursor as usual, and Enter toggles the pending row and then confirms, as
+    a lone `1` then Enter always did.
     """
     exclusive = exclusive or set()
     ticked = set(ticked)
@@ -4252,6 +4341,8 @@ def _keyboard_multi_choice(
     rendered_option_rows = 0
     first_render = True
     error = ""
+    choices = [option["choice"] for option in options]
+    pending = ""
     while True:
         lines = _choice_menu_lines(
             title,
@@ -4270,6 +4361,10 @@ def _keyboard_multi_choice(
             # the rows -- `rendered_option_rows` is measured after the append.
             option_lines = [*option_lines, _color(f"  {error}", "31", use_color)]
             lines = [*lines, option_lines[-1]]
+        if pending:
+            note = _menu_pending_note(language, "menu_pending_row_multi", pending, use_color)
+            option_lines = [*option_lines, note]
+            lines = [*lines, note]
         if first_render:
             sys.stdout.write("\n".join(lines) + "\n")
             first_render = False
@@ -4282,6 +4377,17 @@ def _keyboard_multi_choice(
         key = _read_tui_key()
         if key in {"\x03", "\x04"}:
             raise KeyboardInterrupt
+        if len(key) == 1 and key in "0123456789":
+            pending, number = _menu_number_key(pending, key, choices)
+            if number:
+                cursor = choices.index(number)
+                ticked ^= {number}
+            elif pending in choices:
+                cursor = choices.index(pending)
+            continue
+        if pending in choices and key in {"\r", "\n"}:
+            ticked ^= {pending}
+        pending = ""
         if key in {"\x1b[A", "k"}:
             cursor = (cursor - 1) % len(options)
             continue
@@ -4299,11 +4405,6 @@ def _keyboard_multi_choice(
             label = next(option["label"] for option in options if option["value"] == conflict)
             error = tr(language, "exclusive_selection", label=label)
             continue
-        for index, option in enumerate(options):
-            if key == option["choice"]:
-                cursor = index
-                ticked ^= {option["choice"]}
-                break
 
 
 def _choice_menu_lines(

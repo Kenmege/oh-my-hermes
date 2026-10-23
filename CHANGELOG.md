@@ -25,6 +25,25 @@ All notable changes will be documented here.
   that settles or shrinks mid-turn keeps its rows until the turn ends
   instead of leaving a blank band above the composer.
 
+- **`omh setup`'s provider step ends on one Enter.** After the provider
+  list, a second prompt, `Add another provider by name (Enter to skip)`,
+  always followed and waited for its own Enter. The step looked finished
+  while it was still blocked. The list now has an **Other provider -- type
+  its name** row just above skip. The name prompt appears only when that
+  row is ticked; it keeps the duplicate and invalid-id checks and the kind
+  menu, and an empty line still ends it. The row is never pre-ticked, it is
+  refused beside skip like any other row, and it is never written to
+  `~/.omh/routing/providers.json`. In the typed menu, typing only that row's
+  number adds it to the ticked rows; it does not replace them, so found
+  providers are not recorded as excluded. In the arrow-key menus (the
+  provider list and the single-choice menus, such as the provider-kind
+  menu), digits now build a row number: `1` then `7` is row 17. Before, the
+  list toggled row 1 and then row 7, which silently excluded a found
+  provider. The kind menu returned row 1 and left the `7` to be read by the
+  next "Provider name" prompt. While a digit could still be extended, a
+  note under the menu shows it (`Row 1_ -- type a second digit, or
+  Space/Enter ...`). Menus of up to nine rows behave as before.
+
 - **`/omh-doctor status` runs doctor (#2221 L4).** After a slash skill, a
   status question shows OMH's status card. The exception is a skill whose
   own work is that status, and doctor is now one of them. The card counts
