@@ -901,8 +901,12 @@ _KEEPER_WORD: Final = (
     r"|noon|midnight|(?:this\s+|next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|weekend)"
     r"|\d{1,2}(?::\d{2})?\s*(?:am|pm)?)"
     r"|please|pls|plz|thanks(?:\s+(?:a\s+lot|so\s+much|in\s+advance))?|thank\s+you(?:\s+so\s+much)?|thx|ty|cheers"
-    r"|(?:much\s+)?appreciated)"
+    r"|(?:much\s+)?appreciated"
+    # how the work is cut per unit ("one PR per service", "per repo", "each in its own branch")
+    rf"|one\s+{_EN_UNITS}\s+per\s+{_EN_UNITS}|per\s+{_EN_UNITS}|each\s+in\s+its\s+own\s+{_EN_UNITS})"
 )
+# A confirmation tag alone closes the message without taking anything back ("…, ok?"), as its last clause only.
+_CONFIRMATION_TAG: Final = re.compile(r"(?:ok|okay|alright|right)\s*\?+")
 _KEEPER_CLAUSE: Final = re.compile(
     rf"{_KEEPER_WORD}(?:\s*(?:and\s+)?{_KEEPER_WORD})*(?:\s*(?:해\s*{_KOREAN_GIVE}|해요|해|{_KOREAN_GIVE}|요))?\s*[.!~]*"
 )
@@ -917,8 +921,15 @@ _FOLLOW_ON_VERB: Final = rf"(?:{_KOREAN_OFFER_VERB}|갱신|써|작성|확인|(?<
 _EN_FOLLOW_ON: Final = re.compile(
     r"^(?:and\s+then|and|then|after\s+that|next|afterwards)\s*,?\s+(?:please\s+|just\s+|also\s+)*"
     rf"(?:{_EN_OFFER_VERB}|integrate|develop|ship|test|run|rerun|deploy|write|document|verify|check|clean\s+up|push|tag"
-    r"|release|tell\s+me|let\s+me\s+know|report|send\s+me|show\s+me)\b"
+    r"|release|(?:ping|tell|notify|message|let|show|send)\s+me|report)\b"
 )
+# A colon list of changes after a breadth head is one request, not trailing clauses ("for each of my upstream PRs:
+# rebase, resolve conflicts, push"): each item opens on a change verb.
+_EN_LIST_HEAD: Final = re.compile(
+    rf"(?:{_EN_BREADTH}|\bfor\s+(?:each|every|all)\b|\b{_EN_PLURAL_UNITS}\b)[^:,.!?]*:\s*(?:please\s+)?"
+    rf"(?:{_EN_CHANGE_VERB}|push|review)\b[^,]*$"
+)
+_EN_LIST_ITEM: Final = re.compile(rf"^(?:and\s+)?(?:{_EN_CHANGE_VERB}|push|force[\s-]*push|review|resolve)\b")
 _HOLD: Final = re.compile(
     r"농담|장난|됐어|됐고|(?<![가-힣])(?:아냐|아니야|아니다|아니|잠깐만?|잠시만?|말고)(?![가-힣])"
     r"|\b(?:jk|j/k|kidding|never\s*mind|nvm|wait|hold\s+on)\b"
@@ -951,7 +962,9 @@ def _follows_on(clause: str) -> bool:
 
 def _keeps_the_request(trailing: list[str]) -> bool:
     """Whether every clause after a request keeps it: a keeper (`_KEEPER_CLAUSE`) or a follow-on (`_follows_on`), with
-    no hold or joke in any of them (`_HOLD`)."""
+    no hold or joke in any of them (`_HOLD`); a confirmation tag may close them (`_CONFIRMATION_TAG`)."""
+    if trailing and _CONFIRMATION_TAG.fullmatch(trailing[-1]):
+        trailing = trailing[:-1]
     return all(
         not _HOLD.search(clause) and bool(_KEEPER_CLAUSE.fullmatch(clause) or _follows_on(clause)) for clause in trailing
     )
@@ -986,7 +999,11 @@ def _trails_off(folded: str) -> bool:
         return False  # a Korean message is read whole instead (`_korean_clauses`)
     for cut in _CLAUSE_BREAK.finditer(folded):
         if _reads_as_an_english_request(folded[: cut.start()]):
-            return not _keeps_the_request([clause for clause in _CLAUSE_BREAK.split(folded[cut.end() :]) if clause])
+            trailing = [clause for clause in _CLAUSE_BREAK.split(folded[cut.end() :]) if clause]
+            if _EN_LIST_HEAD.search(folded[: cut.start()]):
+                while trailing and _EN_LIST_ITEM.match(trailing[0]) and not _HOLD.search(trailing[0]):
+                    trailing = trailing[1:]  # the rest of the colon list of changes
+            return not _keeps_the_request(trailing)
     return False
 
 

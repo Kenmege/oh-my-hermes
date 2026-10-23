@@ -456,7 +456,14 @@ class RouterTests(unittest.TestCase):
                         "PR들 전부 머지해줘, 아니 잠깐, 로그 먼저 확인해줘", "브랜치들 전부 리베이스해줘, 아 그거 말고 테스트만 돌려줘",
                         "PR들 전부 머지해줘, 아니 잠깐, 그리고 로그 확인해줘", "PR들 전부 리베이스해줘, 그리고 농담이고 테스트 돌려줘",
                         "PR들 전부 리베이스해줘, 테스트 돌려줘", "모든 서비스 업데이트해줘, 확인해줘", "rebase all open PRs, run the tests",
-                        "PR들 전부 리베이스해줘, 그리고 결과 알려줘", "모든 서비스 업데이트해줘, 끝나면 대시보드도 봐 줘"):
+                        "PR들 전부 리베이스해줘, 그리고 결과 알려줘", "모든 서비스 업데이트해줘, 끝나면 대시보드도 봐 줘",
+                        # A confirmation tag keeps the request only alone in the last clause; a colon list of changes
+                        # holds only change items; a per-unit spec keeps nothing that follows it.
+                        "split the api, ui and docs work into parallel lanes, ok? actually no",
+                        "for each of my upstream PRs: rebase, then wait", "for each of my upstream PRs: rebase, not sure though",
+                        "for each of my upstream PRs: rebase, merge jk, push",
+                        "for each of my upstream PRs: rebase, resolve conflicts, push, lol jk",
+                        "update every service, one PR per service, not sure"):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
@@ -481,7 +488,12 @@ class RouterTests(unittest.TestCase):
                         "rebase all open PRs, go", "rebase all open PRs, by friday please", "update every service, urgently",
                         "fix all the failing tests, right away", "rebase all open PRs, no rush", "update every service, go ahead",
                         "fix all the failing tests, let's go", "rebase all open PRs, cheers", "update every service, ty",
-                        "fix all the failing tests, appreciated", "rebase all open PRs, right now", "update every service, tonight"):
+                        "fix all the failing tests, appreciated", "rebase all open PRs, right now", "update every service, tonight",
+                        # A report tail on the work, a confirmation tag, a colon list of changes and a per-unit spec.
+                        "migrate every package to pnpm, then ping me with the results",
+                        "split the api, ui and docs work into parallel lanes, ok?",
+                        "for each of my upstream PRs: rebase, resolve conflicts, push", "update every service, one PR per service",
+                        "update every service, each in its own branch", "rebase all open PRs, per repo"):
             with self.subTest(message=message):
                 self.assertTrue(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))

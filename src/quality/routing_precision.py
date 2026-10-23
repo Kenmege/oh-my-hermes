@@ -7943,6 +7943,21 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "dag-ulw",
     ),
     RoutingPrecisionCase(
+        "english-colon-list-then-a-hold-is-not-a-graph-run",
+        "A colon list of changes over every PR that ends in a wait holds the request: no graph run, where main dispatched one",
+        "for each of my upstream PRs: rebase, then wait",
+        "answer_clarification",
+        "",
+        "dag-ulw",
+    ),
+    RoutingPrecisionCase(
+        "english-confirmation-tag-then-a-take-back-is-asked-not-run",
+        "A split followed by ok? and a take-back in the same clause: dag-ulw is asked about, not dispatched as on main",
+        "split the api, ui and docs work into parallel lanes, ok? actually no",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
         "one-named-function-split-is-asked-not-run",
         "One function split into parallel parts is one task: dag-ulw is asked about, not run",
         "이 함수 병렬로 나눠서 구현해줘",
@@ -18041,6 +18056,24 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "korean-urgency-with-an-intensifier-runs-as-a-graph",
         "An urgency with an intensifier after a rebase of every PR is a keeper by shape: a dag-ulw graph",
         "PR들 전부 리베이스해줘, 최대한 빨리",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "english-report-tail-ping-me-runs-as-a-graph",
+        "A migration of every package, then a ping with the results, is the work's report tail: a dag-ulw graph",
+        "migrate every package to pnpm, then ping me with the results",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "english-colon-list-of-changes-runs-as-a-graph",
+        "A colon list of changes after a breadth head is one request: a dag-ulw graph",
+        "for each of my upstream PRs: rebase, resolve conflicts, push",
+        "dispatch", "dag-ulw", "start_dag_run", "dag_run",
+    ),
+    RoutingInterventionCase(
+        "english-per-unit-spec-runs-as-a-graph",
+        "An update of every service with one PR per service keeps the request: a dag-ulw graph",
+        "update every service, one PR per service",
         "dispatch", "dag-ulw", "start_dag_run", "dag_run",
     ),
     RoutingInterventionCase(

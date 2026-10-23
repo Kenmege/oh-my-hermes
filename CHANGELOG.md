@@ -45,10 +45,13 @@ All notable changes will be documented here.
   a keeper by shape (an urgency or a deadline, a start cue, thanks or
   politeness, with an intensifier or a request ending: `…해줘, 최대한 빨리`,
   `…해줘, 금요일까지`, `…해줘, 지금 바로`, `…해줘, 부탁할게`, `…, by friday please`,
-  `…, no rush`), or a follow-on after a sequencing connective that asks for more
-  work (`…해줘, 그리고 README도 갱신해줘`, `…해줘, 그 다음 테스트 돌려줘`, `모든 패키지
-  업데이트해줘, 패키지마다 changelog도 써줘`, `…, then run the tests`), with no hold or
-  joke in any clause after the request. Anything else after it keeps nothing
+  `…, no rush`, `…, one PR per service`, a bare `…, ok?` last), or a follow-on
+  after a sequencing connective that asks for more work or a report on it
+  (`…해줘, 그리고 README도 갱신해줘`, `…해줘, 그 다음 테스트 돌려줘`, `모든 패키지
+  업데이트해줘, 패키지마다 changelog도 써줘`, `…, then run the tests`, `…, then ping me
+  with the results`), with no hold or joke in any clause after the request. A
+  colon list of changes after a breadth head is one request (`for each of my
+  upstream PRs: rebase, resolve conflicts, push`). Anything else after it keeps nothing
   (`…해줘, 아 잠깐만`, `…해줘, 해도 되나`, `…해줘, 확인해줘`, `…, what do you think`,
   `…, not sure though`, `…, never mind`, `… — jk`, `… or maybe not`). A past
   inside an embedded question (`어떻게 나눴는지 설명해줘`), a report after a -고 work
