@@ -32,6 +32,7 @@ from .owner_progress_normalization import (
     normalize_shared_progress_event,
     progress_evidence_tier,
 )
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 # `ALLOWED_EXECUTOR_PROFILES` and `BINDING_STATES` are the run-record
@@ -1868,7 +1869,7 @@ def _parse_time(value: str) -> datetime:
         raise ValueError("empty timestamp")
     if cleaned.endswith("Z"):
         cleaned = cleaned[:-1] + "+00:00"
-    parsed = datetime.fromisoformat(cleaned)
+    parsed = strict_fromisoformat(cleaned)
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)

@@ -12,6 +12,7 @@ from .production_readiness_values import (
     _valid_ref,
     readiness_row_id,
 )
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 def _matrix_identity_and_time_errors(
     *, scope: str, task_id: str, revision: str, created_at: str, evidence_fresh_after: str
@@ -178,7 +179,7 @@ def _timestamp(value: object) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except (TypeError, ValueError):
         return None
     if parsed.tzinfo is None or parsed.utcoffset() is None:

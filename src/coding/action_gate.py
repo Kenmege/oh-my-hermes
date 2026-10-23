@@ -114,6 +114,7 @@ from ..workflows.approval_receipts import (
     approval_satisfies_request_in,
 )
 from ..workflows.domain_intelligence_admission import ensure_safe_opaque_ref_content
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 TASK_AUTHORITY_ENVELOPE_SCHEMA_VERSION = "task_authority_envelope/v1"
@@ -1766,7 +1767,7 @@ def _stamp_age_seconds(observed_at: str, now: str = "") -> int:
     def _parse(value: str) -> datetime | None:
         text = value.strip().replace("Z", "+00:00")
         try:
-            parsed = datetime.fromisoformat(text)
+            parsed = strict_fromisoformat(text)
         except ValueError:
             return None
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

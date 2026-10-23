@@ -105,6 +105,7 @@ from ..routing.executor_cues import contains_boundary_phrase
 from ..routing.localization import normalized_phrase, routing_tokens
 from .capability_inspiration_snapshot import validate_capability_inspiration_snapshot
 from .skill_governance import _stable_encode
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 CAPABILITY_GAP_SCOUT_SCHEMA_VERSION: Final = "capability_gap_scout/v1"
@@ -851,7 +852,7 @@ def _parse_timestamp(value: str) -> datetime | None:
     if not text:
         return None
     try:
-        parsed = datetime.fromisoformat(text)
+        parsed = strict_fromisoformat(text)
     except ValueError:
         return None
     if parsed.tzinfo is None:

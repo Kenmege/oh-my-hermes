@@ -131,6 +131,7 @@ from ..system.append_only_store import (
 from ..system.local_store import file_lock, read_jsonl_objects, utc_now
 from ..system.metadata_safety import is_sensitive_metadata_text
 from ..system.paths import OmhPaths, expand_path
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 WORKSPACE_BINDING_SCHEMA_VERSION: Final[str] = "workspace_binding_guard/v1"
@@ -1445,7 +1446,7 @@ def _parse_stamp(value: str) -> datetime | None:
     if not text:
         return None
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)

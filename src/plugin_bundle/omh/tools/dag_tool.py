@@ -56,6 +56,7 @@ from ..delegation_routing import read_delegation_settings
 from ..host_observation import host_session_id
 from ..host_process import process_alive
 from ..sqlite_readonly import connect_readonly
+from ..iso_datetime import strict_fromisoformat
 
 DEFAULT_MAX_CONCURRENT_CHILDREN = 10  # Hermes' `_DEFAULT_MAX_CONCURRENT_CHILDREN` (tools/delegate_tool_config.py)
 MAX_CONCURRENT_ENV = "DELEGATION_MAX_CONCURRENT_CHILDREN"
@@ -662,12 +663,10 @@ def _flag(value: object) -> bool:
 
 
 def _timestamp(value: object) -> float | None:
-    from datetime import datetime
-
     if not isinstance(value, str) or not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        return strict_fromisoformat(value.replace("Z", "+00:00")).timestamp()
     except ValueError:
         return None
 

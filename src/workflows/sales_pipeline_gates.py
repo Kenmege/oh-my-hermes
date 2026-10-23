@@ -6,6 +6,7 @@ import re
 from typing import Final
 
 from .sales_pipeline_models import SalesPipelineReviewInput
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 _TOKEN_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{1,95}$")
 _CURRENCY_PATTERN: Final = re.compile(r"^[A-Z]{3}$")
@@ -19,7 +20,7 @@ _ALLOWED_SIGNAL_STATES: Final = frozenset(("observed_positive", "observed_neutra
 
 def parse_timestamp(value: str) -> datetime | None:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
     if parsed.tzinfo is None:

@@ -7,6 +7,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 HERMES_PROCESS_SCHEMA_VERSION = "hermes_process_observation/v1"
@@ -186,7 +187,7 @@ def _coerce_datetime(value: datetime | str | None) -> datetime | None:
         parsed = value
     else:
         try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return None
     if parsed.tzinfo is None:

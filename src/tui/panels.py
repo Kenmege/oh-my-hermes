@@ -44,7 +44,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import timezone
 import json
 import math
 from pathlib import Path
@@ -61,6 +61,7 @@ from .escapes import strip_escapes
 from .style import NO_COLOR, TRUECOLOR, Line, Span, Style
 from .theme import Theme
 from .width import cell_width, clusters, truncate, truncate_line
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 HUD_POLL_MIN_SECONDS = 2.0
 HUD_POLL_MAX_SECONDS = 8.0
@@ -458,7 +459,7 @@ def _epoch(value: Any) -> float | None:
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     try:
-        parsed = datetime.fromisoformat(text)
+        parsed = strict_fromisoformat(text)
     except ValueError:
         return None
     if parsed.tzinfo is None:

@@ -23,6 +23,7 @@ from .memory_governance import (
     classify_memory_admission,
     stable_artifact_identity,
 )
+from .iso_datetime import strict_fromisoformat
 
 SYSTEM_TIER = "system"
 REFERENCE_TIER = "reference"
@@ -519,7 +520,7 @@ def _validate_identity(identity: object) -> None:
 
 def _timestamp(value: object) -> bool:
     try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return False
     return parsed.tzinfo is not None

@@ -71,6 +71,7 @@ from .inflight import read_inflight_markers
 from .unit_execution_state import UNIT_STUCK_STATES, is_terminal
 from ..workflows.observation_journal import project_run_executor_session
 import json
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 FANOUT_STATUS_SCHEMA_VERSION = "fanout_status_roster/v1"
 FANOUT_STATUS_CLAIM_BOUNDARY = (
@@ -717,7 +718,7 @@ def _parse_timestamp(value: str) -> datetime | None:
     if not text:
         return None
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

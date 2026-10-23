@@ -44,6 +44,7 @@ from .web_qa_observation_store import (
     _write_private,
     read_web_qa_observation,
 )
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 MOTION_INTERACTION_CAPTURE_SCHEMA_VERSION: Final = "motion_interaction_capture/v1"
@@ -510,7 +511,7 @@ def _utc(value: object, label: str) -> datetime:
     if not isinstance(value, str) or not _UTC.fullmatch(value):
         _refuse("malformed_receipt", f"{label} must be a UTC timestamp")
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise MotionCaptureImportError("malformed_receipt", f"{label} must be a UTC timestamp") from exc
 

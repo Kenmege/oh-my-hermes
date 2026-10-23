@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from .iso_datetime import strict_fromisoformat
 
 
 def validate_stale_override(
@@ -44,7 +45,7 @@ def validate_stale_override(
     if override_deadline_str:
         try:
             override_str = str(override_deadline_str).replace("Z", "+00:00")
-            override_deadline = datetime.fromisoformat(override_str)
+            override_deadline = strict_fromisoformat(override_str)
             if override_deadline != reval_deadline:
                 return {"valid": False, "reason": "stale_override_invalid"}
         except (ValueError, TypeError):
@@ -59,7 +60,7 @@ def validate_stale_override(
     
     try:
         expires_str = str(expires_at_str).replace("Z", "+00:00")
-        expires_at = datetime.fromisoformat(expires_str)
+        expires_at = strict_fromisoformat(expires_str)
         
         if now >= expires_at:
             return {"valid": False, "reason": "stale_override_expired"}

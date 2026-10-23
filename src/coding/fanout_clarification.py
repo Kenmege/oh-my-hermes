@@ -27,6 +27,7 @@ from .fanout_clarification_records import (
     parse_clarification_record, history_receipt,
 )
 from .fanout_failure_diagnostics import is_string_map, is_object_list
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 def clarification_path(paths: OmhPaths, fanout_id: str, unit_id: str) -> Path:
@@ -44,7 +45,7 @@ def read_clarification(path: Path) -> ClarificationRecord | None:
 
 def clarification_state(record: ClarificationRecord, now: datetime | None = None) -> str:
     state = record["state"]
-    if state == "prepared_not_answered" and (now or datetime.now(timezone.utc)) >= datetime.fromisoformat(record["expires_at"]):
+    if state == "prepared_not_answered" and (now or datetime.now(timezone.utc)) >= strict_fromisoformat(record["expires_at"]):
         return "expired"
     return state
 
