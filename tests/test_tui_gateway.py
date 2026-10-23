@@ -15,6 +15,7 @@ from _test_temp_root import make_test_tempdir
 from _tui_gateway_replay import EXIT, HANG, Scenario, load_fixture, materialize, replay_env, spans
 from omh.tui import gateway_contract as contract
 from omh.tui.gateway import (
+    GATEWAY_SCRIPT,
     PREVIEW_CHARS,
     STDERR_TAIL_LINES,
     Event,
@@ -67,9 +68,10 @@ def _segment_rows(fixture: str, segment: str) -> list[dict]:
 
 
 class GatewaySpawnTests(unittest.TestCase):
-    def test_argv_runs_the_gateway_module_on_the_launchers_interpreter(self) -> None:
+    def test_argv_runs_the_attach_script_on_the_launchers_interpreter(self) -> None:
+        # The script attaches to Hermes' shared gateway, or runs `tui_gateway.entry` where this Hermes has no other way.
         spawn = gateway_spawn(LAUNCHER_ENV)
-        self.assertEqual(spawn.argv, ("/hermes/runtime/bin/python3", "-m", "tui_gateway.entry"))
+        self.assertEqual(spawn.argv, ("/hermes/runtime/bin/python3", str(GATEWAY_SCRIPT)))
 
     def test_cwd_is_the_launchers_working_directory_else_the_hermes_root(self) -> None:
         self.assertEqual(gateway_spawn({**LAUNCHER_ENV, "HERMES_CWD": "/work/project"}).cwd, "/work/project")
@@ -105,6 +107,12 @@ class GatewaySpawnTests(unittest.TestCase):
         for name in ("HERMES_HOME", "PATH", "OMH_HOME", "HERMES_PYTHON"):
             with self.subTest(name=name):
                 self.assertEqual(child[name], LAUNCHER_ENV[name])
+
+    def test_windows_system_variables_reach_the_child(self) -> None:
+        # Without SYSTEMROOT a Windows child cannot load Winsock and `import asyncio` fails (WinError 10106).
+        system = {"SYSTEMROOT": r"C:\Windows", "SystemDrive": "C:", "WINDIR": r"C:\Windows", "COMSPEC": r"C:\cmd.exe"}
+        child = gateway_spawn({**LAUNCHER_ENV, **system}).env
+        self.assertEqual({name: child.get(name) for name in system}, system)
 
     def test_the_callers_environment_is_not_mutated(self) -> None:
         env = {**LAUNCHER_ENV, "OMH_TUI_PYTHON": "/omh/venv/bin/python"}

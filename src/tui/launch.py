@@ -21,7 +21,9 @@ When the TUI cannot start it creates the file `omh` named in
 Hermes' own terminal instead (`hermes --tui` where Node is found and the
 reason is the OMH TUI's own, plain `hermes` otherwise; `hermes_tui_fits`),
 after one line on stderr saying why, so a failure costs the person the OMH
-surface, never the session. `omh_tui_blocker` is the
+surface, never the session. The TUI writes what it said into that file, and
+`omh` says it again once Hermes' terminal closes, since that terminal clears
+the screen it was said on. `omh_tui_blocker` is the
 same choice made before anything starts. Exit 75 without that file (Hermes
 uses 75 on paths of its own), like every other exit code, is the session
 ending and is returned as it is.
@@ -50,6 +52,10 @@ FALLBACK_EXIT = 75
 # (`fallback_sentinel`); `gateway_spawn` drops every `OMH_TUI_` name, so the
 # gateway and its tools never see it.
 FALLBACK_SENTINEL_ENV = "OMH_TUI_FALLBACK_SENTINEL"
+# How much of the TUI's reason the marker keeps (`request_fallback`).
+FALLBACK_REASON_BYTES = 4096
+# Windows opens a descriptor in text mode unless told otherwise, which rewrites line ends and stops at Ctrl+Z.
+_BINARY = getattr(os, "O_BINARY", 0)
 # The directory the TUI's interpreter imports `omh` from when its own path
 # does not already import it from there (`omh_import_root`). `omh` always sets
 # it, so a value left in the person's environment never picks the tree.
@@ -194,18 +200,46 @@ def fallback_requested(returncode: int, sentinel: Path) -> bool:
     return returncode == FALLBACK_EXIT and os.path.lexists(sentinel)
 
 
-def request_fallback(environ: Mapping[str, str]) -> int:
-    """Create the file named in `FALLBACK_SENTINEL_ENV`, if any, and return `FALLBACK_EXIT`.
+def request_fallback(environ: Mapping[str, str], reason: str = "") -> int:
+    """Create the file named in `FALLBACK_SENTINEL_ENV`, if any, holding `reason`, and return `FALLBACK_EXIT`.
 
     The TUI returns `FALLBACK_EXIT` only through this; the frontend shim and
-    its import bootstrap create the file the same way before they exit 75.
-    When the file cannot be created, `omh` passes the 75 on as an exit code
-    instead of opening Hermes' terminal.
+    its import bootstrap create the file the same way, empty, before they
+    exit 75. When the file cannot be created, `omh` passes the 75 on as an
+    exit code instead of opening Hermes' terminal. `reason` is what the TUI
+    printed about why it did not start: Hermes' own TUI clears the screen it
+    was printed on, so `omh` prints it again once that terminal closes
+    (`fallback_reason`). Its last `FALLBACK_REASON_BYTES` are kept, since a
+    traceback's cause is at its end; a marker whose reason could not be
+    written still asks for the fallback.
     """
     path = environ.get(FALLBACK_SENTINEL_ENV, "")
     if path:
         try:
-            os.close(os.open(path, os.O_WRONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600))
+            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _BINARY | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(path, flags, 0o600)
+        except OSError:
+            return FALLBACK_EXIT
+        try:
+            os.write(descriptor, reason.encode("utf-8", "replace")[-FALLBACK_REASON_BYTES:])
         except OSError:
             pass
+        finally:
+            os.close(descriptor)
     return FALLBACK_EXIT
+
+
+def fallback_reason(sentinel: Path) -> list[str]:
+    """The lines the TUI wrote into the fallback marker (`request_fallback`), printable characters only."""
+    try:
+        descriptor = os.open(sentinel, os.O_RDONLY | _BINARY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return []
+    try:
+        data = os.read(descriptor, FALLBACK_REASON_BYTES)
+    except OSError:
+        data = b""
+    finally:
+        os.close(descriptor)
+    lines = ("".join(char for char in line if char.isprintable()) for line in data.decode("utf-8", "replace").splitlines())
+    return [line for line in lines if line.strip()]

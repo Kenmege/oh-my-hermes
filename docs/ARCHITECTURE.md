@@ -2828,7 +2828,7 @@ enforcement suite pins its exact argv, so changing it fails a test rather than
 quietly widening what the sentence covers.
 
 The plugin tool `omh_jev_ask` is the second place, and the only network client
-in `src/`: `plugin_bundle/omh/jev_ask_client.py` POSTs typed questions to Jev
+core omh has in `src/`: `plugin_bundle/omh/jev_ask_client.py` POSTs typed questions to Jev
 over one of two fixed HTTPS hosts (`api.typesafe.ai` with `TYPESAFE_API_KEY`,
 or `openrouter.ai` only when the operator also set `openrouter_route` in
 `<omh_home>/jev/settings.json`), refuses every redirect, bounds both bodies and
@@ -2842,6 +2842,27 @@ in `tests/test_handoff_safety_contract_enforcement.py` pins the exception to
 that one file through `NETWORK_CLIENT_BRIDGES`, fails on a stale entry, and
 fails when any module other than the tool imports the bridge. The coding
 delegation lane is unchanged by it.
+
+The OMH TUI's gateway child, `tui/attach/gateway_attach.py`, is the third, and
+it is not core omh: nothing in `src/` imports it, and it runs only on Hermes'
+own interpreter, as the child the TUI spawns by path. On a Hermes that has the
+shared-gateway attach API it reaches the person's own gateway the way Hermes'
+Ink TUI does, through Hermes' functions (`ensure_gateway_runtime`, the home's
+private control socket for a session ticket, Hermes' `websockets` client on the
+URL `gateway_ws_target` builds from the gateway's grant), and relays one TUI's
+frames; on any other Hermes it runs Hermes' stdio entry instead. INVARIANT 2
+lists it in `HERMES_INTERPRETER_SCRIPTS` with a closed allow list measured from
+the script: the imports it may make (the standard library modules, each with
+the attributes it uses, the `asyncio` event-loop names, Hermes' functions named
+one by one, and `websockets.asyncio.client.connect`), the names it may read
+with `getattr` (three receipt fields), and a list of attribute names it may not
+use (connection, resolver and subprocess factories, a socket's verbs, dunder
+names). That blocks the realistic drift of a later edit that calls another
+Hermes, network or subprocess helper. It is not a sandbox: a deliberate
+private-attribute trick (`loop._sock_connect`, `type(x)()`) or an allowed name
+called with other arguments is not caught, and it does not check where the
+WebSocket goes. It fails on an entry the script no longer uses and when any
+module in `src/` imports it.
 
 Declared and not enforced, each naming what must land first: **workspace** —
 `workspace_binding_guard/v1` now refuses a second workspace-bound handoff on a

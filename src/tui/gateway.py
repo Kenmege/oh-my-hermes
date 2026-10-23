@@ -1,9 +1,13 @@
-"""The OMH TUI's child process, one at a time: Hermes' `tui_gateway`, spoken to over stdio JSON-RPC.
+"""The OMH TUI's child process, one at a time: Hermes' gateway, spoken to over stdio JSON-RPC.
 
 `gateway_spawn` turns the environment Hermes' launcher handed the frontend into
-the gateway's argv, working directory and environment. It never picks an
-interpreter: the gateway runs on exactly `HERMES_PYTHON` with the launcher's own
+the child's argv, working directory and environment. It never picks an
+interpreter: the child runs on exactly `HERMES_PYTHON` with the launcher's own
 import path, because another Python cannot load Hermes' compiled dependencies.
+The child is `attach/gateway_attach.py`, which reaches the profile's shared
+gateway as Hermes' own Ink TUI does where this Hermes can, and runs Hermes'
+stdio entry where it cannot; this client sees the stdio entry's protocol from
+either.
 
 `GatewayClient` owns the child. A reader thread turns each stdout line into an
 inbound item; a second thread drains stderr into a bounded in-memory tail, since
@@ -22,6 +26,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import json
 import os
+from pathlib import Path
 import subprocess
 import threading
 import time
@@ -29,7 +34,10 @@ from typing import IO, Any
 
 from . import gateway_contract as contract
 
-GATEWAY_MODULE = "tui_gateway.entry"
+# The child, run by path on Hermes' interpreter: it attaches to the profile's shared gateway where this Hermes
+# has that, else it runs Hermes' stdio entry (`tui_gateway.entry`) in its own process. Either way it speaks the
+# stdio entry's protocol to this client. Never imported here: it imports Hermes, and this interpreter cannot.
+GATEWAY_SCRIPT = Path(__file__).resolve().parent / "attach" / "gateway_attach.py"
 READY_EVENT = "gateway.ready"
 # The frontend shim hands the launcher's PYTHONPATH over under this name, so the
 # OMH interpreter itself never imports from Hermes' tree.
@@ -147,7 +155,7 @@ def gateway_spawn(env: Mapping[str, str]) -> GatewaySpawn:
     launcher_path = env.get(GATEWAY_PYTHONPATH_ENV, "")
     child["PYTHONPATH"] = src_root + os.pathsep + launcher_path if launcher_path else src_root
     return GatewaySpawn(
-        argv=(python, "-m", GATEWAY_MODULE),
+        argv=(python, str(GATEWAY_SCRIPT)),
         cwd=env.get("HERMES_CWD") or src_root,
         env=child,
     )

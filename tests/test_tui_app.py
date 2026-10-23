@@ -451,6 +451,16 @@ class StartupRefusalTests(AppTestCase):
         self.assertNotIn("\x1b", printed)
         self.assertNotIn("\x07", printed)
 
+    def test_the_fallback_marker_carries_every_line_said_about_a_failed_start(self) -> None:
+        # Hermes' own TUI, which `omh` opens next, clears these lines from the screen; `omh` says them again after.
+        run = self.prepare(Scenario("session", (), stderr=("refused: home is owned by a running gateway",),
+                                    after=EXIT, exit_code=1))
+        self.run_main(run)
+        self.assert_fell_back(run)
+        printed = run.stderr.getvalue()
+        self.assertIn("  refused: home is owned by a running gateway\n", printed)
+        self.assertEqual(run.fallback_sentinel.read_text(encoding="utf-8"), printed)
+
     def test_ctrl_c_while_the_session_opens_exits_130_and_closes_the_gateway(self) -> None:
         # The gateway start and the session call run before the terminal goes raw, where
         # Ctrl+C is still SIGINT; KeyboardInterrupt stands in for it on the first startup call.
