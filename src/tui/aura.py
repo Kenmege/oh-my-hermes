@@ -1,7 +1,8 @@
 """The aura a `dag-ulw` in the composer draws (owner request 2026-10-23, after Claude Code's `ultrathink`).
 
 While the draft holds `dag-ulw`, `dag ulw` or `/dag-ulw` (any case, a whole
-token: `dag-ulwx`, `undag ulw` and a path's `src/dag-ulw/` are none), the
+token, though a Korean particle may follow it: `dag-ulwx`, `undag ulw` and
+a path's `src/dag-ulw/` are none), the
 token's letters run violet, magenta, pink and lavender (`Theme.aura`) with a
 near-white band sweeping through them (`Theme.aura_glint`), and the
 composer's two rules are drawn heavy (`AURA_RULE`) in the same gradient with
@@ -11,7 +12,8 @@ caret and the cells are the draft's own.
 It moves only at the truecolor depth with motion on, and only while the
 token is there, so the app ticks for it then and never otherwise
 (`App._aura_live`). At 256 or 16 colours it stands still; at the `NO_COLOR`
-depth the token and the heavy rules are bold.
+depth, and on a background where its band would not show
+(`theme.aura_moves`), the token and the heavy rules are bold and still.
 """
 
 from __future__ import annotations
@@ -26,8 +28,9 @@ GLINT_CELLS = 2  # the band through the token
 RULE_GLINT_CELLS = 16  # the band along a rule
 RULE_GLINT_SPEED = 4  # cells the rule's band travels a phase
 
-# A whole `dag-ulw`, `dag ulw` or `/dag-ulw` token: nothing a word or a path goes on with on either side.
-_KEYWORD = re.compile(r"(?<![\w./-])/?dag[- ]ulw(?![\w/-])", re.IGNORECASE)
+# A whole `dag-ulw`, `dag ulw` or `/dag-ulw` token: nothing a word or a path goes on with on either side. It ends on an
+# ASCII class, so a Korean particle (`dag-ulw로`, `/dag-ulw를`) leaves it whole, as the router reads it.
+_KEYWORD = re.compile(r"(?<![\w./-])/?dag[- ]ulw(?![A-Za-z0-9_/-])", re.IGNORECASE)
 
 
 def aura_ranges(text: str) -> list[tuple[int, int]]:

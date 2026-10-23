@@ -6,6 +6,7 @@ the draft holds it, at the truecolor depth with motion on; the rows, the caret a
 
 from __future__ import annotations
 
+from dataclasses import replace
 import unittest
 
 from _local_package import load_local_package
@@ -65,9 +66,25 @@ class KeywordTests(unittest.TestCase):
                             ("run DAG ULW now", ["DAG ULW"]), ("(dag-ulw), then Dag-Ulw.", ["dag-ulw", "Dag-Ulw"])):
             with self.subTest(text=text):
                 self.assertEqual([text[start:end] for start, end in aura_ranges(text)], found)
-        for text in ("dag-ulwx", "undag ulw", "src/dag-ulw/plan.md", "dag_ulw", "dagulw", "dag-ulw-plan", "my-dag-ulw"):
+        for text in ("dag-ulwx", "undag ulw", "src/dag-ulw/plan.md", "a/dag-ulw", "dag_ulw", "dagulw", "dag-ulw-plan",
+                     "my-dag-ulw"):
             with self.subTest(text=text):
                 self.assertEqual(aura_ranges(text), [])
+
+    def test_a_korean_particle_after_it_keeps_it_whole_as_the_router_reads_it(self) -> None:
+        # The review of 254c15335: `\w` counts Hangul, so `dag-ulw로` turned the aura off while the router dispatched.
+        from omh.routing.chat import route_chat_message
+
+        for text, token in (("dag-ulw로 돌려줘", "dag-ulw"), ("dag ulw로 해줘", "dag ulw"), ("/dag-ulw로", "/dag-ulw"),
+                            ("dag-ulw를 써서 정리해줘", "dag-ulw"), ("dag-ulw가 끝나면 알려줘", "dag-ulw"),
+                            ("dag-ulw는 언제 쓰나", "dag-ulw"), ("dag-ulw에서 돌려줘", "dag-ulw"),
+                            ("/dag-ulw를 실행해줘", "/dag-ulw")):
+            with self.subTest(text=text):
+                self.assertEqual([text[start:end] for start, end in aura_ranges(text)], [token])
+        for text in ("dag-ulw로 돌려줘", "dag ulw로 해줘", "/dag-ulw로", "/dag-ulw를 실행해줘"):
+            with self.subTest(route=text):
+                route = route_chat_message(text, source="discord")
+                self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "dag-ulw"))
 
 
 class DrawTests(unittest.TestCase):
@@ -131,13 +148,35 @@ class DrawTests(unittest.TestCase):
     def test_it_reads_on_a_dark_and_a_light_background(self) -> None:
         from omh.tui.theme import build_theme, contrast_ratio, default_theme, surface_for
 
-        for background in ("#0D1117", "#FFFFFF", "#3A3A3A", "#DDDDDD", "#808080", "#5A5A5A", "#A8A8A8"):
+        for background in ("#0D1117", "#FFFFFF", "#3A3A3A", "#DDDDDD", "#5A5A5A", "#A8A8A8", "#C0C0C0"):
             with self.subTest(background=background):
                 theme = build_theme(default_theme(), background)
                 surface = surface_for(default_theme(), background)
                 styles = (*theme.aura, *theme.aura_glint)
                 self.assertGreaterEqual(min(contrast_ratio(style.fg, surface) for style in styles), 4.5)
                 self.assertEqual(len(theme.aura), len(theme.aura_glint))
+
+    def test_where_its_band_would_not_show_it_is_the_still_bold_look(self) -> None:
+        # The review of 254c15335: on #808080 the lift pulled the steps and the band to one ink (1.01:1).
+        from omh.tui.theme import AURA_GLINT_MIN_CONTRAST, aura_moves, build_theme, contrast_ratio, default_theme
+
+        self.assertEqual(AURA_GLINT_MIN_CONTRAST, 1.15)
+        for background, moves in (("#808080", False), ("#C0C0C0", True), ("#3A3A3A", True), ("#0D1117", True),
+                                  ("#FFFFFF", True)):
+            with self.subTest(background=background):
+                theme = build_theme(default_theme(), background)
+                self.assertEqual(aura_moves(theme), moves)
+                top, row, bottom = rows_of(frame_for("dag-ulw go", theme=theme, aura=5))
+                lit = styles_over(row, text_of(row), "dag-ulw")
+                self.assertEqual(text_of(top), AURA_RULE * 80)
+                if moves:
+                    self.assertGreaterEqual(min(contrast_ratio(a.fg, b.fg) for a, b in zip(theme.aura, theme.aura_glint)),
+                                            AURA_GLINT_MIN_CONTRAST)
+                    self.assertGreater(len({style.fg for style in lit}), 4)
+                else:
+                    self.assertEqual(set(lit), {replace(DEFAULT_THEME.slash, fg=None)}, "bold, the draft's own colour")
+                    self.assertEqual(top, (Span(AURA_RULE * 80, replace(theme.rule, bold=True)),))
+                    self.assertEqual(top, bottom)
 
     def test_a_masked_draft_or_one_holding_a_paste_has_none(self) -> None:
         aura = set(DEFAULT_THEME.aura) | set(DEFAULT_THEME.aura_glint)
@@ -212,6 +251,35 @@ class AppTests(unittest.TestCase):
         self.assertTrue(still[0] == still[1], "a static gradient at 256 colours")
         aura = {style.fg for style in app.theme.aura}
         self.assertEqual({span.style.depth for line in still[1] for span in line if span.style.fg in aura}, {COLOR_256})
+
+    def test_it_stands_still_where_its_band_would_not_show(self) -> None:
+        from omh.tui.theme import build_theme, default_theme
+
+        app, _client, _clock = self.app()
+        app.theme = build_theme(default_theme(), "#808080")
+        type_text(app, "dag-ulw")
+        app.last_render = app.clock()
+        self.assertFalse(app._aura_live())
+        self.assertEqual(app._read_timeout(), IDLE_READ_SECONDS)
+
+    def test_nothing_ticks_and_nothing_glows_while_a_list_or_the_tree_holds_the_keys(self) -> None:
+        from omh.tui.keys import ESCAPE
+
+        app, _client, _clock = self.app()
+        type_text(app, "dag-ulw migrate")
+        self.assertTrue(app._aura_live())
+        aura = set(app.theme.aura) | set(app.theme.aura_glint)
+        for holder in ("list_selected", "tree_selected"):
+            with self.subTest(holder=holder):
+                setattr(app, holder, "sa-1" if holder == "list_selected" else "d:run:node")
+                self.assertFalse(app._aura_live())
+                frame = build_frame(cols=80, rows=24, composer=app.composer, info=(), theme=app.theme, aura=3,
+                                    composer_blank=True)
+                self.assertFalse([line for line in frame.lines if AURA_RULE in text_of(line)], "the rules are plain")
+                self.assertFalse([span for line in frame.lines for span in line if span.style in aura])
+                app._on_input(Key(ESCAPE))
+                setattr(app, holder, None)  # Esc gives the keys back (the list and the tree each close on it)
+                self.assertTrue(app._aura_live())
 
     def test_it_ends_the_frame_the_token_goes_or_the_prompt_is_sent(self) -> None:
         app, client, _clock = self.app()

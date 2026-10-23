@@ -129,6 +129,10 @@ AURA_STOPS = (("#A77BFF", "#6F3FD6"), ("#D95FE8", "#A3249E"), ("#FF7AB6", "#C236
 AURA_STEPS = 8
 AURA_GLINT = ("#F6F0FF", "#2E1470")
 AURA_GLINT_SHARE = 0.7
+# The least contrast between a step and its band colour, once both are lifted, at which the band still shows. On a
+# mid-grey background the lift pulls both to the same ink: the aura is then the still look `NO_COLOR` gets, a bold
+# token and heavy rules in the rule colour, and nothing ticks for it (`aura_moves`).
+AURA_GLINT_MIN_CONTRAST = 1.15
 # The tool families a call's name is coloured by (`Theme.kinds`, in `KIND_FAMILIES` order); a name in none
 # keeps the terminal's foreground, bold. Hermes' browser tools all start `browser_`.
 TOOL_FAMILIES = {
@@ -185,6 +189,11 @@ class Theme:
     slash: Style  # a `/name` that resolves to a command or skill, bold, in the composer and your prompt's rows
     aura: tuple[Style, ...] = ()  # a `dag-ulw` in the composer and the rules around it, bold, `AURA_STOPS` stepped
     aura_glint: tuple[Style, ...] = ()  # the same steps toward `AURA_GLINT`: the band that sweeps through them
+
+
+def aura_moves(theme: Theme) -> bool:
+    """Whether the theme's aura has its gradient and band (`AURA_GLINT_MIN_CONTRAST`), or is the still bold look."""
+    return bool(theme.aura) and theme.aura[0].fg is not None
 
 
 def tool_family(name: str) -> str:
@@ -286,7 +295,13 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         return _lifted(c[key], ink, surface, EDGE_CONTRAST)
 
     status_ink = BLACK if is_light(status_bg) else c["banner_text"]
-    aura_steps = _gradient([stop[side] for stop in AURA_STOPS], AURA_STEPS)
+    aura_steps = [_lifted(colour, ink, surface, TEXT_CONTRAST)
+                  for colour in _gradient([stop[side] for stop in AURA_STOPS], AURA_STEPS)]
+    # Each band colour is its lifted step mixed toward `AURA_GLINT`, the far end from the background: never less
+    # contrast than the step it starts from.
+    glint_steps = [_mix(colour, AURA_GLINT[side], AURA_GLINT_SHARE) for colour in aura_steps]
+    moving = min(contrast_ratio(step, glint) for step, glint in zip(aura_steps, glint_steps, strict=True)) \
+        >= AURA_GLINT_MIN_CONTRAST
 
     def on_bar(key: str, minimum: float = TEXT_CONTRAST) -> Style:
         return Style(fg=_lifted(c[key], status_ink, status_bg, minimum), bg=status_bg)
@@ -355,11 +370,8 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         brand=Style(fg=read("ui_accent"), bold=True),
         kinds=tuple(Style(fg=hue(family), bold=True) for family in KIND_FAMILIES),
         slash=Style(fg=hue("skill"), bold=True),
-        aura=tuple(Style(fg=_lifted(colour, ink, surface, TEXT_CONTRAST), bold=True) for colour in aura_steps),
-        aura_glint=tuple(
-            Style(fg=_lifted(_mix(colour, AURA_GLINT[side], AURA_GLINT_SHARE), ink, surface, TEXT_CONTRAST), bold=True)
-            for colour in aura_steps
-        ),
+        aura=tuple(Style(fg=colour, bold=True) for colour in aura_steps) if moving else (Style(bold=True),),
+        aura_glint=tuple(Style(fg=colour, bold=True) for colour in glint_steps) if moving else (Style(bold=True),),
     )
 
 

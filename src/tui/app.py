@@ -215,6 +215,7 @@ from .theme import (
     DEFAULT_THEME,
     LIGHT_STAND_IN,
     Theme,
+    aura_moves,
     build_theme,
     is_light,
     logo_lines,
@@ -4017,13 +4018,17 @@ class App(ModesMixin, AgentViewMixin):
 
     def _aura_live(self) -> bool:
         """Whether the composer's `dag-ulw` aura moves now (`aura`): a token in the draft it draws, at the truecolor
-        depth, with motion on. Only then does the loop tick for it; the gradient stands still at 256 or 16 colours
-        and with reduced motion, and there is none at the `NO_COLOR` depth, so nothing ticks while it would not move.
+        depth, with motion on, on a background its band shows on (`theme.aura_moves`), and while no list or tree
+        holds the keys (the composer is drawn blank then). Only then does the loop tick for it; the gradient stands
+        still at 256 or 16 colours and with reduced motion, and there is none at the `NO_COLOR` depth, so nothing
+        ticks while it would not move.
         """
         composer = self.composer
         return (
-            self.motion and self.color_depth == TRUECOLOR and not composer.pastes and not composer.masked
-            and not self._composer_hidden() and bool(aura_ranges(composer.text))
+            self.motion and self.color_depth == TRUECOLOR and aura_moves(self.theme)
+            and not composer.pastes and not composer.masked and not self._composer_hidden()
+            and self.list_selected is None and self.tree_selected is None  # browsing draws the composer blank
+            and bool(aura_ranges(composer.text))
         )
 
     def _render_when_due(self) -> None:

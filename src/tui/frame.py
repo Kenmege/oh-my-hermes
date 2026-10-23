@@ -56,12 +56,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
-from .aura import aura_ranges, aura_rule, aura_style
+from .aura import AURA_RULE, aura_ranges, aura_rule, aura_style
 from .composer import PROMPT, Composer
 from .layout import BLANK, Budget, allocate, caret_row, compose, composer_cap
 from .style import TRUECOLOR, Line, Span, Style
 from .slash import slash_spans, slash_token_ranges
-from .theme import DEFAULT_THEME, KIND_FAMILIES, Theme
+from .theme import DEFAULT_THEME, KIND_FAMILIES, Theme, aura_moves
 from .width import cell_width, line_width, truncate, truncate_line
 
 RULE = "─"  # the composer's rules, above and under it, full width
@@ -173,7 +173,8 @@ def build_frame(
     )
     rule = rule_line(cols, theme)
     if glow and not composer_blank:
-        rule = aura_rule(cols, base, glint, aura)
+        rule = aura_rule(cols, base, glint, aura) if aura_moves(theme) else (
+            Span(AURA_RULE * cols, replace(theme.rule, bold=True)),)
     lines = compose(
         budget,
         sticky=sticky,

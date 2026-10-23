@@ -341,8 +341,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   them, and the composer's two rules are drawn heavy (`━`) in the same
   gradient with a band travelling along them; it ends the moment the word
   goes or the prompt is sent. It moves only on a truecolor terminal with
-  motion on; at 256 or 16 colours it stands still, and with `NO_COLOR` the
-  word and the heavy rules are bold. While you pick from a
+  motion on, and not while the agent list or the dag tree has the keys; at
+  256 or 16 colours it stands still, and with `NO_COLOR`, or on a
+  background too close to its colours for the band to show (a mid grey),
+  the word and the heavy rules are bold and still. A Korean particle right
+  after the word (`dag-ulw로`) keeps it lit, as the router reads it. While you pick from a
   list (a question answered by picking, or the `/sessions`, `/rewind` or bare
   `/model` picker) or search the history with Ctrl+R, the
   composer and its rules are not drawn and the list or the search stands in
