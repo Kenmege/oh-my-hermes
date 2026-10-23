@@ -863,10 +863,12 @@ class DocumentedBoundaryTests(unittest.TestCase):
 
     def test_the_boundary_names_what_ctrl_z_does_to_the_gateway(self) -> None:
         agents = self.prose("AGENTS.md")
-        self.assertIn("Ctrl+Z stops the process group, Hermes' gateway with it, as Hermes' own CLI's Ctrl+Z does, and fg "
-                      "continues both.", agents)
+        # The child is in the TUI's process group; a shared gateway it attached to is not, and goes on.
+        self.assertIn("Ctrl+Z stops the process group, the gateway child with it, as Hermes' own CLI's Ctrl+Z does, "
+                      "and fg continues both; a shared gateway, which is not in that group, goes on.", agents)
         context = self.prose("CONTEXT.md")
-        self.assertIn("Ctrl+Z stops its process group, the gateway with it, as Hermes' own CLI's Ctrl+Z does.", context)
+        self.assertIn("Ctrl+Z stops its process group, the gateway child with it, as Hermes' own CLI's Ctrl+Z does.",
+                      context)
 
 
 class TinyTerminalQuestionTests(unittest.TestCase):

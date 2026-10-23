@@ -56,6 +56,7 @@ from .policy import (
     context_query_is_budget_sense,
     dependency_bump_spoken,
     dependency_upgrade_guard_applies,
+    employer_hiring_intent,
     explicit_skill_invocation,
     is_explicit_one_off_request,
     jit_learn_guard_applies,
@@ -1395,6 +1396,11 @@ _SKILL_POLICIES = {
         next_action="prepare_biomedical_evidence",
         evidence_boundary="Source availability is not complete reconciliation, eligibility, diagnosis or treatment advice; missing identity or date evidence remains partial.",
         wrapper_guidance="Confirm public query and exact IDs, capture BioMCP sources through the explicit bounded host terminal, then reconcile local hash-checked captures offline and retain source failures and disagreements.",
+    ),
+    "ai-job-search": RecommendationPolicy(
+        next_action="prepare_ai_job_search",
+        evidence_boundary="Prepared career guidance is not verified vacancies, authored documents, independent review or submission; require actual artifacts and typed event read-back.",
+        wrapper_guidance="Confirm the career action and private workspace; load the installed method, capture bounded sources, invoke offline validate/merge/summary, write and review requested drafts, and transition only on explicit evidence.",
     ),
     "molecular-docking": RecommendationPolicy(
         next_action="prepare_molecular_docking",
@@ -2838,6 +2844,7 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     "geospatial-analysis": frozenset({"analysis", "overlay", "spatial", "intersection", "intersect", "layers", "compute", "overlap", "area"}),
     "biomedical-evidence": frozenset({"evidence", "reconciliation", "cross", "check", "variant", "matrix", "capture"}),
     "molecular-docking": frozenset({"molecular", "docking", "rigid", "receptor", "ligand", "poses"}),
+    "ai-job-search": frozenset({"ai", "job", "search", "evaluate", "this", "posting", "tailor", "my", "resume", "cv", "prepare", "for", "interview", "track", "applications", "draft", "cover", "letter", "application", "answers"}),
     # The Jev skills are reached through `routing/jev_addressing.py` only:
     # every word their triggers are built from is held back, `jev` included,
     # so a sentence that merely mentions Jev or a review, a failure, or a
@@ -4395,6 +4402,8 @@ def _score_definition(
 ) -> Recommendation | None:
     definition = prepared.definition
     policy = prepared.policy
+    if definition.name == "ai-job-search" and employer_hiring_intent(normalized_query, query_tokens):
+        return None
     if explicit_skill != definition.name and _explicit_skill_candidate_is_negated(original_query, definition.name):
         return None
     score = 0

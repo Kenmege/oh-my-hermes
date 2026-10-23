@@ -58,6 +58,7 @@ from .catalog import (
     workflow_reference_definitions,
 )
 from .procedure_rendering import specialist_procedure_reference_markdown
+from .search_guidance import search_reference_templates
 from .dag_ulw_skill import dag_ulw_reference_templates
 from .market_research_skill import REFERENCE_CONTENT as MARKET_RESEARCH_REFERENCES
 from .show_reel_references import show_reel_reference_templates
@@ -65,6 +66,7 @@ from .review_methods import review_method_reference_templates
 from .geospatial_analysis_skill import geospatial_analysis_reference_templates
 from .biomedical_evidence_skill import biomedical_evidence_reference_templates
 from .molecular_docking_skill import molecular_docking_reference_templates
+from .ai_job_search_skill import ai_job_search_reference_templates
 from .render import (
     SkillReferenceTemplate,
     SkillTemplate,
@@ -268,12 +270,14 @@ REFERENCE_PRODUCERS: tuple[Callable[[], list[SkillReferenceTemplate]], ...] = (
     geospatial_analysis_reference_templates,
     biomedical_evidence_reference_templates,
     molecular_docking_reference_templates,
+    ai_job_search_reference_templates,
     idea_to_deploy_reference_templates,
     llm_app_dev_reference_templates,
     _procedure_reference_templates,
     _full_contract_reference_templates,
     research_reference_templates,
     _market_research_reference_templates,
+    search_reference_templates,
     design_reference_templates,
     apple_design_reference_templates,
     award_bar_score_reference_templates,

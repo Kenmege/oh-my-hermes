@@ -62,6 +62,7 @@ packages = [
   "omh.plugin_bundle.omh.tools",
   "omh.skins",
   "omh.tui",
+  "omh.tui.attach",
   "omh.profiles",
   "omh.quality",
   "omh.routing",
@@ -98,12 +99,16 @@ packages = [
 "omh.surfaces" = "src/surfaces"
 "omh.system" = "src/system"
 "omh.tui" = "src/tui"
+"omh.tui.attach" = "src/tui/attach"
 "omh.workflows" = "src/workflows"
 "omh.wrapper" = "src/wrapper"
 
 [tool.setuptools.package-data]
 # Closed optional companion data, not packages/imported production modules.
 "omh.skills" = [
+  "ai_job_search_toolkit/README.md", "ai_job_search_toolkit/scripts/job_state.py",
+  "ai_job_search_toolkit/examples/synthetic-captures.json", "ai_job_search_toolkit/LICENSE.upstream",
+  "ai_job_search_toolkit/upstream-manifest.json",
   "geospatial_analysis_toolkit/README.md", "geospatial_analysis_toolkit/LICENSE.upstream",
   "geospatial_analysis_toolkit/scripts/analyze.py", "geospatial_analysis_toolkit/examples/input.json",
   "geospatial_analysis_toolkit/examples/overlay.json", "geospatial_analysis_toolkit/upstream-manifest.json",

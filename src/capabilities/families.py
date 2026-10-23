@@ -48,7 +48,10 @@ _FAMILY_DEFINITIONS = (
         "next_action": "gather_source_backed_evidence",
         "example_prompt": "Find papers, datasets, and repos for this topic.",
         "not_evidence_until_observed": ("source retrieval", "source verification", "decision approval"),
-        "route_summary": "Name the source/synthesis split before summarizing or planning from the material.",
+        "route_summary": (
+            "Name the source/synthesis split before summarizing or planning from the material. "
+            "omh_search is optional local plan/fusion/coverage processing, not retrieval or permission evidence."
+        ),
     },
     {
         "id": "retain_knowledge",

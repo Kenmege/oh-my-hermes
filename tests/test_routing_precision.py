@@ -56,7 +56,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # count of PRs with no breadth word add four (+4); a noun with 마다, an
         # interval and PR 하나 add three (+3).
         # Three science vocabulary controls remain direct answers.
-        self.assertEqual(payload["summary"]["case_count"], 1070)
+        # Career actor repair adds five employer requests and two references.
+        # Actor/objective follow-up adds seven employer contrasts.
+        self.assertEqual(payload["summary"]["case_count"], 1089)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -125,7 +127,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # A Korean stop then a negation is answered directly (+1).
         # A stop with a declarative reason is answered directly (+1).
         # The three science vocabulary controls also answer directly.
-        self.assertEqual(payload["summary"]["direct_answer_count"], 342)
+        # The two quoted employer controls are answered directly.
+        self.assertEqual(payload["summary"]["direct_answer_count"], 349)
         # show-reel's README-link control is answered as a file lookup (+1).
         self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
@@ -163,7 +166,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # said now runs as a graph (+3). Every deploy and every push stay, and
         # each service with 마다 runs as a graph (+3).
         # Three unnamed science requests render dedicated computation cards.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1083)
+        # Career actor repair retains five personal/target/quoted controls.
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1095)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

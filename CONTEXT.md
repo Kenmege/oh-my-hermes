@@ -17,7 +17,9 @@ metadata-only status surfaces. Makes no LLM, API, or network calls, with one
 scoped exception: the opt-in `omh_jev_ask` tool sends typed questions to Jev
 with the user's own key when the user names Jev in that turn. (The `show-reel`
 skill also ships opt-in provider scripts that the user, not OMH, runs with
-their own key.)
+their own key. The OMH TUI's gateway child is not core OMH: it runs on Hermes'
+interpreter and reaches the person's own Hermes gateway over loopback, as
+Hermes' own TUI does.)
 _Avoid_: Hermes plugin (that is one distribution surface, not the product),
 coding executor, Hermes patch
 
@@ -455,12 +457,17 @@ with the directory `omh` imported its own package from (`OMH_TUI_SITE`) put
 first on that path when the interpreter does not already import `omh` from
 there, as under the npm and Bun launcher, whose cache is on the path only
 inside its own process;
-the TUI spawns Hermes' `tui_gateway`, one at a time, with the interpreter and
-import path the launcher provided and speaks its stdio JSON-RPC; when that
+the TUI spawns its gateway child, one at a time, with the interpreter and
+import path the launcher provided and speaks `tui_gateway`'s stdio JSON-RPC to
+it. The child (`omh/tui/attach/gateway_attach.py`, run by path on Hermes'
+interpreter) attaches to the profile's shared gateway as Hermes' Ink TUI does
+on a Hermes that has that API, starting it with idle exit when none runs, and
+otherwise runs Hermes' stdio entry, which since Hermes 9595c3f345 refuses a
+home a running gateway owns; when that
 child exits on its own with a failure, it spawns it again the same way and
 resumes the open session, at most 3 times in 60 s (an open question closes
 unanswered, a running turn is reported lost and never re-sent), and past that
-it exits as before; Ctrl+Z stops its process group, the gateway with it, as
+it exits as before; Ctrl+Z stops its process group, the gateway child with it, as
 Hermes' own CLI's Ctrl+Z does. Layout, input, rendering and
 the OMH panels are OMH's; every model call, tool run and approval decision is
 the gateway's. Its look is the rail and kind colours the owner picked on
@@ -480,8 +487,9 @@ text only to Hermes' own input history (`$HERMES_HOME/.hermes_history`, which
 `hermes --tui` shares: each line the person sends is appended in its format,
 never an answer to a question Hermes asked); its other writes are metadata
 (the launcher's active-session file, what OMH's HUD reader and model-chain
-picker write under the OMH home, and an empty fallback marker at the path
-`omh` named, which `omh` removes). Finished
+picker write under the OMH home, and a fallback marker at the path `omh`
+named, holding what the TUI printed about why it did not start, which `omh`
+prints again after Hermes' own terminal closes and then removes). Finished
 transcript lines go to the terminal's own scrollback; only a region drawn
 right under them (the streaming tail, one slot for the plan or a prompt
 Hermes asked, the composer, the info line under it, and under that the agent
@@ -506,7 +514,10 @@ extension of Hermes' TUI), a Hermes patch or fork, an execution surface
 
 **Hermes gateway protocol**:
 Hermes' `tui_gateway` newline JSON-RPC over stdio, which the OMH TUI speaks as
-a client. The slice the TUI relies on (the methods it calls with the only
+a client. Attached to a shared gateway, its child translates that wire to and
+from the gateway's canonical session wire (`hermes-gateway-v1`) in the closed
+set of places `gateway_attach.Adapter` names, after Hermes' own
+`canonicalGateway.ts`, and passes the rest unchanged. The slice the TUI relies on (the methods it calls with the only
 keys it sends, how it answers each server-to-client request, and the subagent
 and notification events and the `session.info`, `subagent.tail` and
 `session.steer` fields and values it keys on) is declared once in

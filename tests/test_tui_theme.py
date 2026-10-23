@@ -246,3 +246,56 @@ class DimCarriesNoWordsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MidGreyContrastTests(unittest.TestCase):
+    """Every ink with a contrast floor meets it on every shipped skin over the greys and the two common backgrounds.
+
+    The #2256 review measured crimson's text inks at 4.36:1 on #707070: the lift stopped at the palette's own ink
+    (`banner_text`, #FFEDE6), which white passes and that ink does not. A sweep at a step of 2 found every skin
+    short somewhere between #6E6E6E and #747474.
+    """
+
+    BACKGROUNDS = (*(f"#{level:02X}{level:02X}{level:02X}" for level in range(0x40, 0xF1, 2)), "#0D1117", "#FFFFFF")
+
+    def test_every_ink_meets_its_floor_on_every_skin_and_grey(self) -> None:
+        from omh.tui.theme import (
+            EDGE_CONTRAST, LAUNCH_PRESETS, TEXT_CONTRAST, aura_moves, contrast_ratio, launch_palette, launch_styles,
+            surface_for,
+        )
+
+        short = []
+        for skin in SKIN_THEMES:
+            for background in self.BACKGROUNDS:
+                theme = build_theme(skin, background)
+                surface = surface_for(skin, background)
+                inks = [(role, getattr(theme, role).fg, TEXT_CONTRAST) for role in TEXT_ROLES]
+                inks += [(role, getattr(theme, role).fg, EDGE_CONTRAST) for role in GLYPH_ROLES]
+                inks += [("kinds", style.fg, TEXT_CONTRAST) for style in theme.kinds]
+                inks += [("dag_words", style.fg, TEXT_CONTRAST) for style in theme.dag_words]
+                inks += [("dag_edges", style.fg, EDGE_CONTRAST) for style in theme.dag_edges]
+                if aura_moves(theme):
+                    inks += [("aura", style.fg, TEXT_CONTRAST) for style in (*theme.aura, *theme.aura_glint)]
+                for preset in LAUNCH_PRESETS:
+                    styles = launch_styles(skin, background, launch_palette(preset, surface))
+                    inks += [(f"{preset}.brand", styles.brand.fg, TEXT_CONTRAST),
+                             (f"{preset}.label", styles.label.fg, TEXT_CONTRAST),
+                             (f"{preset}.edge", styles.edge.fg, EDGE_CONTRAST)]
+                short += [(skin.short_name, background, role, round(contrast_ratio(fg, surface), 2), floor)
+                          for role, fg, floor in inks if contrast_ratio(fg, surface) < floor]
+        self.assertEqual(short[:12], [], f"{len(short)} inks under their floor")
+
+    def test_a_short_ink_on_a_light_background_goes_on_toward_black(self) -> None:
+        # No shipped palette needs the lift's second leg on a light background, so the sweep never runs it there: a
+        # leg that always went to white would pass it. Here the ink given, a mid grey, is short on a light background
+        # (one well inside the light side, and one just past the black/white crossover) and the lift must go darker.
+        from omh.tui.theme import BLACK, TEXT_CONTRAST, _lifted, contrast_ratio
+
+        for background, toward in (("#BBBBBB", "#777777"), ("#767676", "#9A9A9A")):
+            with self.subTest(background=background):
+                self.assertTrue(is_light(background))
+                self.assertLess(contrast_ratio(toward, background), TEXT_CONTRAST)
+                lifted = _lifted("#CCCCCC", toward, background, TEXT_CONTRAST)
+                self.assertGreaterEqual(contrast_ratio(lifted, background), TEXT_CONTRAST)
+                self.assertGreater(contrast_ratio(lifted, "#FFFFFF"), contrast_ratio(toward, "#FFFFFF"), "darker")
+                self.assertLess(contrast_ratio(lifted, BLACK), contrast_ratio(toward, BLACK), "toward black")

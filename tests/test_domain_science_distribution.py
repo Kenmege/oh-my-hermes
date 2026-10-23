@@ -252,7 +252,7 @@ class BuiltDomainDistributionTests(unittest.TestCase):
         expected = expected_support()
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            result = subprocess.run(["uv", "build", "--offline", "--out-dir", str(root / "dist")], cwd=ROOT, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(["uv", "build", "--out-dir", str(root / "dist")], cwd=ROOT, capture_output=True, text=True, timeout=180)
             self.assertEqual(result.returncode, 0, result.stderr)
             wheels = list((root / "dist").glob("*.whl"))
             sdists = list((root / "dist").glob("*.tar.gz"))

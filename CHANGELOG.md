@@ -21,6 +21,14 @@ All notable changes will be documented here.
   Hermes reads the keys after the hook returns. A wait for a person to
   approve the call is part of that window.
 
+- **TUI text stays readable on a mid-grey background with every skin.**
+  A colour that needed lifting for contrast stopped at the skin's own
+  light ink. Crimson's is #FFEDE6, which reaches only 4.36:1 on #707070,
+  so its labels, headings, warnings and errors read below the 4.5:1
+  floor; between #6E6E6E and #747474 every skin did. The lift now goes on
+  to white or black where that ink falls short, so every text ink meets
+  4.5:1 and every glyph meets 3:1 on any grey.
+
 - **The launch has a look of its own, and a card.** The owner asked for new
   logo colours and for more than the logo, like the skills box in Hermes'
   own session panel. A fresh session's launch now draws the logo, the

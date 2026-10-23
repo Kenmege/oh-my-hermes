@@ -9,6 +9,8 @@ Artifacts Map in CLAUDE.md.
 
 from __future__ import annotations
 
+from .search_guidance import SEARCH_OPENING
+
 from ..coding.orchestration_vocabulary import HERMES_HARNESS_DEFAULT_WORDING
 from ..evidence.observed_check_results import (
     FAILURE_ORIGINS,
@@ -64,6 +66,7 @@ from .show_reel_skill import DEFINITION as SHOW_REEL_DEFINITION
 from .geospatial_analysis_skill import DEFINITION as GEOSPATIAL_ANALYSIS_DEFINITION
 from .biomedical_evidence_skill import DEFINITION as BIOMEDICAL_EVIDENCE_DEFINITION
 from .molecular_docking_skill import DEFINITION as MOLECULAR_DOCKING_DEFINITION
+from .ai_job_search_skill import DEFINITION as AI_JOB_SEARCH_DEFINITION
 
 from .catalog_types import (
     ADAPTATION_QUALITY_READ_RULE,
@@ -1737,7 +1740,8 @@ _DEFINITIONS = [
         # Declare ownership before fan-out: readers return entries and only
         # the parent writes the run-private shared ledger at fan-in.
         opening_steps=(
-            "When Hermes' bundled `grounded-citations` skill is available, set the citation ledger up before the first retrieval: choose one run-private file, have the parent reset it once (`sources.py --ledger <path> reset`), and declare parent-only writes in every lane brief. No lane resets it.",
+            "When Hermes' bundled `grounded-citations` skill is available, set the citation ledger up before the first retrieval: choose one run-private file, have the parent reset it once (`sources.py --ledger <path> reset`), and declare parent-only writes in every lane brief. No lane resets it. "
+            + SEARCH_OPENING,
         ),
         do_not_use_when=(
             "The user asks for a full plan-to-PR delivery cycle; use `ultrawork` (its `delivery_boundary` capability) or a planning workflow after research instead.",
@@ -1845,6 +1849,7 @@ _DEFINITIONS = [
         "Use when the answer depends on current external facts that one round of cited web retrieval can settle, with no reference-implementation study and no declared depth budget.",
         category="research",
         phase="web-evidence",
+        opening_steps=(SEARCH_OPENING,),
         hermes_role="retained-cognition",
         delegation_boundary="retained",
         handoff_policy="Run as a Hermes-side web retrieval lane: Hermes fetches and cites, and reports a retrieval gap when the web is unreachable instead of answering from recall.",
@@ -2075,6 +2080,7 @@ _DEFINITIONS = [
         ),
         category="research",
         phase="source-acquisition",
+        opening_steps=(SEARCH_OPENING,),
         # `research-department` ships only on Hermes.
         portable_overrides={
             "use_when": (
@@ -11786,6 +11792,7 @@ _DEFINITIONS.extend(
         GEOSPATIAL_ANALYSIS_DEFINITION,
         BIOMEDICAL_EVIDENCE_DEFINITION,
         MOLECULAR_DOCKING_DEFINITION,
+        AI_JOB_SEARCH_DEFINITION,
         *JEV_DEFINITIONS,
     )
 )

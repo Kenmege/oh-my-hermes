@@ -11,6 +11,9 @@ install.ps1 text eol=lf
 skills/**/*.md text eol=lf
 agent-skills/**/*.md text eol=lf
 # Canonical and projected UTF-8 companion bytes are digest-bound on every OS.
+src/skills/ai_job_search_toolkit/** text eol=lf
+skills/omh-ai-job-search/toolkit/** text eol=lf
+agent-skills/omh-ai-job-search/toolkit/** text eol=lf
 src/skills/show_reel_toolkit/** text eol=lf
 skills/omh-show-reel/toolkit/** text eol=lf
 agent-skills/omh-show-reel/toolkit/** text eol=lf

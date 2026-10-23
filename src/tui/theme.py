@@ -292,12 +292,20 @@ def _mix(start: str, end: str, share: float) -> str:
 
 
 def _lifted(colour: str, toward: str, background: str, minimum: float) -> str:
-    """`colour` moved toward `toward` in twentieths until it reaches `minimum` against `background`."""
-    for step in range(_LIFT_STEPS + 1):
-        candidate = _mix(colour, toward, step / _LIFT_STEPS)
-        if contrast_ratio(candidate, background) >= minimum:
-            return candidate
-    return toward
+    """`colour` moved toward `toward` in twentieths until it reaches `minimum` against `background`, and on from
+    `toward` to pure black or white, whichever reads better there, where `toward` itself falls short.
+
+    `toward` is the palette's ink on a dark background (`banner_text`), not white. On a mid grey just dark enough
+    to take light text, a tinted ink such as crimson's #FFEDE6 reaches only 4.36:1 on #707070, while white reaches
+    4.95:1. The better of black and white always reaches 4.58:1 or more, so no `minimum` up to that is out of reach.
+    """
+    end = BLACK if is_light(background) else WHITE
+    for start, target in ((colour, toward), (toward, end)):
+        for step in range(_LIFT_STEPS + 1):
+            candidate = _mix(start, target, step / _LIFT_STEPS)
+            if contrast_ratio(candidate, background) >= minimum:
+                return candidate
+    return end
 
 
 def _palette(skin: SkinTheme) -> dict[str, str]:

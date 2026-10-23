@@ -149,7 +149,7 @@
 }
 },
 {
-"anchors":"best citation cite diversity documentation fresh gap guidanc internet latest library official onlin practic pric retrieval say scan search still today true upstream",
+"anchors":"best citation cite diversity documentation fresh gap guidanc internet latest library official onlin practic pric retrieval say scan still today true upstream",
 "hangul":"검색 색해 서치 웹서 인터 자료 찾아 최신 출처 터넷",
 "hangul_anchors":"검색 색해 서치 웹서 인터 자료 찾아 최신 출처 터넷",
 "label":"omh-web-research",
@@ -200,7 +200,7 @@
 }
 },
 {
-"anchors":"comparison competitiv competitor feedback landscap market pric say scan search trend vendor",
+"anchors":"comparison competitiv competitor feedback landscap market pric say scan trend vendor",
 "hangul":"고객 근거 데이 드백 서치 이터 자료 조사 추세 피드",
 "hangul_anchors":"고객 근거 데이 드백 서치 이터 자료 조사 추세 피드",
 "label":"omh-research-brief",
@@ -412,7 +412,7 @@
 }
 },
 {
-"anchors":"backlog document option prd prioritiz prioritization quarter requirement rice roadmap scor spec tradeoff",
+"anchors":"backlog option prd prioritiz prioritization quarter requirement rice roadmap scor spec tradeoff",
 "hangul":"구사 기획 드맵 로드 문서 사항 선순 순위 요구 우선 제품 획서",
 "hangul_anchors":"구사 기획 드맵 로드 문서 사항 선순 순위 요구 우선 제품 획서",
 "label":"omh-product-brief",
@@ -478,7 +478,7 @@
 }
 },
 {
-"anchors":"agency attach binary clean convert creat csv deck differenc document docx excel export extract hwp item keynot korean layout material monthly outlin pdf powerpoint ppt pptx proposal pull render sheet spreadsheet tabl word xlsx",
+"anchors":"agency attach binary clean convert creat csv deck differenc docx excel export extract hwp item keynot korean layout material monthly outlin pdf powerpoint ppt pptx proposal pull render sheet spreadsheet tabl word xlsx",
 "hangul":"고서 노트 드시 디에 레드 렌더 리프 문서 보고 부한 분석 브리 비교 생성 셀을 스프 시트 안서 에프 엑셀 워드 월간 자료 제안 처리 첨부 추출 키노 키지 파일 패키 표를 프레 피디 한글",
 "hangul_anchors":"고서 노트 드시 디에 레드 렌더 리프 문서 보고 부한 분석 브리 비교 생성 셀을 스프 시트 안서 에프 엑셀 워드 월간 자료 제안 처리 첨부 추출 키노 키지 파일 패키 표를 프레 피디 한글",
 "label":"omh-materials-package",
@@ -922,7 +922,7 @@
 }
 },
 {
-"anchors":"chatbot dev document evaluat extract field invoic pin reliably",
+"anchors":"chatbot dev evaluat extract field invoic pin reliably",
 "hangul":"가셋 개발 골든 관리 구조 구축 기능 든셋 라인 롬프 리케 버전 스키 애플 이션 이프 조화 출력 케이 키마 파이 평가 프라 프롬 프트 플리 화된",
 "hangul_anchors":"가셋 개발 골든 관리 구조 구축 기능 든셋 라인 롬프 리케 버전 스키 애플 이션 이프 조화 출력 케이 키마 파이 평가 프라 프롬 프트 플리 화된",
 "label":"omh-llm-app-dev",
@@ -1200,7 +1200,7 @@
 }
 },
 {
-"anchors":"edit manag remov search",
+"anchors":"edit manag remov",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-skill",
@@ -1314,7 +1314,7 @@
 }
 },
 {
-"anchors":"bill cheaper configur connect extraction grow reduc scraper search websearch",
+"anchors":"bill cheaper configur connect extraction grow reduc scraper websearch",
 "hangul":"검색 비용 서치 설정 싸게 웹서 이기 줄이",
 "hangul_anchors":"검색 비용 서치 설정 싸게 웹서 이기 줄이",
 "label":"omh-websearch-setup",
@@ -1517,7 +1517,7 @@
 }
 },
 {
-"anchors":"ai assistant codex cursorrul date document edit generat md stop tell wrong",
+"anchors":"ai assistant codex cursorrul date edit generat md stop tell wrong",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-agent-instructions",
@@ -1814,7 +1814,7 @@
 }
 },
 {
-"anchors":"autodock box budget differ energy engin genuin measur mistaken number pdbqt result saved scor search tutorial vina",
+"anchors":"autodock box budget differ energy engin genuin measur mistaken number pdbqt result saved scor tutorial vina",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-molecular-docking",
@@ -1827,6 +1827,22 @@
 "4":"bound prepar run",
 "5":"molecular pose receptor",
 "8":"dock"
+}
+},
+{
+"anchors":"ai based career confirm cv event explanation invitation match opportunity person preferenc preparation requisition saved shortlist submit suitability truthful vacancy",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-ai-job-search",
+"name":"ai-job-search",
+"situation":"Career search to interview",
+"terms":{
+"1":"across assist awar fact find ground hunt profession sourc support verifi",
+"2":"after answer based bound cover cv document evaluat event explanation invitation letter match outcom person post preferenc prepar report requisition resum saved shortlist submit suitability suppli vacancy version",
+"3":"evidenc preparation track truthful",
+"4":"career confirm opportunity",
+"5":"application draft tailor",
+"6":"ai interview job search"
 }
 },
 {
@@ -2031,7 +2047,7 @@
 }
 },
 {
-"anchors":"attach attachment client deck deliver deliverabl document generat mode pdf thread",
+"anchors":"attach attachment client deck deliver deliverabl generat mode pdf thread",
 "hangul":"상태 전달 첨부",
 "hangul_anchors":"상태 전달 첨부",
 "label":"omh-deliverable-package",
@@ -2082,7 +2098,7 @@
 }
 },
 {
-"anchors":"archiv clean cleanup copy delet directory download duplicat filesystem folder move name old organiz pdf remov renam safely search system workspac",
+"anchors":"archiv clean cleanup copy delet directory download duplicat filesystem folder move name old organiz pdf remov renam safely system workspac",
 "hangul":"검색 다운 디렉 렉터 로드 목록 변경 복사 삭제 운로 이동 이름 작업 정리 조작 찾아 터리 파일 폴더",
 "hangul_anchors":"검색 다운 디렉 렉터 로드 목록 변경 복사 삭제 운로 이동 이름 작업 정리 조작 찾아 터리 파일 폴더",
 "label":"omh-files",
@@ -2382,7 +2398,7 @@
 }
 },
 {
-"anchors":"adopt adoption agentskill community creat discovery don extend famous fork github io marketplac plugin popular reinvent scout search top useful worth",
+"anchors":"adopt adoption agentskill community creat discovery don extend famous fork github io marketplac plugin popular reinvent scout top useful worth",
 "hangul":"검색 그인 기존 들기 러그 명한 비교 설치 스카 스킬 없는 용한 우트 유명 유용 찾기 찾아 치할 카우 플러 할지 후보",
 "hangul_anchors":"검색 그인 기존 들기 러그 명한 비교 설치 스카 스킬 없는 용한 우트 유명 유용 찾기 찾아 치할 카우 플러 할지 후보",
 "label":"omh-skill-scout",
