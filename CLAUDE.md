@@ -36,7 +36,12 @@ it. On a Hermes with the shared-gateway attach API it reaches the person's own
 gateway over loopback the way Hermes' Ink TUI does, through Hermes' functions
 and Hermes' `websockets` client; INVARIANT 2's `HERMES_INTERPRETER_SCRIPTS`
 holds it to a closed list of every import and name it may use, measured from
-the script (owner-approved as asyncio + websockets only, loopback).
+the script (owner-approved as asyncio + websockets only, loopback), plus three
+name flows: `connect` only as the dial slot fed the grant's url, no private
+attribute but its own, and `os.environ` written only as the `TERMINAL_CWD`
+set-and-restore and the launch-policy removal. It is not a sandbox: an allowed
+Hermes function called with other arguments, and where the grant's url points,
+are beyond it.
 
 ## Build & Test
 

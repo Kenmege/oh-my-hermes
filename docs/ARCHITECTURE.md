@@ -2857,12 +2857,17 @@ the attributes it uses, the `asyncio` event-loop names, Hermes' functions named
 one by one, and `websockets.asyncio.client.connect`), the names it may read
 with `getattr` (three receipt fields), and a list of attribute names it may not
 use (connection, resolver and subprocess factories, a socket's verbs, dunder
-names). That blocks the realistic drift of a later edit that calls another
-Hermes, network or subprocess helper. It is not a sandbox: a deliberate
-private-attribute trick (`loop._sock_connect`, `type(x)()`) or an allowed name
-called with other arguments is not caught, and it does not check where the
-WebSocket goes. It fails on an entry the script no longer uses and when any
-module in `src/` imports it.
+names). It also follows three name flows: `connect` goes only into the
+`AttachApi(dial=...)` slot, and `api.dial` is called only with the url
+`api.grant()` returned, traced by name through the call that hands it on; no
+`_`-prefixed attribute of anything but `self` is read, and `type` is not used;
+`os.environ` is read and copied, but written only as the `TERMINAL_CWD`
+set-and-restore and emptied only of `LAUNCH_POLICY_ENV`. That blocks the
+realistic drift of a later edit that calls another Hermes, network or
+subprocess helper. It is not a sandbox: an allowed Hermes function called with
+other arguments is not caught, and it does not check where the grant's url
+points. It fails on an entry the script no longer uses and when any module in
+`src/` imports it.
 
 Declared and not enforced, each naming what must land first: **workspace** —
 `workspace_binding_guard/v1` now refuses a second workspace-bound handoff on a
