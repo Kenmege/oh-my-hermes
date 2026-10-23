@@ -10,7 +10,7 @@ import argparse
 import io
 import json
 import unittest
-from contextlib import redirect_stdout
+from contextlib import ExitStack, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -471,6 +471,115 @@ class MultiChoicePromptTests(unittest.TestCase):
         self.assertEqual(chosen, ["openrouter"])
         self.assertIn("cannot be combined", out.getvalue())
 
+    LONG_OPTIONS = [
+        {"choice": str(index), "value": f"row{index}", "label": f"row {index}", "description": ""} for index in range(1, 19)
+    ]
+
+    def _keys(self, keys: list[str], selected: list[str], options=None) -> list[str]:
+        stream = iter(keys)
+        out = io.StringIO()
+        with patch.object(setup_module, "_keyboard_menu_available", return_value=True), patch.object(
+            setup_module, "_read_tui_key", side_effect=lambda: next(stream)
+        ), redirect_stdout(out):
+            chosen = setup_module._ask_multi_choice(
+                "Which?", ["pick some"], options or self.LONG_OPTIONS, selected=selected, use_color=False, language="en"
+            )
+        self.rendered = out.getvalue()
+        # Every key went to this menu: nothing is left over for the next prompt.
+        with self.assertRaises(StopIteration):
+            next(stream)
+        return chosen
+
+    def _single_keys(self, keys: list[str], options=None, default_choice: str = "1") -> str:
+        stream = iter(keys)
+        out = io.StringIO()
+        with patch.object(setup_module, "_keyboard_menu_available", return_value=True), patch.object(
+            setup_module, "_read_tui_key", side_effect=lambda: next(stream)
+        ), redirect_stdout(out):
+            chosen = setup_module._ask_single_choice(
+                "Which one?",
+                ["pick one"],
+                options or self.LONG_OPTIONS,
+                default_choice=default_choice,
+                use_color=False,
+                language="en",
+            )
+        self.rendered = out.getvalue()
+        with self.assertRaises(StopIteration):
+            next(stream)
+        return chosen
+
+    def test_keyboard_digits_build_a_two_digit_row_number(self) -> None:
+        # Before: `1` unticked row 1 and `7` ticked row 7.
+        self.assertEqual(self._keys(["1", "7", "\r"], ["row1"]), ["row1", "row17"])
+        self.assertEqual(self._keys(["1", "0", "\r"], []), ["row10"])
+
+    def test_keyboard_digit_nothing_can_extend_toggles_at_once(self) -> None:
+        # No row 2x exists, so `2` is complete; `9`, `3` are two rows.
+        self.assertEqual(self._keys(["2", "\r"], []), ["row2"])
+        self.assertEqual(self._keys(["9", "3", "\r"], []), ["row3", "row9"])
+        # On a short list every digit is complete, exactly as before.
+        self.assertEqual(self._keys(["1", "3", "\r"], ["og"], options=self.OPTIONS), ["openrouter"])
+
+    def test_keyboard_pending_digit_is_toggled_by_space_or_enter_once(self) -> None:
+        # `1` waits for a second digit with the cursor on row 1.
+        self.assertEqual(self._keys(["1", "\r"], []), ["row1"])
+        self.assertEqual(self._keys(["1", " ", "\r"], []), ["row1"])
+        self.assertEqual(self._keys(["1", "\r"], ["row1"]), [])
+        # An arrow abandons it: nothing toggles, the cursor moves on from row 1.
+        self.assertEqual(self._keys(["1", "\x1b[B", " ", "\r"], []), ["row2"])
+        # A digit that cannot extend it starts a new number instead, the same
+        # rule as the single-choice menu: only Space or Enter acts on a
+        # pending row, and a digit always builds a number.
+        self.assertEqual(self._keys(["1", "9", "\r"], []), ["row9"])
+        self.assertEqual(self._keys(["1", "9", "\r"], ["row1"]), ["row1", "row9"])
+
+    def test_a_pending_digit_is_shown_under_the_list(self) -> None:
+        """`1` on a long list ticks nothing yet, so the screen has to say why.
+
+        `1` `1` is row 11 -- the note after the first `1` says a second digit
+        builds the number, so row 11 is not ticked silently.
+        """
+        note = tr("en", "menu_pending_row_multi", row="1")
+        self.assertIn("Row 1_", note)
+        self.assertEqual(self._keys(["1", "1", "\r"], []), ["row11"])
+        self.assertIn(note, self.rendered)
+        self.assertIn("[x] row 11", self.rendered)
+        # The note goes away with the pending digit: the last frame drawn
+        # after the second `1` has no note in it.
+        self.assertNotIn(note, self.rendered.rsplit("\033[J", 1)[-1])
+        # A list of up to nine rows never shows it.
+        self._keys(["1", "\r"], [], options=self.OPTIONS)
+        self.assertNotIn("_ --", self.rendered)
+
+    def test_single_choice_digits_build_a_two_digit_row_number(self) -> None:
+        # Before: `1` returned row 1 at once and the `2` was left for the
+        # next prompt to read.
+        self.assertEqual(self._single_keys(["1", "2"]), "row12")
+        self.assertIn(tr("en", "menu_pending_row", row="1"), self.rendered)
+        # A number nothing can extend still answers at once.
+        self.assertEqual(self._single_keys(["5"]), "row5")
+        # A pending row is chosen by Space or Enter, with the cursor on it.
+        self.assertEqual(self._single_keys(["1", "\r"], default_choice="3"), "row1")
+        self.assertEqual(self._single_keys(["1", " "], default_choice="3"), "row1")
+        # An arrow abandons it and moves on from that row.
+        self.assertEqual(self._single_keys(["1", "\x1b[B", "\r"]), "row2")
+        # A digit no row continues starts a new number; `0` alone is nothing.
+        self.assertEqual(self._single_keys(["1", "9"]), "row9")
+        self.assertEqual(self._single_keys(["0", "4"]), "row4")
+
+    def test_single_choice_on_a_short_list_is_unchanged(self) -> None:
+        self.assertEqual(self._single_keys(["3"], options=self.OPTIONS), "openrouter")
+        self.assertEqual(self._single_keys(["9", "2"], options=self.OPTIONS), "zai")
+        self.assertNotIn("_ --", self.rendered)
+
+    def test_every_language_carries_the_pending_row_notes(self) -> None:
+        for code in LANGUAGE_CODES:
+            for key in ("menu_pending_row", "menu_pending_row_multi"):
+                with self.subTest(language=code, key=key):
+                    self.assertIn(key, MESSAGES[code])
+                    self.assertIn("17_", tr(code, key, row="17"))
+
     def test_values_are_accepted_and_an_unknown_token_re_asks(self) -> None:
         self.assertEqual(self._typed(["zai"], []), ["zai"])
         self.assertEqual(self._typed(["9", "1"], ["zai"]), ["og"])
@@ -503,6 +612,9 @@ class MultiChoicePromptTests(unittest.TestCase):
             "provider_opengateway_desc",
             "provider_skip_label",
             "provider_skip_desc",
+            "provider_other_label",
+            "provider_other_desc",
+            "provider_add_prompt",
             "provider_entitlements_skipped",
             "exclusive_selection",
         )
@@ -748,14 +860,14 @@ class SetupInterviewTests(unittest.TestCase):
             with patch.object(
                 setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
             ), patch.object(setup_module, "_ask_yes_no", return_value=True), patch.object(
-                setup_module, "_ask_multi_choice", return_value=["og"]
+                setup_module, "_ask_multi_choice", return_value=["og", setup_module._PROVIDER_OTHER_CHOICE]
             ), patch.object(setup_module, "_ask_single_choice", return_value="openrouter"), patch.object(
                 setup_module, "_ask", side_effect=lambda *a, **k: next(extra)
             ), patch.object(setup_module, "_use_color", return_value=False):
                 setup_module._ask_provider_entitlements(args, paths, "en")
             document = json.loads(provider_entitlements_path(paths.omh_home).read_text(encoding="utf-8"))
             # A provider outside the family vocabulary is still reachable by
-            # name after the list, and still gets its kind menu. The YAML merge
+            # name once "other provider" is ticked, and still gets its kind menu. The YAML merge
             # key `<<` is never offered; the bad id and the duplicate are skipped.
             self.assertEqual(document["providers"], {"og": "gateway", "work-relay": "openrouter"})
             parsed, status = load_provider_entitlements(paths.omh_home)
@@ -774,7 +886,9 @@ class SetupInterviewTests(unittest.TestCase):
             out = io.StringIO()
             with patch.object(
                 setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
-            ), patch.object(setup_module, "_ask_multi_choice", return_value=["og"]), patch.object(
+            ), patch.object(
+                setup_module, "_ask_multi_choice", return_value=["og", setup_module._PROVIDER_OTHER_CHOICE]
+            ), patch.object(
                 setup_module, "_ask", side_effect=lambda *a, **k: next(extra)
             ), patch.object(setup_module, "_use_color", return_value=False), redirect_stdout(out):
                 setup_module._ask_provider_entitlements(args, paths, "en")
@@ -796,9 +910,9 @@ class SetupInterviewTests(unittest.TestCase):
             out = io.StringIO()
             with patch.object(
                 setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
-            ), patch.object(setup_module, "_ask_multi_choice", return_value=["og"]), patch.object(
-                setup_module, "_use_color", return_value=False
-            ), patch.object(setup_module.sys, "stdin", io.StringIO("\x1b[B\x1b[A\x1b[B\x1b[\n")), redirect_stdout(out):
+            ), patch.object(
+                setup_module, "_ask_multi_choice", return_value=["og", setup_module._PROVIDER_OTHER_CHOICE]
+            ), patch.object(setup_module, "_use_color", return_value=False), patch.object(setup_module.sys, "stdin", io.StringIO("\x1b[B\x1b[A\x1b[B\x1b[\n")), redirect_stdout(out):
                 setup_module._ask_provider_entitlements(args, paths, "en")
             printed = out.getvalue()
             self.assertNotIn("skipped.", printed)
@@ -925,6 +1039,224 @@ class SetupInterviewTests(unittest.TestCase):
 
         self.assertFalse(is_provider_id_token(setup_module._PROVIDER_SKIP_CHOICE))
 
+    def test_the_other_row_sits_before_skip_and_is_never_pre_ticked_or_a_kind(self) -> None:
+        # A pre-ticked "other" would bring back the second prompt it makes optional.
+        options, preselected, kinds = setup_module._provider_entitlement_options(
+            [("og", "gateway", "config")], {"og": "gateway"}, "en"
+        )
+        values = [option["value"] for option in options]
+        self.assertEqual(values[-2:], [setup_module._PROVIDER_OTHER_CHOICE, setup_module._PROVIDER_SKIP_CHOICE])
+        self.assertEqual(options[-2]["label"], tr("en", "provider_other_label"))
+        self.assertNotIn(setup_module._PROVIDER_OTHER_CHOICE, preselected)
+        self.assertNotIn(setup_module._PROVIDER_OTHER_CHOICE, kinds)
+        from omh.plugin_bundle.omh.hermes_delegation import is_provider_id_token
+
+        # Not a provider id, so no record can name it: a document that did is
+        # refused by the reader and offers nothing to pre-tick.
+        self.assertFalse(is_provider_id_token(setup_module._PROVIDER_OTHER_CHOICE))
+        with TemporaryDirectory() as tmp:
+            _write(
+                provider_entitlements_path(Path(tmp)),
+                {
+                    "schema_version": PROVIDER_ENTITLEMENTS_SCHEMA_VERSION,
+                    "providers": {setup_module._PROVIDER_OTHER_CHOICE: "gateway"},
+                    "subscription_clis": [],
+                },
+            )
+            parsed, status = load_provider_entitlements(Path(tmp))
+        self.assertIsNone(parsed)
+        self.assertTrue(status.startswith("invalid:"), status)
+
+    def test_enter_on_the_list_without_other_asks_nothing_more(self) -> None:
+        """The owner report: Enter on the list looked done while a prompt waited.
+
+        With "other provider" left unticked the list is the whole step -- the
+        add-by-name prompt is never put on screen.
+        """
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = self._paths(root)
+            self._config(paths, "providers:\n  og:\n    base_url: x\n")
+            out = io.StringIO()
+            with patch.object(
+                setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
+            ), patch.object(setup_module, "_ask_multi_choice", return_value=["og"]), patch.object(
+                # "" so a regression that asks anyway ends the loop and fails
+                # the assertion below instead of hanging.
+                setup_module, "_ask", return_value=""
+            ) as free_form, patch.object(setup_module, "_ask_single_choice") as kind_menu, patch.object(
+                setup_module, "_use_color", return_value=False
+            ), redirect_stdout(out):
+                setup_module._ask_provider_entitlements(argparse.Namespace(), paths, "en")
+            free_form.assert_not_called()
+            kind_menu.assert_not_called()
+            self.assertNotIn(tr("en", "provider_add_prompt"), out.getvalue())
+            document = json.loads(provider_entitlements_path(paths.omh_home).read_text(encoding="utf-8"))
+            self.assertEqual(document["providers"], {"og": "gateway"})
+
+    def test_ticking_other_runs_the_add_loop_and_records_the_kind(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = self._paths(root)
+            self._config(paths, "providers:\n  og:\n    base_url: x\n")
+            typed = iter(["work-relay", ""])
+            prompts: list[str] = []
+
+            def ask(prompt, **_kwargs):
+                prompts.append(prompt)
+                return next(typed)
+
+            with patch.object(
+                setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
+            ), patch.object(
+                setup_module, "_ask_multi_choice", return_value=["og", setup_module._PROVIDER_OTHER_CHOICE]
+            ), patch.object(setup_module, "_ask", side_effect=ask), patch.object(
+                setup_module, "_ask_single_choice", return_value="openrouter"
+            ) as kind_menu, patch.object(setup_module, "_use_color", return_value=False), redirect_stdout(io.StringIO()):
+                setup_module._ask_provider_entitlements(argparse.Namespace(), paths, "en")
+            # The loop runs once per typed name and ends on the empty answer.
+            self.assertEqual(prompts, [tr("en", "provider_add_prompt")] * 2)
+            kind_menu.assert_called_once()
+            raw = provider_entitlements_path(paths.omh_home).read_text(encoding="utf-8")
+            document = json.loads(raw)
+            self.assertEqual(document["providers"], {"og": "gateway", "work-relay": "openrouter"})
+            # The sentinel picked the loop; it is never a provider.
+            self.assertNotIn(setup_module._PROVIDER_OTHER_CHOICE, raw)
+            _parsed, status = load_provider_entitlements(paths.omh_home)
+            self.assertEqual(status, "applied")
+
+    def _drive_real_menu(self, paths, *, keys: list[str] | None, typed: str) -> dict:
+        """The real step and the real menu: the typed fallback, or the keyboard menu when `keys` is given."""
+        stack = [
+            patch.object(
+                setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
+            ),
+            patch.object(setup_module, "_keyboard_menu_available", return_value=keys is not None),
+            patch.object(setup_module, "_use_color", return_value=False),
+            patch.object(setup_module.sys, "stdin", io.StringIO(typed)),
+        ]
+        if keys is not None:
+            key_stream = iter(keys)
+            stack.append(patch.object(setup_module, "_read_tui_key", side_effect=lambda: next(key_stream)))
+        out = io.StringIO()
+        with ExitStack() as entered:
+            for manager in stack:
+                entered.enter_context(manager)
+            entered.enter_context(redirect_stdout(out))
+            setup_module._ask_provider_entitlements(argparse.Namespace(), paths, "en")
+        if keys is not None:
+            # Every key went to a menu: nothing is left over for the name prompt.
+            with self.assertRaises(StopIteration):
+                next(key_stream)
+        raw = provider_entitlements_path(paths.omh_home).read_text(encoding="utf-8")
+        self.assertNotIn(setup_module._PROVIDER_OTHER_CHOICE, raw)
+        return json.loads(raw)
+
+    def _other_row_number(self, paths) -> str:
+        options, _preselected, _kinds = setup_module._provider_entitlement_options(
+            setup_module._provider_candidates(paths), {}, "en"
+        )
+        number = next(option["choice"] for option in options if option["value"] == setup_module._PROVIDER_OTHER_CHOICE)
+        # The case that matters: a row number with two digits.
+        self.assertGreaterEqual(int(number), 10)
+        return number
+
+    def test_typing_only_the_other_row_number_keeps_the_found_rows(self) -> None:
+        """The typed menu replaces the ticked set, but not for the "other" row.
+
+        Typing just that row's number is how a person "ticks Other" in the
+        typed menu. A plain replace would untick every found row and record
+        them all as excluded, so routing would stop counting providers the
+        operator holds.
+        """
+        with TemporaryDirectory() as tmp, patch.dict("os.environ", {}, clear=True):
+            paths = self._paths(Path(tmp))
+            self._config(paths, "providers:\n  og:\n    base_url: x\n  zai:\n    base_url: y\n")
+            other = self._other_row_number(paths)
+            document = self._drive_real_menu(paths, keys=None, typed=f"{other}\nwork-relay\n1\n\n")
+        self.assertEqual(document["providers"], {"og": "gateway", "work-relay": "gateway", "zai": "zai"})
+        self.assertNotIn("excluded_providers", document)
+
+    def test_typing_other_with_nothing_named_changes_nothing_else(self) -> None:
+        with TemporaryDirectory() as tmp, patch.dict("os.environ", {}, clear=True):
+            paths = self._paths(Path(tmp))
+            self._config(paths, "providers:\n  og:\n    base_url: x\n")
+            other = self._other_row_number(paths)
+            document = self._drive_real_menu(paths, keys=None, typed=f"{other}\n\n")
+        self.assertEqual(document["providers"], {"og": "gateway"})
+        self.assertNotIn("excluded_providers", document)
+
+    def test_typed_numbers_beside_other_still_replace_the_ticked_set(self) -> None:
+        # Only an answer naming nothing but "other" merges. Naming a row too
+        # keeps the replace semantics, so `zai` is cleared here as asked.
+        with TemporaryDirectory() as tmp, patch.dict("os.environ", {}, clear=True):
+            paths = self._paths(Path(tmp))
+            self._config(paths, "providers:\n  og:\n    base_url: x\n  zai:\n    base_url: y\n")
+            other = self._other_row_number(paths)
+            document = self._drive_real_menu(paths, keys=None, typed=f"1,{other}\n\n")
+        self.assertEqual(document["providers"], {"og": "gateway"})
+        self.assertEqual(document["excluded_providers"], ["zai"])
+
+    def test_typing_the_other_row_number_on_the_keyboard_menu_ticks_it(self) -> None:
+        """Keys arrive one at a time; `1` then `7` must reach row 17, not rows 1 and 7."""
+        with TemporaryDirectory() as tmp, patch.dict("os.environ", {}, clear=True):
+            paths = self._paths(Path(tmp))
+            self._config(paths, "providers:\n  og:\n    base_url: x\n  zai:\n    base_url: y\n")
+            other = self._other_row_number(paths)
+            # The kind menu after the name is a keyboard menu too: Enter takes its default, gateway.
+            document = self._drive_real_menu(paths, keys=[*other, "\r", "\r"], typed="work-relay\n\n")
+        self.assertEqual(document["providers"], {"og": "gateway", "work-relay": "gateway", "zai": "zai"})
+        self.assertNotIn("excluded_providers", document)
+
+    def test_the_kind_menu_after_a_typed_name_takes_a_two_digit_row(self) -> None:
+        """The kind menu has more than nine rows; `1` `2` is row 12.
+
+        Before, `1` returned row 1 at once and the `2` stayed in the input
+        queue. The next "Provider name" prompt read it, and Enter recorded a
+        provider named `2`.
+        """
+        from omh.plugin_bundle.omh.hermes_delegation import PROVIDER_KIND_GATEWAY, PROVIDER_KIND_UNKNOWN
+
+        kinds = (PROVIDER_KIND_GATEWAY, *PROVIDER_FAMILY_VOCABULARY, PROVIDER_KIND_UNKNOWN)
+        self.assertGreaterEqual(len(kinds), 12)
+        with TemporaryDirectory() as tmp, patch.dict("os.environ", {}, clear=True):
+            paths = self._paths(Path(tmp))
+            self._config(paths, "providers:\n  og:\n    base_url: x\n")
+            other = self._other_row_number(paths)
+            document = self._drive_real_menu(paths, keys=[*other, "\r", "1", "2"], typed="work-relay\n\n")
+        self.assertEqual(document["providers"], {"og": "gateway", "work-relay": kinds[11]})
+        self.assertNotIn("2", document["providers"])
+
+    def test_other_beside_skip_is_refused_like_any_row_beside_skip(self) -> None:
+        """Skip stays exclusive: "other" and "leave everything" contradict each other.
+
+        Driven through the real typed-fallback list with the real rows, so the
+        refusal is the list's own rule, not a fake's.
+        """
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = self._paths(root)
+            self._config(paths, "providers:\n  og:\n    base_url: x\n")
+            options, _preselected, _kinds = setup_module._provider_entitlement_options(
+                [("og", "gateway", "config")], {}, "en"
+            )
+            other, skip = options[-2]["choice"], options[-1]["choice"]
+            typed = iter([f"{other},{skip}", skip])
+            out = io.StringIO()
+            with patch.object(
+                setup_module, "_detect_external_cli_profiles", return_value={"claude-code": {"binary_present": False}, "codex": {"binary_present": False}}
+            ), patch.object(setup_module, "_keyboard_menu_available", return_value=False), patch.object(
+                setup_module, "_ask", side_effect=lambda *a, **k: next(typed)
+            ), patch.object(setup_module, "_use_color", return_value=False), redirect_stdout(out):
+                args = argparse.Namespace()
+                setup_module._ask_provider_entitlements(args, paths, "en")
+            self.assertIn(tr("en", "exclusive_selection", label=tr("en", "provider_skip_label")), out.getvalue())
+            # The second answer, skip alone, is honoured: nothing written, and
+            # no add prompt was reached.
+            self.assertIsNone(args._provider_entitlements)
+            self.assertFalse(provider_entitlements_path(paths.omh_home).exists())
+            self.assertNotIn(tr("en", "provider_add_prompt"), out.getvalue())
+
     def test_opengateway_is_always_offered_and_never_duplicated(self) -> None:
         """OMH's own gateway is discoverable before its key is configured.
 
@@ -936,9 +1268,11 @@ class SetupInterviewTests(unittest.TestCase):
         self.assertNotIn("opengateway", PROVIDER_FAMILY_VOCABULARY)
         options, preselected, kinds = setup_module._provider_entitlement_options([], {}, "en")
         values = [option["value"] for option in options]
-        # Last real row, immediately before skip, and not pre-ticked when the
-        # env key is absent.
-        self.assertEqual(values[-2:], ["opengateway", setup_module._PROVIDER_SKIP_CHOICE])
+        # Last real row, immediately before "other" and skip, and not
+        # pre-ticked when the env key is absent.
+        self.assertEqual(
+            values[-3:], ["opengateway", setup_module._PROVIDER_OTHER_CHOICE, setup_module._PROVIDER_SKIP_CHOICE]
+        )
         self.assertEqual(kinds["opengateway"], "gateway")
         self.assertEqual(preselected, [])
         # Detected through its env-key name it becomes a normal pre-ticked

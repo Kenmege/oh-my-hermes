@@ -1757,8 +1757,17 @@ unless nothing is linked. It is exclusive — ticked beside a provider the
 prompt asks again rather than guessing which half you meant — and it is
 never pre-ticked.
 
-After the list you can type any further provider id (that one is asked for
-its kind, since OMH knows nothing about it), and, when the Claude Code CLI is
+The row just above it is **Other provider — type its name**. Tick it to add a
+provider id the list does not show: after Enter you type each id (each is
+asked for its kind, since OMH knows nothing about it) and an empty line ends
+the list. Left unticked, Enter on the list ends the step without that
+prompt. Like skip it is never pre-ticked, and ticked beside skip the prompt
+asks again. Picking it never unticks another row. In the typed menu, where a
+typed answer otherwise replaces the ticked rows, an answer naming only this
+row is added to them. In the arrow-key menus, including the kind menu that
+follows a typed name, a two-digit row number is typed as its two digits. A
+note under the menu shows a first digit that is still waiting, and Space or
+Enter picks that row instead. Then, when the Claude Code CLI is
 on PATH, you are asked whether you have a Claude Code subscription. The
 answers are recorded in `~/.omh/routing/providers.json`
 (`provider_entitlements/v1`):
