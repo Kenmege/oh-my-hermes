@@ -1717,6 +1717,37 @@ and the CLI a task is one turn, so a route lasts one turn. On a gateway
 platform (Slack, Discord, Telegram, Feishu, the API server) the task id is
 the session id, so a route lasts the session.
 
+A route is also the route of the conversation that set it. The three keys
+are shared by every session on the profile, so `~/.omh/routing/conversation-routes.json`
+(`delegation_conversation_routes/v1`) records which conversation asked for
+which route, and just before Hermes reads the keys for a `delegate_task`,
+OMH's `pre_tool_call` puts that conversation's own route back if another
+session replaced it. A delegate child that dispatches its own workers (with
+`delegation.max_spawn_depth` above 1) gets the route of the conversation it
+was delegated from, found through the `_delegate_from` marker Hermes writes
+on the child's `state.db` row. A conversation that set no route in this task
+gets the profile's default instead of another session's live route. Another
+session's `set`, `clear`, `fallback` or turn-end restore therefore changes
+which route the keys hold between dispatches, but not which route a dispatch
+runs on. A recorded route ends with its task, at the turn end or at the
+session-start restore that takes it back, and one older than six hours is
+ignored. When OMH cannot put the right route in place (another writer holds
+the lock for two seconds, or the write is refused), the `delegate_task` call
+is refused with `route_overwritten_by_other_session`, `route_not_applied` or
+`other_session_route_live`, naming both sessions, and no child starts. Two
+cases are left in place as before: a route whose writer recorded no
+conversation entry, such as one written by an older OMH that is still
+running, and any route when the dispatching session's own `state.db` row
+cannot be read, since that session might be the route's child.
+
+One window remains: Hermes reads the keys after the hook returns, so a write
+by another session in that interval still wins. When another check asks a
+person to approve the `delegate_task` first, the route is written before
+they answer, so the wait for the answer is part of that interval. A released
+Hermes offers no per-call route that would close it. With
+`HERMES_IGNORE_USER_CONFIG=1`, Hermes ignores the `config.yaml` OMH writes,
+so no route applies at all.
+
 Every one of those is gated on the same recorded value: if the keys no
 longer hold what OMH wrote, someone else set them, and OMH reports that and
 changes nothing. The session-start path additionally asks the writer's own

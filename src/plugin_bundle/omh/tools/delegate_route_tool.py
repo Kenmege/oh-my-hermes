@@ -10,6 +10,7 @@ from ..delegation_route_restore import (
     load_route_restore_record,
     newest_written_provenance,
     provenance_route_keys,
+    release_conversation_route,
     restore_delegation_baseline,
     write_route_with_baseline,
 )
@@ -105,6 +106,8 @@ def _clear_to_baseline(
     *,
     trigger: str,
     unrecorded_clear: str,
+    task_id: str,
+    conversation: set[str],
     expected_previous: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Put the recorded baseline back, or remove the keys when none was recorded.
@@ -120,18 +123,34 @@ def _clear_to_baseline(
     only remove a value OMH can prove it wrote -- otherwise a single failed
     lane deleted the model the person had pinned.
 
-    Deliberately NOT scoped to the calling session or task, unlike the two
-    hooks. Both callers here are asking for the route to come off now, and
-    the recorded writer exists to stop an AUTOMATIC restore acting on
-    someone else's route, not to refuse an explicit instruction. The value
-    check still holds, so a key a person set by hand is safe either way.
+    The KEYS are deliberately NOT scoped to the calling session or task,
+    unlike the two hooks. Both callers here are asking for the route to come
+    off now, and the recorded writer exists to stop an AUTOMATIC restore
+    acting on someone else's route, not to refuse an explicit instruction.
+    The value check still holds, so a key a person set by hand is safe
+    either way. What IS scoped is the conversation route: only the caller's
+    own is released, so another session whose route this took out of the
+    keys gets it back at its own next dispatch (#2251).
     """
-    return restore_delegation_baseline(
+    result = restore_delegation_baseline(
         hermes_home,
         omh_home=omh_home,
         trigger=trigger,
         unrecorded_clear=unrecorded_clear,
         expected_previous=expected_previous,
+    )
+    result["conversation_route"] = release_conversation_route(
+        omh_home, task_id=task_id, conversation=conversation
+    )
+    return result
+
+
+def _conversation(hermes_home: Any, session_id: str) -> set[str]:
+    """The host's session id plus its compression continuations, or none."""
+    return (
+        {session_id} | conversation_session_ids(hermes_home, session_id)
+        if session_id
+        else set()
     )
 
 
@@ -175,11 +194,7 @@ def _fallback_position(
     `provenance_route_keys`, whose three keys the leftover check compares
     with the file.
     """
-    conversation = (
-        {session_id} | conversation_session_ids(hermes_home, session_id)
-        if session_id
-        else set()
-    )
+    conversation = _conversation(hermes_home, session_id)
     newest = newest_written_provenance(omh_home, session_ids=conversation)
     recovered = provenance_route_keys(newest)
     record = load_route_restore_record(omh_home)
@@ -356,7 +371,12 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
 
     if action == "clear":
         result = _clear_to_baseline(
-            hermes_home, omh_home, trigger="clear", unrecorded_clear="always"
+            hermes_home,
+            omh_home,
+            trigger="clear",
+            unrecorded_clear="always",
+            task_id=task_id,
+            conversation=_conversation(hermes_home, session_id),
         )
         if result.get("status") in ("cleared", "restored"):
             # A cleared route must supersede the head/fallback record that
@@ -504,6 +524,8 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
                 omh_home,
                 trigger="chain_exhausted",
                 unrecorded_clear="if_omh_wrote",
+                task_id=task_id,
+                conversation=_conversation(hermes_home, session_id),
                 expected_previous=route,
             )
             if result.get("status") in ("cleared", "restored"):

@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A delegation route belongs to the conversation that set it (#2251).**
+  The three `delegation.*` keys are shared by every session on a profile.
+  When session A ran `omh_delegate_route set` and session B set its own route
+  before A's `delegate_task`, A's child ran on B's model and nothing reported
+  it. B's turn-end restore could also take the route away from A. Each route
+  is now also recorded per conversation in
+  `~/.omh/routing/conversation-routes.json`. Just before Hermes reads the
+  keys for a `delegate_task`, `pre_tool_call` puts the dispatching
+  conversation's own route back. A delegate child's workers get the route of
+  the conversation the child was delegated from, as they did before. A
+  conversation that set no route gets the profile's default, not another
+  session's live route. If OMH cannot do that, the call is refused with a
+  typed status naming both sessions, and no child starts. A dispatch on a
+  session's own route still writes nothing. A small window remains, because
+  Hermes reads the keys after the hook returns. A wait for a person to
+  approve the call is part of that window.
+
 - **TUI text stays readable on a mid-grey background with every skin.**
   A colour that needed lifting for contrast stopped at the skin's own
   light ink. Crimson's is #FFEDE6, which reaches only 4.36:1 on #707070,

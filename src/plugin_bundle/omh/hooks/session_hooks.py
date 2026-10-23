@@ -149,12 +149,19 @@ def on_session_end(**kwargs) -> dict[str, object] | None:
     # session id mid-turn while the task id stays put (`_writer_matches`).
     # In TUI and CLI a task is one turn; on every gateway platform the task
     # id is the session id, so there the scope is the session.
+    writer_session = host_session_id(kwargs)
+    writer_task = str(kwargs.get("task_id", "") or "").strip()
     restore = _restore_route(
         hermes_home,
         home,
         trigger="turn_end",
-        writer_session=host_session_id(kwargs),
-        writer_task=str(kwargs.get("task_id", "") or "").strip(),
+        writer_session=writer_session,
+        writer_task=writer_task,
+        # This conversation's own route ends with its task too, and only its
+        # own: another session's route stays recorded for that session's next
+        # dispatch, whatever this restore did to the keys (#2251). Released
+        # inside the restore's lock, so the two cannot come apart.
+        release_writer=writer_session,
     )
     runtime_dir = home / "runtime"
     if not runtime_dir.exists():
@@ -196,6 +203,7 @@ def _restore_route(
     writer_session: str | None = None,
     writer_task: str | None = None,
     orphaned: bool = False,
+    release_writer: str | None = None,
 ) -> dict[str, object]:
     """Call the restore and never let its failure reach the host as a raise.
 
@@ -213,6 +221,7 @@ def _restore_route(
             require_writer_session=writer_session,
             require_writer_task=writer_task,
             require_writer_not_live=orphaned,
+            release_writer=release_writer,
         )
     except (OSError, ValueError, TypeError) as exc:
         return {
