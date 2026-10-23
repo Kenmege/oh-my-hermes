@@ -24,6 +24,7 @@ from omh.plugin_bundle.omh.dag_ulw_cues import (  # noqa: E402
     dag_ulw_control,
     declines_dag_ulw,
     dispatches_dag_ulw,
+    refuses_dag_ulw,
     invokes_dag_ulw,
     work_over_many_targets,
 )
@@ -650,6 +651,34 @@ class RouterTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertTrue(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
+
+    def test_the_router_size_cue_follows_the_cue_readers_refusals(self) -> None:
+        # The router's size-cue path dispatches dag-ulw only where the cue reader would start: a held, deferred or
+        # asking request is asked about on the router and never started by the hint (#2243 review).
+        for message in ("refactor the logging in all modules in parallel, then tell me which ones you'd skip",
+                        "refactor the logging in all modules in parallel, then tell me which ones to keep",
+                        "rewrite the error handling across all services in parallel, then tell me which ones we should keep",
+                        "refactor the logging in all modules in parallel, and notify me when it's ready to merge",
+                        "refactor the logging in all modules in parallel, then send me your misgivings",
+                        "refactor the logging in all modules in parallel next week",
+                        "refactor the logging in all modules in parallel, next week",
+                        "모든 모듈의 로깅을 병렬로 리팩터링해줘 다음 주에"):
+            with self.subTest(message=message):
+                self.assertTrue(refuses_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        # A fault said in the past is no past when the message ends asking to fix it; a report, a question or a hold
+        # after the fault keeps it held, and another past stays one.
+        self.assertFalse(refuses_dag_ulw("api 모듈과 ui 모듈 테스트가 깨졌어, 동시에 고쳐줘"))
+        self.assertTrue(self._dag_ulw_starts("api 모듈과 ui 모듈 테스트가 깨졌어, 동시에 고쳐줘")[0])
+        for message in ("api 모듈과 ui 모듈 테스트가 깨졌어", "api 모듈과 ui 모듈 테스트가 깨졌어, 왜 그래?",
+                        "api 모듈과 ui 모듈 테스트가 깨졌어, 아직 고치지 마", "모든 서비스 배포했어, 이제 다 업데이트해줘"):
+            with self.subTest(message=message):
+                self.assertTrue(refuses_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        # With nothing refused, the size cue still dispatches.
+        message = "refactor the logging in all modules in parallel, then tell me which ones failed"
+        self.assertFalse(refuses_dag_ulw(message))
+        self.assertTrue(self._dag_ulw_starts(message)[0])
 
     def test_a_missing_skill_catalog_is_not_kept(self) -> None:
         # With no sidecar the catalog names are unknown, and that is not kept: once the sidecar answers, a request

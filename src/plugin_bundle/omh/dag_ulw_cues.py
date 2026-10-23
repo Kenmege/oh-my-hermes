@@ -1024,8 +1024,12 @@ _RESULT_NOUN: Final = (
 _DELIBERATION: Final = (
     r"(?:reasons?|objections?|concerns?|thoughts?|opinions?|doubts?|pros|cons|plans?|approach(?:es)?|risks?|alternatives?"
     r"|options?|ideas?|feedback|take|views?|worries|worry|caveats?|trade-?offs?|considerations?|pushback|questions?"
-    r"|suggestions?|recommendations?|advice|preferences?|think|reckon|feel|suggest|recommend|prefer|propose|advise"
-    r"|believe|expect)"
+    r"|suggestions?|recommendations?|advice|preferences?|misgivings?|reservations?|hesitations?|qualms?|fears?"
+    r"|apprehensions?|feelings?|input|perspectives?|angles?|stance|positions?|viewpoints?|outlook|judg(?:e)?ments?"
+    r"|assessments?|evaluations?|estimates?|guess(?:es)?|hunch(?:es)?|instincts?|intuitions?|impressions?|rationale"
+    r"|justifications?|arguments?|pitfalls?|downsides?|upsides?|drawbacks?|benefits?|merits?|strategy|strategies"
+    r"|proposals?|think|reckon|feel|suggest|recommend|prefer|propose|advise|believe|expect|consider|weigh|suppose"
+    r"|imagine|wonder|doubt|favou?r|lean)"
 )
 # After a quantifier the report's clause turns on its subject. With the targets as the subject (the quantifier
 # itself, or that/which/who) any finite verb reports on them, modal or negated too ("which ones break", "any that won't
@@ -1073,6 +1077,7 @@ def _closed(folded: str) -> tuple[str, str]:
         return untagged, folded
     head = untagged[: tail.start()]
     changes = _EN_CHANGE_ON_BREADTH.search(head) or _EN_PARTS_IN_PARALLEL.search(head)
+    changes = changes or (_EN_OFFER.search(head) and re.match(rf"(?:please\s+)?{_POLITE_OPENER}?{_EN_CHANGE_VERB}\b", head))
     if not changes and not (_EN_SPLIT_REQUEST.search(head) and _EN_SPLIT_EVIDENCE.search(head)):
         return untagged, folded
     done = tail.span("done") if tail.group("done") else None
@@ -1292,13 +1297,25 @@ def _closes_on_ss(character: str) -> bool:
 
 
 def _says_a_past(folded: str) -> bool:
+    """Whether ``folded`` says a past: the work done, not asked for. A fault said in the past is no such past when the
+    message ends asking to fix it (`_asks_to_fix_a_fault`: "api 모듈과 ui 모듈 테스트가 깨졌어, 동시에 고쳐줘")."""
+    faults = [match.span() for match in _FAULT.finditer(folded)] if _asks_to_fix_a_fault(folded) else []
     return any(
         _closes_on_ss(character)
         and character not in _NOT_A_PAST
         and folded[index + 1 :].lstrip("었았였")[:1] != "던"
         and folded[index + 1 :].lstrip("었았였")[:2] != "는지"
+        and not any(start <= index < end for start, end in faults)
         for index, character in enumerate(folded)
     )
+
+
+def _asks_to_fix_a_fault(folded: str) -> bool:
+    """Whether ``folded`` reports a fault (`_FAULT`) and its last clause asks, in request form, to fix it
+    (`_FIX_REQUEST`)."""
+    last = [clause for clause in _CLAUSE_BREAK.split(folded) if clause][-1:] or [folded]
+    request = _korean_request_verb(last[0])[0] or re.match(r"(?:please\s+)?(?:fix|resolve|repair|debug)\b", last[0])
+    return bool(_FAULT.search(folded) and request and _FIX_REQUEST.search(last[0]))
 
 
 # Words that ask for no work, or only a report: a negation, no need, a lookup or a status, a question ("PR들 전부
@@ -1517,6 +1534,14 @@ def _splits_named_work(text: str, folded: str, links: tuple[str, ...]) -> bool:
     return bool(_EN_SPLIT_REQUEST.search(request) and _EN_SPLIT_EVIDENCE.search(request))
 
 
+def refuses_dag_ulw(text: str, links: tuple[str, ...] = ()) -> bool:
+    """Whether the cue reader refuses ``text`` whatever its size: a hard exclude on the whole text, or a clause after
+    the request that keeps nothing (`_hard_excluded` over `_closed`). The router's and the hint's size-cue paths read
+    this, so neither starts a run the cue reader holds."""
+    request, whole = _closed(_folded(text))
+    return _hard_excluded(whole, links, request)
+
+
 def splits_without_evidence(text: str, links: tuple[str, ...] = ()) -> bool:
     """Whether ``text`` asks for a split (`work_is_split`) without naming the work to split (`_splits_named_work`):
     the router asks about dag-ulw instead of dispatching it, and the route hint offers it, rather than either starting a
@@ -1531,7 +1556,7 @@ def sized_without_evidence(text: str, links: tuple[str, ...] = ()) -> bool:
     `dispatches_dag_ulw` needs: the route hint offers dag-ulw there instead of starting it (rule A)."""
     if not big_work_for_dag_ulw(text) or dispatches_dag_ulw(text, links):
         return False
-    if splits_without_evidence(text, links):
+    if splits_without_evidence(text, links) or refuses_dag_ulw(text, links):
         return True
     folded = _cue_text(text)
     return _contains(folded, BREADTH_CUES) and not _asks_for_a_split(text) and not _contains(folded, CONCURRENCY_CUES)
