@@ -2746,7 +2746,7 @@ class App(ModesMixin, AgentViewMixin):
             return
         kept = self.transcript  # the screen before the cut, put back if Hermes refuses it
         self._restart_transcript(list(rewind.before))
-        self._submit_prompt(text, shown, truncate=rewind.row_id, before_cut=kept, notice=notice)
+        self._submit_prompt(text, shown, truncate=rewind.row_id, before_cut=kept, notice=notice, typed=typed)
         self._full_redraw()
 
     def _restart_transcript(self, messages: list[dict[str, Any]]) -> None:
@@ -2768,8 +2768,10 @@ class App(ModesMixin, AgentViewMixin):
         sent with it come back as chips: Hermes still holds them for the next
         prompt. An error whose `data` says `rewound` (the shared-gateway
         child cut the session, then Hermes refused the prompt) is not
-        "Hermes kept its history": the notice says the cut happened, and the
-        prompt the person typed goes back into the composer.
+        "Hermes kept its history": the notice says the cut happened, and what
+        the person typed (`text`: for a skill, the command, not the message it
+        expanded to) goes back to the draft as a refused steer's does
+        (`_give_back`), after a draft begun since rather than over it.
         """
         if sid != self.sid:
             self._on_submit_error(error)
@@ -2781,7 +2783,7 @@ class App(ModesMixin, AgentViewMixin):
         self._full_redraw()
         self.attachments.extend(images)
         if cut:
-            self._draft().handle(Paste(text))
+            self._give_back(text)  # what the person typed, after any draft begun since: never over it
         self.transcript.add_notice((REWIND_CUT_NOTICE if cut else REWIND_KEPT_NOTICE).format(reason=reason), NOTICE_WARN)
         self.turn_pending = False  # no turn starts; the queue waits for the history read
         after = (REWIND_CUT_NOTICE if cut else REWIND_REFUSED_NOTICE).format(reason=reason)
@@ -3004,13 +3006,15 @@ class App(ModesMixin, AgentViewMixin):
 
     def _submit_prompt(
         self, text: str, shown: str = "", queued: bool = False, truncate: int | None = None,
-        before_cut: Transcript | None = None, notice: str = "",
+        before_cut: Transcript | None = None, notice: str = "", typed: str = "",
     ) -> None:
         """Send one prompt; `queued` says the queue sent it.
 
         `truncate` names the row a rewind cuts the session before, and
         `before_cut` the transcript from before that cut, which a refusal puts back.
-        `notice` is what the skill command that sent it said, under its row whenever it goes.
+        `notice` is what the skill command that sent it said, under its row whenever it goes. `typed` is
+        what the person typed for it (a skill command, not the skill message it expanded to), which a
+        rewind refused after its cut gives back.
         """
         self.transcript.add_user(shown or text, from_queue=queued, known=self.known_slash)
         if notice:
@@ -3035,7 +3039,7 @@ class App(ModesMixin, AgentViewMixin):
             sid, kept = self.sid, before_cut or self.transcript
             self._request(
                 "prompt.submit", params, lambda result: None,
-                lambda error: self._on_rewind_refused(sid, kept, error, text, sent_images),
+                lambda error: self._on_rewind_refused(sid, kept, error, typed or text, sent_images),
             )
             return
         self._request("prompt.submit", params, lambda result: None, self._on_submit_error)

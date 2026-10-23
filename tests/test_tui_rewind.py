@@ -433,6 +433,18 @@ class RewindCommandTests(unittest.TestCase):
         self.assertFalse([block for block in app.transcript.blocks if isinstance(block, CommandBlock)])
         self.assertNotIn("rewind", line_text(app._info_line(100)))
 
+    def test_a_skill_prompt_refused_after_the_cut_gives_back_the_command_typed_not_the_skill_message(self) -> None:
+        # The draft the person began while it was out stays first; the command comes back on its own line after it.
+        app, client = picked()
+        self.send(app, SKILL_LINE)
+        answer(app, client, error=SKILL_REFUSAL)
+        answer(app, client, SKILL_TURN)
+        type_text(app, "a new draft")
+        answer(app, client, error={"code": 4001, "message": "Hermes cut the session, then refused the prompt (busy)",
+                                   "data": {"rewound": True}})
+        self.assertEqual(app.composer.text, f"a new draft\n{SKILL_LINE}")
+        self.assertNotIn(SKILL_TURN["message"], app.composer.text)
+
     def test_a_built_in_command_that_sends_a_prompt_sends_it_in_the_picked_ones_place(self) -> None:
         # Hermes 0.22.2's slash.exec runs command.dispatch itself for /plan (`_PENDING_INPUT_COMMANDS`) and answers
         # with its `send`; the TUI's 4018 fallback to command.dispatch, which a skill takes, gives the same.
