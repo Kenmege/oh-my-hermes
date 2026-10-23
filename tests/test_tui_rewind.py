@@ -20,7 +20,7 @@ from _tui_lines import line_text, lines_text
 from test_tui_command_output import SKILL_LINE, SKILL_REFUSAL, SKILL_TURN
 from test_tui_gateway_contract import recorded_rows
 from test_tui_modes import PLAN_PROMPT, SID, answer, make_app, notices, type_text
-from omh.tui.app import DOUBLE_ESCAPE_SECONDS, REWIND_TURN_BACK_NOTICE, App
+from omh.tui.app import DOUBLE_ESCAPE_SECONDS, REWIND_TURN_BACK_NOTICE, App, Attachment
 from omh.tui.gateway import Event, Response
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, Key
 from omh.tui.rewind_picker import CLOSE, PICK, RewindPicker, rewind_rows
@@ -245,6 +245,33 @@ class RewindTests(unittest.TestCase):
     def users(self, app: App) -> list[str]:
         return [block.text for block in app.transcript.blocks if isinstance(block, UserBlock)]
 
+    def test_a_prompt_refused_after_the_cut_says_the_cut_happened_and_gives_the_prompt_back(self) -> None:
+        # Attached to a shared gateway the child cuts first (`session.mutate`), then sends the prompt; Hermes
+        # refusing the prompt then is no "Hermes kept its history".
+        app, client = self.picked()
+        app._set_composer("an edited prompt")
+        app._on_input(Key(ENTER))
+        answer(app, client, error={"code": 4001, "message": "Hermes cut the session, then refused the prompt (busy)",
+                                   "data": {"rewound": True}})
+        self.assertEqual(app.composer.text, "an edited prompt")
+        said = notices(app, NOTICE_WARN)[-1]
+        self.assertIn("Hermes cut the session there but did not take the prompt", said)
+        self.assertNotIn("did not rewind", said)
+        self.assertEqual(client.calls[-1], ("session.history", {"session_id": SID}))
+        answer(app, client, HISTORY)
+        self.assertIn("Hermes cut the session there", notices(app, NOTICE_WARN)[-1])
+        self.assertFalse(app.turn_pending)
+
+    def test_the_images_sent_with_a_refused_rewind_come_back_as_chips(self) -> None:
+        # Hermes keeps an image queued when it refuses the prompt it was for, so the chip comes back with it.
+        app, client = self.picked()
+        chip = Attachment("/hermes/cache/images/upload_1.png", "shot.png", "")
+        app.attachments.append(chip)
+        app._on_input(Key(ENTER))
+        self.assertEqual(app.attachments, [])  # sent with the prompt
+        answer(app, client, error={"code": 4018, "message": "rewind target not found"})
+        self.assertEqual(app.attachments, [chip])
+
     def test_a_refused_rewind_puts_the_screen_back_before_hermes_sends_its_history(self) -> None:
         app, client = self.sent_and_refused()
         self.assertEqual(client.calls[-1], ("session.history", {"session_id": SID}))
@@ -405,6 +432,18 @@ class RewindCommandTests(unittest.TestCase):
         self.assertEqual(self.users(app), [TODO_PROMPT, SKILL_LINE])  # redrawn from the cut, the skill's one row
         self.assertFalse([block for block in app.transcript.blocks if isinstance(block, CommandBlock)])
         self.assertNotIn("rewind", line_text(app._info_line(100)))
+
+    def test_a_skill_prompt_refused_after_the_cut_gives_back_the_command_typed_not_the_skill_message(self) -> None:
+        # The draft the person began while it was out stays first; the command comes back on its own line after it.
+        app, client = picked()
+        self.send(app, SKILL_LINE)
+        answer(app, client, error=SKILL_REFUSAL)
+        answer(app, client, SKILL_TURN)
+        type_text(app, "a new draft")
+        answer(app, client, error={"code": 4001, "message": "Hermes cut the session, then refused the prompt (busy)",
+                                   "data": {"rewound": True}})
+        self.assertEqual(app.composer.text, f"a new draft\n{SKILL_LINE}")
+        self.assertNotIn(SKILL_TURN["message"], app.composer.text)
 
     def test_a_built_in_command_that_sends_a_prompt_sends_it_in_the_picked_ones_place(self) -> None:
         # Hermes 0.22.2's slash.exec runs command.dispatch itself for /plan (`_PENDING_INPUT_COMMANDS`) and answers

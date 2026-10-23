@@ -4,6 +4,99 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A delegation route belongs to the conversation that set it (#2251).**
+  The three `delegation.*` keys are shared by every session on a profile.
+  When session A ran `omh_delegate_route set` and session B set its own route
+  before A's `delegate_task`, A's child ran on B's model and nothing reported
+  it. B's turn-end restore could also take the route away from A. Each route
+  is now also recorded per conversation in
+  `~/.omh/routing/conversation-routes.json`. Just before Hermes reads the
+  keys for a `delegate_task`, `pre_tool_call` puts the dispatching
+  conversation's own route back. A delegate child's workers get the route of
+  the conversation the child was delegated from, as they did before. A
+  conversation that set no route gets the profile's default, not another
+  session's live route. If OMH cannot do that, the call is refused with a
+  typed status naming both sessions, and no child starts. A dispatch on a
+  session's own route still writes nothing. A small window remains, because
+  Hermes reads the keys after the hook returns. A wait for a person to
+  approve the call is part of that window.
+
+- **TUI text stays readable on a mid-grey background with every skin.**
+  A colour that needed lifting for contrast stopped at the skin's own
+  light ink. Crimson's is #FFEDE6, which reaches only 4.36:1 on #707070,
+  so its labels, headings, warnings and errors read below the 4.5:1
+  floor; between #6E6E6E and #747474 every skin did. The lift now goes on
+  to white or black where that ink falls short, so every text ink meets
+  4.5:1 and every glyph meets 3:1 on any grey.
+
+- **The launch has a look of its own, and a card.** The owner asked for new
+  logo colours and for more than the logo, like the skills box in Hermes'
+  own session panel. A fresh session's launch now draws the logo, the
+  banner's title and a launch card in one of four launch looks: `spectrum`
+  (the default: the logo swept through the five tool-kind hues, a box per
+  section), `violet`, `gold` and `graphite`. The card names the model and
+  effort, the new session, the last session with its `/resume` id, the first
+  keys, and the skills Hermes has. OMH's skills are grouped by capability
+  family, with the ulw lanes on their own row, and Hermes' own skills by
+  category. It fills in as `session.info` and `session.list` answer, sits
+  under the banner until the first prompt, then stays in scrollback above
+  it. `/theme` alone opens a picker that previews each look as you move
+  (on the logo and the card at launch, in a compact preview later); Enter
+  keeps it under the OMH home, and `/theme <look>` keeps one at once.
+  The logo is coloured cell by cell, with a darker drop shadow, at 3:1 or
+  more on dark and light backgrounds. The skin file Hermes' banner reads is
+  unchanged.
+
+- **A `dag-ulw` in the composer glows.** Typing `dag-ulw`, `dag ulw` or
+  `/dag-ulw` in the TUI's composer runs the word's letters through violet,
+  magenta, pink and lavender with a brighter band sweeping through them,
+  and draws the composer's rules heavy in the same gradient with a band
+  travelling along them, the way Claude Code marks `ultrathink`. It adds no
+  rows and leaves the caret and the cells alone, ticks only while the word
+  is there on a truecolor terminal, stands still at 256 or 16 colours, and
+  is bold without colour with `NO_COLOR`. The word takes the glow in place
+  of its `/name` colour.
+
+- **The dag-ulw TUI reads at a glance on a big run.** The owner's GIF review
+  and an audit at 100×30, 150×42 and 200×50 found the transcript flooded by
+  147–219 rows per print under the 48-node cap, and a tree whose short titles
+  left the figures ragged at the right edge. A print now leaves the
+  Dependencies list and the Node details to `/dag`. A run of up to 12 lanes
+  still prints every box and arrow; a bigger one prints its header, a row
+  per layer, the boxes the moment changed and
+  `… N more nodes · /dag shows the whole graph`, and its end is the whole
+  run's tally and its failed or stuck nodes. A layer the node cap emptied
+  keeps its row. Tree titles take the task line of a node's prompt after a
+  short label, cut at a word past 52 cells, and the figures stand in fixed
+  columns. Boxes
+  grow to 48 cells and cut a long title in its middle. Counts are the run's
+  lanes and the edges between them, with thousands separators and `B`/`T`
+  token tiers, a capped layer reads `28 of 640 nodes`, and the agents chip
+  counts the running lanes. The launch fills the screen with the composer
+  on the bottom rows, the composer keeps its rules and a
+  `↑↓ browsing · esc to type` hint while the tree has the keys, and a run
+  that settles or shrinks mid-turn keeps its rows until the turn ends
+  instead of leaving a blank band above the composer.
+
+- **`omh setup`'s provider step ends on one Enter.** After the provider
+  list, a second prompt, `Add another provider by name (Enter to skip)`,
+  always followed and waited for its own Enter. The step looked finished
+  while it was still blocked. The list now has an **Other provider -- type
+  its name** row just above skip. The name prompt appears only when that
+  row is ticked; it keeps the duplicate and invalid-id checks and the kind
+  menu, and an empty line still ends it. The row is never pre-ticked, it is
+  refused beside skip like any other row, and it is never written to
+  `~/.omh/routing/providers.json`. In the typed menu, typing only that row's
+  number adds it to the ticked rows; it does not replace them, so found
+  providers are not recorded as excluded. In the arrow-key menus (the
+  provider list and the single-choice menus, such as the provider-kind
+  menu), digits now build a row number: `1` then `7` is row 17. Before, the
+  list toggled row 1 and then row 7, which silently excluded a found
+  provider. The kind menu returned row 1 and left the `7` to be read by the
+  next "Provider name" prompt. While a digit could still be extended, a
+  note under the menu shows it (`Row 1_ -- type a second digit, or
+  Space/Enter ...`). Menus of up to nine rows behave as before.
+
 - **`/omh-doctor status` runs doctor (#2221 L4).** After a slash skill, a
   status question shows OMH's status card. The exception is a skill whose
   own work is that status, and doctor is now one of them. The card counts

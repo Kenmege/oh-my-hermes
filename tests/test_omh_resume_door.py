@@ -118,7 +118,7 @@ def launched(
     blocker: str = "TERM=dumb cannot draw the OMH TUI",
     node: bool = False,
     environments: list[dict[str, str] | None] | None = None,
-    signal_fallback: bool = False,
+    signal_fallback: bool | str = False,
     while_tui_runs=None,
     killed: list[str] | None = None,
     errors: list[str] | None = None,
@@ -136,7 +136,8 @@ def launched(
     ``environments`` (when given) collects the ``env`` each child was started
     with, and ``errors`` (when given) collects what the launch wrote to stderr.
     With ``signal_fallback``, a child started with a fallback sentinel name
-    creates that file, as the OMH TUI does before it exits 75.
+    creates that file, as the OMH TUI does before it exits 75, holding the
+    text when it is one (what the TUI said about why).
     ``while_tui_runs`` is called while the OMH TUI attempt is being waited on,
     and ``killed`` collects a note for each kill, terminate or signal sent to
     that child.
@@ -156,7 +157,7 @@ def launched(
         if environments is not None:
             environments.append(env)
         if signal_fallback and env and FALLBACK_SENTINEL_ENV in env:
-            Path(env[FALLBACK_SENTINEL_ENV]).touch()
+            Path(env[FALLBACK_SENTINEL_ENV]).write_text(signal_fallback if isinstance(signal_fallback, str) else "")
         return _Completed(codes.pop(0) if codes is not None else returncode)
 
     class _Child:
@@ -698,6 +699,22 @@ class FallbackTargetTests(unittest.TestCase):
             stderr, "omh: the OMH TUI did not start (its reason is above); opening Hermes' own TUI (`hermes --tui`).\n"
         )
         self.assertEqual(status, 0)
+
+    def test_what_the_tui_said_is_said_again_after_hermes_own_tui_closes(self) -> None:
+        # Hermes' TUI clears the screen the TUI's reason was printed on, so the person never saw it.
+        from omh.tui.launch import FALLBACK_EXIT
+
+        said = "omh: the Hermes gateway did not start: it exited\n  [gateway-exit] refused: owned\n"
+        _recorded, _environments, stderr, status = self._fallback(
+            omh_tui=True, node=True, returncode=[FALLBACK_EXIT, 3], signal_fallback=said
+        )
+        self.assertEqual(stderr, (
+            "omh: the OMH TUI did not start (its reason is above); opening Hermes' own TUI (`hermes --tui`).\n"
+            "omh: Hermes' own TUI (`hermes --tui`) opened because the OMH TUI did not start; it said:\n"
+            "  omh: the Hermes gateway did not start: it exited\n"
+            "    [gateway-exit] refused: owned\n"
+        ))
+        self.assertEqual(status, 3)  # the session Hermes' TUI ran is what the launch returns
 
     def test_no_node_opens_plain_hermes(self) -> None:
         with TemporaryDirectory() as tmp, patch("omh.tui.launch.terminal_supported", return_value=True):

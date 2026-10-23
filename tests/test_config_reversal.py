@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from _cli_harness import run_cli
 from _local_package import load_local_package
 
 load_local_package()
@@ -28,10 +30,13 @@ from omh.config_adapter import (  # noqa: E402
     set_memory_provider,
 )
 from omh.config_adapter import read_config, write_config  # noqa: E402
+from omh.install.config_adapter import childless_containers  # noqa: E402
 from omh.install.config_reversal import (  # noqa: E402
     DISPLAY_KEYS,
     MANAGED_CONFIG_WRITES_SCHEMA,
+    MANAGED_CONTAINERS,
     config_names_key,
+    drop_emptied_containers,
     load_managed_config_writes,
     managed_config_reading,
     managed_config_writes,
@@ -199,6 +204,110 @@ class InverseWriterTests(unittest.TestCase):
 
         self.assertFalse(change.changed)
         self.assertEqual(change.text, text)
+
+
+ISSUE_2244_CONFIG = "providers:\n  z.ai-coding-plan:\n    api_key_env: ZAI_CODING_PLAN_API_KEY\n"
+
+
+class DottedKeyContainerTests(unittest.TestCase):
+    """A key holding a dot is one key, never a level of nesting (#2244)."""
+
+    def test_a_dotted_second_level_key_has_no_container_path(self) -> None:
+        self.assertEqual(config_container_paths(ISSUE_2244_CONFIG), {"providers"})
+
+    def test_childless_containers_reads_the_issue_config_without_raising(self) -> None:
+        self.assertEqual(childless_containers(ISSUE_2244_CONFIG), set())
+
+    def test_nothing_under_a_dotted_top_level_key_has_a_path(self) -> None:
+        text = "z.ai:\n  inner:\n    k: v\n  empty:\n"
+
+        self.assertEqual(config_container_paths(text), set())
+        self.assertEqual(childless_containers(text), set())
+
+    def test_a_dotted_key_that_is_itself_childless_is_neither_named_nor_removed(self) -> None:
+        text = "providers:\n  z.ai-coding-plan:\nz.ai:\n"
+
+        self.assertEqual(config_container_paths(text), {"providers"})
+        self.assertEqual(childless_containers(text), set())
+        # A record on disk is not checked against the producer, so its
+        # joined spelling can still be asked for; no line answers to it.
+        for path in ("providers.z.ai-coding-plan", "z.ai"):
+            change = remove_childless_containers(text, [path])
+            self.assertFalse(change.changed, path)
+            self.assertEqual(change.text, text)
+
+    def test_the_reversal_cleanup_leaves_the_issue_config_byte_identical(self) -> None:
+        change = remove_childless_containers(ISSUE_2244_CONFIG, list(MANAGED_CONTAINERS))
+
+        self.assertFalse(change.changed)
+        self.assertEqual(change.text, ISSUE_2244_CONFIG)
+
+    def test_a_dotted_top_level_key_no_longer_hides_the_container_setup_creates(self) -> None:
+        before = "skills.external_dirs:\n  - /x\n"
+        after = ensure_external_dir(before, "/tmp/omh/skills").text
+
+        self.assertIn("skills:\n  external_dirs:\n", after)
+        self.assertEqual(config_container_paths(before), set())
+        self.assertEqual(
+            config_container_paths(after) - config_container_paths(before),
+            {"skills", "skills.external_dirs"},
+        )
+        created = _entry(_record(before, after))["containers_created"]
+        self.assertEqual(created, ["skills", "skills.external_dirs"])
+
+        unregistered = remove_external_dir(after, "/tmp/omh/skills").text
+        cleanup = drop_emptied_containers(
+            unregistered, childless_containers(after), recorded=created, record_is_complete=True
+        )
+
+        self.assertEqual(cleanup.text, before)
+
+    def test_plain_two_part_paths_read_and_remove_as_before(self) -> None:
+        text = "version: 1\nskills:\n  external_dirs:\nplugins:\n  entries:\n    omh: {}\ndisplay:\n"
+
+        self.assertEqual(
+            config_container_paths(text),
+            {"skills", "skills.external_dirs", "plugins", "plugins.entries", "display"},
+        )
+        self.assertEqual(childless_containers(text), {"skills.external_dirs", "display"})
+        change = remove_childless_containers(text, ["skills", "skills.external_dirs", "plugins.entries", "display"])
+        self.assertTrue(change.changed)
+        self.assertEqual(change.text, "version: 1\nplugins:\n  entries:\n    omh: {}\n")
+
+
+class DottedKeySetupTests(unittest.TestCase):
+    """`omh setup` against the issue's config, through the CLI (#2244)."""
+
+    def _homes(self, root: Path) -> tuple[list[str], Path]:
+        hermes = root / ".hermes"
+        hermes.mkdir()
+        config = hermes / "config.yaml"
+        config.write_text(ISSUE_2244_CONFIG, encoding="utf-8", newline="\n")
+        return ["--omh-home", str(root / ".omh"), "--hermes-home", str(hermes)], config
+
+    def test_setup_dry_run_connects_and_leaves_the_config_alone(self) -> None:
+        with TemporaryDirectory() as tmp:
+            base, config = self._homes(Path(tmp))
+
+            status, stdout, stderr = run_cli(base + ["setup", "--core", "--yes", "--dry-run"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertNotIn("too many values to unpack", stderr)
+            self.assertIn("OMH setup preview complete.", stdout)
+            self.assertEqual(config.read_text(encoding="utf-8"), ISSUE_2244_CONFIG)
+
+    def test_setup_applies_its_writes_and_keeps_the_dotted_provider(self) -> None:
+        with TemporaryDirectory() as tmp:
+            base, config = self._homes(Path(tmp))
+
+            status, stdout, stderr = run_cli(base + ["setup", "--core", "--yes", "--json"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertTrue(json.loads(stdout)["ok"])
+            text = config.read_text(encoding="utf-8")
+            self.assertTrue(text.startswith(ISSUE_2244_CONFIG), text)
+            self.assertIn("skills:\n  external_dirs:\n", text)
+            self.assertIn("memory:\n  provider: omh\n", text)
 
 
 class NewlineHandlingTests(unittest.TestCase):

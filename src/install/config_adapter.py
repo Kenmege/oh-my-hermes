@@ -1559,6 +1559,15 @@ def config_container_paths(config_text: str) -> set[str]:
     The set uninstall compares before and after setup's own writes, so it can
     drop a `display:` or `skills:` that OMH created and nothing else. Depth
     two is where every key OMH writes lives, so it is where this stops.
+
+    A path is its keys joined with `.`, so a key that itself holds a dot --
+    `z.ai-coding-plan:` under `providers:` -- has no path here, and neither
+    does anything under a dotted top-level key. Joined, it would read as
+    one more level of nesting (#2244): `_container_line_index` would look
+    for a key that is not there, and a top-level `skills.external_dirs:`
+    would spell the managed container setup goes on to create beside it,
+    hiding that creation from the record. OMH's writers never create a
+    dotted key, so none is a container this set has to answer for.
     """
     paths: set[str] = set()
     section = ""
@@ -1568,15 +1577,16 @@ def config_container_paths(config_text: str) -> set[str]:
             continue
         if not line.startswith(" "):
             key, separator, rest = stripped.partition(":")
+            key = key.strip()
             section = ""
-            if separator and not rest.strip() and key.strip():
-                section = key.strip()
+            if separator and not rest.strip() and key and "." not in key:
+                section = key
                 paths.add(section)
             continue
         if section and line.startswith("  ") and not line.startswith("    "):
             key, separator, rest = stripped.partition(":")
             key = key.strip()
-            if separator and not rest.strip() and key and not key.startswith("-"):
+            if separator and not rest.strip() and key and not key.startswith("-") and "." not in key:
                 paths.add(f"{section}.{key}")
     return paths
 
@@ -1587,6 +1597,11 @@ def _container_line_index(lines: list[str], path: str) -> int | None:
         for index, line in enumerate(lines):
             if not line.startswith(" ") and line.strip() == f"{parts[0]}:":
                 return index
+        return None
+    if len(parts) != 2:
+        # Deeper than any path `config_container_paths` names. A recorded
+        # one can still arrive from the write record on disk, and no line
+        # OMH wrote answers to it.
         return None
     section, key = parts
     in_section = False

@@ -11,6 +11,7 @@ from typing import Protocol, runtime_checkable
 from ..degradation import runtime_binding_degradation
 from ..approval_bypass import record_approval_bypass
 from ..dag_define_gate import delegate_before_define_directive
+from ..delegation_route_restore import dispatch_route_directive
 from ..host_observation import host_session_id, observe_plugin_hook_call
 from ..jev_consent import arm_tool_call as arm_jev_tool_call
 from ..jev_consent import disarm_tool_call as disarm_jev_tool_call
@@ -218,6 +219,10 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
     # host passes the tool arguments as ``args``; ``tool_input`` is accepted
     # for bundle-internal callers and tests.
     tool_input = _tool_arguments(kwargs)
+    # Every gate below that can answer `approve` returns through
+    # `_route_gated`, so a `delegate_task` behind a person's yes still runs
+    # on its own route (#2251).
+    route_gate = {"kwargs": kwargs, "tool_input": tool_input, "omh_home": omh_home, "hermes_home": hermes_home}
     session_id = str(kwargs.get("session_id", "") or kwargs.get("task_id", "") or "")
     rule_directive = _rule_directive_or_recorded_fault(
         tool_name=kwargs.get("tool_name"),
@@ -229,7 +234,7 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
         # A blocked call never dispatches, so it must not tick the
         # parallel-shot burst ledger (its claim boundary is "the host
         # dispatched the calls as one batch").
-        return dict(rule_directive)
+        return _route_gated(rule_directive, **route_gate)
     # An edit to a skill OMH installed is refused with a pointer to where the
     # lesson goes (`skill_ownership`). After the person's own rules, before
     # anything that records a dispatch, for the same reason as the guards
@@ -242,7 +247,7 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
         hermes_home=hermes_home,
     )
     if ownership_directive is not None:
-        return dict(ownership_directive)
+        return _route_gated(ownership_directive, **route_gate)
     # The repeat guard runs after the user's own rules and before anything
     # that observes a dispatch, for the same reason: it intervenes on a
     # call, so nothing downstream may record that call as having happened.
@@ -286,7 +291,7 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
             session_id=session_id,
             omh_home=omh_home,
         )
-        return dict(repeat_directive)
+        return _route_gated(repeat_directive, **route_gate)
     # The plan-stage gate sits here for the same reason the two guards above
     # it do: it intervenes on a call, so nothing that observes a dispatch may
     # run first. Ordered after them because they answer about THIS call --
@@ -309,7 +314,7 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
         # own allowlist is what remembers a person's answer. A counter here
         # would be a second record of the same fact, and OMH cannot observe
         # how the gate was answered anyway.
-        return dict(plan_stage_directive)
+        return _route_gated(plan_stage_directive, **route_gate)
     # A dag-ulw turn's first markerless `delegate_task`, before the run is
     # defined, goes back to `omh_dag define` once (`dag_define_gate`). Before
     # anything records a dispatch, like the gates above: it dispatches nothing.
@@ -322,7 +327,7 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
         hermes_home=hermes_home,
     )
     if dag_define_directive is not None:
-        return dict(dag_define_directive)
+        return _route_gated(dag_define_directive, **route_gate)
     # `omh_team` `team_start` freezes commands OMH will later run by itself,
     # so the person sees the exact list and answers for it (`team_gate`).
     # Where nobody can answer, the call is blocked rather than let through.
@@ -332,7 +337,16 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
         escalation_allowed=escalation_allowed,
     )
     if team_directive is not None:
-        return dict(team_directive)
+        return _route_gated(team_directive, **route_gate)
+    # Last of the gates, so it writes only for a call nothing above refused:
+    # a `delegate_task` spawn runs on the route its OWN conversation set,
+    # which is put back in the profile-wide `delegation.*` keys here if
+    # another session replaced it, and is refused rather than dispatched on
+    # that session's route when it cannot be (#2251). A gate above that asks
+    # a person (`approve`) still runs it, through `_route_gated`.
+    route_directive = _route_directive(kwargs, tool_input, omh_home, hermes_home)
+    if route_directive is not None:
+        return dict(route_directive)
     # Only the normal host loop invokes native Kanban tools. Correlation runs
     # after OMH's user veto; it never dispatches or grants a native permission.
     bridge = _agent_board_bridge()
@@ -454,6 +468,44 @@ def post_tool_call(**kwargs: object) -> dict[str, object] | None:
     if kwargs.get("tool_name") == "delegate_task" and str(kwargs.get("status", "") or "").lower() != "blocked":
         observe_delegate_call(kwargs)
     return None
+
+
+def _route_directive(
+    kwargs: Mapping[str, object], tool_input: object, omh_home: str, hermes_home: str
+) -> dict[str, str] | None:
+    return dispatch_route_directive(
+        tool_name=kwargs.get("tool_name"),
+        tool_input=tool_input,
+        session_id=host_session_id(dict(kwargs)),
+        task_id=str(kwargs.get("task_id", "") or "").strip(),
+        omh_home=omh_home,
+        hermes_home=hermes_home,
+    )
+
+
+def _route_gated(
+    directive: Mapping[str, object],
+    *,
+    kwargs: Mapping[str, object],
+    tool_input: object,
+    omh_home: str,
+    hermes_home: str,
+) -> dict[str, object]:
+    """An earlier gate's directive, with the route gate still run under an `approve`.
+
+    An `approve` lets the call through once a person says yes, so a
+    `delegate_task` spawn behind one still has to run on its own route
+    (#2251 review): the route gate's block wins, since Hermes ranks `block`
+    above `approve`, and otherwise the approve stands with the route already
+    in the keys. The route is written BEFORE the person answers, so the wait
+    for that answer is part of the window in which another session's write
+    can still replace it. A `block` needs nothing: the call never dispatches.
+    """
+    if directive.get("action") == "approve":
+        route_directive = _route_directive(kwargs, tool_input, omh_home, hermes_home)
+        if route_directive is not None:
+            return dict(route_directive)
+    return dict(directive)
 
 
 def _tool_arguments(kwargs: Mapping[str, object]) -> object:

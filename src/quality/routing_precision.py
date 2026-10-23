@@ -84,6 +84,31 @@ class RoutingInterventionCase:
 # helpful but should not hijack the answer into workflow selection, catalog
 # pickers, coding handoffs, or generic workflow acknowledgements.
 ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
+    RoutingPrecisionCase("career-cron-job", "A background job is not career work", "Explain what a cron job does.", "answer_directly", "direct_answer", "ai-job-search"),
+    RoutingPrecisionCase("career-codebase-search", "Application code lookup is not an application draft", "Explain application code lookup.", "answer_directly", "direct_answer", "ai-job-search"),
+    RoutingPrecisionCase("career-hiring-definition", "Employer terminology is not personal job hunting", "Explain what an employer does.", "answer_directly", "direct_answer", "ai-job-search"),
+    RoutingPrecisionCase("career-employer-campaign", "An employer campaign cannot dispatch candidate work", "Help our employer recruiting team run a job search campaign.", "answer_clarification", "", "ai-job-search"),
+    RoutingPrecisionCase("career-recruiting-team-campaign", "An organizational recruiting actor is not a candidate", "Help our recruiting team run a job search campaign.", "answer_clarification", "", "ai-job-search"),
+    RoutingPrecisionCase("career-we-hire-campaign", "Hiring for us is not searching for our next role", "We need to hire librarians; help us run a job search campaign.", "answer_clarification", "", "ai-job-search"),
+    # A safe clarification may still list the career workflow as an option;
+    # forbidden_candidate bans even a non-dispatched option. The real actor/card
+    # regression separately requires clarification or people-ops, never career dispatch.
+    RoutingPrecisionCase("career-company-candidates", "Finding candidates for a company is employer work", "Run a job search campaign to find candidates for our company.", "answer_clarification", ""),
+    RoutingPrecisionCase("career-client-recruiting", "Recruiting for a client is not the recruiter's career search", "Help our client recruit candidates through a job search campaign.", "answer_clarification", "", "ai-job-search"),
+    # These assert the non-dispatch contract, not exclusion from an unresolved
+    # clarification's shortlist. Real rendered actor/card assertions live in
+    # AiJobSearchActorRoutingTests; no existing forbidden-candidate guard moves.
+    RoutingPrecisionCase("career-that-employer", "Determiners do not define the recruiting actor", "Help that employer recruiting team run a job search campaign.", "answer_clarification", ""),
+    RoutingPrecisionCase("career-an-employer", "An employer actor needs no first-person pronoun", "Help an employer recruiting team run a job search campaign.", "answer_clarification", ""),
+    RoutingPrecisionCase("career-agency-candidates", "An agency seeking candidates is not a jobseeker", "Help a recruitment agency run a job search campaign to find candidates.", "answer_clarification", ""),
+    RoutingPrecisionCase("career-hiring-speaker", "A speaker hiring staff is acting for the employer", "I am hiring; help me run a job search campaign for library staff.", "answer_clarification", ""),
+    RoutingPrecisionCase("career-staffing-campaign", "Staffing agencies can own recruitment objectives", "The staffing agency wants a job search campaign to recruit archivists.", "answer_clarification", ""),
+    RoutingPrecisionCase("career-explicit-employer", "Naming the career skill cannot erase employer intent", "Use ai-job-search to help our company run a job search campaign to find candidates.", "answer_clarification", ""),
+    RoutingPrecisionCase("career-the-employer", "An organizational actor is independent of its determiner", "Help the employer recruiting team run a job search campaign.", "answer_clarification", ""),
+    RoutingPrecisionCase("career-employer-translation", "Quoted employer work is translation input", 'Translate "Help our employer recruiting team run a job search campaign." into Japanese.', "answer_directly", "direct_answer", "ai-job-search"),
+    RoutingPrecisionCase("career-employer-reference", "An employer campaign named as a phrase is reference input", 'Explain the phrase "our recruiting team runs a job search campaign".', "answer_directly", "direct_answer", "ai-job-search"),
+    RoutingPrecisionCase("career-financial-definition", "Financial terms do not request career work", "Explain what a salary bond is in finance.", "answer_directly", "direct_answer", "ai-job-search"),
+    RoutingPrecisionCase("career-resume-process", "Resume as a verb is not career tailoring", "Explain how to resume a paused process.", "answer_directly", "direct_answer", "ai-job-search"),
     RoutingPrecisionCase("gis-map-metaphor", "Map prose needs no coordinate computation", "Explain the map metaphor in this essay.", "answer_directly", "direct_answer", "geospatial-analysis"),
     RoutingPrecisionCase("bio-ui-variant", "Variant vocabulary alone is not biological evidence", "Explain the word variant in a UI experiment.", "answer_directly", "direct_answer", "biomedical-evidence"),
     RoutingPrecisionCase("docking-boat-reservation", "Boat docking is not a molecular search", "Explain the boat docking reservation policy.", "answer_directly", "direct_answer", "molecular-docking"),
@@ -8764,6 +8789,18 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
 # Positive-intervention corpus. These are real OMH-shaped turns where the router
 # should still step in after the direct-answer fallback was added.
 ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
+    RoutingInterventionCase("career-discovery", "Career discovery reaches the installed method", "Help with my job search for library coordinator roles in Boston.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
+    RoutingInterventionCase("career-recruiter-candidate", "A recruiter can search for their own next role", "I am a recruiter; help with my job search for my next role.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
+    RoutingInterventionCase("career-employer-target", "An employer recruiting team can be the candidate's target", "Help with my job search for a role on an employer recruiting team.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
+    RoutingInterventionCase("career-employer-resume-target", "An employer target does not make a personal resume employer work", "Tailor my resume to this employer recruiting team posting using my supplied facts.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
+    RoutingInterventionCase("career-recruiter-own-role", "A recruiting team member retains personal career intent", "I work on our recruiting team; help with my job search for my own next role.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
+    RoutingInterventionCase("career-employer-quoted-control", "A quoted employer actor does not override a personal search", 'Help with my job search; the example says "our employer recruiting team runs a job search campaign".', "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
+    RoutingInterventionCase("career-third-person-agency-employee", "Agency employment does not override a person's own search", "Help a recruitment agency employee run his own job search campaign.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
+    RoutingInterventionCase("career-third-person-seeker", "Third-person seekers retain career ownership", "Help a person with their job search for a role at a company.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
+    RoutingInterventionCase("career-fit", "A pasted posting reaches qualitative fit", "Evaluate this job posting against my supplied career evidence.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
+    RoutingInterventionCase("career-tailoring", "Resume tailoring reaches real drafts", "Tailor my resume to this library coordinator posting using my supplied facts.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
+    RoutingInterventionCase("career-interview", "Interview preparation reaches versioned evidence", "Prepare for my job interview from the selected application version.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
+    RoutingInterventionCase("career-tracking", "Outcome tracking requires confirmed events", "Track my job applications and record my explicitly confirmed outcome.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
     RoutingInterventionCase("gis-metric-overlay", "Supplied geometry requires actual metric computation", "Intersect these two GeoJSON layers in a metric CRS and compute overlap area.", "dispatch", "geospatial-analysis", "prepare_geospatial_analysis", "geospatial_analysis"),
     RoutingInterventionCase("bio-public-source-comparison", "Public claims require source-labelled reconciliation", "Cross-check this public BRAF V600E melanoma query with a ClinVar cross-check and trial registry records, retaining disagreements and update dates.", "dispatch", "biomedical-evidence", "prepare_biomedical_evidence", "biomedical_evidence"),
     RoutingInterventionCase("docking-prepared-search", "Prepared inputs require actual bounded pose search", "Run rigid-receptor docking for these prepared PDBQT inputs and declared binding box, returning real poses and replay settings.", "dispatch", "molecular-docking", "prepare_molecular_docking", "molecular_docking"),

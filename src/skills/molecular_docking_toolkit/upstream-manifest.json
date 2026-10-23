@@ -18,10 +18,10 @@
       "copyright": "Copyright (c) 2026 oh-my-hermes contributors",
       "license": "MIT",
       "local_path": "README.md",
-      "local_sha256": "560cc14c9b82bea381b7b13ee92e858b0394c6526a6eb354cb28310fa309a2dd",
+      "local_sha256": "8741e1fc2c16c0d3dbb690b9669af84c4e04f177ad9248ae3cfe867b160ab71e",
       "modification_notice": "Original standalone direct Vina helper and guidance; no upstream code, molecular inputs or result files copied",
       "source_path": "src/skills/molecular_docking_toolkit/README.md",
-      "source_sha256": "560cc14c9b82bea381b7b13ee92e858b0394c6526a6eb354cb28310fa309a2dd",
+      "source_sha256": "8741e1fc2c16c0d3dbb690b9669af84c4e04f177ad9248ae3cfe867b160ab71e",
       "upstream": []
     },
     "examples/settings.json": {
@@ -40,10 +40,10 @@
       "copyright": "Copyright (c) 2026 oh-my-hermes contributors",
       "license": "MIT",
       "local_path": "scripts/dock.py",
-      "local_sha256": "6439478a365f94ff7a68dfc50b1ee7bba1ec54f64ba7a1b12bc6481fb4fa0f9e",
+      "local_sha256": "e27d15c921543849de47023bf21417efa73d94620d54cb158378fab998c65f41",
       "modification_notice": "Original standalone direct Vina helper and guidance; no upstream code, molecular inputs or result files copied",
       "source_path": "src/skills/molecular_docking_toolkit/scripts/dock.py",
-      "source_sha256": "6439478a365f94ff7a68dfc50b1ee7bba1ec54f64ba7a1b12bc6481fb4fa0f9e",
+      "source_sha256": "e27d15c921543849de47023bf21417efa73d94620d54cb158378fab998c65f41",
       "upstream": []
     }
   },

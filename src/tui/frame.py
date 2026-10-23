@@ -13,7 +13,8 @@ composer frame (`layout.allocate`), so a 6-row terminal draws the top rule
 alone, and below `layout.MIN_ROWS` rows or `layout.MIN_COLS` columns the input
 rows have no rule at all. A `/name` in the draft that resolves to a command or
 skill (`known_slash`, `slash.known_names`) is drawn bold in its colour
-(`Theme.slash`). While the composer holds a `!` line for Hermes' shell the
+(`Theme.slash`). A `dag-ulw` token in the draft is drawn in the aura instead
+(`aura`), and the rules are drawn heavy in its gradient while it is there. While the composer holds a `!` line for Hermes' shell the
 prompt mark is drawn bold in the shell family's hue instead of the prompt colour; the rules
 stay as they are. The info line under the bottom rule is a line the app
 builds, its text `INFO_INSET` cells in; the frame only places it. The agent
@@ -53,19 +54,21 @@ first row under the top rule while there is one: it counts against the composer'
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+from .aura import AURA_RULE, aura_ranges, aura_rule, aura_style
 from .composer import PROMPT, Composer
 from .layout import BLANK, Budget, allocate, caret_row, compose, composer_cap
-from .style import Line, Span
+from .style import TRUECOLOR, Line, Span, Style
 from .slash import slash_spans, slash_token_ranges
-from .theme import DEFAULT_THEME, KIND_FAMILIES, Theme
+from .theme import DEFAULT_THEME, KIND_FAMILIES, Theme, aura_moves
 from .width import cell_width, line_width, truncate, truncate_line
 
 RULE = "─"  # the composer's rules, above and under it, full width
 INFO_INSET = 2  # cells before the info line's text, under the rule
 STICKY_PREFIX = "↳ you: "
 STICKY_CUT = "…"  # where the reminder's prompt is cut
+BROWSING_HINT = "↑↓ browsing · esc to type"  # in the composer's place while the agent list or the dag tree has the keys
 
 MODE_NORMAL = "normal"
 MODE_ACCEPT = "accept"
@@ -104,6 +107,8 @@ def build_frame(
     composer_blank: bool = False,
     tail_floor: int = 0,
     known_slash: frozenset[str] = frozenset(),
+    aura: int = 0,
+    aura_depth: str = TRUECOLOR,
 ) -> Frame:
     """The region for one repaint; `min_height` rows at least, pad rows at the top making up the rest.
 
@@ -119,23 +124,34 @@ def build_frame(
     under the bottom edge, above the info line: the completion menu where the
     app puts it under the composer. `agents` is the agent view, drawn under
     the info line as the region's last rows, sized by its producer to
-    `layout.agent_view_cap`. `composer_blank` draws the composer's rows, its
-    rules included, as blank rows of the same count, with no caret: the agent
-    list under them has the keys, and nothing moves as it opens or closes.
+    `layout.agent_view_cap`. `composer_blank` keeps the composer's rules and
+    draws its rows as the dim `BROWSING_HINT` and blank rows of the same
+    count, with no caret: the agent list or the dag tree under them has the
+    keys, and nothing moves as it opens or closes.
     `tail_floor` is the tail's last rows the agent view leaves it
     (`layout.allocate`): the working row while a turn runs. `known_slash`
     names the commands and skills a `/name` in the draft is drawn for (none
-    in a draft holding a paste chip).
+    in a draft holding a paste chip). `aura` is the phase a `dag-ulw` token's
+    gradient and its band stand at (`aura`), painted at `aura_depth`: the
+    token, over its `/name` colour, and both rules, drawn heavy, while the
+    draft holds one.
     """
     cap = composer_cap(rows)
     composer_lines: list[Line] = []
+    glow: list[tuple[int, int]] = []
+    base: tuple[Style, ...] = ()
+    glint: tuple[Style, ...] = ()
     caret_line = caret_col = 0
     if composer is not None:
         chips = [truncate_line(attachments, cols)] if attachments is not None and cap >= 2 else []
         mark = theme.kinds[KIND_FAMILIES.index("shell")] if mode == MODE_SHELL else theme.prompt
         marks = slash_token_ranges(composer.text, known_slash) if known_slash and not composer.pastes else []
+        glow = aura_ranges(composer.text) if theme.aura and not composer.pastes and not composer.masked else []
+        base, glint = (tuple(replace(style, depth=aura_depth) for style in styles) if aura_depth != TRUECOLOR
+                       else styles for styles in (theme.aura, theme.aura_glint))
         input_lines, (caret_line, caret_col) = composer.render(
-            cols, cap - len(chips), prompt, mark, theme.muted, marks, theme.slash
+            cols, cap - len(chips), prompt, mark, theme.muted, marks, theme.slash,
+            glow, lambda offset, length: aura_style(base, glint, offset, length, aura),
         )
         if placeholder and not composer.text and input_lines:
             input_lines[0] = truncate_line((*input_lines[0], Span(placeholder, theme.hint)), cols)
@@ -155,14 +171,18 @@ def build_frame(
         agents_rows=len(agents),
         tail_floor=tail_floor,
     )
+    rule = rule_line(cols, theme)
+    if glow and not composer_blank:
+        rule = aura_rule(cols, base, glint, aura) if aura_moves(theme) else (
+            Span(AURA_RULE * cols, replace(theme.rule, bold=True)),)
     lines = compose(
         budget,
         sticky=sticky,
         tail=tail,
         slot=slot,
-        rule=BLANK if composer_blank else rule_line(cols, theme),
-        composer=[BLANK] * len(composer_lines) if composer_blank else composer_lines,
-        bottom_rule=BLANK if composer_blank else rule_line(cols, theme),
+        rule=rule,
+        composer=_browsing_rows(len(composer_lines), cols, theme) if composer_blank else composer_lines,
+        bottom_rule=rule,
         info=truncate_line(info, cols),
         below=below,
         agents=agents,
@@ -179,6 +199,13 @@ def build_frame(
         height=budget.total,
         budget=budget,
     )
+
+
+def _browsing_rows(count: int, cols: int, theme: Theme) -> list[Line]:
+    """The composer's rows while a list under it has the keys: the hint, dim, then blank rows; as many as it had."""
+    if count <= 0:
+        return []
+    return [truncate_line((Span(" " * INFO_INSET), Span(BROWSING_HINT, theme.hint)), cols), *[BLANK] * (count - 1)]
 
 
 def rule_line(width: int, theme: Theme = DEFAULT_THEME) -> Line:

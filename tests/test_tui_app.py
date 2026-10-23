@@ -451,6 +451,16 @@ class StartupRefusalTests(AppTestCase):
         self.assertNotIn("\x1b", printed)
         self.assertNotIn("\x07", printed)
 
+    def test_the_fallback_marker_carries_every_line_said_about_a_failed_start(self) -> None:
+        # Hermes' own TUI, which `omh` opens next, clears these lines from the screen; `omh` says them again after.
+        run = self.prepare(Scenario("session", (), stderr=("refused: home is owned by a running gateway",),
+                                    after=EXIT, exit_code=1))
+        self.run_main(run)
+        self.assert_fell_back(run)
+        printed = run.stderr.getvalue()
+        self.assertIn("  refused: home is owned by a running gateway\n", printed)
+        self.assertEqual(run.fallback_sentinel.read_text(encoding="utf-8"), printed)
+
     def test_ctrl_c_while_the_session_opens_exits_130_and_closes_the_gateway(self) -> None:
         # The gateway start and the session call run before the terminal goes raw, where
         # Ctrl+C is still SIGINT; KeyboardInterrupt stands in for it on the first startup call.
@@ -831,13 +841,17 @@ class SessionTests(AppTestCase):
                 screen = run.terminal.captures[name]
                 self.assertEqual(len(screen), rows)
                 drawn = [line for line in screen if line]
-                self.assertEqual(sum(BOX_MARK in line for line in screen), 2, screen)  # one frame: its two rules
-                self.assertEqual(sum(RULE_MARK in line for line in screen), 2, screen)
+                self.assertEqual(sum(line.startswith(BOX_MARK) for line in screen), 2, screen)  # one frame: its rules
+                self.assertEqual(sum(line.startswith(RULE_MARK) for line in screen), 2, screen)
                 # The redrawn session (the banner, and at 100 columns the logo above it, since the whole session
-                # fits the redraw) and the region (top edge, composer, bottom edge, info line), nothing else.
+                # fits the redraw) and the region (the launch card, refitted, then top edge, composer, bottom edge,
+                # info line), nothing else: one card, its boxes all closed.
                 logo = LOGO[:-1] if cols >= 100 else []
+                card = [line for line in drawn if line[:1] in ("╭", "│", "╰")]
+                self.assertEqual(sum(line.startswith("╭─ session") for line in screen), 1 if card else 0, screen)
+                self.assertEqual(sum(line.count("╭") for line in card), sum(line.count("╰") for line in card), screen)
                 self.assertEqual(drawn[: len(logo)], logo, screen)
-                self.assertEqual(len(drawn), 5 + len(logo), screen)
+                self.assertEqual(len(drawn), 5 + len(logo) + len(card), screen)
                 self.assertTrue(drawn[len(logo)].startswith("⚚ OH-MY-HERMES"), screen)
                 self.assertTrue(all(len(line) <= cols for line in screen))
 
@@ -870,7 +884,8 @@ class SessionTests(AppTestCase):
         self.assert_clean_run(run)
         screen = run.terminal.captures["final"]
         everything = run.terminal.screen.scrollback + screen
-        self.assertEqual(sum(BOX_MARK in line for line in everything), 2, everything)  # one frame: its two rules
+        self.assertEqual(sum(line.startswith(BOX_MARK) for line in everything), 2, everything)  # one frame: its rules
+        self.assertEqual(sum(line.startswith("╭─ session") for line in everything), 1, everything)  # one launch card
         self.assertEqual(sum(line.startswith("⚚ OH-MY-HERMES") for line in everything), 1, everything)
         self.assertTrue(screen[0].startswith("⚚ OH-MY-HERMES"), screen[:2])
         self.assertTrue(all(len(line) <= 60 for line in everything))
@@ -1577,9 +1592,10 @@ class OpeningTests(AppTestCase):
         self.assertEqual(screen[LOGO_ROWS + 1], "")
         self.assertEqual(run.terminal.screen.scrollback, [])
 
-    def test_the_composer_follows_the_banner_and_then_the_turn_with_no_blank_rows_but_a_spacer(self) -> None:
-        # Claude Code's input box follows what was printed: no screen of blank rows over the composer at the start
-        # or after a turn, only the one spacer row every block opens with, and nothing under the info line.
+    def test_the_launch_fills_the_screen_and_the_composer_stays_on_the_bottom_rows(self) -> None:
+        # The owner, 2026-10-23: the TUI opens full screen, the logo and the banner on top and the composer on the
+        # bottom rows with the rows between them empty, and the turn's output fills them from the top while the
+        # composer stays where it is. Nothing under the info line.
         run = self.prepare(
             Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers()),
             rows=34,
@@ -1593,16 +1609,35 @@ class OpeningTests(AppTestCase):
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        for name, above in (("start", f"⚚ OH-MY-HERMES v{__version__} · ~/project"), ("turn", "  ✻ ")):
+        for name in ("start", "turn"):
             with self.subTest(capture=name):
                 screen = run.terminal.captures[name]
                 status = info_index(screen)
                 rule = status - 2 - UNDER_COMPOSER
                 self.assertIn(RULE_MARK, screen[rule], screen)
-                self.assertEqual(screen[rule - 1], "", screen)
-                self.assertTrue(screen[rule - 2].startswith(above), screen)
-                self.assertEqual(screen[status + 1 :], [""] * (33 - status), screen)
-                self.assertLess(status, 33)
+                self.assertEqual(status, 33, screen)  # the info line on the last row, the composer right above it
+        start = run.terminal.captures["start"]
+        rule = info_index(start) - 2 - UNDER_COMPOSER
+        self.assertTrue(start[LOGO_ROWS].startswith(f"⚚ OH-MY-HERMES v{__version__} · ~/project"), start)
+        # In between: the launch card right under the banner's blank row, then empty rows down to the composer.
+        card_end = max(index for index, line in enumerate(start[:rule]) if line.startswith("╰"))
+        self.assertTrue(start[LOGO_ROWS + 2].startswith("╭─ session"), start)
+        self.assertEqual(start[card_end + 1 : rule], [""] * (rule - card_end - 1), start)
+        turn = run.terminal.captures["turn"]
+        self.assertTrue(any(line.startswith("  ✻ ") for line in turn[:rule]), turn)  # the turn above the composer
+
+    def test_only_the_launch_fills_the_screen_a_redraw_after_the_first_prompt_follows_the_content(self) -> None:
+        from omh.tui.screen import LiveRegion
+        from test_tui_modes import composer_index, drawn, make_app, type_text
+
+        app, _client = make_app(rows=30, cols=100)
+        app.launch_layout = True
+        app.region = LiveRegion(app.terminal.write, at_top=True)
+        self.assertGreater(composer_index(drawn(app)), 20, "the launch: the composer on the bottom rows")
+        type_text(app, "hi")
+        app._on_input(Key(ENTER, ""))
+        app._full_redraw()
+        self.assertLess(composer_index(drawn(app)), 10, "after the first prompt the composer follows the content")
 
     def test_launched_on_a_screen_holding_output_it_starts_on_the_top_row_and_erases_the_scrollback(self) -> None:
         # The owner, 2026-10-22: scrolling up must stop at the top of the session, not walk into the shell's history.
@@ -1647,7 +1682,7 @@ class OpeningTests(AppTestCase):
                 self.assertEqual(history[: LOGO_ROWS - 1], LOGO[:-1])  # scrolling up stops at the logo
                 self.assertEqual(first[: LOGO_ROWS - 1], LOGO[:-1])  # the logo opens the top row
                 self.assertEqual(rows["after"], rows["before"])
-                self.assertEqual(rows["before"], LOGO_ROWS + 3)  # the logo, the banner and its blank row, the top edge
+                self.assertEqual(rows["before"], 33 - 1 - UNDER_COMPOSER)  # the bottom rows: composer, rule, info
                 writes = "".join(run.terminal.writes)
                 # The startup query, the push, ED 3 once, then the first frame. No ED 2: the push leaves only the
                 # cursor's own row on the screen, the top row, which the first frame paints over.
@@ -1907,8 +1942,8 @@ class LocalCommandTests(AppTestCase):
         )
         terminal = run.terminal  # answers no OSC 11
         terminal.script(
-            self.submit(run, "/theme"),
-            Step(b"\x04", when=terminal.shows("picks the background it is measured"), label="the summary"),
+            self.submit(run, "/theme auto"),
+            Step(b"\x04", when=terminal.shows("COLORFGBG"), label="the background notice"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
@@ -1940,8 +1975,7 @@ class LocalCommandTests(AppTestCase):
             Step(b"/theme amber\r", when=note("light", "on a light background"), label="light"),
             Step(b"/theme dark\r", when=note("amber", "Theme amber"), label="amber"),
             Step(b"/theme auto\r", when=note("dark", "on a dark background"), label="dark"),
-            Step(b"/theme\r", when=note("auto", "follows the terminal"), label="auto"),
-            Step(b"\x04", when=terminal.shows("picks the background it is measured"), label="the summary"),
+            Step(b"\x04", when=note("auto", "follows the terminal"), label="auto"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
@@ -1958,14 +1992,16 @@ class LocalCommandTests(AppTestCase):
             self.submit(run, "/theme crimson"),
             Step(b"/theme nope\r", when=lambda: terminal.idle() and "applies to this session" in terminal.history()
                  and not seen.append(terminal.box_foreground()), label="the switch notice"),
-            Step(b"\x04", when=terminal.shows("No theme named nope"), label="the unknown-theme notice"),
+            Step(b"\x04", when=terminal.shows("No theme or launch look named nope"), label="the unknown-theme notice"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
         self.assertEqual(seen[-1], hex_to_rgb(theme_named("crimson").rule.fg))
         history = terminal.history()
         self.assertIn("Theme crimson applies to this session", history)
-        self.assertIn("No theme named nope. Available: sky, amber, crimson, mono.", history)
+        said = " ".join(word for word in history.split() if word != "┃")  # it wraps on the echo's rail
+        self.assertIn("No theme or launch look named nope. Themes: sky, amber, crimson, mono. "
+                      "Launch looks: spectrum, violet, gold, graphite.", said)
 
     def test_help_lists_local_commands_the_hermes_catalog_by_category_and_keys_in_the_transcript(self) -> None:
         run = self.prepare(
@@ -2157,8 +2193,9 @@ class AttachmentTests(AppTestCase):
         self.assertEqual(attach["params"], {"session_id": LIVE_ID, "path": "./shot.png"})
         before, chip = terminal.captures["before"], terminal.captures["chip"]
         status = info_index(chip)
-        # The chip row sits between the top rule and the input, and the region grew by it.
-        self.assertEqual(status, info_index(before) + 3)  # the command's echo and the spacer under it, the chip
+        # The chip row sits between the top rule and the input; the launch put the composer on the bottom rows, and
+        # it stays there, the chip taking a row above the input.
+        self.assertEqual(status, info_index(before))
         composer = status - 1 - UNDER_COMPOSER
         self.assertTrue(composer_text(chip[composer]).startswith("❯"), chip)
         self.assertEqual(composer_text(chip[composer - 1]), "📎 shot.png 1280×720  Backspace removes")  # under the rule
@@ -2403,11 +2440,11 @@ class KeyTests(AppTestCase):
         (asked,) = run.calls("complete.path")
         self.assertEqual(asked["params"], {"word": "@sr", "session_id": LIVE_ID})
         menu = terminal.captures["menu"]
-        # The launch starts the region on the top row, so it knows its place and the menu opens under the composer.
-        bottom = rule_rows(menu)[1]
-        self.assertTrue(menu[bottom + 1].startswith(" app.py"), menu)
-        self.assertTrue(menu[bottom + 2].startswith(" src/"), menu)
-        self.assertIn("dir", menu[bottom + 2])
+        # The launch puts the composer on the bottom rows, so the menu opens above it, over its top rule.
+        top = rule_rows(menu)[0]
+        self.assertTrue(menu[top - 2].startswith(" app.py"), menu)
+        self.assertTrue(menu[top - 1].startswith(" src/"), menu)
+        self.assertIn("dir", menu[top - 1])
         accepted = terminal.captures["accepted"]
         self.assertFalse(any(line.startswith(" src/") for line in accepted), accepted)
 

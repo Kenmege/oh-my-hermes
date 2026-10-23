@@ -18,16 +18,29 @@ import argparse
 import array
 import json
 import math
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
 
 
+def system_alias(part):
+    # macOS ships /etc, /tmp and /var (home of the default temp dir) as links
+    # into /private. Only root can create a top-level entry, so trust exactly
+    # those three, and only when the link names the same directory there.
+    if sys.platform != "darwin" or part.parent != Path("/") or part.name not in ("etc", "tmp", "var"):
+        return False
+    try:
+        return os.readlink(part) in ("private/" + part.name, "/private/" + part.name)
+    except OSError:
+        return False
+
+
 def read_spec(path, expected=dict):
     path = Path(path).absolute()
     # The file, its folder and that folder's parent; above is the operator's own layout.
-    if any(p.is_symlink() for p in (path, path.parent, path.parent.parent)) or not path.is_file() or path.stat().st_size > 1_048_576:
+    if any(p.is_symlink() and not system_alias(p) for p in (path, path.parent, path.parent.parent)) or not path.is_file() or path.stat().st_size > 1_048_576:
         raise ValueError("spec must be a regular symlink-free UTF-8 JSON file <=1 MiB")
     def invalid_constant(value):
         raise ValueError(f"nonfinite JSON constant: {value}")
@@ -124,7 +137,7 @@ def envelope(path, dt, db_floor=None, ffmpeg="ffmpeg"):
 def generated(path):
     """timeline.json and reel/timeline.js are regenerated on every run; never through a link."""
     path = Path(path).absolute()
-    if any(p.is_symlink() for p in (path, path.parent, path.parent.parent)):
+    if any(p.is_symlink() and not system_alias(p) for p in (path, path.parent, path.parent.parent)):
         raise ValueError(f"generated output refuses symlink: {path}")
     return path
 

@@ -17,6 +17,8 @@ from pathlib import Path
 import tempfile
 import unittest
 from _module_patch import patch_modules
+from _toolkit_path_guard import (POSIX_ONLY, assert_alias_does_not_exempt_links_below,
+                                 assert_only_system_aliases_trusted)
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "src/skills/molecular_docking_toolkit/scripts/dock.py"
@@ -175,6 +177,43 @@ class PrerequisiteTests(unittest.TestCase):
                         self.assertEqual(helper.main(self.argv(receptor, ligand, selected_output) + ["--validate-only"]), 2)
             self.assertEqual(sentinel.read_text(), "unchanged")
             self.assertEqual((receptor.read_bytes(), ligand.read_bytes()), original)
+
+    def test_receptor_and_ligand_must_be_different_files_however_spelled(self):
+        helper = load_helper()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receptor, ligand = self.inputs(root)
+            (root / "sub").mkdir()
+            hard_link = root / "hard-link.pdbqt"
+            os.link(receptor, hard_link)
+            for same in (receptor, root / "sub" / ".." / receptor.name, hard_link):
+                stderr = io.StringIO()
+                with self.subTest(ligand=same), contextlib.redirect_stderr(stderr):
+                    self.assertEqual(helper.main(self.argv(receptor, same, root / "refused") + ["--validate-only"]), 2)
+                    self.assertIn("receptor and ligand must be different files", stderr.getvalue())
+            # A ligand symlinked to the receptor is refused as a symlink: `checked_path` reads both before `same_file`.
+            link = root / "link.pdbqt"
+            link.symlink_to(receptor)
+            stderr = io.StringIO()
+            with self.subTest(ligand=link), contextlib.redirect_stderr(stderr):
+                self.assertEqual(helper.main(self.argv(receptor, link, root / "refused") + ["--validate-only"]), 2)
+                self.assertIn("symlink paths are not accepted", stderr.getvalue())
+            self.assertFalse((root / "refused").exists())
+            missing = root / "missing.pdbqt"
+            self.assertTrue(helper.same_file(missing, root / "sub" / ".." / missing.name))
+            self.assertFalse(helper.same_file(missing, receptor))
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(helper.main(self.argv(receptor, ligand, root / "validated") + ["--validate-only"]), 0)
+
+    def test_only_macos_system_aliases_are_trusted(self):
+        helper = load_helper()
+        with tempfile.TemporaryDirectory() as directory:
+            assert_only_system_aliases_trusted(self, helper.checked_path, helper.system_alias, Path(directory),
+                                               "symlink paths")
+
+    @POSIX_ONLY
+    def test_a_trusted_alias_does_not_exempt_a_link_below_it(self):
+        assert_alias_does_not_exempt_links_below(self, load_helper().checked_path, "symlink paths")
 
     def test_malformed_engine_pose_refuses_without_success_manifest(self):
         # Corrupted backend output fixture only: never evidence of native execution.

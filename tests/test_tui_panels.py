@@ -477,7 +477,7 @@ class AgentsBlockTests(unittest.TestCase):
         payload = with_delegation(with_agents(hud_payload(), [agent_row(0)]), [{}, {}])
         rows = lines_text(panel_lines(payload, 120, 40, THEME, 0.0, show_agents=False))
         self.assertFalse(any(row.startswith("● main") for row in rows))
-        self.assertTrue(any(row.startswith("  DAG · delegation · 3 nodes · 2 edges") for row in rows), rows)
+        self.assertTrue(any(row.startswith("  DAG · delegation · 2 nodes · 0 edges") for row in rows), rows)  # lanes, not main
 
     def test_the_old_fanout_graph_field_is_no_longer_drawn(self) -> None:
         payload = with_graph(with_agents(hud_payload(), [agent_row(0)]), 3)

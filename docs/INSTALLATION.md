@@ -335,12 +335,23 @@ run and approval decision stays Hermes'; the screen is OMH's.
   names the session's commands and skills, when that moves one of the
   prompts a redraw prints. A
   path such as `src/a.py`, a `/name` nothing answers to and
-  a word with a slash inside it stay plain. While you pick from a
+  a word with a slash inside it stay plain. While the draft holds `dag-ulw`,
+  `dag ulw` or `/dag-ulw` (any case, as a whole word), its letters run
+  violet, magenta, pink and lavender with a brighter band sweeping through
+  them, and the composer's two rules are drawn heavy (`━`) in the same
+  gradient with a band travelling along them; it ends the moment the word
+  goes or the prompt is sent. It moves only on a truecolor terminal with
+  motion on, and not while the agent list or the dag tree has the keys; at
+  256 or 16 colours it stands still, and with `NO_COLOR`, or on a
+  background too close to its colours for the band to show (a mid grey),
+  the word and the heavy rules are bold and still. A Korean particle right
+  after the word (`dag-ulw로`) keeps it lit, as the router reads it. While you pick from a
   list (a question answered by picking, or the `/sessions`, `/rewind` or bare
   `/model` picker) or search the history with Ctrl+R, the
   composer and its rules are not drawn and the list or the search stands in
-  their place, right above the info line. While the agent list has the keys
-  the composer's rows are drawn blank instead, so nothing moves. A question and the agent list show
+  their place, right above the info line. While the agent list or the dag
+  tree has the keys the composer keeps its rules and its row says
+  `↑↓ browsing · esc to type` instead of the prompt, so nothing moves. A question and the agent list show
   no caret; a picker shows it at the end of its filter row and the search at
   the end of its query, where what you type (an input method's composition
   too) appears. The banner above the
@@ -352,7 +363,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   (100 columns) and 24 rows tall, the start shows the logo above the banner,
   each row in the theme's gradient made to read on the terminal's
   background; `/new` and a switched session do not repeat it, and a full
-  redraw shows it again only on top of the whole session.
+  redraw shows it again only on top of the whole session. Until the first
+  prompt the start fills the screen: the logo and the banner on top, the
+  composer and the info line on the bottom rows, the rows between them empty.
 - The info line under the composer, two cells in so it starts under the
   composer's text (on the edge on a terminal too small for the rules), says, on
   the left, the input mode or the keys that matter right now, and on the right the model, how full the
@@ -485,18 +498,28 @@ run and approval decision stays Hermes'; the screen is OMH's.
   new one counts every session it wrote in.
   The info line counts them (`2 agents · ↓ agents`; the count alone where
   the line is too narrow for both, or where Down would not open the list:
-  while you type, while a question or a picker is open). The view stays
+  while you type, while a question or a picker is open). During a DAG run the
+  count is the run's running lanes (`1,204 agents`), and it goes once none
+  runs or the run is over. The view stays
   while agents outlive the turn, each one's mark saying whether it still
   runs. With more agents than the view has rows, the running ones keep
   theirs and the rest are counted on its last row (`○ 3 done`, or `+4 more ·
   1 waiting · 3 done`); in two rows or fewer `● main` gives its row up
   first. While the conversation's delegation graph is a DAG run (a lane
   waits on another, or a lane delegates), the view is the run's folding tree
-  instead: the graph's header (`DAG · <name> · N nodes · …`), a row per layer
-  (`▾ layer 2 · 4 nodes · 2 running`) with a blank row between two layers
-  when either is open, and a row per node: a `▾`/`▸` fold triangle where
-  something is under it, its state glyph (the spinner while it runs), its
-  label, and its category, model, state and output tokens at the right edge.
+  instead: the graph's header (`DAG · <name> · N nodes · E edges · …`, the
+  run's lanes and the edges between them, main and its dispatches not
+  counted), a row per layer (`▾ layer 2 · 4 nodes · 2 running`; `28 of 640
+  nodes` where the graph's node cap left some out, `▸ layer 4 · 0 of 161
+  nodes` for a layer it left none of) with a blank row between
+  two layers when either is open, and a row per node: a `▾`/`▸` fold
+  triangle where something is under it, its state glyph (the spinner while
+  it runs), its title, and its category, model, state and output tokens. The
+  title is the node's label, followed by its prompt's first clause when the
+  label is under 24 cells, cut at a word with `…` past 52 cells. The figures
+  stand in columns two cells after the widest title, each as wide as its
+  widest value; where the row is too narrow the tokens go first, then the
+  category, then the model.
   Under an open node two `›` rows say what its child is doing: its latest
   call (`terminal(gh pr checkout 138300)`) and its latest other line, a
   thinking line, Hermes' progress line (the names of its last five calls) or
@@ -517,7 +540,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   nodes stay. Your folds last as long as the run: a new run, or another
   session, starts with none. `/dag` shows the
   graph with boxes. Once every lane has
-  settled the tree is one line (`DAG · <name> · done 5/6 · 1 failed`).
+  settled and the turn has ended, the tree is one line (`DAG · <name> · done
+  5/6 · 1 failed`); while the turn still runs, it stays. On the screen's
+  bottom rows the tree keeps the most rows it took this turn, blank under it
+  where it shrank, so the rows between the transcript and the working row
+  never open up mid-run.
 
   ![A dag run's folding tree under the OMH TUI composer: layer 1's accepted inventory shut, layer 2's two running groups open with each child's latest call and line under it, the failed group 3 with its error and the repair running beneath it, group 4 ready, and the verification waiting in layer 3](../assets/omh-tui-dag-tree.png)
 
@@ -525,8 +552,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   agents · 1 running`, then its rows). On a terminal under 6 rows or 20
   columns there is no view, and the info line keeps the count. Down on an empty composer
   gives the view's rows the keys as a list you pick from, as from a picker:
-  the composer's rows are drawn blank while it is open, so nothing on the
-  screen moves; the list scrolls when there are more agents than rows; and
+  the composer keeps its rules and says `↑↓ browsing · esc to type` while it
+  is open, so nothing on the screen moves; the list scrolls when there are
+  more agents than rows; and
   the info line says its keys (`↑↓ select
   · ⏎ log · x interrupt · s steer · esc back`). In a DAG run Down gives
   the keys to the tree instead, on its first running node, the same way:
@@ -927,6 +955,7 @@ Esc closes it):
 | ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions`, `/rewind` or `/model` list, move, take the highlighted row (switch to that session, put that prompt in the composer to send again, or switch this session to that model), or close it; typing filters the list |
 | ↑ / ↓, Enter, Esc, ←, q, Ctrl+C | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; any other key does nothing there |
 | x, s | In the agent list, on an agent: x twice interrupts it; s steers it with the next line you send (Esc cancels) |
+| ↑ / ↓ or a click, Enter, Esc | In the `/theme` picker, preview a launch look (spectrum, violet, gold, graphite) on the logo and the card, keep it, or put the one in use back; `/theme <look>` keeps one at once |
 | Click | On a row of the agent list, opens that agent's log (on main, only leaves the list) |
 | ← / →, q or Esc | In an agent's log, show the agent before or after, or go back; the pager's keys scroll it |
 | Tab / n, Shift+Tab / p, Space / Enter, d | In `/dag`, highlight the next or the previous box, fold or unfold the highlighted one, or show or hide Node details; ↑ / ↓, PageUp / PageDown and g / G scroll, q or Esc leaves |
@@ -1119,6 +1148,25 @@ fallback marker at the path `omh` named, which `omh` removes.
 
 The OMH TUI opens with the theme `omh theme use` saved under the OMH home
 (see [TUI Themes](#tui-themes)); `/theme <name>` switches the open session only.
+
+A fresh session's launch draws the block logo, the banner's title and a
+launch card in one launch look: `spectrum` (the logo swept through the tool
+kind hues, a box per section, the default), `violet` (one box), `gold` (one
+box in two columns) or `graphite` (grey and white with turquoise hyphens, a
+rule above and below). The card sits under the banner until your first
+prompt, then stays in scrollback above it. It names the model and effort,
+the new session, the last stored session with its `/resume` id, the first
+keys, and the skills Hermes has: OMH's grouped by capability family with
+the ulw lanes on a row of their own, and Hermes' own by category. It fills
+in as Hermes answers, and on a short terminal it drops rows, the last ones
+first, never reaching the composer. `/theme` alone opens a picker that
+previews each look on the logo and the card as you move (arrow keys, `j`/`k`
+or a click; once the launch has scrolled away, a compact preview above the
+list shows it); Enter keeps the highlighted look, Esc puts the one in use
+back, and `/theme <look>` (Tab completes the name) keeps one at once. The look is saved beside the theme, as
+`launch` in `<omh_home>/tui/theme.json`; a saved name OMH does not have is
+said once and `spectrum` is used. The looks are OMH's own colours: the skin
+file Hermes' banner reads is unchanged.
 Before its first frame it asks the terminal for its background colour (OSC 11,
 in the same wait as the cursor-position query, at most 0.1 s; a terminal that
 does not answer can still say light or
@@ -1669,6 +1717,37 @@ and the CLI a task is one turn, so a route lasts one turn. On a gateway
 platform (Slack, Discord, Telegram, Feishu, the API server) the task id is
 the session id, so a route lasts the session.
 
+A route is also the route of the conversation that set it. The three keys
+are shared by every session on the profile, so `~/.omh/routing/conversation-routes.json`
+(`delegation_conversation_routes/v1`) records which conversation asked for
+which route, and just before Hermes reads the keys for a `delegate_task`,
+OMH's `pre_tool_call` puts that conversation's own route back if another
+session replaced it. A delegate child that dispatches its own workers (with
+`delegation.max_spawn_depth` above 1) gets the route of the conversation it
+was delegated from, found through the `_delegate_from` marker Hermes writes
+on the child's `state.db` row. A conversation that set no route in this task
+gets the profile's default instead of another session's live route. Another
+session's `set`, `clear`, `fallback` or turn-end restore therefore changes
+which route the keys hold between dispatches, but not which route a dispatch
+runs on. A recorded route ends with its task, at the turn end or at the
+session-start restore that takes it back, and one older than six hours is
+ignored. When OMH cannot put the right route in place (another writer holds
+the lock for two seconds, or the write is refused), the `delegate_task` call
+is refused with `route_overwritten_by_other_session`, `route_not_applied` or
+`other_session_route_live`, naming both sessions, and no child starts. Two
+cases are left in place as before: a route whose writer recorded no
+conversation entry, such as one written by an older OMH that is still
+running, and any route when the dispatching session's own `state.db` row
+cannot be read, since that session might be the route's child.
+
+One window remains: Hermes reads the keys after the hook returns, so a write
+by another session in that interval still wins. When another check asks a
+person to approve the `delegate_task` first, the route is written before
+they answer, so the wait for the answer is part of that interval. A released
+Hermes offers no per-call route that would close it. With
+`HERMES_IGNORE_USER_CONFIG=1`, Hermes ignores the `config.yaml` OMH writes,
+so no route applies at all.
+
 Every one of those is gated on the same recorded value: if the keys no
 longer hold what OMH wrote, someone else set them, and OMH reports that and
 changes nothing. The session-start path additionally asks the writer's own
@@ -1757,8 +1836,17 @@ unless nothing is linked. It is exclusive — ticked beside a provider the
 prompt asks again rather than guessing which half you meant — and it is
 never pre-ticked.
 
-After the list you can type any further provider id (that one is asked for
-its kind, since OMH knows nothing about it), and, when the Claude Code CLI is
+The row just above it is **Other provider — type its name**. Tick it to add a
+provider id the list does not show: after Enter you type each id (each is
+asked for its kind, since OMH knows nothing about it) and an empty line ends
+the list. Left unticked, Enter on the list ends the step without that
+prompt. Like skip it is never pre-ticked, and ticked beside skip the prompt
+asks again. Picking it never unticks another row. In the typed menu, where a
+typed answer otherwise replaces the ticked rows, an answer naming only this
+row is added to them. In the arrow-key menus, including the kind menu that
+follows a typed name, a two-digit row number is typed as its two digits. A
+note under the menu shows a first digit that is still waiting, and Space or
+Enter picks that row instead. Then, when the Claude Code CLI is
 on PATH, you are asked whether you have a Claude Code subscription. The
 answers are recorded in `~/.omh/routing/providers.json`
 (`provider_entitlements/v1`):
@@ -2410,6 +2498,9 @@ Rules worth knowing:
   it. The palette is measured against the terminal's background as the
   session opens, and `/theme auto|light|dark` chooses that background for
   the open session (see [The OMH TUI](#the-omh-tui)).
+- **The launch look is saved in the same record.** `/theme` in the OMH TUI
+  writes `launch` beside `theme` in `<omh_home>/tui/theme.json`; either
+  write keeps the other.
 - **Bare `hermes` keeps its own skin.** `display.skin` is yours; OMH reads it
   only for the fallback above and never writes it.
 

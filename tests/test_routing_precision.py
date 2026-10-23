@@ -66,7 +66,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # a deferral in a bit one more (+1), and a tail asking for concerns and a
         # future time after a past clause two more (+2).
         # Three science vocabulary controls remain direct answers.
-        self.assertEqual(payload["summary"]["case_count"], 1093)
+        # Career actor repair adds five employer requests and two references.
+        # Actor/objective follow-up adds seven employer contrasts.
+        self.assertEqual(payload["summary"]["case_count"], 1112)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -135,7 +137,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # A Korean stop then a negation is answered directly (+1).
         # A stop with a declarative reason is answered directly (+1).
         # The three science vocabulary controls also answer directly.
-        self.assertEqual(payload["summary"]["direct_answer_count"], 342)
+        # The two quoted employer controls are answered directly.
+        self.assertEqual(payload["summary"]["direct_answer_count"], 349)
         # show-reel's README-link control is answered as a file lookup (+1).
         self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
@@ -183,7 +186,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # and a send me the diff tail run as a graph (+2). Two report tails by their
         # opening and a time inside a past clause run as a graph (+3).
         # Three unnamed science requests render dedicated computation cards.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1108)
+        # Career actor repair retains five personal/target/quoted controls.
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1120)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

@@ -8521,7 +8521,63 @@ def _hermes_setup_guide_requested(normalized_query: str) -> bool:
     return any(terms == routing_terms(request) for request in _HERMES_SETUP_GUIDE_WHOLE_REQUESTS)
 
 
+def employer_hiring_intent(normalized_query: str, query_tokens: set[str]) -> bool:
+    """Separate an organization's recruiting objective from a candidate's role.
+
+    Inputs are the existing executable, normalized routing view: quoted examples
+    do not establish an actor. Occupations and employer targets alone are not a
+    veto; personal career objectives retain their normal routing evidence.
+    """
+    candidate_objectives = ("job search", "own job search", "next role", "next job", "resume", "cv",
+                            "application", "cover letter", "job applications", "job interview", "own next role")
+    candidate_owns_work = contains_boundary_phrase(normalized_query, tuple(
+        f"{owner} {objective}"
+        for owner in ("my", "his", "her", "their")
+        for objective in candidate_objectives
+    ) + ("for myself",))
+    # Role nouns are actor evidence only beside an organizational objective;
+    # neither an article nor a first-person pronoun establishes that boundary.
+    employer_actor = bool({"employer", "company", "client", "recruiter", "hiring"} & query_tokens) or contains_boundary_phrase(
+        normalized_query, ("recruiting team", "recruitment team", "recruitment agency",
+                           "recruiting agency", "staffing agency", "recruitment department", "hiring team")
+    )
+    # A present hiring predicate supplies actor evidence, not a requested
+    # sourcing objective: background hiring must not override personal work.
+    hiring_actor = contains_boundary_phrase(normalized_query, (
+        "am hiring", "are hiring", "is hiring", "we're hiring", "i'm hiring", "we’re hiring", "i’m hiring",
+        "need to hire", "needs to hire",
+    ))
+    # A recruiting purpose attached to the search establishes an organizational
+    # objective regardless of the profession being recruited or the actor's name.
+    # Match the purpose immediately attached to the search, not any hiring
+    # verb later in an employer/target/background clause. Regular -ly adverbs
+    # form an open modifier class; degree and coordination are grammatical
+    # structure, not a vocabulary of professions, actors or example adverbs.
+    modifier = r"(?:(?:more|less|very) )?[^\W\d_]+ly "
+    search_sourcing = bool(re.search(
+        r"\bjob search(?: campaign)? (?:in order )?to "
+        rf"(?:{modifier}(?:(?:and|or) )?)*"
+        r"(?:recruit|hire|source|screen)\b",
+        normalized_query,
+    ))
+    sourcing_objective = search_sourcing or contains_boundary_phrase(normalized_query, (
+        "find candidates", "source candidates", "screen candidates", "recruit candidates", "hire candidates",
+    ))
+    hiring_objective = sourcing_objective or contains_boundary_phrase(normalized_query, (
+        "job search campaign", "hiring campaign", "recruiting campaign", "recruitment campaign",
+    ))
+    # A possessive can refer to the organization's campaign too; it is not
+    # candidate ownership when the requested outcome is sourcing people.
+    if candidate_owns_work and not sourcing_objective:
+        return False
+    return search_sourcing or hiring_actor or (employer_actor and hiring_objective)
+
+
 def _web_research_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
+    # Career discovery retains its domain method; retrieval is one of its steps.
+    # Generic job/process/search words alone do not establish that intent.
+    if _contains_phrase(normalized_query, ("job search",)):
+        return False
     if _hermes_setup_guide_requested(normalized_query):
         return False
     if _scheduled_ops_blueprint_guard_applies(normalized_query, query_tokens):

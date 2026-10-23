@@ -72,6 +72,7 @@
    "geospatial-analysis",
    "biomedical-evidence",
    "molecular-docking",
+   "ai-job-search",
    "meeting-brief",
    "finance-analysis",
    "internal-audit",
@@ -84,7 +85,7 @@
    "lifecycle-growth",
    "sales-pipeline-review"
   ],
-  "route_summary": "Name the source/synthesis split before summarizing or planning from the material.",
+  "route_summary": "Name the source/synthesis split before summarizing or planning from the material. omh_search is optional local plan/fusion/coverage processing, not retrieval or permission evidence.",
   "source_examples": [
    "customer signal -> feedback-triage -> investigation plan -> coding handoff -> status",
    "source discovery -> source-finder -> candidate set -> downstream workflow",

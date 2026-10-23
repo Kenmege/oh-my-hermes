@@ -109,10 +109,13 @@ from ..skin_pack import (
     SkinTheme,
     default_theme,
     effective_theme,
+    read_launch_choice,
     skin_colors,
     theme_for_name,
     theme_for_skin_name,
     theme_names,
+    theme_store_path,
+    write_launch_choice,
 )
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
@@ -132,6 +135,7 @@ from .gateway import (
     gateway_spawn,
 )
 from .keys import (
+    BUTTON_LEFT,
     BACKSPACE,
     CHAR,
     DOWN,
@@ -149,6 +153,7 @@ from .keys import (
 )
 from .launch import request_fallback
 from .agent_view import AGENT_STEER_LEFT_UNANSWERED_NOTICE, STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
+from .aura import aura_ranges
 from .layout import Budget, choice_cap, is_tiny, slot_cap
 from .markdown import clean_text
 from .modes import (
@@ -188,6 +193,15 @@ from .rewind_picker import KEYS as REWIND_PICKER_KEYS
 from .rewind_picker import PICK as REWIND_PICK
 from .rewind_picker import RewindPicker, rewind_rows
 from .shortcuts import shortcut_lines
+from .launch_card import Facts as LaunchFacts
+from .launch_card import Paint as LaunchPaint
+from .launch_card import Skills, launch_card, preview, skill_rows
+from .launch_picker import CLOSE as LAUNCH_CLOSE
+from .launch_picker import KEYS as LAUNCH_PICKER_KEYS
+from .launch_picker import MOVE as LAUNCH_MOVE
+from .launch_picker import PICK as LAUNCH_PICK
+from .launch_picker import SUMMARIES as LAUNCH_SUMMARIES
+from .launch_picker import LaunchPicker
 from .slash import (
     COMMANDS,
     DROPPED,
@@ -211,11 +225,23 @@ from .style import CSI, NO_COLOR, TRUECOLOR, Line, Span, Style, color_depth
 from .subagents import Hit, Roster
 from .terminal import Terminal, background_from_colorfgbg, colorfgbg_names_dark, terminal_name, terminal_supported
 from .theme import (
+    BLACK,
+    DEFAULT_LAUNCH,
     DEFAULT_THEME,
+    EDGE_CONTRAST,
+    LAUNCH_PRESETS,
     LIGHT_STAND_IN,
+    WHITE,
+    LaunchStyles,
+    LogoPalette,
     Theme,
+    aura_moves,
     build_theme,
     is_light,
+    launch_palette,
+    launch_styles,
+    launch_wordmark,
+    lifted_colour,
     logo_lines,
     surface_for,
     theme_named,
@@ -311,7 +337,9 @@ REWIND_NONE_NOTICE = "No prompt to rewind to in this session yet."
 REWIND_REFUSED_NOTICE = "Hermes did not rewind: {reason}. The screen shows the session as Hermes still has it."
 # Said as Hermes refuses, over the screen from before the send, until Hermes' history redraws it.
 REWIND_KEPT_NOTICE = "Hermes did not rewind: {reason}. The screen is back to how it was before you sent."
-REWIND_UNREAD_NOTICE = "Hermes did not send the session's history ({reason}), so the screen stays as it was before you sent."
+# Said when the session was cut but the prompt that replaces the cut part did not go (only attached to a shared gateway).
+REWIND_CUT_NOTICE = "Hermes cut the session there but did not take the prompt: {reason}. The prompt is back in the composer."
+REWIND_UNREAD_NOTICE ="Hermes did not send the session's history ({reason}), so the screen stays as it was before you sent."
 REWIND_TURN_BACK_NOTICE = "/{name} went back in the session itself, so the rewind is cancelled."
 MODEL_BUSY_NOTICE = "Hermes switches the model between turns: let this one end, or interrupt it with Esc."
 TODOS_NONE_NOTICE = "No plan in this session yet: Hermes' todo tool writes one."
@@ -350,6 +378,17 @@ LOGO_MIN_ROWS = 24
 LAST_SESSION_LIMIT = 3
 LAST_SESSION_NOTICE = "last session: {label} · /resume {id} reopens it"
 PLACEHOLDER = "Ask Hermes anything"
+# The launch card (`launch_card`): none (a resumed session, or after /new or a switch), live in the region until the
+# first prompt is sent, then kept in scrollback above it, and printed again under the banner by a full redraw.
+CARD_NONE = "none"
+CARD_LIVE = "live"
+CARD_KEPT = "kept"
+LAUNCH_UNKNOWN_NOTICE = "The launch look {name!r} saved in {path} is not one OMH has; spectrum is used."
+LAUNCH_NO_NAME_NOTICE = "No theme or launch look named {name}. Themes: {themes}. Launch looks: {looks}."
+LAUNCH_KEPT_NOTICE = "Launch look {name}, kept in {path}."
+LAUNCH_SESSION_NOTICE = "Launch look {name} for this session; there is no OMH home to keep it in."
+LAUNCH_SAVE_FAILED_NOTICE = "Launch look {name} for this session; it could not be saved to {path}: {error}"
+LAUNCH_SWATCH_STEPS = 6  # the colours a look's swatch shows in the /theme picker
 # The composer after an approval's tell row: what is sent goes into the running turn as a steer (`App._tell`).
 TELL_PLACEHOLDER = "tell Hermes what to do instead"
 TELL_SAY = (
@@ -842,7 +881,7 @@ def short_path(path: str, home: str) -> str:
 _BANNER_MIN_PATH_CELLS = 12
 
 
-def banner_lines(*, cwd: str, resumed: str, theme: Theme, width: int) -> list[Line]:
+def banner_lines(*, cwd: str, resumed: str, theme: Theme, width: int, brand: Style | None = None) -> list[Line]:
     """The header flushed to scrollback once, before the first frame, and a blank row under it.
 
     The header is one row at `width`: the brand, the version, the session it
@@ -856,7 +895,7 @@ def banner_lines(*, cwd: str, resumed: str, theme: Theme, width: int) -> list[Li
     def header(path: str) -> Line:
         shown = [*facts, path] if path else facts
         return (
-            Span(BANNER_BRAND, theme.brand),
+            Span(BANNER_BRAND, brand or theme.brand),
             Span(f" v{__version__}", theme.muted),
             *(span for fact in shown for span in (Span(" · ", theme.dim), Span(fact, theme.text))),
         )
@@ -866,10 +905,14 @@ def banner_lines(*, cwd: str, resumed: str, theme: Theme, width: int) -> list[Li
     return [truncate_line(header(path), width), ()]
 
 
-def banner_logo(skin: SkinTheme, background: str | None, width: int, rows: int, depth: str = TRUECOLOR) -> list[Line]:
-    """The skin's block logo and a blank row, for above the banner; nothing narrower than the logo or under LOGO_MIN_ROWS.
-    At the `NO_COLOR` depth the logo keeps its bold and drops its colours."""
-    logo = logo_lines(skin, background)
+def banner_logo(
+    skin: SkinTheme, background: str | None, width: int, rows: int, depth: str = TRUECOLOR,
+    palette: LogoPalette | None = None,
+) -> list[Line]:
+    """The skin's block logo in a launch look's colours (the default look's without one) and a blank row, for above
+    the banner; nothing narrower than the logo or under LOGO_MIN_ROWS. At the `NO_COLOR` depth the logo keeps its
+    bold and drops its colours."""
+    logo = logo_lines(skin, background, palette or launch_palette(DEFAULT_LAUNCH, surface_for(skin, background)))
     if depth == NO_COLOR:
         logo = [tuple(Span(span.text, replace(span.style, depth=NO_COLOR)) for span in row) for row in logo]
     if not logo or rows < LOGO_MIN_ROWS or width < max(line_width(row) for row in logo):
@@ -1224,6 +1267,12 @@ class App(ModesMixin, AgentViewMixin):
         self.banner_record: dict[str, str] | None = None  # kept, so a full redraw can print it again
         self.logo_due = False  # the block logo goes above the banner flushed next
         self.in_launch_session = True  # the logo is the start's: it is not repeated for /new or a switch
+        self.launch_look = DEFAULT_LAUNCH  # the launch look the logo, the banner's title and the card are drawn in
+        self.launch_picker: LaunchPicker | None = None  # /theme's picker, while open; its highlight is previewed
+        self.card_state = CARD_NONE
+        self.card_room = 0  # the rows the live card was last fitted to: the form it is kept in once the prompt goes
+        self.session_skills: Skills | None = None  # Hermes' skills, regrouped for the card, once `session.info` says
+        self.last_session_row: Any = None  # the last stored session, for the card while it is live
         self.redraw_at: float | None = None  # when a settled resize redraws everything
         self.busy_since = 0.0  # when the running turn (or the prompt still waiting for it) started
         self.tip_turn: float | None = None  # the turn (its `busy_since`) whose working row shows TIPS[tip_index]
@@ -1255,6 +1304,10 @@ class App(ModesMixin, AgentViewMixin):
         # The rows the agent view wanted, the rows it got and the tail's working rows in the last frame drawn while a
         # turn ran (`_held_view_rows`).
         self.view_hold: tuple[int, int, int] | None = None
+        self.tree_hold = 0  # the most rows the dag tree took this turn on the bottom rows (`_tree_held_rows`)
+        # Until the first prompt the region reaches the screen's last row (`_render`): the launch's logo and banner on
+        # top, the composer on the bottom rows, the rows between them empty.
+        self.launch_layout = True
         self.mouse_off_at: float | None = None  # when `_set_mouse` last turned reports off; None before that
         self.wake: int | None = None  # the gateway client's wake descriptor, which `run` selects on with the input
         self.input_at = 0.0  # when input last arrived, on `clock`
@@ -1299,9 +1352,26 @@ class App(ModesMixin, AgentViewMixin):
         self.banner_record = self._banner_record(result, resumed=self.stored_id if resume else "")
         self.banner_facts = dict(self.banner_record)
         self.logo_due = True
+        self._load_launch_look()
+        self.card_state = CARD_NONE if resume else CARD_LIVE
         if resume:
             self._draw_history(result.get("messages"))
         self._redeliver(result.get("open_requests"))
+
+    def _omh_home(self) -> Path | None:
+        home = self.environ.get("OMH_HOME") or ""
+        return Path(home) if home else None
+
+    def _load_launch_look(self) -> None:
+        """The launch look saved under the OMH home; a name OMH does not have is said once, and spectrum used."""
+        home = self._omh_home()
+        saved = read_launch_choice(home) if home is not None else None
+        if saved is None:
+            return
+        if saved.strip().lower() in LAUNCH_PRESETS:  # a hand-edited `GRAPHITE` is graphite; it is written lowercase
+            self.launch_look = saved.strip().lower()
+        elif home is not None:
+            self.transcript.add_notice(LAUNCH_UNKNOWN_NOTICE.format(name=saved, path=theme_store_path(home)), NOTICE_WARN)
 
     def _ask_last_session(self) -> None:
         """Ask for the stored sessions, to say under the banner where the last one is; a refusal says nothing."""
@@ -1311,7 +1381,10 @@ class App(ModesMixin, AgentViewMixin):
         """Name the newest other session that has messages, unless the person has started already."""
         started = any(not isinstance(block, NoticeBlock) for block in self.transcript.blocks)
         row = next((row for row in session_rows(result) if row.id != self.stored_id and row.message_count > 0), None)
-        if row is not None and not started:
+        if row is not None and not started and self.card_state == CARD_LIVE:
+            self.last_session_row = row  # the card says it
+            self.dirty = True
+        elif row is not None and not started:
             self.transcript.add_notice(LAST_SESSION_NOTICE.format(label=row.label, id=row.id))
 
     def _banner_record(self, result: Mapping[str, Any], resumed: str) -> dict[str, str]:
@@ -1615,7 +1688,7 @@ class App(ModesMixin, AgentViewMixin):
             due.append(now + READ_TIMEOUT_SECONDS)
         if self.redraw_at is not None:
             due.append(self.redraw_at)
-        elif self._busy() or self._panel_live():
+        elif self._busy() or self._panel_live() or self._aura_live():
             due.append(self.last_render + self._tick_seconds())
         if self.path_due is not None and self.sid:
             due.append(self.path_due)
@@ -2087,7 +2160,7 @@ class App(ModesMixin, AgentViewMixin):
         self.dag_end_due.pop(run, None)
         graph = self._read_dag_graph()
         if graph is not None:
-            self.transcript.add_aside(dag_block.DagBlock(title, graph))
+            self.transcript.add_aside(dag_block.DagBlock(title, graph, added=tuple(_added)))
 
     def _dag_ends_due(self) -> None:
         """The run ends this turn reached, each printed once if its run is still over as the turn ends."""
@@ -2185,6 +2258,10 @@ class App(ModesMixin, AgentViewMixin):
         self.transcript.add_notice(CONNECTION_NOTICE, NOTICE_WARN)
 
     def _on_session_info(self, payload: Mapping[str, Any]) -> None:
+        skills = payload.get("skills")
+        if isinstance(skills, dict) and skills:  # Hermes' lazy first info names none; the full one, after its build
+            self.session_skills = skill_rows({key: value for key, value in skills.items() if isinstance(value, list)})
+            self.dirty = True
         self.model = as_text(payload.get("model")) or self.model
         self._take_usage(payload.get("usage"))
         self._take_session_state(payload)
@@ -2365,7 +2442,10 @@ class App(ModesMixin, AgentViewMixin):
 
     def _on_input(self, event: Key | Paste | Mouse) -> None:
         if isinstance(event, Mouse):
-            self._on_mouse(event)  # never a key: whatever it is, it types nothing
+            if self.launch_picker is not None:
+                self._launch_picker_click(event)
+            else:
+                self._on_mouse(event)  # never a key: whatever it is, it types nothing
             return
         if self.pager is not None:
             if self.log_agent and isinstance(event, Key) and event.name in (LEFT, RIGHT):
@@ -2398,6 +2478,9 @@ class App(ModesMixin, AgentViewMixin):
             return
         if self.slot is None and self.model_picker is not None:
             self._model_picker_key(event)
+            return
+        if self.slot is None and self.launch_picker is not None:
+            self._launch_picker_key(event)
             return
         if self.slot is None and self._agent_list_key(event):
             return
@@ -2744,7 +2827,7 @@ class App(ModesMixin, AgentViewMixin):
             return
         kept = self.transcript  # the screen before the cut, put back if Hermes refuses it
         self._restart_transcript(list(rewind.before))
-        self._submit_prompt(text, shown, truncate=rewind.row_id, before_cut=kept, notice=notice)
+        self._submit_prompt(text, shown, truncate=rewind.row_id, before_cut=kept, notice=notice, typed=typed)
         self._full_redraw()
 
     def _restart_transcript(self, messages: list[dict[str, Any]]) -> None:
@@ -2754,26 +2837,41 @@ class App(ModesMixin, AgentViewMixin):
         self.transcript.cwd = cwd
         self._draw_history(messages)
 
-    def _on_rewind_refused(self, sid: str, kept: Transcript, error: dict[str, Any]) -> bool:
-        """Hermes kept its history: the turn never starts, and the screen goes back to `kept`, as it was before the send.
+    def _on_rewind_refused(
+        self, sid: str, kept: Transcript, error: dict[str, Any], text: str = "", images: Sequence[Attachment] = ()
+    ) -> bool:
+        """The rewound prompt did not start a turn: the screen goes back to `kept`, as it was before the send.
 
         Then it is redrawn from the history Hermes sends; if that read fails,
         or is not answered, the screen from before the send stays, and the
         notices say which. A prompt queued behind the rewind goes only once
-        that is settled, so the redraw does not wipe its echo.
+        that is settled, so the redraw does not wipe its echo. The images
+        sent with it come back as chips: Hermes still holds them for the next
+        prompt. An error whose `data` says `rewound` (the shared-gateway
+        child cut the session, then Hermes refused the prompt) is not
+        "Hermes kept its history": the notice says the cut happened, and what
+        the person typed (`text`: for a skill, the command, not the message it
+        expanded to) goes back to the draft as a refused steer's does
+        (`_give_back`), after a draft begun since rather than over it.
         """
         if sid != self.sid:
             self._on_submit_error(error)
             return True
         reason = (as_text(error.get("message")) or "refused").strip().rstrip(".")
+        data = error.get("data")
+        cut = isinstance(data, dict) and data.get("rewound") is True
         self.transcript = kept
         self._full_redraw()
-        self.transcript.add_notice(REWIND_KEPT_NOTICE.format(reason=reason), NOTICE_WARN)
+        self.attachments.extend(images)
+        if cut:
+            self._give_back(text)  # what the person typed, after any draft begun since: never over it
+        self.transcript.add_notice((REWIND_CUT_NOTICE if cut else REWIND_KEPT_NOTICE).format(reason=reason), NOTICE_WARN)
         self.turn_pending = False  # no turn starts; the queue waits for the history read
+        after = (REWIND_CUT_NOTICE if cut else REWIND_REFUSED_NOTICE).format(reason=reason)
         self._request(
             "session.history",
             {"session_id": sid},
-            lambda result: self._redraw_from_history(sid, result, REWIND_REFUSED_NOTICE.format(reason=reason)),
+            lambda result: self._redraw_from_history(sid, result, after),
             lambda history_error: self._history_unread(sid, history_error),
             lambda: self._history_unread(sid, {"message": f"no answer in {CALL_ANSWER_SECONDS:g} s"}),
         )
@@ -2830,7 +2928,14 @@ class App(ModesMixin, AgentViewMixin):
     def _menu_entries(self) -> list[Completion]:
         """Completions while the composer holds a leading `/word` and nothing else, unless Esc closed them over it."""
         text = self.composer.text
-        if self.slot is not None or not text.startswith("/") or any(ch.isspace() for ch in text) or text == self.menu_closed:
+        if self.slot is not None or not text.startswith("/") or text == self.menu_closed:
+            return []
+        command, space, typed = text[1:].partition(" ")
+        if space and command.lower() == "theme" and not any(ch.isspace() for ch in typed):
+            # `/theme <look>`: the launch looks, by what is typed of one
+            return [Completion(f"theme {name}", LAUNCH_SUMMARIES[name]) for name in LAUNCH_PRESETS
+                    if name.startswith(typed.lower()) and name != typed.lower()]
+        if any(ch.isspace() for ch in text):
             return []
         prefix = text[1:]
         if "/" in prefix:
@@ -2989,15 +3094,18 @@ class App(ModesMixin, AgentViewMixin):
 
     def _submit_prompt(
         self, text: str, shown: str = "", queued: bool = False, truncate: int | None = None,
-        before_cut: Transcript | None = None, notice: str = "",
+        before_cut: Transcript | None = None, notice: str = "", typed: str = "",
     ) -> None:
         """Send one prompt; `queued` says the queue sent it.
 
         `truncate` names the row a rewind cuts the session before, and
         `before_cut` the transcript from before that cut, which a refusal puts back.
-        `notice` is what the skill command that sent it said, under its row whenever it goes.
+        `notice` is what the skill command that sent it said, under its row whenever it goes. `typed` is
+        what the person typed for it (a skill command, not the skill message it expanded to), which a
+        rewind refused after its cut gives back.
         """
         self.transcript.add_user(shown or text, from_queue=queued, known=self.known_slash)
+        self.launch_layout = False
         if notice:
             self.transcript.add_aside(NoticeBlock(notice))
         if not queued:
@@ -3010,6 +3118,7 @@ class App(ModesMixin, AgentViewMixin):
         self.busy_since = self.clock()
         self.turn_waited = 0.0
         self.turn_output_base = self.usage_output
+        sent_images = list(self.attachments)
         self.attachments.clear()  # the gateway sends its queued images with this turn
         params: dict[str, Any] = {"session_id": self.sid, "text": text}
         if queued:
@@ -3017,7 +3126,10 @@ class App(ModesMixin, AgentViewMixin):
         if truncate is not None:
             params.update(truncate_before_row_id=truncate, confirm_truncate=True)  # the person picked this row
             sid, kept = self.sid, before_cut or self.transcript
-            self._request("prompt.submit", params, lambda result: None, lambda error: self._on_rewind_refused(sid, kept, error))
+            self._request(
+                "prompt.submit", params, lambda result: None,
+                lambda error: self._on_rewind_refused(sid, kept, error, typed or text, sent_images),
+            )
             return
         self._request("prompt.submit", params, lambda result: None, self._on_submit_error)
 
@@ -3552,6 +3664,7 @@ class App(ModesMixin, AgentViewMixin):
         """
         old = self.sid
         self.in_launch_session = False
+        self.card_state = CARD_NONE
         declined = self._decline_all_requests()
         if old and old != as_text(result.get("session_id")):
             self._turn_off_yolo_set_here(old)
@@ -3801,17 +3914,19 @@ class App(ModesMixin, AgentViewMixin):
         """
         choice = arg.strip().lower()
         if not choice:
-            self.transcript.add_notice(
-                f"Theme {self.theme.name}: {self._background_text()}. /theme <name> picks a palette "
-                f"({', '.join(theme_names())}); /theme auto|light|dark picks the background it is measured against."
-            )
+            self.launch_picker = LaunchPicker(self.launch_look)
+            self.dirty = True
+            return
+        if choice in LAUNCH_PRESETS:
+            self._keep_launch_look(choice)
             return
         if choice in BACKGROUND_MODES:
             self.background_mode = choice
         elif theme_for_name(arg) or theme_for_skin_name(arg):
             self.theme = theme_named(arg)
         else:
-            self.transcript.add_notice(f"No theme named {arg}. Available: {', '.join(theme_names())}.", NOTICE_WARN)
+            self.transcript.add_notice(LAUNCH_NO_NAME_NOTICE.format(
+                name=arg, themes=", ".join(theme_names()), looks=", ".join(LAUNCH_PRESETS)), NOTICE_WARN)
             return
         self.theme = self._painted(build_theme(self._skin(), self._surface()))
         if choice in BACKGROUND_MODES:
@@ -3819,6 +3934,126 @@ class App(ModesMixin, AgentViewMixin):
         else:
             self.transcript.add_notice(f"Theme {self.theme.name} applies to this session; `omh theme` keeps it.")
         self._full_redraw()
+
+    def _shown_look(self) -> str:
+        """The launch look drawn now: the /theme picker's highlight while it is open, else the one in use."""
+        return self.launch_picker.highlighted if self.launch_picker is not None else self.launch_look
+
+    def _launch_paint(self) -> LaunchPaint:
+        """The shown look's card colours against the theme's background, painted at this terminal's depth."""
+        background = self._surface()
+        palette = launch_palette(self._shown_look(), surface_for(self._skin(), background))
+        look = launch_styles(self._skin(), background, palette)
+        if self.color_depth == NO_COLOR:
+            look = LaunchStyles(*(replace(style, depth=NO_COLOR) for style in (look.brand, look.label, look.edge)))
+        return LaunchPaint(self.theme, look)
+
+    def _card_lines(self, cols: int, room: int) -> list[Line]:
+        """The launch card in the shown look, from what the session has said so far, fitted to `room` rows."""
+        row = self.last_session_row
+        facts = LaunchFacts(
+            model=self.model, effort=self.effort, session=self.stored_id,
+            last_title=row.label if row is not None else "", last_id=row.id if row is not None else "",
+            last_count=row.message_count if row is not None else 0,
+        )
+        return launch_card(self._shown_look(), facts, self._launch_paint(), cols, room, self.session_skills)
+
+    def _launch_swatches(self) -> dict[str, tuple[Style, ...]]:
+        """Each launch look's colours for its row in the /theme picker, each lifted to a glyph's 3:1."""
+        surface = surface_for(self._skin(), self._surface())
+        ink = BLACK if is_light(surface) else WHITE
+        swatches = {}
+        for name in LAUNCH_PRESETS:
+            palette = launch_palette(name, surface)
+            colours = palette.faces or palette.sweep or (*palette.greys[:1], *palette.whites[:2], palette.spark)
+            step = max(len(colours) // LAUNCH_SWATCH_STEPS, 1)
+            swatches[name] = tuple(
+                Style(fg=lifted_colour(colour, surface, EDGE_CONTRAST, ink), depth=self.color_depth)
+                for colour in colours[::step][:LAUNCH_SWATCH_STEPS]
+            )
+        return swatches
+
+    def _keep_launch_look(self, name: str) -> None:
+        """Use launch look `name` from now on, save it under the OMH home, and draw the logo and the card in it."""
+        self.launch_look = name
+        home = self._omh_home()
+        if home is None:
+            self.transcript.add_notice(LAUNCH_SESSION_NOTICE.format(name=name))
+        else:
+            try:
+                path = write_launch_choice(home, name)
+            except OSError as error:
+                self.transcript.add_notice(
+                    LAUNCH_SAVE_FAILED_NOTICE.format(name=name, path=theme_store_path(home), error=error), NOTICE_WARN)
+            else:
+                self.transcript.add_notice(LAUNCH_KEPT_NOTICE.format(name=name, path=path))
+        self._redraw_launch()
+
+    def _preview_launch(self) -> None:
+        """Draw the shown look where it shows: on the launch screen, the logo by a full redraw and the live card in
+        the region; past it, the compact preview above the picker (`_launch_preview`) needs only the next frame."""
+        if self.card_state == CARD_LIVE:
+            self._full_redraw()
+        self.dirty = True
+
+    def _redraw_launch(self) -> None:
+        """Draw a look kept: as the preview does, and once the launch is past it, the logo and the kept card in
+        scrollback again by a full redraw while the whole session still fits one, as `/theme <name>` repaints."""
+        if self.card_state == CARD_LIVE or (self.in_launch_session and not self.transcript.left_out):
+            self._full_redraw()
+        self.dirty = True
+
+    def _launch_preview(self, cols: int) -> list[Line]:
+        """The highlighted look in four rows: its wordmark and its card's frame."""
+        background = self._surface()
+        palette = launch_palette(self._shown_look(), surface_for(self._skin(), background))
+        mark = launch_wordmark(BANNER_BRAND, self._skin(), background, palette)
+        if self.color_depth == NO_COLOR:
+            mark = tuple(Span(span.text, replace(span.style, depth=NO_COLOR)) for span in mark)
+        facts = LaunchFacts(model=self.model, effort=self.effort, session=self.stored_id)
+        return preview(self._shown_look(), facts, self._launch_paint(), mark, cols, self.session_skills)
+
+    def _launch_picker_key(self, event: Key | Paste | Mouse) -> None:
+        """A key for the open /theme picker: a move previews the highlighted look, Enter keeps it, Esc puts the one in
+        use back."""
+        picker = self.launch_picker
+        if picker is None or isinstance(event, Mouse):
+            return
+        action = picker.handle_key(event)
+        if action == LAUNCH_MOVE:
+            self._preview_launch()
+        elif action == LAUNCH_PICK:
+            self.launch_picker = None
+            self._keep_launch_look(picker.highlighted)
+        elif action == LAUNCH_CLOSE:
+            self.launch_picker = None
+            if picker.highlighted != picker.current:
+                self._preview_launch()
+        self.dirty = True
+
+    def _take_launch_clickable(self, budget: Budget, cols: int, rows: int) -> None:
+        """The /theme picker's look rows as the cells a click moves the highlight to, counted up from the region's
+        last row like the agent list's, with mouse reports on while it is open."""
+        picker = self.launch_picker
+        first = budget.pad + budget.sticky + budget.tail + (picker.first_row if picker is not None else 1)
+        last = budget.total - 1
+        self.clickable = {
+            last - (first + index): (Hit(0, cols, f"launch:{index}"),)
+            for index in range(len(LAUNCH_PRESETS)) if first + index < budget.pad + budget.sticky + budget.tail + budget.slot
+        }
+        self._set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
+
+    def _launch_picker_click(self, event: Mouse) -> None:
+        """A plain left press on one of the picker's look rows highlights that look and previews it."""
+        picker = self.launch_picker
+        plain = event.button == BUTTON_LEFT and event.pressed and not (event.motion or event.shift or event.alt or event.ctrl)
+        last = self.region.last_row(self.size[1])
+        if picker is None or not plain or last is None or self.redraw_at is not None:
+            return
+        above, column = last - (event.y - 1), event.x - 1  # a report counts rows and columns from 1
+        target = next((hit.subagent_id for hit in self.clickable.get(above, ()) if hit.start <= column < hit.end), "")
+        if target.startswith("launch:") and picker.move_to(int(target.split(":", 1)[1])) == LAUNCH_MOVE:
+            self._preview_launch()
 
     def _background_text(self) -> str:
         """How the theme's background was chosen, for `/theme`'s notices."""
@@ -4009,6 +4244,21 @@ class App(ModesMixin, AgentViewMixin):
         payload = self.hud.payload if self.hud is not None else None
         return isinstance(payload, Mapping) and bool(payload.get("active"))
 
+    def _aura_live(self) -> bool:
+        """Whether the composer's `dag-ulw` aura moves now (`aura`): a token in the draft it draws, at the truecolor
+        depth, with motion on, on a background its band shows on (`theme.aura_moves`), and while no list or tree
+        holds the keys (the composer is drawn blank then). Only then does the loop tick for it; the gradient stands
+        still at 256 or 16 colours and with reduced motion, and there is none at the `NO_COLOR` depth, so nothing
+        ticks while it would not move.
+        """
+        composer = self.composer
+        return (
+            self.motion and self.color_depth == TRUECOLOR and aura_moves(self.theme)
+            and not composer.pastes and not composer.masked and not self._composer_hidden()
+            and self.list_selected is None and self.tree_selected is None  # browsing draws the composer blank
+            and bool(aura_ranges(composer.text))
+        )
+
     def _render_when_due(self) -> None:
         if self.terminal.resized():  # one that came during this step's work: no frame is drawn at the old size
             self._on_resize()
@@ -4016,7 +4266,7 @@ class App(ModesMixin, AgentViewMixin):
         if self.redraw_at is not None:
             return  # the screen is mid-reflow; the settled redraw paints it
         now = self.clock()
-        due = (self._busy() or self._panel_live()) and now - self.last_render >= self._tick_seconds()
+        due = (self._busy() or self._panel_live() or self._aura_live()) and now - self.last_render >= self._tick_seconds()
         if not (self.dirty or due):
             return
         self.dirty = False
@@ -4035,12 +4285,23 @@ class App(ModesMixin, AgentViewMixin):
             return
         stable = self.transcript.take_stable_lines(cols, self.theme)
         prompt_row = self.transcript.prompt_row
+        head: list[Line] = []
         if self.banner_facts is not None:
-            head = banner_logo(self._skin(), self._surface(), cols, rows, self.color_depth) if self.logo_due else []
-            head += banner_lines(**self.banner_facts, theme=self.theme, width=cols)
+            background = self._surface()
+            palette = launch_palette(self._shown_look(), surface_for(self._skin(), background))
+            if self.logo_due:
+                head = banner_logo(self._skin(), background, cols, rows, self.color_depth, palette)
+            head += banner_lines(**self.banner_facts, theme=self.theme, width=cols, brand=self._launch_paint().look.brand)
+            if self.card_state == CARD_KEPT and self.logo_due:  # a redraw of the whole session prints it again
+                head += [*self._card_lines(cols, self.card_room), ()]
+            self.banner_facts = None
+        if self.card_state == CARD_LIVE and not self.launch_layout:
+            # The first prompt went: the card, as it was last fitted, stays in scrollback above it.
+            head += [*self._card_lines(cols, self.card_room), ()]
+            self.card_state = CARD_KEPT
+        if head:
             stable = head + stable
             prompt_row = None if prompt_row is None else prompt_row + len(head)
-            self.banner_facts = None
         # Counted from the prompt's own first row: not the blank row or the held rows above it, and after a full
         # redraw only the rows retaken from the prompt on.
         if prompt_row is not None:
@@ -4053,11 +4314,17 @@ class App(ModesMixin, AgentViewMixin):
         # becomes pad rows at its top and the composer stays on the bottom rows; above it, the region follows the
         # content. Where the region's place is not certain it counts as above.
         pinned = self.region.last_row(rows) == rows - 1
+        min_height = max(self.region.height - len(stable), 0) if pinned else 0
+        top = self.region.top_row(rows)
+        if not pinned and self.launch_layout and top is not None:
+            # Until the first prompt the launch fills the screen: the rows under the banner pad the region down to the
+            # last row, so the composer stands on the bottom rows from the first frame and the pinned rule keeps it.
+            min_height = max(rows - min(top + len(stable), rows - 1), 0)
         build = partial(
             build_frame,
             cols=cols,
             rows=rows,
-            min_height=max(self.region.height - len(stable), 0) if pinned else 0,
+            min_height=min_height,
             composer=None if self._composer_hidden() else self.composer,
             # the list, or the dag tree, under the info line has the keys
             composer_blank=self.list_selected is not None or self.tree_selected is not None,
@@ -4068,6 +4335,8 @@ class App(ModesMixin, AgentViewMixin):
             agents=self._agent_view(cols, rows),
             tail_floor=self._working_rows(),
             known_slash=self.known_slash,
+            aura=self._spinner_frame() if self._aura_live() else 0,
+            aura_depth=self.color_depth,
             text_question=self.slot is not None and not self.slot.picking,
             slot_caret=self._slot_caret(),  # read after `_slot_lines` drew the picker it comes from
             theme=self.theme,
@@ -4095,6 +4364,16 @@ class App(ModesMixin, AgentViewMixin):
             # cannot show) is never the one cut.
             build = partial(build, agents=self._agent_view(cols, rows, room))
             frame = build()
+        if self.card_state == CARD_LIVE and self.launch_layout and min_height > 0:
+            # The card goes at the region's top, under what is flushed above it (and the spacer the tail opens with
+            # after a notice), and blank rows take the rest down to the composer, so the region still reaches the
+            # last row and no pad goes above the card.
+            room = min_height - (frame.budget.total - frame.budget.pad)
+            card = self._card_lines(cols, room - 1)  # a blank row stays over the composer's rule
+            self.card_room = max(room - 1, 0)
+            if card:
+                build = partial(build, tail=[*build.keywords["tail"], *card, *([()] * (room - len(card)))])
+                frame = build()
         # The rows above the region once the flush below and this frame are drawn: transcript rows.
         if self._sticky_needed(self.region.rows_above(rows, len(stable), frame.height)):
             frame = build(sticky=sticky_line(self.sticky, cols, self.theme, self.known_slash))
@@ -4106,6 +4385,8 @@ class App(ModesMixin, AgentViewMixin):
         if busy:
             self.view_hold = (wanted, frame.budget.agents, self._working_rows())
         self._take_clickable(frame.budget, self._clickable_rows())
+        if self.launch_picker is not None:
+            self._take_launch_clickable(frame.budget, cols, rows)
 
     def _place_menu(self, rows: int, flushed: int, frame: Frame) -> bool:
         """Where the open completion menu goes with `frame`; True when that changed, so the frame is built again.
@@ -4147,6 +4428,7 @@ class App(ModesMixin, AgentViewMixin):
         return (
             self.slot is None and self.picker is None and self.search is None and self.rewind_picker is None
             and self.model_picker is None and self.list_selected is None and self.tree_selected is None
+            and self.launch_picker is None
         )
 
     def _composer_hidden(self) -> bool:
@@ -4162,7 +4444,7 @@ class App(ModesMixin, AgentViewMixin):
             return self.slot.picking
         return (
             self.picker is not None or self.rewind_picker is not None or self.model_picker is not None
-            or self.search is not None
+            or self.search is not None or self.launch_picker is not None
         )
 
     def _info_line(self, cols: int) -> Line:
@@ -4250,6 +4532,8 @@ class App(ModesMixin, AgentViewMixin):
         """The open picker's or search's keys, said on the info line in place of the composer's; () with neither open."""
         if self.picker is not None:
             return SESSION_PICKER_KEYS
+        if self.launch_picker is not None:
+            return LAUNCH_PICKER_KEYS
         if self.search is not None:
             return SEARCH_HINTS
         if self.rewind_picker is not None:
@@ -4390,6 +4674,9 @@ class App(ModesMixin, AgentViewMixin):
         # The info line says a question's or a picker's keys at every height; their rows do not.
         if self.slot is not None:
             return self.slot.lines(cols, self.theme, cap, waiting=len(self.waiting_requests))
+        if self.launch_picker is not None:
+            shown = [] if self.card_state == CARD_LIVE else self._launch_preview(cols)
+            return self.launch_picker.lines(cols, self.theme, cap, self._launch_swatches(), shown)
         if self.picker is not None:
             return self.picker.lines(cols, self.theme, cap, self.wall_clock())
         if self.search is not None:
@@ -4520,6 +4807,28 @@ def _say(stream: TextIO, text: str) -> None:
     stream.flush()
 
 
+class _Told:
+    """`main`'s stderr, keeping what it said there: a fallback hands that to `omh` (`request_fallback`).
+
+    Hermes' own TUI, which `omh` opens next, clears the screen those lines
+    were on, so `omh` says them again once it closes.
+    """
+
+    def __init__(self, stream: TextIO) -> None:
+        self.stream = stream
+        self.lines: list[str] = []
+
+    def write(self, text: str) -> int:
+        self.lines.append(text)
+        return self.stream.write(text)
+
+    def flush(self) -> None:
+        self.stream.flush()
+
+    def said(self) -> str:
+        return "".join(self.lines)
+
+
 def _start_gateway(client: GatewayClient, stderr: TextIO) -> Event | None:
     """The gateway's ready event, or None after saying why it did not start."""
     try:
@@ -4536,7 +4845,7 @@ def _start_gateway(client: GatewayClient, stderr: TextIO) -> Event | None:
 def _run(
     client: GatewayClient,
     environ: Mapping[str, str],
-    stderr: TextIO,
+    stderr: _Told,
     open_terminal: Callable[[], TerminalLike],
     make_poller: Callable[[str | None, str | None], PollerLike],
     make_client: Callable[..., GatewayClient] | None = None,
@@ -4547,7 +4856,7 @@ def _run(
     """
     ready = _start_gateway(client, stderr)
     if ready is None:
-        return request_fallback(environ)
+        return request_fallback(environ, stderr.said())
     terminal = open_terminal()
     app = App(
         terminal,
@@ -4561,7 +4870,7 @@ def _run(
         app.startup()
     except (GatewayCallError, GatewayTimeout, GatewayUnavailable) as error:
         _say(stderr, f"omh: the OMH TUI could not open a Hermes session: {error}")
-        return request_fallback(environ)
+        return request_fallback(environ, stderr.said())
     try:
         with terminal:
             background, typed, row = terminal.query_background()
@@ -4590,10 +4899,10 @@ def main(
     """Start the OMH TUI and return its exit code (`FALLBACK_EXIT` when it could not start)."""
     stdin = sys.stdin if stdin is None else stdin
     stdout = sys.stdout if stdout is None else stdout
-    stderr = sys.stderr if stderr is None else stderr
+    stderr = _Told(sys.stderr if stderr is None else stderr)
     if not terminal_supported(stdin, stdout, environ):
         _say(stderr, "omh: this terminal cannot run the OMH TUI; opening Hermes' own terminal instead.")
-        return request_fallback(environ)
+        return request_fallback(environ, stderr.said())
     if attach_refused(environ):
         _say(stderr, attach_message(environ))
         return 1
@@ -4601,7 +4910,7 @@ def main(
         client = make_client(gateway_spawn(environ))
     except GatewayUnavailable as error:
         _say(stderr, f"omh: the Hermes gateway did not start: {error}")
-        return request_fallback(environ)
+        return request_fallback(environ, stderr.said())
     previous_handlers = _install_exit_signals()
     try:
         # The terminal picks its key reports from the environment the TUI was given (TERM_PROGRAM and kin).

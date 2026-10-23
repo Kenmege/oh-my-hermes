@@ -247,6 +247,8 @@ _PORTABILITY: dict[str, str] = {
     'omh-geospatial-analysis': PORTABILITY_PORTABLE,
     'omh-biomedical-evidence': PORTABILITY_PORTABLE,
     'omh-molecular-docking': PORTABILITY_PORTABLE,
+    # Offline stdlib state helper; research and drafting belong to the host.
+    'omh-ai-job-search': PORTABILITY_PORTABLE,
     # required_inputs: user request; expected_outputs: github-event-ops/v1 card or guidance; final_checklist requires evidence/approval, not a native runtime.
     'omh-github-event-ops': PORTABILITY_PORTABLE,
     # expected_outputs require omh_agent_board RPC; final_checklist invokes Hermes native_action.
@@ -335,6 +337,20 @@ def portable_skill_names() -> tuple[str, ...]:
 # native campaign/TDD RPC guidance, route-capacity host injection, ecosystem
 # installation recipes, and progressive full-contracts (inlined for this target).
 PORTABLE_REFERENCE_PATHS = frozenset({
+    'ai-job-search/references/procedure.md',
+    'ai-job-search/references/profile-and-discovery.md',
+    'ai-job-search/references/fit-and-drafting.md',
+    'ai-job-search/references/interview-and-outcomes.md',
+    'ai-job-search/references/execution-and-qa.md',
+    'web-research/references/search-method.md',
+    'source-finder/references/search-method.md',
+    'research/references/search-method.md',
+    'web-research/references/search-fields.md',
+    'source-finder/references/search-fields.md',
+    'research/references/search-fields.md',
+    'web-research/references/search-examples.md',
+    'source-finder/references/search-examples.md',
+    'research/references/search-examples.md',
     'market-research/references/procedure.md',
     'market-research/references/market-sizing.md',
     'market-research/references/customer-evidence.md',
@@ -478,6 +494,11 @@ PORTABLE_REFERENCE_PATHS = frozenset({
 
 # Reviewed companion paths, independent of Markdown references and Hermes runtime.
 PORTABLE_SUPPORT_PATHS = frozenset({
+    'ai-job-search/toolkit/README.md',
+    'ai-job-search/toolkit/scripts/job_state.py',
+    'ai-job-search/toolkit/examples/synthetic-captures.json',
+    'ai-job-search/toolkit/LICENSE.upstream',
+    'ai-job-search/toolkit/upstream-manifest.json',
     'geospatial-analysis/toolkit/README.md',
     'geospatial-analysis/toolkit/LICENSE.upstream',
     'geospatial-analysis/toolkit/scripts/analyze.py',

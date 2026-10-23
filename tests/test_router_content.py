@@ -495,7 +495,19 @@ class RouterContentTests(unittest.TestCase):
         # 32,300 -> 33,100: `market-research` and `show-reel` add two registry
         # rows (32,367 measured); one row per new skill, ~2.3% headroom kept.
         for template in builtin_skill_reference_templates():
-            self.assertLess(len(template.content.encode("utf-8")), 33_100, template.relative_path)
+            # Only workflow-registry grows: 32,874 -> 33,118 measured bytes
+            # on clean 85673e100 -> career candidate. Its intact English
+            # retrieval row costs 227 and operator membership costs 17.
+            # No optional prose can be cut here without trimming triggers.
+            # 33,100 -> 33,344 adds exactly those 244 bytes, preserving the
+            # existing 226-byte allowance (less than the historical ~2%).
+            # The feature regression reconstructs and pins the legacy rows;
+            # every other reference keeps the original 33,100 ceiling.
+            limit = 33_344 if (
+                template.skill_name == "oh-my-hermes"
+                and template.relative_path == "references/workflow-registry.md"
+            ) else 33_100
+            self.assertLess(len(template.content.encode("utf-8")), limit, template.relative_path)
 
         schemas = (
             OMH_CAPABILITIES_SCHEMA,
@@ -4312,7 +4324,7 @@ class RouterContentTests(unittest.TestCase):
         # Retired engines must not be presented as current planning skills.
         self.assertNotIn("`ultragoal`", docs_readme)
         # omh-docs and github-issue-intake raise the measured catalog to 119.
-        self.assertIn("**150 installable skills**", docs_readme)
+        self.assertIn("**151 installable skills**", docs_readme)
         self.assertIn("**Retain knowledge**", docs_readme)
         # The unit suite runs through the deterministic sharding tools (issue
         # #1294): plan once, run per shard plus the serial quarantine, then

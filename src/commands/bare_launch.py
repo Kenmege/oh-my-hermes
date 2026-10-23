@@ -516,6 +516,7 @@ def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
     """
     from ..tui.launch import (
         exit_on_signals,
+        fallback_reason,
         fallback_requested,
         fallback_sentinel,
         omh_import_root,
@@ -523,6 +524,7 @@ def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
     )
 
     blocker = _omh_tui_blocker(paths)
+    said: list[str] = []
     if not blocker:
         with exit_on_signals(), fallback_sentinel() as sentinel:
             environment = omh_tui_environment(
@@ -535,13 +537,16 @@ def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
             child = subprocess.Popen([hermes, *_hermes_passthrough_argv(args, tui=True)], env=environment)
             returncode = int(child.wait())
             fell_back = fallback_requested(returncode, sentinel)
+            said = fallback_reason(sentinel) if fell_back else []
         if not fell_back:
             return returncode
         blocker = "the OMH TUI did not start (its reason is above)"
-    return _run_hermes_fallback(hermes, args, paths, blocker)
+    return _run_hermes_fallback(hermes, args, paths, blocker, said)
 
 
-def _run_hermes_fallback(hermes: str, args: argparse.Namespace, paths, reason: str) -> int:
+def _run_hermes_fallback(
+    hermes: str, args: argparse.Namespace, paths, reason: str, said: list[str] | None = None
+) -> int:
     """Hermes' own TUI when only the OMH TUI is ruled out, else plain `hermes`.
 
     Bare `hermes` is stock Hermes and opens whatever `display.interface`
@@ -551,11 +556,18 @@ def _run_hermes_fallback(hermes: str, args: argparse.Namespace, paths, reason: s
     (`hermes_tui_fits`), and only where Node is found: Hermes' TUI exits 1
     without it, as the OMH TUI would. Otherwise plain `hermes`, which opens
     what the config chooses. One line on stderr says why the OMH TUI is not
-    the one opening.
+    the one opening. `said` is what the OMH TUI printed about why it did not
+    start (`fallback_reason`); Hermes' TUI clears the screen it was on, so it
+    is printed again once that terminal closes.
     """
     from ..tui.launch import hermes_tui_fits
 
     with_tui = hermes_tui_fits(os.environ) and _node_available(paths)
     target = "Hermes' own TUI (`hermes --tui`)" if with_tui else "`hermes`"
     print(f"omh: {reason}; opening {target}.", file=sys.stderr)
-    return int(subprocess.run([hermes, *_hermes_passthrough_argv(args, tui=with_tui)]).returncode)
+    returncode = int(subprocess.run([hermes, *_hermes_passthrough_argv(args, tui=with_tui)]).returncode)
+    if said:
+        print(f"omh: {target} opened because the OMH TUI did not start; it said:", file=sys.stderr)
+        for line in said:
+            print(f"  {line}", file=sys.stderr)
+    return returncode

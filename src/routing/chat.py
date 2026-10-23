@@ -95,7 +95,7 @@ from .policy import (
 )
 from .policy import _doctor_health_guard_applies
 from .policy import asks_to_produce_materials, command_request_is_failure_or_agent_question, guard_label_dispatch_trust
-from .policy import _explicit_skill_candidate_is_negated
+from .policy import _explicit_skill_candidate_is_negated, employer_hiring_intent
 from .policy import EXPLICIT_INVOCATION_PREFIXES, bare_name_reports_or_asks
 from .policy import _greenfield_project_bootstrap_requested
 from .policy import _hermes_setup_guide_requested
@@ -7428,11 +7428,17 @@ def explicit_skill_invocation(
     message = executable_routing_text(message)
     definitions = definitions or routable_definitions()
     names = {definition.name for definition in definitions}
-    return (
+    selected = (
         explicit_skill_name(message, names, query)
         or _verb_invoked_skill_name(message, names)
         or _verb_invoked_public_display_name(message, names)
     )
+    # Explicit naming cannot turn employer work into candidate work. This
+    # consumer also feeds the fast path, which bypasses recommendation guards.
+    normalized = normalized_phrase(message)
+    if selected == "ai-job-search" and employer_hiring_intent(normalized, routing_tokens(normalized)):
+        return None
+    return selected
 
 
 # An invocation verb that introduces an explicit skill mention mid-message.
