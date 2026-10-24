@@ -129,8 +129,10 @@ survived the take-out filter, and every release -- turn end, session start,
 `clear`, chain exhaustion -- marks the writer's stamps released before it
 deletes the entries, so neither a release nor a release whose own write
 failed brings a route back through a stamp. A child inherits the newest
-write of the conversations it descends from, stamps included, and nothing
-older than a stamp or take-out there (`_newest_inherited`). The profile-wide
+write of the conversations it descends from, stamps included; each
+conversation counts only a route no older than its own newest stamp or
+take-out, so a later write in one ancestor never hides another's route
+(`_newest_inherited`). The profile-wide
 `route-restore.json` cannot hold any of this, because the next writer's `set`
 replaces it and a restore deletes it.
 
@@ -1140,14 +1142,17 @@ def restore_delegation_baseline(
     gone cannot come back at a later dispatch.
     """
     record_path = delegation_route_restore_path(omh_home)
-    # A release has work to do even when no record does.
-    must_release = (
-        release_writer is not None or release_conversation is not None
-    ) and conversation_routes_path(omh_home).exists()
+    # A release has work to do even when no record does: an entry to drop,
+    # or a live stamp to mark released, which outlives the routes file when
+    # the entry it was written for failed to land (#2273 review, R1/R3).
+    must_release = (release_writer is not None or release_conversation is not None) and (
+        conversation_routes_path(omh_home).exists()
+        or any(not stamp.get("released") for stamp in load_conversation_writes(omh_home).values())
+    )
     if not unrecorded_clear and not record_path.exists() and not must_release:
         # The common case by far: every turn of every session reaches here,
-        # and almost none of them has a route to take back. One `stat`, no
-        # lock, no sqlite. The race it accepts is a record created between
+        # and almost none of them has a route to take back. A few `stat`s
+        # and at most one small JSON read, no lock, no sqlite. The race it accepts is a record created between
         # this check and a lock that is never taken, which costs one missed
         # restore that the next turn end or the next session start makes
         # good -- never a wrong write.
@@ -1471,14 +1476,23 @@ def _owned_by_caller(
 
 
 def _delegate_ancestors(hermes_home: str | Path, session_id: str) -> set[str] | None:
-    """The conversations this session was delegated from, or None when unknown.
+    """Every session of the conversations this session was delegated from, or None when unknown.
+
+    The union of `_delegate_ancestry`.
+    """
+    ancestry = _delegate_ancestry(hermes_home, session_id)
+    return None if ancestry is None else set().union(*ancestry)
+
+
+def _delegate_ancestry(hermes_home: str | Path, session_id: str) -> list[set[str]] | None:
+    """The conversations this session was delegated from, nearest first, or None when unknown.
 
     Hermes stamps a delegate child's `sessions.model_config` with
     `_delegate_from` naming its parent (`tools/delegate_tool.py`, beside
     `_build_child_agent`), and a child's compaction continuation carries the
     same marker. The walk follows that marker upward, adding each parent's
     whole conversation (#2177), so an orchestrator child's worker dispatch
-    can tell its parent's route from a stranger's. `set()` is an answer: a
+    can tell its parent's route from a stranger's. `[]` is an answer: a
     top-level session. None means the caller's own row could not be read,
     and the caller then leaves the keys alone, which is what every dispatch
     did before conversation routes existed.
@@ -1516,10 +1530,7 @@ def _delegate_ancestors(hermes_home: str | Path, session_id: str) -> set[str] | 
         return None
     finally:
         connection.close()
-    ancestors: set[str] = set()
-    for parent in parents:
-        ancestors |= {parent} | conversation_session_ids(hermes_home, parent)
-    return ancestors
+    return [{parent} | conversation_session_ids(hermes_home, parent) for parent in parents]
 
 
 def _dispatch_plan(
@@ -1531,7 +1542,7 @@ def _dispatch_plan(
     task_id: str,
     now: float,
     conversation: Callable[[], set[str]],
-    ancestors: Callable[[], set[str] | None],
+    ancestors: Callable[[], list[set[str]] | None],
 ) -> dict[str, Any]:
     """What the keys must hold for this dispatch, read from the three stores.
 
@@ -1587,14 +1598,17 @@ def _dispatch_plan(
     )
     if not entries and (not record_live or record_is_callers):
         return {**plan, "action": "none", "status": "no_conversation_route"}
-    lineage = ancestors()
+    ancestry = ancestors()
+    lineage: set[str] | None = None if ancestry is None else set().union(*ancestry)
     if lineage:
         # A corrupt `_delegate_from` cycle must not make the caller its own
         # ancestor: it would then inherit its own stale route from an
         # earlier task, the one thing the task-first ownership rule refuses.
-        lineage = lineage - conversation()
+        own = conversation()
+        lineage = lineage - own
+        ancestry = [group - own for group in ancestry or []]
     if lineage:
-        route = _newest_inherited(entries, lineage, record, omh_home, config_path=config_path, now=now)
+        route = _newest_inherited(entries, ancestry or [], record, omh_home, config_path=config_path, now=now)
         if route:
             # Written back on behalf of the parent, so the record names the
             # parent's task and the parent's own turn end takes it out.
@@ -1624,7 +1638,7 @@ def _dispatch_plan(
 
 def _newest_inherited(
     entries: list[dict[str, Any]],
-    lineage: Collection[str],
+    ancestry: list[set[str]],
     record: Mapping[str, Any],
     omh_home: str | Path | None,
     *,
@@ -1633,38 +1647,46 @@ def _newest_inherited(
 ) -> dict[str, Any] | None:
     """The newest route the conversations a child descends from set, or None.
 
-    `lineage` holds each ancestor's #2177 conversation set, so a session a
-    compaction continued in counts as the one it continued from. Its live
-    stamps are candidates beside its entries: after a compaction the newer
-    `set` may have lost its entry under the continuation's key, where no
-    entry of its own stands for it. Nothing older than the newest stamp
-    (live or released) or take-out in the lineage is inherited: that is the
+    `ancestry` holds each ancestor's #2177 conversation set, so a session a
+    compaction continued in counts as the one it continued from. Each
+    conversation is read on its own. Its live stamps are candidates beside
+    its entries: after a compaction the newer `set` may have lost its entry
+    under the continuation's key, where no entry of its own stands for it.
+    Its newest candidate is dropped when it is older than that same
+    conversation's newest stamp (live or released) or take-out: that is the
     conversation's own later write, or a release of it, and an older route
-    coming back over it is the one thing this filter is for.
+    coming back over it is what this filter is for. Another ancestor's later
+    write says nothing about this one's route. Of what each conversation
+    leaves, the newest is inherited, which is what a dispatch chose before
+    stamps existed.
     """
-    stamps = [
-        stamp
-        for stamp in load_conversation_writes(omh_home).values()
-        if stamp["session_id"] in lineage
-        and stamp["config_path"] == config_path
-        and now - stamp["written_at"] <= LIVE_TUI_SESSION_FRESH_SECONDS
-    ]
+    writes = load_conversation_writes(omh_home)
     take_outs = load_conversation_take_outs(omh_home)
-    marks = [stamp["written_at"] for stamp in stamps] + [at for key, at in take_outs.items() if key in lineage]
-    live = [
-        stamp
-        for stamp in stamps
-        if not stamp.get("released")
-        and take_outs.get(_conversation_route_key(stamp["session_id"], stamp["task_id"]), -1.0) < stamp["written_at"]
-    ]
-    candidates = [entry for entry in entries if entry["session_id"] in lineage]
-    candidates += _not_superseded(live, record, {})
-    if not candidates:
-        return None
-    newest = max(candidates, key=lambda entry: entry["written_at"])
-    if marks and newest["written_at"] < max(marks):
-        return None
-    return newest
+    left = []
+    for group in ancestry:
+        stamps = [
+            stamp
+            for stamp in writes.values()
+            if stamp["session_id"] in group
+            and stamp["config_path"] == config_path
+            and now - stamp["written_at"] <= LIVE_TUI_SESSION_FRESH_SECONDS
+        ]
+        marks = [stamp["written_at"] for stamp in stamps] + [at for key, at in take_outs.items() if key in group]
+        live = [
+            stamp
+            for stamp in stamps
+            if not stamp.get("released")
+            and take_outs.get(_conversation_route_key(stamp["session_id"], stamp["task_id"]), -1.0)
+            < stamp["written_at"]
+        ]
+        candidates = [entry for entry in entries if entry["session_id"] in group]
+        candidates += _not_superseded(live, record, {})
+        if not candidates:
+            continue
+        newest = max(candidates, key=lambda entry: entry["written_at"])
+        if not marks or newest["written_at"] >= max(marks):
+            left.append(newest)
+    return max(left, key=lambda entry: entry["written_at"]) if left else None
 
 
 def _not_taken_out(entries: list[dict[str, Any]], omh_home: str | Path | None) -> list[dict[str, Any]]:
@@ -1813,9 +1835,9 @@ def prepare_dispatch_route(
             )
         return cache["conversation"]
 
-    def ancestors() -> set[str] | None:
+    def ancestors() -> list[set[str]] | None:
         if "ancestors" not in cache:
-            cache["ancestors"] = _delegate_ancestors(home, session_id)
+            cache["ancestors"] = _delegate_ancestry(home, session_id)
         return cache["ancestors"]
 
     def plan() -> dict[str, Any]:

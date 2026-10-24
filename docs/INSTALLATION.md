@@ -1755,9 +1755,10 @@ ignored. A stamp never brings back a route a `clear`, a chain exhaustion or a
 turn end took out: it stands in only for an entry still recorded, and each of
 those marks the conversation's stamps released before it removes the entries,
 so a removal that fails does not let the stamp stand in either. A delegate
-child inherits the newest route the conversation it descends from wrote,
-including across a compaction, and never one older than that conversation's
-newest stamp or take-out. Stamps are kept for six hours, at most 64 of them,
+child inherits the newest route the conversations it descends from wrote,
+including across a compaction, and never one older than the same
+conversation's newest stamp or take-out; a later write by a grandparent's
+conversation does not hide the parent's route. Stamps are kept for six hours, at most 64 of them,
 and a missing or unreadable file reads as "no newer write". Two
 cases are left in place as before: a route whose writer recorded no
 conversation entry, such as one written by an older OMH that is still

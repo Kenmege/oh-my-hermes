@@ -1203,6 +1203,99 @@ class PerWriterStampTest(PerConversationRouteTestCase):
 
         self.assertEqual(self.keys(), {})
 
+    def parent_and_child(self) -> None:
+        self.start = time.time()
+        self.sessions(
+            row("P", last_activity_at=self.start),
+            row("B", last_activity_at=self.start),
+            row("O", delegate_from="P", source="subagent", last_activity_at=self.start),
+        )
+
+    def test_a_clear_with_no_routes_file_still_releases_the_stamp(self) -> None:
+        # Probe R1 (#2273 re-review): P's only `set` lost its entry, so there
+        # was no conversation-routes.json and the clear released nothing; the
+        # live stamp then handed the cleared DEEP to P's child.
+        self.parent_and_child()
+        with self.at(0):
+            self.failed_entry_set("P", "P-t1", "deep")
+        self.assertFalse(conversation_routes_path(self.omh_home).exists())
+        self.assertEqual(self.tool("P", "P-t1", action="clear")["status"], "cleared")
+        with self.at(1):
+            self.other_writer_routes()
+
+        self.assertIsNone(self.dispatch("O", "O-task"))
+
+        self.assertEqual(self.keys(), {})
+        self.assertTrue(load_conversation_writes(self.omh_home)["P"].get("released"))
+
+    def test_a_turn_end_with_no_routes_file_still_releases_the_stamp(self) -> None:
+        # Probe R3: both writers' entries failed, so the turn end -- here
+        # `not_last_writer` -- had no routes file to release from.
+        self.parent_and_child()
+        with self.at(0):
+            self.failed_entry_set("P", "P-t1", "deep")
+        with self.at(1):
+            self.failed_entry_set("B", "B-t1", "quick")
+        self.assertEqual(self.end_turn("P", "P-t1")["route_restore"]["status"], "not_last_writer")
+
+        self.assertIsNone(self.dispatch("O", "O-task"))
+
+        # B's route is left alone, as on main: B recorded no entry.
+        self.assertEqual(self.keys(), QUICK)
+        self.assertTrue(load_conversation_writes(self.omh_home)["P"].get("released"))
+
+    def three_generations(self) -> None:
+        """GG delegated G, which delegated P."""
+        self.start = time.time()
+        self.sessions(
+            row("GG", last_activity_at=self.start),
+            row("B", last_activity_at=self.start),
+            row("G", delegate_from="GG", source="subagent", last_activity_at=self.start),
+            row("P", delegate_from="G", source="subagent", last_activity_at=self.start),
+        )
+
+    def test_a_grandparents_later_write_does_not_hide_the_parents_route(self) -> None:
+        # Probe GG: no failure anywhere. A newer write in GG's conversation
+        # said nothing about G's route, but suppressed it for G's worker.
+        self.three_generations()
+        with self.at(0):
+            self.set_route("GG", "GG-t1", "deep")
+        with self.at(1):
+            self.set_route("G", "G-task", "quick")
+        with self.at(2):
+            self.set_route("GG", "GG-t1", "deep")
+        self.assertEqual(self.end_turn("GG", "GG-t1")["route_restore"]["status"], "cleared")
+        with self.at(3):
+            self.other_writer_routes()
+
+        self.assertIsNone(self.dispatch("P", "P-task"))
+
+        self.assertEqual(self.keys(), QUICK)
+
+    def test_a_parents_released_write_is_not_inherited_and_the_grandparents_is(self) -> None:
+        # G1's intent one generation up: G's newest write was released by its
+        # turn end, whose entry release failed. Neither that write nor G's
+        # older QUICK entry is P's; GG's live route, untouched, is.
+        self.three_generations()
+        with self.at(0):
+            self.set_route("GG", "GG-t1", "deep")
+            self.assertEqual(self.tool("GG", "GG-t1", action="fallback")["status"], "fell_back")
+        with self.at(1):
+            self.set_route("G", "G-task", "quick")
+        with self.at(2):
+            self.failed_entry_set("G", "G-task", "deep")
+        failing, logged = self.release_fails()
+        with failing, logged:
+            self.assertEqual(self.end_turn("G", "G-task")["route_restore"]["status"], "cleared")
+        self.assertEqual(load_conversation_routes(self.omh_home)["G"]["route"], QUICK)
+        with self.at(3):
+            self.set_route("B", "B-t1", "quick")
+            self.assertEqual(self.tool("B", "B-t1", action="fallback")["status"], "fell_back")
+
+        self.assertIsNone(self.dispatch("P", "P-task"))
+
+        self.assertEqual(self.keys(), DEEP_NEXT)
+
     def test_a_release_marks_stamps_released_and_stamps_are_bounded_like_entries(self) -> None:
         self.top_level("A", "B")
         old = time.time() - 7 * 3600
