@@ -1144,16 +1144,24 @@ def restore_delegation_baseline(
     record_path = delegation_route_restore_path(omh_home)
     # A release has work to do even when no record does: an entry to drop,
     # or a live stamp to mark released, which outlives the routes file when
-    # the entry it was written for failed to land (#2273 review, R1/R3).
+    # the entry it was written for failed to land (#2273 review, R1/R3). A
+    # stamp past the liveness bound is never inherited (`_newest_inherited`)
+    # and so is no work: counting it would keep every session's turn end off
+    # the fast path until some later `set` pruned it.
+    tick = float(now if now is not None else time.time())
     must_release = (release_writer is not None or release_conversation is not None) and (
         conversation_routes_path(omh_home).exists()
-        or any(not stamp.get("released") for stamp in load_conversation_writes(omh_home).values())
+        or any(
+            not stamp.get("released") and tick - stamp["written_at"] <= LIVE_TUI_SESSION_FRESH_SECONDS
+            for stamp in load_conversation_writes(omh_home).values()
+        )
     )
     if not unrecorded_clear and not record_path.exists() and not must_release:
         # The common case by far: every turn of every session reaches here,
         # and almost none of them has a route to take back. A few `stat`s
-        # and at most one small JSON read, no lock, no sqlite. The race it accepts is a record created between
-        # this check and a lock that is never taken, which costs one missed
+        # and at most one small JSON read, no lock, no sqlite. The race it
+        # accepts is a record created between this check and a lock that is
+        # never taken, which costs one missed
         # restore that the next turn end or the next session start makes
         # good -- never a wrong write.
         return {"status": "no_baseline_recorded", "trigger": trigger, "fast_path": True}

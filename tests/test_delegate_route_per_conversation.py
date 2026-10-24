@@ -1244,6 +1244,28 @@ class PerWriterStampTest(PerConversationRouteTestCase):
         self.assertEqual(self.keys(), QUICK)
         self.assertTrue(load_conversation_writes(self.omh_home)["P"].get("released"))
 
+    def test_an_aged_live_stamp_leaves_an_unrelated_turn_end_on_the_fast_path(self) -> None:
+        # Probe B1 (#2273 third review): a killed session's live stamp, seven
+        # hours old, kept every turn end off the fast path -- a state.db
+        # lookup and the lock -- until some later `set` pruned it.
+        self.top_level("K", "U")
+        with mock.patch.object(delegation_route_restore.time, "time", return_value=time.time() - 7 * 3600):
+            self.failed_entry_set("K", "K-t1", "deep")
+        delegation_route_restore_path(self.omh_home).unlink()
+        self.assertFalse(conversation_routes_path(self.omh_home).exists())
+        self.assertNotIn("released", load_conversation_writes(self.omh_home)["K"])
+
+        with mock.patch.object(
+            delegation_route_restore, "_awareness_delivery_lock", side_effect=AssertionError("locked")
+        ):
+            ended = self.end_turn("U", "U-t1")
+
+        self.assertTrue(ended["route_restore"].get("fast_path"), ended)
+        # A fresh live stamp is still release work, as R1 and R3 need.
+        self.failed_entry_set("K", "K-t1", "deep")
+        delegation_route_restore_path(self.omh_home).unlink()
+        self.assertNotIn("fast_path", self.end_turn("U", "U-t1")["route_restore"])
+
     def three_generations(self) -> None:
         """GG delegated G, which delegated P."""
         self.start = time.time()
