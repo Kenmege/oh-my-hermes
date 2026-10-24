@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The TUI no longer draws a month-old fanout as live work.** With no
+  native delegation graph, the HUD drew the newest verified fanout contract
+  under `~/.omh/coding/fanout/` however old it was, so a fanout prepared once
+  and never dispatched still showed `1 agent · DAG · fanout … · 1 waiting`
+  weeks later. A fanout is now drawn only while it is current: one whose units
+  all settled leaves after the 15-minute linger a settled native graph gets,
+  and one with a prepared or running unit stays for 24 hours, the window a
+  delegation record is kept. Its age runs from the last change to its
+  directory, contract, dispatch summary or in-flight markers. Both the
+  delegation graph and the older subagent graph read the same gate, and the
+  record on disk is left alone.
+
 ## 4.0.2 - 2026-10-24
 
 - **`omh_agent_board` states the fields a `prepare` needs, and names the
