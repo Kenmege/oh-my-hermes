@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh_agent_board` states the fields a `prepare` needs, and names the
+  one that is missing (#2277).** The schema required only `action` and
+  `request_id`, so a `prepare` built from it left out `coordination`,
+  `operation`, `board`, `profile` and `arguments` and came back as
+  `invalid_request_or_board_store`, the same reason an unreadable board store
+  gives. The schema now carries a top-level `oneOf` with the two closed
+  shapes, and the tool description lists the prepare fields, because Hermes
+  removes a top-level combinator from every tool schema before any provider
+  sees it. A `prepare` that still omits one is refused as
+  `invalid_prepare_input` with `fields` naming the missing names and no
+  values; a missing `board` keeps `board_required`, a host without the board
+  engine still answers `omh_agent_board_core_unavailable` first, and `status`
+  is unchanged. `docs/AGENT-BOARD.md` lists the refusals that come before an
+  engine record.
+
 - **Kimi K3.1 Pro replaces Kimi K3 in the shipped chains.** Every slot K3
   held now names `kimi-k3.1-pro` at the same effort: `deep`, `architect`,
   `unspecified-high`, `quick`, `writing`, `visual-engineering`, `artistry`,

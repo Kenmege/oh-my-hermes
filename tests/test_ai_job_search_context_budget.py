@@ -133,7 +133,7 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         from omh.maintenance.drift import budget_metrics
         expected = {
             'skill_index_line_max_chars': 100,
-            'plugin_tool_schema_chars': 68402,  # Main's registered search tool; unchanged here.
+            'plugin_tool_schema_chars': 68757,  # Main's search tool, then #2277's agent-board prepare fields.
             'pre_llm_call_context_chars_max': 5780,
             'pre_llm_call_context_fallback_chars_max': 7216,
             'awareness_primer_markdown_chars': 3520,
