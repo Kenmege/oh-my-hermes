@@ -23,7 +23,10 @@ All notable changes will be documented here.
   doing it`, `…, here's to letting sleeping services lie`, `…, the team lead
   asked us to leave it`, `…, cheers don't bother`), while a negated outcome
   keeps (`…, hope nothing breaks`, `…, btw it won't touch prod`, `…, fwiw no
-  exceptions`).
+  exceptions`, `…, hope we don't break imports`: a `don't` that governs an
+  outcome verb asks for the work all the same). A flat refusal holds, said
+  alone or as what a third party said (`…, ops said no`, `…, legal said
+  absolutely not`).
 
 - **A cleared or exhausted delegation route stays gone (#2251
   follow-up).** `clear` and chain exhaustion now release the conversation's

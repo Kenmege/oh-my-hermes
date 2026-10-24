@@ -1257,8 +1257,11 @@ _NO_PRESSURE: Final = re.compile(
 # Negating or abandoning the work itself, which a wish never excuses ("…, here's to not doing it", "…, cheers to not
 # touching it", "…, here's to leaving it alone", "…, hope we just let it be"); a negated outcome is no such thing
 # ("…, here's to no conflicts", "…, hope it doesn't break").
+# The verbs of an outcome rather than of the work: a negation of one negates what might go wrong, not doing the work
+# ("…, hope nothing breaks", "…, hope we don't regress"). `_NOT_DOING` and `_NO_WORK_ASKED` both except them.
+_OUTCOME_VERB: Final = r"(?:fail|break|crash|explod|regress|flak|conflict|tim|blow|los|corrupt|wip|leak)\w*"
 _NOT_DOING: Final = re.compile(
-    r"\bnot\s+(?:even\s+|just\s+|really\s+)?(?!(?:fail|break|crash|explod|regress|flak|conflict|tim|blow|los|corrupt|wip|leak)\w*)"
+    rf"\bnot\s+(?:even\s+|just\s+|really\s+)?(?!{_OUTCOME_VERB})"
     r"(?:\w+ing|do|touch|bother|start|proceed|ship|merge|run)\b"
     r"|\bnot\s+(?:yet|now|today|tonight|right\s+now|anymore|this\s+(?:time|sprint|week))\b|\blet'?s\s+not\b|\bno\s+thank(?:s|\s+you)\b"
     r"|\b(?:not|never|\w+n['’]t)\b[^,;.]*\byet\b"
@@ -1280,12 +1283,25 @@ def _unnegated(pattern: re.Pattern[str], text: str) -> bool:
     return any(not _NEGATED_BEFORE.search(text[: match.start()]) for match in pattern.finditer(text))
 
 
+# A flat refusal said on its own, or as what a third party said ("…, btw, no", "…, ops said no", "…, legal said
+# absolutely not", "…, security said hard pass", "…, the client wants none of it").
+_FLAT_REFUSAL: Final = re.compile(
+    r"(?:no+|nope|nah|no\s+way|absolutely\s+not|not\s+a\s+chance|not\s+happening|hard\s+pass|count\s+(?:me|us)\s+out"
+    r"|no\s+can\s+do|none\s+of\s+it|veto(?:ed)?|denied|rejected|negative|nope\s+nope)\W*"
+)
+# Reported speech sets off what was said ("ops said no", "the lead told us no", "my manager asked: no").
+_REPORTED_SPEECH: Final = re.compile(
+    r"\b(?:said|says|told\s+(?:us|me|them)|tells\s+(?:us|me)|wants|wanted|asked(?:\s+(?:us|me))?)\b(?:\s+that)?\s*[:,]?\s*"
+)
+
+
 def _statement_refuses(clause: str) -> bool:
     """Whether the statement a keep kind's opener sets off with a colon or a dash refuses, read on its own as an
     aside's is: after a toast or a wish (`_WISH`), a back-reference (`_BACK_REFERENCE`) or an attribution
-    (`_ATTRIBUTION`) ("…, legal's request: leave it alone", "…, as discussed: hold off"). An object said straight on is
-    read with its opener (`_refuses` on the whole clause, `_NOT_DOING`), since its first word is no verb ("…, may the
-    build be green")."""
+    (`_ATTRIBUTION`) ("…, legal's request: leave it alone", "…, as discussed: hold off"); and what reported speech
+    sets off, when it is a flat refusal (`_REPORTED_SPEECH`, `_FLAT_REFUSAL`: "…, ops said no"). An object said
+    straight on is read with its opener (`_refuses` on the whole clause, `_NOT_DOING`), since its first word is no
+    verb ("…, may the build be green")."""
     for opener in (_WISH.match(clause), _BACK_REFERENCE.search(clause), _ATTRIBUTION.search(clause)):
         if not opener:
             continue
@@ -1293,7 +1309,8 @@ def _statement_refuses(clause: str) -> bool:
         set_off = _STATEMENT_SET_OFF.match(rest)
         if set_off and rest[set_off.end() :].strip() and _refuses(rest[set_off.end() :].strip()):
             return True
-    return False
+    said = _REPORTED_SPEECH.search(clause)
+    return bool(said and _FLAT_REFUSAL.fullmatch(clause[said.end() :].strip()))
 
 
 _STATEMENT_SET_OFF: Final = re.compile(r"\s*[:;—–]\s*|\s+-\s+")
@@ -1308,6 +1325,7 @@ def _refuses(clause: str) -> bool:
     bare = _KEEP_IDIOM.sub("", _NO_PRESSURE.sub("", clause)).strip()
     return bool(
         _LAUGH_ALONE.fullmatch(clause)
+        or _FLAT_REFUSAL.fullmatch(clause)
         or _STATUS_ALONE.fullmatch(clause)
         or _HESITATION.fullmatch(clause)
         or _EN_ASKS_FOR_MORE.match(bare)
@@ -1631,7 +1649,8 @@ _NO_WORK_ASKED: Final = re.compile(
     r"했다|됐다|했음|됐음|했잖아|했는데|했지만|했더니|지\s*마(?!다)|지\s*말|안\s*해|필요\s*없|도\s*돼|도\s*된다|도\s*괜찮"
     r"|알려\s*줘|알려\s*주세요|보여\s*줘|찾아|링크\s*(?:줘|주세요|보내)|읽어|상태|몇\s*개|목록|리스트|어때|뭐야|[?？]"
     r"|pr\s*들?\s*(?:을|를)?\s*(?:전부|모두|다)\s*정리"
-    r"|\b(?:tell\s+me|let\s+me\s+know|report|summari[sz]e|show\s+me|status|which\s+(?:ones|are|is)|do\s+not|don'?t"
+    r"|\b(?:tell\s+me|let\s+me\s+know|report|summari[sz]e|show\s+me|status|which\s+(?:ones|are|is)"
+    rf"|(?:do\s+not|don'?t)(?!\s+(?:\w+\s+)?{_OUTCOME_VERB})"
     r"|without|but\s+not|never|only)\b|\band\s+list\b|\blist\s+(?:them|the|which|all)\b"
     r"|\b(?:the|this|that|a)\s+(?:\S+\s+){0,2}\S+(?<!s)\s+(?:in|on)\s+(?:all|every|each)\b"
 )

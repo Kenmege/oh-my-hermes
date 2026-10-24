@@ -761,11 +761,31 @@ class RouterTests(unittest.TestCase):
             with self.subTest(message=f"rebase all open PRs, {tail}"):
                 self.assertTrue(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
                 self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
-        # Any "don't" or "do not" in the message reads as no work asked, before the remark gate, as on main: a negated
-        # outcome said with it holds too (a known limit, outside the remark gate).
-        for tail in ("fingers crossed we don't regress", "fyi don't skip any"):
+        # A "don't" or "do not" that governs a work verb asks for no work, before the remark gate; one that negates an
+        # outcome (the outcome verbs `_NOT_DOING` excepts) does not, on the router and the hint alike (#2265 review).
+        for tail in ("fingers crossed we don't regress", "hope we don't break imports", "hope this doesn't crash anything",
+                     "here's to not breaking prod", "hope we are not losing data"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertTrue(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
+        for tail in ("fyi don't skip any", "don't update every module", "don't touch it"):
             with self.subTest(message=f"rebase all open PRs, {tail}"):
                 self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
+        # The same on the size-cue path: the router and the hint agree on a negated outcome and on a negated work verb.
+        work = "implement the export in parallel across the api and ui modules"
+        self.assertEqual(self._dag_ulw_starts(f"{work}, hope we don't break imports")[:2], (True, True))
+        self.assertEqual(self._dag_ulw_starts(f"{work}, don't touch the cli module")[:2], (False, False))
+        # Reported speech carries its object: a third party saying no holds, and saying go, yes or fine keeps.
+        for tail in ("ops said no", "legal said absolutely not", "boss said not a chance", "QA says no way",
+                     "security said hard pass", "the team said count me out", "the client wants none of it",
+                     "the lead told us no", "my manager asked: no", "btw, no"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
+        for tail in ("ops said go", "the lead said it's fine", "legal said yes"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
         # A remark after a colon list's last item goes through the same gate: a status in either order holds, and a
         # dismissal holds.
         for message in ("for each open PR: rebase, merge, merged already", "for each open PR: rebase, merge, already merged",
