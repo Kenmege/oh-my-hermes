@@ -81,7 +81,7 @@ omh setup
 별도 노드가 목표를 검증한 뒤에 보고가 옵니다.
 
 <p align="center">
-  <img src="assets/omh-dag-ulw-tui.gif" alt="/dag-ulw를 실행하는 OMH TUI: 프롬프트를 입력하면 레인 7개의 박스 그래프가 정의되고, 레인이 Claude Opus 5.5, GPT-6.1 Sol, DeepSeek V4.1 Flash, GLM 5.3, Kimi K3.1 Pro로 레이어마다 실행된 뒤 모두 accepted로 끝납니다" width="960">
+  <img src="assets/omh-dag-ulw-tui.gif" alt="/dag-ulw를 실행하는 OMH TUI: 프롬프트를 입력하면 레인 7개의 박스 그래프가 정의되고, 레인이 Claude Opus 5.5, GPT-6.1 Sol, DeepSeek V4.1 Flash, GLM 5.3, Kimi K3.1 Pro로 레이어마다 실행된 뒤 모두 accepted로 끝납니다" width="900">
   <br><sub><code>/dag-ulw</code>를 실행하는 OMH TUI, 실제 렌더러로 그린 스크립트 데모 (모델은 돌지 않음). <a href="assets/omh-dag-ulw-tui.mp4">고화질 MP4</a></sub>
 </p>
 

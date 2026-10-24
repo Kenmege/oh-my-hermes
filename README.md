@@ -81,7 +81,7 @@ Your goal becomes a graph of small nodes that run in parallel, each on its own m
 A separate node verifies the goal before you get the report.
 
 <p align="center">
-  <img src="assets/omh-dag-ulw-tui.gif" alt="The OMH TUI running /dag-ulw: the prompt is typed, the box graph of seven lanes is defined, the lanes run layer by layer on Claude Opus 5.5, GPT-6.1 Sol, DeepSeek V4.1 Flash, GLM 5.3 and Kimi K3.1 Pro, and every lane ends accepted" width="960">
+  <img src="assets/omh-dag-ulw-tui.gif" alt="The OMH TUI running /dag-ulw: the prompt is typed, the box graph of seven lanes is defined, the lanes run layer by layer on Claude Opus 5.5, GPT-6.1 Sol, DeepSeek V4.1 Flash, GLM 5.3 and Kimi K3.1 Pro, and every lane ends accepted" width="900">
   <br><sub>The OMH TUI running <code>/dag-ulw</code>, a scripted demo on the real renderer (no model ran). <a href="assets/omh-dag-ulw-tui.mp4">Full-quality MP4</a></sub>
 </p>
 

@@ -76,7 +76,7 @@ omh setup
 別のノードが目標を検証してから、報告が届きます。
 
 <p align="center">
-  <img src="assets/omh-dag-ulw-tui.gif" alt="/dag-ulw を実行する OMH TUI: プロンプトを入力すると 7 レーンのボックスグラフが定義され、レーンが Claude Opus 5.5、GPT-6.1 Sol、DeepSeek V4.1 Flash、GLM 5.3、Kimi K3.1 Pro でレイヤーごとに走り、すべて accepted で終わります" width="960">
+  <img src="assets/omh-dag-ulw-tui.gif" alt="/dag-ulw を実行する OMH TUI: プロンプトを入力すると 7 レーンのボックスグラフが定義され、レーンが Claude Opus 5.5、GPT-6.1 Sol、DeepSeek V4.1 Flash、GLM 5.3、Kimi K3.1 Pro でレイヤーごとに走り、すべて accepted で終わります" width="900">
   <br><sub><code>/dag-ulw</code> を実行する OMH TUI、実際のレンダラーで描いたスクリプトによるデモ（モデルは動いていません）。<a href="assets/omh-dag-ulw-tui.mp4">高画質 MP4</a></sub>
 </p>
 
