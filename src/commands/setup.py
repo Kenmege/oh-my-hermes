@@ -54,6 +54,7 @@ from ..config_adapter import (
     update_config,
 )
 from ..install.compression_defaults import ensure_compression_defaults
+from ..install.lifecycle_safety import command_runtime_owned, primary_hermes_home, store_removal_plan
 from ..install.config_reversal import (
     DISPLAY_KEYS,
     DISPLAY_RELEASED_FIELD,
@@ -104,7 +105,6 @@ from ..paths import (
     OmhPaths,
     managed_command_venv_dir,
     managed_current_workflow_pack_dir,
-    managed_generation_for_executable,
     configured_omh_home,
 )
 from ..plugin_bundle.omh.metadata import MEMORY_PROVIDER_NAME
@@ -117,7 +117,7 @@ from ..plugin_bundle.omh.provider_detection import (
     env_row_is_covered,
 )
 from ..plugin_pack import PLUGIN_NAME, PluginPackError, install_plugin_bundle
-from ..install.plugin_pack import HERMES_PLUGIN_UPDATE_COMMAND
+from ..install.plugin_pack import HERMES_PLUGIN_UPDATE_COMMAND, PluginContentProtectedError
 from ..probe import probe_capabilities
 from ..release import (
     RELEASE_CHANNELS,
@@ -288,12 +288,17 @@ SELF_UPDATE_SKIP_ENV = "OMH_SKIP_COMMAND_PACKAGE_UPDATE"
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
-def cmd_install(args: argparse.Namespace) -> int:
+def cmd_install(args: argparse.Namespace, *, result: dict[str, object] | None = None, emit: bool = True) -> int:
     if getattr(args, "target", "hermes") == "agents":
         return _cmd_install_agents(args)
     if getattr(args, "agents_scope", None) or getattr(args, "status", False) or getattr(args, "host", None):
         raise OmhError("install --host, --scope and --status require --target agents; Hermes scope goes before install")
     language = _resolve_language(args)
+    if not emit:
+        payload = _install_result(args)
+        if result is not None:
+            result.update(payload)
+        return 0
     if _wants_json(args):
         payload = _install_result(args)
         _print_json(payload)
@@ -452,47 +457,59 @@ def cmd_update(args: argparse.Namespace) -> int:
     self_update = _command_package_self_update_plan(args)
     if self_update.get("should_update"):
         return _run_command_package_self_update(args, self_update)
-    code = cmd_install(args)
-    if code == 0:
-        primary_registration: dict[str, object] | None = None
-        if not (args.from_skills_dir or args.source):
-            if _paths(args).hermes_plugin_dir.is_dir():
-                _refresh_installed_plugin_bundle(args)
-                primary_registration = _refresh_hermes_registration(args)
-                # Same carry-forward rule as registration: a surface only
-                # setup seeds never lands on machines that update forever.
-                # Seeding is create-only, so user edits are never touched.
-                _seed_model_chains_result(_paths(args), dry_run=bool(args.dry_run))
-            else:
-                primary_registration = _bootstrap_tui_surface(args)
-        _refresh_installed_menubar_app(args)
-        # Bot profiles are independent Hermes homes; update carries the same
-        # managed registration into each so a bot chat sees the same skills
-        # the default chat does — including bots created after install.
-        profile_results: list[dict[str, object]] = []
-        synced_profiles = not (args.from_skills_dir or args.source) and hasattr(args, "omh_home")
-        if synced_profiles:
-            profile_results = _sync_hermes_profiles(args)
-        # Human output only — the JSON payload was already emitted by
-        # cmd_install before the surface refreshes above ran.
-        if (
-            not _wants_json(args)
-            and not bool(getattr(args, "dry_run", False))
-            and hasattr(args, "omh_home")
-        ):
-            _print_display_release_lines(primary_registration, profile_results)
-            _print_registration_migrations(primary_registration, profile_results)
-            _print_omh_home_reclaims(profile_results)
-            _print_hermes_profiles_line(profile_results, language=_resolve_language(args))
-            if synced_profiles:
-                # Post-check, re-read from disk after every home was written:
-                # the migration above is what makes this list empty, and a
-                # home it could not retire is named here in doctor's words
-                # rather than left for the next bot chat to discover.
-                for line in _registration_ambiguity_lines(args):
-                    print(f"  warning: {line}")
-                for hint in gateway_restart_hints(_paths(args)):
-                    print(f"  {hint}")
+    # Explicit local skill sources retain the content-only install contract.
+    if args.from_skills_dir or args.source:
+        code = cmd_install(args)
+        if code == 0:
+            _refresh_installed_menubar_app(args)
+        return code
+    payload: dict[str, object] = {}
+    code = cmd_install(args, result=payload, emit=False)
+    if code:
+        return code
+    failures: list[dict[str, object]] = []
+    primary_registration: dict[str, object] | None = None
+    try:
+        if _paths(args).hermes_plugin_dir.is_dir():
+            plugin = _refresh_installed_plugin_bundle(args)
+            payload["plugin_bundle"] = plugin
+            if plugin is None:
+                failures.append({"phase": "plugin_bundle", "error": "plugin refresh refused; preserve local changes and run `omh setup --force` after reviewing them"})
+            primary_registration = _refresh_hermes_registration(args)
+            _seed_model_chains_result(_paths(args), dry_run=bool(args.dry_run))
+        else:
+            primary_registration = _bootstrap_tui_surface(args)
+        if primary_registration is None:
+            failures.append({"phase": "registration", "error": "primary Hermes registration failed; run `omh setup` after repairing its config"})
+    except (OSError, UnicodeError, ValueError, OmhError, PluginPackError) as exc:
+        failures.append({"phase": "primary", "error": f"{type(exc).__name__}: {_bounded_command_error(str(exc))}"})
+    payload["hermes_registration"] = primary_registration
+    payload["menubar_app"] = _refresh_installed_menubar_app(args)
+    profile_results = _sync_hermes_profiles(args) if hasattr(args, "omh_home") else []
+    payload["hermes_profiles"] = profile_results
+    failures.extend(
+        {"phase": "profile_sync", "profile": row["profile"], "error": row["error"]}
+        for row in profile_results if row.get("status") == "failed"
+    )
+    code = 1 if failures else 0
+    payload.update({"status": "partial" if failures else "ok", "failures": failures, "exit_code": code})
+    if _wants_json(args):
+        _print_json(payload)
+    else:
+        if payload.get("skills") is not None:
+            _print_install_summary(payload, command="update", language=_resolve_language(args))
+        _print_display_release_lines(primary_registration, profile_results)
+        _print_registration_migrations(primary_registration, profile_results)
+        _print_omh_home_reclaims(profile_results)
+        _print_hermes_profiles_line(profile_results, language=_resolve_language(args))
+        for failure in failures:
+            label = failure.get("profile", failure["phase"])
+            print(f"  warning: {label}: {failure['error']}; repair this home and rerun `omh update`")
+        if not bool(getattr(args, "dry_run", False)) and hasattr(args, "omh_home"):
+            for line in _registration_ambiguity_lines(args):
+                print(f"  warning: {line}")
+            for hint in gateway_restart_hints(_paths(args)):
+                print(f"  {hint}")
     return code
 
 
@@ -619,33 +636,34 @@ def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
     results: list[dict[str, object]] = []
     primary = _paths(args)
     for name, profile_dir in _hermes_profile_dirs(primary):
-        clone = _profile_clone(args, primary, profile_dir)
-        profile_paths = _paths(clone)
-        config_text = read_config(profile_paths.hermes_config_path)
-        registered = any(
-            _external_dir_registered(config_text, candidate)
-            for candidate in _managed_workflow_dir_candidates(profile_paths)
-        )
-        if profile_paths.hermes_plugin_dir.is_dir() and not registered:
-            results.append(
-                {
-                    "profile": name,
-                    "status": "unregistered_kept",
-                    "registration": "unchanged",
-                    "display_release": _unregistered_display_release(profile_paths, args),
-                }
-            )
-            continue
-        entry: dict[str, object] = {
-            "profile": name,
-            "status": "refreshed" if profile_paths.hermes_plugin_dir.is_dir() else "bootstrapped",
-            # What the registration pass did to this home's config, so the
-            # update output can say a profile MOVED off the pre-pointer path
-            # (#1857) rather than folding that into "refreshed".
-            "registration": "unchanged",
-            "retired_external_dirs": [],
-        }
+        entry: dict[str, object] = {"profile": name}
         try:
+            clone = _profile_clone(args, primary, profile_dir)
+            profile_paths = _paths(clone)
+            config_text = read_config(profile_paths.hermes_config_path)
+            registered = any(
+                _external_dir_registered(config_text, candidate)
+                for candidate in _managed_workflow_dir_candidates(profile_paths)
+            )
+            if profile_paths.hermes_plugin_dir.is_dir() and not registered:
+                results.append(
+                    {
+                        "profile": name,
+                        "status": "unregistered_kept",
+                        "registration": "unchanged",
+                        "display_release": _unregistered_display_release(profile_paths, args),
+                    }
+                )
+                continue
+            entry = {
+                "profile": name,
+                "status": "refreshed" if profile_paths.hermes_plugin_dir.is_dir() else "bootstrapped",
+                # What the registration pass did to this home's config, so the
+                # update output can say a profile MOVED off the pre-pointer path
+                # (#1857) rather than folding that into "refreshed".
+                "registration": "unchanged",
+                "retired_external_dirs": [],
+            }
             plugin = install_plugin_bundle(
                 profile_paths, force=bool(getattr(args, "force", False)), dry_run=bool(args.dry_run)
             )
@@ -668,15 +686,15 @@ def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
                 entry["omh_home_reclaimed"] = reclaimed
         # A refusal is one profile's row, never the end of the update: the
         # primary home and every other profile still get their refresh.
-        except (PluginPackError, OmhError) as exc:
+        except (OSError, UnicodeError, ValueError, PluginPackError, OmhError) as exc:
             entry["status"] = "failed"
-            entry["error"] = str(exc)
+            entry["error"] = f"{type(exc).__name__}: {_bounded_command_error(str(exc))}"
         results.append(entry)
     return results
 
 
 def _uninstall_hermes_profiles(
-    args: argparse.Namespace, *, remove_all: bool, record: dict[str, object]
+    args: argparse.Namespace, *, remove_all: bool, record: dict[str, object], primary: OmhPaths | None = None
 ) -> list[dict[str, object]]:
     """Reverse the per-profile sync: unregister every bot-profile home.
 
@@ -690,12 +708,14 @@ def _uninstall_hermes_profiles(
     halfway.
     """
     results: list[dict[str, object]] = []
-    primary = _paths(args)
+    # The primary config may already have lost its recorded store binding.
+    primary = primary or _paths(args)
     for name, profile_dir in _hermes_profile_dirs(primary):
-        clone = _profile_clone(args, primary, profile_dir)
-        profile_paths = _paths(clone)
         entry: dict[str, object] = {"profile": name}
         try:
+            clone = _profile_clone(args, primary, profile_dir)
+            profile_paths = _paths(clone)
+            read_config(profile_paths.hermes_config_path)
             rows: list[dict[str, str]] = []
 
             def _unregister(config_text: str, profile_paths: OmhPaths = profile_paths) -> ConfigChange:
@@ -747,9 +767,9 @@ def _uninstall_hermes_profiles(
                 if remove_all
                 else ("unregistered" if change.changed else "absent")
             )
-        except (ValueError, OmhError) as exc:
+        except (OSError, UnicodeError, ValueError, PluginPackError, OmhError) as exc:
             entry["status"] = "failed"
-            entry["error"] = str(exc)
+            entry["error"] = f"{type(exc).__name__}: {_bounded_command_error(str(exc))}"
         results.append(entry)
     return results
 
@@ -922,9 +942,13 @@ def _registration_ambiguity_lines(args: argparse.Namespace) -> list[str]:
         homes.append((registration_home_label(profile_paths.hermes_config_path, profile=name), profile_paths))
     lines: list[str] = []
     for label, home_paths in homes:
-        entries = registered_managed_entries(
-            read_config(home_paths.hermes_config_path), _managed_workflow_dir_candidates(home_paths)
-        )
+        try:
+            entries = registered_managed_entries(
+                read_config(home_paths.hermes_config_path), _managed_workflow_dir_candidates(home_paths)
+            )
+        except (OSError, UnicodeError, ValueError, OmhError) as exc:
+            lines.append(f"{label}: could not inspect registration: {_bounded_command_error(str(exc))}")
+            continue
         if len(entries) > 1:
             lines.append(ambiguous_registration_message(label, entries))
     return lines
@@ -1031,8 +1055,16 @@ def _managed_config_record(paths: OmhPaths) -> dict[str, object]:
     profile config that comes back clean and one that keeps
     `display.interface` and three collapsed sections.
     """
+    primary = primary_hermes_home(paths.hermes_home)
+    primary_store = configured_omh_home(primary) if primary != paths.hermes_home else None
+    record: dict[str, object] = {}
+    if primary_store is not None and primary_store != paths.omh_home:
+        primary_paths = OmhPaths(omh_home=primary_store, hermes_home=primary)
+        state, _state_error = read_state_result(primary_paths)
+        record.update((state or {}).get(MANAGED_CONFIG_WRITES_STATE_KEY) or {})
     state, _state_error = read_state_result(paths)
-    return (state or {}).get(MANAGED_CONFIG_WRITES_STATE_KEY) or {}
+    record.update((state or {}).get(MANAGED_CONFIG_WRITES_STATE_KEY) or {})
+    return record
 
 
 def _unregister_and_reverse(
@@ -1125,12 +1157,7 @@ def _refresh_hermes_registration(args: argparse.Namespace) -> dict[str, object] 
         for candidate in _managed_workflow_dir_candidates(paths)
     ):
         return {"display_release": _unregistered_display_release(paths, args)}
-    try:
-        return _apply_result(args)
-    except OmhError:
-        # An update must not fail over a config it cannot rewrite; `omh doctor`
-        # reports the gap with the command that repairs it.
-        return None
+    return _apply_result(args)
 
 
 def _refresh_installed_plugin_bundle(args: argparse.Namespace) -> dict[str, object] | None:
@@ -1152,8 +1179,17 @@ def _refresh_installed_plugin_bundle(args: argparse.Namespace) -> dict[str, obje
     try:
         result = install_plugin_bundle(paths, force=args.force, dry_run=args.dry_run)
     except PluginPackError as exc:
-        # Preserve the existing partial-update contract, but never silently
-        # claim that a protected plugin tree was refreshed.
+        # Only confirmed content protection is a successful *plan*. Generic
+        # inspection/read/parse failures remain failed even during dry-run.
+        if args.dry_run and isinstance(exc, PluginContentProtectedError):
+            return {
+                "status": "would_refuse", "applied": False, "changed": False,
+                "observed": False, "dry_run": True,
+                "plugin_dir": str(paths.hermes_plugin_dir),
+                "reason": _bounded_command_error(str(exc)),
+                "observed_scope": "protected content; no plugin refresh applied",
+            }
+        # Actual protection refusals still make the final update partial.
         print(f"note: OMH plugin refresh skipped: {_friendly_plugin_error(paths, str(exc))}", file=sys.stderr)
         return None
     if result.get("status") == "host_managed":
@@ -1508,7 +1544,7 @@ def _managed_command_runtime() -> dict[str, object]:
     if venv_dir is None:
         return {"managed": False, "reason": "no home directory or OMH_VENV_DIR is available"}
     executable = Path(sys.executable).expanduser()
-    if not _is_relative_to_without_resolving_symlinks(executable, venv_dir) and managed_generation_for_executable(executable) is None:
+    if not command_runtime_owned(executable, venv_dir):
         return {
             "managed": False,
             "reason": "current omh command is not running from the installer-managed OMH venv",
@@ -2445,8 +2481,14 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
     language = _resolve_language(args)
     if args.registration_only and (args.remove_files or args.all or args.purge):
         raise OmhError("--registration-only cannot be combined with --remove-files, --all, or --purge")
-    paths = _paths(args)
+    try:
+        paths = _paths(args)
+        read_config(paths.hermes_config_path)
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise OmhError(f"Hermes home {getattr(args, 'hermes_home', None) or 'primary'}: unreadable config: {exc}") from exc
     remove_all = bool(args.all or args.purge or (not args.registration_only and not args.remove_files))
+    plan = store_removal_plan(paths, remove_profiles=remove_all) if remove_all or args.remove_files else {}
+    blocked = bool(plan.get("failed"))
     record = _managed_config_record(paths)
     registration_message = ""
     reversal_rows: list[dict[str, str]] = []
@@ -2479,17 +2521,37 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         # naming `omh` after the bundle is gone is the exact cost #1725
         # exists to remove -- but the blast radius went from one key to
         # seven, so it is written down.
-        update = update_config(
-            paths.hermes_config_path, _unregister, omh_home=paths.omh_home, dry_run=bool(args.dry_run)
+        update = (
+            ConfigChange(False, "unreadable reference inventory; repair the named homes before retrying uninstall", read_config(paths.hermes_config_path))
+            if blocked else update_config(
+                paths.hermes_config_path, _unregister, omh_home=paths.omh_home, dry_run=bool(args.dry_run)
+            )
         )
-    except ValueError as exc:
+    except (OSError, UnicodeError, ValueError) as exc:
         raise OmhError(str(exc)) from exc
     config_changed = update.changed
     menubar_result = (
         uninstall_menubar_app(paths, dry_run=bool(args.dry_run))
-        if remove_all and _uninstall_should_remove_menubar(args)
+        if remove_all and not blocked and _uninstall_should_remove_menubar(args)
         else {"status": "not_requested", "operation": "uninstall"}
     )
+    # A readable inventory is not proof that a child's guarded config write
+    # will succeed. Detach first, then inspect the persisted references again
+    # before removing the shared store or the interpreter running this command.
+    profile_results = [] if blocked else _uninstall_hermes_profiles(
+        args, remove_all=remove_all, record=record, primary=paths
+    )
+    if not blocked and (remove_all or args.remove_files):
+        detached = () if args.dry_run or not remove_all else tuple(
+            paths.hermes_home / "profiles" / str(row["profile"])
+            for row in profile_results if row.get("status") != "failed"
+        )
+        plan = store_removal_plan(paths, remove_profiles=remove_all, detached_homes=detached)
+        failed_profiles = [str(row["profile"]) for row in profile_results if row.get("status") == "failed"]
+        if failed_profiles and plan.get("status") != "kept":
+            plan = {"status": "kept", "reason": "profile detach failed; repair the named profiles before retrying uninstall",
+                    "homes": failed_profiles, "failed": False}
+        blocked = bool(plan.get("failed"))
     result = uninstall_skill_pack(
         paths,
         remove_files=bool(args.remove_files),
@@ -2497,6 +2559,7 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         dry_run=bool(args.dry_run),
         force=bool(args.force),
         remove_command_package=bool(remove_all and not args.keep_command),
+        store_plan=plan,
     )
     legacy_files = (
         _remove_legacy_display_files(
@@ -2505,12 +2568,11 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
             config_text=update.text,
             released=_display_released(record, paths),
         )
-        if remove_all
+        if remove_all and not blocked
         else {"tui_widget": {"status": "not_requested"}, "skin": {"status": "not_requested"}}
     )
     tui_widget_result = legacy_files["tui_widget"]
     skin_result = legacy_files["skin"]
-    profile_results = _uninstall_hermes_profiles(args, remove_all=remove_all, record=record)
     scope = (
         tr(language, "uninstall_scope_all")
         if remove_all
@@ -2536,11 +2598,15 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
     if profile_results:
         result["hermes_profiles"] = profile_results
     result["command_package"] = _command_package_status_for_uninstall(result)
+    code = 1 if blocked or any(row.get("status") == "failed" for row in profile_results) else 0
+    result.update({"status": "failed" if blocked else "partial" if code else "ok", "exit_code": code})
     if _wants_json(args):
         _print_json(result)
     else:
         _print_uninstall_summary(result, language=language)
-    return 0
+        if blocked:
+            print(f"  warning: unreadable reference inventory: {plan}; repair the named homes before retrying uninstall")
+    return code
 
 
 def cmd_list(args: argparse.Namespace) -> int:
@@ -4939,7 +5005,11 @@ def _print_uninstall_config_keys(payload: dict[str, object], *, language: str, d
 def _print_uninstall_summary(payload: dict[str, object], *, language: str = "en") -> None:
     use_color = _use_color()
     dry_run = bool(payload.get("dry_run", False))
-    title = tr(language, "uninstall_preview_complete") if dry_run else tr(language, "uninstall_complete")
+    title = (
+        "OMH uninstall blocked; repair the reported failures before retrying."
+        if payload.get("status") in {"partial", "failed"}
+        else tr(language, "uninstall_preview_complete") if dry_run else tr(language, "uninstall_complete")
+    )
     removed = payload.get("removed_paths", [])
     would_remove = payload.get("would_remove", [])
     kept = payload.get("kept_paths", [])
@@ -5018,7 +5088,9 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
     dry_run = bool(payload.get("dry_run", False))
     label = "update" if command == "update" else "install"
     restoring = label == "update" and not dry_run and bool(os.environ.get(SELF_UPDATE_ROLLBACK_ENV))
-    if restoring:
+    if payload.get("status") in {"partial", "failed"}:
+        title = f"OMH {label} partially applied; required refreshes failed."
+    elif restoring:
         title = tr(language, "update_rollback_complete")
     else:
         title = tr(language, "install_preview_complete", label=label) if dry_run else tr(language, "install_complete", label=label)
