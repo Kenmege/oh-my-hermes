@@ -75,7 +75,8 @@ omh setup
 
 ## DAG-ULW
 
-**Just type `/dag-ulw`, and you're a graph engineering master.**<br>
+**Just type `/dag-ulw`, and you're a graph engineering master.**
+
 Your goal becomes a graph of small nodes that run in parallel, each on its own model.<br>
 A separate node verifies the goal before you get the report.
 
