@@ -30,12 +30,13 @@ All notable changes will be documented here.
   Another writer's `set` does not replace it. The stamp stands in for the
   older entry, so the conversation's next dispatch runs on the route it set
   last, and so does a delegate child inheriting from it, even when the older
-  entry was from an earlier turn. A stamp never brings back a route that a
-  `clear`, a chain exhaustion or a turn end took out. A reapply, a repeated
-  `set` of the same route and a child inheriting its parent's route are
-  unchanged. Stamps are kept only while their key or writer has an entry, at
-  most 64. A missing or corrupt file reads as "no newer write", which is the
-  behaviour before.
+  entry was from an earlier turn or from the session a compaction continued.
+  A stamp never brings back a route that a `clear`, a chain exhaustion or a
+  turn end took out, even when that removal's own write failed: each marks
+  the conversation's stamps released first. A reapply, a repeated `set` of the
+  same route and a child inheriting its parent's route are unchanged. Stamps
+  are kept for six hours, at most 64. A missing or corrupt file reads as "no
+  newer write", which is the behaviour before.
 
 - **A cleared or exhausted delegation route stays gone (#2251
   follow-up).** `clear` and chain exhaustion now release the conversation's

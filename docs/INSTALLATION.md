@@ -1752,9 +1752,13 @@ conversation's dispatch, and a delegate child inheriting from it, runs on the
 route it set last. Any other older entry of the same writer (the same task,
 or the same session when neither names a task) that names another route is
 ignored. A stamp never brings back a route a `clear`, a chain exhaustion or a
-turn end took out: it stands in only for an entry still recorded. A stamp is
-kept while its key or that writer has an entry, at most 64 of them, and a
-missing or unreadable file reads as "no newer write". Two
+turn end took out: it stands in only for an entry still recorded, and each of
+those marks the conversation's stamps released before it removes the entries,
+so a removal that fails does not let the stamp stand in either. A delegate
+child inherits the newest route the conversation it descends from wrote,
+including across a compaction, and never one older than that conversation's
+newest stamp or take-out. Stamps are kept for six hours, at most 64 of them,
+and a missing or unreadable file reads as "no newer write". Two
 cases are left in place as before: a route whose writer recorded no
 conversation entry, such as one written by an older OMH that is still
 running, and any route when the dispatching session's own `state.db` row
