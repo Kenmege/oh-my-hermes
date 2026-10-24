@@ -110,7 +110,7 @@ omh setup
 > <table>
 >   <tr>
 >     <td width="160" align="center"><a href="https://opengateway.ai/"><img alt="OpenGateway" src="assets/sponsors/opengateway.svg" width="140" /></a></td>
->     <td><a href="https://opengateway.ai/"><strong>OpenGateway</strong></a> 赞助了 oh-my-hermes。<br>它用一个兼容 OpenAI 的端点接入多家模型 provider，并提供自动故障切换。<br>感谢你们对开源的支持。</td>
+>     <td><a href="https://opengateway.ai/"><strong>OpenGateway</strong></a> 赞助了 oh-my-hermes，感谢你们对开源的支持。<br>它用一个兼容 OpenAI 的端点接入多家模型 provider，并提供自动故障切换。</td>
 >   </tr>
 > </table>
 
