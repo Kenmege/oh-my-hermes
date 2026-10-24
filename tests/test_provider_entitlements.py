@@ -639,10 +639,10 @@ class MultiChoicePromptTests(unittest.TestCase):
     def test_the_interview_copy_does_not_claim_the_built_in_order_survives_a_skip(self) -> None:
         """Linked providers reorder chains whether or not the interview is answered.
 
-        Before detection the three strings were true: nothing counted until
-        the operator answered. Now the record only corrects what is already
-        counted, so every language has to say that skipping keeps the linked
-        providers counting, and that the record sits on top of them.
+        The brief introduction must preserve detection, exclusion and
+        validation boundaries without repeating storage paths or internals.
+        The Skip choice and result still explain that linked providers keep
+        counting and an earlier record stays unchanged.
         """
         retired = ("built-in model order", "기본 모델 순서", "組み込みのモデル順序", "内置的模型顺序", "内置模型列表")
         for code in LANGUAGE_CODES:
@@ -651,21 +651,25 @@ class MultiChoicePromptTests(unittest.TestCase):
                     text = tr(code, key)
                     for phrase in retired:
                         self.assertNotIn(phrase, text)
-        self.assertIn("count on their own and arrive pre-ticked", tr("en", "provider_entitlements_note"))
-        # The interview also offers a key exported only in the shell,
-        # pre-ticked; routing reads `.env`, not the process environment, so
-        # that row counts only once it is recorded, and the copy says so.
-        self.assertIn("a key exported only in this shell is offered pre-ticked too, but counts only once you record it", tr("en", "provider_entitlements_note"))
+        # The short intro covers the decision and validation boundaries;
+        # detailed skip behavior remains in the choice and result text.
+        intro = tr("en", "provider_entitlements_note")
+        for disclosure in (
+            "Detected entries are preselected",
+            "accounts are not checked",
+            "Unticking one excludes it",
+            "Skip keeps your settings",
+            "No keys are requested or services called",
+        ):
+            self.assertIn(disclosure, intro)
         for code in ("ko", "ja", "zh"):
-            self.assertNotEqual(tr(code, "provider_entitlements_note"), tr("en", "provider_entitlements_note"))
-        self.assertIn("on top of that", tr("en", "provider_entitlements_note"))
+            self.assertNotEqual(tr(code, "provider_entitlements_note"), intro)
         self.assertIn("keep counting", tr("en", "provider_skip_desc"))
         self.assertIn("an earlier record stays as it is", tr("en", "provider_skip_desc"))
         self.assertIn("keep counting on their own", tr("en", "provider_entitlements_skipped"))
         for code in ("ko", "ja", "zh"):
             self.assertIn("Hermes", tr(code, "provider_skip_desc"))
             self.assertIn("Hermes", tr(code, "provider_entitlements_skipped"))
-            self.assertIn("providers.json", tr(code, "provider_entitlements_note"))
 
 
 class SetupInterviewTests(unittest.TestCase):
