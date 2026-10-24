@@ -1743,8 +1743,15 @@ entries it takes out in `~/.omh/routing/conversation-take-outs.json`
 like the entries (the session, or `task:<id>` for a host that names no
 session), and a dispatch ignores an entry recorded there. A `set` that wrote
 its route but not its conversation entry does not get the conversation's older
-route put back over it either: an entry older than the restore record of the
-same task, naming another route, is ignored. Two
+route put back over it either, even after another session's `set`: before the
+entry, each `set` records the route it wrote in
+`~/.omh/routing/conversation-writes.json`
+(`delegation_conversation_writes/v1`), one stamp per writer keyed like the
+entries, and an entry older than a stamp of the same writer (the same task,
+or the same session when neither names a task) that names another route is
+ignored, and the conversation's dispatch is handled as one with no route of
+its own until it sets one again. A stamp is kept while that writer has an entry, at most 64 of them, and
+a missing or unreadable file reads as "no newer write". Two
 cases are left in place as before: a route whose writer recorded no
 conversation entry, such as one written by an older OMH that is still
 running, and any route when the dispatching session's own `state.db` row
