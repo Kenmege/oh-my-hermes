@@ -4402,36 +4402,35 @@ class RouterContentTests(unittest.TestCase):
         self.assertIn("OMH", site)
         self.assertIn("Oh My Hermes", site)
         hero = site.split('<section class="hero hero--center"', 1)[1].split("</section>", 1)[0]
-        self.assertIn('src="assets/omh-character-mask.png"', hero)
-        self.assertIn("Power intelligence and <em>agentic memory</em> for Hermes Agent.", hero)
+        # The hero is the spectrum wordmark (the h1) under the app-icon logo,
+        # the README tagline, and the primary install path: the script
+        # installer then setup. Windows and the package managers live in the
+        # install section, which pins them below.
+        self.assertIn('src="assets/oh-my-hermes-wordmark.png" alt="Oh My Hermes"', hero)
+        self.assertIn('src="assets/omh-logo.png"', hero)
+        self.assertIn(
+            "All-in-one package for Hermes Agent. Install once, then just type <code>dag-ulw</code>.",
+            hero,
+        )
         self.assertIn(
             "curl -fsSL https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.sh | sh",
             hero,
         )
-        self.assertIn("irm https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.ps1 | iex", hero)
         self.assertIn("omh setup", hero)
-        # The landing page carries the character mark four times (header,
-        # hero, Hermes executor card, footer) plus two product captures --
-        # the terminal boot banner and the /omh-model chain picker under
-        # Recommended chains -- plus the four ulw usage-example figures (the
-        # real ulw-plan TUI capture, the Slack-thread illustrations of the
-        # real ulw-interview reply and the real ulw-work run, and the
-        # labelled ulw-maestro illustration) under the ulw family, and
+        # The landing page carries the logo twice (header at 64 px, hero),
+        # the wordmark twice (hero, footer), and the sponsor logo, and
         # nothing else. The exact count keeps decorative images off the page;
-        # the three surface demos (the TUI ultrawork run, the Desktop run,
-        # the messenger card) are <video> elements.
-        self.assertEqual(site.count("<img"), 10)
-        self.assertEqual(site.count('src="assets/omh-character-mask.png"'), 4)
-        self.assertEqual(site.count('src="assets/omh-terminal-boot-banner.png"'), 1)
-        self.assertEqual(site.count('src="assets/omh-model-tui.png"'), 1)
-        self.assertEqual(site.count('src="assets/omh-terminal-ulw-plan-refactor.png"'), 1)
-        self.assertEqual(site.count('src="assets/omh-slack-ulw-interview.png"'), 1)
-        self.assertEqual(site.count('src="assets/omh-slack-ulw-work.png"'), 1)
-        self.assertEqual(site.count('src="assets/omh-ulw-maestro-dispatch.svg"'), 1)
-        self.assertEqual(site.count("<video"), 3)
-        for stem in ("hermes-cli", "hermes-desktop", "hermes-messenger"):
-            self.assertEqual(site.count(f'src="assets/{stem}.webm"'), 1)
-            self.assertEqual(site.count(f'src="assets/{stem}.mp4"'), 1)
+        # the one product capture, the real /dag-ulw TUI recording, is a
+        # <video> transcoded from assets/omh-dag-ulw-tui.gif.
+        self.assertEqual(site.count("<img"), 5)
+        self.assertEqual(site.count('src="assets/omh-logo-64.png"'), 1)
+        self.assertEqual(site.count('src="assets/omh-logo.png"'), 1)
+        self.assertEqual(site.count('src="assets/oh-my-hermes-wordmark.png"'), 2)
+        self.assertEqual(site.count('src="assets/sponsors/opengateway.svg"'), 1)
+        self.assertEqual(site.count("<video"), 1)
+        self.assertEqual(site.count('src="assets/omh-dag-ulw-tui.webm"'), 1)
+        self.assertEqual(site.count('src="assets/omh-dag-ulw-tui.mp4"'), 1)
+        self.assertEqual(site.count('poster="assets/omh-dag-ulw-tui-poster.webp"'), 1)
         # site/assets is self-contained; the Pages build must copy the whole
         # tree instead of stitching demos in from the repo-root assets dir.
         self.assertIn("cp -R site/. _site/", pages)
@@ -4441,7 +4440,6 @@ class RouterContentTests(unittest.TestCase):
             self.assertIn(f'data-lang="{lang}"', site)
         self.assertIn('src="i18n.js"', site)
         self.assertIn('src="app.js"', site)
-        self.assertIn("104", site)
         self.assertIn("omh update", site)
         self.assertIn("omh doctor", site)
         # Every canonical flagship workflow is named by exact skill name; the
@@ -4458,7 +4456,6 @@ class RouterContentTests(unittest.TestCase):
         self.assertIn("Code · running", site)
         self.assertIn("Code · reported done", site)
         self.assertIn("Test · verified", site)
-        self.assertIn("request-to-handoff", site)
         self.assertIn("See where Hermes ends and OMH begins.", site)
         self.assertIn('href="docs/hermes-agent-architecture/"', site)
         self.assertIn("not affiliated with Anthropic or OpenAI", site)
@@ -4874,8 +4871,10 @@ class RouterContentTests(unittest.TestCase):
         readme = Path("README.md").read_text(encoding="utf-8")
         docs_index = Path("docs/README.md").read_text(encoding="utf-8")
         playbooks = Path("docs/PLAYBOOKS.md").read_text(encoding="utf-8")
-        site = Path("site/index.html").read_text(encoding="utf-8")
 
+        # The landing page stopped listing playbooks when the site was
+        # rebuilt around the README (#2269); docs/README.md is where a reader
+        # finds them.
         self.assertNotIn("omh playbook recommend", readme)
         self.assertIn("omh playbook recommend", playbooks)
         self.assertIn("Playbooks", docs_index)
@@ -4889,8 +4888,6 @@ class RouterContentTests(unittest.TestCase):
         self.assertIn("reliability-incident-review", playbooks)
         self.assertIn("binary PPTX export", playbooks)
         self.assertIn("not execution evidence", playbooks)
-        self.assertIn("request-to-handoff", site)
-        self.assertIn("Start with the job.", site)
 
     def test_discord_example_uses_wrapper_native_flow(self) -> None:
         text = Path("examples/discord-bot-runtime-flow.md").read_text(encoding="utf-8")
