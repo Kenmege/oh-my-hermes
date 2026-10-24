@@ -628,6 +628,17 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "classification, never the exception message or raw backend body, so failure is surfaced "
         "without leaking search content.",
     ),
+    ClassifiedSite(
+        "src/plugin_bundle/omh/tools/dag_tool.py",
+        "_single_query_session",
+        INTENTIONAL,
+        "Hermes' optional `agent.oneshot_footprint` detector is imported and called at define time. A "
+        "missing host package is ModuleNotFoundError and stays the documented absent path (no cap); any "
+        "other failure -- an installed detector raising or failing to import -- is refused with the named "
+        "reason `oneshot_detection_unavailable` and actionable text, and the raw exception is suppressed. "
+        "It is never answered `False`, which would read as a healthy interactive session and silently "
+        "disable the one-shot child budget.",
+    ),
 )
 
 # Ruff reports one hit per handler; the inventory is keyed per enclosing
@@ -672,8 +683,12 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # 68 -> 69 / 60 -> 61: `search_tool.omh_search_handler`, which classifies
 # unexpected delegated search failures separately from success and optional
 # backend absence, without returning raw backend content.
-EXPECTED_HANDLER_COUNT = 69
-EXPECTED_ANCHOR_COUNT = 61
+# 69 -> 70 / 61 -> 62: `dag_tool._single_query_session`, Hermes' optional
+# one-shot detector at define time (an installed detector that fails is a named
+# refusal, `oneshot_detection_unavailable`, never a healthy `False` that
+# silently drops the child budget; #preflight review).
+EXPECTED_HANDLER_COUNT = 70
+EXPECTED_ANCHOR_COUNT = 62
 
 
 class DerivedSite(NamedTuple):

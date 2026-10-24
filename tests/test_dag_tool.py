@@ -859,6 +859,51 @@ class PreflightTests(unittest.TestCase):
             result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
         self.assertEqual(result["status"], "ok", result)
 
+    def test_a_healthy_detector_saying_interactive_leaves_the_graph_uncapped(self) -> None:
+        detector = SimpleNamespace(is_single_query_session=lambda: False)
+        with homes() as home, patch_modules({"agent": SimpleNamespace(oneshot_footprint=detector),
+                                             "agent.oneshot_footprint": detector}):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+        self.assertEqual(result["status"], "ok", result)
+
+    def test_an_absent_optional_detector_is_not_one_shot_and_stays_uncapped(self) -> None:
+        # `None` in sys.modules blocks the import the way an install without the
+        # host package does; the absent path is the documented no-cap answer.
+        with homes() as home, patch_modules({"agent": None, "agent.oneshot_footprint": None}):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+        self.assertEqual(result["status"], "ok", result)
+
+    def test_a_broken_installed_detector_refuses_by_name_and_writes_nothing(self) -> None:
+        def broken() -> bool:
+            raise RuntimeError("host one-shot state is unreadable")
+
+        detector = SimpleNamespace(is_single_query_session=broken)
+        with homes() as home, patch_modules({"agent": SimpleNamespace(oneshot_footprint=detector),
+                                             "agent.oneshot_footprint": detector}):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            result = call(action="define", run="feat", nodes=[node("a"), node("b")])
+            written = dag_run.record_path(home.omh, PARENT, "feat").exists()
+        self.assertEqual((result["status"], result["reason"]), ("refused", "oneshot_detection_unavailable"), result)
+        self.assertIn("one-shot", result["say"])
+        self.assertNotIn("host one-shot state is unreadable", result["say"])
+        self.assertNotIn("RuntimeError", result["say"])
+        self.assertFalse(written, "a refused define must not leave a run record behind")
+
+    def test_zero_limit_is_unlimited_but_invalid_values_follow_the_host_default(self) -> None:
+        cases = (("0", "ok"), ("-1", "refused"), ("many", "refused"))
+        for raw, status in cases:
+            with self.subTest(raw=raw), homes() as home, \
+                    patch.object(dag_tool, "_single_query_session", return_value=True):
+                (home.hermes / "config.yaml").write_text(
+                    f"delegation:\n  oneshot_max_children: {raw}\n", encoding="utf-8")
+                result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+            self.assertEqual((result["status"], result.get("reason")),
+                             (status, None if status == "ok" else "oneshot_budget_exceeded"), result)
+            if status == "refused":
+                self.assertIn("at most 2 nodes", result["say"])
+
     def test_define_refuses_markerless_node(self) -> None:
         with homes():
             result = call(action="define", run="feat", nodes=[node("a", prompt="Do the thing.")])

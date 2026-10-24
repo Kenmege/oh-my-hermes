@@ -271,32 +271,44 @@ def _single_query_session() -> bool:
     """Hermes' finite one-shot marker (`hermes chat -q`), read where the host keeps it.
 
     Imported at call time: `agent` is the host's package and may not be on this
-    install's path, where the session is simply not one-shot.
+    install's path, where the session is simply not one-shot. An installed
+    detector that fails is not that absence: it is refused by name
+    (`oneshot_detection_unavailable`) rather than answered `False`, because
+    `False` means "interactive, no cap" and would silently drop the budget.
     """
     try:
         from agent.oneshot_footprint import is_single_query_session
-    except ImportError:
-        return False
-    try:
         return bool(is_single_query_session())
-    except Exception:
+    except ModuleNotFoundError:
         return False
+    except Exception:
+        # Classified and surfaced, never relabeled as a healthy answer: the
+        # caller refuses by name and the exception text stays out of it.
+        raise dag_run.DagRefusal(
+            "oneshot_detection_unavailable",
+            "OMH could not read whether this session is a one-shot `hermes chat -q`, so it will not "
+            "define a dag run without knowing the child budget. Retry the define in a fresh session; "
+            "if this repeats, repair the Hermes install that provides the one-shot detector.",
+        ) from None
 
 
 def oneshot_child_limit(hermes_home: Path) -> int | None:
     """`delegation.oneshot_max_children` in a one-shot session, else ``None`` (no cap here).
 
-    ``0`` means unlimited, and an unreadable value falls back to Hermes' own
-    default, so a malformed config never silently refuses a graph.
+    ``0`` means unlimited. A value that is not a positive integer falls back to
+    Hermes' own default, so a malformed or negative setting never silently
+    becomes unlimited.
     """
     if not _single_query_session():
         return None
     raw = read_delegation_settings(hermes_home, ("oneshot_max_children",)).get("oneshot_max_children", "")
     try:
         limit = int(raw) if raw else DEFAULT_ONESHOT_MAX_CHILDREN
-    except ValueError:
+    except (TypeError, ValueError):
         limit = DEFAULT_ONESHOT_MAX_CHILDREN
-    return limit if limit > 0 else None
+    if limit == 0:
+        return None
+    return limit if limit > 0 else DEFAULT_ONESHOT_MAX_CHILDREN
 
 
 def _define(args: Mapping[str, object], omh_home: Path, hermes_home: Path, durable: str, segments: list[str],
