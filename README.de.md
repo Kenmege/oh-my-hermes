@@ -2,12 +2,12 @@
 
 <br>
 
-<img src="assets/omh-logo.png" alt="oh-my-hermes-Logo: die oh-my-hermes-Figur in kräftiger schwarzer Linienzeichnung auf einer weißen Kachel mit abgerundeten Ecken" width="200">
-
-<br>
-<br>
-
 <img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="70%">
+
+<br>
+<br>
+
+<img src="assets/omh-logo.png" alt="oh-my-hermes-Logo: die oh-my-hermes-Figur in kräftiger schwarzer Linienzeichnung auf einer weißen Kachel mit abgerundeten Ecken" width="200">
 
 <br>
 <br>

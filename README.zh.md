@@ -2,12 +2,12 @@
 
 <br>
 
-<img src="assets/omh-logo.png" alt="oh-my-hermes 标志：白色圆角方形图块上，用粗黑线条画出的 oh-my-hermes 角色" width="200">
-
-<br>
-<br>
-
 <img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="70%">
+
+<br>
+<br>
+
+<img src="assets/omh-logo.png" alt="oh-my-hermes 标志：白色圆角方形图块上，用粗黑线条画出的 oh-my-hermes 角色" width="200">
 
 <br>
 <br>

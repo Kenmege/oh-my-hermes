@@ -2,12 +2,12 @@
 
 <br>
 
-<img src="assets/omh-logo.png" alt="Логотип oh-my-hermes: персонаж oh-my-hermes жирной чёрной линией на белой плитке со скруглёнными углами" width="200">
-
-<br>
-<br>
-
 <img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="70%">
+
+<br>
+<br>
+
+<img src="assets/omh-logo.png" alt="Логотип oh-my-hermes: персонаж oh-my-hermes жирной чёрной линией на белой плитке со скруглёнными углами" width="200">
 
 <br>
 <br>

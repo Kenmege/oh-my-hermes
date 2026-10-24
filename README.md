@@ -2,12 +2,12 @@
 
 <br>
 
-<img src="assets/omh-logo.png" alt="oh-my-hermes logo: the oh-my-hermes character in bold black line art on a white rounded-square tile" width="200">
-
-<br>
-<br>
-
 <img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="70%">
+
+<br>
+<br>
+
+<img src="assets/omh-logo.png" alt="oh-my-hermes logo: the oh-my-hermes character in bold black line art on a white rounded-square tile" width="200">
 
 <br>
 <br>
