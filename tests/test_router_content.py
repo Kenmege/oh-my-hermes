@@ -4702,10 +4702,7 @@ class RouterContentTests(unittest.TestCase):
         readme_section_translations = (
             ("## Install", {"ko": "## 설치", "ja": "## インストール", "zh": "## 安装"}),
             ("## What you get", {"ko": "## 얻는 것", "ja": "## 得られるもの", "zh": "## 你能得到什么"}),
-            (
-                "## Graph engineering",
-                {"ko": "## 그래프 엔지니어링", "ja": "## グラフエンジニアリング", "zh": "## 图工程"},
-            ),
+            ("## DAG-ULW", {"ko": "## DAG-ULW", "ja": "## DAG-ULW", "zh": "## DAG-ULW"}),
             ("## License", {"ko": "## 라이선스", "ja": "## ライセンス", "zh": "## 许可证"}),
         )
 

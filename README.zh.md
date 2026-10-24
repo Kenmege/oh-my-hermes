@@ -1,10 +1,16 @@
 <div align="center">
 
-<img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="100%">
+<br>
 
-<img src="assets/omh-logo.png" alt="oh-my-hermes 标志：白色圆角方形图块上，用粗黑线条画出的 oh-my-hermes 角色" width="180">
+<img src="assets/omh-logo.png" alt="oh-my-hermes 标志：白色圆角方形图块上，用粗黑线条画出的 oh-my-hermes 角色" width="200">
 
-# oh-my-hermes
+<br>
+<br>
+
+<img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="70%">
+
+<br>
+<br>
 
 **Hermes Agent 的一站式套件。安装一次，然后只需输入 `dag-ulw`。**
 
@@ -12,11 +18,13 @@
 
 [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md) · [中文](README.zh.md)
 
-</div>
-
 **oh-my-hermes** 是 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 之上的操作层。<br>
 你照常和 Hermes 对话，OMH 为你选技能、为每条 lane 选模型，并把工作并行跑起来。<br>
 它不给 Hermes 打补丁，也不取代它，更不会把只是计划过的工作报告为完成。
+
+</div>
+
+<br>
 
 ## 安装
 
@@ -27,17 +35,23 @@ omh setup
 
 [Windows 及其他安装方式 →](docs/INSTALLATION.md)
 
+<br>
+
 ## 你能得到什么
 
-- **每条 lane 用对的模型。** 委派的 lane 运行在你可以编辑的模型与 effort chain 上：[每条 lane 用哪个模型](docs/INSTALLATION.md#guided-model-setup)。
-- **互不冲突的并行工作。** lane 之间不共享文件，检查通过之前不算完成。
-- **按需加入的专家技能。** 一百多个专业技能在请求触及它们的领域时加入运行。
-- **可以信赖的记忆。** 没有任何东西被悄悄记住，下一个会话会得到排好序的召回包。
-- **一眼看清运行。** `omh` 打开的 OMH TUI 实时显示每条 lane 的模型、token 和成本。
+- **每条 lane 用对的模型。** 每条 lane 一条可编辑的模型 chain（[每条 lane 用哪个模型](docs/INSTALLATION.md#guided-model-setup)）。
+- **互不冲突的并行工作。** lane 之间不共享文件，检查通过才算完成。
+- **按需加入的专家技能。** 一百多个专业技能在需要时加入运行。
+- **可以信赖的记忆。** 不悄悄记忆，每个会话都会得到排好序的召回包。
+- **一眼看清运行。** `omh` 实时显示每条 lane 的模型、token 和成本。
 
-## 图工程
+<br>
 
-把大任务交给 `/dag-ulw`，它会变成由小节点组成的图，每个节点用自己的模型并行运行，由一个单独的节点在报告前验证目标。
+## DAG-ULW
+
+**只需输入 `/dag-ulw`，你就是图工程大师。**<br>
+你的目标会变成由小节点组成的图，每个节点用自己的模型并行运行。<br>
+由一个单独的节点验证目标之后，你才会收到报告。
 
 <p align="center">
   <img src="assets/omh-dag-ulw-tui.gif" alt="运行 /dag-ulw 的 OMH TUI：输入提示词后定义出七条通道的方框图，通道按层在 Claude Opus 5.5、GPT-6.1 Sol、DeepSeek V4.1 Flash、GLM 5.3 和 Kimi K3.1 Pro 上运行，最后全部 accepted" width="960">
@@ -285,6 +299,9 @@ executor 说自己完成了，与结果被检查过是两回事，而大多数�
 
 </details>
 
+<br>
+
 ## 许可证
 
-MIT，见 [LICENSE](LICENSE)。与[贡献者们](https://github.com/rlaope/oh-my-hermes/graphs/contributors)一起，作为 [Team Art & Engineering](https://rlaope.github.io/artengine-lab/) 的开源项目开发。
+MIT，见 [LICENSE](LICENSE)。<br>
+与[贡献者们](https://github.com/rlaope/oh-my-hermes/graphs/contributors)一起，作为 [Team Art & Engineering](https://rlaope.github.io/artengine-lab/) 的开源项目开发。

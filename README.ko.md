@@ -1,10 +1,16 @@
 <div align="center">
 
-<img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="100%">
+<br>
 
-<img src="assets/omh-logo.png" alt="oh-my-hermes 로고: 흰 둥근 사각 타일 위에 굵은 검은 선으로 그린 oh-my-hermes 캐릭터" width="180">
+<img src="assets/omh-logo.png" alt="oh-my-hermes 로고: 흰 둥근 사각 타일 위에 굵은 검은 선으로 그린 oh-my-hermes 캐릭터" width="200">
 
-# oh-my-hermes
+<br>
+<br>
+
+<img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="70%">
+
+<br>
+<br>
 
 **Hermes Agent를 위한 올인원 패키지. 한 번 설치하고 `dag-ulw`만 입력하세요.**
 
@@ -17,11 +23,13 @@
 
 [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md) · [中文](README.zh.md)
 
-</div>
-
 **oh-my-hermes**는 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 위의 운영층입니다.<br>
 대화는 계속 Hermes와 하고, OMH가 스킬과 lane마다 모델을 골라 일을 병렬로 돌립니다.<br>
 Hermes를 패치하거나 대체하지 않고, 계획만 된 일을 완료로 보고하지 않습니다.
+
+</div>
+
+<br>
 
 ## 설치
 
@@ -32,18 +40,23 @@ omh setup
 
 [Windows와 다른 설치 방법 →](docs/INSTALLATION.md)
 
+<br>
+
 ## 얻는 것
 
-- **lane마다 맞는 모델.** 위임되는 lane은 직접 편집할 수 있는 모델·effort chain으로 돕니다: [lane별 모델 보기](docs/INSTALLATION.md#guided-model-setup).
-- **서로 부딪히지 않는 병렬 작업.** lane끼리 파일을 공유하지 않고, 검사가 통과해야 완료로 봅니다.
-- **필요할 때 들어오는 전문가 스킬.** 100개가 넘는 전문 스킬이 요청이 그 영역에 닿으면 실행에 들어옵니다.
-- **믿을 수 있는 기억.** 아무것도 조용히 기억되지 않고, 다음 세션은 순위가 매겨진 recall pack을 받습니다.
-- **한눈에 보는 실행.** `omh`가 여는 OMH TUI에서 lane마다 모델, 토큰, 비용을 실시간으로 봅니다.
+- **lane마다 맞는 모델.** lane마다 편집 가능한 모델 chain ([lane별 모델 보기](docs/INSTALLATION.md#guided-model-setup)).
+- **부딪히지 않는 병렬 작업.** lane끼리 파일을 공유하지 않고, 검사가 통과해야 완료입니다.
+- **필요할 때 전문가 스킬.** 100개가 넘는 전문 스킬이 필요한 요청에 합류합니다.
+- **믿을 수 있는 기억.** 조용히 기억하지 않고, 세션마다 순위가 매겨진 recall pack을 받습니다.
+- **한눈에 보는 실행.** `omh`가 lane마다 모델, 토큰, 비용을 실시간으로 보여 줍니다.
 
-## 그래프 엔지니어링
+<br>
 
-큰 작업을 `/dag-ulw`에 맡기면 작은 노드의 그래프가 되어 노드마다 자기 모델로 병렬 실행되고,
-별도 노드가 보고 전에 목표를 검증합니다.
+## DAG-ULW
+
+**`/dag-ulw`만 입력하세요. 그래프 엔지니어링 마스터가 됩니다.**<br>
+목표가 작은 노드의 그래프가 되고, 노드마다 자기 모델로 병렬 실행됩니다.<br>
+별도 노드가 목표를 검증한 뒤에 보고가 옵니다.
 
 <p align="center">
   <img src="assets/omh-dag-ulw-tui.gif" alt="/dag-ulw를 실행하는 OMH TUI: 프롬프트를 입력하면 레인 7개의 박스 그래프가 정의되고, 레인이 Claude Opus 5.5, GPT-6.1 Sol, DeepSeek V4.1 Flash, GLM 5.3, Kimi K3.1 Pro로 레이어마다 실행된 뒤 모두 accepted로 끝납니다" width="960">
@@ -311,7 +324,9 @@ executor가 끝났다고 말한 것과 결과가 확인된 것은 다른데, 대
 
 </details>
 
+<br>
+
 ## 라이선스
 
-MIT, [LICENSE](LICENSE) 참조. [기여자들](https://github.com/rlaope/oh-my-hermes/graphs/contributors)과 함께
-[Team Art & Engineering](https://rlaope.github.io/artengine-lab/)의 공개 프로젝트로 만들고 있습니다.
+MIT, [LICENSE](LICENSE) 참조.<br>
+[기여자들](https://github.com/rlaope/oh-my-hermes/graphs/contributors)과 함께 [Team Art & Engineering](https://rlaope.github.io/artengine-lab/)의 공개 프로젝트로 만들고 있습니다.

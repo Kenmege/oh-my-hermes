@@ -1,10 +1,16 @@
 <div align="center">
 
-<img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="100%">
+<br>
 
-<img src="assets/omh-logo.png" alt="oh-my-hermes logo: the oh-my-hermes character in bold black line art on a white rounded-square tile" width="180">
+<img src="assets/omh-logo.png" alt="oh-my-hermes logo: the oh-my-hermes character in bold black line art on a white rounded-square tile" width="200">
 
-# oh-my-hermes
+<br>
+<br>
+
+<img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="70%">
+
+<br>
+<br>
 
 **All-in-one package for Hermes Agent. Install once, then just type `dag-ulw`.**
 
@@ -17,11 +23,13 @@
 
 [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md) · [中文](README.zh.md)
 
-</div>
-
 **oh-my-hermes** is an operating layer for [Hermes Agent](https://github.com/NousResearch/hermes-agent).<br>
 You keep talking to Hermes. OMH picks the skill and a model for each lane, and runs the work in parallel.<br>
 It never patches or replaces Hermes, and it never reports planned work as done.
+
+</div>
+
+<br>
 
 ## Install
 
@@ -32,18 +40,23 @@ omh setup
 
 [Windows and other options →](docs/INSTALLATION.md)
 
+<br>
+
 ## What you get
 
-- **The right model for every lane.** Each delegated lane runs on a model and effort chain you can edit: [which model runs each lane](docs/INSTALLATION.md#guided-model-setup).
-- **Parallel work that never collides.** Lanes never share a file, and nothing counts as done until a check passes.
-- **Expert skills on demand.** A hundred-plus specialist skills join the run when a request touches their area.
-- **Memory you can trust.** Nothing is remembered silently, and the next session gets a ranked recall pack.
-- **One live view.** Bare `omh` opens the OMH TUI with every lane's model, tokens and cost.
+- **The right model for every lane.** An editable model chain per lane ([which model runs each lane](docs/INSTALLATION.md#guided-model-setup)).
+- **Parallel work that never collides.** Lanes never share a file; nothing is done until a check passes.
+- **Expert skills on demand.** A hundred-plus specialist skills join when a request needs them.
+- **Memory you can trust.** Nothing is remembered silently; each session gets a ranked recall pack.
+- **One live view.** Bare `omh` shows every lane's model, tokens and cost.
 
-## Graph engineering
+<br>
 
-Give `/dag-ulw` a big job. It becomes a graph of small nodes that run in parallel, each on its own model,
-and a separate node verifies the goal before the report.
+## DAG-ULW
+
+**Just type `/dag-ulw`, and you're a graph engineering master.**<br>
+Your goal becomes a graph of small nodes that run in parallel, each on its own model.<br>
+A separate node verifies the goal before you get the report.
 
 <p align="center">
   <img src="assets/omh-dag-ulw-tui.gif" alt="The OMH TUI running /dag-ulw: the prompt is typed, the box graph of seven lanes is defined, the lanes run layer by layer on Claude Opus 5.5, GPT-6.1 Sol, DeepSeek V4.1 Flash, GLM 5.3 and Kimi K3.1 Pro, and every lane ends accepted" width="960">
@@ -314,7 +327,9 @@ in place, and no measured run is published yet:
 
 </details>
 
+<br>
+
 ## License
 
-MIT, see [LICENSE](LICENSE). Built in the open with [our contributors](https://github.com/rlaope/oh-my-hermes/graphs/contributors) as part of
-[Team Art & Engineering](https://rlaope.github.io/artengine-lab/).
+MIT, see [LICENSE](LICENSE).<br>
+Built in the open with [our contributors](https://github.com/rlaope/oh-my-hermes/graphs/contributors) as part of [Team Art & Engineering](https://rlaope.github.io/artengine-lab/).

@@ -1,10 +1,16 @@
 <div align="center">
 
-<img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="100%">
+<br>
 
-<img src="assets/omh-logo.png" alt="oh-my-hermes のロゴ: 白い角丸の正方形タイルに太い黒線で描いた oh-my-hermes のキャラクター" width="180">
+<img src="assets/omh-logo.png" alt="oh-my-hermes のロゴ: 白い角丸の正方形タイルに太い黒線で描いた oh-my-hermes のキャラクター" width="200">
 
-# oh-my-hermes
+<br>
+<br>
+
+<img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="70%">
+
+<br>
+<br>
 
 **Hermes Agent のためのオールインワンパッケージ。一度インストールしたら、`dag-ulw` と入力するだけ。**
 
@@ -12,11 +18,13 @@
 
 [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md) · [中文](README.zh.md)
 
-</div>
-
 **oh-my-hermes** は [Hermes Agent](https://github.com/NousResearch/hermes-agent) の上に載る運用レイヤーです。<br>
 話しかける相手は Hermes のまま。OMH がスキルと lane ごとのモデルを選び、作業を並列で回します。<br>
 Hermes にパッチを当てたり置き換えたりせず、計画しただけの作業を完了とは報告しません。
+
+</div>
+
+<br>
 
 ## インストール
 
@@ -27,17 +35,23 @@ omh setup
 
 [Windows とその他の方法 →](docs/INSTALLATION.md)
 
+<br>
+
 ## 得られるもの
 
-- **lane ごとに合うモデル。** 委譲される lane は、編集できるモデルと effort の chain で動きます: [lane ごとのモデル](docs/INSTALLATION.md#guided-model-setup)。
-- **ぶつからない並列作業。** lane 同士はファイルを共有せず、チェックが通るまで完了とみなしません。
-- **必要なときに専門スキル。** 100 を超える専門スキルが、依頼がその領域に触れると実行に入ります。
-- **信頼できる記憶。** 何も黙って記憶されず、次のセッションは順位付けされた recall pack を受け取ります。
-- **ひと目で分かる実行。** `omh` が開く OMH TUI で、lane ごとのモデル、トークン、コストをライブで見られます。
+- **lane ごとに合うモデル。** lane ごとに編集できるモデル chain（[lane ごとのモデル](docs/INSTALLATION.md#guided-model-setup)）。
+- **ぶつからない並列作業。** lane 同士はファイルを共有せず、チェックが通るまで完了としません。
+- **必要なときに専門スキル。** 100 を超える専門スキルが、必要な依頼に加わります。
+- **信頼できる記憶。** 黙って記憶せず、セッションごとに順位付きの recall pack を渡します。
+- **ひと目で分かる実行。** `omh` が lane ごとのモデル、トークン、コストをライブで表示します。
 
-## グラフエンジニアリング
+<br>
 
-大きな仕事を `/dag-ulw` に渡すと、小さなノードのグラフになり、ノードごとに自分のモデルで並列に走り、別のノードが報告前に目標を検証します。
+## DAG-ULW
+
+**`/dag-ulw` と打つだけで、あなたもグラフエンジニアリングの達人。**<br>
+目標は小さなノードのグラフになり、ノードごとに自分のモデルで並列に走ります。<br>
+別のノードが目標を検証してから、報告が届きます。
 
 <p align="center">
   <img src="assets/omh-dag-ulw-tui.gif" alt="/dag-ulw を実行する OMH TUI: プロンプトを入力すると 7 レーンのボックスグラフが定義され、レーンが Claude Opus 5.5、GPT-6.1 Sol、DeepSeek V4.1 Flash、GLM 5.3、Kimi K3.1 Pro でレイヤーごとに走り、すべて accepted で終わります" width="960">
@@ -285,6 +299,9 @@ executor が終わったと言うことと結果が確認されたことは別�
 
 </details>
 
+<br>
+
 ## ライセンス
 
-MIT、[LICENSE](LICENSE) を参照。[コントリビューター](https://github.com/rlaope/oh-my-hermes/graphs/contributors)とともに、[Team Art & Engineering](https://rlaope.github.io/artengine-lab/) のオープンプロジェクトとして開発しています。
+MIT、[LICENSE](LICENSE) を参照。<br>
+[コントリビューター](https://github.com/rlaope/oh-my-hermes/graphs/contributors)とともに、[Team Art & Engineering](https://rlaope.github.io/artengine-lab/) のオープンプロジェクトとして開発しています。
