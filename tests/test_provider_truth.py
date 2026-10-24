@@ -529,7 +529,7 @@ class SetupSummaryProviderTests(unittest.TestCase):
             status, stdout, stderr = run_cli(self._base(paths) + ["setup", "--yes"], output_json=False)
 
             self.assertEqual(status, 0, stderr)
-            self.assertIn("Model providers: og (config), zai (env) count; each model list puts the models they serve first.", stdout)
+            self.assertIn("Model providers: og (config), zai (env).", stdout)
             self.assertNotIn("sk-secret-value", stdout)
 
             status, stdout, stderr = run_cli(self._base(paths) + ["setup", "--json"], output_json=False)
@@ -556,7 +556,7 @@ class SetupSummaryProviderTests(unittest.TestCase):
             _write_config(paths, "providers:\n  og:\n    base_url: x\n")
             status, stdout, stderr = run_cli(self._base(paths) + ["setup", "--yes"], output_json=False)
             self.assertEqual(status, 0, stderr)
-            self.assertIn("Model providers: og (config) counts; each model list puts the models it serves first.", stdout)
+            self.assertIn("Model provider: og (config).", stdout)
             self.assertNotIn("og (config) count;", stdout)
 
     def test_nothing_linked_is_said_plainly(self) -> None:
@@ -564,7 +564,7 @@ class SetupSummaryProviderTests(unittest.TestCase):
             paths = _paths(Path(tmp))
             status, stdout, stderr = run_cli(self._base(paths) + ["setup", "--no-interactive"], output_json=False)
             self.assertEqual(status, 0, stderr)
-            self.assertIn("Model providers: none linked to Hermes or recorded yet, so every model counts as served.", stdout)
+            self.assertIn("Model providers: none linked yet. Use `hermes auth` to connect an account.", stdout)
 
     def test_an_invalid_record_is_named_with_what_still_counts(self) -> None:
         with TemporaryDirectory() as tmp:

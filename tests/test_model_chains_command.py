@@ -250,7 +250,12 @@ class ModelChainsSetupWizardTests(unittest.TestCase):
 
             self.assertEqual((status, stderr), (0, ""), stdout)
             self.assertEqual(yes_no.call_count, 1)
-            self.assertIn("chains", yes_no.call_args_list[0].args[0].lower())
+            from omh.commands.language import tr
+
+            offer = yes_no.call_args_list[0]
+            self.assertEqual(offer.args[0], tr("en", "model_chains_interview_prompt"))
+            self.assertFalse(offer.kwargs["default"])
+            self.assertEqual(offer.kwargs["note"], tr("en", "model_chains_interview_note"))
             self.assertEqual(
                 json.loads(_chains_path(root).read_text(encoding="utf-8")),
                 _SEEDED_EMPTY_DOCUMENT,
@@ -571,9 +576,12 @@ class ModelChainsSetupTerminalTests(unittest.TestCase):
             # prompt the pty never closes and the run times out.
             transcript = self._run_setup_under_pty(root, ["n", ""])
 
-            self.assertIn("Walk the per-category model chains now (interview)?", transcript)
+            from omh.commands.language import tr
+
+            prompt = tr("en", "model_chains_interview_prompt")
+            self.assertIn(prompt, transcript)
             # Default No: a bare Enter has to keep the shipped chains.
-            self.assertIn("[y/N]", transcript.split("model chains now (interview)?", 1)[1][:16])
+            self.assertIn("[y/N]", transcript.split(prompt, 1)[1][:16])
             self.assertNotIn("Model chain interview", transcript)
             self.assertEqual(
                 json.loads(_chains_path(root).read_text(encoding="utf-8")),

@@ -2848,13 +2848,13 @@ def cmd_setup(args: argparse.Namespace) -> int:
     total_steps = 5 + (1 if args.with_mcp else 0) + (1 if args.profile_pack else 0) + (1 if setup_menubar else 0)
     step_index = 1
 
-    progress.step(step_index, total_steps, tr(language, "step_install_skills"), detail=str(paths.skills_dir))
+    progress.step(step_index, total_steps, tr(language, "step_install_skills"))
     steps: dict[str, object] = {"install": _install_result(args)}
     install_skills = steps["install"].get("skills", []) if isinstance(steps["install"], dict) else []
     progress.done(tr(language, "done_skills_installed", count=len(install_skills) if isinstance(install_skills, list) else 0))
     step_index += 1
 
-    progress.step(step_index, total_steps, tr(language, "step_register"), detail=str(paths.hermes_config_path))
+    progress.step(step_index, total_steps, tr(language, "step_register"))
     if args.skip_apply:
         steps["apply"] = {"skipped": True, "message": "Skipped Hermes config registration because --skip-apply was set."}
         progress.skip(tr(language, "skip_by_flag", flag="--skip-apply"))
@@ -2864,7 +2864,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         progress.done(_config_change_label(language, str(apply_message)))
     step_index += 1
 
-    progress.step(step_index, total_steps, tr(language, "step_plugin"), detail=str(paths.hermes_plugin_dir))
+    progress.step(step_index, total_steps, tr(language, "step_plugin"))
     steps["plugin"] = _plugin_setup_result(args, paths)
     # Every install gets the editable mixture-chain override document so
     # customizing routing is a config edit, not a source edit.
@@ -4662,28 +4662,18 @@ def _print_setup_summary(payload: dict[str, object], *, language: str = "en") ->
 
     install = steps.get("install", {})
     profile = steps.get("profile", {})
-    targets = steps.get("targets", {})
     skills = install.get("skills", []) if isinstance(install, dict) else []
-    topology = targets.get("topology", {}) if isinstance(targets, dict) else {}
 
     dry_run = bool(payload.get("dry_run", False))
     title = tr(language, "setup_preview_complete") if dry_run else tr(language, "setup_complete")
     print("")
     print(_color(title, "1;36", use_color))
-    print(_color(tr(language, "summary"), "1;32", use_color))
-    scope_label = tr(language, "setup_scope_" + str(operator_summary.get("scope", "custom")))
     mcp_mode_label = tr(language, "setup_mcp_mode_" + str(operator_summary.get("mcp_mode", "none")))
-    status_label = tr(language, "setup_status_" + str(operator_summary.get("status", "configured")))
-    print(f"  {tr(language, 'setup_scope', scope=scope_label)}")
-    print(f"  {tr(language, 'setup_status', status=status_label)}")
     command_path = operator_summary.get("command_path", {})
-    if isinstance(command_path, dict):
-        if command_path.get("found"):
-            print(f"  {tr(language, 'command_path_found', path=command_path.get('path', 'omh'))}")
-        else:
-            print(f"  {tr(language, 'command_path_missing')}")
-            print(f"  {tr(language, 'command_path_missing_next')}")
-    print(f"  {tr(language, 'skills_line', count=len(skills), path=hermes_native.get('skills_dir', ''))}")
+    if isinstance(command_path, dict) and not command_path.get("found"):
+        print(f"  {tr(language, 'command_path_missing')}")
+        print(f"  {tr(language, 'command_path_missing_next')}")
+    print(f"  {tr(language, 'done_skills_ready', count=len(skills))}")
 
     discovery_status = str(hermes_native.get("discovery_status", ""))
     if discovery_status == "config_registered_reload_required":
@@ -4701,13 +4691,8 @@ def _print_setup_summary(payload: dict[str, object], *, language: str = "en") ->
         executor = str(profile.get("default_executor", ""))
         if executor:
             print(f"  {tr(language, 'default_handoff', summary=_executor_summary(language, executor))}")
-            if executor == "choose":
-                print(f"  {tr(language, 'default_handoff_pin_hint')}")
 
-    if isinstance(topology, dict):
-        print(
-            f"  {tr(language, 'target_topology', mode=topology.get('mode', 'unknown'), count=topology.get('known_target_count', 0))}"
-        )
+
     providers = operator_summary.get("providers")
     if isinstance(providers, dict):
         print(f"  {_provider_summary_line(providers, language=language)}")
@@ -4732,12 +4717,11 @@ def _print_setup_summary(payload: dict[str, object], *, language: str = "en") ->
     print(_color(tr(language, "next"), "1;32", use_color))
     if dry_run:
         print(f"  {tr(language, 'setup_next_dry')}")
+    elif discovery_status == "not_registered_skip_apply":
+        print(f"  {tr(language, 'setup_next_connect')}")
     else:
         print(f"  {tr(language, 'setup_next_reload')}")
-        print(f"  {tr(language, 'setup_next_prompt')}")
         print(f"  {tr(language, 'setup_next_verify')}")
-        print(f"  {tr(language, 'setup_next_chains')}")
-    print(f"  {tr(language, 'machine_readable')}")
     profiles = payload.get("hermes_profiles")
     if not dry_run:
         apply = steps.get("apply")
@@ -4747,6 +4731,9 @@ def _print_setup_summary(payload: dict[str, object], *, language: str = "en") ->
         )
     if isinstance(profiles, list):
         _print_hermes_profiles_line(profiles, language=language)
+        for row in profiles:
+            if isinstance(row, dict) and row.get("status") == "failed":
+                print(f"  {row.get('profile')}: {row.get('error')}; run `omh setup` after resolving this error.")
         _print_omh_home_reclaims([row for row in profiles if isinstance(row, dict)])
 
 
