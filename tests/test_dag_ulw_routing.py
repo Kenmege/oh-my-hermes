@@ -850,9 +850,25 @@ class RouterTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
-        for message in ("rebase all open PRs as soon as possible", "fix all the failing tests provided by QA"):
+        for message in ("rebase all open PRs as soon as possible", "fix all the failing tests provided by QA",
+                        # Only where it opens a clause: an adjective or a participle, and a constraint inside the clause,
+                        # keep as on main (#2265 review33).
+                        "add pagination to every list endpoint using the provided helper",
+                        "update every service to node 22 with the provided config",
+                        "rename every module per the provided naming guide", "fix all the failing tests with the fixtures provided",
+                        "rebase all open PRs onto the branch provided", "bump every package with the provided changelog template",
+                        "update all services to the provided base image", "close all stale issues using the provided label",
+                        "update every service with the values provided",
+                        "rename every module as long as the import paths stay the same",
+                        "update every service assuming the defaults are fine"):
             with self.subTest(message=message):
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
+        for message in ("rebase all open PRs; supposing legal agrees", "rebase all open PRs — in case the CTO approves",
+                        "rebase all open PRs: as soon as the lead says go",
+                        "update every service to node 22 provided that the tests pass"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
         # The reported object is read by the kinds a bare remark is: thanks, a greeting, a sign-off or a wish keeps, an
         # approval keeps with when or what for, a plain statement keeps after an aside marker, and a relative what is no
         # reported speech (#2265 review32).
@@ -861,7 +877,14 @@ class RouterTests(unittest.TestCase):
                      "the client wants it by friday", "ops wants it by end of week", "the PM wants this this sprint",
                      "the lead wants it done in Q3", "ops said yes for the release", "legal says yes by eod",
                      "fwiw QA says the suite is faster now", "btw the PM said she'll review it",
-                     "ps the client said the demo went well", "hope it's what the PM wants", "hope this is what legal wanted"):
+                     "ps the client said the demo went well", "hope it's what the PM wants", "hope this is what legal wanted",
+                     # #2265 review33: a plain aside statement, a clean wish, a single assent, and an attribution unnegated.
+                     "btw ops says the new cluster is up", "fwiw legal says the contract is signed",
+                     "fwiw QA said the flaky suite is fixed now", "btw the CTO said the budget isn't an issue",
+                     "the PM said best of luck!", "ops said fingers crossed", "the lead said hope it goes well",
+                     "QA said hope the rollout is smooth", "the CTO said good luck with the migration", "QA said great",
+                     "the PM said nice", "the lead said perfect", "ops said cool, ship it", "the team gave the go-ahead",
+                     "security cleared it"):
             with self.subTest(message=f"rebase all open PRs, {tail}"):
                 self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
         for tail in ("btw the lead said idk", "fyi QA said not sure", "ps the PM said she's skeptical",
@@ -870,7 +893,25 @@ class RouterTests(unittest.TestCase):
                      "fyi the lead said over my dead body", "the client wants it next week",
                      # a refusal in a later part of the object, and a word after an approval that is no punctuation
                      "btw QA said the suite is green, but let's not merge yet", "fyi the PM said she'll review it, maybe",
-                     "the PM said sure 🤡", "ops said fine 😬"):
+                     "the PM said sure 🤡", "ops said fine 😬",
+                     # Under an aside, a reported negated state, reluctance or blocking status holds; a reported wish
+                     # holds unless it is a wish alone or that the work goes well; a doubled assent is no thanks; and a
+                     # negated subject with a phrase after it, or a negator before an attribution verb, holds (#2265
+                     # review33).
+                     "btw legal says the contract isn't signed", "fwiw the CTO said she'd rather we didn't",
+                     "btw ops says staging isn't ready", "fyi legal said the release wasn't approved",
+                     "fwiw the lead said she would rather we waited", "btw ops says prod is frozen",
+                     "fyi QA said the pipeline is blocked", "btw the CTO says the repo is locked down",
+                     "btw finance says we're over budget", "fyi the lead said she's out today", "btw ops says the cluster is down",
+                     "fyi legal says deploys are paused", "the PM said good luck lol", "ops said hope you enjoy debugging",
+                     "legal said best of luck explaining that", "QA said fingers crossed you know what you're doing",
+                     "the CTO said good luck haha", "fyi the PM said good luck lol", "QA said great, great",
+                     "the PM said nice, nice", "QA said perfect, perfect", "no one on the team gave the go-ahead",
+                     "not a soul signed off", "no one on security cleared it", "nobody from legal approved it",
+                     "no-one gave the nod", "the team never gave the go-ahead", "no one on the team asked for this",
+                     "not a soul asked for it", "no-one asked for it", "nobody in legal requested it", "the team never okayed it",
+                     "security never greenlit it", "security has not blessed it", "none of the leads asked for this",
+                     "not a single person requested it", "neither of them asked for it"):
             with self.subTest(message=f"rebase all open PRs, {tail}"):
                 self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
                 self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))

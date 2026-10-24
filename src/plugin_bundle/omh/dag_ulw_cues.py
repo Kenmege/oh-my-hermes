@@ -1271,7 +1271,8 @@ _NOT_DOING: Final = re.compile(
     r"|\b(?:we|i|you)\s+(?:won'?t|wouldn'?t|don'?t|shouldn'?t|can'?t|do\s+not|will\s+not)\s+(?:need|have|want|bother|do|go|start"
     r"|touch|proceed|run|ship|merge)\b"
     r"|\b(?:asked|told|want|wants|wanted)\s+(?:us|me|you)\s+not\s+to\b|\bhold\s+off\b|\bno\s+need\b(?!\s+to\s+(?:rush|hurry|stress))"
-    r"|\b(?:nobody|no\s*one|none\s+of\s+(?:us|them|the\s+\w+)|not\s+(?:a\s+single|one)(?:\s+\w+)?|neither(?:\s+of\s+(?:us|them))?)"
+    r"|\b(?:nobody|no[-\s]?one|not\s+a\s+soul|none\s+of\s+(?:us|them|the\s+\w+)|not\s+(?:a\s+single|one)(?:\s+\w+)?"
+    r"|neither(?:\s+of\s+(?:us|them))?)(?:\s+(?:on|in|from|at|of)\s+(?:the\s+)?\w+(?:\s+\w+)?)?"
     r"\s+(?:(?:has|have|had|ever|actually|really|even)\s+)*(?:asked|wants|wanted|needs|needed|requested|said|says|told|gave"
     r"|given|approved|signed\s+off|okayed|ok'?d|greenlit|cleared|agreed|blessed)\b"
     r"|\blea(?:ve|ving)\s+(?:it|this|that|them|everything)(?:\s+(?:alone|be|as\s+is|untouched|for\s+now))?\s*[.!]*$"
@@ -1307,6 +1308,10 @@ _REPORTED_SPEECH: Final = re.compile(
 )
 _SPEAKER_BACK_REFERENCE: Final = re.compile(r"\b(?:as|like|what|how)\s+(?:i|we|you|they)\s+(?:\w+\s+)?$")
 _RELATIVE_WHAT: Final = re.compile(r"\bwhat(?:ever)?\s+(?:\w+(?:'s)?\s+){0,3}$")
+_ATTRIBUTION_VERB: Final = re.compile(
+    r"\b(?:gave|give[sn]?|sign(?:ed|s)?\s+off|clear(?:ed|s)?|approv(?:ed|es|e)|okay(?:ed|s)?|ok'?d|greenl(?:it|ight(?:ed|s)?)"
+    r"|bless(?:ed|es)?)\b"
+)
 _NEGATOR: Final = re.compile(
     r"\b(?:nobody|no\s*one|none|not|never|neither|nor|\w+n['’]t|dont|didnt|doesnt|hasnt|havent|wont|cant|wasnt)\b"
 )
@@ -1318,7 +1323,10 @@ _APPROVAL_AROUND: Final = rf"(?:{_APPROVAL_INTENSIFIER}|too|already|now|asap|tod
 _APPROVAL_SEP: Final = r"(?:\s*[,;.!…—–]+\s*|\s+)"
 # A one-word assent stands at most once, first ("…, QA said yes, absolutely", "…, ops said ok, ship it"); said twice it
 # is sarcasm ("…, the PM said sure, sure", "…, the lead said yeah, sure").
-_APPROVAL_ASSENT: Final = r"(?:yes+|yep|yeah|yup|sure|ok(?:ay)?|fine|good|great|cool)"
+_APPROVAL_ASSENT: Final = (
+    r"(?:yes+|yep|yeah|yup|sure|ok(?:ay)?|fine|good|great|cool|nice|perfect|awesome|sweet|excellent|brilliant|lovely"
+    r"|amazing|fantastic|wonderful)"
+)
 _APPROVAL_WORD: Final = (
     r"(?:go(?:\s+(?:for\s+it|ahead|nuts|wild))?|go[-\s]ahead|approved?"
     r"|lgtm|ship\s+it|do\s+it|let'?s\s+(?:go|do\s+it)|make\s+it\s+happen|green\s*light|thumbs\s+up|(?:full\s+)?steam\s+ahead"
@@ -1353,13 +1361,38 @@ _MOCKING: Final = re.compile(
     r"|(?:good\s+luck|have\s+fun)\s+with\s+that|over\s+my\s+dead\s+body|when\s+pigs\s+fly|not\s+in\s+a\s+million\s+years)\b"
     r"|(?:^|\s)/s\b|🙄|😒|🙃"
 )
+# A part that is only an assent is never thanks, even said twice ("…, QA said great, great", "…, the PM said nice,
+# nice"); a reported wish keeps only as a wish alone or a wish that the work goes well (`_REPORTED_WISH`: "…, the lead
+# said good luck", "…, QA said hope the rollout is smooth"), so a wish with anything else after it holds ("…, the PM
+# said good luck lol", "…, legal said best of luck explaining that", "…, ops said hope you enjoy debugging").
+_ASSENT_ALONE: Final = re.compile(rf"(?:{_APPROVAL_INTENSIFIER}\s+)?{_APPROVAL_ASSENT}[\s.!…]*")
+_REPORTED_WISH: Final = re.compile(
+    rf"(?:(?:{_APPROVAL_INTENSIFIER}|so|just)\s+)*(?:good\s+luck|best\s+of\s+luck|(?:fingers|toes)\s+crossed|break\s+a\s+leg"
+    r"|godspeed|knock\s+on\s+wood|touch\s+wood)(?:\s+(?:to\s+(?:you|us|all|everyone)|with\s+the\s+(?:\w+\s+)?(?:rollout|migration"
+    r"|release|deploy(?:ment)?|launch|upgrade|rebase|work|change|refactor|rewrite)))?[\s.!…]*"
+    r"|(?:i\s+|we\s+)?(?:hope|hoping|wish(?:ing)?)\s+(?:it|this|that|everything|all|the\s+\w+(?:\s+\w+)?)\s+(?:goes|go|went|runs?"
+    r"|lands?|is|are|stays?|will\s+(?:go|be|run|land))\s+(?:\w+\s+)?(?:well|smooth(?:ly)?|fine|great|green|clean(?:ly)?|ok(?:ay)?"
+    r"|to\s+plan)[\s.!…]*"
+)
+# Under an aside a reported statement that blocks the work holds: a negated state ("…, btw legal says the contract
+# isn't signed"), reluctance ("…, fwiw the CTO said she'd rather we didn't") or a blocking status ("…, btw ops says prod
+# is frozen", "…, fyi the lead said she's out today").
+_REPORTED_BLOCKER: Final = re.compile(
+    r"\b(?:isn'?t|aren'?t|hasn'?t|haven'?t|wasn'?t|weren'?t|is\s+not|are\s+not|has\s+not|have\s+not|was\s+not|were\s+not)"
+    r"\s+(?:been\s+|yet\s+|fully\s+|quite\s+|actually\s+)*(?:\w+ed|\w+en|ready|cleared|signed|approved|done|set)\b"
+    r"|\brather\s+(?:not|we|they|you)\b|\bprefer(?:s|red)?\s+(?:not|we|us|they|you|to\s+(?:not|wait|hold)|waiting)\b"
+    r"|(?:\b(?:is|are|was|were|be|been|stays?|remains?|still|now|currently)|'s|'re)\s+(?:still\s+|currently\s+|now\s+|totally\s+"
+    r"|completely\s+|all\s+)?(?:frozen|blocked|locked(?:\s+down)?|closed|paused|on\s+hold|over\s+budget|out|down|offline"
+    r"|not\s+ready)\b"
+)
 
 
 def _reported_object_keeps(reported: str, aside: bool) -> bool:
     """Whether what a third party is reported to have said keeps the request, read by the kinds a bare remark is: a
-    clean approval (`_APPROVAL`), thanks, a greeting, a sign-off or a wish in every part, or after an aside marker a plain
-    statement that does not open like an approval (`_APPROVAL_LEAD`); never a mocking idiom (`_MOCKING`) or a part that
-    refuses (`_refuses`). Anything else holds."""
+    clean approval (`_APPROVAL`), thanks, a greeting, a sign-off or a clean wish (`_REPORTED_WISH`) in every part, a part
+    that is only an assent never counting as thanks (`_ASSENT_ALONE`), or after an aside marker a plain statement that
+    neither opens like an approval (`_APPROVAL_LEAD`) nor blocks the work (`_REPORTED_BLOCKER`); never a mocking idiom
+    (`_MOCKING`) or a part that refuses (`_refuses`). Anything else holds."""
     if _MOCKING.search(reported):
         return False
     if _APPROVAL.fullmatch(reported):
@@ -1367,15 +1400,21 @@ def _reported_object_keeps(reported: str, aside: bool) -> bool:
     parts = [part for part in _CLAUSE_BREAK.split(reported) if part]
     if not parts or any(_refuses(part) for part in parts):
         return False
-    if all(_GRATITUDE.search(part) or _SIGN_OFF.search(part) or _WISH.match(part) for part in parts):
+    if any(_WISH.match(part) and not _REPORTED_WISH.fullmatch(part) for part in parts):
+        return False
+    if all(
+        not _ASSENT_ALONE.fullmatch(part) and (_GRATITUDE.search(part) or _SIGN_OFF.search(part) or _WISH.match(part))
+        for part in parts
+    ):
         return True
-    return aside and not _APPROVAL_LEAD.match(reported)
+    return aside and not _APPROVAL_LEAD.match(reported) and not _REPORTED_BLOCKER.search(reported)
 
 
 def _without_an_unapproved_report(trailing: list[str]) -> list[str] | None:
     """``trailing`` with what a third party is reported to have said read as one object, on to the next follow-on request
     (`_REPORTED_SPEECH`, `_follows_on`), and kept only as its reporting clause; None when a negator stands before the
-    reporting verb (`_NEGATOR`) or the object does not keep (`_reported_object_keeps`). A speaker's own back-reference
+    reporting verb or an attribution verb (`_NEGATOR`, `_ATTRIBUTION_VERB`: "…, no one on the team gave the go-ahead") or
+    the object does not keep (`_reported_object_keeps`). A speaker's own back-reference
     and a relative what report nothing ("…, as I said, …", "…, like the ticket says", "…, hope it's what the PM
     wants")."""
     kept: list[str] = []
@@ -1384,6 +1423,9 @@ def _without_an_unapproved_report(trailing: list[str]) -> list[str] | None:
     while index < len(trailing):
         clause = trailing[index]
         aside = aside or bool(_ASIDE_MARKER.match(clause))
+        attributed = _ATTRIBUTION_VERB.search(clause)
+        if attributed and _NEGATOR.search(clause[: attributed.start()]):
+            return None
         said = _REPORTED_SPEECH.search(clause)
         before = clause[: said.start()] if said else ""
         reported = clause[said.end() :].strip() if said else ""
@@ -1599,13 +1641,17 @@ _STOP_OR_HOLD: Final = re.compile(
     r"중단|취소|멈춰|멈추|멈춤|보류|금지|그만|\b(?:stop|cancel|hold|halt|pause|abort|freeze)\b"
 )
 # - a condition ("테스트 다 통과하면 머지해줘", "PR 다 올렸으면 리뷰 요청해줘", "if all the tests pass, merge"); a noun that ends in
-#   면 (화면, 측면, 전면) is no condition; every subordinating condition opener is one, trailing or leading ("…, assuming
-#   QA says it's fine", "…, provided the CTO says ok", "…, as soon as the lead says go"), while an urgency that borrows
-#   its words is none ("… as soon as possible") and neither is a participle ("… provided by QA");
+#   면 (화면, 측면, 전면) is no condition; a subordinating condition opener is one where it opens a clause, at the start
+#   or after a comma, a semicolon, a colon or a dash, and so is "provided that" anywhere ("…, assuming QA says it's
+#   fine", "…, provided the CTO says ok", "…; as soon as the lead says go"). Inside a clause it constrains the work and
+#   keeps, as on main ("rename every module as long as the import paths stay the same", "update every service assuming
+#   the defaults are fine", "rebase all open PRs as soon as possible"), and so does an adjective or a participle ("…
+#   using the provided helper", "… with the fixtures provided", "fix all the failing tests provided by QA");
 _CONDITION: Final = re.compile(
     r"(?<![화측전양단표방내외평])면(?=[\s,.!?~]|$)(?!\s*감사)|거든|\b(?:if|when|once|after|unless|whenever|before)\b"
-    r"|\b(?:assuming|supposing|provided(?!\s+by\b)|providing\s+that|as\s+long\s+as|so\s+long\s+as|in\s+case"
-    r"|on\s+(?:the\s+)?condition|as\s+soon\s+as(?!\s+(?:possible|you\s+can|we\s+can|feasible|practical)\b))\b"
+    r"|(?:^|[,;:—–]\s*|\s-\s)(?:assuming|supposing|provided|providing\s+that|as\s+long\s+as|so\s+long\s+as|in\s+case"
+    r"|on\s+(?:the\s+)?condition|as\s+soon\s+as)\b"
+    r"|\bprovided\s+that\b"
 )
 # - a deferral of the work past now ("rebase all the open PRs later", "update every service tonight", "… next week",
 #   "… on monday", "PR들 전부 나중에 리베이스해줘", "모든 서비스 내일 업데이트해줘"); a deadline is none ("… by tonight",

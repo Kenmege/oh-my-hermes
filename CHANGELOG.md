@@ -38,10 +38,19 @@ All notable changes will be documented here.
   `…, ops said sure, in your dreams`, `…, the lead said oh sure`, `…, QA
   said yeah yeah`). A negator before the reporting verb holds whatever was
   said (`…, nobody said yes`, `…, ops never said go`, `…, nobody signed
-  off`), and so does a subordinating condition opener (`…, assuming QA says
-  it's fine`, `…, as soon as the lead says go`). A relative what is no
-  reported speech (`…, hope it's what the PM wants` keeps as a wish).
-  Korean reported speech is unchanged and reads as on main.
+  off`), and so does one before an attribution verb (`…, no one on the
+  team gave the go-ahead`). A subordinating condition opener holds where it
+  opens a clause (`…, assuming QA says it's fine`, `…; as soon as the lead
+  says go`); inside a clause it constrains the work and keeps, and an
+  adjective never counts (`rename every module as long as the import paths
+  stay the same`, `… using the provided helper`). A reported wish keeps
+  only as a wish alone or that the work goes well (`…, the lead said hope it
+  goes well`; `…, the PM said good luck lol` holds), a doubled assent is no
+  thanks (`…, QA said great, great` holds), and under an aside a reported
+  negated state, reluctance or blocking status holds (`…, btw legal says
+  the contract isn't signed`, `…, btw ops says prod is frozen`). A relative
+  what is no reported speech (`…, hope it's what the PM wants` keeps as a
+  wish). Korean reported speech is unchanged and reads as on main.
 
 - **Kimi K3.1 Pro and K3.1 Pro Highspeed are onboarded.** Moonshot released
   them on 2026-10-23. Both ids now have exact contracts read from
