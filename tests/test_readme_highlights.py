@@ -93,19 +93,14 @@ class ReadmeHighlightsTests(unittest.TestCase):
                 f"{rel}: mutable installable-skill count leaked",
             )
 
-    def test_localized_model_tables_and_install_details_keep_gfm_spacing(self) -> None:
-        table_heads = {
-            "README.ko.md": "| 카테고리 alias |",
-            "README.ja.md": "| カテゴリ alias |",
-            "README.zh.md": "| 类别 alias |",
-        }
-        for rel, table_head in table_heads.items():
+    def test_localized_install_details_keep_gfm_spacing(self) -> None:
+        # The model table left the READMEs for docs/INSTALLATION.md (the lean
+        # README, #2269); the install toggle's GFM spacing is still checked.
+        for rel in ("README.ko.md", "README.ja.md", "README.zh.md"):
             lines = Path(rel).read_text(encoding="utf-8").splitlines()
-            table_index = next(index for index, line in enumerate(lines) if line.startswith(table_head))
             details_index = lines.index("<details>")
             fence_index = lines.index("```text", details_index)
             with self.subTest(readme=rel):
-                self.assertEqual(lines[table_index - 1], "")
                 self.assertEqual(lines[details_index - 1], "")
                 self.assertEqual(lines[fence_index - 1], "")
 

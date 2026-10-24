@@ -31,6 +31,25 @@ All notable changes will be documented here.
   route. To try K3.1 Pro now, use
   `omh model-chains set <category> "kimi-k3.1-pro:high, ..."`.
 
+- **A newer delegation route stays newer after another session's `set`
+  (#2251 follow-up).** When an `omh_delegate_route set` wrote its route but
+  failed to write the conversation's entry, the conversation's older entry was
+  ignored only while the profile-wide restore record still named that writer.
+  Once another session's `set` replaced the record, the older route came back
+  at the conversation's next `delegate_task`. Each `set` now first records
+  the route it wrote in `~/.omh/routing/conversation-writes.json`, one stamp
+  per writer (the session, or `task:<id>` for a host that names no session).
+  Another writer's `set` does not replace it. The stamp stands in for the
+  older entry, so the conversation's next dispatch runs on the route it set
+  last, and so does a delegate child inheriting from it, even when the older
+  entry was from an earlier turn or from the session a compaction continued.
+  A stamp never brings back a route that a `clear`, a chain exhaustion or a
+  turn end took out, even when that removal's own write failed: each marks
+  the conversation's stamps released first. A reapply, a repeated `set` of the
+  same route and a child inheriting its parent's route are unchanged. Stamps
+  are kept for six hours, at most 64. A missing or corrupt file reads as "no
+  newer write", which is the behaviour before.
+
 - **A cleared or exhausted delegation route stays gone (#2251
   follow-up).** `clear` and chain exhaustion now release the conversation's
   own route inside the same lock as the restore, after it. Before, the

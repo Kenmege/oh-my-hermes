@@ -114,6 +114,28 @@ refused, never sent on another's. When the dispatching session's own
 `state.db` row cannot be read, its lineage is unknown and another
 conversation's route is left in the keys, as every dispatch did before.
 
+Two more files keep an entry that failed to change from being applied, and
+each is written before the `conversation-routes.json` write it covers, so it
+survives that write failing. `conversation-take-outs.json` names the entries
+a `clear` or chain exhaustion released (`_stamp_take_out`).
+`conversation-writes.json` holds each writer's newest `set`, keyed like the
+entries and in their shape (`_stamp_conversation_write`). An entry older
+than its own key's stamp is the route that write failed to replace, so the
+stamp stands in for it, and the writer's own dispatch -- or a child that
+inherits from it -- runs on the newest route (`_in_force`). An older entry of
+the same writer under another key that names another route is superseded,
+not its intent (`_not_superseded`). A stamp stands in only for an entry that
+survived the take-out filter, and every release -- turn end, session start,
+`clear`, chain exhaustion -- marks the writer's stamps released before it
+deletes the entries, so neither a release nor a release whose own write
+failed brings a route back through a stamp. A child inherits the newest
+write of the conversations it descends from, stamps included; each
+conversation counts only a route no older than its own newest stamp or
+take-out, so a later write in one ancestor never hides another's route
+(`_newest_inherited`). The profile-wide
+`route-restore.json` cannot hold any of this, because the next writer's `set`
+replaces it and a restore deletes it.
+
 What this does not close, stated at its real size: the hook releases the lock
 before Hermes reads the keys, so another session's dispatch or `set` landing
 between the two -- the hook-to-handler gap, not the model's round trip that
@@ -201,6 +223,10 @@ DELEGATION_ROUTE_RESTORE_SCHEMA_VERSION = "delegation_route_restore/v2"
 DELEGATION_ROUTE_RESTORE_FILE = "route-restore.json"
 CONVERSATION_ROUTES_SCHEMA_VERSION = "delegation_conversation_routes/v1"
 CONVERSATION_ROUTES_FILE = "conversation-routes.json"
+CONVERSATION_TAKE_OUTS_SCHEMA_VERSION = "delegation_conversation_take_outs/v1"
+CONVERSATION_TAKE_OUTS_FILE = "conversation-take-outs.json"
+CONVERSATION_WRITES_SCHEMA_VERSION = "delegation_conversation_writes/v1"
+CONVERSATION_WRITES_FILE = "conversation-writes.json"
 _MAX_ID_CHARS = 160
 _MAX_CONFIG_PATH_CHARS = 4096
 # A conversation's route lives as long as its task, so an entry older than
@@ -230,9 +256,6 @@ BASELINE_ORIGIN_OMH_LEFTOVER = "omh_leftover"
 # `exhausted_to_inherit` describe one being taken out, so they say nothing
 # about what the keys hold now.
 _ROUTE_LEAVING_ORIGINS = ("head", "explicit", "fallback")
-# The two that the tool appends after a `clear` or a chain exhaustion took a
-# conversation's own route out of the keys.
-_ROUTE_TAKING_ORIGINS = ("cleared", "exhausted_to_inherit")
 
 # The liveness verdicts that let a restore proceed, as an explicit allow-set
 # rather than an inequality against "live". An inequality is how this went
@@ -539,17 +562,215 @@ def _release_locked(
     The caller holds `route_write_lock`.
     """
     routes = load_conversation_routes(omh_home)
-    kept = {
-        key: entry
-        for key, entry in routes.items()
-        if not (
-            (task_id and entry["task_id"] == task_id)
-            or (entry["session_id"] and entry["session_id"] in conversation)
-        )
-    }
+    kept = {key: entry for key, entry in routes.items() if not _released_by(entry, task_id, conversation)}
     if len(kept) != len(routes) or not kept:
         _write_conversation_routes(omh_home, kept)
     return {"status": "released", "released": len(routes) - len(kept)}
+
+
+def _released_by(entry: Mapping[str, Any], task_id: str, conversation: Collection[str]) -> bool:
+    """Is `entry` one a release of `task_id` and `conversation` drops?"""
+    return bool(task_id and entry["task_id"] == task_id) or bool(
+        entry["session_id"] and entry["session_id"] in conversation
+    )
+
+
+def conversation_take_outs_path(omh_home: str | Path | None = None) -> Path:
+    return delegation_route_restore_path(omh_home).with_name(CONVERSATION_TAKE_OUTS_FILE)
+
+
+def load_conversation_take_outs(omh_home: str | Path | None = None) -> dict[str, float]:
+    """The entries a `clear` or chain exhaustion took out: entry key to its `written_at`.
+
+    An unreadable file reads as "nothing taken out", which is the behaviour
+    before this file existed, and a malformed stamp is dropped alone.
+    """
+    try:
+        raw = json.loads(conversation_take_outs_path(omh_home).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return {}
+    if not isinstance(raw, dict) or raw.get("schema_version") != CONVERSATION_TAKE_OUTS_SCHEMA_VERSION:
+        return {}
+    stamps = raw.get("taken_out")
+    if not isinstance(stamps, dict):
+        return {}
+    cleaned: dict[str, float] = {}
+    for key, value in stamps.items():
+        at = _valid_timestamp(value)
+        if _valid_identifier(key) and key and at is not None:
+            cleaned[key] = at
+    return cleaned
+
+
+def _stamp_take_out(omh_home: str | Path | None, *, task_id: str, conversation: Collection[str]) -> str:
+    """Record which entries a `clear` or chain exhaustion is about to release.
+
+    The caller holds `route_write_lock` and releases right after. When that
+    release fails, the entries stay in `conversation-routes.json`, and
+    without a stamp the same task's next dispatch put the cleared route -- or,
+    for exhaustion, the failing model -- back (#2258 and #2264 reviews). So
+    the stamp is written first, to its own file, whatever the restore
+    decided, and names each entry by its key (the session, or `task:<id>`
+    for a host that names no session) and its `written_at`: a later `set`
+    of the same conversation writes a newer entry, which no stamp covers.
+    A stamp is kept only while its entry is still in the routes file, so the
+    file holds no more stamps than that file holds entries.
+
+    Like `_store_conversation_route`, a failure is named rather than raised.
+    """
+    routes = load_conversation_routes(omh_home)
+    taking = {
+        key: entry["written_at"] for key, entry in routes.items() if _released_by(entry, task_id, conversation)
+    }
+    if not taking:
+        return "nothing_to_stamp"
+    stamps = {
+        key: at
+        for key, at in load_conversation_take_outs(omh_home).items()
+        if key in routes and routes[key]["written_at"] <= at
+    }
+    stamps.update(taking)
+    try:
+        _write_private_json(
+            conversation_take_outs_path(omh_home),
+            {
+                "schema_version": CONVERSATION_TAKE_OUTS_SCHEMA_VERSION,
+                "taken_out": stamps,
+                "claim_boundary": (
+                    "The conversation-routes entries a clear or a chain exhaustion released, "
+                    "so an entry whose release failed is not put back at a later dispatch. "
+                    "It is not evidence that any dispatch ran or which model a child used."
+                ),
+            },
+        )
+    except OSError as exc:
+        return f"unrecorded: {type(exc).__name__}"
+    return "recorded"
+
+
+def conversation_writes_path(omh_home: str | Path | None = None) -> Path:
+    return delegation_route_restore_path(omh_home).with_name(CONVERSATION_WRITES_FILE)
+
+
+def load_conversation_writes(omh_home: str | Path | None = None) -> dict[str, dict[str, Any]]:
+    """Each writer's newest routed `set`, keyed like the entries, in the entry's own shape.
+
+    An unreadable file reads as "no newer write", which is the behaviour
+    before this file existed, and a malformed stamp is dropped alone.
+    """
+    try:
+        raw = json.loads(conversation_writes_path(omh_home).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return {}
+    if not isinstance(raw, dict) or raw.get("schema_version") != CONVERSATION_WRITES_SCHEMA_VERSION:
+        return {}
+    writes = raw.get("writes")
+    if not isinstance(writes, dict):
+        return {}
+    cleaned: dict[str, dict[str, Any]] = {}
+    for key, stamp in writes.items():
+        valid = _valid_conversation_route(key, stamp)
+        if valid is not None:
+            if stamp.get("released") is True:
+                valid["released"] = True
+            cleaned[key] = valid
+    return cleaned
+
+
+def _write_conversation_writes(omh_home: str | Path | None, writes: dict[str, dict[str, Any]]) -> None:
+    _write_private_json(
+        conversation_writes_path(omh_home),
+        {
+            "schema_version": CONVERSATION_WRITES_SCHEMA_VERSION,
+            "writes": writes,
+            "claim_boundary": (
+                "The route each writer's newest omh_delegate_route set wrote, so an older "
+                "conversation-routes entry whose replacement failed to write is not put back. "
+                "It is not evidence that any dispatch ran or which model a child used."
+            ),
+        },
+    )
+
+
+def _release_conversation_writes(
+    omh_home: str | Path | None, *, task_id: str, conversation: Collection[str]
+) -> str:
+    """Mark the stamps a release of `task_id` and `conversation` covers as released.
+
+    The caller holds `route_write_lock` and runs this BEFORE the entries'
+    own release, because the two live in different files: when the entries'
+    release then fails, a stamp left unmarked would stand in for the entry a
+    turn end or `clear` meant to take out, and put the writer's newest route
+    back at a later turn. A released stamp still supersedes an older entry of
+    its writer (`_not_superseded`); it never stands in for one or is
+    inherited (`_in_force`, `_newest_inherited`). The writer's next `set`
+    replaces it with a live stamp.
+
+    Like `_store_conversation_route`, a failure is named rather than raised.
+    """
+    writes = load_conversation_writes(omh_home)
+    marking = [
+        key
+        for key, stamp in writes.items()
+        if not stamp.get("released") and _released_by(stamp, task_id, conversation)
+    ]
+    if not marking:
+        return "nothing_to_release"
+    for key in marking:
+        writes[key] = {**writes[key], "released": True}
+    try:
+        _write_conversation_writes(omh_home, writes)
+    except OSError as exc:
+        return f"unreleased: {type(exc).__name__}"
+    return "released"
+
+
+def _stamp_conversation_write(
+    omh_home: str | Path | None,
+    *,
+    session_id: str,
+    task_id: str,
+    config_path: str,
+    route: dict[str, str],
+    written_at: float,
+) -> str:
+    """Record the entry a `set` is about to write as its writer's newest; the caller holds `route_write_lock`.
+
+    Written before the entry, to its own file, so that when the entry's write
+    fails the stamp stands in for the writer's older entry under the same key
+    (`_in_force`), and an older entry of the same writer under another key is
+    recognised as superseded (`_not_superseded`). The profile-wide restore
+    record said the same thing only until another writer's `set` replaced it.
+    Stamps are bounded the way entries are: one older than the liveness
+    bound is dropped, and at most `_MAX_CONVERSATION_ROUTES` are kept, the
+    newest. A stamp is not dropped with its entry, because the entry it
+    matters to may be another session's of the same conversation -- the one
+    a compaction continued from (`_newest_inherited`) -- which nothing here
+    can see without `state.db`. A release marks it released instead
+    (`_release_conversation_writes`).
+
+    Like `_store_conversation_route`, a failure is named rather than raised.
+    """
+    if not (session_id or task_id):
+        return "unrecorded: no session or task"
+    writes = {
+        key: stamp
+        for key, stamp in load_conversation_writes(omh_home).items()
+        if written_at - stamp["written_at"] <= LIVE_TUI_SESSION_FRESH_SECONDS
+    }
+    writes[_conversation_route_key(session_id, task_id)] = {
+        "config_path": config_path,
+        "route": dict(route),
+        "session_id": session_id,
+        "task_id": task_id,
+        "written_at": written_at,
+    }
+    newest = sorted(writes.items(), key=lambda item: item[1]["written_at"])[-_MAX_CONVERSATION_ROUTES:]
+    try:
+        _write_conversation_writes(omh_home, dict(newest))
+    except OSError as exc:
+        return f"unrecorded: {type(exc).__name__}"
+    return "recorded"
 
 
 def _routable_subset(applied: Mapping[str, Any]) -> dict[str, str]:
@@ -715,14 +936,17 @@ def write_route_with_baseline(
                 expected_previous=expected_previous,
             )
             if result.get("status") == "routed":
-                result["conversation_route"] = _store_conversation_route(
-                    omh_home,
-                    session_id=session_id,
-                    task_id=task_id,
-                    config_path=config_path,
-                    route=_routable_subset(result.get("applied") or {}),
-                    written_at=tick,
-                )
+                entry = {
+                    "session_id": session_id,
+                    "task_id": task_id,
+                    "config_path": config_path,
+                    "route": _routable_subset(result.get("applied") or {}),
+                    "written_at": tick,
+                }
+                # The stamp first: it is what still names this write when
+                # the entry's own write fails.
+                result["conversation_write"] = _stamp_conversation_write(omh_home, **entry)
+                result["conversation_route"] = _store_conversation_route(omh_home, **entry)
                 if result["conversation_route"] != "recorded":
                     result["conversation_route_note"] = (
                         "The route is in the delegation.* keys but was not recorded as this "
@@ -918,15 +1142,26 @@ def restore_delegation_baseline(
     gone cannot come back at a later dispatch.
     """
     record_path = delegation_route_restore_path(omh_home)
-    # A release has work to do even when no record does.
-    must_release = (
-        release_writer is not None or release_conversation is not None
-    ) and conversation_routes_path(omh_home).exists()
+    # A release has work to do even when no record does: an entry to drop,
+    # or a live stamp to mark released, which outlives the routes file when
+    # the entry it was written for failed to land (#2273 review, R1/R3). A
+    # stamp past the liveness bound is never inherited (`_newest_inherited`)
+    # and so is no work: counting it would keep every session's turn end off
+    # the fast path until some later `set` pruned it.
+    tick = float(now if now is not None else time.time())
+    must_release = (release_writer is not None or release_conversation is not None) and (
+        conversation_routes_path(omh_home).exists()
+        or any(
+            not stamp.get("released") and tick - stamp["written_at"] <= LIVE_TUI_SESSION_FRESH_SECONDS
+            for stamp in load_conversation_writes(omh_home).values()
+        )
+    )
     if not unrecorded_clear and not record_path.exists() and not must_release:
         # The common case by far: every turn of every session reaches here,
-        # and almost none of them has a route to take back. One `stat`, no
-        # lock, no sqlite. The race it accepts is a record created between
-        # this check and a lock that is never taken, which costs one missed
+        # and almost none of them has a route to take back. A few `stat`s
+        # and at most one small JSON read, no lock, no sqlite. The race it
+        # accepts is a record created between this check and a lock that is
+        # never taken, which costs one missed
         # restore that the next turn end or the next session start makes
         # good -- never a wrong write.
         return {"status": "no_baseline_recorded", "trigger": trigger, "fast_path": True}
@@ -980,9 +1215,18 @@ def restore_delegation_baseline(
                 now=now,
             )
             if release is not None and result.get("status") != "error":
+                # `clear` and chain exhaustion stamp what they release first,
+                # whatever the restore decided: a `foreign_edit` releases too.
+                take_out = (
+                    _stamp_take_out(omh_home, task_id=task, conversation=release)
+                    if release_conversation is not None
+                    else ""
+                )
                 result["conversation_route"] = _release_reported(
                     omh_home, task_id=task, conversation=release
                 )
+                if take_out:
+                    result["conversation_route"]["take_out"] = take_out
             return result
     except TimeoutError:
         return {
@@ -1144,16 +1388,34 @@ def _release_reported(
     The restore has already written the keys by now, so failing the whole
     call would report an error over a write that happened.
     """
+    _release_writes_logged(omh_home, task_id=task_id, conversation=conversation)
     try:
         return _release_locked(omh_home, task_id=task_id, conversation=conversation)
     except OSError as exc:
         _LOG.warning(
             "OMH could not release a conversation's delegation route after restoring the keys "
-            "(%s); only the provenance record of this clear keeps a later dispatch of the same "
+            "(%s); only the take-out stamp written before it keeps a later dispatch of the same "
             "task from putting it back",
             type(exc).__name__,
         )
         return {"status": "error", "error_type": type(exc).__name__}
+
+
+def _release_writes_logged(
+    omh_home: str | Path | None, *, task_id: str, conversation: Collection[str]
+) -> None:
+    """`_release_conversation_writes` before an entry release, its failure logged.
+
+    The release result keeps its shape; a stamp left unmarked can stand in
+    for an entry whose own release then also fails, so an operator is told.
+    """
+    stamps = _release_conversation_writes(omh_home, task_id=task_id, conversation=conversation)
+    if stamps.startswith("unreleased"):
+        _LOG.warning(
+            "OMH could not mark a conversation's delegation route stamps released (%s); if the "
+            "release of its entries fails too, the newest route can come back at a later dispatch",
+            stamps.removeprefix("unreleased: "),
+        )
 
 
 def _release_writer(omh_home: str | Path | None, record: Mapping[str, Any], unrecorded_clear: str) -> str:
@@ -1166,10 +1428,10 @@ def _release_writer(omh_home: str | Path | None, record: Mapping[str, Any], unre
     if unrecorded_clear:
         return "kept"
     session_id = record["writer_session_id"]
+    conversation = {session_id} if session_id else set()
+    _release_writes_logged(omh_home, task_id=record["writer_task_id"], conversation=conversation)
     try:
-        _release_locked(
-            omh_home, task_id=record["writer_task_id"], conversation={session_id} if session_id else set()
-        )
+        _release_locked(omh_home, task_id=record["writer_task_id"], conversation=conversation)
     except OSError as exc:
         # The keys are already back; failing the restore over its bookkeeping
         # would report an error over a write that happened. The age bound in
@@ -1222,14 +1484,23 @@ def _owned_by_caller(
 
 
 def _delegate_ancestors(hermes_home: str | Path, session_id: str) -> set[str] | None:
-    """The conversations this session was delegated from, or None when unknown.
+    """Every session of the conversations this session was delegated from, or None when unknown.
+
+    The union of `_delegate_ancestry`.
+    """
+    ancestry = _delegate_ancestry(hermes_home, session_id)
+    return None if ancestry is None else set().union(*ancestry)
+
+
+def _delegate_ancestry(hermes_home: str | Path, session_id: str) -> list[set[str]] | None:
+    """The conversations this session was delegated from, nearest first, or None when unknown.
 
     Hermes stamps a delegate child's `sessions.model_config` with
     `_delegate_from` naming its parent (`tools/delegate_tool.py`, beside
     `_build_child_agent`), and a child's compaction continuation carries the
     same marker. The walk follows that marker upward, adding each parent's
     whole conversation (#2177), so an orchestrator child's worker dispatch
-    can tell its parent's route from a stranger's. `set()` is an answer: a
+    can tell its parent's route from a stranger's. `[]` is an answer: a
     top-level session. None means the caller's own row could not be read,
     and the caller then leaves the keys alone, which is what every dispatch
     did before conversation routes existed.
@@ -1267,10 +1538,7 @@ def _delegate_ancestors(hermes_home: str | Path, session_id: str) -> set[str] | 
         return None
     finally:
         connection.close()
-    ancestors: set[str] = set()
-    for parent in parents:
-        ancestors |= {parent} | conversation_session_ids(hermes_home, parent)
-    return ancestors
+    return [{parent} | conversation_session_ids(hermes_home, parent) for parent in parents]
 
 
 def _dispatch_plan(
@@ -1282,7 +1550,7 @@ def _dispatch_plan(
     task_id: str,
     now: float,
     conversation: Callable[[], set[str]],
-    ancestors: Callable[[], set[str] | None],
+    ancestors: Callable[[], list[set[str]] | None],
 ) -> dict[str, Any]:
     """What the keys must hold for this dispatch, read from the three stores.
 
@@ -1314,7 +1582,7 @@ def _dispatch_plan(
         if entry["config_path"] == config_path
         and now - entry["written_at"] <= LIVE_TUI_SESSION_FRESH_SECONDS
     ]
-    entries = _not_taken_out(entries, omh_home, conversation)
+    entries = _in_force(entries, record, omh_home)
     current = read_delegation_route(hermes_home)
     record_live = bool(record) and current == record["written"]
     plan: dict[str, Any] = {
@@ -1338,16 +1606,18 @@ def _dispatch_plan(
     )
     if not entries and (not record_live or record_is_callers):
         return {**plan, "action": "none", "status": "no_conversation_route"}
-    lineage = ancestors()
+    ancestry = ancestors()
+    lineage: set[str] | None = None if ancestry is None else set().union(*ancestry)
     if lineage:
         # A corrupt `_delegate_from` cycle must not make the caller its own
         # ancestor: it would then inherit its own stale route from an
         # earlier task, the one thing the task-first ownership rule refuses.
-        lineage = lineage - conversation()
+        own = conversation()
+        lineage = lineage - own
+        ancestry = [group - own for group in ancestry or []]
     if lineage:
-        inherited = [entry for entry in entries if entry["session_id"] in lineage]
-        if inherited:
-            route = max(inherited, key=lambda entry: entry["written_at"])
+        route = _newest_inherited(entries, ancestry or [], record, omh_home, config_path=config_path, now=now)
+        if route:
             # Written back on behalf of the parent, so the record names the
             # parent's task and the parent's own turn end takes it out.
             plan.update(
@@ -1374,40 +1644,161 @@ def _dispatch_plan(
     return {**plan, "action": "restore_baseline", "status": "baseline_restored_for_dispatch"}
 
 
-def _not_taken_out(
-    entries: list[dict[str, Any]], omh_home: str | Path | None, conversation: Callable[[], set[str]]
-) -> list[dict[str, Any]]:
-    """`entries` less those a later `clear` or chain exhaustion of their own conversation took out.
+def _newest_inherited(
+    entries: list[dict[str, Any]],
+    ancestry: list[set[str]],
+    record: Mapping[str, Any],
+    omh_home: str | Path | None,
+    *,
+    config_path: str,
+    now: float,
+) -> dict[str, Any] | None:
+    """The newest route the conversations a child descends from set, or None.
 
-    That release runs in the restore's lock and deletes them. When its write
-    fails the entry stays, and the same task's next dispatch put the cleared
-    route -- or, for exhaustion, the failing model -- back (#2258 review). The
-    stamp is the `cleared` / `exhausted_to_inherit` provenance record the tool
-    appends after the restore, so this costs no write of its own: an entry
-    written before such a record, by its session or by another session of
-    the caller's conversation, is ignored. The record names a session and no
-    task, so an entry of a host that names no session is not covered, and a
-    record the unlocked provenance append dropped covers nothing.
+    `ancestry` holds each ancestor's #2177 conversation set, so a session a
+    compaction continued in counts as the one it continued from. Each
+    conversation is read on its own. Its live stamps are candidates beside
+    its entries: after a compaction the newer `set` may have lost its entry
+    under the continuation's key, where no entry of its own stands for it.
+    Its newest candidate is dropped when it is older than that same
+    conversation's newest stamp (live or released) or take-out: that is the
+    conversation's own later write, or a release of it, and an older route
+    coming back over it is what this filter is for. Another ancestor's later
+    write says nothing about this one's route. Of what each conversation
+    leaves, the newest is inherited, which is what a dispatch chose before
+    stamps existed.
+    """
+    writes = load_conversation_writes(omh_home)
+    take_outs = load_conversation_take_outs(omh_home)
+    left = []
+    for group in ancestry:
+        stamps = [
+            stamp
+            for stamp in writes.values()
+            if stamp["session_id"] in group
+            and stamp["config_path"] == config_path
+            and now - stamp["written_at"] <= LIVE_TUI_SESSION_FRESH_SECONDS
+        ]
+        marks = [stamp["written_at"] for stamp in stamps] + [at for key, at in take_outs.items() if key in group]
+        live = [
+            stamp
+            for stamp in stamps
+            if not stamp.get("released")
+            and take_outs.get(_conversation_route_key(stamp["session_id"], stamp["task_id"]), -1.0)
+            < stamp["written_at"]
+        ]
+        candidates = [entry for entry in entries if entry["session_id"] in group]
+        candidates += _not_superseded(live, record, {})
+        if not candidates:
+            continue
+        newest = max(candidates, key=lambda entry: entry["written_at"])
+        if not marks or newest["written_at"] >= max(marks):
+            left.append(newest)
+    return max(left, key=lambda entry: entry["written_at"]) if left else None
+
+
+def _not_taken_out(entries: list[dict[str, Any]], omh_home: str | Path | None) -> list[dict[str, Any]]:
+    """`entries` less those a `clear` or chain exhaustion stamped before its release.
+
+    That release deletes them; this covers the release whose write failed.
+    See `_stamp_take_out`.
     """
     if not entries:
         return entries
-    stamps = [
-        (record["session_id"], record["written_at"])
-        for record in load_delegation_route_provenance(omh_home)
-        if record["origin"] in _ROUTE_TAKING_ORIGINS and record.get("session_id")
-    ]
+    stamps = load_conversation_take_outs(omh_home)
+    if not stamps:
+        return entries
 
     def taken_out(entry: Mapping[str, Any]) -> bool:
+        stamp = stamps.get(_conversation_route_key(entry["session_id"], entry["task_id"]))
+        return stamp is not None and entry["written_at"] <= stamp
+
+    return [entry for entry in entries if not taken_out(entry)]
+
+
+def _in_force(
+    entries: list[dict[str, Any]], record: Mapping[str, Any], omh_home: str | Path | None
+) -> list[dict[str, Any]]:
+    """`entries` as a dispatch reads them: taken-out ones gone, each at its writer's newest write.
+
+    The take-out filter runs first, so an entry a `clear` or chain exhaustion
+    released is gone before its writer's stamp is consulted, and a newer stamp
+    of that writer cannot bring a route back past the take-out. An entry that
+    survives and has an older `written_at` than its own key's stamp lost its
+    replacement to a failed write (`_stamp_conversation_write`), so the stamp
+    -- the entry that write meant to leave, in the same shape -- stands in for
+    it. A stamp with no surviving entry of its key stands for nothing: the
+    entry was released, by a turn end or a `clear`, and the route with it.
+    """
+    entries = _not_taken_out(entries, omh_home)
+    writes = load_conversation_writes(omh_home) if entries else {}
+    return _not_superseded([_newest_write(entry, writes) for entry in entries], record, writes)
+
+
+def _newest_write(entry: dict[str, Any], writes: Mapping[str, dict[str, Any]]) -> dict[str, Any]:
+    """The newer of `entry` and the stamp under the same key, for the same config."""
+    stamp = writes.get(_conversation_route_key(entry["session_id"], entry["task_id"]))
+    if (
+        stamp
+        and not stamp.get("released")
+        and stamp["config_path"] == entry["config_path"]
+        and stamp["written_at"] > entry["written_at"]
+    ):
+        return stamp
+    return entry
+
+
+def _not_superseded(
+    entries: list[dict[str, Any]], record: Mapping[str, Any], stamps: Mapping[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """`entries` less one its own writer has since replaced in the keys.
+
+    A route write stores the restore record, then the writer's stamp
+    (`_stamp_conversation_write`), then the conversation entry. An entry
+    whose own key has a newer stamp is replaced by that stamp before this
+    runs (`_in_force`); what is left to catch is an older entry of the same
+    writer under another key, such as the session a compaction continued
+    from. So an entry is ignored when a newer write by the same writer (by
+    task, or by session for an entry with no task) holds another route. The
+    writes compared with are the per-writer stamps, which another writer's
+    `set` does not replace, and the restore record, which still covers a
+    stamp that failed to write. A write that names the entry's own route --
+    a reapply's record, or a `set` of the same route again -- changes
+    nothing.
+    """
+    if not entries:
+        return entries
+    writes = list(stamps.values())
+    if record:
+        writes.append(
+            {
+                "config_path": record["config_path"],
+                "route": record["written"],
+                "session_id": record["writer_session_id"],
+                "task_id": record["writer_task_id"],
+                "written_at": record["written_at"],
+            }
+        )
+    if not writes:
+        return entries
+
+    def superseded(entry: Mapping[str, Any]) -> bool:
         return any(
-            at >= entry["written_at"]
-            and (
-                session == entry["session_id"]
-                or (bool(entry["session_id"]) and {session, entry["session_id"]} <= conversation())
-            )
-            for session, at in stamps
+            _same_writer(entry, write)
+            and write["config_path"] == entry["config_path"]
+            and write["written_at"] > entry["written_at"]
+            and write["route"] != entry["route"]
+            for write in writes
         )
 
-    return [entry for entry in entries if not taken_out(entry)] if stamps else entries
+    return [entry for entry in entries if not superseded(entry)]
+
+
+def _same_writer(entry: Mapping[str, Any], write: Mapping[str, Any]) -> bool:
+    """The same task, or the same session when neither has a task."""
+    if entry["task_id"] or write["task_id"]:
+        return entry["task_id"] == write["task_id"]
+    return entry["session_id"] == write["session_id"]
 
 
 # Plan statuses an unlocked read may return on: each says the keys already
@@ -1452,9 +1843,9 @@ def prepare_dispatch_route(
             )
         return cache["conversation"]
 
-    def ancestors() -> set[str] | None:
+    def ancestors() -> list[set[str]] | None:
         if "ancestors" not in cache:
-            cache["ancestors"] = _delegate_ancestors(home, session_id)
+            cache["ancestors"] = _delegate_ancestry(home, session_id)
         return cache["ancestors"]
 
     def plan() -> dict[str, Any]:
@@ -1631,9 +2022,13 @@ def conversation_route_for(
             )
         return cache["conversation"]
 
+    record = load_route_restore_record(omh_home)
+    if record and record["config_path"] != config_path:
+        record = {}
+    entries = _in_force(list(load_conversation_routes(omh_home).values()), record, omh_home)
     own = [
         entry
-        for entry in _not_taken_out(list(load_conversation_routes(omh_home).values()), omh_home, conversation)
+        for entry in entries
         if entry["config_path"] == config_path
         and tick - entry["written_at"] <= LIVE_TUI_SESSION_FRESH_SECONDS
         and _owned_by_caller(entry["session_id"], entry["task_id"], task_id, conversation)

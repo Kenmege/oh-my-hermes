@@ -61,8 +61,10 @@ class RecommendationCatalogTests(unittest.TestCase):
     def test_public_readmes_and_site_cover_every_shipped_category_chain(self) -> None:
         """Each hand-maintained public row lists exactly its chain, in order.
 
-        The four READMEs and the two site pages are edited by hand, so no
-        producer regenerates them. Every row's order cell is split into its
+        The two site pages are edited by hand, so no producer regenerates
+        them. The READMEs no longer carry a chain table (the lean README,
+        #2269, links docs/INSTALLATION.md#guided-model-setup, whose generated
+        table `docs chain-table --check` keeps equal to the catalog). Every row's order cell is split into its
         entries on that surface's own separator and compared whole against
         the catalog's display labels: a missing model, an extra entry whether
         or not it is a known label, a swapped pair, and a wrong generation
@@ -72,10 +74,6 @@ class RecommendationCatalogTests(unittest.TestCase):
         from omh.catalogs.model_chain_table import MODEL_DISPLAY_LABELS
 
         docs = {
-            "readme": Path("README.md").read_text(encoding="utf-8"),
-            "ko": Path("README.ko.md").read_text(encoding="utf-8"),
-            "ja": Path("README.ja.md").read_text(encoding="utf-8"),
-            "zh": Path("README.zh.md").read_text(encoding="utf-8"),
             "site": Path("site/docs/model-routing/index.html").read_text(encoding="utf-8"),
             "home": Path("site/index.html").read_text(encoding="utf-8"),
         }
@@ -205,9 +203,10 @@ class RecommendationCatalogTests(unittest.TestCase):
             with self.subTest(surface=surface, contract="chain-interview-step"):
                 self.assertIn("model-chain interview", text)
                 self.assertNotIn("interactive model setup, and doctor steps", text)
-        # The README model-routing section shows where the chains live: a cat
-        # of the seeded file (matching its real key order and indentation) and
-        # an edited example, so readers learn the file is the tuning surface.
+        # The model-routing docs show where the chains live: a cat of the
+        # seeded file (matching its real key order and indentation) and an
+        # edited example, so readers learn the file is the tuning surface. The
+        # READMEs link there (the lean README, #2269) instead of copying it.
         seeded_cat_block = (
             "$ cat ~/.omh/routing/model-chains.json\n"
             "{\n"
@@ -215,13 +214,13 @@ class RecommendationCatalogTests(unittest.TestCase):
             '  "schema_version": "mixture_chain_overrides/v1"\n'
             "}"
         )
-        for surface in ("readme", "ko", "ja", "zh"):
-            with self.subTest(surface=surface, contract="chains-file-example"):
-                self.assertIn(seeded_cat_block, surfaces[surface])
-                self.assertIn('"claude-fable-5-1", "reasoning_effort": "xhigh"', surfaces[surface])
-                self.assertIn('"gpt-5.6-sol", "reasoning_effort": "xhigh"', surfaces[surface])
-                self.assertIn('"kimi-k3-ultrafast", "reasoning_effort": "low"', surfaces[surface])
-                self.assertIn("omh model-chains show", surfaces[surface])
+        installation = Path("docs/INSTALLATION.md").read_text(encoding="utf-8")
+        with self.subTest(surface="installation", contract="chains-file-example"):
+            self.assertIn(seeded_cat_block, installation)
+            self.assertIn('"claude-fable-5-1", "reasoning_effort": "xhigh"', installation)
+            self.assertIn('"gpt-5.6-sol", "reasoning_effort": "xhigh"', installation)
+            self.assertIn('"kimi-k3-ultrafast", "reasoning_effort": "low"', installation)
+            self.assertIn("omh model-chains show", installation)
         self.assertIn('data-i18n="route.state.owner_default"', surfaces["site"])
         translations = Path("site/i18n.js").read_text(encoding="utf-8")
         self.assertIn('"route.state.owner_default"', translations)
