@@ -4700,18 +4700,36 @@ class RouterContentTests(unittest.TestCase):
         # regressions only; it intentionally does not assert prose wording,
         # so natural, non-mechanical per-language translation is allowed.
         readme_section_translations = (
-            ("## Install", {"ko": "## 설치", "ja": "## インストール", "zh": "## 安装"}),
-            ("## What you get", {"ko": "## 얻는 것", "ja": "## 得られるもの", "zh": "## 你能得到什么"}),
-            ("## DAG-ULW", {"ko": "## DAG-ULW", "ja": "## DAG-ULW", "zh": "## DAG-ULW"}),
-            ("## Others", {"ko": "## 기타", "ja": "## その他", "zh": "## 其他"}),
-            ("## License", {"ko": "## 라이선스", "ja": "## ライセンス", "zh": "## 许可证"}),
+            ("## Install", {
+                "ko": "## 설치", "ja": "## インストール", "zh": "## 安装",
+                "ru": "## Установка", "es": "## Instalación", "fr": "## Installation",
+                "de": "## Installation", "pt-BR": "## Instalação", "it": "## Installazione",
+            }),
+            ("## What you get", {
+                "ko": "## 얻는 것", "ja": "## 得られるもの", "zh": "## 你能得到什么",
+                "ru": "## Что вы получаете", "es": "## Qué obtienes", "fr": "## Ce que vous obtenez",
+                "de": "## Was du bekommst", "pt-BR": "## O que você ganha", "it": "## Cosa ottieni",
+            }),
+            ("## DAG-ULW", {
+                locale: "## DAG-ULW"
+                for locale in ("ko", "ja", "zh", "ru", "es", "fr", "de", "pt-BR", "it")
+            }),
+            ("## Others", {
+                "ko": "## 기타", "ja": "## その他", "zh": "## 其他",
+                "ru": "## Прочее", "es": "## Otros", "fr": "## Autres",
+                "de": "## Weiteres", "pt-BR": "## Outros", "it": "## Altro",
+            }),
+            ("## License", {
+                "ko": "## 라이선스", "ja": "## ライセンス", "zh": "## 许可证",
+                "ru": "## Лицензия", "es": "## Licencia", "fr": "## Licence",
+                "de": "## Lizenz", "pt-BR": "## Licença", "it": "## Licenza",
+            }),
         )
 
         readme = Path("README.md").read_text(encoding="utf-8")
         localized_readmes = {
-            "ko": Path("README.ko.md").read_text(encoding="utf-8"),
-            "ja": Path("README.ja.md").read_text(encoding="utf-8"),
-            "zh": Path("README.zh.md").read_text(encoding="utf-8"),
+            locale: Path(f"README.{locale}.md").read_text(encoding="utf-8")
+            for locale in readme_section_translations[0][1]
         }
 
         english_headings = re.findall(r"^## .+$", readme, flags=re.MULTILINE)
@@ -4720,8 +4738,8 @@ class RouterContentTests(unittest.TestCase):
             english_headings,
             expected_english_headings,
             "README.md top-level sections changed. Update "
-            "readme_section_translations in this test (and sync README.ko.md, "
-            "README.ja.md, README.zh.md) for the new section set/order.",
+            "readme_section_translations in this test (and sync every "
+            "README.<locale>.md it lists) for the new section set/order.",
         )
 
         for locale, localized_readme in localized_readmes.items():
@@ -4736,6 +4754,13 @@ class RouterContentTests(unittest.TestCase):
                 "README.md; a section was added, dropped, or reordered in "
                 "English without updating this locale.",
             )
+
+        # Every README links every README from its language switcher, so a
+        # locale added to the table above is reachable from all the others.
+        readme_files = ["README.md", *(f"README.{locale}.md" for locale in localized_readmes)]
+        for name, text in {"README.md": readme, **{f"README.{k}.md": v for k, v in localized_readmes.items()}}.items():
+            for target in readme_files:
+                self.assertIn(f"]({target})", text, f"{name} language switcher is missing {target}")
 
         # Regression guards for the exact stale onboarding copy identified in
         # issue #639: a four-line request-pipeline block, and a "then ask
