@@ -111,6 +111,16 @@ omh setup
 >   </tr>
 > </table>
 
+> **스폰서**<br>
+> oh-my-hermes를 후원해 주시는 곳입니다. 덕분에 프로젝트를 이어 갈 수 있습니다.
+>
+> <table>
+>   <tr>
+>     <td width="160" align="center"><a href="https://opengateway.ai/"><img alt="OpenGateway" src="https://opengateway.ai/logo.svg" width="140" /></a></td>
+>     <td><a href="https://opengateway.ai/"><strong>OpenGateway</strong></a>가 oh-my-hermes를 후원합니다.<br>여러 모델 provider를 OpenAI 호환 엔드포인트 하나로 묶고, 자동 failover를 제공합니다.<br>오픈소스를 응원해 주셔서 감사합니다.</td>
+>   </tr>
+> </table>
+
 [문서](docs/README.md) · [설치](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [웹사이트](https://rlaope.github.io/oh-my-hermes/)
 
 <details>

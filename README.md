@@ -111,6 +111,16 @@ A separate node verifies the goal before you get the report.
 >   </tr>
 > </table>
 
+> **Sponsors**<br>
+> These are our sponsors. They help keep oh-my-hermes going.
+>
+> <table>
+>   <tr>
+>     <td width="160" align="center"><a href="https://opengateway.ai/"><img alt="OpenGateway" src="https://opengateway.ai/logo.svg" width="140" /></a></td>
+>     <td><a href="https://opengateway.ai/"><strong>OpenGateway</strong></a> sponsors oh-my-hermes.<br>One OpenAI-compatible endpoint for many model providers, with automatic failover.<br>Thank you for backing open source.</td>
+>   </tr>
+> </table>
+
 [Docs](docs/README.md) · [Installation](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [Website](https://rlaope.github.io/oh-my-hermes/)
 
 <details>

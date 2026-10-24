@@ -106,6 +106,16 @@ omh setup
 >   </tr>
 > </table>
 
+> **スポンサー**<br>
+> oh-my-hermes を支えてくださっているスポンサーです。
+>
+> <table>
+>   <tr>
+>     <td width="160" align="center"><a href="https://opengateway.ai/"><img alt="OpenGateway" src="https://opengateway.ai/logo.svg" width="140" /></a></td>
+>     <td><a href="https://opengateway.ai/"><strong>OpenGateway</strong></a> が oh-my-hermes をスポンサーしています。<br>複数のモデル provider を OpenAI 互換のエンドポイント一つにまとめ、自動フェイルオーバーも備えています。<br>オープンソースへのご支援に感謝します。</td>
+>   </tr>
+> </table>
+
 [ドキュメント](docs/README.md) · [インストール](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [ウェブサイト](https://rlaope.github.io/oh-my-hermes/)
 
 <details>

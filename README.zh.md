@@ -106,6 +106,16 @@ omh setup
 >   </tr>
 > </table>
 
+> **赞助商**<br>
+> 感谢赞助商对 oh-my-hermes 的支持。
+>
+> <table>
+>   <tr>
+>     <td width="160" align="center"><a href="https://opengateway.ai/"><img alt="OpenGateway" src="https://opengateway.ai/logo.svg" width="140" /></a></td>
+>     <td><a href="https://opengateway.ai/"><strong>OpenGateway</strong></a> 赞助了 oh-my-hermes。<br>它用一个兼容 OpenAI 的端点接入多家模型 provider，并提供自动故障切换。<br>感谢你们对开源的支持。</td>
+>   </tr>
+> </table>
+
 [文档](docs/README.md) · [安装](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [网站](https://rlaope.github.io/oh-my-hermes/)
 
 <details>
