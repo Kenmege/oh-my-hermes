@@ -2,12 +2,12 @@
 
 <br>
 
+<img src="assets/oh-my-hermes-wordmark.png?v=spectrum" alt="OH-MY-HERMES" width="70%">
+
+<br>
+<br>
+
 <img src="assets/omh-logo.png" alt="oh-my-hermes 로고: 흰 둥근 사각 타일 위에 굵은 검은 선으로 그린 oh-my-hermes 캐릭터" width="200">
-
-<br>
-<br>
-
-<img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="70%">
 
 <br>
 <br>

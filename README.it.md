@@ -2,12 +2,12 @@
 
 <br>
 
+<img src="assets/oh-my-hermes-wordmark.png?v=spectrum" alt="OH-MY-HERMES" width="70%">
+
+<br>
+<br>
+
 <img src="assets/omh-logo.png" alt="Logo di oh-my-hermes: il personaggio di oh-my-hermes a tratto nero spesso su una tessera bianca con angoli arrotondati" width="200">
-
-<br>
-<br>
-
-<img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="70%">
 
 <br>
 <br>

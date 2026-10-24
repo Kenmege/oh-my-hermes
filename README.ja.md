@@ -2,12 +2,12 @@
 
 <br>
 
+<img src="assets/oh-my-hermes-wordmark.png?v=spectrum" alt="OH-MY-HERMES" width="70%">
+
+<br>
+<br>
+
 <img src="assets/omh-logo.png" alt="oh-my-hermes のロゴ: 白い角丸の正方形タイルに太い黒線で描いた oh-my-hermes のキャラクター" width="200">
-
-<br>
-<br>
-
-<img src="assets/oh-my-hermes-wordmark.png" alt="OH-MY-HERMES" width="70%">
 
 <br>
 <br>
