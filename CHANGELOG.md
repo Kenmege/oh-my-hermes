@@ -7,14 +7,69 @@ All notable changes will be documented here.
 - **Kimi K3.1 Pro replaces Kimi K3 in the shipped chains.** Every slot K3
   held now names `kimi-k3.1-pro` at the same effort: `deep`, `architect`,
   `unspecified-high`, `quick`, `writing`, `visual-engineering`, `artistry`,
-  `capable`, the `main` suggestion, and the X-platform affinity. The four
-  READMEs, both site pages, the generated install table, and the
-  model-setup skill say so. K3 is retired under the superseded-generation
+  `capable`, the `main` suggestion, and the X-platform affinity. Both site
+  pages, the generated install table, and the model-setup skill say so;
+  the four lean READMEs link to the canonical table. K3 is retired under the superseded-generation
   rule. It stays recognized and priced, so `omh model-chains set` can still
   name it. The Highspeed tier joins no chain. The `quick` chain therefore
   no longer offers a Kimi Ultrafast swap in `omh model-chains interview`,
   because no K3.1 Ultrafast tier is priced. This is an editorial change
   (owner decision) and has not been measured yet.
+
+- **A remark after a request is read by its kind, more widely (#2243
+  follow-up).** A retraction is read by its verb stem (`…, side note, I'm
+  cancelling that`, `…, fyi backing out of this`, `…, calling the whole
+  thing off`), a stated precondition holds (`…, need to confirm it's safe on
+  my side`), and a contrast after a wish turns to what follows (`…, fingers
+  crossed but let's not`): each holds where it started a graph run before.
+  Who asked needs someone other than the speaker as its subject, or a
+  passive (`…, approved by the CTO`). More remarks keep the request: an
+  aside marker of any kind (`…, also, …`, `…, off topic, …`), a request on
+  someone's behalf or for a purpose (`…, the PM's request`, `…, at the
+  request of QA`, `…, on behalf of legal`, `…, it's for the audit`), a toast
+  (`…, here's to a clean run`, `…, may the build be green`), a
+  back-reference (`…, consistent with the RFC`, `…, like we did for
+  billing`), `…, no deadline` and `…, bear with me`. A toast, a wish, a
+  back-reference or an attribution keeps only when what it carries is clean:
+  a negation of doing the work holds wherever it is said (`…, here's to not
+  doing it`, `…, here's to letting sleeping services lie`, `…, the team lead
+  asked us to leave it`, `…, cheers don't bother`), while a negated outcome
+  keeps (`…, hope nothing breaks`, `…, btw it won't touch prod`, `…, fwiw no
+  exceptions`, `…, hope we don't break imports`: a `don't` that governs an
+  outcome verb asks for the work all the same). A flat refusal holds
+  (`…, btw, no`). What a third party said, wanted or told us is read by
+  the kinds a bare remark is: a clean approval keeps, with intensifiers,
+  punctuation and a when or what for around it (`…, legal said a big yes`,
+  `…, the lead said absolutely, go for it`, `…, the client wants it by
+  friday`), and so do thanks, a greeting, a sign-off and a wish (`…, the
+  lead said thanks a ton`, `…, the PM says hi`); after an aside marker a
+  plain statement keeps too (`…, fwiw QA says the suite is faster now`).
+  A refusal, a hedge or anything unknown holds (`…, QA says hard no`, `…,
+  fyi the lead said meh`), and so does sarcasm: a mocking idiom or an
+  approval dressed in filler or said twice (`…, the lead said yeah right`,
+  `…, ops said sure, in your dreams`, `…, the lead said oh sure`, `…, QA
+  said yeah yeah`). A negator before the reporting verb holds whatever was
+  said (`…, nobody said yes`, `…, ops never said go`, `…, nobody signed
+  off`), and so does one before an attribution verb (`…, no one on the
+  team gave the go-ahead`). A subordinating condition opener holds where it
+  opens a clause (`…, assuming QA says it's fine`, `…; as soon as the lead
+  says go`); inside a clause it constrains the work and keeps, and an
+  adjective never counts (`rename every module as long as the import paths
+  stay the same`, `… using the provided helper`). A reported wish keeps
+  only as a wish alone or that the work goes well (`…, the lead said hope it
+  goes well`; `…, the PM said good luck lol` holds), a doubled assent is no
+  thanks (`…, QA said great, great` holds), and under an aside a reported
+  negated state, reluctance or blocking status holds (`…, btw legal says
+  the contract isn't signed`, `…, btw ops says staging isn't up`, `…, btw
+  ops says prod is frozen`), while a negated problem keeps (`…, fwiw QA
+  says it isn't a problem`). A status word that is also good news holds
+  only of a person away or a system down (`…, fyi the lead said she's out
+  today`, `…, btw ops says the cluster is down`); of a work item it keeps
+  (`…, btw ops says the fix is out`, `…, fyi ops said the error rate is
+  down`). Thanks for a negation mocks wherever it is said (`…, thanks for
+  nothing` holds). A relative what is no reported speech (`…, hope it's
+  what the PM wants` keeps as a wish). Korean reported speech is unchanged
+  and reads as on main.
 
 - **Kimi K3.1 Pro and K3.1 Pro Highspeed are onboarded.** Moonshot released
   them on 2026-10-23. Both ids now have exact contracts read from
@@ -229,8 +284,10 @@ All notable changes will be documented here.
   with any intensifier: gratitude (`…, thanks a bunch`, `…, thx so much!!`,
   `…, much obliged`), a sign-off (`…, have a good one`), a wish (`…, fingers
   crossed`, `…, wish me luck`), a back-reference (`…, as discussed`, `…, same
-  as last time`), who asked (`…, my manager asked for it`), an aside marker
-  and a harmless statement (`…, fwiw the tests are flaky`), or no pressure
+  as last time`), who asked (`…, my manager asked for it`, `…, approved by the
+  CTO`), an aside marker of any kind and a harmless statement (`…, fwiw the
+  tests are flaky`, `…, also, the new keyboard is lovely`, `…, off topic, the
+  sofa arrived`), or no pressure
   (`…, no worries`, `…, take your time`, `…, whenever works`). An unknown
   remark holds, so the request is offered, not started, and a refusal class
   holds even inside a keep kind: a new request (`…, run the tests`), a hold, a
