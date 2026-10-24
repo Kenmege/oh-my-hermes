@@ -208,13 +208,20 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
         # lead into setup and then doctor, and the package managers keep their
         # brew -> bun -> npm order. Where the package-manager run sits relative
         # to the script run is the surface's call: the READMEs fold it into an
-        # "other installation paths" toggle after doctor, INSTALLATION.md
-        # lists it first.
-        script_run = (*INSTALL_COMMANDS[3:], SETUP_COMMAND, DOCTOR_COMMAND)
+        # "install options" toggle after the quick install, INSTALLATION.md
+        # lists it first. The READMEs open with the owner's two-line quick
+        # install (the POSIX script, then setup) and keep the Windows script
+        # in that toggle, so their ordered run is curl -> setup -> doctor and
+        # the Windows script only has to be present; INSTALLATION.md keeps the
+        # full curl -> irm -> setup -> doctor order.
+        full_script_run = (*INSTALL_COMMANDS[3:], SETUP_COMMAND, DOCTOR_COMMAND)
+        readme_script_run = (INSTALL_COMMANDS[3], SETUP_COMMAND, DOCTOR_COMMAND)
         manager_run = INSTALL_COMMANDS[:3]
 
         for relative in surfaces:
             with self.subTest(surface=relative):
+                is_readme = relative.startswith("README")
+                script_run = readme_script_run if is_readme else full_script_run
                 blocks = _fenced_blocks(
                     (PROJECT_ROOT / relative).read_text(encoding="utf-8")
                 )
@@ -228,6 +235,8 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
                     self.assertTrue(matches, f"{relative} is missing {command}")
                     return matches[0]
 
+                if is_readme:
+                    first_block(INSTALL_COMMANDS[4])
                 script_positions = [first_block(c) for c in script_run]
                 self.assertEqual(script_positions, sorted(script_positions))
                 self.assertNotEqual(
