@@ -25,17 +25,16 @@ plugins:
         omh_home: ~/omh-stores/profile-a
 ```
 
-`omh setup --omh-home X` writes this setting into the Hermes home it
-installs, so the plugin loaded there binds X without `OMH_HOME` exported to
-Hermes; `omh update` adds it to an existing install, and `omh uninstall`
-removes it while it still names X. That includes X = `~/.omh`: a
-single-profile process reaches it with nothing named, but a multiplexed
+Setup and update record the resolved store when this setting is unset, for
+both the implicit default `~/.omh` and a custom store selected by `--omh-home X`.
+A single-profile process reaches the default with nothing named, but a multiplexed
 process (a gateway serving several profiles, Desktop `serve`) refuses to load
 the plugin for every profile that names no store (#2037). A value already
 there is never replaced. A bot profile that already names a store, through
 this setting or through `OMH_HOME` in its own `.env`, keeps it untouched; a
-profile that names neither is given X too, because its managed skills come
-from X.
+profile that names neither is given the primary's resolved store, including
+the implicit default; its skill registration may still point at that store.
+Uninstall reverses an unchanged binding only under its managed-write rules.
 If a profile's `.env` names `OMH_HOME` after OMH gave it X, the setting would
 outrank that choice, so setup and update remove it while it still names the
 value OMH recorded writing, and say so per profile; a value OMH did not write,
@@ -210,9 +209,10 @@ for using OMH.
 
 ## Quick Start
 
-> **Publication status:** Homebrew, Bun, and npm package-manager installs are
-> public as of v1.0.6. Clean installation and `omh update` were observed for
-> each package-manager path in isolated release QA.
+> **Publication status:** Use the npm package and the `rlaope/tap/omh` formula
+> as the package-manager distribution sources; check their official metadata
+> for the version you intend to install. Publication is not runtime verification:
+> it does not establish a successful install, update, or Windows CI result.
 
 Choose one installation path. The package-manager paths install the same `omh`
 command as the platform installers.
@@ -1341,22 +1341,16 @@ retained backup for manual recovery. Inspect any old recovery directories before
 removing them yourself. Hermes-managed plugin installs remain Hermes-owned:
 `--force` does not override that boundary; use `hermes plugins update omh`.
 
-The Hermes Desktop half needs one switch OMH cannot flip, beyond the
-registration it already manages. Hermes Desktop copies
-`plugins/omh/desktop/plugin.js` into its own `desktop-plugins/omh/` on its
-next plugin rescan (Capabilities -> Plugins -> Rescan, or an app restart) and
-mounts the backend at `/api/plugins/omh/hud` inside the gateway it spawns
-while `omh` is registered in Hermes' `plugins.enabled` (what `omh setup` and
-`omh update` write and `omh doctor`'s `plugin_enabled` check reports; after
-`omh uninstall --registration-only` the file is still copied but the backend
-is not mounted, and the pane says so); the half then appears on the Plugins
-page switched off, because the app keeps every unified-package half off until
-its owner enables it. Turn it on there to get the `omh` pane (the plan
-checklist, the agent rows with their routed model and metrics, the fanout DAG
-while one is active) and the compact agent and plan count in the status bar.
-`omh doctor` reports `plugin_desktop_half` for whether the installed bundle
-carries the files (an older bundle warns toward `omh update`); it never
-claims the half is enabled, since that state lives inside the app.
+The installed bundle carries a Hermes Desktop half at
+`plugins/omh/desktop/plugin.js` and a HUD backend route at
+`/api/plugins/omh/hud`. `omh doctor` reports `plugin_desktop_half` for whether
+the bundle carries its files, and `plugin_enabled` for local Hermes config;
+neither check proves Desktop copied, enabled or mounted the half. Rescan in
+Desktop (Capabilities -> Plugins -> Rescan, or restart the app), inspect the
+Plugins page, and verify the pane/backend in that runtime before reporting
+it ready. The pane is intended to show the plan checklist, agent rows and active
+fanout DAG. `omh uninstall --registration-only` does not disable the plugin or
+change `plugins.enabled`. Desktop mounting must be observed separately.
 
 An explicit `--source` or `--from-skills-dir` remains a workflow-content-only
 operation, and `--dry-run` never changes the command package. A source checkout
@@ -2440,6 +2434,21 @@ when any managed setup field changes, including skill registration, compression
 fallbacks, plugin enablement, the display release, or memory-provider
 selection. Model-alias writes remain a separate preview-and-approval step.
 
+For normal managed refresh, `omh update --json` emits exactly one final JSON
+document after plugin, registration and profile processing, preserving existing
+install fields. Inspect `hermes_profiles` for refreshed, bootstrapped,
+`host_managed`, `unregistered_kept` and failed rows, not just installed skills.
+An unreadable/invalid-UTF-8 or protected profile is named as failed; later healthy
+profiles still synchronize, without rewriting the unreadable config. A required
+refresh failure produces `status: partial`, `failures`, `exit_code: 1` and a
+nonzero process exit; the human summary names the failure rather than claiming
+completion. Repair the named profile's permissions/config or review protected
+local edits before retrying; never discard them merely to make a status green.
+
+Explicit `--source` / `--from-skills-dir` updates remain workflow-content-only:
+no command-package replacement, plugin refresh or Hermes registration/profile
+sync is implied. Optional menubar handling is not required-profile success.
+
 ### Returning hermes to stock Hermes
 
 Earlier versions made bare `hermes` look like OMH: setup and update wrote
@@ -2620,8 +2629,9 @@ unregistered but retained (`external_dir_unregistered_copy`), and only a
 copy that no home registers and no generation links is named, with its
 directory mtime, as safe to delete.
 
-`omh uninstall` is symmetric with the sync. A full uninstall (`omh uninstall`,
-`--all`, or `--purge`) clears every profile's registration, reverses the same
+`omh uninstall` is symmetric with the sync. A full uninstall from the primary
+home (`omh uninstall`, `--all`, or `--purge`) clears its bot profiles'
+registration, reverses the same
 `config.yaml` keys the primary home's reversal takes back, and removes its
 managed artifacts — the plugin bundle, and any status widget or skin files an
 earlier version left — through the same manifest checks the primary home gets: a profile directory OMH cannot
@@ -2646,7 +2656,7 @@ evidence only: the bundle stamp is rewritten by every update, so the hint
 covers gateways whose last recorded start precedes this update, and a
 gateway running without a pid record is not named.
 
-To keep OMH out of one bot, unregister that profile only:
+To opt one bot out of managed skill registration, unregister that profile only:
 
 ```sh
 omh --hermes-home ~/.hermes/profiles/<name> uninstall --registration-only
@@ -2656,6 +2666,15 @@ That removes every OMH-managed skills directory the profile's config named,
 whichever one it was registered at. The plugin directory stays in place as
 the opt-out marker; setup and update never re-register a profile in that
 state.
+
+Registration-only removes managed skill entries by real path, including the
+primary skill store A even when the profile selects a different runtime store B.
+It also recognizes a configured runtime store's managed skills candidate; an
+arbitrary external directory is never owned just because its basename is
+`skills` or `omh`. It preserves store data, plugin files and plugin enablement:
+it does not disable the plugin. Desktop mounting must be observed separately.
+The remaining plugin directory plus absent managed registration is the opt-out
+marker; the next sync leaves that profile unregistered.
 
 OMH workflows are skill triggers, not Hermes slash commands, so they do not
 appear in the `/` autocomplete — in any chat, bot or default. Invoke them as
@@ -2712,8 +2731,11 @@ default on its next read (`omh memory status` shows `mode_source`).
 project memory under `.omh/memory/`; setup does not mutate Hermes global or
 internal memory.
 
-The default user scope writes `~/.omh` and `~/.hermes`. Use project scope when
-one repository needs isolated local OMH skills and Hermes config:
+The default user scope uses `~/.omh` and `~/.hermes` when no binding overrides
+them. `--hermes-home <profile>` alone can select that profile's configured
+store; it does not imply a private store. An explicit `--omh-home` selects
+the requested store but never bypasses uninstall's shared-reference guard.
+Use project scope when one repository needs isolated local skills and config:
 
 ```sh
 omh setup --scope project
@@ -4696,24 +4718,53 @@ Remove OMH-managed local state and Hermes integration files:
 omh uninstall
 ```
 
-This unregisters `~/.omh/skills` from Hermes config, removes `~/.omh`, removes
-the managed `~/.hermes/plugins/omh` plugin bundle when it has an OMH manifest,
-removes generated team role files recorded in OMH team-profile manifests, clears the
-same registration, config keys and managed artifacts from every Hermes bot profile
-under `~/.hermes/profiles/` (through the same manifest-checked refusals as the primary
-home), and removes the install.sh-managed `omh` command venv/link when the current
-command is running from that managed venv. It does not delete unrelated Hermes files,
-unrelated plugins, unrelated agents, or pipx/development Python environments
-that OMH cannot safely identify as install.sh-managed.
+From the primary Hermes home this unregisters managed skill directories,
+reverses recorded config changes, and removes manifest-owned plugin, team and
+legacy display artifacts from that home and its bot profiles. A named-profile
+invocation targets only that profile. Store deletion is conditional on the
+persisted reference inventory described below, not on the spelling of the command.
+
+Command cleanup recognizes both the installer-owned legacy venv and real
+`generations` venvs, including their `current` pointer and managed launcher.
+A named-profile uninstall retains the shared command. `--keep-command` preserves
+command files in every scope. Foreign commands, unrelated venvs, package-manager
+roots, unrelated stores and user files are not attributed by layout names alone.
+
+Before destructive store cleanup, OMH inventories persisted primary/sibling
+home settings and skill registrations. A targeted profile using a shared store
+gets a profile-local detach: its managed integration is removed, but the store,
+records and shared command remain. `--all` / `--purge` are full-cleanup aliases,
+not overrides for this guard; from the primary home they include its profiles.
+`--remove-files` uses the same store guard without full integration cleanup.
+A genuinely unshared store can be removed. Full primary cleanup detaches children
+before deleting shared roots, then re-reads the actual retained references. A
+readable config is not proof that its guarded rewrite will succeed: if a child
+refuses detach (including a readable symlinked config), the store, records and
+shared command remain and the result is partial/nonzero. User-edited retained
+bindings or skill registrations also protect the store and command.
+`--dry-run --json` writes nothing and conservatively keeps roots still referenced
+by children; it does not assume planned detach succeeded. Inspect `store_removal`,
+`kept_paths`, `hermes_profiles` and `would_remove`.
+
+An unreadable config, invalid UTF-8, unreadable profile inventory, or a persisted
+`.env` naming `OMH_HOME` without a winning config binding makes ownership unknown.
+OMH reports `unreadable_reference_inventory`, exits nonzero and leaves config,
+store and managed artifacts untouched for that blocked cleanup. Repair the named
+home or record its intended absolute `plugins.entries.omh.settings.omh_home`
+before retrying; do not delete a store manually to bypass the refusal. Inventory
+does not count another home's transient process environment as a persisted
+reference, and cannot prove that no external process is using the store.
 
 ### What a full uninstall takes back out of `config.yaml`
 
 `omh setup` writes `skills.external_dirs`,
 `auxiliary.compression.fallback_chain`, `plugins.enabled`, `memory.provider`
-and, for a store other than `~/.omh`, `plugins.entries.omh.settings.omh_home`.
+and, when unset, `plugins.entries.omh.settings.omh_home` for both the implicit
+default and a custom store binding.
 Earlier versions also wrote `display.interface`, `display.skin` and
 `display.sections`. A full uninstall reverses them, in the primary home and in
-every bot profile.
+every bot profile when invoked from the primary home, or only the targeted
+profile for a named-profile invocation.
 
 It reverses a key only while the value there is still the one OMH wrote.
 Setup records that at write time, per config path, in
@@ -4756,8 +4807,10 @@ command when only the CLI package should be removed:
 | Bun | `bun remove -g oh-my-hermes` |
 | npm | `npm uninstall -g oh-my-hermes` |
 
-For a complete removal, run `omh uninstall --all` first to remove OMH-managed
-state and Hermes integration, then run the package-manager remove command.
+For complete removal, preview `omh uninstall --all --dry-run --json` from the
+primary home, inspect retained stores and failures, then run `omh uninstall --all`.
+Remove the package-manager command only after confirming other homes no longer
+need it; `--all` is not a bypass for shared-store or unreadable-inventory guards.
 
 The npm/Bun launcher keeps the current exact wheel plus the two most recently used caches
 and removes abandoned staging directories after 24 hours. `OMH_CACHE_DIR`

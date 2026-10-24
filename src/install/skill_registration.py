@@ -32,7 +32,8 @@ import os
 from pathlib import Path
 
 from .config_adapter import ensure_external_dir, external_dirs, remove_external_dir_entries
-from ..paths import OmhPaths
+from ..paths import OmhPaths, configured_omh_home
+from .lifecycle_safety import primary_hermes_home
 from ..plugin_bundle.omh import runtime_paths
 
 AMBIGUOUS_REGISTRATION_NEXT_ACTION = "run `omh update`"
@@ -58,8 +59,13 @@ def managed_skill_dir_candidates(paths: OmhPaths, *, current: Path | None) -> li
     passed in rather than read here so the installer's own binding (and the
     fixtures that stub it) stays the one reading.
     """
+    primary = primary_hermes_home(paths.hermes_home)
+    primary_store = configured_omh_home(primary) if primary != paths.hermes_home else None
+    runtime_store = configured_omh_home(paths.hermes_home)
     candidates: list[Path] = []
     for candidate in (
+        primary_store / "skills" if primary_store is not None else None,
+        runtime_store / "skills" if runtime_store is not None else None,
         paths.omh_home / "skills",
         paths.skills_dir,
         current,

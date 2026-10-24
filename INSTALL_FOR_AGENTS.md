@@ -40,9 +40,10 @@ readiness until the target Hermes runtime or wrapper has been checked.
 
 ## Step 1: Install OMH
 
-> **Publication status:** Package-manager installs are pending the first distribution release.
-> Until npm and the Homebrew tap are public, choose curl or PowerShell and report
-> that package-manager publication is not yet observed.
+> **Publication status:** Use the npm package and the `rlaope/tap/omh` formula
+> as the package-manager distribution sources; check their official metadata
+> for the version you intend to install. Publication is not runtime verification:
+> it does not establish a successful install, update, or Windows CI result.
 
 Homebrew:
 
@@ -101,9 +102,9 @@ $env:OMH_SOURCE_REF = $Ref
 irm "https://raw.githubusercontent.com/rlaope/oh-my-hermes/$Ref/install.ps1" | iex
 ```
 
-Windows npm/Bun launcher support is gated by the Windows CI suite. Until the
-first package-manager release passes that gate, choose PowerShell and report
-the npm/Bun path as prepared but not yet published.
+Windows npm/Bun launcher support is gated by the Windows CI suite. Without
+observed passing evidence for the intended release, choose PowerShell and
+report Windows launcher execution as unverified, not as unpublished.
 
 The curl and PowerShell installers accept the same `OMH_*` environment contract.
 Package-manager installs use their native global command location. Report which
@@ -194,14 +195,78 @@ Use the owning manager directly only as a reported repair fallback:
 | pip (repo link) | `pip install --upgrade "git+https://github.com/rlaope/oh-my-hermes"` | `pip uninstall oh-my-hermes` |
 | uv tool (repo link) | `uv tool upgrade oh-my-hermes` | `uv tool uninstall oh-my-hermes` |
 
-Removing the command package preserves OMH state. For full cleanup, run
-`omh uninstall --all` before the manager's remove command. Never run the curl
+Removing the command package preserves OMH state. For full cleanup, preview
+`omh uninstall --all --dry-run --json` from the primary home, inspect retained
+stores/failures, then run `omh uninstall --all`. Remove the command with its
+owning manager only after confirming no other home needs it. Never run the curl
 installer over a package-manager command to update it. An explicit
 `omh update --source ...` refreshes workflow content only and does not replace
 the command package, plugin bundle, or Hermes registration. Package-manager
 installs reject explicit release metadata such as `--version`, `--package-url`,
 or `--source-ref`; use the owning manager directly for an intentional CLI
 rollback.
+
+### Recovery and result boundaries (agent/operator reference)
+
+Setup and update record an unset plugin store binding for both the implicit
+default and a custom store. Selecting `--hermes-home <profile>` alone can resolve
+that profile's store; an explicit `--omh-home` selects a target, not permission
+to delete shared data. Existing user bindings remain unchanged.
+
+Registration-only removes managed skill entries by real path, including the
+primary skill store A even when the profile selects a different runtime store B.
+It also recognizes a configured runtime store's managed skills candidate; an
+arbitrary external directory is never owned just because its basename is
+`skills` or `omh`. It preserves store data, plugin files and plugin enablement:
+it does not disable the plugin. Desktop mounting must be observed separately.
+The remaining plugin directory plus absent managed registration is the opt-out
+marker; the next sync leaves that profile unregistered.
+
+Before destructive store cleanup, OMH inventories persisted primary/sibling
+home settings and skill registrations. A targeted profile using a shared store
+gets a profile-local detach: its managed integration is removed, but the store,
+records and shared command remain. `--all` / `--purge` are full-cleanup aliases,
+not overrides for this guard; from the primary home they include its profiles.
+`--remove-files` uses the same store guard without full integration cleanup.
+A genuinely unshared store can be removed. Full primary cleanup detaches children
+before deleting shared roots, then re-reads the actual retained references. A
+readable config is not proof that its guarded rewrite will succeed: if a child
+refuses detach (including a readable symlinked config), the store, records and
+shared command remain and the result is partial/nonzero. User-edited retained
+bindings or skill registrations also protect the store and command.
+`--dry-run --json` writes nothing and conservatively keeps roots still referenced
+by children; it does not assume planned detach succeeded. Inspect `store_removal`,
+`kept_paths`, `hermes_profiles` and `would_remove`.
+
+An unreadable config, invalid UTF-8, unreadable profile inventory, or a persisted
+`.env` naming `OMH_HOME` without a winning config binding makes ownership unknown.
+OMH reports `unreadable_reference_inventory`, exits nonzero and leaves config,
+store and managed artifacts untouched for that blocked cleanup. Repair the named
+home or record its intended absolute `plugins.entries.omh.settings.omh_home`
+before retrying; do not delete a store manually to bypass the refusal. Inventory
+does not count another home's transient process environment as a persisted
+reference, and cannot prove that no external process is using the store.
+
+For normal managed refresh, `omh update --json` emits exactly one final JSON
+document after plugin, registration and profile processing, preserving existing
+install fields. Inspect `hermes_profiles` for refreshed, bootstrapped,
+`host_managed`, `unregistered_kept` and failed rows, not just installed skills.
+An unreadable/invalid-UTF-8 or protected profile is named as failed; later healthy
+profiles still synchronize, without rewriting the unreadable config. A required
+refresh failure produces `status: partial`, `failures`, `exit_code: 1` and a
+nonzero process exit; the human summary names the failure rather than claiming
+completion. Repair the named profile's permissions/config or review protected
+local edits before retrying; never discard them merely to make a status green.
+
+Explicit `--source` / `--from-skills-dir` updates remain workflow-content-only:
+no command-package replacement, plugin refresh or Hermes registration/profile
+sync is implied. Optional menubar handling is not required-profile success.
+
+Command cleanup accepts proven installer-owned legacy and `generations` venvs,
+`current` and managed launchers, not foreign or package-manager command roots.
+Named-profile uninstall retains the shared command; `--keep-command` preserves
+it even during primary cleanup. Verify retained paths before removing anything
+through the owning manager.
 
 For release-candidate verification, add the Hermes CLI smoke. Plan mode is safe
 and non-mutating:
