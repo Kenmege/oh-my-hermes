@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Kimi K3.1 Pro replaces Kimi K3 in the shipped chains.** Every slot K3
+  held now names `kimi-k3.1-pro` at the same effort: `deep`, `architect`,
+  `unspecified-high`, `quick`, `writing`, `visual-engineering`, `artistry`,
+  `capable`, the `main` suggestion, and the X-platform affinity. Both site
+  pages, the generated install table, and the model-setup skill say so;
+  the four lean READMEs link to the canonical table. K3 is retired under the superseded-generation
+  rule. It stays recognized and priced, so `omh model-chains set` can still
+  name it. The Highspeed tier joins no chain. The `quick` chain therefore
+  no longer offers a Kimi Ultrafast swap in `omh model-chains interview`,
+  because no K3.1 Ultrafast tier is priced. This is an editorial change
+  (owner decision) and has not been measured yet.
+
 - **A remark after a request is read by its kind, more widely (#2243
   follow-up).** A retraction is read by its verb stem (`…, side note, I'm
   cancelling that`, `…, fyi backing out of this`, `…, calling the whole

@@ -74,14 +74,14 @@ HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
     # projection.
     # Non-head entries move the same way: (claude-opus-5-5, medium) projects
     # to writing, which covers unspecified-high's second entry and the
-    # last_resort head; (kimi-k3, high) projects to deep from
+    # last_resort head; (kimi-k3.1-pro, high) projects to deep from
     # visual-engineering and artistry; (gpt-6-luna, low) and
     # (claude-haiku-5-5, low) reached through quick project to simple-work.
     "ultrabrain": (("gpt-6-astra", "xhigh"),),
     # DeepSeek V4.1 Flash left `deep`: a Flash budget model does not fit the
-    # strong tier, and Opus 5.5 and Kimi K3 now carry its cross-ecosystem
+    # strong tier, and Opus 5.5 and Kimi K3.1 Pro now carry its cross-ecosystem
     # fallback. visual-engineering children are labelled "deep" (above).
-    "deep": (("claude-opus-5-5", "high"), ("gpt-6.1-sol", "high"), ("kimi-k3", "high")),
+    "deep": (("claude-opus-5-5", "high"), ("gpt-6.1-sol", "high"), ("kimi-k3.1-pro", "high")),
     # Architecture/system-design lanes: full-depth effort across three
     # provider ecosystems. Astra at xhigh stays labeled ultrabrain (its
     # canonical head), which is the honest projection when the chain falls
@@ -90,7 +90,7 @@ HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
         ("claude-opus-5-5", "xhigh"),
         ("gpt-6-astra", "xhigh"),
         ("claude-fable-5-1", "xhigh"),
-        ("kimi-k3", "xhigh"),
+        ("kimi-k3.1-pro", "xhigh"),
     ),
     # The one placement here backed by a measurement, of its predecessor: on
     # benchmarks/live-model-tools/v1 (30 evaluation tasks, 2026-09-05) OMH
@@ -102,7 +102,7 @@ HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
     "unspecified-high": (
         ("gpt-6.1-sol", "medium"),
         ("claude-opus-5-5", "medium"),
-        ("kimi-k3", "medium"),
+        ("kimi-k3.1-pro", "medium"),
     ),
     # A chain that would otherwise sit in one provider ecosystem ends with a
     # comparable-tier candidate from another (owner rule, 2026-08-19), so one
@@ -120,14 +120,14 @@ HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
         ("glm-5.3-flash", "low"),
         ("gpt-6-luna", "low"),
         ("claude-haiku-5-5", "low"),
-        ("kimi-k3", "low"),
+        ("kimi-k3.1-pro", "low"),
     ),
     # Writing keeps the (claude-opus-5-5, medium) label: it is earlier in
     # canonical order than capable, whose head is the same pair.
     "writing": (
         ("claude-opus-5-5", "medium"),
         ("claude-sonnet-5-5", "medium"),
-        ("kimi-k3", "medium"),
+        ("kimi-k3.1-pro", "medium"),
         ("gemini-3.1-pro", "medium"),
     ),
     # Labelled "deep" by projection: its head is deep's (accepted collision).
@@ -135,13 +135,13 @@ HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
         ("claude-opus-5-5", "high"),
         ("claude-fable-5-1", "high"),
         ("gemini-3.1-pro", "high"),
-        ("kimi-k3", "high"),
+        ("kimi-k3.1-pro", "high"),
     ),
     "artistry": (
         ("gemini-3.1-pro", "high"),
         ("claude-opus-5-5", "high"),
         ("claude-fable-5-1", "high"),
-        ("kimi-k3", "high"),
+        ("kimi-k3.1-pro", "high"),
     ),
     # The three categories below were added on 2026-09-11 and are APPENDED
     # rather than interleaved. Position is load-bearing here: `mixture_category_for`
@@ -156,7 +156,7 @@ HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
         ("claude-opus-5-5", "medium"),
         ("gpt-6.1-sol", "medium"),
         ("claude-fable-5-1", "medium"),
-        ("kimi-k3", "medium"),
+        ("kimi-k3.1-pro", "medium"),
     ),
     # simple-work: small tasks rather than fast ones. It leads with the GPT
     # small model where quick leads with the cheapest GLM tier, so a user who
@@ -325,14 +325,16 @@ PROVIDER_KIND_UNKNOWN = "unknown"
 # Mirrors the union of `preferred_provider_families` across
 # SHIPPED_MODEL_RECOMMENDATIONS in src/coding/model_recommendations.py (the
 # plugin bundle cannot import src/coding); the parity gate lives in
-# tests/test_provider_entitlements.py (ParityTests). One family is retained
-# past its last catalog member: `qwen-oauth`, whose only member qwen3-coder
-# left every shipped chain on 2026-10-13. The entitlement parser is strict and
-# atomic, so dropping the kind would invalidate as a whole every
-# providers.json that recorded it, and recognition-only qwen3-coder still
-# names it; the parity gate lists the exception by name. A side effect: the
-# setup interview offers every vocabulary family, so `qwen-oauth` stays
-# selectable there although no shipped chain uses it.
+# tests/test_provider_entitlements.py (ParityTests). Two families are retained
+# past their last catalog member: `qwen-oauth`, whose only member qwen3-coder
+# left every shipped chain on 2026-10-13, and `apitopia`, whose only member
+# kimi-k3 left them on 2026-10-24 (nobody observed Apitopia serving K3.1
+# Pro). The entitlement parser is strict and atomic, so dropping a kind would
+# invalidate as a whole every providers.json that recorded it, and
+# recognition-only qwen3-coder and kimi-k3 still name them; the parity gate
+# lists the exceptions by name. A side effect: the setup interview offers
+# every vocabulary family, so both stay selectable there although no
+# shipped chain uses them.
 PROVIDER_FAMILY_VOCABULARY: tuple[str, ...] = (
     "anthropic",
     "apitopia",
@@ -366,7 +368,11 @@ SUBSCRIPTION_CLI_PROFILES: tuple[str, ...] = ("claude-code",)
 # by every provider — the honest default for an id the catalog has never
 # described.
 HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
-    "kimi-k3": ("apitopia", "kimi-coding", "openrouter", "opencode"),
+    # Families are the ones observed serving each id on 2026-10-24: Moonshot's
+    # own API (`kimi-coding` in Hermes) for both, OpenRouter
+    # (`moonshotai/kimi-k3.1-pro`) and OpenCode Go for the base model only.
+    # No family is claimed for a relay nobody observed serving it.
+    "kimi-k3.1-pro": ("kimi-coding", "openrouter", "opencode"),
     "claude-opus-5-5": ("ccapi", "anthropic", "openrouter"),
     "claude-fable-5-1": ("ccapi", "anthropic", "openrouter"),
     "claude-sonnet-5-5": ("ccapi", "anthropic", "openrouter"),
@@ -375,13 +381,12 @@ HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
     # who asks for it still deserves "which of my providers serves this"
     # answered rather than unknown. The parity gate lists it explicitly.
     "claude-mythos-5-1": ("ccapi", "anthropic", "openrouter"),
-    # Recognition-only until the K3-vs-K3.1 pair measures it into a chain
-    # (released 2026-10-23). Families are the ones observed serving each id on
-    # 2026-10-24: Moonshot's own API (`kimi-coding` in Hermes) for both,
-    # OpenRouter (`moonshotai/kimi-k3.1-pro`) and OpenCode Go for the base
-    # model only. No family is claimed for a relay nobody observed serving it.
-    "kimi-k3.1-pro": ("kimi-coding", "openrouter", "opencode"),
+    # Recognition-only: no shipped chain names the Highspeed tier. Moonshot's
+    # own API (`kimi-coding` in Hermes) is the one family observed serving it
+    # (2026-10-24); OpenRouter and OpenCode list only the base id.
     "kimi-k3.1-pro-highspeed": ("kimi-coding",),
+    # Recognition-only, retired 2026-10-24 behind kimi-k3.1-pro.
+    "kimi-k3": ("apitopia", "kimi-coding", "openrouter", "opencode"),
     "gpt-6-astra": ("openai-codex", "openai"),
     "gpt-6.1-sol": ("openai-codex", "openai"),
     "gpt-6-luna": ("openai-codex", "openai"),

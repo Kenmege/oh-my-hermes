@@ -66,9 +66,10 @@ class ParityTests(unittest.TestCase):
     # same reason: a machine-level chain override may still name them.
     _RECOGNITION_ONLY_ALIAS_FAMILIES: dict[str, tuple[str, ...]] = {
         "claude-mythos-5-1": ("ccapi", "anthropic", "openrouter"),
-        # Onboarded 2026-10-24 ahead of any chain placement.
-        "kimi-k3.1-pro": ("kimi-coding", "openrouter", "opencode"),
+        # Onboarded 2026-10-24; no shipped chain names the Highspeed tier.
         "kimi-k3.1-pro-highspeed": ("kimi-coding",),
+        # Retired 2026-10-24 when Kimi K3.1 Pro took every K3 slot.
+        "kimi-k3": ("apitopia", "kimi-coding", "openrouter", "opencode"),
         # The versioned spelling of the shipped `deepseek-flash` pointer;
         # gateways serve it under this id.
         "deepseek-v4.1-flash": ("deepseek", "openrouter", "opencode"),
@@ -96,7 +97,10 @@ class ParityTests(unittest.TestCase):
     # dropping a kind would invalidate as a whole every providers.json that
     # recorded it; `qwen-oauth` lost its only member (qwen3-coder) on
     # 2026-10-13 and is still named by that recognition-only row.
-    _RETAINED_PROVIDER_FAMILIES: frozenset[str] = frozenset({"qwen-oauth"})
+    # `apitopia` lost its only member on 2026-10-24, when kimi-k3.1-pro took
+    # the K3 slots without it (nobody observed Apitopia serving K3.1 Pro);
+    # recognition-only kimi-k3 still names it.
+    _RETAINED_PROVIDER_FAMILIES: frozenset[str] = frozenset({"apitopia", "qwen-oauth"})
 
     def _catalog_families(self) -> dict[str, tuple[str, ...]]:
         families: dict[str, tuple[str, ...]] = {}
@@ -285,7 +289,7 @@ class ChainSurfaceConsistencyTests(unittest.TestCase):
             with redirect_stdout(out):
                 _print_state(state)
             self.assertIn(
-                "architect: gpt-6-astra:xhigh, claude-opus-5-5:xhigh, claude-fable-5-1:xhigh, kimi-k3:xhigh",
+                "architect: gpt-6-astra:xhigh, claude-opus-5-5:xhigh, claude-fable-5-1:xhigh, kimi-k3.1-pro:xhigh",
                 out.getvalue(),
             )
             self.assertIn("(reordered by this machine's providers)", out.getvalue())
@@ -308,7 +312,7 @@ class ChainSurfaceConsistencyTests(unittest.TestCase):
             )
             self.assertEqual(routed["status"], "routed", routed)
             self.assertEqual(routed["applied"]["alias"], "gpt-6-astra")
-            for expected in ("claude-opus-5-5", "claude-fable-5-1", "kimi-k3"):
+            for expected in ("claude-opus-5-5", "claude-fable-5-1", "kimi-k3.1-pro"):
                 fallback = json.loads(
                     omh_delegate_route_handler({"action": "fallback", "category": "architect", **common}, **host)
                 )
