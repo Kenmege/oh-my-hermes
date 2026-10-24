@@ -48,9 +48,16 @@ All notable changes will be documented here.
   goes well`; `…, the PM said good luck lol` holds), a doubled assent is no
   thanks (`…, QA said great, great` holds), and under an aside a reported
   negated state, reluctance or blocking status holds (`…, btw legal says
-  the contract isn't signed`, `…, btw ops says prod is frozen`). A relative
-  what is no reported speech (`…, hope it's what the PM wants` keeps as a
-  wish). Korean reported speech is unchanged and reads as on main.
+  the contract isn't signed`, `…, btw ops says staging isn't up`, `…, btw
+  ops says prod is frozen`), while a negated problem keeps (`…, fwiw QA
+  says it isn't a problem`). A status word that is also good news holds
+  only of a person away or a system down (`…, fyi the lead said she's out
+  today`, `…, btw ops says the cluster is down`); of a work item it keeps
+  (`…, btw ops says the fix is out`, `…, fyi ops said the error rate is
+  down`). Thanks for a negation mocks wherever it is said (`…, thanks for
+  nothing` holds). A relative what is no reported speech (`…, hope it's
+  what the PM wants` keeps as a wish). Korean reported speech is unchanged
+  and reads as on main.
 
 - **Kimi K3.1 Pro and K3.1 Pro Highspeed are onboarded.** Moonshot released
   them on 2026-10-23. Both ids now have exact contracts read from

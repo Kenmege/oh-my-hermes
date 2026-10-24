@@ -1260,6 +1260,12 @@ _NO_PRESSURE: Final = re.compile(
 # The verbs of an outcome rather than of the work: a negation of one negates what might go wrong, not doing the work
 # ("…, hope nothing breaks", "…, hope we don't regress"). `_NOT_DOING` and `_NO_WORK_ASKED` both except them.
 _OUTCOME_VERB: Final = r"(?:fail|break|crash|explod|regress|flak|conflict|tim|blow|los|corrupt|wip|leak)\w*"
+# Thanks whose object is a negation mocks ("…, thanks for nothing", "…, cheers for nothing, really", "…, ty for no help"),
+# except thanks for an outcome that did not happen ("…, thanks for not breaking prod").
+_MOCKED_THANKS: Final = re.compile(
+    r"\b(?:thanks?|thank\s+(?:you|u|ya)|thx|cheers|ta|ty)\s+(?:\w+\s+){0,2}?for\s+(?:nothing|none|nada|zilch|no\s+help|zero\s+help"
+    rf"|not\b(?!\s+(?:\w+\s+)?{_OUTCOME_VERB}))"
+)
 _NOT_DOING: Final = re.compile(
     rf"\bnot\s+(?:even\s+|just\s+|really\s+)?(?!{_OUTCOME_VERB})"
     r"(?:\w+ing|do|touch|bother|start|proceed|ship|merge|run)\b"
@@ -1357,7 +1363,7 @@ _APPROVAL_LEAD: Final = re.compile(
     r"|thumbs\s+up)(?![\w'])|👍|✅"
 )
 _MOCKING: Final = re.compile(
-    r"\b(?:yeah\s+right|in\s+your\s+dreams|dream\s+on|as\s+if|nice\s+try|thanks\s+for\s+nothing|said\s+no\s+one"
+    r"\b(?:yeah\s+right|in\s+your\s+dreams|dream\s+on|as\s+if|nice\s+try|said\s+no\s+one"
     r"|(?:good\s+luck|have\s+fun)\s+with\s+that|over\s+my\s+dead\s+body|when\s+pigs\s+fly|not\s+in\s+a\s+million\s+years)\b"
     r"|(?:^|\s)/s\b|🙄|😒|🙃"
 )
@@ -1374,24 +1380,66 @@ _REPORTED_WISH: Final = re.compile(
     r"|lands?|is|are|stays?|will\s+(?:go|be|run|land))\s+(?:\w+\s+)?(?:well|smooth(?:ly)?|fine|great|green|clean(?:ly)?|ok(?:ay)?"
     r"|to\s+plan)[\s.!…]*"
 )
-# Under an aside a reported statement that blocks the work holds: a negated state ("…, btw legal says the contract
-# isn't signed"), reluctance ("…, fwiw the CTO said she'd rather we didn't") or a blocking status ("…, btw ops says prod
-# is frozen", "…, fyi the lead said she's out today").
-_REPORTED_BLOCKER: Final = re.compile(
-    r"\b(?:isn'?t|aren'?t|hasn'?t|haven'?t|wasn'?t|weren'?t|is\s+not|are\s+not|has\s+not|have\s+not|was\s+not|were\s+not)"
-    r"\s+(?:been\s+|yet\s+|fully\s+|quite\s+|actually\s+)*(?:\w+ed|\w+en|ready|cleared|signed|approved|done|set)\b"
-    r"|\brather\s+(?:not|we|they|you)\b|\bprefer(?:s|red)?\s+(?:not|we|us|they|you|to\s+(?:not|wait|hold)|waiting)\b"
-    r"|(?:\b(?:is|are|was|were|be|been|stays?|remains?|still|now|currently)|'s|'re)\s+(?:still\s+|currently\s+|now\s+|totally\s+"
-    r"|completely\s+|all\s+)?(?:frozen|blocked|locked(?:\s+down)?|closed|paused|on\s+hold|over\s+budget|out|down|offline"
-    r"|not\s+ready)\b"
+# Under an aside a reported statement that blocks the work holds (`_reported_blocks`):
+# - any negated copula or auxiliary, whatever follows ("…, btw legal says the contract isn't signed", "…, fyi ops says
+#   staging isn't up", "…, btw the CFO said the budget isn't there"), except a negated problem or outcome, which is good
+#   news ("…, fwiw QA says it isn't a problem", "…, btw ops says it won't break anything");
+# - reluctance ("…, fwiw the CTO said she'd rather we didn't", "…, btw the lead said he'd sooner we waited");
+# - a blocking status said of anything (frozen, blocked, locked down, on hold, paused, over budget, not ready);
+# - a status word that is also good news only with its subject: a person who is out, off, away or sick ("…, fyi the
+#   lead said she's out today"), or a system that is down, offline, frozen or locked ("…, btw ops says the cluster is
+#   down"), while a work item keeps ("…, btw ops says the fix is out", "…, fwiw QA said the old ticket is closed",
+#   "…, fyi the error rate is down").
+_PROBLEM: Final = (
+    rf"(?:{_OUTCOME_VERB}|(?:(?:be|been|really|actually|even|that|too|going\s+to\s+be|gonna\s+be|much\s+of|such)\s+)*"
+    r"(?:an?\s+|any\s+)?(?:big\s+|real\s+|major\s+|huge\s+)?(?:problems?|issues?|blockers?|blocking|deal|urgent|broken|failing"
+    r"|worry|worries|concerns?|risky|risks?|dealbreaker|showstopper|flaky|dangerous))"
 )
+_NEGATED_STATE: Final = re.compile(
+    r"\b(?:isn'?t|aren'?t|wasn'?t|weren'?t|hasn'?t|haven'?t|won'?t|can'?t|cannot|doesn'?t|don'?t|didn'?t|is\s+not|are\s+not"
+    rf"|was\s+not|were\s+not|has\s+not|have\s+not|will\s+not|does\s+not|did\s+not)\b(?!\s+{_PROBLEM}\b)"
+)
+_RELUCTANCE: Final = re.compile(
+    r"\b(?:rather|sooner)\s+(?:not|we|they|you)\b|\bprefer(?:s|red)?\s+(?:not|we|us|they|you|to\s+(?:not|wait|hold)|waiting)\b"
+)
+_COPULA: Final = r"(?:\s+(?:is|are|was|were|will\s+be|stays?|remains?)|'s|'re)\s+(?:still\s+|currently\s+|now\s+|totally\s+|completely\s+|all\s+)?"
+_BLOCKING_STATUS: Final = re.compile(
+    r"(?:\b(?:is|are|was|were|be|been|stays?|remains?|still|now|currently)|'s|'re)\s+(?:still\s+|currently\s+|now\s+|totally\s+"
+    r"|completely\s+|all\s+)?(?:frozen|blocked|locked\s+down|on\s+hold|paused|over\s+budget|not\s+ready)\b"
+)
+_WORK_ITEM: Final = (
+    r"(?:fix(?:es)?|builds?|releases?|tickets?|bugs?|incidents?|prs?|pull\s+requests?|issues?|migrations?|patch(?:es)?|hotfix(?:es)?"
+    r"|versions?|updates?|changes?|features?|errors?|error\s+rate|alerts?|outage|it|everything|that|this)"
+)
+_PERSON_AWAY: Final = re.compile(
+    r"(?:she|he|they|i|we|(?:the\s+|our\s+|my\s+)?(?:lead|tech\s+lead|team\s+lead|pm|po|cto|ceo|cfo|vp|manager|boss|owner"
+    rf"|reviewer|approver|on-?call|maintainer|admin|dba|sre|engineer|designer|team)|(?!(?:the|a|an|our|my|their|this|{_WORK_ITEM})\b)"
+    rf"[a-z][\w-]*){_COPULA}(?:out|off|away|sick|ooo|on\s+(?:leave|vacation|pto))\b"
+)
+_SYSTEM_DOWN: Final = re.compile(
+    r"(?:(?:the|our|all)\s+)?(?:prod(?:uction)?|staging|dev|ci|cd|main|master|pipelines?|clusters?|db|databases?|deploys?"
+    r"|deployments?|(?:build\s+)?servers?|registry|env(?:ironment)?s?|infra|vpn|runners?|\w+\s+(?:server|cluster|env|environment|db"
+    rf"|database)){_COPULA}(?:down|offline|frozen|locked)\b"
+)
+
+
+def _reported_blocks(reported: str) -> bool:
+    """Whether a reported statement said under an aside blocks the work: a negated state, reluctance, a blocking
+    status, or a status word that is also good news said of a person away or a system down."""
+    return bool(
+        _NEGATED_STATE.search(reported)
+        or _RELUCTANCE.search(reported)
+        or _BLOCKING_STATUS.search(reported)
+        or _PERSON_AWAY.match(reported)
+        or _SYSTEM_DOWN.match(reported)
+    )
 
 
 def _reported_object_keeps(reported: str, aside: bool) -> bool:
     """Whether what a third party is reported to have said keeps the request, read by the kinds a bare remark is: a
     clean approval (`_APPROVAL`), thanks, a greeting, a sign-off or a clean wish (`_REPORTED_WISH`) in every part, a part
     that is only an assent never counting as thanks (`_ASSENT_ALONE`), or after an aside marker a plain statement that
-    neither opens like an approval (`_APPROVAL_LEAD`) nor blocks the work (`_REPORTED_BLOCKER`); never a mocking idiom
+    neither opens like an approval (`_APPROVAL_LEAD`) nor blocks the work (`_reported_blocks`); never a mocking idiom
     (`_MOCKING`) or a part that refuses (`_refuses`). Anything else holds."""
     if _MOCKING.search(reported):
         return False
@@ -1407,7 +1455,7 @@ def _reported_object_keeps(reported: str, aside: bool) -> bool:
         for part in parts
     ):
         return True
-    return aside and not _APPROVAL_LEAD.match(reported) and not _REPORTED_BLOCKER.search(reported)
+    return aside and not _APPROVAL_LEAD.match(reported) and not _reported_blocks(reported)
 
 
 def _without_an_unapproved_report(trailing: list[str]) -> list[str] | None:
@@ -1477,6 +1525,7 @@ def _refuses(clause: str) -> bool:
     return bool(
         _LAUGH_ALONE.fullmatch(clause)
         or _FLAT_REFUSAL.fullmatch(clause)
+        or _MOCKED_THANKS.search(clause)
         or _STATUS_ALONE.fullmatch(clause)
         or _HESITATION.fullmatch(clause)
         or _EN_ASKS_FOR_MORE.match(bare)

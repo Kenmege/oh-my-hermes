@@ -884,7 +884,17 @@ class RouterTests(unittest.TestCase):
                      "the PM said best of luck!", "ops said fingers crossed", "the lead said hope it goes well",
                      "QA said hope the rollout is smooth", "the CTO said good luck with the migration", "QA said great",
                      "the PM said nice", "the lead said perfect", "ops said cool, ship it", "the team gave the go-ahead",
-                     "security cleared it"):
+                     "security cleared it",
+                     # #2265 review34: a work item with a status word that is also good news, a negated problem or
+                     # outcome, and thanks for something.
+                     "btw ops says the fix is out", "btw ops says hotfix is out", "fwiw QA said the old ticket is closed",
+                     "fyi the release is out",
+                     "btw QA says the bug is gone", "btw the PM says the migration is done", "fyi ops said the error rate is down",
+                     "btw QA says flakiness is down", "btw ops says the hotfix is out", "fyi QA said the alert is off",
+                     "btw the lead says latency is down", "fwiw QA says it isn't a problem", "btw ops says it won't break anything",
+                     "fwiw ops says it doesn't conflict with anything", "fyi QA said the flaky test isn't failing anymore",
+                     "btw legal says it's not an issue", "fwiw ops said it wasn't urgent anyway", "thanks for the help",
+                     "cheers for sorting it", "thanks for everything", "thanks for not breaking prod"):
             with self.subTest(message=f"rebase all open PRs, {tail}"):
                 self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
         for tail in ("btw the lead said idk", "fyi QA said not sure", "ps the PM said she's skeptical",
@@ -911,7 +921,20 @@ class RouterTests(unittest.TestCase):
                      "no-one gave the nod", "the team never gave the go-ahead", "no one on the team asked for this",
                      "not a soul asked for it", "no-one asked for it", "nobody in legal requested it", "the team never okayed it",
                      "security never greenlit it", "security has not blessed it", "none of the leads asked for this",
-                     "not a single person requested it", "neither of them asked for it"):
+                     "not a single person requested it", "neither of them asked for it",
+                     # A status word that is also good news holds with a person away or a system down; a blocking
+                     # status, any negated state but a negated problem, reluctance and thanks for a negation hold
+                     # (#2265 review34).
+                     "btw ops says sarah is out", "fwiw the PM said he is off this week", "btw QA says the reviewer is away",
+                     "fyi they said the oncall is sick", "fwiw QA says staging is offline", "btw the lead says main is locked",
+                     "fwiw ops says the db is down", "btw ops says the build server is down", "fyi QA said CI is down",
+                     "btw the PM said the launch is paused", "btw ops says staging isn't up",
+                     "fyi the CFO said the budget isn't there", "fwiw QA says the suite doesn't pass",
+                     "btw legal says the contract hasn't come back", "fyi ops said the cert won't renew in time",
+                     "btw QA says CI can't keep up", "fwiw the lead said the design isn't final",
+                     "btw the lead said he'd sooner we didn't", "fwiw the PM said she'd sooner we waited",
+                     "thanks for nothing", "cheers for nothing", "thanks for nothing, really", "thx for no help",
+                     "ty for nothing lol", "thanks a lot for nothing", "ta for none of it"):
             with self.subTest(message=f"rebase all open PRs, {tail}"):
                 self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
                 self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
