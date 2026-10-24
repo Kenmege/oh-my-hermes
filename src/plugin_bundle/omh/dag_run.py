@@ -746,8 +746,13 @@ def task_for(
         preceding = ancestors(str(node["id"]), parents)
         for baseline in record["nodes"]:
             if str(baseline["id"]) in preceding and is_baseline(baseline):
-                lines.append(f"Baseline: Read {node_handoff(record, omh_home, str(baseline['id']))}; "
-                             "fail only on test failures absent from the baseline list.")
+                lines.append(f"Baseline: Read {node_handoff(record, omh_home, str(baseline['id']))}. Exempt only a "
+                             "failure it lists that you re-ran here with the same test id and assertion/error "
+                             "signature, under a comparable command and environment at the pinned base and candidate "
+                             "revisions; report it as pre-existing. A same-id failure that changed, missing evidence, "
+                             "skipped or reduced coverage, collection/execution/exit errors, and security or mandatory "
+                             "gates are never exempt: fail them. A baseline list does not make an unmet full-suite-green "
+                             "goal done.")
         lines.append("Check the complete run goal, not only this node's local VERIFY. "
                      "Name each unmet or unobserved goal criterion; producer claims are not verification evidence.")
     lines.append("Stay inside your SCOPE: other parts of this run work at the same time. If you cannot finish, "

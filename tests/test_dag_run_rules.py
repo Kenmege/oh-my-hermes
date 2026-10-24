@@ -173,27 +173,76 @@ class BaselineNodeTests(unittest.TestCase):
                     self.assertNotIn("verify", dag_run.offerable(record, dag_run.derive(record, [], time.time()),
                                                                 time.time()))
 
+    def _baseline_context(self, home) -> tuple[dict, str]:
+        record = dag_run.new_record(PARENT, "feat", "Feature", "", [
+            node("baseline"),
+            node("old-tests", label="Capture BASELINE failures"),
+            node("unrelated-baseline"),
+            node("api", depends_on=("baseline", "old-tests")),
+            node("verify", depends_on=("api",)),
+        ], time.time())
+        record["handoff_root"] = "/sandbox-home/dev/.omh/dag"
+        derived = dag_run.derive(record, [], time.time())
+        context = dag_run.task_for(record, record["nodes"][-1], home.omh, derived)["context"]
+        return record, context
+
+    def _baseline_line(self, home) -> str:
+        return next(line for line in self._baseline_context(home)[1].splitlines() if line.startswith("Baseline:"))
+
     def test_verify_task_names_baseline_handoff(self) -> None:
         with homes() as home:
-            record = dag_run.new_record(PARENT, "feat", "Feature", "", [
-                node("baseline"),
-                node("old-tests", label="Capture BASELINE failures"),
-                node("unrelated-baseline"),
-                node("api", depends_on=("baseline", "old-tests")),
-                node("verify", depends_on=("api",)),
-            ], time.time())
-            record["handoff_root"] = "/sandbox-home/dev/.omh/dag"
-            derived = dag_run.derive(record, [], time.time())
-            context = dag_run.task_for(record, record["nodes"][-1], home.omh, derived)["context"]
+            record, context = self._baseline_context(home)
             baseline_lines = [line for line in context.splitlines() if line.startswith("Baseline:")]
             self.assertEqual(len(baseline_lines), 2)
             for baseline_id, line in zip(("baseline", "old-tests"), baseline_lines):
                 self.assertIn(dag_run.node_handoff(record, home.omh, baseline_id), line)
                 self.assertIn("Read", line)
-                self.assertIn("fail only on test failures absent from the baseline list", line)
+                self.assertIn("same test id and assertion/error signature", line)
             self.assertNotIn("unrelated-baseline.md", "\n".join(baseline_lines))
-            producer = dag_run.task_for(record, record["nodes"][-2], home.omh, derived)["context"]
+            producer = dag_run.task_for(record, record["nodes"][-2], home.omh,
+                                        dag_run.derive(record, [], time.time()))["context"]
             self.assertNotIn("Baseline:", producer)
+
+    def test_matching_baseline_failure_may_be_exempted_but_is_disclosed(self) -> None:
+        # Worker guidance only: this pins the generated instruction, not live compliance.
+        with homes() as home:
+            line = self._baseline_line(home)
+        self.assertIn("Exempt only a failure it lists that you re-ran here with the same test id and "
+                      "assertion/error signature", line)
+        self.assertIn("under a comparable command and environment at the pinned base and candidate revisions", line)
+        self.assertIn("report it as pre-existing", line)
+        self.assertIn("does not make an unmet full-suite-green goal done", line)
+        self.assertNotIn("fail only on test failures absent from the baseline list", line)
+
+    def test_baseline_exemption_never_waives_changed_or_unevidenced_failures(self) -> None:
+        # Worker guidance only: this pins the generated instruction, not live compliance.
+        with homes() as home:
+            line = self._baseline_line(home)
+        for guard in ("same-id failure that changed", "missing evidence", "skipped or reduced coverage",
+                      "collection/execution/exit errors", "security or mandatory gates"):
+            with self.subTest(guard=guard):
+                self.assertIn(guard, line)
+        self.assertIn("never exempt: fail them", line)
+
+    def test_baseline_failures_do_not_close_an_unmet_full_suite_goal(self) -> None:
+        with homes() as home:
+            context = self._baseline_context(home)[1]
+        self.assertIn("does not make an unmet full-suite-green goal done", context)
+        self.assertIn("Check the complete run goal, not only this node's local VERIFY", context)
+        self.assertIn("Name each unmet or unobserved goal criterion", context)
+
+    def test_baseline_quality_bar_carries_the_same_comparison_guards(self) -> None:
+        from omh.skills.dag_ulw_skill import DEFINITION
+
+        bullets = [bullet for bullet in DEFINITION.quality_bar if "`baseline` node" in bullet]
+        self.assertEqual(len(bullets), 1)
+        bullet = bullets[0]
+        for term in ("test id, assertion/error signature", "comparable command", "pinned base and candidate revisions",
+                     "changed same-id failure", "missing evidence", "skipped or reduced coverage",
+                     "collection/exit errors", "security/mandatory gates", "pre-existing",
+                     "full-suite-green goal met"):
+            with self.subTest(term=term):
+                self.assertIn(term, bullet)
 
 
 class RepairDataFlowTests(unittest.TestCase):
