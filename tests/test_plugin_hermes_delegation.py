@@ -426,7 +426,9 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         self.assertAlmostEqual(cost("kimi-k3.1-pro", 0, 1, 1_000_000), 0.20 + 10.0 / 1_000_000)
         self.assertAlmostEqual(cost("kimi-k3.1-pro-highspeed", 0, 1, 1_000_000), 0.20 + 20.0 / 1_000_000)
         self.assertIs(provider_serves_alias("kimi-k3.1-pro", "kimi-coding"), True)
-        self.assertIs(provider_serves_alias("kimi-k3.1-pro", "apitopia"), True)
+        # Apitopia carried K3 but nobody observed it serving K3.1 Pro, so no
+        # family is claimed for it and the vendor-specific verdict is False.
+        self.assertIs(provider_serves_alias("kimi-k3.1-pro", "apitopia"), False)
         # OpenRouter relays every vendor, so its verdict stays unknown rather
         # than a claim; the family row matters for vendor-specific kinds.
         self.assertIsNone(provider_serves_alias("moonshotai/kimi-k3.1-pro", "openrouter"))

@@ -97,7 +97,10 @@ class ParityTests(unittest.TestCase):
     # dropping a kind would invalidate as a whole every providers.json that
     # recorded it; `qwen-oauth` lost its only member (qwen3-coder) on
     # 2026-10-13 and is still named by that recognition-only row.
-    _RETAINED_PROVIDER_FAMILIES: frozenset[str] = frozenset({"qwen-oauth"})
+    # `apitopia` lost its only member on 2026-10-24, when kimi-k3.1-pro took
+    # the K3 slots without it (nobody observed Apitopia serving K3.1 Pro);
+    # recognition-only kimi-k3 still names it.
+    _RETAINED_PROVIDER_FAMILIES: frozenset[str] = frozenset({"apitopia", "qwen-oauth"})
 
     def _catalog_families(self) -> dict[str, tuple[str, ...]]:
         families: dict[str, tuple[str, ...]] = {}

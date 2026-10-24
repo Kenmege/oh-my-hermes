@@ -86,7 +86,7 @@ def _candidate(
 _KIMI_K31_PRO = _candidate(
     "kimi-k3.1-pro",
     "kimi",
-    ("apitopia", "kimi-coding", "openrouter", "opencode"),
+    ("kimi-coding", "openrouter", "opencode"),
     reasoning="Editorial general-work recommendation; not a benchmark claim.",
 )
 _OPUS_55 = _candidate(

@@ -325,14 +325,16 @@ PROVIDER_KIND_UNKNOWN = "unknown"
 # Mirrors the union of `preferred_provider_families` across
 # SHIPPED_MODEL_RECOMMENDATIONS in src/coding/model_recommendations.py (the
 # plugin bundle cannot import src/coding); the parity gate lives in
-# tests/test_provider_entitlements.py (ParityTests). One family is retained
-# past its last catalog member: `qwen-oauth`, whose only member qwen3-coder
-# left every shipped chain on 2026-10-13. The entitlement parser is strict and
-# atomic, so dropping the kind would invalidate as a whole every
-# providers.json that recorded it, and recognition-only qwen3-coder still
-# names it; the parity gate lists the exception by name. A side effect: the
-# setup interview offers every vocabulary family, so `qwen-oauth` stays
-# selectable there although no shipped chain uses it.
+# tests/test_provider_entitlements.py (ParityTests). Two families are retained
+# past their last catalog member: `qwen-oauth`, whose only member qwen3-coder
+# left every shipped chain on 2026-10-13, and `apitopia`, whose only member
+# kimi-k3 left them on 2026-10-24 (nobody observed Apitopia serving K3.1
+# Pro). The entitlement parser is strict and atomic, so dropping a kind would
+# invalidate as a whole every providers.json that recorded it, and
+# recognition-only qwen3-coder and kimi-k3 still name them; the parity gate
+# lists the exceptions by name. A side effect: the setup interview offers
+# every vocabulary family, so both stay selectable there although no
+# shipped chain uses them.
 PROVIDER_FAMILY_VOCABULARY: tuple[str, ...] = (
     "anthropic",
     "apitopia",
@@ -366,7 +368,11 @@ SUBSCRIPTION_CLI_PROFILES: tuple[str, ...] = ("claude-code",)
 # by every provider — the honest default for an id the catalog has never
 # described.
 HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
-    "kimi-k3.1-pro": ("apitopia", "kimi-coding", "openrouter", "opencode"),
+    # Families are the ones observed serving each id on 2026-10-24: Moonshot's
+    # own API (`kimi-coding` in Hermes) for both, OpenRouter
+    # (`moonshotai/kimi-k3.1-pro`) and OpenCode Go for the base model only.
+    # No family is claimed for a relay nobody observed serving it.
+    "kimi-k3.1-pro": ("kimi-coding", "openrouter", "opencode"),
     "claude-opus-5-5": ("ccapi", "anthropic", "openrouter"),
     "claude-fable-5-1": ("ccapi", "anthropic", "openrouter"),
     "claude-sonnet-5-5": ("ccapi", "anthropic", "openrouter"),

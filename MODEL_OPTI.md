@@ -1131,9 +1131,10 @@ pairing so a benchmark claim can never mix in other prompt changes.
   resolves. The `medium` and `xhigh` slots are off-ladder for this model, as
   they were for K3, whose ladder is the same. The route records the raise to
   `high` and `max`, the rungs Hermes sends. Highspeed joins no chain.
-  Provider families for the base id are K3's (`apitopia`, `kimi-coding`,
-  `openrouter`, `opencode`). For Highspeed, `kimi-coding` is the only family
-  observed serving it. Editorial and unmeasured; the pair below confirms or
+  Provider families for the base id are the ones observed serving K3.1 Pro
+  (`kimi-coding`, `openrouter`, `opencode`); `apitopia`, which carried K3, is
+  not claimed because nobody observed it serving K3.1 Pro. For Highspeed,
+  `kimi-coding` is the only family observed serving it. Editorial and unmeasured; the pair below confirms or
   reverses it.
 - **Surfaces:** Hermes resolves both ids to the 1 Mi window through its
   `kimi-k3` context row and has no price row for them (observed). The Kimi
