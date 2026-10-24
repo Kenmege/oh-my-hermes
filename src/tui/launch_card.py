@@ -10,6 +10,14 @@ by OMH's capability family (the generated `capability_families.json`) and puts
 the ulw lanes on a row of their own; Hermes' own skills are named by category on
 one row.
 
+Hermes sends the skills only once it has built the session's agent, a second or
+two after the first frame, so the card draws the skills the last launch drew
+(`read_snapshot`, kept under the OMH home by `write_snapshot`) marked last-known
+until then, and the session's own replace them whole. The snapshot holds the
+names as drawn, so the first frame imports no skill catalog, and it names the
+Hermes home and profile it was drawn for. A first launch, another Hermes home
+or profile, or a snapshot this module did not write says loading… instead.
+
 Each launch look (`theme.LAUNCH_PRESETS`) has its own layout: a box per section
 (spectrum), one box of stacked sections (violet), one box in two columns (gold)
 or a rule above and below with no side edges (graphite). Every layout is fitted
@@ -26,6 +34,9 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 from importlib import resources
 import json
+from pathlib import Path
+
+from ..system.local_store import atomic_write_json
 
 from .style import Line, Span
 from .theme import LaunchStyles, Theme
@@ -52,6 +63,8 @@ COLUMN = 26  # the narrowest column a name gets; a longer name spans two
 KEYS = (("/dag-ulw", "run a goal as a graph of subagents"), ("/resume", "reopen a stored session"),
         ("/theme", "switch the launch look"), ("?", "every shortcut"))
 LOADING = "loading…"
+LAST_KNOWN = "last-known"  # the skills drawn are the last launch's, until this session's arrive
+SNAPSHOT_SCHEMA = "omh.tui.launch-skills/v1"
 
 
 @dataclass(frozen=True)
@@ -76,6 +89,7 @@ class Skills:
     omh: int
     hermes_categories: tuple[str, ...]
     hermes: int
+    last_known: bool = False  # read from the last launch's snapshot, not from this session
 
 
 @lru_cache(maxsize=1)
@@ -122,6 +136,54 @@ def skill_rows(skills: Mapping[str, Sequence[str]], members=family_members) -> S
     categories = tuple(sorted(category for category, names in skills.items()
                               if any(isinstance(name, str) and name not in omh for name in names)))
     return Skills(groups, len(omh), categories, len([name for name in installed if name not in omh]))
+
+
+def snapshot_path(omh_home: Path) -> Path:
+    return Path(omh_home) / "tui" / "launch-skills.json"
+
+
+def _names(value: object) -> tuple[str, ...] | None:
+    return tuple(value) if isinstance(value, list) and all(isinstance(name, str) for name in value) else None
+
+
+def _count(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def read_snapshot(omh_home: Path, hermes_home: str, profile: str) -> Skills | None:
+    """The skills the last launch drew for this Hermes home and profile, marked last-known; None when there are
+    none this module wrote for them."""
+    try:
+        record = json.loads(snapshot_path(omh_home).read_text(encoding="utf-8"))
+    except (OSError, ValueError, RecursionError):
+        return None
+    if (not isinstance(record, dict) or record.get("schema_version") != SNAPSHOT_SCHEMA
+            or record.get("hermes_home") != hermes_home or record.get("profile") != profile):
+        return None
+    rows = record.get("groups")
+    groups = []
+    for row in rows if isinstance(rows, list) else [None]:
+        names = _names(row[1]) if isinstance(row, list) and len(row) == 2 and isinstance(row[0], str) else None
+        if names is None:
+            return None
+        groups.append((row[0], names))
+    categories = _names(record.get("hermes_categories"))
+    omh, hermes = _count(record.get("omh")), _count(record.get("hermes"))
+    if categories is None or omh is None or hermes is None:
+        return None
+    return Skills(tuple(groups), omh, categories, hermes, last_known=True)
+
+
+def write_snapshot(omh_home: Path, hermes_home: str, profile: str, skills: Skills) -> None:
+    """Keep `skills` for the next launch's first frame on this Hermes home and profile, atomically; a failed write
+    costs that frame only."""
+    record = {"schema_version": SNAPSHOT_SCHEMA, "hermes_home": hermes_home, "profile": profile,
+              "groups": [[label, list(names)] for label, names in skills.groups],
+              "omh": skills.omh, "hermes_categories": list(skills.hermes_categories), "hermes": skills.hermes}
+    try:
+        atomic_write_json(snapshot_path(omh_home), record)
+    except OSError:
+        pass
 
 
 # --- rows ------------------------------------------------------------------------------------------------------
@@ -186,9 +248,14 @@ def model_spans(f: Facts, p: Paint) -> Line:
 def skills_header(s: Skills | None, p: Paint) -> Line:
     if s is None:
         return (Span("skills", p.look.label), Span(f"  {LOADING}", p.theme.muted))
-    return (Span("skills", p.look.label), Span(f"  {s.omh + s.hermes} installed", p.theme.text),
+    return (Span("skills", p.look.label), Span(f"  {s.omh + s.hermes} installed", p.theme.text), *known(s, p),
             Span(" · ", p.theme.dim), Span(f"{s.omh} from OMH", p.theme.muted), Span(" · ", p.theme.dim),
             Span(f"{s.hermes} from Hermes", p.theme.muted), Span(" · ", p.theme.dim), *find_hint(p))
+
+
+def known(s: Skills | None, p: Paint) -> Line:
+    """The last-known mark after a count read from the snapshot; () once the session's own are drawn."""
+    return (Span(" · ", p.theme.dim), Span(LAST_KNOWN, p.theme.faint)) if s is not None and s.last_known else ()
 
 
 def find_hint(p: Paint) -> Line:
@@ -290,7 +357,8 @@ def _tiles(f: Facts, s: Skills | None, p: Paint, width: int) -> Build:
                                                                  width - half - 1, p), strict=True)]
                if start else left)
         title = (Span("skills", p.look.label),
-                 Span(f" {s.omh + s.hermes} installed" if s is not None else f" {LOADING}", p.theme.muted))
+                 Span(f" {s.omh + s.hermes} installed" if s is not None else f" {LOADING}", p.theme.muted),
+                 *known(s, p))
         right = find_hint(p) if s is not None else ()
         return [*top, *boxed(title, right, _skills_body(s, width - 6, per_group, drop, p) or [()], width, p)]
     return build
@@ -318,7 +386,8 @@ def _split(f: Facts, s: Skills | None, p: Paint, width: int) -> Build:
                      (Span("/resume ", p.theme.slash), Span(f.last_id, p.theme.muted)), ()]
         if drop < 7:
             left += key_rows(p)
-        right = [skills_header(s, p)[:2] + ((Span(" · ", p.theme.dim), *find_hint(p)) if s is not None else ()), ()]
+        right = [skills_header(s, p)[:2] + known(s, p) + ((Span(" · ", p.theme.dim), *find_hint(p))
+                                                         if s is not None else ()), ()]
         right += _skills_body(s, right_w, per_group, drop, p)
         tall = max(len(left), len(right))
         left += [()] * (tall - len(left))
@@ -338,7 +407,8 @@ def _rules(f: Facts, s: Skills | None, p: Paint, width: int) -> Build:
         body += _skills_body(s, inner, per_group, drop, p) or [skills_header(s, p)]
         if drop < 7:
             body += [(), (Span("keys".ljust(GUTTER), p.look.label), *keys_line(p, inner - GUTTER))]
-        foot = ((Span(f"{s.omh + s.hermes} skills", p.theme.muted), Span(" · ", p.theme.dim), *find_hint(p))
+        foot = ((Span(f"{s.omh + s.hermes} skills", p.theme.muted), *known(s, p), Span(" · ", p.theme.dim),
+                 *find_hint(p))
                 if s is not None else (Span(f"skills {LOADING}", p.theme.muted),))
         return ruled(model_spans(f, p), [*body, ()], foot, width, p)
     return build

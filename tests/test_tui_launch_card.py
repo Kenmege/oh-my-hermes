@@ -4,7 +4,8 @@ A fresh session's launch draws the logo and the banner in the launch look in use
 (spectrum unless one is saved under the OMH home), and the launch card in the
 live region under them: the session, the skills Hermes has (regrouped by OMH's
 capability family) and the first keys, fitted to the rows above the composer.
-The card grows as `session.info` and `session.list` answer, goes to scrollback
+The card grows as `session.info` and `session.list` answer (until Hermes names
+its skills, the last launch's are drawn marked last-known), goes to scrollback
 above the first prompt, and comes back with a full redraw of the whole session.
 `/theme` alone opens a picker that previews each look on the logo and the card;
 Enter keeps the highlighted one (saved beside the theme), Esc puts the one in
@@ -13,8 +14,12 @@ use back, a click moves the highlight, and `/theme <look>` keeps one at once.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -35,7 +40,18 @@ from omh.skin_pack import (
 from omh.tui.app import CARD_KEPT, CARD_LIVE, CARD_NONE, CLEAR_SCREEN_AND_SCROLLBACK, LAUNCH_UNKNOWN_NOTICE, App
 from omh.tui.gateway import Event, Response
 from omh.tui.keys import BUTTON_LEFT, CHAR, DOWN, ENTER, ESCAPE, Key, Mouse
-from omh.tui.launch_card import Facts, Paint, family_members, grid, launch_card, skill_rows
+from omh.tui.launch_card import (
+    SNAPSHOT_SCHEMA,
+    Facts,
+    Paint,
+    family_members,
+    grid,
+    launch_card,
+    read_snapshot,
+    skill_rows,
+    snapshot_path,
+    write_snapshot,
+)
 from omh.tui.shortcuts import SHORTCUTS
 from omh.tui.style import NO_COLOR
 from omh.tui.theme import (
@@ -64,19 +80,26 @@ def texts(lines) -> list[str]:
 
 
 class StartClient(RecordingClient):
+    profile: str | None = None  # the `profile_name` session.create's info carries; None: no such key
+
     def call(self, method: str, params: dict, timeout: float = 30.0) -> dict:
         self.calls.append((method, params))
-        return {"session_id": SID, "stored_session_id": "stored-1", "info": {"model": "openai/gpt-6.1-sol", "cwd": "/p"}}
+        info = {"model": "openai/gpt-6.1-sol", "cwd": "/p"}
+        if self.profile is not None:
+            info["profile_name"] = self.profile
+        return {"session_id": SID, "stored_session_id": "stored-1", "info": info}
 
 
 class Launched:
     """A launched app on a scripted terminal, its OMH home a temporary directory."""
 
-    def __init__(self, rows: int = 42, cols: int = 150, look: str | None = None, env: dict | None = None) -> None:
+    def __init__(self, rows: int = 42, cols: int = 150, look: str | None = None, env: dict | None = None,
+                 profile: str | None = None) -> None:
         self.home = Path(tempfile.mkdtemp(prefix="omh-launch-test-")) / ".omh"
         if look is not None:
             write_launch_choice(self.home, look)
         self.client = StartClient()
+        self.client.profile = profile
         self.app = App(ScriptedTerminal(rows, cols), self.client, {"OMH_HOME": str(self.home), **(env or {})},
                        poller=FakePoller())  # type: ignore[arg-type]
         self.app.startup()  # as `_run` starts it: the session, then the background, then the cleared screen
@@ -290,6 +313,145 @@ class LaunchTests(unittest.TestCase):
         self.assertNotIn("38;5;", writes)
         self.assertEqual(run.app._launch_paint().look.brand.depth, NO_COLOR)
         self.assertTrue(run.app._launch_paint().look.brand.bold)
+
+
+HERMES = "/home/one/.hermes"  # the Hermes home a snapshot test launches on
+
+
+def kept(home: Path, hermes_home: str = HERMES, profile: str = "default"):
+    return read_snapshot(home, hermes_home, profile)
+
+
+def relaunch(first: "Launched", hermes_home: str = HERMES, profile: str = "default") -> "Launched":
+    return Launched(env={"OMH_HOME": str(first.home), "HERMES_HOME": hermes_home}, profile=profile)
+
+
+class SnapshotTests(unittest.TestCase):
+    """The skills the last launch drew, under the OMH home: drawn last-known until the session's own replace them."""
+
+    def first(self) -> Launched:
+        run = Launched(env={"HERMES_HOME": HERMES}, profile="default")
+        run.info()
+        return run
+
+    def test_a_first_launch_says_loading_and_keeps_the_skills_for_the_next(self) -> None:
+        run = Launched(env={"HERMES_HOME": HERMES}, profile="default")
+        self.assertIn("skills loading…", "\n".join(run.screen()))
+        self.assertIsNone(kept(run.home))
+        run.info()
+        self.assertEqual(kept(run.home), replace(skill_rows(SKILLS), last_known=True))
+        record = json.loads(snapshot_path(run.home).read_text(encoding="utf-8"))
+        self.assertEqual((record["schema_version"], record["hermes_home"], record["profile"]),
+                         (SNAPSHOT_SCHEMA, HERMES, "default"))
+        drawn = [[label, list(names)] for label, names in skill_rows(SKILLS).groups]
+        self.assertEqual(record["groups"], drawn)  # the names as drawn: the first frame needs no catalog
+
+    def test_the_next_launch_draws_them_last_known_and_the_sessions_own_replace_them(self) -> None:
+        first = self.first()
+        for look in LAUNCH_PRESETS:
+            with self.subTest(look=look):
+                run = relaunch(first)
+                run.app.launch_look = look
+                screen = "\n".join(run.screen())
+                self.assertNotIn("loading…", screen)
+                self.assertIn("last-known", screen)
+                self.assertIn("omh-lone", screen)
+                gone = {key: [name for name in names if name != "omh-lone"] for key, names in SKILLS.items()}
+                run.info(gone)
+                screen = "\n".join(run.screen())
+                self.assertNotIn("last-known", screen)
+                self.assertNotIn("omh-lone", screen)  # uninstalled since the snapshot: never shown once Hermes says
+                self.assertIn("ulw-plan", screen)
+                run.info()  # put back for the next look's launch
+                self.assertEqual(kept(first.home), replace(skill_rows(SKILLS), last_known=True))
+
+    def test_another_hermes_home_or_profile_never_draws_this_ones_skills(self) -> None:
+        first = self.first()
+        for hermes_home, profile in (("/home/two/.hermes", "default"), (HERMES, "work"), (HERMES + "/", "default")):
+            with self.subTest(hermes_home=hermes_home, profile=profile):
+                run = relaunch(first, hermes_home, profile)
+                screen = "\n".join(run.screen())
+                self.assertIn("skills loading…", screen)
+                self.assertNotIn("last-known", screen)
+        self.assertIsNotNone(kept(first.home))  # the control: its own home and profile still read it
+
+    def test_a_session_info_for_another_profile_does_not_overwrite_the_launchs_snapshot(self) -> None:
+        run = self.first()
+        other = {"general": ["omh-plan"]}
+        run.app._on_event(Event("session.info", SID, {"model": "m", "skills": other, "profile_name": "work"}))
+        self.assertEqual(kept(run.home), replace(skill_rows(SKILLS), last_known=True))
+        run.app._on_event(Event("session.info", SID, {"model": "m", "skills": other, "profile_name": "default"}))
+        self.assertEqual(kept(run.home), replace(skill_rows(other), last_known=True))
+
+    def test_an_unreadable_or_foreign_snapshot_is_ignored_and_replaced(self) -> None:
+        good = {"schema_version": SNAPSHOT_SCHEMA, "hermes_home": HERMES, "profile": "default",
+                "groups": [["plan", ["omh-plan"]]], "omh": 1, "hermes_categories": [], "hermes": 0}
+        damaged = ["{not json", "\udcff", json.dumps([good]), json.dumps({**good, "schema_version": "other/v9"}),
+                   json.dumps({**good, "groups": [["plan", "omh-plan"]]}), json.dumps({**good, "groups": [["plan"]]}),
+                   json.dumps({**good, "groups": {"plan": ["omh-plan"]}}), json.dumps({**good, "omh": True}),
+                   json.dumps({**good, "hermes": -1}), json.dumps({**good, "hermes_categories": [3]}),
+                   json.dumps({key: value for key, value in good.items() if key != "profile"}),
+                   "[" * 100000]
+        for text in damaged:
+            with self.subTest(text=text[:40]):
+                home = Path(tempfile.mkdtemp()) / ".omh"
+                snapshot_path(home).parent.mkdir(parents=True)
+                snapshot_path(home).write_text(text, encoding="utf-8", errors="surrogateescape")
+                self.assertIsNone(kept(home))
+                run = Launched(env={"OMH_HOME": str(home), "HERMES_HOME": HERMES}, profile="default")
+                self.assertIn("skills loading…", "\n".join(run.screen()))
+                run.info()
+                self.assertEqual(kept(home), replace(skill_rows(SKILLS), last_known=True))
+        home = Path(tempfile.mkdtemp()) / ".omh"
+        snapshot_path(home).parent.mkdir(parents=True)
+        snapshot_path(home).write_text(json.dumps(good), encoding="utf-8")
+        self.assertEqual(kept(home).groups, (("plan", ("omh-plan",)),))  # the control: this one reads
+
+    def test_a_snapshot_that_cannot_be_written_costs_nothing_but_the_next_first_frame(self) -> None:
+        home = Path(tempfile.mkdtemp()) / ".omh"
+        home.mkdir(parents=True)
+        (home / "tui").write_text("a file where the directory goes", encoding="utf-8")
+        run = Launched(env={"OMH_HOME": str(home), "HERMES_HOME": HERMES}, profile="default")
+        run.info()
+        screen = "\n".join(run.screen())
+        self.assertIn("dag-ulw", screen)
+        self.assertNotIn("last-known", screen)
+        self.assertIsNone(kept(home))
+        write_snapshot(home, HERMES, "default", skill_rows(SKILLS))  # called directly too: it never raises
+
+    def test_the_mark_is_quiet_and_the_swap_keeps_the_cards_height(self) -> None:
+        facts = CardTests.FACTS
+        fresh = skill_rows(SKILLS, members=lambda: MEMBERS)
+        for look in LAUNCH_PRESETS:
+            for width, room in ((150, 30), (120, 12), (100, 6), (60, 9)):
+                with self.subTest(look=look, width=width, room=room):
+                    known = launch_card(look, facts, paint(look), width, room, replace(fresh, last_known=True))
+                    final = launch_card(look, facts, paint(look), width, room, fresh)
+                    self.assertEqual(len(known), len(final))  # no extra row, and the swap moves nothing below
+                    marked = "\n".join(texts(known))
+                    if width >= 100:  # narrower, the title row cuts the mark like the count beside it
+                        self.assertEqual("last-known" in marked, "skills" in marked or "installed" in marked, marked)
+                    self.assertNotIn("last-known", "\n".join(texts(final)))
+                    marks = [span for line in known for span in line if span.text == "last-known"]
+                    self.assertTrue(all(span.style == paint(look).theme.faint for span in marks))
+
+    def test_the_first_frame_from_a_snapshot_imports_no_skill_catalog(self) -> None:
+        first = self.first()
+        code = (
+            "import sys; sys.path[:0] = [sys.argv[1]]\n"
+            "from test_tui_launch_card import relaunch, Launched\n"
+            "from pathlib import Path\n"
+            "first = Launched.__new__(Launched); first.home = Path(sys.argv[2])\n"
+            "before = 'omh.skills.catalog' in sys.modules\n"
+            "run = relaunch(first); screen = '\\n'.join(run.screen())\n"
+            "assert 'last-known' in screen, screen\n"
+            "print(before, 'omh.skills.catalog' in sys.modules)\n"
+        )
+        tests = str(Path(__file__).resolve().parent)
+        done = subprocess.run([sys.executable, "-P", "-c", code, tests, str(first.home)], capture_output=True,
+                              text=True, timeout=120, env={**os.environ, "PYTHONPATH": tests})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.split(), ["False", "False"])
 
 
 class SwitchTests(unittest.TestCase):

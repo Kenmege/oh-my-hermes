@@ -1143,8 +1143,9 @@ prompts from either terminal. It only appends to that file (creating it mode
 Hermes asked or a masked value there. Everything else it writes
 is metadata: the launcher's active-session file, which holds the session id,
 what OMH's own HUD reader and model-chain picker write under the OMH home
-(the HUD's fan-out cache, and the chains `/omh-model` saves), and an empty
-fallback marker at the path `omh` named, which `omh` removes.
+(the HUD's fan-out cache, and the chains `/omh-model` saves), the skill
+names and counts the launch card last drew (`<omh_home>/tui/launch-skills.json`),
+and an empty fallback marker at the path `omh` named, which `omh` removes.
 
 The OMH TUI opens with the theme `omh theme use` saved under the OMH home
 (see [TUI Themes](#tui-themes)); `/theme <name>` switches the open session only.
@@ -1158,7 +1159,12 @@ prompt, then stays in scrollback above it. It names the model and effort,
 the new session, the last stored session with its `/resume` id, the first
 keys, and the skills Hermes has: OMH's grouped by capability family with
 the ulw lanes on a row of their own, and Hermes' own by category. It fills
-in as Hermes answers, and on a short terminal it drops rows, the last ones
+in as Hermes answers. Hermes names its skills only once it has built the
+session's agent, a second or two after the first frame, so until then the
+card shows the skills the last launch on the same Hermes home and profile
+showed, marked `last-known`, and then replaces them with the session's own; a
+first launch, or one on another Hermes home or profile, says `loading…`. On a
+short terminal it drops rows, the last ones
 first, never reaching the composer. `/theme` alone opens a picker that
 previews each look on the logo and the card as you move (arrow keys, `j`/`k`
 or a click; once the launch has scrolled away, a compact preview above the
