@@ -60,6 +60,7 @@
   --sp-5: #a95a14;
   --sp-6: #5f7410;
   --shadow: 0 24px 60px rgba(40, 20, 70, 0.16);
+  --aura-strength: 0.62;
 }
 
 @media (prefers-color-scheme: light) {
@@ -84,6 +85,7 @@
     --sp-5: #a95a14;
     --sp-6: #5f7410;
     --shadow: 0 24px 60px rgba(40, 20, 70, 0.16);
+    --aura-strength: 0.62;
   }
 }
 
@@ -291,6 +293,78 @@ main:focus {
   fill: currentColor;
 }
 
+/* GitHub star and npm install count. Both fill in from app.js; until then
+   (or when a request fails) the star shows without a number and the
+   install count stays hidden. */
+.gh-star {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  margin-left: 4px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.gh-star:hover {
+  border-color: var(--link);
+  background: var(--code-bg);
+}
+
+.gh-star svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.gh-star__count {
+  margin-right: -2px;
+  padding-left: 9px;
+  border-left: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.installs {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.installs[hidden] {
+  display: none;
+}
+
+.installs:hover {
+  color: var(--ink);
+  background: var(--code-bg);
+}
+
+.installs svg {
+  width: 16px;
+  height: 16px;
+}
+
+.installs__count {
+  color: var(--ink);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
 .langswitch {
   position: relative;
 }
@@ -386,6 +460,9 @@ main:focus {
 /* ------------------------------------------------------------------ hero */
 
 .hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -411,13 +488,22 @@ main:focus {
 }
 
 .hero__badge {
+  position: relative;
+  isolation: isolate;
   margin-top: 28px;
-  padding: 4px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
   color: var(--muted);
   font-size: 14px;
   font-weight: 500;
+}
+
+/* The pill sits on top of the beam's splash, so its text keeps the page contrast. */
+.hero__badge > [data-i18n] {
+  position: relative;
+  display: inline-block;
+  padding: 4px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--bg);
 }
 
 .hero__tagline {
@@ -487,6 +573,192 @@ main:focus {
   font-size: 22px;
   font-weight: 750;
   letter-spacing: -0.02em;
+}
+
+/* ------------------------------------------------------------------ aura */
+
+/* Soft spectrum light behind the hero and the DAG-ULW band: three drifting
+   ribbons, a beam that lands on the version badge and splashes along it
+   while its hue walks the spectrum, and a glow that follows the pointer.
+   Everything animates transform or opacity only; app.js pauses a band that
+   is off screen, and reduced motion keeps the first frame. */
+.aura {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: calc(var(--aura-strength, 1) * var(--aura-fade, 1));
+}
+
+.aura__ribbon {
+  position: absolute;
+  left: -30%;
+  width: 160%;
+  height: 300px;
+  border-radius: 50%;
+  will-change: transform, opacity;
+}
+
+.aura__ribbon--a {
+  top: 14%;
+  background: radial-gradient(closest-side, rgba(208, 140, 242, 0.34), rgba(242, 123, 182, 0.12) 55%, transparent);
+  transform: translate3d(-5%, 0, 0) rotate(-13deg);
+  animation: aura-ribbon-a 26s ease-in-out infinite alternate;
+}
+
+.aura__ribbon--b {
+  top: 42%;
+  background: radial-gradient(closest-side, rgba(242, 123, 182, 0.2), rgba(244, 164, 98, 0.09) 55%, transparent);
+  transform: translate3d(4%, 0, 0) rotate(9deg);
+  animation: aura-ribbon-b 32s ease-in-out infinite alternate;
+}
+
+.aura__ribbon--c {
+  top: 66%;
+  background: radial-gradient(closest-side, rgba(201, 220, 107, 0.16), rgba(208, 140, 242, 0.08) 55%, transparent);
+  transform: translate3d(0, 0, 0) rotate(-5deg);
+  animation: aura-ribbon-c 38s ease-in-out infinite alternate;
+}
+
+@keyframes aura-ribbon-a {
+  from { transform: translate3d(-5%, 0, 0) rotate(-13deg); opacity: 0.75; }
+  to { transform: translate3d(6%, 36px, 0) rotate(-8deg); opacity: 1; }
+}
+
+@keyframes aura-ribbon-b {
+  from { transform: translate3d(4%, 0, 0) rotate(9deg); opacity: 0.9; }
+  to { transform: translate3d(-7%, -28px, 0) rotate(5deg); opacity: 0.6; }
+}
+
+@keyframes aura-ribbon-c {
+  from { transform: translate3d(0, 0, 0) rotate(-5deg); opacity: 0.6; }
+  to { transform: translate3d(8%, 20px, 0) rotate(-1deg); opacity: 1; }
+}
+
+/* The beam: four stacked layers, one per spectrum stop, crossfading in turn. */
+.aura__beam {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 260px;
+  height: var(--beam-h, 46%);
+  transform: translateX(-50%);
+}
+
+.aura__beam i,
+.hero__splash i {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  animation: aura-hue 16s linear infinite;
+}
+
+.aura__beam i:nth-child(1),
+.hero__splash i:nth-child(1) { --hue: 208, 140, 242; opacity: 1; animation-delay: 0s; }
+.aura__beam i:nth-child(2),
+.hero__splash i:nth-child(2) { --hue: 242, 123, 182; animation-delay: -12s; }
+.aura__beam i:nth-child(3),
+.hero__splash i:nth-child(3) { --hue: 244, 164, 98; animation-delay: -8s; }
+.aura__beam i:nth-child(4),
+.hero__splash i:nth-child(4) { --hue: 201, 220, 107; animation-delay: -4s; }
+
+.aura__beam i {
+  background:
+    linear-gradient(to bottom, transparent, rgba(var(--hue), 0.9) 92%, rgba(255, 255, 255, 0.9)) 50% 0 / 2px 100% no-repeat,
+    radial-gradient(48% 100% at 50% 100%, rgba(var(--hue), 0.42), rgba(var(--hue), 0.1) 55%, transparent 80%);
+}
+
+@keyframes aura-hue {
+  0% { opacity: 1; }
+  20% { opacity: 1; }
+  28% { opacity: 0; }
+  92% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.hero__splash {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: -1;
+  width: 560px;
+  height: 64px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.hero__splash i {
+  background:
+    linear-gradient(90deg, transparent, rgba(var(--hue), 0.75) 50%, transparent) 50% 0 / 100% 1px no-repeat,
+    radial-gradient(closest-side, rgba(var(--hue), 0.36), transparent);
+}
+
+.aura__spot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 560px;
+  height: 560px;
+  margin: -280px 0 0 -280px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(242, 123, 182, 0.16), rgba(208, 140, 242, 0.07) 50%, transparent);
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  will-change: transform, opacity;
+}
+
+.aura__spot.is-on {
+  opacity: 1;
+}
+
+/* The DAG-ULW band: two ribbons and a pool of light behind the graph that
+   breathes on the same 6 s beat as the graph's own node auras. */
+.aura--stage .aura__ribbon--a { top: 24%; }
+.aura--stage .aura__ribbon--c { top: 70%; }
+
+.aura__pool {
+  position: absolute;
+  top: 58%;
+  right: 4%;
+  width: 720px;
+  height: 720px;
+  margin-top: -360px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(208, 140, 242, 0.2), rgba(242, 123, 182, 0.08) 50%, transparent);
+  animation: aura-breathe 6s ease-in-out infinite alternate;
+  will-change: opacity;
+}
+
+@keyframes aura-breathe {
+  from { opacity: 0.55; }
+  to { opacity: 1; }
+}
+
+.dag-node .dag-aura {
+  animation: dag-aura-breathe 6s ease-in-out infinite alternate;
+}
+
+.dag-node[data-layer="2"] .dag-aura { animation-delay: -1.5s; }
+.dag-node[data-layer="3"] .dag-aura { animation-delay: -3s; }
+.dag-node[data-layer="4"] .dag-aura { animation-delay: -4.5s; }
+
+.dag-node[data-state="waiting"] .dag-aura,
+.dag-node.is-active .dag-aura {
+  animation: none;
+}
+
+@keyframes dag-aura-breathe {
+  from { opacity: 0.14; }
+  to { opacity: 0.32; }
+}
+
+/* A band scrolled out of view stops animating. */
+[data-aura-paused] .aura *,
+[data-aura-paused] .hero__splash i,
+[data-aura-paused] .dag-edge,
+[data-aura-paused] .dag-aura {
+  animation-play-state: paused;
 }
 
 /* -------------------------------------------------------------- terminal */
@@ -627,6 +899,9 @@ main:focus {
 
 /* The capture is a dark terminal, so this band stays dark in both themes. */
 .section--stage {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   --ink: #f2eef8;
   --muted: #aaa2ba;
   --line: rgba(242, 238, 248, 0.1);
@@ -1295,6 +1570,12 @@ main:focus {
 /* ------------------------------------------------------------ responsive */
 
 @media (max-width: 1000px) {
+  .aura__pool {
+    top: 76%;
+    right: 50%;
+    margin-right: -360px;
+  }
+
   .stage__pair {
     grid-template-columns: minmax(0, 1fr);
     gap: 48px;
@@ -1321,6 +1602,21 @@ main:focus {
   }
 
   .nav__link {
+    display: none;
+  }
+
+  .gh-star__label,
+  .installs__label {
+    display: none;
+  }
+
+  .gh-star__count {
+    padding-left: 7px;
+  }
+}
+
+@media (max-width: 420px) {
+  .brand span {
     display: none;
   }
 
@@ -1368,5 +1664,17 @@ main:focus {
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+
+  .aura__ribbon,
+  .aura__beam i,
+  .aura__pool,
+  .hero__splash i,
+  .dag-node .dag-aura {
+    animation: none;
+  }
+
+  .aura__spot {
+    display: none;
   }
 }

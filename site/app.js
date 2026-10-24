@@ -88,6 +88,7 @@
     });
 
     syncDemoLabel();
+    renderCounts();
     writeStore(LANG_KEY, lang);
   }
 
@@ -325,6 +326,175 @@
     });
   }
 
+  /* ======================================================== star + installs */
+
+  // The header shows the repository's stars and the npm package's all-time
+  // downloads. Both come from public JSON APIs, are cached for an hour, and
+  // fail quietly: the star button stays without a number and the install
+  // count stays hidden.
+  var COUNTS_KEY = "omh.counts";
+  var COUNTS_TTL = 60 * 60 * 1000;
+  // First npm publish of oh-my-hermes; the all-time range starts here.
+  var NPM_FIRST_PUBLISH = "2026-08-14";
+  var counts = { stars: null, installs: null };
+
+  function compact(n) {
+    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+    if (n >= 1e5) return Math.round(n / 1e3) + "k";
+    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "k";
+    return String(n);
+  }
+
+  function renderCounts() {
+    var star = document.querySelector("[data-gh-star]");
+    var starCount = document.querySelector("[data-star-count]");
+    if (star && starCount && typeof counts.stars === "number") {
+      starCount.textContent = compact(counts.stars);
+      starCount.hidden = false;
+      var label = translate("nav.star.label", currentLang) || "Star oh-my-hermes on GitHub";
+      var stars = (translate("nav.star.stars", currentLang) || "{n} stars").replace("{n}", compact(counts.stars));
+      star.setAttribute("aria-label", label + ", " + stars);
+    }
+    var installs = document.querySelector("[data-installs]");
+    var installsCount = document.querySelector("[data-installs-count]");
+    if (installs && installsCount && typeof counts.installs === "number") {
+      installsCount.textContent = compact(counts.installs);
+      installs.hidden = false;
+    }
+  }
+
+  function getJSON(url) {
+    var controller = typeof AbortController === "function" ? new AbortController() : null;
+    var timer = controller ? window.setTimeout(function () { controller.abort(); }, 6000) : 0;
+    return window.fetch(url, { signal: controller ? controller.signal : undefined, headers: { Accept: "application/json" } })
+      .then(function (response) {
+        window.clearTimeout(timer);
+        if (!response.ok) throw new Error(String(response.status));
+        return response.json();
+      });
+  }
+
+  function npmDownloads() {
+    var today = new Date().toISOString().slice(0, 10);
+    var base = "https://api.npmjs.org/downloads/point/";
+    return getJSON(base + NPM_FIRST_PUBLISH + ":" + today + "/oh-my-hermes")
+      .catch(function () {
+        // The range API stops at 18 months; fall back to the last year.
+        return getJSON(base + "last-year/oh-my-hermes");
+      })
+      .then(function (data) {
+        if (typeof data.downloads !== "number") throw new Error("no downloads");
+        return data.downloads;
+      });
+  }
+
+  function initCounts() {
+    if (!document.querySelector("[data-gh-star]") || typeof window.fetch !== "function") return;
+    var cached = null;
+    try {
+      cached = JSON.parse(readStore(COUNTS_KEY) || "null");
+    } catch (err) {
+      cached = null;
+    }
+    if (cached) {
+      counts.stars = typeof cached.stars === "number" ? cached.stars : null;
+      counts.installs = typeof cached.installs === "number" ? cached.installs : null;
+      renderCounts();
+      if (Date.now() - cached.t < COUNTS_TTL && counts.stars !== null && counts.installs !== null) return;
+    }
+    function save() {
+      writeStore(COUNTS_KEY, JSON.stringify({ t: Date.now(), stars: counts.stars, installs: counts.installs }));
+    }
+    getJSON("https://api.github.com/repos/rlaope/oh-my-hermes")
+      .then(function (repo) {
+        if (typeof repo.stargazers_count !== "number") return;
+        counts.stars = repo.stargazers_count;
+        renderCounts();
+        save();
+      })
+      .catch(function () { /* keep the star button without a number */ });
+    npmDownloads()
+      .then(function (downloads) {
+        counts.installs = downloads;
+        renderCounts();
+        save();
+      })
+      .catch(function () { /* keep the install count hidden */ });
+  }
+
+  /* =============================================================== aura */
+
+  // The beam ends on the version badge, the pointer glow follows the cursor
+  // inside the hero, and the hero aura fades as it scrolls away. A band that
+  // leaves the viewport, or a hidden tab, pauses its animations.
+  function initAura() {
+    var bands = Array.prototype.slice.call(document.querySelectorAll("[data-aura]"));
+    if (!bands.length) return;
+    var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var hero = document.querySelector(".hero");
+    var heroAura = hero && hero.querySelector("[data-aura]");
+    var badge = hero && hero.querySelector(".hero__badge");
+
+    function placeBeam() {
+      if (!heroAura || !badge) return;
+      heroAura.style.setProperty("--beam-h", Math.round(badge.offsetTop + badge.offsetHeight / 2) + "px");
+    }
+    placeBeam();
+    window.addEventListener("resize", placeBeam);
+    window.addEventListener("load", placeBeam);
+
+    if ("IntersectionObserver" in window) {
+      var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) entry.target.removeAttribute("data-aura-paused");
+          else entry.target.setAttribute("data-aura-paused", "");
+        });
+      });
+      bands.forEach(function (aura) { observer.observe(aura.parentElement); });
+    }
+    document.addEventListener("visibilitychange", function () {
+      bands.forEach(function (aura) {
+        if (document.hidden) aura.parentElement.setAttribute("data-aura-paused", "");
+      });
+      if (document.hidden) return;
+      placeBeam();
+      bands.forEach(function (aura) {
+        var box = aura.parentElement.getBoundingClientRect();
+        if (box.bottom > 0 && box.top < window.innerHeight) aura.parentElement.removeAttribute("data-aura-paused");
+      });
+    });
+
+    if (reduce || !hero || !heroAura) return;
+
+    var spot = heroAura.querySelector("[data-aura-spot]");
+    var frame = 0;
+    var pointer = null;
+    function paint() {
+      frame = 0;
+      if (spot && pointer) {
+        spot.style.transform = "translate3d(" + pointer.x + "px, " + pointer.y + "px, 0)";
+      }
+      var fade = 1 - Math.min(window.scrollY / Math.max(hero.offsetHeight, 1), 1) * 0.7;
+      heroAura.style.setProperty("--aura-fade", fade.toFixed(3));
+    }
+    function schedule() {
+      if (!frame) frame = window.requestAnimationFrame(paint);
+    }
+    hero.addEventListener("pointermove", function (event) {
+      if (event.pointerType === "touch") return;
+      var box = hero.getBoundingClientRect();
+      pointer = { x: event.clientX - box.left, y: event.clientY - box.top };
+      if (spot) spot.classList.add("is-on");
+      schedule();
+    });
+    hero.addEventListener("pointerleave", function () {
+      if (spot) spot.classList.remove("is-on");
+    });
+    window.addEventListener("scroll", schedule, { passive: true });
+  }
+
+  initAura();
+  initCounts();
   initDag();
   initDemo();
   initLangSwitch();

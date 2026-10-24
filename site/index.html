@@ -67,22 +67,36 @@
         <a class="nav__link" href="#dag-ulw">DAG-ULW</a>
         <a class="nav__link" href="#install" data-i18n="nav.install">Install</a>
         <a class="nav__link" href="docs/" data-i18n="nav.docs">Docs</a>
-        <button class="nav__icon theme-toggle" type="button" data-theme-toggle data-i18n-attr="aria-label:nav.theme" aria-label="Switch color theme">
+        <button class="nav__icon" type="button" data-theme-toggle data-i18n-attr="aria-label:nav.theme" aria-label="Switch color theme">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18V3Z"></path><circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" stroke-width="1.6"></circle></svg>
         </button>
-        <a class="nav__icon" href="https://github.com/rlaope/oh-my-hermes" aria-label="Open OMH on GitHub" title="GitHub repository">
+        <a class="installs" href="https://www.npmjs.com/package/oh-my-hermes" data-installs data-i18n-attr="title:nav.installs.title" title="npm downloads, all time" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11.2m0 0 4.6-4.6M12 14.2 7.4 9.6M4.5 17.5v1.6c0 1 .8 1.9 1.9 1.9h11.2c1 0 1.9-.8 1.9-1.9v-1.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span class="installs__count" data-installs-count></span>
+          <span class="installs__label" data-i18n="nav.installs">installs</span>
+        </a>
+        <a class="gh-star" href="https://github.com/rlaope/oh-my-hermes" data-gh-star data-i18n-attr="aria-label:nav.star.label" aria-label="Star oh-my-hermes on GitHub">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.48 2 2 6.58 2 12.22c0 4.52 2.87 8.35 6.85 9.7.5.09.68-.22.68-.49v-1.73c-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.56 2.35 1.11 2.92.85.09-.66.35-1.11.63-1.37-2.22-.26-4.55-1.14-4.55-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.31.1-2.71 0 0 .84-.28 2.75 1.05A9.37 9.37 0 0 1 12 6.92c.85 0 1.7.12 2.5.35 1.9-1.33 2.74-1.05 2.74-1.05.55 1.4.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.79-4.57 5.05.36.32.68.94.68 1.9v2.8c0 .27.18.58.69.48A10.06 10.06 0 0 0 22 12.22C22 6.58 17.52 2 12 2Z"></path></svg>
+          <span class="gh-star__label" data-i18n="nav.star">Star</span>
+          <span class="gh-star__count" data-star-count hidden></span>
         </a>
       </nav>
     </header>
 
     <main id="content" tabindex="-1">
       <section class="hero hero--center" id="product" aria-labelledby="home-title">
+        <div class="aura aura--hero" aria-hidden="true" data-aura>
+          <span class="aura__ribbon aura__ribbon--a"></span>
+          <span class="aura__ribbon aura__ribbon--b"></span>
+          <span class="aura__ribbon aura__ribbon--c"></span>
+          <span class="aura__beam"><i></i><i></i><i></i><i></i></span>
+          <span class="aura__spot" data-aura-spot></span>
+        </div>
         <img class="hero__logo" src="assets/omh-logo.png" alt="" width="96" height="96" fetchpriority="high">
         <h1 id="home-title" class="hero__title">
           <img src="assets/oh-my-hermes-wordmark.png" alt="Oh My Hermes" width="2412" height="288" fetchpriority="high">
         </h1>
-        <p class="hero__badge"><span data-i18n="hero.badge">For Hermes Agent · v4.0.1</span></p>
+        <p class="hero__badge"><span class="hero__splash" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span data-i18n="hero.badge">For Hermes Agent · v4.0.1</span></p>
         <p class="hero__tagline" data-i18n-html="hero.tagline">All-in-one package for Hermes Agent. Install once, then just type <code>dag-ulw</code>.</p>
         <p class="hero__lead" data-i18n="hero.lead">You keep talking to Hermes. OMH picks the skill and a model for each lane, and runs the work in parallel. It never patches or replaces Hermes, and it never reports planned work as done.</p>
 
@@ -145,6 +159,11 @@ omh setup</code></pre>
       </section>
 
       <section class="section section--stage" id="dag-ulw" aria-labelledby="dag-title">
+        <div class="aura aura--stage" aria-hidden="true" data-aura>
+          <span class="aura__ribbon aura__ribbon--a"></span>
+          <span class="aura__ribbon aura__ribbon--c"></span>
+          <span class="aura__pool"></span>
+        </div>
         <div class="stage__head">
           <h2 id="dag-title" class="section__title" data-i18n-html="dag.title">Just type <code>/dag-ulw</code>, and you're a graph engineering master.</h2>
           <p class="section__lead" data-i18n="dag.lead">Your goal becomes a graph of small nodes that run in parallel, each on its own model. A separate node verifies the goal before you get the report.</p>
