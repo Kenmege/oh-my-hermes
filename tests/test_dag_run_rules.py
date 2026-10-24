@@ -214,9 +214,11 @@ class ReVerificationTests(unittest.TestCase):
             call(action="define", run="feat", nodes=[node("api", scope=("a.py",)),
                                                      node("verify", depends_on=("api",), label="Verify")])
             call(action="settle", run="feat", node="api", outcome="failed")
+            markerless = call(action="repair", run="feat", node="api", nodes=[node("api-fix", prompt="just fix it")])
             repaired = call(action="repair", run="feat", node="api", nodes=[node("api-fix", scope=("a.py",),
-                                                                               prompt="just fix it")])
-        self.assertIn("missing_markers:api-fix:TASK,DELIVERABLE,SCOPE,VERIFY,STOP_WHEN", repaired["lint"])
+                                                                               prompt="TASK: just fix it")])
+        self.assertEqual((markerless["status"], markerless["reason"]), ("refused", "prompt_markers_missing"))
+        self.assertIn("missing_markers:api-fix:DELIVERABLE,SCOPE,VERIFY,STOP_WHEN", repaired["lint"])
         self.assertIn("topology", repaired)
 
 

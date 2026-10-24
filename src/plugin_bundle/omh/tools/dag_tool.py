@@ -59,6 +59,8 @@ from ..sqlite_readonly import connect_readonly
 from ..iso_datetime import strict_fromisoformat
 
 DEFAULT_MAX_CONCURRENT_CHILDREN = 10  # Hermes' `_DEFAULT_MAX_CONCURRENT_CHILDREN` (tools/delegate_tool_config.py)
+# Hermes' default for `delegation.oneshot_max_children`: a finite one-shot session gets this many children at most.
+DEFAULT_ONESHOT_MAX_CHILDREN = 2
 MAX_CONCURRENT_ENV = "DELEGATION_MAX_CONCURRENT_CHILDREN"
 UNREAD_SLOTS = 1  # when Hermes' state cannot be read: one call at a time, never a guessed wider wave
 ACTIVE_UNIT_STATES = ("running", "stalling")
@@ -110,8 +112,10 @@ OMH_DAG_SCHEMA = {
     "description": (
         "Keep a dag-ulw run: a graph of small nodes the parent dispatches with delegate_task. define records the "
         "nodes (id, label, category, prompt with TASK / DELIVERABLE / SCOPE / VERIFY / STOP WHEN, depends_on, "
-        "write_scope) and refuses cycles, unknown or self edges, write scopes two nodes share without an edge, and "
-        "more than 48 nodes; its lint is advice. ready returns delegate_task calls, one per category, never more "
+        "write_scope) and refuses cycles, unknown or self edges, write scopes two nodes share without an edge, "
+        "more than 48 nodes, and a node whose prompt names none of those five markers; a one-shot session also "
+        "refuses more nodes than delegation.oneshot_max_children. Its lint is advice. ready returns delegate_task "
+        "calls, one per category, never more "
         "than the free slots: per call, run its route with omh_delegate_route, then delegate_task with the tasks "
         "unchanged. After each completion read the node's handoff file and settle it accepted, failed or blocked; "
         "a child that says it is blocked is blocked, never accepted. settle returns what is ready next. repair adds "
@@ -263,10 +267,43 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
         return _refused(action, "dag_store_unreadable", "The dag run record could not be read.")
 
 
+def _single_query_session() -> bool:
+    """Hermes' finite one-shot marker (`hermes chat -q`), read where the host keeps it.
+
+    Imported at call time: `agent` is the host's package and may not be on this
+    install's path, where the session is simply not one-shot.
+    """
+    try:
+        from agent.oneshot_footprint import is_single_query_session
+    except ImportError:
+        return False
+    try:
+        return bool(is_single_query_session())
+    except Exception:
+        return False
+
+
+def oneshot_child_limit(hermes_home: Path) -> int | None:
+    """`delegation.oneshot_max_children` in a one-shot session, else ``None`` (no cap here).
+
+    ``0`` means unlimited, and an unreadable value falls back to Hermes' own
+    default, so a malformed config never silently refuses a graph.
+    """
+    if not _single_query_session():
+        return None
+    raw = read_delegation_settings(hermes_home, ("oneshot_max_children",)).get("oneshot_max_children", "")
+    try:
+        limit = int(raw) if raw else DEFAULT_ONESHOT_MAX_CHILDREN
+    except ValueError:
+        limit = DEFAULT_ONESHOT_MAX_CHILDREN
+    return limit if limit > 0 else None
+
+
 def _define(args: Mapping[str, object], omh_home: Path, hermes_home: Path, durable: str, segments: list[str],
             now: float, shown: set[str] | None, task: str) -> str:
     run = dag_run.valid_id(args.get("run"), "invalid_run_id", "Give the run a short lowercase id (a-z, 0-9, -).")
-    record = dag_run.new_record(durable, run, args.get("name"), args.get("goal"), args.get("nodes"), now)
+    record = dag_run.new_record(durable, run, args.get("name"), args.get("goal"), args.get("nodes"), now,
+                                oneshot_limit=oneshot_child_limit(hermes_home))
     found = _find(omh_home, segments, run)
     if found is not None:
         existing, path = found

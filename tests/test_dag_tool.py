@@ -280,12 +280,13 @@ class DefineTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok", result)
 
     def test_lint_is_advice_and_never_rejects(self) -> None:
-        nodes = [node("a", category="deep", prompt="Do the thing."), node("b", category="deep-work", scope=("b.py",)),
+        # A partial marker set is lint; a prompt with no marker at all is refused (see DefineTests.preflight).
+        nodes = [node("a", category="deep", prompt="TASK: do the thing."), node("b", category="deep-work", scope=("b.py",)),
                  node("c", category="ultrabrain"), node("d", category="ultrabrain")]
         with homes():
             result = call(action="define", run="feat", nodes=nodes)
         self.assertEqual(result["status"], "ok", result)
-        self.assertIn("missing_markers:a:TASK,DELIVERABLE,SCOPE,VERIFY,STOP_WHEN", result["lint"])
+        self.assertIn("missing_markers:a:DELIVERABLE,SCOPE,VERIFY,STOP_WHEN", result["lint"])
         self.assertIn("no_verification_node", result["lint"])
         self.assertIn("ultrabrain_more_than_once", result["lint"])
         with homes():
@@ -841,6 +842,48 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(result["reason"], "not_failed")
 
 
+class PreflightTests(unittest.TestCase):
+    """What define refuses before a node is ever handed out, and the serial-graph lint."""
+
+    def test_define_refuses_over_oneshot_budget(self) -> None:
+        with homes() as home, patch.object(dag_tool, "_single_query_session", return_value=True):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            result = call(action="define", run="feat", nodes=[node("a"), node("b")])
+        self.assertEqual((result["status"], result["reason"]), ("refused", "oneshot_budget_exceeded"), result)
+        self.assertIn("1", result["say"])
+        self.assertIn("2", result["say"])
+
+    def test_define_allows_interactive_session(self) -> None:
+        with homes() as home, patch.object(dag_tool, "_single_query_session", return_value=False):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+        self.assertEqual(result["status"], "ok", result)
+
+    def test_define_refuses_markerless_node(self) -> None:
+        with homes():
+            result = call(action="define", run="feat", nodes=[node("a", prompt="Do the thing.")])
+        self.assertEqual((result["status"], result["reason"]), ("refused", "prompt_markers_missing"), result)
+        self.assertIn("a", result["say"])
+        self.assertIn("TASK", result["say"])
+
+    def test_partial_markers_stay_lint(self) -> None:
+        with homes():
+            result = call(action="define", run="feat",
+                          nodes=[node("a", prompt="TASK: do it\nDELIVERABLE: a change")])
+        self.assertEqual(result["status"], "ok", result)
+        self.assertIn("missing_markers:a:SCOPE,VERIFY,STOP_WHEN", result["lint"])
+
+    def test_lint_serial_graph(self) -> None:
+        chain = [node("n0")] + [node(f"n{index}", depends_on=(f"n{index - 1}",)) for index in range(1, 5)]
+        wide = [node("n0"), node("n1"), node("n2"), node("n3"),
+                node("n4", depends_on=("n0", "n1", "n2", "n3"))]
+        self.assertIn("serial_graph:5 nodes, critical path 5; most of the graph is one chain, "
+                      "so split it into parallel lanes where the work allows.",
+                      dag_run.lint([dag_run._validated_node(item) for item in chain]))
+        self.assertFalse([finding for finding in dag_run.lint([dag_run._validated_node(item) for item in wide])
+                          if finding.startswith("serial_graph")])
+
+
 class ExtendTests(unittest.TestCase):
     """Work found missing after every node passed: an extend round on the same run, at most two per run."""
 
@@ -903,8 +946,10 @@ class ExtendTests(unittest.TestCase):
     def test_the_new_nodes_are_linted(self) -> None:
         with homes() as home:
             self._done(home)
-            extended = call(action="extend", run="feat", nodes=[node("csv", scope=("b.py",), prompt="just do it")])
-        self.assertIn("missing_markers:csv:TASK,DELIVERABLE,SCOPE,VERIFY,STOP_WHEN", extended["lint"])
+            markerless = call(action="extend", run="feat", nodes=[node("csv", scope=("b.py",), prompt="just do it")])
+            extended = call(action="extend", run="feat", nodes=[node("csv", scope=("b.py",), prompt="TASK: add CSV")])
+        self.assertEqual((markerless["status"], markerless["reason"]), ("refused", "prompt_markers_missing"))
+        self.assertIn("missing_markers:csv:DELIVERABLE,SCOPE,VERIFY,STOP_WHEN", extended["lint"])
         self.assertIn("verification_misses:csv", extended["lint"])
 
     def test_two_rounds_then_the_parent_reports_what_is_open(self) -> None:
