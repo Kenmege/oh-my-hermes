@@ -29,8 +29,6 @@ It never patches or replaces Hermes, and it never reports planned work as done.
 
 </div>
 
-<br>
-
 ## Install
 
 ```sh
@@ -44,11 +42,35 @@ omh setup
 
 ## What you get
 
-- **The right model for every lane.** An editable model chain per lane ([which model runs each lane](docs/INSTALLATION.md#guided-model-setup)).
-- **Parallel work that never collides.** Lanes never share a file; nothing is done until a check passes.
-- **Expert skills on demand.** A hundred-plus specialist skills join when a request needs them.
-- **Memory you can trust.** Nothing is remembered silently; each session gets a ranked recall pack.
-- **One live view.** Bare `omh` shows every lane's model, tokens and cost.
+- **The right model for every lane.**<br>
+  Each delegated lane lands on a category: an editable chain of model and reasoning effort.<br>
+  When a provider rejects a model, the chain moves to the next one instead of silently downgrading.<br>
+  `omh model` opens the picker; [see which model runs each lane](docs/INSTALLATION.md#guided-model-setup).
+
+- **Parallel work that never collides.**<br>
+  `ulw-work` splits an accepted plan into units that never edit the same file.<br>
+  Each unit comes back typed: exited, schema valid, verified, ready to integrate.<br>
+  Exit 0 with no evidence stays `reported done` until a gate checks it.
+
+- **Expert skills on demand.**<br>
+  A hundred-plus `omh-*` specialists: frontend, backend, Rust, security review, verification gates.<br>
+  You never call them; the router loads the right ones into the run as tool calls.<br>
+  Ask in English or Korean.
+
+- **Memory you can trust.**<br>
+  Nothing is remembered silently: each candidate is kept, refused or deferred with a written reason.<br>
+  The next session gets a recall pack ranked for its task and cut to a token budget.<br>
+  Hermes' own memory is never read or patched.
+
+- **One live view.**<br>
+  Bare `omh` opens the OMH TUI: one row per lane with its model, effort, tokens and cost.<br>
+  The phase todo sits above the prompt, and a `dag-ulw` run shows a live lane tree.<br>
+  An unpriced call says `unknown`, never `$0`.
+
+- **Evidence before "done".**<br>
+  Every status names its stage and how sure OMH is about it.<br>
+  `Plan · not run` · `Code · reported done` · `Test · verified`<br>
+  A run counts as verified only when a test, review or CI gate actually passed.
 
 <br>
 
