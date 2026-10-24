@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Kimi K3.1 Pro replaces Kimi K3 in the shipped chains.** Every slot K3
+  held now names `kimi-k3.1-pro` at the same effort: `deep`, `architect`,
+  `unspecified-high`, `quick`, `writing`, `visual-engineering`, `artistry`,
+  `capable`, the `main` suggestion, and the X-platform affinity. The four
+  READMEs, both site pages, the generated install table, and the
+  model-setup skill say so. K3 is retired under the superseded-generation
+  rule. It stays recognized and priced, so `omh model-chains set` can still
+  name it. The Highspeed tier joins no chain. The `quick` chain therefore
+  no longer offers a Kimi Ultrafast swap in `omh model-chains interview`,
+  because no K3.1 Ultrafast tier is priced. This is an editorial change
+  (owner decision) and has not been measured yet.
+
 - **Kimi K3.1 Pro and K3.1 Pro Highspeed are onboarded.** Moonshot released
   them on 2026-10-23. Both ids now have exact contracts read from
   platform.kimi.ai: 1M context, thinking always on, and a `low` / `high` /

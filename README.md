@@ -382,15 +382,15 @@ credential, dispatch, or execution evidence:
 | Category alias | What it is for | Editable recommendation order |
 | --- | --- | --- |
 | `ultrabrain` | Deepest reasoning | GPT-6 Astra (xhigh) |
-| `deep` | Strong default tier | Claude Opus 5.5, then GPT-6.1 Sol, then Kimi K3 (high) |
-| `architect` | Architecture and system design | Claude Opus 5.5, then GPT-6 Astra, then Claude Fable 5.1, then Kimi K3 (xhigh) |
-| `unspecified-high` | Default working model | GPT-6.1 Sol, then Claude Opus 5.5, then Kimi K3 (medium) |
+| `deep` | Strong default tier | Claude Opus 5.5, then GPT-6.1 Sol, then Kimi K3.1 Pro (high) |
+| `architect` | Architecture and system design | Claude Opus 5.5, then GPT-6 Astra, then Claude Fable 5.1, then Kimi K3.1 Pro (xhigh) |
+| `unspecified-high` | Default working model | GPT-6.1 Sol, then Claude Opus 5.5, then Kimi K3.1 Pro (medium) |
 | `unspecified-low` | Cheaper fallback | GLM 5.3, then DeepSeek V4.1 Flash, then GPT-6.1 Sol, then Claude Sonnet 5.5 (low) |
-| `quick` | Short tasks | GLM 5.3 Flash, then GPT-6 Luna, then Claude Haiku 5.5, then Kimi K3 (low) |
-| `writing` | Prose and docs | Claude Opus 5.5, then Claude Sonnet 5.5, then Kimi K3, then Gemini 3.1 Pro (medium) |
-| `visual-engineering` | Frontend and visual | Claude Opus 5.5, then Claude Fable 5.1, then Gemini 3.1 Pro, then Kimi K3 (high) |
-| `artistry` | Unconventional work | Gemini 3.1 Pro, then Claude Opus 5.5, then Claude Fable 5.1, then Kimi K3 (high) |
-| `capable` | Strong general work | Claude Opus 5.5, then GPT-6.1 Sol, then Claude Fable 5.1, then Kimi K3 (medium) |
+| `quick` | Short tasks | GLM 5.3 Flash, then GPT-6 Luna, then Claude Haiku 5.5, then Kimi K3.1 Pro (low) |
+| `writing` | Prose and docs | Claude Opus 5.5, then Claude Sonnet 5.5, then Kimi K3.1 Pro, then Gemini 3.1 Pro (medium) |
+| `visual-engineering` | Frontend and visual | Claude Opus 5.5, then Claude Fable 5.1, then Gemini 3.1 Pro, then Kimi K3.1 Pro (high) |
+| `artistry` | Unconventional work | Gemini 3.1 Pro, then Claude Opus 5.5, then Claude Fable 5.1, then Kimi K3.1 Pro (high) |
+| `capable` | Strong general work | Claude Opus 5.5, then GPT-6.1 Sol, then Claude Fable 5.1, then Kimi K3.1 Pro (medium) |
 | `simple-work` | Small everyday tasks | GPT-6 Luna, then Claude Haiku 5.5, then DeepSeek V4.1 Flash (low) |
 | `deep-work` | Long tasks at frontier depth | Claude Opus 5.5, then GPT-6.1 Sol (max) |
 

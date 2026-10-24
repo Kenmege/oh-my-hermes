@@ -131,7 +131,7 @@ class GeneratedChainTableTests(unittest.TestCase):
         self.assertEqual(
             main.order,
             "GPT-6.1 Sol (`high`), Claude Opus 5.5, Claude Fable 5.1, "
-            "GPT-6 Astra (`xhigh`), Kimi K3",
+            "GPT-6 Astra (`xhigh`), Kimi K3.1 Pro",
         )
 
     def test_every_declared_effort_is_annotated_on_its_own_entry(self) -> None:
@@ -139,7 +139,7 @@ class GeneratedChainTableTests(unittest.TestCase):
         self.assertEqual(
             architect.order,
             "Claude Opus 5.5 (`xhigh`), GPT-6 Astra (`xhigh`), "
-            "Claude Fable 5.1 (`xhigh`), Kimi K3 (`xhigh`)",
+            "Claude Fable 5.1 (`xhigh`), Kimi K3.1 Pro (`xhigh`)",
         )
 
     def test_empty_chain_renders_without_inventing_a_model(self) -> None:
@@ -214,12 +214,12 @@ class ChainTableFailureSurfaceTests(unittest.TestCase):
 
     def test_model_without_a_display_label_names_the_alias(self) -> None:
         labels = dict(MODEL_DISPLAY_LABELS)
-        labels.pop("kimi-k3")
+        labels.pop("kimi-k3.1-pro")
         with patch.dict(MODEL_DISPLAY_LABELS, labels, clear=True):
             with self.assertRaises(ValueError) as caught:
                 chain_table_rows()
         message = str(caught.exception)
-        self.assertIn("'kimi-k3'", message)
+        self.assertIn("'kimi-k3.1-pro'", message)
         self.assertIn("MODEL_DISPLAY_LABELS", message)
         self.assertIn("src/catalogs/model_chain_table.py", message)
 

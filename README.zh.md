@@ -311,15 +311,15 @@ OMH 随附以下可编辑的有序 recommendation chain。guided model setup 只
 | 类别 alias | 用途 | 可编辑的 recommendation 顺序 |
 | --- | --- | --- |
 | `ultrabrain` | 最深度推理 | GPT-6 Astra (xhigh) |
-| `deep` | 强力默认层 | Claude Opus 5.5，其次 GPT-6.1 Sol，其次 Kimi K3 (high) |
-| `architect` | 架构与系统设计 | Claude Opus 5.5，其次 GPT-6 Astra，其次 Claude Fable 5.1，其次 Kimi K3 (xhigh) |
-| `unspecified-high` | 默认工作模型 | GPT-6.1 Sol，其次 Claude Opus 5.5，其次 Kimi K3 (medium) |
+| `deep` | 强力默认层 | Claude Opus 5.5，其次 GPT-6.1 Sol，其次 Kimi K3.1 Pro (high) |
+| `architect` | 架构与系统设计 | Claude Opus 5.5，其次 GPT-6 Astra，其次 Claude Fable 5.1，其次 Kimi K3.1 Pro (xhigh) |
+| `unspecified-high` | 默认工作模型 | GPT-6.1 Sol，其次 Claude Opus 5.5，其次 Kimi K3.1 Pro (medium) |
 | `unspecified-low` | 低成本回退 | GLM 5.3，其次 DeepSeek V4.1 Flash，其次 GPT-6.1 Sol，其次 Claude Sonnet 5.5 (low) |
-| `quick` | 短任务 | GLM 5.3 Flash，其次 GPT-6 Luna，其次 Claude Haiku 5.5，其次 Kimi K3 (low) |
-| `writing` | 文章与文档 | Claude Opus 5.5，其次 Claude Sonnet 5.5，其次 Kimi K3，其次 Gemini 3.1 Pro (medium) |
-| `visual-engineering` | 前端与视觉 | Claude Opus 5.5，其次 Claude Fable 5.1，其次 Gemini 3.1 Pro，其次 Kimi K3 (high) |
-| `artistry` | 非常规创作 | Gemini 3.1 Pro，其次 Claude Opus 5.5，其次 Claude Fable 5.1，其次 Kimi K3 (high) |
-| `capable` | 通用高能力工作 | Claude Opus 5.5，其次 GPT-6.1 Sol，其次 Claude Fable 5.1，其次 Kimi K3 (medium) |
+| `quick` | 短任务 | GLM 5.3 Flash，其次 GPT-6 Luna，其次 Claude Haiku 5.5，其次 Kimi K3.1 Pro (low) |
+| `writing` | 文章与文档 | Claude Opus 5.5，其次 Claude Sonnet 5.5，其次 Kimi K3.1 Pro，其次 Gemini 3.1 Pro (medium) |
+| `visual-engineering` | 前端与视觉 | Claude Opus 5.5，其次 Claude Fable 5.1，其次 Gemini 3.1 Pro，其次 Kimi K3.1 Pro (high) |
+| `artistry` | 非常规创作 | Gemini 3.1 Pro，其次 Claude Opus 5.5，其次 Claude Fable 5.1，其次 Kimi K3.1 Pro (high) |
+| `capable` | 通用高能力工作 | Claude Opus 5.5，其次 GPT-6.1 Sol，其次 Claude Fable 5.1，其次 Kimi K3.1 Pro (medium) |
 | `simple-work` | 简单的日常任务 | GPT-6 Luna，其次 Claude Haiku 5.5，其次 DeepSeek V4.1 Flash (low) |
 | `deep-work` | 最高深度的长任务 | Claude Opus 5.5，其次 GPT-6.1 Sol (max) |
 

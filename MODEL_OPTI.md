@@ -1123,11 +1123,18 @@ pairing so a benchmark claim can never mix in other prompt changes.
   the approximation table carries its 0.05 cache ratio. As an exact id it
   never projects onto a chain entry that names the base model, so a chain
   that wants Highspeed has to name it.
-- **Placement:** none. Both ids are recognized, priced, and provider-mapped
-  (`kimi-coding` for both; `openrouter` and `opencode` for the base id only,
-  the catalogs observed serving each on 2026-10-24). They join no shipped
-  chain until the K3-vs-K3.1 pair below is measured and the owner decides.
-  An operator places either id with `omh model-chains set`.
+- **Placement (owner decision, 2026-10-24):** `kimi-k3.1-pro` took every
+  Kimi K3 slot at the effort each carried. That covers eight categories, the
+  `main` role suggestion, and the `x_platform_data` affinity. K3 left the
+  shipped chains under the superseded-generation rule. It stays recognized,
+  priced, and provider-mapped, so an operator override that names it still
+  resolves. The `medium` and `xhigh` slots are off-ladder for this model, as
+  they were for K3, whose ladder is the same. The route records the raise to
+  `high` and `max`, the rungs Hermes sends. Highspeed joins no chain.
+  Provider families for the base id are K3's (`apitopia`, `kimi-coding`,
+  `openrouter`, `opencode`). For Highspeed, `kimi-coding` is the only family
+  observed serving it. Editorial and unmeasured; the pair below confirms or
+  reverses it.
 - **Surfaces:** Hermes resolves both ids to the 1 Mi window through its
   `kimi-k3` context row and has no price row for them (observed). The Kimi
   Code plan serves bare `k3.1-pro` / `k3.1-pro-highspeed` slugs
@@ -1802,7 +1809,7 @@ choose models by, not a guarantee for another persona or skill.
 | `gpt-6-luna`, `claude-opus-5-5` (exact contracts, no exact calibration) | yes → `gpt` / `claude` | yes, through the family block | exact documented contracts (Luna's `none`-to-`max` ladder; Opus 5.5's always-on thinking, forced-`tool_choice` 400, and 0.05x cache reads); no exact counter because neither shipped placement reaches the high-effort tier on the subagent side and the Opus composer block is kept byte-stable per the vendor's Opus 5.5 prompting guide; the old-vs-new generation pairs are the named follow-up |
 | `openai-gpt-`, `anthropic-claude-` (design-qualified aliases) | yes → `gpt` / `claude` | yes, through the design family | concrete models.dev/OpenCode serving ids carry these sub-prefixes; their catalog `base_model` fields establish the underlying design family |
 | other `openai-`, `anthropic-` vendor-qualified ids | recognized as model targets, family `unknown` | no → `generic` | vendor qualification alone does not establish a design; O-series, image, and emerging ids remain uncalibrated |
-| `kimi-k3.1-pro`, `kimi-k3.1-pro-highspeed` (exact contracts, no exact calibration) | yes → `kimi` | yes, through the family block | exact documented contracts (three-rung `low`/`high`/`max` ladder with `max` as default, every other rung raised on record; Highspeed has its own rate card); recognized, priced, and provider-mapped but in no shipped chain; the K3-vs-K3.1 pair is the named follow-up, blocked on a served route |
+| `kimi-k3.1-pro`, `kimi-k3.1-pro-highspeed` (exact contracts, no exact calibration) | yes → `kimi` | yes, through the family block | exact documented contracts (three-rung `low`/`high`/`max` ladder with `max` as default, every other rung raised on record; Highspeed has its own rate card); K3.1 Pro holds every former Kimi K3 slot since 2026-10-24, Highspeed is recognition-only; the K3-vs-K3.1 pair is the named follow-up, blocked on a served route |
 | `jev` (non-generative) | yes | no, and none applies → no calibration pair | recognized, contracted (`jev-1.13.0`, with `jev-latest` and `jev-preview` as declared aliases), priced with a free output side, and in no chain by decision; the route answers `model_refused` and both chain editors refuse it. The coverage audit reports `effort`, `category_projection`, and `provider_eligibility` as `missing`, which is the honest reading for a model with no effort parameter and no chain membership — greening any of them would need an invented rung or an invented chain entry |
 | `minimax` | yes | no → `generic` | prefix landed in #1304 (`MiniMax-M3`, released 2026-05-31, and `MiniMax-M2.7`, 2026-03-18, per minimax.io release notes and the platform.minimax.io model list); the calibration pair waits on an observed failure mode or a provider-stated characteristic worth countering |
 | emerging families | no → `unknown` | no → `generic` | add a prefix and a calibration pair when one lands (the #1051/#1052 pattern) |
@@ -1822,7 +1829,7 @@ change chains, infer entitlement, or call a provider. These states differ:
 | --- | --- | --- |
 | Supported | Present in the caller's accepted inventory, not necessarily recognized or usable on this account | `minimax/minimax-m3` in the seed fixture |
 | Optimized | Model-specific guidance has documented trait-to-counter provenance; calibration presence alone does not prove improvement | `gpt-6-astra` has an exact calibration pair; consult its measurement stage separately |
-| Eligible | A reviewed decision permits a particular model-and-role placement; it does not imply selection or global promotion | `kimi-k3` is eligible for `architect`, even behind another chain head |
+| Eligible | A reviewed decision permits a particular model-and-role placement; it does not imply selection or global promotion | `kimi-k3.1-pro` is eligible for `architect`, even behind another chain head |
 | Recommended | An eligible placement actually appears in a shipped chain | `deepseek-flash` in `unspecified-low`, with its explicit versioned pointer relationship |
 | Excluded | A reviewed decision deliberately withholds placement and records its scope and evidence | `claude-fable-5` is superseded by `claude-fable-5-1` |
 

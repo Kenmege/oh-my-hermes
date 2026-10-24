@@ -112,7 +112,7 @@ RECOMMENDATION_DECISIONS: Final[dict[str, tuple[str, ...]]] = {
         "categories:unspecified-low", "last_resort:any", "role_suggestions:main",
     ),
     "grok-build-0.1": ("domain_affinities:x_platform_data",),
-    "kimi-k3": (
+    "kimi-k3.1-pro": (
         "categories:architect", "categories:artistry", "categories:capable", "categories:deep",
         "categories:quick", "categories:unspecified-high", "categories:visual-engineering",
         "categories:writing", "domain_affinities:x_platform_data", "role_suggestions:main",
@@ -148,6 +148,7 @@ RETIREMENT_DECISIONS: Final[dict[str, dict[str, object]]] = {
         ("grok-code-fast", "grok-build-0.1", "all_shipped_chains", "2026-10-01"),
         ("gpt-6-sol", "gpt-6.1-sol", "all_shipped_chains", "2026-10-01"),
         ("claude-haiku-4-5", "claude-haiku-5-5", "all_shipped_chains", "2026-10-13"),
+        ("kimi-k3", "kimi-k3.1-pro", "all_shipped_chains", "2026-10-24"),
     )
 } | {
     # Qwen3-Coder (2025) left its only slot on 2026-10-13 and no Qwen-line

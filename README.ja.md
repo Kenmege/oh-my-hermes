@@ -321,15 +321,15 @@ OMH には次の編集可能な順序付き recommendation chain が含まれて
 | カテゴリ alias | 用途 | 編集可能な recommendation 順序 |
 | --- | --- | --- |
 | `ultrabrain` | 最も深い推論 | GPT-6 Astra (xhigh) |
-| `deep` | 強力なデフォルト層 | Claude Opus 5.5、次に GPT-6.1 Sol、次に Kimi K3 (high) |
-| `architect` | アーキテクチャ・システム設計 | Claude Opus 5.5、次に GPT-6 Astra、次に Claude Fable 5.1、次に Kimi K3 (xhigh) |
-| `unspecified-high` | デフォルト作業モデル | GPT-6.1 Sol、次に Claude Opus 5.5、次に Kimi K3 (medium) |
+| `deep` | 強力なデフォルト層 | Claude Opus 5.5、次に GPT-6.1 Sol、次に Kimi K3.1 Pro (high) |
+| `architect` | アーキテクチャ・システム設計 | Claude Opus 5.5、次に GPT-6 Astra、次に Claude Fable 5.1、次に Kimi K3.1 Pro (xhigh) |
+| `unspecified-high` | デフォルト作業モデル | GPT-6.1 Sol、次に Claude Opus 5.5、次に Kimi K3.1 Pro (medium) |
 | `unspecified-low` | 低コストのフォールバック | GLM 5.3、次に DeepSeek V4.1 Flash、次に GPT-6.1 Sol、次に Claude Sonnet 5.5 (low) |
-| `quick` | 短いタスク | GLM 5.3 Flash、次に GPT-6 Luna、次に Claude Haiku 5.5、次に Kimi K3 (low) |
-| `writing` | 文章・ドキュメント | Claude Opus 5.5、次に Claude Sonnet 5.5、次に Kimi K3、次に Gemini 3.1 Pro (medium) |
-| `visual-engineering` | フロントエンド・ビジュアル | Claude Opus 5.5、次に Claude Fable 5.1、次に Gemini 3.1 Pro、次に Kimi K3 (high) |
-| `artistry` | 型にはまらない創作 | Gemini 3.1 Pro、次に Claude Opus 5.5、次に Claude Fable 5.1、次に Kimi K3 (high) |
-| `capable` | 汎用の高性能作業 | Claude Opus 5.5、次に GPT-6.1 Sol、次に Claude Fable 5.1、次に Kimi K3 (medium) |
+| `quick` | 短いタスク | GLM 5.3 Flash、次に GPT-6 Luna、次に Claude Haiku 5.5、次に Kimi K3.1 Pro (low) |
+| `writing` | 文章・ドキュメント | Claude Opus 5.5、次に Claude Sonnet 5.5、次に Kimi K3.1 Pro、次に Gemini 3.1 Pro (medium) |
+| `visual-engineering` | フロントエンド・ビジュアル | Claude Opus 5.5、次に Claude Fable 5.1、次に Gemini 3.1 Pro、次に Kimi K3.1 Pro (high) |
+| `artistry` | 型にはまらない創作 | Gemini 3.1 Pro、次に Claude Opus 5.5、次に Claude Fable 5.1、次に Kimi K3.1 Pro (high) |
+| `capable` | 汎用の高性能作業 | Claude Opus 5.5、次に GPT-6.1 Sol、次に Claude Fable 5.1、次に Kimi K3.1 Pro (medium) |
 | `simple-work` | 簡単な日常タスク | GPT-6 Luna、次に Claude Haiku 5.5、次に DeepSeek V4.1 Flash (low) |
 | `deep-work` | 最高深度の長時間タスク | Claude Opus 5.5、次に GPT-6.1 Sol (max) |
 

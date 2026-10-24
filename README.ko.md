@@ -316,15 +316,15 @@ OMH에는 다음과 같이 편집 가능한 순서형 recommendation chain이 �
 | 카테고리 alias | 용도 | 편집 가능한 recommendation 순서 |
 | --- | --- | --- |
 | `ultrabrain` | 가장 깊은 추론 | GPT-6 Astra (xhigh) |
-| `deep` | 강력한 기본 티어 | Claude Opus 5.5, 다음 GPT-6.1 Sol, 다음 Kimi K3 (high) |
-| `architect` | 아키텍처·시스템 설계 | Claude Opus 5.5, 다음 GPT-6 Astra, 다음 Claude Fable 5.1, 다음 Kimi K3 (xhigh) |
-| `unspecified-high` | 기본 작업 모델 | GPT-6.1 Sol, 다음 Claude Opus 5.5, 다음 Kimi K3 (medium) |
+| `deep` | 강력한 기본 티어 | Claude Opus 5.5, 다음 GPT-6.1 Sol, 다음 Kimi K3.1 Pro (high) |
+| `architect` | 아키텍처·시스템 설계 | Claude Opus 5.5, 다음 GPT-6 Astra, 다음 Claude Fable 5.1, 다음 Kimi K3.1 Pro (xhigh) |
+| `unspecified-high` | 기본 작업 모델 | GPT-6.1 Sol, 다음 Claude Opus 5.5, 다음 Kimi K3.1 Pro (medium) |
 | `unspecified-low` | 저비용 폴백 | GLM 5.3, 다음 DeepSeek V4.1 Flash, 다음 GPT-6.1 Sol, 다음 Claude Sonnet 5.5 (low) |
-| `quick` | 짧은 작업 | GLM 5.3 Flash, 다음 GPT-6 Luna, 다음 Claude Haiku 5.5, 다음 Kimi K3 (low) |
-| `writing` | 문서·산문 | Claude Opus 5.5, 다음 Claude Sonnet 5.5, 다음 Kimi K3, 다음 Gemini 3.1 Pro (medium) |
-| `visual-engineering` | 프론트엔드·비주얼 | Claude Opus 5.5, 다음 Claude Fable 5.1, 다음 Gemini 3.1 Pro, 다음 Kimi K3 (high) |
-| `artistry` | 비정형 창작 | Gemini 3.1 Pro, 다음 Claude Opus 5.5, 다음 Claude Fable 5.1, 다음 Kimi K3 (high) |
-| `capable` | 범용 고성능 작업 | Claude Opus 5.5, 다음 GPT-6.1 Sol, 다음 Claude Fable 5.1, 다음 Kimi K3 (medium) |
+| `quick` | 짧은 작업 | GLM 5.3 Flash, 다음 GPT-6 Luna, 다음 Claude Haiku 5.5, 다음 Kimi K3.1 Pro (low) |
+| `writing` | 문서·산문 | Claude Opus 5.5, 다음 Claude Sonnet 5.5, 다음 Kimi K3.1 Pro, 다음 Gemini 3.1 Pro (medium) |
+| `visual-engineering` | 프론트엔드·비주얼 | Claude Opus 5.5, 다음 Claude Fable 5.1, 다음 Gemini 3.1 Pro, 다음 Kimi K3.1 Pro (high) |
+| `artistry` | 비정형 창작 | Gemini 3.1 Pro, 다음 Claude Opus 5.5, 다음 Claude Fable 5.1, 다음 Kimi K3.1 Pro (high) |
+| `capable` | 범용 고성능 작업 | Claude Opus 5.5, 다음 GPT-6.1 Sol, 다음 Claude Fable 5.1, 다음 Kimi K3.1 Pro (medium) |
 | `simple-work` | 간단한 일상 작업 | GPT-6 Luna, 다음 Claude Haiku 5.5, 다음 DeepSeek V4.1 Flash (low) |
 | `deep-work` | 최상위 깊이의 긴 작업 | Claude Opus 5.5, 다음 GPT-6.1 Sol (max) |
 
