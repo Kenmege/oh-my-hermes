@@ -1,8 +1,9 @@
 /*!
  * Oh My Hermes - landing page.
  * Dark by default, light by system preference or the header toggle. The
- * ground is the gridded violet-black the OMH TUI is recorded on, so the
- * DAG-ULW capture sits in the page instead of on it. The spectrum (violet,
+ * ground is a solid violet-black, the colour the OMH TUI is recorded on, so
+ * the DAG-ULW capture sits in the page instead of on it. One soft radial glow
+ * at the top of the page is the only background effect. The spectrum (violet,
  * pink, orange, lime) comes from the wordmark and carries structure only:
  * the order of the feature list and the stage of an evidence label.
  */
@@ -16,7 +17,7 @@
   --muted: #aaa2ba;
   --line: rgba(242, 238, 248, 0.1);
   --line-strong: rgba(242, 238, 248, 0.2);
-  --grid: rgba(208, 140, 242, 0.055);
+  --glow: rgba(208, 140, 242, 0.12);
   --link: #f59ccb;
   --focus: #f59ccb;
   --code-bg: rgba(208, 140, 242, 0.13);
@@ -47,7 +48,7 @@
   --muted: #564f66;
   --line: rgba(23, 19, 31, 0.11);
   --line-strong: rgba(23, 19, 31, 0.22);
-  --grid: rgba(110, 60, 160, 0.06);
+  --glow: rgba(208, 140, 242, 0.16);
   --link: #a12f72;
   --focus: #a12f72;
   --code-bg: rgba(139, 63, 194, 0.1);
@@ -71,7 +72,7 @@
     --muted: #564f66;
     --line: rgba(23, 19, 31, 0.11);
     --line-strong: rgba(23, 19, 31, 0.22);
-    --grid: rgba(110, 60, 160, 0.06);
+    --glow: rgba(208, 140, 242, 0.16);
     --link: #a12f72;
     --focus: #a12f72;
     --code-bg: rgba(139, 63, 194, 0.1);
@@ -104,10 +105,8 @@ body {
   margin: 0;
   min-height: 100vh;
   background-color: var(--bg);
-  background-image:
-    linear-gradient(var(--grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-  background-size: 32px 32px;
+  background-image: radial-gradient(70% 640px at 50% 0%, var(--glow), transparent 70%);
+  background-repeat: no-repeat;
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: 17px;
@@ -636,11 +635,7 @@ main:focus {
   width: 100%;
   padding-inline: var(--gutter);
   background-color: #0c0a12;
-  background-image:
-    radial-gradient(60% 50% at 50% 0%, rgba(208, 140, 242, 0.16), transparent 70%),
-    linear-gradient(rgba(208, 140, 242, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(208, 140, 242, 0.055) 1px, transparent 1px);
-  background-size: auto, 32px 32px, 32px 32px;
+  background-image: radial-gradient(60% 50% at 50% 0%, rgba(208, 140, 242, 0.16), transparent 70%);
   color: var(--ink);
 }
 
