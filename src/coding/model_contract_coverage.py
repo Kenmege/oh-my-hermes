@@ -51,6 +51,8 @@ _MODEL_DOCS: Final[dict[str, tuple[str, ...]]] = {
     "claude-sonnet-5-5": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
     "claude-haiku-5-5": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
     "deepseek-v4.1-flash": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
+    "kimi-k3.1-pro": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
+    "kimi-k3.1-pro-highspeed": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
     "jev-1.13.0": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
 }
 

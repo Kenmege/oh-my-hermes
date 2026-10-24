@@ -1659,6 +1659,88 @@ class ClaudeHaiku55ContractTests(unittest.TestCase):
         self.assertEqual(calibration_for_route(route), HIGH_EFFORT_CALIBRATIONS["claude"])
 
 
+class KimiK31ProContractTests(unittest.TestCase):
+    """Kimi K3.1 Pro (2026-10-23): the first Kimi exact contracts. A
+    three-rung ladder the API enforces, so every other rung is raised on
+    record, and a Highspeed tier with its own rate card."""
+
+    _FORMS = ("kimi-k3.1-pro", "moonshotai/kimi-k3.1-pro", "openrouter/moonshotai/kimi-k3.1-pro")
+
+    def test_both_ids_resolve_exact_contracts_and_older_kimi_ids_stay_uncontracted(self) -> None:
+        for form in self._FORMS:
+            with self.subTest(form=form):
+                self.assertEqual(model_family(form), "kimi")
+                self.assertEqual(contract_model_id(form), "kimi-k3.1-pro")
+                projection = model_contract_projection(form)
+                assert projection is not None
+                self.assertEqual(projection["provenance"], "exact")
+        highspeed = model_contract_projection("moonshotai/kimi-k3.1-pro-highspeed")
+        assert highspeed is not None
+        self.assertEqual(highspeed["contract_model_id"], "kimi-k3.1-pro-highspeed")
+        self.assertEqual(highspeed["service_tier"], "highspeed")
+        self.assertEqual(highspeed["provenance"], "exact")
+        # K3 and its gateway speed tier keep the family-only treatment, and the
+        # Kimi Code plan's bare slugs are not aliased on a guess.
+        for model_id in ("kimi-k3", "kimi-k3-ultrafast", "k3.1-pro", "kimi-k3.1", "kimi-k3.1-pro-turbo"):
+            with self.subTest(model_id=model_id):
+                self.assertIsNone(model_contract(model_id))
+
+    def test_off_ladder_rungs_are_raised_on_record_and_documented_rungs_pass(self) -> None:
+        expected = {"off": "low", "none": "low", "minimal": "low", "medium": "high", "xhigh": "max"}
+        for model in ("kimi-k3.1-pro", "kimi-k3.1-pro-highspeed"):
+            for requested, selected in expected.items():
+                route = resolve_model_route("hermes", requested_model=model, requested_effort=requested)
+                with self.subTest(model=model, requested=requested):
+                    self.assertEqual(route["selected_reasoning_effort"], selected)
+                    self.assertEqual(route["effort_change"]["kind"], EFFORT_FLOOR_KIND)
+            for requested in ("low", "high", "max"):
+                route = resolve_model_route("hermes", requested_model=model, requested_effort=requested)
+                with self.subTest(model=model, requested=requested):
+                    self.assertEqual(route["selected_reasoning_effort"], requested)
+                    self.assertNotEqual(route["effort_change"]["kind"], EFFORT_FLOOR_KIND)
+        # K3 itself is still uncontracted: its route is unchanged.
+        route = resolve_model_route("hermes", requested_model="kimi-k3", requested_effort="medium")
+        self.assertEqual(route["selected_reasoning_effort"], "medium")
+        self.assertEqual(route["effort_change"]["kind"], "catalog_no_authority_passthrough")
+
+    def test_contract_records_the_ladder_limits_and_both_rate_cards(self) -> None:
+        from omh.plugin_bundle.omh.hermes_delegation import APPROX_CACHE_READ_RATIO
+
+        base = model_contract("kimi-k3.1-pro")
+        fast = model_contract("kimi-k3.1-pro-highspeed")
+        assert base is not None and fast is not None
+        for contract in (base, fast):
+            self.assertEqual(contract["reasoning_efforts"], ("low", "high", "max"))
+            self.assertEqual((contract["effort_floor"], contract["effort_default"]), ("low", "max"))
+            self.assertEqual(contract["context_window_tokens"], 1_048_576)
+            self.assertEqual(contract["released"], "2026-10-23")
+            self.assertEqual(contract["tool_calling"]["api"], "chat_completions")
+            self.assertIn("thinking", contract["unsupported_parameters"])
+            self.assertTrue(all(source.startswith("https://platform.kimi.ai/") for source in contract["sources"]))
+            self.assertNotIn("dynamic_effort", contract)
+            self.assertNotIn("entitled", json.dumps(dict(contract)).casefold())
+            pricing = contract["pricing_usd_per_mtok"]
+            self.assertEqual(APPROX_PRICE_PER_MTOK[contract["model_id"]], (pricing["input"], pricing["output"]))
+            self.assertAlmostEqual(
+                APPROX_CACHE_READ_RATIO.get(contract["model_id"], 0.1) * pricing["input"], pricing["cached_input"]
+            )
+        self.assertEqual((base["pricing_usd_per_mtok"]["input"], base["pricing_usd_per_mtok"]["output"]), (2.0, 10.0))
+        self.assertEqual((fast["pricing_usd_per_mtok"]["input"], fast["pricing_usd_per_mtok"]["output"]), (4.0, 20.0))
+        self.assertEqual(fast["pricing_usd_per_mtok"]["cached_input"], 0.20)
+        self.assertEqual(fast["documented_traits"][1:], base["documented_traits"][1:])
+        # K3's own row is unchanged.
+        self.assertEqual(APPROX_PRICE_PER_MTOK["kimi-k3"], (3.0, 15.0))
+
+    def test_the_kimi_family_blocks_apply_unchanged(self) -> None:
+        for model in ("kimi-k3.1-pro", "kimi-k3.1-pro-highspeed"):
+            with self.subTest(model=model):
+                self.assertNotIn(model, MODEL_HIGH_EFFORT_CALIBRATIONS)
+                self.assertNotIn(model, MODEL_COMPOSITION_CALIBRATIONS)
+                route = resolve_model_route("hermes", requested_model=model, requested_effort="max")
+                self.assertEqual(calibration_for_route(route), HIGH_EFFORT_CALIBRATIONS["kimi"])
+                self.assertEqual(composition_calibration_for_model(model), MAIN_AGENT_COMPOSITION_CALIBRATIONS["kimi"])
+
+
 class GrokBuildPriceTests(unittest.TestCase):
     """Grok Build 0.1 took the X-platform slot on 2026-10-01; xAI lists the
     retired Grok Code Fast ids as its aliases, so both spellings price alike."""
