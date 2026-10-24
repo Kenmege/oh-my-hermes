@@ -47,10 +47,10 @@ omh setup
   When a provider rejects a model, the chain moves to the next one instead of silently downgrading.<br>
   `omh model` opens the picker; [see which model runs each lane](docs/INSTALLATION.md#guided-model-setup).
 
-- **Parallel work that never collides.**<br>
-  `ulw-work` splits an accepted plan into units that never edit the same file.<br>
-  Each unit comes back typed: exited, schema valid, verified, ready to integrate.<br>
-  Exit 0 with no evidence stays `reported done` until a gate checks it.
+- **`/dag-ulw` graph runs.**<br>
+  Your goal becomes a graph of small nodes, and the ready ones run in parallel.<br>
+  Each node runs on its category's model and effort; nodes running at once never share a write scope.<br>
+  A separate node checks the goal, and failed nodes are repaired before the report.
 
 - **Expert skills on demand.**<br>
   A hundred-plus `omh-*` specialists: frontend, backend, Rust, security review, verification gates.<br>
