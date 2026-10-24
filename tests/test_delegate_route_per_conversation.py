@@ -31,10 +31,14 @@ from omh.plugin_bundle.omh.delegation_route_restore import (
     conversation_routes_path,
     delegation_route_restore_path,
     load_conversation_routes,
+    load_conversation_take_outs,
     load_route_restore_record,
 )
 from omh.plugin_bundle.omh.delegation_routing import read_delegation_route
-from omh.plugin_bundle.omh.hermes_delegation import load_delegation_route_provenance
+from omh.plugin_bundle.omh.hermes_delegation import (
+    append_delegation_route_provenance,
+    load_delegation_route_provenance,
+)
 from omh.plugin_bundle.omh.hooks.session_hooks import on_session_end, on_session_start
 from omh.plugin_bundle.omh.hooks.tool_hooks import pre_tool_call
 from omh.plugin_bundle.omh.tools.delegate_route_tool import omh_delegate_route_handler
@@ -728,6 +732,104 @@ class ReleaseCoherenceTest(PerConversationRouteTestCase):
         self.assertIsNone(self.dispatch("A", "A-t1"))
 
         self.assertEqual(self.keys(), DEEP)
+
+    def test_a_failed_release_outlives_the_provenance_cap(self) -> None:
+        # The #2264 review's probe A1b: the stamp used to be a provenance
+        # record, and 33 later appends pushed it out of the 32-record cap.
+        self.top_level("A")
+        self.set_route("A", "A-t1", "deep")
+        failing, logged = self.release_fails()
+        with failing, logged:
+            self.tool("A", "A-t1", action="clear")
+        for index in range(33):
+            append_delegation_route_provenance(
+                {"origin": "explicit", "written_at": time.time(), "session_id": f"Z{index}",
+                 "alias": "x", "wire_model": "x"},
+                self.omh_home,
+            )
+
+        self.assertIsNone(self.dispatch("A", "A-t1"))
+
+        self.assertEqual(self.keys(), {})
+
+    def test_a_clear_over_a_persons_edit_whose_release_fails_does_not_come_back(self) -> None:
+        # Probe A1c: the person edited the keys, so the clear ends `foreign_edit`
+        # and the tool appended no `cleared` record; the dispatch then wrote the
+        # route back over the person's edit.
+        self.top_level("A")
+        self.set_route("A", "A-t1", "deep")
+        config = self.hermes_home / "config.yaml"
+        config.write_text(config.read_text(encoding="utf-8").replace("deep-head", "person-edit"), encoding="utf-8")
+        edited = self.keys()
+        failing, logged = self.release_fails()
+        with failing, logged:
+            cleared = self.tool("A", "A-t1", action="clear")
+
+        self.assertEqual(cleared["status"], "foreign_edit", cleared)
+        self.assertEqual(cleared["conversation_route"]["take_out"], "recorded", cleared)
+        self.assertIsNone(self.dispatch("A", "A-t1"))
+        self.assertEqual(self.keys(), edited)
+        self.assertIsNone(self.tool("A", "A-t1", action="status")["conversation_route"])
+
+    def test_a_host_that_names_no_session_keeps_its_clear_after_a_failed_release(self) -> None:
+        # The stamp is keyed like the entry, `task:<id>`, so a host that names
+        # no session is covered too.
+        self.set_route(None, "T1", "deep")
+        failing, logged = self.release_fails()
+        with failing, logged:
+            cleared = self.tool(None, "T1", action="clear")
+
+        self.assertEqual(cleared["status"], "cleared", cleared)
+        self.assertEqual(set(load_conversation_take_outs(self.omh_home)), {"task:T1"})
+        self.assertIsNone(self.dispatch("", "T1"))
+        self.assertEqual(self.keys(), {})
+
+    def test_a_stamp_lasts_only_while_its_entry_does(self) -> None:
+        self.top_level("A", "B")
+        self.set_route("A", "A-t1", "deep")
+        self.assertEqual(self.tool("A", "A-t1", action="clear")["conversation_route"]["take_out"], "recorded")
+        self.set_route("B", "B-t1", "quick")
+        failing, logged = self.release_fails()
+        with failing, logged:
+            self.tool("B", "B-t1", action="clear")
+
+        # A's entry was released, so its stamp is dropped at the next stamp.
+        self.assertEqual(set(load_conversation_take_outs(self.omh_home)), {"B"})
+
+    def test_a_set_whose_entry_failed_does_not_bring_back_the_older_route(self) -> None:
+        # #2264's follow-up: the restore record of the newer route was written
+        # and its conversation entry was not, so the entry left was the older
+        # route of the same task, and the next dispatch put it back.
+        self.top_level("A")
+        self.set_route("A", "A-t1", "deep")
+        with mock.patch.object(delegation_route_restore.time, "time", return_value=time.time() + 1), \
+                mock.patch.object(delegation_route_restore, "_write_conversation_routes",
+                                  side_effect=PermissionError("denied")):
+            result = self.tool("A", "A-t1", action="set", category="quick")
+        self.assertEqual(result["conversation_route"], "unrecorded: PermissionError", result)
+        self.assertEqual(load_conversation_routes(self.omh_home)["A"]["route"], DEEP)
+
+        self.assertIsNone(self.dispatch("A", "A-t1"))
+
+        self.assertEqual(self.keys(), QUICK)
+        self.assertIsNone(self.tool("A", "A-t1", action="status")["conversation_route"])
+
+    def test_a_route_put_back_at_its_dispatch_is_still_its_writers(self) -> None:
+        # The control for the rule above: the record a reapply writes is newer
+        # than the entry it came from but names the same route, so the entry
+        # stands, and a session with no route still gets the default.
+        self.top_level("A", "B", "C")
+        self.set_route("A", "A-t1", "deep")
+        self.set_route("B", "B-t1", "quick")
+        with mock.patch.object(delegation_route_restore.time, "time", return_value=time.time() + 1):
+            self.assertIsNone(self.dispatch("A", "A-t1"))
+        self.assertEqual(self.keys(), DEEP)
+        self.assertGreater(load_route_restore_record(self.omh_home)["written_at"],
+                           load_conversation_routes(self.omh_home)["A"]["written_at"])
+
+        self.assertIsNone(self.dispatch("C", "C-t1"))
+
+        self.assertEqual(self.keys(), {})
 
     def test_another_sessions_clear_keeps_this_sessions_route(self) -> None:
         self.set_route("B", "B-t1", "quick")

@@ -1737,9 +1737,14 @@ is refused with `route_overwritten_by_other_session`, `route_not_applied` or
 `other_session_route_live`, naming both sessions, and no child starts. A
 dispatch whose unlocked read found nothing to change goes ahead when the lock
 is busy. A `clear` or an exhausted chain whose release of the conversation's
-entry fails does not bring the route back: the dispatch ignores an entry
-written before the `cleared` or `exhausted_to_inherit` provenance record of
-its own conversation. Two
+entry fails does not bring the route back: before the release it records the
+entries it takes out in `~/.omh/routing/conversation-take-outs.json`
+(`delegation_conversation_take_outs/v1`), whatever the restore found, keyed
+like the entries (the session, or `task:<id>` for a host that names no
+session), and a dispatch ignores an entry recorded there. A `set` that wrote
+its route but not its conversation entry does not get the conversation's older
+route put back over it either: an entry older than the restore record of the
+same task, naming another route, is ignored. Two
 cases are left in place as before: a route whose writer recorded no
 conversation entry, such as one written by an older OMH that is still
 running, and any route when the dispatching session's own `state.db` row
