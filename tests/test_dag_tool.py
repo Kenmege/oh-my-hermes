@@ -201,6 +201,22 @@ class Answers(Base):
 
 
 @contextmanager
+def detector_module(source: str | None) -> Iterator[None]:
+    """Import a real optional host package, restoring modules and path afterwards."""
+    with TemporaryDirectory() as tmp, patch_modules({}):
+        package = Path(tmp) / "agent"
+        package.mkdir()
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        if source is not None:
+            (package / "oneshot_footprint.py").write_text(source, encoding="utf-8")
+        for name in list(sys.modules):
+            if name == "agent" or name.startswith("agent."):
+                del sys.modules[name]
+        with patch.object(sys, "path", [tmp, *sys.path]):
+            yield
+
+
+@contextmanager
 def terminal_env(value: str | None = None) -> Iterator[None]:
     """``TERMINAL_ENV`` as given, or unset: the variable `terminal_backend` falls back to."""
     with patch.dict(os.environ):
@@ -860,12 +876,13 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok", result)
 
     def test_a_healthy_detector_saying_interactive_leaves_the_graph_uncapped(self) -> None:
-        detector = SimpleNamespace(is_single_query_session=lambda: False)
-        with homes() as home, patch_modules({"agent": SimpleNamespace(oneshot_footprint=detector),
-                                             "agent.oneshot_footprint": detector}):
+        with homes() as home, detector_module("def is_single_query_session():\n    return False\n"):
             (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            self.assertFalse(dag_tool._single_query_session())
+            self.assertIsNone(dag_tool.oneshot_child_limit(home.hermes))
             result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
-        self.assertEqual(result["status"], "ok", result)
+            self.assertEqual(result["status"], "ok", result)
+            self.assertTrue(dag_run.record_path(home.omh, PARENT, "feat").exists())
 
     def test_an_absent_optional_detector_is_not_one_shot_and_stays_uncapped(self) -> None:
         # `None` in sys.modules blocks the import the way an install without the
@@ -874,6 +891,79 @@ class PreflightTests(unittest.TestCase):
             (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
             result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
         self.assertEqual(result["status"], "ok", result)
+
+    def _assert_detector_refuses_without_record_changes(self, source: str) -> None:
+        for existing in (False, True):
+            with self.subTest(existing=existing), homes() as home, detector_module(source):
+                slots_table(home)
+                (home.hermes / "config.yaml").write_text(
+                    "delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+                if existing:
+                    with patch.object(dag_tool, "_single_query_session", return_value=False):
+                        self.assertEqual(call(action="define", run="feat", nodes=[node("a")])["status"], "ok")
+                path = dag_run.record_path(home.omh, PARENT, "feat")
+                before = path.read_bytes() if path.exists() else None
+                for operation in (dag_tool._single_query_session, lambda: dag_tool.oneshot_child_limit(home.hermes)):
+                    with self.assertRaises(dag_run.DagRefusal) as raised:
+                        operation()
+                    self.assertEqual(raised.exception.reason, "oneshot_detection_unavailable")
+                result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+                self.assertEqual((result["status"], result.get("reason")),
+                                 ("refused", "oneshot_detection_unavailable"), result)
+                self.assertIn("one-shot", result["say"])
+                for secret in ("ModuleNotFoundError", "ImportError", "RuntimeError",
+                               "omh_review_missing_detector_dependency", "private failure"):
+                    self.assertNotIn(secret, json.dumps(result))
+                self.assertEqual(path.exists(), existing)
+                self.assertEqual(path.read_bytes() if path.exists() else None, before)
+
+    def test_missing_dependency_during_detector_invocation_refuses_without_record_changes(self) -> None:
+        sources = ["def is_single_query_session():\n    import omh_review_missing_detector_dependency\n"]
+        # Even a permitted absence name (or no name) from the callable is a failure.
+        for missing in ("agent", "agent.oneshot_footprint", None):
+            sources.append("def is_single_query_session():\n"
+                           f"    raise ModuleNotFoundError('private failure', name={missing!r})\n")
+        for source in sources:
+            with self.subTest(source=source):
+                self._assert_detector_refuses_without_record_changes(source)
+
+    def test_missing_dependency_during_detector_import_refuses_without_record_changes(self) -> None:
+        sources = ["import omh_review_missing_detector_dependency\n"]
+        # Prefix matches and unnamed ImportErrors do not establish optional absence.
+        for missing in ("agent.other_dependency", "agent.oneshot_footprint.dependency", None):
+            sources.append(f"raise ModuleNotFoundError('private failure', name={missing!r})\n")
+        sources.extend(("raise ImportError('private failure')\n", "raise RuntimeError('private failure')\n", ""))
+        for source in sources:
+            with self.subTest(source=source):
+                self._assert_detector_refuses_without_record_changes(source)
+
+    def test_an_absent_agent_package_stays_uncapped(self) -> None:
+        with homes() as home, patch_modules({"agent": None}):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            self.assertFalse(dag_tool._single_query_session())
+            self.assertIsNone(dag_tool.oneshot_child_limit(home.hermes))
+            result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+            self.assertEqual(result["status"], "ok", result)
+            self.assertTrue(dag_run.record_path(home.omh, PARENT, "feat").exists())
+
+    def test_an_absent_detector_module_in_a_present_agent_stays_uncapped(self) -> None:
+        with homes() as home, detector_module(None):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            self.assertFalse(dag_tool._single_query_session())
+            self.assertIsNone(dag_tool.oneshot_child_limit(home.hermes))
+            result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+            self.assertEqual(result["status"], "ok", result)
+            self.assertTrue(dag_run.record_path(home.omh, PARENT, "feat").exists())
+
+    def test_a_healthy_imported_oneshot_detector_enforces_the_budget(self) -> None:
+        with homes() as home, detector_module("def is_single_query_session():\n    return True\n"):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            self.assertTrue(dag_tool._single_query_session())
+            self.assertEqual(dag_tool.oneshot_child_limit(home.hermes), 1)
+            result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+            self.assertEqual((result["status"], result.get("reason")),
+                             ("refused", "oneshot_budget_exceeded"), result)
+            self.assertFalse(dag_run.record_path(home.omh, PARENT, "feat").exists())
 
     def test_a_broken_installed_detector_refuses_by_name_and_writes_nothing(self) -> None:
         def broken() -> bool:

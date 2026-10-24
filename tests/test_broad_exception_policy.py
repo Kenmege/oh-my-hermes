@@ -632,12 +632,12 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "src/plugin_bundle/omh/tools/dag_tool.py",
         "_single_query_session",
         INTENTIONAL,
-        "Hermes' optional `agent.oneshot_footprint` detector is imported and called at define time. A "
-        "missing host package is ModuleNotFoundError and stays the documented absent path (no cap); any "
-        "other failure -- an installed detector raising or failing to import -- is refused with the named "
-        "reason `oneshot_detection_unavailable` and actionable text, and the raw exception is suppressed. "
-        "It is never answered `False`, which would read as a healthy interactive session and silently "
-        "disable the one-shot child budget.",
+        "Hermes' optional `agent.oneshot_footprint` detector is imported and called at define time. Only "
+        "ModuleNotFoundError during import naming exactly `agent` or `agent.oneshot_footprint` is the "
+        "documented absent path (no cap). A missing unrelated dependency during import, or any callable "
+        "or truth-conversion failure including ModuleNotFoundError, is refused with the named reason "
+        "`oneshot_detection_unavailable` and actionable text; the raw exception is suppressed. These "
+        "failures are never answered `False`, which would silently disable the one-shot child budget.",
     ),
 )
 

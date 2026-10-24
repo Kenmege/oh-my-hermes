@@ -271,16 +271,21 @@ def _single_query_session() -> bool:
     """Hermes' finite one-shot marker (`hermes chat -q`), read where the host keeps it.
 
     Imported at call time: `agent` is the host's package and may not be on this
-    install's path, where the session is simply not one-shot. An installed
-    detector that fails is not that absence: it is refused by name
+    install's path, where the session is simply not one-shot. Only an import
+    missing exactly `agent` or `agent.oneshot_footprint` is optional absence.
+    An installed detector's dependency or invocation failure is refused by name
     (`oneshot_detection_unavailable`) rather than answered `False`, because
     `False` means "interactive, no cap" and would silently drop the budget.
     """
     try:
-        from agent.oneshot_footprint import is_single_query_session
+        try:
+            from agent.oneshot_footprint import is_single_query_session
+        except ModuleNotFoundError as error:
+            if error.name in {"agent", "agent.oneshot_footprint"}:
+                return False
+            raise
+        # The callable (and truth conversion) can fail too; neither is absence.
         return bool(is_single_query_session())
-    except ModuleNotFoundError:
-        return False
     except Exception:
         # Classified and surfaced, never relabeled as a healthy answer: the
         # caller refuses by name and the exception text stays out of it.
