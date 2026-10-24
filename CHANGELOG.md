@@ -24,9 +24,14 @@ All notable changes will be documented here.
   asked us to leave it`, `…, cheers don't bother`), while a negated outcome
   keeps (`…, hope nothing breaks`, `…, btw it won't touch prod`, `…, fwiw no
   exceptions`, `…, hope we don't break imports`: a `don't` that governs an
-  outcome verb asks for the work all the same). A flat refusal holds, said
-  alone or as what a third party said (`…, ops said no`, `…, legal said
-  absolutely not`).
+  outcome verb asks for the work all the same). A flat refusal holds
+  (`…, btw, no`). What a third party said, wanted or told us keeps the
+  request only when the whole reported object is an approval, with only
+  intensifiers, filler and punctuation around it (`…, legal said a big
+  yes`, `…, ops says totally fine!`, `…, the lead said absolutely, go for
+  it`); any other reported object holds, sarcasm included (`…, QA says hard
+  no`, `…, the lead said over my dead body`, `…, the lead said yeah right`,
+  `…, ops said sure, in your dreams`).
 
 - **A cleared or exhausted delegation route stays gone (#2251
   follow-up).** `clear` and chain exhaustion now release the conversation's

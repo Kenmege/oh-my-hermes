@@ -1283,25 +1283,78 @@ def _unnegated(pattern: re.Pattern[str], text: str) -> bool:
     return any(not _NEGATED_BEFORE.search(text[: match.start()]) for match in pattern.finditer(text))
 
 
-# A flat refusal said on its own, or as what a third party said ("…, btw, no", "…, ops said no", "…, legal said
-# absolutely not", "…, security said hard pass", "…, the client wants none of it").
+# A flat refusal said on its own ("…, btw, no", "…, my manager asked: no", "…, hard pass").
 _FLAT_REFUSAL: Final = re.compile(
     r"(?:no+|nope|nah|no\s+way|absolutely\s+not|not\s+a\s+chance|not\s+happening|hard\s+pass|count\s+(?:me|us)\s+out"
     r"|no\s+can\s+do|none\s+of\s+it|veto(?:ed)?|denied|rejected|negative|nope\s+nope)\W*"
 )
-# Reported speech sets off what was said ("ops said no", "the lead told us no", "my manager asked: no").
+# Reported speech sets off what a third party said, wanted or told us ("ops said go", "the lead told us to go ahead",
+# "the client wants it done"); it keeps the request only when what it reports is an approval as a whole, read on to the
+# next follow-on request (`_without_an_unapproved_report`). Only intensifiers, filler and punctuation may stand around
+# the approval (`_APPROVAL`: "…, legal said a big yes", "…, ops says totally fine!", "…, the lead said absolutely, go
+# for it", "…, QA said LGTM"), so sarcasm that wraps an approval word holds ("…, the lead said yeah right", "…, ops said
+# sure, in your dreams", "…, QA said great idea… not"). Any other reported object holds, a refusal however it is put
+# and anything unknown alike ("…, QA says hard no", "…, the lead said over my dead body", "…, security said meh").
+# Asking for it is no reported speech ("…, my manager asked for it" keeps as an attribution).
 _REPORTED_SPEECH: Final = re.compile(
-    r"\b(?:said|says|told\s+(?:us|me|them)|tells\s+(?:us|me)|wants|wanted|asked(?:\s+(?:us|me))?)\b(?:\s+that)?\s*[:,]?\s*"
+    r"\b(?:said|says|saying|told\s+(?:us|me|them)|tells\s+(?:us|me)|wants|wanted)\b(?:\s+that)?\s*[:,]?\s*"
 )
+_SPEAKER_BACK_REFERENCE: Final = re.compile(r"\b(?:as|like|what|how)\s+(?:i|we|you|they)\s+(?:\w+\s+)?$")
+_APPROVAL_INTENSIFIER: Final = (
+    r"(?:big|huge|firm|clear|total|totally|absolutely|definitely|fully|super|very|really|so|quite|100%|resounding|solid"
+    r"|strong|full|enthusiastic|happy|hearty|emphatic|honestly|seriously|truly|for\s+sure|of\s+course|tbh|ngl|all)"
+)
+_APPROVAL_AROUND: Final = rf"(?:{_APPROVAL_INTENSIFIER}|oh|ah|well|um+|uh+|hm+|too|already|now|asap|today|then)"
+_APPROVAL_SEP: Final = r"(?:\s*[,;.!…—–]+\s*|\s+)"
+_APPROVAL_WORD: Final = (
+    r"(?:go(?:\s+(?:for\s+it|ahead|nuts|wild))?|go[-\s]ahead|yes+|yep|yeah|yup|sure|ok(?:ay)?|k|fine|good|great|cool|approved?"
+    r"|lgtm|ship\s+it|do\s+it|let'?s\s+(?:go|do\s+it)|make\s+it\s+happen|green\s*light|thumbs\s+up|(?:full\s+)?steam\s+ahead"
+    r"|all\s+good|so|good\s+to\s+go|(?:the\s+)?(?:blessing|sign[-\s]?off|nod)"
+    r"|(?:it'?s|that'?s|this\s+is|all|we'?re|they'?re|everything'?s|it\s+is|we\s+are)\s+"
+    rf"(?:{_APPROVAL_INTENSIFIER}\s+)?(?:fine|good|ok(?:ay)?|clear|set|great|cool|a\s+go|approved|green|good\s+to\s+go)"
+    rf"|sounds?\s+(?:{_APPROVAL_INTENSIFIER}\s+)?(?:good|great|fine)"
+    r"|(?:(?:he|she|they|we|i)(?:'s|'re|'m|\s+is|\s+are|\s+am)\s+)?(?:on\s+board|in|good\s+with\s+it|fine\s+with\s+it|happy\s+with\s+it)"
+    r"|(?:it|this|that|them)(?:\s+(?:done|shipped|merged|fixed|in))?|👍|✅)"
+)
+_APPROVAL: Final = re.compile(
+    rf"(?:to\s+)?(?:{_APPROVAL_AROUND}{_APPROVAL_SEP})*"
+    rf"(?:(?:a|an|the|their|his|her)\s+(?:{_APPROVAL_INTENSIFIER}{_APPROVAL_SEP})*)?"
+    rf"{_APPROVAL_WORD}(?:{_APPROVAL_SEP}(?:{_APPROVAL_AROUND}|{_APPROVAL_WORD}))*[\s.!,;:)…]*"
+)
+
+
+def _without_an_unapproved_report(trailing: list[str]) -> list[str] | None:
+    """``trailing`` with what a third party is reported to have said read as one object, on to the next follow-on request
+    (`_REPORTED_SPEECH`, `_follows_on`), and kept only as its reporting clause; None when an object is no approval as a
+    whole (`_APPROVAL`). A speaker's own back-reference reports nothing ("…, as I said, …", "…, like the ticket says")."""
+    kept: list[str] = []
+    index = 0
+    while index < len(trailing):
+        clause = trailing[index]
+        said = _REPORTED_SPEECH.search(clause)
+        reported = clause[said.end() :].strip() if said else ""
+        if (
+            not said
+            or _SPEAKER_BACK_REFERENCE.search(clause[: said.start()])
+            or (not reported and _BACK_REFERENCE.search(clause))
+        ):
+            kept.append(clause)
+            index += 1
+            continue
+        end = next((later for later in range(index + 1, len(trailing)) if _follows_on(trailing[later])), len(trailing))
+        if not _APPROVAL.fullmatch(", ".join(part for part in (reported, *trailing[index + 1 : end]) if part)):
+            return None
+        kept.append(clause)
+        index = end
+    return kept
 
 
 def _statement_refuses(clause: str) -> bool:
     """Whether the statement a keep kind's opener sets off with a colon or a dash refuses, read on its own as an
     aside's is: after a toast or a wish (`_WISH`), a back-reference (`_BACK_REFERENCE`) or an attribution
-    (`_ATTRIBUTION`) ("…, legal's request: leave it alone", "…, as discussed: hold off"); and what reported speech
-    sets off, when it is a flat refusal (`_REPORTED_SPEECH`, `_FLAT_REFUSAL`: "…, ops said no"). An object said
-    straight on is read with its opener (`_refuses` on the whole clause, `_NOT_DOING`), since its first word is no
-    verb ("…, may the build be green")."""
+    (`_ATTRIBUTION`) ("…, legal's request: leave it alone", "…, as discussed: hold off"). An object said straight on
+    is read with its opener (`_refuses` on the whole clause, `_NOT_DOING`), since its first word is no verb ("…, may
+    the build be green")."""
     for opener in (_WISH.match(clause), _BACK_REFERENCE.search(clause), _ATTRIBUTION.search(clause)):
         if not opener:
             continue
@@ -1309,8 +1362,7 @@ def _statement_refuses(clause: str) -> bool:
         set_off = _STATEMENT_SET_OFF.match(rest)
         if set_off and rest[set_off.end() :].strip() and _refuses(rest[set_off.end() :].strip()):
             return True
-    said = _REPORTED_SPEECH.search(clause)
-    return bool(said and _FLAT_REFUSAL.fullmatch(clause[said.end() :].strip()))
+    return False
 
 
 _STATEMENT_SET_OFF: Final = re.compile(r"\s*[:;—–]\s*|\s+-\s+")
@@ -1365,7 +1417,12 @@ def _remarks_keep_the_request(trailing: list[str]) -> bool:
     """Whether the clauses after an English request keep it: each is a keeper by shape (`_KEEPER_CLAUSE`), a follow-on
     (`_follows_on`) or a remark of a keep kind with no refusal in it, and an aside marker opens a statement that runs to
     the message's end with no refusal in it (`_ASIDE_MARKER`), where a new request is read by the follow-on rule ("…,
-    also, fix the lint" holds as before). No clause may hold or joke (`_HOLD`); anything else holds."""
+    also, fix the lint" holds as before). What a third party is reported to have said keeps only as an approval as a
+    whole (`_without_an_unapproved_report`). No clause may hold or joke (`_HOLD`); anything else holds."""
+    reported = _without_an_unapproved_report(trailing)
+    if reported is None:
+        return False
+    trailing = reported
     for index, clause in enumerate(trailing):
         if _HOLD.search(clause):
             return False

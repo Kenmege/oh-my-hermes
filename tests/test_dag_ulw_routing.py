@@ -786,6 +786,36 @@ class RouterTests(unittest.TestCase):
         for tail in ("ops said go", "the lead said it's fine", "legal said yes"):
             with self.subTest(message=f"rebase all open PRs, {tail}"):
                 self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
+        # Reported speech keeps only when what was said is an approval, in any words and with any intensifier; any other
+        # reported object holds, a refusal however it is put and anything unknown alike (#2265 review).
+        for tail in ("QA says hard no", "legal said a firm no", "ops said heck no", "the lead said over my dead body",
+                     "security said meh", "the client wants nothing to do with it", "the lead told us to sit on it",
+                     "ops said something about the docs", "fyi the lead said meh"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
+        for tail in ("legal said a big yes", "ops says totally fine", "the lead said go ahead", "the PM said ship it",
+                     "QA said LGTM", "the team says we're clear", "the client wants it done", "security says she's on board",
+                     "the boss gave the green light", "boss said go for it", "the team wants this",
+                     "the lead told us to go ahead", "my manager asked for it", "like the ticket says",
+                     "as we said we split by module"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
+        # The approval has to be the whole reported object, read on past a comma: sarcasm that wraps an approval word
+        # holds, and a clean approval with intensifiers, filler and punctuation around it keeps (#2265 review).
+        for tail in ("the lead said yeah right", "ops said sure, in your dreams", "QA said great idea… not",
+                     "the lead said oh totally lol no", "legal said in your dreams", "the lead said it's not fine",
+                     "ops said sure, good luck with that", "the PM said yes /s", "QA said lgtm... said no one",
+                     "fyi the lead said sure, in your dreams", "the lead said, sure, in your dreams", "the PM said sure 🙄",
+                     "the lead said ok?"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
+        for tail in ("legal said a firm yes", "ops says totally fine!", "the lead said absolutely, go for it",
+                     "QA said yes, absolutely", "the lead said oh yes, totally", "ops said ok, ship it",
+                     "the lead said, go ahead", "btw ops said go ahead", "the lead said go ahead, then also bump the version"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
         # A remark after a colon list's last item goes through the same gate: a status in either order holds, and a
         # dismissal holds.
         for message in ("for each open PR: rebase, merge, merged already", "for each open PR: rebase, merge, already merged",
