@@ -227,6 +227,18 @@ window.OMH_I18N = {
       ja: "OMH TUI の実際の録画: 7 レーン、4 レイヤー、すべてのレーンが accepted。",
       zh: "OMH TUI 的真实录屏：七条通道、四层，每条通道都 accepted。"
     },
+    "dag.graph.caption": {
+      en: "The graph from the demo run, drawn as an illustration. Hover or focus a lane to trace what it waits on and what it feeds.",
+      ko: "데모 실행의 그래프를 일러스트로 그린 것입니다. lane에 마우스를 올리거나 포커스하면 무엇을 기다리고 무엇에 이어지는지 보입니다.",
+      ja: "デモ実行のグラフをイラストとして描いたものです。lane にホバーまたはフォーカスすると、何を待ち、何につながるかをたどれます。",
+      zh: "这是演示运行中的图，以示意图形式绘制。悬停或聚焦某条 lane，可以看到它等待什么、又连向什么。"
+    },
+    "dag.graph.replay": {
+      en: "Replay the run",
+      ko: "실행 다시 보기",
+      ja: "実行を再生",
+      zh: "重放这次运行"
+    },
     "install.title": {
       en: "Install once. Set up once.",
       ko: "설치도 한 번, 설정도 한 번.",
@@ -826,6 +838,18 @@ window.OMH_I18N = {
       ko: "재생",
       ja: "再生",
       zh: "播放"
+    },
+    "dag.graph.running": {
+      en: "Layer {n} of 4 running",
+      ko: "레이어 {n}/4 실행 중",
+      ja: "レイヤー {n}/4 を実行中",
+      zh: "第 {n}/4 层运行中"
+    },
+    "dag.graph.done": {
+      en: "All seven lanes accepted",
+      ko: "레인 7개 모두 accepted",
+      ja: "7 レーンすべて accepted",
+      zh: "七条通道全部 accepted"
     }
   }
 };

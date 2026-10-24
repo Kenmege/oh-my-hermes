@@ -211,6 +211,121 @@
     syncDemoLabel();
   }
 
+  /* ========================================================== DAG graph */
+
+  // The illustration of the demo run's graph. Hover or focus a lane to trace
+  // what it waits on and what it feeds; Replay steps the layers through
+  // waiting, running, and accepted. Reduced motion keeps the static view.
+  function initDag() {
+    var root = document.querySelector("[data-dag]");
+    if (!root) return;
+    var svg = root.querySelector("svg");
+    var nodes = Array.prototype.slice.call(root.querySelectorAll(".dag-node"));
+    var edges = Array.prototype.slice.call(root.querySelectorAll(".dag-edge"));
+    var replay = root.querySelector("[data-dag-replay]");
+    var live = root.querySelector("[data-dag-live]");
+
+    function walk(start, key, other) {
+      var seen = {};
+      var queue = [start];
+      while (queue.length) {
+        var id = queue.shift();
+        edges.forEach(function (edge) {
+          if (edge.dataset[key] !== id) return;
+          var next = edge.dataset[other];
+          if (seen[next]) return;
+          seen[next] = true;
+          queue.push(next);
+        });
+      }
+      return seen;
+    }
+
+    function trace(id) {
+      var up = walk(id, "to", "from");
+      var down = walk(id, "from", "to");
+      svg.classList.add("is-tracing");
+      nodes.forEach(function (node) {
+        var nid = node.dataset.node;
+        node.classList.toggle("is-active", nid === id);
+        node.classList.toggle("is-lineage", nid === id || !!up[nid] || !!down[nid]);
+      });
+      edges.forEach(function (edge) {
+        var from = edge.dataset.from;
+        var to = edge.dataset.to;
+        var upstream = (to === id || up[to]) && (up[from] || from === id);
+        var downstream = (from === id || down[from]) && (down[to] || to === id);
+        edge.classList.toggle("is-lineage", !!(upstream || downstream));
+      });
+    }
+
+    function clear() {
+      svg.classList.remove("is-tracing");
+      nodes.forEach(function (node) {
+        node.classList.remove("is-active", "is-lineage");
+      });
+      edges.forEach(function (edge) {
+        edge.classList.remove("is-lineage");
+      });
+    }
+
+    nodes.forEach(function (node) {
+      node.addEventListener("pointerenter", function () { trace(node.dataset.node); });
+      node.addEventListener("pointerleave", function () {
+        if (document.activeElement === node) trace(node.dataset.node);
+        else clear();
+      });
+      node.addEventListener("focus", function () { trace(node.dataset.node); });
+      node.addEventListener("blur", clear);
+    });
+
+    if (!replay) return;
+    var timers = [];
+    var LAYERS = 4;
+    var STEP = 1300;
+
+    function say(key, layer) {
+      var text = translate(key, currentLang) || "";
+      if (live) live.textContent = text.replace("{n}", layer);
+    }
+
+    function setLayer(layer, state) {
+      nodes.forEach(function (node) {
+        if (Number(node.dataset.layer) === layer) node.dataset.state = state;
+      });
+      edges.forEach(function (edge) {
+        var target = root.querySelector('.dag-node[data-node="' + edge.dataset.to + '"]');
+        if (!target) return;
+        if (target.dataset.state === "waiting") edge.dataset.state = "idle";
+        else edge.removeAttribute("data-state");
+      });
+    }
+
+    replay.addEventListener("click", function () {
+      timers.forEach(window.clearTimeout);
+      timers = [];
+      replay.disabled = true;
+      nodes.forEach(function (node) { node.dataset.state = "waiting"; });
+      setLayer(0, "waiting");
+      for (var layer = 1; layer <= LAYERS; layer += 1) {
+        (function (k) {
+          timers.push(window.setTimeout(function () {
+            setLayer(k, "running");
+            say("dag.graph.running", k);
+          }, (k - 1) * STEP + 200));
+          timers.push(window.setTimeout(function () {
+            setLayer(k, "done");
+            if (k === LAYERS) {
+              say("dag.graph.done", k);
+              replay.disabled = false;
+            }
+          }, k * STEP));
+        })(layer);
+      }
+    });
+  }
+
+  initDag();
   initDemo();
   initLangSwitch();
   initTheme();
