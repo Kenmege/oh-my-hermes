@@ -1776,11 +1776,19 @@ route put back over it either, even after another session's `set`: before the
 entry, each `set` records the route it wrote in
 `~/.omh/routing/conversation-writes.json`
 (`delegation_conversation_writes/v1`), one stamp per writer keyed like the
-entries, and an entry older than a stamp of the same writer (the same task,
+entries. An entry older than its own stamp is replaced by that stamp, so the
+conversation's dispatch, and a delegate child inheriting from it, runs on the
+route it set last. Any other older entry of the same writer (the same task,
 or the same session when neither names a task) that names another route is
-ignored, and the conversation's dispatch is handled as one with no route of
-its own until it sets one again. A stamp is kept while that writer has an entry, at most 64 of them, and
-a missing or unreadable file reads as "no newer write". Two
+ignored. A stamp never brings back a route a `clear`, a chain exhaustion or a
+turn end took out: it stands in only for an entry still recorded, and each of
+those marks the conversation's stamps released before it removes the entries,
+so a removal that fails does not let the stamp stand in either. A delegate
+child inherits the newest route the conversations it descends from wrote,
+including across a compaction, and never one older than the same
+conversation's newest stamp or take-out; a later write by a grandparent's
+conversation does not hide the parent's route. Stamps are kept for six hours, at most 64 of them,
+and a missing or unreadable file reads as "no newer write". Two
 cases are left in place as before: a route whose writer recorded no
 conversation entry, such as one written by an older OMH that is still
 running, and any route when the dispatching session's own `state.db` row
