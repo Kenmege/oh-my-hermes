@@ -850,6 +850,36 @@ window.OMH_I18N = {
       ko: "레인 7개 모두 accepted",
       ja: "7 レーンすべて accepted",
       zh: "七条通道全部 accepted"
+    },
+    "nav.star": {
+      en: "Star",
+      ko: "Star",
+      ja: "Star",
+      zh: "Star"
+    },
+    "nav.star.label": {
+      en: "Star oh-my-hermes on GitHub",
+      ko: "GitHub에서 oh-my-hermes에 Star 주기",
+      ja: "GitHub で oh-my-hermes に Star する",
+      zh: "在 GitHub 上为 oh-my-hermes 点 Star"
+    },
+    "nav.star.stars": {
+      en: "{n} stars",
+      ko: "Star {n}개",
+      ja: "Star {n}",
+      zh: "{n} 个 Star"
+    },
+    "nav.installs": {
+      en: "installs",
+      ko: "설치",
+      ja: "インストール",
+      zh: "次安装"
+    },
+    "nav.installs.title": {
+      en: "npm downloads, all time",
+      ko: "npm 누적 다운로드",
+      ja: "npm の累計ダウンロード数",
+      zh: "npm 累计下载量"
     }
   }
 };
