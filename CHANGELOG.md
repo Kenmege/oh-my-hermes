@@ -4,6 +4,8 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+## 4.0.2 - 2026-10-24
+
 - **`omh_agent_board` states the fields a `prepare` needs, and names the
   one that is missing (#2277).** The schema required only `action` and
   `request_id`, so a `prepare` built from it left out `coordination`,
@@ -112,10 +114,9 @@ All notable changes will be documented here.
   Cost estimates use the list prices: 2/10 per MTok, and 4/20 for
   Highspeed, which keeps the 0.20 cached-input rate. Provider checks know
   which catalogs serve each id. The `kimi` calibration applies unchanged.
-  Neither id joins a shipped chain yet, and Kimi K3 keeps every slot it
-  held. The K3-vs-K3.1 benchmark pair is the follow-up and needs a served
-  route. To try K3.1 Pro now, use
-  `omh model-chains set <category> "kimi-k3.1-pro:high, ..."`.
+  K3.1 Pro takes every slot Kimi K3 held (the shipped-chains entry above),
+  and Highspeed joins no chain. The K3-vs-K3.1 benchmark pair is the
+  follow-up and needs a served route.
 
 - **A newer delegation route stays newer after another session's `set`
   (#2251 follow-up).** When an `omh_delegate_route set` wrote its route but
@@ -137,9 +138,10 @@ All notable changes will be documented here.
   newer write", which is the behaviour before.
 
 - **A cleared or exhausted delegation route stays gone (#2251
-  follow-up).** `clear` and chain exhaustion now release the conversation's
-  own route inside the same lock as the restore, after it. Before, the
-  release took a second lock. When that lock timed out, the cleared route,
+  follow-up; #2258, #2264, #2268).** `clear` and chain exhaustion now
+  release the conversation's own route inside the same lock as the
+  restore, after it. Before, the release took a second lock. When that
+  lock timed out, the cleared route,
   or the model that had just failed, came back at the next dispatch of the
   same task. A turn-end restore whose write is refused now keeps the route
   recorded, because the keys still hold it. A session-start restore that
@@ -149,7 +151,13 @@ All notable changes will be documented here.
   in the hook result and in Hermes' log. A corrupt `_delegate_from` cycle can
   no longer make a session inherit its own stale route.
   `omh_delegate_route action=status` reports the conversation's own route
-  beside the profile-wide keys.
+  beside the profile-wide keys. Before it releases, a `clear` or a chain
+  exhaustion stamps the entries it takes out in
+  `~/.omh/routing/conversation-take-outs.json`, inside the restore's lock
+  and whatever the restore decided, so a failed release cannot bring the
+  cleared route back at the same task's next dispatch. When the 2 s
+  dispatch-lock wait times out and the unlocked read finds nothing to
+  change, the `delegate_task` goes ahead instead of being refused.
 
 - **A delegation route belongs to the conversation that set it (#2251).**
   The three `delegation.*` keys are shared by every session on a profile.
@@ -667,6 +675,119 @@ All notable changes will be documented here.
   highlight and `/help`'s Hermes list match names the same way, so `/Dag-ulw`
   is highlighted as the skill Hermes runs for it. A name the TUI does not
   have, and a skill, still go to Hermes as typed.
+
+- **The README and the GitHub Pages site are a lean landing page (#2269,
+  #2271, #2272, #2274).** All four READMEs open with the spectrum
+  OH-MY-HERMES wordmark, then the app-icon logo, the tagline "All-in-one
+  package for Hermes Agent. Install once, then just type `dag-ulw`.", the
+  two install lines (`curl …install.sh | sh` and `omh setup`), five
+  one-line bullets, and the `dag-ulw` clip. The longer install options and
+  details sit behind a link and two collapsed toggles. The site's landing
+  page is rebuilt around the same copy, with the real TUI recording, every
+  install path, the community and sponsor sections, a spectrum aura on the
+  hero and the DAG-ULW band, and a header button with the live GitHub star
+  and npm install counts.
+
+- **Every timestamp read from outside OMH refuses hour 24 on Python 3.14
+  too (#2263).** CPython 3.14 reads `T24:00:00` as midnight of the next
+  day, where 3.11 to 3.13 raise. 85 of the 108 `fromisoformat` calls in
+  `src/` read text from outside OMH's own clock; they now go through
+  `strict_fromisoformat` (or a standalone script's own copy, tested equal) and
+  refuse it on every supported Python. Before, on 3.14, a model-supplied
+  todo `done_at` was stored verbatim, memory records stayed eligible until
+  the next midnight, and connector receipts and routing observations were
+  admitted. Valid timestamps, including a real `T00:00:00`, are unaffected.
+  A source gate pins the remaining raw calls, each with its reason.
+
+- **Bare `omh` opens the OMH TUI with a Hermes gateway already running
+  (#2249).** On current upstream Hermes, the stdio gateway entry refuses a
+  home a running gateway owns, so bare `omh` fell back to Hermes' own TUI
+  every time. The TUI's gateway child now attaches to the profile's shared
+  gateway where Hermes has the attach API, and starts Hermes' own gateway
+  with idle exit when none is running, as Hermes' Ink TUI does. Older
+  Hermes, with only the stdio entry, works as before. When the OMH TUI
+  cannot start, its reason now prints again after the Hermes TUI it falls
+  back to closes.
+
+- **`omh setup` finishes with a config key that holds a dot (#2248).** A
+  provider key such as `z.ai-coding-plan:` under `providers:` stopped setup
+  at `[2/5] Connecting OMH to Hermes` with `too many values to unpack`.
+  Such a key is now read as one key, not a level of nesting, in the dry run
+  and the real run.
+
+- **`omh-ai-job-search` is a new installable skill (#2253, #2261).** An
+  AI-assisted job search for any profession, adapted from the upstream
+  ai-job-search methodology to Hermes' own research and document tools. It
+  confirms the person's profile and preferences, shortlists real vacancies
+  with their sources and fit reasons, drafts truthful, versioned
+  application material for review, and prepares interviews. A stdlib-only
+  `job_state.py` tracks applications locally; an application counts as
+  submitted only on confirmed evidence, and a malformed timestamp (hour 24
+  included, on every Python) is refused before any write. An employer's
+  hiring request is not routed to it. Contributed by @frirenai.
+
+- **`research`, `source-finder` and `web-research` share a bounded
+  multi-source search (#2255).** A "find this" request is decomposed into
+  queries, searched and read with the host's own tools, fused into
+  requirement-level coverage, and followed up within a bound. An optional
+  `omh_search` plugin tool helps with that. There is no new command, mode
+  or required provider key. An unavailable, failed or unsearched source is
+  not reported as zero hits. This is a draft candidate: search quality and
+  installed-model behaviour have not passed acceptance. Contributed by
+  @frirenai.
+
+- **Three executable domain-science skills: `omh-geospatial-analysis`,
+  `omh-biomedical-evidence` and `omh-molecular-docking` (#2235, #2241,
+  #2245).** CRS-aware polygon intersection and area in projected metres
+  (Shapely/PyProj); captured BioMCP public-source responses reconciled
+  offline into an evidence matrix that keeps disagreements and gaps; and
+  standalone AutoDock Vina docking with reproducible settings and per-model
+  integrity checks. They are opt-in. Their helpers ship as inert files:
+  installing a skill neither runs a helper nor installs a scientific
+  dependency. On macOS the helpers' path guards, and show-reel's, accept
+  the system `/etc`, `/tmp` and `/var` links into `/private`, and every
+  other symlink is still refused. Docking refuses one file passed as both
+  receptor and ligand, however it is spelled. Contributed by @frirenai.
+
+- **Skill replies end on their result, not on a list of things not done
+  (#2238).** The shared closing guidance asked for a list of what was not
+  checked or executed and for a question at the end, so a briefing could
+  close on "I did not install or change settings" when neither was asked
+  for. The shared closing rule, in every skill body, now orders a reply as
+  result, relevant evidence and limits, the required observed run summary,
+  then one specific question about the content only when a real decision
+  or a useful discussion remains. Completed work needs no question, and
+  unrelated non-action footers and generic offers to continue are left
+  out. Requested work that was not done, a failed retrieval, an unavailable
+  check and a permission decision stay explicit, and a discussion question
+  grants no permission. Contributed by @frirenai.
+
+- **Windows staged self-updates work under PowerShell 7 (#2218).** The
+  generation-pointer junction now gets an absolute target, which
+  PowerShell 7 requires; a relative one staged the update and then failed
+  at activation. POSIX symlinks keep their relative targets. Contributed by
+  @frirenai.
+
+- **`ulw-research` records inspectable evidence (#2227).** Claims and
+  sources carry typed provenance, ownership and counter-search checks, so
+  correlated republications cannot count as independent corroboration. An
+  exhausted budget is kept apart from completed research. `python -m
+  omh.workflows.research_dossier <json-file>` validates a dossier's record
+  structure, with distinct exit codes for valid and invalid input. Passing
+  it is not factual truth or evidence that a source was read. Contributed
+  by @frirenai.
+
+- **`omh-show-reel` is a new installable skill (#2212, #2220).** A
+  multilingual show-reel and launch-film workflow ("Create a launch film.",
+  "제품 쇼케이스 영상 만들어줘", `/show-reel …`), with an optional motion and
+  audio toolkit that ships as inert files. Its engine, project layout and
+  QA tools match upstream revfactory/showreel (MIT) at a pinned revision,
+  and the render receipt records its quality settings. Narration reaches a
+  network service only when the person runs the opt-in script with
+  `ELEVENLABS_API_KEY` set; without it, the reel falls back to music and
+  captions. A film named inside another request (an issue title, a Slack
+  post, "make the launch film shorter") keeps that request's owner.
+  Contributed by @frirenai (carries #2195).
 
 ## 4.0.1 - 2026-10-22
 
