@@ -362,7 +362,7 @@ class ShippedTriggerPackTests(unittest.TestCase):
             ("id", "build gagal", "build-failure-triage"),
             ("vi", "lập kế hoạch thực hiện", "plan"),
             ("vi", "rà soát mã nguồn", "code-review"),
-            ("vi", "kiểm tra khả năng tiếp cận", "accessibility-audit"),
+            ("vi", "kiểm tra accessibility", "accessibility-audit"),
             ("vi", "build thất bại", "build-failure-triage"),
             ("vi", "tiến hành nghiên cứu chuyên sâu", "research"),
         )

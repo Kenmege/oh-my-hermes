@@ -410,6 +410,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # intervention case.
             # #1892 adds eight: four habits told with a cadence phrase and four
             # non-code fix commands on a product noun and a defect noun.
+            # The native vi review adds two: a red-team hiring sentence and
+            # gop prose, both of which mention the lane's own word without
+            # asking for the lane.
             # The #1893 review adds three: modals said of a person (advice,
             # obligation, belief), which stay narration.
             # The #1893 re-review adds five: a modal inside a subordinate or
@@ -418,6 +421,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # predicate declines (a one-word approval, a thank-you, a Choice
             # offering only `none`) and one four-candidate non-request it must
             # keep asking.
+            # The native vi review adds ten: four in-sentence dispatch cases,
+            # five clarify band cases, and the accessibility misroute.
             # #1799 adds six: human agents, a database compaction, an app's API
             # bill, and a recursive function, none of which is an agent run;
             # and six more that carry the incident phrases themselves (goal
@@ -872,7 +877,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Three domain-science vocabulary controls (+3).
             # Career actor repair adds five employer requests and two references.
             # Normalized actor/objective follow-up adds seven employer contrasts.
-            expected=1112,
+            expected=1114,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1375,7 +1380,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # install drift, and /omh-doctor status runs doctor (+1).
             # Career actor repair retains five personal/target/quoted controls.
             # Actor/objective follow-up adds two third-person candidate controls.
-            expected=1120,
+            expected=1130,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
