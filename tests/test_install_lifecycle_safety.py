@@ -31,14 +31,19 @@ from _platform_support import requires_symlinks
 load_local_package()
 
 from omh.commands.setup import _sync_hermes_profiles, read_config  # noqa: E402
-from omh.install.config_adapter import external_dirs  # noqa: E402
+from omh.commands import setup as setup_module  # noqa: E402
+from omh.install.config_adapter import external_dirs, plugin_omh_home_setting  # noqa: E402
 from omh.install.installer import uninstall_skill_pack  # noqa: E402
 from omh.system.paths import OmhPaths  # noqa: E402
 
 
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    path.write_bytes(text.encode("utf-8"))
+
+
+def _external_paths(config: str) -> set[Path]:
+    return {Path(value).resolve() for value in external_dirs(config)}
 
 
 class _Fixture(unittest.TestCase):
@@ -98,6 +103,7 @@ class SharedStoreUninstallTests(_Fixture):
         _write(sentinel, '{"synthetic_user_record": true}\n')
         _write(self.omh / "skills" / "primary-only" / "SKILL.md", "# primary skill\n")
         _write(self.hermes / "plugins" / "omh" / "plugin.yaml", "name: omh\n")
+        primary_before = (self.hermes / "config.yaml").read_bytes()
 
         status, stdout, stderr = run_cli(
             ["--hermes-home", str(bot), "uninstall", "--keep-command", "--json"]
@@ -109,7 +115,9 @@ class SharedStoreUninstallTests(_Fixture):
         self.assertTrue(sentinel.is_file(), "shared runtime record was deleted")
         self.assertTrue((self.omh / "skills" / "primary-only" / "SKILL.md").is_file())
         self.assertTrue((self.hermes / "plugins" / "omh" / "plugin.yaml").is_file())
-        self.assertIn(str(self.omh), (self.hermes / "config.yaml").read_text(encoding="utf-8"))
+        self.assertIn((self.omh / "skills").resolve(),
+                      _external_paths(read_config(self.hermes / "config.yaml")))
+        self.assertEqual((self.hermes / "config.yaml").read_bytes(), primary_before)
         self.assertIn("would_remove", payload)
 
     def test_unshared_store_is_still_removed(self) -> None:
@@ -126,7 +134,10 @@ class SharedStoreUninstallTests(_Fixture):
                f"        omh_home: {self.omh}\n"
                f"skills:\n  external_dirs:\n    - {self.omh / 'skills'}\n")
         primary_before = (self.hermes / "config.yaml").read_bytes()
-        self.assertNotIn(str(private), primary_before.decode("utf-8"))
+        self.assertNotEqual(Path(plugin_omh_home_setting(primary_before.decode("utf-8"))).resolve(),
+                            private.resolve())
+        self.assertNotIn((private / "skills").resolve(),
+                         _external_paths(primary_before.decode("utf-8")))
 
         status, stdout, stderr = run_cli(
             ["--hermes-home", str(bot), "uninstall", "--all", "--keep-command", "--json"]
@@ -143,8 +154,9 @@ class SharedStoreUninstallTests(_Fixture):
         self._profile_binding(bot, self.omh)
         primary_runtime = self.root / "primary-runtime"
         self._profile_binding(self.hermes, primary_runtime)
-        with (self.hermes / "config.yaml").open("a", encoding="utf-8") as config:
-            config.write(f"skills:\n  external_dirs:\n    - {self.omh / 'skills'}\n")
+        config_path = self.hermes / "config.yaml"
+        config_path.write_bytes(config_path.read_bytes() +
+                                f"skills:\n  external_dirs:\n    - {self.omh / 'skills'}\n".encode("utf-8"))
         sentinel = self.omh / "runtime" / "shared-record.json"
         _write(sentinel, '{"shared": true}\n')
         skill = self.omh / "skills" / "primary-only" / "SKILL.md"
@@ -161,7 +173,8 @@ class SharedStoreUninstallTests(_Fixture):
         self.assertEqual(sentinel.read_bytes(), b'{"shared": true}\n')
         self.assertTrue(skill.is_file())
         self.assertEqual((self.hermes / "config.yaml").read_bytes(), before)
-        self.assertNotIn(str(self.omh), json.loads(stdout)["removed_paths"])
+        self.assertNotIn(self.omh.resolve(),
+                         {Path(value).resolve() for value in json.loads(stdout)["removed_paths"]})
 
     def test_shared_store_dry_run_does_not_delete_or_rewrite_files(self) -> None:
         """Mutation control, independently of whether the proposed plan is safe."""
@@ -189,7 +202,8 @@ class SharedStoreUninstallTests(_Fixture):
         )
 
         self.assertEqual(status, 0, stderr)
-        self.assertNotIn(str(self.omh), json.loads(stdout)["would_remove"],
+        self.assertNotIn(self.omh.resolve(),
+                         {Path(value).resolve() for value in json.loads(stdout)["would_remove"]},
                          "dry-run advertises destructive shared-store removal")
 
 
@@ -215,9 +229,11 @@ class RegistrationOptOutTests(_Fixture):
         )
         self._setup_primary()
         config = read_config(bot / "config.yaml")
-        self.assertIn(str(self.omh / "skills"), external_dirs(config))
-        self.assertIn(str(self.omh), read_config(self.hermes / "config.yaml"))
-        self.assertIn(str(runtime), config, "setup must retain bot's preexisting B binding")
+        self.assertIn((self.omh / "skills").resolve(), _external_paths(config))
+        self.assertEqual(Path(plugin_omh_home_setting(
+            read_config(self.hermes / "config.yaml"))).resolve(), self.omh.resolve())
+        self.assertEqual(Path(plugin_omh_home_setting(config)).resolve(), runtime.resolve(),
+                         "setup must retain bot's preexisting B binding")
         self.assertTrue((bot / "plugins" / "omh" / ".omh-plugin-manifest.json").is_file())
         return bot, runtime, foreign
 
@@ -235,13 +251,13 @@ class RegistrationOptOutTests(_Fixture):
 
         self.assertEqual(status, 0, stderr)
         self.assertTrue(payload["config_changed"], payload.get("config_message"))
-        self.assertNotIn(str(self.omh / "skills"), external_dirs(config))
-        self.assertIn(str(runtime), config)
+        self.assertNotIn((self.omh / "skills").resolve(), _external_paths(config))
+        self.assertEqual(Path(plugin_omh_home_setting(config)).resolve(), runtime.resolve())
         self.assertTrue(runtime.is_dir())
         self.assertEqual(runtime_sentinel.read_bytes(), runtime_before)
         self.assertEqual(self._file_snapshot(bot / "plugins" / "omh"), plugin_before)
         for directory in foreign:
-            self.assertIn(str(directory), external_dirs(config))
+            self.assertIn(directory.resolve(), _external_paths(config))
             self.assertTrue((directory / "personal" / "SKILL.md").is_file())
         # Installed-but-unregistered is the product's persistent opt-out marker.
         rows = _sync_hermes_profiles(Namespace(
@@ -249,7 +265,8 @@ class RegistrationOptOutTests(_Fixture):
             scope=None, force=False, dry_run=False,
         ))
         self.assertEqual({row["profile"]: row for row in rows}["bot"]["status"], "unregistered_kept")
-        self.assertNotIn(str(self.omh / "skills"), external_dirs(read_config(bot / "config.yaml")))
+        self.assertNotIn((self.omh / "skills").resolve(),
+                         _external_paths(read_config(bot / "config.yaml")))
 
     def test_registration_only_preserves_foreign_same_basename_directories(self) -> None:
         """Negative ownership control: basename 'skills' proves no ownership."""
@@ -265,10 +282,10 @@ class RegistrationOptOutTests(_Fixture):
         self.assertEqual(status, 0, stderr)
         self.assertIsInstance(json.loads(stdout), dict)
         config = read_config(bot / "config.yaml")
-        self.assertIn(str(runtime), config)
+        self.assertEqual(Path(plugin_omh_home_setting(config)).resolve(), runtime.resolve())
         self.assertEqual(sentinel.read_bytes(), before)
         for directory in foreign:
-            self.assertIn(str(directory), external_dirs(config))
+            self.assertIn(directory.resolve(), _external_paths(config))
             self.assertEqual(self._file_snapshot(directory), snapshots[directory])
 
 
@@ -316,10 +333,15 @@ class CorruptProfileUpdateTests(_Fixture):
         _write(bad / "config.yaml", "plugins: {}\n# do not replace bad config\n")
         bad_before = self._file_snapshot(bad)
         reads: list[Path] = []
+        bad_reads: list[dict[str, bytes]] = []
+        bad_config = (bad / "config.yaml").resolve()
 
         def read_one_profile(path: Path, *args, **kwargs):
-            reads.append(Path(path))
-            if Path(path) == bad / "config.yaml":
+            identity = Path(path).resolve()
+            reads.append(identity)
+            if identity == bad_config:
+                bad_reads.append(self._file_snapshot(bad))
+                self.assertEqual(bad_reads[-1], bad_before, "mutation before unreadable config preflight")
                 raise OSError("permission denied for a-bad/config.yaml")
             return read_config(path, *args, **kwargs)
 
@@ -330,19 +352,26 @@ class CorruptProfileUpdateTests(_Fixture):
             force=False,
             dry_run=False,
         )
-        with mock.patch("omh.commands.setup.read_config", side_effect=read_one_profile):
+        with mock.patch("omh.commands.setup.read_config", side_effect=read_one_profile), mock.patch(
+            "omh.commands.setup.install_plugin_bundle", wraps=setup_module.install_plugin_bundle
+        ) as bundle:
             rows = self._sync_rows(args)
 
         by_profile = {row["profile"]: row for row in rows}
         self.assertEqual(by_profile["a-bad"]["status"], "failed")
-        self.assertTrue(by_profile["a-bad"].get("error"))
+        self.assertIn("permission denied for a-bad/config.yaml", by_profile["a-bad"]["error"])
+        self.assertEqual(bad_reads, [bad_before], "fault must fire at the first and only bad read")
         self.assertEqual(self._file_snapshot(bad), bad_before, "bad profile state was mutated")
-        self.assertIn(bad / "config.yaml", reads)
-        self.assertIn(good / "config.yaml", reads, "fault injection must delegate healthy reads")
+        self.assertFalse((bad / "plugins" / "omh").exists())
+        self.assertNotIn(bad.resolve(),
+                         [call.args[0].hermes_home.resolve() for call in bundle.call_args_list])
+        self.assertIn(bad_config, reads)
+        self.assertIn((good / "config.yaml").resolve(), reads, "fault injection must delegate healthy reads")
         self.assertNotEqual(by_profile["z-good"]["status"], "failed")
         self.assertTrue((good / "plugins" / "omh").is_dir(), "healthy profile was skipped")
         self.assertIn("healthy-model", read_config(good / "config.yaml"))
-        self.assertIn(str(self.omh / "skills"), external_dirs(read_config(good / "config.yaml")))
+        self.assertIn((self.omh / "skills").resolve(),
+                      _external_paths(read_config(good / "config.yaml")))
 
 
 class UpdateJsonTests(_Fixture):

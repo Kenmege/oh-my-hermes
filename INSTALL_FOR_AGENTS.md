@@ -258,6 +258,15 @@ nonzero process exit; the human summary names the failure rather than claiming
 completion. Repair the named profile's permissions/config or review protected
 local edits before retrying; never discard them merely to make a status green.
 
+For the primary plugin only, `update --dry-run` can return a successful plan
+with `plugin_bundle.status: would_refuse`, `applied: false`, and a `reason`
+when a readable, structurally valid OMH manifest confirms dirty managed files
+or unknown private entries. This is not an applied refresh: it writes nothing,
+and an actual refused update remains partial/nonzero. Missing, unreadable or
+malformed manifest inventories and real inspection/config errors are not
+protected-only plans; required child-profile failures still make dry-run
+partial/nonzero. Hermes-owned plugins remain host-managed, even with `--force`.
+
 Explicit `--source` / `--from-skills-dir` updates remain workflow-content-only:
 no command-package replacement, plugin refresh or Hermes registration/profile
 sync is implied. Optional menubar handling is not required-profile success.

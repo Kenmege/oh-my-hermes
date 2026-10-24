@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from _cli_harness import run_cli
 from _platform_support import requires_symlinks
+from omh.config_adapter import external_dirs, plugin_omh_home_setting
 
 
 class LifecycleOrderingTests(unittest.TestCase):
@@ -25,9 +26,11 @@ class LifecycleOrderingTests(unittest.TestCase):
         self.command = self.root / "command" / "venv"
         self.python = self.command / "bin" / "python"
         self.python.parent.mkdir(parents=True)
-        self.python.write_text("owned\n", encoding="utf-8")
+        self.python.write_bytes(b"owned\n")
         self.environment = patch.dict(os.environ, {"OMH_VENV_DIR": str(self.command),
-                                                   "OMH_BIN_DIR": str(self.root / "bin")})
+                                                   "OMH_BIN_DIR": str(self.root / "bin"),
+                                                   "HOME": str(self.root / "home"),
+                                                   "USERPROFILE": str(self.root / "home")})
         self.environment.start()
         self.addCleanup(self.environment.stop)
 
@@ -41,7 +44,10 @@ class LifecycleOrderingTests(unittest.TestCase):
     def setup(self, *, default=False):
         if default:
             self.store = self.root / "home" / ".omh"
+            self.store.parent.mkdir(parents=True, exist_ok=True)
             os.environ["HOME"] = str(self.store.parent)
+            os.environ["USERPROFILE"] = str(self.store.parent)
+            self.assertEqual(Path.home().resolve(), self.store.parent.resolve())
             os.environ.pop("OMH_HOME", None)
         code, payload, stderr = self.cli("setup", "--core", "--yes", "--no-interactive",
                                          "--no-menubar", store=not default)
@@ -49,7 +55,19 @@ class LifecycleOrderingTests(unittest.TestCase):
         self.record = self.store / "runtime" / "record"
         self.record.parent.mkdir(parents=True, exist_ok=True)
         self.record.write_bytes(b"MUST KEEP\n")
-        self.assertIn(str(self.store), (self.bot / "config.yaml").read_text())
+        self.assert_binding(self.bot)
+        self.assertIn((self.store / "skills").resolve(),
+                      {Path(p).resolve() for p in external_dirs((self.bot / "config.yaml").read_text())})
+
+    def assert_binding(self, home):
+        self.assertEqual(Path(plugin_omh_home_setting((home / "config.yaml").read_text())).resolve(), self.store.resolve())
+
+    def resolved_paths(self, paths):
+        return {Path(p).resolve() for p in paths}
+
+    def assert_retained_roots(self):
+        self.assertEqual(self.record.read_bytes(), b"MUST KEEP\n")
+        self.assertEqual(self.python.read_bytes(), b"owned\n")
 
     def uninstall(self, *flags, store=True, home=None):
         with patch.object(sys, "executable", str(self.python)):
@@ -69,14 +87,13 @@ class LifecycleOrderingTests(unittest.TestCase):
         self.assertEqual(payload["hermes_profiles"][0]["status"], "failed")
         self.assertIn("symlink", payload["hermes_profiles"][0]["error"])
         self.assertTrue(self.store.is_dir(), payload)
-        self.assertEqual(self.record.read_bytes(), b"MUST KEEP\n")
-        self.assertTrue(self.python.is_file(), payload)
+        self.assert_retained_roots()
         self.assertEqual(saved.read_bytes(), before)
         self.assertTrue(cfg.is_symlink())
-        self.assertIn(str(self.store).encode(), before)
+        self.assert_binding(self.bot)
         self.assertEqual(payload["store_removal"]["status"], "kept")
         self.assertFalse(payload["command_package_removed"])
-        self.assertNotIn(str(self.store), payload["removed_paths"])
+        self.assertNotIn(self.store.resolve(), self.resolved_paths(payload["removed_paths"]))
 
     def test_successful_primary_and_child_detach_removes_roots(self):
         self.setup()
@@ -85,7 +102,7 @@ class LifecycleOrderingTests(unittest.TestCase):
         self.assertFalse(self.store.exists(), payload)
         self.assertFalse(self.command.exists(), payload)
         self.assertEqual(payload["hermes_profiles"][0]["status"], "cleared")
-        self.assertIn(str(self.store), payload["removed_paths"])
+        self.assertIn(self.store.resolve(), self.resolved_paths(payload["removed_paths"]))
 
     def test_successful_custom_binding_cleanup_without_store_override(self):
         self.setup()
@@ -95,13 +112,15 @@ class LifecycleOrderingTests(unittest.TestCase):
         self.assertEqual(code, 0, (payload, stderr))
         self.assertFalse(self.store.exists(), payload)
         self.assertFalse(self.command.exists(), payload)
-        self.assertNotIn(str(self.store), (self.bot / "config.yaml").read_text())
+        text = (self.bot / "config.yaml").read_text()
+        self.assertEqual(plugin_omh_home_setting(text), "")
+        self.assertNotIn((self.store / "skills").resolve(), {Path(p).resolve() for p in external_dirs(text)})
 
     def test_default_home_store_successful_cleanup(self):
         self.setup(default=True)
         code, payload, stderr = self.uninstall(store=False)
         self.assertEqual(code, 0, (payload, stderr))
-        self.assertEqual(Path(payload["omh_home"]), self.store)
+        self.assertEqual(Path(payload["omh_home"]).resolve(), self.store.resolve())
         self.assertFalse(self.store.exists(), payload)
         self.assertFalse(self.command.exists(), payload)
 
@@ -109,12 +128,19 @@ class LifecycleOrderingTests(unittest.TestCase):
         self.setup()
         cfg = self.bot / "config.yaml"
         # Same real store, different user value: ownership reversal must keep it.
-        cfg.write_text(cfg.read_text().replace(str(self.store), str(self.store / ".." / "store")))
+        before = cfg.read_bytes()
+        current = plugin_omh_home_setting(before.decode("utf-8"))
+        edited = before.replace(f"'{current}'".encode(), f"'{current}/../{self.store.name}'".encode())
+        self.assertNotEqual(edited, before, "the actual serialized binding must be edited")
+        cfg.write_bytes(edited)
+        self.assertNotEqual(plugin_omh_home_setting(edited.decode("utf-8")), current)
+        self.assert_binding(self.bot)
         code, payload, stderr = self.uninstall()
         self.assertEqual(code, 0, (payload, stderr))
         self.assertEqual(payload["hermes_profiles"][0]["status"], "partially_cleared")
-        self.assertTrue(self.record.exists(), payload)
-        self.assertTrue(self.python.exists(), payload)
+        self.assertIn(f"'{current}/../{self.store.name}'".encode(), cfg.read_bytes())
+        self.assert_binding(self.bot)
+        self.assert_retained_roots()
         self.assertEqual(payload["store_removal"]["status"], "kept")
         self.assertFalse(payload["command_package_removed"])
 
@@ -123,21 +149,24 @@ class LifecycleOrderingTests(unittest.TestCase):
         primary = (self.hermes / "config.yaml").read_bytes()
         code, payload, stderr = self.uninstall(home=self.bot, store=False)
         self.assertEqual(code, 0, (payload, stderr))
-        self.assertTrue(self.record.exists(), payload)
-        self.assertTrue(self.python.exists(), payload)
+        self.assert_retained_roots()
         self.assertEqual((self.hermes / "config.yaml").read_bytes(), primary)
 
     def test_remove_files_keeps_child_binding_plugin_and_shared_roots(self):
         self.setup()
+        plugin = self.bot / "plugins" / "omh"
+        before = {p.relative_to(plugin): p.read_bytes() for p in plugin.rglob("*") if p.is_file()}
         code, payload, stderr = self.uninstall("--remove-files")
         self.assertEqual(code, 0, (payload, stderr))
-        self.assertTrue(self.record.exists(), payload)
-        self.assertTrue(self.python.exists(), payload)
+        self.assert_retained_roots()
         # Existing remove-files semantics unregister profiles, but do not reverse
         # their runtime binding or remove the plugin bundle.
-        self.assertIn(str(self.store), (self.bot / "config.yaml").read_text())
-        self.assertTrue((self.bot / "plugins" / "omh").is_dir())
-        self.assertNotIn(str(self.store), payload["removed_paths"])
+        self.assert_binding(self.bot)
+        self.assertNotIn((self.store / "skills").resolve(),
+                         {Path(p).resolve() for p in external_dirs((self.bot / "config.yaml").read_text())})
+        self.assertTrue(plugin.is_dir())
+        self.assertEqual({p.relative_to(plugin): p.read_bytes() for p in plugin.rglob("*") if p.is_file()}, before)
+        self.assertNotIn(self.store.resolve(), self.resolved_paths(payload["removed_paths"]))
 
     def test_dry_run_preserves_configs_and_does_not_assume_detach(self):
         self.setup()
@@ -145,7 +174,7 @@ class LifecycleOrderingTests(unittest.TestCase):
         code, payload, stderr = self.uninstall("--dry-run")
         self.assertEqual(code, 0, (payload, stderr))
         self.assertEqual({p: p.read_bytes() for p in self.root.rglob("*") if p.is_file()}, before)
-        self.assertNotIn(str(self.store), payload["would_remove"])
+        self.assertNotIn(self.store.resolve(), self.resolved_paths(payload["would_remove"]))
         self.assertFalse(payload["command_package_removed"])
 
 

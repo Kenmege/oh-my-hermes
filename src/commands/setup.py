@@ -117,7 +117,7 @@ from ..plugin_bundle.omh.provider_detection import (
     env_row_is_covered,
 )
 from ..plugin_pack import PLUGIN_NAME, PluginPackError, install_plugin_bundle
-from ..install.plugin_pack import HERMES_PLUGIN_UPDATE_COMMAND
+from ..install.plugin_pack import HERMES_PLUGIN_UPDATE_COMMAND, PluginContentProtectedError
 from ..probe import probe_capabilities
 from ..release import (
     RELEASE_CHANNELS,
@@ -1179,8 +1179,17 @@ def _refresh_installed_plugin_bundle(args: argparse.Namespace) -> dict[str, obje
     try:
         result = install_plugin_bundle(paths, force=args.force, dry_run=args.dry_run)
     except PluginPackError as exc:
-        # Preserve the existing partial-update contract, but never silently
-        # claim that a protected plugin tree was refreshed.
+        # Only confirmed content protection is a successful *plan*. Generic
+        # inspection/read/parse failures remain failed even during dry-run.
+        if args.dry_run and isinstance(exc, PluginContentProtectedError):
+            return {
+                "status": "would_refuse", "applied": False, "changed": False,
+                "observed": False, "dry_run": True,
+                "plugin_dir": str(paths.hermes_plugin_dir),
+                "reason": _bounded_command_error(str(exc)),
+                "observed_scope": "protected content; no plugin refresh applied",
+            }
+        # Actual protection refusals still make the final update partial.
         print(f"note: OMH plugin refresh skipped: {_friendly_plugin_error(paths, str(exc))}", file=sys.stderr)
         return None
     if result.get("status") == "host_managed":

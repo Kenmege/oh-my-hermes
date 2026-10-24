@@ -56,6 +56,33 @@ class PluginPackError(Exception):
     pass
 
 
+class PluginContentProtectedError(PluginPackError):
+    """Known local content under a readable, structurally valid OMH inventory."""
+
+
+def _protection_inventory_valid(manifest: dict[str, Any] | None) -> bool:
+    # Structure proves an inspectable ownership inventory, not matching file
+    # contents: genuinely edited managed files must still be protected.
+    if not manifest or manifest.get("schema_version") != PLUGIN_SCHEMA_VERSION or manifest.get("plugin_name") != PLUGIN_NAME:
+        return False
+    records = manifest.get("files")
+    if not isinstance(records, list) or not records:
+        return False
+    seen: set[str] = set()
+    for record in records:
+        if not isinstance(record, dict):
+            return False
+        rel, digest = record.get("path"), record.get("sha256")
+        if not isinstance(rel, str) or not rel or "\\" in rel or rel.startswith("/") or ":" in rel:
+            return False
+        if any(part in ("", ".", "..") for part in rel.split("/")) or rel in seen:
+            return False
+        if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            return False
+        seen.add(rel)
+    return True
+
+
 @dataclass(frozen=True)
 class PluginFileRecord:
     path: str
@@ -193,6 +220,8 @@ def install_plugin_bundle(paths: OmhPaths, *, force: bool = False, dry_run: bool
         )
         return result
     existing_manifest = read_plugin_manifest(target)
+    if existing_manifest is not None and not force and not _protection_inventory_valid(existing_manifest):
+        raise PluginPackError("invalid OMH plugin manifest inventory; plugin directory left unchanged")
     dirty = plugin_local_modifications(existing_manifest, target)
     # `is_directory_link` as well as `exists`: `Path.exists` follows the link,
     # so a dangling plugin symlink or junction reads as absent and would slip
@@ -202,11 +231,11 @@ def install_plugin_bundle(paths: OmhPaths, *, force: bool = False, dry_run: bool
     if unmanaged and not force:
         raise PluginPackError(f"{target} exists without an OMH plugin manifest; use --force to replace it")
     if dirty and not force:
-        raise PluginPackError(f"managed plugin files changed: {', '.join(dirty)}; use --force to replace them")
+        raise PluginContentProtectedError(f"managed plugin files changed: {', '.join(dirty)}; use --force to replace them")
     if existing_manifest is not None and not force:
         unknown = _plugin_unmanaged_entries(existing_manifest, target)
         if unknown:
-            raise PluginPackError(
+            raise PluginContentProtectedError(
                 f"unmanaged plugin entries: {', '.join(unknown)}; plugin directory left unchanged; "
                 "move these entries outside the plugin directory, or use --force to replace them"
             )
@@ -426,9 +455,16 @@ def plugin_local_modifications(manifest: dict[str, Any] | None, plugin_dir: Path
         if not rel or not expected:
             continue
         path = plugin_dir / rel
-        if not path.exists():
+        try:
+            # exists() suppresses metadata errors on supported interpreters;
+            # only genuine absence is known content protection.
+            path.stat()
+        except FileNotFoundError:
             modified.append(rel)
-        elif sha256_file(path) != expected:
+            continue
+        except (OSError, ValueError) as exc:
+            raise PluginPackError(f"could not inspect managed plugin path: {exc}") from exc
+        if sha256_file(path) != expected:
             modified.append(rel)
     return modified
 
