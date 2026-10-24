@@ -15,7 +15,9 @@ class ProtectedUpdatePlanTests(unittest.TestCase):
     def setUp(self):
         temporary = TemporaryDirectory(prefix="protected-update-")
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        # The CLI resolves home paths; derive fault targets from that same
+        # identity before patching stat (temporary paths may use aliases).
+        self.root = Path(temporary.name).resolve()
         self.hermes = self.root / "hermes"
         self.store = self.root / "store"
         self.plugin = self.hermes / "plugins" / "omh"
