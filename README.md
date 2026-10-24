@@ -54,18 +54,17 @@ omh setup
 
 - **Expert skills on demand.**<br>
   A hundred-plus `omh-*` specialists: frontend, backend, Rust, security review, verification gates.<br>
-  You never call them; the router loads the right ones into the run as tool calls.<br>
-  Ask in English or Korean.
+  You never call them; the router loads the right ones into the run as tool calls.
 
 - **Long-term memory you can trust.**<br>
   Nothing is remembered silently: each candidate is kept, refused or deferred with a written reason.<br>
   The next session gets a recall pack ranked for its task and cut to a token budget.<br>
   Hermes' own memory is never read or patched.
 
-- **One live view.**<br>
-  Bare `omh` opens the OMH TUI: one row per lane with its model, effort, tokens and cost.<br>
-  The phase todo sits above the prompt, and a `dag-ulw` run shows a live lane tree.<br>
-  An unpriced call says `unknown`, never `$0`.
+- **OMH Native.**<br>
+  Bare `omh` opens OMH's own TUI on Hermes' gateway; switch its launch look with `/theme`.<br>
+  `/dag-ulw` prints the box graph, then a live lane tree with each lane's model, effort and tokens.<br>
+  Steer or interrupt an agent from the agent list, run a `!` shell line, and rewind with Esc Esc.
 
 - **Evidence before "done".**<br>
   Every status names its stage and how sure OMH is about it.<br>
