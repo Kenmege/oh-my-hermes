@@ -31,7 +31,9 @@ from omh.plugin_bundle.omh.delegation_route_restore import (
     conversation_routes_path,
     delegation_route_restore_path,
     load_conversation_routes,
+    conversation_writes_path,
     load_conversation_take_outs,
+    load_conversation_writes,
     load_route_restore_record,
 )
 from omh.plugin_bundle.omh.delegation_routing import read_delegation_route
@@ -870,6 +872,155 @@ class ReleaseCoherenceTest(PerConversationRouteTestCase):
         self.assertEqual(started["route_restore"]["writer_routes"], "unreleased: PermissionError")
         components = started["omh_degradation"]["components"]
         self.assertEqual(components[0]["error_type"], "PermissionError", started)
+
+
+class PerWriterStampTest(PerConversationRouteTestCase):
+    """A `set` whose entry failed to write stays superseded after another writer's `set`.
+
+    The #2268 Risk: the superseded rule compared an entry with the one
+    profile-wide restore record, so once another session's `set` replaced
+    that record, the writer's older entry was put back at its next dispatch.
+    """
+
+    def at(self, offset: float):
+        return mock.patch.object(delegation_route_restore.time, "time", return_value=self.start + offset)
+
+    def stale_entry_then_another_set(self, session: str | None, task: str) -> None:
+        """The exact sequence: W sets, W's next `set` loses its entry, another writer sets."""
+        self.start = time.time()
+        self.top_level("B", *([session] if session else []))
+        with self.at(0):
+            self.set_route(session, task, "deep")
+        with self.at(1), mock.patch.object(
+            delegation_route_restore, "_write_conversation_routes", side_effect=PermissionError("denied")
+        ):
+            result = self.tool(session, task, action="set", category="quick")
+        self.assertEqual(result["conversation_route"], "unrecorded: PermissionError", result)
+        self.assertEqual(result["conversation_write"], "recorded", result)
+        with self.at(2):
+            self.set_route("B", "B-t1", "quick")
+        record = load_route_restore_record(self.omh_home)
+        self.assertEqual(record["writer_session_id"], "B")
+        self.assertEqual(load_conversation_routes(self.omh_home)[session or f"task:{task}"]["route"], DEEP)
+
+    def test_a_stale_entry_stays_ignored_after_another_writers_set(self) -> None:
+        self.stale_entry_then_another_set("A", "A-t1")
+
+        self.assertIsNone(self.dispatch("A", "A-t1"))
+
+        # Neither the stale DEEP nor B's QUICK: this conversation's newest
+        # route has no entry, so it runs on the default.
+        self.assertEqual(self.keys(), {})
+        self.assertIsNone(self.tool("A", "A-t1", action="status")["conversation_route"])
+
+    def test_a_host_that_names_no_session_keeps_its_stale_entry_ignored(self) -> None:
+        # The stamp is keyed like the entry, `task:<id>`. With no session row
+        # the lineage is unknown, so B's route is left in place, as before.
+        self.stale_entry_then_another_set(None, "T1")
+
+        with self.assertLogs("omh.delegation_route", level="WARNING"):
+            fallback = self.dispatch("", "T1")
+
+        self.assertEqual(fallback["omh_route_fallback"]["status"], "lineage_unresolved", fallback)
+        self.assertEqual(self.keys(), QUICK)
+        self.assertEqual(set(load_conversation_writes(self.omh_home)), {"task:T1", "B"})
+
+    def test_a_set_of_the_same_route_whose_entry_failed_is_still_reapplied(self) -> None:
+        # The control: the newer stamp names the entry's own route, so the
+        # entry stands, and so does it after a reapply and another `set`.
+        self.start = time.time()
+        self.top_level("A", "B")
+        with self.at(0):
+            self.set_route("A", "A-t1", "deep")
+        with self.at(1), mock.patch.object(
+            delegation_route_restore, "_write_conversation_routes", side_effect=PermissionError("denied")
+        ):
+            self.tool("A", "A-t1", action="set", category="deep")
+        with self.at(2):
+            self.set_route("B", "B-t1", "quick")
+
+        with self.at(3):
+            self.assertIsNone(self.dispatch("A", "A-t1"))
+        self.assertEqual(self.keys(), DEEP)
+        with self.at(4):
+            self.set_route("B", "B-t1", "quick")
+        self.assertIsNone(self.dispatch("A", "A-t1"))
+        self.assertEqual(self.keys(), DEEP)
+
+    def test_a_child_still_inherits_its_parents_route(self) -> None:
+        self.start = time.time()
+        self.sessions(
+            row("P", last_activity_at=time.time()),
+            row("B", last_activity_at=time.time()),
+            row("O", parent="P", source="subagent", delegate_from="P", started_at=1050.0),
+        )
+        with self.at(0):
+            self.set_route("P", "P-t1", "deep")
+        with self.at(1):
+            self.set_route("B", "B-t1", "quick")
+        with self.at(2):
+            self.assertIsNone(self.dispatch("O", "O-task"))
+        self.assertEqual(self.keys(), DEEP)
+        with self.at(3):
+            self.set_route("B", "B-t1", "quick")
+
+        self.assertIsNone(self.dispatch("O", "O-task"))
+
+        self.assertEqual(self.keys(), DEEP)
+        self.assertEqual(load_conversation_writes(self.omh_home)["P"], load_conversation_routes(self.omh_home)["P"])
+
+    def test_an_absent_or_corrupt_stamp_file_reads_as_no_newer_write(self) -> None:
+        # Exactly the behaviour before the file existed: the stale entry is
+        # put back. This is also the proof that the stamp is what holds it.
+        spoil = {
+            "absent": lambda path: path.unlink(),
+            "garbage": lambda path: path.write_text("{not json", encoding="utf-8"),
+            "schema": lambda path: path.write_text(
+                json.dumps({"schema_version": "x", "writes": {}}), encoding="utf-8"
+            ),
+            "stamp": lambda path: path.write_text(
+                json.dumps({"schema_version": "delegation_conversation_writes/v1", "writes": {"A": {"route": 1}}}),
+                encoding="utf-8",
+            ),
+        }
+        for kind, spoiled in spoil.items():
+            with self.subTest(kind=kind):
+                self.setUp()
+                self.stale_entry_then_another_set("A", "A-t1")
+                spoiled(conversation_writes_path(self.omh_home))
+
+                self.assertIsNone(self.dispatch("A", "A-t1"))
+
+                self.assertEqual(self.keys(), DEEP)
+
+    def test_a_stamp_that_cannot_be_written_does_not_refuse_the_route(self) -> None:
+        conversation_writes_path(self.omh_home).mkdir()
+
+        result = self.tool("A", "A-t1", action="set", category="deep")
+
+        self.assertEqual(result["status"], "routed", result)
+        # A replace onto a directory is IsADirectoryError on POSIX and
+        # PermissionError on Windows; either is a named, not raised, failure.
+        prefix, _, error = result["conversation_write"].partition(": ")
+        self.assertEqual(prefix, "unrecorded", result)
+        self.assertIn(error, {"IsADirectoryError", "PermissionError"}, result)
+        self.assertEqual(result["conversation_route"], "recorded", result)
+        self.assertEqual(self.keys(), DEEP)
+
+    def test_stamps_are_kept_only_for_writers_with_an_entry_and_at_most_64(self) -> None:
+        self.top_level("A", "B")
+        self.set_route("A", "A-t1", "deep")
+        self.assertEqual(self.tool("A", "A-t1", action="clear")["conversation_route"]["status"], "released")
+        self.set_route("B", "B-t1", "quick")
+        # A's entry was released, so its stamp is dropped at the next stamp.
+        self.assertEqual(set(load_conversation_writes(self.omh_home)), {"B"})
+
+        for index in range(70):
+            self.set_route(f"S{index}", f"S{index}-t", "deep")
+        writes = load_conversation_writes(self.omh_home)
+        self.assertEqual(len(writes), 64)
+        self.assertLessEqual(set(writes), set(load_conversation_routes(self.omh_home)))
+        self.assertIn("S69", writes)
 
 
 class LineageCycleTest(PerConversationRouteTestCase):
