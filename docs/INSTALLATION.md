@@ -1163,7 +1163,9 @@ in as Hermes answers. Hermes names its skills only once it has built the
 session's agent, a second or two after the first frame, so until then the
 card shows the skills the last launch on the same Hermes home and profile
 showed, marked `last-known`, and then replaces them with the session's own; a
-first launch, or one on another Hermes home or profile, says `loading…`. On a
+first launch, or one on another Hermes home or profile, says `loading…`. The
+OMH home keeps one such snapshot, so alternating between Hermes profiles that
+share it says `loading…` on each switch. On a
 short terminal it drops rows, the last ones
 first, never reaching the composer. `/theme` alone opens a picker that
 previews each look on the logo and the card as you move (arrow keys, `j`/`k`

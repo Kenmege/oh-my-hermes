@@ -207,8 +207,11 @@ def grid(groups: Sequence[tuple[str, Sequence[str]]], width: int, per_group: int
 
     A name wider than a column spans as many as it needs, so each is shown
     whole and the columns still line up; a group with more names than its
-    rows hold ends them with "+N more" in the next free column.
+    rows hold ends them with "+N more" in the next free column. Narrower
+    than a few cells past the gutter there is no column, and no rows.
     """
+    if width - GUTTER < 3:
+        return []
     columns = max((width - GUTTER) // COLUMN, 1)
     cell = (width - GUTTER) // columns
     out: list[Line] = []
@@ -322,7 +325,7 @@ def ruled(title: Line, body: Sequence[Line], foot: Line, width: int, p: Paint) -
         return (*lead, Span("─" * max(width - line_width(lead) - line_width(tail), 0), edge), *tail)
 
     return [rule(truncate_line(title, max(width - 8, 1)), ()), *[_pad((Span("  "), *line), width) for line in body],
-            rule((), foot)]
+            rule((), truncate_line(foot, max(width - 8, 1)))]
 
 
 # --- layouts: each takes (rows per family, how much to drop) and returns the card's lines ------------------------
@@ -407,9 +410,12 @@ def _rules(f: Facts, s: Skills | None, p: Paint, width: int) -> Build:
         body += _skills_body(s, inner, per_group, drop, p) or [skills_header(s, p)]
         if drop < 7:
             body += [(), (Span("keys".ljust(GUTTER), p.look.label), *keys_line(p, inner - GUTTER))]
-        foot = ((Span(f"{s.omh + s.hermes} skills", p.theme.muted), *known(s, p), Span(" · ", p.theme.dim),
-                 *find_hint(p))
-                if s is not None else (Span(f"skills {LOADING}", p.theme.muted),))
+        foot: Line = (Span(f"skills {LOADING}", p.theme.muted),)
+        if s is not None:
+            count = Span(f"{s.omh + s.hermes} skills", p.theme.muted)
+            foot = (count, *known(s, p), Span(" · ", p.theme.dim), *find_hint(p))
+            if line_width(foot) > width - 8:  # a narrow foot drops the mark first, so the hint stays whole
+                foot = (count, Span(" · ", p.theme.dim), *find_hint(p))
         return ruled(model_spans(f, p), [*body, ()], foot, width, p)
     return build
 

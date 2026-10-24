@@ -1274,7 +1274,8 @@ class App(ModesMixin, AgentViewMixin):
         # Hermes' skills, regrouped for the card: the last launch's (last-known) from startup, the session's once
         # `session.info` says.
         self.session_skills: Skills | None = None
-        self.launch_profile = ""  # the Hermes profile `session.create` named: the snapshot's key with the Hermes home
+        # The Hermes profile `session.create` named: the snapshot's key with the Hermes home; "" when it named none.
+        self.launch_profile = ""
         self.snapshot_kept: Skills | None = None  # the skills this process last wrote to the snapshot
         self.last_session_row: Any = None  # the last stored session, for the card while it is live
         self.redraw_at: float | None = None  # when a settled resize redraws everything
@@ -1359,12 +1360,17 @@ class App(ModesMixin, AgentViewMixin):
         self._load_launch_look()
         info = result.get("info")
         self.launch_profile = as_text(info.get("profile_name")) if isinstance(info, dict) else ""
-        home = self._omh_home()
+        home = self._snapshot_home()
         self.session_skills = read_snapshot(home, *self._snapshot_key()) if home is not None else None
         self.card_state = CARD_NONE if resume else CARD_LIVE
         if resume:
             self._draw_history(result.get("messages"))
         self._redeliver(result.get("open_requests"))
+
+    def _snapshot_home(self) -> Path | None:
+        """Where the launch card's skills snapshot is kept; None without an OMH home, or when `session.create` named
+        no profile to key it by (then it is neither read nor written)."""
+        return self._omh_home() if self.launch_profile else None
 
     def _snapshot_key(self) -> tuple[str, str]:
         """The Hermes home and profile the launch card's skills snapshot is for: another one's skills are never drawn."""
@@ -2273,9 +2279,9 @@ class App(ModesMixin, AgentViewMixin):
         skills = payload.get("skills")
         if isinstance(skills, dict) and skills:  # Hermes' lazy first info names none; the full one, after its build
             rows = skill_rows({key: value for key, value in skills.items() if isinstance(value, list)})
-            home = self._omh_home()
-            # What the next launch draws first, kept only for the profile the launch opened on.
-            same_profile = payload.get("profile_name", self.launch_profile) == self.launch_profile
+            home = self._snapshot_home()
+            # What the next launch draws first, kept only when this info names the profile the launch opened on.
+            same_profile = payload.get("profile_name") == self.launch_profile
             if home is not None and same_profile and rows != self.snapshot_kept:
                 write_snapshot(home, *self._snapshot_key(), rows)
                 self.snapshot_kept = rows

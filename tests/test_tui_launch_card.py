@@ -111,7 +111,10 @@ class Launched:
         self.app._on_response(Response(number, result, None))
 
     def info(self, skills: dict | None = None) -> None:
-        self.app._on_event(Event("session.info", SID, {"model": "openai/gpt-6.1-sol", "skills": skills or SKILLS}))
+        """Hermes' full session info; it names the profile session.create named, when that named one."""
+        named = {"profile_name": self.client.profile} if self.client.profile is not None else {}
+        self.app._on_event(Event("session.info", SID, {"model": "openai/gpt-6.1-sol", "skills": skills or SKILLS,
+                                                       **named}))
 
     def screen(self) -> list[str]:
         self.app._render()
@@ -383,6 +386,22 @@ class SnapshotTests(unittest.TestCase):
         run.app._on_event(Event("session.info", SID, {"model": "m", "skills": other, "profile_name": "default"}))
         self.assertEqual(kept(run.home), replace(skill_rows(other), last_known=True))
 
+    def test_no_profile_named_means_no_snapshot_read_or_written(self) -> None:
+        first = self.first()
+        for profile in (None, ""):  # session.create's info names no profile: the launch keys nothing
+            with self.subTest(profile=profile):
+                write_snapshot(first.home, HERMES, "", skill_rows(SKILLS))  # even one keyed to "" is not read
+                run = Launched(env={"OMH_HOME": str(first.home), "HERMES_HOME": HERMES}, profile=profile)
+                self.assertIn("skills loading…", "\n".join(run.screen()))
+                before = snapshot_path(first.home).read_bytes()
+                run.app._on_event(Event("session.info", SID, {"model": "m", "skills": {"general": ["omh-plan"]},
+                                                              "profile_name": "default"}))
+                self.assertEqual(snapshot_path(first.home).read_bytes(), before)  # nor written
+        run = relaunch(first)  # the launch names one, a session.info names none: nothing is written either
+        run.app._on_event(Event("session.info", SID, {"model": "m", "skills": {"general": ["omh-plan"]}}))
+        self.assertIsNone(kept(first.home))  # still the "" one written above, not this launch's
+        self.assertIsNotNone(read_snapshot(first.home, HERMES, ""))
+
     def test_an_unreadable_or_foreign_snapshot_is_ignored_and_replaced(self) -> None:
         good = {"schema_version": SNAPSHOT_SCHEMA, "hermes_home": HERMES, "profile": "default",
                 "groups": [["plan", ["omh-plan"]]], "omh": 1, "hermes_categories": [], "hermes": 0}
@@ -422,12 +441,17 @@ class SnapshotTests(unittest.TestCase):
     def test_the_mark_is_quiet_and_the_swap_keeps_the_cards_height(self) -> None:
         facts = CardTests.FACTS
         fresh = skill_rows(SKILLS, members=lambda: MEMBERS)
+        sizes = [(150, 30), (120, 12), (100, 6), (60, 9)] + [(width, room) for width in range(40, 49) for room in (30, 9)]
         for look in LAUNCH_PRESETS:
-            for width, room in ((150, 30), (120, 12), (100, 6), (60, 9)):
-                with self.subTest(look=look, width=width, room=room):
-                    known = launch_card(look, facts, paint(look), width, room, replace(fresh, last_known=True))
-                    final = launch_card(look, facts, paint(look), width, room, fresh)
+            for (width, room), count in ((size, count) for size in sizes for count in (9, 99, 999)):
+                with self.subTest(look=look, width=width, room=room, count=count):
+                    sized = replace(fresh, omh=count - fresh.hermes)  # 1, 2 and 3 digits in the count
+                    known = launch_card(look, facts, paint(look), width, room, replace(sized, last_known=True))
+                    final = launch_card(look, facts, paint(look), width, room, sized)
                     self.assertEqual(len(known), len(final))  # no extra row, and the swap moves nothing below
+                    self.assertTrue(all(line_width(line) <= width for line in known), texts(known))
+                    if look == "graphite":  # its foot drops the mark before it would cut the hint
+                        self.assertIn("type / to find one ──", texts(known)[-1])
                     marked = "\n".join(texts(known))
                     if width >= 100:  # narrower, the title row cuts the mark like the count beside it
                         self.assertEqual("last-known" in marked, "skills" in marked or "installed" in marked, marked)
