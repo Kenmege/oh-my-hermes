@@ -999,7 +999,11 @@ class PerWriterStampTest(PerConversationRouteTestCase):
         result = self.tool("A", "A-t1", action="set", category="deep")
 
         self.assertEqual(result["status"], "routed", result)
-        self.assertEqual(result["conversation_write"], "unrecorded: IsADirectoryError", result)
+        # A replace onto a directory is IsADirectoryError on POSIX and
+        # PermissionError on Windows; either is a named, not raised, failure.
+        prefix, _, error = result["conversation_write"].partition(": ")
+        self.assertEqual(prefix, "unrecorded", result)
+        self.assertIn(error, {"IsADirectoryError", "PermissionError"}, result)
         self.assertEqual(result["conversation_route"], "recorded", result)
         self.assertEqual(self.keys(), DEEP)
 
