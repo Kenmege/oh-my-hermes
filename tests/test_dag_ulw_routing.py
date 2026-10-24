@@ -812,10 +812,68 @@ class RouterTests(unittest.TestCase):
                 self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
                 self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
         for tail in ("legal said a firm yes", "ops says totally fine!", "the lead said absolutely, go for it",
-                     "QA said yes, absolutely", "the lead said oh yes, totally", "ops said ok, ship it",
-                     "the lead said, go ahead", "btw ops said go ahead", "the lead said go ahead, then also bump the version"):
+                     "QA said yes, absolutely", "ops said ok, ship it", "the lead said definitely, ship it",
+                     "the lead said, go ahead", "btw ops said go ahead", "the lead said go ahead, then also bump the version",
+                     # "that" before the object, and an infinitive's subject (#2265 review32).
+                     "the PM said that's fine", "QA said that it's fine", "ops wants us to go ahead",
+                     "the lead wants them to ship it"):
             with self.subTest(message=f"rebase all open PRs, {tail}"):
                 self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
+        # An approval dressed in filler or said twice is sarcasm and holds, and so does a lone k (#2265 review32).
+        for tail in ("the lead said oh yes, totally", "the lead said oh sure", "ops said well, ok", "QA said um, sure",
+                     "the PM said sure, sure", "QA said yeah yeah", "the lead said yeah, sure", "ops said ok, sure, totally",
+                     "the lead said cool cool", "legal said k", "fyi the lead said oh sure", "btw ops said yeah yeah"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
+        # A negator before the reporting or approving verb holds whatever was said, on the router and the hint together,
+        # a size-cue base included (#2265 review32).
+        for message in ("rebase all open PRs, nobody said yes", "rebase all open PRs, not one of them said go",
+                        "update every service to node 22, neither of them said yes", "rebase all open PRs, no-one said ship it",
+                        "rebase all open PRs, ops never said go", "rebase all open PRs, the client never wanted it done",
+                        "rebase all open PRs, nobody's said go", "rebase all open PRs, none of the leads approved it",
+                        "rebase all open PRs, not a single reviewer signed off", "rebase all open PRs, nobody gave the green light",
+                        "rebase all open PRs, no one has approved this", "rebase all open PRs, fyi nobody said yes",
+                        "lint every module and fix the warnings, nobody said yes",
+                        "lint every module and fix the warnings, nobody approved it",
+                        "fix every flaky test across all packages, nobody signed off"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        # A subordinating condition opener holds, trailing or leading; an urgency that borrows its words keeps (#2265
+        # review32).
+        for message in ("rebase all open PRs, assuming QA says it's fine", "rebase all open PRs, provided the CTO says ok",
+                        "rebase all open PRs, as soon as the lead says go", "rebase all open PRs, so long as the build is green",
+                        "rebase all open PRs, supposing legal agrees", "rebase all open PRs, in case the CTO approves",
+                        "rebase all open PRs, on condition that QA signs off", "assuming QA is happy, rebase all open PRs",
+                        "as long as CI is green, update every service to node 22"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        for message in ("rebase all open PRs as soon as possible", "fix all the failing tests provided by QA"):
+            with self.subTest(message=message):
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
+        # The reported object is read by the kinds a bare remark is: thanks, a greeting, a sign-off or a wish keeps, an
+        # approval keeps with when or what for, a plain statement keeps after an aside marker, and a relative what is no
+        # reported speech (#2265 review32).
+        for tail in ("the lead said thanks a ton", "the CTO said cheers", "the PM said have a great weekend",
+                     "the client says hello", "the lead said best of luck", "the lead says fingers crossed",
+                     "the client wants it by friday", "ops wants it by end of week", "the PM wants this this sprint",
+                     "the lead wants it done in Q3", "ops said yes for the release", "legal says yes by eod",
+                     "fwiw QA says the suite is faster now", "btw the PM said she'll review it",
+                     "ps the client said the demo went well", "hope it's what the PM wants", "hope this is what legal wanted"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
+        for tail in ("btw the lead said idk", "fyi QA said not sure", "ps the PM said she's skeptical",
+                     "the lead said thanks but no", "fyi ops said we should wait", "the lead said whatever",
+                     "fyi the lead said thanks for nothing", "btw the PM said in your dreams",
+                     "fyi the lead said over my dead body", "the client wants it next week",
+                     # a refusal in a later part of the object, and a word after an approval that is no punctuation
+                     "btw QA said the suite is green, but let's not merge yet", "fyi the PM said she'll review it, maybe",
+                     "the PM said sure 🤡", "ops said fine 😬"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
         # A remark after a colon list's last item goes through the same gate: a status in either order holds, and a
         # dismissal holds.
         for message in ("for each open PR: rebase, merge, merged already", "for each open PR: rebase, merge, already merged",

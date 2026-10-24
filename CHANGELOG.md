@@ -25,13 +25,23 @@ All notable changes will be documented here.
   keeps (`…, hope nothing breaks`, `…, btw it won't touch prod`, `…, fwiw no
   exceptions`, `…, hope we don't break imports`: a `don't` that governs an
   outcome verb asks for the work all the same). A flat refusal holds
-  (`…, btw, no`). What a third party said, wanted or told us keeps the
-  request only when the whole reported object is an approval, with only
-  intensifiers, filler and punctuation around it (`…, legal said a big
-  yes`, `…, ops says totally fine!`, `…, the lead said absolutely, go for
-  it`); any other reported object holds, sarcasm included (`…, QA says hard
-  no`, `…, the lead said over my dead body`, `…, the lead said yeah right`,
-  `…, ops said sure, in your dreams`).
+  (`…, btw, no`). What a third party said, wanted or told us is read by
+  the kinds a bare remark is: a clean approval keeps, with intensifiers,
+  punctuation and a when or what for around it (`…, legal said a big yes`,
+  `…, the lead said absolutely, go for it`, `…, the client wants it by
+  friday`), and so do thanks, a greeting, a sign-off and a wish (`…, the
+  lead said thanks a ton`, `…, the PM says hi`); after an aside marker a
+  plain statement keeps too (`…, fwiw QA says the suite is faster now`).
+  A refusal, a hedge or anything unknown holds (`…, QA says hard no`, `…,
+  fyi the lead said meh`), and so does sarcasm: a mocking idiom or an
+  approval dressed in filler or said twice (`…, the lead said yeah right`,
+  `…, ops said sure, in your dreams`, `…, the lead said oh sure`, `…, QA
+  said yeah yeah`). A negator before the reporting verb holds whatever was
+  said (`…, nobody said yes`, `…, ops never said go`, `…, nobody signed
+  off`), and so does a subordinating condition opener (`…, assuming QA says
+  it's fine`, `…, as soon as the lead says go`). A relative what is no
+  reported speech (`…, hope it's what the PM wants` keeps as a wish).
+  Korean reported speech is unchanged and reads as on main.
 
 - **A cleared or exhausted delegation route stays gone (#2251
   follow-up).** `clear` and chain exhaustion now release the conversation's
