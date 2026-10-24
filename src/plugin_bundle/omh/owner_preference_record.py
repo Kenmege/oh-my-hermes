@@ -16,9 +16,9 @@ patterns equal.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
 import re
 from typing import Any, Final
+from .iso_datetime import strict_fromisoformat
 
 OWNER_PREFERENCE_SCHEMA_VERSION: Final = "coding_owner_preference/v1"
 OWNER_PREFERENCE_RECORD_TYPE: Final = "coding_owner_preference"
@@ -90,7 +90,7 @@ def opaque_ref_ok(value: object) -> bool:
 
 def valid_timestamp(value: str) -> bool:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return False
     return parsed.tzinfo is not None

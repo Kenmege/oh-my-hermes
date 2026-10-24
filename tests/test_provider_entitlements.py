@@ -66,6 +66,9 @@ class ParityTests(unittest.TestCase):
     # same reason: a machine-level chain override may still name them.
     _RECOGNITION_ONLY_ALIAS_FAMILIES: dict[str, tuple[str, ...]] = {
         "claude-mythos-5-1": ("ccapi", "anthropic", "openrouter"),
+        # Onboarded 2026-10-24 ahead of any chain placement.
+        "kimi-k3.1-pro": ("kimi-coding", "openrouter", "opencode"),
+        "kimi-k3.1-pro-highspeed": ("kimi-coding",),
         # The versioned spelling of the shipped `deepseek-flash` pointer;
         # gateways serve it under this id.
         "deepseek-v4.1-flash": ("deepseek", "openrouter", "opencode"),

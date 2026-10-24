@@ -8,6 +8,7 @@ from typing import Any
 from ..local_store import atomic_write_json, ensure_dir, read_json_object, read_json_object_result, utc_now
 from ..paths import OmhPaths
 from .knowledge_connections import KnowledgeConnectionOptions, build_knowledge_store_intent
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 RESEARCH_DEPARTMENT_PLAN_SCHEMA_VERSION = "research_department_plan/v1"
@@ -833,7 +834,7 @@ def _stamp(value: datetime | str | None) -> str:
         value = datetime.now(timezone.utc)
     if isinstance(value, str):
         try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return _slugify(value)[:32] or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         return _stamp(parsed)

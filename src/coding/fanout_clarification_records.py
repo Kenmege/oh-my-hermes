@@ -1,11 +1,11 @@
 """Typed parent decision records and their on-disk boundary parser."""
 from __future__ import annotations
 
-from datetime import datetime
 from typing import TypedDict, TypeGuard
 
 from .fanout_clarification_schema import InputRequired, ClarificationError, parse_input_required, metadata_text
 from .fanout_failure_diagnostics import is_string_map, is_object_list
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 class ClarificationIdentity(TypedDict):
@@ -116,7 +116,7 @@ def parse_clarification_record(value: object) -> ClarificationRecord:
     if request["decision_id"] != value["decision_id"] or not 1 <= value["round"] <= 3:
         raise ClarificationError("clarification_record_identity_invalid")
     for timestamp in (value["requested_at"], value["expires_at"]):
-        if datetime.fromisoformat(timestamp).tzinfo is None:
+        if strict_fromisoformat(timestamp).tzinfo is None:
             raise ClarificationError("clarification_timestamp_invalid")
     answer = value["answer"]
     if answer is not None:

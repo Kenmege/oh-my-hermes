@@ -7,7 +7,7 @@ clock. This adapter retains source-finder vocabulary without replacing its
 source_candidate contract; temporal receipts belong to coverage assessment.
 """
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 import math
 
 
@@ -187,6 +187,26 @@ def _unique(value, seen, path, errors):
     seen.add(value)
 
 
+def strict_fromisoformat(text):
+    # This module loads by file path with only the stdlib, so it keeps its own
+    # copy of omh.plugin_bundle.omh.iso_datetime.strict_fromisoformat: Python
+    # 3.14 reads T24:00:00 as the next midnight and 3.11-3.13 refuse it. Only
+    # that reading moves the date past the one the text starts with.
+    parsed = datetime.fromisoformat(text)
+    if parsed.time() == time(0) and not text.startswith(_date_spellings(parsed.date())):
+        raise ValueError("hour must be in 0..23")
+    return parsed
+
+
+def _date_spellings(day):
+    week_year, week, weekday = day.isocalendar()
+    spellings = (f"{day.year:04d}-{day.month:02d}-{day.day:02d}", f"{day.year:04d}{day.month:02d}{day.day:02d}",
+                 f"{week_year:04d}-W{week:02d}-{weekday}", f"{week_year:04d}W{week:02d}{weekday}")
+    if weekday == 1:
+        spellings += (f"{week_year:04d}-W{week:02d}", f"{week_year:04d}W{week:02d}")
+    return spellings
+
+
 def _timestamp(value, path, errors):
     # Compatible comparison semantics with temporal_source_receipts._parse_stamp;
     # retain the original token in every returned occurrence.
@@ -194,7 +214,7 @@ def _timestamp(value, path, errors):
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     try:
-        stamp = datetime.fromisoformat(text)
+        stamp = strict_fromisoformat(text)
         if stamp.tzinfo is None:
             stamp = stamp.replace(tzinfo=timezone.utc)
         return stamp.astimezone(timezone.utc)

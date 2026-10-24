@@ -414,6 +414,36 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
             "",
         )
 
+    def test_kimi_k31_pro_ids_are_priced_and_provider_mapped_but_unchained(self):
+        # Onboarded 2026-10-24 ahead of a chain placement: an operator chain
+        # naming either id costs out at Moonshot's list price and gets a
+        # provider verdict, and neither id borrows K3's category label.
+        cost = hermes_delegation_module._approximate_cost_usd
+        self.assertEqual(cost("moonshotai/kimi-k3.1-pro", 1_000_000, 1_000_000, 0), 12.0)
+        self.assertEqual(cost("kimi-k3.1-pro-highspeed", 1_000_000, 1_000_000, 0), 24.0)
+        # Cached input is 0.20 on both cards: the default tenth on the base,
+        # 0.05 of input on Highspeed, never a 2x multiplier.
+        self.assertAlmostEqual(cost("kimi-k3.1-pro", 0, 1, 1_000_000), 0.20 + 10.0 / 1_000_000)
+        self.assertAlmostEqual(cost("kimi-k3.1-pro-highspeed", 0, 1, 1_000_000), 0.20 + 20.0 / 1_000_000)
+        self.assertIs(provider_serves_alias("kimi-k3.1-pro", "kimi-coding"), True)
+        # OpenRouter relays every vendor, so its verdict stays unknown rather
+        # than a claim; the family row matters for vendor-specific kinds.
+        self.assertIsNone(provider_serves_alias("moonshotai/kimi-k3.1-pro", "openrouter"))
+        self.assertIs(provider_serves_alias("kimi-k3.1-pro", "anthropic"), False)
+        self.assertIs(provider_serves_alias("kimi-k3.1-pro-highspeed", "kimi-coding"), True)
+        self.assertIs(provider_serves_alias("kimi-k3.1-pro-highspeed", "zai"), False)
+        for spelling in ("kimi-k3.1-pro", "kimi-k3.1-pro-highspeed", "moonshotai/kimi-k3.1-pro"):
+            for effort in ("low", "medium", "high", "xhigh"):
+                with self.subTest(spelling=spelling, effort=effort):
+                    self.assertEqual(mixture_category_for(spelling, effort, parent_model="gpt-6.1-sol"), "")
+        # An operator chain that names the base id labels the Highspeed child
+        # only if it names Highspeed too: an exact contract never projects.
+        chains = {"deep": (("kimi-k3.1-pro", "high"),)}
+        self.assertEqual(mixture_category_for("kimi-k3.1-pro", "high", parent_model="gpt-6.1-sol", chains=chains), "deep")
+        self.assertEqual(
+            mixture_category_for("kimi-k3.1-pro-highspeed", "high", parent_model="gpt-6.1-sol", chains=chains), ""
+        )
+
     def test_the_served_ultrafast_tiers_are_priced_without_a_provider_claim(self):
         # Observed 2026-09-24 on the OpenGateway route: the V4.1 Flash and GLM
         # 5.3 generations are served through Ultrafast tiers next to the base ids

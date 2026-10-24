@@ -11,7 +11,8 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
-from datetime import datetime, timezone
+from datetime import timezone
+from .iso_datetime import strict_fromisoformat
 
 MAX_SESSIONS = 256
 MAX_REQUESTS_PER_SESSION = 32
@@ -54,7 +55,7 @@ def _operations(capability: dict) -> int:
 def _clock(raw: str) -> int:
     # Same comparison semantics/precision as the validated producer timestamps;
     # integer UTC microseconds avoid float rounding and retain no raw token.
-    parsed = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+    parsed = strict_fromisoformat(raw.strip().replace("Z", "+00:00"))
     stamp = (parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None
              else parsed.astimezone(timezone.utc))
     return ((stamp.toordinal() * 86400 + stamp.hour * 3600 + stamp.minute * 60 + stamp.second)

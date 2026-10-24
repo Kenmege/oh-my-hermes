@@ -105,6 +105,7 @@ from .todo_store import (
     todo_items_digest,
     todo_path,
 )
+from .iso_datetime import strict_fromisoformat
 
 STATUS_SCHEMA_VERSION = "omh_status/v1"
 HUD_SCHEMA_VERSION = "omh_hud/v1"
@@ -3738,7 +3739,7 @@ def _epoch_seconds(value: str) -> float | None:
         cleaned = value.strip()
         if cleaned.endswith("Z"):
             cleaned = cleaned[:-1] + "+00:00"
-        parsed = datetime.fromisoformat(cleaned)
+        parsed = strict_fromisoformat(cleaned)
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed.astimezone(timezone.utc).timestamp()

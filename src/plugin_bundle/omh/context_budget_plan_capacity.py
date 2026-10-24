@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime
 from typing import assert_never
 
 from ._governance_safety import contains_credential_like_material
@@ -13,6 +12,7 @@ from .context_budget_plan_types import (
     Evidence, EvidenceClass, MustKeep, MustKeepClass, MustKeepClassDelta, MustKeepDelta,
     Observations, RouteCapacity, RouteIdentity,
 )
+from .iso_datetime import strict_fromisoformat
 
 
 def metadata_ref(value: str, *, optional: bool = False) -> str:
@@ -52,7 +52,7 @@ def parse_route_capacity_input(raw: str) -> dict[str, Evidence]:
         metadata_ref(source)
         if observed_at:
             try:
-                timestamp = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+                timestamp = strict_fromisoformat(observed_at.replace("Z", "+00:00"))
             except ValueError as exc:
                 raise BudgetPlanError("invalid_evidence_timestamp") from exc
             if len(observed_at) > 40 or timestamp.tzinfo is None:

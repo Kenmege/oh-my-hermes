@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from .iso_datetime import strict_fromisoformat
 
 # Hermes' own entry separator: ENTRY_DELIMITER in its memory store
 # (``tools/memory_tool_store.py``), which splits on the FULL "\n§\n" so a bare
@@ -423,7 +424,7 @@ def _parse_expires_at(value: Any) -> tuple[datetime | None, str]:
     if not text:
         return None, "no_ttl"
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
         return None, "malformed"
     if parsed.tzinfo is None:

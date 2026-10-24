@@ -37,6 +37,7 @@ from datetime import datetime, timezone
 from typing import Any, Final
 
 from .executors import executor_label
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 PRE_HANDOFF_READINESS_SCHEMA_VERSION: Final = "pre_handoff_readiness/v1"
@@ -498,7 +499,7 @@ def _stamp_age_seconds(stamp: str, now: str, horizon: int) -> int:
         if not text:
             return None
         try:
-            parsed = datetime.fromisoformat(text)
+            parsed = strict_fromisoformat(text)
         except ValueError:
             return None
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

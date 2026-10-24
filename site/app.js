@@ -1,14 +1,31 @@
 /*!
  * Oh My Hermes - site runtime.
- * i18n switching, scroll motion, pointer specular, memory ladder,
- * and the electric aura/spark FX layer. No dependencies, no network calls.
+ * Language switch, theme toggle, copy buttons, and the demo pause control.
+ * No dependencies, no network calls.
  */
 (function () {
   "use strict";
 
-  var STORE_KEY = "omh.lang";
+  var LANG_KEY = "omh.lang";
+  var THEME_KEY = "omh.theme";
   var FALLBACK = "en";
-  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var currentLang = FALLBACK;
+
+  function readStore(key) {
+    try {
+      return window.localStorage.getItem(key);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function writeStore(key, value) {
+    try {
+      window.localStorage.setItem(key, value);
+    } catch (err) {
+      /* storage unavailable (private mode); the choice still applies to this page */
+    }
+  }
 
   /* =============================================================== i18n */
 
@@ -26,19 +43,8 @@
   // English by default. Localization is an explicit choice (?lang= or the
   // header switch), never inferred from the browser or OS locale.
   function initialLang() {
-    var stored = null;
-    try {
-      stored = window.localStorage.getItem(STORE_KEY);
-    } catch (err) {
-      stored = null;
-    }
     var fromQuery = new URLSearchParams(window.location.search).get("lang");
-    var list = [fromQuery, stored];
-    for (var i = 0; i < list.length; i += 1) {
-      var hit = normalize(list[i]);
-      if (hit) return hit;
-    }
-    return FALLBACK;
+    return normalize(fromQuery) || normalize(readStore(LANG_KEY)) || FALLBACK;
   }
 
   function translate(key, lang) {
@@ -48,6 +54,7 @@
   }
 
   function applyLang(lang) {
+    currentLang = lang;
     var meta = I18N.meta[lang] || I18N.meta[FALLBACK];
     document.documentElement.lang = (meta && meta.htmlLang) || lang;
 
@@ -80,11 +87,8 @@
       if (option) option.setAttribute("aria-selected", String(button.dataset.lang === lang));
     });
 
-    try {
-      window.localStorage.setItem(STORE_KEY, lang);
-    } catch (err) {
-      /* storage unavailable (private mode); language still applies for this page */
-    }
+    syncDemoLabel();
+    writeStore(LANG_KEY, lang);
   }
 
   function initLangSwitch() {
@@ -141,352 +145,190 @@
     });
   }
 
-  /* ============================================================= motion */
+  /* ============================================================== theme */
 
-  function initReveal() {
-    var targets = Array.prototype.slice.call(document.querySelectorAll("[data-reveal]"));
-    if (!targets.length) return;
+  // With no saved choice the stylesheet follows prefers-color-scheme; the
+  // toggle flips whatever is showing and remembers it.
+  function shownTheme() {
+    var set = document.documentElement.dataset.theme;
+    if (set === "light" || set === "dark") return set;
+    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  }
 
-    targets.forEach(function (node) {
-      var delay = node.getAttribute("data-reveal-delay");
-      if (delay) node.style.setProperty("--reveal-delay", delay + "ms");
-    });
-
-    if (reduceMotion || !("IntersectionObserver" in window)) {
-      targets.forEach(function (node) {
-        node.classList.add("is-revealed");
-      });
-      targets.forEach(runCounters);
-      return;
-    }
-
-    var observer = new IntersectionObserver(
-      function (entries) {
-        entries.forEach(function (entry) {
-          if (!entry.isIntersecting) return;
-          entry.target.classList.add("is-revealed");
-          runCounters(entry.target);
-          observer.unobserve(entry.target);
-        });
-      },
-      { rootMargin: "0px 0px -12% 0px", threshold: 0.12 }
-    );
-
-    targets.forEach(function (node) {
-      observer.observe(node);
+  function initTheme() {
+    var toggle = document.querySelector("[data-theme-toggle]");
+    if (!toggle) return;
+    toggle.addEventListener("click", function () {
+      var next = shownTheme() === "light" ? "dark" : "light";
+      document.documentElement.dataset.theme = next;
+      writeStore(THEME_KEY, next);
     });
   }
 
-  function runCounters(scope) {
-    scope.querySelectorAll("[data-count-to]").forEach(function (node) {
-      if (node.dataset.counted === "true") return;
-      node.dataset.counted = "true";
+  /* =============================================================== copy */
 
-      var target = parseInt(node.getAttribute("data-count-to"), 10);
-      if (isNaN(target)) return;
-      if (reduceMotion || target === 0) {
-        node.textContent = String(target);
-        return;
-      }
-
-      var duration = 1100;
-      var started = null;
-
-      function tick(now) {
-        if (started === null) started = now;
-        var t = Math.min(1, (now - started) / duration);
-        var eased = 1 - Math.pow(1 - t, 3);
-        node.textContent = String(Math.round(target * eased));
-        if (t < 1) window.requestAnimationFrame(tick);
-      }
-
-      window.requestAnimationFrame(tick);
-    });
-  }
-
-  /* The memory ladder: the spine fills as the section scrolls past, and each
-     layer lights up once its node reaches the reading line. */
-  function initMemoryLadder() {
-    var track = document.querySelector("[data-mem-track]");
-    if (!track) return;
-
-    var steps = Array.prototype.slice.call(track.querySelectorAll("[data-mem-step]"));
-    if (!steps.length) return;
-
-    if (reduceMotion) {
-      track.style.setProperty("--mem-progress", "1");
-      steps.forEach(function (step) {
-        step.classList.add("is-active");
-      });
-      return;
-    }
-
-    var queued = false;
-
-    function update() {
-      queued = false;
-
-      var box = track.getBoundingClientRect();
-      var line = window.innerHeight * 0.58;
-      var progress = (line - box.top) / Math.max(box.height, 1);
-      track.style.setProperty("--mem-progress", String(Math.min(1, Math.max(0, progress))));
-
-      steps.forEach(function (step) {
-        var node = step.querySelector(".mem-step__node") || step;
-        var top = node.getBoundingClientRect().top;
-        step.classList.toggle("is-active", top < line);
-      });
-    }
-
-    function onScroll() {
-      if (queued) return;
-      queued = true;
-      window.requestAnimationFrame(update);
-    }
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    update();
-  }
-
-  /* Looping rails: the markup ships two copies; double until one copy
-     is at least as wide as the viewport so translate(-50%) never shows a gap. */
-  function initMarquees() {
-    document.querySelectorAll(".marquee__track, .logo-rail__track").forEach(function (track) {
-      var guard = 0;
-      while (track.scrollWidth < window.innerWidth * 2 && guard < 4) {
-        track.innerHTML += track.innerHTML;
-        guard += 1;
-      }
-    });
-  }
-
-  function initSpecular() {
-    if (reduceMotion || !window.matchMedia("(hover: hover)").matches) return;
-
-    document.querySelectorAll(".glass-card").forEach(function (card) {
-      card.addEventListener("pointermove", function (event) {
-        var box = card.getBoundingClientRect();
-        card.style.setProperty("--mx", ((event.clientX - box.left) / box.width) * 100 + "%");
-        card.style.setProperty("--my", ((event.clientY - box.top) / box.height) * 100 + "%");
-      });
-    });
-  }
-
-  function initCopyButtons() {
+  function initCopy() {
     document.querySelectorAll("[data-copy]").forEach(function (button) {
       button.addEventListener("click", function () {
         var source = document.querySelector(button.getAttribute("data-copy"));
         if (!source || !navigator.clipboard) return;
-
         navigator.clipboard.writeText(source.textContent.trim()).then(function () {
-          var label = button.querySelector("span") || button;
-          var lang = normalize(document.documentElement.lang) || FALLBACK;
-          var done = translate("hero.copied", lang) || "Copied";
-          var idle = translate("hero.copy", lang) || "Copy";
-
-          label.textContent = done;
-          button.dataset.copied = "true";
+          button.setAttribute("data-copied", "");
+          button.textContent = "✓";
           window.setTimeout(function () {
-            label.textContent = idle;
-            delete button.dataset.copied;
+            button.removeAttribute("data-copied");
+            button.textContent = translate("hero.copy", currentLang) || "Copy";
           }, 1600);
         });
       });
     });
   }
 
-  /* ====================================================== electric FX */
-  /* Blue sparks drifting over the whole page, plus lightning filaments
-     whose energy follows scroll velocity. Canvas 2D, additive blending. */
+  /* =============================================================== demo */
 
-  function initElectricFX() {
-    var canvas = document.querySelector("[data-fx]");
-    if (!canvas || reduceMotion) return;
+  var demo = document.querySelector("[data-demo]");
+  var demoToggle = document.querySelector("[data-demo-toggle]");
 
-    var ctx = canvas.getContext("2d");
-    if (!ctx) return;
+  function syncDemoLabel() {
+    if (!demo || !demoToggle) return;
+    var paused = demo.paused;
+    demoToggle.textContent = translate(paused ? "dag.play" : "dag.pause", currentLang) || (paused ? "Play" : "Pause");
+  }
 
-    var W = 0;
-    var H = 0;
-    var dpr = 1;
-    var sparks = [];
-    var bolts = [];
-    var energy = 0;          // 0..1, driven by scroll velocity
-    var lastScrollY = window.scrollY;
-    var lastScrollT = performance.now();
-
-    function resize() {
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
-      W = canvas.clientWidth;
-      H = canvas.clientHeight;
-      canvas.width = Math.round(W * dpr);
-      canvas.height = Math.round(H * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  function initDemo() {
+    if (!demo || !demoToggle) return;
+    // Reduced motion: keep the poster (the finished graph) until asked.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      demo.removeAttribute("autoplay");
+      demo.pause();
     }
+    demoToggle.addEventListener("click", function () {
+      if (demo.paused) demo.play();
+      else demo.pause();
+    });
+    demo.addEventListener("play", syncDemoLabel);
+    demo.addEventListener("pause", syncDemoLabel);
+    syncDemoLabel();
+  }
 
-    function spawnSpark() {
-      return {
-        x: Math.random() * W,
-        y: Math.random() * H,
-        vx: (Math.random() - 0.5) * 0.16,
-        vy: -0.06 - Math.random() * 0.2,
-        r: 0.6 + Math.random() * 1.5,
-        life: 0,
-        ttl: 340 + Math.random() * 460,
-        hue: 200 + Math.random() * 26
-      };
-    }
+  /* ========================================================== DAG graph */
 
-    /* A lightning filament: jittered polyline with a couple of branches. */
-    function spawnBolt(strength) {
-      var startX = Math.random() * W;
-      var startY = Math.random() * H * 0.85;
-      var segments = 13 + Math.floor(Math.random() * 9);
-      var length = (0.3 + Math.random() * 0.34) * H * (0.75 + strength);
-      var angle = Math.PI / 2 + (Math.random() - 0.5) * 1.5;
-      var points = [{ x: startX, y: startY }];
-      var x = startX;
-      var y = startY;
+  // The illustration of the demo run's graph. Hover or focus a lane to trace
+  // what it waits on and what it feeds; Replay steps the layers through
+  // waiting, running, and accepted. Reduced motion keeps the static view.
+  function initDag() {
+    var root = document.querySelector("[data-dag]");
+    if (!root) return;
+    var svg = root.querySelector("svg");
+    var nodes = Array.prototype.slice.call(root.querySelectorAll(".dag-node"));
+    var edges = Array.prototype.slice.call(root.querySelectorAll(".dag-edge"));
+    var replay = root.querySelector("[data-dag-replay]");
+    var live = root.querySelector("[data-dag-live]");
 
-      for (var i = 1; i <= segments; i += 1) {
-        var t = i / segments;
-        x += Math.cos(angle) * (length / segments) + (Math.random() - 0.5) * 26;
-        y += Math.sin(angle) * (length / segments) + (Math.random() - 0.5) * 14;
-        points.push({ x: x, y: y });
-        if (Math.random() < 0.2 && t > 0.25 && t < 0.85) {
-          // short branch
-          var bx = x;
-          var by = y;
-          var branch = [{ x: bx, y: by }];
-          var bAngle = angle + (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.6);
-          for (var j = 0; j < 4; j += 1) {
-            bx += Math.cos(bAngle) * 22 + (Math.random() - 0.5) * 14;
-            by += Math.sin(bAngle) * 22 + (Math.random() - 0.5) * 14;
-            branch.push({ x: bx, y: by });
-          }
-          bolts.push({ points: branch, life: 0, ttl: 170 + Math.random() * 130, width: 1.0, alpha: 0.5 });
-        }
+    function walk(start, key, other) {
+      var seen = {};
+      var queue = [start];
+      while (queue.length) {
+        var id = queue.shift();
+        edges.forEach(function (edge) {
+          if (edge.dataset[key] !== id) return;
+          var next = edge.dataset[other];
+          if (seen[next]) return;
+          seen[next] = true;
+          queue.push(next);
+        });
       }
+      return seen;
+    }
 
-      bolts.push({
-        points: points,
-        life: 0,
-        ttl: 190 + Math.random() * 170,
-        width: 1.7 + strength * 1.3,
-        alpha: 0.7 + strength * 0.28
+    function trace(id) {
+      var up = walk(id, "to", "from");
+      var down = walk(id, "from", "to");
+      svg.classList.add("is-tracing");
+      nodes.forEach(function (node) {
+        var nid = node.dataset.node;
+        node.classList.toggle("is-active", nid === id);
+        node.classList.toggle("is-lineage", nid === id || !!up[nid] || !!down[nid]);
+      });
+      edges.forEach(function (edge) {
+        var from = edge.dataset.from;
+        var to = edge.dataset.to;
+        var upstream = (to === id || up[to]) && (up[from] || from === id);
+        var downstream = (from === id || down[from]) && (down[to] || to === id);
+        edge.classList.toggle("is-lineage", !!(upstream || downstream));
       });
     }
 
-    function drawBolt(bolt) {
-      var t = bolt.life / bolt.ttl;
-      var fade = t < 0.18 ? t / 0.18 : 1 - (t - 0.18) / 0.82;
-      if (fade <= 0) return;
-
-      ctx.strokeStyle = "rgba(150, 210, 255, " + (bolt.alpha * fade) + ")";
-      ctx.lineWidth = bolt.width;
-      ctx.shadowColor = "rgba(80, 160, 255, " + 0.9 * fade + ")";
-      ctx.shadowBlur = 14;
-      ctx.beginPath();
-      bolt.points.forEach(function (p, i) {
-        if (i === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
+    function clear() {
+      svg.classList.remove("is-tracing");
+      nodes.forEach(function (node) {
+        node.classList.remove("is-active", "is-lineage");
       });
-      ctx.stroke();
-      ctx.shadowBlur = 0;
+      edges.forEach(function (edge) {
+        edge.classList.remove("is-lineage");
+      });
     }
 
-    var visible = !document.hidden;
-    document.addEventListener("visibilitychange", function () {
-      visible = !document.hidden;
+    nodes.forEach(function (node) {
+      node.addEventListener("pointerenter", function () { trace(node.dataset.node); });
+      node.addEventListener("pointerleave", function () {
+        if (document.activeElement === node) trace(node.dataset.node);
+        else clear();
+      });
+      node.addEventListener("focus", function () { trace(node.dataset.node); });
+      node.addEventListener("blur", clear);
     });
 
-    window.addEventListener("scroll", function () {
-      var now = performance.now();
-      var dy = Math.abs(window.scrollY - lastScrollY);
-      var dt = Math.max(now - lastScrollT, 16);
-      var velocity = dy / dt; // px per ms
-      energy = Math.min(1, energy + velocity * 0.16);
-      lastScrollY = window.scrollY;
-      lastScrollT = now;
-    }, { passive: true });
+    if (!replay) return;
+    var timers = [];
+    var LAYERS = 4;
+    var STEP = 1300;
 
-    var last = performance.now();
-
-    function frame(now) {
-      window.requestAnimationFrame(frame);
-      if (!visible) return;
-
-      var dt = Math.min(now - last, 50);
-      last = now;
-
-      ctx.clearRect(0, 0, W, H);
-      ctx.globalCompositeOperation = "lighter";
-
-      // idle shimmer + scroll surge
-      energy *= 0.965;
-      var targetCount = 46 + Math.round(energy * 40);
-      while (sparks.length < targetCount) sparks.push(spawnSpark());
-
-      for (var i = sparks.length - 1; i >= 0; i -= 1) {
-        var s = sparks[i];
-        s.life += dt;
-        if (s.life > s.ttl || s.y < -12) {
-          sparks.splice(i, 1);
-          continue;
-        }
-        var drift = 1 + energy * 3.2;
-        s.x += s.vx * dt * drift;
-        s.y += s.vy * dt * drift;
-
-        var lifeT = s.life / s.ttl;
-        var alpha = (lifeT < 0.2 ? lifeT / 0.2 : 1 - (lifeT - 0.2) / 0.8) * (0.34 + energy * 0.5);
-        ctx.fillStyle = "hsla(" + s.hue + ", 92%, 72%, " + alpha + ")";
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, s.r * (1 + energy * 0.7), 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // lightning: rare at idle, frequent under fast scroll
-      var boltChance = 0.0012 + energy * 0.022;
-      if (Math.random() < boltChance && bolts.length < 4) {
-        spawnBolt(energy);
-      }
-
-      for (var b = bolts.length - 1; b >= 0; b -= 1) {
-        var bolt = bolts[b];
-        bolt.life += dt;
-        if (bolt.life > bolt.ttl) {
-          bolts.splice(b, 1);
-          continue;
-        }
-        drawBolt(bolt);
-      }
-
-      ctx.globalCompositeOperation = "source-over";
+    function say(key, layer) {
+      var text = translate(key, currentLang) || "";
+      if (live) live.textContent = text.replace("{n}", layer);
     }
 
-    resize();
-    window.addEventListener("resize", resize);
-    window.requestAnimationFrame(frame);
+    function setLayer(layer, state) {
+      nodes.forEach(function (node) {
+        if (Number(node.dataset.layer) === layer) node.dataset.state = state;
+      });
+      edges.forEach(function (edge) {
+        var target = root.querySelector('.dag-node[data-node="' + edge.dataset.to + '"]');
+        if (!target) return;
+        if (target.dataset.state === "waiting") edge.dataset.state = "idle";
+        else edge.removeAttribute("data-state");
+      });
+    }
+
+    replay.addEventListener("click", function () {
+      timers.forEach(window.clearTimeout);
+      timers = [];
+      replay.disabled = true;
+      nodes.forEach(function (node) { node.dataset.state = "waiting"; });
+      setLayer(0, "waiting");
+      for (var layer = 1; layer <= LAYERS; layer += 1) {
+        (function (k) {
+          timers.push(window.setTimeout(function () {
+            setLayer(k, "running");
+            say("dag.graph.running", k);
+          }, (k - 1) * STEP + 200));
+          timers.push(window.setTimeout(function () {
+            setLayer(k, "done");
+            if (k === LAYERS) {
+              say("dag.graph.done", k);
+              replay.disabled = false;
+            }
+          }, k * STEP));
+        })(layer);
+      }
+    });
   }
 
-  /* =============================================================== boot */
-
-  function boot() {
-    applyLang(initialLang());
-    initLangSwitch();
-    initReveal();
-    initMarquees();
-    initMemoryLadder();
-    initSpecular();
-    initCopyButtons();
-    initElectricFX();
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot);
-  } else {
-    boot();
-  }
+  initDag();
+  initDemo();
+  initLangSwitch();
+  initTheme();
+  initCopy();
+  applyLang(initialLang());
 })();

@@ -40,8 +40,8 @@ jobs:
         run: |
           rm -rf _site
           mkdir -p _site/assets
-          # site/assets is self-contained: demo videos (webm/mp4), the
-          # character mask, and the boot banner are tracked under site/.
+          # site/assets is self-contained: the DAG-ULW capture (webm/mp4 and
+          # poster), the logo, and the wordmark are tracked under site/.
           cp -R site/. _site/
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5

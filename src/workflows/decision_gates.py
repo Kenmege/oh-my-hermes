@@ -149,7 +149,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
@@ -180,6 +179,7 @@ from .approval_receipts import (
     UNKNOWN_AGE_SECONDS,
     approval_age_seconds,
 )
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 DECISION_GATE_SCHEMA_VERSION: Final[str] = "decision_gate/v1"
@@ -1612,7 +1612,7 @@ def _connector_receipt_errors(record: dict[str, Any]) -> list[str]:
     for key in required - {"claim_boundary", "privacy", "schema_version", "wrapper_expected_revision"}:
         errors.extend(reference_errors(record.get(key), field=key, label="connector decision receipt", required=True))
     try:
-        datetime.fromisoformat(str(record.get("observed_at", "")).replace("Z", "+00:00"))
+        strict_fromisoformat(str(record.get("observed_at", "")).replace("Z", "+00:00"))
     except ValueError:
         errors.append("connector decision receipt observed_at must be an ISO-8601 timestamp")
     return errors
@@ -1643,7 +1643,7 @@ def _connector_transaction_errors(record: dict[str, Any]) -> list[str]:
     if not isinstance(record.get("payload_digest"), str) or not _DIGEST.fullmatch(str(record.get("payload_digest", ""))):
         errors.append("connector decision transaction payload_digest must be a sha256 hex digest")
     try:
-        datetime.fromisoformat(str(record.get("decided_at", "")).replace("Z", "+00:00"))
+        strict_fromisoformat(str(record.get("decided_at", "")).replace("Z", "+00:00"))
     except ValueError:
         errors.append("connector decision transaction decided_at must be an ISO-8601 timestamp")
     return errors

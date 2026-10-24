@@ -48,6 +48,7 @@ from .lifecycle_growth_values import (
     require_state,
     state_errors,
 )
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 ANALYSIS_RUN_STATES: Final = ("not_started", "queued", "running", "completed", "failed", "canceled", "unknown")
@@ -381,7 +382,7 @@ def _observed_time(value: object) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
     if parsed.tzinfo is None or parsed.utcoffset() is None:

@@ -1669,6 +1669,35 @@ walks, and HUD category labels alike — until the user removes it. An invalid
 document is ignored whole (defaults apply) and reported by
 `omh_delegate_route` `action=status` as `chain_overrides: invalid: ...`.
 
+A fresh seed, and an edit that replaces two chains:
+
+```sh
+$ cat ~/.omh/routing/model-chains.json
+{
+  "categories": {},
+  "schema_version": "mixture_chain_overrides/v1"
+}
+```
+
+```json
+{
+  "schema_version": "mixture_chain_overrides/v1",
+  "categories": {
+    "architect": [
+      {"model": "claude-fable-5-1", "reasoning_effort": "xhigh"},
+      {"model": "gpt-5.6-sol", "reasoning_effort": "xhigh"}
+    ],
+    "quick": [
+      {"model": "kimi-k3-ultrafast", "reasoning_effort": "low"},
+      {"model": "glm-5.3-ultrafast", "reasoning_effort": "low"}
+    ]
+  }
+}
+```
+
+The Ultrafast models in that example, Kimi K3 Ultrafast (300 TPS) and GLM 5.3
+Ultrafast, are served on [OpenGateway](https://opengateway.ai/).
+
 Next to those two documents, `omh_delegate_route` maintains
 `~/.omh/routing/route-provenance.json` (`delegation_route_provenance/v1`): a
 capped history of the routes it prepared (head, explicit, fallback, chain
@@ -1737,9 +1766,29 @@ is refused with `route_overwritten_by_other_session`, `route_not_applied` or
 `other_session_route_live`, naming both sessions, and no child starts. A
 dispatch whose unlocked read found nothing to change goes ahead when the lock
 is busy. A `clear` or an exhausted chain whose release of the conversation's
-entry fails does not bring the route back: the dispatch ignores an entry
-written before the `cleared` or `exhausted_to_inherit` provenance record of
-its own conversation. Two
+entry fails does not bring the route back: before the release it records the
+entries it takes out in `~/.omh/routing/conversation-take-outs.json`
+(`delegation_conversation_take_outs/v1`), whatever the restore found, keyed
+like the entries (the session, or `task:<id>` for a host that names no
+session), and a dispatch ignores an entry recorded there. A `set` that wrote
+its route but not its conversation entry does not get the conversation's older
+route put back over it either, even after another session's `set`: before the
+entry, each `set` records the route it wrote in
+`~/.omh/routing/conversation-writes.json`
+(`delegation_conversation_writes/v1`), one stamp per writer keyed like the
+entries. An entry older than its own stamp is replaced by that stamp, so the
+conversation's dispatch, and a delegate child inheriting from it, runs on the
+route it set last. Any other older entry of the same writer (the same task,
+or the same session when neither names a task) that names another route is
+ignored. A stamp never brings back a route a `clear`, a chain exhaustion or a
+turn end took out: it stands in only for an entry still recorded, and each of
+those marks the conversation's stamps released before it removes the entries,
+so a removal that fails does not let the stamp stand in either. A delegate
+child inherits the newest route the conversations it descends from wrote,
+including across a compaction, and never one older than the same
+conversation's newest stamp or take-out; a later write by a grandparent's
+conversation does not hide the parent's route. Stamps are kept for six hours, at most 64 of them,
+and a missing or unreadable file reads as "no newer write". Two
 cases are left in place as before: a route whose writer recorded no
 conversation entry, such as one written by an older OMH that is still
 running, and any route when the dispatching session's own `state.db` row

@@ -4052,8 +4052,11 @@ class RouterContentTests(unittest.TestCase):
         self.assertIn("[Roles](docs/ROLES.md)", readme)
         self.assertIn("[Application cases](docs/APPLICATION_CASES.md)", readme)
         self.assertIn("[GitHub Pages site](site/index.html)", readme)
-        self.assertIn("<strong>oh-my-hermes</strong> (OMH) turns a normal", readme)
-        self.assertIn("replacing Hermes or hiding a coding executor", readme)
+        # The lean README (owner-directed, #2269) opens with a three-line
+        # intro; the trust claim it must keep is that OMH never patches or
+        # replaces Hermes.
+        self.assertIn("**oh-my-hermes** is an operating layer for [Hermes Agent]", readme)
+        self.assertIn("never patches or replaces Hermes", readme)
         self.assertIn("| Intelligence | What OMH adds |", readme)
         # Renamed from "Model-aware routing" when the highlights table was
         # refreshed to name the shipped capability: per-dispatch mixture
@@ -4145,13 +4148,13 @@ class RouterContentTests(unittest.TestCase):
         # earns trust by stating the distinction, not by printing the token.
         self.assertIn("`Plan · not run`", readme)
         self.assertIn("`Code · reported done`", readme)
-        self.assertIn("assets/hermes-agent-hero.png", readme)
+        self.assertIn("assets/omh-logo.png", readme)
         self.assertNotIn("assets/friren-agent-omh-callout.png", readme)
         self.assertIn("contrib.rocks/image?repo=rlaope/oh-my-hermes", readme)
         self.assertNotIn("assets/artengine-friren-profile-card.png", readme)
         self.assertNotIn("assets/omh-core-workflows.png", readme)
         self.assertNotIn("assets/omh-skill-magic-promo.png", readme)
-        self.assertIn("img.shields.io/badge/github", readme)
+        self.assertIn("img.shields.io/github/v/release/rlaope/oh-my-hermes", readme)
         self.assertNotIn("### Img Summary Skill", readme)
         self.assertNotIn("assets/omh-img-summary-card.png", readme)
         self.assertNotIn("## Organization Patterns", readme)
@@ -4180,22 +4183,28 @@ class RouterContentTests(unittest.TestCase):
         self.assertNotIn("omh update --channel preview", update_section)
         self.assertIn("omh setup", readme)
         self.assertNotIn("## Why OMH", readme)
-        self.assertLess(readme.index("## Quick Start"), readme.index("## What OMH Adds"))
-        quick_start = readme.split("## Quick Start", 1)[1].split("## What OMH Adds", 1)[0]
-        self.assertIn("curl -fsSL https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.sh | sh", quick_start)
-        self.assertIn("omh setup", quick_start)
+        # The lean README (owner-directed, #2269) shows a two-line quick
+        # install under "## Install" and keeps every other install step in the
+        # "Install options" toggle; together they are the install surface.
+        self.assertLess(readme.index("## Install"), readme.index("## What you get"))
+        quick_start = readme.split("## Install", 1)[1].split("## What you get", 1)[0]
+        self.assertIn(
+            "```sh\ncurl -fsSL https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.sh | sh\nomh setup\n```",
+            quick_start,
+        )
+        install_options = readme.split("<summary><b>Install options</b></summary>", 1)[1].split("</details>", 1)[0]
         # `omh doctor` belongs in its own block, never bundled into the install
         # step: model setup guidance follows in a separate shell block.
-        self.assertIn("```sh\nomh setup\n```", quick_start)
-        self.assertIn("```sh\nomh update\n```", quick_start)
-        self.assertIn("```sh\nomh doctor\n```", quick_start)
-        self.assertNotIn("```sh\nomh setup\nomh doctor\n```", quick_start)
+        self.assertIn("```sh\nomh update\n```", install_options)
+        self.assertIn("```sh\nomh doctor\n```", install_options)
+        self.assertNotIn("omh doctor", quick_start)
+        self.assertNotIn("```sh\nomh setup\nomh doctor\n```", readme)
         self.assertIn(
             "https://raw.githubusercontent.com/rlaope/oh-my-hermes/"
             "{resolved-commit-sha}/INSTALL_FOR_AGENTS.md",
-            quick_start,
+            install_options,
         )
-        self.assertIn("hermes skills tap add", quick_start)
+        self.assertIn("hermes skills tap add", install_options)
         self.assertNotIn("That is the normal path", quick_start)
         self.assertNotIn("name the responsible role", quick_start)
         self.assertNotIn("omh_interact", quick_start)
@@ -4393,36 +4402,35 @@ class RouterContentTests(unittest.TestCase):
         self.assertIn("OMH", site)
         self.assertIn("Oh My Hermes", site)
         hero = site.split('<section class="hero hero--center"', 1)[1].split("</section>", 1)[0]
-        self.assertIn('src="assets/omh-character-mask.png"', hero)
-        self.assertIn("Power intelligence and <em>agentic memory</em> for Hermes Agent.", hero)
+        # The hero is the spectrum wordmark (the h1) under the app-icon logo,
+        # the README tagline, and the primary install path: the script
+        # installer then setup. Windows and the package managers live in the
+        # install section, which pins them below.
+        self.assertIn('src="assets/oh-my-hermes-wordmark.png" alt="Oh My Hermes"', hero)
+        self.assertIn('src="assets/omh-logo.png"', hero)
+        self.assertIn(
+            "All-in-one package for Hermes Agent. Install once, then just type <code>dag-ulw</code>.",
+            hero,
+        )
         self.assertIn(
             "curl -fsSL https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.sh | sh",
             hero,
         )
-        self.assertIn("irm https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.ps1 | iex", hero)
         self.assertIn("omh setup", hero)
-        # The landing page carries the character mark four times (header,
-        # hero, Hermes executor card, footer) plus two product captures --
-        # the terminal boot banner and the /omh-model chain picker under
-        # Recommended chains -- plus the four ulw usage-example figures (the
-        # real ulw-plan TUI capture, the Slack-thread illustrations of the
-        # real ulw-interview reply and the real ulw-work run, and the
-        # labelled ulw-maestro illustration) under the ulw family, and
+        # The landing page carries the logo twice (header at 64 px, hero),
+        # the wordmark twice (hero, footer), and the sponsor logo, and
         # nothing else. The exact count keeps decorative images off the page;
-        # the three surface demos (the TUI ultrawork run, the Desktop run,
-        # the messenger card) are <video> elements.
-        self.assertEqual(site.count("<img"), 10)
-        self.assertEqual(site.count('src="assets/omh-character-mask.png"'), 4)
-        self.assertEqual(site.count('src="assets/omh-terminal-boot-banner.png"'), 1)
-        self.assertEqual(site.count('src="assets/omh-model-tui.png"'), 1)
-        self.assertEqual(site.count('src="assets/omh-terminal-ulw-plan-refactor.png"'), 1)
-        self.assertEqual(site.count('src="assets/omh-slack-ulw-interview.png"'), 1)
-        self.assertEqual(site.count('src="assets/omh-slack-ulw-work.png"'), 1)
-        self.assertEqual(site.count('src="assets/omh-ulw-maestro-dispatch.svg"'), 1)
-        self.assertEqual(site.count("<video"), 3)
-        for stem in ("hermes-cli", "hermes-desktop", "hermes-messenger"):
-            self.assertEqual(site.count(f'src="assets/{stem}.webm"'), 1)
-            self.assertEqual(site.count(f'src="assets/{stem}.mp4"'), 1)
+        # the one product capture, the real /dag-ulw TUI recording, is a
+        # <video> transcoded from assets/omh-dag-ulw-tui.gif.
+        self.assertEqual(site.count("<img"), 5)
+        self.assertEqual(site.count('src="assets/omh-logo-64.png"'), 1)
+        self.assertEqual(site.count('src="assets/omh-logo.png"'), 1)
+        self.assertEqual(site.count('src="assets/oh-my-hermes-wordmark.png"'), 2)
+        self.assertEqual(site.count('src="assets/sponsors/opengateway.svg"'), 1)
+        self.assertEqual(site.count("<video"), 1)
+        self.assertEqual(site.count('src="assets/omh-dag-ulw-tui.webm"'), 1)
+        self.assertEqual(site.count('src="assets/omh-dag-ulw-tui.mp4"'), 1)
+        self.assertEqual(site.count('poster="assets/omh-dag-ulw-tui-poster.webp"'), 1)
         # site/assets is self-contained; the Pages build must copy the whole
         # tree instead of stitching demos in from the repo-root assets dir.
         self.assertIn("cp -R site/. _site/", pages)
@@ -4432,7 +4440,6 @@ class RouterContentTests(unittest.TestCase):
             self.assertIn(f'data-lang="{lang}"', site)
         self.assertIn('src="i18n.js"', site)
         self.assertIn('src="app.js"', site)
-        self.assertIn("104", site)
         self.assertIn("omh update", site)
         self.assertIn("omh doctor", site)
         # Every canonical flagship workflow is named by exact skill name; the
@@ -4449,7 +4456,6 @@ class RouterContentTests(unittest.TestCase):
         self.assertIn("Code · running", site)
         self.assertIn("Code · reported done", site)
         self.assertIn("Test · verified", site)
-        self.assertIn("request-to-handoff", site)
         self.assertIn("See where Hermes ends and OMH begins.", site)
         self.assertIn('href="docs/hermes-agent-architecture/"', site)
         self.assertIn("not affiliated with Anthropic or OpenAI", site)
@@ -4691,49 +4697,36 @@ class RouterContentTests(unittest.TestCase):
         # regressions only; it intentionally does not assert prose wording,
         # so natural, non-mechanical per-language translation is allowed.
         readme_section_translations = (
-            ("## Quick Start", {"ko": "## 빠른 시작", "ja": "## クイックスタート", "zh": "## 快速开始"}),
-            ("## What you get", {"ko": "## 얻는 것", "ja": "## 得られるもの", "zh": "## 你能得到什么"}),
-            (
-                "## The OH-MY-HERMES terminal",
-                {
-                    "ko": "## OH-MY-HERMES 터미널",
-                    "ja": "## OH-MY-HERMES ターミナル",
-                    "zh": "## OH-MY-HERMES 终端",
-                },
-            ),
-            (
-                "## Recommended models",
-                {
-                    "ko": "## 권장 모델",
-                    "ja": "## 推奨モデル",
-                    "zh": "## 推荐模型",
-                },
-            ),
-            (
-                "## Ultra-Skills",
-                {"ko": "## 울트라 스킬", "ja": "## ウルトラスキル", "zh": "## Ultra 技能"},
-            ),
-            (
-                "## What OMH Adds",
-                {"ko": "## OMH가 더하는 것", "ja": "## OMH が追加するもの", "zh": "## OMH 提供什么"},
-            ),
-            (
-                "## Evidence Before Claims",
-                {"ko": "## 주장보다 증거", "ja": "## 主張より証拠", "zh": "## 证据先于声明"},
-            ),
-            ("## Documentation", {"ko": "## 문서", "ja": "## ドキュメント", "zh": "## 文档"}),
-            ("## Development", {"ko": "## 개발", "ja": "## 開発", "zh": "## 开发"}),
-            (
-                "## Contributors",
-                {"ko": "## 기여자", "ja": "## コントリビューター", "zh": "## 贡献者"},
-            ),
+            ("## Install", {
+                "ko": "## 설치", "ja": "## インストール", "zh": "## 安装",
+                "ru": "## Установка", "es": "## Instalación", "fr": "## Installation",
+                "de": "## Installation", "pt-BR": "## Instalação", "it": "## Installazione",
+            }),
+            ("## What you get", {
+                "ko": "## 얻는 것", "ja": "## 得られるもの", "zh": "## 你能得到什么",
+                "ru": "## Что вы получаете", "es": "## Qué obtienes", "fr": "## Ce que vous obtenez",
+                "de": "## Was du bekommst", "pt-BR": "## O que você ganha", "it": "## Cosa ottieni",
+            }),
+            ("## DAG-ULW", {
+                locale: "## DAG-ULW"
+                for locale in ("ko", "ja", "zh", "ru", "es", "fr", "de", "pt-BR", "it")
+            }),
+            ("## Others", {
+                "ko": "## 기타", "ja": "## その他", "zh": "## 其他",
+                "ru": "## Прочее", "es": "## Otros", "fr": "## Autres",
+                "de": "## Weiteres", "pt-BR": "## Outros", "it": "## Altro",
+            }),
+            ("## License", {
+                "ko": "## 라이선스", "ja": "## ライセンス", "zh": "## 许可证",
+                "ru": "## Лицензия", "es": "## Licencia", "fr": "## Licence",
+                "de": "## Lizenz", "pt-BR": "## Licença", "it": "## Licenza",
+            }),
         )
 
         readme = Path("README.md").read_text(encoding="utf-8")
         localized_readmes = {
-            "ko": Path("README.ko.md").read_text(encoding="utf-8"),
-            "ja": Path("README.ja.md").read_text(encoding="utf-8"),
-            "zh": Path("README.zh.md").read_text(encoding="utf-8"),
+            locale: Path(f"README.{locale}.md").read_text(encoding="utf-8")
+            for locale in readme_section_translations[0][1]
         }
 
         english_headings = re.findall(r"^## .+$", readme, flags=re.MULTILINE)
@@ -4742,8 +4735,8 @@ class RouterContentTests(unittest.TestCase):
             english_headings,
             expected_english_headings,
             "README.md top-level sections changed. Update "
-            "readme_section_translations in this test (and sync README.ko.md, "
-            "README.ja.md, README.zh.md) for the new section set/order.",
+            "readme_section_translations in this test (and sync every "
+            "README.<locale>.md it lists) for the new section set/order.",
         )
 
         for locale, localized_readme in localized_readmes.items():
@@ -4758,6 +4751,13 @@ class RouterContentTests(unittest.TestCase):
                 "README.md; a section was added, dropped, or reordered in "
                 "English without updating this locale.",
             )
+
+        # Every README links every README from its language switcher, so a
+        # locale added to the table above is reachable from all the others.
+        readme_files = ["README.md", *(f"README.{locale}.md" for locale in localized_readmes)]
+        for name, text in {"README.md": readme, **{f"README.{k}.md": v for k, v in localized_readmes.items()}}.items():
+            for target in readme_files:
+                self.assertIn(f"]({target})", text, f"{name} language switcher is missing {target}")
 
         # Regression guards for the exact stale onboarding copy identified in
         # issue #639: a four-line request-pipeline block, and a "then ask
@@ -4871,8 +4871,10 @@ class RouterContentTests(unittest.TestCase):
         readme = Path("README.md").read_text(encoding="utf-8")
         docs_index = Path("docs/README.md").read_text(encoding="utf-8")
         playbooks = Path("docs/PLAYBOOKS.md").read_text(encoding="utf-8")
-        site = Path("site/index.html").read_text(encoding="utf-8")
 
+        # The landing page stopped listing playbooks when the site was
+        # rebuilt around the README (#2269); docs/README.md is where a reader
+        # finds them.
         self.assertNotIn("omh playbook recommend", readme)
         self.assertIn("omh playbook recommend", playbooks)
         self.assertIn("Playbooks", docs_index)
@@ -4886,8 +4888,6 @@ class RouterContentTests(unittest.TestCase):
         self.assertIn("reliability-incident-review", playbooks)
         self.assertIn("binary PPTX export", playbooks)
         self.assertIn("not execution evidence", playbooks)
-        self.assertIn("request-to-handoff", site)
-        self.assertIn("Start with the job.", site)
 
     def test_discord_example_uses_wrapper_native_flow(self) -> None:
         text = Path("examples/discord-bot-runtime-flow.md").read_text(encoding="utf-8")

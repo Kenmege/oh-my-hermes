@@ -16,6 +16,8 @@ import re
 import secrets
 from urllib.parse import unquote, urlsplit
 
+from .iso_datetime import strict_fromisoformat
+
 RESOLVER_VERSION = "project_identity/v2"
 EXPLICIT_SCHEMA_VERSION = "project_identity_file/v1"
 LEGACY_BASENAME_STATE = "legacy_basename"
@@ -62,7 +64,7 @@ def _explicit(path: Path) -> str:
     if not isinstance(identity, str) or not re.fullmatch(r"prj:[0-9a-f]{64}", identity):
         raise ValueError("explicit_invalid")
     created = value["created_at"]
-    if not isinstance(created, str) or datetime.fromisoformat(created.replace("Z", "+00:00")).tzinfo is None:
+    if not isinstance(created, str) or strict_fromisoformat(created.replace("Z", "+00:00")).tzinfo is None:
         raise ValueError("explicit_invalid")
     return identity
 

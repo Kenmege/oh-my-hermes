@@ -954,6 +954,159 @@ _DEEPSEEK_V41_FLASH: Final[dict[str, object]] = {
     "claim_boundary": MODEL_CONTRACT_CLAIM_BOUNDARY,
 }
 
+# Kimi K3.1 Pro (Moonshot AI, 2026-10-23), the first K3.1-series model: a
+# post-trained Kimi K3 served under the K3 parameter contract ("`kimi-k3.1-pro`
+# and `kimi-k3.1-pro-highspeed` also have the same parameter constraints as
+# `kimi-k3`", models-overview, read 2026-10-24). Kimi K3 itself has no exact
+# contract; this one is read from the K3.1 pages, which restate the K3 rules.
+#
+# The ladder is three rungs and the API accepts only those values, so every
+# other rung is recorded as unsupported and raised on record: `off` and
+# `minimal` to the floor `low` (thinking is always on and the `thinking`
+# parameter is not supported), `medium` to `high` and `xhigh` to `max`, the
+# lowest documented rung above each. Those two raises are the same mapping the
+# installed Hermes Agent applies on its kimi-coding route
+# (`KIMI_K3_OVERRIDES`), so the route record now says what the wire carries.
+_KIMI_K3_1_PRO: Final[dict[str, object]] = {
+    "schema_version": MODEL_CONTRACT_SCHEMA_VERSION,
+    "model_id": "kimi-k3.1-pro",
+    "reasoning_mode": "thinking",
+    "service_tier": "standard",
+    "family": "kimi",
+    "generation": "kimi-k3.1",
+    # The launch post on X is dated October 23, 2026.
+    "released": "2026-10-23",
+    "rollout": (
+        "available on the Kimi API, Kimi Code, Kimi Work, and the Kimi apps; off by default for "
+        "Kimi Enterprise organizations until an administrator enables it; open weights are "
+        "promised by 2026-11-04; a released id is not account-level readiness evidence"
+    ),
+    "served_ids": {
+        "first_party": "kimi-k3.1-pro",
+        "openrouter": "moonshotai/kimi-k3.1-pro",
+    },
+    "knowledge_cutoff": "",
+    "context_window_tokens": 1_048_576,
+    "max_input_tokens": 1_048_576,
+    "max_output_tokens": 1_048_576,
+    "limits_note": (
+        "every K3-series model has a 1,048,576-token context window; `max_completion_tokens` "
+        "defaults to 131,072 and can be set up to 1,048,576; no separate max-input figure is "
+        "published, and billing is flat across the window (no long-context tier)"
+    ),
+    "reasoning_efforts": ("low", "high", "max"),
+    "effort_floor": "low",
+    "effort_default": "max",
+    "unsupported_efforts": {
+        "off": "thinking is always on and the `thinking` parameter is not supported",
+        "minimal": "not an accepted `reasoning_effort` value",
+        "medium": "not an accepted `reasoning_effort` value",
+        "xhigh": "not an accepted `reasoning_effort` value",
+    },
+    "tool_calling": {
+        "api": "chat_completions",
+        "note": (
+            "`tool_choice` accepts `auto`, `none`, and `required`; forcing one named function "
+            "returns HTTP 400 while thinking is on, and thinking is always on; the complete "
+            "assistant message, `reasoning_content` and `tool_calls` included, is returned "
+            "unchanged on every later turn"
+        ),
+    },
+    "unsupported_parameters": ("thinking", "temperature", "top_p", "n", "presence_penalty", "frequency_penalty"),
+    "unsupported_parameters_note": (
+        "`temperature` 1.0, `top_p` 0.95, `n` 1, and both penalties 0 are fixed and any other "
+        "value returns an error, so none is sent; `thinking` is a K2.x-only parameter"
+    ),
+    "runtime_mechanisms": {
+        "preserved_thinking": "documented_not_observed",
+        "prefix_cache_ttl_tiers": "documented_not_observed",
+        "dynamic_tool_loading": "documented_not_observed",
+        "native_image_and_video_input": "documented_not_observed",
+    },
+    "surface_notes": {
+        "hermes": (
+            "the installed Hermes Agent (0.22.2) and origin/main 5894e750c3 send every model on "
+            "the kimi-coding route through the K3 ladder (`low`/`high`/`max`, `medium` raised to "
+            "`high`, `xhigh` to `max`), resolve the 1,048,576-token window through the `kimi-k3` "
+            "context row by longest match, and carry no price row for this id; observed in the "
+            "Hermes source, not a vendor statement"
+        ),
+        "kimi_code": (
+            "the Kimi Code plan lists the model under the bare slug `k3.1-pro` (models.dev, read "
+            "2026-10-24; community), which classifies `unknown` here, like the bare `k3` slug"
+        ),
+    },
+    "documented_traits": (
+        "a post-trained Kimi K3 with substantially larger post-training compute and joint "
+        "reinforcement learning across hundreds of domains; the served parameter contract is "
+        "K3's",
+        "always reasons; `reasoning_effort` accepts `low`, `high`, and `max`, and `max` is the "
+        "default when a request omits it",
+        "switching the effort level invalidates prefix-cache hits, so the vendor advises "
+        "fixing it before a conversation starts",
+        "Preserved Thinking is always on: earlier `reasoning_content` is sent back and the model "
+        "continues its earlier reasoning",
+        "forcing a specific tool returns HTTP 400 because thinking cannot be turned off",
+        "vision input takes base64 or `ms://` file ids, not public image URLs",
+    ),
+    # Moonshot AI list price (platform.kimi.ai/docs/pricing/chat, read
+    # 2026-10-24). Cached input is the default tenth of input.
+    "pricing_usd_per_mtok": {
+        "input": 2.0,
+        "cached_input": 0.20,
+        "cache_write_5m": 2.0,
+        "cache_write_1h": 4.0,
+        "output": 10.0,
+    },
+    "data_handling": _DATA_HANDLING_NOT_READ,
+    "sources": (
+        "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart",
+        "https://platform.kimi.ai/docs/pricing/chat",
+        "https://platform.kimi.ai/docs/guide/use-reasoning-effort",
+        "https://platform.kimi.ai/docs/guide/use-thinking-models",
+        "https://platform.kimi.ai/docs/guide/use-tool-choice",
+        "https://platform.kimi.ai/docs/api/models-overview",
+    ),
+    "sources_read": "2026-10-24",
+    "claim_boundary": MODEL_CONTRACT_CLAIM_BOUNDARY,
+}
+
+# Kimi K3.1 Pro Highspeed: the same model served faster ("same intelligence
+# and 1M-token context window at roughly 3x the speed", platform.kimi.ai; the
+# launch post says 2-3x). It is an exact contract rather than a declared
+# projection because Moonshot publishes a full rate card of its own: input,
+# output, and cache writes are double the base card but cached input is the
+# same 0.20, which no single service-tier multiplier reproduces. Being exact,
+# it projects onto no base chain entry; a chain that wants it names it.
+_KIMI_K3_1_PRO_HIGHSPEED: Final[dict[str, object]] = {
+    **_KIMI_K3_1_PRO,
+    "model_id": "kimi-k3.1-pro-highspeed",
+    "service_tier": "highspeed",
+    "served_ids": {"first_party": "kimi-k3.1-pro-highspeed"},
+    "surface_notes": {
+        "hermes": _KIMI_K3_1_PRO["surface_notes"]["hermes"],  # type: ignore[index]
+        "kimi_code": (
+            "the Kimi Code plan lists the model under the bare slug `k3.1-pro-highspeed` "
+            "(models.dev, read 2026-10-24; community) and documents about twice the quota usage "
+            "of `k3.1-pro`; OpenRouter's live listing (read 2026-10-24) serves no Highspeed id"
+        ),
+    },
+    "documented_traits": (
+        "the same model as `kimi-k3.1-pro` served at 2-3x the speed, with the same parameter "
+        "contract and context window",
+        *_KIMI_K3_1_PRO["documented_traits"][1:],  # type: ignore[index]
+    ),
+    # Moonshot AI list price (platform.kimi.ai/docs/pricing/chat, read
+    # 2026-10-24): double the base card except cached input.
+    "pricing_usd_per_mtok": {
+        "input": 4.0,
+        "cached_input": 0.20,
+        "cache_write_5m": 4.0,
+        "cache_write_1h": 8.0,
+        "output": 20.0,
+    },
+}
+
 # TypeSafe Jev 1.13, the first `non_generative` contract: a model whose
 # documented output is a typed answer over options the caller supplies, not
 # text. Four keys exist only on this class and carry their reason here rather
@@ -1097,6 +1250,8 @@ MODEL_CONTRACTS: Final[dict[str, Mapping[str, object]]] = {
     "claude-sonnet-5-5": _CLAUDE_SONNET_5_5,
     "claude-haiku-5-5": _CLAUDE_HAIKU_5_5,
     "deepseek-v4.1-flash": _DEEPSEEK_V41_FLASH,
+    "kimi-k3.1-pro": _KIMI_K3_1_PRO,
+    "kimi-k3.1-pro-highspeed": _KIMI_K3_1_PRO_HIGHSPEED,
     "jev-1.13.0": _JEV_1_13,
 }
 

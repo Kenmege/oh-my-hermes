@@ -375,6 +375,13 @@ HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
     # who asks for it still deserves "which of my providers serves this"
     # answered rather than unknown. The parity gate lists it explicitly.
     "claude-mythos-5-1": ("ccapi", "anthropic", "openrouter"),
+    # Recognition-only until the K3-vs-K3.1 pair measures it into a chain
+    # (released 2026-10-23). Families are the ones observed serving each id on
+    # 2026-10-24: Moonshot's own API (`kimi-coding` in Hermes) for both,
+    # OpenRouter (`moonshotai/kimi-k3.1-pro`) and OpenCode Go for the base
+    # model only. No family is claimed for a relay nobody observed serving it.
+    "kimi-k3.1-pro": ("kimi-coding", "openrouter", "opencode"),
+    "kimi-k3.1-pro-highspeed": ("kimi-coding",),
     "gpt-6-astra": ("openai-codex", "openai"),
     "gpt-6.1-sol": ("openai-codex", "openai"),
     "gpt-6-luna": ("openai-codex", "openai"),
@@ -416,7 +423,8 @@ HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
 EXACT_MODEL_CONTRACT_ALIASES: frozenset[str] = frozenset(
     {
         "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna", "claude-opus-5-5", "claude-sonnet-5-5",
-        "claude-haiku-5-5", "deepseek-v4.1-flash", "jev-1.13.0",
+        "claude-haiku-5-5", "deepseek-v4.1-flash", "kimi-k3.1-pro", "kimi-k3.1-pro-highspeed",
+        "jev-1.13.0",
     }
 )
 
@@ -1352,11 +1360,18 @@ APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
     # and stays priced for overrides.
     "claude-haiku-4-5": (1.0, 5.0),
     # Moonshot AI list price (platform.kimi.ai/docs/pricing/chat, read
-    # 2026-10-01): 3/15, cache-hit input 0.30 (the default tenth). The earlier
-    # 0.6/2.5 was the K2-era rate and under-reported K3 input fivefold and
-    # output sixfold. Cache write (6.00 at a 5-minute TTL, 3.00 at 1 hour,
-    # the same page) has no column here.
+    # 2026-10-01, re-read 2026-10-24): 3/15, cache-hit input 0.30 (the
+    # default tenth). The earlier 0.6/2.5 was the K2-era rate and
+    # under-reported K3 input fivefold and output sixfold. Cache write (3.00
+    # at a 5-minute TTL, 6.00 at 1 hour, the same page) has no column here.
     "kimi-k3": (3.0, 15.0),
+    # Moonshot AI list price (platform.kimi.ai/docs/pricing/chat, read
+    # 2026-10-24): K3.1 Pro 2/10 with cached input 0.20 (the default tenth);
+    # Highspeed has its own card, 4/20 with cached input still 0.20 (the 0.05
+    # ratio below). Cache writes (2.00/4.00 and 4.00/8.00 at 5 minutes / 1
+    # hour) stay on the contracts.
+    "kimi-k3.1-pro": (2.0, 10.0),
+    "kimi-k3.1-pro-highspeed": (4.0, 20.0),
     # Zhipu AI list price (docs.z.ai pricing, 2026-08):
     "glm-5.2": (0.6, 2.2),
     # Z.ai list price for the 5.3 generation (docs.z.ai pricing, 2026-08).
@@ -1455,6 +1470,10 @@ APPROX_CACHE_READ_RATIO: dict[str, float] = {
     # the tier would price cached input at the generic tenth.
     "deepseek-v4.1-flash": 0.02,
     "deepseek-v4.1-flash-ultrafast": 0.02,
+    # Kimi K3.1 Pro Highspeed cached input 0.20 against 4.00 input
+    # (platform.kimi.ai/docs/pricing/chat, read 2026-10-24); the base model's
+    # 0.20 against 2.00 is the default tenth and needs no row.
+    "kimi-k3.1-pro-highspeed": 0.05,
     # Grok Build 0.1 cached input 0.20 against 1.00 input below 200K, and
     # 0.40 against 2.00 above (docs.x.ai/developers/models/grok-build-0.1,
     # read 2026-10-01); the retired alias bills at the same rate.

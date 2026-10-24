@@ -8,7 +8,6 @@ logs, or summaries; only the explicit scalar allowlist below can reach output.
 
 from __future__ import annotations
 
-from datetime import datetime
 import math
 from dataclasses import dataclass
 import re
@@ -16,6 +15,7 @@ from typing import Final, Mapping, Sequence, TypeAlias, TypeGuard, TypeVar
 
 from ..system.metadata_safety import require_opaque_metadata_ref
 from .hermes_child_evaluation import evaluation_binding_errors
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 JsonScalar: TypeAlias = str | int | float | bool | None
 JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
@@ -353,7 +353,7 @@ def validate_routing_observation(payload: Mapping[str, object] | object) -> list
     if observed_at is not None:
         if isinstance(observed_at, str) and _UTC_Z.fullmatch(observed_at) is not None:
             try:
-                datetime.fromisoformat(observed_at.removesuffix("Z") + "+00:00")
+                strict_fromisoformat(observed_at.removesuffix("Z") + "+00:00")
             except ValueError:
                 errors.append("observed_at must be an exact UTC-Z timestamp")
         else:

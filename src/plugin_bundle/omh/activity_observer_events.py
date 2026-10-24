@@ -3,12 +3,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
 import hashlib
 import hmac
 import re
 from typing import Final, NewType, TypeAlias
+from .iso_datetime import strict_fromisoformat
 
 OpaqueRef = NewType("OpaqueRef", str)
 EventValue: TypeAlias = str | int | None
@@ -58,7 +58,7 @@ def parse_stamp(value: EventValue) -> str:
     if not isinstance(value, str) or len(value) != 20 or not STAMP.fullmatch(value):
         raise EventError("invalid_time")
     try:
-        _ = datetime.fromisoformat(value[:-1] + "+00:00")
+        _ = strict_fromisoformat(value[:-1] + "+00:00")
     except ValueError:
         raise EventError("invalid_time") from None
     return value

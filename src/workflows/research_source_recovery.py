@@ -30,10 +30,10 @@ host reported, not execution, review, CI, or publication evidence.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime
 from typing import Any
 
 from ..system.metadata_safety import is_body_shaped_metadata_text, is_secret_value_shaped
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 RESEARCH_SOURCE_RECOVERY_SCHEMA_VERSION = "research_source_recovery/v1"
@@ -365,7 +365,7 @@ def _line_errors(value: str) -> list[str]:
 def _is_iso_timestamp(value: str) -> bool:
     text = value[:-1] + "+00:00" if value.endswith("Z") else value
     try:
-        datetime.fromisoformat(text)
+        strict_fromisoformat(text)
     except ValueError:
         return False
     return True

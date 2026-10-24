@@ -55,6 +55,7 @@ from .memory_admission import MODEL_CAPTURE_SOURCE
 from .memory_prefetch_receipt import MAX_PREFETCH_RECEIPT_BYTES, prefetch_receipt_path
 from .memory_state_files import state_file_lock, write_text_atomic
 from .memory_store_io import scan_project_memory_records
+from .iso_datetime import strict_fromisoformat
 
 DIGEST_WINDOW_CAP_DAYS = 7
 SESSION_CLOSE_SCHEMA_VERSION = "omh_memory_session_close/v1"
@@ -292,7 +293,7 @@ def stamp_epoch(value: Any) -> float | None:
     else:
         return number if math.isfinite(number) else None
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(text.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed.timestamp()

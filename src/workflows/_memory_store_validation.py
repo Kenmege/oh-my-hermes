@@ -8,6 +8,7 @@ from typing import Any
 
 from ..plugin_bundle.omh.memory_governance import contains_credential_like_material
 from ..plugin_bundle.omh.memory_principals import PRINCIPAL_REF_PATTERN
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 MEMORY_OPERATION_SCHEMA_VERSION = "memory_operation/v1"
 MEMORY_TOMBSTONE_SCHEMA_VERSION = "memory_tombstone/v1"
@@ -123,7 +124,7 @@ def _relative_memory_path(value: str, suffix: str) -> bool:
 
 def parse_time(value: str | None) -> datetime | None:
     try:
-        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(str(value or "").replace("Z", "+00:00"))
     except ValueError:
         return None
     return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)

@@ -19,6 +19,7 @@ from ..plugin_bundle.omh.memory_governance import (
 )
 from ..system.local_store import read_json_object_result
 from ..system.paths import OmhPaths
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 _SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$")
 _LABEL = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
@@ -247,7 +248,7 @@ def _files(root: Path) -> list[tuple[Path, bool]]:
 
 def _time(value: object) -> datetime | None:
     try:
-        result = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        result = strict_fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
     return result.replace(tzinfo=timezone.utc) if result.tzinfo is None else result.astimezone(timezone.utc)

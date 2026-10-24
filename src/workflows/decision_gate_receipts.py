@@ -21,6 +21,7 @@ from .decision_gates import (
     gate_is_expired,
     validate_decision_gate,
 )
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 CONNECTOR_DECISION_GATE_RECEIPT_SCHEMA_VERSION: Final[str] = "connector_decision_gate_receipt/v1"
 CONNECTOR_DECISION_GATE_TRANSACTION_SCHEMA_VERSION: Final[str] = "connector_decision_gate_transaction/v1"
@@ -316,7 +317,7 @@ def _timestamp(value: Any) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
     if parsed.tzinfo is None:

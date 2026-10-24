@@ -13,6 +13,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from ..local_store import read_json_object_result
 from .working_tree_fingerprint import WorkingTreeFingerprint
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 QUALITY_EVIDENCE_PACKAGE_SCHEMA = "quality_evidence_package/v1"
 # `observed_tree` was added to the observation as an optional field and the
@@ -445,7 +446,7 @@ def _parse_timestamp(value: object) -> datetime | None:
     if not isinstance(value, str) or not value.strip():
         return None
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
     return parsed.astimezone(timezone.utc) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

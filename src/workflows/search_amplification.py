@@ -5,7 +5,7 @@ The host must anchor the latest cumulative assessment state per request and
 recheck authorization before every call and disclosure. Nothing persists here.
 """
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import timezone
 import hashlib
 import json
 import math
@@ -16,6 +16,7 @@ from .temporal_source_receipts import (
     receipt_supports_as_of_claim,
     validate_temporal_source_receipt,
 )
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 class SearchPlanError(ValueError):
@@ -362,7 +363,7 @@ def _digest(value):
 
 def _stamp(raw, path, errors):
     try:
-        parsed = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+        parsed = strict_fromisoformat(raw.strip().replace("Z", "+00:00"))
         return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
     except (ValueError, OverflowError):
         _error(errors, "invalid_time", path)

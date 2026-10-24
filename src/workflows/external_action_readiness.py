@@ -56,6 +56,7 @@ from ..system.append_only_store import (
     opaque_ref,
     reference_errors,
 )
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 
 EXTERNAL_ACTION_READINESS_SCHEMA_VERSION: Final = "external_action_readiness/v1"
@@ -742,7 +743,7 @@ def _parse_stamp(value: str) -> datetime | None:
     if not text:
         return None
     try:
-        parsed = datetime.fromisoformat(text)
+        parsed = strict_fromisoformat(text)
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
