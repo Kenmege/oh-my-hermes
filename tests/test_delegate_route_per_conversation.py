@@ -814,7 +814,8 @@ class ReleaseCoherenceTest(PerConversationRouteTestCase):
         self.assertIsNone(self.dispatch("A", "A-t1"))
 
         self.assertEqual(self.keys(), QUICK)
-        self.assertIsNone(self.tool("A", "A-t1", action="status")["conversation_route"])
+        # The stamp stands in for the stale entry, so status reports QUICK.
+        self.assertEqual(self.tool("A", "A-t1", action="status")["conversation_route"]["route"], QUICK)
 
     def test_a_route_put_back_at_its_dispatch_is_still_its_writers(self) -> None:
         # The control for the rule above: the record a reapply writes is newer
@@ -880,7 +881,22 @@ class PerWriterStampTest(PerConversationRouteTestCase):
     The #2268 Risk: the superseded rule compared an entry with the one
     profile-wide restore record, so once another session's `set` replaced
     that record, the writer's older entry was put back at its next dispatch.
+    Since the #2270 review, the writer's stamp also stands in for that older
+    entry, so the dispatch runs on the writer's newest route.
     """
+
+    def failed_entry_set(self, session: str | None, task: str, category: str) -> None:
+        with mock.patch.object(
+            delegation_route_restore, "_write_conversation_routes", side_effect=PermissionError("denied")
+        ):
+            result = self.tool(session, task, action="set", category=category)
+        self.assertEqual(result["conversation_route"], "unrecorded: PermissionError", result)
+        self.assertEqual(result["conversation_write"], "recorded", result)
+
+    def other_writer_routes(self) -> None:
+        """B ends on DEEP_NEXT, a route neither the stale entry nor the newest write holds."""
+        self.set_route("B", "B-t1", "deep")
+        self.assertEqual(self.tool("B", "B-t1", action="fallback")["status"], "fell_back")
 
     def at(self, offset: float):
         return mock.patch.object(delegation_route_restore.time, "time", return_value=self.start + offset)
@@ -891,39 +907,99 @@ class PerWriterStampTest(PerConversationRouteTestCase):
         self.top_level("B", *([session] if session else []))
         with self.at(0):
             self.set_route(session, task, "deep")
-        with self.at(1), mock.patch.object(
-            delegation_route_restore, "_write_conversation_routes", side_effect=PermissionError("denied")
-        ):
-            result = self.tool(session, task, action="set", category="quick")
-        self.assertEqual(result["conversation_route"], "unrecorded: PermissionError", result)
-        self.assertEqual(result["conversation_write"], "recorded", result)
+        with self.at(1):
+            self.failed_entry_set(session, task, "quick")
         with self.at(2):
-            self.set_route("B", "B-t1", "quick")
+            self.other_writer_routes()
         record = load_route_restore_record(self.omh_home)
         self.assertEqual(record["writer_session_id"], "B")
         self.assertEqual(load_conversation_routes(self.omh_home)[session or f"task:{task}"]["route"], DEEP)
 
-    def test_a_stale_entry_stays_ignored_after_another_writers_set(self) -> None:
+    def test_a_writer_whose_entry_failed_dispatches_on_its_newest_route(self) -> None:
+        # Probe T6 (#2270 review): the stale DEEP stays out, and the stamp
+        # puts the writer's own newest QUICK back over B's DEEP_NEXT.
         self.stale_entry_then_another_set("A", "A-t1")
 
         self.assertIsNone(self.dispatch("A", "A-t1"))
 
-        # Neither the stale DEEP nor B's QUICK: this conversation's newest
-        # route has no entry, so it runs on the default.
+        self.assertEqual(self.keys(), QUICK)
+        status = self.tool("A", "A-t1", action="status")["conversation_route"]
+        self.assertEqual((status["route"], status["in_keys"]), (QUICK, True), status)
+
+    def test_a_host_that_names_no_session_dispatches_on_its_newest_route(self) -> None:
+        # The stamp is keyed like the entry, `task:<id>`, and the route is the
+        # caller's own, so no lineage is needed.
+        self.stale_entry_then_another_set(None, "T1")
+
+        self.assertIsNone(self.dispatch("", "T1"))
+
+        self.assertEqual(self.keys(), QUICK)
+        self.assertEqual(set(load_conversation_writes(self.omh_home)), {"task:T1", "B"})
+
+    def test_a_child_inherits_its_parents_newest_route_over_an_earlier_tasks(self) -> None:
+        # Probe W4 (#2270 review): P's t1 entry outlived a turn end whose
+        # release failed, and P's t2 `set` lost its entry. O, delegated from
+        # P, inherited the t1 DEEP; P's own t2 dispatch had no route at all.
+        self.start = time.time()
+        self.sessions(
+            row("P", last_activity_at=time.time()),
+            row("B", last_activity_at=time.time()),
+            row("O", parent="P", source="subagent", delegate_from="P", started_at=1050.0),
+        )
+        with self.at(0):
+            self.set_route("P", "P-t1", "deep")
+        with mock.patch.object(
+            delegation_route_restore, "_release_locked", side_effect=PermissionError("denied")
+        ), self.assertLogs("omh.delegation_route", level="WARNING"):
+            self.assertEqual(self.end_turn("P", "P-t1")["route_restore"]["status"], "cleared")
+        with self.at(1):
+            self.failed_entry_set("P", "P-t2", "quick")
+        with self.at(2):
+            self.other_writer_routes()
+        self.assertEqual(load_conversation_routes(self.omh_home)["P"]["task_id"], "P-t1")
+
+        self.assertIsNone(self.dispatch("O", "O-task"))
+        self.assertEqual(self.keys(), QUICK)
+        with self.at(3):
+            self.other_writer_routes()
+        self.assertIsNone(self.dispatch("P", "P-t2"))
+        self.assertEqual(self.keys(), QUICK)
+
+    def test_a_clear_after_the_failed_set_keeps_the_newest_route_out_too(self) -> None:
+        # The take-out runs first: the entry it names is gone, so the newer
+        # stamp of the same key has nothing to stand in for.
+        self.stale_entry_then_another_set("A", "A-t1")
+        with mock.patch.object(
+            delegation_route_restore, "_release_locked", side_effect=PermissionError("denied")
+        ), self.assertLogs("omh.delegation_route", level="WARNING"):
+            cleared = self.tool("A", "A-t1", action="clear")
+        self.assertEqual(cleared["conversation_route"]["take_out"], "recorded", cleared)
+        self.assertEqual(load_conversation_writes(self.omh_home)["A"]["route"], QUICK)
+
+        self.assertIsNone(self.dispatch("A", "A-t1"))
+
         self.assertEqual(self.keys(), {})
         self.assertIsNone(self.tool("A", "A-t1", action="status")["conversation_route"])
 
-    def test_a_host_that_names_no_session_keeps_its_stale_entry_ignored(self) -> None:
-        # The stamp is keyed like the entry, `task:<id>`. With no session row
-        # the lineage is unknown, so B's route is left in place, as before.
-        self.stale_entry_then_another_set(None, "T1")
+    def test_a_turn_end_that_released_the_entry_leaves_the_stamp_standing_for_nothing(self) -> None:
+        # Gateway shape (task == session): the turn end takes the record and
+        # the entry out, and the stamp it leaves must not bring QUICK back
+        # over another session's route.
+        self.start = time.time()
+        self.top_level("A", "B")
+        with self.at(0):
+            self.set_route("A", "A", "deep")
+        with self.at(1):
+            self.failed_entry_set("A", "A", "quick")
+        with self.at(2):
+            self.other_writer_routes()
+        self.assertEqual(self.end_turn("A", "A")["route_restore"]["status"], "not_last_writer")
+        self.assertNotIn("A", load_conversation_routes(self.omh_home))
+        self.assertIn("A", load_conversation_writes(self.omh_home))
 
-        with self.assertLogs("omh.delegation_route", level="WARNING"):
-            fallback = self.dispatch("", "T1")
+        self.assertIsNone(self.dispatch("A", "A"))
 
-        self.assertEqual(fallback["omh_route_fallback"]["status"], "lineage_unresolved", fallback)
-        self.assertEqual(self.keys(), QUICK)
-        self.assertEqual(set(load_conversation_writes(self.omh_home)), {"task:T1", "B"})
+        self.assertEqual(self.keys(), {})
 
     def test_a_set_of_the_same_route_whose_entry_failed_is_still_reapplied(self) -> None:
         # The control: the newer stamp names the entry's own route, so the

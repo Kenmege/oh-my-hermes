@@ -119,11 +119,16 @@ each is written before the `conversation-routes.json` write it covers, so it
 survives that write failing. `conversation-take-outs.json` names the entries
 a `clear` or chain exhaustion released (`_stamp_take_out`).
 `conversation-writes.json` holds each writer's newest `set`, keyed like the
-entries (`_stamp_conversation_write`): an entry older than a write of the
-same writer that names another route is the writer's superseded route, not
-its intent (`_not_superseded`). The profile-wide `route-restore.json` cannot
-hold that, because the next writer's `set` replaces it and a restore deletes
-it.
+entries and in their shape (`_stamp_conversation_write`). An entry older
+than its own key's stamp is the route that write failed to replace, so the
+stamp stands in for it, and the writer's own dispatch -- or a child that
+inherits from it -- runs on the newest route (`_in_force`). An older entry of
+the same writer under another key that names another route is superseded,
+not its intent (`_not_superseded`). A stamp stands in only for an entry that
+survived the take-out filter, so neither a `clear` nor a released entry
+brings a route back through it. The profile-wide `route-restore.json` cannot
+hold any of this, because the next writer's `set` replaces it and a restore
+deletes it.
 
 What this does not close, stated at its real size: the hook releases the lock
 before Hermes reads the keys, so another session's dispatch or `set` landing
@@ -676,21 +681,24 @@ def _stamp_conversation_write(
     """Record the entry a `set` is about to write as its writer's newest; the caller holds `route_write_lock`.
 
     Written before the entry, to its own file, so that when the entry's write
-    fails the writer's older entry is recognised as superseded
-    (`_not_superseded`). The profile-wide restore record said the same thing
-    only until another writer's `set` replaced it. A stamp is kept only while
-    an entry of the same writer is still in `conversation-routes.json`, and at
+    fails the stamp stands in for the writer's older entry under the same key
+    (`_in_force`), and an older entry of the same writer under another key is
+    recognised as superseded (`_not_superseded`). The profile-wide restore
+    record said the same thing only until another writer's `set` replaced it.
+    A stamp is kept only while its key, or another entry of the same writer,
+    is still in `conversation-routes.json` -- the key alone covers a later
+    task of the session, which the same-writer rule does not match -- and at
     most `_MAX_CONVERSATION_ROUTES` are kept, the newest.
 
     Like `_store_conversation_route`, a failure is named rather than raised.
     """
     if not (session_id or task_id):
         return "unrecorded: no session or task"
-    routes = load_conversation_routes(omh_home).values()
+    routes = load_conversation_routes(omh_home)
     writes = {
         key: stamp
         for key, stamp in load_conversation_writes(omh_home).items()
-        if any(_same_writer(entry, stamp) for entry in routes)
+        if key in routes or any(_same_writer(entry, stamp) for entry in routes.values())
     }
     writes[_conversation_route_key(session_id, task_id)] = {
         "config_path": config_path,
@@ -1492,7 +1500,7 @@ def _dispatch_plan(
         if entry["config_path"] == config_path
         and now - entry["written_at"] <= LIVE_TUI_SESSION_FRESH_SECONDS
     ]
-    entries = _not_superseded(_not_taken_out(entries, omh_home), record, omh_home)
+    entries = _in_force(entries, record, omh_home)
     current = read_delegation_route(hermes_home)
     record_live = bool(record) and current == record["written"]
     plan: dict[str, Any] = {
@@ -1571,25 +1579,54 @@ def _not_taken_out(entries: list[dict[str, Any]], omh_home: str | Path | None) -
     return [entry for entry in entries if not taken_out(entry)]
 
 
-def _not_superseded(
+def _in_force(
     entries: list[dict[str, Any]], record: Mapping[str, Any], omh_home: str | Path | None
+) -> list[dict[str, Any]]:
+    """`entries` as a dispatch reads them: taken-out ones gone, each at its writer's newest write.
+
+    The take-out filter runs first, so an entry a `clear` or chain exhaustion
+    released is gone before its writer's stamp is consulted, and a newer stamp
+    of that writer cannot bring a route back past the take-out. An entry that
+    survives and has an older `written_at` than its own key's stamp lost its
+    replacement to a failed write (`_stamp_conversation_write`), so the stamp
+    -- the entry that write meant to leave, in the same shape -- stands in for
+    it. A stamp with no surviving entry of its key stands for nothing: the
+    entry was released, by a turn end or a `clear`, and the route with it.
+    """
+    entries = _not_taken_out(entries, omh_home)
+    writes = load_conversation_writes(omh_home) if entries else {}
+    return _not_superseded([_newest_write(entry, writes) for entry in entries], record, writes)
+
+
+def _newest_write(entry: dict[str, Any], writes: Mapping[str, dict[str, Any]]) -> dict[str, Any]:
+    """The newer of `entry` and the stamp under the same key, for the same config."""
+    stamp = writes.get(_conversation_route_key(entry["session_id"], entry["task_id"]))
+    if stamp and stamp["config_path"] == entry["config_path"] and stamp["written_at"] > entry["written_at"]:
+        return stamp
+    return entry
+
+
+def _not_superseded(
+    entries: list[dict[str, Any]], record: Mapping[str, Any], stamps: Mapping[str, dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """`entries` less one its own writer has since replaced in the keys.
 
     A route write stores the restore record, then the writer's stamp
-    (`_stamp_conversation_write`), then the conversation entry. When the
-    entry's write fails, the entry left is the writer's OLDER route, and its
-    next dispatch put that back over the newer one. So an entry is ignored
-    when a newer write by the same writer (by task, or by session for an
-    entry with no task) holds another route. The writes compared with are
-    the writer's own stamp, which another writer's `set` does not replace,
-    and the restore record, which still covers a stamp that failed to write.
-    A write that names the entry's own route -- a reapply's record, or a
-    `set` of the same route again -- changes nothing.
+    (`_stamp_conversation_write`), then the conversation entry. An entry
+    whose own key has a newer stamp is replaced by that stamp before this
+    runs (`_in_force`); what is left to catch is an older entry of the same
+    writer under another key, such as the session a compaction continued
+    from. So an entry is ignored when a newer write by the same writer (by
+    task, or by session for an entry with no task) holds another route. The
+    writes compared with are the per-writer stamps, which another writer's
+    `set` does not replace, and the restore record, which still covers a
+    stamp that failed to write. A write that names the entry's own route --
+    a reapply's record, or a `set` of the same route again -- changes
+    nothing.
     """
     if not entries:
         return entries
-    writes = list(load_conversation_writes(omh_home).values())
+    writes = list(stamps.values())
     if record:
         writes.append(
             {
@@ -1846,9 +1883,7 @@ def conversation_route_for(
     record = load_route_restore_record(omh_home)
     if record and record["config_path"] != config_path:
         record = {}
-    entries = _not_superseded(
-        _not_taken_out(list(load_conversation_routes(omh_home).values()), omh_home), record, omh_home
-    )
+    entries = _in_force(list(load_conversation_routes(omh_home).values()), record, omh_home)
     own = [
         entry
         for entry in entries
