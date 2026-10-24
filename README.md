@@ -57,7 +57,7 @@ omh setup
   You never call them; the router loads the right ones into the run as tool calls.<br>
   Ask in English or Korean.
 
-- **Memory you can trust.**<br>
+- **Long-term memory you can trust.**<br>
   Nothing is remembered silently: each candidate is kept, refused or deferred with a written reason.<br>
   The next session gets a recall pack ranked for its task and cut to a token budget.<br>
   Hermes' own memory is never read or patched.
