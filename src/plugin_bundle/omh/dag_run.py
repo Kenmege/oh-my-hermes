@@ -663,6 +663,26 @@ def lost_for_good(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, 
             and int(node["attempts"][-1].get("lost", 0)) >= MAX_LOST_REOFFERS]
 
 
+def resume_handle_for(attempts: Sequence[Mapping[str, Any]]) -> str:
+    """The process identity a new attempt must resume, or ``""`` for fresh work.
+
+    A park hands its ``handle`` to the wake attempt, and a provider-error retry
+    replaces that attempt without ending the wait, so it inherits the attempt's
+    ``resume_handle``. Only the immediately previous attempt is read: once a
+    resumed attempt settles accepted, failed or blocked, its handle dies with it
+    and later work on the node (a repair re-run, for instance) starts fresh
+    instead of checking an unrelated old process.
+    """
+    if not attempts:
+        return ""
+    previous = attempts[-1]
+    if previous.get("outcome") == "parked":
+        return str(previous.get("handle") or "")
+    if previous.get("outcome") == "retry":
+        return str(previous.get("resume_handle") or "")
+    return ""
+
+
 def hand_out(node: dict[str, Any], derived_state: str, now: float, *, lost: bool = False) -> dict[str, Any]:
     """Write-ahead: the attempt exists before its goal leaves this tool, so a marker always finds it.
 
@@ -678,8 +698,9 @@ def hand_out(node: dict[str, Any], derived_state: str, now: float, *, lost: bool
     fallback = bool(attempts) and attempts[-1].get("outcome") == "retry"
     attempt = {"n": len(attempts) + 1, "handed_out_at": now, "fallback": fallback,
                "settled_at": None, "outcome": "", "reason": "", "provider_error": False}
-    if attempts and attempts[-1].get("outcome") == "parked":
-        attempt["resume_handle"] = attempts[-1]["handle"]
+    handle = resume_handle_for(attempts)
+    if handle:
+        attempt["resume_handle"] = handle
     attempts.append(attempt)
     return attempt
 

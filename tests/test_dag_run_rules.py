@@ -21,7 +21,7 @@ load_local_package()
 from _delegation_state import PARENT, homes  # noqa: E402
 from omh.plugin_bundle.omh import dag_run  # noqa: E402
 from omh.plugin_bundle.omh.tools import dag_tool  # noqa: E402
-from test_dag_tool import call, child_started, handoff, node, slots_table  # noqa: E402
+from test_dag_tool import PROMPT, call, child_started, handoff, node, slots_table  # noqa: E402
 
 
 def calls_by_node(result: dict) -> dict[str, dict]:
@@ -271,6 +271,51 @@ class ParkedNodeTests(unittest.TestCase):
             refused = call(action="repair", run="feat", node="a", nodes=[node("fix")])
             self.assertEqual(refused["reason"], "not_failed")
             self.assertEqual(record_of(home), stored)
+
+    def test_provider_retry_after_wake_keeps_the_resume_handle(self) -> None:
+        with homes() as home:
+            slots_table(home)
+            moment = time.time()
+            with patch.object(dag_tool.time, "time", return_value=moment):
+                call(action="define", run="feat", nodes=[node("a")])
+                call(action="settle", run="feat", node="a", outcome="parked",
+                     handle="ci:123", wake_at=moment + 60)
+            with patch.object(dag_tool.time, "time", return_value=moment + 60):
+                wake = call(action="ready", run="feat")
+                retry = call(action="settle", run="feat", node="a", outcome="failed", provider_error=True)
+            wake_context = calls_by_node(wake)["a"]["context"]
+            retry_context = calls_by_node(retry)["a"]["context"]
+            self.assertIn("ci:123", wake_context)
+            self.assertEqual(retry["settled"], {"node": "a", "outcome": "retry"})
+            self.assertEqual([row["route"]["action"] for row in retry["calls"]], ["fallback"])
+            self.assertIn("ci:123", retry_context)
+            # One resume instruction carrying the one handle; the goal is not restated as a second work order.
+            self.assertEqual(retry_context.count("Resume the still-running wait"), 1)
+            self.assertEqual(retry_context.count("ci:123"), 1)
+            self.assertEqual(retry_context.count(PROMPT), 1)
+            attempts = record_of(home)["nodes"][0]["attempts"]
+            self.assertEqual([attempt.get("resume_handle") for attempt in attempts], [None, "ci:123", "ci:123"])
+            self.assertEqual(attempts[-1]["fallback"], True)
+
+    def test_a_resume_handle_dies_with_the_attempt_that_held_it(self) -> None:
+        # Two parks in a row keep the latest identity, not the first one.
+        chained = {"attempts": [
+            {"n": 1, "outcome": "parked", "handle": "ci:one"},
+            {"n": 2, "outcome": "retry", "resume_handle": "ci:one"},
+            {"n": 3, "outcome": "parked", "handle": "ci:two"},
+            {"n": 4, "outcome": "retry", "resume_handle": "ci:two"},
+        ]}
+        self.assertEqual(dag_run.hand_out(chained, "ready", 100).get("resume_handle"), "ci:two")
+        # Once the resumed attempt settles, later work on the node starts fresh.
+        settled = {"attempts": [
+            {"n": 1, "outcome": "parked", "handle": "ci:one"},
+            {"n": 2, "outcome": "retry", "resume_handle": "ci:one"},
+            {"n": 3, "outcome": "failed", "provider_error": False},
+        ]}
+        self.assertNotIn("resume_handle", dag_run.hand_out(settled, "ready", 200))
+        # A provider retry that never resumed a wait carries no identity either.
+        plain = {"attempts": [{"n": 1, "outcome": "retry", "provider_error": True}]}
+        self.assertNotIn("resume_handle", dag_run.hand_out(plain, "ready", 300))
 
 
 class RepairDataFlowTests(unittest.TestCase):
