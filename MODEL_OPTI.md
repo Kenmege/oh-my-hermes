@@ -56,7 +56,7 @@ identical prompt. Nothing else about the pipeline changes per model.
 | `gpt` | `gpt-`; design-qualified alias `openai-gpt-` | `gpt-6-astra`, `gpt-5.6-sol`, `digitalocean/openai-gpt-5.6-sol` |
 | `claude` | `claude-`; design-qualified alias `anthropic-claude-`; bare tiers `opus`/`sonnet`/`haiku`/`fable`/`mythos` | `claude-fable-5-1`, `claude-mythos-5-1`, `digitalocean/anthropic-claude-opus-5` |
 | `gemini` | `gemini-` | `gemini-3.1-pro` |
-| `kimi` | `kimi-` | `kimi-k3`, `kimi-k3-ultrafast` |
+| `kimi` | `kimi-` | `kimi-k3`, `kimi-k3-ultrafast`, `kimi-k3.1-pro`, `kimi-k3.1-pro-highspeed`, `moonshotai/kimi-k3.1-pro` |
 | `glm` | `glm-` | `glm-5.3`, `glm-5.3-flash`, `glm-5.2-ultrafast` |
 | `grok` | `grok-` | `grok-build-0.1` |
 | `qwen` | `qwen-`, aliases `qwen3-` and `qwen3.` | `qwen3-coder`, `qwen/qwen3.8-flash` |
@@ -1072,7 +1072,7 @@ pairing so a benchmark claim can never mix in other prompt changes.
   grok had no upstream precedent; the content encodes the family's publicly
   stated speed-first design plus observed search-churn behavior.
 
-### `kimi` (Kimi K3, K3 Ultrafast)
+### `kimi` (Kimi K3, K3 Ultrafast, K3.1 Pro, K3.1 Pro Highspeed)
 
 - **Model trait:** a deep decompose-compare-verify reasoning loop. Excellent
   on genuinely hard problems; wasteful on low-entropy mechanical steps, where
@@ -1087,6 +1087,57 @@ pairing so a benchmark claim can never mix in other prompt changes.
   boundaries, take the first and move.
 - **Source:** observed failure modes in live OMH usage of Kimi K3 (authored
   in the per-family calibration commit).
+- **Version rule:** K3.1 Pro and its Highspeed tier take these blocks
+  unchanged. Moonshot describes K3.1 Pro as K3 with much more
+  post-training, served under K3's parameter contract. Nothing in its
+  thinking, tool, or effort contract changes the trait above, so there is
+  no new trait to counter yet. The K3-vs-K3.1 pair in the next section
+  decides whether the blocks still hold.
+
+### `kimi-k3.1-pro` (Kimi K3.1 Pro and K3.1 Pro Highspeed, exact contracts; `kimi` family calibration)
+
+- **Documented contract (official, platform.kimi.ai, read 2026-10-24):**
+  released 2026-10-23, the first K3.1-series model. 1,048,576-token
+  context. `max_completion_tokens` defaults to 131,072 and goes up to the
+  full window. Thinking is always on, and `reasoning_effort` accepts `low`,
+  `high`, and `max`, with `max` as the default. The `thinking` parameter is
+  K2-only. `temperature`, `top_p`, `n`, and both penalties are fixed, and
+  any other value is an error. `tool_choice` accepts `auto`, `none`, and
+  `required`. Forcing one named function returns HTTP 400 while thinking is
+  on. Every later turn returns the complete assistant message, including
+  `reasoning_content` (Preserved Thinking is always on). Switching the
+  effort level mid-conversation invalidates prefix-cache hits.
+- **Effort on the route:** the API accepts no other rung, so each one is
+  listed as unsupported and raised on record (`floor_raised`). `off`,
+  `none`, and `minimal` go to `low`, `medium` to `high`, and `xhigh` to
+  `max`. The last two are the same mapping Hermes' kimi-coding provider
+  applies on the wire (`KIMI_K3_OVERRIDES`, observed in the installed
+  0.22.2 and origin/main `5894e750c3`). With the route record raising them
+  the same way, the record shows what was actually sent. Kimi K3 itself
+  still has no contract, so its routes are unchanged.
+- **Highspeed is its own exact contract.** Moonshot calls it the same model
+  at 2-3x the speed. It is not a declared projection because it has its
+  own rate card: 4/20 per MTok against the base model's 2/10, with cache
+  writes doubled but cached input the same 0.20. No single service-tier
+  multiplier reproduces that card. Its `service_tier` is `highspeed`, and
+  the approximation table carries its 0.05 cache ratio. As an exact id it
+  never projects onto a chain entry that names the base model, so a chain
+  that wants Highspeed has to name it.
+- **Placement:** none. Both ids are recognized, priced, and provider-mapped
+  (`kimi-coding` for both; `openrouter` and `opencode` for the base id only,
+  the catalogs observed serving each on 2026-10-24). They join no shipped
+  chain until the K3-vs-K3.1 pair below is measured and the owner decides.
+  An operator places either id with `omh model-chains set`.
+- **Surfaces:** Hermes resolves both ids to the 1 Mi window through its
+  `kimi-k3` context row and has no price row for them (observed). The Kimi
+  Code plan serves bare `k3.1-pro` / `k3.1-pro-highspeed` slugs
+  (models.dev, community). Those slugs classify `unknown` here, like bare
+  `k3`.
+- **Measurement (named follow-up):** the paired runs are `kimi-k3` vs
+  `kimi-k3.1-pro` on `benchmarks/live-model-tools/v1` at the same effort,
+  plus `baseline` vs `optimized` for the family block on K3.1 Pro. On
+  2026-10-24 neither can run on the maintainer host: OpenGateway lists no
+  K3.1 id, and no Moonshot or OpenRouter key is configured.
 
 ### `glm` (GLM 5.3, 5.3 Flash, 5.2, speed tiers)
 
@@ -1751,6 +1802,7 @@ choose models by, not a guarantee for another persona or skill.
 | `gpt-6-luna`, `claude-opus-5-5` (exact contracts, no exact calibration) | yes → `gpt` / `claude` | yes, through the family block | exact documented contracts (Luna's `none`-to-`max` ladder; Opus 5.5's always-on thinking, forced-`tool_choice` 400, and 0.05x cache reads); no exact counter because neither shipped placement reaches the high-effort tier on the subagent side and the Opus composer block is kept byte-stable per the vendor's Opus 5.5 prompting guide; the old-vs-new generation pairs are the named follow-up |
 | `openai-gpt-`, `anthropic-claude-` (design-qualified aliases) | yes → `gpt` / `claude` | yes, through the design family | concrete models.dev/OpenCode serving ids carry these sub-prefixes; their catalog `base_model` fields establish the underlying design family |
 | other `openai-`, `anthropic-` vendor-qualified ids | recognized as model targets, family `unknown` | no → `generic` | vendor qualification alone does not establish a design; O-series, image, and emerging ids remain uncalibrated |
+| `kimi-k3.1-pro`, `kimi-k3.1-pro-highspeed` (exact contracts, no exact calibration) | yes → `kimi` | yes, through the family block | exact documented contracts (three-rung `low`/`high`/`max` ladder with `max` as default, every other rung raised on record; Highspeed has its own rate card); recognized, priced, and provider-mapped but in no shipped chain; the K3-vs-K3.1 pair is the named follow-up, blocked on a served route |
 | `jev` (non-generative) | yes | no, and none applies → no calibration pair | recognized, contracted (`jev-1.13.0`, with `jev-latest` and `jev-preview` as declared aliases), priced with a free output side, and in no chain by decision; the route answers `model_refused` and both chain editors refuse it. The coverage audit reports `effort`, `category_projection`, and `provider_eligibility` as `missing`, which is the honest reading for a model with no effort parameter and no chain membership — greening any of them would need an invented rung or an invented chain entry |
 | `minimax` | yes | no → `generic` | prefix landed in #1304 (`MiniMax-M3`, released 2026-05-31, and `MiniMax-M2.7`, 2026-03-18, per minimax.io release notes and the platform.minimax.io model list); the calibration pair waits on an observed failure mode or a provider-stated characteristic worth countering |
 | emerging families | no → `unknown` | no → `generic` | add a prefix and a calibration pair when one lands (the #1051/#1052 pattern) |

@@ -61,6 +61,8 @@ MODEL_DISPLAY_LABELS: Final[dict[str, str]] = {
     "grok-build-0.1": "Grok Build 0.1",
     "grok-code-fast": "Grok Code Fast",
     "kimi-k3": "Kimi K3",
+    "kimi-k3.1-pro": "Kimi K3.1 Pro",
+    "kimi-k3.1-pro-highspeed": "Kimi K3.1 Pro Highspeed",
     "qwen3-coder": "Qwen3-Coder",
 }
 
