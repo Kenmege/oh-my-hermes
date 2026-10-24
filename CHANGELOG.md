@@ -71,6 +71,22 @@ All notable changes will be documented here.
   what the PM wants` keeps as a wish). Korean reported speech is unchanged
   and reads as on main.
 
+- **The launch card shows skills from its first frame.** The skills section
+  said `loading…` for about 1.4 s on a warm launch and 1.8 s on a cold one.
+  Hermes names its skills only in the `session.info` it sends after building
+  the session's agent: plugin discovery, `AIAgent` setup and its skill scan.
+  The OMH TUI's own share is under 0.1 s. The card now keeps the skills it
+  drew in `<omh_home>/tui/launch-skills.json`, written atomically and
+  best-effort, with the Hermes home and profile they were drawn for. The
+  next launch on that home and profile draws them at once, with a dim
+  `last-known` mark on the title row. When the session's own skills arrive
+  they replace the snapshot whole, so a skill removed since then leaves the
+  screen. The card keeps its height through the swap. The snapshot holds
+  the names as drawn, so the first frame imports no skill catalog. A first
+  launch, a launch on another Hermes home or profile, or a snapshot that is
+  unreadable or from another schema still says `loading…`. Hermes is
+  unchanged.
+
 - **Kimi K3.1 Pro and K3.1 Pro Highspeed are onboarded.** Moonshot released
   them on 2026-10-23. Both ids now have exact contracts read from
   platform.kimi.ai: 1M context, thinking always on, and a `low` / `high` /
