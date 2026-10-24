@@ -77,7 +77,6 @@ omh setup
 
 <p align="center">
   <img src="assets/omh-dag-ulw-tui.gif" alt="运行 /dag-ulw 的 OMH TUI：输入提示词后定义出七条通道的方框图，通道按层在 Claude Opus 5.5、GPT-6.1 Sol、DeepSeek V4.1 Flash、GLM 5.3 和 Kimi K3.1 Pro 上运行，最后全部 accepted" width="900">
-  <br><sub>运行 <code>/dag-ulw</code> 的 OMH TUI，由真实渲染器绘制的脚本化演示（没有模型真正运行）。<a href="assets/omh-dag-ulw-tui.mp4">高清 MP4</a></sub>
 </p>
 
 > [!TIP]
