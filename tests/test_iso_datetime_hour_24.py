@@ -16,6 +16,9 @@ Three layers:
   A reference is either a guard definition, a guarded call with its case here,
   a ``date.fromisoformat`` (unchanged in 3.14), or a count pinned in
   ``UNGUARDED`` with its reason. A new raw reference fails until it takes one.
+
+The guard itself has three hand-kept copies (``GUARD_COPIES``). Each is run on
+the 3.14 reading against the bundle helper, and their ASTs must stay equal.
 """
 
 from __future__ import annotations
@@ -45,6 +48,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src"
 RECONCILE = SOURCE / "skills/biomedical_evidence_toolkit/scripts/reconcile.py"
 SEARCH_EVIDENCE = SOURCE / "workflows/search_evidence.py"
+# The three hand-kept copies of the guard, the bundle helper first. They must stay
+# one function: `test_the_guard_copies_are_one_function` compares their ASTs.
+GUARD_COPIES = (SOURCE / "plugin_bundle/omh/iso_datetime.py", RECONCILE, SEARCH_EVIDENCE)
+_SPELLINGS_NAMES = {"_date_spellings": "date_spellings", "date_spellings": "date_spellings"}
 UTC = timezone.utc
 NOON = datetime(2020, 1, 1, 12, tzinfo=UTC)
 NEXT_MIDNIGHT = datetime(2020, 1, 2, tzinfo=UTC)
@@ -360,6 +367,45 @@ def fromisoformat_references() -> tuple[Counter[tuple[str, str]], Counter[tuple[
     return guarded, raw
 
 
+class _GuardShape(ast.NodeTransformer):
+    """A guard copy as code: no docstring, no annotation, one name for the spellings helper."""
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef:
+        self.generic_visit(node)
+        node.name = _SPELLINGS_NAMES.get(node.name, node.name)
+        node.returns = None
+        first = node.body[0]
+        if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+            node.body = node.body[1:]
+        return node
+
+    def visit_arg(self, node: ast.arg) -> ast.arg:
+        node.annotation = None
+        return node
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> ast.AST | None:
+        if node.value is None:
+            return None
+        return ast.Assign(targets=[node.target], value=self.visit(node.value))
+
+    def visit_Name(self, node: ast.Name) -> ast.Name:
+        node.id = _SPELLINGS_NAMES.get(node.id, node.id)
+        return node
+
+
+def guard_body(source: str) -> str:
+    """The normalized AST of a module's ``strict_fromisoformat`` and its spellings helper."""
+    functions = sorted(
+        (node for node in ast.parse(source).body
+         if isinstance(node, ast.FunctionDef) and node.name in {"strict_fromisoformat", *_SPELLINGS_NAMES}),
+        key=lambda node: _SPELLINGS_NAMES.get(node.name, node.name),
+    )
+    names = [_SPELLINGS_NAMES.get(node.name, node.name) for node in functions]
+    if names != ["date_spellings", "strict_fromisoformat"]:
+        raise AssertionError(f"expected one strict_fromisoformat and one date_spellings, found {names}")
+    return ast.dump(ast.Module(body=[_GuardShape().visit(node) for node in functions], type_ignores=[]))
+
+
 class HelperTests(unittest.TestCase):
     def test_hour_24_is_refused_in_every_spelling_on_this_interpreter(self) -> None:
         for text in ("2026-10-24T24:00:00", "2026-10-24T24:00:00Z", "2026-10-24T24:00:00+09:00",
@@ -459,13 +505,14 @@ class SourceGateTests(unittest.TestCase):
         self.assertEqual(sorted(f for p, f in guarded if p == script), ["freshness", "timestamp"])
 
     def test_every_guard_copy_reads_as_the_bundle_helper_does(self) -> None:
-        copies = {
-            "reconcile.py": runpy.run_path(str(RECONCILE))["strict_fromisoformat"],
-            "search_evidence.py": runpy.run_path(str(SEARCH_EVIDENCE))["strict_fromisoformat"],
-        }
-        texts = ("2026-10-24T24:00:00", "2026-10-24T24:00:00Z".replace("Z", "+00:00"), "20261024T24",
-                 "2026-W43-6T24:00", "2026-W43T24", "2026-10-25T00:00:00", "2026-W43", "2026W431T00",
-                 "2026-10-24", "2026-10-24T12:30:00+09:00", "2026-10-24T25:00", "not a time")
+        # Each copy runs on the 3.14 reading, whatever the interpreter: on 3.11 and
+        # 3.13, raw fromisoformat already refuses hour 24, so a copy that ran on the
+        # real parser there would compare nothing for exactly the inputs it guards.
+        # The reference is the bundle helper on the real interpreter, which on 3.11
+        # to 3.13 is raw fromisoformat itself.
+        texts = ("2026-10-24T24:00:00", "2026-10-24T24:00:00Z".replace("Z", "+00:00"), "2026-12-31 24:00",
+                 "20261024T24", "2026-W43-6T24:00", "2026-W43T24", "2026-10-25T00:00:00", "2026-W43",
+                 "2026W431T00", "2026-10-24", "2026-10-24T12:30:00+09:00", "2026-10-24T25:00", "not a time")
 
         def outcome(parse: Callable[[str], datetime], text: str) -> object:
             try:
@@ -473,10 +520,26 @@ class SourceGateTests(unittest.TestCase):
             except ValueError as exc:
                 return "raised: " + str(exc).split(",")[0]
 
-        for name, copy in copies.items():
+        for path in GUARD_COPIES:
+            with mock.patch("datetime.datetime", Lenient):
+                copy = runpy.run_path(str(path))["strict_fromisoformat"]
             for text in texts:
-                with self.subTest(copy=name, text=text):
+                with self.subTest(copy=path.name, text=text):
                     self.assertEqual(outcome(copy, text), outcome(strict_fromisoformat, text))
+
+    def test_the_guard_copies_are_one_function(self) -> None:
+        bodies = {path.name: guard_body(path.read_text(encoding="utf-8")) for path in GUARD_COPIES}
+        drifted = sorted(name for name, body in bodies.items() if body != bodies[GUARD_COPIES[0].name])
+        self.assertEqual(drifted, [], (
+            "these copies of strict_fromisoformat / date_spellings no longer match "
+            "src/plugin_bundle/omh/iso_datetime.py; change all three together"
+        ))
+
+    def test_the_drift_check_sees_a_changed_copy(self) -> None:
+        source = RECONCILE.read_text(encoding="utf-8")
+        self.assertIn("time(0)", source)
+        self.assertNotEqual(guard_body(source.replace("time(0)", "time(1)")), guard_body(source))
+        self.assertNotEqual(guard_body(source.replace("weekday == 1", "weekday == 7")), guard_body(source))
 
 
 if __name__ == "__main__":
