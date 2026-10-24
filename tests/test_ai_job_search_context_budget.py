@@ -112,7 +112,10 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
                                if heading == 'Workflow Lane' and '**Research and company ops**' in body
                                else body for heading, body in parts)
             legacy_hashes[template.name] = hashlib.sha256(restored.encode()).hexdigest()
-        self.assertEqual(_digest(legacy_hashes), 'd1c5273b31d9833daa48d770d1c728d9aabf98d14eb29802d25dcf8875cce2b5')
+        # Re-derived 2026-10-24: model-setup's chain sentence names Kimi K3.1
+        # Pro where it named Kimi K3 (9 mentions); reverting only that edit
+        # reproduces the previous pin d1c5273b31d9833daa48d770d1c728d9aabf98d14eb29802d25dcf8875cce2b5.
+        self.assertEqual(_digest(legacy_hashes), '62e32b8e958d3ca0dc9e52abaaddcda26650a0c837feae55346860f677ec8950')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
