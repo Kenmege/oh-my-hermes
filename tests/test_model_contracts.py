@@ -263,18 +263,17 @@ class EffortFloorTests(unittest.TestCase):
         self.assertEqual(route["selected_reasoning_effort"], "low")
         self.assertEqual(route["effort_change"]["kind"], EFFORT_FLOOR_KIND)
         # A model without a contract keeps the previous behavior byte for byte.
-        # (GPT-5.6 Sol, the earlier subject here, left the shipped chains on
-        # 2026-09-23; Kimi K3 has no contract and is the only active model
-        # here, so it is selected from the tail of `unspecified-high`, which
-        # GPT-6.1 Sol heads since 2026-10-13.)
+        # (GPT-5.6 Sol and then Kimi K3, the earlier subjects here, left the
+        # shipped chains on 2026-09-23 and 2026-10-24; GLM 5.3 Flash has no
+        # contract and heads `quick`.)
         route = resolve_model_route(
             "hermes",
             role="brain",
             requested_effort="off",
-            requested_category="unspecified-high",
-            active_models=("kimi-k3",),
+            requested_category="quick",
+            active_models=("glm-5.3-flash",),
         )
-        self.assertEqual(route["selected_model"], "kimi-k3")
+        self.assertEqual(route["selected_model"], "glm-5.3-flash")
         self.assertEqual(route["selected_reasoning_effort"], "off")
         self.assertNotIn("effort_change", route)
 
@@ -1698,7 +1697,8 @@ class KimiK31ProContractTests(unittest.TestCase):
                 with self.subTest(model=model, requested=requested):
                     self.assertEqual(route["selected_reasoning_effort"], requested)
                     self.assertNotEqual(route["effort_change"]["kind"], EFFORT_FLOOR_KIND)
-        # K3 itself is still uncontracted: its route is unchanged.
+        # K3 itself is still uncontracted (retired from the chains, routable
+        # by name): its route is unchanged.
         route = resolve_model_route("hermes", requested_model="kimi-k3", requested_effort="medium")
         self.assertEqual(route["selected_reasoning_effort"], "medium")
         self.assertEqual(route["effort_change"]["kind"], "catalog_no_authority_passthrough")

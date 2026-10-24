@@ -113,7 +113,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
                                if heading == 'Workflow Lane' and '**Research and company ops**' in body
                                else body for heading, body in parts)
             legacy_hashes[template.name] = hashlib.sha256(restored.encode()).hexdigest()
-        self.assertEqual(_digest(legacy_hashes), '21f88b93b73d048b4dcb064550e6a1f635cf6bedcd8fd1905a7313b1830367cf')
+        # Re-derived from both sources: the vi rewordings above plus
+        # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
+        self.assertEqual(_digest(legacy_hashes), 'a411e6d5f26759a0bdda078999df35a131ec2614d90c87d353147d7aa715a828')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
@@ -131,7 +133,7 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         from omh.maintenance.drift import budget_metrics
         expected = {
             'skill_index_line_max_chars': 100,
-            'plugin_tool_schema_chars': 68402,  # Main's registered search tool; unchanged here.
+            'plugin_tool_schema_chars': 68757,  # Main's search tool, then #2277's agent-board prepare fields.
             'pre_llm_call_context_chars_max': 5780,
             'pre_llm_call_context_fallback_chars_max': 7216,
             'awareness_primer_markdown_chars': 3520,

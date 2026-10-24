@@ -366,13 +366,13 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
                 )
 
     def test_a_membership_only_model_falls_back_to_its_first_chain(self):
-        # Kimi K3 at medium heads no chain and sits third in both
+        # Kimi K3.1 Pro at medium heads no chain and sits third in both
         # unspecified-high and writing (fourth in capable); the equal-position
         # tie goes to the first chain in canonical order. The earlier pin,
         # (claude-opus-5-5, medium), heads writing since 2026-10-13, so it is
         # no longer a membership-only model.
         self.assertEqual(
-            mixture_category_for("kimi-k3", "medium", parent_model="gpt-6-astra"),
+            mixture_category_for("kimi-k3.1-pro", "medium", parent_model="gpt-6-astra"),
             "unspecified-high",
         )
 
@@ -387,16 +387,17 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
 
     def test_an_ultrafast_variant_projects_onto_its_base_models_category(self):
         # Providers serve some chain models through speed variants (e.g. the
-        # OpenGateway Ultrafast tier: kimi-k3 via kimi-k3-ultrafast); the
+        # OpenGateway Ultrafast tier: glm-5.3 via glm-5.3-ultrafast); the
         # variant projects onto the base model's category instead of leaving
-        # the HUD row unlabeled.
+        # the HUD row unlabeled. Kimi K3's tier lost its label with its base
+        # model, which left the shipped chains on 2026-10-24.
         self.assertEqual(
-            mixture_category_for("kimi-k3-ultrafast", "xhigh", parent_model="gpt-5.6-sol"),
-            "architect",
+            mixture_category_for("glm-5.3-ultrafast", "low", parent_model="gpt-5.6-sol"),
+            "unspecified-low",
         )
         self.assertEqual(
             mixture_category_for("kimi-k3-ultrafast", "low", parent_model="gpt-5.6-sol"),
-            "quick",
+            "",
         )
         # An explicitly-named variant still matches itself first (no shipped
         # chain names a variant since 2026-09-11, so the rule is pinned on an
@@ -414,10 +415,9 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
             "",
         )
 
-    def test_kimi_k31_pro_ids_are_priced_and_provider_mapped_but_unchained(self):
-        # Onboarded 2026-10-24 ahead of a chain placement: an operator chain
-        # naming either id costs out at Moonshot's list price and gets a
-        # provider verdict, and neither id borrows K3's category label.
+    def test_kimi_k31_pro_ids_are_priced_provider_mapped_and_chained(self):
+        # Kimi K3.1 Pro took every Kimi K3 slot on 2026-10-24; the Highspeed
+        # tier stays recognition-only. Both cost out at Moonshot's list price.
         cost = hermes_delegation_module._approximate_cost_usd
         self.assertEqual(cost("moonshotai/kimi-k3.1-pro", 1_000_000, 1_000_000, 0), 12.0)
         self.assertEqual(cost("kimi-k3.1-pro-highspeed", 1_000_000, 1_000_000, 0), 24.0)
@@ -426,23 +426,27 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         self.assertAlmostEqual(cost("kimi-k3.1-pro", 0, 1, 1_000_000), 0.20 + 10.0 / 1_000_000)
         self.assertAlmostEqual(cost("kimi-k3.1-pro-highspeed", 0, 1, 1_000_000), 0.20 + 20.0 / 1_000_000)
         self.assertIs(provider_serves_alias("kimi-k3.1-pro", "kimi-coding"), True)
+        # Apitopia carried K3 but nobody observed it serving K3.1 Pro, so no
+        # family is claimed for it and the vendor-specific verdict is False.
+        self.assertIs(provider_serves_alias("kimi-k3.1-pro", "apitopia"), False)
         # OpenRouter relays every vendor, so its verdict stays unknown rather
         # than a claim; the family row matters for vendor-specific kinds.
         self.assertIsNone(provider_serves_alias("moonshotai/kimi-k3.1-pro", "openrouter"))
         self.assertIs(provider_serves_alias("kimi-k3.1-pro", "anthropic"), False)
         self.assertIs(provider_serves_alias("kimi-k3.1-pro-highspeed", "kimi-coding"), True)
         self.assertIs(provider_serves_alias("kimi-k3.1-pro-highspeed", "zai"), False)
-        for spelling in ("kimi-k3.1-pro", "kimi-k3.1-pro-highspeed", "moonshotai/kimi-k3.1-pro"):
+        # The shipped slots label K3.1 Pro at the efforts K3 carried.
+        for effort, category in (("xhigh", "architect"), ("medium", "unspecified-high"), ("low", "quick")):
+            with self.subTest(effort=effort):
+                self.assertEqual(
+                    mixture_category_for("moonshotai/kimi-k3.1-pro", effort, parent_model="gpt-6.1-sol"), category
+                )
+        # The retired generation and the Highspeed tier label nothing: an
+        # exact contract never projects onto its base model's chain entry.
+        for spelling in ("kimi-k3", "kimi-k3.1-pro-highspeed"):
             for effort in ("low", "medium", "high", "xhigh"):
                 with self.subTest(spelling=spelling, effort=effort):
                     self.assertEqual(mixture_category_for(spelling, effort, parent_model="gpt-6.1-sol"), "")
-        # An operator chain that names the base id labels the Highspeed child
-        # only if it names Highspeed too: an exact contract never projects.
-        chains = {"deep": (("kimi-k3.1-pro", "high"),)}
-        self.assertEqual(mixture_category_for("kimi-k3.1-pro", "high", parent_model="gpt-6.1-sol", chains=chains), "deep")
-        self.assertEqual(
-            mixture_category_for("kimi-k3.1-pro-highspeed", "high", parent_model="gpt-6.1-sol", chains=chains), ""
-        )
 
     def test_the_served_ultrafast_tiers_are_priced_without_a_provider_claim(self):
         # Observed 2026-09-24 on the OpenGateway route: the V4.1 Flash and GLM
@@ -964,9 +968,9 @@ class HermesNativeSubagentReaderTest(unittest.TestCase):
                 {
                     "schema_version": "model_provider_routes/v1",
                     "models": {
-                        "kimi-k3": {
+                        "kimi-k3.1-pro": {
                             "provider": "gateway",
-                            "model": "moonshotai/kimi-k3",
+                            "model": "moonshotai/kimi-k3.1-pro",
                         }
                     },
                 }
@@ -978,7 +982,7 @@ class HermesNativeSubagentReaderTest(unittest.TestCase):
             [
                 {
                     "id": "20260818_100100_provider",
-                    "model": "moonshotai/kimi-k3",
+                    "model": "moonshotai/kimi-k3.1-pro",
                     "effort": "low",
                     "started_at": NOW - 60,
                     "usage": {"last_seen": NOW - 5, "output_tokens": 10},
@@ -992,10 +996,10 @@ class HermesNativeSubagentReaderTest(unittest.TestCase):
             omh_home=self.home,
         )["rows"][0]
 
-        self.assertEqual(row["alias"], "kimi-k3")
+        self.assertEqual(row["alias"], "kimi-k3.1-pro")
         self.assertEqual(row["provider"], "gateway")
         self.assertEqual(row["provider_source"], "model_provider_routes")
-        self.assertEqual(row["model"], "moonshotai/kimi-k3")
+        self.assertEqual(row["model"], "moonshotai/kimi-k3.1-pro")
         self.assertEqual(row["category"], "quick")
 
     def test_a_live_child_projects_a_running_row_with_model_effort_and_metrics(self):
@@ -2751,9 +2755,9 @@ class HudMergeTest(unittest.TestCase):
                     {
                         "schema_version": "model_provider_routes/v1",
                         "models": {
-                            "kimi-k3": {
+                            "kimi-k3.1-pro": {
                                 "provider": "gateway",
-                                "model": "moonshotai/kimi-k3",
+                                "model": "moonshotai/kimi-k3.1-pro",
                             }
                         },
                     }
@@ -2765,7 +2769,7 @@ class HudMergeTest(unittest.TestCase):
                 [
                     {
                         "id": "20260818_100100_provider",
-                        "model": "moonshotai/kimi-k3",
+                        "model": "moonshotai/kimi-k3.1-pro",
                         "effort": "low",
                         "started_at": time.time() - 30,
                         "usage": {
@@ -2779,7 +2783,7 @@ class HudMergeTest(unittest.TestCase):
 
             row = read_omh_hud(omh_home, hermes_home)["subagents"]["rows"][0]
 
-            self.assertEqual(row["alias"], "kimi-k3")
+            self.assertEqual(row["alias"], "kimi-k3.1-pro")
             self.assertEqual(row["provider"], "gateway")
             self.assertEqual(row["category"], "quick")
 
@@ -2892,8 +2896,8 @@ def _record(**overrides) -> dict:
     record = {
         "origin": "fallback",
         "category": "visual-engineering",
-        "alias": "kimi-k3",
-        "wire_model": "moonshotai/kimi-k3",
+        "alias": "kimi-k3.1-pro",
+        "wire_model": "moonshotai/kimi-k3.1-pro",
         "provider": "gateway",
         "reasoning_effort": "low",
         "from_alias": "claude-fable-5-1",
@@ -2998,9 +3002,9 @@ class RouteProvenanceProjectionTest(unittest.TestCase):
                 {
                     "schema_version": "model_provider_routes/v1",
                     "models": {
-                        "kimi-k3": {
+                        "kimi-k3.1-pro": {
                             "provider": "gateway",
-                            "model": "moonshotai/kimi-k3",
+                            "model": "moonshotai/kimi-k3.1-pro",
                         }
                     },
                 }
@@ -3025,7 +3029,7 @@ class RouteProvenanceProjectionTest(unittest.TestCase):
 
     def test_a_fallback_route_labels_its_child_with_category_and_origin(self):
         _write_provenance(self.home, [_record()])
-        row = self._row("moonshotai/kimi-k3")
+        row = self._row("moonshotai/kimi-k3.1-pro")
         self.assertEqual(row["category"], "visual-engineering")
         self.assertEqual(row["route_origin"], "fallback")
         self.assertEqual(row["category_source"], "route_provenance")
@@ -3104,7 +3108,7 @@ class RouteProvenanceProjectionTest(unittest.TestCase):
                 {"origin": "cleared", "written_at": NOW - 200},
             ],
         )
-        row = self._row("moonshotai/kimi-k3")
+        row = self._row("moonshotai/kimi-k3.1-pro")
         self.assertNotIn("route_origin", row)
         self.assertNotIn("category_source", row)
         self.assertEqual(row["category"], "quick")
@@ -3153,7 +3157,7 @@ class RouteProvenanceProjectionTest(unittest.TestCase):
 
     def test_a_routed_child_on_another_model_never_carries_the_parent_token(self):
         _write_provenance(self.home, [_record(origin="head")])
-        row = self._row("moonshotai/kimi-k3")
+        row = self._row("moonshotai/kimi-k3.1-pro")
         self.assertEqual(row["category"], "visual-engineering")
         self.assertNotIn("same_as_parent", row)
 
@@ -3174,7 +3178,7 @@ class RouteProvenanceProjectionTest(unittest.TestCase):
                 ),
             ],
         )
-        row = self._row("moonshotai/kimi-k3")
+        row = self._row("moonshotai/kimi-k3.1-pro")
         self.assertNotIn("route_origin", row)
         self.assertEqual(row["category"], "quick")
 
@@ -3194,6 +3198,6 @@ class RouteProvenanceProjectionTest(unittest.TestCase):
             with self.subTest(records=records):
                 _write_provenance(self.home, records)
                 (self.home / "state.db").unlink(missing_ok=True)
-                row = self._row("moonshotai/kimi-k3")
+                row = self._row("moonshotai/kimi-k3.1-pro")
                 self.assertNotIn("route_origin", row)
                 self.assertEqual(row["category"], "quick")

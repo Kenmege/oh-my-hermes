@@ -4,6 +4,104 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh_agent_board` states the fields a `prepare` needs, and names the
+  one that is missing (#2277).** The schema required only `action` and
+  `request_id`, so a `prepare` built from it left out `coordination`,
+  `operation`, `board`, `profile` and `arguments` and came back as
+  `invalid_request_or_board_store`, the same reason an unreadable board store
+  gives. The schema now carries a top-level `oneOf` with the two closed
+  shapes, and the tool description lists the prepare fields, because Hermes
+  removes a top-level combinator from every tool schema before any provider
+  sees it. A `prepare` that still omits one is refused as
+  `invalid_prepare_input` with `fields` naming the missing names and no
+  values; a missing `board` keeps `board_required`, a host without the board
+  engine still answers `omh_agent_board_core_unavailable` first, and `status`
+  is unchanged. `docs/AGENT-BOARD.md` lists the refusals that come before an
+  engine record.
+
+- **Kimi K3.1 Pro replaces Kimi K3 in the shipped chains.** Every slot K3
+  held now names `kimi-k3.1-pro` at the same effort: `deep`, `architect`,
+  `unspecified-high`, `quick`, `writing`, `visual-engineering`, `artistry`,
+  `capable`, the `main` suggestion, and the X-platform affinity. Both site
+  pages, the generated install table, and the model-setup skill say so;
+  the four lean READMEs link to the canonical table. K3 is retired under the superseded-generation
+  rule. It stays recognized and priced, so `omh model-chains set` can still
+  name it. The Highspeed tier joins no chain. The `quick` chain therefore
+  no longer offers a Kimi Ultrafast swap in `omh model-chains interview`,
+  because no K3.1 Ultrafast tier is priced. This is an editorial change
+  (owner decision) and has not been measured yet.
+
+- **A remark after a request is read by its kind, more widely (#2243
+  follow-up).** A retraction is read by its verb stem (`…, side note, I'm
+  cancelling that`, `…, fyi backing out of this`, `…, calling the whole
+  thing off`), a stated precondition holds (`…, need to confirm it's safe on
+  my side`), and a contrast after a wish turns to what follows (`…, fingers
+  crossed but let's not`): each holds where it started a graph run before.
+  Who asked needs someone other than the speaker as its subject, or a
+  passive (`…, approved by the CTO`). More remarks keep the request: an
+  aside marker of any kind (`…, also, …`, `…, off topic, …`), a request on
+  someone's behalf or for a purpose (`…, the PM's request`, `…, at the
+  request of QA`, `…, on behalf of legal`, `…, it's for the audit`), a toast
+  (`…, here's to a clean run`, `…, may the build be green`), a
+  back-reference (`…, consistent with the RFC`, `…, like we did for
+  billing`), `…, no deadline` and `…, bear with me`. A toast, a wish, a
+  back-reference or an attribution keeps only when what it carries is clean:
+  a negation of doing the work holds wherever it is said (`…, here's to not
+  doing it`, `…, here's to letting sleeping services lie`, `…, the team lead
+  asked us to leave it`, `…, cheers don't bother`), while a negated outcome
+  keeps (`…, hope nothing breaks`, `…, btw it won't touch prod`, `…, fwiw no
+  exceptions`, `…, hope we don't break imports`: a `don't` that governs an
+  outcome verb asks for the work all the same). A flat refusal holds
+  (`…, btw, no`). What a third party said, wanted or told us is read by
+  the kinds a bare remark is: a clean approval keeps, with intensifiers,
+  punctuation and a when or what for around it (`…, legal said a big yes`,
+  `…, the lead said absolutely, go for it`, `…, the client wants it by
+  friday`), and so do thanks, a greeting, a sign-off and a wish (`…, the
+  lead said thanks a ton`, `…, the PM says hi`); after an aside marker a
+  plain statement keeps too (`…, fwiw QA says the suite is faster now`).
+  A refusal, a hedge or anything unknown holds (`…, QA says hard no`, `…,
+  fyi the lead said meh`), and so does sarcasm: a mocking idiom or an
+  approval dressed in filler or said twice (`…, the lead said yeah right`,
+  `…, ops said sure, in your dreams`, `…, the lead said oh sure`, `…, QA
+  said yeah yeah`). A negator before the reporting verb holds whatever was
+  said (`…, nobody said yes`, `…, ops never said go`, `…, nobody signed
+  off`), and so does one before an attribution verb (`…, no one on the
+  team gave the go-ahead`). A subordinating condition opener holds where it
+  opens a clause (`…, assuming QA says it's fine`, `…; as soon as the lead
+  says go`); inside a clause it constrains the work and keeps, and an
+  adjective never counts (`rename every module as long as the import paths
+  stay the same`, `… using the provided helper`). A reported wish keeps
+  only as a wish alone or that the work goes well (`…, the lead said hope it
+  goes well`; `…, the PM said good luck lol` holds), a doubled assent is no
+  thanks (`…, QA said great, great` holds), and under an aside a reported
+  negated state, reluctance or blocking status holds (`…, btw legal says
+  the contract isn't signed`, `…, btw ops says staging isn't up`, `…, btw
+  ops says prod is frozen`), while a negated problem keeps (`…, fwiw QA
+  says it isn't a problem`). A status word that is also good news holds
+  only of a person away or a system down (`…, fyi the lead said she's out
+  today`, `…, btw ops says the cluster is down`); of a work item it keeps
+  (`…, btw ops says the fix is out`, `…, fyi ops said the error rate is
+  down`). Thanks for a negation mocks wherever it is said (`…, thanks for
+  nothing` holds). A relative what is no reported speech (`…, hope it's
+  what the PM wants` keeps as a wish). Korean reported speech is unchanged
+  and reads as on main.
+
+- **The launch card shows skills from its first frame.** The skills section
+  said `loading…` for about 1.4 s on a warm launch and 1.8 s on a cold one.
+  Hermes names its skills only in the `session.info` it sends after building
+  the session's agent: plugin discovery, `AIAgent` setup and its skill scan.
+  The OMH TUI's own share is under 0.1 s. The card now keeps the skills it
+  drew in `<omh_home>/tui/launch-skills.json`, written atomically and
+  best-effort, with the Hermes home and profile they were drawn for. The
+  next launch on that home and profile draws them at once, with a dim
+  `last-known` mark on the title row. When the session's own skills arrive
+  they replace the snapshot whole, so a skill removed since then leaves the
+  screen. The card keeps its height through the swap. The snapshot holds
+  the names as drawn, so the first frame imports no skill catalog. A first
+  launch, a launch on another Hermes home or profile, or a snapshot that is
+  unreadable or from another schema still says `loading…`. Hermes is
+  unchanged.
+
 - **Kimi K3.1 Pro and K3.1 Pro Highspeed are onboarded.** Moonshot released
   them on 2026-10-23. Both ids now have exact contracts read from
   platform.kimi.ai: 1M context, thinking always on, and a `low` / `high` /
@@ -217,8 +315,10 @@ All notable changes will be documented here.
   with any intensifier: gratitude (`…, thanks a bunch`, `…, thx so much!!`,
   `…, much obliged`), a sign-off (`…, have a good one`), a wish (`…, fingers
   crossed`, `…, wish me luck`), a back-reference (`…, as discussed`, `…, same
-  as last time`), who asked (`…, my manager asked for it`), an aside marker
-  and a harmless statement (`…, fwiw the tests are flaky`), or no pressure
+  as last time`), who asked (`…, my manager asked for it`, `…, approved by the
+  CTO`), an aside marker of any kind and a harmless statement (`…, fwiw the
+  tests are flaky`, `…, also, the new keyboard is lovely`, `…, off topic, the
+  sofa arrived`), or no pressure
   (`…, no worries`, `…, take your time`, `…, whenever works`). An unknown
   remark holds, so the request is offered, not started, and a refusal class
   holds even inside a keep kind: a new request (`…, run the tests`), a hold, a

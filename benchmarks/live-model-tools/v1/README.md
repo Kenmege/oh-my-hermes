@@ -342,8 +342,9 @@ What the numbers say, and no more:
   ```
 
   Since the 2026-10-13 shipped table this is the default shape: GPT-6.1
-  Sol heads `unspecified-high`, ahead of Claude Opus 5.5 and Kimi K3.
-  GPT-6.1 Sol itself has not been run on this corpus.
+  Sol heads `unspecified-high`, ahead of Claude Opus 5.5 and Kimi K3 (Kimi
+  K3.1 Pro since 2026-10-24). Neither GPT-6.1 Sol nor K3.1 Pro has been
+  run on this corpus.
 
 - Effort routing did nothing for Astra here: `low` and `xhigh` produced the
   same passes, tokens, and wall clock, so no claim is made for it.

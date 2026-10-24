@@ -371,7 +371,8 @@ Rules that have held across every onboarding so far:
   Code Fast behind Grok Build 0.1; and on 2026-10-13 to Claude Haiku 4.5
   behind Haiku 5.5 and to the 2025 Qwen3-Coder, the first retiree with no
   same-line successor: its row is written out with an empty `successor` and
-  a reason naming the model that now holds its only slot).
+  a reason naming the model that now holds its only slot; and on 2026-10-24
+  to Kimi K3 behind Kimi K3.1 Pro).
   Record each retirement as a `RETIREMENT_DECISIONS` row with its
   own `decision_date`. The table is keyed by model id, so a second
   retirement of the same id rewrites its row rather than adding one: GPT-5.6

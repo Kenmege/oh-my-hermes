@@ -1143,8 +1143,9 @@ prompts from either terminal. It only appends to that file (creating it mode
 Hermes asked or a masked value there. Everything else it writes
 is metadata: the launcher's active-session file, which holds the session id,
 what OMH's own HUD reader and model-chain picker write under the OMH home
-(the HUD's fan-out cache, and the chains `/omh-model` saves), and an empty
-fallback marker at the path `omh` named, which `omh` removes.
+(the HUD's fan-out cache, and the chains `/omh-model` saves), the skill
+names and counts the launch card last drew (`<omh_home>/tui/launch-skills.json`),
+and an empty fallback marker at the path `omh` named, which `omh` removes.
 
 The OMH TUI opens with the theme `omh theme use` saved under the OMH home
 (see [TUI Themes](#tui-themes)); `/theme <name>` switches the open session only.
@@ -1158,7 +1159,14 @@ prompt, then stays in scrollback above it. It names the model and effort,
 the new session, the last stored session with its `/resume` id, the first
 keys, and the skills Hermes has: OMH's grouped by capability family with
 the ulw lanes on a row of their own, and Hermes' own by category. It fills
-in as Hermes answers, and on a short terminal it drops rows, the last ones
+in as Hermes answers. Hermes names its skills only once it has built the
+session's agent, a second or two after the first frame, so until then the
+card shows the skills the last launch on the same Hermes home and profile
+showed, marked `last-known`, and then replaces them with the session's own; a
+first launch, or one on another Hermes home or profile, says `loading…`. The
+OMH home keeps one such snapshot, so alternating between Hermes profiles that
+share it says `loading…` on each switch. On a
+short terminal it drops rows, the last ones
 first, never reaching the composer. `/theme` alone opens a picker that
 previews each look on the logo and the card as you move (arrow keys, `j`/`k`
 or a click; once the launch has scrolled away, a compact preview above the
@@ -1625,20 +1633,20 @@ The shipped catalog is editorial policy, not benchmark output:
 <!-- omh:model-chain-table:begin (generated: uv run python -m omh.cli docs chain-table; source: src/coding/model_recommendations.py) -->
 | Surface | What it is for | Shipped editable order |
 | --- | --- | --- |
-| Hermes `main` suggestion | The session's own model | GPT-6.1 Sol (`high`), Claude Opus 5.5, Claude Fable 5.1, GPT-6 Astra (`xhigh`), Kimi K3 |
+| Hermes `main` suggestion | The session's own model | GPT-6.1 Sol (`high`), Claude Opus 5.5, Claude Fable 5.1, GPT-6 Astra (`xhigh`), Kimi K3.1 Pro |
 | `ultrabrain` | Deepest reasoning | GPT-6 Astra (`xhigh`) |
-| `deep` | Strong default tier | Claude Opus 5.5 (`high`), GPT-6.1 Sol (`high`), Kimi K3 (`high`) |
-| `architect` | Architecture and system design | Claude Opus 5.5 (`xhigh`), GPT-6 Astra (`xhigh`), Claude Fable 5.1 (`xhigh`), Kimi K3 (`xhigh`) |
-| `unspecified-high` | Default working model | GPT-6.1 Sol (`medium`), Claude Opus 5.5 (`medium`), Kimi K3 (`medium`) |
+| `deep` | Strong default tier | Claude Opus 5.5 (`high`), GPT-6.1 Sol (`high`), Kimi K3.1 Pro (`high`) |
+| `architect` | Architecture and system design | Claude Opus 5.5 (`xhigh`), GPT-6 Astra (`xhigh`), Claude Fable 5.1 (`xhigh`), Kimi K3.1 Pro (`xhigh`) |
+| `unspecified-high` | Default working model | GPT-6.1 Sol (`medium`), Claude Opus 5.5 (`medium`), Kimi K3.1 Pro (`medium`) |
 | `unspecified-low` | Cheaper fallback | GLM 5.3 (`low`), DeepSeek V4.1 Flash (`low`), GPT-6.1 Sol (`low`), Claude Sonnet 5.5 (`low`) |
-| `quick` | Short tasks | GLM 5.3 Flash (`low`), GPT-6 Luna (`low`), Claude Haiku 5.5 (`low`), Kimi K3 (`low`) |
-| `writing` | Prose and docs | Claude Opus 5.5 (`medium`), Claude Sonnet 5.5 (`medium`), Kimi K3 (`medium`), Gemini 3.1 Pro (`medium`) |
-| `visual-engineering` | Frontend and visual | Claude Opus 5.5 (`high`), Claude Fable 5.1 (`high`), Gemini 3.1 Pro (`high`), Kimi K3 (`high`) |
-| `artistry` | Unconventional work | Gemini 3.1 Pro (`high`), Claude Opus 5.5 (`high`), Claude Fable 5.1 (`high`), Kimi K3 (`high`) |
-| `capable` | Strong general work | Claude Opus 5.5 (`medium`), GPT-6.1 Sol (`medium`), Claude Fable 5.1 (`medium`), Kimi K3 (`medium`) |
+| `quick` | Short tasks | GLM 5.3 Flash (`low`), GPT-6 Luna (`low`), Claude Haiku 5.5 (`low`), Kimi K3.1 Pro (`low`) |
+| `writing` | Prose and docs | Claude Opus 5.5 (`medium`), Claude Sonnet 5.5 (`medium`), Kimi K3.1 Pro (`medium`), Gemini 3.1 Pro (`medium`) |
+| `visual-engineering` | Frontend and visual | Claude Opus 5.5 (`high`), Claude Fable 5.1 (`high`), Gemini 3.1 Pro (`high`), Kimi K3.1 Pro (`high`) |
+| `artistry` | Unconventional work | Gemini 3.1 Pro (`high`), Claude Opus 5.5 (`high`), Claude Fable 5.1 (`high`), Kimi K3.1 Pro (`high`) |
+| `capable` | Strong general work | Claude Opus 5.5 (`medium`), GPT-6.1 Sol (`medium`), Claude Fable 5.1 (`medium`), Kimi K3.1 Pro (`medium`) |
 | `simple-work` | Small everyday tasks | GPT-6 Luna (`low`), Claude Haiku 5.5 (`low`), DeepSeek V4.1 Flash (`low`) |
 | `deep-work` | Long tasks at frontier depth | Claude Opus 5.5 (`max`), GPT-6.1 Sol (`max`) |
-| `x_platform_data` affinity | X-platform data affinity | Grok Build 0.1, Kimi K3, Gemini 3.1 Pro |
+| `x_platform_data` affinity | X-platform data affinity | Grok Build 0.1, Kimi K3.1 Pro, Gemini 3.1 Pro |
 | Shared final order (`last_resort.any`) | Last resort when a chain is exhausted | Claude Opus 5.5 (`medium`), GPT-6.1 Sol (`medium`) |
 <!-- omh:model-chain-table:end -->
 
