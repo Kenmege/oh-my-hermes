@@ -6,7 +6,7 @@
 
 # oh-my-hermes
 
-**Hermes는 그대로. lane마다 맞는 모델, 병렬 작업, 그리고 "완료" 전에 증거를.**
+**Hermes Agent를 위한 올인원 패키지. 한 번 설치하고 `dag-ulw`만 입력하세요.**
 
 [![GitHub Release](https://img.shields.io/github/v/release/rlaope/oh-my-hermes?color=58a6ff&labelColor=black&logo=github&style=flat-square)](https://github.com/rlaope/oh-my-hermes/releases)
 [![npm downloads](https://img.shields.io/npm/dt/oh-my-hermes?color=3fb950&labelColor=black&logo=npm&label=downloads&style=flat-square)](https://www.npmjs.com/package/oh-my-hermes)
@@ -19,16 +19,67 @@
 
 </div>
 
-**oh-my-hermes**(OMH)는 [Hermes Agent](https://github.com/NousResearch/hermes-agent)
-위의 운영층입니다. 대화하는 곳과 실제로 도는 루프는 계속 Hermes이고, OMH는
-그 루프에 무엇을 넣을지 정합니다. 결정적(deterministic) 스킬 카탈로그와 라우터가
-요청을 알맞은 capability로 바꾸고, 위임되는 lane마다 모델과 추론 강도를 고르고,
-병렬로 돌릴 수 있는 일을 나누고, 실제로 일어난 일을 기록합니다. OMH는 Hermes를
-패치하지 않고, 대체하지 않으며, 코딩 executor를 뒤에 숨기지 않습니다. 준비만 된
-것을 실행됐다고 보고하지 않습니다. 모든 상태는 그 일이 계획만 됐는지, 끝났다고
-보고됐는지, 검증됐는지를 구분해 보여 줍니다.
+**oh-my-hermes**는 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 위의 운영층입니다.<br>
+대화는 계속 Hermes와 하고, OMH가 스킬과 lane마다 모델을 골라 일을 병렬로 돌립니다.<br>
+Hermes를 패치하거나 대체하지 않고, 계획만 된 일을 완료로 보고하지 않습니다.
 
 ## 설치
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.sh | sh
+omh setup
+```
+
+[Windows와 다른 설치 방법 →](docs/INSTALLATION.md)
+
+## 얻는 것
+
+- **lane마다 맞는 모델.** 위임되는 lane은 직접 편집할 수 있는 모델·effort chain으로 돕니다: [lane별 모델 보기](docs/INSTALLATION.md#guided-model-setup).
+- **서로 부딪히지 않는 병렬 작업.** lane끼리 파일을 공유하지 않고, 검사가 통과해야 완료로 봅니다.
+- **필요할 때 들어오는 전문가 스킬.** 100개가 넘는 전문 스킬이 요청이 그 영역에 닿으면 실행에 들어옵니다.
+- **믿을 수 있는 기억.** 아무것도 조용히 기억되지 않고, 다음 세션은 순위가 매겨진 recall pack을 받습니다.
+- **한눈에 보는 실행.** `omh`가 여는 OMH TUI에서 lane마다 모델, 토큰, 비용을 실시간으로 봅니다.
+
+## 그래프 엔지니어링
+
+큰 작업을 `/dag-ulw`에 맡기면 작은 노드의 그래프가 되어 노드마다 자기 모델로 병렬 실행되고,
+별도 노드가 보고 전에 목표를 검증합니다.
+
+<p align="center">
+  <img src="assets/omh-dag-ulw-tui.gif" alt="/dag-ulw를 실행하는 OMH TUI: 프롬프트를 입력하면 레인 7개의 박스 그래프가 정의되고, 레인이 Claude Opus 5.5, GPT-6.1 Sol, DeepSeek V4.1 Flash, GLM 5.3, Kimi K3.1 Pro로 레이어마다 실행된 뒤 모두 accepted로 끝납니다" width="960">
+  <br><sub><code>/dag-ulw</code>를 실행하는 OMH TUI, 실제 렌더러로 그린 스크립트 데모 (모델은 돌지 않음). <a href="assets/omh-dag-ulw-tui.mp4">고화질 MP4</a></sub>
+</p>
+
+> [!TIP]
+> 함께해요!
+>
+> <table>
+>   <tr>
+>     <td width="124"><a href="https://x.com/rlaope"><img alt="X link" src="https://img.shields.io/badge/Follow-%40rlaope-00CED1?style=flat-square&logo=x&labelColor=black" width="112" /></a></td>
+>     <td><code>oh-my-hermes</code> 업데이트는 릴리스 노트, 프로젝트 소식과 함께 X의 <a href="https://x.com/rlaope">@rlaope</a>에서 공유됩니다.</td>
+>   </tr>
+>   <tr>
+>     <td width="124"><a href="https://github.com/rlaope"><img alt="GitHub Follow" src="https://img.shields.io/github/followers/rlaope?style=flat-square&logo=github&labelColor=black&color=24292f" width="112" /></a></td>
+>     <td>더 많은 프로젝트, 릴리스, 진행 중인 작업은 GitHub에서 <a href="https://github.com/rlaope">@rlaope</a>를 팔로우하세요.</td>
+>   </tr>
+>   <tr>
+>     <td width="124"><a href="https://discord.gg/6EjTP3cWM"><img alt="Discord invite" src="https://img.shields.io/badge/Join-Discord-5865F2?style=flat-square&logo=discord&logoColor=white&labelColor=black" width="112" /></a></td>
+>     <td>Discord의 <a href="https://discord.gg/6EjTP3cWM">Oh-My-Hermes Community</a>에 참여해 질문하고, 워크플로를 공유하고, 다른 사용자들과 이야기해 보세요.</td>
+>   </tr>
+>   <tr>
+>     <td width="124"><a href="https://github.com/rlaope/oh-my-hermes/graphs/contributors"><img alt="AI agent collaborators" src="https://img.shields.io/badge/With-AI%20agents-6f42c1?style=flat-square&labelColor=black" width="112" /></a></td>
+>     <td><code>oh-my-hermes</code> 출시를 함께 돕는 AI 에이전트 <a href="https://github.com/frirenai"><strong>Friren</strong></a>, <a href="https://github.com/sionic-khope"><strong>Kami</strong></a>와 함께 만들어졌습니다.</td>
+>   </tr>
+>   <tr>
+>     <td width="124"><a href="https://nousresearch.com/"><img alt="Thanks to Nous Research" src="https://img.shields.io/badge/Thanks-Nous%20Research-4B2E83?style=flat-square&labelColor=black" width="112" /></a></td>
+>     <td>Hermes Agent를 만들어 준 <a href="https://nousresearch.com/">Nous Research</a>에 감사드립니다.</td>
+>   </tr>
+> </table>
+
+[문서](docs/README.md) · [설치](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [웹사이트](https://rlaope.github.io/oh-my-hermes/)
+
+<details>
+<summary><b>설치 옵션</b></summary>
 
 **macOS / Linux:**
 
@@ -52,19 +103,6 @@ https://raw.githubusercontent.com/rlaope/oh-my-hermes/{resolved-commit-sha}/INST
 Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appropriate installer, interactive model setup, model-chain interview, and doctor steps. Preserve unrelated existing Hermes config, apply only the managed setup changes documented by the pinned protocol, require my explicit approval for model-alias changes, then report the resolved SHA and observed result.
 ```
 
-**⭐ 그다음 설정합니다 (필수):**
-
-```sh
-omh setup
-```
-
-설치 스크립트는 Python 3.11 이상을 찾고(없을 때 `uv`가 있으면 그것으로 설치)
-`omh` 명령을 설치합니다. `omh setup`은 관리 스킬과 OMH 플러그인을 설치하고, Hermes와 모든
-Hermes 봇 프로필에 등록하며, 대화형으로 실행하면 쓸 수 있는 모델 provider를 물어
-chain을 이 머신에 맞춥니다. `hermes`는 그대로 순정 Hermes이고, `omh`는 OMH TUI를
-엽니다. Hermes Agent를 재시작하거나 다시 불러온 뒤, 원하는 일을 평범한 말로
-요청하면 됩니다.
-
 **업데이트:**
 
 ```sh
@@ -87,11 +125,6 @@ omh model
 # 새 모델 패밀리를 온보딩하려면 Hermes에서 이 스킬을 사용하세요:
 /omh-model-setup
 ```
-
-<details>
-<summary><b>다른 설치 경로</b>: Homebrew, Bun, npm, Hermes skill tap, 수동 대체 경로</summary>
-
-<br>
 
 **Homebrew:**
 
@@ -138,132 +171,10 @@ hermes skills install rlaope/oh-my-hermes/skills/omh-routing --yes
 
 </details>
 
-> [!TIP]
-> 함께해요!
->
-> <table>
->   <tr>
->     <td width="124"><a href="https://x.com/rlaope"><img alt="X link" src="https://img.shields.io/badge/Follow-%40rlaope-00CED1?style=flat-square&logo=x&labelColor=black" width="112" /></a></td>
->     <td><code>oh-my-hermes</code> 업데이트는 릴리스 노트, 프로젝트 소식과 함께 X의 <a href="https://x.com/rlaope">@rlaope</a>에서 공유됩니다.</td>
->   </tr>
->   <tr>
->     <td width="124"><a href="https://github.com/rlaope"><img alt="GitHub Follow" src="https://img.shields.io/github/followers/rlaope?style=flat-square&logo=github&labelColor=black&color=24292f" width="112" /></a></td>
->     <td>더 많은 프로젝트, 릴리스, 진행 중인 작업은 GitHub에서 <a href="https://github.com/rlaope">@rlaope</a>를 팔로우하세요.</td>
->   </tr>
->   <tr>
->     <td width="124"><a href="https://discord.gg/6EjTP3cWM"><img alt="Discord invite" src="https://img.shields.io/badge/Join-Discord-5865F2?style=flat-square&logo=discord&logoColor=white&labelColor=black" width="112" /></a></td>
->     <td>Discord의 <a href="https://discord.gg/6EjTP3cWM">Oh-My-Hermes Community</a>에 참여해 질문하고, 워크플로를 공유하고, 다른 사용자들과 이야기해 보세요.</td>
->   </tr>
->   <tr>
->     <td width="124"><a href="https://github.com/rlaope/oh-my-hermes/graphs/contributors"><img alt="AI agent collaborators" src="https://img.shields.io/badge/With-AI%20agents-6f42c1?style=flat-square&labelColor=black" width="112" /></a></td>
->     <td><code>oh-my-hermes</code> 출시를 함께 돕는 AI 에이전트 <a href="https://github.com/frirenai"><strong>Friren</strong></a>, <a href="https://github.com/sionic-khope"><strong>Kami</strong></a>와 함께 만들어졌습니다.</td>
->   </tr>
->   <tr>
->     <td width="124"><a href="https://nousresearch.com/"><img alt="Thanks to Nous Research" src="https://img.shields.io/badge/Thanks-Nous%20Research-4B2E83?style=flat-square&labelColor=black" width="112" /></a></td>
->     <td>Hermes Agent를 만들어 준 <a href="https://nousresearch.com/">Nous Research</a>에 감사드립니다.</td>
->   </tr>
-> </table>
-
-## 왜 oh-my-hermes인가
-
-**lane마다 맞는 모델.** 모든 요청은 디스패치 전에 점수가 매겨지고, 점수를 움직인
-신호에는 전부 이름이 붙습니다. 이름 바꾸기는 quick 레인으로 가고, "X를 참조하는
-곳을 전부 찾아라"는 exhaustive-search 신호에 걸려 하나도 빠뜨리지 않을 모델로
-갑니다. 위임되는 lane은 카테고리, 즉 편집 가능한 모델·추론 강도 chain에 붙습니다.
-provider가 모델을 거부하면 chain이 다음으로 넘어가고, 모델을 서빙할 수 없는
-provider를 물려받게 될 디스패치는 조용히 다운그레이드되는 대신 거부됩니다. 고정된
-30개 과제 코퍼스에서, standard 레인의 head를 GPT 모델로 둔 라우팅은 머신 기본값과
-같은 18개 통과를 비용 19%, 벽시계 시간 21%로 유지했습니다
-([측정 기록](benchmarks/live-model-tools/v1/README.md)).
-
-**모델 패밀리마다 다른 프롬프팅.** 패밀리당 캘리브레이션 블록 하나, 모든 문장은 그
-패밀리의 문서화된 성향 하나를 겨냥합니다. Claude에게는 체크리스트가 전부라고,
-Gemini에게는 툴 출력 없는 주장은 증거가 아니라고, Qwen3-Coder에게는 thinking
-태그를 내지 말라고 말합니다. 라우트가 있는 곳에서는 블록을 측정하고, 도움이 될
-때만 남깁니다. Astra 첫 초안의 한 문장은 모델이 계속 일하도록 밀어붙여, 통과율은
-그대로인 채 못 풀 과제에 토큰을 더 썼고, 그래서 잘렸습니다.
-
-**안전한 곳에서만 병렬, 돌아올 땐 타입으로.** `ulw-work`는 승인된 계획을 파일을
-공유하지 않는 유닛으로 나누고, 유닛마다 고정된 SHA 하나에서 분기한 워크트리를
-줍니다. 유닛은 타입이 있는 결과로 돌아옵니다: 프로세스 종료, 스키마 유효, 검증
-관찰됨, 통합 준비됨. 증거 없는 exit 0은 게이트가 확인할 때까지 `reported done`에
-머뭅니다.
-
-**전문가 스킬이 실행에 들어옵니다.** 전문가를 따로 부르지 않습니다. 100개가 넘는
-전문 스킬(프론트엔드, 백엔드, Rust, 네이티브 디버깅, 추론 서빙, 디자인·검증
-게이트, 보안 리뷰, 리팩터 계획)이 요청이 그 영역을 건드리면 툴 호출로 실행 안에
-들어와, 에이전트가 "끝났다"고 인정하는 기준을 끌어올립니다. 영어든 한국어든
-말하면 라우터가 전문가를 고릅니다.
-
-**아키텍처를 한 장으로.** 리포 그림을 부탁하면 `codebase-uml`이 코드에서 직접
-그립니다. 패키지, 모듈, 모든 import 간선이 나오고 순환은 표시됩니다.
-`refactor-plan`은 상위 발견 사항을 단계로 바꾸고, 각 단계는 테스트로 동작이 잠긴
-PR 하나로 들어갑니다.
-
-**가정이 아니라 승인된 기억.** 아무것도 조용히 기억되지 않습니다. 후보는 세션에서
-포착돼 리뷰 카드에 올라가고, 이유가 적힌 채로 기억·거부·보류됩니다. 다음 세션은
-작업에 맞게 순위가 매겨지고 토큰 예산에 맞춰 잘린 recall pack을 받습니다. Hermes
-자체 메모리는 읽지도 고치지도 않습니다.
-
-**이 모두를 한 화면에서.** `omh`가 OMH TUI를 엽니다. 위임 lane마다 모델, effort,
-턴, 토큰, 비용이 한 행으로 실시간 갱신되고, 프롬프트 위에는 그 런의 phase todo가
-있습니다. 비용 0은 호스트가 확인했을 때만 표시되고, 가격을 모르는 호출은 `$0`이
-아니라 `unknown`이라고 말합니다.
-
 <details>
-<summary><b>표면마다 장면 하나</b>: 카테고리, 캘리브레이션, 병렬 작업, HUD, 스킬, 아키텍처, 기억</summary>
+<summary><b>레퍼런스</b></summary>
 
-<br>
-
-<p align="center">
-  <img src="assets/showcase-02-categories.svg" alt="omh coding category-maestro show: 실행기별 카테고리 체인, 운영자 오버라이드 하나, 거부된 디스패치" width="1080">
-</p>
-
-<p align="center">
-  <img src="assets/showcase-03-calibration.svg" alt="패밀리별 캘리브레이션 한 줄씩, gpt-6-astra 모델 계약, 측정된 수정" width="1080">
-</p>
-
-<p align="center">
-  <img src="assets/showcase-04-parallel.svg" alt="ulw-work 팬아웃: 파일이 겹치지 않는 유닛 셋, 유닛당 워크트리 하나, 타입 상태, 한 턴에 낸 툴 호출" width="1080">
-</p>
-
-<p align="center">
-  <img src="assets/showcase-05-hud.svg" alt="OMH HUD: 레인별 모델·effort·턴·토큰·비용 출처·증거 상태, 그리고 phase todo" width="1080">
-</p>
-
-<p align="center">
-  <img src="assets/showcase-06-skills.svg" alt="실행 안으로 툴 호출로 들어오는 omh-* 전문 스킬들, 실행을 둘러싼 전문가들의 궤도, 숫자 셋" width="1080">
-</p>
-
-<p align="center">
-  <img src="assets/showcase-07-architecture.svg" alt="codebase-uml이 순환 2개와 함께 리포를 그리고, 옆에 발견 사항과 단계별 리팩터 계획, 측정된 전후, 단계별 dock 행" width="1080">
-</p>
-
-<p align="center">
-  <img src="assets/showcase-08-memory.svg" alt="장기 기억: 승인 카드, 기록 하나의 생애, attention 티어, 다음 세션용 예산 recall pack" width="1080">
-</p>
-
-</details>
-
-## `dag-ulw`로 하는 그래프 엔지니어링
-
-에이전트 하나로는 벅찬 큰 작업을 `dag-ulw`에 맡깁니다. 부모 에이전트가 작업을 작은
-노드의 그래프로 계획하고(노드마다 카테고리, 프롬프트, 의존 관계, 쓸 수 있는 파일),
-OMH는 실행 전에 그래프를 검증해 박스 그래프로 그립니다. 준비된 노드는 Hermes 자신의
-자식 에이전트에서 `delegate_task`로 병렬 실행되고, 각자 카테고리의 모델로 돕니다.
-별도 노드가 목표를 검증하고, 실패한 노드는 보고 전에 복구됩니다. 동시에 돌 수 있는
-두 노드는 둘 사이에 간선이 없는 한 같은 쓰기 범위를 공유하지 않습니다.
-
-```text
-❯ dag ulw: add the export API, its UI button and the docs page, then verify with the full test suite
-```
-
-<p align="center">
-  <img src="assets/omh-dag-ulw-tui.gif" alt="/dag-ulw를 실행하는 OMH TUI: 프롬프트를 입력하면 레인 7개의 박스 그래프가 정의되고, 레인이 Claude Opus 5.5, GPT-6.1 Sol, DeepSeek V4.1 Flash, GLM 5.3, Kimi K3.1 Pro로 레이어마다 실행된 뒤 모두 accepted로 끝납니다" width="960">
-  <br><sub><code>/dag-ulw</code>를 실행하는 OMH TUI: 박스 그래프, 그다음 다섯 모델 패밀리로 레이어마다 도는 레인 일곱 개. 실제 렌더러를 시간을 빠르게 돌린 스크립트 데모 실행으로 구동했으며, 모델은 실제로 돌지 않았습니다. <a href="assets/omh-dag-ulw-tui.mp4">고화질 영상 (MP4)</a></sub>
-</p>
-
-## 울트라 스킬
+### 울트라 스킬
 
 10개의 `ulw-` workflow. 대화에서 트리거만 말하면 Hermes가 라우팅합니다 —
 전체 카탈로그는 [Workflow Reference](docs/WORKFLOWS.md).
@@ -281,7 +192,7 @@ OMH는 실행 전에 그래프를 검증해 박스 그래프로 그립니다. �
 | ⚡ `ulw-qa` | 일부러 험한 시나리오로 공격해 보고, 깨지는 곳을 고칩니다. |
 | ⚡ `ulw-perf` | 어디가 진짜 느리고 비싼지 측정한 뒤, 핫패스를 하나씩 고칩니다. |
 
-### 추천 조합
+#### 추천 조합
 
 Hermes 프롬프트에 이렇게 입력합니다. `ulw-` 접두어가 workflow를 고르고,
 나머지는 평범한 말로 쓴 요청입니다.
@@ -307,17 +218,8 @@ Hermes 프롬프트에 이렇게 입력합니다. `ulw-` 접두어가 workflow�
 ❯ ulw-loop: keep going until npm test passes
 ```
 
-### Claude Code와 Codex에 일 맡기기
 
-코딩 에이전트를 직접 지정하면 `ulw-maestro`가 그 에이전트에 설치된 스킬로
-프롬프트를 구성해 디스패치하고, 유닛마다 이어서 조종할 수 있는 세션과 함께
-OMH HUD에 행을 추가합니다. 에이전트를 대신 고르지 않고, 머지도 하지 않습니다.
-
-```text
-❯ ulw-maestro: send the retry-queue fix to Claude Code and the lint cleanup to Codex, dispatch both now
-```
-
-## Hermes와 함께 동작하는 방식
+### Hermes와 함께 동작하는 방식
 
 Hermes Agent는 이미 루프를 돌립니다. OMH는 그 루프에 무엇을 넣을지 정합니다.
 어느 lane에 어떤 모델과 추론 강도를 줄지, 코드 변경의 owner는 누구인지,
@@ -377,70 +279,7 @@ executor가 끝났다고 말한 것과 결과가 확인된 것은 다른데, 대
 파일럿까지 갖췄고, 아직 게시된 측정 실행은 없습니다:
 [`benchmarks/product-ab/v1/README.md`](benchmarks/product-ab/v1/README.md).
 
-## 권장 모델
-
-OMH에는 다음과 같이 편집 가능한 순서형 recommendation chain이 포함되어 있습니다. guided model setup은 사용자가 active라고 확인한 candidate만 기준으로 chain을 해석합니다. 그 결과는 준비된 routing config이며 provider availability, credential, dispatch, execution evidence가 아닙니다.
-
-| 카테고리 alias | 용도 | 편집 가능한 recommendation 순서 |
-| --- | --- | --- |
-| `ultrabrain` | 가장 깊은 추론 | GPT-6 Astra (xhigh) |
-| `deep` | 강력한 기본 티어 | Claude Opus 5.5, 다음 GPT-6.1 Sol, 다음 Kimi K3 (high) |
-| `architect` | 아키텍처·시스템 설계 | Claude Opus 5.5, 다음 GPT-6 Astra, 다음 Claude Fable 5.1, 다음 Kimi K3 (xhigh) |
-| `unspecified-high` | 기본 작업 모델 | GPT-6.1 Sol, 다음 Claude Opus 5.5, 다음 Kimi K3 (medium) |
-| `unspecified-low` | 저비용 폴백 | GLM 5.3, 다음 DeepSeek V4.1 Flash, 다음 GPT-6.1 Sol, 다음 Claude Sonnet 5.5 (low) |
-| `quick` | 짧은 작업 | GLM 5.3 Flash, 다음 GPT-6 Luna, 다음 Claude Haiku 5.5, 다음 Kimi K3 (low) |
-| `writing` | 문서·산문 | Claude Opus 5.5, 다음 Claude Sonnet 5.5, 다음 Kimi K3, 다음 Gemini 3.1 Pro (medium) |
-| `visual-engineering` | 프론트엔드·비주얼 | Claude Opus 5.5, 다음 Claude Fable 5.1, 다음 Gemini 3.1 Pro, 다음 Kimi K3 (high) |
-| `artistry` | 비정형 창작 | Gemini 3.1 Pro, 다음 Claude Opus 5.5, 다음 Claude Fable 5.1, 다음 Kimi K3 (high) |
-| `capable` | 범용 고성능 작업 | Claude Opus 5.5, 다음 GPT-6.1 Sol, 다음 Claude Fable 5.1, 다음 Kimi K3 (medium) |
-| `simple-work` | 간단한 일상 작업 | GPT-6 Luna, 다음 Claude Haiku 5.5, 다음 DeepSeek V4.1 Flash (low) |
-| `deep-work` | 최상위 깊이의 긴 작업 | Claude Opus 5.5, 다음 GPT-6.1 Sol (max) |
-
-Ultrafast 티어가 궁금하다면 — Kimi K3 Ultrafast(300 TPS), GLM 5.3 Ultrafast — [OpenGateway](https://opengateway.ai/)에서 만나볼 수 있습니다.
-
-모든 chain은 코드를 건드리지 않고 편집할 수 있고, `omh setup`이 시드하는 파일 하나로
-관리됩니다:
-
-```sh
-$ cat ~/.omh/routing/model-chains.json
-{
-  "categories": {},
-  "schema_version": "mixture_chain_overrides/v1"
-}
-```
-
-`categories`가 비어 있으면 위의 기본 chain이 그대로 살아 있습니다. 여기에 적은
-카테고리는 라우팅·fallback·HUD 라벨 모두에서 해당 chain을 대체합니다:
-
-```json
-{
-  "schema_version": "mixture_chain_overrides/v1",
-  "categories": {
-    "architect": [
-      {"model": "claude-fable-5-1", "reasoning_effort": "xhigh"},
-      {"model": "gpt-5.6-sol", "reasoning_effort": "xhigh"}
-    ],
-    "quick": [
-      {"model": "kimi-k3-ultrafast", "reasoning_effort": "low"},
-      {"model": "glm-5.3-ultrafast", "reasoning_effort": "low"}
-    ]
-  }
-}
-```
-
-현재 적용 중인 chain은 `omh model-chains show`로 확인합니다. `omh model-chains`(또는
-`omh model`)는 화살표 피커를 열고, OMH TUI 안에서는 `/omh-model`이 같은 피커를
-엽니다. 스크립트에서는
-`omh model-chains set quick "kimi-k3-ultrafast:low, glm-5.3-ultrafast:low"`로 같은
-변경을 합니다. OMH는 Hermes가 이미 연결해 둔 provider를 읽고(id와 변수 이름만,
-키나 token은 읽지 않습니다) 각 chain에서 쓸 수 있는 항목이 앞에 오도록
-재정렬합니다. 아무것도 지우지 않고, 확인을 위해 아무것도 호출하지 않습니다.
-Claude Code나 Codex를 직접 띄우는 Maestro 레인은 자기만의 카테고리 다이얼
-`omh coding category-maestro`를 가집니다. provider, fallback, 전체 우선순위는
-[Guided Model Setup](docs/INSTALLATION.md#guided-model-setup)과
-[docs/FANOUT.md](docs/FANOUT.md)를 참조하세요.
-
-## 문서
+### 문서
 
 - [문서 지도](docs/README.md)
 - [설치와 업데이트](docs/INSTALLATION.md)
@@ -464,28 +303,15 @@ Claude Code나 Codex를 직접 띄우는 Maestro 레인은 자기만의 카테�
 - [릴리스와 개발](docs/RELEASE.md)
 - [웹사이트](https://rlaope.github.io/oh-my-hermes/) ([소스](site/index.html))
 
-## 개발
-
-소스 체크아웃 시:
-
-```sh
-PYTHONPATH=tests uv run python -m unittest discover -s tests -v
-uv run python -m compileall -q src tests
-uv run python -m omh.cli docs workflows --check
-git diff --check
-```
-
-## 기여자
-
-oh-my-hermes에 기여해 주신 모든 분들께 감사드립니다.
+### 기여자
 
 <a href="https://github.com/rlaope/oh-my-hermes/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=rlaope/oh-my-hermes&max=100&columns=10" alt="oh-my-hermes contributors" />
 </a>
 
+</details>
+
 ## 라이선스
 
-oh-my-hermes는 [MIT License](LICENSE)로 배포됩니다.
-[Team Art & Engineering](https://rlaope.github.io/artengine-lab/)의 공개 프로젝트로
-개발되고 있으며, 프로젝트 소식은 [@rlaope](https://github.com/rlaope)에서 확인할 수
-있습니다.
+MIT, [LICENSE](LICENSE) 참조. [기여자들](https://github.com/rlaope/oh-my-hermes/graphs/contributors)과 함께
+[Team Art & Engineering](https://rlaope.github.io/artengine-lab/)의 공개 프로젝트로 만들고 있습니다.

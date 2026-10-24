@@ -4052,8 +4052,11 @@ class RouterContentTests(unittest.TestCase):
         self.assertIn("[Roles](docs/ROLES.md)", readme)
         self.assertIn("[Application cases](docs/APPLICATION_CASES.md)", readme)
         self.assertIn("[GitHub Pages site](site/index.html)", readme)
-        self.assertIn("<strong>oh-my-hermes</strong> (OMH) turns a normal", readme)
-        self.assertIn("replacing Hermes or hiding a coding executor", readme)
+        # The lean README (owner-directed, #2269) opens with a three-line
+        # intro; the trust claim it must keep is that OMH never patches or
+        # replaces Hermes.
+        self.assertIn("**oh-my-hermes** is an operating layer for [Hermes Agent]", readme)
+        self.assertIn("never patches or replaces Hermes", readme)
         self.assertIn("| Intelligence | What OMH adds |", readme)
         # Renamed from "Model-aware routing" when the highlights table was
         # refreshed to name the shipped capability: per-dispatch mixture
@@ -4145,13 +4148,13 @@ class RouterContentTests(unittest.TestCase):
         # earns trust by stating the distinction, not by printing the token.
         self.assertIn("`Plan · not run`", readme)
         self.assertIn("`Code · reported done`", readme)
-        self.assertIn("assets/hermes-agent-hero.png", readme)
+        self.assertIn("assets/omh-logo.png", readme)
         self.assertNotIn("assets/friren-agent-omh-callout.png", readme)
         self.assertIn("contrib.rocks/image?repo=rlaope/oh-my-hermes", readme)
         self.assertNotIn("assets/artengine-friren-profile-card.png", readme)
         self.assertNotIn("assets/omh-core-workflows.png", readme)
         self.assertNotIn("assets/omh-skill-magic-promo.png", readme)
-        self.assertIn("img.shields.io/badge/github", readme)
+        self.assertIn("img.shields.io/github/v/release/rlaope/oh-my-hermes", readme)
         self.assertNotIn("### Img Summary Skill", readme)
         self.assertNotIn("assets/omh-img-summary-card.png", readme)
         self.assertNotIn("## Organization Patterns", readme)
@@ -4180,22 +4183,28 @@ class RouterContentTests(unittest.TestCase):
         self.assertNotIn("omh update --channel preview", update_section)
         self.assertIn("omh setup", readme)
         self.assertNotIn("## Why OMH", readme)
-        self.assertLess(readme.index("## Quick Start"), readme.index("## What OMH Adds"))
-        quick_start = readme.split("## Quick Start", 1)[1].split("## What OMH Adds", 1)[0]
-        self.assertIn("curl -fsSL https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.sh | sh", quick_start)
-        self.assertIn("omh setup", quick_start)
+        # The lean README (owner-directed, #2269) shows a two-line quick
+        # install under "## Install" and keeps every other install step in the
+        # "Install options" toggle; together they are the install surface.
+        self.assertLess(readme.index("## Install"), readme.index("## What you get"))
+        quick_start = readme.split("## Install", 1)[1].split("## What you get", 1)[0]
+        self.assertIn(
+            "```sh\ncurl -fsSL https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.sh | sh\nomh setup\n```",
+            quick_start,
+        )
+        install_options = readme.split("<summary><b>Install options</b></summary>", 1)[1].split("</details>", 1)[0]
         # `omh doctor` belongs in its own block, never bundled into the install
         # step: model setup guidance follows in a separate shell block.
-        self.assertIn("```sh\nomh setup\n```", quick_start)
-        self.assertIn("```sh\nomh update\n```", quick_start)
-        self.assertIn("```sh\nomh doctor\n```", quick_start)
-        self.assertNotIn("```sh\nomh setup\nomh doctor\n```", quick_start)
+        self.assertIn("```sh\nomh update\n```", install_options)
+        self.assertIn("```sh\nomh doctor\n```", install_options)
+        self.assertNotIn("omh doctor", quick_start)
+        self.assertNotIn("```sh\nomh setup\nomh doctor\n```", readme)
         self.assertIn(
             "https://raw.githubusercontent.com/rlaope/oh-my-hermes/"
             "{resolved-commit-sha}/INSTALL_FOR_AGENTS.md",
-            quick_start,
+            install_options,
         )
-        self.assertIn("hermes skills tap add", quick_start)
+        self.assertIn("hermes skills tap add", install_options)
         self.assertNotIn("That is the normal path", quick_start)
         self.assertNotIn("name the responsible role", quick_start)
         self.assertNotIn("omh_interact", quick_start)
@@ -4691,42 +4700,13 @@ class RouterContentTests(unittest.TestCase):
         # regressions only; it intentionally does not assert prose wording,
         # so natural, non-mechanical per-language translation is allowed.
         readme_section_translations = (
-            ("## Quick Start", {"ko": "## 빠른 시작", "ja": "## クイックスタート", "zh": "## 快速开始"}),
+            ("## Install", {"ko": "## 설치", "ja": "## インストール", "zh": "## 安装"}),
             ("## What you get", {"ko": "## 얻는 것", "ja": "## 得られるもの", "zh": "## 你能得到什么"}),
             (
-                "## The OH-MY-HERMES terminal",
-                {
-                    "ko": "## OH-MY-HERMES 터미널",
-                    "ja": "## OH-MY-HERMES ターミナル",
-                    "zh": "## OH-MY-HERMES 终端",
-                },
+                "## Graph engineering",
+                {"ko": "## 그래프 엔지니어링", "ja": "## グラフエンジニアリング", "zh": "## 图工程"},
             ),
-            (
-                "## Recommended models",
-                {
-                    "ko": "## 권장 모델",
-                    "ja": "## 推奨モデル",
-                    "zh": "## 推荐模型",
-                },
-            ),
-            (
-                "## Ultra-Skills",
-                {"ko": "## 울트라 스킬", "ja": "## ウルトラスキル", "zh": "## Ultra 技能"},
-            ),
-            (
-                "## What OMH Adds",
-                {"ko": "## OMH가 더하는 것", "ja": "## OMH が追加するもの", "zh": "## OMH 提供什么"},
-            ),
-            (
-                "## Evidence Before Claims",
-                {"ko": "## 주장보다 증거", "ja": "## 主張より証拠", "zh": "## 证据先于声明"},
-            ),
-            ("## Documentation", {"ko": "## 문서", "ja": "## ドキュメント", "zh": "## 文档"}),
-            ("## Development", {"ko": "## 개발", "ja": "## 開発", "zh": "## 开发"}),
-            (
-                "## Contributors",
-                {"ko": "## 기여자", "ja": "## コントリビューター", "zh": "## 贡献者"},
-            ),
+            ("## License", {"ko": "## 라이선스", "ja": "## ライセンス", "zh": "## 许可证"}),
         )
 
         readme = Path("README.md").read_text(encoding="utf-8")

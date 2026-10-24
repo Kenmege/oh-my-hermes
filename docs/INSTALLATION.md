@@ -1669,6 +1669,35 @@ walks, and HUD category labels alike — until the user removes it. An invalid
 document is ignored whole (defaults apply) and reported by
 `omh_delegate_route` `action=status` as `chain_overrides: invalid: ...`.
 
+A fresh seed, and an edit that replaces two chains:
+
+```sh
+$ cat ~/.omh/routing/model-chains.json
+{
+  "categories": {},
+  "schema_version": "mixture_chain_overrides/v1"
+}
+```
+
+```json
+{
+  "schema_version": "mixture_chain_overrides/v1",
+  "categories": {
+    "architect": [
+      {"model": "claude-fable-5-1", "reasoning_effort": "xhigh"},
+      {"model": "gpt-5.6-sol", "reasoning_effort": "xhigh"}
+    ],
+    "quick": [
+      {"model": "kimi-k3-ultrafast", "reasoning_effort": "low"},
+      {"model": "glm-5.3-ultrafast", "reasoning_effort": "low"}
+    ]
+  }
+}
+```
+
+The Ultrafast models in that example, Kimi K3 Ultrafast (300 TPS) and GLM 5.3
+Ultrafast, are served on [OpenGateway](https://opengateway.ai/).
+
 Next to those two documents, `omh_delegate_route` maintains
 `~/.omh/routing/route-provenance.json` (`delegation_route_provenance/v1`): a
 capped history of the routes it prepared (head, explicit, fallback, chain
