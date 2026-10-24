@@ -34,6 +34,33 @@ actions.
 - `status` returns the bounded projection for one `request_id`, including any
   observed receipt. It carries no action text, body, summary, or native output.
 
+The tool's schema states both shapes: a top-level `oneOf` requires
+`coordination`, `operation`, `board`, `profile` (the host profile being
+coordinated) and `arguments` for `prepare`, and allows nothing beyond
+`action` and `request_id` for `status`. Hermes removes a top-level combinator
+from every tool schema before any provider sees it
+(`tools/schema_sanitizer.py`), so the tool description states the same fields,
+and that sentence is what the model reads.
+
+### Refusals before an engine record
+
+Some calls are refused before the engine builds an `agent_board_request/v1`
+record. These come back as an `agent_board_tool_result/v1` payload with
+`state: unavailable`, `native_action: null` and a `reason`. They never echo an
+argument value, an exception string, or a path.
+
+| `reason` | When | Extra key |
+| --- | --- | --- |
+| `omh_agent_board_core_unavailable` | The bridge or the board engine cannot be imported on this host. A `prepare` that names its `board` gets this before its other fields are checked, because no field would make the call succeed. | `detail`: `board_bridge_unimportable:<module>`, `board_bridge_incomplete`, or `board_engine_unimportable:<module>` |
+| `invalid_status_input` | A `status` call that is not exactly `action` plus a string `request_id`. | none |
+| `board_required` | A call that is not `status` and carries no string `board`. | none |
+| `invalid_prepare_input` | A call that is not `status`, carries a string `board`, and omits a required field. | `fields`: the missing names, from the closed list `action`, `request_id`, `coordination`, `operation`, `profile`, `arguments` (never `board`, which reports `board_required`) |
+| `invalid_request_or_board_store` | The engine refused the request (for example an unknown key, a foreign board, closed per-operation arguments, or a `status` for a `request_id` it never prepared), or the board store could not be read. | none |
+
+Every other `unavailable` answer is an engine record: its
+`missing_capabilities` names the gap, or its reason is `request_capacity` (see
+[Request states](#request-states)).
+
 Supported durable operations are `create`, `link`, `comment`, `heartbeat`,
 `request_review`, `request_changes`, `block`, `unblock`, `complete`, `show`,
 `list`, and `attachments`. Arguments are closed per operation: unknown keys,

@@ -403,5 +403,75 @@ class AgentBoardIntegration(unittest.TestCase):
         self.assertIsNone(handler_identity(args, {"session_id": "session", "task_id": "host-task"}))
 
 
+class PrepareFieldContract(unittest.TestCase):
+    """#2277: the published schema states the engine's closed prepare shape."""
+
+    def setUp(self) -> None:
+        from omh.plugin_bundle.omh.tools import agent_board_tool
+        self.tool = agent_board_tool
+        self.parameters = agent_board_tool.OMH_AGENT_BOARD_SCHEMA["parameters"]
+
+    def handle(self, args: Mapping[str, object]) -> dict[str, object]:
+        from unittest.mock import patch
+        with TemporaryDirectory() as tmp, patch.object(bridge_api(), "default_omh_home", return_value=Path(tmp)):
+            return json.loads(self.tool.omh_agent_board_handler(args))
+
+    def branch(self, action: str) -> dict[str, object]:
+        [branch] = [b for b in self.parameters["oneOf"] if b["properties"]["action"]["const"] == action]
+        return branch
+
+    def test_the_schema_requires_the_prepare_fields_only_for_prepare(self) -> None:
+        from five_issue_cases.kanban import request
+        top = set(self.parameters["required"])
+        self.assertEqual(top, {"action", "request_id"})
+        prepare = top | set(self.branch("prepare")["required"])
+        # The known-good fixture request is exactly the engine's required set.
+        self.assertEqual(prepare, set(request()))
+        self.assertEqual(prepare, set(self.tool.PREPARE_REQUIRED_FIELDS))
+        self.assertNotIn("required", self.branch("status"))
+        self.assertEqual(self.branch("status")["maxProperties"], 2)
+        self.assertEqual(self.parameters["properties"]["profile"]["description"], "Host profile being coordinated.")
+        # Hermes removes the top-level oneOf before any provider sees it; the
+        # description is what the model reads.
+        description = self.tool.OMH_AGENT_BOARD_SCHEMA["description"]
+        for name in prepare - top:
+            with self.subTest(field=name):
+                self.assertIn(name, description.split("prepare needs ")[1].split(";")[0])
+
+    def test_a_schema_shaped_prepare_reaches_the_engine(self) -> None:
+        from five_issue_cases.kanban import request
+        result = self.handle(request())
+        self.assertEqual(result["schema_version"], "agent_board_request/v1", result)
+        self.assertNotIn("fields", result)
+
+    def test_a_prepare_without_profile_names_profile_and_no_value(self) -> None:
+        from five_issue_cases.kanban import request
+        args = request()
+        del args["profile"]
+        result = self.handle(args)
+        self.assertEqual((result["reason"], result["fields"]), ("invalid_prepare_input", ["profile"]))
+        for value in ("qa-board", "qa-create-1", "qa-task", "durable"):
+            self.assertNotIn(value, json.dumps(result))
+
+    def test_the_reported_board_only_prepare_names_every_missing_field(self) -> None:
+        result = self.handle({"action": "prepare", "request_id": "r1", "board": "default"})
+        self.assertEqual(result["reason"], "invalid_prepare_input")
+        self.assertEqual(result["fields"], ["coordination", "operation", "profile", "arguments"])
+
+    def test_a_prepare_without_board_keeps_board_required(self) -> None:
+        from five_issue_cases.kanban import request
+        args = request()
+        del args["board"], args["profile"]
+        result = self.handle(args)
+        self.assertEqual(result["reason"], "board_required")
+        self.assertNotIn("fields", result)
+
+    def test_status_with_only_action_and_request_id_is_unchanged(self) -> None:
+        result = self.handle({"action": "status", "request_id": "r1"})
+        # No such request in an empty store: the engine answered, as before.
+        self.assertEqual(result["reason"], "invalid_request_or_board_store")
+        self.assertNotIn("fields", result)
+
+
 if __name__ == "__main__":
     _ = unittest.main()
