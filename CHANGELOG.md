@@ -114,10 +114,9 @@ All notable changes will be documented here.
   Cost estimates use the list prices: 2/10 per MTok, and 4/20 for
   Highspeed, which keeps the 0.20 cached-input rate. Provider checks know
   which catalogs serve each id. The `kimi` calibration applies unchanged.
-  Neither id joins a shipped chain yet, and Kimi K3 keeps every slot it
-  held. The K3-vs-K3.1 benchmark pair is the follow-up and needs a served
-  route. To try K3.1 Pro now, use
-  `omh model-chains set <category> "kimi-k3.1-pro:high, ..."`.
+  K3.1 Pro takes every slot Kimi K3 held (the shipped-chains entry above),
+  and Highspeed joins no chain. The K3-vs-K3.1 benchmark pair is the
+  follow-up and needs a served route.
 
 - **A newer delegation route stays newer after another session's `set`
   (#2251 follow-up).** When an `omh_delegate_route set` wrote its route but
@@ -139,9 +138,10 @@ All notable changes will be documented here.
   newer write", which is the behaviour before.
 
 - **A cleared or exhausted delegation route stays gone (#2251
-  follow-up).** `clear` and chain exhaustion now release the conversation's
-  own route inside the same lock as the restore, after it. Before, the
-  release took a second lock. When that lock timed out, the cleared route,
+  follow-up; #2258, #2264, #2268).** `clear` and chain exhaustion now
+  release the conversation's own route inside the same lock as the
+  restore, after it. Before, the release took a second lock. When that
+  lock timed out, the cleared route,
   or the model that had just failed, came back at the next dispatch of the
   same task. A turn-end restore whose write is refused now keeps the route
   recorded, because the keys still hold it. A session-start restore that
@@ -151,7 +151,13 @@ All notable changes will be documented here.
   in the hook result and in Hermes' log. A corrupt `_delegate_from` cycle can
   no longer make a session inherit its own stale route.
   `omh_delegate_route action=status` reports the conversation's own route
-  beside the profile-wide keys.
+  beside the profile-wide keys. Before it releases, a `clear` or a chain
+  exhaustion stamps the entries it takes out in
+  `~/.omh/routing/conversation-take-outs.json`, inside the restore's lock
+  and whatever the restore decided, so a failed release cannot bring the
+  cleared route back at the same task's next dispatch. When the 2 s
+  dispatch-lock wait times out and the unlocked read finds nothing to
+  change, the `delegate_task` goes ahead instead of being refused.
 
 - **A delegation route belongs to the conversation that set it (#2251).**
   The three `delegation.*` keys are shared by every session on a profile.
@@ -742,6 +748,19 @@ All notable changes will be documented here.
   the system `/etc`, `/tmp` and `/var` links into `/private`, and every
   other symlink is still refused. Docking refuses one file passed as both
   receptor and ligand, however it is spelled. Contributed by @frirenai.
+
+- **Skill replies end on their result, not on a list of things not done
+  (#2238).** The shared closing guidance asked for a list of what was not
+  checked or executed and for a question at the end, so a briefing could
+  close on "I did not install or change settings" when neither was asked
+  for. The shared closing rule, in every skill body, now orders a reply as
+  result, relevant evidence and limits, the required observed run summary,
+  then one specific question about the content only when a real decision
+  or a useful discussion remains. Completed work needs no question, and
+  unrelated non-action footers and generic offers to continue are left
+  out. Requested work that was not done, a failed retrieval, an unavailable
+  check and a permission decision stay explicit, and a discussion question
+  grants no permission. Contributed by @frirenai.
 
 - **Windows staged self-updates work under PowerShell 7 (#2218).** The
   generation-pointer junction now gets an absolute target, which
