@@ -57,6 +57,7 @@ from pathlib import Path
 import posixpath
 import re
 import secrets
+import shlex
 import shutil
 from typing import Any, Final
 
@@ -107,6 +108,7 @@ DAG_CLAIM_BOUNDARY: Final = (
 
 _ID: Final = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 _CONTROL: Final = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+_BASELINE_WORD: Final = re.compile(r"(?<![a-z])baseline(?![a-z])")
 _VERIFY_WORDS: Final = re.compile(r"(?<![a-z])(verif|audit|validat|qa(?![a-z]))")
 _REVIEW_WORDS: Final = re.compile(r"(?<![a-z])review")
 _MARKER_PATTERNS: Final = {
@@ -361,6 +363,34 @@ def _require_graph(
             )
 
 
+def _mentions_full_suite(prompt: str) -> bool:
+    """Advisory detection of broad suites, excluding pytest's explicit positional targets."""
+    if re.search(r"\b(?:full\s+(?:test\s+)?suite|unittest\s+discover)\b", prompt, re.IGNORECASE):
+        return True
+    # Commands end at shell separators, line breaks or inline-code fences; prose often adds ', exit 0'.
+    for match in re.finditer(r"(?<![\w.-])pytest(?![\w.-])([^\n`;&|,]*)", prompt, re.IGNORECASE):
+        try:
+            arguments = shlex.split(match[1])
+        except ValueError:
+            continue  # An unfinished quotation is not enough to infer an unscoped command.
+        takes_value = {"-k", "-m", "-c", "-o", "-p", "--override-ini", "--maxfail", "--tb",
+                       "--durations", "--durations-min", "--color", "--capture", "--confcutdir",
+                       "--rootdir", "--basetemp", "--ignore", "--ignore-glob", "--deselect", "--log-level"}
+        skip_value = False
+        targeted = False
+        for argument in arguments:
+            if skip_value:
+                skip_value = False
+            elif argument in takes_value:
+                skip_value = True
+            elif not argument.startswith("-"):
+                targeted = True
+                break
+        if not targeted:
+            return True
+    return False
+
+
 def lint(nodes: Sequence[Mapping[str, Any]]) -> list[str]:
     """Advisory findings: they never reject a run, and the run records them."""
     findings: list[str] = []
@@ -374,8 +404,12 @@ def lint(nodes: Sequence[Mapping[str, Any]]) -> list[str]:
     if verifiers:
         parents = {str(node["id"]): node["depends_on"] for node in nodes}
         covered: set[str] = set()
+        baselines = {str(node["id"]) for node in nodes if is_baseline(node)}
         for verifier in verifiers:
-            covered |= ancestors(str(verifier["id"]), parents)
+            preceding = ancestors(str(verifier["id"]), parents)
+            covered |= preceding
+            if not preceding & baselines and _mentions_full_suite(str(verifier["prompt"])):
+                findings.append(f"verify_without_baseline:{verifier['id']}")
         # A repair node stands in for the node it repairs; a verification node's repair is checked by its re-run.
         checks = {str(verifier["id"]) for verifier in verifiers}
         covered |= {str(node["id"]) for node in nodes if node.get("repairs") and node["repairs"] in covered | checks}
@@ -390,17 +424,23 @@ def lint(nodes: Sequence[Mapping[str, Any]]) -> list[str]:
     return findings
 
 
+def is_baseline(node: Mapping[str, Any]) -> bool:
+    """A baseline captures existing failures before later verification judges the change."""
+    return bool(_BASELINE_WORD.search(f"{node['id']} {node['label']}".casefold()))
+
+
 def is_verification(node: Mapping[str, Any]) -> bool:
-    return bool(_VERIFY_WORDS.search(f"{node['id']} {str(node['label']).casefold()}"))
+    return not is_baseline(node) and bool(_VERIFY_WORDS.search(f"{node['id']} {str(node['label']).casefold()}"))
 
 
 def is_coding(node: Mapping[str, Any]) -> bool:
-    """A node an external coding owner may take: it writes files, and it is no verification or review node.
+    """A node an external coding owner may take: it writes files, but is no baseline, verification or review node.
 
-    Verification and review stay on `delegate_task` whoever builds: the builder never approves itself.
+    Baselines, verification and review stay native whoever builds: the builder never approves itself.
     """
     text = f"{node['id']} {str(node['label']).casefold()}"
-    return bool(node["write_scope"]) and not is_verification(node) and not _REVIEW_WORDS.search(text)
+    return (bool(node["write_scope"]) and not is_baseline(node)
+            and not is_verification(node) and not _REVIEW_WORDS.search(text))
 
 
 def ancestors(node_id: str, parents: Mapping[str, Iterable[str]]) -> set[str]:
@@ -702,6 +742,12 @@ def task_for(
         reads = ", ".join(node_handoff(record, omh_home, parent) for parent in reads_for(record, derived, node))
         lines.append(f"Read first: {reads}. A missing file means that part did not finish: stop and say so.")
     if is_verification(node):
+        parents = {str(item["id"]): item["depends_on"] for item in record["nodes"]}
+        preceding = ancestors(str(node["id"]), parents)
+        for baseline in record["nodes"]:
+            if str(baseline["id"]) in preceding and is_baseline(baseline):
+                lines.append(f"Baseline: Read {node_handoff(record, omh_home, str(baseline['id']))}; "
+                             "fail only on test failures absent from the baseline list.")
         lines.append("Check the complete run goal, not only this node's local VERIFY. "
                      "Name each unmet or unobserved goal criterion; producer claims are not verification evidence.")
     lines.append("Stay inside your SCOPE: other parts of this run work at the same time. If you cannot finish, "

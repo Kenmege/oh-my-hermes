@@ -107,6 +107,95 @@ class SavedGoalLifecycleTests(unittest.TestCase):
             self.assertIn(f"Run goal (saved):\n{goal}\n", calls_by_node(ready)["api"]["context"])
 
 
+class BaselineNodeTests(unittest.TestCase):
+    def test_baseline_is_not_verification_or_coding(self) -> None:
+        for node_id, label in (("baseline", "Verify existing tests"),
+                               ("verify-baseline", "Capture failures"),
+                               ("capture", "Audit BASELINE failures")):
+            with self.subTest(node_id=node_id, label=label):
+                baseline = node(node_id, label=label, scope=("baseline.txt",))
+                self.assertTrue(dag_run.is_baseline(baseline))
+                self.assertFalse(dag_run.is_verification(baseline))
+                self.assertFalse(dag_run.is_coding(baseline))
+        for label in ("Prebaseline check", "Baselineish change"):
+            with self.subTest(label=label):
+                self.assertFalse(dag_run.is_baseline(node("api", label=label)))
+        record = dag_run.new_record(PARENT, "feat", "Feature", "", [
+            node("baseline", scope=("baseline.txt",)), node("api", scope=("api.py",)),
+        ], time.time())
+        derived = dag_run.derive(record, [], time.time())
+        self.assertEqual([unit["unit_id"] for unit in dag_tool.export_units(record, derived, "codex")], ["api"])
+        with homes() as home, patch.object(dag_tool, "owner_choice", return_value="codex"):
+            slots_table(home)
+            result = call(action="define", run="feat", nodes=[
+                node("baseline", scope=("baseline.txt",)), node("api", scope=("api.py",)),
+            ])
+            self.assertIn("baseline", calls_by_node(result))
+            self.assertEqual(result["export"]["nodes"], ["api"])
+
+    def test_lint_verify_without_baseline(self) -> None:
+        for prompt in ("Run the FULL SUITE", "python -m unittest discover -s tests", "pytest", "Run `pytest -q`",
+                       "VERIFY: pytest, exit 0", "python -m pytest --maxfail=1 -k 'not slow'",
+                       "pytest --tb short", "pytest tests/test_api.py && pytest -q"):
+            with self.subTest(prompt=prompt):
+                definitions = [node("api"), node("verify", depends_on=("api",), prompt=prompt)]
+                self.assertIn("verify_without_baseline:verify", dag_run.lint(definitions))
+                definitions.insert(0, node("baseline"))
+                self.assertIn("verify_without_baseline:verify", dag_run.lint(definitions))
+                definitions[1]["depends_on"] = ["baseline"]
+                self.assertNotIn("verify_without_baseline:verify", dag_run.lint(definitions))
+        for prompt in ("pytest tests/test_api.py", "pytest -q tests/", "pytest -k 'not slow' tests",
+                       "python -m unittest tests.test_api", "Run the focused suite", "pytest.ini"):
+            with self.subTest(prompt=prompt):
+                self.assertNotIn("verify_without_baseline:verify", dag_run.lint([node("verify", prompt=prompt)]))
+        self.assertNotIn("verify_without_baseline:baseline", dag_run.lint([
+            node("baseline", label="Verify baseline", prompt="Run full suite"),
+        ]))
+
+    def test_verify_held_when_baseline_failed(self) -> None:
+        for outcome in ("failed", "blocked"):
+            for indirect in (False, True):
+                with self.subTest(outcome=outcome, indirect=indirect), homes() as home:
+                    slots_table(home)
+                    definitions = [node("baseline"), node("side")]
+                    if indirect:
+                        definitions.append(node("api", depends_on=("baseline",)))
+                    definitions.append(node("verify", depends_on=("api" if indirect else "baseline",)))
+                    started = call(action="define", run="feat", nodes=definitions)
+                    self.assertIn("side", calls_by_node(started))
+                    failed = call(action="settle", run="feat", node="baseline", outcome=outcome)
+                    ready = call(action="ready", run="feat")
+                    for result in (failed, ready):
+                        row = next(item for item in result["nodes"] if item["id"] == "verify")
+                        self.assertEqual((row["state"], row["held_by"], row["attempts"]), ("held", ["baseline"], 0))
+                        self.assertNotIn("verify", calls_by_node(result))
+                    record = record_of(home)
+                    self.assertNotIn("verify", dag_run.offerable(record, dag_run.derive(record, [], time.time()),
+                                                                time.time()))
+
+    def test_verify_task_names_baseline_handoff(self) -> None:
+        with homes() as home:
+            record = dag_run.new_record(PARENT, "feat", "Feature", "", [
+                node("baseline"),
+                node("old-tests", label="Capture BASELINE failures"),
+                node("unrelated-baseline"),
+                node("api", depends_on=("baseline", "old-tests")),
+                node("verify", depends_on=("api",)),
+            ], time.time())
+            record["handoff_root"] = "/sandbox-home/dev/.omh/dag"
+            derived = dag_run.derive(record, [], time.time())
+            context = dag_run.task_for(record, record["nodes"][-1], home.omh, derived)["context"]
+            baseline_lines = [line for line in context.splitlines() if line.startswith("Baseline:")]
+            self.assertEqual(len(baseline_lines), 2)
+            for baseline_id, line in zip(("baseline", "old-tests"), baseline_lines):
+                self.assertIn(dag_run.node_handoff(record, home.omh, baseline_id), line)
+                self.assertIn("Read", line)
+                self.assertIn("fail only on test failures absent from the baseline list", line)
+            self.assertNotIn("unrelated-baseline.md", "\n".join(baseline_lines))
+            producer = dag_run.task_for(record, record["nodes"][-2], home.omh, derived)["context"]
+            self.assertNotIn("Baseline:", producer)
+
+
 class RepairDataFlowTests(unittest.TestCase):
     def test_a_dependent_reads_the_repair_groups_handoff_not_the_failed_nodes(self) -> None:
         with homes() as home:

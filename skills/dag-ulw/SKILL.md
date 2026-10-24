@@ -91,6 +91,7 @@ Quality bar:
 - Climb the difficulty ladder `quick` -> `unspecified-low` -> `unspecified-high` with a one-line reason per climb; use `ultrabrain` at most once, and a graph whose every node is `deep` or `deep-work` is a routing failure.
 - Write every node prompt self-contained, in order: TASK, DELIVERABLE, SCOPE (what it may read and write), VERIFY (the literal command and expected result), STOP WHEN.
 - `depends_on` only orders nodes; data moves through the handoff files `omh_dag` names, never through the parent's memory.
+- Before full-suite verification, run a `baseline` node before changes and list existing test failures in its handoff; make verification depend on it and fail only on failures absent from that baseline list.
 - End every run with a verification node that depends on every producer, runs the real command, and is never the node that built the work.
 - Completion is a claim: before reporting the goal met, check each node against its SCOPE in both directions, nothing owed missing and nothing beyond it done.
 - Goal loop: verify, repair, extend, verify. A failed check gets repair nodes (`omh_dag action=repair`, two cycles per node); when every node passed but the goal check finds work missing, add it to the same run (`omh_dag action=extend`, two rounds per run). Past either limit, report what is still open.

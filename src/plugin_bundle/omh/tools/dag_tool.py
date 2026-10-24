@@ -542,7 +542,7 @@ def _ready(
     owner = owner_choice(omh_home, now=now)
     nodes = {str(node["id"]): node for node in record["nodes"]}
     # With a coding owner the person chose, the ready coding nodes go to that owner's fanout, never to delegate_task;
-    # verification and review nodes, and every node without a write scope, stay native.
+    # baseline, verification and review nodes, and every node without a write scope, stay native.
     offered = dag_run.offerable(record, derived, now)
     coding = [node_id for node_id in offered
               if derived[node_id]["state"] == "ready" and dag_run.is_coding(nodes[node_id])] if owner else []
