@@ -115,7 +115,7 @@ omh setup
 >
 > <table>
 >   <tr>
->     <td width="160" align="center"><a href="https://opengateway.ai/"><img alt="OpenGateway" src="https://opengateway.ai/logo.svg" width="140" /></a></td>
+>     <td width="160" align="center"><a href="https://opengateway.ai/"><img alt="OpenGateway" src="assets/sponsors/opengateway.svg" width="140" /></a></td>
 >     <td><a href="https://opengateway.ai/"><strong>OpenGateway</strong></a>가 oh-my-hermes를 후원합니다.<br>여러 모델 provider를 OpenAI 호환 엔드포인트 하나로 묶고, 자동 failover를 제공합니다.<br>오픈소스를 응원해 주셔서 감사합니다.</td>
 >   </tr>
 > </table>
@@ -354,8 +354,6 @@ executor가 끝났다고 말한 것과 결과가 확인된 것은 다른데, 대
 </a>
 
 </details>
-
-<br>
 
 ## 라이선스
 

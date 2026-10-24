@@ -110,7 +110,7 @@ omh setup
 >
 > <table>
 >   <tr>
->     <td width="160" align="center"><a href="https://opengateway.ai/"><img alt="OpenGateway" src="https://opengateway.ai/logo.svg" width="140" /></a></td>
+>     <td width="160" align="center"><a href="https://opengateway.ai/"><img alt="OpenGateway" src="assets/sponsors/opengateway.svg" width="140" /></a></td>
 >     <td><a href="https://opengateway.ai/"><strong>OpenGateway</strong></a> 赞助了 oh-my-hermes。<br>它用一个兼容 OpenAI 的端点接入多家模型 provider，并提供自动故障切换。<br>感谢你们对开源的支持。</td>
 >   </tr>
 > </table>
@@ -329,8 +329,6 @@ executor 说自己完成了，与结果被检查过是两回事，而大多数�
 </a>
 
 </details>
-
-<br>
 
 ## 许可证
 

@@ -115,7 +115,7 @@ A separate node verifies the goal before you get the report.
 >
 > <table>
 >   <tr>
->     <td width="160" align="center"><a href="https://opengateway.ai/"><img alt="OpenGateway" src="https://opengateway.ai/logo.svg" width="140" /></a></td>
+>     <td width="160" align="center"><a href="https://opengateway.ai/"><img alt="OpenGateway" src="assets/sponsors/opengateway.svg" width="140" /></a></td>
 >     <td><a href="https://opengateway.ai/"><strong>OpenGateway</strong></a> sponsors oh-my-hermes.<br>One OpenAI-compatible endpoint for many model providers, with automatic failover.<br>Thank you for backing open source.</td>
 >   </tr>
 > </table>
@@ -357,8 +357,6 @@ in place, and no measured run is published yet:
 </a>
 
 </details>
-
-<br>
 
 ## License
 
