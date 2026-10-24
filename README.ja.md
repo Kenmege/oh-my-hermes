@@ -115,6 +115,10 @@ omh setup
 >   </tr>
 > </table>
 
+<br>
+
+## その他
+
 [ドキュメント](docs/README.md) · [インストール](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [ウェブサイト](https://rlaope.github.io/oh-my-hermes/)
 
 <details>

@@ -120,6 +120,10 @@ A separate node verifies the goal before you get the report.
 >   </tr>
 > </table>
 
+<br>
+
+## Others
+
 [Docs](docs/README.md) · [Installation](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [Website](https://rlaope.github.io/oh-my-hermes/)
 
 <details>

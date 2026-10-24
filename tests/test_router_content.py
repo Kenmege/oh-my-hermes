@@ -4703,6 +4703,7 @@ class RouterContentTests(unittest.TestCase):
             ("## Install", {"ko": "## 설치", "ja": "## インストール", "zh": "## 安装"}),
             ("## What you get", {"ko": "## 얻는 것", "ja": "## 得られるもの", "zh": "## 你能得到什么"}),
             ("## DAG-ULW", {"ko": "## DAG-ULW", "ja": "## DAG-ULW", "zh": "## DAG-ULW"}),
+            ("## Others", {"ko": "## 기타", "ja": "## その他", "zh": "## 其他"}),
             ("## License", {"ko": "## 라이선스", "ja": "## ライセンス", "zh": "## 许可证"}),
         )
 

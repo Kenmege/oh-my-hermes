@@ -115,6 +115,10 @@ omh setup
 >   </tr>
 > </table>
 
+<br>
+
+## 其他
+
 [文档](docs/README.md) · [安装](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [网站](https://rlaope.github.io/oh-my-hermes/)
 
 <details>

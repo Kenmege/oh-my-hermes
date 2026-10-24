@@ -120,6 +120,10 @@ omh setup
 >   </tr>
 > </table>
 
+<br>
+
+## 기타
+
 [문서](docs/README.md) · [설치](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [웹사이트](https://rlaope.github.io/oh-my-hermes/)
 
 <details>
