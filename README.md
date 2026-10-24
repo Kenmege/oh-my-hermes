@@ -110,8 +110,7 @@ A separate node verifies the goal before you get the report.
 >   </tr>
 > </table>
 
-> **Sponsors**<br>
-> These are our sponsors. They help keep oh-my-hermes going.
+> **Sponsors** These are our sponsors. They help keep oh-my-hermes going.
 >
 > <table>
 >   <tr>

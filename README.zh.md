@@ -105,8 +105,7 @@ omh setup
 >   </tr>
 > </table>
 
-> **赞助商**<br>
-> 感谢赞助商对 oh-my-hermes 的支持。
+> **赞助商** 感谢赞助商对 oh-my-hermes 的支持。
 >
 > <table>
 >   <tr>

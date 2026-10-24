@@ -105,8 +105,7 @@ omh setup
 >   </tr>
 > </table>
 
-> **スポンサー**<br>
-> oh-my-hermes を支えてくださっているスポンサーです。
+> **スポンサー** oh-my-hermes を支えてくださっているスポンサーです。
 >
 > <table>
 >   <tr>
