@@ -38,7 +38,8 @@ omh setup
 ## 得られるもの
 
 - **lane ごとに合うモデル。**<br>
-  委譲される lane は、編集できるモデルと推論強度の chain（カテゴリ）に載ります。<br>
+  lane ごとに作業カテゴリが付きます: `ultrabrain`、`deep`、`visual-engineering`、`quick` など。<br>
+  カテゴリがその lane のモデル chain と推論強度を決め、chain はすべて編集できます。<br>
   provider がモデルを拒否すると、黙ってダウングレードせず chain の次のモデルへ進みます。<br>
   `omh model` でピッカーが開きます。[lane ごとのモデル](docs/INSTALLATION.md#guided-model-setup)
 

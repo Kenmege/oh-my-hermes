@@ -38,7 +38,8 @@ omh setup
 ## 你能得到什么
 
 - **每条 lane 用对的模型。**<br>
-  每条委派的 lane 落到一个类别，也就是一条可编辑的模型与推理强度 chain。<br>
+  每条 lane 都带有一个工作类别：`ultrabrain`、`deep`、`visual-engineering`、`quick` 等。<br>
+  类别决定该 lane 的模型 chain 和推理强度，每条 chain 都可以编辑。<br>
   provider 拒绝某个模型时，不会悄悄降级，而是前进到 chain 的下一个模型。<br>
   `omh model` 打开选择器。[每条 lane 用哪个模型](docs/INSTALLATION.md#guided-model-setup)
 

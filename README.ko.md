@@ -43,7 +43,8 @@ omh setup
 ## 얻는 것
 
 - **lane마다 맞는 모델.**<br>
-  위임되는 lane은 카테고리, 즉 편집 가능한 모델·추론 강도 chain에 붙습니다.<br>
+  lane마다 작업 카테고리가 붙습니다: `ultrabrain`, `deep`, `visual-engineering`, `quick` 등.<br>
+  카테고리가 그 lane의 모델 chain과 추론 강도를 정하고, chain은 모두 편집할 수 있습니다.<br>
   provider가 모델을 거부하면 조용히 다운그레이드하지 않고 chain의 다음 모델로 넘어갑니다.<br>
   `omh model`이 피커를 엽니다. [lane별 모델 보기](docs/INSTALLATION.md#guided-model-setup)
 

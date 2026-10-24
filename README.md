@@ -43,7 +43,8 @@ omh setup
 ## What you get
 
 - **The right model for every lane.**<br>
-  Each delegated lane lands on a category: an editable chain of model and reasoning effort.<br>
+  Each lane is tagged with a work category: `ultrabrain`, `deep`, `visual-engineering`, `quick` and more.<br>
+  The category picks that lane's model chain and reasoning effort, and you can edit every chain.<br>
   When a provider rejects a model, the chain moves to the next one instead of silently downgrading.<br>
   `omh model` opens the picker; [see which model runs each lane](docs/INSTALLATION.md#guided-model-setup).
 
