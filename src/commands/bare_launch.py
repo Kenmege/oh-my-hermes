@@ -19,6 +19,7 @@ import time
 from typing import NoReturn
 
 from ..paths import resolve_paths
+from ..system.stdin_probe import stdin_is_tty
 
 
 def _paths(args: argparse.Namespace):
@@ -392,7 +393,7 @@ def _launch_hermes_tui(args: argparse.Namespace) -> int | None:
     """
     import shutil
 
-    if not sys.stdin.isatty() or not sys.stdout.isatty():
+    if not stdin_is_tty() or not sys.stdout.isatty():
         return None
     hermes = shutil.which("hermes")
     if not hermes:

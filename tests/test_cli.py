@@ -2566,7 +2566,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             hermes_home = root / ".hermes"
             base = ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home)]
 
-            status, stdout, stderr = run_cli(base + ["setup", "--interactive"], output_json=False, stdin_text="")
+            with patch("omh.commands.setup._wizard_has_terminal", return_value=True):
+                status, stdout, stderr = run_cli(base + ["setup", "--interactive"], output_json=False, stdin_text="")
 
             self.assertEqual(status, 0, stderr)
             self.assertEqual(stderr, "")
@@ -2618,7 +2619,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                 "omh.commands.setup._ask_yes_no",
                 return_value=True,
             ) as yes_no:
-                status, stdout, stderr = run_cli(base + ["setup", "--interactive"], output_json=False)
+                with patch("omh.commands.setup._wizard_has_terminal", return_value=True):
+                    status, stdout, stderr = run_cli(base + ["setup", "--interactive"], output_json=False)
 
             self.assertEqual(status, 0, stderr)
             self.assertEqual(stderr, "")
@@ -2661,7 +2663,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             ) as yes_no, patch(
                 "omh.commands.setup._try_star_github_repo"
             ) as star:
-                status, stdout, stderr = run_cli(["setup", "--interactive"], output_json=False)
+                with patch("omh.commands.setup._wizard_has_terminal", return_value=True):
+                    status, stdout, stderr = run_cli(["setup", "--interactive"], output_json=False)
 
             self.assertEqual(status, 0, stderr)
             # Exactly one of the single choices is about scope, and it is the
@@ -2726,7 +2729,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                 "omh.commands.setup._ask_yes_no",
                 side_effect=[True, False, False],
             ) as yes_no:
-                status, stdout, stderr = run_cli(base + ["setup", "--interactive"], output_json=False)
+                with patch("omh.commands.setup._wizard_has_terminal", return_value=True):
+                    status, stdout, stderr = run_cli(base + ["setup", "--interactive"], output_json=False)
 
             self.assertEqual(status, 0, stderr)
             # The maestro-delegation question, the category-maestro interview
@@ -2765,7 +2769,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             ), patch("omh.commands.setup._env_key_names", return_value=set()), patch(
                 "omh.commands.setup._ask_yes_no", side_effect=[False]
             ) as yes_no:
-                status, stdout, stderr = run_cli(base + ["setup", "--interactive"], output_json=False)
+                with patch("omh.commands.setup._wizard_has_terminal", return_value=True):
+                    status, stdout, stderr = run_cli(base + ["setup", "--interactive"], output_json=False)
 
             self.assertEqual(status, 0, stderr)
             # Maestro delegation (no). The provider-entitlement question has
@@ -2795,7 +2800,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                     "codex": {"binary_present": False, "login_marker": "absent"},
                 },
             ), patch("omh.commands.setup._ask_yes_no", return_value=True):
-                status, _, stderr = run_cli(base + ["setup", "--interactive"], output_json=False)
+                with patch("omh.commands.setup._wizard_has_terminal", return_value=True):
+                    status, _, stderr = run_cli(base + ["setup", "--interactive"], output_json=False)
 
             self.assertEqual(status, 0, stderr)
             self.assertEqual(dispatch_models_path.read_text(encoding="utf-8"), existing)

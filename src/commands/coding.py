@@ -61,6 +61,7 @@ from ..routing.localization import normalized_phrase, routing_tokens
 from ..runtime.artifacts import append_journal_observation, create_prepared_coding_delegation_run, write_coding_delegation
 from ..runtime.records import OBSERVED_RESULTS, WRAPPER_COMPLETION_STATUSES
 from ..system.paths import OmhPaths, continuity_write_target
+from ..system.stdin_probe import stdin_is_tty
 from ..workflows.blocked_work_records import mint_blocked_work_record
 from ..workflows.goal_ledger import (
     create_goal_ledger,
@@ -1101,10 +1102,7 @@ def _parsed_chain_entry(raw: str) -> dict[str, str]:
 
 
 def _stdin_is_tty() -> bool:
-    try:
-        return sys.stdin.isatty()
-    except (AttributeError, ValueError):
-        return False
+    return stdin_is_tty()
 
 
 def _chain_display_text(chain) -> str:
@@ -2707,7 +2705,7 @@ def _failure_recovery_kwargs(args: argparse.Namespace) -> dict:
     interactive = (
         mode == ON_FAILURE_REPORT
         and not getattr(args, "no_interactive", False)
-        and sys.stdin.isatty()
+        and stdin_is_tty()
     )
     routing = {
         "model": getattr(args, "hermes_model", "") or "",

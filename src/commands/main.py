@@ -361,6 +361,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     parser = build_parser()
     args = parser.parse_args(raw_argv)
+    # The command line as typed, for a refusal that must name the same
+    # command back (`omh setup --interactive` without a terminal).
+    args._argv = raw_argv
     set_json_output_pretty(bool(getattr(args, "pretty", False)))
     if not getattr(args, "command", None):
         return run_bare_launch(args)

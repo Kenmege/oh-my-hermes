@@ -11,13 +11,17 @@ theme's OWN declared hex values, and NO_COLOR emits no escape bytes.
 
 from __future__ import annotations
 
+import io
 import os
+import sys
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
 from _cli_harness import run_cli
+from omh.commands.main import main
 from _platform_support import requires_posix_select
 
 from omh.commands.theme_picker import (
@@ -234,6 +238,26 @@ class PickerCommandIntegrationTests(unittest.TestCase):
             self.assertEqual(status, 0)
             self.assertIn("OMH TUI themes", out)
             self.assertNotIn("Enter to apply", out)
+
+    def test_closed_stdin_degrades_to_the_plain_list_for_theme_and_model_chains(self) -> None:
+        # `<&-` leaves sys.stdin as None. termios/tty are stood in for and TERM
+        # is a real terminal's, so the probe is reached on every platform.
+        for command, heading in (("theme", "OMH TUI themes"), ("model-chains", "Current model chains")):
+            with self.subTest(command=command), TemporaryDirectory() as tmp:
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with (
+                    patch.dict(os.environ, {"TERM": "xterm-256color"}),
+                    patch("omh.commands.theme_picker.termios", object()),
+                    patch("omh.commands.theme_picker.tty", object()),
+                    patch.object(sys, "stdin", None),
+                    redirect_stdout(stdout),
+                    redirect_stderr(stderr),
+                ):
+                    os.environ.pop("OMH_NO_TUI", None)
+                    os.environ.pop("OMH_OUTPUT", None)
+                    status = main([*self._homes(tmp), command])
+                self.assertEqual(status, 0, stderr.getvalue())
+                self.assertIn(heading, stdout.getvalue())
 
     def test_a_picked_theme_is_written_through_the_same_selection_path(self) -> None:
         with TemporaryDirectory() as tmp:
