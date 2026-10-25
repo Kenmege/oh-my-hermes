@@ -4,6 +4,25 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The OMH TUI switches models the way Hermes' own TUI does.** Attached to
+  a shared Hermes gateway, every `/model` the TUI sent (a picker pick, a
+  typed `/model <name>`, `/model --refresh`) was refused as
+  `Unsupported_command.`, because that gateway runs no `/model` through
+  `slash.exec`. A pick and a typed `/model <name> [--provider <slug>]` now go
+  as the session-scoped `config.set model` Hermes' own TUI sends, which the
+  gateway child turns into the owner's `session.mutate model`; `/model
+  --refresh` opens the picker over a list Hermes asks the providers for again.
+  When Hermes' configured default model changes while a session runs (the
+  person or the agent edited the config), the session switches to it once the
+  turn ends and says so in one line, and the info line shows the new model; a
+  model picked with `/model` stays until the default itself changes. Hermes'
+  refusal codes (`unsupported_command`, `model_resolution_failed`,
+  `session_busy` and the rest) now read as sentences that say what to do
+  instead. A model Hermes asks to confirm (cost, data policy, a large
+  context) is asked about in the prompt slot, as Hermes' own TUI asks it:
+  keeping the session's model is the first choice and the one selected, and
+  only "switch anyway" sends the switch again with Hermes' confirmation.
+
 - **Byte-identical managed plugin files no longer block setup or update
   (#2300).** A managed plugin file whose current bytes match the incoming
   bundle no longer needs `--force` merely because its hash differs from an
@@ -57,6 +76,7 @@ All notable changes will be documented here.
   exits 1. Piped answers into `--interactive` therefore stop working; pass
   the choices as flags instead. A closed stdin no longer crashes bare `omh`,
   `omh theme`, `omh model-chains` or `omh model-chains interview` either.
+
 
 - **`omh setup` records the release that is installed.** After the
   documented stable curl install, a plain `omh setup` recorded

@@ -9,13 +9,12 @@ a row), the position of the highlight once the list scrolls (`Model
 (12/162)`), and returns the one picked; its last row is the filter
 (`session_picker.filter_line`), where the composer is drawn while no picker is
 open. It holds no IO: the app sends the
-pick as Hermes' own `/model <name> --provider <slug> --session` through
-`slash.exec`, so the switch is Hermes' (refused while a turn runs) and lasts
+pick as `config.set model` with `<name> --provider <slug> --session`
+(`gateway_contract.model_switch_value`), so the switch is Hermes' and lasts
 for this session only. A name or slug that is not one plain word
 (whitespace, a leading dash of any kind, a control character) is left out,
-so a pick can never add a flag such as `--global` to that command: Hermes
-splits the arguments on whitespace and reads a token that starts with `--`,
-or with one of the dashes U+2012 to U+2015 before a flag word, as a flag.
+so a pick can never add a flag such as `--global` to that value
+(`gateway_contract.plain_word`).
 
 Keys: Up/Down move one row, PageUp/PageDown one page; printable text filters
 (model or provider, ignoring case) and Backspace takes a filter character
@@ -26,9 +25,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-import unicodedata
 
 from .escapes import strip_escapes
+from .gateway_contract import MODEL_PROVIDER_FLAG, MODEL_SESSION_FLAG, model_switch_value, plain_word
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
 from .session_picker import picker_frame
 from .style import Line, Span
@@ -53,8 +52,8 @@ class ModelRow:
 
     @property
     def arg(self) -> str:
-        """What Hermes' own `/model` takes to switch this session, and only this session, to this row."""
-        return f"{self.model} --provider {self.provider} --session"
+        """What `config.set model` takes to switch this session, and only this session, to this row."""
+        return model_switch_value(self.model, self.provider)
 
 
 @dataclass(frozen=True)
@@ -63,19 +62,29 @@ class ModelAction:
     row: ModelRow | None = None
 
 
-def _word(value: object) -> str:
-    """`value` when it is one plain word a command line carries as one argument; "" otherwise.
-
-    It may not start with a dash of any kind (Unicode category Pd, `-` and the en and em dashes among them).
-    """
-    if not isinstance(value, str) or not value or unicodedata.category(value[0]) == "Pd":
-        return ""
-    return value if all(char.isprintable() and not char.isspace() for char in value) else ""
-
-
 def _name(value: object, fallback: str) -> str:
     text = "".join(char for char in strip_escapes(value) if char.isprintable()) if isinstance(value, str) else ""
     return text.strip() or fallback
+
+
+def typed_switch_value(arg: str) -> str:
+    """`/model`'s arguments as a `config.set model` value, when they name a model, maybe its provider, and `--session`.
+
+    That is what Hermes' own TUI sends for them, always for this session
+    only. "" for any other flag (`--global`, `--once`, `--reasoning`), which
+    goes to Hermes' `/model` as typed.
+    """
+    words = arg.split()
+    model, provider, rest = (words[0] if words else ""), "", words[1:]
+    while rest:
+        flag = rest.pop(0)
+        if flag == MODEL_SESSION_FLAG:
+            continue
+        if flag == MODEL_PROVIDER_FLAG and rest and not provider:
+            provider = rest.pop(0)
+            continue
+        return ""
+    return model_switch_value(model, provider)
 
 
 def model_rows(result: Mapping[str, object]) -> list[ModelRow]:
@@ -92,7 +101,7 @@ def model_rows(result: Mapping[str, object]) -> list[ModelRow]:
     for entry in providers if isinstance(providers, list) else []:
         if not isinstance(entry, dict):
             continue
-        slug, models = _word(entry.get("slug")), entry.get("models")
+        slug, models = plain_word(entry.get("slug")), entry.get("models")
         if not slug or not isinstance(models, list):
             continue
         name = _name(entry.get("name"), slug)
@@ -101,10 +110,10 @@ def model_rows(result: Mapping[str, object]) -> list[ModelRow]:
             slug == provider or entry.get("is_current") is True
             or (isinstance(aliases, list) and isinstance(provider, str) and provider in aliases)
         )
-        for listed in map(_word, models):
+        for listed in map(plain_word, models):
             if listed:
                 rows.append(ModelRow(listed, slug, name, current_provider and listed == model))
-    running, running_provider = _word(model), _word(provider)
+    running, running_provider = plain_word(model), plain_word(provider)
     if running and running_provider and not any(row.current for row in rows):
         name = next((row.provider_name for row in rows if row.provider == running_provider), running_provider)
         rows.insert(0, ModelRow(running, running_provider, name, True))

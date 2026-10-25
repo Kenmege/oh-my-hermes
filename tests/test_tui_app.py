@@ -4,10 +4,11 @@ Each test runs `omh.tui.app.main` (or the `App` it builds) with a scripted
 terminal whose output lands in the VT screen model, a fake HUD poller, and the
 real `GatewayClient` talking to the replay gateway, which plays recorded Hermes
 6c61c3e27d frames and checks every frame the TUI sends against the recording.
-The TUI's startup differs from the recording client's (it asks `config.get`
-and `commands.catalog` after `session.create`, without waiting for either), so
-those two are answered from the scenario's answer table: the catalog with its
-recorded answer, the config with an empty one.
+The TUI's startup differs from the recording client's (it asks `config.get`,
+`commands.catalog`, `session.list` and `model.options` after `session.create`,
+without waiting for any), so those are answered from the scenario's answer
+table: the catalog and the session list with their recorded answers, the
+config with an empty one and the configured default with no model.
 
 A script step waits for a condition on what the screen shows, then delivers
 its bytes (or a resize); one silent read follows every step, so a lone Esc
@@ -80,8 +81,12 @@ WORKING_CLOCK = re.compile(r"\(\d+(?:m \d+)?s(?: · |\))")
 # Between the composer and the info line on these 24-row terminals: the bottom rule.
 UNDER_COMPOSER = 1
 # Only the session call is awaited. The catalog is read after the session, naming it, so project-local skills
-# are listed for its workspace; a fresh session then asks for the stored sessions, to name the last one.
-STARTUP_METHODS = ["client.capabilities", "session.create", "config.get", "commands.catalog", "session.list"]
+# are listed for its workspace; a fresh session then asks for the stored sessions, to name the last one. Last,
+# the config file's mtime and Hermes' configured default model, which a later move is measured from.
+STARTUP_METHODS = [
+    "client.capabilities", "session.create", "config.get", "commands.catalog", "session.list", "config.get",
+    "model.options",
+]
 NO_TERMIOS = terminal_module.termios is None
 # The block logo a start shows above the banner on these 24-row terminals from 100 columns: six rows and a blank.
 LOGO = [line_text(row) for row in banner_logo(default_theme(), None, 100, 24)]
@@ -93,12 +98,17 @@ TURN_CANCELLED = "Turn cancelled before the agent was ready"
 INTERRUPTED = ("session.interrupt", {"result": {"status": "interrupted"}})
 
 
+# Hermes' configured default (a `model.options` naming no session): the same at every read, so nothing moves.
+NO_DEFAULT = ("model.options", {"result": {"model": "", "provider": ""}})
+
+
 def startup_answers() -> tuple[tuple[str, dict], ...]:
     return (
         ("config.get", {"result": {"config": {}}}),
         ("commands.catalog", recorded_answer("session", "commands_catalog")),
         # The last-session lookup a fresh session makes: the recording lists only the session itself.
         ("session.list", recorded_answer("session", "session_list")),
+        NO_DEFAULT,
     )
 
 
@@ -430,6 +440,7 @@ class StartupRefusalTests(AppTestCase):
             ("config.get", drift),
             ("commands.catalog", recorded_answer("session", "commands_catalog")),
             ("session.list", recorded_answer("session", "session_list")),
+            NO_DEFAULT,
         )
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
         run.terminal.script(
@@ -1525,6 +1536,7 @@ def busy_mode_answers(mode: str) -> tuple[tuple[str, dict], ...]:
         ("config.get", {"result": {"config": {"display": {"busy_input_mode": mode}}}}),
         ("commands.catalog", recorded_answer("session", "commands_catalog")),
         ("session.list", recorded_answer("session", "session_list")),
+        NO_DEFAULT,
     )
 
 

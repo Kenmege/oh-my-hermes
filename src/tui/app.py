@@ -171,12 +171,12 @@ from .modes import (
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .model_picker import KEYS as MODEL_PICKER_KEYS
 from .model_picker import PICK as MODEL_PICK
-from .model_picker import ModelPicker, model_rows
+from .model_picker import ModelPicker, model_rows, typed_switch_value
 from . import dag_block
 from .dag_tree import TreeState
 from .panels import HudPoller, HudSnapshot, dag_page_lines, hud_chips, panel_lines, plan_state, plan_text
 from .dag_pager import DagPager
-from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
+from .prompts import CLOSED_CHOICES, Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
 from .screen import (
     CARRIAGE_RETURN,
     CLEAR_SCREEN_AND_SCROLLBACK,
@@ -342,6 +342,67 @@ REWIND_CUT_NOTICE = "Hermes cut the session there but did not take the prompt: {
 REWIND_UNREAD_NOTICE ="Hermes did not send the session's history ({reason}), so the screen stays as it was before you sent."
 REWIND_TURN_BACK_NOTICE = "/{name} went back in the session itself, so the rewind is cancelled."
 MODEL_BUSY_NOTICE = "Hermes switches the model between turns: let this one end, or interrupt it with Esc."
+# `/model --refresh` as Hermes' own TUI reads it: the picker, over a list Hermes asks the providers for again.
+MODEL_REFRESH_ARG = "--refresh"
+# What a `config.set model` answer says, for `/model` and its picker.
+MODEL_SWITCHED_NOTICE = "This session now runs {model}."
+MODEL_DEFERRED_NOTICE = "This session switches to {model} when its next turn starts."
+# A guarded model (cost, data policy, a large context): Hermes answers `confirm_required` and switches nothing, and
+# the TUI asks in the prompt slot as Hermes' own TUI asks (`openModelConfirmation`), keeping the session's model the
+# first choice and the one selected. Only "switch anyway" sends the switch again, with `confirm_expensive_model`.
+MODEL_CONFIRM_QUESTION = "{intro}{message}\nSwitch this session to {model}?"
+MODEL_CONFIRM_QID = "confirm"
+MODEL_KEEP_CHOICE = "Keep {current}"
+MODEL_SWITCH_CHOICE = "Switch to {model} anyway"
+MODEL_KEPT_NOTICE = "Model not switched: this session stays on {current}."
+MODEL_CONFIRM_STALE_NOTICE = "Model not switched: the session changed before the confirmation landed; run /model again."
+# A question the TUI asks itself goes through the slot like Hermes' own; its answer stays here (`_respond`).
+LOCAL_QUESTION_PREFIX = "omh-local-"
+MODEL_UNNAMED_NOTICE = "Hermes answered the switch without naming a model; the session runs what Hermes says next."
+# Hermes' configured default changed while this session ran (`_check_default`); `route` is " (<provider>)" or "".
+DEFAULT_SWITCHED_NOTICE = "Hermes' default model is now {model}{route}; this session switched to it."
+DEFAULT_DEFERRED_NOTICE = "Hermes' default model is now {model}{route}; this session switches to it at its next turn."
+DEFAULT_KEPT_NOTICE = "Hermes' default model is now {model}{route}; this session stays on {current}.{reason}"
+DEFAULT_UNSAFE_NOTICE = (
+    "Hermes' default model is now {model}{route}, a name the OMH TUI does not send as one word; this session stays "
+    "on {current}. Pick it with /model."
+)
+# `/model` with a flag Hermes' shared gateway does not take from a session, in place of the refusal's code.
+MODEL_OPTIONS_REFUSED = (
+    "Hermes' shared gateway switches only this session's model, by name: `/model <name>` or "
+    "`/model <name> --provider <slug>`, and /model alone lists them. It takes no --global or --once from a session: "
+    "to change the default for new sessions, run `hermes model` in a terminal, and this session switches to it "
+    "when its turn ends."
+)
+# Refusals that only say a turn came first: a switch to a moved default (`_switch_to_default`) is due again then.
+TURN_CAME_FIRST_REASONS = frozenset({"revision_conflict", "stale_generation", "session_busy"})
+SESSION_MOVED_SENTENCE = "The session changed while Hermes applied this (a turn or another edit came first): run it again."
+# Hermes' refusal reasons (`data.reason`, else the message), each in words that say what to do instead. A shared
+# gateway's refusal can carry a hint of its own (`data.detail`), which follows the sentence.
+REFUSAL_SENTENCES = {
+    "unsupported_command": (
+        "Hermes' shared gateway does not run this command in a TUI session. Type / to see the ones it does, "
+        "or run this one in Hermes' classic CLI (`hermes --cli`)."
+    ),
+    "unsupported_model_options": MODEL_OPTIONS_REFUSED,
+    "model_resolution_failed": (
+        "Hermes found no provider it is set up for that serves this model. Pick one from /model, or name the "
+        "provider with `/model <name> --provider <slug>`."
+    ),
+    "session_busy": "A turn is running: try again once it ends, or interrupt it with Esc.",
+    "revision_conflict": SESSION_MOVED_SENTENCE,
+    "stale_generation": SESSION_MOVED_SENTENCE,
+    "unknown_execution": "Hermes no longer knows the turn this was for: run it again.",
+    "permission_denied": (
+        "Hermes does not let this connection change that session: open it in Hermes' own TUI (`hermes --tui`) instead."
+    ),
+    "invalid_params": "Hermes did not take the arguments: /help lists what each command takes.",
+    "nothing_to_compress": "There is nothing to compress yet: the session is still short.",
+    "unsupported_compress_options": (
+        "Hermes' /compress does not take that option: use /compress, /compress <focus>, /compress here [N] "
+        "or /compress --preview."
+    ),
+}
 TODOS_NONE_NOTICE = "No plan in this session yet: Hermes' todo tool writes one."
 QUESTION_VIEW_TITLE = "the open question (q goes back to it)"  # Ctrl+O's pager while Hermes asks something
 # Claude Code's /export saves the conversation; Hermes' writes a profile archive. Said once, then it runs.
@@ -774,6 +835,22 @@ def plain_sentence(message: str) -> str:
     return text if text.endswith((".", "!", "?")) else f"{text}."
 
 
+def refusal_reason(error: Mapping[str, Any]) -> str:
+    """A refusal's reason: the shared gateway's `data.reason`, else the message, which is the reason itself there."""
+    data = error.get("data")
+    reason = as_text(data.get("reason")) if isinstance(data, Mapping) else ""
+    return reason or as_text(error.get("message")).strip()
+
+
+def refusal_sentence(error: Mapping[str, Any]) -> str:
+    """A refusal whose reason (`refusal_reason`) `REFUSAL_SENTENCES` knows, in those words and then Hermes' hint;
+    "" for any other."""
+    sentence = REFUSAL_SENTENCES.get(refusal_reason(error), "")
+    data = error.get("data")
+    detail = as_text(data.get("detail")).strip() if isinstance(data, Mapping) else ""
+    return f"{sentence} {plain_sentence(detail)}" if sentence and detail else sentence
+
+
 @dataclass(frozen=True)
 class Attachment:
     """An image the gateway queued for the next message; the gateway holds the file, this is its label."""
@@ -793,6 +870,18 @@ class PathItem:
 
 
 # ── small pure helpers ────────────────────────────────────────────────────
+
+
+def model_switch_params(value: str, session_id: str, confirmed: bool = False) -> dict[str, Any]:
+    """The `config.set model` call that switches `session_id` to `value`; `confirmed` once the person said to."""
+    params: dict[str, Any] = {"key": contract.CONFIG_SET_MODEL, "value": value, "session_id": session_id}
+    return {**params, "confirm_expensive_model": True} if confirmed else params
+
+
+def config_mtime(result: Mapping[str, Any]) -> float | None:
+    """The config file's mtime from a `config.get {key: "mtime"}` answer; None when it names none."""
+    mtime = result.get("mtime")
+    return float(mtime) if isinstance(mtime, (int, float)) and not isinstance(mtime, bool) else None
 
 
 def busy_mode(config_result: Mapping[str, Any]) -> str:
@@ -1181,6 +1270,14 @@ class App(ModesMixin, AgentViewMixin):
         self.rewind_messages: list[dict[str, Any]] = []  # the history the picker was opened over
         self.rewind: Rewind | None = None  # a picked prompt waiting to be sent again
         self.model_picker: ModelPicker | None = None  # bare /model's list of what Hermes offers
+        # Hermes' configured default model and provider (a sessionless `model.options`) when last read, and the
+        # config file's mtime then; None until read. A default that moves is switched to (`_check_default`).
+        self.default_route: tuple[str, str] | None = None
+        self.config_mtime: float | None = None
+        self.default_due: tuple[str, str] | None = None  # a moved default not switched to yet: a turn ran
+        self.default_asked = False  # a read or a switch for it is out
+        self.local_questions: dict[str, Callable[[dict[str, Any]], None]] = {}  # asked in the slot, by request id
+        self.local_serial = 0
         self.chains_open = False  # /omh-model's picker has the terminal (`_omh_model`)
         self.chains_closing = False  # a server request arrived while it was open: its next read cancels it
         self.export_said = False  # EXPORT_NOTE has been said: the next /export runs
@@ -1360,6 +1457,7 @@ class App(ModesMixin, AgentViewMixin):
         self._refresh_catalog()
         if not resume:
             self._ask_last_session()
+        self._read_default()
         self.banner_record = self._banner_record(result, resumed=self.stored_id if resume else "")
         self.banner_facts = dict(self.banner_record)
         self.logo_due = True
@@ -1887,6 +1985,10 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.close_command(command)
 
     def _respond(self, answer: Answer) -> None:
+        local = self.local_questions.pop(answer.request_id, None)
+        if local is not None:  # a question the TUI asked itself (`_ask_locally`): nothing goes to Hermes
+            local(answer.frame)
+            return
         try:
             self.client.respond(answer.request_id, answer.frame)
         except GatewayUnavailable as error:
@@ -1941,6 +2043,7 @@ class App(ModesMixin, AgentViewMixin):
         self.list_selected = None
         first_id = max(self.pending, default=0) + 1
         self._settle_lost_calls()
+        self.default_asked = False  # a read or switch for Hermes' default went with the old gateway: ask again
         self._give_back_tell()
         old: GatewayClient | None = self.client
         while True:
@@ -2048,6 +2151,7 @@ class App(ModesMixin, AgentViewMixin):
     def _close_questions_unanswered(self) -> None:
         """Close the open question and drop the waiting ones without an answer: the gateway that asked is gone."""
         self.waiting_requests.clear()
+        self.local_questions.clear()  # a model confirmation is about a switch the old gateway never made
         slot = self.slot
         if slot is not None:
             self._close_slot()
@@ -2098,12 +2202,14 @@ class App(ModesMixin, AgentViewMixin):
         if pending.on_error is not None and pending.on_error(error):
             return
         message = as_text(error.get("message")) or "refused"
+        sentence = refusal_sentence(error)  # a reason code in words, never the code itself
         if pending.command is not None:
-            self.transcript.add_notice(plain_sentence(message), NOTICE_ERROR)  # under the command's echo
+            self.transcript.add_notice(sentence or plain_sentence(message), NOTICE_ERROR)  # under the command's echo
             return
         phrase = CALL_FAILED_PHRASES.get(pending.method, f"complete {pending.method}")
         reason = message.strip().rstrip(".")
-        self.transcript.add_notice(f"Hermes did not {phrase}: {reason}.", NOTICE_ERROR)
+        said = f"Hermes did not {phrase}. {sentence}" if sentence else f"Hermes did not {phrase}: {reason}."
+        self.transcript.add_notice(said, NOTICE_ERROR)
 
     def _on_event(self, event: Event) -> None:
         payload = event.payload
@@ -2805,8 +2911,18 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice(TODOS_NONE_NOTICE)
 
     def _model(self, arg: str) -> None:
-        """`/model <name> ...` is Hermes' as typed; bare, between turns, a picker of what Hermes offers this session."""
-        if arg:
+        """`/model <name> [--provider <slug>]` switches this session as Hermes' own TUI does (`config.set model`).
+
+        Bare, or with `--refresh` alone, it opens between turns a picker of
+        what Hermes offers this session, asked again of the providers for
+        `--refresh`. Any other flag (`--global`, `--once`) is Hermes' own
+        `/model` as typed, which a shared gateway refuses (`_on_slash_refused`).
+        """
+        refresh = arg.strip() == MODEL_REFRESH_ARG
+        value = typed_switch_value(arg) if arg and not refresh else ""
+        if value:
+            self._switch_model(value)
+        elif arg and not refresh:
             self._route_slash(SlashInvocation("model", arg, None), 0)
         elif self._busy():
             # Bare /model has no echo to say this under, so it waits under what runs rather than close it.
@@ -2815,7 +2931,226 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
         else:
             sid = self.sid
-            self._request("model.options", {"session_id": sid}, lambda result: self._open_model_picker(sid, result))
+            params: dict[str, Any] = {"session_id": sid, "refresh": True} if refresh else {"session_id": sid}
+            self._request("model.options", params, lambda result: self._open_model_picker(sid, result))
+
+    def _switch_model(self, value: str, confirmed: bool = False) -> None:
+        """Switch this session to `value` (`gateway_contract.model_switch_value`); the answer says what Hermes did.
+
+        `confirmed`: the person picked "switch anyway" for the guarded target Hermes asked about.
+        """
+        if not self.sid:
+            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
+            return
+        sid = self.sid
+        params = model_switch_params(value, sid, confirmed)
+        self._request("config.set", params, lambda result: self._on_model_switched(sid, value, confirmed, result))
+
+    def _on_model_switched(self, sid: str, value: str, confirmed: bool, result: dict[str, Any]) -> None:
+        """A `config.set model` answer: switched, switched at the next turn, or not until the person confirms."""
+        if result.get("confirm_required"):
+            if confirmed:  # a turn or another switch landed between the ask and the yes
+                self.transcript.add_notice(MODEL_CONFIRM_STALE_NOTICE, NOTICE_WARN)
+            elif sid == self.sid:
+                model = (contract.model_switch_parts(value) or (value, ""))[0]
+                current = self.model or "its model"
+                self._confirm_model(
+                    result, "", model, current, lambda: self._switch_model(value, confirmed=True),
+                    lambda: self.transcript.add_notice(MODEL_KEPT_NOTICE.format(current=current)),
+                )
+            return
+        model = as_text(result.get("value")).strip()
+        if not model:
+            self.transcript.add_notice(MODEL_UNNAMED_NOTICE, NOTICE_WARN)
+            return
+        if result.get("deferred"):
+            self.transcript.add_notice(MODEL_DEFERRED_NOTICE.format(model=model))
+            return
+        if sid == self.sid:
+            self.model = model
+            self.dirty = True
+        self.transcript.add_notice(MODEL_SWITCHED_NOTICE.format(model=model))
+        warning = as_text(result.get("warning")).strip()
+        if warning:
+            self.transcript.add_notice(warning, NOTICE_WARN)
+
+    def _confirm_model(
+        self, result: Mapping[str, Any], intro: str, model: str, current: str,
+        switch: Callable[[], None], keep: Callable[[], None],
+    ) -> None:
+        """Ask in the slot whether to switch to the guarded `model` Hermes named, in Hermes' words; keep is first."""
+        message = as_text(result.get("confirm_message")).strip() or "Hermes guards this model."
+        keep_choice, switch_choice = MODEL_KEEP_CHOICE.format(current=current), MODEL_SWITCH_CHOICE.format(model=model)
+
+        def decided(choice: str) -> None:
+            if choice == switch_choice:
+                switch()
+            else:
+                keep()
+
+        question = MODEL_CONFIRM_QUESTION.format(intro=intro, message=message, model=model)
+        self._ask_locally(question, (keep_choice, switch_choice), decided)
+
+    def _ask_locally(self, question: str, choices: tuple[str, ...], decided: Callable[[str], None]) -> None:
+        """Ask the person a question of the TUI's own in the prompt slot, with only `choices` to answer it.
+
+        It opens, waits behind an open question and arms like any question
+        Hermes asks; `decided` gets the choice picked, or "" for Esc (and for
+        a session the person leaves, which declines what is open).
+        """
+        self.local_serial += 1
+        request_id = f"{LOCAL_QUESTION_PREFIX}{self.local_serial}"
+
+        def answered(frame: dict[str, Any]) -> None:
+            result = frame.get("result")
+            answers = result.get("answers") if isinstance(result, dict) else None
+            decided(as_text(answers.get(MODEL_CONFIRM_QID)) if isinstance(answers, dict) else "")
+
+        self.local_questions[request_id] = answered
+        params = {"questions": [
+            {"qid": MODEL_CONFIRM_QID, "question": question, "choices": list(choices), CLOSED_CHOICES: True},
+        ]}
+        self._on_server_request(ServerRequest(request_id, "clarify", params))
+
+    # ── Hermes' configured default model ──
+
+    def _read_default(self) -> None:
+        """At the launch: the config file's mtime, and Hermes' configured default model, which a move is measured from.
+
+        Hermes sends no event when its config changes, so the mtime
+        (`config.get mtime`, which Hermes' own TUI polls) says when to read the
+        default again (`_check_default`): a `model.options` that names no
+        session, whose `model` and `provider` are then the profile's default.
+        Both go at once, so the launch's calls do not wait on each other.
+        """
+        self.default_asked = True
+        self._request("config.get", {"key": "mtime"}, self._seed_mtime, lambda _error: True)
+        self._ask_default()
+
+    def _ask_default(self) -> None:
+        self._request("model.options", {}, self._take_default, self._default_unread, on_expiry=self._default_unread)
+
+    def _seed_mtime(self, result: dict[str, Any]) -> None:
+        self.config_mtime = config_mtime(result)
+
+    def _default_unread(self, _error: object = None) -> bool:
+        """A read refused or unanswered: the default stays as last read, and the next turn's end asks again."""
+        self.default_asked = False
+        return True
+
+    def _take_default(self, result: dict[str, Any]) -> None:
+        """The default as Hermes has it now; one that moved since the last read is switched to (`_switch_to_default`).
+
+        The first read is only where later ones are measured from: a
+        session that runs another model than the default (one picked with
+        /model, or a resumed one) is left on it until the default itself moves.
+        """
+        self.default_asked = False
+        route = (as_text(result.get("model")).strip(), as_text(result.get("provider")).strip())
+        before, self.default_route = self.default_route, route
+        if before is not None and route != before and route[0]:
+            self.default_due = route
+            self._switch_to_default()
+
+    def _check_default(self) -> None:
+        """At a turn's end, whether Hermes' default model moved during it, or the switch to it a turn held back.
+
+        Off when the launch's read did not come back: there is nothing to
+        measure a move from. A config file whose mtime did not move (or a
+        Hermes that gives none) is not read again.
+        """
+        if self.default_route is None or self.default_asked:
+            return
+        if self.default_due is not None:
+            self._switch_to_default()
+            return
+        self.default_asked = True
+        self._request(
+            "config.get", {"key": "mtime"}, self._take_mtime, self._default_unread, on_expiry=self._default_unread
+        )
+
+    def _take_mtime(self, result: dict[str, Any]) -> None:
+        mtime = config_mtime(result)
+        if mtime == self.config_mtime:
+            self.default_asked = False
+            return
+        self.config_mtime = mtime
+        self._ask_default()
+
+    def _switch_to_default(self) -> None:
+        """Switch the session to the default that moved, the way a /model pick does; never while a turn runs.
+
+        A turn that runs keeps the switch due for its end. A session already
+        on that model (a `/model --global` moved both) is left as it is.
+        """
+        due = self.default_due
+        if due is None or self._busy() or not self.sid:
+            return
+        self.default_due = None
+        model, provider = due
+        current = self.model
+        if model == current:
+            return
+        facts = {"model": model, "route": f" ({provider})" if provider else "", "current": current or "its model"}
+        value = contract.model_switch_value(model, provider)
+        if not value:
+            self.transcript.add_aside(NoticeBlock(DEFAULT_UNSAFE_NOTICE.format(**facts), NOTICE_WARN))
+            return
+        self._send_default_switch(due, facts, value)
+
+    def _send_default_switch(self, due: tuple[str, str], facts: dict[str, str], value: str, confirmed: bool = False) -> None:
+        sid = self.sid
+        self.default_asked = True
+        self._request(
+            "config.set",
+            model_switch_params(value, sid, confirmed),
+            lambda result: self._on_default_switched(sid, due, facts, value, confirmed, result),
+            lambda error: self._on_default_refused(due, facts, error),
+            on_expiry=self._default_unread,
+        )
+
+    def _on_default_switched(
+        self, sid: str, due: tuple[str, str], facts: dict[str, str], value: str, confirmed: bool, result: dict[str, Any]
+    ) -> None:
+        """A switch to the moved default, answered: made, made at the next turn, or asked about first (guarded)."""
+        self.default_asked = False
+        model = as_text(result.get("value")).strip()
+        if result.get("confirm_required"):
+            if confirmed or sid != self.sid:
+                reason = f" {MODEL_CONFIRM_STALE_NOTICE}" if confirmed else ""
+                self.transcript.add_aside(NoticeBlock(DEFAULT_KEPT_NOTICE.format(**facts, reason=reason), NOTICE_WARN))
+                return
+            intro = f"Hermes' default model is now {facts['model']}{facts['route']}. "
+            self._confirm_model(
+                result, intro, facts["model"], facts["current"],
+                lambda: self._send_default_switch(due, facts, value, confirmed=True),
+                lambda: self.transcript.add_aside(
+                    NoticeBlock(DEFAULT_KEPT_NOTICE.format(**facts, reason=""), NOTICE_WARN)
+                ),
+            )
+        elif not model:
+            self.transcript.add_aside(NoticeBlock(MODEL_UNNAMED_NOTICE, NOTICE_WARN))
+        elif result.get("deferred"):
+            self.transcript.add_aside(NoticeBlock(DEFAULT_DEFERRED_NOTICE.format(**facts)))
+        else:
+            if sid == self.sid:
+                self.model = model
+                self.dirty = True
+            self.transcript.add_aside(NoticeBlock(DEFAULT_SWITCHED_NOTICE.format(**{**facts, "model": model})))
+
+    def _on_default_refused(self, due: tuple[str, str], facts: dict[str, str], error: dict[str, Any]) -> bool:
+        """Hermes refused the switch: the session stays where it was, and the notice says why in words.
+
+        A refusal that only says a turn came first (a prompt sent as the last
+        one ended) says nothing, and the switch is due again at that turn's end.
+        """
+        self.default_asked = False
+        if refusal_reason(error) in TURN_CAME_FIRST_REASONS:
+            self.default_due = due
+            return True
+        reason = refusal_sentence(error) or plain_sentence(as_text(error.get("message")))
+        self.transcript.add_aside(NoticeBlock(DEFAULT_KEPT_NOTICE.format(**facts, reason=f" {reason}"), NOTICE_WARN))
+        return True
 
     def _open_model_picker(self, sid: str, result: dict[str, Any]) -> None:
         if sid != self.sid:
@@ -2824,7 +3159,7 @@ class App(ModesMixin, AgentViewMixin):
         self._settle_list()
 
     def _model_picker_key(self, event: Key | Paste | Mouse) -> None:
-        """A key for the open model picker: the model picked becomes this session's, through Hermes' own /model."""
+        """A key for the open model picker: the model picked becomes this session's (`_switch_model`), one echo."""
         picker = self.model_picker
         if picker is None or isinstance(event, Mouse):
             return
@@ -2833,7 +3168,8 @@ class App(ModesMixin, AgentViewMixin):
             return
         self.model_picker = None
         if action.kind == MODEL_PICK and action.row is not None:
-            self._run_slash(SlashInvocation("model", action.row.arg, None))  # Hermes' own command, echoed
+            value = action.row.arg
+            self._as_command(f"/model {value}", lambda: self._switch_model(value))
 
     def _export(self, arg: str) -> None:
         """Hermes' /export, once the person has been told it is a profile archive and not the transcript."""
@@ -3178,13 +3514,18 @@ class App(ModesMixin, AgentViewMixin):
         return False
 
     def _turn_ended(self) -> None:
-        """The turn is over: the next queued line goes, unless the person interrupted it (`_hold_queue`)."""
+        """The turn is over: the next queued line goes, unless the person interrupted it (`_hold_queue`).
+
+        Then whether Hermes' default model moved (`_check_default`): a queued
+        prompt that went first keeps the switch for that turn's end.
+        """
         self.tell_turn_runs = False  # an open tell field now says what to do after this turn, not in it
         if self.interrupting:
             self.interrupting = False
             self._hold_queue(INTERRUPTED_WHY)
         else:
             self._drain_queue()
+        self._check_default()
 
     def _hold_queue(self, why: str) -> None:
         """A turn ended that the person stopped (or that a gateway restart lost): the queue does not go on by itself,
@@ -3496,7 +3837,14 @@ class App(ModesMixin, AgentViewMixin):
             )
 
     def _on_slash_refused(self, invocation: SlashInvocation, error: dict[str, Any], depth: int) -> bool:
-        """`slash.exec` refusing a command `command.dispatch` owns (4018) falls back to it, as Ink does."""
+        """`slash.exec` refusing a command `command.dispatch` owns (4018) falls back to it, as Ink does.
+
+        A shared gateway runs no `/model` through `slash.exec`: one with a flag
+        it does not take from a session is refused there, in `/model`'s own words.
+        """
+        if invocation.name.lower() == "model" and refusal_reason(error) == "unsupported_command":
+            self.transcript.add_notice(MODEL_OPTIONS_REFUSED, NOTICE_ERROR)
+            return True
         if error.get("code") != contract.NOT_MINE:
             return False
         self._request(

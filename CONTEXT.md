@@ -470,7 +470,12 @@ the OMH panels are OMH's; every model call, tool run and approval decision is
 the gateway's. Shift+Tab may turn on Hermes' per-session yolo, so Hermes stops
 asking for approvals in that one session (a `config.set` naming the session,
 never `approvals.mode`), and the TUI sends that session an explicit off before
-it leaves it. Every deny the person gives an approval also interrupts the
+it leaves it. When Hermes' configured default model moves while a session
+runs (the config file's mtime, read at each turn's end, then a `model.options`
+naming no session), the TUI switches that session to it once the turn ends,
+with the session-scoped `config.set model` a `/model` pick sends, and says so
+in one line; a session that runs another model than an unmoved default stays
+on it. Every deny the person gives an approval also interrupts the
 running turn, except its last row's, which denies and sends what the person
 then types into the running turn as a steer; its `always` row, there only when
 Hermes offers it, sends Hermes' own permanent allow, which Hermes saves. It writes no

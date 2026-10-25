@@ -43,7 +43,10 @@ past that limit it exits as it would without recovery, naming `hermes --tui`.
 
 It relays only what the person types; on its own it reads Hermes' settings and
 command catalog as a session opens and, at a fresh start, `session.list` to
-name the last session under the banner, and, beyond opening and closing
+name the last session under the banner, reads the config file's mtime
+(`config.get mtime`) and Hermes' configured default model (`model.options`
+naming no session) at the launch, the mtime again at each turn's end and the
+default again when the mtime moved, and, beyond opening and closing
 sessions (`client.capabilities`, `session.create`, `session.resume`,
 `session.close`), sends only what this bullet names below, plus
 `session.history` again when Hermes refuses a rewind; when no turn runs, a
@@ -89,10 +92,26 @@ what is shown, so yolo that Hermes reports for its own reasons is shown too,
 except that one saying approvals are on within 2 seconds of a confirmed on is
 held until the next, keeping accept shown. Ctrl+T and `/effort` set that
 session's reasoning effort through the same session-scoped call. A pick in the
-`/model` picker (bare `/model`, listed from `model.options`) is sent as Hermes'
-own `/model <name> --provider <slug> --session` through `slash.exec`, so it
-switches that session only, and a name or slug that could read as a flag is
-left out of the list. `/cost` and `/permissions` run Hermes' `/usage` and
+`/model` picker (bare `/model`, listed from `model.options`, or `/model
+--refresh`, listed from `model.options` with `refresh`), and a typed `/model
+<name>` with at most `--provider <slug>`, is sent as `config.set model` naming
+the session with the value `<name> --provider <slug> --session`, as Hermes'
+own TUI sends it (attached to a shared gateway, the gateway child sends it as
+the owner's `session.mutate model`), so it switches that session only; a name
+or slug that could read as a flag is left out of the list and is never sent,
+and a `/model` with any other flag goes to Hermes' `/model` as typed. The one
+switch the TUI makes on its own is this one: when Hermes' configured default
+model moved since it was last read (the person or the agent edited Hermes'
+config), it switches the session to the new default once the turn ends, never
+during one, and says so in one line; a refusal leaves the session as it was
+and says why. A target Hermes asks to confirm (cost, data policy, a large
+context), from a pick or from this switch, is a question the TUI asks in the
+slot, keeping the session's model first and selected; only the person's
+"switch anyway" sends it again with `confirm_expensive_model`, and Esc keeps
+the model. It never switches because
+the session runs a model other than the default, so one picked with `/model`
+stays until the default itself moves (owner, 2026-10-25). `/cost` and
+`/permissions` run Hermes' `/usage` and
 `/approvals`; the latter shows or sets Hermes' persistent approval mode, as
 typed. Plan mode is the frontend's own flag, also turned on with Shift+Tab:
 while it is on, a prompt the person types goes to Hermes as `/plan <text>`.

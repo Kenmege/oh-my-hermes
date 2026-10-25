@@ -1263,7 +1263,10 @@ class StartupWaitsOnlyForTheSessionTests(unittest.TestCase):
         app = App(ScriptedTerminal(), client, {}, poller=FakePoller())  # type: ignore[arg-type]
         app.startup()
         self.assertEqual(client.awaited, ["session.create"])
-        self.assertEqual([method for method, _params in client.calls], ["config.get", "commands.catalog", "session.list"])
+        self.assertEqual(
+            [method for method, _params in client.calls],
+            ["config.get", "commands.catalog", "session.list", "config.get", "model.options"],  # the default's two last
+        )
         self.assertEqual(app.busy_mode, "queue")  # Hermes' own default, until config.get answers
         type_text(app, "/")
         self.assertTrue(app._menu_rows())  # no catalog yet: the TUI's own commands still complete
