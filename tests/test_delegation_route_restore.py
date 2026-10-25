@@ -1209,6 +1209,17 @@ class RestoredBytesTest(RouteRestoreTestCase):
 class ClearActionTest(RouteRestoreTestCase):
     """`clear` through the tool, which is where the person-pinned case lands."""
 
+    def setUp(self) -> None:
+        super().setUp()
+        # A route may only name a provider the person configured; these
+        # tests route through `og`, so record it as held.
+        path = self.omh_home / "routing" / "providers.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"schema_version": "provider_entitlements/v1", "providers": {"og": "gateway"}}),
+            encoding="utf-8",
+        )
+
     def call(self, **args) -> dict:
         args.setdefault("hermes_home", str(self.hermes_home))
         args.setdefault("omh_home", str(self.omh_home))

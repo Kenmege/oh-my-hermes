@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import secrets
 import subprocess
 from typing import Literal, Protocol
 
@@ -108,10 +109,11 @@ class SelfUpdatePlatform:
     def replace_current(self, root: Path, target: Path) -> None:
         root.mkdir(parents=True, exist_ok=True)
         current = root / "current"
-        temporary = root / f".current.{os.getpid()}.tmp"
-        backup = root / f".current.{os.getpid()}.previous"
-        _remove_directory_link(temporary)
-        _remove_directory_link(backup)
+        # Random names: both links are created exclusively, so nothing that
+        # sits at a guessable name is removed or reused.
+        token = secrets.token_hex(16)
+        temporary = root / f".current.{token}.tmp"
+        backup = root / f".current.{token}.previous"
         try:
             self.create_directory_link(root, temporary, target)
             if self.is_windows:

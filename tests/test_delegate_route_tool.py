@@ -355,7 +355,20 @@ class DelegateRouteToolTest(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _record_providers(self, *provider_ids: str) -> None:
+        # A route may only name a provider the person configured; these
+        # tests route through gateway ids, so record them as held.
+        path = self.omh_home / "routing" / "providers.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({
+                "schema_version": "provider_entitlements/v1",
+                "providers": {provider_id: "gateway" for provider_id in provider_ids},
+            }),
+            encoding="utf-8",
+        )
     def test_a_routed_alias_dispatches_the_providers_own_model_name(self):
+        self._record_providers("gateway")
         self._write_provider_routes(
             {"gpt-6-astra": {"provider": "gateway", "model": "vendor/gpt-6-astra"}}
         )
@@ -371,6 +384,7 @@ class DelegateRouteToolTest(unittest.TestCase):
         )
 
     def test_named_provider_mapping_survives_set_fallback_and_clear(self):
+        self._record_providers("custom:cli-proxy")
         self._write_overrides({"quick": [
             {"model": "first", "reasoning_effort": "low"},
             {"model": "second", "reasoning_effort": "low"},
@@ -407,6 +421,7 @@ class DelegateRouteToolTest(unittest.TestCase):
         )
 
     def test_an_explicit_provider_outranks_a_stored_route(self):
+        self._record_providers("direct")
         self._write_provider_routes(
             {"gpt-5.6-sol": {"provider": "gateway", "model": "vendor/gpt-5.6-sol"}}
         )
@@ -430,6 +445,7 @@ class DelegateRouteToolTest(unittest.TestCase):
         chain and fallback errors instead of advancing.
         """
 
+        self._record_providers("gateway")
         self._write_overrides(
             {
                 "quick": [
@@ -461,6 +477,7 @@ class DelegateRouteToolTest(unittest.TestCase):
         )
 
     def test_status_reports_provider_route_state_and_dispatched_values(self):
+        self._record_providers("gateway")
         result = self._call(action="status")
         self.assertEqual(result["provider_routes"], "absent")
         self.assertEqual(
@@ -501,6 +518,7 @@ class DelegateRouteToolTest(unittest.TestCase):
         self.assertEqual(routed["applied"]["alias"], "aliased-model")
 
     def test_partial_or_unresolved_wire_routes_fail_without_mutation(self):
+        self._record_providers("gateway")
         self._write_provider_routes(
             {"head": {"provider": "gateway", "model": "vendor/head"}}
         )
@@ -520,6 +538,7 @@ class DelegateRouteToolTest(unittest.TestCase):
                 self.assertEqual(self.config.read_bytes(), before)
 
     def test_fallback_refuses_wrong_provider_and_shared_origins(self):
+        self._record_providers("gateway")
         self._write_provider_routes(
             {"shared": {"provider": "gateway", "model": "vendor/shared"}}
         )
