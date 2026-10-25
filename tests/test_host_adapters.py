@@ -429,16 +429,28 @@ class HostAdapterTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("sh"), "POSIX shell unavailable")
     def test_shell_warns_when_the_other_pack_root_holds_the_pack(self):
+        self._sibling_pack_warning(lambda host: ["sh", str(ROOT / f".{host}/install.sh")])
+
+    @unittest.skipUnless(shutil.which("pwsh") or shutil.which("powershell"), "PowerShell unavailable")
+    def test_powershell_warns_when_the_other_pack_root_holds_the_pack(self):
+        shell = shutil.which("pwsh") or shutil.which("powershell")
+        self._sibling_pack_warning(lambda host: [shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                                                 "-File", str(ROOT / f".{host}/install.ps1")])
+
+    def _sibling_pack_warning(self, command):
         for first, second in (("claude", "cursor"), ("opencode", "claude")):
             with self.subTest(first=first, second=second), tempfile.TemporaryDirectory() as tmp:
                 repo = Path(tmp).resolve()
-                results = [subprocess.run(["sh", str(ROOT / f".{host}/install.sh")], cwd=repo,
-                                          capture_output=True, text=True, timeout=60) for host in (first, second)]
+                results = [subprocess.run(command(host), cwd=repo, capture_output=True, text=True, timeout=60)
+                           for host in (first, second)]
                 for result in results:
                     self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertNotIn("Warning", results[0].stderr)
-                other = repo / (".claude/skills" if first == "claude" else ".agents/skills")
-                self.assertIn(f"Warning: {other} also holds OMH Agent Skills", results[1].stderr)
+                # Git Bash prints /c/..., PowerShell C:\...; assert the root's
+                # last two components in either separator, not the prefix.
+                other = r"\.claude[\\/]skills" if first == "claude" else r"\.agents[\\/]skills"
+                self.assertIn("Warning: ", results[1].stderr)
+                self.assertRegex(results[1].stderr, rf"[\\/]{other} also holds OMH Agent Skills")
                 self.assertIn("docs/AGENT-SKILLS.md#duplicate-copies", results[1].stderr)
                 # The skill list on stdout stays parseable.
                 self.assertEqual(results[0].stdout.splitlines()[1:], results[1].stdout.splitlines()[1:])
