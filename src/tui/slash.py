@@ -87,6 +87,8 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("effort", LOCAL, "Set this session's reasoning effort (/effort <level>; Ctrl+T steps through it)"),
     SlashCommand("logs", LOCAL, "Show the gateway's recent stderr (kept in memory only)", echo_bare=False),
     SlashCommand("dag", LOCAL, "Show the delegation graph whole, with full boxes, in a pager", echo_bare=False),
+    SlashCommand("bots", LOCAL, "Watch this machine's Hermes profiles, gateways and sessions, read-only (also Ctrl+S)",
+                 echo_bare=False),
     SlashCommand("copy", LOCAL, "Copy the last reply to the clipboard"),
     SlashCommand("image", LOCAL, "Attach an image file to the next message (/image <path>)"),
     SlashCommand("paste", LOCAL, "Attach the clipboard image to the next message (also Ctrl+V)"),

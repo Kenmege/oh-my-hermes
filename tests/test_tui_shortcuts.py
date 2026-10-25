@@ -97,7 +97,7 @@ class TableTests(unittest.TestCase):
 
     def test_the_ctrl_letters_named_are_the_ones_that_do_something(self) -> None:
         named = ctrl_letters_named()
-        self.assertEqual(named, set("acdejklrtouvwxyz"))
+        self.assertEqual(named, set("acdejklrstouvwxyz"))
         for letter in string.ascii_lowercase:
             changed = False
             for draft, undone in (("", False), ("one two", False), ("one two", True)):  # Ctrl+Y redoes the undone draft

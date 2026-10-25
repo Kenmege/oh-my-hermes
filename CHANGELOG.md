@@ -12,21 +12,82 @@ All notable changes will be documented here.
   plus `omh -c "<title>"` when Hermes' title lookup would open that same
   session (it prefers a newer `<title> #N`) and the title does not start
   with `-`. After a `/new` with nothing said, the card names the newest
-  earlier session of the launch that has messages. Hermes' summary, which named `hermes --tui --resume`, no longer
-  prints: the OMH TUI exits with a code of OMH's own, which Hermes' launcher
-  prints no summary for, and `omh` returns 0 to the shell as before. A
-  resumed session gets the card too: the old line came from the state
-  database's end stamps, and Hermes leaves a resumed session's old
-  `ended_at` in place until a prompt reopens it, so reopening a session and
-  leaving printed no `omh` line. The OMH TUI now records the open session
-  and its Hermes home in a private file `omh` names for the launch, and the
-  end stamps are only the fallback for Hermes' own terminal. A session
-  nothing was said in gets one line saying there is nothing to resume. The
-  Ctrl+C that interrupts a turn also arms the exit, so a second press
-  within 2 s leaves while the turn is still `interrupting…` (it used to be
-  swallowed, with no hint), and the info line says `ctrl+c again to exit`
-  then too. The info line also leads its right side with the session's
-  title, cut to 24 cells, and drops it first on a narrow terminal.
+  earlier session of the launch that has messages. Hermes' summary, which
+  named `hermes --tui --resume`, no longer prints: the OMH TUI exits with
+  a code of OMH's own, which Hermes' launcher prints no summary for, and
+  `omh` returns 0 to the shell as before. A resumed session gets the card
+  too: the old line came from the state database's end stamps, and Hermes
+  leaves a resumed session's old `ended_at` in place until a prompt
+  reopens it, so reopening a session and leaving printed no `omh` line.
+  The OMH TUI now records the open session and its Hermes home in a
+  private file `omh` names for the launch, and the end stamps are only the
+  fallback for Hermes' own terminal. A session nothing was said in gets
+  one line saying there is nothing to resume. The Ctrl+C that interrupts a
+  turn also arms the exit, so a second press within 2 s leaves while the
+  turn is still `interrupting…` (it used to be swallowed, with no hint),
+  and the info line says `ctrl+c again to exit` then too. The info line
+  also leads its right side with the session's title, cut to 24 cells, and
+  drops it first on a narrow terminal.
+
+- **The OMH TUI shows this machine's Hermes bots on a read-only board.**
+  Ctrl+S, or `/bots`, opens it full screen. The first page lists the Hermes
+  home the TUI runs under and each named profile beside it, each with its
+  gateway as `gateway_state.json` records it (state, pid, running agents,
+  every platform's state), its sessions counted by source, how many were
+  active in the last 24 hours, and when the last one was. Enter opens a
+  profile's sessions, newest activity first, and a session's last 40
+  messages; ← or Esc goes back, and r reads again. It reads again every 5 s
+  off the screen's thread. A gateway reads as running only while the process
+  its record names still runs and is the one that wrote it, and a platform's
+  state left by a stopped or restarted gateway shows as last recorded. It
+  counts active sessions, not open ones: a Slack gateway never ends a chat,
+  so a bot idle for weeks still had dozens open. Each `state.db` is opened
+  read-only, and immutable when nothing has it open, so not even SQLite's
+  `-wal` and `-shm` appear beside it; the only signal is a signal-0
+  liveness probe, and nothing is sent to the gateway.
+
+- **Byte-identical managed plugin files no longer block setup or update
+  (#2300).** A managed plugin file whose current bytes match the incoming
+  bundle no longer needs `--force` merely because its hash differs from an
+  older installed manifest. The normal install rewrites that manifest. A file
+  whose bytes diverge from the incoming bundle is still protected, including
+  by the staging revalidation, and a non-forced setup or update refuses to
+  replace it. Managed skill `SKILL.md` files follow the same rule: one that
+  already holds the bytes the install would write is not reported as a local
+  modification; support files keep the manifest-only comparison.
+
+- **`omh doctor` adds independent personal-file and state-write privacy
+  controls (#2300).** `--no-personal-files` never opens or reads the bodies of
+  `SOUL.md`, `memories/MEMORY.md`, or `memories/USER.md`; the
+  `soul_missing_or_starter` and `hermes_memory_staleness` advisories are
+  reported as `skipped`, with the reason, rather than as passing checks.
+  `--no-state-write` does not create or update `runtime/state.json`, leaves
+  JSON `state_log` empty, and skips the `runtime_artifacts` and
+  `workflow_state` `.doctor-write-test` probes. Those two checks instead
+  report a non-writing permission result with write access explicitly not
+  probed. No writes under the OMH home were observed in this mode, but the
+  Hermes loader-registration smoke can still copy the plugin into a temporary
+  directory when a Hermes install is found. Both flags work with human and
+  `--json` output; `--no-personal-files` does not disable Hermes `config.yaml`
+  reads.
+
+- **`omh setup --dry-run` no longer applies model aliases, and the model
+  step reports a broken Hermes instead of a traceback (#2299).** With
+  `--model-setup --apply-model-config --model-config-digest D`, a dry run ran
+  `hermes config set model.aliases.*` and wrote the alias while the payload
+  said `dry_run: true`. It now runs no mutating Hermes command, still checks
+  the digest, and reports `apply.status: "dry_run"` with the exact commands
+  it would run; the human summary prints each as a "would run" line, and the
+  interactive question asks whether to list them rather than to apply. When
+  Hermes' `config.yaml` does not exist (a dry run on a fresh home, or
+  `--skip-apply`), the step reports `status: "hermes_config_missing"`; when
+  it exists but cannot be read, `status: "hermes_config_unreadable"` with a
+  next action to fix its permissions. Either way setup exits 3. When a
+  `hermes` command exits nonzero or times out, it reports
+  `status: "hermes_command_failed"` and exits 1. All of these used to stop on
+  a `HermesCommandError` traceback. The
+  setup JSON `ok` and the recorded `last_setup.ok` now follow the exit code,
+  so a model step that could not run no longer reads as success.
 
 - **`omh setup --interactive` without a terminal refuses instead of
   crashing or taking every default (#2295).** With stdin closed (`<&-`) it

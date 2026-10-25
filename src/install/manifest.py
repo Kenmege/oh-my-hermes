@@ -101,9 +101,23 @@ def same_directory(first: Path, second: Path) -> bool:
         return False
 
 
-def local_modifications(manifest: dict[str, Any] | None, skills_dir: Path) -> list[str]:
+def local_modifications(
+    manifest: dict[str, Any] | None,
+    skills_dir: Path,
+    *,
+    incoming: dict[str, str] | None = None,
+) -> list[str]:
+    """Managed files whose bytes differ from what the manifest recorded.
+
+    `incoming` maps a SKILL.md record path to the sha256 of the bytes the
+    install about to run writes there. A file already holding exactly those
+    bytes loses nothing to the install, so it is not a modification even when
+    an older release recorded another hash (#2300). Support files keep the
+    manifest-only rule.
+    """
     if not manifest:
         return []
+    incoming = incoming or {}
     modified: list[str] = []
     for record in manifest.get("skills", []):
         rel = record.get("path")
@@ -114,7 +128,8 @@ def local_modifications(manifest: dict[str, Any] | None, skills_dir: Path) -> li
         if not path.exists():
             modified.append(str(rel))
             continue
-        if sha256_file(path) != expected:
+        observed = sha256_file(path)
+        if observed != expected and observed != incoming.get(str(rel)):
             modified.append(str(rel))
     from .support_materialization import support_records, support_path
 

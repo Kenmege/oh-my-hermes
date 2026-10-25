@@ -8,7 +8,7 @@ from pathlib import Path, PurePosixPath
 
 from ..core.errors import OmhError
 from ..converter import convert_from_dir, convert_references_from_dir, convert_support_from_dir
-from ..hashutil import sha256_file
+from ..hashutil import sha256_file, sha256_text
 from .curator_ledger import (
     LedgerWrite,
     hermes_edit_still_on_disk,
@@ -686,9 +686,16 @@ def install_skill_pack(
     # kept skill's directory that `local_modifications` reports are its support
     # files; a kept skill is not rendered again, so they are not replaced.
     kept_directories = {PurePosixPath(rel).parent.as_posix() + "/" for rel in kept}
+    # A SKILL.md already holding the bytes `_write_skill` is about to write
+    # (`atomic_write_text` of the template, UTF-8, newline-stable) is not a
+    # local change even when an older release recorded another hash (#2300).
+    incoming = {
+        f"{skill_install_relative_dir(template.name).as_posix()}/SKILL.md": sha256_text(template.content)
+        for template in templates
+    }
     modified = [
         rel
-        for rel in local_modifications(manifest, paths.skills_dir)
+        for rel in local_modifications(manifest, paths.skills_dir, incoming=incoming)
         if rel not in kept and rel not in missing_paths and rel not in left_behind
         and not any(rel.startswith(directory) for directory in kept_directories)
     ]
