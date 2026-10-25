@@ -306,16 +306,16 @@ pointer.
 Note on code-level borrowings (issue #2049): the table audits skill rows
 only, so a borrowing that lives in code carries no row and is recorded here and
 in the module's own docstring. `src/quality/completion_integrity.py` takes its
-placeholder evidence values and its negative-case naming vocabulary from
-oh-my-openagent (omo), and `src/plugin_bundle/omh/engagement_nudges.py` takes
-the shape of omo's `agent-usage-reminder` hook, and the block-quote, relay-header
-and URL masks in `src/plugin_bundle/omh/reference_regions.py` take their mask
-list from omo's skill-pointer arming guard. The refusal of an
-instruction-shaped summary on the model capture path in
-`src/plugin_bundle/omh/memory_admission.py` takes its rule, reason and fix from
-omo's memory hint admission. omo is published under the
-Sustainable Use License 1.0, which is not OSI-approved, so all four are
-link-only concept borrowings. The nine skills whose "Why This Exists" line
+placeholder evidence values and its negative-case naming vocabulary from the
+upstream harness credited in the rows above, and
+`src/plugin_bundle/omh/engagement_nudges.py` takes the shape of that
+harness's `agent-usage-reminder` hook, and the block-quote, relay-header and URL
+masks in `src/plugin_bundle/omh/reference_regions.py` take their mask list from
+its skill-pointer arming guard. The refusal of an instruction-shaped summary on
+the model capture path in `src/plugin_bundle/omh/memory_admission.py` takes its
+rule, reason and fix from its memory hint admission. That harness is published
+under the Sustainable Use License 1.0, which is not OSI-approved, so all four
+are link-only concept borrowings. The nine skills whose "Why This Exists" line
 credits ECC (`affaan-m/everything-claude-code`) were compared section by
 section against ECC at `ef648e01899ba3e8dc6371642deaaf64b4477775`; they share a
 posture rather than a section structure, a rule list, or ECC's own terms, so

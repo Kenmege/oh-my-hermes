@@ -211,8 +211,9 @@ Confirm the skill pack is installed through Hermes or registered through the
 OMH bootstrap path:
 
 ```sh
-hermes skills install ulw-interview
-hermes skills install ulw-plan
+hermes skills tap add rlaope/oh-my-hermes
+hermes skills install rlaope/oh-my-hermes/skills/ulw-interview --yes
+hermes skills install rlaope/oh-my-hermes/skills/ulw-plan --yes
 omh setup
 omh doctor
 ```
