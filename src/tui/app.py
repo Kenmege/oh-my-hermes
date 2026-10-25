@@ -286,6 +286,11 @@ WORKING_VERB = "Working"  # the verb while Hermes says nothing it is doing
 # The end of Hermes' own spinner text, `f"{face} {verb}..."` (6c61c3e27d `agent/turn_iteration_prep.py`).
 SPINNER_DOTS = "..."
 THINKING_EFFORT = "thinking with {} effort"
+# The working row's tokens between Hermes' usage blocks: what the turn streamed, four characters a token and one per
+# wide (CJK) character (`streamed_tokens`). Against the usage counter on deepseek-v4.1-flash and kimi-k3 it read
+# 0.75-1.15 of English and Korean prose and about half of a turn of tool calls, whose framing never streams; each
+# usage block puts the row back on the counter, and the done line is the counter's.
+CHARS_PER_TOKEN = 4
 CYCLE_TIP = "⇧⇥ turns on accept all, then plan mode"  # one of TIPS
 # CYCLE_TIP's words while Hermes has approvals off on its own: Shift+Tab then turns plan mode on and off, nothing else.
 HERMES_OWN_CYCLE_TIP = "⇧⇥ turns plan mode on and off"
@@ -925,6 +930,18 @@ def reduced_motion(environ: Mapping[str, str]) -> bool:
     return environ.get("OMH_TUI_REDUCED_MOTION", "") not in ("", "0") or bool(environ.get("NO_COLOR"))
 
 
+def usage_count(usage: object, key: str) -> int | None:
+    """One counter of a Hermes usage block (`output`, `calls`); None when the block carries no such number."""
+    value = usage.get(key) if isinstance(usage, dict) else None
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def streamed_tokens(text: str) -> float:
+    """About how many tokens a model wrote to stream `text`: CHARS_PER_TOKEN characters a token, one per wide one."""
+    wide = sum(1 for char in text if unicodedata.east_asian_width(char) in ("W", "F"))
+    return (len(text) - wide) / CHARS_PER_TOKEN + wide
+
+
 def working_verb(text: str) -> str:
     """Hermes' activity text as the working row's verb, its first letter capitalised; "" when no words are left.
 
@@ -1319,7 +1336,13 @@ class App(ModesMixin, AgentViewMixin):
         self.background: str | None = None  # the terminal's background as it reported it; None when it did not
         self.background_named_dark = False  # no colour reported, but `COLORFGBG` named the background dark
         self.usage_output: int | None = None  # the session's `output` counter, as the last usage block said
+        self.usage_calls: int | None = None  # its `calls` counter, from the same block
         self.turn_output_base: int | None = None  # that counter as the running turn began
+        self.turn_calls_base: int | None = None  # and the calls counter then
+        # The counter was seen starting over at a turn (`_take_usage`), so every later turn counts from 0.
+        self.usage_restarts = False
+        self.turn_streamed = 0.0  # what the turn streamed since the counter last moved, in tokens (`streamed_tokens`)
+        self.turn_shown = 0  # the most tokens the working row has said this turn: it never goes back
         self.session_title = ""  # Hermes' auto-title for the session (`session.title`)
         self.shown_title: str | None = None  # the terminal title last written
         self.title_words = ""  # what that title was cut from: the same words need no new cut
@@ -1525,7 +1548,16 @@ class App(ModesMixin, AgentViewMixin):
         info = result.get("info")
         self.model = as_text(info.get("model")) if isinstance(info, dict) else ""
         self.context_percent = None  # the next session.usage says how full this session is
-        self.usage_output = self.turn_output_base = None  # the token counter is the session's own
+        # The token counter is the session's own. An answer with none opened a session in which no API call has ended
+        # on this gateway yet (Hermes sends its first usage block after one), so the counter stands at 0.
+        usage = info.get("usage") if isinstance(info, dict) else None
+        self.usage_output = usage_count(usage, "output")
+        self.usage_calls = usage_count(usage, "calls")
+        if self.usage_output is None:
+            self.usage_output = self.usage_calls = 0
+        self.turn_output_base = self.turn_calls_base = None
+        self.usage_restarts = False
+        self.turn_streamed, self.turn_shown = 0.0, 0
         cwd = as_text(info.get("cwd")) if isinstance(info, dict) else ""
         self.transcript.cwd = cwd or str(self._create_params().get("cwd", ""))
         self.turn_pending = bool(result.get("running"))
@@ -2149,13 +2181,14 @@ class App(ModesMixin, AgentViewMixin):
                 self.tail_misses.pop(as_text(payload.get("subagent_id")), None)
         else:
             self.transcript.apply(event)
+            self._count_streamed(event.type, payload)
             if event.type == "tool.complete" and isinstance(payload, Mapping):
                 self._dag_moment(payload)
             if event.type == "message.start":
                 if not self.turn_pending:  # a turn this TUI did not start (a resumed one, a server queue)
                     self.busy_since = self.clock()
                     self.turn_waited = 0.0
-                    self.turn_output_base = self.usage_output
+                    self._count_from_here()
                 self.turn_pending = False
             elif event.type == "message.complete":
                 self.turn_pending = False
@@ -2310,18 +2343,64 @@ class App(ModesMixin, AgentViewMixin):
     def _take_usage(self, usage: object) -> None:
         """A usage block with context figures replaces the shown ones; one without leaves them. Its `output` counts tokens.
 
-        A turn that began before any counter was known (a fresh session's
-        first: Hermes sends its first usage block after `prompt.submit`) counts
-        from the first one it brings.
+        A turn's tokens are the `output` counter's rise from where it stood as
+        the turn began. The counter has started over when a block reads less
+        than that, or reads more with no more `calls` than then: the turn
+        counts from 0, and so does every later turn of the session. Hermes
+        bf0203a794's gateway starts both counters over at every turn (each
+        turn's `calls` begins at 1 again), so a turn's first block can read 50
+        after the last turn's 9. A turn that began with no counter known (one
+        already running when its session was opened) counts from the first
+        block it brings. A block that moves the counter replaces the estimate
+        of what streamed before it.
         """
         percent = context_percent(usage)
         if percent is not None:
             self.context_percent = percent
-        output = usage.get("output") if isinstance(usage, dict) else None
-        if isinstance(output, int) and not isinstance(output, bool):
-            if self.turn_output_base is None and self._busy():
-                self.turn_output_base = output
-            self.usage_output = output
+        output, calls = usage_count(usage, "output"), usage_count(usage, "calls")
+        if output is None:
+            return
+        base, calls_base = self.turn_output_base, self.turn_calls_base
+        if base is None:
+            if self._busy():
+                self.turn_output_base, self.turn_calls_base = output, calls
+        elif output < base or (output != base and calls is not None and calls_base is not None and calls <= calls_base):
+            self.turn_output_base, self.turn_calls_base = 0, 0
+            self.usage_restarts = True
+        if output != self.usage_output:
+            self.turn_streamed = 0.0
+        self.usage_output, self.usage_calls = output, calls
+        self._raise_shown()
+
+    def _count_from_here(self) -> None:
+        """A turn begins: its tokens count from the counter as it stands, or from 0 once the counter has started over."""
+        self.turn_output_base = 0 if self.usage_restarts else self.usage_output
+        self.turn_calls_base = 0 if self.usage_restarts else self.usage_calls
+        self.turn_streamed, self.turn_shown = 0.0, 0
+
+    def _count_streamed(self, event_type: str, payload: object) -> None:
+        """What the model wrote, as it reaches the TUI during a turn: the reply and the reasoning as they stream,
+        commentary that did not stream, and a tool call's arguments as the call starts (Hermes streams only its name).
+
+        With Hermes' `display.show_reasoning` off no reasoning streams, so a
+        turn that thinks counts only at its next usage block.
+        """
+        if not self._busy() or not isinstance(payload, Mapping):
+            return
+        if event_type in ("message.delta", "reasoning.delta"):
+            text = as_text(payload.get("text"))
+        elif event_type == "message.interim" and not payload.get("already_streamed"):
+            text = as_text(payload.get("text"))
+        elif event_type == "tool.start" and payload.get("args"):
+            text = json.dumps(payload.get("args"), ensure_ascii=False)
+        else:
+            return
+        self.turn_streamed += streamed_tokens(text)
+        self._raise_shown()
+
+    def _raise_shown(self) -> None:
+        """The working row's tokens: the counter's rise and what streamed since it last moved, never fewer than it said."""
+        self.turn_shown = max(self.turn_shown, (self._turn_tokens() or 0) + math.ceil(self.turn_streamed))
 
     def _turn_tokens(self) -> int | None:
         """What the running (or just ended) turn has written, by the usage counter; None before it has written any."""
@@ -3155,7 +3234,7 @@ class App(ModesMixin, AgentViewMixin):
         self.turn_unknown, self.turn_unknown_count = [], 0
         self.busy_since = self.clock()
         self.turn_waited = 0.0
-        self.turn_output_base = self.usage_output
+        self._count_from_here()
         sent_images = list(self.attachments)
         self.attachments.clear()  # the gateway sends its queued images with this turn
         params: dict[str, Any] = {"session_id": self.sid, "text": text}
@@ -4637,8 +4716,7 @@ class App(ModesMixin, AgentViewMixin):
             lines.append(truncate_line(row, cols))
         elif self._busy() and self.interrupting:
             elapsed = elapsed_text(now - (self.busy_since or now))
-            tokens = self._turn_tokens()
-            written = f" · ↓{compact_count(tokens)} tokens" if tokens else ""
+            written = f" · ↓{compact_count(self.turn_shown)} tokens" if self.turn_shown else ""
             row = (Span(WORKING_GLYPHS[0], self.theme.warn), Span(" "), Span(INTERRUPTING, self.theme.warn),
                    Span(f" ({elapsed}{written})", self.theme.muted))
             lines.append(truncate_line(row, cols))
@@ -4649,8 +4727,7 @@ class App(ModesMixin, AgentViewMixin):
                 text = f"{text} · {self.transcript.moa}"
             frame = self._spinner_frame()
             elapsed = elapsed_text(now - (self.busy_since or now))
-            tokens = self._turn_tokens()
-            written = f"↓{compact_count(tokens)} tokens" if tokens else ""
+            written = f"↓{compact_count(self.turn_shown)} tokens" if self.turn_shown else ""
             effort = ""
             if self.effort in contract.REASONING_LEVELS and self.effort != "none":  # `none` is thinking off
                 effort = THINKING_EFFORT.format(self.effort)

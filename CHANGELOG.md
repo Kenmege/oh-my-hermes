@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The TUI's working row counts tokens while the turn streams.** The
+  `↓N tokens` on the working row moved only when Hermes sent a usage report,
+  which it does after an API call ends, so a one-call reply showed nothing
+  until it was over. It also read the wrong number. A fresh session's first
+  turn took its first report as the starting point and showed no tokens at
+  all, and the done line said `✻ 4s` with no `↓`. Hermes' gateway now starts
+  its counters over at every turn, so every later turn subtracted the last
+  turn's total: nothing showed until the new count passed it, and then a
+  small wrong number (`↓48 tokens` after 2m 37s). The row now counts up from
+  the reply, the reasoning (when `display.show_reasoning` sends it) and each
+  tool call's arguments as they arrive, at about four characters a token and
+  one per CJK character, and moves to Hermes' count at each report without
+  ever going back during the turn. A counter that starts over is detected
+  and counted from zero, and the done line carries Hermes' count.
+
 - **`omh setup --interactive` without a terminal refuses instead of
   crashing or taking every default (#2295).** With stdin closed (`<&-`) it
   stopped on an `AttributeError` traceback; with stdin from `/dev/null` or a
