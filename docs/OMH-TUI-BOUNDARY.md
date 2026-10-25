@@ -161,6 +161,19 @@ without the next, the byte is read as Esc, and the rest is dropped only if it
 arrives within 0.5 s after that. One that starts later and is split right after
 its first or second byte is read as keys.
 
+## The bot board
+
+The bot board (Ctrl+S, `/bots`, `src/tui/bot_board.py`) only reads. For the
+Hermes root the TUI runs under and each named profile beside it
+(`<root>/profiles/<name>/`), it reads `gateway_state.json` and `state.db`,
+the latter opened `mode=ro`, and immutable when it is a WAL store no
+connection has open, so SQLite creates no `-wal` or `-shm` beside it; with a
+connection open, the read takes its read mark in the existing `-shm`, as
+every reader of the store does. It probes the pid a gateway record names with
+signal 0 and reads that process's start time; it sends no other signal, and
+nothing to the gateway. It reads on its own thread, never on the render path,
+and stops reading when the board closes.
+
 ## Sessions it refuses, and what it writes
 
 It never attaches to a session another runtime owns: when the launcher sets

@@ -176,6 +176,7 @@ from . import dag_block
 from .dag_tree import TreeState
 from .panels import HudPoller, HudSnapshot, dag_page_lines, hud_chips, panel_lines, plan_state, plan_text
 from .dag_pager import DagPager
+from .bot_board import BoardReader, BotBoard
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
 from .screen import (
     CARRIAGE_RETURN,
@@ -1254,6 +1255,9 @@ class App(ModesMixin, AgentViewMixin):
         self.menu_under: list[Line] = []  # the menu's rows as `_slot_lines` last made them, while it is drawn under
         self.pager: Pager | None = None
         self.question_view: Pager | None = None  # the pager Ctrl+O opened over the open question, while it is open
+        # What reads the bot board (Ctrl+S, `/bots`) off this thread, while the board is open.
+        self.board_reader: BoardReader | None = None
+        self.make_board_reader: Callable[..., BoardReader] = BoardReader
         self.resized_while_paging = False
         self.hud: HudSnapshot | None = None
         self.goal: Mapping[str, Any] | None = None  # Hermes' standing /goal, as its last `session.control.update` said
@@ -1668,6 +1672,7 @@ class App(ModesMixin, AgentViewMixin):
         self._ask_path_completion_when_due()
         self._ask_tail_when_due()
         self._take_hud()
+        self._take_board()
         self._render_when_due()
 
     def _take_input(self, data: bytes) -> None:
@@ -1747,6 +1752,7 @@ class App(ModesMixin, AgentViewMixin):
             self._set_mouse(False)
             if self.pager is not None:
                 self.pager = None
+                self._stop_board_reader()
                 self.terminal.write(ALT_SCREEN_OFF + SHOW_CURSOR)
             cols = self.size[0]
             try:
@@ -2524,7 +2530,7 @@ class App(ModesMixin, AgentViewMixin):
             return
         if self.slot is None and (
             self._mode_key(event) or self._effort_key(event) or self._guide_key(event) or self._search_open_key(event)
-            or self._sessions_key(event)
+            or self._sessions_key(event) or self._board_key(event)
         ):
             return
         if self.slot is None and (self._attachment_input(event) or self._escape(event)):
@@ -2558,6 +2564,13 @@ class App(ModesMixin, AgentViewMixin):
         if not isinstance(event, Key) or event != Key(CHAR, "x", ctrl=True):
             return False
         self._sessions("")
+        return True
+
+    def _board_key(self, event: Key | Paste) -> bool:
+        """Ctrl+S opens the bot board; `/bots` does the same. Raw mode turns IXON off, so the key reaches the TUI."""
+        if not isinstance(event, Key) or event != Key(CHAR, "s", ctrl=True):
+            return False
+        self._bots("")
         return True
 
     def _search_key(self, event: Key | Paste | Mouse) -> None:
@@ -3598,6 +3611,7 @@ class App(ModesMixin, AgentViewMixin):
             "effort": self._effort_command,
             "logs": self._logs,
             "dag": self._dag,
+            "bots": self._bots,
             "copy": self._copy,
             "theme": self._theme,
             "omh-model": self._omh_model,
@@ -3934,6 +3948,30 @@ class App(ModesMixin, AgentViewMixin):
             clock=self.wall_clock,  # the HUD poller stamps its reads with the wall clock
         ))
 
+    def _bots(self, arg: str) -> None:
+        """This machine's Hermes profiles, their gateways and sessions, read-only, in the pager (`BotBoard`).
+
+        What it shows is read by a `BoardReader` thread for as long as the
+        board is open; nothing it does is sent anywhere.
+        """
+        reader = self.make_board_reader(self.environ, clock=self.wall_clock)
+        board = BotBoard("bots", show=reader.show, refresh=reader.refresh, clock=self.wall_clock)
+        self._show_pager(board)
+        self.board_reader = reader
+        reader.start(self._wake_loop)
+
+    def _take_board(self) -> None:
+        reader = self.board_reader
+        snapshot = reader.take() if reader is not None else None
+        if snapshot is not None and isinstance(self.pager, BotBoard):
+            self.pager.take(snapshot)
+            self.dirty = True
+
+    def _stop_board_reader(self) -> None:
+        if self.board_reader is not None:
+            self.board_reader.stop()
+            self.board_reader = None
+
     def _copy(self, arg: str) -> None:
         last = next((block for block in reversed(self.transcript.blocks) if isinstance(block, AssistantBlock)), None)
         if last is None or not last.text.strip():
@@ -4188,12 +4226,14 @@ class App(ModesMixin, AgentViewMixin):
         """
         if self.pager is None:
             self.terminal.write(ALT_SCREEN_ON)
+        self._stop_board_reader()  # a board this replaces reads no more
         self.pager = pager
         self.log_agent = ""
 
     def _leave_pager(self) -> None:
         self.pager = None
         self.log_agent = ""
+        self._stop_board_reader()
         self.terminal.write(ALT_SCREEN_OFF + self._caret_visibility())
         if self.resized_while_paging:
             self.resized_while_paging = False

@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The OMH TUI shows this machine's Hermes bots on a read-only board.**
+  Ctrl+S, or `/bots`, opens it full screen. The first page lists the Hermes
+  home the TUI runs under and each named profile beside it, each with its
+  gateway as `gateway_state.json` records it (state, pid, running agents,
+  every platform's state), its sessions counted by source, how many were
+  active in the last 24 hours, and when the last one was. Enter opens a
+  profile's sessions, newest activity first, and a session's last 40
+  messages; ← or Esc goes back, and r reads again. It reads again every 5 s
+  off the screen's thread. A gateway reads as running only while the process
+  its record names still runs and is the one that wrote it, and a platform's
+  state left by a stopped or restarted gateway shows as last recorded. It
+  counts active sessions, not open ones: a Slack gateway never ends a chat,
+  so a bot idle for weeks still had dozens open. Each `state.db` is opened
+  read-only, and immutable when nothing has it open, so not even SQLite's
+  `-wal` and `-shm` appear beside it; the only signal is a signal-0
+  liveness probe, and nothing is sent to the gateway.
+
 - **`omh setup --interactive` without a terminal refuses instead of
   crashing or taking every default (#2295).** With stdin closed (`<&-`) it
   stopped on an `AttributeError` traceback; with stdin from `/dev/null` or a
