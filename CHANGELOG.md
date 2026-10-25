@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Setup no longer writes a second `plugins.enabled` when a column-0
+  comment sits inside `plugins:` (#2304).** Hermes' own config separates the
+  children of `plugins:` with `# ====` banners written at column 0. OMH's
+  config readers and writers ended a top-level node at the first unindented
+  line, comment included, so an `enabled:` list below such a banner was
+  never seen: the guard passed, setup inserted a second `enabled:` under
+  `plugins:`, and Hermes then refused the whole file as a duplicate key, so
+  no plugin selection was read at all. A comment now never ends a node, in
+  every line reader and writer of the config adapter (`plugins`, `skills`,
+  `memory` and `display`), so setup adds `omh` to the one existing list and
+  uninstall takes it back out. Setup also reads its composed text back
+  before returning it and refuses, with the file untouched, when it would
+  not hold exactly the earlier `plugins.enabled` names plus `omh`.
+
 - **The OMH TUI shows this machine's Hermes bots on a read-only board.**
   Ctrl+S, or `/bots`, opens it full screen. The first page lists the Hermes
   home the TUI runs under and each named profile beside it, each with its

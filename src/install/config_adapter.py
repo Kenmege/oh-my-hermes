@@ -42,6 +42,21 @@ _DUPLICATE_EXTERNAL_DIRS_SHAPE = "duplicate skills.external_dirs entries are uns
 _DUPLICATE_ENABLED_SHAPE = "duplicate plugins.enabled keys are unsupported; keep one YAML block list or inline list"
 
 
+def _ends_top_level_node(line: str) -> bool:
+    """Whether `line` closes the top-level node the lines above it belong to.
+
+    Only content at column 0 does. A comment carries no structure in YAML at
+    any indent, and Hermes' own config separates the children of `plugins:`
+    with `# ====` banners written at column 0. The line readers and writers
+    here used to stop a node at the first unindented line, comment included,
+    so an `enabled:` below such a banner was never seen: the guard passed,
+    setup inserted a second `enabled:` under `plugins:`, and Hermes refused
+    the whole file as a duplicate key (#2304).
+    """
+    stripped = line.strip()
+    return bool(stripped) and not line.startswith(" ") and not stripped.startswith("#")
+
+
 def _normalize(value: str | Path) -> str:
     # POSIX-form separators keep config.yaml entries byte-stable across
     # platforms; on POSIX this equals str().
@@ -302,7 +317,7 @@ def _validate_external_dirs_mutation_shape(config_text: str) -> None:
     external_dirs_declarations = 0
     for line in config_text.splitlines():
         stripped = line.strip()
-        if not line.startswith(" ") and stripped:
+        if _ends_top_level_node(line):
             in_skills = stripped == "skills:"
             continue
         if in_skills and line.startswith("  ") and not line.startswith("    "):
@@ -322,7 +337,7 @@ def external_dirs(config_text: str) -> list[str]:
     in_external = False
     for line in lines:
         stripped = line.strip()
-        if not line.startswith(" ") and stripped:
+        if _ends_top_level_node(line):
             in_skills = stripped == "skills:"
             in_external = False
             continue
@@ -369,7 +384,7 @@ def plugin_enablement(config_text: str) -> dict[str, list[str]]:
     current = ""
     for line in config_text.splitlines():
         stripped = line.strip()
-        if not line.startswith(" ") and stripped:
+        if _ends_top_level_node(line):
             current = ""
             node = _plugins_node_line_shape(line)
             in_plugins = node is not None and node[0] == _PLUGINS_NODE_BLOCK
@@ -416,7 +431,7 @@ def _plugin_list_item_indent(lines: list[str], plugins_index: int) -> str:
     two depths and YAML reads it as two different nodes.
     """
     for line in lines[plugins_index + 1:]:
-        if line.strip() and not line.startswith(" "):
+        if _ends_top_level_node(line):
             break
         if line.strip().startswith("- "):
             return line[: len(line) - len(line.lstrip(" "))]
@@ -475,7 +490,7 @@ def plugin_enablement_shape_error(config_text: str) -> str:
     scalar_value = ""
     for line in config_text.splitlines():
         stripped = line.strip()
-        if not line.startswith(" ") and stripped:
+        if _ends_top_level_node(line):
             node = _plugins_node_line_shape(line)
             in_plugins = node is not None and node[0] == _PLUGINS_NODE_BLOCK
             scalar_key = ""
@@ -589,7 +604,7 @@ def plugins_enabled_extension_error(config_text: str, name: str) -> str:
     enabled_keys = 0
     for line in config_text.splitlines():
         stripped = line.strip()
-        if not line.startswith(" ") and stripped:
+        if _ends_top_level_node(line):
             node = _plugins_node_line_shape(line)
             in_plugins = node is not None and node[0] == _PLUGINS_NODE_BLOCK
             continue
@@ -609,6 +624,30 @@ def plugins_enabled_extension_error(config_text: str, name: str) -> str:
     return ""
 
 
+def _plugin_enable_read_back_error(before: str, after: str, name: str) -> str:
+    """Why `after` is not `before` with `name` added to `plugins.enabled`, or "".
+
+    The writer below is a line editor, so a shape its node walk misreads
+    lands in the person's primary config, and the one failure Hermes cannot
+    survive is a second `enabled:` under `plugins:`: its loader refuses the
+    whole file as a duplicate key (#2304). The composed text is read back
+    with the same reader and guard setup runs before the write, and anything
+    other than one list holding every earlier name plus `name` is refused
+    with the file left as it was.
+    """
+    if plugins_enabled_extension_error(after, name):
+        verdict = "it would hold two plugins.enabled keys or a list Hermes cannot read"
+    else:
+        expected = {*plugin_enablement(before)["enabled"], name}
+        if set(plugin_enablement(after)["enabled"]) == expected:
+            return ""
+        verdict = "it would not read back as the existing plugins.enabled list plus this one"
+    return (
+        f"setup did not add {name} to plugins.enabled: {verdict}, so the file is left alone. "
+        f"Run `hermes plugins enable {name}`"
+    )
+
+
 def ensure_plugin_enabled(config_text: str, name: str) -> ConfigChange:
     """Add `name` to `plugins.enabled` so Hermes will actually load the bridge.
 
@@ -620,6 +659,16 @@ def ensure_plugin_enabled(config_text: str, name: str) -> ConfigChange:
     deliberate opt-out, and setup must not override it. `omh doctor` reports that
     state instead.
     """
+    change = _compose_plugin_enable(config_text, name)
+    if change.changed:
+        refusal = _plugin_enable_read_back_error(config_text, change.text, name)
+        if refusal:
+            raise ValueError(refusal)
+    return change
+
+
+def _compose_plugin_enable(config_text: str, name: str) -> ConfigChange:
+    """`ensure_plugin_enabled` before its composed text is read back."""
     refusal = plugins_enabled_extension_error(config_text, name)
     if refusal:
         raise ValueError(refusal)
@@ -642,7 +691,7 @@ def ensure_plugin_enabled(config_text: str, name: str) -> ConfigChange:
     indent = _plugin_list_item_indent(lines, plugins_index)
     for idx in range(plugins_index + 1, len(lines)):
         line = lines[idx]
-        if line.strip() and not line.startswith(" "):
+        if _ends_top_level_node(line):
             break
         if line.strip().startswith("- "):
             continue
@@ -1147,7 +1196,7 @@ def _canonical_display_sections(
 
     end = len(lines)
     for index in range(display_index + 1, len(lines)):
-        if lines[index].strip() and not lines[index].startswith(" "):
+        if _ends_top_level_node(lines[index]):
             end = index
             break
 
@@ -1212,7 +1261,7 @@ def display_interface_selection(config_text: str) -> str:
         return ""
     entries: list[str] = []
     for line in lines[display_indices[0] + 1 :]:
-        if line.strip() and not line.startswith(" "):
+        if _ends_top_level_node(line):
             break
         if line.startswith("  ") and not line.startswith("    "):
             key, separator, rest = line.strip().partition(":")
@@ -1267,7 +1316,7 @@ def set_memory_provider(config_text: str, name: str) -> ConfigChange:
 
     for idx in range(memory_index + 1, len(lines)):
         line = lines[idx]
-        if line.strip() and not line.startswith(" "):
+        if _ends_top_level_node(line):
             break
         if line.startswith("  ") and not line.startswith("    "):
             key, _, _rest = line.strip().partition(":")
@@ -1353,7 +1402,7 @@ def remove_plugin_enabled(config_text: str, name: str) -> ConfigChange:
     index = plugins_index + 1
     while index < len(lines):
         line = lines[index]
-        if line.strip() and not line.startswith(" "):
+        if _ends_top_level_node(line):
             break
         stripped = line.strip()
         # Item shape before key shape, for the reason `plugin_enablement`
@@ -1429,7 +1478,7 @@ def _locate_display_block_scalar(lines: list[str], key: str) -> tuple[int, str] 
     key_like_lines = 0
     for index in range(display_index + 1, len(lines)):
         line = lines[index]
-        if line.strip() and not line.startswith(" "):
+        if _ends_top_level_node(line):
             break
         if _references_mapping_key(line, key):
             key_like_lines += 1
@@ -1607,7 +1656,7 @@ def _container_line_index(lines: list[str], path: str) -> int | None:
     in_section = False
     for index, line in enumerate(lines):
         stripped = line.strip()
-        if not line.startswith(" ") and stripped:
+        if _ends_top_level_node(line):
             in_section = stripped == f"{section}:"
             continue
         if in_section and line.startswith("  ") and not line.startswith("    ") and stripped == f"{key}:":
@@ -1705,7 +1754,7 @@ def _section_scalars(
 def _enclosing_section(lines: list[str], index: int) -> str:
     for cursor in range(index - 1, -1, -1):
         line = lines[cursor]
-        if line.strip() and not line.startswith(" "):
+        if _ends_top_level_node(line):
             return line.strip().rstrip(":")
     return ""
 
@@ -1771,7 +1820,7 @@ def ensure_external_dir(config_text: str, skill_dir: str | Path) -> ConfigChange
     external_index = None
     for idx in range(skills_index + 1, len(lines)):
         line = lines[idx]
-        if line and not line.startswith(" "):
+        if _ends_top_level_node(line):
             break
         if line.startswith("  ") and not line.startswith("    "):
             inline = _classify_inline_external_dirs(line)
@@ -1832,7 +1881,7 @@ def _remove_external_dir_items(config_text: str, should_remove: Callable[[str], 
     in_external = False
     for line in lines:
         stripped = line.strip()
-        if not line.startswith(" ") and stripped:
+        if _ends_top_level_node(line):
             in_skills = stripped == "skills:"
             in_external = False
             output.append(line)
