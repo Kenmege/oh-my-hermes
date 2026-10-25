@@ -324,11 +324,16 @@ omh · Fix the login bug
 
 The first line is the session's title (`untitled session` when Hermes has
 not named it). Then come its id, prompts, messages and how long this `omh`
-ran, and its tokens, split as Hermes splits them, and its model. The last two
-lines reopen it by id, and by title when there is one (Hermes keeps titles
-unique). With a profile both carry `-p <profile>`, since a profile has its own
+ran, and its tokens, split and summed over a `/branch` chain as Hermes does
+it, and its model. The last two lines reopen it by id, and by title when
+`-c <title>` would open this session: Hermes takes the newest `<title> #N`
+session over the exact title, so the line is left out when another session
+carries that name with a number, and for a title starting with `-`, which
+would read as options. With a profile both carry `-p <profile>`, since a profile has its own
 `state.db`. A session in which nothing was said gets one line instead, `omh:
-nothing was said in this session, so there is nothing to resume.`
+nothing was said in this session, so there is nothing to resume.`, unless
+an earlier session of the same launch (before a `/new` or a switch) has
+messages: then the card names the newest such one.
 
 Hermes' own exit summary, which names `hermes --tui --resume`, does not
 print: the OMH TUI closes with a code of OMH's own, which Hermes' launcher

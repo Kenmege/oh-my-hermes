@@ -61,11 +61,11 @@ FALLBACK_EXIT = 75
 # (`fallback_sentinel`); `gateway_spawn` drops every `OMH_TUI_` name, so the
 # gateway and its tools never see it.
 FALLBACK_SENTINEL_ENV = "OMH_TUI_FALLBACK_SENTINEL"
-# The file the TUI keeps `{"session_id": ..., "hermes_home": ...}` in for the
+# The file the TUI keeps `{"session_id": ..., "hermes_home": ..., "opened": [...]}` in for the
 # session it has open (`write_active_session`), in the same private directory.
 SESSION_FILE_ENV = "OMH_TUI_SESSION_FILE"
-# How much of that file `closed_session` reads: an id and a path.
-SESSION_FILE_BYTES = 8192
+# How much of that file `closed_session` reads: an id, a path and the launch's earlier ids.
+SESSION_FILE_BYTES = 16384
 # What the TUI exits with, in place of 0, when the person closes a session `omh` launched (`SESSION_FILE_ENV`
 # set), and what `omh` turns back into 0. Hermes' launcher prints its exit summary, naming `hermes --tui
 # --resume`, only for 0 and 130 (`_launch_tui` in `hermes_cli/main_tui_launch.py`), so `omh`'s card is the
@@ -267,19 +267,21 @@ def fallback_reason(sentinel: Path) -> list[str]:
     return [line for line in lines if line.strip()]
 
 
-def closed_session(path: Path) -> tuple[str, str]:
-    """The session id and Hermes home the TUI last wrote to the file named in `SESSION_FILE_ENV`; ("", "") when it
-    wrote none, or wrote something this cannot read as both.
+def closed_session(path: Path) -> tuple[str, str, tuple[str, ...]]:
+    """The session id and Hermes home the TUI last wrote to the file named in `SESSION_FILE_ENV`, with the sessions
+    the launch had open before it, newest last; ("", "", ()) when it wrote none, or wrote something this cannot
+    read as an id and a home.
 
     Read before the private directory is removed. The home is the
     `HERMES_HOME` the TUI ran with, which is where Hermes put the session:
     Hermes' launcher may pick a profile (`--profile`, or the sticky active
     profile) that `omh` did not name.
     """
+    nothing: tuple[str, str, tuple[str, ...]] = ("", "", ())
     try:
         descriptor = os.open(path, os.O_RDONLY | _BINARY | getattr(os, "O_NOFOLLOW", 0))
     except OSError:
-        return "", ""
+        return nothing
     try:
         data = os.read(descriptor, SESSION_FILE_BYTES)
     except OSError:
@@ -289,12 +291,15 @@ def closed_session(path: Path) -> tuple[str, str]:
     try:
         record = json.loads(data.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
-        return "", ""
+        return nothing
     if not isinstance(record, dict):
-        return "", ""
+        return nothing
     session_id, hermes_home = record.get("session_id"), record.get("hermes_home")
     if not isinstance(session_id, str) or not isinstance(hermes_home, str):
-        return "", ""
+        return nothing
     if not session_id.isprintable() or not session_id.strip() or not os.path.isabs(hermes_home):
-        return "", ""
-    return session_id.strip(), hermes_home
+        return nothing
+    opened = record.get("opened")
+    earlier = tuple(item.strip() for item in opened if isinstance(item, str) and item.isprintable() and item.strip()) \
+        if isinstance(opened, list) else ()
+    return session_id.strip(), hermes_home, earlier

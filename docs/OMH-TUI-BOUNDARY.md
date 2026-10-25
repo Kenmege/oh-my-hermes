@@ -181,7 +181,12 @@ timestamp line). It only appends there (opened `O_APPEND` and `O_NOFOLLOW`,
 created mode 0600), reads at most the file's last 1 MiB and only when it is a
 regular file (no symlink or FIFO), and never writes an answer to a question
 Hermes asked or masked input there. The other files it writes are metadata: the
-launcher's active-session file (the session id), and what OMH's own HUD reader
+launcher's active-session file (the session id); when `omh` launched it, the
+file `omh` named in `OMH_TUI_SESSION_FILE`, in `omh`'s private 0700 launch
+directory (opened `O_NOFOLLOW`, mode 0600), holding the open session's id, the
+Hermes home it runs on and the ids of the sessions this launch had open
+before, which `omh` reads for its exit card and removes with the directory;
+and what OMH's own HUD reader
 and model-chain picker already write under the OMH home (the HUD fan-out cache
 and its lock, and the chains `/omh-model` saves), and a fallback marker at the
 path `omh` named, holding what the TUI printed about why it did not start,

@@ -530,6 +530,8 @@ STRING_TERMINATOR = "\x1b\\"
 TITLE_SET = "\x1b]2;{}" + STRING_TERMINATOR
 TITLE_DEFAULT = "Hermes"
 TITLE_CHARS = 80
+# How many earlier sessions of this launch `omh`'s session file names (`opened`), newest kept.
+OPENED_IDS_KEPT = 16
 INFO_TITLE_CELLS = 24  # the session title at the head of the info line's right side, cut with `…` past this
 
 # What a session id and a profile name have to look like before a farewell names them in a command to type back
@@ -1016,16 +1018,17 @@ def attach_message(environ: Mapping[str, str]) -> str:
     )
 
 
-def write_active_session(path: str, stored_id: str, hermes_home: str | None = None) -> None:
+def write_active_session(path: str, stored_id: str, extra: Mapping[str, Any] | None = None) -> None:
     """Write `{"session_id": <stored id>}` (mode 0600) for the launcher's exit epilogue. Best effort.
 
     The id is all Hermes' file holds; `omh`'s (`SESSION_FILE_ENV`) also
-    carries `hermes_home`, the home whose state database holds the session. A
+    carries `extra`: `hermes_home`, the home whose state database holds the
+    session, and `opened`, the sessions this launch had open before it. A
     failure costs the launcher its exit lines and nothing else.
     """
     if not path or not stored_id:
         return
-    record = {"session_id": stored_id} if hermes_home is None else {"session_id": stored_id, "hermes_home": hermes_home}
+    record = {"session_id": stored_id, **(extra or {})}
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags, 0o600)
@@ -1198,6 +1201,7 @@ class App(ModesMixin, AgentViewMixin):
         self.size = terminal.size()
         self.sid = ""
         self.stored_id = ""
+        self.opened_ids: list[str] = []  # the sessions this launch had open before `stored_id`, oldest first
         self.model = ""
         self.context_percent: float | None = None
         # What the info line shows (`mode`): accept while Hermes has approvals off, the TUI's own plan flag.
@@ -1560,11 +1564,15 @@ class App(ModesMixin, AgentViewMixin):
     def _adopt_stored(self, stored: str) -> None:
         if not stored or stored == self.stored_id:
             return
+        if self.stored_id and self.stored_id not in self.opened_ids:
+            self.opened_ids = [*self.opened_ids, self.stored_id][-OPENED_IDS_KEPT:]
         self.stored_id = stored
         write_active_session(self.environ.get("HERMES_TUI_ACTIVE_SESSION_FILE", ""), stored)
         hermes_home = self.environ.get("HERMES_HOME", "")
         if hermes_home:  # `omh` reads the session's row there once the TUI exits
-            write_active_session(self.environ.get(SESSION_FILE_ENV, ""), stored, hermes_home)
+            opened = [stored_id for stored_id in self.opened_ids if stored_id != stored]
+            write_active_session(self.environ.get(SESSION_FILE_ENV, ""), stored,
+                                 {"hermes_home": hermes_home, "opened": opened})
         self.poller.set_session(stored)
 
     # ── loop ──

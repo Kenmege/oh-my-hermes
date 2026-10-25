@@ -7,9 +7,12 @@ All notable changes will be documented here.
 - **Leaving the OMH TUI says which session it was, only the `omh` way, and
   Ctrl+C leaves during a turn.** Closing a session `omh` opened now prints
   an OMH card in place of Hermes' exit summary: the title, the session id,
-  turns, messages, how long `omh` ran, tokens split as Hermes splits them,
-  the model, and `omh --resume <id>` plus `omh -c "<title>"` for a titled
-  one. Hermes' summary, which named `hermes --tui --resume`, no longer
+  turns, messages, how long `omh` ran, tokens split and summed over a
+  `/branch` chain as Hermes does it, the model, and `omh --resume <id>`
+  plus `omh -c "<title>"` when Hermes' title lookup would open that same
+  session (it prefers a newer `<title> #N`) and the title does not start
+  with `-`. After a `/new` with nothing said, the card names the newest
+  earlier session of the launch that has messages. Hermes' summary, which named `hermes --tui --resume`, no longer
   prints: the OMH TUI exits with a code of OMH's own, which Hermes' launcher
   prints no summary for, and `omh` returns 0 to the shell as before. A
   resumed session gets the card too: the old line came from the state

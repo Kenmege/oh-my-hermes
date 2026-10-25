@@ -576,7 +576,7 @@ class SessionTests(AppTestCase):
         # `omh`'s own copy names the home whose state database holds the session, for the exit card.
         omh_session = Path(run.environ[SESSION_FILE_ENV])
         self.assertEqual(json.loads(omh_session.read_text(encoding="utf-8")),
-                         {"session_id": STORED_ID, "hermes_home": str(run.root)})
+                         {"session_id": STORED_ID, "hermes_home": str(run.root), "opened": []})
         self.assertEqual(stat.S_IMODE(os.stat(omh_session).st_mode), 0o600)
         self.assertEqual(run.poller.sessions, [STORED_ID])
         self.assertTrue(run.poller.started and run.poller.stopped)

@@ -494,3 +494,21 @@ class ShimTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SessionRecordTests(unittest.TestCase):
+    """What the TUI writes to the file `omh` names, and what `omh` reads back from it."""
+
+    def test_the_record_names_the_open_session_and_the_ones_this_launch_had_open_before(self) -> None:
+        from test_tui_modes import make_app
+
+        with TemporaryDirectory() as tmp:
+            record = Path(tmp) / "session"
+            app, _client = make_app(environ={launch.SESSION_FILE_ENV: str(record), "HERMES_HOME": tmp})
+            for stored in ("sess-a", "sess-b", "sess-a", "sess-c"):
+                app._adopt_stored(stored)
+            self.assertEqual(json.loads(record.read_text(encoding="utf-8")),
+                             {"session_id": "sess-c", "hermes_home": tmp, "opened": ["sess-a", "sess-b"]})
+            self.assertEqual(launch.closed_session(record), ("sess-c", tmp, ("sess-a", "sess-b")))
+            record.write_text(json.dumps({"session_id": "s", "hermes_home": tmp, "opened": ["ok", 3, "bad\x1bid", ""]}))
+            self.assertEqual(launch.closed_session(record), ("s", tmp, ("ok",)))

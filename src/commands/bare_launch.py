@@ -334,7 +334,7 @@ def _print_exit_card(
     started_at: float,
     ended_at: float,
     returncode: int,
-    closed: tuple[str, str] = ("", ""),
+    closed: tuple[str, str, tuple[str, ...]] = ("", "", ()),
 ) -> None:
     """Print the OMH exit card after the TUI's own epilogue: the session, its counts, and the `omh` way back.
 
@@ -346,10 +346,13 @@ def _print_exit_card(
     it. A session nothing was said in gets one line saying there is nothing
     to resume.
 
-    `closed` is the session id and Hermes home the OMH TUI recorded
-    (`tui.launch.closed_session`); without one, the session that ended with
-    the child is recovered from the state database's end stamps
-    (`resumable_session_id`), in the home and profile this launch named.
+    `closed` is the session id and Hermes home the OMH TUI recorded, with the
+    sessions it had open before that one (`tui.launch.closed_session`); when
+    nothing was said in the last one (a `/new` just before quitting), the card
+    names the newest earlier one that has messages. Without a record, the
+    session that ended with the child is recovered from the state database's
+    end stamps (`resumable_session_id`), in the home and profile this launch
+    named.
 
     Only the two exit codes Hermes itself treats as a normal close print
     anything, matching the condition its own epilogue uses. Everything else is
@@ -373,7 +376,7 @@ def _print_exit_card(
     )
 
     profile = getattr(args, "tui_profile", None) or None
-    session_id, hermes_home = closed
+    session_id, hermes_home, earlier = closed
     try:
         if session_id:
             db_path = Path(hermes_home) / "state.db"
@@ -381,6 +384,11 @@ def _print_exit_card(
             db_path = hermes_state_db_path(paths.hermes_home, profile)
             session_id = resumable_session_id(db_path, started_at, ended_at) or ""
         lines = exit_card_lines(db_path, session_id, ended_at - started_at, profile)
+        for opened in reversed(earlier) if lines == [NOTHING_SAID_LINE] else ():
+            said = exit_card_lines(db_path, opened, ended_at - started_at, profile)
+            if said and said != [NOTHING_SAID_LINE]:
+                lines = said
+                break
         if lines and lines != [NOTHING_SAID_LINE]:
             print()  # apart from the transcript above it, or Hermes' epilogue after its own terminal
         for line in lines:
@@ -419,12 +427,12 @@ def _launch_hermes_tui(args: argparse.Namespace) -> int | None:
     _run_startup_update_check(args)
     paths = _paths(args)
     started_at = time.time()
-    closed: list[tuple[str, str]] = []
+    closed: list[tuple[str, str, tuple[str, ...]]] = []
     try:
         returncode = _run_terminal(hermes, args, paths, closed)
     except (OSError, KeyboardInterrupt):
         return None
-    _print_exit_card(args, paths, started_at, time.time(), returncode, closed[0] if closed else ("", ""))
+    _print_exit_card(args, paths, started_at, time.time(), returncode, closed[0] if closed else ("", "", ()))
     return returncode
 
 
@@ -469,7 +477,9 @@ def _node_available(paths) -> bool:
     return node_available(os.environ, paths.hermes_home)
 
 
-def _run_terminal(hermes: str, args: argparse.Namespace, paths, closed: list[tuple[str, str]] | None = None) -> int:
+def _run_terminal(
+    hermes: str, args: argparse.Namespace, paths, closed: list[tuple[str, str, tuple[str, ...]]] | None = None
+) -> int:
     """Run the OMH TUI through `hermes --tui`, or Hermes' own terminal when it cannot start.
 
     `closed`, when given, receives the session the OMH TUI had open as it

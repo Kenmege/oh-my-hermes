@@ -66,7 +66,8 @@ _SCHEMA = (
     "id TEXT PRIMARY KEY, source TEXT NOT NULL, started_at REAL NOT NULL, "
     "ended_at REAL, end_reason TEXT, message_count INTEGER DEFAULT 0, "
     "title TEXT, cwd TEXT, model TEXT, input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0, "
-    "cache_read_tokens INTEGER DEFAULT 0, cache_write_tokens INTEGER DEFAULT 0, reasoning_tokens INTEGER DEFAULT 0)"
+    "cache_read_tokens INTEGER DEFAULT 0, cache_write_tokens INTEGER DEFAULT 0, reasoning_tokens INTEGER DEFAULT 0, "
+    "model_config TEXT)"
 )
 _MESSAGES_SCHEMA = (
     "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL, "
@@ -113,6 +114,7 @@ def write_card_session(
     tokens: tuple[int, int, int, int, int] = (12_000, 3_000, 2_000, 1_000, 200),
     turns: int = 3,
     inactive_turns: int = 0,
+    branched_from: str | None = None,
 ) -> None:
     """Add one session to a state database (created when missing) with its card's fields and `turns` user prompts,
     each followed by a reply, plus `inactive_turns` prompts a rewind turned inactive."""
@@ -122,11 +124,12 @@ def write_card_session(
         if fresh:
             connection.execute(_SCHEMA)
             connection.execute(_MESSAGES_SCHEMA)
+        config = json.dumps({"_branched_from": branched_from}) if branched_from else None
         connection.execute(
             "INSERT INTO sessions (id, source, started_at, ended_at, message_count, title, cwd, model, input_tokens, "
-            "output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens) "
-            "VALUES (?, 'tui', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (session_id, started_at, ended_at, 2 * (turns + inactive_turns), title, SECRET_CWD, model, *tokens),
+            "output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, model_config) "
+            "VALUES (?, 'tui', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (session_id, started_at, ended_at, 2 * (turns + inactive_turns), title, SECRET_CWD, model, *tokens, config),
         )
         for index in range(turns + inactive_turns):
             active = 1 if index < turns else 0
@@ -1039,6 +1042,70 @@ class ExitCardTests(unittest.TestCase):
         self.assertEqual(lines[3], f"  omh --resume {long_id}")
         self.assertIn(f"session {long_id} · ", lines[1])
         self.assertFalse(any("…" in line for line in lines[1:4]))
+
+    def test_continue_is_offered_only_when_hermes_title_rule_lands_on_this_session(self) -> None:
+        # Hermes' `-c <title>` takes the newest "<title> #N" row over the exact title (`resolve_session_by_title`).
+        from omh.maintenance.hermes_resume import exit_card_lines
+
+        cases = (
+            ("Reply with ok", ["Reply with ok #2"], False),  # an unrelated session the title generator numbered
+            ("Reply with ok #2", ["Reply with ok"], True),  # the numbered one itself: nothing numbers it again
+            ("a_b", ["aXb #2", "a%b #2"], True),  # `_` and `%` match literally, as Hermes escapes them
+            ("Bot Chat", ["Bot Chat #2"], True),  # Hermes' one exception: the exact title wins
+        )
+        for title, others, offered in cases:
+            with self.subTest(title=title), TemporaryDirectory() as tmp:
+                db = Path(tmp) / "state.db"
+                write_card_session(db, "sess-alpha", title=title)
+                for index, other in enumerate(others):
+                    write_card_session(db, f"sess-other-{index}", title=other, started_at=CHILD_STARTED_AT + 5 + index)
+                lines = exit_card_lines(db, "sess-alpha", 60.0)
+                self.assertEqual(any(line.startswith("  omh -c ") for line in lines), offered, lines)
+
+    def test_a_title_starting_with_a_dash_offers_no_continue_line(self) -> None:
+        # `omh -c "-p work"` would parse as `-c` with no name and then `-p work`.
+        from omh.maintenance.hermes_resume import continue_command_line, exit_card_lines
+
+        for title in ("-p work", "-r abc", "--resume x", "-"):
+            with self.subTest(title=title):
+                self.assertEqual(continue_command_line(title), "")
+        with TemporaryDirectory() as tmp:
+            db = Path(tmp) / "state.db"
+            write_card_session(db, "sess-alpha", title="-p work")
+            lines = exit_card_lines(db, "sess-alpha", 60.0)
+        self.assertEqual(lines[0], "omh · -p work")
+        self.assertFalse(any(line.startswith("  omh -c ") for line in lines), lines)
+
+    def test_tokens_sum_the_branch_chain_as_hermes_does(self) -> None:
+        from omh.maintenance.hermes_resume import exit_card_lines
+
+        with TemporaryDirectory() as tmp:
+            db = Path(tmp) / "state.db"
+            write_card_session(db, "sess-root", title="root", tokens=(100, 10, 1, 2, 3))
+            write_card_session(db, "sess-mid", title="mid", tokens=(200, 20, 0, 0, 0), branched_from="sess-root")
+            write_card_session(db, "sess-alpha", tokens=(12_000, 3_000, 2_000, 1_000, 200), branched_from="sess-mid")
+            lines = exit_card_lines(db, "sess-alpha", 60.0)
+            # A chain that loops back is summed once per session.
+            write_card_session(db, "sess-loop-a", title="loop a", tokens=(1, 0, 0, 0, 0), branched_from="sess-loop-b")
+            write_card_session(db, "sess-loop-b", title="loop b", tokens=(2, 0, 0, 0, 0), branched_from="sess-loop-a")
+            looped = exit_card_lines(db, "sess-loop-a", 60.0)
+        self.assertEqual(lines[2], "  18536 tokens (in 12300, out 3030, cache 3003, reasoning 203) · moonshotai/kimi-k3.1-pro")
+        self.assertTrue(looped[2].startswith("  3 tokens (in 3, out 0,"), looped)
+
+    def test_after_new_the_newest_earlier_session_with_messages_gets_the_card(self) -> None:
+        # `/new` just before quitting: the open session is empty, the one before it is what this launch said.
+        from omh.maintenance.hermes_resume import NOTHING_SAID_LINE
+
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            write_card_session(home / "state.db", "sess-alpha")
+            write_card_session(home / "state.db", "sess-blank", turns=0, title=None)
+            fallen_back = self._launch(home, {"session_id": "sess-new", "hermes_home": str(home),
+                                              "opened": ["sess-alpha", "sess-blank"]})
+            all_empty = self._launch(home, {"session_id": "sess-new", "hermes_home": str(home),
+                                            "opened": ["sess-blank", "sess-gone"]})
+        self.assertEqual(fallen_back, CARD_ALPHA)
+        self.assertEqual(all_empty, NOTHING_SAID_LINE + "\n")
 
     def test_an_unreadable_database_prints_nothing(self) -> None:
         with TemporaryDirectory() as tmp:
