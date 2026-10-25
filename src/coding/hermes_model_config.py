@@ -54,6 +54,14 @@ class HermesCommandError(HermesModelConfigError):
     """Raised when a required local Hermes command fails."""
 
 
+class HermesConfigUnreadableError(HermesCommandError):
+    """Raised when the config file Hermes names cannot be read (missing or unreadable)."""
+
+    def __init__(self, config_path: Path) -> None:
+        super().__init__(f"cannot read Hermes config at {config_path}")
+        self.config_path = config_path
+
+
 class HermesVerificationError(HermesModelConfigError):
     """Raised when post-write inspection does not match the preview."""
 
@@ -437,7 +445,7 @@ def _config_digest(path: Path) -> str:
     try:
         return sha256(path.read_bytes()).hexdigest()
     except OSError as exc:
-        raise HermesCommandError(f"cannot read Hermes config at {path}") from exc
+        raise HermesConfigUnreadableError(path) from exc
 
 
 def _auth_provider_ids(output: str) -> set[str]:

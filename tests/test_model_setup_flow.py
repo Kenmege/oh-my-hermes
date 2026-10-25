@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
+import textwrap
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -51,6 +54,41 @@ def _inspection(
         ),
         commands=(),
     )
+
+
+# Records which home each call acted on, in a log outside every home, and
+# answers the read-only inspection plus `config set` from files under
+# $HERMES_HOME -- so a write lands in whichever home the call was given.
+_HOME_RECORDING_HERMES = """
+import json
+import os
+from pathlib import Path
+import sys
+
+home = Path(os.environ["HERMES_HOME"])
+args = sys.argv[1:]
+with open(os.environ["HERMES_CALL_LOG"], "a", encoding="utf-8") as stream:
+    stream.write(json.dumps({"home": str(home), "args": args}) + "\\n")
+aliases_path = home / "model-aliases.json"
+aliases = json.loads(aliases_path.read_text(encoding="utf-8")) if aliases_path.exists() else {}
+if args == ["config", "path"]:
+    print(home / "config.yaml")
+elif args[:3] == ["config", "get", "model.aliases"]:
+    print(json.dumps(aliases))
+elif args[:2] == ["config", "get"]:
+    raise SystemExit(1)
+elif args == ["config", "check"]:
+    print("Configuration OK")
+elif args[:2] == ["auth", "list"]:
+    print("openai (1 credentials):")
+elif args[:2] == ["auth", "status"]:
+    raise SystemExit(0 if args[2] == "openai" else 1)
+elif args[:2] == ["config", "set"] and args[2].startswith("model.aliases."):
+    aliases[args[2].removeprefix("model.aliases.")] = args[3]
+    aliases_path.write_text(json.dumps(aliases), encoding="utf-8")
+else:
+    raise SystemExit(f"unexpected command: {args}")
+"""
 
 
 def _discovery(
@@ -676,6 +714,119 @@ class ModelSetupFlowTests(unittest.TestCase):
                 },
             ],
         )
+
+    def _recording_hermes(self, root: Path) -> tuple[Path, Path]:
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        hermes = bin_dir / "hermes"
+        hermes.write_text(
+            f"#!{sys.executable}\n" + textwrap.dedent(_HOME_RECORDING_HERMES).lstrip(),
+            encoding="utf-8",
+        )
+        hermes.chmod(0o755)
+        return bin_dir, root / "hermes-calls.jsonl"
+
+    @unittest.skipIf(os.name == "nt", "the stub is a shebang script resolved as `hermes` on PATH")
+    def test_dry_run_apply_reports_the_commands_and_runs_no_mutation(self) -> None:
+        # Given: a target home with a config, and a preview digest for one alias.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            target = root / ".hermes"
+            target.mkdir()
+            (target / "config.yaml").write_text("{}\n", encoding="utf-8")
+            bin_dir, call_log = self._recording_hermes(root)
+            base = [
+                "--omh-home",
+                str(root / ".omh"),
+                "--hermes-home",
+                str(target),
+                "setup",
+                "--dry-run",
+                "--no-menubar",
+                "--model-setup",
+                "--confirm-model",
+                "openai/gpt-5",
+                "--model-alias",
+                "main=openai/gpt-5",
+                "--no-interactive",
+                "--json",
+            ]
+            environment = {
+                "PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
+                "HERMES_HOME": str(target),
+                "HERMES_CALL_LOG": str(call_log),
+            }
+            with patch.dict(os.environ, environment), patch.object(
+                setup_commands,
+                "discover_local_models",
+                return_value=_discovery([]),
+            ):
+                status, stdout, stderr = run_cli(base, output_json=False)
+                self.assertEqual((status, stderr), (0, ""))
+                digest = json.loads(stdout)["steps"]["model_activation"]["preview"]["config_digest"]
+                # When: the apply is asked for under --dry-run.
+                status, stdout, stderr = run_cli(
+                    base + ["--apply-model-config", "--model-config-digest", digest],
+                    output_json=False,
+                )
+
+            # Then: the would-apply argv is reported and no Hermes call mutated anything.
+            self.assertEqual((status, stderr), (0, ""))
+            payload = json.loads(stdout)
+            activation = payload["steps"]["model_activation"]
+            self.assertTrue(payload["dry_run"])
+            self.assertEqual(
+                activation["apply"],
+                {"status": "dry_run", "commands": [["hermes", "config", "set", "model.aliases.main", "openai/gpt-5"]]},
+            )
+            self.assertFalse(activation["verification"]["verified"])
+            calls = [json.loads(line)["args"] for line in call_log.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual([call for call in calls if call[:2] in (["config", "set"], ["config", "unset"])], [])
+            self.assertFalse((target / "model-aliases.json").exists())
+
+    @unittest.skipIf(os.name == "nt", "the stub is a shebang script resolved as `hermes` on PATH")
+    def test_missing_hermes_config_is_a_classified_status_not_a_traceback(self) -> None:
+        # Given: a fresh Hermes home; a dry run never creates its config.yaml.
+        for label, flags in (("dry_run", ["--dry-run"]), ("skip_apply", ["--skip-apply"])):
+            with self.subTest(run=label), TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                target = root / ".hermes"
+                bin_dir, call_log = self._recording_hermes(root)
+                environment = {
+                    "PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
+                    "HERMES_HOME": str(target),
+                    "HERMES_CALL_LOG": str(call_log),
+                }
+                with patch.dict(os.environ, environment), patch.object(
+                    setup_commands,
+                    "discover_local_models",
+                    return_value=_discovery([]),
+                ):
+                    # When: the model step runs, scripted and then for a person.
+                    status, stdout, stderr = run_cli(
+                        ["--omh-home", str(root / ".omh"), "--hermes-home", str(target), "setup", *flags,
+                         "--no-menubar", "--model-setup", "--no-interactive", "--json"],
+                        output_json=False,
+                    )
+                    human_status, human_stdout, _ = run_cli(
+                        ["--omh-home", str(root / ".omh"), "--hermes-home", str(target), "setup", *flags,
+                         "--no-menubar", "--model-setup", "--no-interactive"],
+                        output_json=False,
+                    )
+
+                # Then: a classified status, a next action, and an exit code that is not success.
+                self.assertEqual((status, stderr), (3, ""))
+                self.assertEqual(human_status, 3)
+                activation = json.loads(stdout)["steps"]["model_activation"]
+                self.assertEqual(activation["status"], "hermes_config_missing")
+                self.assertEqual(activation["config_path"], str(target / "config.yaml"))
+                self.assertEqual(activation["apply"]["status"], "not_run")
+                if label == "dry_run":
+                    self.assertEqual(activation["next_action"], "rerun_without_dry_run")
+                    self.assertIn("A real `omh setup` creates that file", human_stdout)
+                else:
+                    self.assertEqual(activation["next_action"], "create_hermes_config_then_rerun_model_setup")
+                    self.assertIn("without --skip-apply", human_stdout)
 
 
 if __name__ == "__main__":

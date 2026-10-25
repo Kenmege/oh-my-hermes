@@ -8,6 +8,7 @@ from typing import Callable
 
 from ..coding.hermes_model_config import (
     AliasCollisionError,
+    HermesConfigUnreadableError,
     HermesModelConfigError,
 )
 from ..coding.model_recommendations import (
@@ -45,9 +46,18 @@ def model_activation_result(
     dependencies: ModelSetupFlowDependencies,
 ) -> dict[str, object]:
     discovery = dependencies.discover_local_models(Path.home())
-    inspection = dependencies.inspect_hermes_model_config()
     confirmed = confirmed_model_ids(getattr(args, "confirm_model", []))
     candidates = classified_model_candidates(discovery, confirmed)
+    try:
+        inspection = dependencies.inspect_hermes_model_config()
+    except HermesConfigUnreadableError as exc:
+        # Every later stage is bound to this file's digest, so none can run.
+        return _hermes_config_missing_result(
+            discovery,
+            candidates,
+            config_path=exc.config_path,
+            dry_run=bool(getattr(args, "dry_run", False)),
+        )
     aliases = model_alias_changes(getattr(args, "model_alias", []))
 
     if getattr(args, "interactive", False):
@@ -151,27 +161,37 @@ def model_activation_result(
                 expected_digest = model_preview.config_digest
             if not expected_digest:
                 raise OmhError("--apply-model-config requires --model-config-digest from this preview.")
-            try:
-                receipt = dependencies.apply_hermes_model_config(
-                    model_preview,
-                    confirmed=True,
-                    expected_config_digest=expected_digest,
-                )
-            except HermesModelConfigError as exc:
-                raise OmhError(str(exc)) from exc
-            apply_status = {
-                "status": "applied",
-                "commands": [list(command) for command in receipt.commands],
-                "before_digest": receipt.before_digest,
-                "after_digest": receipt.after_digest,
-            }
-            verification = {
-                "status": "verified" if receipt.verified else "failed",
-                "verified": receipt.verified,
-                "config_digest": receipt.after_digest,
-            }
-            status = "verified" if receipt.verified else "verification_failed"
-            next_action = "model_setup_complete" if receipt.verified else "inspect_model_config"
+            if getattr(args, "dry_run", False):
+                # A dry run never spawns a mutating Hermes command: report the
+                # exact argv the apply would run, checked against the same digest.
+                if expected_digest != model_preview.config_digest:
+                    raise OmhError("expected digest does not match the preview digest")
+                apply_status = {
+                    "status": "dry_run",
+                    "commands": [list(command) for command in model_preview.commands],
+                }
+            else:
+                try:
+                    receipt = dependencies.apply_hermes_model_config(
+                        model_preview,
+                        confirmed=True,
+                        expected_config_digest=expected_digest,
+                    )
+                except HermesModelConfigError as exc:
+                    raise OmhError(str(exc)) from exc
+                apply_status = {
+                    "status": "applied",
+                    "commands": [list(command) for command in receipt.commands],
+                    "before_digest": receipt.before_digest,
+                    "after_digest": receipt.after_digest,
+                }
+                verification = {
+                    "status": "verified" if receipt.verified else "failed",
+                    "verified": receipt.verified,
+                    "config_digest": receipt.after_digest,
+                }
+                status = "verified" if receipt.verified else "verification_failed"
+                next_action = "model_setup_complete" if receipt.verified else "inspect_model_config"
     elif recommendation["status"] == "owner_default":
         status = "defaulted"
         next_action = "model_setup_complete"
@@ -196,6 +216,37 @@ def model_activation_result(
         "claim_boundary": (
             "Model activation uses local metadata and explicit confirmation only. "
             "Observed-before records are not active-model confirmation, and preview is not apply."
+        ),
+    }
+
+
+def _hermes_config_missing_result(
+    discovery: dict[str, object],
+    candidates: list[dict[str, str]],
+    *,
+    config_path: Path,
+    dry_run: bool,
+) -> dict[str, object]:
+    return {
+        "schema_version": "omh_model_activation/v1",
+        "status": "hermes_config_missing",
+        "config_path": str(config_path),
+        "dry_run": dry_run,
+        "stages": ["inspect", "confirm_active", "preview", "apply", "verify"],
+        "discovery": discovery,
+        "inspection": None,
+        "candidates": candidates,
+        "recommendations": None,
+        "provider_next_actions": [],
+        "preview": None,
+        "apply": {"status": "not_run", "commands": []},
+        "verification": {"status": "not_run", "verified": False},
+        # A dry run writes nothing, so on a fresh home the file a real setup
+        # creates (step 2 registers OMH in it) does not exist yet.
+        "next_action": "rerun_without_dry_run" if dry_run else "create_hermes_config_then_rerun_model_setup",
+        "claim_boundary": (
+            "Hermes' config file could not be read, so it was not inspected, previewed, or changed. "
+            "Nothing about the active model was observed."
         ),
     }
 
