@@ -1024,6 +1024,22 @@ class ExitCardTests(unittest.TestCase):
         self.assertEqual(lines[1], "  session sess-big · 3 turns · 6 messages · 1h 02m")
         self.assertEqual(lines[2], "  2400000 tokens (in 1500000, out 900000, cache 0, reasoning 0) · moonshotai/kimi-k3.1-pro")
 
+    def test_a_long_id_is_printed_whole_in_both_lines(self) -> None:
+        # Hermes' newer stored ids are `local-<64 hex>`: the resume line is typed back, so it is never shortened,
+        # whatever the terminal's width (the card is printed as lines; the terminal wraps them).
+        from omh.maintenance.hermes_resume import exit_card_lines
+
+        long_id = "local-" + "b3c800dd" * 8
+        self.assertEqual(len(long_id), 70)
+        with TemporaryDirectory() as tmp:
+            db = Path(tmp) / "state.db"
+            write_card_session(db, long_id)
+            with patch.dict(os.environ, {"COLUMNS": "40"}):
+                lines = exit_card_lines(db, long_id, 60.0)
+        self.assertEqual(lines[3], f"  omh --resume {long_id}")
+        self.assertIn(f"session {long_id} · ", lines[1])
+        self.assertFalse(any("…" in line for line in lines[1:4]))
+
     def test_an_unreadable_database_prints_nothing(self) -> None:
         with TemporaryDirectory() as tmp:
             home = Path(tmp)

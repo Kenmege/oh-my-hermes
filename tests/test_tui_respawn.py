@@ -365,6 +365,40 @@ class CapTests(unittest.TestCase):
         self.assertEqual(len(spawner.made), RESPAWN_LIMIT)
         self.assertIn(f"hermes --tui --resume {STORED}", app.farewell)
 
+    def test_under_omh_the_tui_leaves_past_the_cap_naming_omh_resume(self) -> None:
+        from omh.tui.launch import SESSION_FILE_ENV
+
+        app, client, _spawner, now = crashing(environ={**ENVIRON, SESSION_FILE_ENV: "/private/omh-tui-x/session"})
+        for _ in range(RESPAWN_LIMIT + 1):
+            crash(app, client)
+            client = app.client  # type: ignore[assignment]
+            now[0] += 10.0
+        self.assertEqual(app.exit_code, 1)
+        self.assertTrue(app.farewell.endswith(f"Resume the session: omh --resume {STORED}"), app.farewell)
+        self.assertNotIn("hermes --tui", app.farewell)
+
+    def test_under_omh_the_farewell_carries_the_whole_id_and_a_named_profile(self) -> None:
+        from omh.tui.launch import SESSION_FILE_ENV
+
+        long_id = "local-" + "b3c800dd" * 8  # Hermes' newer stored ids: 70 characters, never shortened
+        for profile, expected in (("", f"omh --resume {long_id}"), ("default", f"omh --resume {long_id}"),
+                                  ("work", f"omh -p work --resume {long_id}")):
+            with self.subTest(profile=profile):
+                app, client, _spawner, _now = crashing(environ={**ENVIRON, SESSION_FILE_ENV: "/private/omh-tui-x/session"})
+                app.stored_id, app.launch_profile = long_id, profile
+                crash(app, client, code=0)  # a normal exit is never respawned: the TUI leaves at once
+                self.assertTrue(app.farewell.endswith(f"Resume the session: {expected}"), app.farewell)
+
+    def test_under_omh_a_profile_or_id_that_cannot_be_typed_back_names_hermes_instead(self) -> None:
+        from omh.tui.launch import SESSION_FILE_ENV
+
+        for stored, profile in ((STORED, "Bad Name"), ("sess alpha", "")):
+            with self.subTest(stored=stored, profile=profile):
+                app, client, _spawner, _now = crashing(environ={**ENVIRON, SESSION_FILE_ENV: "/private/omh-tui-x/session"})
+                app.stored_id, app.launch_profile = stored, profile
+                crash(app, client, code=0)  # a normal exit is never respawned: the TUI leaves at once
+                self.assertIn("Resume the session in Hermes' own terminal: hermes --tui", app.farewell)
+
     def test_the_window_slides(self) -> None:
         app, client, spawner, now = crashing()
         for _ in range(RESPAWN_LIMIT):

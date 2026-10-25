@@ -532,6 +532,10 @@ TITLE_DEFAULT = "Hermes"
 TITLE_CHARS = 80
 INFO_TITLE_CELLS = 24  # the session title at the head of the info line's right side, cut with `…` past this
 
+# What a session id and a profile name have to look like before a farewell names them in a command to type back
+# (Hermes' ids are `YYYYMMDD_HHMMSS_<hex>` or `local-<hex>`; its profile rule is `hermes_cli/profiles.py`'s).
+RESUMABLE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
+PROFILE_NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 EXIT_HINT = "ctrl+c again to exit"  # on the info line while a second Ctrl+C would exit
 INTERRUPT_HINT = "esc to interrupt"
 OSC52_COPY = "\x1b]52;c;{}\x07"
@@ -2064,8 +2068,22 @@ class App(ModesMixin, AgentViewMixin):
         if self.exit_code is not None:
             return
         self.transcript.add_notice(f"{reason}.", NOTICE_ERROR)
-        self.farewell = f"omh: {reason}. Resume the session in Hermes' own terminal: {resume_command(self.stored_id)}"
+        omh_way = self._omh_resume_command()
+        if omh_way:
+            self.farewell = f"omh: {reason}. Resume the session: {omh_way}"
+        else:
+            self.farewell = f"omh: {reason}. Resume the session in Hermes' own terminal: {resume_command(self.stored_id)}"
         self.exit_code = 1
+
+    def _omh_resume_command(self) -> str:
+        """`omh --resume <id>` for the open session when `omh` launched the TUI (`SESSION_FILE_ENV`), with `-p` for a
+        named profile; "" otherwise, or when the id or the profile could not be typed back as they are."""
+        if not self.environ.get(SESSION_FILE_ENV) or not RESUMABLE_ID.fullmatch(self.stored_id):
+            return ""
+        profile = self.launch_profile
+        if profile in ("", "default", "custom"):
+            return f"omh --resume {self.stored_id}"
+        return f"omh -p {profile} --resume {self.stored_id}" if PROFILE_NAME.fullmatch(profile) else ""
 
     def _drain_gateway(self) -> None:
         for item in self.client.poll():

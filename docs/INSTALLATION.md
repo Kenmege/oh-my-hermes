@@ -333,7 +333,8 @@ nothing was said in this session, so there is nothing to resume.`
 Hermes' own exit summary, which names `hermes --tui --resume`, does not
 print: the OMH TUI closes with a code of OMH's own, which Hermes' launcher
 prints no summary for, and `omh` returns 0 to your shell, as before. A
-failure (exit 1, a signal) is returned as it was and prints no card. The
+failure (exit 1, a signal) is returned as it was and prints no card; a
+lost gateway names `omh --resume <id>` on its way out. The
 OMH TUI records the session it has open, and the Hermes home it runs on, in
 a private file `omh` names for the launch and removes once it has read it,
 so a resumed session is named too. When Hermes' own terminal opened instead,
@@ -1172,7 +1173,8 @@ interrupted, `▪`), and what you queued comes back to the composer as after an 
 does this at most three times in a minute, and a new gateway that exits
 before it resumed the session counts as one of them; after that, or when the
 new gateway refuses the resume or does not answer it, it leaves with the command that reopens
-the session in `hermes --tui`, and Ctrl+C or Ctrl+D while it waits leaves the
+the session, `omh --resume <id>` (`hermes --tui` when something other than `omh` opened the TUI),
+and Ctrl+C or Ctrl+D while it waits leaves the
 same way, the new gateway stopped. A gateway that exits normally, or after you
 quit, is not started again. A
 turn that brings no event the TUI shows, only types it does not know (Hermes

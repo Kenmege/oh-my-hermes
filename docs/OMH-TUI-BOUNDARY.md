@@ -41,7 +41,11 @@ for a gateway another runtime owns), it spawns it again the same way and
 resumes the session that was open (`session.resume`), at most 3 times in 60 s,
 as Hermes' own TUI does: the open question and those waiting behind it close
 unanswered, a turn that was running is reported lost and never sent again, and
-past that limit it exits as it would without recovery, naming `hermes --tui`.
+past that limit it exits as it would without recovery, naming `omh --resume
+<id>` (with `-p` for a named profile) when `omh` launched it, and `hermes --tui`
+otherwise. A reply that shows the gateway no longer speaks the declared
+contract ends the session the same way. The attach refusal still names Hermes'
+own terminal: the OMH TUI cannot open a session another runtime's gateway owns.
 
 ## What it sends and answers
 

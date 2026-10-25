@@ -1222,6 +1222,16 @@ class SlashCommandTests(AppTestCase):
                 self.assertEqual(run.calls("command.dispatch"), [])
                 self.assertEqual((run.terminal.entered, run.terminal.exited), (1, 1))
 
+    def test_under_omh_a_drift_reply_ends_the_session_naming_omh_resume(self) -> None:
+        answers = (*startup_answers(), ("slash.exec", {"error": {"code": 4000, "message": "extra fields not permitted"}}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        run.environ[SESSION_FILE_ENV] = str(run.root / "omh-session.json")
+        run.terminal.script(self.submit(run, "/xyz"))
+        self.run_main(run)
+        self.assertEqual(run.code, 1)
+        self.assertIn(f"Resume the session: omh --resume {STORED_ID}", run.stderr.getvalue())
+        self.assertNotIn("hermes --tui", run.stderr.getvalue())
+
     def test_tab_completes_a_local_command_and_history_pages_on_the_alternate_screen(self) -> None:
         run = self.prepare(
             Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers())
