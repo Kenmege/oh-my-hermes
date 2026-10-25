@@ -3105,6 +3105,36 @@ def cmd_setup(args: argparse.Namespace) -> int:
         _print_json(payload)
     else:
         _print_setup_summary(payload, language=language)
+    return _setup_exit_code(payload)
+
+
+def _setup_exit_code(payload: Any) -> int:
+    """0 when every step setup was asked to run ran.
+
+    3 when the install steps finished but the requested model step could not
+    run because no `hermes` executable was found
+    (`steps.model_activation.status == "hermes_unavailable"`). Not 0, because
+    a wrapper reading only the status would be told the models were set up
+    when nothing was inspected; not 1, because nothing OMH installed failed
+    and the same command succeeds once Hermes is on PATH; not 2, which `main`
+    returns for an OmhError. 3 is what the other mappers return for a command
+    that ran but could not inspect what it needed (`_profile_isolation_exit_code`,
+    `_memory_evidence_exit_code`).
+
+    Generic failure signals -- a refused or interrupted run, or a unit
+    carrying a failure kind -- are never success either, so this mapper
+    cannot be passed by ignoring them.
+    """
+    summary = payload if isinstance(payload, dict) else {}
+    if summary.get("refused") or summary.get("interrupted"):
+        return 1
+    units = summary.get("units")
+    if isinstance(units, list) and any(isinstance(unit, dict) and unit.get("failure_kind") for unit in units):
+        return 1
+    steps = summary.get("steps")
+    activation = steps.get("model_activation") if isinstance(steps, dict) else None
+    if isinstance(activation, dict) and activation.get("status") == "hermes_unavailable":
+        return 3
     return 0
 
 
