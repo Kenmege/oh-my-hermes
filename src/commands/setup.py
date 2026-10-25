@@ -349,6 +349,8 @@ def _cmd_install_agents(args: argparse.Namespace) -> int:
         for relative in payload["locally_modified"]:
             print(f"Locally modified: {relative}")
         print(f"Next action: {payload['next_action']}")
+        for warning in payload["warnings"]:
+            print(f"Warning: {warning}")
         print(payload["claim_boundary"])
     return 0
 
