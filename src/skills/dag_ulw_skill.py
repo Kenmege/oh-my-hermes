@@ -86,6 +86,12 @@ DEFINITION = SkillDefinition(
         "VERIFY (the literal command and expected result), STOP WHEN.",
         "`depends_on` only orders nodes; data moves through the handoff files `omh_dag` names, never through "
         "the parent's memory.",
+        "Before full-suite verification, run a `baseline` node before changes and record in its handoff each "
+        "failure's test id, assertion/error signature, command, environment and revision; make verification depend on "
+        "it and exempt only those signatures re-executed under a comparable command at the pinned base and candidate "
+        "revisions. Never exempt a changed same-id failure, missing evidence, skipped or reduced coverage, "
+        "collection/exit errors, or security/mandatory gates; disclose genuine baseline failures as pre-existing "
+        "rather than calling a full-suite-green goal met.",
         "End every run with a verification node that depends on every producer, runs the real command, and is "
         "never the node that built the work.",
         "Completion is a claim: before reporting the goal met, check each node against its SCOPE in both "
@@ -203,6 +209,13 @@ def run_loop_reference() -> str:
    command there, then `ready`.
    The result carries the next `calls`; dispatch them in the same turn.
 6. `omh_dag action=status` at any time; it survives compaction.
+
+A child handing off a still-running background process or CI run is not a failure: settle with
+`outcome=parked`, its `handle` (at most 120 characters), and `wake_at` (UTC ISO-8601 or epoch, future,
+within 24 hours). The node stays live as `parked`, spends no repair cycle, and cannot be repaired.
+At the deadline call `ready`: the same node gets a fresh attempt naming the handle, not replacement
+work. OMH starts no timer or poll. After three parks per node, another park is refused with
+`park_limit_reached`; settle accepted, failed or blocked instead. Cancel turns parked nodes cancelled.
 
 ## Goal loop
 

@@ -57,6 +57,7 @@ from pathlib import Path
 import posixpath
 import re
 import secrets
+import shlex
 import shutil
 from typing import Any, Final
 
@@ -64,6 +65,7 @@ from . import dag_core
 from .awareness_delivery import _awareness_delivery_lock
 from .delegation_ledger import ledger_key
 from .hermes_delegation import HERMES_MIXTURE_CATEGORY_CHAINS
+from .iso_datetime import strict_fromisoformat
 
 DAG_SCHEMA_VERSION: Final = "omh_dag/v1"
 DAG_RESULT_SCHEMA_VERSION: Final = "omh_dag_result/v1"
@@ -80,6 +82,9 @@ MAX_REASON_CHARS: Final = 200
 MAX_REPAIR_CYCLES: Final = 2
 MAX_EXTEND_ROUNDS: Final = 2
 MAX_PROVIDER_RETRIES: Final = 1
+MAX_PARKS: Final = 3
+MAX_HANDLE_CHARS: Final = 120
+MAX_PARK_SECONDS: Final = 24 * 3600
 MAX_RECORD_BYTES: Final = 262_144
 LOCK_SECONDS: Final = 5.0
 # A node handed out that no child has bound to for this long was not dispatched; `ready` offers it again.
@@ -90,7 +95,7 @@ MAX_LOST_REOFFERS: Final = 3
 BIND_SLACK_SECONDS: Final = 2.0
 CATEGORIES: Final = tuple(HERMES_MIXTURE_CATEGORY_CHAINS)
 DEEP_CATEGORIES: Final = frozenset({"deep", "deep-work"})
-OUTCOMES: Final = ("accepted", "failed", "blocked")
+OUTCOMES: Final = ("accepted", "failed", "blocked", "parked")
 # The ``origin`` kinds of a node added after define: ``repair:<root>`` and ``extend:<round>``.
 ADDED_ORIGIN_KINDS: Final = ("repair", "extend")
 PROMPT_MARKERS: Final = ("TASK", "DELIVERABLE", "SCOPE", "VERIFY", "STOP WHEN")
@@ -110,6 +115,7 @@ DAG_CLAIM_BOUNDARY: Final = (
 
 _ID: Final = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 _CONTROL: Final = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+_BASELINE_WORD: Final = re.compile(r"(?<![a-z])baseline(?![a-z])")
 _VERIFY_WORDS: Final = re.compile(r"(?<![a-z])(verif|audit|validat|qa(?![a-z]))")
 _REVIEW_WORDS: Final = re.compile(r"(?<![a-z])review")
 _MARKER_PATTERNS: Final = {
@@ -120,6 +126,7 @@ _MARKER_PATTERNS: Final = {
 # Node states the derivation produces.
 SATISFIED: Final = frozenset({"accepted", "repaired"})
 OPEN: Final = frozenset({"handed_out", "running", "returned"})
+LIVE: Final = OPEN | {"parked"}
 
 
 class DagRefusal(Exception):
@@ -386,6 +393,34 @@ def require_prompt_markers(nodes: Sequence[Mapping[str, Any]]) -> None:
         )
 
 
+def _mentions_full_suite(prompt: str) -> bool:
+    """Advisory detection of broad suites, excluding pytest's explicit positional targets."""
+    if re.search(r"\b(?:full\s+(?:test\s+)?suite|unittest\s+discover)\b", prompt, re.IGNORECASE):
+        return True
+    # Commands end at shell separators, line breaks or inline-code fences; prose often adds ', exit 0'.
+    for match in re.finditer(r"(?<![\w.-])pytest(?![\w.-])([^\n`;&|,]*)", prompt, re.IGNORECASE):
+        try:
+            arguments = shlex.split(match[1])
+        except ValueError:
+            continue  # An unfinished quotation is not enough to infer an unscoped command.
+        takes_value = {"-k", "-m", "-c", "-o", "-p", "--override-ini", "--maxfail", "--tb",
+                       "--durations", "--durations-min", "--color", "--capture", "--confcutdir",
+                       "--rootdir", "--basetemp", "--ignore", "--ignore-glob", "--deselect", "--log-level"}
+        skip_value = False
+        targeted = False
+        for argument in arguments:
+            if skip_value:
+                skip_value = False
+            elif argument in takes_value:
+                skip_value = True
+            elif not argument.startswith("-"):
+                targeted = True
+                break
+        if not targeted:
+            return True
+    return False
+
+
 def lint(nodes: Sequence[Mapping[str, Any]]) -> list[str]:
     """Advisory findings: they never reject a run, and the run records them."""
     findings: list[str] = []
@@ -404,8 +439,12 @@ def lint(nodes: Sequence[Mapping[str, Any]]) -> list[str]:
     if verifiers:
         parents = {str(node["id"]): node["depends_on"] for node in nodes}
         covered: set[str] = set()
+        baselines = {str(node["id"]) for node in nodes if is_baseline(node)}
         for verifier in verifiers:
-            covered |= ancestors(str(verifier["id"]), parents)
+            preceding = ancestors(str(verifier["id"]), parents)
+            covered |= preceding
+            if not preceding & baselines and _mentions_full_suite(str(verifier["prompt"])):
+                findings.append(f"verify_without_baseline:{verifier['id']}")
         # A repair node stands in for the node it repairs; a verification node's repair is checked by its re-run.
         checks = {str(verifier["id"]) for verifier in verifiers}
         covered |= {str(node["id"]) for node in nodes if node.get("repairs") and node["repairs"] in covered | checks}
@@ -420,17 +459,23 @@ def lint(nodes: Sequence[Mapping[str, Any]]) -> list[str]:
     return findings
 
 
+def is_baseline(node: Mapping[str, Any]) -> bool:
+    """A baseline captures existing failures before later verification judges the change."""
+    return bool(_BASELINE_WORD.search(f"{node['id']} {node['label']}".casefold()))
+
+
 def is_verification(node: Mapping[str, Any]) -> bool:
-    return bool(_VERIFY_WORDS.search(f"{node['id']} {str(node['label']).casefold()}"))
+    return not is_baseline(node) and bool(_VERIFY_WORDS.search(f"{node['id']} {str(node['label']).casefold()}"))
 
 
 def is_coding(node: Mapping[str, Any]) -> bool:
-    """A node an external coding owner may take: it writes files, and it is no verification or review node.
+    """A node an external coding owner may take: it writes files, but is no baseline, verification or review node.
 
-    Verification and review stay on `delegate_task` whoever builds: the builder never approves itself.
+    Baselines, verification and review stay native whoever builds: the builder never approves itself.
     """
     text = f"{node['id']} {str(node['label']).casefold()}"
-    return bool(node["write_scope"]) and not is_verification(node) and not _REVIEW_WORDS.search(text)
+    return (bool(node["write_scope"]) and not is_baseline(node)
+            and not is_verification(node) and not _REVIEW_WORDS.search(text))
 
 
 def ancestors(node_id: str, parents: Mapping[str, Iterable[str]]) -> set[str]:
@@ -514,7 +559,9 @@ def bound_children(children: Sequence[Mapping[str, Any]], run: str) -> dict[str,
 def attempt_child(attempt: Mapping[str, Any], children: Sequence[Mapping[str, Any]]) -> Mapping[str, Any] | None:
     """The newest child that started for this attempt, if one did."""
     out = _number(attempt.get("handed_out_at")) or 0.0
-    matched = [child for child in children if (_number(child.get("started_at")) or 0.0) >= out - BIND_SLACK_SECONDS]
+    # A short park can end within the normal binding slack: its old child must not take the fresh attempt.
+    slack = 0.0 if attempt.get("resume_handle") else BIND_SLACK_SECONDS
+    matched = [child for child in children if (_number(child.get("started_at")) or 0.0) >= out - slack]
     return matched[-1] if matched else None
 
 
@@ -575,7 +622,7 @@ def derive(record: Mapping[str, Any], children: Sequence[Mapping[str, Any]], now
     dead = {node_id for node_id, info in base.items() if info["state"] in ("failed", "blocked")}
     for node_id, info in base.items():
         if info["state"] != "pending":
-            if cancelled and info["state"] in OPEN:
+            if cancelled and info["state"] in LIVE:
                 info["state"] = "cancelled"
             continue
         parents = nodes[node_id]["depends_on"]
@@ -609,7 +656,7 @@ def run_state(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]
     live = [info for info in derived.values() if info["state"] != "superseded"]
     if all(info["state"] in SATISFIED for info in live):
         return "done"
-    if any(info["state"] in OPEN or info["state"] == "ready" for info in live):
+    if any(info["state"] in LIVE or info["state"] == "ready" for info in live):
         return "running"
     failures = open_failures(record, derived)
     if any(cycles_left(record, node_id) > 0 for node_id in failures):
@@ -628,6 +675,7 @@ def counts(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]]) 
         "done": sum(1 for info in live.values() if info["state"] in SATISFIED),
         "running": sum(1 for info in live.values() if info["state"] == "running"),
         "out": sum(1 for info in live.values() if info["state"] in OPEN),
+        "parked": sum(1 for info in live.values() if info["state"] == "parked"),
         "failed": len(failures),
         "first_failure": labels[failures[0]] if failures else "",
     }
@@ -641,6 +689,8 @@ def status_line(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, An
     """
     tally = counts(record, derived)
     parts = [f"DAG {record['name']}", f"{tally['done']}/{tally['total']} done", f"{tally['running']} running"]
+    if tally["parked"]:
+        parts.append(f"{tally['parked']} parked")
     if tally["failed"]:
         parts.append(f"{tally['failed']} failed ({tally['first_failure']})")
     unchecked = sum(1 for node in record["nodes"]
@@ -670,6 +720,10 @@ def offerable(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]
         state = derived[node_id]["state"]
         if state == "ready":
             nodes.append(node_id)
+        elif state == "parked":
+            deadline = _number(node["attempts"][-1].get("wake_at"))
+            if deadline is not None and now >= deadline:
+                nodes.append(node_id)
         elif state == "handed_out":
             last = node["attempts"][-1]
             if last.get("lane") == "fanout":
@@ -689,6 +743,26 @@ def lost_for_good(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, 
             and int(node["attempts"][-1].get("lost", 0)) >= MAX_LOST_REOFFERS]
 
 
+def resume_handle_for(attempts: Sequence[Mapping[str, Any]]) -> str:
+    """The process identity a new attempt must resume, or ``""`` for fresh work.
+
+    A park hands its ``handle`` to the wake attempt, and a provider-error retry
+    replaces that attempt without ending the wait, so it inherits the attempt's
+    ``resume_handle``. Only the immediately previous attempt is read: once a
+    resumed attempt settles accepted, failed or blocked, its handle dies with it
+    and later work on the node (a repair re-run, for instance) starts fresh
+    instead of checking an unrelated old process.
+    """
+    if not attempts:
+        return ""
+    previous = attempts[-1]
+    if previous.get("outcome") == "parked":
+        return str(previous.get("handle") or "")
+    if previous.get("outcome") == "retry":
+        return str(previous.get("resume_handle") or "")
+    return ""
+
+
 def hand_out(node: dict[str, Any], derived_state: str, now: float, *, lost: bool = False) -> dict[str, Any]:
     """Write-ahead: the attempt exists before its goal leaves this tool, so a marker always finds it.
 
@@ -704,6 +778,9 @@ def hand_out(node: dict[str, Any], derived_state: str, now: float, *, lost: bool
     fallback = bool(attempts) and attempts[-1].get("outcome") == "retry"
     attempt = {"n": len(attempts) + 1, "handed_out_at": now, "fallback": fallback,
                "settled_at": None, "outcome": "", "reason": "", "provider_error": False}
+    handle = resume_handle_for(attempts)
+    if handle:
+        attempt["resume_handle"] = handle
     attempts.append(attempt)
     return attempt
 
@@ -726,6 +803,10 @@ def task_for(
     """One `delegate_task` task: the marked goal, and the node's prompt with where to write and read handoffs."""
     run = str(record["run"])
     lines = [str(node["prompt"]), ""]
+    attempts = node.get("attempts") or []
+    if attempts and attempts[-1].get("resume_handle"):
+        lines.extend([f"Resume the still-running wait: {attempts[-1]['resume_handle']}. "
+                      "Check its result before starting any replacement work.", ""])
     goal = record.get("goal")
     if isinstance(goal, str) and goal.strip():
         lines.extend([
@@ -742,6 +823,17 @@ def task_for(
         reads = ", ".join(node_handoff(record, omh_home, parent) for parent in reads_for(record, derived, node))
         lines.append(f"Read first: {reads}. A missing file means that part did not finish: stop and say so.")
     if is_verification(node):
+        parents = {str(item["id"]): item["depends_on"] for item in record["nodes"]}
+        preceding = ancestors(str(node["id"]), parents)
+        for baseline in record["nodes"]:
+            if str(baseline["id"]) in preceding and is_baseline(baseline):
+                lines.append(f"Baseline: Read {node_handoff(record, omh_home, str(baseline['id']))}. Exempt only a "
+                             "failure it lists that you re-ran here with the same test id and assertion/error "
+                             "signature, under a comparable command and environment at the pinned base and candidate "
+                             "revisions; report it as pre-existing. A same-id failure that changed, missing evidence, "
+                             "skipped or reduced coverage, collection/execution/exit errors, and security or mandatory "
+                             "gates are never exempt: fail them. A baseline list does not make an unmet full-suite-green "
+                             "goal done.")
         lines.append("Check the complete run goal, not only this node's local VERIFY. "
                      "Name each unmet or unobserved goal criterion; producer claims are not verification evidence.")
     lines.append("Stay inside your SCOPE: other parts of this run work at the same time. If you cannot finish, "
@@ -795,9 +887,26 @@ def calls_for(
 # ── settling and repairing ───────────────────────────────────────────────
 
 
+def _park_deadline(value: object, now: float) -> float:
+    deadline = _number(value)
+    if isinstance(value, str):
+        try:
+            parsed = strict_fromisoformat(value)
+            offset = parsed.utcoffset()
+            if offset is not None and offset.total_seconds() == 0:
+                deadline = parsed.timestamp()
+        except (ValueError, OverflowError, OSError):
+            deadline = None
+    if deadline is None or not 0 < deadline - now <= MAX_PARK_SECONDS:
+        raise DagRefusal("invalid_wake_at",
+                         "parked needs wake_at as UTC ISO-8601 or epoch, in the future and at most 24 hours ahead.")
+    return deadline
+
+
 def settle(
     record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], node_id: str, outcome: object, reason: object,
     provider_error: bool, *, read_handoff: Callable[[], tuple[bool, str]], now: float,
+    handle: object = None, wake_at: object = None,
 ) -> str:
     """Close the node's open attempt. Returns what happened: the outcome, or ``retry`` (a provider error's one retry).
 
@@ -814,10 +923,19 @@ def settle(
     if record.get("cancelled_at") is not None:
         raise DagRefusal("run_cancelled", "The run was cancelled; nothing in it settles now.")
     if outcome not in OUTCOMES:
-        raise DagRefusal("invalid_outcome", "Settle a node as accepted, failed or blocked.")
+        raise DagRefusal("invalid_outcome", "Settle a node as accepted, failed, blocked or parked.")
     info = derived[node_id]
     if info["state"] not in OPEN:
         raise DagRefusal("node_not_out", f"Node {node_id} is {info['state']}, not out with a child; nothing to settle.")
+    if outcome == "parked" and sum(1 for item in nodes[node_id]["attempts"]
+                                   if item.get("outcome") == "parked") >= MAX_PARKS:
+        raise DagRefusal("park_limit_reached",
+                         f"Node {node_id} has parked {MAX_PARKS} times; settle it accepted, failed or blocked.")
+    if outcome == "parked":
+        if (not isinstance(handle, str) or not handle.strip() or len(handle) > MAX_HANDLE_CHARS
+                or _CONTROL.search(handle) or any(char in handle for char in "\r\n\t")):
+            raise DagRefusal("invalid_handle", "parked needs a nonempty handle of at most 120 characters on one line.")
+        wake_at = _park_deadline(wake_at, now)
     child = info["child"]
     stop = child.get("stop") if isinstance(child, Mapping) else None
     if outcome == "accepted" and isinstance(stop, Mapping) and stop.get("status") in CHILD_FAILURE_STOPS:
@@ -845,6 +963,8 @@ def settle(
         attempt["outcome"] = "retry"
         return "retry"
     attempt["outcome"] = outcome
+    if outcome == "parked":
+        attempt.update(handle=handle, wake_at=wake_at)
     if outcome == "accepted" and unread:
         attempt.update(handoff_checked=False, handoff_unread=unread)
     return str(outcome)
@@ -890,7 +1010,7 @@ def repair(
                 f"Repair node {node['id']} may depend only on accepted nodes or its own group, not {', '.join(outside)}.",
             )
         node.update(repairs=root, cycle=len(groups) + 1, origin=f"repair:{root}")
-    runnable = {key for key, info in derived.items() if info["state"] in OPEN | {"ready", "waiting", "held"}}
+    runnable = {key for key, info in derived.items() if info["state"] in LIVE | {"ready", "waiting", "held"}}
     # The group runs before every node that waits on the root (they wait on the root, the root on the group), so a
     # dependent writing what the group writes is ordered, not an overlap.
     every = {str(node["id"]): node["depends_on"] for node in record["nodes"]}
@@ -996,6 +1116,8 @@ def node_rows(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]
             row["reason"] = attempts[-1]["reason"]
         if info["state"] == "accepted" and handoff_unchecked(node):
             row.update(handoff_checked=False, handoff_unread=str(attempts[-1].get("handoff_unread") or ""))
+        if info["state"] == "parked":
+            row.update(handle=attempts[-1]["handle"], wake_at=attempts[-1]["wake_at"])
         if info["state"] in ("failed", "blocked"):
             row["repair_cycles_left"] = cycles_left(record, node_id)
         rows.append(row)

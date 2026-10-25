@@ -117,7 +117,9 @@ OMH_DAG_SCHEMA = {
         "delegation.oneshot_max_children. Lint is advice. ready returns delegate_task calls per category "
         "within the free slots: route each via omh_delegate_route, then delegate_task unchanged. After each "
         "child, read the node's handoff and settle it accepted, failed or blocked; a child saying it is "
-        "blocked is blocked, never accepted. settle returns what is next. repair adds nodes for a failed "
+        "blocked is blocked, never accepted. A still-running wait may settle parked with "
+        "handle and wake_at (future UTC ISO-8601 or epoch, within 24h); ready reoffers it then, at most three parks. "
+        "settle returns what is next. repair adds nodes for a failed "
         "node, at most two cycles. extend adds nodes to an all-passed run when the goal check finds work "
         "missing, at most two rounds. Past either limit, report what is open. Relay any `say` once."
     ),
@@ -147,6 +149,10 @@ OMH_DAG_SCHEMA = {
                      "description": "settle / repair: the node id. extend: the node whose check found the gap."},
             "outcome": {"type": "string", "enum": list(dag_run.OUTCOMES)},
             "reason": {"type": "string"},
+            "handle": {"type": "string", "maxLength": dag_run.MAX_HANDLE_CHARS,
+                       "description": "settle parked: the still-running background process or CI run handle."},
+            "wake_at": {"type": ["string", "number"],
+                        "description": "settle parked: UTC ISO-8601 or epoch; future, at most 24 hours ahead."},
             "provider_error": {
                 "type": "boolean",
                 "description": "settle failed: the child died on a provider error (an HTTP 400, no model call).",
@@ -227,7 +233,7 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
 
                 happened = dag_run.settle(
                     record, derived, node, args.get("outcome"), args.get("reason"), _flag(args.get("provider_error")),
-                    read_handoff=read, now=now,
+                    read_handoff=read, now=now, handle=args.get("handle"), wake_at=args.get("wake_at"),
                 )
                 record["updated_at"] = now
                 dag_run.write_run(path, record)
@@ -595,7 +601,7 @@ def _ready(
     owner = owner_choice(omh_home, now=now)
     nodes = {str(node["id"]): node for node in record["nodes"]}
     # With a coding owner the person chose, the ready coding nodes go to that owner's fanout, never to delegate_task;
-    # verification and review nodes, and every node without a write scope, stay native.
+    # baseline, verification and review nodes, and every node without a write scope, stay native.
     offered = dag_run.offerable(record, derived, now)
     coding = [node_id for node_id in offered
               if derived[node_id]["state"] == "ready" and dag_run.is_coding(nodes[node_id])] if owner else []

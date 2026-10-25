@@ -21,7 +21,7 @@ load_local_package()
 from _delegation_state import PARENT, homes  # noqa: E402
 from omh.plugin_bundle.omh import dag_run  # noqa: E402
 from omh.plugin_bundle.omh.tools import dag_tool  # noqa: E402
-from test_dag_tool import call, child_started, handoff, node, slots_table  # noqa: E402
+from test_dag_tool import PROMPT, call, child_started, handoff, node, slots_table  # noqa: E402
 
 
 def calls_by_node(result: dict) -> dict[str, dict]:
@@ -105,6 +105,438 @@ class SavedGoalLifecycleTests(unittest.TestCase):
             with patch.object(dag_tool.time, "time", return_value=time.time() + dag_run.HANDOUT_STALE_SECONDS + 1):
                 ready = call(action="ready", run="feat")
             self.assertIn(f"Run goal (saved):\n{goal}\n", calls_by_node(ready)["api"]["context"])
+
+
+class BaselineNodeTests(unittest.TestCase):
+    def test_baseline_is_not_verification_or_coding(self) -> None:
+        for node_id, label in (("baseline", "Verify existing tests"),
+                               ("verify-baseline", "Capture failures"),
+                               ("capture", "Audit BASELINE failures")):
+            with self.subTest(node_id=node_id, label=label):
+                baseline = node(node_id, label=label, scope=("baseline.txt",))
+                self.assertTrue(dag_run.is_baseline(baseline))
+                self.assertFalse(dag_run.is_verification(baseline))
+                self.assertFalse(dag_run.is_coding(baseline))
+        for label in ("Prebaseline check", "Baselineish change"):
+            with self.subTest(label=label):
+                self.assertFalse(dag_run.is_baseline(node("api", label=label)))
+        record = dag_run.new_record(PARENT, "feat", "Feature", "", [
+            node("baseline", scope=("baseline.txt",)), node("api", scope=("api.py",)),
+        ], time.time())
+        derived = dag_run.derive(record, [], time.time())
+        self.assertEqual([unit["unit_id"] for unit in dag_tool.export_units(record, derived, "codex")], ["api"])
+        with homes() as home, patch.object(dag_tool, "owner_choice", return_value="codex"):
+            slots_table(home)
+            result = call(action="define", run="feat", nodes=[
+                node("baseline", scope=("baseline.txt",)), node("api", scope=("api.py",)),
+            ])
+            self.assertIn("baseline", calls_by_node(result))
+            self.assertEqual(result["export"]["nodes"], ["api"])
+
+    def test_lint_verify_without_baseline(self) -> None:
+        for prompt in ("Run the FULL SUITE", "python -m unittest discover -s tests", "pytest", "Run `pytest -q`",
+                       "VERIFY: pytest, exit 0", "python -m pytest --maxfail=1 -k 'not slow'",
+                       "pytest --tb short", "pytest tests/test_api.py && pytest -q"):
+            with self.subTest(prompt=prompt):
+                definitions = [node("api"), node("verify", depends_on=("api",), prompt=prompt)]
+                self.assertIn("verify_without_baseline:verify", dag_run.lint(definitions))
+                definitions.insert(0, node("baseline"))
+                self.assertIn("verify_without_baseline:verify", dag_run.lint(definitions))
+                definitions[1]["depends_on"] = ["baseline"]
+                self.assertNotIn("verify_without_baseline:verify", dag_run.lint(definitions))
+        for prompt in ("pytest tests/test_api.py", "pytest -q tests/", "pytest -k 'not slow' tests",
+                       "python -m unittest tests.test_api", "Run the focused suite", "pytest.ini"):
+            with self.subTest(prompt=prompt):
+                self.assertNotIn("verify_without_baseline:verify", dag_run.lint([node("verify", prompt=prompt)]))
+        self.assertNotIn("verify_without_baseline:baseline", dag_run.lint([
+            node("baseline", label="Verify baseline", prompt="Run full suite"),
+        ]))
+
+    def test_verify_held_when_baseline_failed(self) -> None:
+        for outcome in ("failed", "blocked"):
+            for indirect in (False, True):
+                with self.subTest(outcome=outcome, indirect=indirect), homes() as home:
+                    slots_table(home)
+                    definitions = [node("baseline"), node("side")]
+                    if indirect:
+                        definitions.append(node("api", depends_on=("baseline",)))
+                    definitions.append(node("verify", depends_on=("api" if indirect else "baseline",)))
+                    started = call(action="define", run="feat", nodes=definitions)
+                    self.assertIn("side", calls_by_node(started))
+                    failed = call(action="settle", run="feat", node="baseline", outcome=outcome)
+                    ready = call(action="ready", run="feat")
+                    for result in (failed, ready):
+                        row = next(item for item in result["nodes"] if item["id"] == "verify")
+                        self.assertEqual((row["state"], row["held_by"], row["attempts"]), ("held", ["baseline"], 0))
+                        self.assertNotIn("verify", calls_by_node(result))
+                    record = record_of(home)
+                    self.assertNotIn("verify", dag_run.offerable(record, dag_run.derive(record, [], time.time()),
+                                                                time.time()))
+
+    def _baseline_context(self, home) -> tuple[dict, str]:
+        record = dag_run.new_record(PARENT, "feat", "Feature", "", [
+            node("baseline"),
+            node("old-tests", label="Capture BASELINE failures"),
+            node("unrelated-baseline"),
+            node("api", depends_on=("baseline", "old-tests")),
+            node("verify", depends_on=("api",)),
+        ], time.time())
+        record["handoff_root"] = "/sandbox-home/dev/.omh/dag"
+        derived = dag_run.derive(record, [], time.time())
+        context = dag_run.task_for(record, record["nodes"][-1], home.omh, derived)["context"]
+        return record, context
+
+    def _baseline_line(self, home) -> str:
+        return next(line for line in self._baseline_context(home)[1].splitlines() if line.startswith("Baseline:"))
+
+    def test_verify_task_names_baseline_handoff(self) -> None:
+        with homes() as home:
+            record, context = self._baseline_context(home)
+            baseline_lines = [line for line in context.splitlines() if line.startswith("Baseline:")]
+            self.assertEqual(len(baseline_lines), 2)
+            for baseline_id, line in zip(("baseline", "old-tests"), baseline_lines):
+                self.assertIn(dag_run.node_handoff(record, home.omh, baseline_id), line)
+                self.assertIn("Read", line)
+                self.assertIn("same test id and assertion/error signature", line)
+            self.assertNotIn("unrelated-baseline.md", "\n".join(baseline_lines))
+            producer = dag_run.task_for(record, record["nodes"][-2], home.omh,
+                                        dag_run.derive(record, [], time.time()))["context"]
+            self.assertNotIn("Baseline:", producer)
+
+    def test_matching_baseline_failure_may_be_exempted_but_is_disclosed(self) -> None:
+        # Worker guidance only: this pins the generated instruction, not live compliance.
+        with homes() as home:
+            line = self._baseline_line(home)
+        self.assertIn("Exempt only a failure it lists that you re-ran here with the same test id and "
+                      "assertion/error signature", line)
+        self.assertIn("under a comparable command and environment at the pinned base and candidate revisions", line)
+        self.assertIn("report it as pre-existing", line)
+        self.assertIn("does not make an unmet full-suite-green goal done", line)
+        self.assertNotIn("fail only on test failures absent from the baseline list", line)
+
+    def test_baseline_exemption_never_waives_changed_or_unevidenced_failures(self) -> None:
+        # Worker guidance only: this pins the generated instruction, not live compliance.
+        with homes() as home:
+            line = self._baseline_line(home)
+        for guard in ("same-id failure that changed", "missing evidence", "skipped or reduced coverage",
+                      "collection/execution/exit errors", "security or mandatory gates"):
+            with self.subTest(guard=guard):
+                self.assertIn(guard, line)
+        self.assertIn("never exempt: fail them", line)
+
+    def test_baseline_failures_do_not_close_an_unmet_full_suite_goal(self) -> None:
+        with homes() as home:
+            context = self._baseline_context(home)[1]
+        self.assertIn("does not make an unmet full-suite-green goal done", context)
+        self.assertIn("Check the complete run goal, not only this node's local VERIFY", context)
+        self.assertIn("Name each unmet or unobserved goal criterion", context)
+
+    def test_baseline_quality_bar_carries_the_same_comparison_guards(self) -> None:
+        from omh.skills.dag_ulw_skill import DEFINITION
+
+        bullets = [bullet for bullet in DEFINITION.quality_bar if "`baseline` node" in bullet]
+        self.assertEqual(len(bullets), 1)
+        bullet = bullets[0]
+        for term in ("test id, assertion/error signature", "comparable command", "pinned base and candidate revisions",
+                     "changed same-id failure", "missing evidence", "skipped or reduced coverage",
+                     "collection/exit errors", "security/mandatory gates", "pre-existing",
+                     "full-suite-green goal met"):
+            with self.subTest(term=term):
+                self.assertIn(term, bullet)
+
+
+class ParkedNodeTests(unittest.TestCase):
+    def test_parked_wait_contract_is_documented(self) -> None:
+        from omh.skills.dag_ulw_skill import run_loop_reference
+
+        reference = run_loop_reference()
+        for phrase in ("outcome=parked", "handle", "wake_at", "24 hours", "three parks", "park_limit_reached"):
+            self.assertIn(phrase, reference)
+
+    def test_short_park_does_not_rebind_the_previous_child(self) -> None:
+        with homes() as home:
+            slots_table(home)
+            moment = time.time()
+            with patch.object(dag_tool.time, "time", return_value=moment):
+                call(action="define", run="feat", nodes=[node("a")])
+                child_started(home, "feat", "a", now=moment)
+                call(action="settle", run="feat", node="a", outcome="parked",
+                     handle="proc:short", wake_at=moment + 1)
+            with patch.object(dag_tool.time, "time", return_value=moment + 1):
+                ready = call(action="ready", run="feat")
+            self.assertEqual(states(ready)["a"], "handed_out", ready)
+
+    def test_cancel_turns_parked_cancelled(self) -> None:
+        for elapsed in (0, 61):
+            with self.subTest(elapsed=elapsed), homes() as home:
+                slots_table(home)
+                moment = time.time()
+                with patch.object(dag_tool.time, "time", return_value=moment):
+                    call(action="define", run="feat", nodes=[node("a")])
+                    call(action="settle", run="feat", node="a", outcome="parked",
+                         handle="proc:123", wake_at=moment + 60)
+                with patch.object(dag_tool.time, "time", return_value=moment + elapsed):
+                    cancelled = call(action="cancel", run="feat")
+                    ready = call(action="ready", run="feat")
+                self.assertEqual(cancelled["state"], "cancelled")
+                self.assertEqual(states(cancelled)["a"], "cancelled")
+                self.assertFalse(ready["calls"])
+                self.assertEqual(record_of(home)["nodes"][0]["attempts"][-1]["outcome"], "parked")
+
+    def test_legacy_record_without_parked_derives(self) -> None:
+        record = dag_run.new_record(PARENT, "feat", "Feature", "", [node("a"), node("b", depends_on=("a",))], 100)
+        for outcome, expected in (("", "handed_out"), ("accepted", "accepted"), ("failed", "failed"),
+                                  ("blocked", "blocked"), ("retry", "ready")):
+            with self.subTest(outcome=outcome):
+                # Pre-park attempts have neither wait metadata nor resume metadata.
+                record["nodes"][0]["attempts"] = [{"n": 1, "handed_out_at": 100, "outcome": outcome,
+                                                  "settled_at": 101 if outcome else None}]
+                derived = dag_run.derive(record, [], 200)
+                self.assertEqual(derived["a"], {"child": None, "attempts": 1, "waits_on": [],
+                                                "held_by": [], "state": expected})
+                dependent = {"accepted": "ready", "failed": "held", "blocked": "held"}.get(outcome, "waiting")
+                self.assertEqual(derived["b"]["state"], dependent)
+                self.assertEqual(dag_run.cycles_left(record, "a"), dag_run.MAX_REPAIR_CYCLES)
+
+    def test_parked_needs_handle_and_deadline(self) -> None:
+        moment = 1_800_000_000.0
+        invalid = [
+            ({"wake_at": moment + 60}, "invalid_handle"),
+            ({"handle": "", "wake_at": moment + 60}, "invalid_handle"),
+            ({"handle": "x" * 121, "wake_at": moment + 60}, "invalid_handle"),
+            ({"handle": "proc:\n123", "wake_at": moment + 60}, "invalid_handle"),
+            ({"handle": 123, "wake_at": moment + 60}, "invalid_handle"),
+            ({"handle": "proc:123"}, "invalid_wake_at"),
+        ]
+        invalid.extend(({"handle": "proc:123", "wake_at": deadline}, "invalid_wake_at")
+                       for deadline in (None, True, float("nan"), float("inf"), moment, moment - 1,
+                                        moment + 86401, "nonsense", "2027-01-15T08:01:00",
+                                        "2027-01-15T09:01:00+01:00"))
+        with homes() as home, patch.object(dag_tool.time, "time", return_value=moment):
+            slots_table(home)
+            call(action="define", run="feat", nodes=[node("a")])
+            original = record_of(home)
+            for args, reason in invalid:
+                with self.subTest(args=args):
+                    refused = call(action="settle", run="feat", node="a", outcome="parked", **args)
+                    self.assertEqual(refused.get("reason"), reason, refused)
+                    self.assertEqual(record_of(home), original)
+            for index, deadline in enumerate((moment + 86400, "2027-01-15T08:01:00Z",
+                                              "2027-01-15T08:01:00+00:00")):
+                run = f"valid-{index}"
+                call(action="define", run=run, nodes=[node("a")])
+                result = call(action="settle", run=run, node="a", outcome="parked",
+                              handle="x" * 120, wake_at=deadline)
+                self.assertEqual(result["status"], "ok", result)
+                self.assertIsInstance(result["nodes"][0]["wake_at"], (int, float))
+        properties = dag_tool.OMH_DAG_SCHEMA["parameters"]["properties"]
+        self.assertIn("parked", properties["outcome"]["enum"])
+        self.assertEqual(properties["handle"]["maxLength"], 120)
+        self.assertEqual(set(properties["wake_at"]["type"]), {"string", "number"})
+
+    def test_park_limit_requires_settle(self) -> None:
+        for outcome in ("accepted", "failed", "blocked"):
+            with self.subTest(outcome=outcome), homes() as home:
+                slots_table(home)
+                moment = time.time()
+                with patch.object(dag_tool.time, "time", return_value=moment):
+                    call(action="define", run="feat", nodes=[node("a")])
+                for count in range(3):
+                    now = moment + count * 60
+                    with patch.object(dag_tool.time, "time", return_value=now):
+                        result = call(action="settle", run="feat", node="a", outcome="parked",
+                                      handle=f"proc:{count}", wake_at=now + 60)
+                    self.assertEqual(result["status"], "ok", result)
+                    with patch.object(dag_tool.time, "time", return_value=now + 60):
+                        self.assertIn("a", calls_by_node(call(action="ready", run="feat")))
+                stored = record_of(home)
+                with patch.object(dag_tool.time, "time", return_value=moment + 180):
+                    refused = call(action="settle", run="feat", node="a", outcome="parked",
+                                   handle="proc:fourth", wake_at=moment + 240)
+                    self.assertEqual(refused.get("reason"), "park_limit_reached", refused)
+                    self.assertEqual(record_of(home), stored)
+                    handoff(home, "feat", "a")
+                    settled = call(action="settle", run="feat", node="a", outcome=outcome)
+                self.assertEqual(settled["status"], "ok", settled)
+                self.assertEqual(states(settled)["a"], outcome)
+                self.assertEqual(dag_run.cycles_left(record_of(home), "a"), dag_run.MAX_REPAIR_CYCLES)
+
+    def test_parked_reoffered_after_wake_at(self) -> None:
+        with homes() as home:
+            slots_table(home)
+            moment = time.time()
+            with patch.object(dag_tool.time, "time", return_value=moment):
+                call(action="define", run="feat", nodes=[node("a"), node("b", depends_on=("a",))])
+                child_started(home, "feat", "a", now=moment)
+                parked = call(action="settle", run="feat", node="a", outcome="parked",
+                              handle="ci:run-987", wake_at=moment + 60)
+            self.assertEqual(parked["status"], "ok", parked)
+            for offset in (0, 59):
+                with patch.object(dag_tool.time, "time", return_value=moment + offset):
+                    self.assertFalse(call(action="ready", run="feat")["calls"])
+            with patch.object(dag_tool.time, "time", return_value=moment + 60):
+                ready = call(action="ready", run="feat")
+                repeat = call(action="ready", run="feat")
+            self.assertIn("a", calls_by_node(ready), ready)
+            self.assertIn("ci:run-987", calls_by_node(ready)["a"]["context"])
+            self.assertEqual(states(ready), {"a": "handed_out", "b": "waiting"})
+            self.assertFalse(repeat["calls"])
+            attempts = record_of(home)["nodes"][0]["attempts"]
+            self.assertEqual(len(attempts), 2)
+            self.assertEqual(attempts[0]["outcome"], "parked")
+            self.assertEqual(attempts[1]["n"], 2)
+            self.assertEqual(attempts[1]["outcome"], "")
+
+    def test_parked_does_not_spend_repair_cycle(self) -> None:
+        with homes() as home:
+            slots_table(home)
+            call(action="define", run="feat", nodes=[node("a"), node("b", depends_on=("a",))])
+            deadline = time.time() + 60
+            parked = call(action="settle", run="feat", node="a", outcome="parked",
+                          handle="proc:123", wake_at=deadline)
+            self.assertEqual(parked["status"], "ok", parked)
+            stored = record_of(home)
+            self.assertEqual(dag_run.cycles_left(stored, "a"), dag_run.MAX_REPAIR_CYCLES)
+            self.assertEqual(parked["state"], "running")
+            self.assertEqual(states(parked), {"a": "parked", "b": "waiting"})
+            self.assertEqual(parked["counts"]["failed"], 0)
+            self.assertEqual(parked["counts"]["parked"], 1)
+            self.assertIn("1 parked", parked["status_line"])
+            row = next(row for row in parked["nodes"] if row["id"] == "a")
+            self.assertEqual((row["handle"], row["wake_at"]), ("proc:123", deadline))
+            self.assertEqual(stored["nodes"][0]["attempts"][-1]["handle"], "proc:123")
+            self.assertFalse(parked["calls"])
+            refused = call(action="repair", run="feat", node="a", nodes=[node("fix")])
+            self.assertEqual(refused["reason"], "not_failed")
+            self.assertEqual(record_of(home), stored)
+
+    def test_provider_retry_after_wake_keeps_the_resume_handle(self) -> None:
+        with homes() as home:
+            slots_table(home)
+            moment = time.time()
+            with patch.object(dag_tool.time, "time", return_value=moment):
+                call(action="define", run="feat", nodes=[node("a")])
+                call(action="settle", run="feat", node="a", outcome="parked",
+                     handle="ci:123", wake_at=moment + 60)
+            with patch.object(dag_tool.time, "time", return_value=moment + 60):
+                wake = call(action="ready", run="feat")
+                retry = call(action="settle", run="feat", node="a", outcome="failed", provider_error=True)
+            wake_context = calls_by_node(wake)["a"]["context"]
+            retry_context = calls_by_node(retry)["a"]["context"]
+            self.assertIn("ci:123", wake_context)
+            self.assertEqual(retry["settled"], {"node": "a", "outcome": "retry"})
+            self.assertEqual([row["route"]["action"] for row in retry["calls"]], ["fallback"])
+            self.assertIn("ci:123", retry_context)
+            # One resume instruction carrying the one handle; the goal is not restated as a second work order.
+            self.assertEqual(retry_context.count("Resume the still-running wait"), 1)
+            self.assertEqual(retry_context.count("ci:123"), 1)
+            self.assertEqual(retry_context.count(PROMPT), 1)
+            attempts = record_of(home)["nodes"][0]["attempts"]
+            self.assertEqual([attempt.get("resume_handle") for attempt in attempts], [None, "ci:123", "ci:123"])
+            self.assertEqual(attempts[-1]["fallback"], True)
+
+    def test_a_resume_handle_dies_with_the_attempt_that_held_it(self) -> None:
+        # Two parks in a row keep the latest identity, not the first one.
+        chained = {"attempts": [
+            {"n": 1, "outcome": "parked", "handle": "ci:one"},
+            {"n": 2, "outcome": "retry", "resume_handle": "ci:one"},
+            {"n": 3, "outcome": "parked", "handle": "ci:two"},
+            {"n": 4, "outcome": "retry", "resume_handle": "ci:two"},
+        ]}
+        self.assertEqual(dag_run.hand_out(chained, "ready", 100).get("resume_handle"), "ci:two")
+        # Once the resumed attempt settles, later work on the node starts fresh.
+        settled = {"attempts": [
+            {"n": 1, "outcome": "parked", "handle": "ci:one"},
+            {"n": 2, "outcome": "retry", "resume_handle": "ci:one"},
+            {"n": 3, "outcome": "failed", "provider_error": False},
+        ]}
+        self.assertNotIn("resume_handle", dag_run.hand_out(settled, "ready", 200))
+        # A provider retry that never resumed a wait carries no identity either.
+        plain = {"attempts": [{"n": 1, "outcome": "retry", "provider_error": True}]}
+        self.assertNotIn("resume_handle", dag_run.hand_out(plain, "ready", 300))
+
+
+class ComposedDagLifecycleTests(unittest.TestCase):
+    """Composition boundary: prepared worker guidance, not evidence comparison or live compliance."""
+
+    def test_oneshot_refusal_preserves_the_parked_baseline_graph(self) -> None:
+        with homes() as home, patch.object(dag_tool, "_single_query_session", return_value=False):
+            slots_table(home)
+            moment = time.time()
+            definitions = [node("baseline"), node("api", depends_on=("baseline",)),
+                           node("verify", depends_on=("api",))]
+            with patch.object(dag_tool.time, "time", return_value=moment):
+                defined = call(action="define", run="feat", nodes=definitions)
+                self.assertEqual(defined["status"], "ok", defined)
+                parked = call(action="settle", run="feat", node="baseline", outcome="parked",
+                              handle="ci:baseline-oneshot", wake_at=moment + 60)
+                self.assertEqual(states(parked)["baseline"], "parked")
+                path = dag_run.record_path(home.omh, PARENT, "feat")
+                before = path.read_bytes()
+                (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+                with patch.object(dag_tool, "_single_query_session", return_value=True):
+                    refused = call(action="define", run="feat", nodes=definitions)
+                self.assertEqual((refused["status"], refused["reason"]), ("refused", "oneshot_budget_exceeded"))
+                self.assertEqual(path.read_bytes(), before)
+                cancelled = call(action="cancel", run="feat")
+                self.assertEqual(states(cancelled), {"baseline": "cancelled", "api": "cancelled", "verify": "cancelled"})
+                self.assertFalse(call(action="ready", run="feat")["calls"])
+
+    def test_marked_baseline_park_wake_producer_verifier_and_cancel(self) -> None:
+        with homes() as home:
+            slots_table(home)
+            moment = time.time()
+            definitions = [node("baseline", label="Capture baseline", scope=("baseline.txt",)),
+                           node("api", depends_on=("baseline",), scope=("api.py",)),
+                           node("verify", label="Verify full suite", depends_on=("api",),
+                                prompt=PROMPT + "\nRun the full suite.")]
+            with patch.object(dag_tool.time, "time", return_value=moment):
+                defined = call(action="define", run="feat", nodes=definitions,
+                               goal="Deliver the change with comparable baseline evidence and full-suite green.")
+                self.assertEqual(defined["status"], "ok", defined)
+                self.assertEqual(set(calls_by_node(defined)), {"baseline"})
+                self.assertNotIn("verify_without_baseline:verify", defined["lint"])
+                child_started(home, "feat", "baseline", now=moment)
+                parked = call(action="settle", run="feat", node="baseline", outcome="parked",
+                              handle="ci:baseline-123", wake_at=moment + 60)
+                self.assertEqual(states(parked), {"baseline": "parked", "api": "waiting", "verify": "waiting"})
+                self.assertFalse(parked["calls"])
+            with patch.object(dag_tool.time, "time", return_value=moment + 59):
+                self.assertFalse(call(action="ready", run="feat")["calls"])
+            with patch.object(dag_tool.time, "time", return_value=moment + 60):
+                wake = call(action="ready", run="feat")
+                self.assertEqual(set(calls_by_node(wake)), {"baseline"})
+                context = calls_by_node(wake)["baseline"]["context"]
+                self.assertEqual(context.count("Resume the still-running wait: ci:baseline-123"), 1)
+                self.assertEqual(context.count(PROMPT), 1)
+                self.assertFalse(call(action="ready", run="feat")["calls"])
+                record = record_of(home)
+                self.assertEqual(dag_run.cycles_left(record, "baseline"), dag_run.MAX_REPAIR_CYCLES)
+                baseline_path = handoff(home, "feat", "baseline", "Pinned base; comparable command/env; test id/signature.")
+                accepted = call(action="settle", run="feat", node="baseline", outcome="accepted")
+                self.assertEqual(set(calls_by_node(accepted)), {"api"})
+                self.assertIn(str(baseline_path), calls_by_node(accepted)["api"]["context"])
+                self.assertNotIn("Baseline:", calls_by_node(accepted)["api"]["context"])
+                handoff(home, "feat", "api")
+                produced = call(action="settle", run="feat", node="api", outcome="accepted")
+                self.assertEqual(set(calls_by_node(produced)), {"verify"})
+                verify_context = calls_by_node(produced)["verify"]["context"]
+                lines = [line for line in verify_context.splitlines() if line.startswith("Baseline:")]
+                self.assertEqual(len(lines), 1)
+                line = lines[0]
+                self.assertIn(str(baseline_path), line)
+                for guard in ("same test id and assertion/error signature", "comparable command and environment",
+                              "pinned base and candidate revisions", "same-id failure that changed", "missing evidence",
+                              "skipped or reduced coverage", "collection/execution/exit errors",
+                              "security or mandatory gates", "never exempt: fail them",
+                              "does not make an unmet full-suite-green goal done"):
+                    self.assertIn(guard, line)
+                cancelled = call(action="cancel", run="feat")
+                self.assertEqual(states(cancelled)["verify"], "cancelled")
+                self.assertFalse(call(action="ready", run="feat")["calls"])
+                refused = call(action="settle", run="feat", node="verify", outcome="accepted")
+                self.assertEqual(refused["reason"], "run_cancelled")
+                self.assertEqual(states(cancelled)["baseline"], "accepted")
 
 
 class RepairDataFlowTests(unittest.TestCase):

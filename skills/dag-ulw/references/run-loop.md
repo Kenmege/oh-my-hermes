@@ -28,6 +28,13 @@
    The result carries the next `calls`; dispatch them in the same turn.
 6. `omh_dag action=status` at any time; it survives compaction.
 
+A child handing off a still-running background process or CI run is not a failure: settle with
+`outcome=parked`, its `handle` (at most 120 characters), and `wake_at` (UTC ISO-8601 or epoch, future,
+within 24 hours). The node stays live as `parked`, spends no repair cycle, and cannot be repaired.
+At the deadline call `ready`: the same node gets a fresh attempt naming the handle, not replacement
+work. OMH starts no timer or poll. After three parks per node, another park is refused with
+`park_limit_reached`; settle accepted, failed or blocked instead. Cancel turns parked nodes cancelled.
+
 ## Goal loop
 
 Verify, repair, extend, verify. The verification node runs the real command. When it, or any node, fails:

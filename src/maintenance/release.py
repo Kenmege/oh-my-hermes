@@ -319,7 +319,16 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # combinators from every tool schema before any provider sees it
 # (`tools/schema_sanitizer.py`), so those bytes are counted here but not sent.
 # Re-derived from the producer.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 68757
+# 68757 -> 69186: `omh_dag` adds parked waits (+429): the bounded-wait
+# description (+152), outcome enum (+10), and handle / wake_at properties
+# (+267). A live wait keeps its resume handle without spending a repair cycle;
+# the schema must name that outcome and its required metadata. Only omh_dag
+# moves (2479 -> 2908); measured by per_turn_context's register() recorder
+# against pinned main eeebba5bb. Composed preflight retains its approved
+# 947-character marker/cap description and adds only the same parked note;
+# the recorder still measures exactly 69186. No headroom: test_per_turn_budgets
+# holds the +429 parked cap against the intact approved preflight schema.
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69186
 # PRE_LLM_CALL_CONTEXT_CHAR_LIMIT, PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT: moved with
 # their history to src/plugin_bundle/omh/turn_budget.py; imported at the top of this file.
 # 340000 -> 349637: three capability-skill sections were added by the domain
