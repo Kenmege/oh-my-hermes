@@ -146,8 +146,8 @@ from a contract it was not measured against.
 Be clear about this, because the temptation is to claim more. The mapping is a
 snapshot transcribed by hand from Hermes 0.21.1. **It cannot detect upstream
 drift.** Nothing in this repository reads hermes-agent, at test time or at run
-time. If Hermes ships a thirty-eighth hook, the table keeps its 37, the suite
-stays green, and the new hook classifies `unknown`.
+time. If Hermes ships a hook the table does not list, the table keeps its
+current set, the suite stays green, and the new hook classifies `unknown`.
 
 `tests/test_plugin_hook_contract.py` holds a second hand copy of the same
 reading. Comparing the two catches a local edit to the table that nobody

@@ -27,20 +27,8 @@ omh capabilities inspect executor_session_handoff --json
 
 ## Included Patterns
 
-| Pattern | Use |
-| --- | --- |
-| `single_lane` | Direct Hermes-retained work with one owner and one status lane. |
-| `clarify_then_plan` | Fuzzy intent that needs a blocking question, plan, and accept/revise gate. |
-| `plan_execute_verify` | Work that needs a plan, owner, execution evidence, and verification gate. |
-| `fanout_synthesize` | Independent research or option gathering followed by synthesis. |
-| `adversarial_review` | A verifier or reviewer challenges a plan, output, or release claim. |
-| `team_staged_pipeline` | Multi-lane work where lead/member/verifier ownership is explicit. |
-| `swarm_batch` | Independent high-throughput batches with clear ownership. |
-| `worktree_isolated_workers` | Parallel implementation that should use isolated workspaces. |
-| `loop_run_once` | A bounded loop tick without a daemon or hidden execution. |
-| `executor_session_handoff` | Prepared handoff for Codex, Claude Code, Hermes coding skills, or oh-my runtimes. |
-| `hermes_coding_team_path` | Optional Hermes-owned coding path with solo, durable-goal, team, and swarm start choices plus an observed runtime ladder. |
-| `materials_generation_handoff` | Documents, decks, spreadsheets, PDFs, or other material packages needing generation/QA. |
+`omh capabilities export --section orchestration_patterns --json` is the list
+of shipped patterns, each with the fields above; this page does not copy it.
 
 ## Evidence Rule
 

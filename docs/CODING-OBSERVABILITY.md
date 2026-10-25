@@ -1,17 +1,17 @@
 # Seeing What Coding Work Is Running
 
-Multi-session coding work used to be invisible in three specific ways. Each is
-now fixed, and each fix has a boundary worth knowing.
+What the coding status surfaces show about multi-session coding work, and the
+boundary of each.
 
 ## What you get
 
 ```
 Running work — 3 unit(s), 2 running
 
-unit              runtime            model              status     elapsed   tokens       session
-research-sweep    claude-code        opus xhigh         running    35m       10,000,000   sess_9f2c4a
-api-ratelimit     codex              gpt-5.6-sol xhigh  running    4m        128,400      019a7b3e
-docs-pass         omo-runtime (pi)   glm-4.6            completed  12m       unknown      unknown
+unit              runtime            model                  status     elapsed   tokens       session
+research-sweep    claude-code        claude-opus-5-5 xhigh  running    35m       10,000,000   sess_9f2c4a
+api-ratelimit     codex              gpt-6.1-sol xhigh      running    4m        128,400      019a7b3e
+docs-pass         omo-runtime (pi)   glm-5.3                completed  12m       unknown      unknown
 ```
 
 Ask in chat — "what's running", "지금 뭐 돌고 있어", "what models are running" —
@@ -30,15 +30,15 @@ CLI board belongs to no conversation, so both answer in the global scope
 
 ```
 Coding status board (3 running, 1 stuck of 7 observed) — observed at 2026-08-03T12:00:00Z
-LABEL     RUNTIME  MODEL            STATUS          ELAPSED  TOKENS   TOOLS    SESSION
-research  claude   🟠 fable-5 high  Code · running  35m      unknown  unknown  unknown
-SOURCE           ID        MODEL                      STATE                   ELAPSED  TOKENS   TOOLS
-hermes-delegate  childrun  ⚪ gpt-5.6-sol high        running                 2m       1,200    unknown  Fix the parser
-hermes-kanban    aaaa0001  🟠 claude-sonnet-5 medium  running                 5m       3,400    7  Write the docs
-hermes-kanban    bbbb0002  ⬜ unknown                 stale                   34m      unknown  unknown  Task t_bbbb0002
-hermes-delegate  childend  ⚪ gpt-5.6-sol high        reported done           5m       1,200    unknown  Write the release note
-hermes-kanban    cccc0003  ⬜ unknown                 queued (retry pending)  unknown  unknown  unknown  Task t_cccc0003
-hermes-kanban    dddd0004  ⬜ unknown                 reported done           12m      unknown  unknown  Task t_dddd0004
+LABEL     RUNTIME  MODEL                     STATUS          ELAPSED  TOKENS   TOOLS    SESSION
+research  claude   🟠 claude-fable-5-1 high  Code · running  35m      unknown  unknown  unknown
+SOURCE           ID        MODEL                        STATE                   ELAPSED  TOKENS   TOOLS
+hermes-delegate  childrun  ⚪ gpt-6.1-sol high          running                 2m       1,200    unknown  Fix the parser
+hermes-kanban    aaaa0001  🟠 claude-sonnet-5-5 medium  running                 5m       3,400    7  Write the docs
+hermes-kanban    bbbb0002  ⬜ unknown                   stale                   34m      unknown  unknown  Task t_bbbb0002
+hermes-delegate  childend  ⚪ gpt-6.1-sol high          reported done           5m       1,200    unknown  Write the release note
+hermes-kanban    cccc0003  ⬜ unknown                   queued (retry pending)  unknown  unknown  unknown  Task t_cccc0003
+hermes-kanban    dddd0004  ⬜ unknown                   reported done           12m      unknown  unknown  Task t_dddd0004
 ```
 
 - **SOURCE** says which reader the row came from; **ID** is Hermes' own (a
@@ -470,22 +470,12 @@ terminal's background; a printed command cannot ask the terminal for it as
 the TUI does, so with no name, in a pipe, with `NO_COLOR` and with `--json` it
 prints plain text. A chat post is always plain text.
 
-## What was actually broken
+## History
 
-**The model was dropped.** The runtime (`codex` / `claude_code`) was tracked
-end to end, but no progress surface carried the model. `_safe_signal` was a
-closed key allow-list with no model key. So OMH knew *which CLI* was running
-and could not say *which model* it was running on.
-
-**Token counts had no write site.** `omh coding fanout brief` already read
-`tokens_total` and `session_ref` and rendered columns for them. Nothing in
-`src/` ever wrote either key, so both columns printed `unknown` on every row,
-forever.
-
-**A running unit could not report itself.** Dispatch is blocking —
-`subprocess.run` inside a thread pool — so the dispatching process cannot
-narrate its own progress. There was no way for a second session to see that a
-unit was mid-flight, which is exactly the multi-session case that matters.
+Progress surfaces once carried the runtime but not the model, and nothing
+wrote `tokens_total` or `session_ref`, so those columns printed `unknown`. Both
+now have write sites, and a running unit reports itself through the progress
+bindings below rather than through the blocking dispatcher.
 
 ## The honesty contract
 
@@ -588,8 +578,8 @@ waited out. A matched shape is not provider, filesystem, or repository truth —
 it is what the output looked like.
 
 **Runtimes without structured output report `unknown` and say so.** The
-omo-runtime lane (pi / senpi / opencode) has no structured token surface, so
-its token columns stay unknown by design rather than being filled with a guess.
+`omo-runtime` lane has no structured token surface, so its token columns stay
+unknown by design rather than being filled with a guess.
 
 ## Why the token number is a sum, and what that means
 
@@ -839,7 +829,9 @@ anything:
 omh quality-evidence language-diagnostics \
   --owner claude-code --provider <provider> \
   --workspace <id> --baseline-revision <sha> --end-revision <sha> \
-  --diagnostics-revision <sha> [--introduced <json>] [--resolved <json>] [--json]
+  --diagnostics-revision <sha> \
+  [--introduced-json <json> | --introduced-file <path>] \
+  [--resolved-json <json> | --resolved-file <path>] [--json]
 ```
 
 It is read-only in both directions: it starts nothing and writes nothing. Plain

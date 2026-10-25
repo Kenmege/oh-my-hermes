@@ -2257,7 +2257,7 @@ def cmd_coding_fanout_brief(args: argparse.Namespace) -> int:
         selected_effort = model_route.get("selected_reasoning_effort", "")
         model_id = _bounded_fanout_brief_scalar(selected_model)
         effort = _bounded_fanout_brief_scalar(selected_effort)
-        # One human-readable label per subagent, e.g. "gpt-5.6-sol xhigh" —
+        # One human-readable label per subagent, e.g. "gpt-6.1-sol xhigh" —
         # what a briefing renders next to the unit without joining two fields.
         # The format is a stable part of fanout_briefing/v1 and is built by
         # the same `model_label_for` helper the status board uses, so the two

@@ -12,9 +12,8 @@ from .team import inspect_operating_model, operating_model_ids
 SETUP_PROFILE_SCHEMA_VERSION = "setup_profile/v1"
 PROJECT_MEMORY_POLICY_SCHEMA_VERSION = "project_memory_policy/v1"
 PARALLELISM_POLICY_SCHEMA_VERSION = "parallelism_policy/v1"
-# OMO's task engine ships a per-lane default of 5 and a global ceiling of 8;
-# the owner asked for the same defaults installed by setup and editable in the
-# profile. `per_owner` maps an executor owner (codex, claude-code, ...) to its
+# A per-lane default of 5 under a global ceiling of 8, installed by setup and
+# editable in the profile. `per_owner` maps an executor owner (codex, claude-code, ...) to its
 # own lane width; an absent owner is governed by the global pool alone.
 PARALLELISM_DEFAULTS: dict[str, int] = {
     "default_concurrency": 5,

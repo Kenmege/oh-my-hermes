@@ -277,13 +277,13 @@ Hermes Agent はすでにループを回しています。OMH はそのループ
 | インテリジェンス | OMH が追加するもの |
 | --- | --- |
 | 🧭 **Mixture-of-models ルーティング** | 委譲される lane ごとに、dispatch 時点でカテゴリ（モデル + 推論強度）が付きます。provider がモデルを拒否すれば chain を下り、仕事をしなかった子は緑の行ではなく `failed` と表示されます。 |
-| 🎛️ **モデル系列ごとのキャリブレーション** | GPT-6 Astra、GPT-5.6、Claude 5.1、GLM 5.3、Kimi、Gemini、Qwen、DeepSeek など、系列と世代ごとにプロンプティングを調整し、ベンチマークのペアが効果を示す間だけ維持します。 |
-| 🗂️ **自分で所有するカテゴリ** | executor ごとに十二の標準カテゴリ、`omh model-chains set` による並べ替え、マシンごとに chain を並べ替える entitlement インタビュー、実行前にリクエストがどこへルーティングされるかを示すライブビュー。 |
+| 🎛️ **モデル系列ごとのキャリブレーション** | GPT-6 Astra、GPT-5.6、Claude 5.5、GLM 5.3、Kimi、Gemini、Qwen、DeepSeek など、系列と世代ごとにプロンプティングを調整し、ベンチマークのペアが効果を示す間だけ維持します。 |
+| 🗂️ **自分で所有するカテゴリ** | 標準のモデルカテゴリ、`omh model-chains set` による並べ替え、マシンごとに chain を並べ替える entitlement インタビュー、実行前にリクエストがどこへルーティングされるかを示すライブビュー。 |
 | 🖥️ **ネイティブ TUI サーフェス** | OMH HUD（カテゴリ・ターン・コスト・キャッシュ付きのライブ行）、プロンプト上の phase todo、`parallel shot ×N`、full-row diff バンド、自分で選ぶテーマ。`omh` が開く OMH TUI に表示され、Hermes にパッチは当てません。 |
 | ⚡ **観測できる並列作業** | 独立した作業を、ファイル所有権が重ならない fanout unit に分割し、provider 負荷に応じた admission control、型付きの結果 sidecar、返ってきた結果を読む verification gate を付けます。 |
 | 💸 **価格付きコストテレメトリ** | すべての HUD 行と run summary にトークン数とドル金額を表示します。出典を明記した料金表で計算し、計算できない run は `$0` ではなく `unknown` と読めます。 |
 | 🧠 **長期プロジェクトメモリ** | Hermes が読み込むファイルベースの memory provider、admission と retention のポリシー、レビュアーが承認する書き込み、freshness と budget を持つ recall pack。Hermes 自身のメモリには触れません。 |
-| 🔎 **構造的コード検索** | 計測に基づく `ast-grep` プレイブック（28 言語、grep フォールバック）と、リポジトリ全体のアーキテクチャ図を描く `omh codegraph uml` を、executor がコードを読む地点に注入します。 |
+| 🔎 **構造的コード検索** | 計測に基づく `ast-grep` プレイブック（28 言語、grep フォールバック）と、リポジトリ全体のアーキテクチャ図を描く `omh codegraph uml` を、executor がコードを読む地点に注入します。`omh codegraph tests --changed` は変更が届くテストを示します（[codegraph コマンド](docs/CODEGRAPH.md)）。 |
 | 🛡️ **自分で書くガードレール** | ルールを外れた tool call を自分のルール文で遮断する toolcall rules、stub やスキップされたテストを証拠と認めない completion-integrity gate、危険な操作のための approval tier。 |
 | ♾️ **ウルトラワークフローエンジン** | 並列デリバリー lane、ledger と実際の完了 gate で回る計測ループ、エンジン実行前の decision-frontier インタビュー。一覧は上のウルトラスキルにあります。 |
 | 📦 **決定的なカタログ** | 一つのソースから生成される 100 以上のインストール可能なスキル、ネガティブケースを含む routing precision コーパス、1 バイトのずれで CI が失敗する drift gate。 |

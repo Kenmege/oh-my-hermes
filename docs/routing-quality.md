@@ -13,7 +13,8 @@ The gate currently measures:
   confidence threshold; and
 - unknown-input fallback behavior, including explicit fallback metadata.
 
-The current baseline is 100% (7/7) on the known-lane golden set. This is a
+The baseline is 100% of the cases in `DISPATCH_CASES` in
+`tests/test_routing_quality.py`, the known-lane golden set. This is a
 regression baseline, not a claim about production traffic. The next telemetry
 step should measure the same dimensions from privacy-safe route metadata:
 dispatch accuracy from operator corrections, clarification rate, fallback

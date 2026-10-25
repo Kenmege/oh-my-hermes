@@ -14,7 +14,9 @@ commands and pitfalls `CLAUDE.md`.
 This repo — a deterministic wrapper orchestration layer installed next to
 Hermes Agent: skill catalog, router, prepared-handoff generator, and
 metadata-only status surfaces. Makes no LLM, API, or network calls outside
-the scoped exceptions `CLAUDE.md` lists under What This Repo Is.
+the scoped exceptions `CLAUDE.md` lists under What This Repo Is, and executes
+work only through Fanout dispatch and the Hermes-native child boundary (both
+under Implementation Boundaries in `AGENTS.md`).
 _Avoid_: Hermes plugin (that is one distribution surface, not the product),
 coding executor, Hermes patch
 
@@ -72,9 +74,11 @@ not evidence that a host loaded or executed it. See [Agent Skills](docs/AGENT-SK
 _Avoid_: managed skill, Hermes plugin, execution adapter
 
 **Skill catalog**:
-The source of truth for every skill and its metadata (`src/skills/catalog.py`
-plus render code). Skills, `docs/WORKFLOWS.md`, `docs/ROLES.md`, and the demo
-cards are byte-exact projections of it.
+The source of truth for every skill and its metadata: the definitions in
+`src/skills/catalog_definitions.py` and the other `src/skills/catalog_*.py`
+tables, the derivations in `src/skills/catalog.py`, and render code. Skills,
+`docs/WORKFLOWS.md`, `docs/ROLES.md`, and the demo cards are byte-exact
+projections of it.
 _Avoid_: editing any generated projection directly
 
 **Skill record**:

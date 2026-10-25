@@ -277,13 +277,13 @@ Hermes Agent 已经在跑循环。OMH 决定往循环里放什么：每条 lane 
 | 智能 | OMH 提供什么 |
 | --- | --- |
 | 🧭 **Mixture-of-models 路由** | 每条委派 lane 在 dispatch 时落到一个类别（模型 + 推理强度）。provider 拒绝模型时沿 chain 下落，没做事的子任务显示 `failed`，而不是一行绿色。 |
-| 🎛️ **按模型家族校准** | 按家族和代次调校提示词：GPT-6 Astra、GPT-5.6、Claude 5.1、GLM 5.3、Kimi、Gemini、Qwen、DeepSeek 等，只在基准对照证明有效时才保留。 |
-| 🗂️ **你自己掌控的类别** | 每个 executor 九个内置类别，`omh model-chains set` 调整顺序，按机器重排 chain 的 entitlement 访谈，以及运行前就能看到请求会路由到哪里的实时视图。 |
+| 🎛️ **按模型家族校准** | 按家族和代次调校提示词：GPT-6 Astra、GPT-5.6、Claude 5.5、GLM 5.3、Kimi、Gemini、Qwen、DeepSeek 等，只在基准对照证明有效时才保留。 |
+| 🗂️ **你自己掌控的类别** | 内置模型类别，`omh model-chains set` 调整顺序，按机器重排 chain 的 entitlement 访谈，以及运行前就能看到请求会路由到哪里的实时视图。 |
 | 🖥️ **原生 TUI 界面** | OMH HUD（带类别、轮次、成本、缓存的实时行）、提示符上方的 phase todo、`parallel shot ×N`、整行 diff 色带与自选主题，显示在 `omh` 打开的 OMH TUI 中，绝不给 Hermes 打补丁。 |
 | ⚡ **可观测的并行工作** | 把独立工作拆成文件归属互不重叠的 fanout unit，带 provider 压力下的 admission control、有类型的结果 sidecar，以及读取返回结果的 verification gate。 |
 | 💸 **带价格的成本遥测** | 每一行 HUD 和 run summary 都显示 token 数与美元金额，按注明来源的价目表计算；无法计价的 run 显示 `unknown`，而不是 `$0`。 |
 | 🧠 **长期项目记忆** | Hermes 可加载的文件型 memory provider、admission 与 retention 策略、审阅者把关的写入、带新鲜度与预算的 recall pack。Hermes 自身的记忆不被触碰。 |
-| 🔎 **结构化代码搜索** | 经测量的 `ast-grep` 手册（28 种语言，grep 回退）和绘制整个仓库架构图的 `omh codegraph uml`，注入到 executor 读代码的位置。 |
+| 🔎 **结构化代码搜索** | 经测量的 `ast-grep` 手册（28 种语言，grep 回退）和绘制整个仓库架构图的 `omh codegraph uml`，注入到 executor 读代码的位置；`omh codegraph tests --changed` 列出一次改动会触及的测试（[codegraph 命令](docs/CODEGRAPH.md)）。 |
 | 🛡️ **你自己写的护栏** | 用你的规则文本拦截越界 tool call 的 toolcall rules、拒绝把 stub 和跳过的测试当证据的 completion-integrity gate，以及高风险操作的 approval tier。 |
 | ♾️ **Ultra 工作流引擎** | 并行交付 lane、带 ledger 与真实完成 gate 的度量循环、引擎运行前的 decision-frontier 访谈。列表见上方 Ultra 技能。 |
 | 📦 **确定性目录** | 由同一来源生成的一百多个可安装技能、含负例的 routing precision 语料，以及一个字节偏差就让 CI 失败的 drift gate。 |

@@ -1,11 +1,7 @@
-# CI Test Sharding Rollout
+# CI test sharding
 
-How the sharded unit-test workflow gates a merge, what still has to change in
-repository settings, and the exact procedure for deciding whether the speedup
-target from issue #1294 was met.
-
-Nothing here is a performance claim. As of this document's merge, **no
-post-rollout measurement has been taken: NOT YET OBSERVED.**
+How the sharded unit-test workflow gates a merge, and how the repository
+ruleset requires that gate. Nothing here is a performance claim.
 
 ## The Gate Lives in the Workflow
 
@@ -98,17 +94,17 @@ so the LPT partition accounts for them:
 
 Which Linux lanes run depends on the event that started the workflow:
 
-| event | lanes | jobs per run |
-| --- | --- | --- |
-| `pull_request` | `linux-3.11` (2 shards), `windows-3.12` (4 shards) | 10 |
-| `push` to `main`, `workflow_dispatch` | `linux-3.11`, `linux-3.13` (2 shards each), `windows-3.12` (4 shards) | 12 |
+| event | lanes |
+| --- | --- |
+| `pull_request` | `linux-3.11` (2 shards), `windows-3.12` (4 shards) |
+| `push` to `main`, `workflow_dispatch` | `linux-3.11`, `linux-3.13` (2 shards each), `windows-3.12` (4 shards) |
 
-A pull request runs the supported floor, 3.11, on Linux. A main push adds
-3.13, the newest supported interpreter, where 3.12 used to run; Windows
-keeps 3.12 on every event. The evidence behind the change, from the 7 days
-to 2026-09-26: 0 of 40 failed runs were red only on Linux 3.12, while a
-defect only CPython 3.13 shows (`Path.resolve` on a symlink loop, fixed by
-13696e5d) had merged with every lane green.
+A pull request runs the supported floor, 3.11, on Linux. A main push adds 3.13,
+the newest supported interpreter, where 3.12 used to run; Windows keeps 3.12 on
+every event. The evidence at the time of the change (2026-09-26, the 7 days
+before it): 0 of 40 failed runs were red only on Linux 3.12, while a defect only
+CPython 3.13 shows (`Path.resolve` on a symlink loop, fixed by 13696e5d) had
+merged with every lane green.
 
 `aggregate.py --event ${{ github.event_name }}` looks the lane set up in
 `EXPECTED_LANES`, refuses an event it does not know, and requires every shard
@@ -124,14 +120,14 @@ the main lane set before merging, dispatch the workflow on the branch:
 
 ## Superseded Runs Are Cancelled
 
-`concurrency` groups a pull request run by its number and every other run by
-its ref, and cancels the run in progress when a newer one starts. On main this
-trades per-commit attribution for runner time: in the 7 days to 2026-09-26, 32
-of 86 main runs were superseded by a later main push before they finished, at
-~140 job-minutes each, and one 5-push burst left test jobs queued for 13 to 17
-minutes. A red main is now attributed to the range of merges since the last
-completed run. The tip run still tests every merged commit, because its tree
-contains them all.
+`concurrency` groups a pull request run by its number and every other run by its
+ref, and cancels the run in progress when a newer one starts. On main this
+trades per-commit attribution for runner time. At the time of the change
+(2026-09-26, the 7 days before it), 32 of 86 main runs were superseded by a
+later main push before they finished, at ~140 job-minutes each, and one 5-push
+burst left test jobs queued for 13 to 17 minutes. A red main is now attributed
+to the range of merges since the last completed run. The tip run still tests
+every merged commit, because its tree contains them all.
 
 Nothing depends on every main run completing:
 
@@ -196,130 +192,31 @@ A green `aggregate` lists each superseded result as
 
 ## Repository Settings
 
-Read-only inspection of `rlaope/oh-my-hermes` on 2026-09-04:
+`main` is governed by the active ruleset "main: merge only on green aggregate
+and DCO". It blocks deletion and non-fast-forward pushes and requires two
+status checks: `aggregate` and `DCO`. There is no separate branch-protection
+object; `gh api repos/rlaope/oh-my-hermes/branches/main/protection` returns 404,
+and `gh api repos/rlaope/oh-my-hermes/rulesets` is the place to read the gate.
 
-```sh
-gh api repos/rlaope/oh-my-hermes/rulesets            # => []
-gh api repos/rlaope/oh-my-hermes/branches/main/protection  # => 404 Not Found
-```
-
-There are no rulesets and no branch-protection object on `main`. So there is
-no required-status-check list to migrate, and this repository does **not**
-currently enforce any check at the platform level. Do not read the workflow's
-fail-closed behavior as branch protection; they are separate mechanisms.
-
-If a maintainer later enables branch protection or a ruleset, the required
-check to select is `aggregate`, and only `aggregate`. Pinning individual shard
-jobs such as `test (3.12, 0)` would break the moment the shard count changes,
+`aggregate` is the only CI check the ruleset needs. Pinning individual shard
+jobs such as `test (3.11, 0)` would break the moment the shard count changes,
 and pinning them alongside `aggregate` adds nothing: the aggregate is already
 red whenever any of them is.
 
-## Measuring the >=25% Target
+## Unrun measurement plan (#1294)
 
-Issue #1294 asks for a median slowest-test-job reduction of at least 25% over
-at least ten comparable successful push runs, with no increase in retry or
-flaky-failure rate. Run this after the sharded workflow has landed on `main`
-and accumulated enough history. Until then the result is NOT YET OBSERVED.
-
-### Metric
-
-For a single run, the **slowest test-job duration** is the maximum, over the
-test-executing jobs in that run, of `completed_at - started_at` in seconds.
-
-Test-executing jobs are exactly:
-
-- Baseline (pre-sharding): `test (3.11)`, `test (3.12)`, `test-windows`.
-- Post-rollout: every `test (<version>, <shard>)` and every
-  `test-windows (<shard>)` job (before the quarantine was folded into the last
-  shard, also every `test-quarantine (...)` job).
-
-Excluded from the metric in both corpora: `plan`, `aggregate`, `distribution`,
-and any job that is not one of the above. `plan` and `aggregate` are counted
-separately as rollout overhead (see below) because they are new serial hops,
-not test execution.
-
-Use `started_at`, not `created_at`. Queue wait belongs to runner availability,
-not to the suite, and mixing them makes the comparison noise-dominated.
-
-### Corpus
-
-Two corpora of at least 10 runs each:
-
-- **Baseline**: the last 10 `workflow_dispatch`-free `push` runs of `ci.yml` on
-  `main` with `conclusion == success` whose commit predates the sharding merge.
-- **Post-rollout**: the first 10 `push` runs of `ci.yml` on `main` with
-  `conclusion == success` whose commit is the sharding merge or later.
-
-Comparable means all of: same workflow file name, `event == push`,
-`head_branch == main`, `conclusion == success`, and standard GitHub-hosted
-runners. Exclude any run that is a re-run (`run_attempt > 1`), any run whose
-diff touches `tools/test_sharding/` or `.github/workflows/ci.yml`, and any run
-during a declared GitHub Actions incident. If exclusions leave fewer than 10
-runs on either side, the measurement is not yet available; say so instead of
-comparing smaller corpora.
-
-### Procedure
-
-```sh
-REPO=rlaope/oh-my-hermes
-
-# 1. List candidate runs, newest first, and record run IDs + head SHAs.
-gh run list --repo "$REPO" --workflow=ci.yml --branch main \
-  --event push --status success --limit 40 \
-  --json databaseId,headSha,createdAt,attempt
-
-# 2. For each selected run ID, pull per-job timings.
-gh api "repos/$REPO/actions/runs/<RUN_ID>/jobs" \
-  --jq '.jobs[] | [.name, .conclusion, .started_at, .completed_at] | @tsv'
-```
-
-For each run, keep only the test-executing job names above, compute each job's
-duration in seconds, and take the maximum. That single number is the run's
-slowest test-job duration. Then take the median across the 10 runs in each
-corpus, and:
-
-```
-reduction = (baseline_median - post_median) / baseline_median
-```
-
-The target is met when `reduction >= 0.25`.
-
-### Retry and Flaky Comparison
-
-The speed number is meaningless if reliability dropped, so compute both of
-these over the same two corpora and require neither to increase:
-
-- **Retry rate**: the share of `push` runs on `main` in the window that have
-  any job with `run_attempt > 1`, or any manual re-run recorded against the
-  run. Compare the post-rollout window's rate against the baseline window's
-  rate over an equal number of runs.
-- **Flaky-failure rate**: the share of `push` runs on `main` in the window
-  that failed and then passed on re-run with no intervening code change to
-  `src/`, `tools/`, or `tests/`. Include failed runs here, unlike the timing
-  corpus, which is success-only.
-
-If either rate rises, the target is not met regardless of the timing number.
-Rebalance or reduce the shard count and re-measure rather than reporting a
-partial pass.
-
-### Rollout Overhead
-
-Record, but do not net against the timing result: the added wall-clock of the
-serial `plan` job and the `aggregate` job, and the added billable minutes from
-running more jobs in parallel. Sharding trades CI minutes for wall-clock time
-by design. Both numbers belong in the rollout report so the tradeoff is visible
-rather than implied.
-
-### Reporting
-
-State the two medians, the computed reduction, both reliability rates, the run
-IDs used on each side, and every exclusion applied. Timing data is performance
-evidence only. It is never test, review, merge-readiness, or merge evidence.
+Issue #1294 asks for a median slowest-test-job reduction of at least 25%; that
+is a target, not a result, and it has not been measured. The plan: take the
+slowest test-executing job's `completed_at - started_at` (not `created_at`) per
+run, over two corpora of at least ten successful, non-re-run `push` runs of
+`ci.yml` on `main` from before and after the sharding merge, excluding runs that
+touch `tools/test_sharding/` or `.github/workflows/ci.yml`; the target is met
+when `(baseline_median - post_median) / baseline_median >= 0.25` and neither the
+retry rate nor the flaky-failure rate rose. Timing data is performance evidence
+only, never test, review, merge-readiness, or merge evidence.
 
 ## Rolling Back
 
-Revert the workflow's `plan` and `aggregate` jobs and the quarantine steps and
-restore the single full-suite `unittest discover` invocation per matrix job.
-Nothing outside `.github/workflows/ci.yml` and `tools/test_sharding/` has to
-change, and because no branch protection references these job names, no
-settings change is needed to roll back.
+Revert the `plan` and `aggregate` jobs and the quarantine steps in
+`.github/workflows/ci.yml`, and change the ruleset's required check from
+`aggregate` in the same step.

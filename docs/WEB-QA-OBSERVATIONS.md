@@ -582,14 +582,9 @@ the import result, and a same-run `compare` must be `PASS` with
 `omh_cli_wall_ms`, and the store's own `import_timings` apart, and states its
 claim boundary as one local fixture observation.
 
-The native QA pass reported for this feature ran those two scripts against a
-local fixture: positive and negative localhost collection, independent
-exact-capture visual reviews written against the collector's PNG digests, and
-real CLI `import`, `show`, and `compare` returning `PASS` with a write-free
-repeat import. That is local fixture evidence on one machine. It says nothing
-about other engines, profiles, authenticated views, other hosts, or
-production targets, and no number from it belongs in prose without the arm,
-corpus, and artifact it came from.
+A local fixture run of those scripts is evidence for that machine only. No
+number from one belongs in prose without the arm, corpus, and artifact it came
+from.
 
 ### Related skills
 
