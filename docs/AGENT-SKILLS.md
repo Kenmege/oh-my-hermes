@@ -30,9 +30,15 @@ Windows-native PowerShell (5.1 or 7):
 ```powershell
 git clone https://github.com/rlaope/oh-my-hermes.git "$HOME/oh-my-hermes"
 Set-Location C:/path/to/your/project
-& "$HOME/oh-my-hermes/.cursor/install.ps1"
-& "$HOME/oh-my-hermes/.cursor/install.ps1" -User
+powershell -NoProfile -ExecutionPolicy Bypass -File "$HOME/oh-my-hermes/.cursor/install.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$HOME/oh-my-hermes/.cursor/install.ps1" -User
 ```
+
+Windows 10 and 11 ship with the `Restricted` execution policy, which refuses
+to run any `.ps1` file, so calling the script directly
+(`& ".../install.ps1"`) fails there. `-ExecutionPolicy Bypass` applies to that
+one process only and changes no machine or user policy. With PowerShell 7, run
+the same line with `pwsh` in place of `powershell`.
 
 Claude installs only `.claude/skills/`; the other five adapters install only
 `.agents/skills/`. User scope places the same relative path under the user's
@@ -45,8 +51,13 @@ Both installers read the pack's one inventory,
 `agent-skills/.omh-agent-skills-manifest.json`, verify the complete source file
 list and SHA256s against it before writing, copy only listed files, verify the
 installed bytes, copy that inventory verbatim as the receipt, and print the
-installed skill names. Re-running is idempotent. An explicit reinstall replaces
-listed files, so review/back up local edits first. Other files and skills
+installed skill names. Re-running is idempotent. A reinstall replaces edited
+`SKILL.md` and reference files, so review/back up local edits first. It never
+replaces an edited **toolkit** file (`<skill>/toolkit/...`): it stops before
+writing anything with `Foreign/edited support preserved: <path> (move it aside,
+then rerun)`, and keeps stopping on every run until that file is gone. To
+recover, back up the file, move it out of the skills directory, and run the
+installer again; it then writes the pack's copy. Other files and skills
 (including existing `.claude/skills/triage-sweep`, `review-sweep`, and
 `model-onboarding`) are preserved. Symlink/reparse-point destinations are
 refused. Interrupted copies report failure; rerun after resolving the cause.
@@ -91,7 +102,10 @@ omh install --target agents --scope user --status --json
 ```
 
 Repo scope generates `.agents/skills/<name>/SKILL.md` and a `.claude/skills/`
-copy at the git root, and fails closed outside a repository. Claude Code
+copy at the git root, and fails closed outside a repository. Two copies mean
+Cursor and opencode load every skill twice (see
+[Duplicate copies](#duplicate-copies)), and the command prints a warning saying
+so; use `--host` when you use one host. Claude Code
 2.1.270 discovered the repo `.claude/skills/` copy but not `.agents/skills/`
 in observed parent QA (2026-09-13; details below).
 User scope likewise generates both `~/.agents/skills/` and `~/.claude/skills/`,
@@ -126,9 +140,78 @@ or edited mirror is not a fresh install in either scope. `mirror:` prefixes iden
 file drift. An interrupted install stays missing/stale until every copy agrees.
 
 Inspect and back up local edits before repeating the install command. An
-explicit reinstall replaces managed local edits, refreshes both chosen-scope copies,
-and removes retired manifest-owned files; it does not import those edits into
-the catalog. There is no automatic update, host reload, or background sync.
+explicit reinstall replaces managed local edits to `SKILL.md` and reference
+files, refreshes both chosen-scope copies, and removes retired manifest-owned
+files; it does not import those edits into the catalog. Like the clone scripts,
+it refuses an edited toolkit file (`Agent Skills refuses edited support`), and
+status then says to move that file aside before rerunning. There is no automatic update, host reload, or background sync.
+
+## Duplicate copies
+
+Every installer writes one of two directories: `.agents/skills/` (Codex,
+Cursor, opencode, OpenClaw, pi) or `.claude/skills/` (Claude Code). Some hosts
+read both. Per each vendor's skills documentation, read on 2026-10-25:
+
+| Host | Reads `.agents/skills/` | Reads `.claude/skills/` | With the same name in both |
+| --- | --- | --- | --- |
+| Claude Code | no | yes | n/a |
+| Codex | yes | no | n/a |
+| Cursor | yes | yes ("for compatibility", repo and user) | loads both; resolution not documented |
+| opencode | yes | yes (Claude-compatible, repo and global) | loads both; its docs ask for names unique across all locations |
+| OpenClaw | yes | no | n/a |
+| pi | yes | not documented | first discovered wins, with a warning |
+
+Sources: [Claude Code](https://code.claude.com/docs/en/skills),
+[Codex](https://learn.chatgpt.com/docs/build-skills),
+[Cursor](https://cursor.com/docs/context/skills),
+[opencode](https://opencode.ai/docs/skills/),
+[OpenClaw](https://docs.openclaw.ai/tools/skills), and
+[pi](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/skills.md).
+
+Two ways create both copies under one root:
+
+- `omh install --target agents` without `--host`, in either scope. That mode
+  writes both on purpose, because it cannot know which host you use.
+- `.claude/install.sh` (or `.ps1`) plus any of the other five installers.
+
+Both paths warn instead of refusing, since a person who uses Claude Code and a
+`.agents/skills/` host needs both copies. The CLI adds the warning to
+`warnings` in `--json` output and prints it in human output, on install and on
+`--status`. The clone scripts print it to stderr after installing. If you use
+only one host, keep the copy that host reads and remove the other one, as
+described in [Removal](#removal). After removing a copy that an install
+without `--host` made, rerun the install with `--host <host>`. That rewrites
+the remaining receipt as a single-target one, so `--status` reports `fresh`.
+
+A pack in a repo directory and another in the same host's user directory is
+also a duplicate for Cursor and opencode. The installers check only the root
+they write to, so they do not warn about that case.
+
+## Removal
+
+`omh uninstall` does not touch Agent Skills trees. To remove a pack, delete
+the skill directories its receipt lists, then the receipt. Do not delete the
+whole `skills/` directory, because it can hold your own skills. Change into the
+skills directory first: `.claude/skills` or `.agents/skills` under the project
+root, or under your home directory for a user-scope install.
+
+```sh
+cd .agents/skills
+sed -n 's|^    "\([A-Za-z0-9_-][A-Za-z0-9._-]*\)/.*|\1|p' .omh-agent-skills-manifest.json |
+    LC_ALL=C sort -u | while IFS= read -r skill; do rm -rf -- "./$skill"; done
+rm -f .omh-agent-skills-manifest.json
+```
+
+```powershell
+Set-Location .agents/skills
+(Get-Content -Raw -LiteralPath .omh-agent-skills-manifest.json | ConvertFrom-Json).files.PSObject.Properties.Name |
+    ForEach-Object { $_.Split('/')[0] } | Sort-Object -Unique |
+    ForEach-Object { Remove-Item -Recurse -Force -LiteralPath (Join-Path . $_) }
+Remove-Item -LiteralPath .omh-agent-skills-manifest.json
+```
+
+This removes each listed skill's whole directory, including files you added
+inside one, so back those up first. Skills the receipt does not list are kept.
 
 ## Portability classes
 
@@ -245,23 +328,17 @@ continuation/evidence ledger. Missing native evidence remains unavailable;
 queued ticks never establish execution or goal completion. Linked OMH goal
 completion retains its existing evidence gate.
 
-### Hermes-only boundary list
+### Hermes-only boundary
 
-These installable workflows are intentionally absent:
-
-| Workflows | Boundary |
-| --- | --- |
-| `omh-routing`, `omh-meta-router`, `omh-gateway-intent-card` | Hermes chat/wrapper intake, routing, and delivery continuity |
-| `ulw-maestro`, `omh-executor-runtime-readiness` | Hermes harness versus explicit external-owner handoff and readiness semantics |
-| `omh-doctor`, `omh-skill`, `omh-capability-toggle` | Managed Hermes installation, inventory, registration, and product diagnostic surfaces |
-| `omh-model-setup`, `omh-model-optimization`, `omh-parallel-tools`, `omh-websearch-setup` | Native model slots, mixture routing, or Hermes capability/configuration changes |
-| `omh-morning-brief`, `omh-buzz` | Hermes MCP setup or Buzz gateway/transport |
-| `omh-research-department`, `omh-automation-blueprint` | Hermes profiles, recurring-intent lifecycle, cron, and delivery composition |
-| `omh-agent-board`, `omh-browser`, `omh-achievements` | Native plugin RPC, browser admission/effects, or Hermes badge artifacts |
-| `omh-memory-sync` | Hermes USER.md/MEMORY.md review and native write ownership |
-| `omh-prompt-import-readiness` | External prompts being exposed as Hermes slash commands |
-| `omh-agent-evaluation` | The catalog's paired-run output depends on Hermes-child dispatch receipts |
-| `omh-workflow-learning` | Native browser-promotion receipts and managed-skill visibility semantics |
+A workflow in `skills/` that is absent from `agent-skills/` is Hermes-only: it
+needs the Hermes runtime, registration, native plugin tools, or wrapper
+semantics. `skill_portability()` in `src/skills/catalog_portable.py` decides
+it. Each reviewed row of its table carries its reason as the comment above it,
+and a skill the table does not list fails closed as `hermes-only`. To see the
+current set, compare the two directories; this page does not list the names,
+because such a list goes stale whenever a Hermes-only skill is added.
+`tests/test_agent_skills_projection.py` checks that the two trees and that
+function agree.
 
 Retired/reference-only ULW surfaces (`ulw-ralph`, `ulw-goal`, `ulw-team`, and
 `ulw-process`) and `omh-quality-evidence-loop` remain non-installable here too. A skill mentioned
@@ -348,8 +425,9 @@ described below.
   `<cli> --version` probe, for a CLI in that probe's set
   (`version_probed_agent_clis()` in `src/coding/executor_readiness.py`). The
   set is unchanged, but the trigger is wider: this command runs the probe for
-  every such CLI on PATH, where readiness ran `pi` only for pi-family-runtime and
-  `opencode` only when neither `pi` nor `senpi` was on PATH. Only the version
+  every such CLI on PATH, where readiness ran the runtime-family host CLI only
+  for that profile and `opencode` only when no runtime-family host CLI was on
+  PATH. Only the version
   token is kept. Any other host is recorded as `no_approved_probe`,
   and a missing binary as `executable_missing`. What a `--version` child writes
   for itself is neither prevented nor observed.
@@ -431,7 +509,7 @@ npx skills-ref validate agent-skills/ulw-work
 ```
 
 The committed `agent-skills/` tree is generated from the packaged catalog. The
-same command regenerates all 18 host adapter files beside it; `--check` checks
+same command regenerates every host adapter file beside it; `--check` checks
 every adapter's exact bytes while leaving existing host skill/configuration
 files alone. `--output /tmp/stage/agent-skills` stages the tree and its sibling
 adapter directories without modifying the checkout.

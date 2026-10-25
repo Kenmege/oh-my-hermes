@@ -287,6 +287,14 @@ Hermes:
 omh setup
 ```
 
+### Workflows in Claude Code, Codex, Cursor, opencode, OpenClaw, or pi
+
+These hosts can load OMH workflows as Agent Skills without Hermes. The
+per-host clone installers need no Python and no `omh`. See
+[Agent Skills projection](AGENT-SKILLS.md) for the install commands, the
+[duplicate copies](AGENT-SKILLS.md#duplicate-copies) that two installers can
+leave for Cursor and opencode, and [removal](AGENT-SKILLS.md#removal).
+
 ### Open the terminal, and come back to a session
 
 Bare `omh` opens the OMH TUI (described below), and three Hermes session flags
@@ -4768,6 +4776,10 @@ reverses recorded config changes, and removes manifest-owned plugin, team and
 legacy display artifacts from that home and its bot profiles. A named-profile
 invocation targets only that profile. Store deletion is conditional on the
 persisted reference inventory described below, not on the spelling of the command.
+
+`omh uninstall` leaves Agent Skills trees (`.agents/skills/`,
+`.claude/skills/`) in place; [Agent Skills removal](AGENT-SKILLS.md#removal)
+covers them.
 
 Command cleanup recognizes both the installer-owned legacy venv and real
 `generations` venvs, including their `current` pointer and managed launcher.
