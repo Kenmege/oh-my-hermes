@@ -421,14 +421,19 @@ function Select-OmhPython {
         if (-not (Test-Path -LiteralPath $candidate) -and -not (Get-Command $candidate -ErrorAction SilentlyContinue)) { continue }
         # Single quotes inside the snippet on purpose: Windows PowerShell 5.1
         # mangles embedded double quotes when building a native command line.
-        $probe = Invoke-OmhCapture -FilePath $candidate -Arguments @('-c', 'import sys; print(''%d.%d'' % sys.version_info[:2])')
+        # `-I` keeps a stray PYTHONPATH or a user site-packages out of the
+        # answer, as install.sh's probe does.
+        $probe = Invoke-OmhCapture -FilePath $candidate -Arguments @('-I', '-c', 'import sys; print(''%d.%d'' % sys.version_info[:2])')
         if ($probe.ExitCode -ne 0) { continue }
         # Anchored: this is matched against arbitrary interpreter output, and a
         # wrapper that prints a banner first would otherwise satisfy it.
         if ($probe.Output.Trim() -notmatch '^(\d+)\.(\d+)$') { continue }
         $major = [int]$Matches[1]
         $minor = [int]$Matches[2]
-        if ($major -gt 3 -or ($major -eq 3 -and $minor -ge 11)) { return $candidate }
+        if ($major -gt 3 -or ($major -eq 3 -and $minor -ge 11)) {
+            $script:OmhSelectedPythonVersion = "$major.$minor"
+            return $candidate
+        }
         # Keep looking rather than stopping here: `py` honors PY_PYTHON and
         # py.ini, so it can land on 3.10 while `python` one slot later is 3.12.
         $script:OmhRejectedPythons += "$candidate is Python $major.$minor"
@@ -779,7 +784,11 @@ function Resolve-OmhLatestReleaseLocation {
 $OmhInstallFailed = $false
 try {
     $script:OmhLang = Get-OmhNormalizedLang $OmhLangRaw
+    # Header, then the interpreter, then any network work: the order
+    # install.sh uses, so a failed release lookup never prints above it.
+    Write-OmhHeader (Get-OmhMessage 'installer_title') (Get-OmhMessage 'installer_subtitle')
     $script:OmhRuntimePython = Resolve-OmhPython
+    Write-OmhNote "Python: $OmhRuntimePython ($OmhSelectedPythonVersion)"
 
     if (-not $OmhPackageUrl) {
         switch ($OmhChannel) {
@@ -830,7 +839,6 @@ try {
         }
     }
 
-    Write-OmhHeader (Get-OmhMessage 'installer_title') (Get-OmhMessage 'installer_subtitle')
     Write-OmhNote ((Get-OmhMessage 'channel') + ': ' + $OmhChannel)
     Write-OmhNote "Source ref: $OmhSourceRef"
     Write-OmhNote ((Get-OmhMessage 'mode') + ': ' + $OmhInstallMode)

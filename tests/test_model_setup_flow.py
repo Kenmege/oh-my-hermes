@@ -829,5 +829,51 @@ class ModelSetupFlowTests(unittest.TestCase):
                     self.assertIn("without --skip-apply", human_stdout)
 
 
+    def test_setup_without_hermes_on_path_reports_hermes_unavailable(self) -> None:
+        # Given: a machine whose Hermes is managed by a hosted wrapper, so no
+        # `hermes` resolves on PATH. The real inspection adapter runs here.
+        for label, flags in (
+            ("scripted", ["--no-interactive", "--json"]),
+            ("interactive", ["--interactive"]),
+        ):
+            with self.subTest(path=label), TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                empty_bin = root / "bin"
+                empty_bin.mkdir()
+                with patch.dict(os.environ, {"PATH": str(empty_bin), "HOME": str(root)}), patch.object(
+                    setup_commands,
+                    "discover_local_models",
+                    return_value=_discovery([]),
+                ):
+                    # When: setup runs the model step.
+                    status, stdout, stderr = run_cli(
+                        [
+                            "--omh-home",
+                            str(root / ".omh"),
+                            "--hermes-home",
+                            str(root / ".hermes"),
+                            "setup",
+                            "--no-menubar",
+                            "--model-setup",
+                            *flags,
+                        ],
+                        output_json=False,
+                    )
+
+                # Then: the missing executable is a classified status with a
+                # next action, and the exit code does not call it success.
+                self.assertEqual((status, stderr), (3, ""))
+                if label == "scripted":
+                    activation = json.loads(stdout)["steps"]["model_activation"]
+                    self.assertEqual(activation["status"], "hermes_unavailable")
+                    self.assertEqual(activation["next_action"], "install_hermes_then_rerun_model_setup")
+                    self.assertEqual(activation["apply"]["status"], "not_run")
+                    self.assertFalse(activation["verification"]["verified"])
+                else:
+                    self.assertIn("Model activation status: hermes_unavailable", stdout)
+                    self.assertIn("rerun `omh setup --model-setup`", stdout)
+                    self.assertNotIn("owner default remains active", stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,7 @@ from ..coding.hermes_model_config import (
     AliasCollisionError,
     HermesConfigUnreadableError,
     HermesModelConfigError,
+    HermesUnavailableError,
 )
 from ..coding.model_recommendations import (
     SHIPPED_MODEL_RECOMMENDATIONS,
@@ -50,6 +51,10 @@ def model_activation_result(
     candidates = classified_model_candidates(discovery, confirmed)
     try:
         inspection = dependencies.inspect_hermes_model_config()
+    except HermesUnavailableError as exc:
+        # Every later stage reads or writes Hermes' config, so none can run.
+        # Asking the interactive questions would collect answers nothing uses.
+        return _hermes_unavailable_result(discovery, candidates, reason=str(exc))
     except HermesConfigUnreadableError as exc:
         # Every later stage is bound to this file's digest, so none can run.
         return _hermes_config_missing_result(
@@ -216,6 +221,33 @@ def model_activation_result(
         "claim_boundary": (
             "Model activation uses local metadata and explicit confirmation only. "
             "Observed-before records are not active-model confirmation, and preview is not apply."
+        ),
+    }
+
+
+def _hermes_unavailable_result(
+    discovery: dict[str, object],
+    candidates: list[dict[str, str]],
+    *,
+    reason: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": "omh_model_activation/v1",
+        "status": "hermes_unavailable",
+        "reason": reason,
+        "stages": ["inspect", "confirm_active", "preview", "apply", "verify"],
+        "discovery": discovery,
+        "inspection": None,
+        "candidates": candidates,
+        "recommendations": None,
+        "provider_next_actions": [],
+        "preview": None,
+        "apply": {"status": "not_run", "commands": []},
+        "verification": {"status": "not_run", "verified": False},
+        "next_action": "install_hermes_then_rerun_model_setup",
+        "claim_boundary": (
+            "Hermes was not found, so its model config was not inspected, previewed, or changed. "
+            "Nothing about the active model was observed."
         ),
     }
 

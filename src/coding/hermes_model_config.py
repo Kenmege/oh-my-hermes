@@ -62,6 +62,10 @@ class HermesConfigUnreadableError(HermesCommandError):
         self.config_path = config_path
 
 
+class HermesUnavailableError(HermesCommandError):
+    """Raised when the Hermes executable is not found, so no command could run."""
+
+
 class HermesVerificationError(HermesModelConfigError):
     """Raised when post-write inspection does not match the preview."""
 
@@ -390,6 +394,11 @@ def _run(
         raise HermesCommandError(
             f"Hermes command timed out after {_COMMAND_TIMEOUT_SECONDS}s: {' '.join(command[1:])}"
         ) from exc
+    except FileNotFoundError as exc:
+        # A machine may run OMH beside a hosted wrapper that manages Hermes,
+        # with no `hermes` on PATH. That is a missing prerequisite the caller
+        # reports, not a crash.
+        raise HermesUnavailableError(f"Hermes command not found: {command[0]}") from exc
 
 
 def _platform_command(command: tuple[str, ...]) -> tuple[str, ...]:
