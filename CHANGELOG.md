@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+## 4.0.2 - 2026-10-24
+
+- **Install, update and uninstall keep shared state until a profile's
+  teardown succeeds (#2280).** Detaching one profile could delete stores,
+  records or the `omh` command that another Hermes home still used, and a
+  full teardown could delete shared roots before a child's guarded config
+  write refused. Shared stores, records and the command are now kept while
+  any other Hermes home references them, and a failed child detach keeps
+  them, reports a partial result with a nonzero exit, and can be retried
+  once the config is repaired. A dry run is conservative while profiles
+  remain attached. Managed skill registrations are removed even when the
+  primary skill store differs from a bot's runtime store. An unreadable
+  profile config is reported by name and healthy profiles go on. Update
+  prints one final JSON result after every profile, with a nonzero exit
+  when a required refresh fails, instead of success-shaped JSON before a
+  profile failed. Contributed by @frirenai.
+
 - **The TUI no longer draws a month-old fanout as live work.** With no
   native delegation graph, the HUD drew the newest verified fanout contract
   under `~/.omh/coding/fanout/` however old it was, so a fanout prepared once
@@ -16,7 +33,32 @@ All notable changes will be documented here.
   delegation graph and the older subagent graph read the same gate, and the
   record on disk is left alone.
 
-## 4.0.2 - 2026-10-24
+- **`omh setup` is shorter on first use and names `omh` as the next step
+  (#2282).** Fresh noninteractive setup output falls from 36 to 24 lines:
+  repeated successful paths and advanced tuning advice leave the normal
+  completion screen. The optional coding, provider and model choices are
+  explained more briefly in English, Korean, Japanese and Chinese, with the
+  same choices, defaults and disclosures. Completion names `omh` first and
+  keeps the reload, PATH, preview and profile-failure guidance. With no
+  terminal or no Hermes, setup prints an 11-line first-use guide instead of
+  the command inventory. Both launch paths, the OMH TUI and the Hermes
+  fallback, now get the resolved Hermes home (`HERMES_HOME`) instead of
+  inheriting another one. Structured JSON is unchanged. Contributed by
+  @frirenai.
+
+- **Vietnamese trigger phrases follow a native speaker's review (#2262).**
+  The review flagged 11 of the pack's 109 phrases. Nine are reworded into
+  the forms a Vietnamese speaker uses, often keeping the English term (`kiểm
+  tra accessibility`, `kiểm tra screen reader`, `kiểm thử WCAG`, `kiểm tra
+  kiểu red team`), and two keep their original wording. verification-gate
+  gains `gộp` phrasings (`xác minh trước khi gộp`) beside its `merge` ones,
+  which stay because `gộp` is not a router token. The routing effect is
+  measured: the two `gộp` phrases clarify instead of dispatching, `kiểm tra
+  điều hướng với bàn phím` now clarifies with accessibility-audit as the
+  candidate where the old phrase fell back, and `kiểm tra kiểu red team`
+  clarifies with adversarial-consensus as before. No routing rule changed;
+  the five skill bodies that list these phrases are regenerated. Contributed
+  by @PhucNguyen-Dev.
 
 - **`omh_agent_board` states the fields a `prepare` needs, and names the
   one that is missing (#2277).** The schema required only `action` and
