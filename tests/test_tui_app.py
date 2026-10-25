@@ -2222,7 +2222,7 @@ CLIP = {
 }
 OTHER_STORED_ID = "20261012_090000_router"
 OTHER_LIVE_ID = "c0ffee01"
-INTERRUPT_ROW = re.compile(r"\(\d+s · esc to interrupt\)")
+INTERRUPT_ROW = re.compile(r"\(\d+s( · ↓[\d.]+k? tokens)? · esc to interrupt\)")
 
 
 def bracketed(text: str) -> bytes:
@@ -2487,7 +2487,7 @@ class KeyTests(AppTestCase):
     def test_the_activity_row_counts_the_seconds_since_the_prompt(self) -> None:
         run = self.interrupted_run()
         terminal = run.terminal
-        two_seconds = re.compile(r"\(2s · esc to interrupt\)")
+        two_seconds = re.compile(r"\(2s( · ↓[\d.]+k? tokens)? · esc to interrupt\)")  # the replay streams
         terminal.script(
             self.submit(run, "Write the numbers from 1 to 300, one per line, nothing else."),
             Step(b"\x03", when=lambda: any(two_seconds.search(line) for line in terminal.screen.lines()),
