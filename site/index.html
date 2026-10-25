@@ -306,6 +306,20 @@ omh setup</code></pre>
           <li class="install-step">
             <h3 data-i18n="install.step1">Install the command</h3>
             <div class="install-methods">
+              <div class="terminal">
+                <div class="terminal__bar">
+                  <span class="terminal__title" data-i18n="install.method.unix">macOS · Linux</span>
+                  <button class="copy-btn" type="button" data-copy="#cmd-unix" data-i18n="hero.copy">Copy</button>
+                </div>
+                <pre class="terminal__body"><code id="cmd-unix">curl -fsSL https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.sh | sh</code></pre>
+              </div>
+              <div class="terminal">
+                <div class="terminal__bar">
+                  <span class="terminal__title" data-i18n="install.method.windows">Windows · PowerShell 5.1+</span>
+                  <button class="copy-btn" type="button" data-copy="#cmd-win" data-i18n="hero.copy">Copy</button>
+                </div>
+                <pre class="terminal__body"><code id="cmd-win">irm https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.ps1 | iex</code></pre>
+              </div>
               <div class="terminal install-method--package-manager">
                 <div class="terminal__bar">
                   <span class="terminal__title" data-i18n="install.method.brew">Homebrew</span>
@@ -327,21 +341,8 @@ omh setup</code></pre>
                 </div>
                 <pre class="terminal__body"><code id="cmd-npm">npm install -g oh-my-hermes</code></pre>
               </div>
-              <div class="terminal">
-                <div class="terminal__bar">
-                  <span class="terminal__title" data-i18n="install.method.unix">macOS · Linux</span>
-                  <button class="copy-btn" type="button" data-copy="#cmd-unix" data-i18n="hero.copy">Copy</button>
-                </div>
-                <pre class="terminal__body"><code id="cmd-unix">curl -fsSL https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.sh | sh</code></pre>
-              </div>
-              <div class="terminal">
-                <div class="terminal__bar">
-                  <span class="terminal__title" data-i18n="install.method.windows">Windows · PowerShell 5.1+</span>
-                  <button class="copy-btn" type="button" data-copy="#cmd-win" data-i18n="hero.copy">Copy</button>
-                </div>
-                <pre class="terminal__body"><code id="cmd-win">irm https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.ps1 | iex</code></pre>
-              </div>
             </div>
+            <p class="install-step__note" data-i18n="install.prereq.note">Use the macOS · Linux or Windows installer; it finds Python 3.11+ itself. Homebrew, Bun, and npm install the published release: Bun and npm also need Node 18+ and Python 3.11+ on PATH, and Homebrew brings its own Python.</p>
           </li>
           <li class="install-step">
             <h3 data-i18n="install.step2">Set it up</h3>

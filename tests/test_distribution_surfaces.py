@@ -190,16 +190,18 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
         parser = _CodeCollector()
         parser.feed(html)
 
+        # The script installers lead, as on every other front door; the
+        # package managers follow with their prerequisite note.
         ids = (
+            "cmd-unix",
+            "cmd-win",
             "cmd-brew",
             "cmd-bun",
             "cmd-npm",
-            "cmd-unix",
-            "cmd-win",
             "cmd-setup",
             "cmd-doctor",
         )
-        expected = (*INSTALL_COMMANDS, SETUP_COMMAND, DOCTOR_COMMAND)
+        expected = (*INSTALL_COMMANDS[3:], *INSTALL_COMMANDS[:3], SETUP_COMMAND, DOCTOR_COMMAND)
         self.assertEqual(
             tuple(parser.codes.get(code_id) for code_id in ids),
             expected,
@@ -210,6 +212,9 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
             parser.codes["cmd-setup"],
             parser.codes["cmd-doctor"],
         )
+        note = html.index('data-i18n="install.prereq.note"')
+        self.assertLess(html.index('id="cmd-npm"'), note)
+        self.assertLess(note, html.index('id="cmd-setup"'))
 
     def test_markdown_install_surfaces_share_order_and_separate_steps(self) -> None:
         surfaces = (
@@ -287,9 +292,9 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
         positions = tuple(protocol.index(value) for value in ordered)
         self.assertEqual(positions, tuple(sorted(positions)))
         self.assertNotIn("(recommended)", protocol)
-        run_blocks = "\n".join(_fenced_blocks(protocol))
-        self.assertNotIn("--interactive\n", run_blocks + "\n")
-        self.assertNotIn("exit 1", run_blocks)
+        for block in _fenced_blocks(protocol):
+            self.assertIsNone(re.search(r"(?<!no-)--interactive\b", block), block)
+            self.assertNotIn("exit 1", block)
 
     def test_site_translations_cover_new_install_labels(self) -> None:
         translations = (PROJECT_ROOT / "site" / "i18n.js").read_text(
@@ -303,5 +308,6 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
             "install.method.windows",
             "install.doctor.title",
             "install.doctor.note",
+            "install.prereq.note",
         ):
             self.assertIn(f'"{key}"', translations)

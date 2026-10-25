@@ -29,16 +29,16 @@ for candidate in python3 python3.14 python3.13 python3.12 python3.11 python; do
     break
   fi
 done
-if [ -n "$omh_python" ]; then echo "OK: $omh_python is Python 3.11+"; else echo "MISSING: Python 3.11+ (macOS /usr/bin/python3 is 3.9)"; fi
+if [ -n "$omh_python" ]; then echo "OK: $omh_python is Python 3.11+"; else echo "MISSING: Python 3.11+"; fi
 command -v git >/dev/null || echo "MISSING: git is required to resolve the pinned SHA"
 command -v hermes >/dev/null || echo "NOTE: Hermes Agent command not found in PATH"
 ```
 
-A bare `command -v python3` is not enough: stock macOS answers it with Python
-3.9, which OMH cannot use. The curl installer also searches the usual Homebrew,
-python.org, pyenv and uv locations, and asks an installed `uv` for Python when
-it finds none, so a `MISSING` line here blocks the package-manager paths but not
-necessarily the curl path.
+A bare `command -v python3` is not enough: on macOS, `/usr/bin/python3` is
+Python 3.9, which OMH cannot use. A `MISSING` line blocks only the Bun, npm, uv
+and pip paths. Homebrew installs its own Python with the formula, and the curl
+installer also searches the usual Homebrew, python.org, pyenv and uv locations
+and asks an installed `uv` for Python when it finds none.
 
 On native Windows, run the PowerShell equivalent instead:
 
@@ -170,7 +170,29 @@ by default. Run setup once as the shared, repairable, repeatable next step.
 Your shell has no terminal, so do not run the interactive wizard
 (`omh setup --interactive`) from it. With stdin redirected from `/dev/null` the
 wizard answers every question with its default and the user never sees one;
-with stdin closed it stops on a traceback. Run setup without the wizard:
+with stdin closed it stops on a traceback.
+
+Ask the user one question before setup, because it decides where setup writes:
+**user scope** (the default: `~/.omh` and `~/.hermes` for this machine user) or
+**project scope** (`.omh` and `.hermes` at the root of the git repository that
+contains the current directory, not the current directory itself).
+
+For project scope, also point `HERMES_HOME` at that `.hermes`. The model step
+asks the `hermes` command, which reads its own `HERMES_HOME` (default
+`~/.hermes`), so without it the step inspects the user's profile instead of the
+project's:
+
+```sh
+HERMES_HOME="$(git rev-parse --show-toplevel)/.hermes" \
+  omh setup --model-setup --scope project --no-interactive --json
+```
+
+If `command -v omh` is empty after install, use the absolute command path the
+installer printed, or add that directory to `PATH`, before you run setup. Treat
+this as a command availability warning, not proof that Hermes registration
+failed.
+
+For user scope, run setup without the wizard:
 
 ```sh
 omh setup --model-setup --no-interactive --json
@@ -198,18 +220,25 @@ for the answer they give. Never record a default on the user's behalf.
 | Update check at launch | `omh update-check status`, and the three modes: `off` (the default, no network request), `notify` (one line at launch when `main` is ahead), `auto` (also runs `omh update` at launch) | `omh update-check set --mode <off\|notify\|auto>` |
 | Active models and Hermes aliases | `steps.model_activation.candidates`, and the models listed under `steps.model_activation.recommendations.hermes_native.categories.<category>.inactive_candidates` | [Guided Model Configuration](#guided-model-configuration): preview, show the digest, apply only after approval |
 | Providers that serve the chains | the `Linked Hermes providers` line of `omh model-chains show` | `omh model-chains provider set <id> <kind>` for a provider whose kind is wrong or missing |
-| Per-category model chains | `omh model-chains show` | the [Model-Chain Interview](#model-chain-interview-run-right-after-setup) below |
+| Coding tools for handed-off work, only when `codex` or `claude` is on PATH | whether the user wants OMH to configure the detected coding CLIs | for yes, step 5 of the [Model-Chain Interview](#model-chain-interview-run-right-after-setup): `omh coding category-maestro show`, then `set`; for no, nothing |
+
+The per-category model chains are the last choice. Ask them after Step 2, once
+doctor shows no blocking check, through the
+[Model-Chain Interview](#model-chain-interview-run-right-after-setup).
+
+The agent path does not ask one wizard question, because no command records
+the answer: whether the user holds a paid Claude Code subscription (asked only
+when `claude` is on PATH). Its default is no subscription recorded. That only
+leaves the Claude Code `--model` preference for handed-off work unset, so the
+CLI keeps its own default; Hermes' models do not change. Tell the user this.
+If they hold one, they can answer later by running `omh setup --interactive`
+in a real terminal.
 
 If no compatible candidate is confirmed, setup makes no model-config write,
 records `status: defaulted`, and keeps the native default model of Hermes or the
 selected external owner. A person at a real terminal can run
-`omh setup --model-setup --interactive` instead; it asks the same questions on
+`omh setup --model-setup --interactive` instead; it asks these questions on
 screen.
-
-If `command -v omh` is still empty after install, use the absolute command path
-printed by the installer or add that directory to `PATH`, then continue with
-doctor. Treat this as a command availability warning, not proof that Hermes
-registration failed.
 
 Expected local result:
 
@@ -547,8 +576,9 @@ If a chain alias needs a provider-specific wire model, edit the sibling
 ```
 
 From a shell, run `omh model-chains show --json` and report `routes_status`:
-`applied` means OMH read the document, and an invalid one names the reason and
-is ignored. No shell command resolves the full route. Inside a Hermes chat,
+`absent` means there is no `model-providers.json` and every alias dispatches
+unchanged; `applied` means OMH read the document; an `invalid: ...` value names
+the reason, and the whole document is ignored. No shell command resolves the full route. Inside a Hermes chat,
 Hermes can call its `omh_delegate_route` tool with `action=status` and report
 the complete alias/provider/model/effort route; an agent working from Claude
 Code, Codex, or another shell reports the route as not observed. Provider and
