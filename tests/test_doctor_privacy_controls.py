@@ -37,7 +37,12 @@ def _audit(event: str, args: tuple[object, ...]) -> None:
     if not isinstance(target, (str, bytes, os.PathLike)):
         return
     path = os.fsdecode(target)
-    if path.startswith(str(root)) and Path(path).name in PERSONAL_FILE_NAMES:
+    if Path(path).name not in PERSONAL_FILE_NAMES:
+        return
+    # Real paths on both sides: an 8.3 alias or a symlinked temp root names
+    # the same file under another spelling.
+    within = os.path.normcase(os.path.realpath(path)).startswith(os.path.normcase(os.path.realpath(str(root))))
+    if within:
         opens = _WATCH["opens"]
         assert isinstance(opens, list)
         opens.append(path)
@@ -57,7 +62,9 @@ class DoctorPrivacyControlsTests(unittest.TestCase):
     def setUp(self) -> None:
         holder = make_test_tempdir(prefix="omh-doctor-privacy-")
         self.addCleanup(holder.cleanup)
-        self.root = Path(holder.name)
+        # Canonical form, as OMH resolves its homes: on Windows the temp root
+        # can arrive as an 8.3 alias (RUNNER~1) that names the same directory.
+        self.root = Path(holder.name).resolve()
         self.omh_home = self.root / ".omh"
         self.hermes_home = self.root / ".hermes"
         self.base = ["--omh-home", str(self.omh_home), "--hermes-home", str(self.hermes_home)]
