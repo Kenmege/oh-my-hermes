@@ -119,8 +119,8 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
         # Re-derived from both main sources above plus the bounded dag-ulw
         # baseline-verification guidance, then the pi-family runtime rename in
-        # model-setup, maestro, and ultrawork.
-        self.assertEqual(_digest(legacy_hashes), 'fc69d607e32499c7303ed7c311403d0bbe995070d82b46b8160ae044afab4f9d')
+        # model-setup, maestro, ultrawork, and executor-runtime-readiness.
+        self.assertEqual(_digest(legacy_hashes), 'a757146a198363e330d18b43e0063a155d9712e6d185ffd5c4c77be3f654ab38')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.

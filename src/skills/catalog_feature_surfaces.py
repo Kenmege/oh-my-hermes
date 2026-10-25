@@ -10,7 +10,6 @@ the surface template.
 from __future__ import annotations
 
 from ..plugin_bundle.omh.native_tools import native_tool_presence_clause
-from ..coding.pi_family_interop import RUNTIME_SHORT_NAME
 from .catalog_types import (
     DOCUMENT_PRODUCER_QA_RULE,
     DOCUMENT_PRODUCER_RUNGS_RULE,
@@ -390,7 +389,7 @@ _FEATURE_SURFACE_SKILLS = (
             "runtime migration",
             "omx",
             "omc",
-            RUNTIME_SHORT_NAME,
+            "pi-family",
         ),
         "Use when a user may choose Codex, Claude Code, Hermes coding, or another runtime and needs tool/credential gaps before handoff.",
         category="executor-readiness",

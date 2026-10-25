@@ -4359,10 +4359,21 @@ def _one_word_self_name(definition: SkillDefinition) -> str:
     return "" if (" " in name or "-" in name) else name
 
 
+# Triggers that score but are never written into generated skill text: the
+# runtime's short name is an external product name the repo does not ship,
+# yet a user who types it still means this skill.
+_SCORING_ONLY_TRIGGERS: dict[str, tuple[str, ...]] = {
+    "executor-runtime-readiness": (RUNTIME_SHORT_NAME,),
+}
+
+
 def _prepare_definition(definition: SkillDefinition) -> _PreparedDefinition:
     triggers = definition.triggers + tuple(
         phrase
-        for phrase in _user_trigger_pack_phrases().get(definition.name, ())
+        for phrase in (
+            *_user_trigger_pack_phrases().get(definition.name, ()),
+            *_SCORING_ONLY_TRIGGERS.get(definition.name, ()),
+        )
         if phrase not in definition.triggers
     )
     trigger_phrases = tuple(normalized_phrase(trigger) for trigger in triggers)
