@@ -4391,8 +4391,8 @@ class App(ModesMixin, AgentViewMixin):
         if not self._menu_rows():
             self.menu_below = None
         # On the screen's last row the region keeps its height (what the flush below covers aside), so what shrinks
-        # becomes pad rows at its top and the composer stays on the bottom rows; above it, the region follows the
-        # content. Where the region's place is not certain it counts as above.
+        # becomes pad rows under the live block and the composer stays on the bottom rows; above it, the region
+        # follows the content. Where the region's place is not certain it counts as above.
         pinned = self.region.last_row(rows) == rows - 1
         min_height = max(self.region.height - len(stable), 0) if pinned else 0
         top = self.region.top_row(rows)
