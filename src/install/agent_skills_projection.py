@@ -26,6 +26,28 @@ CLAIM_BOUNDARY = (
 )
 
 
+# The two directories any installer writes. Cursor and opencode load both, so
+# a pack in each is every skill twice (docs/AGENT-SKILLS.md#duplicate-copies).
+PACK_ROOTS = (".agents/skills", ".claude/skills")
+
+
+def sibling_pack_root(root: str) -> str:
+    return PACK_ROOTS[1] if root == PACK_ROOTS[0] else PACK_ROOTS[0]
+
+
+def duplicate_pack_warnings(target: Path) -> list[str]:
+    """Warn, never refuse: Claude Code plus a .agents host legitimately needs both."""
+    base = target.parent.parent
+    if not all((base / root / MANIFEST_NAME).is_file() for root in PACK_ROOTS):
+        return []
+    return [
+        f"OMH Agent Skills are installed in both {base / PACK_ROOTS[0]} and {base / PACK_ROOTS[1]}. "
+        "Cursor and opencode load both directories and find each skill twice; Codex and OpenClaw "
+        "read only .agents/skills, and Claude Code only .claude/skills. Keep the copy your host reads "
+        "(install with --host <host>) and remove the other: see docs/AGENT-SKILLS.md#duplicate-copies."
+    ]
+
+
 def agent_skill_files() -> dict[str, str]:
     """The same packaged producer drives install and the committed byte gate."""
     files = {f"{t.name}/SKILL.md": t.content for t in agent_skill_templates()}
@@ -158,10 +180,14 @@ def agent_skills_status(target: Path, *, mirror: Path | None = None) -> dict[str
         "drift": "locally_modified" if modified else "unknown" if "missing" in states else "clean",
         "locally_modified": sorted(modified),
         "next_action": (
-            "Review or back up locally-modified files; rerun the same install command to replace them."
+            "Edited toolkit files are never replaced: back up each locally-modified file, move the "
+            "toolkit ones aside, then rerun the same install command."
+            if any("/toolkit/" in relative for relative in modified)
+            else "Review or back up locally-modified files; rerun the same install command to replace them."
             if modified else "Rerun the same install command to generate the current catalog."
             if projection != "fresh" else "No repair needed; host use remains not_observed."
         ),
+        "warnings": duplicate_pack_warnings(target.absolute()),
         "host_observation": "not_observed",
         "claim_boundary": CLAIM_BOUNDARY,
     }
