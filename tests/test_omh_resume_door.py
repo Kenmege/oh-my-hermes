@@ -923,7 +923,7 @@ class ExitCardTests(unittest.TestCase):
             self.assertEqual((status, out, len(recorded)), (0, CARD_ALPHA, 1))
             # 130 is Hermes' own interrupted close: its epilogue printed, the card follows.
             for code, card in ((0, CARD_ALPHA), (130, CARD_ALPHA), (1, ""), (2, ""), (42, ""), (FALLBACK_EXIT, ""),
-                               (128 + signal.SIGTERM, ""), (128 + signal.SIGHUP, "")):
+                               (128 + 15, ""), (128 + 1, "")):  # SIGTERM, SIGHUP: literal, Windows has no SIGHUP
                 with self.subTest(code=code):
                     with launched(home, [], omh_tui=True, session_record=record, returncode=code) as (_r, out, status):
                         pass
