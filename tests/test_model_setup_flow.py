@@ -795,11 +795,13 @@ class ModelSetupFlowTests(unittest.TestCase):
                 root = Path(tmp)
                 empty_bin = root / "bin"
                 empty_bin.mkdir()
+                # The run_cli stdin is a StringIO; the interactive subtest
+                # stands for a terminal, which `--interactive` now requires.
                 with patch.dict(os.environ, {"PATH": str(empty_bin), "HOME": str(root)}), patch.object(
                     setup_commands,
                     "discover_local_models",
                     return_value=_discovery([]),
-                ):
+                ), patch.object(setup_commands, "_wizard_has_terminal", return_value=True):
                     # When: setup runs the model step.
                     status, stdout, stderr = run_cli(
                         [
