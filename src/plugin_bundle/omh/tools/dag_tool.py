@@ -110,17 +110,16 @@ _ACTIONS = ("define", "ready", "settle", "repair", "extend", "status", "cancel",
 OMH_DAG_SCHEMA = {
     "name": "omh_dag",
     "description": (
-        "Keep a dag-ulw run: a graph of small nodes the parent dispatches with delegate_task. define records the "
-        "nodes (id, label, category, prompt with TASK / DELIVERABLE / SCOPE / VERIFY / STOP WHEN, depends_on, "
-        "write_scope) and refuses cycles, unknown or self edges, write scopes two nodes share without an edge, "
-        "more than 48 nodes, and a node whose prompt names none of those five markers; a one-shot session also "
-        "refuses more nodes than delegation.oneshot_max_children. Its lint is advice. ready returns delegate_task "
-        "calls, one per category, never more "
-        "than the free slots: per call, run its route with omh_delegate_route, then delegate_task with the tasks "
-        "unchanged. After each completion read the node's handoff file and settle it accepted, failed or blocked; "
-        "a child that says it is blocked is blocked, never accepted. settle returns what is ready next. repair adds "
-        "nodes for a failed node, at most two cycles. extend adds nodes to a run whose nodes all passed when the goal "
-        "check finds work missing, at most two rounds. Past either limit, report what is open. Relay any `say` once."
+        "Keep a dag-ulw run: small nodes the parent dispatches via delegate_task. define records nodes "
+        "(id, label, category, prompt with TASK / DELIVERABLE / SCOPE / VERIFY / STOP WHEN, depends_on, "
+        "write_scope) and refuses cycles, unknown or self-edges, write scopes shared without an edge, more "
+        "than 48 nodes, and prompts naming none of the markers; a one-shot session caps nodes at "
+        "delegation.oneshot_max_children. Lint is advice. ready returns delegate_task calls per category "
+        "within the free slots: route each via omh_delegate_route, then delegate_task unchanged. After each "
+        "child, read the node's handoff and settle it accepted, failed or blocked; a child saying it is "
+        "blocked is blocked, never accepted. settle returns what is next. repair adds nodes for a failed "
+        "node, at most two cycles. extend adds nodes to an all-passed run when the goal check finds work "
+        "missing, at most two rounds. Past either limit, report what is open. Relay any `say` once."
     ),
     "parameters": {
         "type": "object",
