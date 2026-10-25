@@ -176,7 +176,37 @@ class Check:
             object.__setattr__(self, "next_action", _default_next_action(self.name))
 
 
-def run_doctor(paths: OmhPaths) -> list[Check]:
+def _writable_without_probe(path: Path) -> bool:
+    """Whether the OS reports `path` (or the ancestor that would hold it) writable, without writing.
+
+    The `--no-state-write` stand-in for `can_write_dir`: no directory is
+    created and no probe file is written, so the answer is the permission
+    bits' claim, not an observed write.
+    """
+    candidate = path
+    while not candidate.exists() and candidate.parent != candidate:
+        candidate = candidate.parent
+    return candidate.is_dir() and os.access(candidate, os.W_OK)
+
+
+def _dir_write_access(path: Path, *, state_write: bool) -> tuple[bool, str]:
+    """The writability verdict for one OMH directory and the words that say how it was reached."""
+    if state_write:
+        return can_write_dir(path, probe_name=".doctor-write-test"), "writable"
+    writable = _writable_without_probe(path)
+    return writable, (
+        "write access not probed (--no-state-write); "
+        + ("permissions allow writing" if writable else "permissions do not allow writing")
+    )
+
+
+def run_doctor(paths: OmhPaths, *, state_write: bool = True) -> list[Check]:
+    """Every doctor check, in report order.
+
+    ``state_write=False`` replaces the two `.doctor-write-test` probe writes
+    with a permission check that writes nothing under the OMH home; those two
+    checks then report ``observed=False``.
+    """
     checks: list[Check] = []
     command_path = inspect_omh_command_path()
     checks.append(
@@ -233,19 +263,22 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
     checks.append(_hermes_skill_edits_check(hermes_edits, ledger_writes, ledger_unread))
     checks.append(Check("skills_dir", paths.skills_dir.exists(), f"{paths.skills_dir}"))
     checks.append(_route_hint_skills_check(paths))
-    runtime_writable = can_write_dir(paths.runtime_dir, probe_name=".doctor-write-test")
-    checks.append(Check("runtime_artifacts", runtime_writable, f"{paths.runtime_dir} writable"))
-    workflow_state_writable = can_write_dir(paths.workflow_state_dir, probe_name=".doctor-write-test")
+    runtime_writable, runtime_access = _dir_write_access(paths.runtime_dir, state_write=state_write)
+    checks.append(
+        Check("runtime_artifacts", runtime_writable, f"{paths.runtime_dir} {runtime_access}", observed=state_write)
+    )
+    workflow_state_writable, workflow_access = _dir_write_access(paths.workflow_state_dir, state_write=state_write)
     states, state_errors = list_workflow_states(paths)
     checks.append(
         Check(
             "workflow_state",
             workflow_state_writable and not state_errors,
             (
-                f"{paths.workflow_state_dir} writable; {len(states)} workflow state file(s) readable"
+                f"{paths.workflow_state_dir} {workflow_access}; {len(states)} workflow state file(s) readable"
                 if workflow_state_writable and not state_errors
                 else f"{paths.workflow_state_dir} has unreadable state: {state_errors}"
             ),
+            observed=state_write,
         )
     )
     if state_error:
@@ -2282,17 +2315,20 @@ def _hermes_edit_line(item: dict) -> str:
     return f"{item['name']} at {item['path']}" + (f" ({detail})" if detail else "")
 
 
-def run_doctor_advisories(paths: OmhPaths) -> AdvisoryReport:
+def run_doctor_advisories(paths: OmhPaths, *, personal_files: bool = True) -> AdvisoryReport:
     """Read-only Hermes config advisory lane.
 
     Deliberately SEPARATE from ``run_doctor``: advisory entries are never
     appended to the ``list[Check]`` consumed by ``doctor_ok()`` or
     ``recommended_next_action()``, so they cannot change the doctor exit code.
+    ``personal_files=False`` reports the SOUL.md and Hermes memory inspectors
+    as ``skipped`` without opening those files.
     """
     return run_config_advisories(
         paths.hermes_home,
         omh_home=paths.omh_home,
         discovery_home=paths.hermes_home.parent,
+        personal_files=personal_files,
     )
 
 

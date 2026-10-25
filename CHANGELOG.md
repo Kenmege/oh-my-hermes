@@ -4,6 +4,31 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Byte-identical managed plugin files no longer block setup or update
+  (#2300).** A managed plugin file whose current bytes match the incoming
+  bundle no longer needs `--force` merely because its hash differs from an
+  older installed manifest. The normal install rewrites that manifest. A file
+  whose bytes diverge from the incoming bundle is still protected, including
+  by the staging revalidation, and a non-forced setup or update refuses to
+  replace it. Managed skill `SKILL.md` files follow the same rule: one that
+  already holds the bytes the install would write is not reported as a local
+  modification; support files keep the manifest-only comparison.
+
+- **`omh doctor` adds independent personal-file and state-write privacy
+  controls (#2300).** `--no-personal-files` never opens or reads the bodies of
+  `SOUL.md`, `memories/MEMORY.md`, or `memories/USER.md`; the
+  `soul_missing_or_starter` and `hermes_memory_staleness` advisories are
+  reported as `skipped`, with the reason, rather than as passing checks.
+  `--no-state-write` does not create or update `runtime/state.json`, leaves
+  JSON `state_log` empty, and skips the `runtime_artifacts` and
+  `workflow_state` `.doctor-write-test` probes. Those two checks instead
+  report a non-writing permission result with write access explicitly not
+  probed. No writes under the OMH home were observed in this mode, but the
+  Hermes loader-registration smoke can still copy the plugin into a temporary
+  directory when a Hermes install is found. Both flags work with human and
+  `--json` output; `--no-personal-files` does not disable Hermes `config.yaml`
+  reads.
+
 - **`omh setup --dry-run` no longer applies model aliases, and the model
   step reports a broken Hermes instead of a traceback (#2299).** With
   `--model-setup --apply-model-config --model-config-digest D`, a dry run ran
