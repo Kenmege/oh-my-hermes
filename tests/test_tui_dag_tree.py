@@ -1044,3 +1044,128 @@ class KeptRunTests(unittest.TestCase):
         self.assertIn(subagent_id("group-1"), app.roster.agents)
         self.take(app, sweep(over))  # this run is over, without the superseded attempt's node
         self.assertEqual(app.roster.agents, {})
+
+
+OVER = {key: (*values[:5], "done", "accepted", *values[7:]) for key, values in NODES.items()}
+
+
+def dag_end(run: str = RUN) -> Event:
+    """The `omh_dag` settle that ended the run, as its `tool.complete` carries it (`dag_block.moment`)."""
+    import json
+
+    result = {"status": "ok", "run": run, "action": "settle", "state": "done",
+              "nodes": [{"id": key, "state": "accepted"} for key in NODES]}
+    return Event("tool.complete", SID, {"tool_id": "t-end", "name": "omh_dag", "result": json.dumps(result)})
+
+
+def turn_end(app) -> None:
+    app._on_event(Event("message.complete", SID, {"text": "done"}))
+
+
+class RunEndTests(unittest.TestCase):
+    """A dag run that is over leaves the view under the composer as its turn ends (the owner, 2026-10-26: it stayed
+    there until the next prompt). Its end print in the transcript keeps the final graph, and `/dag` the whole of it.
+    A run still open, between turns or across them, keeps its tree."""
+
+    def test_a_run_that_ended_leaves_the_view_when_its_turn_ends(self) -> None:
+        app, _client = tree_app(nodes=OVER)  # every lane settled while the turn runs: the tree stays until it ends
+        self.assertGreater(len(view_text(app)), 1)
+        turn_end(app)
+        self.assertEqual(view_text(app), [], "no summary line, no tree: the end print in the transcript says it")
+        self.assertIsNone(re.search(r"\d+ agents?", mode_row(app)), mode_row(app))
+
+    def test_the_ended_run_does_not_come_back_while_the_next_turn_runs(self) -> None:
+        app, _client = tree_app(nodes=OVER)
+        turn_end(app)
+        view_text(app)
+        type_text(app, "thanks")
+        app._on_input(Key(ENTER))
+        self.assertTrue(app._busy())
+        self.assertEqual(view_text(app), [], "the finished run's tree is not drawn again for the next turn")
+
+    def test_the_ended_runs_agents_do_not_come_back_once_its_graph_lingers_out(self) -> None:
+        from omh.plugin_bundle.omh.delegation_graph import inactive_graph
+
+        app, _client = tree_app(nodes=OVER)
+        turn_end(app)
+        view_text(app)
+        with_graph(app, inactive_graph("settled"))  # the HUD stops drawing a settled graph after its linger
+        self.assertEqual(view_text(app), [], "the run's finished children are not listed in its place")
+
+    def test_a_run_still_open_keeps_its_tree_between_turns_and_into_the_next(self) -> None:
+        # The negative case: a dag-ulw run goes on across turns (each child's result starts the parent's next turn),
+        # so a turn that ends with lanes running, or with every drawn lane settled but the run open, keeps the tree.
+        app, _client = tree_app()
+        turn_end(app)
+        self.assertEqual([left(row) for row in view_text(app)], DEFAULT)
+        type_text(app, "how is it going")
+        app._on_input(Key(ENTER))
+        self.assertEqual([left(row) for row in view_text(app)], DEFAULT)
+        held = sweep(OVER)
+        held["dag_open"] = True  # a node is out though its lane reads settled, or a repair is due
+        app, _client = tree_app(nodes=OVER)
+        with_graph(app, held)
+        turn_end(app)
+        self.assertGreater(len(view_text(app)), 1)
+        type_text(app, "next")
+        app._on_input(Key(ENTER))
+        self.assertGreater(len(view_text(app)), 1)
+
+    def test_the_end_print_clears_the_view_in_its_frame_though_the_panels_payload_is_older(self) -> None:
+        # The HUD is read on its own clock, so the frame the turn ends in can still hold a payload with a lane
+        # running. The end print reads the graph afresh: the view goes with it, in that frame.
+        from omh.tui import dag_block
+
+        app, _client = tree_app()  # the panel's payload: lanes still running
+        app.stored_id = "stored-1"
+        over = sweep(OVER)
+        over["changed_at"] = 50.0
+        app.read_dag_graph = lambda _omh, _hermes, session: over
+        app.hud.payload["delegation_graph"]["changed_at"] = 40.0
+        app._on_event(dag_end())
+        turn_end(app)
+        printed = [block.title for block in app.transcript.blocks + app.transcript._held
+                   if isinstance(block, dag_block.DagBlock)]
+        self.assertEqual(printed, ["end · done"])
+        self.assertEqual(view_text(app), [])
+        reopened = sweep({**NODES, "csv": ("CSV export", "quick", KIMI, "low", 4, "running", "running", 3, 10, "")})
+        reopened["changed_at"] = 60.0  # an extend round reopened the run after its end
+        with_graph(app, reopened)
+        self.assertGreater(len(view_text(app)), 1, "a run that moved on after its end is drawn again")
+
+    def test_on_the_bottom_rows_the_freed_rows_go_under_the_info_line_not_between_the_output_and_the_composer(self):
+        # 150x42, the region on the screen's last row. The end print of a run of 20 lanes is condensed (a few rows),
+        # shorter than the tree it replaces: the rows it leaves over stay blank under the info line, so no blank band
+        # stands between the turn's last lines and the composer, and the composer never moves up. Output that comes
+        # after takes them.
+        from test_dag_transcript import big_run
+        from test_tui_agent_view import box_top, pinned
+
+        over = big_run((4, 6, 6, 4), {f"n{number}": "done" for number in range(1, 21)})
+        app, _client = tree_app(rows=42, cols=150, children=False)
+        pinned(app)
+        with_graph(app, over)
+        app.stored_id = "stored-1"
+        app.read_dag_graph = lambda _omh, _hermes, session: over
+        top = box_top(drawn(app))
+        app._on_event(dag_end(run="r1"))
+        turn_end(app)
+        screen = drawn(app)
+        self.assertGreaterEqual(box_top(screen), top, "the composer does not move up")
+        info = box_top(screen) + 3
+        self.assertEqual(screen[info + 1:], [""] * (41 - info), "the tree's rows are blank under the info line")
+        above = screen[box_top(screen) - 2 : box_top(screen)]
+        self.assertTrue(above[0].strip().startswith("✻"), screen)  # the turn's summary line, then one spacer row
+        self.assertEqual(drawn(app), screen, "the next frame keeps them")
+        held = app.frame_budget.agents
+        app.transcript.add_notice("one\ntwo\nthree")
+        self.assertLess((after := (drawn(app), app.frame_budget.agents))[1], held, after[0])
+        self.assertEqual(after[0][box_top(after[0]) - 2].strip(), "three", "the output stands right over the composer")
+
+    def test_another_run_is_drawn_after_one_ended(self) -> None:
+        app, _client = tree_app(nodes=OVER)
+        turn_end(app)
+        type_text(app, "next")
+        app._on_input(Key(ENTER))
+        with_graph(app, other_run(sweep()))
+        self.assertGreater(len(view_text(app)), 1)

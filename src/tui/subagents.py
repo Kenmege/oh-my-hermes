@@ -466,8 +466,16 @@ class Roster:
         """Drop the agents `clear` kept whose dag node belongs to one of `runs` (`d:<run>`, the runs a payload shows
         over), a node that left the drawing since (a superseded repair) included; the ids dropped. An agent that
         arrived in this turn is never one of them."""
-        dropped = frozenset(key for key in self.kept
-                            if key in self.agents and self.agents[key].dag_node.rpartition(":")[0] in runs)
+        return self._drop(frozenset(key for key in self.kept
+                                    if key in self.agents and self.agents[key].dag_node.rpartition(":")[0] in runs))
+
+    def drop_runs(self, runs: frozenset[str]) -> frozenset[str]:
+        """Drop every agent whose dag node belongs to one of `runs` (`d:<run>`): a run that is over, which the view no
+        longer draws (`AgentViewMixin._retire_finished_run`); the ids dropped."""
+        return self._drop(frozenset(key for key, agent in self.agents.items()
+                                    if agent.dag_node and agent.dag_node.rpartition(":")[0] in runs))
+
+    def _drop(self, dropped: frozenset[str]) -> frozenset[str]:
         for key in dropped:
             del self.agents[key]
             self._wrapped.pop(key, None)

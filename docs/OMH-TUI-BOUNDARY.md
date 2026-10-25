@@ -169,7 +169,9 @@ its child's latest call and latest line (thinking, Hermes' progress line or its
 reply), running and failed nodes open, layers set apart by blank rows, folded
 to fit the view's cap before a count row cuts it; Down gives the tree the keys
 (the arrows and Space fold), and a new turn keeps the open run's lanes in the
-roster. Two keys in the agent list, and in the tree on the highlighted node's
+roster. A run that is over leaves the view as the turn that ended it ends (the
+owner's call of 2026-10-26); its end print in the transcript and `/dag` keep
+its graph. Two keys in the agent list, and in the tree on the highlighted node's
 child, act on that agent, and only on the person's keypress: `x` interrupts it
 (`subagent.interrupt`) once a second `x` confirms, and `s` steers it
 (`subagent.steer`) with text the person then types and sends; the TUI never
