@@ -1226,9 +1226,12 @@ COORDINATED_SCOPE_TEARDOWN_TEXT = (
 # so the digests were recomputed once, in the same commit as the change that
 # moved them, and disclosed in the PR body. The definition-field leg is
 # unchanged; a future mismatch still means someone edited a retired contract.
+# `ultraprocess` was re-pinned once more by the pi-family runtime rename: its
+# handoff policy names the runtime list, which changed from the old short name
+# to "pi-family". No obligation moved.
 _SOURCE_BASELINE_DIGESTS = {
     "team": "50918dc931ca52c9ca1fda1a9088e0e4f1997faa45eab6bc4a0d4645fd69b835",
-    "ultraprocess": "0168d5886a4fa18c0a4b86b5007c80b4e229f5ce0e3a92fbbe40ae411f9eba5b",
+    "ultraprocess": "80969d99375839e86d5d3c41b161d0a08d4aaaa9e01367859bd583fc061c124a",
     "ralph": "99a7d3146874ebc3a4ed31c3dcebf2466f16f952a606beae7fbba9b6d75f2bf3",
     "ultragoal": "5f22c848d61e0c7ffa2a6230e8eaba8803a28f852431bc8b7be8a8b50a184db9",
 }
