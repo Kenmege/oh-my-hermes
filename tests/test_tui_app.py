@@ -100,15 +100,18 @@ INTERRUPTED = ("session.interrupt", {"result": {"status": "interrupted"}})
 
 # Hermes' configured default (a `model.options` naming no session): the same at every read, so nothing moves.
 NO_DEFAULT = ("model.options", {"result": {"model": "", "provider": ""}})
+# A launch whose default read Hermes refused: nothing to measure a move from, so a turn starts without the check
+# (`App._start_turn`). Tests of what input typed in one burst does during a turn use it.
+UNREAD_DEFAULT = ("model.options", {"error": {"code": 4001, "message": "no default"}})
 
 
-def startup_answers() -> tuple[tuple[str, dict], ...]:
+def startup_answers(default: tuple[str, dict] = NO_DEFAULT) -> tuple[tuple[str, dict], ...]:
     return (
         ("config.get", {"result": {"config": {}}}),
         ("commands.catalog", recorded_answer("session", "commands_catalog")),
         # The last-session lookup a fresh session makes: the recording lists only the session itself.
         ("session.list", recorded_answer("session", "session_list")),
-        NO_DEFAULT,
+        default,
     )
 
 
@@ -1536,7 +1539,7 @@ def busy_mode_answers(mode: str) -> tuple[tuple[str, dict], ...]:
         ("config.get", {"result": {"config": {"display": {"busy_input_mode": mode}}}}),
         ("commands.catalog", recorded_answer("session", "commands_catalog")),
         ("session.list", recorded_answer("session", "session_list")),
-        NO_DEFAULT,
+        UNREAD_DEFAULT,
     )
 
 
@@ -2085,7 +2088,7 @@ class LocalCommandTests(AppTestCase):
             Scenario(
                 "session",
                 spans("session", "startup", "create", "plain_turn", "smart_approved_turn"),
-                answers=startup_answers(),
+                answers=startup_answers(UNREAD_DEFAULT),
             )
         )
         terminal = run.terminal

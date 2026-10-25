@@ -436,6 +436,78 @@ class DefaultModelTests(unittest.TestCase):
         answer_call(app, client, "config.set", {"key": "model", "value": "claude-opus-5-5"})
         self.assertEqual(app.model, "claude-opus-5-5")
 
+    def methods(self, client: object) -> list[str]:
+        return [name for name, _params in client.calls]
+
+    def test_a_default_moved_while_idle_switches_before_the_next_turn_starts(self) -> None:
+        app, client = self.launched()
+        before = len(client.calls)
+        send(app, "hello")  # Hermes' config was edited while no turn ran
+        self.assertEqual(self.methods(client)[before:], ["config.get"])  # the prompt waits for the check
+        self.assertEqual(sent(client, "prompt.submit"), [])
+        answer_call(app, client, "config.get", {"mtime": 300.0})
+        answer_call(app, client, "model.options", {"model": "claude-opus-5-5", "provider": "claude-proxy"})
+        self.assertEqual(sent(client, "prompt.submit"), [])  # still waiting: the switch goes first
+        answer_call(app, client, "config.set", {"key": "model", "value": "claude-opus-5-5"})
+        self.assertEqual(self.methods(client)[before:], ["config.get", "model.options", "config.set", "prompt.submit"])
+        self.assertEqual(sent(client, "prompt.submit"), [{"session_id": SID, "text": "hello"}])
+        said = notices(app)
+        self.assertIn("Hermes' default model is now claude-opus-5-5 (claude-proxy); this session switched to it.", said)
+        self.assertEqual(app.model, "claude-opus-5-5")
+
+    def test_a_config_that_did_not_move_lets_the_prompt_go_after_one_mtime_read(self) -> None:
+        app, client = self.launched()
+        before = len(client.calls)
+        send(app, "hello")
+        send(app, "and then")  # typed while the first waits: it queues behind it
+        answer_call(app, client, "config.get", {"mtime": 100.0})
+        self.assertEqual(self.methods(client)[before:], ["config.get", "prompt.submit"])
+        self.assertEqual(sent(client, "prompt.submit"), [{"session_id": SID, "text": "hello"}])
+        self.assertEqual([line.text for line in app.queued], ["and then"])
+
+    def test_a_model_picked_with_slash_model_is_not_undone_before_a_prompt(self) -> None:
+        app, client = self.launched()
+        send(app, "/model gpt-5.4 --provider copilot")
+        answer_call(app, client, "config.set", {"key": "model", "value": "gpt-5.4"})
+        send(app, "hello")
+        answer_call(app, client, "config.get", {"mtime": 150.0})  # another edit; the default did not move
+        answer_call(app, client, "model.options", {"model": FLASH, "provider": "og"})
+        self.assertEqual(len(sent(client, "config.set")), 1)
+        self.assertEqual(sent(client, "prompt.submit"), [{"session_id": SID, "text": "hello"}])
+        self.assertEqual(app.model, "gpt-5.4")
+
+    def test_a_guarded_default_found_before_a_prompt_holds_it_until_answered(self) -> None:
+        for switch in (False, True):
+            with self.subTest(switch=switch):
+                now = [100.0]
+                app, client = make_app(clock=lambda: now[0])
+                app.model = FLASH
+                app._read_default()
+                answer_call(app, client, "config.get", {"mtime": 100.0})
+                answer_call(app, client, "model.options", {"model": FLASH, "provider": "og"})
+                send(app, "hello")
+                answer_call(app, client, "config.get", {"mtime": 300.0})
+                answer_call(app, client, "model.options", {"model": "claude-opus-5-5", "provider": "claude-proxy"})
+                answer_call(app, client, "config.set", {"key": "model", "value": "", "confirm_required": True,
+                                                        "confirm_message": "Opus costs 5x."})
+                self.assertIsNotNone(app.slot)
+                self.assertEqual(sent(client, "prompt.submit"), [])  # held while the question is open
+                now[0] += SLOT_ARM_SECONDS
+                if switch:
+                    app._on_input(Key(DOWN))
+                app._on_input(Key(ENTER))
+                if switch:
+                    self.assertEqual(sent(client, "prompt.submit"), [])  # the confirmed switch goes first
+                    answer_call(app, client, "config.set", {"key": "model", "value": "claude-opus-5-5"})
+                self.assertEqual(sent(client, "prompt.submit"), [{"session_id": SID, "text": "hello"}])
+                self.assertEqual(app.model, "claude-opus-5-5" if switch else FLASH)
+
+    def test_a_first_prompt_before_the_launch_read_answers_goes_at_once(self) -> None:
+        app, client = make_app()
+        app._read_default()  # asked, not answered yet
+        send(app, "hello")
+        self.assertEqual(sent(client, "prompt.submit"), [{"session_id": SID, "text": "hello"}])
+
     def test_a_session_already_on_the_new_default_is_left_as_it_is(self) -> None:
         app, client = self.launched()
         app.model = "claude-opus-5-5"  # `/model claude-opus-5-5 --global` moved both

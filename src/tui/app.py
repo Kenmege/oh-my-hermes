@@ -1276,6 +1276,8 @@ class App(ModesMixin, AgentViewMixin):
         self.config_mtime: float | None = None
         self.default_due: tuple[str, str] | None = None  # a moved default not switched to yet: a turn ran
         self.default_asked = False  # a read or a switch for it is out
+        # A prompt sent while no turn runs, held until the default is checked (`_start_turn`): its text, its send.
+        self.starting: tuple[str, Callable[[], None]] | None = None
         self.local_questions: dict[str, Callable[[dict[str, Any]], None]] = {}  # asked in the slot, by request id
         self.local_serial = 0
         self.chains_open = False  # /omh-model's picker has the terminal (`_omh_model`)
@@ -2044,6 +2046,9 @@ class App(ModesMixin, AgentViewMixin):
         first_id = max(self.pending, default=0) + 1
         self._settle_lost_calls()
         self.default_asked = False  # a read or switch for Hermes' default went with the old gateway: ask again
+        if self.starting is not None:  # the prompt it held never went: back to the draft, never sent again
+            self._give_back(self.starting[0])
+            self.starting = None
         self._give_back_tell()
         old: GatewayClient | None = self.client
         while True:
@@ -3036,7 +3041,33 @@ class App(ModesMixin, AgentViewMixin):
     def _default_unread(self, _error: object = None) -> bool:
         """A read refused or unanswered: the default stays as last read, and the next turn's end asks again."""
         self.default_asked = False
+        self._default_settled()
         return True
+
+    def _default_settled(self) -> None:
+        """Nothing is out for the default any more: the prompt held for it (`_start_turn`) goes now."""
+        start, self.starting = self.starting, None
+        if start is not None:
+            start[1]()
+
+    def _start_turn(self, text: str, start: Callable[[], None]) -> None:
+        """Start a turn with `start` once Hermes' default model is checked, so the turn runs on the default it has.
+
+        A config edited while no turn ran (another terminal, an editor, a bot)
+        would otherwise reach only the turn after this one. The check is the
+        turn's end's (`_check_default`): the mtime, then the default and the
+        switch only when the mtime moved. A guarded default's question holds
+        the prompt until the person answers it, and the prompt then goes on
+        the model they chose. Prompts sent meanwhile queue behind it
+        (`_send_prompt`). Until the launch's read has answered there is nothing
+        to measure a move from, so the first prompt never waits on it.
+        """
+        if self.default_route is None:
+            start()
+            return
+        self.starting = (text, start)
+        if not self.default_asked:  # one that is out settles into this start
+            self._check_default()
 
     def _take_default(self, result: dict[str, Any]) -> None:
         """The default as Hermes has it now; one that moved since the last read is switched to (`_switch_to_default`).
@@ -3051,6 +3082,8 @@ class App(ModesMixin, AgentViewMixin):
         if before is not None and route != before and route[0]:
             self.default_due = route
             self._switch_to_default()
+        if not self.default_asked:
+            self._default_settled()
 
     def _check_default(self) -> None:
         """At a turn's end, whether Hermes' default model moved during it, or the switch to it a turn held back.
@@ -3059,10 +3092,15 @@ class App(ModesMixin, AgentViewMixin):
         measure a move from. A config file whose mtime did not move (or a
         Hermes that gives none) is not read again.
         """
-        if self.default_route is None or self.default_asked:
+        if self.default_asked:
+            return
+        if self.default_route is None:
+            self._default_settled()
             return
         if self.default_due is not None:
             self._switch_to_default()
+            if not self.default_asked:
+                self._default_settled()
             return
         self.default_asked = True
         self._request(
@@ -3073,6 +3111,7 @@ class App(ModesMixin, AgentViewMixin):
         mtime = config_mtime(result)
         if mtime == self.config_mtime:
             self.default_asked = False
+            self._default_settled()
             return
         self.config_mtime = mtime
         self._ask_default()
@@ -3119,16 +3158,20 @@ class App(ModesMixin, AgentViewMixin):
             if confirmed or sid != self.sid:
                 reason = f" {MODEL_CONFIRM_STALE_NOTICE}" if confirmed else ""
                 self.transcript.add_aside(NoticeBlock(DEFAULT_KEPT_NOTICE.format(**facts, reason=reason), NOTICE_WARN))
+                self._default_settled()
                 return
+
+            def keep() -> None:
+                self.transcript.add_aside(NoticeBlock(DEFAULT_KEPT_NOTICE.format(**facts, reason=""), NOTICE_WARN))
+                self._default_settled()
+
             intro = f"Hermes' default model is now {facts['model']}{facts['route']}. "
             self._confirm_model(
                 result, intro, facts["model"], facts["current"],
-                lambda: self._send_default_switch(due, facts, value, confirmed=True),
-                lambda: self.transcript.add_aside(
-                    NoticeBlock(DEFAULT_KEPT_NOTICE.format(**facts, reason=""), NOTICE_WARN)
-                ),
+                lambda: self._send_default_switch(due, facts, value, confirmed=True), keep,
             )
-        elif not model:
+            return  # a prompt held for the check waits for the answer
+        if not model:
             self.transcript.add_aside(NoticeBlock(MODEL_UNNAMED_NOTICE, NOTICE_WARN))
         elif result.get("deferred"):
             self.transcript.add_aside(NoticeBlock(DEFAULT_DEFERRED_NOTICE.format(**facts)))
@@ -3137,6 +3180,7 @@ class App(ModesMixin, AgentViewMixin):
                 self.model = model
                 self.dirty = True
             self.transcript.add_aside(NoticeBlock(DEFAULT_SWITCHED_NOTICE.format(**{**facts, "model": model})))
+        self._default_settled()
 
     def _on_default_refused(self, due: tuple[str, str], facts: dict[str, str], error: dict[str, Any]) -> bool:
         """Hermes refused the switch: the session stays where it was, and the notice says why in words.
@@ -3147,9 +3191,10 @@ class App(ModesMixin, AgentViewMixin):
         self.default_asked = False
         if refusal_reason(error) in TURN_CAME_FIRST_REASONS:
             self.default_due = due
-            return True
-        reason = refusal_sentence(error) or plain_sentence(as_text(error.get("message")))
-        self.transcript.add_aside(NoticeBlock(DEFAULT_KEPT_NOTICE.format(**facts, reason=f" {reason}"), NOTICE_WARN))
+        else:
+            reason = refusal_sentence(error) or plain_sentence(as_text(error.get("message")))
+            self.transcript.add_aside(NoticeBlock(DEFAULT_KEPT_NOTICE.format(**facts, reason=f" {reason}"), NOTICE_WARN))
+        self._default_settled()
         return True
 
     def _open_model_picker(self, sid: str, result: dict[str, Any]) -> None:
@@ -3457,14 +3502,19 @@ class App(ModesMixin, AgentViewMixin):
         """Send `text`, or queue it behind the running turn; `typed` is what Up puts back in the composer.
 
         `hold` queues it behind a running turn whatever the busy mode. `notice` goes under its row (`_submit_prompt`).
+        One that starts a turn waits for Hermes' default model to be checked (`_start_turn`), and one sent while
+        that wait is on queues behind it.
         """
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
-        if self._busy() and (hold or self.busy_mode == BUSY_QUEUE):
+        if (self._busy() and (hold or self.busy_mode == BUSY_QUEUE)) or self.starting is not None:
             self.queued.append(QueuedLine(text, shown, typed, chips=chips, notice=notice))
             return
-        self._submit_prompt(text, shown, notice=notice)
+        if self._busy():  # the busy mode sends it into the running turn: no turn starts
+            self._submit_prompt(text, shown, notice=notice)
+        else:
+            self._start_turn(typed or text, lambda: self._submit_prompt(text, shown, notice=notice))
 
     def _submit_prompt(
         self, text: str, shown: str = "", queued: bool = False, truncate: int | None = None,
@@ -3516,8 +3566,8 @@ class App(ModesMixin, AgentViewMixin):
     def _turn_ended(self) -> None:
         """The turn is over: the next queued line goes, unless the person interrupted it (`_hold_queue`).
 
-        Then whether Hermes' default model moved (`_check_default`): a queued
-        prompt that went first keeps the switch for that turn's end.
+        Then whether Hermes' default model moved (`_check_default`); a queued
+        prompt that goes waits for that check before its turn starts (`_start_turn`).
         """
         self.tell_turn_runs = False  # an open tell field now says what to do after this turn, not in it
         if self.interrupting:
@@ -3560,7 +3610,8 @@ class App(ModesMixin, AgentViewMixin):
             if line.shell:
                 self._run_shell(line.text[len(SHELL_PREFIX) :].strip(), drain_after=True, echo=line.shown)
             else:
-                self._submit_prompt(line.text, line.shown, queued=True, notice=line.notice)
+                self._start_turn(line.typed or line.text,
+                                 lambda: self._submit_prompt(line.text, line.shown, queued=True, notice=line.notice))
 
     # ── `!` shell lines ──
 

@@ -13,8 +13,9 @@ All notable changes will be documented here.
   gateway child turns into the owner's `session.mutate model`; `/model
   --refresh` opens the picker over a list Hermes asks the providers for again.
   When Hermes' configured default model changes while a session runs (the
-  person or the agent edited the config), the session switches to it once the
-  turn ends and says so in one line, and the info line shows the new model; a
+  person, a bot or the agent edited the config), the session switches to it
+  at the next turn boundary, before the next prompt goes, and says so in one
+  line, and the info line shows the new model; a
   model picked with `/model` stays until the default itself changes. Hermes'
   refusal codes (`unsupported_command`, `model_resolution_failed`,
   `session_busy` and the rest) now read as sentences that say what to do
