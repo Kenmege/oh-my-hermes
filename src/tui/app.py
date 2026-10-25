@@ -1431,6 +1431,9 @@ class App(ModesMixin, AgentViewMixin):
         self.tree_folds: dict[str, bool] = {}  # the dag tree's rows the person folded (False) or opened (True)
         self.tree_run = ""  # the run those folds belong to (`dag_tree.run_key`); a new run, or session, starts none
         self.tree_state: TreeState | None = None  # what the tree's keys need, as the agent view last drew it
+        # The dag run that is over, which the view no longer draws, and when its graph had last moved (`_run_gone`)
+        self.retired_run: tuple[str, float] | None = None
+        self.tree_freed = 0  # the rows that run's tree gave up, kept blank under the info line (`_render`)
         self.tree_size = (0, 0)  # the width and the rows the agent view last drew the tree in
         self.log_agent = ""  # the agent whose log the pager shows; "" for every other pager
         self.tail_asked_at: float | None = None  # when the last `subagent.tail` went out
@@ -2381,6 +2384,9 @@ class App(ModesMixin, AgentViewMixin):
             graph = self._read_dag_graph()
             if graph is not None and not graph.get("dag_open"):
                 self.transcript.add_aside(dag_block.DagBlock(title, graph))
+                # The view under the composer goes in the frame that prints the end: this read is fresher than the
+                # panel's payload, which can still show a lane running.
+                self._retire_finished_run(graph)
 
     def _read_dag_graph(self) -> Mapping[str, Any] | None:
         return self.read_dag_graph(self.environ.get("OMH_HOME") or None, self.environ.get("HERMES_HOME") or None,
@@ -4269,6 +4275,8 @@ class App(ModesMixin, AgentViewMixin):
         self.retired_plan, self.plan_seen_open = "", False
         self._clear_roster()
         self.tree_folds, self.tree_run = {}, ""  # a run of the same name in the next session starts unfolded
+        self.retired_run = None  # a run of the same name in the next session is drawn
+        self.tree_freed = 0
         self._adopt_session(result, fallback_stored)
         return declined
 
@@ -4978,6 +4986,15 @@ class App(ModesMixin, AgentViewMixin):
             # the working rows the ended turn kept: drawn again to fit them, so its last row (the count of what it
             # cannot show) is never the one cut.
             build = partial(build, agents=self._agent_view(cols, rows, room))
+            frame = build()
+        # A dag run's tree that left the view as its run ended (`_retire_finished_run`) gives its rows up on the bottom
+        # rows as blank rows under the info line, not as pad above the composer: what the run's end print and the
+        # turn's last lines did not fill would be a blank band between them and the composer. The composer stays where
+        # the flush leaves it, as Claude Code's prompt does when the list under it goes, and the rows go as output
+        # fills them (the pad they stand for shrinks), at the next turn, and above the bottom rows.
+        self.tree_freed = min(self.tree_freed, frame.budget.pad) if pinned and not busy else 0
+        if self.tree_freed:
+            build = partial(build, agents=[*build.keywords["agents"], *[()] * self.tree_freed])
             frame = build()
         if self.card_state == CARD_LIVE and self.launch_layout and min_height > 0:
             # The card goes at the region's top, under what is flushed above it (and the spacer the tail opens with

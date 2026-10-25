@@ -4,6 +4,24 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A dag-ulw run that ended leaves the area under the composer on its own.**
+  Once a run was over its tree folded into one line, `DAG · <name> · done
+  9/9`, which stayed under the info line for as long as the HUD kept the
+  settled graph (15 minutes). The whole finished tree also came back while
+  the next turn ran. The run's end print in the transcript already holds the
+  final graph, and `/dag` draws the whole of it, so the view under the
+  composer now empties when the turn that ended the run ends. It goes in the
+  frame that prints the end, from the end print's own read, even when the
+  panel's slower read still shows a lane running. A run that later turns
+  move on (lanes still running, a repair or an extend round) keeps its tree
+  between turns and into the next one, as before. On the bottom rows the
+  rows the tree gave up stay blank under the info line until output fills
+  them, so the composer does not move up and no blank band opens between
+  the run's last lines and the composer. The run's finished children leave
+  the agent list with it, so they are not listed in its place once the
+  graph leaves the HUD. Subagent rows outside a dag run are unchanged: a
+  finished turn still shows each agent's verdict until the next prompt.
+
 - **The TUI's working row counts tokens while the turn streams.** The
   `↓N tokens` on the working row moved only when Hermes sent a usage report,
   which it does after an API call ends, so a one-call reply showed nothing
