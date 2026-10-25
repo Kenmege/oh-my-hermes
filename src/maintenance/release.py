@@ -3251,7 +3251,11 @@ def hermes_release_smoke_steps(
 
 
 def _skill_name_for_hermes(skill: str) -> str:
-    return skill.rstrip("/").split("/")[-1]
+    if "/" in skill:
+        return skill.rstrip("/").split("/")[-1]
+    # Hermes checks a skill by its frontmatter name, which is the display
+    # label the install step also uses; the canonical name names no skill.
+    return omh_skill_display_name(skill)
 
 
 def _normalize_release_version(version: str) -> str:

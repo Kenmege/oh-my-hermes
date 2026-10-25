@@ -247,25 +247,34 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
                 manager_positions = [first_block(c) for c in manager_run]
                 self.assertEqual(manager_positions, sorted(manager_positions))
 
-    def test_agent_protocol_pins_script_installers_after_package_managers(
+    def test_agent_protocol_leads_with_pinned_script_installers(
         self,
     ) -> None:
+        # An agent picks one path by rule: the SHA-pinned script installer for
+        # its OS, and a package manager only when the user asks for one. The
+        # setup step it runs is the non-interactive one, because an agent's
+        # shell has no terminal and the wizard would take every default.
         protocol = (PROJECT_ROOT / "INSTALL_FOR_AGENTS.md").read_text(
             encoding="utf-8"
         )
         protocol = protocol.split("## Step 1: Install OMH", 1)[1]
         ordered = (
-            "brew install rlaope/tap/omh",
-            "bun install -g oh-my-hermes",
-            "npm install -g oh-my-hermes",
             'git ls-remote https://github.com/rlaope/oh-my-hermes.git refs/heads/main',
             'raw.githubusercontent.com/rlaope/oh-my-hermes/$OMH_REF/install.sh',
             'raw.githubusercontent.com/rlaope/oh-my-hermes/$Ref/install.ps1',
-            "omh setup --model-setup --interactive",
+            'uv tool install "git+https://github.com/rlaope/oh-my-hermes@$OMH_REF"',
+            "brew install rlaope/tap/omh",
+            "bun install -g oh-my-hermes",
+            "npm install -g oh-my-hermes",
+            "omh setup --model-setup --no-interactive --json",
             "omh doctor",
         )
         positions = tuple(protocol.index(value) for value in ordered)
         self.assertEqual(positions, tuple(sorted(positions)))
+        self.assertNotIn("(recommended)", protocol)
+        run_blocks = "\n".join(_fenced_blocks(protocol))
+        self.assertNotIn("--interactive\n", run_blocks + "\n")
+        self.assertNotIn("exit 1", run_blocks)
 
     def test_site_translations_cover_new_install_labels(self) -> None:
         translations = (PROJECT_ROOT / "site" / "i18n.js").read_text(
