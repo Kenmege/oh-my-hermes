@@ -2894,6 +2894,21 @@ def cmd_setup(args: argparse.Namespace) -> int:
     validate_model_setup_args(args)
     language = _setup_language(args)
     paths = _paths(args)
+    if getattr(args, "interactive", False) and _setup_should_interact(args) and not _wizard_has_terminal():
+        # Without a terminal on stdin every prompt reads EOF and takes its
+        # default, so the user would never see the choices the wizard exists
+        # to ask. Refuse before anything is written.
+        print(tr(language, "setup_interactive_needs_terminal"), file=sys.stderr)
+        refusal: dict[str, object] = {
+            "ok": False,
+            "refused": True,
+            "refusal_reason": "interactive_requires_terminal",
+            "next_action": "rerun_with_no_interactive_json",
+            "next_command": "omh setup --no-interactive --json",
+            "language": language,
+        }
+        _print_json(refusal)
+        return _setup_exit_code(refusal)
     if _setup_should_interact(args):
         if not _setup_paths_were_explicit(args) and not getattr(args, "scope", None):
             args.scope = _ask_setup_scope(use_color=_use_color(), language=language)
@@ -3105,6 +3120,29 @@ def cmd_setup(args: argparse.Namespace) -> int:
         _print_json(payload)
     else:
         _print_setup_summary(payload, language=language)
+    return _setup_exit_code(payload)
+
+
+def _setup_exit_code(payload: Any) -> int:
+    """0 when every step setup was asked to run ran.
+
+    1 when setup refused to start: `--interactive` was asked for with no
+    terminal on stdin, so nothing ran and nothing was written. Not 0, because
+    a caller reading only the status would be told the user's choices were
+    collected; 1 is what the other mappers return for a refused run. Not 2,
+    which `main` returns for an OmhError: the flags parsed, and the same
+    choices succeed as `--no-interactive --json`.
+
+    Generic failure signals -- an interrupted run, or a unit carrying a
+    failure kind -- are never success either, so this mapper cannot be
+    passed by ignoring them.
+    """
+    summary = payload if isinstance(payload, dict) else {}
+    if summary.get("refused") or summary.get("interrupted"):
+        return 1
+    units = summary.get("units")
+    if isinstance(units, list) and any(isinstance(unit, dict) and unit.get("failure_kind") for unit in units):
+        return 1
     return 0
 
 
@@ -3128,7 +3166,7 @@ def _setup_should_interact(args: argparse.Namespace) -> bool:
         or getattr(args, "model_setup", False)
     ):
         return False
-    return sys.stdin.isatty() and sys.stdout.isatty()
+    return _stdin_is_tty() and sys.stdout.isatty()
 
 
 # Binary name per external CLI profile, read-only PATH lookup only -- never
@@ -3220,7 +3258,21 @@ def _ask_maestro_delegation_choice(args: argparse.Namespace, paths: OmhPaths, la
 
 
 def _stdin_is_tty() -> bool:
-    return sys.stdin.isatty()
+    # `<&-` leaves `sys.stdin` as None; a detached stream raises ValueError.
+    try:
+        return sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def _wizard_has_terminal() -> bool:
+    """Whether an explicit `--interactive` may run the wizard at all.
+
+    The same probe as `_stdin_is_tty`, kept as its own seam: tests that drive
+    the wizard with scripted answers open this gate without also turning on
+    the terminal-only model-chains offer that `_stdin_is_tty` decides.
+    """
+    return _stdin_is_tty()
 
 
 def _will_ask_model_chains_interview(args: argparse.Namespace, paths: OmhPaths) -> bool:

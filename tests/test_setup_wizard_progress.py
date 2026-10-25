@@ -18,9 +18,11 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import re
+import sys
 import unittest
-from contextlib import ExitStack, redirect_stdout
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -33,6 +35,7 @@ load_local_package()
 from omh.coding.executors import EXTERNAL_CLI_PROFILES  # noqa: E402
 from omh.commands import setup as setup_module  # noqa: E402
 from omh.commands.language import LANGUAGE_CODES, MESSAGES, tr  # noqa: E402
+from omh.commands.main import main  # noqa: E402
 from omh.maintenance.update_check import (  # noqa: E402
     DEFAULT_UPDATE_CHECK_MODE,
     UPDATE_CHECK_MODES,
@@ -458,6 +461,45 @@ class NonInteractiveRunTests(unittest.TestCase):
     def test_plain_run_without_a_terminal_prints_no_headings(self) -> None:
         with TemporaryDirectory() as tmp:
             status, stdout, stderr = run_cli(self._base(Path(tmp)) + ["setup"], output_json=False)
+            self.assertEqual(status, 0, stderr)
+            self._assert_no_question_headings(stdout)
+            self._assert_no_update_check_answer(Path(tmp))
+
+    def _run_with_stdin(self, stdin, args: list[str]) -> tuple[int, str, str]:
+        # `run_cli` always supplies a StringIO stdin; these cases need the
+        # two shapes a shell gives a child: `<&-` (None) and `</dev/null`.
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with patch.dict(os.environ), patch.object(sys, "stdin", stdin), redirect_stdout(stdout), redirect_stderr(stderr):
+            os.environ.pop("OMH_OUTPUT", None)
+            status = main(args)
+        return status, stdout.getvalue(), stderr.getvalue()
+
+    def test_interactive_without_a_terminal_refuses_before_any_change(self) -> None:
+        # Given: an agent shell with no terminal on stdin, closed or /dev/null.
+        with open(os.devnull, encoding="utf-8") as devnull:
+            for label, stdin in (("closed", None), ("devnull", devnull)):
+                with self.subTest(stdin=label), TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    # When: the wizard is asked for explicitly.
+                    status, stdout, stderr = self._run_with_stdin(
+                        stdin, self._base(root) + ["setup", "--interactive", "--no-menubar"]
+                    )
+                    # Then: no default stands in for a choice the user never saw.
+                    refusal = json.loads(stdout)
+                    self.assertEqual(status, 1)
+                    self.assertTrue(refusal["refused"])
+                    self.assertEqual(refusal["refusal_reason"], "interactive_requires_terminal")
+                    self.assertEqual(refusal["next_command"], "omh setup --no-interactive --json")
+                    self.assertIn(tr("en", "setup_interactive_needs_terminal"), stderr)
+                    paths = setup_module._paths(
+                        argparse.Namespace(omh_home=str(root / ".omh"), hermes_home=str(root / ".hermes"), scope=None)
+                    )
+                    self.assertFalse(update_check_policy_recorded(paths))
+                    self.assertFalse(paths.setup_profile_path.exists())
+
+    def test_plain_run_with_closed_stdin_keeps_the_non_interactive_path(self) -> None:
+        with TemporaryDirectory() as tmp:
+            status, stdout, stderr = self._run_with_stdin(None, self._base(Path(tmp)) + ["setup"])
             self.assertEqual(status, 0, stderr)
             self._assert_no_question_headings(stdout)
             self._assert_no_update_check_answer(Path(tmp))
