@@ -57,7 +57,7 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
     def test_capability_growth_is_one_bounded_row_without_sibling_edits(self) -> None:
         for producer, base, cap, expected_hash, limit in (
             (skill_capabilities, 522307, FULL_ROW_DELTA_CAP,
-             'f2fa00c65278bf22316bf4ca052a01f006e87805c90dde06baf693c460c4d6a8',
+             '774f87898595ab3e55d6e1fc98136afeb6c8b542fdfc943b1c5f917db027982a',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -106,13 +106,18 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         for template in legacy_templates:
             parts = _split_sections(template.content)
             # The renderer changes only research lane cardinality +25 -> +26.
-            # Reconstruct that one measured, same-length membership change;
-            # all other bytes must equal the recorded clean base.
+            # Reconstruct that one measured, same-length membership change.
+            # The vi trigger rewording also moved five lane bodies, which is
+            # why this digest is no longer the clean-base one.
             restored = ''.join(body.replace('`+26 more`', '`+25 more`')
                                if heading == 'Workflow Lane' and '**Research and company ops**' in body
                                else body for heading, body in parts)
             legacy_hashes[template.name] = hashlib.sha256(restored.encode()).hexdigest()
-        self.assertEqual(_digest(legacy_hashes), 'd1c5273b31d9833daa48d770d1c728d9aabf98d14eb29802d25dcf8875cce2b5')
+        # Re-derived from both sources: the vi rewordings above plus
+        # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
+        # Re-derived from both main sources above plus the bounded dag-ulw
+        # baseline-verification guidance; only dag-ulw moves versus main.
+        self.assertEqual(_digest(legacy_hashes), '5db03a78a37d515ad0f54df6fd2eab2533b9f80c800aed8619a9debd78bce9b3')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
@@ -130,7 +135,7 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         from omh.maintenance.drift import budget_metrics
         expected = {
             'skill_index_line_max_chars': 100,
-            'plugin_tool_schema_chars': 68402,  # Main's registered search tool; unchanged here.
+            'plugin_tool_schema_chars': 68757,  # Main's search tool, then #2277's agent-board prepare fields.
             'pre_llm_call_context_chars_max': 5780,
             'pre_llm_call_context_fallback_chars_max': 7216,
             'awareness_primer_markdown_chars': 3520,

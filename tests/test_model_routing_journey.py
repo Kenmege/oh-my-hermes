@@ -25,7 +25,7 @@ class ModelRoutingJourneyTests(unittest.TestCase):
                     {
                         "models": [
                             {"provider": "xai", "model_id": "grok-build-0.1"},
-                            {"provider": "apitopia", "model_id": "kimi-k3"},
+                            {"provider": "apitopia", "model_id": "kimi-k3.1-pro"},
                             {"provider": "google", "model_id": "gemini-3.1-pro"},
                         ]
                     }
@@ -61,7 +61,7 @@ class ModelRoutingJourneyTests(unittest.TestCase):
         self.assertEqual(hermes["projection"]["kind"], "hermes_native_binding")
         self.assertEqual(hermes["projection"]["binding"], "xai/grok-build-0.1")
         self.assertEqual(external["projection"]["kind"], "maestro_ordered_chain")
-        self.assertEqual(external["available_chain"][:3], ["grok-build-0.1", "kimi-k3", "gemini-3.1-pro"])
+        self.assertEqual(external["available_chain"][:3], ["grok-build-0.1", "kimi-k3.1-pro", "gemini-3.1-pro"])
         self.assertEqual(handoff.capability.profile, "claude-code")
         self.assertEqual(handoff.capability.observation_boundary, "prepared_not_observed")
         self.assertFalse(handoff.capability.executes_work)

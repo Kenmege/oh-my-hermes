@@ -39,7 +39,7 @@ class ModelRoutingStatusTests(unittest.TestCase):
             json.dumps(
                 {
                     "models": [
-                        {"provider": "kimi-coding", "model": "kimi-k3"},
+                        {"provider": "kimi-coding", "model": "kimi-k3.1-pro"},
                         {"provider": "zai", "model": "glm-5.2"},
                         {"provider": "xai", "model": "grok-code-fast"},
                     ]
@@ -52,7 +52,7 @@ class ModelRoutingStatusTests(unittest.TestCase):
         )
         _write(
             hermes_home / "config.yaml",
-            "model:\n  aliases:\n    main: kimi-coding/kimi-k3\n    cheap: zai/glm-5.2\n",
+            "model:\n  aliases:\n    main: kimi-coding/kimi-k3.1-pro\n    cheap: zai/glm-5.2\n",
         )
         state = empty_owner_preference_state()
         for index in range(3):
@@ -73,21 +73,21 @@ class ModelRoutingStatusTests(unittest.TestCase):
         self.assertEqual(payload["schema_version"], "model_routing_status/v1")
         self.assertEqual(
             {entry["model_id"] for entry in payload["models"]["confirmed"]},
-            {"kimi-k3", "glm-5.2", "grok-code-fast"},
+            {"kimi-k3.1-pro", "glm-5.2", "grok-code-fast"},
         )
         self.assertEqual(
             [entry["model_id"] for entry in payload["models"]["discovered_only"]],
             ["gpt-6.1-sol"],
         )
         # A discovered-only model is not confirmed. Since 2026-10-13 `deep`
-        # ends on Kimi K3 and resolves, so the owner-default case is
+        # ends on Kimi K3.1 Pro and resolves, so the owner-default case is
         # unspecified-low: it names gpt-6.1-sol and still falls through, and
         # unspecified-high reports gpt-6.1-sol as its missing head.
         low = payload["maestro"]["categories"]["unspecified-low"]
         self.assertEqual(low["status"], "owner_default")
         self.assertEqual(low["missing_head"], "glm-5.3")
         unspecified = payload["maestro"]["categories"]["unspecified-high"]
-        self.assertEqual(unspecified["selected_model"], "kimi-k3")
+        self.assertEqual(unspecified["selected_model"], "kimi-k3.1-pro")
         self.assertEqual(unspecified["missing_head"], "gpt-6.1-sol")
         self.assertIn("metadata", payload["claim_boundary"])
         self.assertNotIn("execution confirmed", json.dumps(payload).lower())
@@ -98,7 +98,7 @@ class ModelRoutingStatusTests(unittest.TestCase):
             payload = build_model_routing_status(paths, discovery_home=discovery_home)
 
         self.assertEqual(payload["hermes"]["status"], "configured")
-        self.assertEqual(payload["hermes"]["aliases"]["main"], "kimi-coding/kimi-k3")
+        self.assertEqual(payload["hermes"]["aliases"]["main"], "kimi-coding/kimi-k3.1-pro")
         self.assertEqual(payload["hermes"]["auth"]["status"], "unobserved")
         learned = payload["owner_learning"]["routes"][ROUTE_FAMILY]
         self.assertEqual(learned["status"], "learned")

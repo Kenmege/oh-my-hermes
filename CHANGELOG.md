@@ -4,6 +4,118 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The TUI no longer draws a month-old fanout as live work.** With no
+  native delegation graph, the HUD drew the newest verified fanout contract
+  under `~/.omh/coding/fanout/` however old it was, so a fanout prepared once
+  and never dispatched still showed `1 agent · DAG · fanout … · 1 waiting`
+  weeks later. A fanout is now drawn only while it is current: one whose units
+  all settled leaves after the 15-minute linger a settled native graph gets,
+  and one with a prepared or running unit stays for 24 hours, the window a
+  delegation record is kept. Its age runs from the last change to its
+  directory, contract, dispatch summary or in-flight markers. Both the
+  delegation graph and the older subagent graph read the same gate, and the
+  record on disk is left alone.
+
+## 4.0.2 - 2026-10-24
+
+- **`omh_agent_board` states the fields a `prepare` needs, and names the
+  one that is missing (#2277).** The schema required only `action` and
+  `request_id`, so a `prepare` built from it left out `coordination`,
+  `operation`, `board`, `profile` and `arguments` and came back as
+  `invalid_request_or_board_store`, the same reason an unreadable board store
+  gives. The schema now carries a top-level `oneOf` with the two closed
+  shapes, and the tool description lists the prepare fields, because Hermes
+  removes a top-level combinator from every tool schema before any provider
+  sees it. A `prepare` that still omits one is refused as
+  `invalid_prepare_input` with `fields` naming the missing names and no
+  values; a missing `board` keeps `board_required`, a host without the board
+  engine still answers `omh_agent_board_core_unavailable` first, and `status`
+  is unchanged. `docs/AGENT-BOARD.md` lists the refusals that come before an
+  engine record.
+
+- **Kimi K3.1 Pro replaces Kimi K3 in the shipped chains.** Every slot K3
+  held now names `kimi-k3.1-pro` at the same effort: `deep`, `architect`,
+  `unspecified-high`, `quick`, `writing`, `visual-engineering`, `artistry`,
+  `capable`, the `main` suggestion, and the X-platform affinity. Both site
+  pages, the generated install table, and the model-setup skill say so;
+  the four lean READMEs link to the canonical table. K3 is retired under the superseded-generation
+  rule. It stays recognized and priced, so `omh model-chains set` can still
+  name it. The Highspeed tier joins no chain. The `quick` chain therefore
+  no longer offers a Kimi Ultrafast swap in `omh model-chains interview`,
+  because no K3.1 Ultrafast tier is priced. This is an editorial change
+  (owner decision) and has not been measured yet.
+
+- **A remark after a request is read by its kind, more widely (#2243
+  follow-up).** A retraction is read by its verb stem (`…, side note, I'm
+  cancelling that`, `…, fyi backing out of this`, `…, calling the whole
+  thing off`), a stated precondition holds (`…, need to confirm it's safe on
+  my side`), and a contrast after a wish turns to what follows (`…, fingers
+  crossed but let's not`): each holds where it started a graph run before.
+  Who asked needs someone other than the speaker as its subject, or a
+  passive (`…, approved by the CTO`). More remarks keep the request: an
+  aside marker of any kind (`…, also, …`, `…, off topic, …`), a request on
+  someone's behalf or for a purpose (`…, the PM's request`, `…, at the
+  request of QA`, `…, on behalf of legal`, `…, it's for the audit`), a toast
+  (`…, here's to a clean run`, `…, may the build be green`), a
+  back-reference (`…, consistent with the RFC`, `…, like we did for
+  billing`), `…, no deadline` and `…, bear with me`. A toast, a wish, a
+  back-reference or an attribution keeps only when what it carries is clean:
+  a negation of doing the work holds wherever it is said (`…, here's to not
+  doing it`, `…, here's to letting sleeping services lie`, `…, the team lead
+  asked us to leave it`, `…, cheers don't bother`), while a negated outcome
+  keeps (`…, hope nothing breaks`, `…, btw it won't touch prod`, `…, fwiw no
+  exceptions`, `…, hope we don't break imports`: a `don't` that governs an
+  outcome verb asks for the work all the same). A flat refusal holds
+  (`…, btw, no`). What a third party said, wanted or told us is read by
+  the kinds a bare remark is: a clean approval keeps, with intensifiers,
+  punctuation and a when or what for around it (`…, legal said a big yes`,
+  `…, the lead said absolutely, go for it`, `…, the client wants it by
+  friday`), and so do thanks, a greeting, a sign-off and a wish (`…, the
+  lead said thanks a ton`, `…, the PM says hi`); after an aside marker a
+  plain statement keeps too (`…, fwiw QA says the suite is faster now`).
+  A refusal, a hedge or anything unknown holds (`…, QA says hard no`, `…,
+  fyi the lead said meh`), and so does sarcasm: a mocking idiom or an
+  approval dressed in filler or said twice (`…, the lead said yeah right`,
+  `…, ops said sure, in your dreams`, `…, the lead said oh sure`, `…, QA
+  said yeah yeah`). A negator before the reporting verb holds whatever was
+  said (`…, nobody said yes`, `…, ops never said go`, `…, nobody signed
+  off`), and so does one before an attribution verb (`…, no one on the
+  team gave the go-ahead`). A subordinating condition opener holds where it
+  opens a clause (`…, assuming QA says it's fine`, `…; as soon as the lead
+  says go`); inside a clause it constrains the work and keeps, and an
+  adjective never counts (`rename every module as long as the import paths
+  stay the same`, `… using the provided helper`). A reported wish keeps
+  only as a wish alone or that the work goes well (`…, the lead said hope it
+  goes well`; `…, the PM said good luck lol` holds), a doubled assent is no
+  thanks (`…, QA said great, great` holds), and under an aside a reported
+  negated state, reluctance or blocking status holds (`…, btw legal says
+  the contract isn't signed`, `…, btw ops says staging isn't up`, `…, btw
+  ops says prod is frozen`), while a negated problem keeps (`…, fwiw QA
+  says it isn't a problem`). A status word that is also good news holds
+  only of a person away or a system down (`…, fyi the lead said she's out
+  today`, `…, btw ops says the cluster is down`); of a work item it keeps
+  (`…, btw ops says the fix is out`, `…, fyi ops said the error rate is
+  down`). Thanks for a negation mocks wherever it is said (`…, thanks for
+  nothing` holds). A relative what is no reported speech (`…, hope it's
+  what the PM wants` keeps as a wish). Korean reported speech is unchanged
+  and reads as on main.
+
+- **The launch card shows skills from its first frame.** The skills section
+  said `loading…` for about 1.4 s on a warm launch and 1.8 s on a cold one.
+  Hermes names its skills only in the `session.info` it sends after building
+  the session's agent: plugin discovery, `AIAgent` setup and its skill scan.
+  The OMH TUI's own share is under 0.1 s. The card now keeps the skills it
+  drew in `<omh_home>/tui/launch-skills.json`, written atomically and
+  best-effort, with the Hermes home and profile they were drawn for. The
+  next launch on that home and profile draws them at once, with a dim
+  `last-known` mark on the title row. When the session's own skills arrive
+  they replace the snapshot whole, so a skill removed since then leaves the
+  screen. The card keeps its height through the swap. The snapshot holds
+  the names as drawn, so the first frame imports no skill catalog. A first
+  launch, a launch on another Hermes home or profile, or a snapshot that is
+  unreadable or from another schema still says `loading…`. Hermes is
+  unchanged.
+
 - **Kimi K3.1 Pro and K3.1 Pro Highspeed are onboarded.** Moonshot released
   them on 2026-10-23. Both ids now have exact contracts read from
   platform.kimi.ai: 1M context, thinking always on, and a `low` / `high` /
@@ -14,10 +126,9 @@ All notable changes will be documented here.
   Cost estimates use the list prices: 2/10 per MTok, and 4/20 for
   Highspeed, which keeps the 0.20 cached-input rate. Provider checks know
   which catalogs serve each id. The `kimi` calibration applies unchanged.
-  Neither id joins a shipped chain yet, and Kimi K3 keeps every slot it
-  held. The K3-vs-K3.1 benchmark pair is the follow-up and needs a served
-  route. To try K3.1 Pro now, use
-  `omh model-chains set <category> "kimi-k3.1-pro:high, ..."`.
+  K3.1 Pro takes every slot Kimi K3 held (the shipped-chains entry above),
+  and Highspeed joins no chain. The K3-vs-K3.1 benchmark pair is the
+  follow-up and needs a served route.
 
 - **A newer delegation route stays newer after another session's `set`
   (#2251 follow-up).** When an `omh_delegate_route set` wrote its route but
@@ -39,9 +150,10 @@ All notable changes will be documented here.
   newer write", which is the behaviour before.
 
 - **A cleared or exhausted delegation route stays gone (#2251
-  follow-up).** `clear` and chain exhaustion now release the conversation's
-  own route inside the same lock as the restore, after it. Before, the
-  release took a second lock. When that lock timed out, the cleared route,
+  follow-up; #2258, #2264, #2268).** `clear` and chain exhaustion now
+  release the conversation's own route inside the same lock as the
+  restore, after it. Before, the release took a second lock. When that
+  lock timed out, the cleared route,
   or the model that had just failed, came back at the next dispatch of the
   same task. A turn-end restore whose write is refused now keeps the route
   recorded, because the keys still hold it. A session-start restore that
@@ -51,7 +163,13 @@ All notable changes will be documented here.
   in the hook result and in Hermes' log. A corrupt `_delegate_from` cycle can
   no longer make a session inherit its own stale route.
   `omh_delegate_route action=status` reports the conversation's own route
-  beside the profile-wide keys.
+  beside the profile-wide keys. Before it releases, a `clear` or a chain
+  exhaustion stamps the entries it takes out in
+  `~/.omh/routing/conversation-take-outs.json`, inside the restore's lock
+  and whatever the restore decided, so a failed release cannot bring the
+  cleared route back at the same task's next dispatch. When the 2 s
+  dispatch-lock wait times out and the unlocked read finds nothing to
+  change, the `delegate_task` goes ahead instead of being refused.
 
 - **A delegation route belongs to the conversation that set it (#2251).**
   The three `delegation.*` keys are shared by every session on a profile.
@@ -217,8 +335,10 @@ All notable changes will be documented here.
   with any intensifier: gratitude (`…, thanks a bunch`, `…, thx so much!!`,
   `…, much obliged`), a sign-off (`…, have a good one`), a wish (`…, fingers
   crossed`, `…, wish me luck`), a back-reference (`…, as discussed`, `…, same
-  as last time`), who asked (`…, my manager asked for it`), an aside marker
-  and a harmless statement (`…, fwiw the tests are flaky`), or no pressure
+  as last time`), who asked (`…, my manager asked for it`, `…, approved by the
+  CTO`), an aside marker of any kind and a harmless statement (`…, fwiw the
+  tests are flaky`, `…, also, the new keyboard is lovely`, `…, off topic, the
+  sofa arrived`), or no pressure
   (`…, no worries`, `…, take your time`, `…, whenever works`). An unknown
   remark holds, so the request is offered, not started, and a refusal class
   holds even inside a keep kind: a new request (`…, run the tests`), a hold, a
@@ -567,6 +687,119 @@ All notable changes will be documented here.
   highlight and `/help`'s Hermes list match names the same way, so `/Dag-ulw`
   is highlighted as the skill Hermes runs for it. A name the TUI does not
   have, and a skill, still go to Hermes as typed.
+
+- **The README and the GitHub Pages site are a lean landing page (#2269,
+  #2271, #2272, #2274).** All four READMEs open with the spectrum
+  OH-MY-HERMES wordmark, then the app-icon logo, the tagline "All-in-one
+  package for Hermes Agent. Install once, then just type `dag-ulw`.", the
+  two install lines (`curl …install.sh | sh` and `omh setup`), five
+  one-line bullets, and the `dag-ulw` clip. The longer install options and
+  details sit behind a link and two collapsed toggles. The site's landing
+  page is rebuilt around the same copy, with the real TUI recording, every
+  install path, the community and sponsor sections, a spectrum aura on the
+  hero and the DAG-ULW band, and a header button with the live GitHub star
+  and npm install counts.
+
+- **Every timestamp read from outside OMH refuses hour 24 on Python 3.14
+  too (#2263).** CPython 3.14 reads `T24:00:00` as midnight of the next
+  day, where 3.11 to 3.13 raise. 85 of the 108 `fromisoformat` calls in
+  `src/` read text from outside OMH's own clock; they now go through
+  `strict_fromisoformat` (or a standalone script's own copy, tested equal) and
+  refuse it on every supported Python. Before, on 3.14, a model-supplied
+  todo `done_at` was stored verbatim, memory records stayed eligible until
+  the next midnight, and connector receipts and routing observations were
+  admitted. Valid timestamps, including a real `T00:00:00`, are unaffected.
+  A source gate pins the remaining raw calls, each with its reason.
+
+- **Bare `omh` opens the OMH TUI with a Hermes gateway already running
+  (#2249).** On current upstream Hermes, the stdio gateway entry refuses a
+  home a running gateway owns, so bare `omh` fell back to Hermes' own TUI
+  every time. The TUI's gateway child now attaches to the profile's shared
+  gateway where Hermes has the attach API, and starts Hermes' own gateway
+  with idle exit when none is running, as Hermes' Ink TUI does. Older
+  Hermes, with only the stdio entry, works as before. When the OMH TUI
+  cannot start, its reason now prints again after the Hermes TUI it falls
+  back to closes.
+
+- **`omh setup` finishes with a config key that holds a dot (#2248).** A
+  provider key such as `z.ai-coding-plan:` under `providers:` stopped setup
+  at `[2/5] Connecting OMH to Hermes` with `too many values to unpack`.
+  Such a key is now read as one key, not a level of nesting, in the dry run
+  and the real run.
+
+- **`omh-ai-job-search` is a new installable skill (#2253, #2261).** An
+  AI-assisted job search for any profession, adapted from the upstream
+  ai-job-search methodology to Hermes' own research and document tools. It
+  confirms the person's profile and preferences, shortlists real vacancies
+  with their sources and fit reasons, drafts truthful, versioned
+  application material for review, and prepares interviews. A stdlib-only
+  `job_state.py` tracks applications locally; an application counts as
+  submitted only on confirmed evidence, and a malformed timestamp (hour 24
+  included, on every Python) is refused before any write. An employer's
+  hiring request is not routed to it. Contributed by @frirenai.
+
+- **`research`, `source-finder` and `web-research` share a bounded
+  multi-source search (#2255).** A "find this" request is decomposed into
+  queries, searched and read with the host's own tools, fused into
+  requirement-level coverage, and followed up within a bound. An optional
+  `omh_search` plugin tool helps with that. There is no new command, mode
+  or required provider key. An unavailable, failed or unsearched source is
+  not reported as zero hits. This is a draft candidate: search quality and
+  installed-model behaviour have not passed acceptance. Contributed by
+  @frirenai.
+
+- **Three executable domain-science skills: `omh-geospatial-analysis`,
+  `omh-biomedical-evidence` and `omh-molecular-docking` (#2235, #2241,
+  #2245).** CRS-aware polygon intersection and area in projected metres
+  (Shapely/PyProj); captured BioMCP public-source responses reconciled
+  offline into an evidence matrix that keeps disagreements and gaps; and
+  standalone AutoDock Vina docking with reproducible settings and per-model
+  integrity checks. They are opt-in. Their helpers ship as inert files:
+  installing a skill neither runs a helper nor installs a scientific
+  dependency. On macOS the helpers' path guards, and show-reel's, accept
+  the system `/etc`, `/tmp` and `/var` links into `/private`, and every
+  other symlink is still refused. Docking refuses one file passed as both
+  receptor and ligand, however it is spelled. Contributed by @frirenai.
+
+- **Skill replies end on their result, not on a list of things not done
+  (#2238).** The shared closing guidance asked for a list of what was not
+  checked or executed and for a question at the end, so a briefing could
+  close on "I did not install or change settings" when neither was asked
+  for. The shared closing rule, in every skill body, now orders a reply as
+  result, relevant evidence and limits, the required observed run summary,
+  then one specific question about the content only when a real decision
+  or a useful discussion remains. Completed work needs no question, and
+  unrelated non-action footers and generic offers to continue are left
+  out. Requested work that was not done, a failed retrieval, an unavailable
+  check and a permission decision stay explicit, and a discussion question
+  grants no permission. Contributed by @frirenai.
+
+- **Windows staged self-updates work under PowerShell 7 (#2218).** The
+  generation-pointer junction now gets an absolute target, which
+  PowerShell 7 requires; a relative one staged the update and then failed
+  at activation. POSIX symlinks keep their relative targets. Contributed by
+  @frirenai.
+
+- **`ulw-research` records inspectable evidence (#2227).** Claims and
+  sources carry typed provenance, ownership and counter-search checks, so
+  correlated republications cannot count as independent corroboration. An
+  exhausted budget is kept apart from completed research. `python -m
+  omh.workflows.research_dossier <json-file>` validates a dossier's record
+  structure, with distinct exit codes for valid and invalid input. Passing
+  it is not factual truth or evidence that a source was read. Contributed
+  by @frirenai.
+
+- **`omh-show-reel` is a new installable skill (#2212, #2220).** A
+  multilingual show-reel and launch-film workflow ("Create a launch film.",
+  "제품 쇼케이스 영상 만들어줘", `/show-reel …`), with an optional motion and
+  audio toolkit that ships as inert files. Its engine, project layout and
+  QA tools match upstream revfactory/showreel (MIT) at a pinned revision,
+  and the render receipt records its quality settings. Narration reaches a
+  network service only when the person runs the opt-in script with
+  `ELEVENLABS_API_KEY` set; without it, the reel falls back to music and
+  captions. A film named inside another request (an issue title, a Slack
+  post, "make the launch film shorter") keeps that request's owner.
+  Contributed by @frirenai (carries #2195).
 
 ## 4.0.1 - 2026-10-22
 

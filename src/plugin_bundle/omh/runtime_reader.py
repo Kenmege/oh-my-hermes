@@ -20,8 +20,8 @@ from typing import Any, Callable
 
 from .approval_bypass import effective_approval_bypass
 from .awareness_delivery import _awareness_delivery_lock
-from .delegation_graph import build_delegation_graph, inactive_graph
-from .delegation_ledger import newest_ledger_session
+from .delegation_graph import GRAPH_LINGER_SECONDS, build_delegation_graph, inactive_graph
+from .delegation_ledger import LEDGER_MAX_AGE_SECONDS, newest_ledger_session
 from .hermes_delegation import _CHILD_SELECT_LIMIT, read_hermes_native_subagents
 from .kanban_board_reader import conversation_session_ids, kanban_db_path, read_kanban_lanes
 from .live_session import (
@@ -1118,7 +1118,7 @@ def read_omh_hud(
         merged["completed"] = int(merged.get("completed", 0)) + int(kanban["completed"])
         if merged.get("status") == "idle":
             merged["status"] = "observed"
-    fanout_record = _hud_local_fanout_record(home)
+    fanout_record = _hud_current_fanout_record(home, _hud_local_fanout_record(home), now=time.time())
     payload["graph"] = _hud_subagent_graph(
         home,
         native_rows_present=bool(native["rows"]),
@@ -1161,8 +1161,34 @@ def read_omh_hud(
     return _fit_widget_hud_budget(payload)
 
 
-# `_hud_subagent_graph` without a record reads one; `None` is a record, the answer "no fanout".
-_RECORD_NOT_READ: Any = object()
+# A unit in one of these has not settled, so its fanout may still move.
+_FANOUT_OPEN_STATUSES = frozenset({"prepared_not_observed", "running"})
+
+
+def _hud_current_fanout_record(home: Path, record: object, *, now: float) -> object:
+    """The fanout record while it is current, else `None`, the answer "no fanout".
+
+    The newest verified contract used to be drawn however old it was, so a
+    fanout prepared once and never dispatched still read "1 waiting" a month
+    later. A fanout whose units all settled leaves after the linger a settled
+    native graph gets; one with a prepared or running unit stays for the
+    window a delegation record is kept. Its age is the newest change to its
+    directory, contract, dispatch summary or in-flight markers.
+    """
+    if not isinstance(record, tuple):
+        return record
+    roster, fanout_id = record[2], record[3]
+    # A cached record's id was not matched against the directory name.
+    if not isinstance(fanout_id, str) or not _FANOUT_GRAPH_ID_RE.fullmatch(fanout_id):
+        return None
+    units = roster.get("units") if isinstance(roster, dict) else None
+    open_unit = any(
+        isinstance(unit, dict) and unit.get("status") in _FANOUT_OPEN_STATUSES
+        for unit in units or []
+    )
+    window = LEDGER_MAX_AGE_SECONDS if open_unit else GRAPH_LINGER_SECONDS
+    updated_at = _hud_fanout_candidate_score(home / "coding" / "fanout" / fanout_id)[0]
+    return record if now - updated_at <= window else None
 
 
 def _hud_verified_fanout(record: object) -> dict[str, Any] | None:
@@ -1183,10 +1209,10 @@ def _hud_subagent_graph(
     *,
     native_rows_present: bool,
     preference: str,
-    record: object = _RECORD_NOT_READ,
+    record: object,
 ) -> dict[str, object]:
-    if record is _RECORD_NOT_READ:
-        record = _hud_local_fanout_record(home)
+    # `record` is required: read through `_hud_current_fanout_record`, so no
+    # caller can draw a fanout past its age. `None` means "no fanout".
     if isinstance(record, str):
         return project_subagent_graph(
             None,

@@ -3,16 +3,16 @@
   "language": "vi",
   "skills": {
     "accessibility-audit": [
-      "kiểm tra khả năng tiếp cận",
-      "kiểm tra tuân thủ WCAG",
-      "kiểm tra điều hướng bằng bàn phím",
+      "kiểm tra accessibility",
+      "kiểm thử WCAG",
+      "kiểm tra điều hướng với bàn phím",
       "kiểm tra thứ tự tiêu điểm",
-      "kiểm thử với trình đọc màn hình"
+      "kiểm tra screen reader"
     ],
     "adversarial-consensus": [
       "phản biện đề xuất này từ nhiều góc độ",
       "tìm điểm yếu của đề xuất kỹ thuật này",
-      "kiểm thử kế hoạch này theo cách red team",
+      "kiểm tra kiểu red team",
       "yêu cầu đánh giá độc lập để kiểm chứng đề xuất",
       "giúp bác bỏ các giả định trong thiết kế này",
       "rà soát đề xuất theo hướng phản biện"
@@ -24,7 +24,7 @@
     ],
     "backend": [
       "thiết kế API backend",
-      "thiết kế contract cho endpoint",
+      "quy định contract của endpoint",
       "thiết kế dịch vụ phía máy chủ",
       "giúp thiết kế luồng xác thực backend",
       "xác định định dạng phản hồi API",
@@ -43,7 +43,7 @@
       "review mã nguồn này",
       "giúp rà soát PR này",
       "hãy kiểm tra diff này tìm bug",
-      "kiểm tra thay đổi mã nguồn trước khi merge",
+      "kiểm tra đoạn code trước khi ráp vô",
       "phân tích pull request này",
       "tìm bug trong thay đổi này",
       "review PR này giúp mình"
@@ -137,9 +137,11 @@
       "chạy các chu kỳ kiểm thử và sửa lỗi lặp lại"
     ],
     "verification-gate": [
+      "xác minh trước khi gộp",
       "xác minh trước khi merge",
       "chứng minh thay đổi này đã hoàn thành",
       "kiểm tra bằng chứng build lint và kiểm thử",
+      "đảm bảo mọi kiểm tra đều đạt trước khi gộp",
       "đảm bảo tất cả kiểm tra đạt trước khi merge",
       "hãy xác thực kết quả thực hiện này"
     ],

@@ -336,6 +336,12 @@ What it shows, and what it leaves as `?`:
     `waiting` until the helper sent in its place starts.
   - A fanout unit whose dispatcher reports it stalled is `stuck`, with how
     long it has been stuck.
+  - A fanout is drawn only when no native graph is, and only while it is
+    current. Its age runs from the last change to its directory, contract,
+    dispatch summary or in-flight markers. One whose units all settled leaves
+    15 minutes after that. One with a unit still prepared or running stays
+    24 hours, the time a delegation record is kept. A fanout prepared once and
+    never dispatched no longer reads `waiting` a month later.
   - A dag-ulw node takes the state its `omh_dag/v1` run derives: accepted or
     repaired is `done`, failed or blocked is `failed`, a node handed out
     with no child yet is `dispatched`, a node whose child returned and that
