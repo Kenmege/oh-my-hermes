@@ -1276,8 +1276,9 @@ class App(ModesMixin, AgentViewMixin):
         self.config_mtime: float | None = None
         self.default_due: tuple[str, str] | None = None  # a moved default not switched to yet: a turn ran
         self.default_asked = False  # a read or a switch for it is out
-        # A prompt sent while no turn runs, held until the default is checked (`_start_turn`): its text, its send.
-        self.starting: tuple[str, Callable[[], None]] | None = None
+        # A prompt sent while no turn runs, held until the default is checked (`_start_turn`): its text, its send,
+        # and the session it was typed in, the only one it may go to.
+        self.starting: tuple[str, Callable[[], None], str] | None = None
         self.local_questions: dict[str, Callable[[dict[str, Any]], None]] = {}  # asked in the slot, by request id
         self.local_serial = 0
         self.chains_open = False  # /omh-model's picker has the terminal (`_omh_model`)
@@ -1621,6 +1622,10 @@ class App(ModesMixin, AgentViewMixin):
         return params
 
     def _adopt_session(self, result: Mapping[str, Any], fallback_stored: str = "") -> None:
+        if self.starting is not None and self.starting[2] != as_text(result.get("session_id")):
+            # A prompt held for the default check was typed in the session being left: back to the draft.
+            self._give_back(self.starting[0])
+            self.starting = None
         self.sid = as_text(result.get("session_id"))
         info = result.get("info")
         self.model = as_text(info.get("model")) if isinstance(info, dict) else ""
@@ -3045,10 +3050,18 @@ class App(ModesMixin, AgentViewMixin):
         return True
 
     def _default_settled(self) -> None:
-        """Nothing is out for the default any more: the prompt held for it (`_start_turn`) goes now."""
+        """Nothing is out for the default any more: the prompt held for it (`_start_turn`) goes now.
+
+        Only into the session it was typed in: once another is open, it goes back to the draft instead.
+        """
         start, self.starting = self.starting, None
-        if start is not None:
-            start[1]()
+        if start is None:
+            return
+        text, send, sid = start
+        if sid != self.sid:
+            self._give_back(text)
+        else:
+            send()
 
     def _start_turn(self, text: str, start: Callable[[], None]) -> None:
         """Start a turn with `start` once Hermes' default model is checked, so the turn runs on the default it has.
@@ -3065,7 +3078,7 @@ class App(ModesMixin, AgentViewMixin):
         if self.default_route is None:
             start()
             return
-        self.starting = (text, start)
+        self.starting = (text, start, self.sid)
         if not self.default_asked:  # one that is out settles into this start
             self._check_default()
 

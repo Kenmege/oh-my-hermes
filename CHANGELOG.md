@@ -9,8 +9,10 @@ All notable changes will be documented here.
   typed `/model <name>`, `/model --refresh`) was refused as
   `Unsupported_command.`, because that gateway runs no `/model` through
   `slash.exec`. A pick and a typed `/model <name> [--provider <slug>]` now go
-  as the session-scoped `config.set model` Hermes' own TUI sends, which the
-  gateway child turns into the owner's `session.mutate model`; `/model
+  as the `config.set model` Hermes' own TUI sends, which the gateway child
+  turns into the owner's `session.mutate model`. A pick is for this session
+  only; a typed one keeps Hermes' own `model.persist_switch_by_default` rule
+  on the stdio entry, as before; `/model
   --refresh` opens the picker over a list Hermes asks the providers for again.
   When Hermes' configured default model changes while a session runs (the
   person, a bot or the agent edited the config), the session switches to it

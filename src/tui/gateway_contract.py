@@ -107,10 +107,12 @@ CONFIG_SET_VALUES: dict[str, frozenset[str]] = {
     "reasoning": frozenset(REASONING_LEVELS),
 }
 CONFIG_SET_SESSION_SCOPE = "session"  # what a yolo answer's `scope` must say
-# `config.set model` switches one session's model, as Ink's `/model` does; over a shared gateway the attach
+# `config.set model` switches the session's model, as Ink's `/model` does; over a shared gateway the attach
 # adapter sends it as the owner's `session.mutate`. Its value is only ever `model_switch_value`'s: a model and
-# a provider slug, each one plain word, then `--session`. Hermes reads `--global` as "every new session's
-# default" and `--once` as "the next turn only", and no value the TUI sends can carry either.
+# a provider slug, each one plain word, then `--session` unless the person typed `/model <name>` without it.
+# Hermes reads `--global` as "every new session's default" and `--once` as "the next turn only", and no value
+# the TUI sends can carry either. Without `--session` Hermes' stdio entry applies its own rule
+# (`resolve_persist_behavior`: `model.persist_switch_by_default`), as for its own typed `/model`.
 CONFIG_SET_MODEL = "model"
 MODEL_PROVIDER_FLAG = "--provider"
 MODEL_SESSION_FLAG = "--session"
@@ -128,27 +130,33 @@ def plain_word(value: object) -> str:
     return value if all(char.isprintable() and not char.isspace() for char in value) else ""
 
 
-def model_switch_value(model: object, provider: object = "") -> str:
-    """What `config.set model` takes to switch this session, and only this session, to `model` on `provider`.
+def model_switch_value(model: object, provider: object = "", session: bool = True) -> str:
+    """What `config.set model` takes to switch to `model` on `provider`: this session only with `session`.
 
-    "" when the model, or a provider that is given, is not one plain word.
+    Without it, Hermes' own rule decides whether the switch also persists, as
+    for `/model <name>` typed without `--session`. "" when the model, or a
+    provider that is given, is not one plain word.
     """
     name, slug = plain_word(model), plain_word(provider)
     if not name or (provider and not slug):
         return ""
-    return f"{name} {MODEL_PROVIDER_FLAG} {slug} {MODEL_SESSION_FLAG}" if slug else f"{name} {MODEL_SESSION_FLAG}"
+    words = [name, MODEL_PROVIDER_FLAG, slug] if slug else [name]
+    return " ".join([*words, MODEL_SESSION_FLAG] if session else words)
 
 
 def model_switch_parts(value: object) -> tuple[str, str] | None:
     """The model and provider of a value `model_switch_value` made; None for any other value."""
     words = value.split(" ") if isinstance(value, str) else []
-    if len(words) == 2:
-        parts = (words[0], "")
-    elif len(words) == 4 and words[1] == MODEL_PROVIDER_FLAG:
-        parts = (words[0], words[2])
+    session = bool(words) and words[-1] == MODEL_SESSION_FLAG
+    named = words[:-1] if session else words
+    if len(named) == 1:
+        parts = (named[0], "")
+    elif len(named) == 3 and named[1] == MODEL_PROVIDER_FLAG:
+        parts = (named[0], named[2])
     else:
         return None
-    return parts if model_switch_value(*parts) == value else None
+    built = model_switch_value(*parts, session=session)
+    return parts if built and built == value else None
 
 # Events whose envelope `session_id` is not the live session are dropped, except
 # these: they belong to the gateway, not to a session.

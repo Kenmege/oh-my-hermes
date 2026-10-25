@@ -195,16 +195,21 @@ class ModelCommandTests(unittest.TestCase):
         self.assertEqual(app.composer.text, "")
         self.assertEqual(commands(app), [])  # no `› /model` left standing empty
 
-    def test_model_with_a_name_switches_this_session_as_hermes_own_tui_does(self) -> None:
-        for typed in ("gpt-5.4 --provider copilot", "gpt-5.4 --provider copilot --session", "gpt-5.4 --session --provider copilot"):
+    def test_model_with_a_name_switches_as_hermes_own_tui_sends_it(self) -> None:
+        # `--session` goes only when typed (Ink's `modelValueForConfigSet` sends the arguments as typed), so without
+        # it Hermes' stdio entry applies `model.persist_switch_by_default` as its own typed `/model` does.
+        cases = (
+            ("gpt-5.4 --provider copilot", "gpt-5.4 --provider copilot"),
+            ("gpt-5.4 --provider copilot --session", "gpt-5.4 --provider copilot --session"),
+            ("gpt-5.4 --session --provider copilot", "gpt-5.4 --provider copilot --session"),
+            ("gpt-5.4", "gpt-5.4"),
+            ("gpt-5.4 --session", "gpt-5.4 --session"),
+        )
+        for typed, value in cases:
             with self.subTest(typed=typed):
                 app, client = make_app()
                 send(app, f"/model {typed}")
-                value = "gpt-5.4 --provider copilot --session"
                 self.assertEqual(client.calls, [("config.set", {"key": "model", "value": value, "session_id": SID})])
-        app, client = make_app()
-        send(app, "/model gpt-5.4")
-        self.assertEqual(client.calls, [("config.set", {"key": "model", "value": "gpt-5.4 --session", "session_id": SID})])
 
     def test_any_other_flag_goes_to_hermes_as_typed(self) -> None:
         for typed in ("gpt-5.4 --global", "gpt-5.4 --once", "--provider copilot", "gpt-5.4 --refresh"):
@@ -260,7 +265,7 @@ class ModelCommandTests(unittest.TestCase):
         app._on_input(Key(ENTER))
         self.assertIsNone(app.slot)
         self.assertEqual(client.answers, [])  # the TUI's own question: nothing went to Hermes for it
-        confirmed = {"key": "model", "value": "claude-opus-5-5 --session", "session_id": SID, "confirm_expensive_model": True}
+        confirmed = {"key": "model", "value": "claude-opus-5-5", "session_id": SID, "confirm_expensive_model": True}
         self.assertEqual(client.calls[-1], ("config.set", confirmed))
         answer(app, client, {"key": "model", "value": "claude-opus-5-5"})
         self.assertEqual(app.model, "claude-opus-5-5")
@@ -369,7 +374,7 @@ class DefaultModelTests(unittest.TestCase):
         self.end_turn(app, client, 100.0)
         self.end_turn(app, client, 150.0, (FLASH, "og"))  # the config file changed, its default did not
         self.assertEqual(app.model, "gpt-5.4")
-        self.assertEqual([params["value"] for params in sent(client, "config.set")], ["gpt-5.4 --provider copilot --session"])
+        self.assertEqual([params["value"] for params in sent(client, "config.set")], ["gpt-5.4 --provider copilot"])
         self.assertFalse(any("default model" in said for said in notices(app)))
 
     def test_the_switch_waits_for_a_turn_that_runs_and_goes_at_its_end(self) -> None:
@@ -502,6 +507,33 @@ class DefaultModelTests(unittest.TestCase):
                 self.assertEqual(sent(client, "prompt.submit"), [{"session_id": SID, "text": "hello"}])
                 self.assertEqual(app.model, "claude-opus-5-5" if switch else FLASH)
 
+    def held(self) -> tuple[App, object]:
+        """A prompt held for the default check, its mtime read not answered yet."""
+        app, client = self.launched()
+        send(app, "hello")
+        self.assertEqual(sent(client, "prompt.submit"), [])
+        return app, client
+
+    def test_a_held_prompt_goes_back_to_the_draft_when_another_session_opens(self) -> None:
+        app, client = self.held()
+        app._adopt_session({"session_id": "live-2", "info": {"model": FLASH}})  # /new, a switch or a resume answered
+        self.assertEqual(app.composer.text, "hello")
+        answer_call(app, client, "config.get", {"mtime": 100.0})
+        self.assertEqual(sent(client, "prompt.submit"), [])  # never into the session it was not typed in
+
+    def test_a_held_prompt_never_goes_to_a_session_other_than_its_own(self) -> None:
+        app, client = self.held()
+        app.sid = "live-2"  # the session changed by a path that did not adopt it yet
+        answer_call(app, client, "config.get", {"mtime": 100.0})
+        self.assertEqual(sent(client, "prompt.submit"), [])
+        self.assertEqual(app.composer.text, "hello")
+
+    def test_the_same_session_adopted_again_keeps_the_held_prompt(self) -> None:
+        app, client = self.held()
+        app._adopt_session({"session_id": SID, "info": {"model": FLASH}})
+        answer_call(app, client, "config.get", {"mtime": 100.0})
+        self.assertEqual(sent(client, "prompt.submit"), [{"session_id": SID, "text": "hello"}])
+
     def test_a_first_prompt_before_the_launch_read_answers_goes_at_once(self) -> None:
         app, client = make_app()
         app._read_default()  # asked, not answered yet
@@ -552,13 +584,15 @@ class RefusalSentenceTests(unittest.TestCase):
         answer(app, client, error={"code": 4001, "message": "unsupported_command", "data": {"reason": "unsupported_command"}})
         self.assertEqual(notices(app)[-1], MODEL_OPTIONS_REFUSED)
 
-    def test_the_contract_lets_config_set_model_carry_only_a_session_switch(self) -> None:
+    def test_the_contract_lets_config_set_model_carry_only_a_switch_by_name(self) -> None:
         def problem(value: str) -> str:
             return contract.call_problem("config.set", {"key": "model", "value": value, "session_id": SID})
 
         self.assertEqual(problem(OPUS_SWITCH), "")
         self.assertEqual(problem("claude-opus-5-5 --session"), "")
-        for value in ("claude-opus-5-5 --global", "claude-opus-5-5", "x --provider y --session --global",
+        self.assertEqual(problem("claude-opus-5-5"), "")  # typed without --session: Hermes' own persistence rule
+        self.assertEqual(problem("claude-opus-5-5 --provider claude-proxy"), "")
+        for value in ("claude-opus-5-5 --global", "claude-opus-5-5 --session --session", "x --provider y --session --global",
                       "x --provider \u2014global --session", "x --once --session", ""):
             with self.subTest(value=value):
                 self.assertTrue(problem(value))

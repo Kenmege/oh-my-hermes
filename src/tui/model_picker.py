@@ -70,21 +70,25 @@ def _name(value: object, fallback: str) -> str:
 def typed_switch_value(arg: str) -> str:
     """`/model`'s arguments as a `config.set model` value, when they name a model, maybe its provider, and `--session`.
 
-    That is what Hermes' own TUI sends for them, always for this session
-    only. "" for any other flag (`--global`, `--once`, `--reasoning`), which
-    goes to Hermes' `/model` as typed.
+    That is what Hermes' own TUI sends for them (`session.ts`
+    `modelValueForConfigSet`, as typed): `--session` only when it was typed,
+    so without it Hermes' stdio entry applies its own persistence rule
+    (`model.persist_switch_by_default`) as its typed `/model` does. "" for any
+    other flag (`--global`, `--once`, `--reasoning`), which goes to Hermes'
+    `/model` as typed.
     """
     words = arg.split()
-    model, provider, rest = (words[0] if words else ""), "", words[1:]
+    model, provider, session, rest = (words[0] if words else ""), "", False, words[1:]
     while rest:
         flag = rest.pop(0)
         if flag == MODEL_SESSION_FLAG:
+            session = True
             continue
         if flag == MODEL_PROVIDER_FLAG and rest and not provider:
             provider = rest.pop(0)
             continue
         return ""
-    return model_switch_value(model, provider)
+    return model_switch_value(model, provider, session)
 
 
 def model_rows(result: Mapping[str, object]) -> list[ModelRow]:

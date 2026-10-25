@@ -98,7 +98,10 @@ session's reasoning effort through the same session-scoped call. A pick in the
 <name>` with at most `--provider <slug>`, is sent as `config.set model` naming
 the session with the value `<name> --provider <slug> --session`, as Hermes'
 own TUI sends it (attached to a shared gateway, the gateway child sends it as
-the owner's `session.mutate model`), so it switches that session only; a name
+the owner's `session.mutate model`), so it switches that session only; a typed
+`/model <name>` carries `--session` only when the person typed it, so on
+Hermes' stdio entry Hermes' own rule (`model.persist_switch_by_default`)
+decides whether it also persists, as for Hermes' typed `/model`; a name
 or slug that could read as a flag is left out of the list and is never sent,
 and a `/model` with any other flag goes to Hermes' `/model` as typed. The one
 switch the TUI makes on its own is this one: when Hermes' configured default

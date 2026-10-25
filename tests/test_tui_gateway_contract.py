@@ -85,7 +85,8 @@ class ClientMethodTests(unittest.TestCase):
             "a yolo word Hermes also reads": {**good, "value": "1"},
             "an effort as a yolo value": {**good, "value": "high"},
             "another key": {**good, "key": "approvals.mode", "value": "off"},
-            "the model key": {**good, "key": "model", "value": "x"},
+            # A model value that could widen the switch: `--global` writes every new session's default.
+            "the model key with --global": {**good, "key": "model", "value": "x --global"},
             "no key": {"value": "on", "session_id": "live-1"},
         }
         for name, params in refused.items():
