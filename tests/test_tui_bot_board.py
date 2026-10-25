@@ -210,7 +210,8 @@ class GatewayTests(FixtureRoot):
         self.assertNotIn(f"pid {os.getpid()} is gone", text, "its pid may well be alive: that is not the reason")
 
     def test_off_posix_nothing_is_probed_and_nothing_reads_as_running(self) -> None:
-        with patch.object(bot_board.os, "name", "nt"), patch.object(bot_board, "pid_exists") as probe:
+        # The module's flag, not `os.name`: Python 3.11's pathlib reads `os.name` to build every `Path`.
+        with patch.object(bot_board, "ON_POSIX", False), patch.object(bot_board, "pid_exists") as probe:
             self.assertFalse(bot_board.process_is_record(os.getpid(), 1))
             self.assertFalse(read_gateway(self.root).live)
         probe.assert_not_called()

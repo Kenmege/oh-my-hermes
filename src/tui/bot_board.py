@@ -103,6 +103,8 @@ DELETED_PROFILES = ".deleted"  # where Hermes keeps a deleted profile's tombston
 START_TIME_TOLERANCE = 200
 INDENT = "    "
 PID_LIMIT = 1 << 31
+# Signal 0 is a probe only on POSIX: on Windows `os.kill(pid, 0)` sends CTRL_C_EVENT to the console group.
+ON_POSIX = os.name == "posix"
 # sysctl names and `kinfo_proc` layout on macOS (sys/sysctl.h, sys/proc.h), measured against psutil on arm64.
 CTL_KERN, KERN_PROC, KERN_PROC_PID = 1, 14, 1
 KINFO_PROC_BYTES = 1024  # room for the struct (648 bytes on arm64 and x86_64)
@@ -295,7 +297,7 @@ def process_is_record(pid: int | None, recorded_start: Any) -> bool:
     match, so a board never calls a reused pid a running gateway. Only a
     record without a start time is taken on its pid alone.
     """
-    if pid is None or os.name != "posix" or not pid_exists(pid):
+    if pid is None or not ON_POSIX or not pid_exists(pid):
         return False
     current, zombie = process_facts(pid)
     if zombie:
