@@ -29,6 +29,7 @@ from ..coding.executor_capability_snapshots import (
     ExecutorCapabilitySnapshotError,
     build_executor_capability_snapshot,
     read_executor_capability_snapshot,
+    snapshot_file_exists,
     validate_executor_capability_snapshot,
     write_executor_capability_snapshot,
 )
@@ -1032,11 +1033,11 @@ def _read_capability_snapshot_json(path_text: str) -> dict[str, object]:
 def _capability_snapshot_read_path(args: argparse.Namespace) -> Path:
     """The snapshot to read: an older release's file name when only that one exists."""
     path = _capability_snapshot_path(args)
-    if getattr(args, "snapshot_path", "") or path.exists():
+    if getattr(args, "snapshot_path", "") or snapshot_file_exists(path):
         return path
     for legacy_id in legacy_executor_profile_ids(args.executor):
         legacy = path.with_name(f"{legacy_id}.json")
-        if legacy.exists():
+        if snapshot_file_exists(legacy):
             return legacy
     return path
 

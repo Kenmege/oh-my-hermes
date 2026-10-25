@@ -242,13 +242,26 @@ def executor_capability_snapshot_path(directory: Path, executor: str) -> Path:
     return directory / f"{normalized}.json"
 
 
+def snapshot_file_exists(path: Path) -> bool:
+    """`path.exists()`, False for a name the filesystem cannot stat.
+
+    Python 3.11 raises `OSError` (ENAMETOOLONG) for an over-long file name,
+    where 3.12 and later return False; an owner id from an untrusted contract
+    can be that long.
+    """
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
 def read_matching_executor_capability_snapshot(path: Path, *, expected_executor: str) -> SnapshotRecord | None:
-    if not path.exists():
+    if not snapshot_file_exists(path):
         # A snapshot an older release recorded sits under the profile id it
         # used then; read it there, nothing is written back.
         for legacy_id in legacy_executor_profile_ids(expected_executor):
             legacy_path = path.with_name(f"{legacy_id}.json")
-            if legacy_path.exists():
+            if snapshot_file_exists(legacy_path):
                 path = legacy_path
                 break
     try:
