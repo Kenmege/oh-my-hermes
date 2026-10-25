@@ -53,7 +53,7 @@ from .bare_launch import (
     _launch_hermes_tui,
     _node_available,
     _omh_tui_blocker,
-    _print_resume_hint,
+    _print_exit_card,
     _print_welcome,
     _run_auto_update,
     _run_hermes_fallback,

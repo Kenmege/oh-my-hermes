@@ -310,13 +310,42 @@ They are a bare-launch surface only. Passing one together with a subcommand
 is an error naming the flag, never a silent no-op, because dropping `-p`
 would run that subcommand against a different profile than you selected.
 
-When the terminal exits normally and OMH can identify the session that just
-closed, it prints one copyable line after Hermes' own exit summary:
-`omh --resume <session-id>`, or `omh -p <profile> --resume <session-id>` when
-you launched with a profile, since a profile has its own `state.db`. OMH
-reads only the session id, from the Hermes state database it launched
-against, and prints nothing whenever more than one session could be the one
-that closed.
+When you close the session (`/quit`, `/exit`, Ctrl+C twice, Ctrl+D), OMH
+prints a short card for the session that was open, and only the `omh` way
+back:
+
+```text
+omh · Fix the login bug
+  session 20261025_101530_ab12cd · 3 turns · 6 messages · 4m 12s
+  18200 tokens (in 12000, out 3000, cache 3000, reasoning 200) · moonshotai/kimi-k3.1-pro
+  omh --resume 20261025_101530_ab12cd
+  omh -c "Fix the login bug"
+```
+
+The first line is the session's title (`untitled session` when Hermes has
+not named it). Then come its id, prompts, messages and how long this `omh`
+ran, and its tokens, split and summed over a `/branch` chain as Hermes does
+it, and its model. The last two lines reopen it by id, and by title when
+`-c <title>` would open this session: Hermes takes the newest `<title> #N`
+session over the exact title, so the line is left out when another session
+carries that name with a number, and for a title starting with `-`, which
+would read as options. With a profile both carry `-p <profile>`, since a profile has its own
+`state.db`. A session in which nothing was said gets one line instead, `omh:
+nothing was said in this session, so there is nothing to resume.`, unless
+an earlier session of the same launch (before a `/new` or a switch) has
+messages: then the card names the newest such one.
+
+Hermes' own exit summary, which names `hermes --tui --resume`, does not
+print: the OMH TUI closes with a code of OMH's own, which Hermes' launcher
+prints no summary for, and `omh` returns 0 to your shell, as before. A
+failure (exit 1, a signal) is returned as it was and prints no card; a
+lost gateway names `omh --resume <id>` on its way out. The
+OMH TUI records the session it has open, and the Hermes home it runs on, in
+a private file `omh` names for the launch and removes once it has read it,
+so a resumed session is named too. When Hermes' own terminal opened instead,
+its summary prints, and the card follows it for the session the Hermes state
+database shows ending with the launch; it prints nothing whenever more than
+one session could be the one that closed, or the database cannot be read.
 
 ### The OMH TUI
 
@@ -393,9 +422,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   composer and the info line on the bottom rows, the rows between them empty.
 - The info line under the composer, two cells in so it starts under the
   composer's text (on the edge on a terminal too small for the rules), says, on
-  the left, the input mode or the keys that matter right now, and on the right the model, how full the
-  context is and the reasoning effort, as `deepseek/deepseek-v4.1-flash ·
-  ctx 5% · effort medium` (the context in the warning colour from 80 % full
+  the left, the input mode or the keys that matter right now, and on the right the session's title once
+  Hermes names it, the model, how full the context is and the reasoning effort, as `Fix the login bug ·
+  deepseek/deepseek-v4.1-flash · ctx 5% · effort medium` (the context in the warning colour from 80 % full
   and the error colour from 95 %; `ctrl+t effort` while no level is
   known). Between turns the left reads `? for shortcuts` (the `?` list names
   every key) while the composer is empty; once you type, or open the `/`
@@ -410,9 +439,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   goes); while Hermes asks something it names that question's keys (`↑↓
   pick · enter confirms · d or esc denies and stops`), and while a picker or
   the Ctrl+R search is open, its keys (`↑↓ move · enter switches · esc
-  closes`). After a first Ctrl+C between turns it says `ctrl+c again to
-  exit` for the 2 s a second one exits in, and writes nothing to the
-  transcript. The interrupt is offered in one place, the working row's `esc
+  closes`). After a first Ctrl+C on an empty composer it says `ctrl+c again
+  to exit` for the 2 s a second one exits in, and writes nothing to the
+  transcript; during a turn that first press also interrupts it, and the
+  second leaves even while `interrupting…` still shows. The interrupt is offered in one place, the working row's `esc
   to interrupt`, and only while Esc does it: in every mode, while the
   composer is empty and nothing else takes Esc (a question, a picker, the
   history search, the agent list, a picked steer or rewind, or the `@` menu
@@ -420,7 +450,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   on the screen. When the OMH
   HUD sees a call repeating, or tool calls in flight during a turn, the right
   side says that first (`repeat x4`, `1 tool · 9s`). On a narrower terminal
-  the right side gives way first: the model shortens to its last path
+  the right side gives way first: the session's title, which leads it cut
+  to 24 cells (`Rename every production… · deepseek/…`), goes first, then
+  the model shortens to its last path
   segment, then that segment loses its first word (`deepseek-v4.1-flash`,
   then `v4.1-flash`; never down to a bare version, so `glm-5.3` stays
   whole), then the model goes, then the effort, then the context,
@@ -976,7 +1008,7 @@ Esc closes it):
 | Ctrl+O | Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end, or, while Hermes asks something, the whole question (it answers nothing); q leaves it |
 | Ctrl+L | Redraws the screen |
 | Ctrl+Z | Suspends the OMH TUI to the shell, as Ctrl+Z does in any terminal program (Hermes stops with it); fg brings it back |
-| Ctrl+C | Clears the composer, interrupts a running turn, or (twice when idle) exits |
+| Ctrl+C | Clears the composer, else interrupts a running turn; a second press within 2 s exits, mid-turn too |
 | Ctrl+D | On an empty composer, exits; with text, deletes the character ahead |
 | ↑ / ↓ or ← / → then Enter | On an approval, highlight allow once, allow this session or (when Hermes offers it) always allow, and allow it, or the last row to deny and tell Hermes what to do instead; Enter alone denies and stops the running turn |
 | `d`, `n` | On an approval, deny and stop the running turn |
@@ -1174,7 +1206,8 @@ interrupted, `▪`), and what you queued comes back to the composer as after an 
 does this at most three times in a minute, and a new gateway that exits
 before it resumed the session counts as one of them; after that, or when the
 new gateway refuses the resume or does not answer it, it leaves with the command that reopens
-the session in `hermes --tui`, and Ctrl+C or Ctrl+D while it waits leaves the
+the session, `omh --resume <id>` (`hermes --tui` when something other than `omh` opened the TUI),
+and Ctrl+C or Ctrl+D while it waits leaves the
 same way, the new gateway stopped. A gateway that exits normally, or after you
 quit, is not started again. A
 turn that brings no event the TUI shows, only types it does not know (Hermes

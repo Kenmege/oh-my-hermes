@@ -13,7 +13,11 @@ what a user sees is in [Installation](INSTALLATION.md).
 The OMH TUI is the frontend bare `omh` opens. `omh` runs the user's own `hermes
 --tui` with `HERMES_TUI_DIR` pointing at OMH's packaged frontend, so Hermes'
 launcher still resolves the profile, resume target, working directory and
-session ownership, then starts OMH's frontend in place of its own. That
+session ownership, then starts OMH's frontend in place of its own. A session
+the person closes there exits with OMH's own code (`CLOSED_EXIT`) instead of
+0, which Hermes' launcher prints no exit summary for (it prints one, naming
+`hermes --tui --resume`, only for 0 and 130); `omh` then prints its exit
+card, with only the `omh` way back, and returns 0. That
 frontend spawns one child at a time, with the interpreter, import path and
 environment the launcher handed it, and speaks the stdio JSON-RPC of Hermes'
 `tui_gateway` to it. The child is `src/tui/attach/gateway_attach.py`, run by
@@ -38,7 +42,11 @@ for a gateway another runtime owns), it spawns it again the same way and
 resumes the session that was open (`session.resume`), at most 3 times in 60 s,
 as Hermes' own TUI does: the open question and those waiting behind it close
 unanswered, a turn that was running is reported lost and never sent again, and
-past that limit it exits as it would without recovery, naming `hermes --tui`.
+past that limit it exits as it would without recovery, naming `omh --resume
+<id>` (with `-p` for a named profile) when `omh` launched it, and `hermes --tui`
+otherwise. A reply that shows the gateway no longer speaks the declared
+contract ends the session the same way. The attach refusal still names Hermes'
+own terminal: the OMH TUI cannot open a session another runtime's gateway owns.
 
 ## What it sends and answers
 
@@ -190,7 +198,12 @@ timestamp line). It only appends there (opened `O_APPEND` and `O_NOFOLLOW`,
 created mode 0600), reads at most the file's last 1 MiB and only when it is a
 regular file (no symlink or FIFO), and never writes an answer to a question
 Hermes asked or masked input there. The other files it writes are metadata: the
-launcher's active-session file (the session id), and what OMH's own HUD reader
+launcher's active-session file (the session id); when `omh` launched it, the
+file `omh` named in `OMH_TUI_SESSION_FILE`, in `omh`'s private 0700 launch
+directory (opened `O_NOFOLLOW`, mode 0600), holding the open session's id, the
+Hermes home it runs on and the ids of the sessions this launch had open
+before, which `omh` reads for its exit card and removes with the directory;
+and what OMH's own HUD reader
 and model-chain picker already write under the OMH home (the HUD fan-out cache
 and its lock, and the chains `/omh-model` saves), and a fallback marker at the
 path `omh` named, holding what the TUI printed about why it did not start,

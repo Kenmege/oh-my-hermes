@@ -19,6 +19,31 @@ All notable changes will be documented here.
   ever going back during the turn. A counter that starts over is detected
   and counted from zero, and the done line carries Hermes' count.
 
+- **Leaving the OMH TUI says which session it was, only the `omh` way, and
+  Ctrl+C leaves during a turn.** Closing a session `omh` opened now prints
+  an OMH card in place of Hermes' exit summary: the title, the session id,
+  turns, messages, how long `omh` ran, tokens split and summed over a
+  `/branch` chain as Hermes does it, the model, and `omh --resume <id>`
+  plus `omh -c "<title>"` when Hermes' title lookup would open that same
+  session (it prefers a newer `<title> #N`) and the title does not start
+  with `-`. After a `/new` with nothing said, the card names the newest
+  earlier session of the launch that has messages. Hermes' summary, which
+  named `hermes --tui --resume`, no longer prints: the OMH TUI exits with
+  a code of OMH's own, which Hermes' launcher prints no summary for, and
+  `omh` returns 0 to the shell as before. A resumed session gets the card
+  too: the old line came from the state database's end stamps, and Hermes
+  leaves a resumed session's old `ended_at` in place until a prompt
+  reopens it, so reopening a session and leaving printed no `omh` line.
+  The OMH TUI now records the open session and its Hermes home in a
+  private file `omh` names for the launch, and the end stamps are only the
+  fallback for Hermes' own terminal. A session nothing was said in gets
+  one line saying there is nothing to resume. The Ctrl+C that interrupts a
+  turn also arms the exit, so a second press within 2 s leaves while the
+  turn is still `interrupting…` (it used to be swallowed, with no hint),
+  and the info line says `ctrl+c again to exit` then too. The info line
+  also leads its right side with the session's title, cut to 24 cells, and
+  drops it first on a narrow terminal.
+
 - **Esc, Ctrl+C and an approval deny stop the turn again on a Hermes whose
   TUI attaches to the shared gateway.** On Hermes bf0203a794 the OMH TUI sent
   `session.interrupt` the way the stdio entry takes it, with only the session
@@ -102,6 +127,18 @@ All notable changes will be documented here.
   exits 1. Piped answers into `--interactive` therefore stop working; pass
   the choices as flags instead. A closed stdin no longer crashes bare `omh`,
   `omh theme`, `omh model-chains` or `omh model-chains interview` either.
+
+- **The OMH TUI no longer opens a blank band above the running calls.** On
+  the bottom rows, a frame that got shorter (an approval or other question
+  answered mid-turn, a picker or menu closing, live thinking folding while
+  details are shown) turned the freed rows into blank rows at the top of the
+  live region. The running calls, the working row and its tip jumped down,
+  leaving up to a third of the screen blank between the last settled call and
+  the running ones until more output filled it. The freed rows now go under
+  the live block and above the working row. The running calls stay right under
+  the transcript they continue, the working row and its tip stay on the
+  composer, and the composer still holds its row. Output arriving later fills
+  the blank rows downward, as printed output would.
 
 - **`omh setup` records the release that is installed.** After the
   documented stable curl install, a plain `omh setup` recorded
