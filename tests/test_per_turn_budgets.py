@@ -11,8 +11,11 @@ moves -- rather than only to the number it returns today.
 from __future__ import annotations
 
 import argparse
+import copy
 import dataclasses
+import hashlib
 import importlib.util
+import json
 import re
 import tempfile
 import unittest
@@ -490,6 +493,33 @@ class PluginToolSchemaProducerTests(unittest.TestCase):
     def test_the_total_is_the_sum_of_the_per_tool_sizes(self) -> None:
         by_tool = per_turn_context.plugin_tool_schema_chars_by_tool()
         self.assertEqual(per_turn_context.plugin_tool_schema_chars(), sum(by_tool.values()))
+
+    def test_parked_dag_schema_growth_is_bounded_without_spending_legacy_content(self) -> None:
+        # Pinned main eeebba5bb: omh_dag was 2479 JSON characters. Remove
+        # only this feature's additions and hash the intact legacy schema,
+        # so shortening an existing safeguard cannot finance more growth.
+        schema = per_turn_context.registered_tool_schemas()["omh_dag"]
+        legacy = copy.deepcopy(schema)
+        parked_note = (
+            "A still-running wait may settle parked with "
+            "handle and wake_at (future UTC ISO-8601 or epoch, within 24h); ready reoffers it then, at most three parks. "
+        )
+        self.assertEqual(legacy["description"].count(parked_note), 1)
+        legacy["description"] = legacy["description"].replace(parked_note, "", 1)
+        properties = legacy["parameters"]["properties"]
+        self.assertEqual(properties.pop("handle")["maxLength"], 120)
+        self.assertEqual(properties.pop("wake_at")["type"], ["string", "number"])
+        self.assertEqual(properties["outcome"]["enum"].count("parked"), 1)
+        properties["outcome"]["enum"].remove("parked")
+        encoded = json.dumps(legacy, sort_keys=True, ensure_ascii=False)
+        self.assertEqual(len(encoded), 2479)
+        self.assertEqual(
+            hashlib.sha256(encoded.encode()).hexdigest(),
+            "12539753e4be1791340d0eeee0282d7c6997780a054980eb954a1deafd483f80",
+        )
+        delta = per_turn_context.plugin_tool_schema_chars_by_tool()["omh_dag"] - len(encoded)
+        self.assertGreater(delta, 0)
+        self.assertLessEqual(delta, 429)  # Measured feature cap, not general headroom.
 
     def test_a_longer_schema_description_moves_the_total(self) -> None:
         before = per_turn_context.plugin_tool_schema_chars()
