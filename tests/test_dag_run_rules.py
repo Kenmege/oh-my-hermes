@@ -489,7 +489,7 @@ class ComposedDagLifecycleTests(unittest.TestCase):
                 self.assertFalse(call(action="ready", run="feat")["calls"])
                 record = record_of(home)
                 self.assertEqual(dag_run.cycles_left(record, "baseline"), dag_run.MAX_REPAIR_CYCLES)
-                baseline_path = handoff(home, "feat", "baseline", "Pinned base; comparable command/env; test id/signature.")
+                baseline_path = handoff(home, "feat", "baseline", "Pinned base; comparable command/env; test id/signature.").resolve()
                 accepted = call(action="settle", run="feat", node="baseline", outcome="accepted")
                 self.assertEqual(set(calls_by_node(accepted)), {"api"})
                 self.assertIn(str(baseline_path), calls_by_node(accepted)["api"]["context"])
