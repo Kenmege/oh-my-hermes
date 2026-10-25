@@ -119,16 +119,18 @@ class AvailabilityTests(unittest.TestCase):
 
 
 class EnvironmentTests(unittest.TestCase):
-    def test_the_environment_adds_five_names_and_keeps_the_rest(self) -> None:
+    def test_the_environment_adds_six_names_and_keeps_the_rest(self) -> None:
         env = launch.omh_tui_environment(
             {"PATH": "/bin", "HERMES_HOME": "/h"},
             python="/py", site="/site", omh_home=Path("/o"), fallback_sentinel=Path("/t/f"),
+            session_file=Path("/t/s"),
         )
         self.assertEqual(env["HERMES_TUI_DIR"], str(launch.FRONTEND_DIR))
         self.assertEqual(env["OMH_TUI_PYTHON"], "/py")
         self.assertEqual(env["OMH_TUI_SITE"], "/site")
         self.assertEqual(env["OMH_HOME"], str(Path("/o")))
         self.assertEqual(env["OMH_TUI_FALLBACK_SENTINEL"], str(Path("/t/f")))
+        self.assertEqual(env["OMH_TUI_SESSION_FILE"], str(Path("/t/s")))
         self.assertEqual(env["PATH"], "/bin")
         self.assertEqual(env["HERMES_HOME"], "/h")
 
@@ -136,6 +138,7 @@ class EnvironmentTests(unittest.TestCase):
         env = launch.omh_tui_environment(
             {launch.SITE_ENV: "/another/tree"},
             python="/py", site="/site", omh_home=Path("/o"), fallback_sentinel=Path("/t/f"),
+            session_file=Path("/t/s"),
         )
         self.assertEqual(env[launch.SITE_ENV], "/site")
 

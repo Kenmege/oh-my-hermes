@@ -4,6 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Leaving the OMH TUI says which session it was, only the `omh` way, and
+  Ctrl+C leaves during a turn.** Closing a session `omh` opened now prints
+  an OMH card in place of Hermes' exit summary: the title, the session id,
+  turns, messages, how long `omh` ran, tokens split as Hermes splits them,
+  the model, and `omh --resume <id>` plus `omh -c "<title>"` for a titled
+  one. Hermes' summary, which named `hermes --tui --resume`, no longer
+  prints: the OMH TUI exits with a code of OMH's own, which Hermes' launcher
+  prints no summary for, and `omh` returns 0 to the shell as before. A
+  resumed session gets the card too: the old line came from the state
+  database's end stamps, and Hermes leaves a resumed session's old
+  `ended_at` in place until a prompt reopens it, so reopening a session and
+  leaving printed no `omh` line. The OMH TUI now records the open session
+  and its Hermes home in a private file `omh` names for the launch, and the
+  end stamps are only the fallback for Hermes' own terminal. A session
+  nothing was said in gets one line saying there is nothing to resume. The
+  Ctrl+C that interrupts a turn also arms the exit, so a second press
+  within 2 s leaves while the turn is still `interrupting…` (it used to be
+  swallowed, with no hint), and the info line says `ctrl+c again to exit`
+  then too. The info line also leads its right side with the session's
+  title, cut to 24 cells, and drops it first on a narrow terminal.
+
 - **`omh setup --interactive` without a terminal refuses instead of
   crashing or taking every default (#2295).** With stdin closed (`<&-`) it
   stopped on an `AttributeError` traceback; with stdin from `/dev/null` or a

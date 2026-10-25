@@ -60,7 +60,7 @@ from omh.tui.app import (
 )
 from omh.tui.gateway import GatewayClient, GatewayUnavailable, ServerRequest, gateway_spawn
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
-from omh.tui.launch import FALLBACK_EXIT, FALLBACK_SENTINEL_ENV
+from omh.tui.launch import CLOSED_EXIT, FALLBACK_EXIT, FALLBACK_SENTINEL_ENV, SESSION_FILE_ENV
 from omh.tui.modes import ACCEPT_LABEL, IDLE_HINT, PLAN_LABEL, STEER_COMMAND_HINT, STEER_KEY_HINT, info_line
 from omh.tui.screen import CLEAR_SCREEN_AND_SCROLLBACK, ERASE_SCROLLBACK
 from omh.tui.style import Span
@@ -539,6 +539,8 @@ class ExitSignalTests(AppTestCase):
                 # leaves this runner alive and the script below exits it.
                 self.addCleanup(signal.signal, signum, signal.signal(signum, outer))
                 run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+                # Under `omh` too: a signal's code is never the closed-session one.
+                run.environ[SESSION_FILE_ENV] = str(run.root / "omh-session.json")
                 run.terminal = SignalledTerminal(signum)
                 run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="the first frame"))
                 with self.assertRaises(SystemExit) as raised:
@@ -555,9 +557,10 @@ class ExitSignalTests(AppTestCase):
 class SessionTests(AppTestCase):
     def test_startup_draws_status_and_composer_and_writes_the_active_session_file(self) -> None:
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.environ[SESSION_FILE_ENV] = str(run.root / "omh-session.json")
         run.terminal.script(Step(b"\x04", when=run.terminal.idle, capture="ready", label="the first frame"))
         self.run_main(run)
-        self.assert_clean_run(run)
+        self.assert_clean_run(run, CLOSED_EXIT)  # `omh` launched it: Hermes prints no epilogue, `omh` its card
         screen = run.terminal.captures["ready"]
         info = info_index(screen)
         self.assertTrue(screen[info].startswith(INFO_INSET + IDLE_HINT), screen)
@@ -570,6 +573,11 @@ class SessionTests(AppTestCase):
         self.assertEqual(run.calls("config.get")[0]["params"], {"key": "full"})
         self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": STORED_ID})
         self.assertEqual(stat.S_IMODE(os.stat(run.active_session_file).st_mode), 0o600)
+        # `omh`'s own copy names the home whose state database holds the session, for the exit card.
+        omh_session = Path(run.environ[SESSION_FILE_ENV])
+        self.assertEqual(json.loads(omh_session.read_text(encoding="utf-8")),
+                         {"session_id": STORED_ID, "hermes_home": str(run.root)})
+        self.assertEqual(stat.S_IMODE(os.stat(omh_session).st_mode), 0o600)
         self.assertEqual(run.poller.sessions, [STORED_ID])
         self.assertTrue(run.poller.started and run.poller.stopped)
         # A new HUD snapshot wakes the loop as gateway news does: through the app, whichever client is live.
@@ -631,6 +639,46 @@ class SessionTests(AppTestCase):
         self.assert_clean_run(run)
         (interrupt,) = run.calls("session.interrupt")
         self.assertEqual(interrupt["params"], {"session_id": LIVE_ID})
+
+    def test_ctrl_c_twice_during_a_turn_interrupts_once_and_exits_0(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "interrupted_turn"), answers=startup_answers())
+        )
+        run.terminal.script(
+            self.submit(run, "Write the numbers from 1 to 300, one per line, nothing else."),
+            Step(b"\x03", when=run.terminal.running, label="running"),
+            Step(b"\x03", when=run.terminal.shows(EXIT_HINT), label="the exit hint"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual([frame["params"] for frame in run.calls("session.interrupt")], [{"session_id": LIVE_ID}])
+
+    def test_a_session_closed_under_omh_exits_closed_exit_and_elsewhere_0(self) -> None:
+        # Hermes' launcher prints its exit summary, naming `hermes --tui --resume`, for 0 and 130 only.
+        closes = {
+            "ctrl+c twice": lambda run: (Step(b"\x03", when=run.terminal.idle, label="idle"),
+                                         Step(b"\x03", when=run.terminal.shows(EXIT_HINT), label="the exit hint")),
+            "ctrl+d": lambda run: (Step(b"\x04", when=run.terminal.idle, label="idle"),),
+            "/exit": lambda run: (self.submit(run, "/exit"),),
+        }
+        for launched_by_omh in (True, False):
+            for name, steps in closes.items():
+                with self.subTest(omh=launched_by_omh, close=name):
+                    answers = (*startup_answers(), ("session.close", {"result": {"closed": True}}))
+                    run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+                    if launched_by_omh:
+                        run.environ[SESSION_FILE_ENV] = str(run.root / "omh-session.json")
+                    run.terminal.script(*steps(run))
+                    self.run_main(run)
+                    self.assert_clean_run(run, CLOSED_EXIT if launched_by_omh else 0)
+
+    def test_a_gateway_exit_under_omh_still_returns_1(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers(), after=EXIT)
+        )
+        run.environ[SESSION_FILE_ENV] = str(run.root / "omh-session.json")
+        self.run_main(run)
+        self.assertEqual(run.code, 1)
 
     def test_ctrl_c_twice_while_idle_exits_0(self) -> None:
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
@@ -782,6 +830,14 @@ class SessionTests(AppTestCase):
         answers = (*startup_answers(), ("session.close", {"result": {"closed": True}}))
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
         run.terminal.script(self.submit(run, "/quit"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual([frame["params"] for frame in run.calls("session.close")], [{"session_id": LIVE_ID}])
+
+    def test_exit_is_quit(self) -> None:
+        answers = (*startup_answers(), ("session.close", {"result": {"closed": True}}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        run.terminal.script(self.submit(run, "/exit"))
         self.run_main(run)
         self.assert_clean_run(run)
         self.assertEqual([frame["params"] for frame in run.calls("session.close")], [{"session_id": LIVE_ID}])

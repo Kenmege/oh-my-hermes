@@ -447,7 +447,10 @@ The terminal frontend bare `omh` opens (`src/tui/`, installed as `omh.tui`).
 `omh` runs the person's own `hermes --tui` with `HERMES_TUI_DIR` pointing at
 the packaged shim `omh/tui/frontend/dist/entry.js`, so Hermes' launcher still
 resolves the profile, the resume target, the working directory and session
-ownership, then starts the shim in place of its Ink app. The shim hands the
+ownership, then starts the shim in place of its Ink app. A session the person
+closes there exits `CLOSED_EXIT` instead of 0, so the launcher prints no exit
+summary of its own (it does for 0 and 130), and `omh` prints its exit card
+and returns 0. The shim hands the
 terminal to `omh.tui.app.main` on OMH's interpreter, started `-E -P` so the
 launcher's `PYTHONPATH` and the working directory stay off its import path,
 with the directory `omh` imported its own package from (`OMH_TUI_SITE`) put

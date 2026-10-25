@@ -20,6 +20,19 @@ deliberately never ended there. It therefore produces no candidate here and
 no line, which is the right outcome rather than a gap: OMH would have no way
 to tell which of several live sessions the person was looking at.
 
+That recovery is the fallback. The OMH TUI writes the session it has open
+into a file of OMH's own (``tui/launch.py``, ``SESSION_FILE_ENV``), which
+``omh`` reads before removing it; only when that file names nothing (Hermes'
+own TUI opened instead, or the OMH TUI never got a session) does the
+``ended_at`` timing above choose. The timing cannot name a resumed session the
+person sent nothing in: Hermes mounts a resumed session read-only and leaves
+its old ``ended_at`` as it was until a prompt reopens it
+(``tui_gateway/methods_prompt.py``, ``_reopen_if_finalized``), so the row
+never falls inside the child's lifetime.
+
+Once the session is known, ``exit_card_lines`` reads its one row, by id, to
+say what it was: its title, counts and model, never message content or the cwd.
+
 Everything here is best effort and runs after the person's session has
 already ended. A line naming the wrong session is worse than no line, so
 every ambiguity resolves to ``None``.
@@ -28,6 +41,7 @@ every ambiguity resolves to ``None``.
 from __future__ import annotations
 
 import re
+import shlex
 import sqlite3
 from pathlib import Path
 
@@ -37,6 +51,10 @@ from ..plugin_bundle.omh.sqlite_readonly import connect_readonly
 # which mirrors ``hermes_cli/profiles.py``). A name that could not identify a
 # profile directory never becomes a path component here.
 _PROFILE_NAME_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+# What a session id has to look like before a copyable line carries it.
+# Hermes' ids are `YYYYMMDD_HHMMSS_<hex>`; anything a shell would read as more
+# than one word, or as an option, is never printed.
+_SESSION_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
 
 # A database the gateway is still finishing with is reported as no line, never
 # as a wait: this runs in a shell that has just come back from the TUI.
@@ -177,3 +195,122 @@ def resume_command_line(session_id: str, profile: str | None = None) -> str:
     if profile:
         return f"omh -p {profile} --resume {session_id}"
     return f"omh --resume {session_id}"
+
+
+# The one row the exit card reads, by the id already chosen, and the person's
+# own prompts in it (rows a rewind or a retired queue entry turned inactive are
+# not turns). No message content, no cwd.
+_CARD_SELECT = (
+    "SELECT title, model, message_count, input_tokens, output_tokens, cache_read_tokens, "
+    "cache_write_tokens, reasoning_tokens FROM sessions WHERE id = ?"
+)
+_TURNS_SELECT = "SELECT COUNT(*) FROM messages WHERE session_id = ? AND role = 'user' AND active = 1"
+
+# What a session nothing was said in leaves: Hermes stores a session's row
+# only once its first prompt is sent, and prints no epilogue for one without
+# messages, so there is nothing to resume.
+NOTHING_SAID_LINE = "omh: nothing was said in this session, so there is nothing to resume."
+UNTITLED = "untitled session"
+# Characters a double-quoted shell word does not keep as typed; a title with
+# one is quoted with `shlex.quote` instead.
+_DOUBLE_QUOTE_UNSAFE = frozenset('"$`\\!')
+
+
+def _count(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(value, 0)
+
+
+def _duration_text(seconds: float) -> str:
+    whole = max(int(seconds), 0)
+    hours, rest = divmod(whole, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m"
+    if minutes:
+        return f"{minutes}m {secs:02d}s"
+    return f"{secs}s"
+
+
+def continue_command_line(title: str, profile: str | None = None) -> str:
+    """`omh -c "<title>"`: Hermes resolves `--continue NAME` by the session's title, which it keeps unique.
+
+    "" for a title a shell line cannot carry as typed (a control character).
+    """
+    if not title or not title.isprintable():
+        return ""
+    quoted = shlex.quote(title) if _DOUBLE_QUOTE_UNSAFE & set(title) else f'"{title}"'
+    return f"omh -p {profile} -c {quoted}" if profile else f"omh -c {quoted}"
+
+
+def _session_card_row(db_path: str | Path, session_id: str) -> tuple[tuple | None, int | None] | None:
+    """The session's card row (None when there is none) and its turn count (None when that cannot be read), or None
+    when the database cannot be read at all."""
+    try:
+        connection = connect_readonly(db_path, timeout=_DB_BUSY_TIMEOUT_SECONDS)
+    except (sqlite3.Error, ValueError, OSError):
+        return None
+    try:
+        row = connection.execute(_CARD_SELECT, (session_id,)).fetchone()
+        try:
+            turns = connection.execute(_TURNS_SELECT, (session_id,)).fetchone()
+        except sqlite3.Error:
+            turns = None
+    except (sqlite3.Error, ValueError):
+        return None
+    finally:
+        try:
+            connection.close()
+        except sqlite3.Error:
+            pass
+    return row, (_count(turns[0]) if turns else None)
+
+
+def exit_card_lines(
+    db_path: str | Path | None, session_id: str, seconds: float, profile: str | None = None
+) -> list[str]:
+    """What `omh` prints for `session_id` as the TUI closes: the card, `NOTHING_SAID_LINE`, or nothing.
+
+    The card says what Hermes' own exit summary says (the session id, its
+    title, its messages and its tokens, split as Hermes splits them), plus
+    its turns, how long this launch ran (`seconds`) and its model, and then
+    only the `omh` way back: `omh --resume <id>` and, for a titled session,
+    `omh -c "<title>"`.
+
+    A session with no row is one nothing was said in: Hermes stores the row
+    with the first prompt. A database that cannot be read prints nothing,
+    since it cannot tell those apart from a session that has messages.
+    """
+    if db_path is None or not _SESSION_ID_RE.fullmatch(session_id):
+        return []
+    read = _session_card_row(db_path, session_id)
+    if read is None:
+        return []
+    row, turns = read
+    if row is None or _count(row[2]) == 0:
+        return [NOTHING_SAID_LINE]
+    title = " ".join(str(row[0] or "").split())
+    model = " ".join(str(row[1] or "").split())
+    messages = _count(row[2])
+    tokens_in, tokens_out, cache_read, cache_write, reasoning = (_count(value) for value in row[3:8])
+    session = [f"session {session_id}"]
+    if turns is not None:
+        session.append(f"{turns} turn" if turns == 1 else f"{turns} turns")
+    session += [f"{messages} message" if messages == 1 else f"{messages} messages", _duration_text(seconds)]
+    usage = [
+        f"{tokens_in + tokens_out + cache_read + cache_write + reasoning} tokens (in {tokens_in}, out {tokens_out}, "
+        f"cache {cache_read + cache_write}, reasoning {reasoning})"
+    ]
+    if model and model.isprintable():
+        usage.append(model)
+    lines = [
+        f"omh · {title if title and title.isprintable() else UNTITLED}",
+        "  " + " · ".join(session),
+        "  " + " · ".join(usage),
+        "  " + resume_command_line(session_id, profile),
+    ]
+    continued = continue_command_line(title, profile)
+    if continued:
+        lines.append("  " + continued)
+    return lines

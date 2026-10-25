@@ -13,7 +13,11 @@ what a user sees is in [Installation](INSTALLATION.md).
 The OMH TUI is the frontend bare `omh` opens. `omh` runs the user's own `hermes
 --tui` with `HERMES_TUI_DIR` pointing at OMH's packaged frontend, so Hermes'
 launcher still resolves the profile, resume target, working directory and
-session ownership, then starts OMH's frontend in place of its own. That
+session ownership, then starts OMH's frontend in place of its own. A session
+the person closes there exits with OMH's own code (`CLOSED_EXIT`) instead of
+0, which Hermes' launcher prints no exit summary for (it prints one, naming
+`hermes --tui --resume`, only for 0 and 130); `omh` then prints its exit
+card, with only the `omh` way back, and returns 0. That
 frontend spawns one child at a time, with the interpreter, import path and
 environment the launcher handed it, and speaks the stdio JSON-RPC of Hermes'
 `tui_gateway` to it. The child is `src/tui/attach/gateway_attach.py`, run by

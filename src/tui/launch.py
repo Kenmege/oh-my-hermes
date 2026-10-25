@@ -27,12 +27,21 @@ the screen it was said on. `omh_tui_blocker` is the
 same choice made before anything starts. Exit 75 without that file (Hermes
 uses 75 on paths of its own), like every other exit code, is the session
 ending and is returned as it is.
+
+The TUI also writes the session it has open, with the Hermes home it runs
+on, into the file `omh` named in `SESSION_FILE_ENV`, beside the fallback
+marker, so `omh` can name that session once the TUI exits
+(`closed_session`). Hermes keeps a file like it for its own epilogue, but
+removes it before `omh` gets control back. A session the person closes then
+exits `CLOSED_EXIT` instead of 0, so Hermes prints no epilogue of its own and
+`omh` prints its card in its place, returning 0 to the shell.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+import json
 import os
 from pathlib import Path
 import shutil
@@ -52,6 +61,17 @@ FALLBACK_EXIT = 75
 # (`fallback_sentinel`); `gateway_spawn` drops every `OMH_TUI_` name, so the
 # gateway and its tools never see it.
 FALLBACK_SENTINEL_ENV = "OMH_TUI_FALLBACK_SENTINEL"
+# The file the TUI keeps `{"session_id": ..., "hermes_home": ...}` in for the
+# session it has open (`write_active_session`), in the same private directory.
+SESSION_FILE_ENV = "OMH_TUI_SESSION_FILE"
+# How much of that file `closed_session` reads: an id and a path.
+SESSION_FILE_BYTES = 8192
+# What the TUI exits with, in place of 0, when the person closes a session `omh` launched (`SESSION_FILE_ENV`
+# set), and what `omh` turns back into 0. Hermes' launcher prints its exit summary, naming `hermes --tui
+# --resume`, only for 0 and 130 (`_launch_tui` in `hermes_cli/main_tui_launch.py`), so `omh`'s card is the
+# only one. The same condition gates its `--worktree` exit question, which `omh` never asks for. Not 1 or 2,
+# not 42 (Hermes relaunches as `hermes update`), not `FALLBACK_EXIT`, and below the 128 + signal range.
+CLOSED_EXIT = 77
 # How much of the TUI's reason the marker keeps (`request_fallback`).
 FALLBACK_REASON_BYTES = 4096
 # Windows opens a descriptor in text mode unless told otherwise, which rewrites line ends and stops at Ctrl+Z.
@@ -132,7 +152,8 @@ def omh_import_root() -> str:
 
 
 def omh_tui_environment(
-    environ: Mapping[str, str], *, python: str, site: str, omh_home: Path, fallback_sentinel: Path
+    environ: Mapping[str, str], *, python: str, site: str, omh_home: Path, fallback_sentinel: Path,
+    session_file: Path,
 ) -> dict[str, str]:
     """The environment `hermes --tui` runs with when it should start the OMH TUI.
 
@@ -147,6 +168,7 @@ def omh_tui_environment(
     env[SITE_ENV] = site
     env["OMH_HOME"] = str(omh_home)
     env[FALLBACK_SENTINEL_ENV] = str(fallback_sentinel)
+    env[SESSION_FILE_ENV] = str(session_file)
     return env
 
 
@@ -243,3 +265,36 @@ def fallback_reason(sentinel: Path) -> list[str]:
         os.close(descriptor)
     lines = ("".join(char for char in line if char.isprintable()) for line in data.decode("utf-8", "replace").splitlines())
     return [line for line in lines if line.strip()]
+
+
+def closed_session(path: Path) -> tuple[str, str]:
+    """The session id and Hermes home the TUI last wrote to the file named in `SESSION_FILE_ENV`; ("", "") when it
+    wrote none, or wrote something this cannot read as both.
+
+    Read before the private directory is removed. The home is the
+    `HERMES_HOME` the TUI ran with, which is where Hermes put the session:
+    Hermes' launcher may pick a profile (`--profile`, or the sticky active
+    profile) that `omh` did not name.
+    """
+    try:
+        descriptor = os.open(path, os.O_RDONLY | _BINARY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return "", ""
+    try:
+        data = os.read(descriptor, SESSION_FILE_BYTES)
+    except OSError:
+        data = b""
+    finally:
+        os.close(descriptor)
+    try:
+        record = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return "", ""
+    if not isinstance(record, dict):
+        return "", ""
+    session_id, hermes_home = record.get("session_id"), record.get("hermes_home")
+    if not isinstance(session_id, str) or not isinstance(hermes_home, str):
+        return "", ""
+    if not session_id.isprintable() or not session_id.strip() or not os.path.isabs(hermes_home):
+        return "", ""
+    return session_id.strip(), hermes_home
