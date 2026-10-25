@@ -4,6 +4,17 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh setup --interactive` without a terminal refuses instead of
+  crashing or taking every default (#2295).** With stdin closed (`<&-`) it
+  stopped on an `AttributeError` traceback; with stdin from `/dev/null` or a
+  pipe the wizard read EOF at every prompt and recorded the defaults as the
+  user's choices. It now writes nothing, prints one line naming the same
+  command with `--interactive` swapped for `--no-interactive --json`, adds
+  that as `next_command` in a JSON record when stdout is not a terminal, and
+  exits 1. Piped answers into `--interactive` therefore stop working; pass
+  the choices as flags instead. A closed stdin no longer crashes bare `omh`,
+  `omh theme`, `omh model-chains` or `omh model-chains interview` either.
+
 ## 4.0.2 - 2026-10-24
 
 - **Install, update and uninstall keep shared state until a profile's

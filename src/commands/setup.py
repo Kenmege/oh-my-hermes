@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -2899,16 +2900,24 @@ def cmd_setup(args: argparse.Namespace) -> int:
         # Without a terminal on stdin every prompt reads EOF and takes its
         # default, so the user would never see the choices the wizard exists
         # to ask. Refuse before anything is written.
-        print(tr(language, "setup_interactive_needs_terminal"), file=sys.stderr)
+        next_command = _noninteractive_rerun_command(getattr(args, "_argv", None) or sys.argv[1:])
+        print(tr(language, "setup_interactive_needs_terminal", command=next_command), file=sys.stderr)
         refusal: dict[str, object] = {
             "ok": False,
             "refused": True,
             "refusal_reason": "interactive_requires_terminal",
             "next_action": "rerun_with_no_interactive_json",
-            "next_command": "omh setup --no-interactive --json",
+            "next_command": next_command,
             "language": language,
         }
-        _print_json(refusal)
+        # A person at a terminal reads the line above; a caller capturing
+        # stdout (the agent shell this refusal exists for) gets the record.
+        try:
+            stdout_is_terminal = sys.stdout.isatty()
+        except (AttributeError, ValueError):
+            stdout_is_terminal = False
+        if not stdout_is_terminal:
+            _print_json(refusal)
         return _setup_exit_code(refusal)
     if _setup_should_interact(args):
         if not _setup_paths_were_explicit(args) and not getattr(args, "scope", None):
@@ -3122,6 +3131,22 @@ def cmd_setup(args: argparse.Namespace) -> int:
     else:
         _print_setup_summary(payload, language=language)
     return _setup_exit_code(payload)
+
+
+def _noninteractive_rerun_command(argv: list[str]) -> str:
+    """The refused command line with the wizard swapped for the scripted path.
+
+    Every other flag the user passed is kept, so `--model-setup`, `--scope`,
+    `--profile-pack` and the homes survive. argparse accepts a unique prefix
+    such as `--inter`, so a prefix of `--interactive` is dropped too.
+    """
+    rerun = ["omh"]
+    for token in argv:
+        if token.startswith("--") and len(token) > 2 and "--interactive".startswith(token):
+            continue
+        rerun.append(token)
+    rerun.extend(flag for flag in ("--no-interactive", "--json") if flag not in rerun)
+    return shlex.join(rerun)
 
 
 def _setup_exit_code(payload: Any) -> int:

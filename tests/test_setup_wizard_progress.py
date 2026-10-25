@@ -20,6 +20,7 @@ import io
 import json
 import os
 import re
+import shlex
 import sys
 import unittest
 from contextlib import ExitStack, redirect_stderr, redirect_stdout
@@ -489,13 +490,65 @@ class NonInteractiveRunTests(unittest.TestCase):
                     self.assertEqual(status, 1)
                     self.assertTrue(refusal["refused"])
                     self.assertEqual(refusal["refusal_reason"], "interactive_requires_terminal")
-                    self.assertEqual(refusal["next_command"], "omh setup --no-interactive --json")
-                    self.assertIn(tr("en", "setup_interactive_needs_terminal"), stderr)
+                    next_command = shlex.join(
+                        ["omh", *self._base(root), "setup", "--no-menubar", "--no-interactive", "--json"]
+                    )
+                    self.assertEqual(refusal["next_command"], next_command)
+                    self.assertIn(tr("en", "setup_interactive_needs_terminal", command=next_command), stderr)
                     paths = setup_module._paths(
                         argparse.Namespace(omh_home=str(root / ".omh"), hermes_home=str(root / ".hermes"), scope=None)
                     )
                     self.assertFalse(update_check_policy_recorded(paths))
                     self.assertFalse(paths.setup_profile_path.exists())
+
+    def test_the_refusal_names_the_same_command_with_the_wizard_swapped_out(self) -> None:
+        # The user's other choices must survive into the command they are told to run.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "a dir with spaces"
+            argv = [
+                *self._base(root),
+                "setup",
+                "--model-setup",
+                "--scope",
+                "project",
+                "--profile-pack",
+                "engineering-delivery",
+                "--inter",
+                "--no-menubar",
+            ]
+            status, stdout, _stderr = self._run_with_stdin(None, argv)
+            self.assertEqual(status, 1)
+            next_command = json.loads(stdout)["next_command"]
+            self.assertEqual(
+                shlex.split(next_command),
+                [
+                    "omh",
+                    *self._base(root),
+                    "setup",
+                    "--model-setup",
+                    "--scope",
+                    "project",
+                    "--profile-pack",
+                    "engineering-delivery",
+                    "--no-menubar",
+                    "--no-interactive",
+                    "--json",
+                ],
+            )
+
+    def test_the_refusal_prints_only_the_line_to_a_person_at_a_terminal(self) -> None:
+        class _TerminalOut(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        with TemporaryDirectory() as tmp:
+            stdout, stderr = _TerminalOut(), io.StringIO()
+            with patch.dict(os.environ), patch.object(sys, "stdin", None), redirect_stdout(stdout), redirect_stderr(stderr):
+                os.environ.pop("OMH_OUTPUT", None)
+                status = main(self._base(Path(tmp)) + ["setup", "--interactive", "--no-menubar"])
+            self.assertEqual(status, 1)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("needs a terminal on stdin", stderr.getvalue())
 
     def test_plain_run_with_closed_stdin_keeps_the_non_interactive_path(self) -> None:
         with TemporaryDirectory() as tmp:
