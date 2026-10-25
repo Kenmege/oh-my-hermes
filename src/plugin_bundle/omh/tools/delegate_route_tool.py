@@ -39,6 +39,7 @@ from ..hermes_delegation import (
     resolve_provider_model,
     effective_mixture_category_chains,
 )
+from ..route_endpoint_guard import managed_config_layer, route_endpoint_refusal
 from ..provider_detection import config_provider_base_url_hosts, configured_provider_ids
 from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, host_session_id, observe_plugin_tool_call
 from ..kanban_board_reader import conversation_session_ids
@@ -175,16 +176,32 @@ def _configured_providers(hermes_home: Any, omh_home: Any) -> frozenset[str]:
     return frozenset(configured)
 
 
-def _unconfigured_provider_error(provider: str, configured: frozenset[str], *, origin: str) -> dict[str, Any]:
+def _unconfigured_provider_error(
+    provider: str, configured: frozenset[str], *, origin: str, hermes_home: Any
+) -> dict[str, Any]:
+    # The endpoint refusals the writer applies are more specific than this
+    # one -- they name the person's own keys that send the child elsewhere --
+    # so a route both would refuse keeps their reason.
+    text, _signature, error = read_config_snapshot(Path(hermes_home).expanduser() / "config.yaml")
+    if not error:
+        refusal = route_endpoint_refusal(
+            text,
+            provider=provider,
+            current_provider=read_delegation_route(hermes_home).get("provider", ""),
+            managed=managed_config_layer(),
+        )
+        if refusal:
+            return refusal
     listed = ", ".join(sorted(configured)) or "none found"
     return {
         "status": "error",
+        "reason": "provider_not_configured",
         "error": (
             f"provider {provider!r} ({origin}) is not one you configured for Hermes; "
             f"configured: {listed}. A delegated child sends its task to the provider its "
             "route names, so a route only names a provider you linked yourself "
             "(config.yaml providers/custom_providers, a Hermes login or key, or this "
-            "session's provider). Nothing was written."
+            "session's provider). No route was written."
         ),
         "provider": provider,
         "configured_providers": sorted(configured),
@@ -830,7 +847,7 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
         configured = _configured_providers(hermes_home, omh_home)
         if provider.casefold() not in configured:
             origin = "explicit provider argument" if args.get("provider") else "routing/model-providers.json"
-            payload = _unconfigured_provider_error(provider, configured, origin=origin)
+            payload = _unconfigured_provider_error(provider, configured, origin=origin, hermes_home=hermes_home)
             return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
     result = write_route_with_baseline(
         hermes_home,

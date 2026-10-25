@@ -1942,14 +1942,30 @@ def _looks_like_managed_plugin(path: Path) -> bool:
     return (path / ".omh-plugin-manifest.json").exists()
 
 
+def _command_venv_scripts_dirs(venv: Path) -> tuple[Path, ...]:
+    """Executable directories a venv can use on this host.
+
+    Windows venvs normally use `Scripts`, but MSYS2/Cygwin-built Pythons there
+    lay out `bin`; POSIX venvs only ever use `bin`.
+    """
+    native = managed_command_venv_scripts_dir(venv)
+    return (native,) if native.name == "bin" else (native, venv / "bin")
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    """Compare as the filesystem does: case-insensitive and 8.3-expanded on Windows."""
+    return os.path.normcase(os.path.realpath(left)) == os.path.normcase(os.path.realpath(right))
+
+
 def _command_venv_owned(path: Path) -> bool:
     """A runtime containment match alone cannot claim an arbitrary ancestor."""
-    scripts = managed_command_venv_scripts_dir(path)
     marker = path / "pyvenv.cfg"
-    return (
+    if not marker.is_file() or is_directory_link(marker):
+        return False
+    return any(
         not linked_removal_reason(scripts, path)
-        and marker.is_file() and not is_directory_link(marker)
         and any((scripts / name).is_file() for name in ("omh", "omh.exe"))
+        for scripts in _command_venv_scripts_dirs(path)
     )
 
 
@@ -1969,11 +1985,11 @@ def _collect_command_package_removal(
         kept.append({"path": str(venv_dir), "reason": reason})
         return
     executable = Path(sys.executable).expanduser()
-    runtime = _normalize_without_final_symlink(executable).parent.parent
-    scripts = managed_command_venv_scripts_dir(runtime)
+    interpreter_dir = _normalize_without_final_symlink(executable).parent
+    runtime = interpreter_dir.parent
     if (
         not command_runtime_owned(executable, venv_dir)
-        or _normalize_without_final_symlink(executable).parent != scripts.resolve()
+        or not any(_same_path(interpreter_dir, scripts) for scripts in _command_venv_scripts_dirs(runtime))
         or not _command_venv_owned(runtime)
     ):
         kept.append(

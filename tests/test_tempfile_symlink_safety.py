@@ -54,14 +54,12 @@ def _record(n: int) -> dict[str, object]:
 class PlantedSymlinkTest(unittest.TestCase):
     def setUp(self) -> None:
         self._temporary = TemporaryDirectory()
-        self.root = Path(self._temporary.name)
+        self.addCleanup(self._temporary.cleanup)
+        self.root = Path(self._temporary.name).resolve()
         self.home = self.root / "home"
         self.victim = _victim(self.root)
         self.path = ledger_path(self.home)
         self.path.parent.mkdir(parents=True)
-
-    def tearDown(self) -> None:
-        self._temporary.cleanup()
 
     def assertVictimUntouched(self) -> None:
         self.assertEqual(self.victim.read_text(encoding="utf-8"), VICTIM_TEXT)

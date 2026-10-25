@@ -236,6 +236,48 @@ class UninstallHomeOwnershipTests(unittest.TestCase):
         self.assertFalse(result["command_package_removed"])
         self.assertTrue(result["command_package_kept"])
 
+    def _command_venv(self, scripts: str, python: str, entry: str) -> tuple[Path, Path]:
+        venv = self.root / f"command-{scripts}" / "venv"
+        (venv / scripts).mkdir(parents=True)
+        (venv / "pyvenv.cfg").write_text("home = synthetic-python\n", encoding="utf-8")
+        (venv / scripts / entry).write_text("# synthetic OMH entry\n", encoding="utf-8")
+        executable = venv / scripts / python
+        executable.write_text("# synthetic python\n", encoding="utf-8")
+        return venv, executable
+
+    def _command_preview(self, venv: Path, executable: Path, *, windows: bool) -> dict:
+        import sys
+
+        from omh.system import paths as system_paths
+
+        environment = {"OMH_VENV_DIR": str(venv), "OMH_BIN_DIR": str(self.root / "bin")}
+        with mock.patch.object(system_paths, "_is_windows", lambda: windows), \
+                mock.patch.dict(os.environ, environment), mock.patch.object(sys, "executable", str(executable)):
+            return uninstall_skill_pack(OmhPaths(self.omh, self.hermes), remove_command_package=True, dry_run=True)
+
+    def test_windows_command_venv_layouts_are_recognized(self) -> None:
+        # Windows CPython venvs use Scripts; MSYS2/Cygwin Pythons there use bin.
+        for scripts, python, entry in (("Scripts", "python.exe", "omh.exe"), ("bin", "python", "omh")):
+            with self.subTest(scripts=scripts):
+                venv, executable = self._command_venv(scripts, python, entry)
+                result = self._command_preview(venv, executable, windows=True)
+                self.assertIn(str(venv), result["command_package_would_remove"], result)
+                self.assertFalse(result["command_package_kept"], result)
+                self.assertTrue(executable.is_file())
+
+    def test_posix_does_not_accept_a_windows_scripts_layout(self) -> None:
+        venv, executable = self._command_venv("Scripts", "python.exe", "omh.exe")
+        result = self._command_preview(venv, executable, windows=False)
+        self.assertNotIn(str(venv), result["command_package_would_remove"], result)
+        self.assertTrue(result["command_package_kept"], result)
+
+    def test_windows_command_venv_without_marker_is_kept(self) -> None:
+        venv, executable = self._command_venv("Scripts", "python.exe", "omh.exe")
+        (venv / "pyvenv.cfg").unlink()
+        result = self._command_preview(venv, executable, windows=True)
+        self.assertNotIn(str(venv), result["command_package_would_remove"], result)
+        self.assertTrue(result["command_package_kept"], result)
+
 
 if __name__ == "__main__":
     unittest.main()
