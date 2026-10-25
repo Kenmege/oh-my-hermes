@@ -4,6 +4,39 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The installers no longer run Python modules from the current directory
+  or `PYTHONPATH`.** `install.sh` and `install.ps1` start venv creation, pip,
+  the command-discovery probes, and the OMH CLI with `-I`, or with `-P -E` in
+  direct-Python mode so `pip --user` still sees the user site; the printed
+  fallback commands carry the same flags. A `venv.py`, `pip.py`, or `omh.py`
+  in the directory the installer runs from is no longer imported.
+
+- **`omh uninstall --remove-files` / `--all` refuses to delete an OMH home it
+  cannot prove OMH created.** OMH_HOME is removed only when it holds a
+  readable, unlinked `oh-my-hermes` schema-1 manifest; otherwise it is kept
+  and listed in `kept_paths` with the reason, and `--dry-run` reports the same.
+  HOME, HERMES_HOME, their ancestors, and the filesystem root are never
+  removed, and a home configured through a symlink or junction (by
+  `--omh-home`, the persisted `omh_home` binding, or `OMH_HOME`) is kept even
+  with `--force`. Linked plugin directories are not followed, team manifests
+  authorize single files rather than directories, the command venv is removed
+  only when it carries a venv marker and an OMH entry, and the menu-bar app
+  directory only with a matching OMH LaunchAgent.
+
+- **`omh_delegate_route` refuses providers you have not configured.** `set`
+  returns an error and writes nothing when the explicit provider, or the one a
+  `routing/model-providers.json` route resolves to, is not linked through
+  auth.json, config.yaml, `.env`, or `routing/providers.json`, is not a
+  configured custom provider, and is not the session provider. `fallback`
+  skips such candidates, lists them in `skipped_unconfigured`, and falls back
+  to inherit when none remain.
+
+- **Temp and lock files no longer use predictable names that a planted
+  symlink can redirect.** The jev ask ledger writes through `mkstemp`; the
+  awareness delivery lock opens with `O_NOFOLLOW` and refuses anything that
+  is not a regular file; the self-update pointer and launcher swaps use random
+  names created exclusively; and browser skill promotion temp names gain a
+  random token.
 - **A dag-ulw run that ended leaves the area under the composer on its own.**
   Once a run was over its tree folded into one line, `DAG · <name> · done
   9/9`, which stayed under the info line for as long as the HUD kept the

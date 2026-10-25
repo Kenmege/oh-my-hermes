@@ -12927,6 +12927,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             fake_python.write_text("# fake python\n", encoding="utf-8")
             fake_omh = fake_venv_bin / "omh"
             fake_omh.write_text("# fake omh\n", encoding="utf-8")
+            (fake_venv / "pyvenv.cfg").write_text("home = synthetic-python\n", encoding="utf-8")
             fake_bin = root / "bin"
             fake_bin.mkdir()
             fake_link = fake_bin / "omh"
@@ -12974,6 +12975,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             fake_python.symlink_to(external_python)
             fake_omh = fake_venv_bin / "omh"
             fake_omh.write_text("# fake omh\n", encoding="utf-8")
+            (fake_venv / "pyvenv.cfg").write_text("home = synthetic-python\n", encoding="utf-8")
             fake_bin = root / "bin"
             fake_bin.mkdir()
             fake_link = fake_bin / "omh"

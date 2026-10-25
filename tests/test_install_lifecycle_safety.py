@@ -126,6 +126,12 @@ class SharedStoreUninstallTests(_Fixture):
         bot.mkdir(parents=True)
         private = self.root / "private-omh"
         private.mkdir()
+        # An unshared path is not ownership evidence: install the real pack.
+        status, _, stderr = run_cli([
+            "--hermes-home", str(bot), "--omh-home", str(private),
+            "setup", "--core", "--yes", "--no-interactive", "--no-menubar", "--json",
+        ])
+        self.assertEqual(status, 0, stderr)
         _write(private / "runtime" / "record.json", "{}\n")
         self._profile_binding(bot, private)
         # The primary uses A, not private/skills: private really is unshared.
@@ -445,7 +451,9 @@ class GenerationOwnershipTests(_Fixture):
 
     @requires_symlinks
     def test_uninstall_removes_an_installer_owned_generation(self) -> None:
+        self._setup_primary()
         store, generation, generation_venv, bin_dir = self._generation_layout()
+        _write(generation_venv / "pyvenv.cfg", "home = synthetic-python\n")
         paths = OmhPaths(omh_home=self.omh, hermes_home=self.hermes)
 
         with mock.patch.dict(
