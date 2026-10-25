@@ -120,9 +120,14 @@ from ..plugin_pack import PLUGIN_NAME, PluginPackError, install_plugin_bundle
 from ..install.plugin_pack import HERMES_PLUGIN_UPDATE_COMMAND, PluginContentProtectedError
 from ..probe import probe_capabilities
 from ..release import (
+    COMMIT_SHA_RE,
+    RELEASE_ASSET_ROOT,
     RELEASE_CHANNELS,
+    RELEASE_WHEEL_VERSION_RE,
+    ReleaseSelection,
     package_url_for,
     release_artifact_note,
+    release_from_direct_url,
 )
 from ..skin_pack import (
     SkinInstallError,
@@ -221,30 +226,20 @@ def _direct_url_update_guidance() -> tuple[str, str] | None:
     would create a second, conflicting install next to the one that already
     owns the command. The dist-info `direct_url.json` records the actual
     origin, so the update instruction points there instead. The curl
-    installer's own managed venv also leaves a `direct_url.json`, but it
-    names the deleted download directory, so it falls through to the
-    installer fallback as before.
+    installer's own managed venv also leaves a `direct_url.json`, naming the
+    release archive it fetched, which is neither shape below, so it falls
+    through to the installer fallback as before.
     """
-    import importlib.metadata
     from urllib.parse import urlsplit
     from urllib.request import url2pathname
 
-    try:
-        raw = importlib.metadata.distribution("oh-my-hermes").read_text("direct_url.json")
-    except (importlib.metadata.PackageNotFoundError, OSError):
-        return None
-    if not raw:
-        return None
-    try:
-        data = json.loads(raw)
-    except ValueError:
-        return None
-    if not isinstance(data, dict):
+    data = _installed_direct_url()
+    if data is None:
         return None
     url = str(data.get("url", "") or "")
     prefix_parts = tuple(part.casefold() for part in Path(sys.prefix).parts)
     if "uv" in prefix_parts and "tools" in prefix_parts:
-        return "uv-tool", "uv tool upgrade oh-my-hermes"
+        return "uv-tool", _uv_tool_update_instruction(data, url)
     if isinstance(data.get("vcs_info"), dict) and url and not url.startswith("file:"):
         return "pip", f'{sys.executable} -m pip install --upgrade "git+{url}"'
     dir_info = data.get("dir_info")
@@ -263,6 +258,78 @@ def _direct_url_update_guidance() -> tuple[str, str] | None:
                 f"{sys.executable} -m pip install --upgrade {checkout}"
             )
     return None
+
+
+def _uv_tool_update_instruction(data: dict[str, object], url: str) -> str:
+    """The command that moves a `uv tool install` to a newer OMH.
+
+    `uv tool upgrade` re-resolves the requirement the tool was installed
+    with, so a commit, a release tag, or an archive URL resolves to itself:
+    on uv 0.12.5, a tool installed from `git+...@<sha>` or from the release
+    wheel URL answered "Nothing to upgrade". Those installs are moved by
+    reinstalling at the new pin; a branch or unpinned git install keeps the
+    upgrade command.
+    """
+    vcs = data.get("vcs_info")
+    if isinstance(vcs, dict):
+        revision = str(vcs.get("requested_revision") or "")
+        tag = revision.startswith("v") and RELEASE_WHEEL_VERSION_RE.fullmatch(revision[1:])
+        if COMMIT_SHA_RE.fullmatch(revision) or tag:
+            return f'uv tool install --force "git+{url}@<new-ref>"'
+        return "uv tool upgrade oh-my-hermes"
+    if isinstance(data.get("archive_info"), dict) and url:
+        release = release_from_direct_url(data)
+        if release is not None and release.artifact_kind == "release-wheel":
+            return f'uv tool install --force "{RELEASE_ASSET_ROOT}/v<version>/oh_my_hermes-<version>-py3-none-any.whl"'
+        return 'uv tool install --force "<new package URL>"'
+    return "uv tool upgrade oh-my-hermes"
+
+
+def _installed_direct_url() -> dict[str, object] | None:
+    """The installed distribution's PEP 610 `direct_url.json`, or None."""
+    import importlib.metadata
+
+    try:
+        raw = importlib.metadata.distribution("oh-my-hermes").read_text("direct_url.json")
+    except (importlib.metadata.PackageNotFoundError, OSError):
+        return None
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _requested_release(args: argparse.Namespace) -> ReleaseSelection:
+    """The release this install/update records: what was asked for, else what is installed.
+
+    `--channel` used to default to `preview`, so a plain `omh setup` after the
+    documented stable install recorded the `main` archive while the release
+    wheel was installed, and the installer's pinned version or commit was
+    lost (install.sh passes them only under `OMH_RUN_SETUP=1`). With no
+    `--channel`, `--version`, or `--package-url`, the installed package's PEP
+    610 record names the artifact. A package-manager install (npm, Bun,
+    Homebrew) leaves none that names a channel -- npm ships stable and beta
+    from the same wheel -- so it records the package version and no channel.
+    Any other recorded URL (a fork, a local wheel or clone) is recorded as
+    the package URL with no channel. Only an install that records nothing,
+    or an editable development checkout, keeps the `preview` default.
+    """
+    if args.channel is not None or args.version or args.package_url:
+        return package_url_for(args.channel or "preview", args.version or "", args.package_url or "")
+    record = _installed_direct_url() or {}
+    installed = release_from_direct_url(record)
+    if installed is not None:
+        return installed
+    if _command_package_update_guidance()[0] in COMMAND_PACKAGE_UPDATE_COMMANDS:
+        return ReleaseSelection("", __version__, "", "", "package-manager")
+    url = str(record.get("url") or "")
+    dir_info = record.get("dir_info")
+    if url and not (isinstance(dir_info, dict) and dir_info.get("editable")):
+        return ReleaseSelection("", "", url, "custom-url", "custom-url")
+    return package_url_for("preview")
 
 
 def _homebrew_prefix_root() -> Path | None:
@@ -322,7 +389,7 @@ def _cmd_install_agents(args: argparse.Namespace) -> int:
     if not args.agents_scope:
         raise OmhError("install --target agents requires --scope repo|user")
     if (args.from_skills_dir or args.source or args.version or args.package_url
-            or args.source_ref or args.full or args.core or args.channel != "preview"):
+            or args.source_ref or args.full or args.core or args.channel not in (None, "preview")):
         raise OmhError("Agent Skills installs generate the complete portable catalog; Hermes source/profile/release options do not apply")
     try:
         target, mirror = agent_skills_targets(args.agents_scope, host=args.host)
@@ -358,7 +425,7 @@ def _install_result(args: argparse.Namespace) -> dict[str, object]:
     language = _resolve_language(args)
     operation = _install_operation(args)
     try:
-        release = package_url_for(args.channel, args.version or "", args.package_url or "")
+        release = _requested_release(args)
     except ValueError as exc:
         raise OmhError(str(exc)) from exc
     if args.channel == "local" and not (args.from_skills_dir or args.source):
@@ -1259,7 +1326,7 @@ def _command_package_self_update_plan(args: argparse.Namespace) -> dict[str, obj
     if getattr(args, "from_skills_dir", None) or getattr(args, "source", None):
         return {"should_update": False, "reason": "explicit skill source updates workflows only"}
     try:
-        release = package_url_for(args.channel, args.version or "", args.package_url or "")
+        release = package_url_for(args.channel or "preview", args.version or "", args.package_url or "")
     except ValueError as exc:
         raise OmhError(str(exc)) from exc
     if release.channel == "local" and release.package_url == "local":
@@ -6221,8 +6288,13 @@ def cmd_probe(args: argparse.Namespace) -> int:
 def _add_common_install_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--from-skills-dir", default=None, help="Import skills from a local skill directory.")
     p.add_argument("--source", default=None, help="Mockable local source directory for install/update.")
-    p.add_argument("--channel", choices=RELEASE_CHANNELS, default="preview", help="Release channel metadata for this install/update.")
-    p.add_argument("--version", default="", help="Stable release version such as 1.0.0 or v1.0.0.")
+    p.add_argument(
+        "--channel",
+        choices=RELEASE_CHANNELS,
+        default=None,
+        help="Release channel metadata for this install/update; defaults to what the installed package records, else preview.",
+    )
+    p.add_argument("--version", default="", help=f"Stable release version such as {__version__} or v{__version__}.")
     p.add_argument("--package-url", default="", help="Explicit release archive URL for support and audit metadata.")
     p.add_argument("--source-ref", default="", help="Release source ref metadata such as main, main@sha, or v1.0.1.")
     p.add_argument("--command-package-updated", action="store_true", help=argparse.SUPPRESS)
