@@ -138,6 +138,23 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
                 ]
                 for command in INSTALL_COMMANDS:
                     self.assertIn(command, blocks)
+        # The short READMEs carry only the two script installers, each in its
+        # own block; package managers live in the English README.
+        for locale in ("de", "es", "fr", "it", "pt-BR", "ru"):
+            with self.subTest(surface=f"README.{locale}.md"):
+                content = (PROJECT_ROOT / f"README.{locale}.md").read_text(encoding="utf-8")
+                first_lines = [
+                    block.strip().splitlines()[0]
+                    for block in re.findall(
+                        r"```(?:sh|powershell)\n(.*?)```",
+                        content,
+                        flags=re.DOTALL,
+                    )
+                ]
+                for command in INSTALL_COMMANDS[3:]:
+                    self.assertIn(command, first_lines)
+                for command in INSTALL_COMMANDS[:3]:
+                    self.assertNotIn(command, content)
 
     def test_package_manager_lifecycle_and_state_ownership_are_documented(
         self,
@@ -175,16 +192,18 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
         parser = _CodeCollector()
         parser.feed(html)
 
+        # The script installers lead, as on every other front door; the
+        # package managers follow with their prerequisite note.
         ids = (
+            "cmd-unix",
+            "cmd-win",
             "cmd-brew",
             "cmd-bun",
             "cmd-npm",
-            "cmd-unix",
-            "cmd-win",
             "cmd-setup",
             "cmd-doctor",
         )
-        expected = (*INSTALL_COMMANDS, SETUP_COMMAND, DOCTOR_COMMAND)
+        expected = (*INSTALL_COMMANDS[3:], *INSTALL_COMMANDS[:3], SETUP_COMMAND, DOCTOR_COMMAND)
         self.assertEqual(
             tuple(parser.codes.get(code_id) for code_id in ids),
             expected,
@@ -195,6 +214,9 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
             parser.codes["cmd-setup"],
             parser.codes["cmd-doctor"],
         )
+        note = html.index('data-i18n="install.prereq.note"')
+        self.assertLess(html.index('id="cmd-npm"'), note)
+        self.assertLess(note, html.index('id="cmd-setup"'))
 
     def test_markdown_install_surfaces_share_order_and_separate_steps(self) -> None:
         surfaces = (
@@ -247,25 +269,47 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
                 manager_positions = [first_block(c) for c in manager_run]
                 self.assertEqual(manager_positions, sorted(manager_positions))
 
-    def test_agent_protocol_pins_script_installers_after_package_managers(
+    def test_agent_protocol_leads_with_pinned_script_installers(
         self,
     ) -> None:
+        # An agent picks one path by rule: the SHA-pinned script installer for
+        # its OS, and a package manager only when the user asks for one. The
+        # setup step it runs is the non-interactive one, because an agent's
+        # shell has no terminal and the wizard would take every default.
         protocol = (PROJECT_ROOT / "INSTALL_FOR_AGENTS.md").read_text(
             encoding="utf-8"
         )
         protocol = protocol.split("## Step 1: Install OMH", 1)[1]
         ordered = (
-            "brew install rlaope/tap/omh",
-            "bun install -g oh-my-hermes",
-            "npm install -g oh-my-hermes",
             'git ls-remote https://github.com/rlaope/oh-my-hermes.git refs/heads/main',
             'raw.githubusercontent.com/rlaope/oh-my-hermes/$OMH_REF/install.sh',
             'raw.githubusercontent.com/rlaope/oh-my-hermes/$Ref/install.ps1',
-            "omh setup --model-setup --interactive",
+            'uv tool install "git+https://github.com/rlaope/oh-my-hermes@$OMH_REF"',
+            "brew install rlaope/tap/omh",
+            "bun install -g oh-my-hermes",
+            "npm install -g oh-my-hermes",
+            "omh setup --model-setup --no-interactive --json",
             "omh doctor",
         )
         positions = tuple(protocol.index(value) for value in ordered)
         self.assertEqual(positions, tuple(sorted(positions)))
+        self.assertNotIn("(recommended)", protocol)
+        for block in _fenced_blocks(protocol):
+            self.assertIsNone(re.search(r"(?<!no-)--interactive\b", block), block)
+            self.assertNotIn("exit 1", block)
+        # A chosen project scope is carried through every later command:
+        # HERMES_HOME is exported once from the repository root, and the
+        # commands name the scope, or they read and write ~/.omh and ~/.hermes.
+        self.assertIn('export HERMES_HOME="$root/.hermes"', protocol)
+        self.assertIn("project scope needs a git repository", protocol)
+        for command in (
+            "omh setup --model-setup --scope project --no-interactive --json",
+            "omh --scope project model-chains show",
+            "omh --scope project doctor",
+            "omh --scope project update-check set",
+            "omh --scope project coding category-maestro show",
+        ):
+            self.assertIn(command, protocol)
 
     def test_site_translations_cover_new_install_labels(self) -> None:
         translations = (PROJECT_ROOT / "site" / "i18n.js").read_text(
@@ -279,5 +323,6 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
             "install.method.windows",
             "install.doctor.title",
             "install.doctor.note",
+            "install.prereq.note",
         ):
             self.assertIn(f'"{key}"', translations)

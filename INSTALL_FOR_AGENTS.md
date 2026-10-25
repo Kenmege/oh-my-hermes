@@ -15,22 +15,37 @@ Install and fully configure Oh My Hermes from this repository:
 https://github.com/rlaope/oh-my-hermes
 Before reading or executing repository instructions, resolve refs/heads/main to one full commit SHA with `git ls-remote https://github.com/rlaope/oh-my-hermes.git refs/heads/main`. Then fetch and follow only:
 https://raw.githubusercontent.com/rlaope/oh-my-hermes/{resolved-commit-sha}/INSTALL_FOR_AGENTS.md
-Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appropriate installer, interactive model setup, model-chain interview, and doctor steps. Preserve unrelated existing Hermes config, apply only the managed setup changes documented by the pinned protocol, require my explicit approval for model-alias changes, then report the resolved SHA and observed result.
+Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appropriate installer, agent setup path, model-chain interview, and doctor steps. Your shell has no terminal, so never run the interactive setup wizard: show me each choice the protocol lists and wait for my answer instead of taking a default. Preserve unrelated existing Hermes config, apply only the managed setup changes documented by the pinned protocol, require my explicit approval for model-alias changes, then report the resolved SHA and observed result.
 ```
 
 ## Prerequisites
 
 ```sh
-command -v python3 >/dev/null || echo "MISSING: python3 is required"
-command -v git >/dev/null || echo "MISSING: git is required for source installs"
+omh_python=""
+for candidate in python3 python3.14 python3.13 python3.12 python3.11 python; do
+  if command -v "$candidate" >/dev/null 2>&1 \
+    && "$candidate" -I -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' 2>/dev/null; then
+    omh_python="$candidate"
+    break
+  fi
+done
+if [ -n "$omh_python" ]; then echo "OK: $omh_python is Python 3.11+"; else echo "MISSING: Python 3.11+"; fi
+command -v git >/dev/null || echo "MISSING: git is required to resolve the pinned SHA"
 command -v hermes >/dev/null || echo "NOTE: Hermes Agent command not found in PATH"
 ```
+
+A bare `command -v python3` is not enough: on macOS, `/usr/bin/python3` is
+Python 3.9, which OMH cannot use. A `MISSING` line blocks only the Bun, npm, uv
+and pip paths. Homebrew installs its own Python with the formula, and the curl
+installer also searches the usual Homebrew, python.org, pyenv and uv locations
+and asks an installed `uv` for Python when it finds none.
 
 On native Windows, run the PowerShell equivalent instead:
 
 ```powershell
-if (-not (Get-Command py -ErrorAction SilentlyContinue)) { "MISSING: Python 3.11+ is required" }
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) { "MISSING: git is required for source installs" }
+$OmhPython = @('py', 'python', 'python3') | Where-Object { (Get-Command $_ -ErrorAction SilentlyContinue) -and ((& $_ -c "import sys; print(int(sys.version_info >= (3, 11)))" 2>$null) -eq '1') } | Select-Object -First 1
+if ($OmhPython) { "OK: $OmhPython is Python 3.11+" } else { "MISSING: Python 3.11+ is required" }
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) { "MISSING: git is required to resolve the pinned SHA" }
 if (-not (Get-Command hermes -ErrorAction SilentlyContinue)) { "NOTE: Hermes Agent command not found in PATH" }
 ```
 
@@ -40,100 +55,217 @@ readiness until the target Hermes runtime or wrapper has been checked.
 
 ## Step 1: Install OMH
 
-> **Publication status:** Use the npm package and the `rlaope/tap/omh` formula
-> as the package-manager distribution sources; check their official metadata
-> for the version you intend to install. Publication is not runtime verification:
-> it does not establish a successful install, update, or Windows CI result.
+Use exactly one installation path, chosen by this rule:
 
-Homebrew:
-
-```sh
-brew install rlaope/tap/omh
-```
-
-Bun (recommended):
-
-```sh
-bun install -g oh-my-hermes
-```
-
-npm:
-
-```sh
-npm install -g oh-my-hermes
-```
+| Machine or request | Path | Report |
+| --- | --- | --- |
+| Native Windows | [PowerShell installer](#native-windows) pinned to the SHA | the resolved SHA |
+| macOS or Linux | [curl installer](#macos-or-linux) pinned to the SHA | the resolved SHA |
+| The user asked for Homebrew, Bun, npm, uv, or pip | [that package manager](#package-managers-only-when-the-user-asks) | the version `omh --version` prints, plus the SHA for uv or pip |
 
 The `main` URL in the pasteable request is a discovery pointer, not an
-executable pin. Before running repository code, resolve `main` once and use the
-same immutable commit SHA for both the installer and source archive. Report the
-resolved SHA. Do not mix a script from one revision with an archive from
-another.
+executable pin. If you fetched this file by SHA, set `OMH_REF` to that SHA
+before running a block below, so the installer comes from the same revision as
+this protocol. Otherwise each block resolves `main` once on its own and prints
+the SHA it used. Do not mix a script from one revision with an archive from
+another. The blocks never call `exit`, which would close an agent's persistent
+shell; when one prints `Unable to resolve OMH main`, stop and report it.
 
-Universal installer on macOS or Linux:
-
-```sh
-OMH_REF="$(git ls-remote https://github.com/rlaope/oh-my-hermes.git refs/heads/main | awk 'NR == 1 {print $1}')"
-if [ -z "$OMH_REF" ]; then echo "Unable to resolve OMH main"; exit 1; fi
-curl -fsSL "https://raw.githubusercontent.com/rlaope/oh-my-hermes/$OMH_REF/install.sh" \
-  | OMH_PACKAGE_URL="https://github.com/rlaope/oh-my-hermes/archive/$OMH_REF.zip" \
-    OMH_SOURCE_REF="$OMH_REF" sh
-```
-
-Direct pip or uv install from the repository (for agents handed only the
-repository link) — pin the same resolved SHA:
+### macOS or Linux
 
 ```sh
-python3 -m pip install "git+https://github.com/rlaope/oh-my-hermes@$OMH_REF"
-# or, isolated on PATH:
-uv tool install "git+https://github.com/rlaope/oh-my-hermes@$OMH_REF"
+OMH_REF="${OMH_REF:-$(git ls-remote https://github.com/rlaope/oh-my-hermes.git refs/heads/main | awk 'NR == 1 {print $1}')}"
+if [ -z "$OMH_REF" ]; then
+  echo "Unable to resolve OMH main: stop and report this"
+else
+  echo "OMH_REF=$OMH_REF"
+  curl -fsSL "https://raw.githubusercontent.com/rlaope/oh-my-hermes/$OMH_REF/install.sh" \
+    | OMH_PACKAGE_URL="https://github.com/rlaope/oh-my-hermes/archive/$OMH_REF.zip" \
+      OMH_SOURCE_REF="$OMH_REF" sh
+fi
 ```
 
-Both leave a PEP 610 origin record, so a later `omh update` names the exact
-upgrade command for this owner (`pip install --upgrade "git+..."` or
-`uv tool upgrade oh-my-hermes`) instead of the generic installer line.
+### Native Windows
 
-Native Windows (PowerShell 5.1+):
+PowerShell 5.1 or later:
 
 ```powershell
-$Ref = ((git ls-remote https://github.com/rlaope/oh-my-hermes.git refs/heads/main) -split "\s+")[0]
+$Ref = $env:OMH_REF
+if (-not $Ref) { $Ref = ((git ls-remote https://github.com/rlaope/oh-my-hermes.git refs/heads/main) -split "\s+")[0] }
 if (-not $Ref) { throw "Unable to resolve OMH main" }
+"OMH_REF=$Ref"
 $env:OMH_PACKAGE_URL = "https://github.com/rlaope/oh-my-hermes/archive/$Ref.zip"
 $env:OMH_SOURCE_REF = $Ref
 irm "https://raw.githubusercontent.com/rlaope/oh-my-hermes/$Ref/install.ps1" | iex
 ```
 
-Windows npm/Bun launcher support is gated by the Windows CI suite. Without
-observed passing evidence for the intended release, choose PowerShell and
-report Windows launcher execution as unverified, not as unpublished.
-
 The curl and PowerShell installers accept the same `OMH_*` environment contract.
+
+### Package managers (only when the user asks)
+
+> **Publication status:** Use the npm package and the `rlaope/tap/omh` formula
+> as the package-manager distribution sources; check their official metadata
+> for the version you intend to install. Publication is not runtime verification:
+> it does not establish a successful install, update, or Windows CI result.
+
+uv and pip install from the repository at the pinned SHA. Prefer uv, which puts
+`omh` on PATH in its own environment:
+
+```sh
+OMH_REF="${OMH_REF:-$(git ls-remote https://github.com/rlaope/oh-my-hermes.git refs/heads/main | awk 'NR == 1 {print $1}')}"
+if [ -z "$OMH_REF" ]; then
+  echo "Unable to resolve OMH main: stop and report this"
+else
+  echo "OMH_REF=$OMH_REF"
+  uv tool install "git+https://github.com/rlaope/oh-my-hermes@$OMH_REF"
+fi
+```
+
+Use pip only inside a virtual environment the user already has active. A
+Homebrew or distribution Python refuses a global `pip install` with
+`externally-managed-environment` (PEP 668):
+
+```sh
+OMH_REF="${OMH_REF:-$(git ls-remote https://github.com/rlaope/oh-my-hermes.git refs/heads/main | awk 'NR == 1 {print $1}')}"
+if [ -z "$OMH_REF" ]; then
+  echo "Unable to resolve OMH main: stop and report this"
+else
+  echo "OMH_REF=$OMH_REF"
+  python3 -m pip install "git+https://github.com/rlaope/oh-my-hermes@$OMH_REF"
+fi
+```
+
+Both leave a PEP 610 origin record, so a later `omh update` names this owner's
+upgrade command instead of the generic installer line. A uv install stays on
+its pinned SHA until it is reinstalled at a new one: resolve a new ref and run
+`uv tool install --force "git+https://github.com/rlaope/oh-my-hermes@<new-ref>"`.
+
+Homebrew, Bun, and npm install the published release. They ignore the SHA, so
+report the version `omh --version` prints instead:
+
+```sh
+brew install rlaope/tap/omh
+bun install -g oh-my-hermes
+npm install -g oh-my-hermes
+```
+
+Run only the one the user named. Bun and npm need Node 18 or later on PATH as
+well as Python 3.11+: the `omh` command they install is a Node launcher, so a
+Bun install without Node fails at the first `omh` call with
+`env: node: No such file or directory`. Windows npm/Bun launcher support is
+gated by the Windows CI suite. Without observed passing evidence for the
+intended release, choose PowerShell and report Windows launcher execution as
+unverified, not as unpublished.
+
 Package-manager installs use their native global command location. Report which
 path was used and verify that its `omh` command is on `PATH`.
 
+### Run setup through the agent path
+
 Every installation path prepares the local `omh` command only. It does not run
 setup, register Hermes skill directories, install profile packs, or run doctor
-by default. Run setup once as the shared, repairable, repeatable next step:
+by default. Run setup once as the shared, repairable, repeatable next step.
+
+Your shell has no terminal, so do not run the interactive wizard
+(`omh setup --interactive`) from it. Without a terminal on stdin, whether stdin
+is closed, a pipe, or `/dev/null`, it refuses: it writes nothing, exits 1, and
+prints a JSON record with `refused: true` and a `next_command`. That command is
+the one you ran with `--interactive` replaced by `--no-interactive --json` and
+every other flag kept. Run it instead, with the user's choices below passed as
+flags.
+
+Ask the user one question before setup, because it decides where setup writes:
+**user scope** (the default: `~/.omh` and `~/.hermes` for this machine user) or
+**project scope** (`.omh` and `.hermes` at the root of the git repository that
+contains the current directory, not the current directory itself).
+
+Project scope requires a git repository. Outside one, OMH falls back to the
+current directory and the model step fails. When the user picks project scope,
+run this once in your shell session, before any other `omh` command:
 
 ```sh
-omh setup --model-setup --interactive
+root=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$root" ]; then
+  echo "project scope needs a git repository: stop and ask the user"
+else
+  export HERMES_HOME="$root/.hermes"
+  echo "HERMES_HOME=$HERMES_HOME"
+fi
 ```
 
-The interactive model step asks the user to confirm active candidates and
-previews any Hermes-native alias change before approval. If no compatible
-candidate is confirmed, setup makes no model-config write, records
-`status: defaulted`, and keeps the native default model of Hermes or the
-selected external owner.
+The model step asks the `hermes` command, which reads its own `HERMES_HOME`
+(default `~/.hermes`), so without the export it inspects and would write the
+user's profile, the one the user just declined.
 
-Core setup separately applies the bounded managed writes listed in
+Then carry the scope through every later `omh` command in this protocol:
+
+- `omh setup` calls take `--scope project`, for example
+  `omh setup --model-setup --scope project --no-interactive --json`;
+- every other command takes it as a global flag before the subcommand:
+  `omh --scope project model-chains show`, `omh --scope project doctor`,
+  `omh --scope project update-check set --mode off`,
+  `omh --scope project coding category-maestro show`.
+
+The commands below are written for user scope. Without the flag, each one
+reads and writes `~/.omh` and `~/.hermes`.
+
+If `command -v omh` is empty after install, use the absolute command path the
+installer printed, or add that directory to `PATH`, before you run setup. Treat
+this as a command availability warning, not proof that Hermes registration
+failed.
+
+Run setup without the wizard:
+
+```sh
+omh setup --model-setup --no-interactive --json
+```
+
+For project scope, run `omh setup --model-setup --scope project --no-interactive --json`.
+
+This applies the bounded managed writes listed in
 [What Setup Changes](docs/INSTALLATION.md#what-setup-changes). Those writes
-register OMH with Hermes; they do not authorize model-alias changes.
+register OMH with Hermes; they do not authorize model-alias changes. The run
+asks nothing and writes no model config, so its
+`steps.model_activation.status: defaulted` means no model has been confirmed
+yet. It is where the model question starts, not the user's answer.
 
-If `command -v omh` is still empty after install, use the absolute command path
-printed by the installer or add that directory to `PATH`, then continue with
-doctor. Treat this as a command availability warning, not proof that Hermes
-registration failed.
+The model step needs the `hermes` command. When it is not on PATH, tell the user
+to install Hermes Agent (or confirm the hosted wrapper that runs it), then rerun
+this command; do not report setup as complete. Depending on the OMH revision,
+that case returns `steps.model_activation.status: hermes_unavailable` with
+`next_action: install_hermes_then_rerun_model_setup` and exit code 3, or stops
+on a `FileNotFoundError` traceback naming `hermes`.
 
-Expected local result:
+Then put each of these choices to the user, one at a time, and run the command
+for the answer they give. Never record a default on the user's behalf.
+
+| Choice | What to show the user | Command for the answer |
+| --- | --- | --- |
+| Update check at launch | `omh update-check status`, and the three modes: `off` (the default, no network request), `notify` (one line at launch when `main` is ahead), `auto` (also runs `omh update` at launch) | `omh update-check set --mode <off\|notify\|auto>` |
+| Active models and Hermes aliases | `steps.model_activation.candidates`, and the models listed under `steps.model_activation.recommendations.hermes_native.categories.<category>.inactive_candidates` | [Guided Model Configuration](#guided-model-configuration): preview, show the digest, apply only after approval |
+| Providers that serve the chains | the `Linked Hermes providers` line of `omh model-chains show` | `omh model-chains provider set <id> <kind>` for a provider whose kind is wrong or missing |
+| Coding tools for handed-off work, only when `codex` or `claude` is on PATH | whether the user wants OMH to configure the detected coding CLIs | for yes, step 5 of the [Model-Chain Interview](#model-chain-interview-run-right-after-setup): `omh coding category-maestro show`, then `set`; for no, nothing |
+
+The per-category model chains are the last choice. Ask them after Step 2, once
+doctor shows no blocking check, through the
+[Model-Chain Interview](#model-chain-interview-run-right-after-setup).
+
+The agent path does not ask one wizard question, because no command records
+the answer: whether the user holds a paid Claude Code subscription (asked only
+when `claude` is on PATH). Its default is no subscription recorded. That only
+leaves the Claude Code `--model` preference for handed-off work unset, so the
+CLI keeps its own default; Hermes' models do not change. Tell the user this.
+If they hold one, they can answer later by running `omh setup --interactive`
+in a real terminal.
+
+If no compatible candidate is confirmed, setup makes no model-config write,
+records `status: defaulted`, and keeps the native default model of Hermes or the
+selected external owner. A person at a real terminal can run
+`omh setup --model-setup --interactive` instead; it asks these questions on
+screen.
+
+Expected local result (for project scope, read `<repository root>/.omh` and
+`<repository root>/.hermes` for `~/.omh` and `~/.hermes`):
 
 - generated skills are installed under `~/.omh/skills`;
 - Hermes config includes that directory in `skills.external_dirs`;
@@ -145,6 +277,8 @@ Expected local result:
 ```sh
 omh doctor
 ```
+
+For project scope: `omh --scope project doctor`.
 
 Report:
 
@@ -192,8 +326,8 @@ Use the owning manager directly only as a reported repair fallback:
 | Homebrew | `brew upgrade rlaope/tap/omh` | `brew uninstall omh` |
 | Bun | `bun update -g --latest oh-my-hermes` | `bun remove -g oh-my-hermes` |
 | npm | `npm update -g oh-my-hermes` | `npm uninstall -g oh-my-hermes` |
-| pip (repo link) | `pip install --upgrade "git+https://github.com/rlaope/oh-my-hermes"` | `pip uninstall oh-my-hermes` |
-| uv tool (repo link) | `uv tool upgrade oh-my-hermes` | `uv tool uninstall oh-my-hermes` |
+| uv tool (repo link) | `uv tool install --force "git+https://github.com/rlaope/oh-my-hermes@<new-ref>"` | `uv tool uninstall oh-my-hermes` |
+| pip in a venv (repo link) | `python3 -m pip install --upgrade "git+https://github.com/rlaope/oh-my-hermes@<new-ref>"` | `python3 -m pip uninstall oh-my-hermes` |
 
 Removing the command package preserves OMH state. For full cleanup, preview
 `omh uninstall --all --dry-run --json` from the primary home, inspect retained
@@ -297,28 +431,47 @@ chat session selected OMH unless that chat response is observed separately.
 
 ## Optional Hermes Skill Tap
 
-If the target Hermes environment supports skill taps, this is the native front
-door:
+If the target Hermes environment supports skill taps and the user wants it,
+this is the native front door:
 
 ```sh
 hermes skills tap add rlaope/oh-my-hermes
-hermes skills install rlaope/oh-my-hermes/skills/oh-my-hermes --yes
+hermes skills install rlaope/oh-my-hermes/skills/omh-routing --yes
 ```
+
+Use the full identifier. A short name can resolve to another tap's skill. The
+router skill's directory and its frontmatter name are both `omh-routing`.
+
+The tap is an alternative to `omh setup`, not an addition to it. A tap install
+lands in the Hermes home's own skills directory, which Hermes 0.21.6 and later
+rank above the `skills.external_dirs` entry OMH manages, so on a machine that
+also runs `omh setup` the tap copy hides the managed skill; older hosts refuse
+the shared name as ambiguous instead. Either way the tap copy never receives
+an OMH update. `omh doctor` names such a copy under `identity_conflicts`.
 
 Install direct workflow skills only when the user wants them exposed as explicit
 Hermes skill choices:
 
 ```sh
-hermes skills install deep-interview
-hermes skills install ralplan
-hermes skills install research
-hermes skills install feedback-triage
-hermes skills install ops-review
-hermes skills install code-review
+hermes skills install rlaope/oh-my-hermes/skills/ulw-interview --yes
+hermes skills install rlaope/oh-my-hermes/skills/ulw-plan --yes
+hermes skills install rlaope/oh-my-hermes/skills/ulw-research --yes
+hermes skills install rlaope/oh-my-hermes/skills/omh-feedback-triage --yes
+hermes skills install rlaope/oh-my-hermes/skills/omh-ops-review --yes
+hermes skills install rlaope/oh-my-hermes/skills/omh-code-review --yes
 ```
 
 The tap path and `omh setup` path should converge on the same user experience:
 Hermes can see OMH guidance and the user talks to Hermes.
+
+## Other Agent Hosts
+
+OMH's workflow guidance can also be installed as Agent Skills for Claude Code,
+Codex, Cursor, opencode, OpenClaw, and pi. That is a separate install that
+needs no Hermes and does not replace Step 1. When the user asks for it, follow
+[Agent Skills projection](docs/AGENT-SKILLS.md): clone the repository, check out
+the SHA you resolved, then run that one host's `install.sh` (or `install.ps1` on
+native Windows) from the target project's root.
 
 ## Plugin Bridge And Profile Packs
 
@@ -351,8 +504,8 @@ category written there governs routing, fallback, and HUD labels. Example:
   "schema_version": "mixture_chain_overrides/v1",
   "categories": {
     "quick": [
-      {"model": "kimi-k3-ultrafast", "reasoning_effort": "low"},
-      {"model": "glm-5.2-ultrafast", "reasoning_effort": "low"}
+      {"model": "glm-5.3-flash", "reasoning_effort": "low"},
+      {"model": "kimi-k3.1-pro", "reasoning_effort": "low"}
     ]
   }
 }
@@ -366,10 +519,13 @@ Inspect my bounded local model metadata and help me configure OMH model routing.
 
 Agent/maintainer procedure:
 
-1. Preview bounded local observations and confirm active models with the user.
+1. Show the user the bounded local observations from the Step 1 setup run
+   (`steps.model_activation`) and confirm active models with them.
    A session-history observation is `observed_before`, not active confirmation.
 2. Build a Hermes-native alias preview without applying it. Repeat
-   `--confirm-model` and `--model-alias` as needed:
+   `--confirm-model` and `--model-alias` as needed. For project scope, keep
+   `HERMES_HOME` exported and add `--scope project`, here and on the apply
+   call in step 3; without it the preview runs a full user-scope setup:
 
    ```sh
    omh setup --model-setup \
@@ -377,6 +533,10 @@ Agent/maintainer procedure:
      --model-alias main=google/gemini-3.1-pro \
      --no-interactive --json
    ```
+
+   A target whose provider has no Hermes login is refused with
+   `lacks safe observed provider auth`; the user links that provider with
+   `hermes auth` first, then you repeat the preview.
 
 3. Show the user `steps.model_activation.preview.changes` and
    `config_digest`. After explicit approval, repeat the command with
@@ -394,9 +554,9 @@ Agent/maintainer procedure:
    ```
 
 Hermes aliases are written through Hermes' native `config` commands. Maestro is
-an OMH-local coordinator for prepared external Codex, Claude Code, OMO, OMC,
-OMX, and generic handoffs; it is not an executor and does not own Hermes-native
-work. `pi` and `senpi` are OMO runtime-family hosts. Recommendations are
+an OMH-local coordinator for prepared external coding-CLI handoffs (Codex,
+Claude Code, the supported runtime profiles, and generic executors); it is not
+an executor and does not own Hermes-native work. Recommendations are
 editable editorial metadata, not provider availability or benchmark evidence.
 Qwen, Gemini, or another confirmed compatible model can be selected when a
 shipped recommendation is absent. When none is confirmed, `owner_default`
@@ -415,7 +575,8 @@ the chain interview with the user before reporting the install complete.
 
 `omh model-chains interview` is the human terminal path and refuses non-TTY
 sessions with a scriptable-path message. Agents conduct the same interview in
-conversation:
+conversation. For project scope, put `--scope project` before the subcommand
+of every command below (`omh --scope project model-chains show`):
 
 1. Run `omh model-chains show` and present the current state per category
    (chain order plus origin: `default` or `override`).
@@ -441,12 +602,17 @@ If a chain alias needs a provider-specific wire model, edit the sibling
 `~/.omh/routing/model-providers.json` document:
 
 ```json
-{"schema_version":"model_provider_routes/v1","models":{"glm-5.2-ultrafast":{"provider":"opengateway","model":"z-ai/glm-5.2-ultrafast"}}}
+{"schema_version":"model_provider_routes/v1","models":{"glm-5.3":{"provider":"opengateway","model":"z-ai/glm-5.3"}}}
 ```
 
-Re-run `omh_delegate_route` with `action=status` and report its complete
-alias/provider/model/effort route. Provider and model overrides are atomic;
-never copy credentials into OMH.
+From a shell, run `omh model-chains show --json` and report `routes_status`:
+`absent` means there is no `model-providers.json` and every alias dispatches
+unchanged; `applied` means OMH read the document; an `invalid: ...` value names
+the reason, and the whole document is ignored. No shell command resolves the full route. Inside a Hermes chat,
+Hermes can call its `omh_delegate_route` tool with `action=status` and report
+the complete alias/provider/model/effort route; an agent working from Claude
+Code, Codex, or another shell reports the route as not observed. Provider and
+model overrides are atomic; never copy credentials into OMH.
 
 A user who declines the interview keeps the shipped defaults; record that as
 the observed result instead of skipping the step silently.
