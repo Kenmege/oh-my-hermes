@@ -68,6 +68,7 @@ def _clear_pack_and_route_caches() -> None:
     routing_recommend._recommend_skills_cached.cache_clear()
     routing_chat._route_chat_message_cached.cache_clear()
     awareness._awareness_route_hint_cached.cache_clear()
+    awareness._awareness_context_matches_message_cached.cache_clear()
 
 
 @contextmanager
@@ -264,6 +265,54 @@ class RouteHintTriggerPackTests(TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.strip(), "hinted dispatch")
+
+
+# A Cyrillic phrase: no ASCII token, no shipped cue, so on a later turn only the
+# user pack can arm the gate (#2284, reported with a Russian pack).
+CYRILLIC_PACK_PHRASE = "сделай ревью кода"
+_CYRILLIC_PACK_DOCUMENT = {
+    "schema_version": "trigger_language_pack/v1",
+    "language": "ru",
+    "skills": {PACK_SKILL: [CYRILLIC_PACK_PHRASE]},
+}
+
+
+class LaterTurnUserPackTests(TestCase):
+    """A later turn in a pack's language re-arms the route hint, as its first turn does (#2284)."""
+
+    def _later_turn(self, message: str) -> dict[str, object] | None:
+        from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
+
+        with TemporaryDirectory() as hermes_home:
+            return pre_llm_call(
+                omh_home=os.environ["OMH_HOME"],
+                hermes_home=hermes_home,
+                user_message=message,
+                is_first_turn=False,
+            )
+
+    def test_a_pack_phrase_arms_the_later_turn_gate_and_its_hint(self) -> None:
+        with _omh_home(_CYRILLIC_PACK_DOCUMENT):
+            self.assertTrue(awareness.awareness_context_matches_message(CYRILLIC_PACK_PHRASE))
+            payload = self._later_turn(f"{CYRILLIC_PACK_PHRASE} в этом модуле")
+
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertIn("[OMH Route Hint]", payload["context"])
+        self.assertIn("selected=code-review", payload["context"])
+
+    def test_the_gate_stays_shut_without_the_pack_or_the_phrase(self) -> None:
+        with _omh_home(None):
+            self.assertFalse(awareness.awareness_context_matches_message(CYRILLIC_PACK_PHRASE))
+            self.assertIsNone(self._later_turn(CYRILLIC_PACK_PHRASE))
+        with _omh_home(_CYRILLIC_PACK_DOCUMENT):
+            self.assertFalse(awareness.awareness_context_matches_message("привет, как дела?"))
+            self.assertIsNone(self._later_turn("привет, как дела?"))
+
+    def test_a_host_without_the_router_arms_nothing_from_a_pack(self) -> None:
+        with _omh_home(_CYRILLIC_PACK_DOCUMENT):
+            with patch_modules({"omh.routing.recommend": None}):
+                self.assertFalse(awareness._user_trigger_pack_phrase_said(CYRILLIC_PACK_PHRASE))
 
 
 # The reproduction in #2129 (reported by @fauzibrevy-hub) used an Indonesian

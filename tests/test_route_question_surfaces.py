@@ -52,10 +52,10 @@ from omh.wrapper.route_hints import build_chat_route_hint_payload  # noqa: E402
 
 # A script no shipped trigger pack covers, which is what makes the route
 # undecidable for `no_trigger_coverage` rather than for a scoring tie. The
-# Japanese sentence this suite originally used stopped qualifying when
-# `trigger_packs/ja.json` shipped; `tests/test_candidate_handoff.py` records
+# Japanese and then Russian sentences this suite used stopped qualifying when
+# `trigger_packs/ja.json` and `ru.json` shipped; `tests/test_candidate_handoff.py` records
 # that move at its own case.
-UNDECIDABLE_MESSAGE = "почему сборка падает на main"
+UNDECIDABLE_MESSAGE = "main पर बिल्ड क्यों फेल हो रहा है"
 DECIDABLE_MESSAGE = "why is the build failing on main?"
 
 
@@ -92,7 +92,7 @@ class RouteQuestionOnTheRouteTests(unittest.TestCase):
         same digest: a recorded answer joined to a group of requests rather
         than to the request it answered, and two of them in one session
         overwrote each other's record."""
-        messages = (UNDECIDABLE_MESSAGE, "расскажи про наш проект", "объясни это")
+        messages = (UNDECIDABLE_MESSAGE, "हमारे प्रोजेक्ट के बारे में बताओ", "इसे समझाओ")
         digests = {}
         shortlists = {}
         for message in messages:

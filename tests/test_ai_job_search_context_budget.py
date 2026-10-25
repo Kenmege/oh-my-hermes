@@ -3,8 +3,9 @@
 Baseline: 245d34d7135ba0fba18afbf7f4151d5c4f6a5f37 (integration main).
 Legacy body hashes match main's producer-derived digest fixture after restoring
 only the research lane cardinality; integration-1/merged-measurements.json
-records the combined repeated-byte measurement. The unchanged index, capability
-and registry pins retain their original 85673e100 measurements. Hashes pin existing
+records the combined repeated-byte measurement. The index pin retains its
+original 85673e100 measurement; the capability and registry pins are re-derived
+for the ru trigger pack's sibling-row triggers. Hashes pin existing
 content, not just its size, so removing a safeguard cannot finance this feature.
 """
 from __future__ import annotations
@@ -56,8 +57,11 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
 
     def test_capability_growth_is_one_bounded_row_without_sibling_edits(self) -> None:
         for producer, base, cap, expected_hash, limit in (
-            (skill_capabilities, 522307, FULL_ROW_DELTA_CAP,
-             '774f87898595ab3e55d6e1fc98136afeb6c8b542fdfc943b1c5f917db027982a',
+            # 522307 -> 522352 and the digest re-derived: the ru trigger pack
+            # moves 48 sibling rows' trigger previews, five of them in length (+45, itemized at
+            # FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT); the career row is unchanged.
+            (skill_capabilities, 522352, FULL_ROW_DELTA_CAP,
+             '039b3c46f2b1d590211b224dbf054294096e02fe457c22c4848b2f77af3bdc30',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -86,9 +90,11 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         self.assertEqual(len(added[0].encode()), 227)
         # Remove only the new row and the explicit operator membership token.
         legacy = [line.replace(', `ai-job-search`', '') for line in lines if line not in added]
-        self.assertEqual(_digest(legacy), '6c130e8ecad1e2ea6fada96a8f3b555b3b80f40d63ec64ea6872c1c49bf941e4')
+        # Re-derived for the ru trigger pack: `running-work-board` gains
+        # `что сейчас делается` and `dag-ulw` three Cyrillic triggers (+123 bytes).
+        self.assertEqual(_digest(legacy), 'b17809e96f77c59e353c66700f562e2773fdc2a253367c231f11bee17861ef9c')
         baseline = len(''.join(legacy).encode())
-        self.assertEqual(baseline, 32874)
+        self.assertEqual(baseline, 32997)
         self.assertLess(baseline, 33_100)  # The existing content keeps its old gate.
         self.assertLessEqual(len(registry.encode()) - baseline, REGISTRY_DELTA_CAP)
 
@@ -117,7 +123,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
         # Re-derived from both main sources above plus the bounded dag-ulw
         # baseline-verification guidance; only dag-ulw moves versus main.
-        self.assertEqual(_digest(legacy_hashes), '5db03a78a37d515ad0f54df6fd2eab2533b9f80c800aed8619a9debd78bce9b3')
+        # Re-derived for the ru trigger pack: the 49 bodies it covers gain
+        # Cyrillic phrases on their routing-signal line; repeated bytes do not move.
+        self.assertEqual(_digest(legacy_hashes), 'b24e47074ec26c9ac42ab0c3720bcde2922e186a63bf74673714df0db56aa999')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.

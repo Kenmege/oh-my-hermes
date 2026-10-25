@@ -6059,6 +6059,7 @@ def _awareness_context_matches_message_cached(message: str) -> tuple[bool, str]:
         or _spend_awareness_marked(raw_text)
         or _data_share_awareness_marked(raw_text)
         or show_reel_request_admitted(raw_text)
+        or _user_trigger_pack_phrase_said(message)
     )
     # `degraded[0][1]` is lossless here because the `_localized_routing_text`
     # call above is the sole guarded call in this function body, so the
@@ -8565,6 +8566,30 @@ def _user_trigger_pack_route_decision(message: str) -> dict[str, str]:
         except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
             return {}
     return user_trigger_pack_route_hint(message)
+
+
+def _user_trigger_pack_phrase_said(message: str) -> bool:
+    """Whether a phrase from a trigger language pack in this OMH home is in the message (#2284).
+
+    The markers `awareness_context_matches_message` reads are shipped cues and
+    ASCII tokens, so a later turn written wholly in a pack's language (Cyrillic,
+    say) armed nothing and its route hint was never recomputed, while the same
+    message on a first turn was hinted. This asks the router's own phrase match,
+    the question `user_trigger_pack_route_hint` starts from, so the gate never
+    admits a message the hint bridge would not look at. With no user pack
+    installed the router answers from a cached empty tuple.
+
+    Deferred and doubly guarded for the reasons `_user_trigger_pack_route_decision`
+    gives; a standalone plugin host has no router to ask and arms nothing here.
+    """
+    try:
+        from ...routing.recommend import user_trigger_pack_phrase_match
+    except ImportError:
+        try:
+            from omh.routing.recommend import user_trigger_pack_phrase_match
+        except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
+            return False
+    return bool(user_trigger_pack_phrase_match(message)[0])
 
 
 def _user_trigger_pack_route_hint(message: str) -> dict[str, object]:

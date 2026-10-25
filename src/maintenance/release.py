@@ -830,7 +830,13 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69186
 # (+3072) for career discovery/drafting/interviews/evidenced outcomes. Retire
 # the old 22 unused characters, not carry them forward. Existing rows are
 # byte-stable and test_ai_job_search_context_budget pins them and this delta.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525379
+# 525379 -> 525424: the shipped `ru` (Russian) trigger language pack. Its
+# Cyrillic phrases merge into rows' trigger previews: `dag-ulw` shows
+# `даг ультраворк` and `+4 more triggers` (+38), `running-work-board`
+# trades its eighth trigger for `+7 more triggers` (+4), and three rows'
+# `+N more` counts widen a digit (+3). No other row field moved.
+# Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525424
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
