@@ -111,6 +111,17 @@ All notable changes will be documented here.
   the choices as flags instead. A closed stdin no longer crashes bare `omh`,
   `omh theme`, `omh model-chains` or `omh model-chains interview` either.
 
+- **The OMH TUI no longer opens a blank band above the running calls.** On
+  the bottom rows, a frame that got shorter (an approval or other question
+  answered mid-turn, a picker or menu closing, live thinking folding while
+  details are shown) turned the freed rows into blank rows at the top of the
+  live region. The running calls, the working row and its tip jumped down,
+  leaving up to a third of the screen blank between the last settled call and
+  the running ones until more output filled it. The freed rows now go under
+  the live block and above the working row. The running calls stay right under
+  the transcript they continue, the working row and its tip stay on the
+  composer, and the composer still holds its row. Output arriving later fills
+  the blank rows downward, as printed output would.
 
 - **`omh setup` records the release that is installed.** After the
   documented stable curl install, a plain `omh setup` recorded
