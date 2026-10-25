@@ -33,7 +33,7 @@ from omh.coding.executor_readiness import (
     executor_readiness_contract,
 )
 from omh.coding.fanout_dispatch import PI_FAMILY_HOST_CANDIDATES
-from omh.plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOST
 
 
 def _fake_binary(directory: str, name: str, version: str) -> Path:

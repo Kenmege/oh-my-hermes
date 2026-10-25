@@ -13,7 +13,7 @@ from omh.coding.unit_telemetry import (  # noqa: E402
     UNIT_TELEMETRY_VALUE_KEYS,
     parse_unit_telemetry,
 )
-from omh.plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOST
 
 CODEX_TOKEN_COUNT_EVENT = {
     "id": "7",

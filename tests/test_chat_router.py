@@ -33,7 +33,7 @@ from omh.routing.route_plan import public_workflow_identifier
 from omh.plugin_bundle.omh.awareness import awareness_route_hint, awareness_route_hint_context
 from omh.skills.catalog import primary_harness_for_skill, routable_definitions
 from _route_owner import dispatched_or_asked, route_owner, route_owner_harness, shortlist_skills
-from omh.plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST, RUNTIME_USER_PHRASE
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOST, RUNTIME_USER_PHRASE
 
 
 class AiJobSearchActorRoutingTests(unittest.TestCase):

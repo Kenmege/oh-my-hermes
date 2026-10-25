@@ -32,7 +32,7 @@ from typing import Callable, Final, Mapping
 
 from ..system.local_store import utc_now
 from ..system.metadata_safety import require_opaque_metadata_ref
-from ..plugin_bundle.omh.pi_family_names import (
+from .pi_family_interop import (
     OPENCODE_RUNTIME_CONFIG_RELATIVE,
     PI_DISTRIBUTION_HOME,
     PI_DISTRIBUTION_HOST,

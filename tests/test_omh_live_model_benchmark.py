@@ -27,7 +27,7 @@ sys.path.insert(0, str(BASE / "lib"))
 
 from runner import _snapshot  # noqa: E402
 from validation import changed_paths  # noqa: E402
-from omh.plugin_bundle.omh.pi_family_names import RUNTIME_SHORT_NAME
+from omh.coding.pi_family_interop import RUNTIME_SHORT_NAME
 
 
 def _load_omh_live():

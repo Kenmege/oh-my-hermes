@@ -18,7 +18,7 @@ from omh.routing.owner_preference import (  # noqa: E402
     record_accepted_explicit_choice,
     write_owner_preference,
 )
-from omh.plugin_bundle.omh.pi_family_names import RUNTIME_CONFIG_FILES, RUNTIME_HOME
+from omh.coding.pi_family_interop import RUNTIME_CONFIG_FILES, RUNTIME_HOME
 
 
 ROUTE_FAMILY = "ulw-coding-delivery"

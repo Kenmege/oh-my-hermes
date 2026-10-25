@@ -12,7 +12,7 @@ load_local_package()
 from omh.coding.maestro import ExternalHandoffRequest, HermesNativeSelectionError, build_external_handoff  # noqa: E402
 from omh.coding.model_discovery import discover_local_models  # noqa: E402
 from omh.coding.model_recommendations import resolve_model_recommendation  # noqa: E402
-from omh.plugin_bundle.omh.pi_family_names import RUNTIME_HOME
+from omh.coding.pi_family_interop import RUNTIME_HOME
 
 
 class ModelRoutingJourneyTests(unittest.TestCase):

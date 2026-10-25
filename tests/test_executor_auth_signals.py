@@ -22,7 +22,7 @@ from omh.coding.executor_readiness import (  # noqa: E402
 )
 from omh.system.local_store import atomic_write_json, utc_now  # noqa: E402
 from omh.system.paths import OmhPaths  # noqa: E402
-from omh.plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOME
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOME
 
 
 class AuthSignalMarkerTests(unittest.TestCase):

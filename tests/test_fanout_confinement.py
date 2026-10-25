@@ -36,7 +36,7 @@ from omh.coding.fanout_dispatch import (  # noqa: E402
     signal_safe_unit_runner,
 )
 from omh.system.paths import OmhPaths  # noqa: E402
-from omh.plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_AGENT_DIR_ENV, PI_DISTRIBUTION_BRAND_ENV, PI_DISTRIBUTION_HOME, PI_DISTRIBUTION_HOST, RUNTIME_HOME, RUNTIME_SHORT_NAME
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_AGENT_DIR_ENV, PI_DISTRIBUTION_BRAND_ENV, PI_DISTRIBUTION_HOME, PI_DISTRIBUTION_HOST, RUNTIME_HOME, RUNTIME_SHORT_NAME
 import json
 
 

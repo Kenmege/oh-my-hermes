@@ -8,7 +8,7 @@ from typing import Any
 from ..local_store import atomic_write_json, ensure_dir, read_json_object, read_json_object_result, utc_now
 from ..paths import OmhPaths
 from ..quality.reported_rate import reported_rate
-from ..plugin_bundle.omh.pi_family_names import RUNTIME_SHORT_NAME
+from ..coding.pi_family_interop import RUNTIME_SHORT_NAME
 from ..routing.action_copy import next_action_label
 
 

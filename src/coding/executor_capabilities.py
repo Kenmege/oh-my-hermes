@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Final, Mapping
 
-from ..plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST
+from .pi_family_interop import PI_DISTRIBUTION_HOST
 from .executor_capability_snapshots import (
     EXECUTOR_CAPABILITY_SNAPSHOT_SCHEMA_VERSION,
     prepared_executor_capability_snapshot,

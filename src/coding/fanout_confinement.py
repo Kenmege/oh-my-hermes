@@ -14,7 +14,7 @@ import subprocess
 from typing import cast
 from uuid import uuid4
 
-from ..plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_AGENT_DIR_ENV, PI_DISTRIBUTION_HOME, PI_DISTRIBUTION_HOST
+from .pi_family_interop import PI_DISTRIBUTION_AGENT_DIR_ENV, PI_DISTRIBUTION_HOME, PI_DISTRIBUTION_HOST
 from ..quality.cross_harness_adapter_backend import trusted_bwrap
 from ..quality.cross_harness_adapter_sandbox import (
     ChildContext,

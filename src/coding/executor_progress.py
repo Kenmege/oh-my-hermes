@@ -10,7 +10,7 @@ from typing import Any
 
 from ..local_store import atomic_write_json, ensure_dir, ensure_file, read_json_object, read_jsonl_objects, utc_now
 from ..paths import OmhPaths
-from ..plugin_bundle.omh.pi_family_names import LEGACY_RUNTIME_PROFILE_ID, PI_DISTRIBUTION_HOST
+from .pi_family_interop import LEGACY_RUNTIME_PROFILE_ID, PI_DISTRIBUTION_HOST
 from ..plugin_bundle.omh.run_records import (
     DELEGATION_FILE,
     EVENTS_FILE,

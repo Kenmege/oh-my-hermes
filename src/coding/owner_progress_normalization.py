@@ -109,7 +109,7 @@ from __future__ import annotations
 
 from typing import Any, Final, NamedTuple
 
-from ..plugin_bundle.omh.pi_family_names import LEGACY_RUNTIME_PROFILE_ID, PI_DISTRIBUTION_HOST
+from .pi_family_interop import LEGACY_RUNTIME_PROFILE_ID, PI_DISTRIBUTION_HOST
 from ..plugin_bundle.omh.run_records import EXECUTOR_PROGRESS_EVENT_TYPES, UNMAPPED_SOURCE_EVENT
 from .executors import EXECUTOR_PROFILES
 

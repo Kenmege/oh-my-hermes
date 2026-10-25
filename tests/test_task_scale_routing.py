@@ -33,7 +33,7 @@ from omh.coding.model_routing import (
     merged_category_chain,
     resolve_model_route,
 )
-from omh.plugin_bundle.omh.pi_family_names import OPENCODE_RUNTIME_CONFIG_FILE
+from omh.coding.pi_family_interop import OPENCODE_RUNTIME_CONFIG_FILE
 
 _RUNTIME_CONFIG = {
     "categories": {

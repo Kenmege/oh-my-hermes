@@ -36,7 +36,7 @@ from omh.routing.owner_preference import (
     record_accepted_explicit_choice,
 )
 from omh.wrapper.contract import build_chat_interaction_payload
-from omh.plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST, RUNTIME_USER_PHRASE
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOST, RUNTIME_USER_PHRASE
 
 
 # One message per coding-delivery route-hint site. Direct `ultraprocess`, broad

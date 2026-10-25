@@ -6,7 +6,7 @@ from functools import lru_cache
 import re
 
 from ..plugin_bundle.omh.data_share_cues import DATA_SHARE_REVIEW_KOREAN_PHRASES, data_share_request_admitted
-from ..plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST, RUNTIME_SHORT_NAME, RUNTIME_USER_PHRASE
+from ..coding.pi_family_interop import PI_DISTRIBUTION_HOST, RUNTIME_SHORT_NAME, RUNTIME_USER_PHRASE
 from ..plugin_bundle.omh.request_lead import after_courtesy
 from ..plugin_bundle.omh.spend_signals import SPEND_GATE_KOREAN_PHRASES, spend_request_clause
 from ..skills.catalog import SkillDefinition, builtin_definitions, routable_definitions

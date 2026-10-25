@@ -42,7 +42,7 @@ from omh.wrapper.localized_copy import detect_copy_locale
 from omh.wrapper.native_commands import build_native_command_surface, render_native_command_response
 from omh.wrapper.route_hints import build_chat_route_hint_payload
 from omh.wrapper.orchestration_guidance import build_omh_orchestration_guidance
-from omh.plugin_bundle.omh.pi_family_names import RUNTIME_CONFIG_FILES, RUNTIME_HOME
+from omh.coding.pi_family_interop import RUNTIME_CONFIG_FILES, RUNTIME_HOME
 
 
 def _canonical_bytes(value: object) -> bytes:

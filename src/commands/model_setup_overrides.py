@@ -10,7 +10,7 @@ from ..coding.model_recommendations import (
     load_recommendation_overrides,
 )
 from ..coding.model_routing import MODEL_CATEGORIES, model_family
-from ..plugin_bundle.omh.pi_family_names import RUNTIME_CONFIG_FILES, RUNTIME_HOME
+from ..coding.pi_family_interop import RUNTIME_CONFIG_FILES, RUNTIME_HOME
 
 
 _JSONC_LINE_COMMENT: Final = re.compile(r"^\s*//.*$", re.MULTILINE)

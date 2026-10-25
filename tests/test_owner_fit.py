@@ -81,7 +81,7 @@ from omh.coding.pre_handoff_readiness import (  # noqa: E402
 from omh.skills.catalog import routable_skill_names  # noqa: E402
 from omh.system.local_store import utc_now  # noqa: E402
 from omh.system.paths import OmhPaths  # noqa: E402
-from omh.plugin_bundle.omh.pi_family_names import RUNTIME_SHORT_NAME
+from omh.coding.pi_family_interop import RUNTIME_SHORT_NAME
 
 
 OBSERVED_AT = "2026-01-01T00:00:00Z"

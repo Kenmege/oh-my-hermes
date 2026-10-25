@@ -8,7 +8,7 @@ from typing import Final
 from ..system.local_store import read_json_object_result, utc_now
 from ..system.paths import OmhPaths
 from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
-from ..plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOME
+from .pi_family_interop import PI_DISTRIBUTION_HOME
 
 EXECUTOR_AUTH_SIGNALS_SCHEMA_VERSION: Final[str] = "executor_auth_signals/v1"
 

@@ -24,7 +24,7 @@ from omh.coding.model_inventory import (  # noqa: E402
     inventory_model_catalog,
     local_model_inventory,
 )
-from omh.plugin_bundle.omh.pi_family_names import OPENCODE_RUNTIME_CONFIG_FILE, PI_DISTRIBUTION_HOME, PI_DISTRIBUTION_HOST, RUNTIME_CONFIG_FILES, RUNTIME_HOME
+from omh.coding.pi_family_interop import OPENCODE_RUNTIME_CONFIG_FILE, PI_DISTRIBUTION_HOME, PI_DISTRIBUTION_HOST, RUNTIME_CONFIG_FILES, RUNTIME_HOME
 from omh.coding.model_discovery_adapters import RUNTIME_CONFIG_SOURCE
 
 _SECRET = "sk-SECRET-VALUE-12345"

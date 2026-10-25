@@ -47,7 +47,7 @@ from omh.plugin_bundle.omh.awareness import (  # noqa: E402
     awareness_primer_payload,
     workflow_context_cards,
 )
-from omh.plugin_bundle.omh.pi_family_names import RUNTIME_HOME
+from omh.coding.pi_family_interop import RUNTIME_HOME
 
 _MESSAGE = "fix the broken login flow in src/auth.py and add a regression test"
 

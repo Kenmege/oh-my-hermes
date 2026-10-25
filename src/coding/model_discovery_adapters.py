@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from ..plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST
+from .pi_family_interop import PI_DISTRIBUTION_HOST
 from ..system.metadata_safety import require_opaque_metadata_ref
 
 # The pi-family runtime's own config: the one source whose models are

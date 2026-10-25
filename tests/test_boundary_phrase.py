@@ -9,7 +9,7 @@ from _local_package import load_local_package
 load_local_package()
 
 from omh.plugin_bundle.omh import awareness, boundary_phrase
-from omh.plugin_bundle.omh.pi_family_names import RUNTIME_USER_PHRASE
+from omh.coding.pi_family_interop import RUNTIME_USER_PHRASE
 from omh.routing import executor_cues
 
 PHRASES = ("pi", "claude-code", "codex", RUNTIME_USER_PHRASE, "opencode")

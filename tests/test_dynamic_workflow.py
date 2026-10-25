@@ -27,7 +27,7 @@ from omh.coding.executor_capability_snapshots import (
     build_executor_capability_snapshot,
     write_executor_capability_snapshot,
 )
-from omh.plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOST
 
 
 class DynamicWorkflowTests(unittest.TestCase):

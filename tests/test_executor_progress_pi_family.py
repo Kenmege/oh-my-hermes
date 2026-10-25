@@ -25,7 +25,7 @@ from omh.executor_progress import (
     write_progress_binding,
 )
 from omh.paths import resolve_paths
-from omh.plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOST
 
 
 class OmoRuntimeProgressProfileTests(unittest.TestCase):

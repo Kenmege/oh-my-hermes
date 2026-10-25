@@ -90,7 +90,7 @@ from ..system.tracker_content import normalize_tracker_content
 from ..isolation import build_isolation_plan
 from ..memory import validate_handoff_context_blocked, validate_handoff_context_pack, validate_project_memory_recall_pack
 from ..workflows.role_context_packs import build_role_context_pack, pin_role_context_pack
-from ..plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST, RUNTIME_USER_PHRASE
+from .pi_family_interop import PI_DISTRIBUTION_HOST, RUNTIME_USER_PHRASE
 from ..routing.coding_route_actions import named_executor_owners
 from ..routing.executor_cues import contains_boundary_phrase
 from ..routing.localization import normalized_phrase

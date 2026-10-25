@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 
-from ..plugin_bundle.omh.pi_family_names import LEGACY_RUNTIME_PROFILE_ID
+from .pi_family_interop import LEGACY_RUNTIME_PROFILE_ID
 
 
 EXECUTOR_HANDOFF_SCHEMA_VERSION = "coding_executor_handoff/v1"

@@ -32,7 +32,7 @@ from .localization import normalized_phrase, phrase_is_spoken, routing_terms, ro
 from .materials_cues import OFFICE_FILE_MATERIAL_PHRASES
 from ..plugin_bundle.omh.dag_ulw_cues import DAG_ULW, asks_about_dag_ulw, dag_ulw_control, declines_dag_ulw, invokes_dag_ulw
 from ..plugin_bundle.omh.invocation_cues import invoked_instruction
-from ..plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST, RUNTIME_SHORT_NAME
+from ..coding.pi_family_interop import PI_DISTRIBUTION_HOST, RUNTIME_SHORT_NAME
 from ..plugin_bundle.omh.name_report_cues import about_the_skill
 from ..plugin_bundle.omh.request_lead import after_courtesy
 from ..plugin_bundle.omh.spend_signals import (

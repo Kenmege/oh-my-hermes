@@ -20,7 +20,7 @@ from ..coding.routing_observation import (
     validate_routing_observation,
 )
 from ..coding.status_board import model_label_for
-from ..plugin_bundle.omh.pi_family_names import RUNTIME_USER_NAMES
+from ..coding.pi_family_interop import RUNTIME_USER_NAMES
 from ..system.display_width import display_width, pad_to_width
 from ..evidence import status_label
 from .message_gate import build_message_gate, fence_marker_for, message_gate_body

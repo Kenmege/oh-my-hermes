@@ -12,7 +12,7 @@ from omh.coding.coding_delegation import (  # noqa: E402
     _coding_status_request_applies,
     build_coding_delegation_payload,
 )
-from omh.plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST, RUNTIME_HOME, RUNTIME_USER_PHRASE
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOST, RUNTIME_HOME, RUNTIME_USER_PHRASE
 
 
 class CodingStatusAgentTermTests(unittest.TestCase):

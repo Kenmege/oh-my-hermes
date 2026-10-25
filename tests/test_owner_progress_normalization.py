@@ -80,7 +80,7 @@ from omh.owner_progress_normalization import (  # noqa: E402
     source_event_evidence_tier,
 )
 from omh.system.paths import OmhPaths  # noqa: E402
-from omh.plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOST
 
 _FANOUT_ID = "fanout-0123456789ab"
 _NOW = "2026-08-06T12:00:00Z"

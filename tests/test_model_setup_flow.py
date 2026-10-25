@@ -15,7 +15,7 @@ from omh.coding.hermes_model_config import (
 from omh.commands import setup as setup_commands
 from omh.commands.main import build_parser
 from omh.commands.model_setup_projections import provider_next_actions
-from omh.plugin_bundle.omh.pi_family_names import RUNTIME_CONFIG_FILES, RUNTIME_HOME
+from omh.coding.pi_family_interop import RUNTIME_CONFIG_FILES, RUNTIME_HOME
 from omh.coding.model_discovery_adapters import RUNTIME_CONFIG_SOURCE
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final, Sequence
 
-from ..plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST
+from .pi_family_interop import PI_DISTRIBUTION_HOST
 from .dynamic_workflow_contracts import PREPARED_NOT_OBSERVED
 from .executor_capability_snapshots import KNOWN_CAPABILITY_NAMES, build_executor_capability_snapshot
 

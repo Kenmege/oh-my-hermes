@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from omh.plugin_bundle.omh import runtime_paths
-from omh.plugin_bundle.omh.pi_family_names import RUNTIME_HOME
+from omh.coding.pi_family_interop import RUNTIME_HOME
 from omh.plugin_bundle.omh.run_records import EVENTS_FILE, EXTERNAL_EFFECT_RECEIPT_STORE_NAME
 
 import os

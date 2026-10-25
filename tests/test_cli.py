@@ -45,7 +45,7 @@ from omh.wrapper_sessions import (
     record_plan_decision,
     select_wrapper_session_executor,
 )
-from omh.plugin_bundle.omh.pi_family_names import RUNTIME_CONFIG_FILES, RUNTIME_HOME
+from omh.coding.pi_family_interop import RUNTIME_CONFIG_FILES, RUNTIME_HOME
 
 
 # Fake `_detect_external_cli_profiles` result for setup-wizard tests that

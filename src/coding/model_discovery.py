@@ -10,7 +10,7 @@ import re
 import time
 from typing import Final, Iterator
 
-from ..plugin_bundle.omh.pi_family_names import (
+from .pi_family_interop import (
     PI_DISTRIBUTION_HOME,
     PI_DISTRIBUTION_HOST,
     RUNTIME_CONFIG_FILES,

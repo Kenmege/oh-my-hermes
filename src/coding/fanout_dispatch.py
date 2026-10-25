@@ -224,7 +224,7 @@ from .fanout_unit_results import (
     read_unit_result_input,
 )
 from .unit_telemetry import native_unit_telemetry, parse_unit_telemetry
-from ..plugin_bundle.omh.pi_family_names import (
+from .pi_family_interop import (
     PI_DISTRIBUTION_AGENT_DIR_ENV,
     PI_DISTRIBUTION_BRAND_ENV,
     PI_DISTRIBUTION_HOST,
