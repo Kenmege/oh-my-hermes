@@ -3224,7 +3224,7 @@ def _noninteractive_rerun_command(argv: list[str]) -> str:
 
 # Model-step statuses that mean the step could not run at all. A missing
 # prerequisite maps to 3; a Hermes that is there but failed maps to 1.
-_MODEL_STEP_NOT_RUN_STATUSES = frozenset({"hermes_unavailable", "hermes_config_missing"})
+_MODEL_STEP_NOT_RUN_STATUSES = frozenset({"hermes_unavailable", "hermes_config_missing", "hermes_config_unreadable"})
 _MODEL_STEP_FAILED_STATUSES = frozenset({"hermes_command_failed"})
 
 
@@ -3240,8 +3240,9 @@ def _setup_exit_code(payload: Any) -> int:
 
     3 when the install steps finished (or, on a dry run, were previewed) but
     the requested model step could not run: no `hermes` executable was found
-    (`hermes_unavailable`), or Hermes' config file could not be read
-    (`hermes_config_missing`), as `steps.model_activation.status`. Not 0,
+    (`hermes_unavailable`), or Hermes' config file does not exist
+    (`hermes_config_missing`) or exists but cannot be read
+    (`hermes_config_unreadable`), as `steps.model_activation.status`. Not 0,
     because a wrapper reading only the status would be told the models were
     set up or previewed when nothing was inspected; not 1, because nothing
     OMH installed failed and the same command succeeds once the prerequisite

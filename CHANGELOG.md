@@ -8,13 +8,17 @@ All notable changes will be documented here.
   step reports a broken Hermes instead of a traceback (#2299).** With
   `--model-setup --apply-model-config --model-config-digest D`, a dry run ran
   `hermes config set model.aliases.*` and wrote the alias while the payload
-  said `dry_run: true`. It now runs no mutating Hermes command and reports
-  `apply.status: "dry_run"` with the exact commands it would run. When
-  Hermes' `config.yaml` is missing or unreadable (a dry run on a fresh home,
-  or `--skip-apply`), the step reports `status: "hermes_config_missing"` with
-  the path and a next action and setup exits 3; when a `hermes` command
-  exits nonzero or times out, it reports `status: "hermes_command_failed"`
-  and exits 1. Both used to stop on a `HermesCommandError` traceback. The
+  said `dry_run: true`. It now runs no mutating Hermes command, still checks
+  the digest, and reports `apply.status: "dry_run"` with the exact commands
+  it would run; the human summary prints each as a "would run" line, and the
+  interactive question asks whether to list them rather than to apply. When
+  Hermes' `config.yaml` does not exist (a dry run on a fresh home, or
+  `--skip-apply`), the step reports `status: "hermes_config_missing"`; when
+  it exists but cannot be read, `status: "hermes_config_unreadable"` with a
+  next action to fix its permissions. Either way setup exits 3. When a
+  `hermes` command exits nonzero or times out, it reports
+  `status: "hermes_command_failed"` and exits 1. All of these used to stop on
+  a `HermesCommandError` traceback. The
   setup JSON `ok` and the recorded `last_setup.ok` now follow the exit code,
   so a model step that could not run no longer reads as success.
 

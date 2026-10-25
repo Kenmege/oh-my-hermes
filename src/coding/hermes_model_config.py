@@ -55,11 +55,17 @@ class HermesCommandError(HermesModelConfigError):
 
 
 class HermesConfigUnreadableError(HermesCommandError):
-    """Raised when the config file Hermes names cannot be read (missing or unreadable)."""
+    """Raised when the config file Hermes names cannot be read.
 
-    def __init__(self, config_path: Path) -> None:
+    `missing` is True only when the file does not exist; a file that exists
+    but cannot be read (permissions, a directory in its place) is not
+    something a later setup run creates.
+    """
+
+    def __init__(self, config_path: Path, *, missing: bool) -> None:
         super().__init__(f"cannot read Hermes config at {config_path}")
         self.config_path = config_path
+        self.missing = missing
 
 
 class HermesUnavailableError(HermesCommandError):
@@ -453,8 +459,10 @@ def _optional_json_mapping(
 def _config_digest(path: Path) -> str:
     try:
         return sha256(path.read_bytes()).hexdigest()
+    except FileNotFoundError as exc:
+        raise HermesConfigUnreadableError(path, missing=True) from exc
     except OSError as exc:
-        raise HermesConfigUnreadableError(path) from exc
+        raise HermesConfigUnreadableError(path, missing=False) from exc
 
 
 def _auth_provider_ids(output: str) -> set[str]:

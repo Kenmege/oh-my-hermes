@@ -16,6 +16,7 @@ from omh.coding.hermes_model_config import (
     ProviderPresence,
 )
 from omh.commands import setup as setup_commands
+from omh.commands.language import tr
 from omh.commands.main import build_parser
 from omh.commands.model_setup_projections import provider_next_actions
 
@@ -1017,6 +1018,122 @@ class ModelSetupFlowTests(unittest.TestCase):
                     self.assertIn("Model activation status: hermes_unavailable", stdout)
                     self.assertIn("rerun `omh setup --model-setup`", stdout)
                     self.assertNotIn("owner default remains active", stdout)
+
+    def _recording_environment(self, root: Path, target: Path) -> tuple[dict[str, str], Path]:
+        bin_dir, call_log = self._recording_hermes(root)
+        environment = {
+            "PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
+            "HERMES_HOME": str(target),
+            "HERMES_CALL_LOG": str(call_log),
+        }
+        return environment, call_log
+
+    @staticmethod
+    def _mutating_calls(call_log: Path) -> list[list[str]]:
+        if not call_log.exists():
+            return []
+        calls = [json.loads(line)["args"] for line in call_log.read_text(encoding="utf-8").splitlines()]
+        return [call for call in calls if call[:2] in (["config", "set"], ["config", "unset"])]
+
+    @unittest.skipIf(os.name == "nt", "chmod 000 does not make a file unreadable on Windows")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root reads a mode-000 file")
+    def test_an_unreadable_config_is_not_reported_as_missing(self) -> None:
+        # Given: one home with no config.yaml, one whose config.yaml exists but cannot be read.
+        for case in ("missing", "unreadable"):
+            with self.subTest(case=case), TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                target = root / ".hermes"
+                target.mkdir()
+                if case == "unreadable":
+                    config = target / "config.yaml"
+                    config.write_text("{}\n", encoding="utf-8")
+                    # Unlinking needs the directory's permissions, not the file's,
+                    # so the temporary directory still cleans up.
+                    config.chmod(0)
+                environment, _call_log = self._recording_environment(root, target)
+                argv = ["--omh-home", str(root / ".omh"), "--hermes-home", str(target), "setup",
+                        "--dry-run", "--skip-apply", "--no-menubar", "--model-setup", "--no-interactive"]
+                with patch.dict(os.environ, environment), patch.object(
+                    setup_commands,
+                    "discover_local_models",
+                    return_value=_discovery([]),
+                ):
+                    # When: a dry run reaches the model step.
+                    status, stdout, stderr = run_cli(argv + ["--json"], output_json=False)
+                    human_status, human_stdout, _ = run_cli(argv, output_json=False)
+
+                # Then: only a file that is absent is described as one a real setup creates.
+                self.assertEqual((status, stderr, human_status), (3, "", 3))
+                activation = json.loads(stdout)["steps"]["model_activation"]
+                if case == "missing":
+                    self.assertEqual(activation["status"], "hermes_config_missing")
+                    self.assertEqual(activation["next_action"], "rerun_without_dry_run")
+                    self.assertIn("A real `omh setup` creates that file", human_stdout)
+                else:
+                    self.assertEqual(activation["status"], "hermes_config_unreadable")
+                    self.assertEqual(activation["next_action"], "fix_hermes_config_permissions_then_rerun")
+                    self.assertIn("exists but could not be read", human_stdout)
+                    self.assertNotIn("A real `omh setup` creates that file", human_stdout)
+
+    @unittest.skipIf(os.name == "nt", "the stub is a shebang script resolved as `hermes` on PATH")
+    def test_dry_run_with_a_wrong_digest_is_refused_with_the_adapter_message(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            target = root / ".hermes"
+            target.mkdir()
+            (target / "config.yaml").write_text("{}\n", encoding="utf-8")
+            environment, call_log = self._recording_environment(root, target)
+            with patch.dict(os.environ, environment), patch.object(
+                setup_commands,
+                "discover_local_models",
+                return_value=_discovery([]),
+            ):
+                status, _stdout, stderr = run_cli(
+                    ["--omh-home", str(root / ".omh"), "--hermes-home", str(target), "setup", "--dry-run",
+                     "--no-menubar", "--model-setup", "--confirm-model", "openai/gpt-5", "--model-alias",
+                     "main=openai/gpt-5", "--no-interactive", "--json", "--apply-model-config",
+                     "--model-config-digest", "0" * 64],
+                    output_json=False,
+                )
+
+            # The dry run checks the digest the way a real apply would, and still writes nothing.
+            self.assertEqual(status, 2)
+            self.assertIn("expected digest does not match the preview digest", stderr)
+            self.assertEqual(self._mutating_calls(call_log), [])
+
+    @unittest.skipIf(os.name == "nt", "the stub is a shebang script resolved as `hermes` on PATH")
+    def test_interactive_dry_run_apply_lists_the_commands_and_mutates_nothing(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            target = root / ".hermes"
+            target.mkdir()
+            (target / "config.yaml").write_text("{}\n", encoding="utf-8")
+            environment, call_log = self._recording_environment(root, target)
+            prompts: list[str] = []
+            with patch.dict(os.environ, environment), patch.object(
+                setup_commands,
+                "discover_local_models",
+                return_value=_discovery([]),
+            ), patch.object(
+                setup_commands,
+                "_ask_yes_no",
+                side_effect=lambda prompt, *args, **kwargs: prompts.append(prompt) or True,
+            ):
+                # When: a person accepts the apply question during a dry run.
+                status, stdout, stderr = run_cli(
+                    ["--omh-home", str(root / ".omh"), "--hermes-home", str(target), "setup", "--dry-run",
+                     "--no-menubar", "--model-setup", "--confirm-model", "openai/gpt-5", "--model-alias",
+                     "main=openai/gpt-5", "--interactive"],
+                    output_json=False,
+                )
+
+            # Then: the question says nothing is written, the summary lists the
+            # would-run command, and no Hermes call mutated anything.
+            self.assertEqual((status, stderr), (0, ""))
+            self.assertEqual(prompts, [tr("en", "model_setup_apply_prompt_dry_run")])
+            self.assertIn("Dry run, would run: hermes config set model.aliases.main openai/gpt-5", stdout)
+            self.assertEqual(self._mutating_calls(call_log), [])
+            self.assertFalse((target / "model-aliases.json").exists())
 
 
 if __name__ == "__main__":

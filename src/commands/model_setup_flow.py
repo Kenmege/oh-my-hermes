@@ -66,6 +66,18 @@ def model_activation_result(
         )
     except HermesConfigUnreadableError as exc:
         dry_run = bool(getattr(args, "dry_run", False))
+        details = {"config_path": str(exc.config_path), "dry_run": dry_run}
+        if not exc.missing:
+            # The file is there; no setup run creates it, and a dry run is
+            # not why it cannot be read.
+            return _inspection_failed_result(
+                discovery,
+                candidates,
+                status="hermes_config_unreadable",
+                next_action="fix_hermes_config_permissions_then_rerun",
+                cause="Hermes' config file exists but could not be read",
+                details=details,
+            )
         return _inspection_failed_result(
             discovery,
             candidates,
@@ -73,8 +85,8 @@ def model_activation_result(
             # A dry run writes nothing, so on a fresh home the file a real
             # setup creates (step 2 registers OMH in it) does not exist yet.
             next_action="rerun_without_dry_run" if dry_run else "create_hermes_config_then_rerun_model_setup",
-            cause="Hermes' config file could not be read",
-            details={"config_path": str(exc.config_path), "dry_run": dry_run},
+            cause="Hermes' config file does not exist",
+            details=details,
         )
     except HermesCommandError as exc:
         # `hermes config path` exited nonzero, timed out, or a query returned
@@ -179,7 +191,12 @@ def model_activation_result(
         if getattr(args, "interactive", False):
             dependencies.print_model_preview_review(preview, language=language)
             args.apply_model_config = dependencies.ask_yes_no(
-                tr(language, "model_setup_apply_prompt"),
+                # A dry run writes nothing: the question is whether to list
+                # the commands an apply would run, not whether to apply.
+                tr(
+                    language,
+                    "model_setup_apply_prompt_dry_run" if getattr(args, "dry_run", False) else "model_setup_apply_prompt",
+                ),
                 default=False,
                 use_color=dependencies.use_color(),
                 language=language,
