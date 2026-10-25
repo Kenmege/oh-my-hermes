@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from _local_package import load_local_package
+from _module_patch import patch_modules
 
 load_local_package()
 
@@ -66,7 +67,7 @@ class StdinProbeTests(unittest.TestCase):
         with (
             patch.object(stdin_probe, "_IS_WINDOWS", True),
             patch.object(sys, "stdin", _Stream(tty=True, fileno=0)),
-            patch.dict(sys.modules, _windows_modules(0, calls)),
+            patch_modules(_windows_modules(0, calls)),
         ):
             self.assertFalse(stdin_probe.stdin_is_tty())
         self.assertEqual(calls, [4096])
@@ -76,7 +77,7 @@ class StdinProbeTests(unittest.TestCase):
         with (
             patch.object(stdin_probe, "_IS_WINDOWS", True),
             patch.object(sys, "stdin", _Stream(tty=True, fileno=0)),
-            patch.dict(sys.modules, _windows_modules(1, calls)),
+            patch_modules(_windows_modules(1, calls)),
         ):
             self.assertTrue(stdin_probe.stdin_is_tty())
         self.assertEqual(calls, [4096])
@@ -91,7 +92,7 @@ class StdinProbeTests(unittest.TestCase):
         with (
             patch.object(stdin_probe, "_IS_WINDOWS", True),
             patch.object(sys, "stdin", _NoDescriptor()),
-            patch.dict(sys.modules, _windows_modules(0, calls)),
+            patch_modules(_windows_modules(0, calls)),
         ):
             self.assertTrue(stdin_probe.stdin_is_tty())
         self.assertEqual(calls, [])
@@ -101,7 +102,7 @@ class StdinProbeTests(unittest.TestCase):
         with (
             patch.object(stdin_probe, "_IS_WINDOWS", True),
             patch.object(sys, "stdin", _Stream(tty=True)),
-            patch.dict(sys.modules, {"msvcrt": None}),
+            patch_modules({"msvcrt": None}),
         ):
             self.assertFalse(stdin_probe.stdin_is_tty())
 
