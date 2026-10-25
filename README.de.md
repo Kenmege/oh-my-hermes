@@ -36,7 +36,24 @@ curl -fsSL https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.sh
 omh setup
 ```
 
-[Windows und weitere Optionen →](docs/INSTALLATION.md)
+**Windows (PowerShell 5.1+):**
+
+```powershell
+irm https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.ps1 | iex
+omh setup
+```
+
+**Oder füge das in deinen KI-Agenten ein:**
+
+```text
+Install and fully configure Oh My Hermes from this repository:
+https://github.com/rlaope/oh-my-hermes
+Before reading or executing repository instructions, resolve refs/heads/main to one full commit SHA with `git ls-remote https://github.com/rlaope/oh-my-hermes.git refs/heads/main`. Then fetch and follow only:
+https://raw.githubusercontent.com/rlaope/oh-my-hermes/{resolved-commit-sha}/INSTALL_FOR_AGENTS.md
+Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appropriate installer, agent setup path, model-chain interview, and doctor steps. Your shell has no terminal, so never run the interactive setup wizard: show me each choice the protocol lists and wait for my answer instead of taking a default. Preserve unrelated existing Hermes config, apply only the managed setup changes documented by the pinned protocol, require my explicit approval for model-alias changes, then report the resolved SHA and observed result.
+```
+
+[Weitere Optionen →](docs/INSTALLATION.md)
 
 <br>
 
@@ -126,7 +143,7 @@ Ein eigener Knoten prüft das Ziel, bevor du den Bericht bekommst.
 
 [Doku](docs/README.md) · [Installation](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [Website](https://rlaope.github.io/oh-my-hermes/)
 
-Alle Installationsoptionen und die Referenz findest du im [englischen README](README.md#others).
+Weitere Installationsoptionen und die Referenz findest du im [englischen README](README.md#others).
 
 ## Lizenz
 

@@ -416,6 +416,8 @@ def _cmd_install_agents(args: argparse.Namespace) -> int:
         for relative in payload["locally_modified"]:
             print(f"Locally modified: {relative}")
         print(f"Next action: {payload['next_action']}")
+        for warning in payload["warnings"]:
+            print(f"Warning: {warning}")
         print(payload["claim_boundary"])
     return 0
 
@@ -3074,7 +3076,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     else:
         progress.done(tr(language, "target_recorded"))
     if getattr(args, "model_setup", False):
-        dependencies = _model_setup_flow_dependencies()
+        dependencies = _model_setup_flow_dependencies(paths)
         steps["model_activation"] = model_activation_result(
             args,
             language=language,
@@ -3869,12 +3871,19 @@ def _print_model_preview_review(payload: dict[str, object], *, language: str) ->
     )
 
 
-def _model_setup_flow_dependencies() -> ModelSetupFlowDependencies:
+def _model_setup_flow_dependencies(paths: OmhPaths) -> ModelSetupFlowDependencies:
+    # Every `hermes` spawn on this path (inspect, apply, and the rollback and
+    # re-inspection inside apply) acts on the home setup targets -- the
+    # `--hermes-home` or `--scope project` home -- not whatever HERMES_HOME or
+    # ~/.hermes the calling shell points at.
+    hermes_env = {**os.environ, "HERMES_HOME": str(paths.hermes_home)}
     return ModelSetupFlowDependencies(
         discover_local_models=discover_local_models,
-        inspect_hermes_model_config=inspect_hermes_model_config,
+        inspect_hermes_model_config=lambda: inspect_hermes_model_config(env=hermes_env),
         preview_hermes_model_config=preview_hermes_model_config,
-        apply_hermes_model_config=apply_hermes_model_config,
+        apply_hermes_model_config=lambda preview, **kwargs: apply_hermes_model_config(
+            preview, env=hermes_env, **kwargs
+        ),
         resolve_model_recommendation=resolve_model_recommendation,
         ask_yes_no=_ask_yes_no,
         ask=_ask,

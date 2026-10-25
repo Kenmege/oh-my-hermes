@@ -257,6 +257,12 @@ window.OMH_I18N = {
       ja: "Homebrew、Bun、npm のパッケージマネージャー経由のインストールは v1.0.6 から公開されています。",
       zh: "Homebrew、Bun 与 npm 包管理器安装方式已随 v1.0.6 正式公开。"
     },
+    "install.prereq.note": {
+      en: "Use the macOS · Linux or Windows installer; it finds Python 3.11+ itself. Homebrew, Bun, and npm install the published release: Bun and npm also need Node 18+ and Python 3.11+ on PATH, and Homebrew brings its own Python.",
+      ko: "macOS · Linux 또는 Windows 설치 스크립트를 사용하세요. Python 3.11 이상을 스스로 찾습니다. Homebrew, Bun, npm은 공개 릴리스를 설치합니다. Bun과 npm은 PATH에 Node 18 이상과 Python 3.11 이상이 더 필요하고, Homebrew는 자체 Python을 설치합니다.",
+      ja: "macOS · Linux または Windows のインストーラーを使ってください。Python 3.11 以降は自動で見つけます。Homebrew、Bun、npm は公開リリースをインストールします。Bun と npm には PATH 上の Node 18 以降と Python 3.11 以降も必要で、Homebrew は独自の Python を入れます。",
+      zh: "请使用 macOS · Linux 或 Windows 安装脚本，它会自行查找 Python 3.11+。Homebrew、Bun 与 npm 安装已发布的版本：Bun 和 npm 还需要 PATH 中有 Node 18+ 与 Python 3.11+，Homebrew 会自带 Python。"
+    },
     "install.step1": {
       en: "Install the command",
       ko: "명령어 설치",

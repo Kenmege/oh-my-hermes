@@ -4360,7 +4360,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         commands = [step["command"] for step in payload["steps"]]
         self.assertEqual(commands[0], ["omh-dev", "--omh-home", str(omh_home.resolve()), "--hermes-home", str(hermes_home.resolve()), "setup"])
         self.assertIn(["hermes", "skills", "list", "--enabled-only"], commands)
-        self.assertIn(["hermes", "skills", "check", "oh-my-hermes"], commands)
+        self.assertIn(["hermes", "skills", "check", "omh-routing"], commands)
         self.assertIn(["omh-dev", "--omh-home", str(omh_home.resolve()), "--hermes-home", str(hermes_home.resolve()), "doctor"], commands)
         self.assertNotIn(["hermes", "skills", "inspect", "oh-my-hermes"], commands)
         installed_commands = [step["command"] for step in payload["installed_command_smoke"]["steps"]]
