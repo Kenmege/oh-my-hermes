@@ -57,9 +57,11 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
     def test_capability_growth_is_one_bounded_row_without_sibling_edits(self) -> None:
         for producer, base, cap, expected_hash, limit in (
             # 522307 -> 522331 and the sibling digest re-derived: the pi-family
-            # runtime rename moved four sibling rows by +6 each.
+            # runtime rename moved four sibling rows by +6 each, and the
+            # executor-runtime-readiness row's trigger count went +35 -> +34
+            # when its runtime names became scoring-only (same length).
             (skill_capabilities, 522331, FULL_ROW_DELTA_CAP,
-             '1a7217a5bbdd5afd4f516002dce758095f6698702c1e842f81eb2708081d5d04',
+             'cd1f5042d76a69544c44314a19352e019f92fe87fdd8c9a76ad7d217312e2018',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
