@@ -67,6 +67,7 @@ from ..plugin_bundle.omh.model_chain_picker import (
 )
 from ..install.config_adapter import display_skin_selection, read_config
 from ..skin_pack import effective_theme, skin_colors
+from ..system.stdin_probe import stdin_is_tty
 from .common import _paths
 from .model_chain_picker import pick_chains_interactively
 
@@ -462,7 +463,7 @@ def _ultrafast_variant(
 
 
 def _stdin_is_tty() -> bool:
-    return sys.stdin.isatty()
+    return stdin_is_tty()
 
 
 def model_chains_interview(paths) -> int:

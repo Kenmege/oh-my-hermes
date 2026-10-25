@@ -29,6 +29,35 @@ All notable changes will be documented here.
   `--json` output; `--no-personal-files` does not disable Hermes `config.yaml`
   reads.
 
+- **`omh setup --dry-run` no longer applies model aliases, and the model
+  step reports a broken Hermes instead of a traceback (#2299).** With
+  `--model-setup --apply-model-config --model-config-digest D`, a dry run ran
+  `hermes config set model.aliases.*` and wrote the alias while the payload
+  said `dry_run: true`. It now runs no mutating Hermes command, still checks
+  the digest, and reports `apply.status: "dry_run"` with the exact commands
+  it would run; the human summary prints each as a "would run" line, and the
+  interactive question asks whether to list them rather than to apply. When
+  Hermes' `config.yaml` does not exist (a dry run on a fresh home, or
+  `--skip-apply`), the step reports `status: "hermes_config_missing"`; when
+  it exists but cannot be read, `status: "hermes_config_unreadable"` with a
+  next action to fix its permissions. Either way setup exits 3. When a
+  `hermes` command exits nonzero or times out, it reports
+  `status: "hermes_command_failed"` and exits 1. All of these used to stop on
+  a `HermesCommandError` traceback. The
+  setup JSON `ok` and the recorded `last_setup.ok` now follow the exit code,
+  so a model step that could not run no longer reads as success.
+
+- **`omh setup --interactive` without a terminal refuses instead of
+  crashing or taking every default (#2295).** With stdin closed (`<&-`) it
+  stopped on an `AttributeError` traceback; with stdin from `/dev/null` or a
+  pipe the wizard read EOF at every prompt and recorded the defaults as the
+  user's choices. It now writes nothing, prints one line naming the same
+  command with `--interactive` swapped for `--no-interactive --json`, adds
+  that as `next_command` in a JSON record when stdout is not a terminal, and
+  exits 1. Piped answers into `--interactive` therefore stop working; pass
+  the choices as flags instead. A closed stdin no longer crashes bare `omh`,
+  `omh theme`, `omh model-chains` or `omh model-chains interview` either.
+
 - **`omh setup` records the release that is installed.** After the
   documented stable curl install, a plain `omh setup` recorded
   `release_channel=preview`, the `main` archive URL, `source_ref=main`, and no

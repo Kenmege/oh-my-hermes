@@ -167,9 +167,12 @@ setup, register Hermes skill directories, install profile packs, or run doctor
 by default. Run setup once as the shared, repairable, repeatable next step.
 
 Your shell has no terminal, so do not run the interactive wizard
-(`omh setup --interactive`) from it. With stdin redirected from `/dev/null` the
-wizard answers every question with its default and the user never sees one;
-with stdin closed it stops on a traceback.
+(`omh setup --interactive`) from it. Without a terminal on stdin, whether stdin
+is closed, a pipe, or `/dev/null`, it refuses: it writes nothing, exits 1, and
+prints a JSON record with `refused: true` and a `next_command`. That command is
+the one you ran with `--interactive` replaced by `--no-interactive --json` and
+every other flag kept. Run it instead, with the user's choices below passed as
+flags.
 
 Ask the user one question before setup, because it decides where setup writes:
 **user scope** (the default: `~/.omh` and `~/.hermes` for this machine user) or

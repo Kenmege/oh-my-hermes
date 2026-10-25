@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -150,6 +151,7 @@ from ..setup_profiles import (
     write_setup_profile,
 )
 from ..snippet import WORKSPACE_SNIPPET
+from ..system.stdin_probe import stdin_is_tty
 from ..targets import record_target_observation
 from ..team_profiles import (
     TeamProfileError,
@@ -2986,6 +2988,29 @@ def cmd_setup(args: argparse.Namespace) -> int:
     validate_model_setup_args(args)
     language = _setup_language(args)
     paths = _paths(args)
+    if getattr(args, "interactive", False) and _setup_should_interact(args) and not _wizard_has_terminal():
+        # Without a terminal on stdin every prompt reads EOF and takes its
+        # default, so the user would never see the choices the wizard exists
+        # to ask. Refuse before anything is written.
+        next_command = _noninteractive_rerun_command(getattr(args, "_argv", None) or sys.argv[1:])
+        print(tr(language, "setup_interactive_needs_terminal", command=next_command), file=sys.stderr)
+        refusal: dict[str, object] = {
+            "ok": False,
+            "refused": True,
+            "refusal_reason": "interactive_requires_terminal",
+            "next_action": "rerun_with_no_interactive_json",
+            "next_command": next_command,
+            "language": language,
+        }
+        # A person at a terminal reads the line above; a caller capturing
+        # stdout (the agent shell this refusal exists for) gets the record.
+        try:
+            stdout_is_terminal = sys.stdout.isatty()
+        except (AttributeError, ValueError):
+            stdout_is_terminal = False
+        if not stdout_is_terminal:
+            _print_json(refusal)
+        return _setup_exit_code(refusal)
     if _setup_should_interact(args):
         if not _setup_paths_were_explicit(args) and not getattr(args, "scope", None):
             args.scope = _ask_setup_scope(use_color=_use_color(), language=language)
@@ -3159,11 +3184,15 @@ def cmd_setup(args: argparse.Namespace) -> int:
         "wrapper_backend_surface": "omh chat interact and runtime commands are adapter/operator contracts, not the normal chat UX",
     }
 
+    # `ok` means what the exit code means: every step setup was asked to run
+    # ran. A model step that could not run makes it false here and in the
+    # state record, so a reader of `ok` alone is not told otherwise.
+    setup_ok = _setup_exit_code({"steps": steps}) == 0
     if not args.dry_run:
         operator_summary = _setup_operator_summary(args, paths, steps, hermes_native)
         state_patch: dict[str, object] = {
             "last_setup": {
-                "ok": True,
+                "ok": setup_ok,
                 "apply_skipped": bool(args.skip_apply),
                 "hermes_native": hermes_native,
                 "operator_summary": operator_summary,
@@ -3181,7 +3210,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     else:
         operator_summary = _setup_operator_summary(args, paths, steps, hermes_native)
     payload: dict[str, object] = {
-        "ok": True,
+        "ok": setup_ok,
         "steps": steps,
         "dry_run": args.dry_run,
         "hermes_native": hermes_native,
@@ -3200,18 +3229,55 @@ def cmd_setup(args: argparse.Namespace) -> int:
     return _setup_exit_code(payload)
 
 
+def _noninteractive_rerun_command(argv: list[str]) -> str:
+    """The refused command line with the wizard swapped for the scripted path.
+
+    Every other flag the user passed is kept, so `--model-setup`, `--scope`,
+    `--profile-pack` and the homes survive. argparse accepts a unique prefix
+    such as `--inter`, so a prefix of `--interactive` is dropped too.
+    """
+    rerun = ["omh"]
+    for token in argv:
+        if token.startswith("--") and len(token) > 2 and "--interactive".startswith(token):
+            continue
+        rerun.append(token)
+    rerun.extend(flag for flag in ("--no-interactive", "--json") if flag not in rerun)
+    return shlex.join(rerun)
+
+
+# Model-step statuses that mean the step could not run at all. A missing
+# prerequisite maps to 3; a Hermes that is there but failed maps to 1.
+_MODEL_STEP_NOT_RUN_STATUSES = frozenset({"hermes_unavailable", "hermes_config_missing", "hermes_config_unreadable"})
+_MODEL_STEP_FAILED_STATUSES = frozenset({"hermes_command_failed"})
+
+
 def _setup_exit_code(payload: Any) -> int:
     """0 when every step setup was asked to run ran.
 
-    3 when the install steps finished but the requested model step could not
-    run because no `hermes` executable was found
-    (`steps.model_activation.status == "hermes_unavailable"`). Not 0, because
-    a wrapper reading only the status would be told the models were set up
-    when nothing was inspected; not 1, because nothing OMH installed failed
-    and the same command succeeds once Hermes is on PATH; not 2, which `main`
-    returns for an OmhError. 3 is what the other mappers return for a command
-    that ran but could not inspect what it needed (`_profile_isolation_exit_code`,
+    1 when setup refused to start: `--interactive` was asked for with no
+    terminal on stdin, so nothing ran and nothing was written. Not 0, because
+    a caller reading only the status would be told the user's choices were
+    collected; 1 is what the other mappers return for a refused run. Not 2,
+    which `main` returns for an OmhError: the flags parsed, and the same
+    choices succeed as `--no-interactive --json`.
+
+    3 when the install steps finished (or, on a dry run, were previewed) but
+    the requested model step could not run: no `hermes` executable was found
+    (`hermes_unavailable`), or Hermes' config file does not exist
+    (`hermes_config_missing`) or exists but cannot be read
+    (`hermes_config_unreadable`), as `steps.model_activation.status`. Not 0,
+    because a wrapper reading only the status would be told the models were
+    set up or previewed when nothing was inspected; not 1, because nothing
+    OMH installed failed and the same command succeeds once the prerequisite
+    is there; not 2, which `main` returns for an OmhError. 3 is what the
+    other mappers return for a command that ran but could not inspect what it
+    needed (`_profile_isolation_exit_code`,
     `_memory_evidence_exit_code`).
+
+    1 when Hermes is on PATH but a command the model step needs failed: it
+    exited nonzero, timed out, or answered in a shape the adapter refuses
+    (`hermes_command_failed`). That is a fault in the Hermes the user has,
+    not a prerequisite they can supply, so it is not 3.
 
     Generic failure signals -- a refused or interrupted run, or a unit
     carrying a failure kind -- are never success either, so this mapper
@@ -3225,7 +3291,10 @@ def _setup_exit_code(payload: Any) -> int:
         return 1
     steps = summary.get("steps")
     activation = steps.get("model_activation") if isinstance(steps, dict) else None
-    if isinstance(activation, dict) and activation.get("status") == "hermes_unavailable":
+    status = activation.get("status") if isinstance(activation, dict) else None
+    if status in _MODEL_STEP_FAILED_STATUSES:
+        return 1
+    if status in _MODEL_STEP_NOT_RUN_STATUSES:
         return 3
     return 0
 
@@ -3250,7 +3319,7 @@ def _setup_should_interact(args: argparse.Namespace) -> bool:
         or getattr(args, "model_setup", False)
     ):
         return False
-    return sys.stdin.isatty() and sys.stdout.isatty()
+    return _stdin_is_tty() and sys.stdout.isatty()
 
 
 # Binary name per external CLI profile, read-only PATH lookup only -- never
@@ -3342,7 +3411,17 @@ def _ask_maestro_delegation_choice(args: argparse.Namespace, paths: OmhPaths, la
 
 
 def _stdin_is_tty() -> bool:
-    return sys.stdin.isatty()
+    return stdin_is_tty()
+
+
+def _wizard_has_terminal() -> bool:
+    """Whether an explicit `--interactive` may run the wizard at all.
+
+    The same probe as `_stdin_is_tty`, kept as its own seam: tests that drive
+    the wizard with scripted answers open this gate without also turning on
+    the terminal-only model-chains offer that `_stdin_is_tty` decides.
+    """
+    return _stdin_is_tty()
 
 
 def _will_ask_model_chains_interview(args: argparse.Namespace, paths: OmhPaths) -> bool:
@@ -4672,7 +4751,7 @@ def _keyboard_menu_available() -> bool:
     return (
         termios is not None
         and tty is not None
-        and sys.stdin.isatty()
+        and stdin_is_tty()
         and sys.stdout.isatty()
         and os.environ.get("TERM", "") != "dumb"
         and os.environ.get("OMH_NO_TUI", "") != "1"
