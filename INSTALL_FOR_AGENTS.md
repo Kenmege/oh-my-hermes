@@ -176,26 +176,48 @@ Ask the user one question before setup, because it decides where setup writes:
 **project scope** (`.omh` and `.hermes` at the root of the git repository that
 contains the current directory, not the current directory itself).
 
-For project scope, also point `HERMES_HOME` at that `.hermes`. The model step
-asks the `hermes` command, which reads its own `HERMES_HOME` (default
-`~/.hermes`), so without it the step inspects the user's profile instead of the
-project's:
+Project scope requires a git repository. Outside one, OMH falls back to the
+current directory and the model step fails. When the user picks project scope,
+run this once in your shell session, before any other `omh` command:
 
 ```sh
-HERMES_HOME="$(git rev-parse --show-toplevel)/.hermes" \
-  omh setup --model-setup --scope project --no-interactive --json
+root=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$root" ]; then
+  echo "project scope needs a git repository: stop and ask the user"
+else
+  export HERMES_HOME="$root/.hermes"
+  echo "HERMES_HOME=$HERMES_HOME"
+fi
 ```
+
+The model step asks the `hermes` command, which reads its own `HERMES_HOME`
+(default `~/.hermes`), so without the export it inspects and would write the
+user's profile, the one the user just declined.
+
+Then carry the scope through every later `omh` command in this protocol:
+
+- `omh setup` calls take `--scope project`, for example
+  `omh setup --model-setup --scope project --no-interactive --json`;
+- every other command takes it as a global flag before the subcommand:
+  `omh --scope project model-chains show`, `omh --scope project doctor`,
+  `omh --scope project update-check set --mode off`,
+  `omh --scope project coding category-maestro show`.
+
+The commands below are written for user scope. Without the flag, each one
+reads and writes `~/.omh` and `~/.hermes`.
 
 If `command -v omh` is empty after install, use the absolute command path the
 installer printed, or add that directory to `PATH`, before you run setup. Treat
 this as a command availability warning, not proof that Hermes registration
 failed.
 
-For user scope, run setup without the wizard:
+Run setup without the wizard:
 
 ```sh
 omh setup --model-setup --no-interactive --json
 ```
+
+For project scope, run `omh setup --model-setup --scope project --no-interactive --json`.
 
 This applies the bounded managed writes listed in
 [What Setup Changes](docs/INSTALLATION.md#what-setup-changes). Those writes
@@ -239,7 +261,8 @@ selected external owner. A person at a real terminal can run
 `omh setup --model-setup --interactive` instead; it asks these questions on
 screen.
 
-Expected local result:
+Expected local result (for project scope, read `<repository root>/.omh` and
+`<repository root>/.hermes` for `~/.omh` and `~/.hermes`):
 
 - generated skills are installed under `~/.omh/skills`;
 - Hermes config includes that directory in `skills.external_dirs`;
@@ -251,6 +274,8 @@ Expected local result:
 ```sh
 omh doctor
 ```
+
+For project scope: `omh --scope project doctor`.
 
 Report:
 
@@ -495,7 +520,9 @@ Agent/maintainer procedure:
    (`steps.model_activation`) and confirm active models with them.
    A session-history observation is `observed_before`, not active confirmation.
 2. Build a Hermes-native alias preview without applying it. Repeat
-   `--confirm-model` and `--model-alias` as needed:
+   `--confirm-model` and `--model-alias` as needed. For project scope, keep
+   `HERMES_HOME` exported and add `--scope project`, here and on the apply
+   call in step 3; without it the preview runs a full user-scope setup:
 
    ```sh
    omh setup --model-setup \
@@ -545,7 +572,8 @@ the chain interview with the user before reporting the install complete.
 
 `omh model-chains interview` is the human terminal path and refuses non-TTY
 sessions with a scriptable-path message. Agents conduct the same interview in
-conversation:
+conversation. For project scope, put `--scope project` before the subcommand
+of every command below (`omh --scope project model-chains show`):
 
 1. Run `omh model-chains show` and present the current state per category
    (chain order plus origin: `default` or `override`).

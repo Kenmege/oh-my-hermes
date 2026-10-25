@@ -297,6 +297,19 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
         for block in _fenced_blocks(protocol):
             self.assertIsNone(re.search(r"(?<!no-)--interactive\b", block), block)
             self.assertNotIn("exit 1", block)
+        # A chosen project scope is carried through every later command:
+        # HERMES_HOME is exported once from the repository root, and the
+        # commands name the scope, or they read and write ~/.omh and ~/.hermes.
+        self.assertIn('export HERMES_HOME="$root/.hermes"', protocol)
+        self.assertIn("project scope needs a git repository", protocol)
+        for command in (
+            "omh setup --model-setup --scope project --no-interactive --json",
+            "omh --scope project model-chains show",
+            "omh --scope project doctor",
+            "omh --scope project update-check set",
+            "omh --scope project coding category-maestro show",
+        ):
+            self.assertIn(command, protocol)
 
     def test_site_translations_cover_new_install_labels(self) -> None:
         translations = (PROJECT_ROOT / "site" / "i18n.js").read_text(
