@@ -543,7 +543,7 @@ if [ -z "$OMH_PACKAGE_URL" ]; then
           */releases/tag/v*) OMH_VERSION="${OMH_LATEST_LOCATION##*/releases/tag/v}" ;;
           *)
             say "omh installer: could not resolve the latest release from $OMH_REPO_LATEST_URL."
-            say "omh installer: set OMH_VERSION=1.0.6 to pin one, or OMH_CHANNEL=preview to track main."
+            say "omh installer: set OMH_VERSION to pin one, or OMH_CHANNEL=preview to track main."
             exit 1
             ;;
         esac
