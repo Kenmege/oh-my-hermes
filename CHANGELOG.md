@@ -4,6 +4,22 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh setup` records the release that is installed.** After the
+  documented stable curl install, a plain `omh setup` recorded
+  `release_channel=preview`, the `main` archive URL, `source_ref=main`, and no
+  version, although the release wheel was installed, and a SHA-pinned install
+  lost its commit the same way. With no `--channel`, `--version`, or
+  `--package-url`, setup now reads the package's PEP 610 `direct_url.json`: a
+  release wheel or tag archive records `stable` and its version, the `main`
+  archive or a commit (including `pip`/`uv tool install git+...`) records
+  `preview` with that ref. npm, Bun, and Homebrew installs record the package
+  version and no channel. A `uv tool install` pinned to a commit, a release
+  tag, or the release wheel URL is now told to reinstall at the new pin with
+  `uv tool install --force ...`; `uv tool upgrade` answered "Nothing to
+  upgrade" for those. The stable installer's failed-lookup hint no longer
+  suggests `OMH_VERSION=1.0.6`, and `install.ps1` now prints the interpreter it
+  picked and probes it with `-I`, as `install.sh` does.
+
 ## 4.0.2 - 2026-10-24
 
 - **Install, update and uninstall keep shared state until a profile's

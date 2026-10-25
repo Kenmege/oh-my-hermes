@@ -2165,6 +2165,53 @@ def package_url_for(channel: str, version: str = "", package_url: str = "") -> R
     return ReleaseSelection(channel, version, "local", "local", "local")
 
 
+REPOSITORY_URL = "https://github.com/rlaope/oh-my-hermes"
+COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def release_from_direct_url(record: object) -> ReleaseSelection | None:
+    """The release an installed distribution came from, read from its PEP 610 record.
+
+    pip and uv write `direct_url.json` beside the package they installed from
+    a URL, naming exactly what they fetched. The curl and PowerShell
+    installers, a SHA-pinned archive, and `pip`/`uv tool install git+...` all
+    leave one, so `omh setup` can record the artifact that is actually
+    installed instead of a channel nobody asked for.
+
+    Only this repository's own artifact shapes are recognized, each mapped
+    by what it is: a release wheel or tag archive is `stable`, the `main`
+    archive or a commit is `preview` (an unreleased revision, which is what
+    `omh update` on preview tracks). Anything else, a local file, a fork, a
+    mirror, returns None rather than a guessed channel.
+    """
+    if not isinstance(record, dict):
+        return None
+    url = str(record.get("url") or "")
+    vcs = record.get("vcs_info")
+    if isinstance(vcs, dict):
+        commit = str(vcs.get("commit_id") or "")
+        if vcs.get("vcs") != "git" or url.removesuffix(".git") != REPOSITORY_URL or not COMMIT_SHA_RE.fullmatch(commit):
+            return None
+        requested = str(vcs.get("requested_revision") or "")
+        if requested.startswith("v") and RELEASE_WHEEL_VERSION_RE.fullmatch(requested[1:]):
+            return ReleaseSelection("stable", requested[1:], f"git+{url}@{requested}", requested, "git")
+        return ReleaseSelection("preview", "", f"git+{url}@{commit}", commit, "git")
+    if not isinstance(record.get("archive_info"), dict):
+        return None
+    tag, _, wheel = url.removeprefix(f"{RELEASE_ASSET_ROOT}/").partition("/")
+    if url.startswith(f"{RELEASE_ASSET_ROOT}/") and tag.startswith("v") and wheel == release_wheel_name(tag[1:]):
+        return ReleaseSelection("stable", tag[1:], url, tag, "release-wheel")
+    tag = url.removeprefix(f"{REPOSITORY_ARCHIVE_ROOT}/tags/").removesuffix(".zip")
+    if url == repository_archive_url(tag) and tag.startswith("v") and "/" not in tag:
+        return ReleaseSelection("stable", tag[1:], url, tag, "repository-archive")
+    if url == f"{REPOSITORY_ARCHIVE_ROOT}/heads/main.zip":
+        return ReleaseSelection("preview", "", url, "main", "repository-archive")
+    commit = url.removeprefix(f"{REPOSITORY_URL}/archive/").removesuffix(".zip")
+    if url == f"{REPOSITORY_URL}/archive/{commit}.zip" and COMMIT_SHA_RE.fullmatch(commit):
+        return ReleaseSelection("preview", "", url, commit, "repository-archive")
+    return None
+
+
 def release_artifact_note(selection: ReleaseSelection) -> str:
     """Say what the resolved artifact is and what downloading it costs."""
     if selection.artifact_kind == "release-wheel":
