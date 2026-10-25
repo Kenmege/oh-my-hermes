@@ -4385,7 +4385,7 @@ class RouterContentTests(unittest.TestCase):
         self.assertIn("Hermes CLI Install Smoke", release)
         self.assertIn("omh release hermes-smoke --live --install-path tap --target-confirmed", release)
         self.assertIn("--hermes-home /tmp/hermes-smoke release hermes-smoke --live --install-path setup", release)
-        self.assertIn("hermes skills check oh-my-hermes", release)
+        self.assertIn("hermes skills check omh-routing", release)
         self.assertIn("uv build", release)
         self.assertIn("oh_my_hermes-1.0.5-py3-none-any.whl", release)
         self.assertIn("/tmp/omh-wheel-smoke/bin/omh --help", release)
