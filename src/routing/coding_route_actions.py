@@ -69,7 +69,8 @@ NAMED_EXECUTOR_OWNER_PHRASES: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 # Owner groups whose phrases hide inside ordinary words as raw substrings
-# ("promo runtime" contains "omo runtime", "api한테" contains "pi한테") or as
+# (a word ending in the runtime's short name contains its runtime phrase, and
+# "api한테" contains "pi한테") or as
 # ordinary hyphenated words and filenames ("claudecode-notes", "claude-code.md",
 # "codex-utils.py" each contain a bare owner name that never named the
 # executor). These groups are matched with `contains_boundary_phrase`; every
