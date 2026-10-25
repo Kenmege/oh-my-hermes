@@ -136,10 +136,9 @@ fi
 ```
 
 Both leave a PEP 610 origin record, so a later `omh update` names this owner's
-upgrade command instead of the generic installer line. A uv install pinned to a
-SHA stays on it: `uv tool upgrade oh-my-hermes` answers `Nothing to upgrade`.
-To move it, resolve a new SHA and run
-`uv tool install --force "git+https://github.com/rlaope/oh-my-hermes@<new-sha>"`.
+upgrade command instead of the generic installer line. A uv install stays on
+its pinned SHA until it is reinstalled at a new one: resolve a new ref and run
+`uv tool install --force "git+https://github.com/rlaope/oh-my-hermes@<new-ref>"`.
 
 Homebrew, Bun, and npm install the published release. They ignore the SHA, so
 report the version `omh --version` prints instead:
@@ -299,8 +298,8 @@ Use the owning manager directly only as a reported repair fallback:
 | Homebrew | `brew upgrade rlaope/tap/omh` | `brew uninstall omh` |
 | Bun | `bun update -g --latest oh-my-hermes` | `bun remove -g oh-my-hermes` |
 | npm | `npm update -g oh-my-hermes` | `npm uninstall -g oh-my-hermes` |
-| uv tool (repo link) | `uv tool install --force "git+https://github.com/rlaope/oh-my-hermes@<new-sha>"` | `uv tool uninstall oh-my-hermes` |
-| pip in a venv (repo link) | `python3 -m pip install --upgrade "git+https://github.com/rlaope/oh-my-hermes@<new-sha>"` | `python3 -m pip uninstall oh-my-hermes` |
+| uv tool (repo link) | `uv tool install --force "git+https://github.com/rlaope/oh-my-hermes@<new-ref>"` | `uv tool uninstall oh-my-hermes` |
+| pip in a venv (repo link) | `python3 -m pip install --upgrade "git+https://github.com/rlaope/oh-my-hermes@<new-ref>"` | `python3 -m pip uninstall oh-my-hermes` |
 
 Removing the command package preserves OMH state. For full cleanup, preview
 `omh uninstall --all --dry-run --json` from the primary home, inspect retained

@@ -153,6 +153,8 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
                 ]
                 for command in INSTALL_COMMANDS[3:]:
                     self.assertIn(command, first_lines)
+                for command in INSTALL_COMMANDS[:3]:
+                    self.assertNotIn(command, content)
 
     def test_package_manager_lifecycle_and_state_ownership_are_documented(
         self,
