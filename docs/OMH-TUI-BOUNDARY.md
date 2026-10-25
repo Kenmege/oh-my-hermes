@@ -31,7 +31,8 @@ systemd), a session ticket comes from the home's private control socket, and
 `websockets.asyncio.client.connect` dials the loopback socket Hermes names. It
 translates between the stdio wire and the gateway's canonical one only where
 they differ (the launch policy riding `session.create`, a detach for a close, a
-rewind as Hermes' revision-fenced `session.mutate`, images staged through
+rewind as Hermes' revision-fenced `session.mutate`, a steer or a stop carrying
+the execution generation of the turn it acts on, images staged through
 Hermes' `image.attach_bytes`, approvals and clarify questions the gateway asks
 as events), and passes everything else as it is. On any other Hermes it runs
 Hermes' stdio entry in its own process, as before. Which one is decided by what
