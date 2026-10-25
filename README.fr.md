@@ -143,7 +143,7 @@ Un nœud distinct vérifie l'objectif avant que vous receviez le rapport.
 
 [Documentation](docs/README.md) · [Installation](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [Site web](https://rlaope.github.io/oh-my-hermes/)
 
-Les options d'installation et la référence complète se trouvent dans le [README en anglais](README.md#others).
+D'autres options d'installation et la référence complète se trouvent dans le [README en anglais](README.md#others).
 
 ## Licence
 

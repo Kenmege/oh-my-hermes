@@ -143,7 +143,7 @@ Um nó separado verifica o objetivo antes de você receber o relatório.
 
 [Documentação](docs/README.md) · [Instalação](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [Site](https://rlaope.github.io/oh-my-hermes/)
 
-As opções de instalação e a referência completa estão no [README em inglês](README.md#others).
+Mais opções de instalação e a referência completa estão no [README em inglês](README.md#others).
 
 ## Licença
 

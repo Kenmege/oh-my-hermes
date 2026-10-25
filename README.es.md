@@ -143,7 +143,7 @@ Un nodo aparte verifica el objetivo antes de que recibas el informe.
 
 [Documentación](docs/README.md) · [Instalación](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [Sitio web](https://rlaope.github.io/oh-my-hermes/)
 
-Las opciones de instalación y la referencia completa están en el [README en inglés](README.md#others).
+Más opciones de instalación y la referencia completa están en el [README en inglés](README.md#others).
 
 ## Licencia
 

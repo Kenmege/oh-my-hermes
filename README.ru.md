@@ -143,7 +143,7 @@ Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appr
 
 [Документация](docs/README.md) · [Установка](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [Сайт](https://rlaope.github.io/oh-my-hermes/)
 
-Все варианты установки и справочник есть в [английском README](README.md#others).
+Другие варианты установки и справочник есть в [английском README](README.md#others).
 
 ## Лицензия
 

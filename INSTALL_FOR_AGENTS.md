@@ -183,6 +183,13 @@ asks nothing and writes no model config, so its
 `steps.model_activation.status: defaulted` means no model has been confirmed
 yet. It is where the model question starts, not the user's answer.
 
+The model step needs the `hermes` command. When it is not on PATH, tell the user
+to install Hermes Agent (or confirm the hosted wrapper that runs it), then rerun
+this command; do not report setup as complete. Depending on the OMH revision,
+that case returns `steps.model_activation.status: hermes_unavailable` with
+`next_action: install_hermes_then_rerun_model_setup` and exit code 3, or stops
+on a `FileNotFoundError` traceback naming `hermes`.
+
 Then put each of these choices to the user, one at a time, and run the command
 for the answer they give. Never record a default on the user's behalf.
 

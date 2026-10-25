@@ -240,9 +240,11 @@ entirely.
 irm https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.ps1 | iex
 ```
 
-Windows npm/Bun launcher support is covered by the Windows CI suite, including
-packed-tarball installation and CLI smoke checks. The PowerShell installer
-remains the native Windows alternative.
+Windows npm/Bun launcher support is gated by the Windows CI suite and is still
+pending: the shared launcher has Windows path, `py -3`, and command-shim
+handling, but no Windows job installs the packed tarball and runs the CLI yet
+(the packed-tarball smoke runs on Ubuntu and macOS only). Use the PowerShell
+installer on native Windows.
 
 ### Homebrew
 

@@ -143,7 +143,7 @@ Ein eigener Knoten prüft das Ziel, bevor du den Bericht bekommst.
 
 [Doku](docs/README.md) · [Installation](docs/INSTALLATION.md) · [Capabilities](docs/CAPABILITIES.md) · [Workflows](docs/WORKFLOWS.md) · [Website](https://rlaope.github.io/oh-my-hermes/)
 
-Alle Installationsoptionen und die Referenz findest du im [englischen README](README.md#others).
+Weitere Installationsoptionen und die Referenz findest du im [englischen README](README.md#others).
 
 ## Lizenz
 

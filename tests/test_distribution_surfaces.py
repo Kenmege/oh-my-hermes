@@ -138,6 +138,21 @@ class DistributionInstallSurfaceTests(unittest.TestCase):
                 ]
                 for command in INSTALL_COMMANDS:
                     self.assertIn(command, blocks)
+        # The short READMEs carry only the two script installers, each in its
+        # own block; package managers live in the English README.
+        for locale in ("de", "es", "fr", "it", "pt-BR", "ru"):
+            with self.subTest(surface=f"README.{locale}.md"):
+                content = (PROJECT_ROOT / f"README.{locale}.md").read_text(encoding="utf-8")
+                first_lines = [
+                    block.strip().splitlines()[0]
+                    for block in re.findall(
+                        r"```(?:sh|powershell)\n(.*?)```",
+                        content,
+                        flags=re.DOTALL,
+                    )
+                ]
+                for command in INSTALL_COMMANDS[3:]:
+                    self.assertIn(command, first_lines)
 
     def test_package_manager_lifecycle_and_state_ownership_are_documented(
         self,
