@@ -872,7 +872,7 @@ User-facing effect:
 - Prepared handoff is presented as ready to dispatch, not completed work.
 - If the selected profile is Codex, the wrapper can use the handoff's
   `$skill {message}` invocation, such as `$ai-slop-cleaner {message}`, rather
-  than asking the chat user to run it. Hermes, OMX, skill-loader runtime, and
+  than asking the chat user to run it. Hermes, OMX, pi-family runtime, and
   OMC profiles render a runtime handoff with team/swarm, worker-protocol, and
   worktree guidance. Claude Code and generic profiles render a copyable prompt
   handoff instead of lifecycle evidence.

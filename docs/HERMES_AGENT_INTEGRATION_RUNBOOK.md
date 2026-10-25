@@ -658,7 +658,7 @@ observed evidence appears in the briefing.
 
 For prompt-only Claude Code or generic agents, the same wrapper session action
 records attached/result metadata without creating a Codex lifecycle run. For
-Hermes, OMX, skill-loader runtime, and OMC runtime handoffs, an observed open
+Hermes, OMX, pi-family runtime, and OMC runtime handoffs, an observed open
 also records the `runtime_start` ladder step; worktree, worker, review, CI, and
 merge still require separate evidence.
 

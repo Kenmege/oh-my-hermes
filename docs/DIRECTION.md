@@ -326,7 +326,7 @@ Selected coding executors/runtimes own:
    report progress and blockers, and send only a bounded delta when an active
    turn needs steering. Codex can use the
    run-backed lifecycle path. Claude Code and generic agents can use portable
-   prompt handoffs. Hermes, OMX, the skill-loader runtime, and OMC can use
+   prompt handoffs. Hermes, OMX, the pi-family runtime, and OMC can use
    `coding_runtime_handoff/v1`
    contracts with team/swarm, worker-protocol, and worktree guidance while still
    preserving prepared-vs-observed boundaries. Coding handoffs should also

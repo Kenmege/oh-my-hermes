@@ -215,11 +215,11 @@ separate when several agents are active:
   must preview and digest-bind every alias change; a concurrent Hermes config
   write invalidates that preview and must be re-inspected rather than retried
   blindly.
-- Maestro coordinates prepared external Codex, Claude Code, skill-loader
+- Maestro coordinates prepared external Codex, Claude Code, pi-family
   runtime, OMC, OMX, and generic handoffs. It is not an executor, does not own
   Hermes-native work, and cannot turn one agent's prepared route into another
   agent's observed run.
-- The skill-loader runtime family's host CLIs are hosts of that runtime, not
+- The pi-family runtime's host CLIs are hosts of that runtime, not
   additional owners. Their metadata observations do not select a model for
   another agent.
 - Recommendation categories and aliases are editable user policy. A missing

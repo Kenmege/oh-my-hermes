@@ -351,7 +351,7 @@ Rules, all applied at freeze time:
 - **Spawnability is data.** `DISPATCH_COMMAND_TEMPLATES` in
   `src/coding/fanout_dispatch.py` maps profiles with a local headless CLI to
   fixed argv templates — currently codex (`codex exec`), claude-code
-  (`claude -p`), and `omo-runtime`. The skill-loader runtime's host CLI is
+  (`claude -p`), and `omo-runtime`. The pi-family runtime's host CLI is
   DETECTED at dispatch/readiness time in the fixed host-candidate order declared
   in `src/coding/fanout_dispatch.py` — first on PATH wins, no personal stack is
   hardcoded, and the selected host is visible in the planned argv and the probed
@@ -817,7 +817,7 @@ Rules, all applied at freeze time:
 - **Model inventory (reporting-only).** `omh coding model-inventory` reports
   which coding models the user has locally activated before any split or
   delegation is proposed: agent CLIs on PATH (codex, claude, opencode, gemini,
-  grok, qwen), models named by the skill-loader runtime's agent config (its path
+  grok, qwen), models named by the pi-family runtime's agent config (its path
   is declared in `src/coding/model_inventory.py`; model/variant/fallback ids
   only), opencode provider-config and auth provider key NAMES (presence-only,
   values never read), and the existing executor login markers. Every identifier
@@ -833,7 +833,7 @@ Rules, all applied at freeze time:
   from what the user actually has instead of asking blind.
 - **Inventory-derived routing (fingerprint-recorded).** For profiles without a
   built-in model catalog, the command layer derives a `local_model_catalog/v1`
-  from the observed inventory — today that means the skill-loader runtime, whose
+  from the observed inventory — today that means the pi-family runtime, whose
   role chains come from the user's own category config for that runtime (ordered
   category→role sources declared as data). Built-in catalogs always win; the
   derived catalog applies only to the profile it names; and it never gains

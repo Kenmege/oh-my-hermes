@@ -297,7 +297,7 @@ by `omh menubar status --json`. Its `menubar_status/v2` payload is a UI
 projection over local HUD, target-registry, runtime, and read-only Hermes
 observations; it is intentionally not the source of truth. The payload retains
 separate `hermes_agents` and `external_coding_executors` metadata so Codex,
-Claude Code, OMX, the skill-loader runtime, OMC, or generic coding tools cannot
+Claude Code, OMX, the pi-family runtime, OMC, or generic coding tools cannot
 be rendered as Hermes agents by accident. `display.menu_cards` is the
 human-facing model for the native helper: a Sessions table, a Models table, and
 one compact coding metadata footer. Sessions uses the exact columns
@@ -416,7 +416,7 @@ acceptance.
 `runtime/artifacts.py` and `runtime/records.py` own local JSON/JSONL evidence,
 schema validation, redacted export, and derived delegated coding status. They
 also own `runtime_observation/v1`, the runtime-level observation ledger for
-Hermes, OMX, skill-loader runtime, and OMC handoffs. Each record names one
+Hermes, OMX, pi-family runtime, and OMC handoffs. Each record names one
 observed or blocked ladder step such as runtime start, worktree creation, worker
 dispatch, worker result, verification, review, CI, merge readiness, or merge.
 Missing records remain missing evidence; OMH does not infer them from prepared
@@ -552,7 +552,7 @@ the executor target without launching Codex. Codex handoffs include
 turn a Hermes workflow into the Codex `$skill {message}` surface while still
 keeping the raw message out of persisted OMH artifacts. Claude Code and generic
 profiles return a `coding_prompt_handoff/v1` prompt-only payload that must not
-create a lifecycle run or observed execution evidence. Hermes, OMX, skill-loader
+create a lifecycle run or observed execution evidence. Hermes, OMX, pi-family
 runtime, and OMC profiles return a `coding_runtime_handoff/v1` contract with
 runtime profile, team/swarm, worker-protocol, and worktree guidance. Runtime
 handoffs are still prepared state only: they do not mean Hermes, tmux, workers,
@@ -609,7 +609,7 @@ has no executor-specific logic.
 The wrapper contract and lower-level surfaces are local contracts; execution
 evidence still comes from Hermes Agent and the selected executor/runtime. The
 append-only observation journal is the bridge between "prepared" and "observed"
-lifecycle status. For Hermes, OMX, skill-loader runtime, and OMC runtime
+lifecycle status. For Hermes, OMX, pi-family runtime, and OMC runtime
 handoffs, the
 legacy-compatible runtime observation ledger is mirrored into that journal. A
 wrapper can record `runtime_start` while `worktree_creation`, `worker_dispatch`,
@@ -672,7 +672,7 @@ The dispatchability object has exactly `handoff_dispatchable`,
 `availability_not_observed`, `candidate_observed_unavailable`,
 `parent_handoff_prepare_only`, `descriptor_only`, and
 `observed_available_ask_before_dispatch`, and must agree with the state and
-parent lane. Runtime, Hermes display, OMX display, skill-loader reference, and
+parent lane. Runtime, Hermes display, OMX display, pi-family reference, and
 OMC descriptor candidates are never dispatchable.
 For unknown or unavailable Codex candidates, the actual executor prompt and
 legacy `codex_invocation.dispatch_text_template` remain the generic
@@ -724,7 +724,7 @@ verification, review, CI, merge readiness, and merge observations.
 records that a wrapper observed an open/attach/result/verification-request event
 for the selected executor. For Codex, observed open maps to lifecycle dispatch
 and observed result maps to the Codex run ledger. For Claude Code and generic
-agents, it remains prompt-only session metadata. For Hermes, OMX, skill-loader
+agents, it remains prompt-only session metadata. For Hermes, OMX, pi-family
 runtime, and OMC runtime handoffs, observed open records `runtime_start` while
 later ladder steps remain missing until explicit `runtime_observation/v1`
 evidence exists.
@@ -877,14 +877,14 @@ are user-owned and collisions fail closed. Hermes skills, Kanban,
 appears in this lane.
 
 **External Maestro lane.** `coding/maestro/` is a typed facade over the existing
-Codex, Claude Code, skill-loader runtime, OMC, OMX, and generic prepared-handoff
+Codex, Claude Code, pi-family runtime, OMC, OMX, and generic prepared-handoff
 builders and status/observation adapters. It rejects Hermes profiles. Maestro is
 a coordinator, not an executor: `executes_work` is false, prepared payload
 schema and dispatchability are preserved, and only the selected external owner
 or wrapper can record runtime observation. Maestro never writes Hermes aliases
 or owns provider credentials.
 
-The skill-loader runtime family's host CLIs (`CAPABILITY_HOST_VARIANT_KEYS` in
+The pi-family runtime's host CLIs (`CAPABILITY_HOST_VARIANT_KEYS` in
 `src/coding/executor_capabilities.py`) have allowlisted session metadata that
 can contribute discovery observations, but they are not independent
 executor/model owners and do not authorize promotion into the Hermes-native
@@ -894,7 +894,7 @@ lane.
 record-count/size/depth/time limits, field allowlists, and explicit
 `observed_before`, `confirmed_active`, `unobserved`, `truncated`, or
 `layout_unverified` states prevent history from becoming availability truth.
-Auth files and record bodies are not emitted. Only the skill-loader runtime's
+Auth files and record bodies are not emitted. Only the pi-family runtime's
 own model file layout yields `confirmed_active` discovery records; guided setup
 otherwise requires explicit user confirmation. Discovery remains advisory and
 performs no network request.
