@@ -189,11 +189,25 @@ class RecommendationCatalogTests(unittest.TestCase):
             "routing_site": Path("site/docs/model-routing/index.html").read_text(
                 encoding="utf-8"
             ),
+            **{
+                locale: Path(f"README.{locale}.md").read_text(encoding="utf-8")
+                for locale in ("de", "es", "fr", "it", "pt-BR", "ru")
+            },
         }
 
         for surface, text in surfaces.items():
             with self.subTest(surface=surface):
                 self.assertIn(protocol_url, text)
+        # The pasteable request is one text shared byte for byte. It sends
+        # the agent down the non-interactive setup path: an agent's shell has
+        # no terminal, and the wizard there takes every default unseen.
+        protocol_text = surfaces["agent_protocol"]
+        start = protocol_text.index("Install and fully configure Oh My Hermes")
+        request = protocol_text[start : protocol_text.index("\n```", start)]
+        self.assertIn("never run the interactive setup wizard", request)
+        for surface, text in surfaces.items():
+            with self.subTest(surface=surface, contract="byte-shared-request"):
+                self.assertIn(request, text)
         # Every copy of the pasteable request names the model-chain interview
         # step, so URL-driven agent installs enter the interview after setup
         # instead of stopping at doctor.

@@ -600,7 +600,7 @@ class ReleaseSmokeTests(unittest.TestCase):
             ["hermes", "skills", "install", "rlaope/oh-my-hermes/skills/omh-routing", "--yes"],
         )
         self.assertIn(["hermes", "skills", "list", "--enabled-only"], commands)
-        self.assertIn(["hermes", "skills", "check", "oh-my-hermes"], commands)
+        self.assertIn(["hermes", "skills", "check", "omh-routing"], commands)
         self.assertIn(["hermes", "skills", "inspect", "rlaope/oh-my-hermes/skills/omh-routing"], commands)
         self.assertIn("does not touch", payload["proof_boundary"])
         self.assertEqual(payload["target_binding"]["hermes_home"], hermes_home)
@@ -629,6 +629,24 @@ class ReleaseSmokeTests(unittest.TestCase):
             False,
         )
 
+    def test_hermes_skill_check_names_the_installed_router_frontmatter(self) -> None:
+        # `hermes skills check` takes the skill's frontmatter name. The tap
+        # install step names a directory under skills/, so the check must name
+        # the frontmatter of that same shipped SKILL.md, not the catalog name.
+        repo_root = Path(__file__).resolve().parents[1]
+        for install_path in ("tap", "setup"):
+            with self.subTest(install_path=install_path):
+                steps = {step.name: step for step in release_module.hermes_release_smoke_steps(install_path=install_path)}
+                checked = steps["skill_check"].command[-1]
+                if install_path == "tap":
+                    installed_dir = steps["skill_install"].command[3].rsplit("/", 1)[-1]
+                else:
+                    installed_dir = "omh-routing"
+                skill_md = (repo_root / "skills" / installed_dir / "SKILL.md").read_text(encoding="utf-8")
+                frontmatter_name = re.search(r'^name: "([^"]+)"$', skill_md, flags=re.MULTILINE)
+                self.assertIsNotNone(frontmatter_name)
+                self.assertEqual(checked, frontmatter_name.group(1))
+
     def test_setup_install_path_uses_omh_setup_before_hermes_checks(self) -> None:
         omh_home = str(Path("/tmp/omh-smoke").resolve())
         hermes_home = str(Path("/tmp/hermes-smoke").resolve())
@@ -641,7 +659,7 @@ class ReleaseSmokeTests(unittest.TestCase):
 
         commands = [step["command"] for step in payload["steps"]]
         self.assertEqual(commands[0], ["omh-dev", "--omh-home", omh_home, "--hermes-home", hermes_home, "setup"])
-        self.assertIn(["hermes", "skills", "check", "oh-my-hermes"], commands)
+        self.assertIn(["hermes", "skills", "check", "omh-routing"], commands)
         self.assertIn(["omh-dev", "--omh-home", omh_home, "--hermes-home", hermes_home, "doctor"], commands)
         self.assertNotIn(["hermes", "skills", "inspect", "oh-my-hermes"], commands)
         installed_commands = [step["command"] for step in payload["installed_command_smoke"]["steps"]]

@@ -214,26 +214,9 @@ for using OMH.
 > for the version you intend to install. Publication is not runtime verification:
 > it does not establish a successful install, update, or Windows CI result.
 
-Choose one installation path. The package-manager paths install the same `omh`
-command as the platform installers.
-
-### Homebrew
-
-```sh
-brew install rlaope/tap/omh
-```
-
-### Bun (recommended)
-
-```sh
-bun install -g oh-my-hermes
-```
-
-### npm
-
-```sh
-npm install -g oh-my-hermes
-```
+Choose one installation path. On macOS and Linux use the universal installer;
+on native Windows use the PowerShell installer. The package-manager paths
+install the same `omh` command from the published release.
 
 ### Universal installer (macOS/Linux)
 
@@ -257,9 +240,43 @@ entirely.
 irm https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.ps1 | iex
 ```
 
-Windows npm/Bun launcher support is covered by the Windows CI suite, including
-packed-tarball installation and CLI smoke checks. The PowerShell installer
-remains the native Windows alternative.
+Windows npm/Bun launcher support is gated by the Windows CI suite and is still
+pending: the shared launcher has Windows path, `py -3`, and command-shim
+handling, but no Windows job installs the packed tarball and runs the CLI yet
+(the packed-tarball smoke runs on Ubuntu and macOS only). Use the PowerShell
+installer on native Windows.
+
+### Homebrew
+
+```sh
+brew install rlaope/tap/omh
+```
+
+### Bun
+
+```sh
+bun install -g oh-my-hermes
+```
+
+### npm
+
+```sh
+npm install -g oh-my-hermes
+```
+
+Bun and npm need Node 18 or later on PATH as well as Python 3.11+ (`python3`,
+or one of `python3.14` through `python3.11`). The `omh` command they install is
+a Node launcher, so a Bun install on a machine without Node fails at the first
+`omh` call with `env: node: No such file or directory`. Check both before you
+install:
+
+```sh
+node -e 'process.exit(Number(process.versions.node.split(".")[0]) < 18 ? 1 : 0)' && echo "Node 18+ OK"
+python3 -I -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' && echo "Python 3.11+ OK"
+```
+
+A bare `python3 --version` that succeeds is not enough: macOS's own
+`/usr/bin/python3` is 3.9. Homebrew installs its own Python.
 
 ### Set up OMH
 
@@ -3206,9 +3223,9 @@ hermes skills tap add rlaope/oh-my-hermes
 hermes skills install rlaope/oh-my-hermes/skills/omh-routing --yes
 ```
 
-Use the full identifier for first install. It avoids short-name resolver
-ambiguity in current Hermes CLI releases while installing the same
-`oh-my-hermes` skill.
+Use the full identifier for every tap install. A short name can resolve to
+another tap's skill in current Hermes CLI releases. The router skill's directory
+and its frontmatter name are both `omh-routing`.
 
 Path A is an alternative to `omh setup`, not an addition to it. A tap install
 lands in the Hermes home's own skills directory, which Hermes 0.21.6 and later
@@ -3220,10 +3237,10 @@ an OMH update. `omh doctor` names such a copy under `identity_conflicts`.
 Install additional workflow skills when you want direct Hermes skill surfaces:
 
 ```sh
-hermes skills install ulw-interview
-hermes skills install ulw-plan
-hermes skills install ulw-research
-hermes skills install omh-code-review
+hermes skills install rlaope/oh-my-hermes/skills/ulw-interview --yes
+hermes skills install rlaope/oh-my-hermes/skills/ulw-plan --yes
+hermes skills install rlaope/oh-my-hermes/skills/ulw-research --yes
+hermes skills install rlaope/oh-my-hermes/skills/omh-code-review --yes
 ```
 
 This path reads the tap-compatible skill pack under `skills/` in this
@@ -3375,7 +3392,7 @@ The live smoke runs the selected install path and then verifies:
 ```sh
 hermes skills tap list
 hermes skills list --enabled-only
-hermes skills check oh-my-hermes
+hermes skills check omh-routing
 hermes skills inspect rlaope/oh-my-hermes/skills/omh-routing
 ```
 
