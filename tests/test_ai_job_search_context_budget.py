@@ -116,9 +116,11 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
                                else body for heading, body in parts)
             legacy_hashes[template.name] = hashlib.sha256(restored.encode()).hexdigest()
         # Re-derived from both sources: the vi rewordings above plus
-        # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main, then
-        # the pi-family runtime rename in model-setup, maestro, and ultrawork.
-        self.assertEqual(_digest(legacy_hashes), '215531d97d520895771534f81219bbadc55933d939fbe3bfe772525a23c4ff7a')
+        # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
+        # Re-derived from both main sources above plus the bounded dag-ulw
+        # baseline-verification guidance, then the pi-family runtime rename in
+        # model-setup, maestro, and ultrawork.
+        self.assertEqual(_digest(legacy_hashes), 'fc69d607e32499c7303ed7c311403d0bbe995070d82b46b8160ae044afab4f9d')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
@@ -132,11 +134,13 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         self.assertLessEqual(max(len(t.content.encode()) for t in feature_refs), 4039)
 
     def test_hard_per_item_schema_and_injection_limits_do_not_move(self) -> None:
-        # Recorded base constants: only the three catalog-total ratchets move.
+        # Career growth moves only the three catalog-total ratchets. Later
+        # schema changes keep their own measured marginal caps; parked waits
+        # are covered by test_per_turn_budgets, not funded from career slack.
         from omh.maintenance.drift import budget_metrics
         expected = {
             'skill_index_line_max_chars': 100,
-            'plugin_tool_schema_chars': 68757,  # Main's search tool, then #2277's agent-board prepare fields.
+            'plugin_tool_schema_chars': 69186,  # #2277 prepare fields, then parked DAG waits (+429).
             'pre_llm_call_context_chars_max': 5786,  # The pi-family runtime rename (+6).
             'pre_llm_call_context_fallback_chars_max': 7222,  # The same rename (+6).
             'awareness_primer_markdown_chars': 3520,

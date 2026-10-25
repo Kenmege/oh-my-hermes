@@ -201,6 +201,22 @@ class Answers(Base):
 
 
 @contextmanager
+def detector_module(source: str | None) -> Iterator[None]:
+    """Import a real optional host package, restoring modules and path afterwards."""
+    with TemporaryDirectory() as tmp, patch_modules({}):
+        package = Path(tmp) / "agent"
+        package.mkdir()
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        if source is not None:
+            (package / "oneshot_footprint.py").write_text(source, encoding="utf-8")
+        for name in list(sys.modules):
+            if name == "agent" or name.startswith("agent."):
+                del sys.modules[name]
+        with patch.object(sys, "path", [tmp, *sys.path]):
+            yield
+
+
+@contextmanager
 def terminal_env(value: str | None = None) -> Iterator[None]:
     """``TERMINAL_ENV`` as given, or unset: the variable `terminal_backend` falls back to."""
     with patch.dict(os.environ):
@@ -280,12 +296,13 @@ class DefineTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok", result)
 
     def test_lint_is_advice_and_never_rejects(self) -> None:
-        nodes = [node("a", category="deep", prompt="Do the thing."), node("b", category="deep-work", scope=("b.py",)),
+        # A partial marker set is lint; a prompt with no marker at all is refused (see DefineTests.preflight).
+        nodes = [node("a", category="deep", prompt="TASK: do the thing."), node("b", category="deep-work", scope=("b.py",)),
                  node("c", category="ultrabrain"), node("d", category="ultrabrain")]
         with homes():
             result = call(action="define", run="feat", nodes=nodes)
         self.assertEqual(result["status"], "ok", result)
-        self.assertIn("missing_markers:a:TASK,DELIVERABLE,SCOPE,VERIFY,STOP_WHEN", result["lint"])
+        self.assertIn("missing_markers:a:DELIVERABLE,SCOPE,VERIFY,STOP_WHEN", result["lint"])
         self.assertIn("no_verification_node", result["lint"])
         self.assertIn("ultrabrain_more_than_once", result["lint"])
         with homes():
@@ -841,6 +858,167 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(result["reason"], "not_failed")
 
 
+class PreflightTests(unittest.TestCase):
+    """What define refuses before a node is ever handed out, and the serial-graph lint."""
+
+    def test_define_refuses_over_oneshot_budget(self) -> None:
+        with homes() as home, patch.object(dag_tool, "_single_query_session", return_value=True):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            result = call(action="define", run="feat", nodes=[node("a"), node("b")])
+        self.assertEqual((result["status"], result["reason"]), ("refused", "oneshot_budget_exceeded"), result)
+        self.assertIn("1", result["say"])
+        self.assertIn("2", result["say"])
+
+    def test_define_allows_interactive_session(self) -> None:
+        with homes() as home, patch.object(dag_tool, "_single_query_session", return_value=False):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+        self.assertEqual(result["status"], "ok", result)
+
+    def test_a_healthy_detector_saying_interactive_leaves_the_graph_uncapped(self) -> None:
+        with homes() as home, detector_module("def is_single_query_session():\n    return False\n"):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            self.assertFalse(dag_tool._single_query_session())
+            self.assertIsNone(dag_tool.oneshot_child_limit(home.hermes))
+            result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+            self.assertEqual(result["status"], "ok", result)
+            self.assertTrue(dag_run.record_path(home.omh, PARENT, "feat").exists())
+
+    def test_an_absent_optional_detector_is_not_one_shot_and_stays_uncapped(self) -> None:
+        # `None` in sys.modules blocks the import the way an install without the
+        # host package does; the absent path is the documented no-cap answer.
+        with homes() as home, patch_modules({"agent": None, "agent.oneshot_footprint": None}):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+        self.assertEqual(result["status"], "ok", result)
+
+    def _assert_detector_refuses_without_record_changes(self, source: str) -> None:
+        for existing in (False, True):
+            with self.subTest(existing=existing), homes() as home, detector_module(source):
+                slots_table(home)
+                (home.hermes / "config.yaml").write_text(
+                    "delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+                if existing:
+                    with patch.object(dag_tool, "_single_query_session", return_value=False):
+                        self.assertEqual(call(action="define", run="feat", nodes=[node("a")])["status"], "ok")
+                path = dag_run.record_path(home.omh, PARENT, "feat")
+                before = path.read_bytes() if path.exists() else None
+                for operation in (dag_tool._single_query_session, lambda: dag_tool.oneshot_child_limit(home.hermes)):
+                    with self.assertRaises(dag_run.DagRefusal) as raised:
+                        operation()
+                    self.assertEqual(raised.exception.reason, "oneshot_detection_unavailable")
+                result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+                self.assertEqual((result["status"], result.get("reason")),
+                                 ("refused", "oneshot_detection_unavailable"), result)
+                self.assertIn("one-shot", result["say"])
+                for secret in ("ModuleNotFoundError", "ImportError", "RuntimeError",
+                               "omh_review_missing_detector_dependency", "private failure"):
+                    self.assertNotIn(secret, json.dumps(result))
+                self.assertEqual(path.exists(), existing)
+                self.assertEqual(path.read_bytes() if path.exists() else None, before)
+
+    def test_missing_dependency_during_detector_invocation_refuses_without_record_changes(self) -> None:
+        sources = ["def is_single_query_session():\n    import omh_review_missing_detector_dependency\n"]
+        # Even a permitted absence name (or no name) from the callable is a failure.
+        for missing in ("agent", "agent.oneshot_footprint", None):
+            sources.append("def is_single_query_session():\n"
+                           f"    raise ModuleNotFoundError('private failure', name={missing!r})\n")
+        for source in sources:
+            with self.subTest(source=source):
+                self._assert_detector_refuses_without_record_changes(source)
+
+    def test_missing_dependency_during_detector_import_refuses_without_record_changes(self) -> None:
+        sources = ["import omh_review_missing_detector_dependency\n"]
+        # Prefix matches and unnamed ImportErrors do not establish optional absence.
+        for missing in ("agent.other_dependency", "agent.oneshot_footprint.dependency", None):
+            sources.append(f"raise ModuleNotFoundError('private failure', name={missing!r})\n")
+        sources.extend(("raise ImportError('private failure')\n", "raise RuntimeError('private failure')\n", ""))
+        for source in sources:
+            with self.subTest(source=source):
+                self._assert_detector_refuses_without_record_changes(source)
+
+    def test_an_absent_agent_package_stays_uncapped(self) -> None:
+        with homes() as home, patch_modules({"agent": None}):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            self.assertFalse(dag_tool._single_query_session())
+            self.assertIsNone(dag_tool.oneshot_child_limit(home.hermes))
+            result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+            self.assertEqual(result["status"], "ok", result)
+            self.assertTrue(dag_run.record_path(home.omh, PARENT, "feat").exists())
+
+    def test_an_absent_detector_module_in_a_present_agent_stays_uncapped(self) -> None:
+        with homes() as home, detector_module(None):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            self.assertFalse(dag_tool._single_query_session())
+            self.assertIsNone(dag_tool.oneshot_child_limit(home.hermes))
+            result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+            self.assertEqual(result["status"], "ok", result)
+            self.assertTrue(dag_run.record_path(home.omh, PARENT, "feat").exists())
+
+    def test_a_healthy_imported_oneshot_detector_enforces_the_budget(self) -> None:
+        with homes() as home, detector_module("def is_single_query_session():\n    return True\n"):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            self.assertTrue(dag_tool._single_query_session())
+            self.assertEqual(dag_tool.oneshot_child_limit(home.hermes), 1)
+            result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+            self.assertEqual((result["status"], result.get("reason")),
+                             ("refused", "oneshot_budget_exceeded"), result)
+            self.assertFalse(dag_run.record_path(home.omh, PARENT, "feat").exists())
+
+    def test_a_broken_installed_detector_refuses_by_name_and_writes_nothing(self) -> None:
+        def broken() -> bool:
+            raise RuntimeError("host one-shot state is unreadable")
+
+        detector = SimpleNamespace(is_single_query_session=broken)
+        with homes() as home, patch_modules({"agent": SimpleNamespace(oneshot_footprint=detector),
+                                             "agent.oneshot_footprint": detector}):
+            (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+            result = call(action="define", run="feat", nodes=[node("a"), node("b")])
+            written = dag_run.record_path(home.omh, PARENT, "feat").exists()
+        self.assertEqual((result["status"], result["reason"]), ("refused", "oneshot_detection_unavailable"), result)
+        self.assertIn("one-shot", result["say"])
+        self.assertNotIn("host one-shot state is unreadable", result["say"])
+        self.assertNotIn("RuntimeError", result["say"])
+        self.assertFalse(written, "a refused define must not leave a run record behind")
+
+    def test_zero_limit_is_unlimited_but_invalid_values_follow_the_host_default(self) -> None:
+        cases = (("0", "ok"), ("-1", "refused"), ("many", "refused"))
+        for raw, status in cases:
+            with self.subTest(raw=raw), homes() as home, \
+                    patch.object(dag_tool, "_single_query_session", return_value=True):
+                (home.hermes / "config.yaml").write_text(
+                    f"delegation:\n  oneshot_max_children: {raw}\n", encoding="utf-8")
+                result = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+            self.assertEqual((result["status"], result.get("reason")),
+                             (status, None if status == "ok" else "oneshot_budget_exceeded"), result)
+            if status == "refused":
+                self.assertIn("at most 2 nodes", result["say"])
+
+    def test_define_refuses_markerless_node(self) -> None:
+        with homes():
+            result = call(action="define", run="feat", nodes=[node("a", prompt="Do the thing.")])
+        self.assertEqual((result["status"], result["reason"]), ("refused", "prompt_markers_missing"), result)
+        self.assertIn("a", result["say"])
+        self.assertIn("TASK", result["say"])
+
+    def test_partial_markers_stay_lint(self) -> None:
+        with homes():
+            result = call(action="define", run="feat",
+                          nodes=[node("a", prompt="TASK: do it\nDELIVERABLE: a change")])
+        self.assertEqual(result["status"], "ok", result)
+        self.assertIn("missing_markers:a:SCOPE,VERIFY,STOP_WHEN", result["lint"])
+
+    def test_lint_serial_graph(self) -> None:
+        chain = [node("n0")] + [node(f"n{index}", depends_on=(f"n{index - 1}",)) for index in range(1, 5)]
+        wide = [node("n0"), node("n1"), node("n2"), node("n3"),
+                node("n4", depends_on=("n0", "n1", "n2", "n3"))]
+        self.assertIn("serial_graph:5 nodes, critical path 5; most of the graph is one chain, "
+                      "so split it into parallel lanes where the work allows.",
+                      dag_run.lint([dag_run._validated_node(item) for item in chain]))
+        self.assertFalse([finding for finding in dag_run.lint([dag_run._validated_node(item) for item in wide])
+                          if finding.startswith("serial_graph")])
+
+
 class ExtendTests(unittest.TestCase):
     """Work found missing after every node passed: an extend round on the same run, at most two per run."""
 
@@ -903,8 +1081,10 @@ class ExtendTests(unittest.TestCase):
     def test_the_new_nodes_are_linted(self) -> None:
         with homes() as home:
             self._done(home)
-            extended = call(action="extend", run="feat", nodes=[node("csv", scope=("b.py",), prompt="just do it")])
-        self.assertIn("missing_markers:csv:TASK,DELIVERABLE,SCOPE,VERIFY,STOP_WHEN", extended["lint"])
+            markerless = call(action="extend", run="feat", nodes=[node("csv", scope=("b.py",), prompt="just do it")])
+            extended = call(action="extend", run="feat", nodes=[node("csv", scope=("b.py",), prompt="TASK: add CSV")])
+        self.assertEqual((markerless["status"], markerless["reason"]), ("refused", "prompt_markers_missing"))
+        self.assertIn("missing_markers:csv:DELIVERABLE,SCOPE,VERIFY,STOP_WHEN", extended["lint"])
         self.assertIn("verification_misses:csv", extended["lint"])
 
     def test_two_rounds_then_the_parent_reports_what_is_open(self) -> None:
