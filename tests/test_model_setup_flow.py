@@ -874,6 +874,80 @@ class ModelSetupFlowTests(unittest.TestCase):
                     self.assertIn("rerun `omh setup --model-setup`", stdout)
                     self.assertNotIn("owner default remains active", stdout)
 
+    @unittest.skipIf(os.name == "nt", "the stub is a shebang script resolved as `hermes` on PATH")
+    def test_a_failing_hermes_command_is_classified_not_a_traceback(self) -> None:
+        # Given: a Hermes on PATH whose `config path` exits nonzero, or hangs.
+        failing_hermes = (
+            "import os, sys, time\n"
+            "if sys.argv[1:] == ['config', 'path']:\n"
+            "    if os.environ['HERMES_STUB_MODE'] == 'hang':\n"
+            "        time.sleep(30)\n"
+            "    raise SystemExit(2)\n"
+            "raise SystemExit(0)\n"
+        )
+        for mode in ("nonzero", "hang"):
+            with self.subTest(mode=mode), TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                bin_dir = root / "bin"
+                bin_dir.mkdir()
+                hermes = bin_dir / "hermes"
+                hermes.write_text(f"#!{sys.executable}\n" + failing_hermes, encoding="utf-8")
+                hermes.chmod(0o755)
+                environment = {
+                    "PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
+                    "HERMES_HOME": str(root / ".hermes"),
+                    "HERMES_STUB_MODE": mode,
+                }
+                with patch.dict(os.environ, environment), patch.object(
+                    setup_commands,
+                    "discover_local_models",
+                    return_value=_discovery([]),
+                ), patch("omh.coding.hermes_model_config._COMMAND_TIMEOUT_SECONDS", 1):
+                    # When: setup runs the model step.
+                    status, stdout, stderr = run_cli(
+                        ["--omh-home", str(root / ".omh"), "--hermes-home", str(root / ".hermes"), "setup",
+                         "--dry-run", "--no-menubar", "--model-setup", "--no-interactive", "--json"],
+                        output_json=False,
+                    )
+
+                # Then: a classified failure, exit 1, and `ok` says the same.
+                self.assertEqual((status, stderr), (1, ""))
+                payload = json.loads(stdout)
+                activation = payload["steps"]["model_activation"]
+                self.assertEqual(activation["status"], "hermes_command_failed")
+                self.assertIn("config path", activation["reason"])
+                self.assertEqual(activation["next_action"], "check_hermes_config_commands_then_rerun_model_setup")
+                self.assertFalse(payload["ok"])
+
+    @unittest.skipIf(os.name == "nt", "the stub is a shebang script resolved as `hermes` on PATH")
+    def test_ok_and_the_state_record_agree_with_the_exit_code(self) -> None:
+        # Given: a real run whose model step cannot read Hermes' config.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            target = root / ".hermes"
+            bin_dir, call_log = self._recording_hermes(root)
+            environment = {
+                "PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
+                "HERMES_HOME": str(target),
+                "HERMES_CALL_LOG": str(call_log),
+            }
+            with patch.dict(os.environ, environment), patch.object(
+                setup_commands,
+                "discover_local_models",
+                return_value=_discovery([]),
+            ):
+                status, stdout, stderr = run_cli(
+                    ["--omh-home", str(root / ".omh"), "--hermes-home", str(target), "setup",
+                     "--skip-apply", "--no-menubar", "--model-setup", "--no-interactive", "--json"],
+                    output_json=False,
+                )
+
+            # Then: neither the payload nor the state record calls exit 3 a success.
+            self.assertEqual((status, stderr), (3, ""))
+            self.assertFalse(json.loads(stdout)["ok"])
+            state = json.loads((root / ".omh" / "runtime" / "state.json").read_text(encoding="utf-8"))
+            self.assertFalse(state["last_setup"]["ok"])
+
 
 if __name__ == "__main__":
     unittest.main()

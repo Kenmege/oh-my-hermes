@@ -52,6 +52,8 @@ def print_model_activation_summary(
                 print(f"  - {candidate.get('model', '')}: {candidate.get('status', 'unobserved')}")
     if payload.get("status") == "hermes_unavailable":
         print(f"  {tr(language, 'model_setup_hermes_unavailable')}")
+    elif payload.get("status") == "hermes_command_failed":
+        print(f"  {tr(language, 'model_setup_hermes_command_failed', reason=payload.get('reason', ''))}")
     elif payload.get("status") == "hermes_config_missing":
         key = "model_setup_config_missing_dry_run" if payload.get("dry_run") else "model_setup_config_missing"
         print(f"  {tr(language, key, path=payload.get('config_path', ''))}")

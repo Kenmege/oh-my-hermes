@@ -8,6 +8,7 @@ from typing import Callable
 
 from ..coding.hermes_model_config import (
     AliasCollisionError,
+    HermesCommandError,
     HermesConfigUnreadableError,
     HermesModelConfigError,
     HermesUnavailableError,
@@ -51,17 +52,40 @@ def model_activation_result(
     candidates = classified_model_candidates(discovery, confirmed)
     try:
         inspection = dependencies.inspect_hermes_model_config()
+    # Every later stage reads, writes, or is bound to the digest of Hermes'
+    # config, so none can run; asking the interactive questions would collect
+    # answers nothing uses.
     except HermesUnavailableError as exc:
-        # Every later stage reads or writes Hermes' config, so none can run.
-        # Asking the interactive questions would collect answers nothing uses.
-        return _hermes_unavailable_result(discovery, candidates, reason=str(exc))
-    except HermesConfigUnreadableError as exc:
-        # Every later stage is bound to this file's digest, so none can run.
-        return _hermes_config_missing_result(
+        return _inspection_failed_result(
             discovery,
             candidates,
-            config_path=exc.config_path,
-            dry_run=bool(getattr(args, "dry_run", False)),
+            status="hermes_unavailable",
+            next_action="install_hermes_then_rerun_model_setup",
+            cause="Hermes was not found",
+            details={"reason": str(exc)},
+        )
+    except HermesConfigUnreadableError as exc:
+        dry_run = bool(getattr(args, "dry_run", False))
+        return _inspection_failed_result(
+            discovery,
+            candidates,
+            status="hermes_config_missing",
+            # A dry run writes nothing, so on a fresh home the file a real
+            # setup creates (step 2 registers OMH in it) does not exist yet.
+            next_action="rerun_without_dry_run" if dry_run else "create_hermes_config_then_rerun_model_setup",
+            cause="Hermes' config file could not be read",
+            details={"config_path": str(exc.config_path), "dry_run": dry_run},
+        )
+    except HermesCommandError as exc:
+        # `hermes config path` exited nonzero, timed out, or a query returned
+        # output the adapter refuses: Hermes is there but did not answer.
+        return _inspection_failed_result(
+            discovery,
+            candidates,
+            status="hermes_command_failed",
+            next_action="check_hermes_config_commands_then_rerun_model_setup",
+            cause="A Hermes command failed",
+            details={"reason": str(exc)},
         )
     aliases = model_alias_changes(getattr(args, "model_alias", []))
 
@@ -225,16 +249,20 @@ def model_activation_result(
     }
 
 
-def _hermes_unavailable_result(
+def _inspection_failed_result(
     discovery: dict[str, object],
     candidates: list[dict[str, str]],
     *,
-    reason: str,
+    status: str,
+    next_action: str,
+    cause: str,
+    details: dict[str, object],
 ) -> dict[str, object]:
+    """The payload for a model step that stopped at inspection: nothing later ran."""
     return {
         "schema_version": "omh_model_activation/v1",
-        "status": "hermes_unavailable",
-        "reason": reason,
+        "status": status,
+        **details,
         "stages": ["inspect", "confirm_active", "preview", "apply", "verify"],
         "discovery": discovery,
         "inspection": None,
@@ -244,40 +272,9 @@ def _hermes_unavailable_result(
         "preview": None,
         "apply": {"status": "not_run", "commands": []},
         "verification": {"status": "not_run", "verified": False},
-        "next_action": "install_hermes_then_rerun_model_setup",
+        "next_action": next_action,
         "claim_boundary": (
-            "Hermes was not found, so its model config was not inspected, previewed, or changed. "
-            "Nothing about the active model was observed."
-        ),
-    }
-
-
-def _hermes_config_missing_result(
-    discovery: dict[str, object],
-    candidates: list[dict[str, str]],
-    *,
-    config_path: Path,
-    dry_run: bool,
-) -> dict[str, object]:
-    return {
-        "schema_version": "omh_model_activation/v1",
-        "status": "hermes_config_missing",
-        "config_path": str(config_path),
-        "dry_run": dry_run,
-        "stages": ["inspect", "confirm_active", "preview", "apply", "verify"],
-        "discovery": discovery,
-        "inspection": None,
-        "candidates": candidates,
-        "recommendations": None,
-        "provider_next_actions": [],
-        "preview": None,
-        "apply": {"status": "not_run", "commands": []},
-        "verification": {"status": "not_run", "verified": False},
-        # A dry run writes nothing, so on a fresh home the file a real setup
-        # creates (step 2 registers OMH in it) does not exist yet.
-        "next_action": "rerun_without_dry_run" if dry_run else "create_hermes_config_then_rerun_model_setup",
-        "claim_boundary": (
-            "Hermes' config file could not be read, so it was not inspected, previewed, or changed. "
+            f"{cause}, so its model config was not inspected, previewed, or changed. "
             "Nothing about the active model was observed."
         ),
     }
