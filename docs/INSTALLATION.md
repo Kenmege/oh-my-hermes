@@ -1360,7 +1360,8 @@ remain protected as additions. Hermes imports the plugin with its own Python,
 which may be another version, so a cache under another version's tag qualifies
 by its well-formed header alone; a foreign header under omh's own tag does not. The staged
 replacement checks the renamed original again before installing; late additions
-or managed edits cause a refusal and restoration of the original directory.
+or managed edits that diverge from the incoming bundle cause a refusal and
+restoration of the original directory.
 If a plugin tree appears after an initially empty path was inspected, setup
 restores it instead of treating it as the original tree, even with `--force`.
 A tree that becomes Hermes-managed during staging is likewise never replaced
@@ -1413,6 +1414,31 @@ Run doctor separately after setup:
 ```sh
 omh doctor
 ```
+
+Doctor has two independent privacy controls, which also work with `--json`:
+
+- `--no-personal-files` does not open or read the bodies of `SOUL.md`,
+  `memories/MEMORY.md`, or `memories/USER.md`. The
+  `soul_missing_or_starter` and `hermes_memory_staleness` advisories remain in
+  the report as `skipped`, with a reason saying they were not run; they are not
+  passing or failed observations. Other checks and advisories are unchanged,
+  and Hermes `config.yaml` reads still happen.
+- `--no-state-write` does not create or update `runtime/state.json` and skips
+  the `.doctor-write-test` writes for `runtime_artifacts` and `workflow_state`.
+  Those checks report `write access not probed` and use a non-writing
+  permission check instead of claiming observed writability. JSON output has
+  an empty `state_log` and a `privacy_controls` marker; human output says state
+  write is disabled. This control removes doctor's state and probe writes
+  under the OMH home, including on check or advisory error paths. It does not
+  make every subcheck write-free: the separate Hermes loader-registration
+  smoke can still copy the plugin into a temporary directory when a Hermes
+  install is found, so this flag is not a promise of no writes anywhere.
+
+For managed plugin upgrades, a local file whose bytes are identical to the
+incoming bundle does not block a non-forced `omh setup` or `omh update`, even
+when its hash differs from the older installed manifest. The normal install
+rewrites the manifest. A locally divergent file still requires `--force`, and
+the staging revalidation applies the same distinction.
 
 First-run expectation:
 

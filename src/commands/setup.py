@@ -2922,13 +2922,16 @@ def _list_catalog_context(skills: list[dict[str, object]]) -> dict[str, object]:
 
 def _doctor_result(args: argparse.Namespace) -> dict[str, object]:
     paths = _paths(args)
-    checks = run_doctor(paths)
+    # Both default to today's behaviour; each flag turns off one thing only.
+    personal_files = not getattr(args, "no_personal_files", False)
+    state_write = not getattr(args, "no_state_write", False)
+    checks = run_doctor(paths, state_write=state_write)
     next_action = recommended_next_action(checks)
     summary = _doctor_operator_summary(checks)
     runtime_writable = any(check.name == "runtime_artifacts" and check.ok for check in checks)
     runtime_state_readable = not any(check.name == "runtime_state" and not check.ok for check in checks)
     state_log: dict[str, str] = {}
-    if runtime_writable and runtime_state_readable:
+    if state_write and runtime_writable and runtime_state_readable:
         update_state(
             paths,
             {
@@ -2941,8 +2944,8 @@ def _doctor_result(args: argparse.Namespace) -> dict[str, object]:
             },
         )
         state_log = {"path": str(paths.runtime_state_path), "entry": "last_doctor"}
-    advisories = run_doctor_advisories(paths)
-    return {
+    advisories = run_doctor_advisories(paths, personal_files=personal_files)
+    payload: dict[str, object] = {
         "ok": doctor_ok(checks),
         "checks": [check.__dict__ for check in checks],
         "summary": summary,
@@ -2955,6 +2958,26 @@ def _doctor_result(args: argparse.Namespace) -> dict[str, object]:
         # not move the doctor status, the issue counts, or the exit code.
         "build_identity": probe_build_identity(),
         "language": _resolve_language(args),
+    }
+    # Only when a control is on, so a default run's payload keeps its shape.
+    if not (personal_files and state_write):
+        payload["privacy_controls"] = _doctor_privacy_controls(personal_files=personal_files, state_write=state_write)
+    return payload
+
+
+def _doctor_privacy_controls(*, personal_files: bool, state_write: bool) -> dict[str, object]:
+    """Say which doctor privacy controls were on and what each one left undone."""
+    return {
+        "personal_files": "read" if personal_files else "not_read",
+        "personal_files_skipped": (
+            [] if personal_files else ["advisory:soul_missing_or_starter", "advisory:hermes_memory_staleness"]
+        ),
+        "state_write": "enabled" if state_write else "disabled",
+        "state_write_skipped": (
+            []
+            if state_write
+            else ["runtime/state.json last_doctor", "runtime_artifacts write probe", "workflow_state write probe"]
+        ),
     }
 
 
@@ -4972,6 +4995,7 @@ def _print_doctor_summary(payload: dict[str, object], *, language: str = "en") -
     state_log = payload.get("state_log", {})
     if isinstance(state_log, dict) and state_log.get("path") and state_log.get("entry"):
         print(f"  {tr(language, 'state_log', path=state_log.get('path'), entry=state_log.get('entry'))}")
+    _print_doctor_privacy_controls(payload)
     for check in checks:
         if not isinstance(check, dict) or (check.get("ok") and check.get("severity") != "warning"):
             continue
@@ -4990,11 +5014,24 @@ def _print_doctor_summary(payload: dict[str, object], *, language: str = "en") -
     print(f"  {tr(language, 'machine_readable')}")
 
 
+def _print_doctor_privacy_controls(payload: dict[str, object]) -> None:
+    """Say, under the summary, what a privacy control left unread or unwritten."""
+    controls = payload.get("privacy_controls")
+    if not isinstance(controls, dict):
+        return
+    if controls.get("state_write") == "disabled":
+        print("  State write: disabled (--no-state-write); runtime/state.json was not written and no write probe ran.")
+    if controls.get("personal_files") == "not_read":
+        print("  Personal files: not read (--no-personal-files); SOUL.md, memories/MEMORY.md and memories/USER.md were not opened.")
+
+
 def _print_doctor_advice(payload: dict[str, object], *, use_color: bool) -> None:
     """Render the read-only Advice lane, separate from doctor checks.
 
     Advice never affects the doctor status or exit code; it is a default-on,
     plain-text section that surfaces the ``hermes_config_advice`` advisory lane.
+    A ``skipped`` entry is listed with its reason, so an inspector that did not
+    run is never mistaken for one that found nothing.
     """
     advisories = payload.get("advisories", {})
     if not isinstance(advisories, dict):
@@ -5007,7 +5044,8 @@ def _print_doctor_advice(payload: dict[str, object], *, use_color: bool) -> None
         for entry in entries
         if isinstance(entry, dict) and entry.get("status") == "advice"
     ]
-    if not actionable:
+    skipped = [entry for entry in entries if isinstance(entry, dict) and entry.get("status") == "skipped"]
+    if not actionable and not skipped:
         return
     print(_color("Advice (read-only; does not affect doctor status)", "1;36", use_color))
     for entry in actionable:
@@ -5017,6 +5055,8 @@ def _print_doctor_advice(payload: dict[str, object], *, use_color: bool) -> None
         print(f"  - {check_id}: {observed}")
         if remediation:
             print(f"    Suggestion: {remediation}")
+    for entry in skipped:
+        print(f"  - {entry.get('check_id', 'unknown')}: skipped ({entry.get('reason', '')})")
 
 
 def _doctor_human_next_action(next_action: str, *, language: str) -> str:
@@ -6604,6 +6644,22 @@ def _add_top_level_commands(sub) -> None:
     doctor = sub.add_parser("doctor", help="Check local OMH install health and Hermes skill registration.")
     doctor.add_argument("--json", action="store_true", help="Print the full machine-readable doctor payload.")
     doctor.add_argument("--language", default=None, help=f"Human output language ({', '.join(LANGUAGE_CODES)}).")
+    doctor.add_argument(
+        "--no-personal-files",
+        action="store_true",
+        help=(
+            "Do not open Hermes personal files (SOUL.md, memories/MEMORY.md, memories/USER.md); "
+            "the checks that need them are reported as skipped."
+        ),
+    )
+    doctor.add_argument(
+        "--no-state-write",
+        action="store_true",
+        help=(
+            "Write nothing under the OMH home: no runtime/state.json `last_doctor` entry and no write probes; "
+            "writability is then checked from permissions and reported as not probed."
+        ),
+    )
     add_doctor_profile_isolation_argument(doctor)
     doctor.set_defaults(func=cmd_doctor)
 
