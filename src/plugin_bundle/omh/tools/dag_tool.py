@@ -114,7 +114,9 @@ OMH_DAG_SCHEMA = {
         "more than 48 nodes; its lint is advice. ready returns delegate_task calls, one per category, never more "
         "than the free slots: per call, run its route with omh_delegate_route, then delegate_task with the tasks "
         "unchanged. After each completion read the node's handoff file and settle it accepted, failed or blocked; "
-        "a child that says it is blocked is blocked, never accepted. settle returns what is ready next. repair adds "
+        "a child that says it is blocked is blocked, never accepted. A still-running wait may settle parked with "
+        "handle and wake_at (future UTC ISO-8601 or epoch, within 24h); ready reoffers it then, at most three parks. "
+        "settle returns what is ready next. repair adds "
         "nodes for a failed node, at most two cycles. extend adds nodes to a run whose nodes all passed when the goal "
         "check finds work missing, at most two rounds. Past either limit, report what is open. Relay any `say` once."
     ),
@@ -144,6 +146,10 @@ OMH_DAG_SCHEMA = {
                      "description": "settle / repair: the node id. extend: the node whose check found the gap."},
             "outcome": {"type": "string", "enum": list(dag_run.OUTCOMES)},
             "reason": {"type": "string"},
+            "handle": {"type": "string", "maxLength": dag_run.MAX_HANDLE_CHARS,
+                       "description": "settle parked: the still-running background process or CI run handle."},
+            "wake_at": {"type": ["string", "number"],
+                        "description": "settle parked: UTC ISO-8601 or epoch; future, at most 24 hours ahead."},
             "provider_error": {
                 "type": "boolean",
                 "description": "settle failed: the child died on a provider error (an HTTP 400, no model call).",
@@ -224,7 +230,7 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
 
                 happened = dag_run.settle(
                     record, derived, node, args.get("outcome"), args.get("reason"), _flag(args.get("provider_error")),
-                    read_handoff=read, now=now,
+                    read_handoff=read, now=now, handle=args.get("handle"), wake_at=args.get("wake_at"),
                 )
                 record["updated_at"] = now
                 dag_run.write_run(path, record)

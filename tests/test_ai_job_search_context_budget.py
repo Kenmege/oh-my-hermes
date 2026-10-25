@@ -129,11 +129,13 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         self.assertLessEqual(max(len(t.content.encode()) for t in feature_refs), 4039)
 
     def test_hard_per_item_schema_and_injection_limits_do_not_move(self) -> None:
-        # Recorded base constants: only the three catalog-total ratchets move.
+        # Career growth moves only the three catalog-total ratchets. Later
+        # schema changes keep their own measured marginal caps; parked waits
+        # are covered by test_per_turn_budgets, not funded from career slack.
         from omh.maintenance.drift import budget_metrics
         expected = {
             'skill_index_line_max_chars': 100,
-            'plugin_tool_schema_chars': 68757,  # Main's search tool, then #2277's agent-board prepare fields.
+            'plugin_tool_schema_chars': 69186,  # #2277 prepare fields, then parked DAG waits (+429).
             'pre_llm_call_context_chars_max': 5780,
             'pre_llm_call_context_fallback_chars_max': 7216,
             'awareness_primer_markdown_chars': 3520,

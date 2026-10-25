@@ -21,7 +21,7 @@ load_local_package()
 from _delegation_state import PARENT, homes  # noqa: E402
 from omh.plugin_bundle.omh import dag_run  # noqa: E402
 from omh.plugin_bundle.omh.tools import dag_tool  # noqa: E402
-from test_dag_tool import call, child_started, handoff, node, slots_table  # noqa: E402
+from test_dag_tool import PROMPT, call, child_started, handoff, node, slots_table  # noqa: E402
 
 
 def calls_by_node(result: dict) -> dict[str, dict]:
@@ -105,6 +105,217 @@ class SavedGoalLifecycleTests(unittest.TestCase):
             with patch.object(dag_tool.time, "time", return_value=time.time() + dag_run.HANDOUT_STALE_SECONDS + 1):
                 ready = call(action="ready", run="feat")
             self.assertIn(f"Run goal (saved):\n{goal}\n", calls_by_node(ready)["api"]["context"])
+
+
+class ParkedNodeTests(unittest.TestCase):
+    def test_parked_wait_contract_is_documented(self) -> None:
+        from omh.skills.dag_ulw_skill import run_loop_reference
+
+        reference = run_loop_reference()
+        for phrase in ("outcome=parked", "handle", "wake_at", "24 hours", "three parks", "park_limit_reached"):
+            self.assertIn(phrase, reference)
+
+    def test_short_park_does_not_rebind_the_previous_child(self) -> None:
+        with homes() as home:
+            slots_table(home)
+            moment = time.time()
+            with patch.object(dag_tool.time, "time", return_value=moment):
+                call(action="define", run="feat", nodes=[node("a")])
+                child_started(home, "feat", "a", now=moment)
+                call(action="settle", run="feat", node="a", outcome="parked",
+                     handle="proc:short", wake_at=moment + 1)
+            with patch.object(dag_tool.time, "time", return_value=moment + 1):
+                ready = call(action="ready", run="feat")
+            self.assertEqual(states(ready)["a"], "handed_out", ready)
+
+    def test_cancel_turns_parked_cancelled(self) -> None:
+        for elapsed in (0, 61):
+            with self.subTest(elapsed=elapsed), homes() as home:
+                slots_table(home)
+                moment = time.time()
+                with patch.object(dag_tool.time, "time", return_value=moment):
+                    call(action="define", run="feat", nodes=[node("a")])
+                    call(action="settle", run="feat", node="a", outcome="parked",
+                         handle="proc:123", wake_at=moment + 60)
+                with patch.object(dag_tool.time, "time", return_value=moment + elapsed):
+                    cancelled = call(action="cancel", run="feat")
+                    ready = call(action="ready", run="feat")
+                self.assertEqual(cancelled["state"], "cancelled")
+                self.assertEqual(states(cancelled)["a"], "cancelled")
+                self.assertFalse(ready["calls"])
+                self.assertEqual(record_of(home)["nodes"][0]["attempts"][-1]["outcome"], "parked")
+
+    def test_legacy_record_without_parked_derives(self) -> None:
+        record = dag_run.new_record(PARENT, "feat", "Feature", "", [node("a"), node("b", depends_on=("a",))], 100)
+        for outcome, expected in (("", "handed_out"), ("accepted", "accepted"), ("failed", "failed"),
+                                  ("blocked", "blocked"), ("retry", "ready")):
+            with self.subTest(outcome=outcome):
+                # Pre-park attempts have neither wait metadata nor resume metadata.
+                record["nodes"][0]["attempts"] = [{"n": 1, "handed_out_at": 100, "outcome": outcome,
+                                                  "settled_at": 101 if outcome else None}]
+                derived = dag_run.derive(record, [], 200)
+                self.assertEqual(derived["a"], {"child": None, "attempts": 1, "waits_on": [],
+                                                "held_by": [], "state": expected})
+                dependent = {"accepted": "ready", "failed": "held", "blocked": "held"}.get(outcome, "waiting")
+                self.assertEqual(derived["b"]["state"], dependent)
+                self.assertEqual(dag_run.cycles_left(record, "a"), dag_run.MAX_REPAIR_CYCLES)
+
+    def test_parked_needs_handle_and_deadline(self) -> None:
+        moment = 1_800_000_000.0
+        invalid = [
+            ({"wake_at": moment + 60}, "invalid_handle"),
+            ({"handle": "", "wake_at": moment + 60}, "invalid_handle"),
+            ({"handle": "x" * 121, "wake_at": moment + 60}, "invalid_handle"),
+            ({"handle": "proc:\n123", "wake_at": moment + 60}, "invalid_handle"),
+            ({"handle": 123, "wake_at": moment + 60}, "invalid_handle"),
+            ({"handle": "proc:123"}, "invalid_wake_at"),
+        ]
+        invalid.extend(({"handle": "proc:123", "wake_at": deadline}, "invalid_wake_at")
+                       for deadline in (None, True, float("nan"), float("inf"), moment, moment - 1,
+                                        moment + 86401, "nonsense", "2027-01-15T08:01:00",
+                                        "2027-01-15T09:01:00+01:00"))
+        with homes() as home, patch.object(dag_tool.time, "time", return_value=moment):
+            slots_table(home)
+            call(action="define", run="feat", nodes=[node("a")])
+            original = record_of(home)
+            for args, reason in invalid:
+                with self.subTest(args=args):
+                    refused = call(action="settle", run="feat", node="a", outcome="parked", **args)
+                    self.assertEqual(refused.get("reason"), reason, refused)
+                    self.assertEqual(record_of(home), original)
+            for index, deadline in enumerate((moment + 86400, "2027-01-15T08:01:00Z",
+                                              "2027-01-15T08:01:00+00:00")):
+                run = f"valid-{index}"
+                call(action="define", run=run, nodes=[node("a")])
+                result = call(action="settle", run=run, node="a", outcome="parked",
+                              handle="x" * 120, wake_at=deadline)
+                self.assertEqual(result["status"], "ok", result)
+                self.assertIsInstance(result["nodes"][0]["wake_at"], (int, float))
+        properties = dag_tool.OMH_DAG_SCHEMA["parameters"]["properties"]
+        self.assertIn("parked", properties["outcome"]["enum"])
+        self.assertEqual(properties["handle"]["maxLength"], 120)
+        self.assertEqual(set(properties["wake_at"]["type"]), {"string", "number"})
+
+    def test_park_limit_requires_settle(self) -> None:
+        for outcome in ("accepted", "failed", "blocked"):
+            with self.subTest(outcome=outcome), homes() as home:
+                slots_table(home)
+                moment = time.time()
+                with patch.object(dag_tool.time, "time", return_value=moment):
+                    call(action="define", run="feat", nodes=[node("a")])
+                for count in range(3):
+                    now = moment + count * 60
+                    with patch.object(dag_tool.time, "time", return_value=now):
+                        result = call(action="settle", run="feat", node="a", outcome="parked",
+                                      handle=f"proc:{count}", wake_at=now + 60)
+                    self.assertEqual(result["status"], "ok", result)
+                    with patch.object(dag_tool.time, "time", return_value=now + 60):
+                        self.assertIn("a", calls_by_node(call(action="ready", run="feat")))
+                stored = record_of(home)
+                with patch.object(dag_tool.time, "time", return_value=moment + 180):
+                    refused = call(action="settle", run="feat", node="a", outcome="parked",
+                                   handle="proc:fourth", wake_at=moment + 240)
+                    self.assertEqual(refused.get("reason"), "park_limit_reached", refused)
+                    self.assertEqual(record_of(home), stored)
+                    handoff(home, "feat", "a")
+                    settled = call(action="settle", run="feat", node="a", outcome=outcome)
+                self.assertEqual(settled["status"], "ok", settled)
+                self.assertEqual(states(settled)["a"], outcome)
+                self.assertEqual(dag_run.cycles_left(record_of(home), "a"), dag_run.MAX_REPAIR_CYCLES)
+
+    def test_parked_reoffered_after_wake_at(self) -> None:
+        with homes() as home:
+            slots_table(home)
+            moment = time.time()
+            with patch.object(dag_tool.time, "time", return_value=moment):
+                call(action="define", run="feat", nodes=[node("a"), node("b", depends_on=("a",))])
+                child_started(home, "feat", "a", now=moment)
+                parked = call(action="settle", run="feat", node="a", outcome="parked",
+                              handle="ci:run-987", wake_at=moment + 60)
+            self.assertEqual(parked["status"], "ok", parked)
+            for offset in (0, 59):
+                with patch.object(dag_tool.time, "time", return_value=moment + offset):
+                    self.assertFalse(call(action="ready", run="feat")["calls"])
+            with patch.object(dag_tool.time, "time", return_value=moment + 60):
+                ready = call(action="ready", run="feat")
+                repeat = call(action="ready", run="feat")
+            self.assertIn("a", calls_by_node(ready), ready)
+            self.assertIn("ci:run-987", calls_by_node(ready)["a"]["context"])
+            self.assertEqual(states(ready), {"a": "handed_out", "b": "waiting"})
+            self.assertFalse(repeat["calls"])
+            attempts = record_of(home)["nodes"][0]["attempts"]
+            self.assertEqual(len(attempts), 2)
+            self.assertEqual(attempts[0]["outcome"], "parked")
+            self.assertEqual(attempts[1]["n"], 2)
+            self.assertEqual(attempts[1]["outcome"], "")
+
+    def test_parked_does_not_spend_repair_cycle(self) -> None:
+        with homes() as home:
+            slots_table(home)
+            call(action="define", run="feat", nodes=[node("a"), node("b", depends_on=("a",))])
+            deadline = time.time() + 60
+            parked = call(action="settle", run="feat", node="a", outcome="parked",
+                          handle="proc:123", wake_at=deadline)
+            self.assertEqual(parked["status"], "ok", parked)
+            stored = record_of(home)
+            self.assertEqual(dag_run.cycles_left(stored, "a"), dag_run.MAX_REPAIR_CYCLES)
+            self.assertEqual(parked["state"], "running")
+            self.assertEqual(states(parked), {"a": "parked", "b": "waiting"})
+            self.assertEqual(parked["counts"]["failed"], 0)
+            self.assertEqual(parked["counts"]["parked"], 1)
+            self.assertIn("1 parked", parked["status_line"])
+            row = next(row for row in parked["nodes"] if row["id"] == "a")
+            self.assertEqual((row["handle"], row["wake_at"]), ("proc:123", deadline))
+            self.assertEqual(stored["nodes"][0]["attempts"][-1]["handle"], "proc:123")
+            self.assertFalse(parked["calls"])
+            refused = call(action="repair", run="feat", node="a", nodes=[node("fix")])
+            self.assertEqual(refused["reason"], "not_failed")
+            self.assertEqual(record_of(home), stored)
+
+    def test_provider_retry_after_wake_keeps_the_resume_handle(self) -> None:
+        with homes() as home:
+            slots_table(home)
+            moment = time.time()
+            with patch.object(dag_tool.time, "time", return_value=moment):
+                call(action="define", run="feat", nodes=[node("a")])
+                call(action="settle", run="feat", node="a", outcome="parked",
+                     handle="ci:123", wake_at=moment + 60)
+            with patch.object(dag_tool.time, "time", return_value=moment + 60):
+                wake = call(action="ready", run="feat")
+                retry = call(action="settle", run="feat", node="a", outcome="failed", provider_error=True)
+            wake_context = calls_by_node(wake)["a"]["context"]
+            retry_context = calls_by_node(retry)["a"]["context"]
+            self.assertIn("ci:123", wake_context)
+            self.assertEqual(retry["settled"], {"node": "a", "outcome": "retry"})
+            self.assertEqual([row["route"]["action"] for row in retry["calls"]], ["fallback"])
+            self.assertIn("ci:123", retry_context)
+            # One resume instruction carrying the one handle; the goal is not restated as a second work order.
+            self.assertEqual(retry_context.count("Resume the still-running wait"), 1)
+            self.assertEqual(retry_context.count("ci:123"), 1)
+            self.assertEqual(retry_context.count(PROMPT), 1)
+            attempts = record_of(home)["nodes"][0]["attempts"]
+            self.assertEqual([attempt.get("resume_handle") for attempt in attempts], [None, "ci:123", "ci:123"])
+            self.assertEqual(attempts[-1]["fallback"], True)
+
+    def test_a_resume_handle_dies_with_the_attempt_that_held_it(self) -> None:
+        # Two parks in a row keep the latest identity, not the first one.
+        chained = {"attempts": [
+            {"n": 1, "outcome": "parked", "handle": "ci:one"},
+            {"n": 2, "outcome": "retry", "resume_handle": "ci:one"},
+            {"n": 3, "outcome": "parked", "handle": "ci:two"},
+            {"n": 4, "outcome": "retry", "resume_handle": "ci:two"},
+        ]}
+        self.assertEqual(dag_run.hand_out(chained, "ready", 100).get("resume_handle"), "ci:two")
+        # Once the resumed attempt settles, later work on the node starts fresh.
+        settled = {"attempts": [
+            {"n": 1, "outcome": "parked", "handle": "ci:one"},
+            {"n": 2, "outcome": "retry", "resume_handle": "ci:one"},
+            {"n": 3, "outcome": "failed", "provider_error": False},
+        ]}
+        self.assertNotIn("resume_handle", dag_run.hand_out(settled, "ready", 200))
+        # A provider retry that never resumed a wait carries no identity either.
+        plain = {"attempts": [{"n": 1, "outcome": "retry", "provider_error": True}]}
+        self.assertNotIn("resume_handle", dag_run.hand_out(plain, "ready", 300))
 
 
 class RepairDataFlowTests(unittest.TestCase):
