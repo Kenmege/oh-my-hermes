@@ -42,6 +42,11 @@ the stdio entry's in a closed set of places. `Adapter` translates those, after
 * `session.steer` gets the execution generation of the turn it steers,
   `shell.exec` the session it runs in, and `session.list` is the owner's live
   listing followed by its stored one.
+* `session.interrupt` gets the execution generation of the turn it stops, as
+  Ink's `interruptTurn` sends it; the owner refuses any other generation
+  (`stale_generation`). Refused so, or with no generation known, it reads the
+  session (`session.resume`) and sends once more at the generation read, only
+  while that read says a turn runs.
 * `image.attach`, an image `input.detect_drop` and `clipboard.paste` stage
   the image with Hermes' own `image.attach_bytes` (or Hermes' clipboard
   helper, into Hermes' image staging directory) and queue it for the
@@ -108,6 +113,7 @@ LIFECYCLE_EVENTS = frozenset({"session.info", "message.start", "message.complete
 CLOSE_END_REASON = "tui_close"
 REFUSED = 4001  # the owner's own refusal code; not a drift code (4000, -32601), so the TUI keeps the session
 PARAM_REJECTED = 4000
+STALE_GENERATION = "stale_generation"  # the owner's refusal of a control sent for a generation it has moved past
 NOT_FOUND = 4016  # the stdio entry's "image not found" / "unsupported image"
 ANSWER_NOTICE_KEY = "omh-attach-answer"
 ANSWER_NOTICE_TTL_MS = 15000
@@ -343,6 +349,12 @@ def _withdrawal(session_id: object, request_id: str) -> Action:
     return TO_CLIENT, _event("request.cancel", session_id, {"id": request_id, "request_ids": [request_id]})
 
 
+def _refusal(error: dict[str, Any]) -> str:
+    """An owner refusal's reason code (`error.data.reason`, else its message)."""
+    data = error.get("data") if isinstance(error.get("data"), dict) else {}
+    return str(data.get("reason") or error.get("message") or "")
+
+
 def _reason(error: dict[str, Any]) -> str:
     """An owner refusal in words: its reason, and the detail it gave."""
     data = error.get("data") if isinstance(error.get("data"), dict) else {}
@@ -416,6 +428,7 @@ class Adapter:
             "session.close": self._close,
             "prompt.submit": self._submit,
             "session.steer": self._steer,
+            "session.interrupt": self._interrupt,
             "shell.exec": self._shell,
             "session.list": self._list,
             "image.attach": self._attach,
@@ -545,6 +558,47 @@ class Adapter:
             return [_reply(request_id, {"status": "rejected"})]  # no turn known to steer: the TUI queues the text
         params["execution_generation"] = state.generation
         return [self._forward(request_id, "session.steer", params, translated=False)]
+
+    def _interrupt(self, request_id: object, params: dict[str, Any]) -> list[Action]:
+        state = self._state(params)
+        if state is None or not _whole(state.generation):
+            return [self._interrupt_read(request_id, params)]
+        return [self._interrupt_at(request_id, params, state.generation, retry=True)]
+
+    def _interrupt_at(self, request_id: object, params: dict[str, Any], generation: int, *, retry: bool) -> Action:
+        """Stop the turn of `generation`; a stale one, the first time, is read afresh and sent once more."""
+
+        def on_answer(reply: dict[str, Any]) -> list[Action]:
+            error = reply.get("error")
+            if retry and isinstance(error, dict) and _refusal(error) == STALE_GENERATION:
+                return [self._interrupt_read(request_id, params)]
+            return [(TO_CLIENT, {**reply, "id": request_id})]
+
+        return self._call("session.interrupt", {**params, "execution_generation": generation}, on_answer)
+
+    def _interrupt_read(self, request_id: object, params: dict[str, Any]) -> Action:
+        """Read the generation the session runs, then stop that turn.
+
+        Ink reports a stale stop instead of retrying it. The TUI only sends a
+        stop while it shows a turn running, so here the read names the turn
+        to stop. A read that finds no turn running answers the stop as done:
+        the turn ended on its own, and nothing else is stopped.
+        """
+        session_id = params.get("session_id")
+
+        def on_read(snapshot: dict[str, Any]) -> list[Action]:
+            result = snapshot.get("result")
+            if not isinstance(result, dict):
+                error = snapshot.get("error") if isinstance(snapshot.get("error"), dict) else {}
+                return [_refuse(request_id, REFUSED, f"Hermes did not read the session to interrupt it ({_reason(error)})")]
+            self._note_view(result, snapshot=True)
+            generation = result.get("execution_generation")
+            if result.get("running") is not True or not _whole(generation):
+                return [_reply(request_id, {"session_id": session_id, "execution_generation": generation,
+                                            "running": False})]
+            return [self._interrupt_at(request_id, params, generation, retry=False)]
+
+        return self._call("session.resume", {"session_id": session_id}, on_read)
 
     def _shell(self, request_id: object, params: dict[str, Any]) -> list[Action]:
         if self.current:

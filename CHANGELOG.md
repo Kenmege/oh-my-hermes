@@ -4,6 +4,19 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Esc, Ctrl+C and an approval deny stop the turn again on a Hermes whose
+  TUI attaches to the shared gateway.** On Hermes bf0203a794 the OMH TUI sent
+  `session.interrupt` the way the stdio entry takes it, with only the session
+  id. The canonical gateway stops a turn only for the execution generation it
+  runs, so it refused every stop with `stale_generation`. The TUI said
+  "Hermes did not interrupt the turn: stale_generation", and the turn ran on
+  in the shared gateway, after the TUI exited too. The attach child now sends
+  the stop with the generation it tracks from the session's snapshot, events
+  and prompt receipts, as Hermes' Ink TUI does. Refused as stale, or with no
+  generation known, it reads the session once and sends the stop once more at
+  the generation read, only while that read says a turn runs. The stdio wire is
+  unchanged.
+
 - **The OMH TUI shows this machine's Hermes bots on a read-only board.**
   Ctrl+S, or `/bots`, opens it full screen. The first page lists the Hermes
   home the TUI runs under and each named profile beside it, each with its
