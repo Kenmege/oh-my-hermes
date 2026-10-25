@@ -495,9 +495,10 @@ class PluginToolSchemaProducerTests(unittest.TestCase):
         self.assertEqual(per_turn_context.plugin_tool_schema_chars(), sum(by_tool.values()))
 
     def test_parked_dag_schema_growth_is_bounded_without_spending_legacy_content(self) -> None:
-        # Pinned main eeebba5bb: omh_dag was 2479 JSON characters. Remove
-        # only this feature's additions and hash the intact legacy schema,
-        # so shortening an existing safeguard cannot finance more growth.
+        # The approved preflight schema was also 2479 JSON characters. Remove
+        # only parked additions, retaining preflight's marker refusal and
+        # one-shot cap wording; pin its intact schema, not just its size, so
+        # removing an existing safeguard cannot finance parked growth.
         schema = per_turn_context.registered_tool_schemas()["omh_dag"]
         legacy = copy.deepcopy(schema)
         parked_note = (
@@ -515,7 +516,7 @@ class PluginToolSchemaProducerTests(unittest.TestCase):
         self.assertEqual(len(encoded), 2479)
         self.assertEqual(
             hashlib.sha256(encoded.encode()).hexdigest(),
-            "12539753e4be1791340d0eeee0282d7c6997780a054980eb954a1deafd483f80",
+            "39be91ffc4db311ad1222cd4f57ded619ceb643063fdaa7bb2f0605fe654d3c5",
         )
         delta = per_turn_context.plugin_tool_schema_chars_by_tool()["omh_dag"] - len(encoded)
         self.assertGreater(delta, 0)

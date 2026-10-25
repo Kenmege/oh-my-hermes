@@ -99,6 +99,9 @@ OUTCOMES: Final = ("accepted", "failed", "blocked", "parked")
 # The ``origin`` kinds of a node added after define: ``repair:<root>`` and ``extend:<round>``.
 ADDED_ORIGIN_KINDS: Final = ("repair", "extend")
 PROMPT_MARKERS: Final = ("TASK", "DELIVERABLE", "SCOPE", "VERIFY", "STOP WHEN")
+# A run this wide whose critical path is this much of it is one chain wearing a graph's clothes.
+SERIAL_GRAPH_NODES: Final = 5
+SERIAL_GRAPH_SHARE: Final = 0.8
 # Hermes' `subagent_stop` words that say the child did not finish (`delegation_graph._FAILED_STOPS` plus interrupted).
 CHILD_FAILURE_STOPS: Final = frozenset({"failed", "error", "timeout", "interrupted"})
 # What every view says for a node accepted while its handoff could not be read where the child wrote it.
@@ -368,6 +371,28 @@ def _require_graph(
             )
 
 
+def markerless_nodes(nodes: Sequence[Mapping[str, Any]]) -> list[str]:
+    """Nodes whose prompt names none of the five markers: a hard reject at define, repair and extend.
+
+    A partial set is a lint finding, not a refusal; a prompt with no marker at
+    all gives the child nothing to plan against, so the node is refused.
+    """
+    return [
+        str(node["id"]) for node in nodes
+        if not any(pattern.search(str(node["prompt"])) for pattern in _MARKER_PATTERNS.values())
+    ]
+
+
+def require_prompt_markers(nodes: Sequence[Mapping[str, Any]]) -> None:
+    missing = markerless_nodes(nodes)
+    if missing:
+        raise DagRefusal(
+            "prompt_markers_missing",
+            f"Node{'s' if len(missing) > 1 else ''} {', '.join(missing)}: no prompt names any of "
+            f"{', '.join(PROMPT_MARKERS)}; add them (a partial set stays a lint finding).",
+        )
+
+
 def _mentions_full_suite(prompt: str) -> bool:
     """Advisory detection of broad suites, excluding pytest's explicit positional targets."""
     if re.search(r"\b(?:full\s+(?:test\s+)?suite|unittest\s+discover)\b", prompt, re.IGNORECASE):
@@ -403,6 +428,11 @@ def lint(nodes: Sequence[Mapping[str, Any]]) -> list[str]:
         missing = [marker for marker in PROMPT_MARKERS if not _MARKER_PATTERNS[marker].search(str(node["prompt"]))]
         if missing:
             findings.append(f"missing_markers:{node['id']}:{','.join(marker.replace(' ', '_') for marker in missing)}")
+    if len(nodes) >= SERIAL_GRAPH_NODES:
+        path_length = len(topology(nodes)["critical_path"])
+        if path_length >= SERIAL_GRAPH_SHARE * len(nodes):
+            findings.append(f"serial_graph:{len(nodes)} nodes, critical path {path_length}; "
+                            "most of the graph is one chain, so split it into parallel lanes where the work allows.")
     verifiers = [node for node in nodes if is_verification(node)]
     if len(nodes) > 1 and not verifiers:
         findings.append("no_verification_node")
@@ -474,12 +504,22 @@ def definition_digest(nodes: Sequence[Mapping[str, Any]]) -> str:
     return hashlib.sha256(json.dumps(shape, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
 
-def new_record(session_id: str, run: str, name: object, goal: object, raw_nodes: object, now: float) -> dict[str, Any]:
+def new_record(session_id: str, run: str, name: object, goal: object, raw_nodes: object, now: float, *,
+               oneshot_limit: int | None = None) -> dict[str, Any]:
     if not isinstance(raw_nodes, list) or not raw_nodes:
         raise DagRefusal("empty_graph", "A run needs at least one node.")
     if len(raw_nodes) > MAX_NODES:
         raise DagRefusal("too_many_nodes", f"A run holds at most {MAX_NODES} nodes; split the goal into phases.")
+    if oneshot_limit is not None and len(raw_nodes) > oneshot_limit:
+        raise DagRefusal(
+            "oneshot_budget_exceeded",
+            f"This one-shot session may define at most {oneshot_limit} "
+            f"{'node' if oneshot_limit == 1 else 'nodes'} (delegation.oneshot_max_children), and the graph has "
+            f"{len(raw_nodes)}. A one-shot run has no later session: cut the graph to {oneshot_limit} or fewer, or "
+            "run the work interactively.",
+        )
     nodes = [_validated_node(raw) for raw in raw_nodes]
+    require_prompt_markers(nodes)
     _require_graph(nodes)
     title = _plain(name, MAX_NAME_CHARS, "invalid_name", "The run needs a short name.") if name else run
     stated = _plain(goal, MAX_GOAL_CHARS, "invalid_goal", "The goal is one line.") if goal else ""
@@ -957,6 +997,7 @@ def repair(
     if not isinstance(raw_nodes, list) or not raw_nodes:
         raise DagRefusal("empty_graph", "A repair needs at least one node.")
     added = [_validated_node(raw) for raw in raw_nodes]
+    require_prompt_markers(added)
     if len(nodes) + len(added) > MAX_NODES:
         raise DagRefusal("too_many_nodes", f"A run holds at most {MAX_NODES} nodes.")
     group = {str(node["id"]) for node in added}
@@ -1026,6 +1067,7 @@ def extend(
     if not isinstance(raw_nodes, list) or not raw_nodes:
         raise DagRefusal("empty_graph", "An extend round needs at least one node.")
     added = [_validated_node(raw) for raw in raw_nodes]
+    require_prompt_markers(added)
     if len(nodes) + len(added) > MAX_NODES:
         raise DagRefusal(
             "too_many_nodes", f"A run holds at most {MAX_NODES} nodes, extend rounds included; report what is open.")

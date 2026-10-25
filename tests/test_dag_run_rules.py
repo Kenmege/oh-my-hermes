@@ -459,6 +459,29 @@ class ParkedNodeTests(unittest.TestCase):
 class ComposedDagLifecycleTests(unittest.TestCase):
     """Composition boundary: prepared worker guidance, not evidence comparison or live compliance."""
 
+    def test_oneshot_refusal_preserves_the_parked_baseline_graph(self) -> None:
+        with homes() as home, patch.object(dag_tool, "_single_query_session", return_value=False):
+            slots_table(home)
+            moment = time.time()
+            definitions = [node("baseline"), node("api", depends_on=("baseline",)),
+                           node("verify", depends_on=("api",))]
+            with patch.object(dag_tool.time, "time", return_value=moment):
+                defined = call(action="define", run="feat", nodes=definitions)
+                self.assertEqual(defined["status"], "ok", defined)
+                parked = call(action="settle", run="feat", node="baseline", outcome="parked",
+                              handle="ci:baseline-oneshot", wake_at=moment + 60)
+                self.assertEqual(states(parked)["baseline"], "parked")
+                path = dag_run.record_path(home.omh, PARENT, "feat")
+                before = path.read_bytes()
+                (home.hermes / "config.yaml").write_text("delegation:\n  oneshot_max_children: 1\n", encoding="utf-8")
+                with patch.object(dag_tool, "_single_query_session", return_value=True):
+                    refused = call(action="define", run="feat", nodes=definitions)
+                self.assertEqual((refused["status"], refused["reason"]), ("refused", "oneshot_budget_exceeded"))
+                self.assertEqual(path.read_bytes(), before)
+                cancelled = call(action="cancel", run="feat")
+                self.assertEqual(states(cancelled), {"baseline": "cancelled", "api": "cancelled", "verify": "cancelled"})
+                self.assertFalse(call(action="ready", run="feat")["calls"])
+
     def test_marked_baseline_park_wake_producer_verifier_and_cancel(self) -> None:
         with homes() as home:
             slots_table(home)
@@ -623,9 +646,11 @@ class ReVerificationTests(unittest.TestCase):
             call(action="define", run="feat", nodes=[node("api", scope=("a.py",)),
                                                      node("verify", depends_on=("api",), label="Verify")])
             call(action="settle", run="feat", node="api", outcome="failed")
+            markerless = call(action="repair", run="feat", node="api", nodes=[node("api-fix", prompt="just fix it")])
             repaired = call(action="repair", run="feat", node="api", nodes=[node("api-fix", scope=("a.py",),
-                                                                               prompt="just fix it")])
-        self.assertIn("missing_markers:api-fix:TASK,DELIVERABLE,SCOPE,VERIFY,STOP_WHEN", repaired["lint"])
+                                                                               prompt="TASK: just fix it")])
+        self.assertEqual((markerless["status"], markerless["reason"]), ("refused", "prompt_markers_missing"))
+        self.assertIn("missing_markers:api-fix:DELIVERABLE,SCOPE,VERIFY,STOP_WHEN", repaired["lint"])
         self.assertIn("topology", repaired)
 
 
