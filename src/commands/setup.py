@@ -145,6 +145,7 @@ from ..setup_profiles import (
     write_setup_profile,
 )
 from ..snippet import WORKSPACE_SNIPPET
+from ..system.stdin_probe import stdin_is_tty
 from ..targets import record_target_observation
 from ..team_profiles import (
     TeamProfileError,
@@ -3258,11 +3259,7 @@ def _ask_maestro_delegation_choice(args: argparse.Namespace, paths: OmhPaths, la
 
 
 def _stdin_is_tty() -> bool:
-    # `<&-` leaves `sys.stdin` as None; a detached stream raises ValueError.
-    try:
-        return sys.stdin.isatty()
-    except (AttributeError, ValueError):
-        return False
+    return stdin_is_tty()
 
 
 def _wizard_has_terminal() -> bool:
@@ -4595,7 +4592,7 @@ def _keyboard_menu_available() -> bool:
     return (
         termios is not None
         and tty is not None
-        and sys.stdin.isatty()
+        and stdin_is_tty()
         and sys.stdout.isatty()
         and os.environ.get("TERM", "") != "dumb"
         and os.environ.get("OMH_NO_TUI", "") != "1"
