@@ -39,6 +39,13 @@ the stdio entry's in a closed set of places. `Adapter` translates those, after
 * `prompt.submit` gets an `input_id` and the images queued for its session;
   one that truncates (a rewind) first reads the session's revision and
   rewinds through the owner's revision-fenced `session.mutate`.
+* `config.set model` (a `/model` switch of this session) is the owner's
+  revision-fenced `session.mutate model`, read and sent as Ink's
+  `canonicalSessionControls.ts` does, and answered in the stdio entry's
+  shape: the model, `deferred` while a turn runs, or `confirm_required` and
+  Hermes' message for a guarded target; the owner's one-time token for that
+  target is kept and rides the same switch sent again with
+  `confirm_expensive_model`. Every other `config.set` passes.
 * `session.steer` gets the execution generation of the turn it steers,
   `shell.exec` the session it runs in, and `session.list` is the owner's live
   listing followed by its stored one.
@@ -124,6 +131,15 @@ IMAGE_SIGNATURES = (
 )
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 TICKET_TIMEOUT_SECONDS = 5
+# The `/model` flags the owner's model switch takes, as `canonicalSessionControls.ts` `modelPayload` reads them:
+# `--session` (and Ink's `--tui-session`) say what a switch here always is, `--provider <slug>` names the route
+# and `--reasoning <level>` commits a level with the pick. Any other flag (`--global`, `--once`, `--refresh`) is
+# refused with the owner's own reason before anything is sent: a session cannot write every new session's default.
+MODEL_SESSION_FLAGS = frozenset({"--session", "--tui-session"})
+MODEL_REASONING_LEVELS = frozenset({
+    "none", "false", "disabled", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+})
+UNSUPPORTED_MODEL_OPTIONS = "unsupported_model_options"
 ENSURE_TIMEOUT_SECONDS = 30
 OPEN_TIMEOUT_SECONDS = 10
 # After the TUI closes its input: how long the answers to calls already sent (the last session's detach) may take.
@@ -363,6 +379,25 @@ def _reason(error: dict[str, Any]) -> str:
     return f"{reason}: {detail}" if isinstance(detail, str) and detail else reason
 
 
+def model_payload(value: str) -> dict[str, str] | None:
+    """The owner's `session.mutate model` payload for a `/model` value; None for a form the owner does not take."""
+    words = value.split()
+    if not words or words[0].startswith("-"):
+        return None
+    payload, rest = {"model": words[0]}, words[1:]
+    while rest:
+        flag = rest.pop(0)
+        if flag in MODEL_SESSION_FLAGS:
+            continue
+        if flag == "--provider" and rest and not rest[0].startswith("-"):
+            payload["provider"] = rest.pop(0)
+        elif flag == "--reasoning" and rest and rest[0].lower() in MODEL_REASONING_LEVELS:
+            payload["reasoning"] = rest.pop(0).lower()
+        else:
+            return None
+    return payload
+
+
 def _event(kind: str, session_id: object, payload: dict[str, Any]) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "method": "event", "params": {"type": kind, "session_id": session_id, "payload": payload}}
 
@@ -392,6 +427,7 @@ class Adapter:
         self.shown: dict[str, _Shown] = {}  # request id the TUI answers -> the owner prompt it stands for
         self.calls: dict[object, str] = {}  # TUI call id -> method, for the calls whose answer is translated
         self.own: dict[str, Callable[[dict[str, Any]], list[Action]]] = {}  # this adapter's calls -> continuation
+        self.model_confirms: dict[tuple[object, str], str] = {}  # (session, model value) -> the owner's confirm token
         self._serial = 0
 
     # ── what the owner is asked first ──
@@ -429,6 +465,7 @@ class Adapter:
             "prompt.submit": self._submit,
             "session.steer": self._steer,
             "session.interrupt": self._interrupt,
+            "config.set": self._config_set,
             "shell.exec": self._shell,
             "session.list": self._list,
             "image.attach": self._attach,
@@ -599,6 +636,55 @@ class Adapter:
             return [self._interrupt_at(request_id, params, generation, retry=False)]
 
         return self._call("session.resume", {"session_id": session_id}, on_read)
+
+    def _config_set(self, request_id: object, params: dict[str, Any]) -> list[Action]:
+        """`config.set model` switches the session through the owner's `session.mutate model`; any other key passes.
+
+        The revision and generation come from a fresh `session.resume`, as
+        Ink reads them. The answer is the stdio entry's: `value` is the model
+        the session now runs, or will at its next turn (`deferred`), and a
+        guarded target (cost, data policy, a large context) is
+        `confirm_required` with Hermes' message and no value, the switch not
+        made; its token is kept, and the same switch sent again with
+        `confirm_expensive_model` carries it, once, as Ink sends `confirm`. A
+        refusal is the owner's own, its reason kept.
+        """
+        if params.get("key") != "model":
+            return [self._forward(request_id, "config.set", params, translated=False)]
+        session_id, value = params.get("session_id"), str(params.get("value") or "")
+        payload = model_payload(value)
+        if payload is None:
+            return [_refuse(request_id, REFUSED, UNSUPPORTED_MODEL_OPTIONS, {"reason": UNSUPPORTED_MODEL_OPTIONS})]
+        token = self.model_confirms.pop((session_id, value), None)
+        if params.get("confirm_expensive_model") is True and token:
+            payload["confirm"] = token
+
+        def on_read(snapshot: dict[str, Any]) -> list[Action]:
+            result = snapshot.get("result")
+            if not isinstance(result, dict):
+                return [(TO_CLIENT, {**snapshot, "id": request_id})]
+            self._note_view(result, snapshot=True)
+            mutate = {
+                "session_id": session_id, "request_id": self.new_id(),
+                "expected_revision": result.get("revision"), "expected_generation": result.get("execution_generation"),
+                "operation": "model", "payload": payload,
+            }
+            return [self._call("session.mutate", mutate, on_mutated)]
+
+        def on_mutated(reply: dict[str, Any]) -> list[Action]:
+            result = reply.get("result")
+            if not isinstance(result, dict):
+                return [(TO_CLIENT, {**reply, "id": request_id})]
+            if result.get("status") == "confirmation_required":
+                if isinstance(result.get("confirm"), str) and result["confirm"]:
+                    self.model_confirms[(session_id, value)] = result["confirm"]
+                return [_reply(request_id, {"key": "model", "value": "", "confirm_required": True,
+                                            "confirm_message": str(result.get("confirm_message") or "")})]
+            self._note_generation(session_id, result.get("execution_generation"))
+            return [_reply(request_id, {"key": "model", "value": result.get("model") or "", "scope": "session",
+                                        "deferred": result.get("status") == "deferred"})]
+
+        return [self._call("session.resume", {"session_id": session_id}, on_read)]
 
     def _shell(self, request_id: object, params: dict[str, Any]) -> list[Action]:
         if self.current:

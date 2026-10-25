@@ -452,6 +452,86 @@ class RewindTests(AdapterCase):
         self.assertIn("target user message is gone", refusal["error"]["message"])
 
 
+class ModelSwitchTests(AdapterCase):
+    """`config.set model` is the owner's `session.mutate model` (Ink's `/model` on a shared gateway), answered as the
+    stdio entry answers it."""
+
+    def switch(self, value: str = "claude-opus-5-5 --provider claude-proxy --session") -> tuple[Adapter, dict]:
+        adapter = self.adapter()
+        self.opened(adapter)
+        read = self.own_call(adapter.from_client(_call(21, "config.set", {
+            "key": "model", "value": value, "session_id": SID})), "session.resume")
+        self.assertEqual(read["params"], {"session_id": SID})
+        mutate = self.own_call(adapter.from_owner(_answer(read["id"], {
+            "session_id": SID, "subscription_id": "sub-1", "revision": 9, "execution_generation": 5})),
+            "session.mutate")
+        return adapter, mutate
+
+    def test_a_switch_reads_the_revision_and_mutates_the_model_with_its_provider(self) -> None:
+        adapter, mutate = self.switch()
+        self.assertEqual(mutate["params"], {
+            "session_id": SID, "request_id": "id-2", "expected_revision": 9, "expected_generation": 5,
+            "operation": "model", "payload": {"model": "claude-opus-5-5", "provider": "claude-proxy"}})
+        [(target, answer)] = adapter.from_owner(_answer(mutate["id"], {
+            "session_id": SID, "operation": "model", "model": "claude-opus-5-5", "execution_generation": 6}))
+        self.assertEqual((target, answer), (TO_CLIENT, _answer(21, {
+            "key": "model", "value": "claude-opus-5-5", "scope": "session", "deferred": False})))
+        self.assertEqual(adapter.sessions[SID].generation, 6)
+        self.assertFalse(adapter.waiting())
+
+    def test_a_pick_while_a_turn_runs_is_deferred_and_a_guarded_one_is_not_made(self) -> None:
+        adapter, mutate = self.switch("claude-opus-5-5 --session")
+        self.assertEqual(mutate["params"]["payload"], {"model": "claude-opus-5-5"})
+        [(_, answer)] = adapter.from_owner(_answer(mutate["id"], {"status": "deferred", "model": "claude-opus-5-5"}))
+        self.assertEqual(answer["result"]["deferred"], True)
+        adapter, mutate = self.switch()
+        [(_, answer)] = adapter.from_owner(_answer(mutate["id"], {
+            "status": "confirmation_required", "confirm_required": True, "confirm": "token",
+            "confirm_message": "Opus costs 5x.", "target_model": "claude-opus-5-5"}))
+        self.assertEqual(answer["result"], {
+            "key": "model", "value": "", "confirm_required": True, "confirm_message": "Opus costs 5x."})
+
+    def test_switch_anyway_carries_the_owners_token_once(self) -> None:
+        adapter, mutate = self.switch()
+        adapter.from_owner(_answer(mutate["id"], {
+            "status": "confirmation_required", "confirm_required": True, "confirm": "tok-1", "confirm_message": "x"}))
+        value = "claude-opus-5-5 --provider claude-proxy --session"
+        read = self.own_call(adapter.from_client(_call(24, "config.set", {
+            "key": "model", "value": value, "session_id": SID, "confirm_expensive_model": True})), "session.resume")
+        again = self.own_call(adapter.from_owner(_answer(read["id"], {"revision": 9, "execution_generation": 5})),
+                              "session.mutate")
+        self.assertEqual(again["params"]["payload"],
+                         {"model": "claude-opus-5-5", "provider": "claude-proxy", "confirm": "tok-1"})
+        read = self.own_call(adapter.from_client(_call(25, "config.set", {
+            "key": "model", "value": value, "session_id": SID, "confirm_expensive_model": True})), "session.resume")
+        third = self.own_call(adapter.from_owner(_answer(read["id"], {"revision": 9, "execution_generation": 5})),
+                              "session.mutate")
+        self.assertNotIn("confirm", third["params"]["payload"])  # used once: the owner then asks again
+
+    def test_a_refusal_is_the_owners_own_with_its_reason(self) -> None:
+        adapter, mutate = self.switch()
+        [(target, refusal)] = adapter.from_owner(_error(mutate["id"], "model_resolution_failed"))
+        self.assertEqual((target, refusal["id"]), (TO_CLIENT, 21))
+        self.assertEqual(refusal["error"]["data"]["reason"], "model_resolution_failed")
+
+    def test_a_flag_the_owner_does_not_take_is_refused_before_anything_is_sent(self) -> None:
+        adapter = self.adapter()
+        self.opened(adapter)
+        for value in ("x --global", "x --once", "x --refresh", "--provider p", "x --provider"):
+            with self.subTest(value=value):
+                [(target, refusal)] = adapter.from_client(_call(22, "config.set", {
+                    "key": "model", "value": value, "session_id": SID}))
+                self.assertEqual((target, refusal["error"]["data"]["reason"]), (TO_CLIENT, "unsupported_model_options"))
+        self.assertFalse(adapter.waiting())
+        self.assertEqual(attach.model_payload("x --tui-session --reasoning HIGH"), {"model": "x", "reasoning": "high"})
+
+    def test_any_other_config_set_passes_through(self) -> None:
+        adapter = self.adapter()
+        frame = _call(23, "config.set", {"key": "yolo", "value": "on", "session_id": SID})
+        self.assertEqual(adapter.from_client(frame), [(TO_OWNER, frame)])
+        self.assertFalse(adapter.waiting())
+
+
 class SharedPromptTests(AdapterCase):
     """An approval or clarify the owner asks as an event is the server request the stdio entry sent."""
 

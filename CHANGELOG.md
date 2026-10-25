@@ -59,6 +59,29 @@ All notable changes will be documented here.
   `-wal` and `-shm` appear beside it; the only signal is a signal-0
   liveness probe, and nothing is sent to the gateway.
 
+- **The OMH TUI switches models the way Hermes' own TUI does.** Attached to
+  a shared Hermes gateway, every `/model` the TUI sent (a picker pick, a
+  typed `/model <name>`, `/model --refresh`) was refused as
+  `Unsupported_command.`, because that gateway runs no `/model` through
+  `slash.exec`. A pick and a typed `/model <name> [--provider <slug>]` now go
+  as the `config.set model` Hermes' own TUI sends, which the gateway child
+  turns into the owner's `session.mutate model`. A pick is for this session
+  only; a typed one keeps Hermes' own `model.persist_switch_by_default` rule
+  on the stdio entry, as before; `/model
+  --refresh` opens the picker over a list Hermes asks the providers for again.
+  When Hermes' configured default model changes while a session runs (the
+  person, a bot or the agent edited the config), the session switches to it
+  at the next turn boundary, before the next prompt goes, and says so in one
+  line, and the info line shows the new model; a
+  model picked with `/model` stays until the default itself changes. Hermes'
+  refusal codes (`unsupported_command`, `model_resolution_failed`,
+  `session_busy` and the rest) now read as sentences that say what to do
+  instead. A model Hermes asks to confirm (cost, data policy, a large
+  context) is asked about in the prompt slot, as Hermes' own TUI asks it:
+  keeping the session's model is the first choice and the one selected, and
+  only "switch anyway" sends the switch again with Hermes' confirmation.
+
+
 - **Byte-identical managed plugin files no longer block setup or update
   (#2300).** A managed plugin file whose current bytes match the incoming
   bundle no longer needs `--force` merely because its hash differs from an
