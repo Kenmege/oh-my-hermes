@@ -79,7 +79,7 @@ class ModelChainsSetTests(unittest.TestCase):
             self.assertEqual(status, 0)
             self.assertIn("quick: kimi-k3-ultrafast:low, glm-5.2-ultrafast:low (override)", stdout)
             # Untouched categories keep the shipped default.
-            self.assertNotIn("architect: claude-fable-5-1:xhigh, gpt-6-astra:xhigh, kimi-k3:xhigh (override)", stdout)
+            self.assertNotIn("architect: claude-fable-5-1:xhigh, gpt-6-astra:xhigh, kimi-k3.1-pro:xhigh (override)", stdout)
 
     def test_clear_returns_the_category_to_the_shipped_default(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -89,7 +89,7 @@ class ModelChainsSetTests(unittest.TestCase):
                 _base(root) + ["model-chains", "set", "deep", "--clear"], output_json=False
             )
             self.assertEqual((status, stderr), (0, ""))
-            self.assertIn("deep: claude-opus-5-5:high, gpt-6.1-sol:high, kimi-k3:high (default)", stdout)
+            self.assertIn("deep: claude-opus-5-5:high, gpt-6.1-sol:high, kimi-k3.1-pro:high (default)", stdout)
             document = json.loads(_chains_path(root).read_text(encoding="utf-8"))
             self.assertNotIn("deep", document["categories"])
 
@@ -151,12 +151,14 @@ class ModelChainsInterviewTests(unittest.TestCase):
     def test_interview_applies_numbered_choices_and_custom_entry(self) -> None:
         # Category order is the shipped dict order. Without an override the
         # options are 1) keep, [2) Ultrafast when the chain has a swappable
-        # member], last) custom. Keep everything except `quick` (Ultrafast)
-        # and `writing` (custom entry).
+        # member], last) custom. Keep everything except `unspecified-low`
+        # (Ultrafast: GLM 5.3 has a priced tier; `quick` lost its swappable
+        # member when Kimi K3.1 Pro replaced K3 on 2026-10-24) and `writing`
+        # (custom entry).
         answers = []
         for name, chain in HERMES_MIXTURE_CATEGORY_CHAINS.items():
             has_ultrafast = _ultrafast_variant(tuple(chain)) is not None
-            if name == "quick":
+            if name == "unspecified-low":
                 answers.append("2" if has_ultrafast else "1")
             elif name == "writing":
                 answers.extend(["3" if has_ultrafast else "2", "qwen3-coder:high, kimi-k3:high"])
@@ -174,10 +176,10 @@ class ModelChainsInterviewTests(unittest.TestCase):
                 )
             self.assertEqual((status, stderr), (0, ""), stdout)
             document = json.loads(_chains_path(root).read_text(encoding="utf-8"))
-            self.assertEqual(set(document["categories"]), {"quick", "writing"})
-            quick_models = [entry["model"] for entry in document["categories"]["quick"]]
-            self.assertIn("kimi-k3-ultrafast", quick_models)
-            self.assertNotIn("kimi-k3", quick_models)
+            self.assertEqual(set(document["categories"]), {"unspecified-low", "writing"})
+            low_models = [entry["model"] for entry in document["categories"]["unspecified-low"]]
+            self.assertIn("glm-5.3-ultrafast", low_models)
+            self.assertNotIn("glm-5.3", low_models)
             self.assertEqual(
                 document["categories"]["writing"],
                 [
@@ -248,7 +250,12 @@ class ModelChainsSetupWizardTests(unittest.TestCase):
 
             self.assertEqual((status, stderr), (0, ""), stdout)
             self.assertEqual(yes_no.call_count, 1)
-            self.assertIn("chains", yes_no.call_args_list[0].args[0].lower())
+            from omh.commands.language import tr
+
+            offer = yes_no.call_args_list[0]
+            self.assertEqual(offer.args[0], tr("en", "model_chains_interview_prompt"))
+            self.assertFalse(offer.kwargs["default"])
+            self.assertEqual(offer.kwargs["note"], tr("en", "model_chains_interview_note"))
             self.assertEqual(
                 json.loads(_chains_path(root).read_text(encoding="utf-8")),
                 _SEEDED_EMPTY_DOCUMENT,
@@ -291,7 +298,7 @@ class ModelChainsSetupWizardTests(unittest.TestCase):
 
         answers = []
         for name, chain in HERMES_MIXTURE_CATEGORY_CHAINS.items():
-            has_ultrafast = any(model in ("glm-5.2", "kimi-k3") for model, _ in chain)
+            has_ultrafast = _ultrafast_variant(tuple(chain)) is not None
             if name == "writing":
                 answers.extend(["3" if has_ultrafast else "2", "qwen3-coder:high"])
             else:
@@ -569,9 +576,12 @@ class ModelChainsSetupTerminalTests(unittest.TestCase):
             # prompt the pty never closes and the run times out.
             transcript = self._run_setup_under_pty(root, ["n", ""])
 
-            self.assertIn("Walk the per-category model chains now (interview)?", transcript)
+            from omh.commands.language import tr
+
+            prompt = tr("en", "model_chains_interview_prompt")
+            self.assertIn(prompt, transcript)
             # Default No: a bare Enter has to keep the shipped chains.
-            self.assertIn("[y/N]", transcript.split("model chains now (interview)?", 1)[1][:16])
+            self.assertIn("[y/N]", transcript.split(prompt, 1)[1][:16])
             self.assertNotIn("Model chain interview", transcript)
             self.assertEqual(
                 json.loads(_chains_path(root).read_text(encoding="utf-8")),
@@ -585,7 +595,7 @@ class ModelChainsSetupTerminalTests(unittest.TestCase):
         # swappable member, last) custom entry.
         answers = ["y"]
         for name, chain in HERMES_MIXTURE_CATEGORY_CHAINS.items():
-            has_ultrafast = any(model in ("glm-5.2", "kimi-k3") for model, _ in chain)
+            has_ultrafast = _ultrafast_variant(tuple(chain)) is not None
             if name == "writing":
                 answers.extend(["3" if has_ultrafast else "2", "qwen3-coder:high"])
             else:

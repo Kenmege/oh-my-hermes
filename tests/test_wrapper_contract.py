@@ -1386,7 +1386,7 @@ class WrapperContractTests(unittest.TestCase):
                         "models": [
                             {
                                 "provider": "apitopia",
-                                "model_id": "kimi-k3",
+                                "model_id": "kimi-k3.1-pro",
                             }
                         ]
                     }
@@ -1405,12 +1405,12 @@ class WrapperContractTests(unittest.TestCase):
         binding = payload["delegation"]["runtime_handoff"]["hermes_native_model_binding"]
         self.assertEqual(binding["status"], "prepared_not_observed")
         self.assertEqual(binding["alias"], "unspecified-high")
-        self.assertEqual(binding["binding"], "apitopia/kimi-k3")
+        self.assertEqual(binding["binding"], "apitopia/kimi-k3.1-pro")
         self.assertEqual(
             binding["kanban_task_override"]["command"],
-            "set-model apitopia/kimi-k3",
+            "set-model apitopia/kimi-k3.1-pro",
         )
-        self.assertEqual(binding["delegate_task_override"]["model"], "apitopia/kimi-k3")
+        self.assertEqual(binding["delegate_task_override"]["model"], "apitopia/kimi-k3.1-pro")
         self.assertNotIn("maestro", json.dumps(binding).casefold())
 
     def test_delegate_mode_keeps_owner_default_hermes_binding_unpinned(self) -> None:
@@ -1538,7 +1538,7 @@ class WrapperContractTests(unittest.TestCase):
                         "models": [
                             {
                                 "provider": "apitopia",
-                                "model_id": "kimi-k3",
+                                "model_id": "kimi-k3.1-pro",
                             }
                         ]
                     }
@@ -1554,7 +1554,7 @@ class WrapperContractTests(unittest.TestCase):
             )
 
         binding = payload["delegation"]["runtime_handoff"]["hermes_native_model_binding"]
-        self.assertEqual(binding["binding"], "apitopia/kimi-k3")
+        self.assertEqual(binding["binding"], "apitopia/kimi-k3.1-pro")
         self.assertEqual(binding["status"], "prepared_not_observed")
 
     def test_route_coding_workflow_requires_executor_choice_without_default(self) -> None:

@@ -68,7 +68,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # Three science vocabulary controls remain direct answers.
         # Career actor repair adds five employer requests and two references.
         # Actor/objective follow-up adds seven employer contrasts.
-        self.assertEqual(payload["summary"]["case_count"], 1112)
+        self.assertEqual(payload["summary"]["case_count"], 1114)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -187,7 +187,12 @@ class RoutingPrecisionTests(unittest.TestCase):
         # opening and a time inside a past clause run as a graph (+3).
         # Three unnamed science requests render dedicated computation cards.
         # Career actor repair retains five personal/target/quoted controls.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1120)
+        # The native vi review adds ten interventions (four in-sentence dispatch
+        # cases, five clarify band cases, and one accessibility misroute) and
+        # two negatives that hold broad wording out (a red-team hiring
+        # sentence and gop prose). Both `gộp` gate phrases clarify, so their
+        # `merge` twins stay beside them and keep the dispatch path.
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1130)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

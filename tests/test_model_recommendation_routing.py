@@ -28,7 +28,7 @@ def _active(alias: str, provider: str, family: str) -> dict[str, object]:
     }
 
 
-_KIMI = _active("kimi-k3", "apitopia", "kimi")
+_KIMI = _active("kimi-k3.1-pro", "apitopia", "kimi")
 _OPUS = _active("claude-opus-5-5", "ccapi", "claude")
 _GROK = _active("grok-build-0.1", "xai", "grok")
 _GEMINI = _active("gemini-3.1-pro", "google", "gemini")
@@ -36,7 +36,7 @@ _GEMINI = _active("gemini-3.1-pro", "google", "gemini")
 # entries left the chains on 2026-09-11): the quick head, and the entries
 # right behind Opus 5.5 in writing and visual-engineering. Opus 5.5 heads
 # both since 2026-10-13, so each category is exercised on a model that only
-# its own chain ranks above Kimi K3, the companion every chain ends on.
+# its own chain ranks above Kimi K3.1 Pro, the companion every chain ends on.
 _GLM_FLASH = _active("glm-5.3-flash", "zai", "glm")
 _FABLE = _active("claude-fable-5-1", "ccapi", "claude")
 _SONNET = _active("claude-sonnet-5-5", "ccapi", "claude")
@@ -247,7 +247,7 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
             chain,
             [
                 "xai/grok-build-0.1",
-                "apitopia/kimi-k3",
+                "apitopia/kimi-k3.1-pro",
                 "google/gemini-3.1-pro",
                 "ccapi/claude-opus-5-5",
             ],
@@ -267,10 +267,10 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
             active_models=[_GEMINI, _KIMI],
         )
 
-        self.assertEqual(route["selected_model"], "apitopia/kimi-k3")
+        self.assertEqual(route["selected_model"], "apitopia/kimi-k3.1-pro")
         self.assertEqual(
             [entry["model_id"] for entry in route["chain"]],
-            ["apitopia/kimi-k3", "google/gemini-3.1-pro"],
+            ["apitopia/kimi-k3.1-pro", "google/gemini-3.1-pro"],
         )
 
     def test_explicit_active_model_wins_over_domain_and_explicit_missing_freezes(self) -> None:
@@ -373,7 +373,7 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
                     {
                         "source": "omo",
                         "provider": "apitopia",
-                        "model_id": "kimi-k3",
+                        "model_id": "kimi-k3.1-pro",
                         "variant": "",
                         "timestamp": "",
                         "status": "confirmed_active",

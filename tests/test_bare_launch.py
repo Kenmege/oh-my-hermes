@@ -88,6 +88,35 @@ class BareArgvTests(unittest.TestCase):
         self.assertEqual(stderr.getvalue(), "")
 
 
+@unittest.skipIf(os.name == "nt", "fixture executable uses a POSIX shebang")
+class LaunchHomeTests(unittest.TestCase):
+    def test_resolved_home_reaches_both_terminal_paths(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        import json
+        from omh.commands import bare_launch
+        from omh.paths import resolve_paths
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            record = root / "child-home.json"
+            hermes = root / "hermes"
+            hermes.write_text(
+                f"#!{sys.executable}\nimport json, os\n"
+                f"with open({str(record)!r}, 'w') as out: json.dump(os.environ.get('HERMES_HOME'), out)\n",
+                encoding="utf-8",
+            )
+            hermes.chmod(0o755)
+            args = bare_launch_args(["--hermes-home", str(root / "selected")])
+            paths = resolve_paths(str(root / "omh"), str(root / "selected"))
+            for blocker in ("", "fixture fallback"):
+                with self.subTest(blocker=blocker), patch.dict(os.environ, {"HERMES_HOME": str(root / "other")}), \
+                        patch.object(bare_launch, "_omh_tui_blocker", return_value=blocker), \
+                        patch.object(bare_launch, "_node_available", return_value=False):
+                    self.assertEqual(bare_launch._run_terminal(str(hermes), args, paths), 0)
+                    self.assertEqual(json.loads(record.read_text()), str(paths.hermes_home))
+
+
 class BareImportTests(unittest.TestCase):
     def test_a_bare_launch_does_not_import_the_command_tree(self) -> None:
         # stdin is not a terminal, so the launch has nothing to open and prints the welcome text.
@@ -102,6 +131,20 @@ class BareImportTests(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("OMH - oh-my-hermes", done.stdout)
         self.assertIn("command tree imported: False", done.stdout)
+
+    def test_welcome_is_a_short_first_use_guide(self) -> None:
+        from contextlib import redirect_stdout
+        from omh.commands.bare_launch import _print_welcome
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            _print_welcome()
+        text = output.getvalue()
+        self.assertLessEqual(len(text.splitlines()), 16)
+        for command in ("omh setup", "omh --help", "Hermes"):
+            self.assertIn(command, text)
+        for command in ("omh runtime", "omh cases", "omh coding", "omh release"):
+            self.assertNotIn(command, text)
 
     def test_a_subcommand_still_goes_through_the_command_tree(self) -> None:
         probe = "import sys; from omh.cli import main; sys.exit(main(['--version']))"

@@ -132,64 +132,15 @@ def _print_welcome() -> None:
     print(
         """OMH - oh-my-hermes
 
-Install OMH, then talk to Hermes. The `omh` command is the setup, doctor,
-update, verifier, and wrapper/backend surface; the normal user experience is
-Hermes Agent chat with installed OMH skills.
+Start here:
+  omh setup     Connect OMH to Hermes
+  omh           Open the OMH terminal, then describe what you need
 
-If this screen appears after `omh uninstall`, the command package is still on
-PATH. `uninstall` removes OMH-managed Hermes files and removes the command only
-when it can prove the command came from the installer-managed OMH venv.
+The terminal opens only in an interactive shell with Hermes installed.
+If Hermes is missing, install Hermes Agent first, then run `omh setup`.
+If you just removed OMH, run `omh setup` to connect it again.
 
-Start:
-  omh setup              Install skills and connect them to Hermes
-  omh doctor             Check local OMH health and registration
-  omh quickstart         Show what to do next in Hermes
-  omh update             Refresh managed skills and update metadata
-  omh --version          Print the command version and its build identity
-
-First five minutes:
-  1. Run `omh setup` and accept the recommended choices.
-  2. Restart or reload Hermes Agent.
-  3. Ask Hermes the prompt below.
-
-Useful operator commands:
-  omh quickstart         Show first-use prompts and evidence boundaries
-  omh recommend "risky refactor"
-  omh cases recommend "daily competitor digest"
-  omh cases readiness   Check the G1-G10 readiness rollup
-  omh cases demo --all  Show wrapper-ready G1-G10 use-case cards
-  omh cases artifact --all --write
-                          Write local G1-G10 runbook artifacts
-  omh cases replay        Replay G1-G10 routing fixtures
-  omh context brief "make an image card for this PR"
-                          Show compact OMH context and route hint
-  omh playbook recommend "turn this issue into a PR"
-  omh chat interact "turn this issue into a PR-ready plan"
-  omh hud                Show the compact OMH status line
-  omh achievements summary
-                          Show observed hermes-achievements badges
-  omh menubar status     Show the OMH menu bar status summary
-  omh mcp manifest       Print the optional stdio MCP bridge manifest
-  omh release evidence-bundle --version 1.0.5 --write
-                          Write local deterministic release evidence
-  omh plugin observe-host --host hermes-agent --session <session-id> --event plugin_load --evidence-ref <host-log>
-  omh loop status        Show loopable goal cycle state
-  omh ops list           List local operations artifacts
-  omh materials list     List material-processing artifacts
-  omh paper list         List paper-learning records and where reading stopped
-  omh img-summary prompt-card Prepare image-generation-ready summary cards
-  omh worktree list      List observed worktree isolation records
-  omh worktree bind --path .worktrees/risky-refactor --executor codex --session <session-id>
-  omh runtime status     Show local evidence artifacts
-
-After setup, restart or reload Hermes Agent and try:
-  Use OMH request-to-handoff for: I want to safely add a feature to this repo.
-
-If `omh` is not found in a new terminal, use the absolute command path printed
-by the installer or add that directory to PATH. Run `omh doctor` after that to
-verify Hermes registration.
-
-Run `omh --help` for the full command list."""
+Need help? Run `omh doctor` to check setup or `omh --help` for all commands."""
     )
 
 
@@ -528,7 +479,7 @@ def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
     if not blocker:
         with exit_on_signals(), fallback_sentinel() as sentinel:
             environment = omh_tui_environment(
-                os.environ,
+                {**os.environ, "HERMES_HOME": str(paths.hermes_home)},
                 python=sys.executable,
                 site=omh_import_root(),
                 omh_home=_tui_omh_home(args, paths),
@@ -565,7 +516,10 @@ def _run_hermes_fallback(
     with_tui = hermes_tui_fits(os.environ) and _node_available(paths)
     target = "Hermes' own TUI (`hermes --tui`)" if with_tui else "`hermes`"
     print(f"omh: {reason}; opening {target}.", file=sys.stderr)
-    returncode = int(subprocess.run([hermes, *_hermes_passthrough_argv(args, tui=with_tui)]).returncode)
+    returncode = int(subprocess.run(
+        [hermes, *_hermes_passthrough_argv(args, tui=with_tui)],
+        env={**os.environ, "HERMES_HOME": str(paths.hermes_home)},
+    ).returncode)
     if said:
         print(f"omh: {target} opened because the OMH TUI did not start; it said:", file=sys.stderr)
         for line in said:

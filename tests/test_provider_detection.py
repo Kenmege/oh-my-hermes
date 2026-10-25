@@ -363,7 +363,7 @@ class SurfaceTests(unittest.TestCase):
         self.assertEqual(payload["providers"], [{"id": "openai-codex", "kind": "openai-codex", "source": "login", "evidence": "auth.json"}])
         served = {row["alias"]: row["served"] for row in payload["models"]}
         self.assertTrue(served["gpt-6-astra"])
-        self.assertFalse(served["kimi-k3"])
+        self.assertFalse(served["kimi-k3.1-pro"])
         self.assertNotIn(TOKEN, json.dumps(payload))
 
     def test_show_names_the_linked_providers_and_the_reorder(self) -> None:

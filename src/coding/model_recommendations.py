@@ -76,10 +76,17 @@ def _candidate(
     }
 
 
-_KIMI_K3 = _candidate(
-    "kimi-k3",
+# Kimi K3.1 Pro took every Kimi K3 slot at the effort each carried (owner
+# decision, 2026-10-24), and K3 left the shipped chains under the
+# superseded-generation rule. The API ladder is `low`/`high`/`max`, so the
+# `medium` and `xhigh` slots are off-ladder: the route keeps the chain's rung
+# and Hermes' kimi-coding provider sends them as `high` and `max`, exactly
+# as it did for K3, whose ladder is the same. Editorial and unmeasured; the
+# K3-vs-K3.1 pair on live-model-tools is the named follow-up.
+_KIMI_K31_PRO = _candidate(
+    "kimi-k3.1-pro",
     "kimi",
-    ("apitopia", "kimi-coding", "openrouter", "opencode"),
+    ("kimi-coding", "openrouter", "opencode"),
     reasoning="Editorial general-work recommendation; not a benchmark claim.",
 )
 _OPUS_55 = _candidate(
@@ -253,19 +260,19 @@ SHIPPED_MODEL_RECOMMENDATIONS: Final[dict[str, object]] = {
     # no matching record is labelled by projection.
     # Non-head entries move the same way: (claude-opus-5-5, medium) projects
     # to writing, which covers unspecified-high's second entry and the
-    # last_resort head; (kimi-k3, high) projects to deep from
+    # last_resort head; (kimi-k3.1-pro, high) projects to deep from
     # visual-engineering and artistry; (gpt-6-luna, low) and
     # (claude-haiku-5-5, low) reached through quick project to simple-work.
     "categories": {
         "ultrabrain": [deepcopy(_ASTRA)],
         # The strong tier across three provider ecosystems. DeepSeek V4.1
         # Flash left it: a Flash budget model does not fit the strong tier,
-        # and Opus 5.5 and Kimi K3 now carry the cross-ecosystem fallback.
+        # and Opus 5.5 and Kimi K3.1 Pro now carry the cross-ecosystem fallback.
         # visual-engineering children are labelled "deep" (collision above).
         "deep": [
             _with_effort(_OPUS_55, "high"),
             _with_effort(_SOL, "high"),
-            _with_effort(_KIMI_K3, "high"),
+            _with_effort(_KIMI_K31_PRO, "high"),
         ],
         # Architecture and system-design lanes (owner request, 2026-08-19):
         # deepest declared effort across three provider ecosystems so a
@@ -275,7 +282,7 @@ SHIPPED_MODEL_RECOMMENDATIONS: Final[dict[str, object]] = {
             _with_effort(_OPUS_55, "xhigh"),
             _with_effort(_ASTRA, "xhigh"),
             _with_effort(_FABLE_51, "xhigh"),
-            _with_effort(_KIMI_K3, "xhigh"),
+            _with_effort(_KIMI_K31_PRO, "xhigh"),
         ],
         # The one placement in this table backed by a measurement, of its
         # predecessor: on benchmarks/live-model-tools/v1 (30 evaluation tasks,
@@ -288,7 +295,7 @@ SHIPPED_MODEL_RECOMMENDATIONS: Final[dict[str, object]] = {
         "unspecified-high": [
             _with_effort(_SOL, "medium"),
             _with_effort(_OPUS_55, "medium"),
-            _with_effort(_KIMI_K3, "medium"),
+            _with_effort(_KIMI_K31_PRO, "medium"),
         ],
         # Owner rule (2026-08-19): a chain that would otherwise sit in one
         # provider ecosystem ends with a comparable-tier candidate from
@@ -310,14 +317,14 @@ SHIPPED_MODEL_RECOMMENDATIONS: Final[dict[str, object]] = {
             _with_effort(_GLM_53_FLASH, "low"),
             _with_effort(_LUNA, "low"),
             _with_effort(_HAIKU_55, "low"),
-            _with_effort(_KIMI_K3, "low"),
+            _with_effort(_KIMI_K31_PRO, "low"),
         ],
         # Writing keeps the (claude-opus-5-5, medium) label: it is earlier in
         # canonical order than capable, whose head is the same pair.
         "writing": [
             _with_effort(_OPUS_55, "medium"),
             _with_effort(_SONNET_55, "medium"),
-            _with_effort(_KIMI_K3, "medium"),
+            _with_effort(_KIMI_K31_PRO, "medium"),
             _with_effort(_GEMINI, "medium"),
         ],
         # Labelled "deep" by projection: its head is deep's (collision above).
@@ -325,13 +332,13 @@ SHIPPED_MODEL_RECOMMENDATIONS: Final[dict[str, object]] = {
             _with_effort(_OPUS_55, "high"),
             _with_effort(_FABLE_51, "high"),
             _with_effort(_GEMINI, "high"),
-            _with_effort(_KIMI_K3, "high"),
+            _with_effort(_KIMI_K31_PRO, "high"),
         ],
         "artistry": [
             _with_effort(_GEMINI, "high"),
             _with_effort(_OPUS_55, "high"),
             _with_effort(_FABLE_51, "high"),
-            _with_effort(_KIMI_K3, "high"),
+            _with_effort(_KIMI_K31_PRO, "high"),
         ],
         # The three categories below are appended rather than interleaved
         # (owner request, 2026-09-11). Position is not cosmetic: canonical
@@ -345,7 +352,7 @@ SHIPPED_MODEL_RECOMMENDATIONS: Final[dict[str, object]] = {
             _with_effort(_OPUS_55, "medium"),
             _with_effort(_SOL, "medium"),
             _with_effort(_FABLE_51, "medium"),
-            _with_effort(_KIMI_K3, "medium"),
+            _with_effort(_KIMI_K31_PRO, "medium"),
         ],
         # simple-work: cheap models for work that is small rather than fast.
         # It differs from quick in what leads — quick leads with the
@@ -370,11 +377,11 @@ SHIPPED_MODEL_RECOMMENDATIONS: Final[dict[str, object]] = {
             deepcopy(_OPUS_55),
             deepcopy(_FABLE_51),
             deepcopy(_ASTRA),
-            deepcopy(_KIMI_K3),
+            deepcopy(_KIMI_K31_PRO),
         ],
     },
     "domain_affinities": {
-        "x_platform_data": [deepcopy(_GROK), deepcopy(_KIMI_K3), deepcopy(_GEMINI)],
+        "x_platform_data": [deepcopy(_GROK), deepcopy(_KIMI_K31_PRO), deepcopy(_GEMINI)],
     },
     # One shared final attempt, consulted only after every candidate of the
     # selected chain is unavailable. A profile whose chains concentrate in one

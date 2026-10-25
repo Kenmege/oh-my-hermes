@@ -310,7 +310,16 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # schema rather than embedding its full nested contracts. The optional-tool
 # research hint is 695 characters and does not change registered system
 # sections. Independently remeasured across all 24 builtin schemas.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 68402
+# 68402 -> 68757: `omh_agent_board` states its prepare fields (+355). The
+# schema required only `action` and `request_id`, so a prepare built from it
+# omitted the five fields the engine requires and was refused with an opaque
+# reason (#2277). One description sentence plus a `profile` description carry
+# the rule to the model (+149). A top-level `oneOf` carries the two closed
+# shapes for a host that keeps it (+206); current Hermes removes top-level
+# combinators from every tool schema before any provider sees it
+# (`tools/schema_sanitizer.py`), so those bytes are counted here but not sent.
+# Re-derived from the producer.
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 68757
 # PRE_LLM_CALL_CONTEXT_CHAR_LIMIT, PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT: moved with
 # their history to src/plugin_bundle/omh/turn_budget.py; imported at the top of this file.
 # 340000 -> 349637: three capability-skill sections were added by the domain
