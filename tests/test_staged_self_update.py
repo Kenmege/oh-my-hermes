@@ -1430,21 +1430,55 @@ class StagedSelfUpdateTests(unittest.TestCase):
     def test_staged_transaction_regression_guard_names_the_refusal_it_prevents(self):
         # Proves the guard above is load-bearing: judging the candidate by the
         # home manifest is exactly the refusal that rolled 2.0.1 updates back.
+        # A candidate SKILL.md that already holds the incoming render is no
+        # longer a local modification (#2300), so the candidate's copy here
+        # differs from BOTH the home manifest's old record and the render.
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             _legacy, args, plan = self._fixture(root, pointer=True)
-            _ = self._older_pack_home(root)
+            manifest_path = self._older_pack_home(root)
+            first_skill = _object(
+                _array(_read_json_object(manifest_path)["skills"], "manifest skills")[0], "first manifest skill"
+            )
+            first_rel = _text(first_skill["path"], "first skill path")
             previous = (root / "current").resolve()
             argv = ["omh", "--omh-home", str(root / "omh"), "--hermes-home", str(root / "hermes"), "update", "--no-interactive"]
+            live = self._live_update_runner(root)
+            diverged: list[Path] = []
+
+            def run(
+                command: list[str],
+                *,
+                text: Literal[True],
+                stdout: int | None,
+                stderr: int | None,
+                env: dict[str, str] | None,
+                timeout: float | None,
+            ) -> subprocess.CompletedProcess[str]:
+                completed = live(command, text=text, stdout=stdout, stderr=stderr, env=env, timeout=timeout)
+                # The pack smoke runs against a throwaway home; only the
+                # re-entry carries this transaction's `--omh-home`.
+                smoke = "update" in command and "--omh-home" not in command
+                if smoke and not diverged:
+                    # After the pack smoke rendered the candidate: neither the
+                    # old record ("0" * 64) nor the incoming render.
+                    generation = _runner_environment(env)["OMH_SELF_UPDATE_GENERATION"]
+                    skill_file = Path(generation) / "skills" / first_rel
+                    _ = skill_file.write_text("diverged from both the old record and the render\n", encoding="utf-8")
+                    diverged.append(skill_file)
+                return completed
+
             with (
                 patch.object(sys, "argv", argv),
                 patch("omh.install.installer._manifest_describes", return_value=True),
                 contextlib.redirect_stderr(io.StringIO()),
             ):
-                result = self._run(root, args, plan, self._live_update_runner(root))
+                result = self._run(root, args, plan, run)
+            self.assertEqual(len(diverged), 1)
             self.assertFalse(result["ok"])
             self.assertEqual(result["phase"], "post_activation")
             self.assertIn("local modifications detected", result["post_activation"].get("reason", ""))
+            self.assertIn(first_rel, result["post_activation"].get("reason", ""))
             self.assertTrue(result["rollback"]["performed"])
             self._assert_pair(root, previous)
 
