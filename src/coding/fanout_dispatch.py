@@ -231,6 +231,11 @@ from .pi_family_interop import (
 )
 from ..plugin_bundle.omh.run_records import FANOUT_DISPATCH_SCHEMA_VERSION, RUN_FILE
 
+# A frozen unit whose owner is a profile id an older release wrote. The
+# contract's digest pins that id, so the unit is refused under this status and
+# the units are re-frozen, rather than reported as an invalid snapshot.
+OWNER_PROFILE_RENAMED = "owner_profile_renamed"
+
 # Grace between SIGTERM and SIGKILL when a unit group must die — the
 # pi-family runtime's launcher uses the same 10s window before re-raising on itself.
 UNIT_TERMINATE_GRACE_SECONDS = 10.0
@@ -1098,7 +1103,8 @@ def _unit_capability_precheck(
         # A contract frozen by an older release; its digest pins the old id,
         # so it is refused by name instead of falling back to a prompt.
         return declared_owner, None, [
-            f"unit owner {declared_owner!r} is a renamed profile id; re-freeze the units to record {current_owner!r}"
+            f"{OWNER_PROFILE_RENAMED}: unit owner {declared_owner!r} is a renamed profile id; "
+            f"re-freeze the units to record {current_owner!r}"
         ]
     handoff = unit.get("handoff", {}) if isinstance(unit.get("handoff"), Mapping) else {}
     handoff_owner = str(handoff.get("executor_target", "choose"))
@@ -3023,7 +3029,7 @@ def _report_recovery_options(
 
 
 def _capability_refusal_status(errors: Sequence[str]) -> str:
-    for status in FAIL_CLOSED_VERDICTS:
+    for status in (*FAIL_CLOSED_VERDICTS, OWNER_PROFILE_RENAMED):
         if any(str(error).startswith(f"{status}:") for error in errors):
             return status
     return "capability_snapshot_invalid"
@@ -6491,6 +6497,7 @@ def _dependency_failed(result: dict[str, Any] | None) -> bool:
         return False
     return result.get("status") in {
         "capability_snapshot_invalid",
+        OWNER_PROFILE_RENAMED,
         "failed",
         "input_required",
         "blocked_by_dependency",

@@ -78,8 +78,11 @@ def canonical_runtime_record(value: object) -> object:
     when they read a record from disk; nothing writes the old spellings again.
     """
     if isinstance(value, dict):
+        # A progress record carries the lane inside its ids; move those first.
+        progress = canonical_progress_record(value)
+        source = progress if isinstance(progress, dict) else value
         record: dict[object, object] = {}
-        for key, item in value.items():
+        for key, item in source.items():
             name = LEGACY_RUNTIME_RECORD_VALUES.get(key, key) if isinstance(key, str) else key
             if name == "runtime_family" and item == LEGACY_RUNTIME_FAMILY:
                 record[name] = "pi-family"
@@ -91,3 +94,28 @@ def canonical_runtime_record(value: object) -> object:
     if isinstance(value, str):
         return LEGACY_RUNTIME_RECORD_VALUES.get(value, value)
     return value
+
+
+def canonical_progress_record(record: object) -> object:
+    """A progress binding, event, or report an older release wrote, on the current lane.
+
+    The lane is also a segment of `binding_id`, `instance_id` and
+    `correlation_root`, so every one of them moves together and the
+    binding-to-event matches still hold. A record already on the current lane
+    is returned unchanged.
+    """
+    if not isinstance(record, dict) or LEGACY_RUNTIME_PROGRESS_LANE not in (
+        record.get("executor_profile"),
+        record.get("executor"),
+    ):
+        return record
+    updated = dict(record)
+    for key in ("executor_profile", "executor"):
+        if updated.get(key) == LEGACY_RUNTIME_PROGRESS_LANE:
+            updated[key] = "pi_family_runtime"
+    for key in ("binding_id", "instance_id", "correlation_root"):
+        value = updated.get(key)
+        if isinstance(value, str):
+            parts = value.split(":")
+            updated[key] = ":".join("pi_family_runtime" if part == LEGACY_RUNTIME_PROGRESS_LANE else part for part in parts)
+    return updated

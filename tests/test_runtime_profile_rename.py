@@ -260,6 +260,7 @@ _FIXTURES = Path(__file__).parent / "fixtures" / "legacy_runtime_records"
 # replaced by placeholders so the repo text never carries them.
 _PLACEHOLDERS = (
     ("<LEGACY_PROFILE_ID>", LEGACY_RUNTIME_PROFILE_ID),
+    ("<LEGACY_LANE>", LEGACY_RUNTIME_PROGRESS_LANE),
     ("<LEGACY_SKILL_REFERENCE>", f"{_SHORT}_skill_reference"),
     ("<LEGACY_AGENT>", "Open" + "Agent"),
     ("<LEGACY_UPPER>", _SHORT.upper()),
@@ -377,6 +378,124 @@ class ScoringOnlyShortlistTests(unittest.TestCase):
         entry = skill_shortlist_entry(definition.name)
         for terms in (*entry["terms"].values(), entry["anchors"]):
             self.assertNotIn(_SHORT, terms.split())
+
+
+def _install_legacy_progress(paths: OmhPaths) -> Path:
+    progress_dir = paths.runtime_runs_dir / "run-legacy-1" / "executor_progress"
+    progress_dir.mkdir(parents=True)
+    (progress_dir / "binding.json").write_text(_legacy_text("progress_binding.json"), encoding="utf-8")
+    (progress_dir / "events.jsonl").write_text(_legacy_text("progress_events.jsonl"), encoding="utf-8")
+    return progress_dir
+
+
+class LegacyInputAndRecordTests(unittest.TestCase):
+    """Review M1-M5, M7 and L2: each old-id input or record reads as the current profile."""
+
+    def _cli(self, root: Path, *argv: str) -> tuple[int, str, str]:
+        return run_cli(["--omh-home", str(root / ".omh"), "--hermes-home", str(root / ".hermes"), *argv])
+
+    def test_m1_language_diagnostics_owner_and_on_failure_retarget_accept_the_old_id(self) -> None:
+        from omh.coding.dispatch_failure_recovery import parse_on_failure
+        from omh.commands.main import build_parser
+
+        args = build_parser().parse_args(
+            ["quality-evidence", "language-diagnostics", "--owner", LEGACY_RUNTIME_PROFILE_ID, "--provider", "pyright"]
+        )
+        self.assertEqual(args.owner, _PROFILE)
+        self.assertEqual(parse_on_failure(f"retarget:{LEGACY_RUNTIME_PROFILE_ID}", known_owners=EXECUTOR_PROFILES), ("retarget", _PROFILE))
+
+    def test_m2_the_old_category_import_flag_is_a_hidden_alias(self) -> None:
+        from omh.commands.main import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["setup", f"--import-{_SHORT}-category-overrides"])
+        self.assertTrue(args.import_category_overrides)
+        self.assertTrue(parser.parse_args(["setup", "--import-category-overrides"]).import_category_overrides)
+        import argparse
+
+        subparsers = next(action for action in parser._actions if isinstance(action, argparse._SubParsersAction))
+        self.assertNotIn(_SHORT, subparsers.choices["setup"].format_help())
+
+    def test_m3_an_old_per_owner_cap_is_still_enforced(self) -> None:
+        from omh.coding.parallelism_policy import read_parallelism_policy
+
+        with TemporaryDirectory() as tmp:
+            paths = _paths(Path(tmp))
+            paths.setup_profile_path.parent.mkdir(parents=True)
+            paths.setup_profile_path.write_text(
+                json.dumps({"schema_version": "setup_profile/v1", "parallelism": {"per_owner": {LEGACY_RUNTIME_PROFILE_ID: 1, "codex": 2}}}),
+                encoding="utf-8",
+            )
+            policy = read_parallelism_policy(paths, env={})
+        self.assertEqual(policy["per_owner"].get(_PROFILE), 1)
+        self.assertNotIn(LEGACY_RUNTIME_PROFILE_ID, policy["per_owner"])
+
+    def test_m4_snapshot_inspect_and_validate_read_an_old_snapshot_file(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            directory = _paths(root).executor_capability_snapshots_dir
+            directory.mkdir(parents=True)
+            legacy_file = directory / f"{LEGACY_RUNTIME_PROFILE_ID}.json"
+            legacy_file.write_text(_legacy_text("capability_snapshot.json"), encoding="utf-8")
+            inspect = self._cli(root, "coding", "capability-snapshot", "inspect", "--executor", _PROFILE)
+            validate = self._cli(
+                root, "coding", "capability-snapshot", "validate", "--executor", _PROFILE, "--path", str(legacy_file)
+            )
+        self.assertEqual(inspect[0], 0, inspect[2])
+        self.assertEqual(json.loads(inspect[1])["snapshot"]["executor"], _PROFILE)
+        self.assertEqual(validate[0], 0, validate[1])
+        self.assertTrue(json.loads(validate[1])["valid"])
+
+    def test_m5_an_old_loop_envelope_and_a_new_grant_both_hold_the_current_id(self) -> None:
+        from omh.workflows.goal_loop import build_authority_envelope
+
+        envelope = build_authority_envelope(permission_profile="custom", allowed_executors=[LEGACY_RUNTIME_PROFILE_ID])
+        self.assertEqual(envelope["allowed_executors"], [_PROFILE])
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            loop_dir = _paths(root).loops_dir / "loop-legacy"
+            loop_dir.mkdir(parents=True)
+            (loop_dir / "cycle.json").write_text(_legacy_text("loop_cycle.json"), encoding="utf-8")
+            status, stdout, stderr = self._cli(root, "loop", "status", "--loop", "loop-legacy")
+        self.assertEqual(status, 0, stderr)
+        self.assertNotIn(LEGACY_RUNTIME_PROFILE_ID, stdout)
+        self.assertIn(f'"allowed_executors": ["{_PROFILE}"]', json.dumps(json.loads(stdout)))
+
+    def test_m7_an_old_progress_binding_reports_and_accepts_observations(self) -> None:
+        from omh.coding.executor_progress import (
+            observe_executor_progress,
+            project_active_executor_status,
+            read_progress_binding,
+            validate_progress_binding,
+        )
+        from omh.plugin_bundle.omh.runtime_reader import _progress_bindings
+
+        with TemporaryDirectory() as tmp:
+            paths = _paths(Path(tmp))
+            _install_legacy_progress(paths)
+            binding = read_progress_binding(paths, "run", "run-legacy-1")
+            self.assertEqual(binding["executor_profile"], "pi_family_runtime")
+            self.assertEqual(validate_progress_binding(binding), [])
+            rows = project_active_executor_status(paths, now="2026-10-01T00:02:00Z")["active_executors"]
+            self.assertEqual([row["executor_profile"] for row in rows], ["pi_family_runtime"])
+            bundle = _progress_bindings(paths.omh_home / "runtime", limit=5)
+            self.assertEqual(len(bundle), 1)
+            self.assertTrue(bundle[0]["latest_event"])
+            observed = observe_executor_progress(
+                paths, binding, {"type": "tests_started", "summary": "running tests"}, observed_at="2026-10-01T00:03:00Z"
+            )
+            self.assertEqual(observed["binding"]["executor_profile"], "pi_family_runtime")
+
+    def test_l2_a_frozen_unit_with_the_old_owner_gets_its_own_status(self) -> None:
+        from omh.coding.fanout_dispatch import OWNER_PROFILE_RENAMED, _capability_refusal_status
+
+        with TemporaryDirectory() as tmp:
+            _owner, _snapshot, errors = _unit_capability_precheck(
+                _paths(Path(tmp)),
+                {"unit_id": "core", "owner": LEGACY_RUNTIME_PROFILE_ID, "handoff": {"executor_target": LEGACY_RUNTIME_PROFILE_ID}},
+                contract_schema_version="fanout_contract/v2",
+            )
+        self.assertEqual(_capability_refusal_status(errors), OWNER_PROFILE_RENAMED)
 
 
 if __name__ == "__main__":

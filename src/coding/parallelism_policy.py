@@ -40,6 +40,7 @@ from ..system.security_posture import (
     resolve_security_posture,
     strict_override,
 )
+from .executors import canonical_executor_profile
 from .fanout_retry import FANOUT_MAX_RETRIES
 
 # One config typo must not turn the fanout pool into a fork bomb: 32 is far
@@ -134,7 +135,8 @@ def read_parallelism_policy(paths: OmhPaths, *, env: Mapping[str, str] | None = 
     raw_owners = stored.get("per_owner")
     if isinstance(raw_owners, dict):
         for owner, value in raw_owners.items():
-            label = owner.strip() if isinstance(owner, str) else ""
+            # An owner an older release wrote reads as the current profile.
+            label = canonical_executor_profile(owner.strip()) if isinstance(owner, str) else ""
             width = (
                 value
                 if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= _PARALLELISM_MAX

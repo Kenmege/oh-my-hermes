@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..coding.pi_family_interop import canonical_progress_record
 from ..plugin_bundle.omh.run_records import (
     CI_FILE,
     CODING_DELEGATION_FILE,
@@ -872,6 +873,8 @@ def _show_executor_progress(target_dir: Path) -> dict[str, Any]:
     binding = raw_binding if isinstance(raw_binding, dict) and not binding_errors else {}
     events, event_errors = read_jsonl_objects(progress_dir / EVENTS_FILE)
     reports, report_errors = read_jsonl_objects(progress_dir / EXECUTOR_PROGRESS_REPORTS_FILE)
+    events = [canonical_progress_record(event) for event in events]
+    reports = [canonical_progress_record(report) for report in reports]
     binding_id = str(binding.get("binding_id", ""))
     instance_id = str(binding.get("instance_id", ""))
     matching_events = [

@@ -10,7 +10,7 @@ from typing import Any
 
 from ..local_store import atomic_write_json, ensure_dir, ensure_file, read_json_object, read_jsonl_objects, utc_now
 from ..paths import OmhPaths
-from .pi_family_interop import LEGACY_RUNTIME_PROFILE_ID, PI_DISTRIBUTION_HOST
+from .pi_family_interop import LEGACY_RUNTIME_PROFILE_ID, PI_DISTRIBUTION_HOST, canonical_progress_record
 from ..plugin_bundle.omh.run_records import (
     DELEGATION_FILE,
     EVENTS_FILE,
@@ -365,7 +365,7 @@ def write_progress_binding(paths: OmhPaths, binding: dict[str, Any]) -> dict[str
 
 
 def read_progress_binding(paths: OmhPaths, target_type: str, target_id: str) -> dict[str, Any] | None:
-    binding = read_json_object(progress_dir_for_target(paths, target_type, target_id) / EXECUTOR_PROGRESS_BINDING_FILE)
+    binding = canonical_progress_record(read_json_object(progress_dir_for_target(paths, target_type, target_id) / EXECUTOR_PROGRESS_BINDING_FILE))
     if not binding:
         return None
     _require_valid("binding", validate_progress_binding(binding))
@@ -382,7 +382,7 @@ def list_progress_bindings(paths: OmhPaths, *, limit: int | None = None) -> list
             continue
         for binding_path in sorted(root.glob("*/executor_progress/binding.json")):
             try:
-                binding = read_json_object(binding_path)
+                binding = canonical_progress_record(read_json_object(binding_path))
                 if not binding:
                     continue
                 _require_valid("binding", validate_progress_binding(binding))
@@ -1089,6 +1089,7 @@ def append_progress_event(paths: OmhPaths, binding: dict[str, Any], event: dict[
 def latest_progress_event(paths: OmhPaths, binding: dict[str, Any]) -> dict[str, Any]:
     target = _binding_target(binding)
     events, _errors = read_jsonl_objects(progress_dir_for_target(paths, target["type"], target["id"]) / EVENTS_FILE)
+    events = [canonical_progress_record(event) for event in events]
     valid = [event for event in events if not validate_progress_event(event) and _payload_matches_binding_instance(event, binding)]
     return valid[-1] if valid else {}
 
@@ -1145,6 +1146,7 @@ def append_progress_report(paths: OmhPaths, binding: dict[str, Any], report: dic
 def latest_progress_report(paths: OmhPaths, binding: dict[str, Any]) -> dict[str, Any]:
     target = _binding_target(binding)
     reports, _errors = read_jsonl_objects(progress_dir_for_target(paths, target["type"], target["id"]) / EXECUTOR_PROGRESS_REPORTS_FILE)
+    reports = [canonical_progress_record(report) for report in reports]
     valid = [report for report in reports if not validate_progress_report(report) and _payload_matches_binding_instance(report, binding)]
     return valid[-1] if valid else {}
 

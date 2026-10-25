@@ -37,7 +37,8 @@ from ..coding.executor_skill_discovery import (
     skill_selection_card,
     suggested_skill_sequence,
 )
-from ..coding.executors import EXECUTOR_PROFILES
+from ..coding.executors import EXECUTOR_PROFILES, legacy_executor_profile_ids
+from ..coding.pi_family_interop import canonical_runtime_record
 from ..executor_readiness import EXECUTOR_READINESS_PROFILES, probe_executor_readiness
 from ..hermes_planning import (
     build_plan_handoff_context_pack,
@@ -964,7 +965,7 @@ def cmd_coding_capability_snapshot_record(args: argparse.Namespace) -> int:
 
 def cmd_coding_capability_snapshot_inspect(args: argparse.Namespace) -> int:
     try:
-        path = _capability_snapshot_path(args)
+        path = _capability_snapshot_read_path(args)
         snapshot = read_executor_capability_snapshot(path)
         if snapshot is None:
             raise ValueError(f"executor capability snapshot not found: {path}")
@@ -984,8 +985,10 @@ def cmd_coding_capability_snapshot_inspect(args: argparse.Namespace) -> int:
 
 def cmd_coding_capability_snapshot_validate(args: argparse.Namespace) -> int:
     try:
-        path = _capability_snapshot_path(args)
-        snapshot = read_json_object(path)
+        path = _capability_snapshot_read_path(args)
+        raw = read_json_object(path)
+        # Validated as the current release reads it: an old profile id is current.
+        snapshot = None if raw is None else canonical_runtime_record(raw)
         if snapshot is None:
             raise ValueError(f"executor capability snapshot not found: {path}")
         errors = validate_executor_capability_snapshot(snapshot)
@@ -1024,6 +1027,18 @@ def _read_capability_snapshot_json(path_text: str) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError("--capabilities-json must contain a JSON object")
     return value
+
+
+def _capability_snapshot_read_path(args: argparse.Namespace) -> Path:
+    """The snapshot to read: an older release's file name when only that one exists."""
+    path = _capability_snapshot_path(args)
+    if getattr(args, "snapshot_path", "") or path.exists():
+        return path
+    for legacy_id in legacy_executor_profile_ids(args.executor):
+        legacy = path.with_name(f"{legacy_id}.json")
+        if legacy.exists():
+            return legacy
+    return path
 
 
 def _capability_snapshot_path(args: argparse.Namespace) -> Path:

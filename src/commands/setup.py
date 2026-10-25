@@ -27,6 +27,7 @@ from ..capabilities.registry import capability_summary
 from ..capabilities.skills import skill_capabilities
 from ..coding.executor_auth_signals import auth_signal_for_profile
 from ..coding.executors import EXTERNAL_CLI_PROFILES
+from ..coding.pi_family_interop import RUNTIME_SHORT_NAME
 from ..coding.fanout_dispatch import (
     DISPATCH_MODEL_PREFERENCE_SCHEMA_VERSION,
     dispatch_model_preferences_path,
@@ -6365,6 +6366,13 @@ def _add_top_level_commands(sub) -> None:
         "--import-category-overrides",
         action="store_true",
         help="Import category model preferences from the pi-family runtime's home config.",
+    )
+    # The flag's old spelling, for scripts written against an older release.
+    setup.add_argument(
+        f"--import-{RUNTIME_SHORT_NAME}-category-overrides",
+        dest="import_category_overrides",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     setup.add_argument(
         "--confirm-model",
