@@ -42,8 +42,23 @@ All notable changes will be documented here.
   keeps the reload, PATH, preview and profile-failure guidance. With no
   terminal or no Hermes, setup prints an 11-line first-use guide instead of
   the command inventory. Both launch paths, the OMH TUI and the Hermes
-  fallback, now get the resolved `--hermes-home` instead of inheriting
-  another home. Structured JSON is unchanged. Contributed by @frirenai.
+  fallback, now get the resolved Hermes home (`HERMES_HOME`) instead of
+  inheriting another one. Structured JSON is unchanged. Contributed by
+  @frirenai.
+
+- **Vietnamese trigger phrases follow a native speaker's review (#2262).**
+  The review flagged 11 of the pack's 109 phrases. Nine are reworded into
+  the forms a Vietnamese speaker uses, often keeping the English term (`kiểm
+  tra accessibility`, `kiểm tra screen reader`, `kiểm thử WCAG`, `kiểm tra
+  kiểu red team`), and two keep their original wording. verification-gate
+  gains `gộp` phrasings (`xác minh trước khi gộp`) beside its `merge` ones,
+  which stay because `gộp` is not a router token. The routing effect is
+  measured: the two `gộp` phrases clarify instead of dispatching, `kiểm tra
+  điều hướng với bàn phím` now clarifies with accessibility-audit as the
+  candidate where the old phrase fell back, and `kiểm tra kiểu red team`
+  clarifies with adversarial-consensus as before. No routing rule changed;
+  the five skill bodies that list these phrases are regenerated. Contributed
+  by @PhucNguyen-Dev.
 
 - **`omh_agent_board` states the fields a `prepare` needs, and names the
   one that is missing (#2277).** The schema required only `action` and
