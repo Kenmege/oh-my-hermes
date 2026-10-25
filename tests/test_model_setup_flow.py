@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+import textwrap
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -54,6 +56,41 @@ def _inspection(
         ),
         commands=(),
     )
+
+
+# Records which home each call acted on, in a log outside every home, and
+# answers the read-only inspection plus `config set` from files under
+# $HERMES_HOME -- so a write lands in whichever home the call was given.
+_HOME_RECORDING_HERMES = """
+import json
+import os
+from pathlib import Path
+import sys
+
+home = Path(os.environ["HERMES_HOME"])
+args = sys.argv[1:]
+with open(os.environ["HERMES_CALL_LOG"], "a", encoding="utf-8") as stream:
+    stream.write(json.dumps({"home": str(home), "args": args}) + "\\n")
+aliases_path = home / "model-aliases.json"
+aliases = json.loads(aliases_path.read_text(encoding="utf-8")) if aliases_path.exists() else {}
+if args == ["config", "path"]:
+    print(home / "config.yaml")
+elif args[:3] == ["config", "get", "model.aliases"]:
+    print(json.dumps(aliases))
+elif args[:2] == ["config", "get"]:
+    raise SystemExit(1)
+elif args == ["config", "check"]:
+    print("Configuration OK")
+elif args[:2] == ["auth", "list"]:
+    print("openai (1 credentials):")
+elif args[:2] == ["auth", "status"]:
+    raise SystemExit(0 if args[2] == "openai" else 1)
+elif args[:2] == ["config", "set"] and args[2].startswith("model.aliases."):
+    aliases[args[2].removeprefix("model.aliases.")] = args[3]
+    aliases_path.write_text(json.dumps(aliases), encoding="utf-8")
+else:
+    raise SystemExit(f"unexpected command: {args}")
+"""
 
 
 def _discovery(
@@ -679,6 +716,75 @@ class ModelSetupFlowTests(unittest.TestCase):
                 },
             ],
         )
+
+    @unittest.skipIf(os.name == "nt", "the stub is a shebang script resolved as `hermes` on PATH")
+    def test_model_step_acts_on_the_target_hermes_home_not_the_ambient_one(self) -> None:
+        # Given: the shell points HERMES_HOME at one home, setup targets another.
+        with TemporaryDirectory() as tmp:
+            # Resolved, because setup resolves the home (macOS /var -> /private/var).
+            root = Path(tmp).resolve()
+            target, ambient, bin_dir = root / "target-hermes", root / "ambient-hermes", root / "bin"
+            for directory in (target, ambient, bin_dir):
+                directory.mkdir()
+            (target / "config.yaml").write_text("{}\n", encoding="utf-8")
+            (ambient / "config.yaml").write_text("{}\n", encoding="utf-8")
+            ambient_before = sorted(path.name for path in ambient.iterdir())
+            call_log = root / "hermes-calls.jsonl"
+            hermes = bin_dir / "hermes"
+            hermes.write_text(
+                f"#!{sys.executable}\n" + textwrap.dedent(_HOME_RECORDING_HERMES).lstrip(),
+                encoding="utf-8",
+            )
+            hermes.chmod(0o755)
+            base = [
+                "--omh-home",
+                str(root / ".omh"),
+                "--hermes-home",
+                str(target),
+                "setup",
+                "--skip-apply",
+                "--no-menubar",
+                "--model-setup",
+                "--confirm-model",
+                "openai/gpt-5",
+                "--model-alias",
+                "main=openai/gpt-5",
+                "--no-interactive",
+                "--json",
+            ]
+            environment = {
+                "PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
+                "HERMES_HOME": str(ambient),
+                "HERMES_CALL_LOG": str(call_log),
+            }
+            with patch.dict(os.environ, environment), patch.object(
+                setup_commands,
+                "discover_local_models",
+                return_value=_discovery([]),
+            ):
+                # When: setup previews, then applies that preview by its digest.
+                status, stdout, stderr = run_cli(base, output_json=False)
+                self.assertEqual((status, stderr), (0, ""))
+                digest = json.loads(stdout)["steps"]["model_activation"]["preview"]["config_digest"]
+                status, stdout, stderr = run_cli(
+                    base + ["--apply-model-config", "--model-config-digest", digest],
+                    output_json=False,
+                )
+
+            # Then: every Hermes call saw the target home, the alias landed
+            # there, and the ambient home was neither read nor written.
+            self.assertEqual((status, stderr), (0, ""))
+            activation = json.loads(stdout)["steps"]["model_activation"]
+            self.assertEqual(activation["verification"]["status"], "verified")
+            self.assertEqual(activation["inspection"]["config_path"], str(target / "config.yaml"))
+            calls = [json.loads(line) for line in call_log.read_text(encoding="utf-8").splitlines()]
+            self.assertIn(["config", "set", "model.aliases.main", "openai/gpt-5"], [call["args"] for call in calls])
+            self.assertEqual({call["home"] for call in calls}, {str(target)})
+            self.assertEqual(
+                json.loads((target / "model-aliases.json").read_text(encoding="utf-8")),
+                {"main": "openai/gpt-5"},
+            )
+            self.assertEqual(sorted(path.name for path in ambient.iterdir()), ambient_before)
 
     def test_setup_without_hermes_on_path_reports_hermes_unavailable(self) -> None:
         # Given: a machine whose Hermes is managed by a hosted wrapper, so no
