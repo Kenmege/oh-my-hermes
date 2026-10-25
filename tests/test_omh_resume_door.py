@@ -588,7 +588,7 @@ class OmhTuiDoorTests(unittest.TestCase):
                 sentinel = Path(environments[0][FALLBACK_SENTINEL_ENV])
                 self.assertFalse(sentinel.parent.exists())
                 # Hermes' own terminal, when it opens, is started without the name.
-                self.assertTrue(all(env is None for env in environments[1:]))
+                self.assertTrue(all(FALLBACK_SENTINEL_ENV not in env for env in environments[1:]))
 
     def test_any_other_code_ends_the_launch_without_a_second_terminal(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -632,7 +632,9 @@ class OmhTuiDoorTests(unittest.TestCase):
             with launched(Path(tmp), [], omh_tui=False, environments=environments) as (recorded, _o, _s):
                 pass
         self.assertEqual(recorded, [["/usr/local/bin/hermes"]])
-        self.assertEqual(environments, [None])
+        self.assertEqual(len(environments), 1)
+        self.assertNotIn("HERMES_TUI_DIR", environments[0])
+        self.assertIn("HERMES_HOME", environments[0])
 
 
 class FallbackTargetTests(unittest.TestCase):
@@ -667,8 +669,10 @@ class FallbackTargetTests(unittest.TestCase):
         self.assertIn("termios", reason)
         recorded, environments, stderr, _status = self._fallback(blocker=reason, node=True)
         self.assertEqual(recorded, [[self.HERMES, "--tui"]])
-        # Hermes' own TUI, not the OMH frontend: no OMH environment at all.
-        self.assertEqual(environments, [None])
+        # Hermes' own TUI, not the OMH frontend; the selected home still reaches it.
+        self.assertEqual(len(environments), 1)
+        self.assertNotIn("HERMES_TUI_DIR", environments[0])
+        self.assertIn("HERMES_HOME", environments[0])
         self.assertEqual(stderr, f"omh: {reason}; opening Hermes' own TUI (`hermes --tui`).\n")
 
     def test_a_dumb_terminal_opens_plain_hermes_even_with_node(self) -> None:
@@ -694,7 +698,8 @@ class FallbackTargetTests(unittest.TestCase):
         )
         self.assertEqual(recorded, [[self.HERMES, "--tui", "--continue"], [self.HERMES, "--tui", "--continue"]])
         self.assertIsNotNone(environments[0])
-        self.assertIsNone(environments[1])
+        self.assertNotIn("HERMES_TUI_DIR", environments[1])
+        self.assertEqual(environments[1]["HERMES_HOME"], environments[0]["HERMES_HOME"])
         self.assertEqual(
             stderr, "omh: the OMH TUI did not start (its reason is above); opening Hermes' own TUI (`hermes --tui`).\n"
         )
@@ -722,7 +727,9 @@ class FallbackTargetTests(unittest.TestCase):
         self.assertIn("no Node found", reason)
         recorded, environments, stderr, _status = self._fallback(blocker=reason, node=False)
         self.assertEqual(recorded, [[self.HERMES]])
-        self.assertEqual(environments, [None])
+        self.assertEqual(len(environments), 1)
+        self.assertNotIn("HERMES_TUI_DIR", environments[0])
+        self.assertIn("HERMES_HOME", environments[0])
         self.assertEqual(stderr, f"omh: {reason}; opening `hermes`.\n")
 
     def test_the_session_ending_in_the_omh_tui_prints_no_fallback_line(self) -> None:

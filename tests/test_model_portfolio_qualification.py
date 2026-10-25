@@ -164,7 +164,8 @@ class PortfolioTests(unittest.TestCase):
                 self.assertEqual(row["evidence"][dimension], {"state": "unmeasured", "evidence_pointers": []})
         retired = {row["canonical_model_id"] for row in rows if row["disposition"] == "excluded_superseded"}
         self.assertEqual(
-            retired, {"claude-fable-5", "glm-5.2", "claude-opus-5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"}
+            retired,
+            {"claude-fable-5", "glm-5.2", "claude-opus-5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "kimi-k3"},
         )
         # List-price multipliers alone cannot prove role-specific efficiency.
         tiers = [row for row in rows if row["canonical_model_id"].startswith("gpt-6-astra-")]

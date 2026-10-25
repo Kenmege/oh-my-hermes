@@ -2,7 +2,8 @@
 
 The fixture (`fixtures/agent_board_golden.json`) was captured at origin/main
 1239b36bd, which has no `omh_team`, by running this producer (re-captured
-there after main changed the tool's own schema text). The team lane
+there after main changed the tool's own schema text, and again when #2277
+added the prepare fields to it). The team lane
 is a separate tool precisely so this tool stays what it was; the test that
 reads the fixture compares STRINGS, not parsed dicts, because a dict compare
 cannot see key order and this pin is about bytes a host reads.

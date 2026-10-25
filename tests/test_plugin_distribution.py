@@ -2312,8 +2312,12 @@ class UpdateRefreshesTheBundleTests(unittest.TestCase):
             manifest = stray.parent / ".omh-plugin-manifest.json"
             before = manifest.read_bytes()
 
-            status, _, stderr = run_cli(base + ["update"])
-            self.assertEqual(status, 0, stderr)
+            status, stdout, stderr = run_cli(base + ["update"])
+            self.assertEqual(status, 1, stderr)
+            payload = json.loads(stdout)
+            self.assertEqual(payload["status"], "partial")
+            self.assertEqual(payload["failures"][0]["phase"], "plugin_bundle")
+            self.assertIn("plugin refresh refused", payload["failures"][0]["error"])
             self.assertTrue(stray.is_file())
             self.assertEqual(stray.read_bytes(), b"user-owned notes\n")
             self.assertEqual(manifest.read_bytes(), before)
@@ -2373,24 +2377,34 @@ class UpdateRefreshesTheBundleTests(unittest.TestCase):
             stray = self._bundle_dir(root / ".hermes") / "stray_from_an_older_version.py"
             stray.write_text("# left behind by an older bundle\n", encoding="utf-8")
 
-            status, _, stderr = run_cli(base + ["update", "--dry-run"])
+            before = {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            status, stdout, stderr = run_cli(base + ["update", "--dry-run"])
             self.assertEqual(status, 0, stderr)
+            plan = json.loads(stdout)["plugin_bundle"]
+            self.assertEqual(plan["status"], "would_refuse")
+            self.assertFalse(plan["applied"])
             self.assertTrue(stray.exists())
+            self.assertEqual({p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()}, before)
 
     def test_a_drifted_bundle_does_not_fail_the_update(self) -> None:
         # A managed file edited outside OMH makes the reinstall refuse. Update
-        # must still succeed for everything else; `omh doctor` reports the drift
-        # with the `omh setup --force` instruction that repairs it.
+        # still refreshes other surfaces, but reports partial/nonzero for this
+        # required refusal; the historical test ID is retained for CI mapping.
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             base = ["--omh-home", str(root / ".omh"), "--hermes-home", str(root / ".hermes")]
             run_cli(base + ["setup"])
             marker = self._bundle_dir(root / ".hermes") / "__init__.py"
-            marker.write_text("# edited outside OMH\n", encoding="utf-8")
+            marker.write_bytes(b"# edited outside OMH\r\n")
+            before = marker.read_bytes()
 
-            status, _, stderr = run_cli(base + ["update"])
-            self.assertEqual(status, 0, stderr)
-            self.assertEqual(marker.read_text(encoding="utf-8"), "# edited outside OMH\n")
+            status, stdout, stderr = run_cli(base + ["update"])
+            self.assertEqual(status, 1, stderr)
+            payload = json.loads(stdout)
+            self.assertEqual(payload["status"], "partial")
+            self.assertEqual(payload["failures"][0]["phase"], "plugin_bundle")
+            self.assertIn("plugin refresh refused", payload["failures"][0]["error"])
+            self.assertEqual(marker.read_bytes(), before)
 
 
 @requires_symlinks
@@ -2481,8 +2495,13 @@ class SymlinkedPluginDirectoryTests(unittest.TestCase):
             self.assertFalse(bundle.exists())
 
             status, stdout, stderr = run_cli(base + ["update"])
-            self.assertEqual(status, 0, stderr)
+            self.assertEqual(status, 1, stderr)
+            payload = json.loads(stdout)
+            self.assertEqual(payload["status"], "partial")
+            self.assertEqual(payload["failures"][0]["phase"], "registration")
+            self.assertIn("registration failed", payload["failures"][0]["error"])
             self.assertTrue(bundle.is_symlink())
+            self.assertFalse(shared.exists())
             self.assertEqual(os.readlink(bundle), str(shared))
             self.assertIn("use --force to replace it", stdout + stderr)
 

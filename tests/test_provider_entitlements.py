@@ -66,9 +66,10 @@ class ParityTests(unittest.TestCase):
     # same reason: a machine-level chain override may still name them.
     _RECOGNITION_ONLY_ALIAS_FAMILIES: dict[str, tuple[str, ...]] = {
         "claude-mythos-5-1": ("ccapi", "anthropic", "openrouter"),
-        # Onboarded 2026-10-24 ahead of any chain placement.
-        "kimi-k3.1-pro": ("kimi-coding", "openrouter", "opencode"),
+        # Onboarded 2026-10-24; no shipped chain names the Highspeed tier.
         "kimi-k3.1-pro-highspeed": ("kimi-coding",),
+        # Retired 2026-10-24 when Kimi K3.1 Pro took every K3 slot.
+        "kimi-k3": ("apitopia", "kimi-coding", "openrouter", "opencode"),
         # The versioned spelling of the shipped `deepseek-flash` pointer;
         # gateways serve it under this id.
         "deepseek-v4.1-flash": ("deepseek", "openrouter", "opencode"),
@@ -96,7 +97,10 @@ class ParityTests(unittest.TestCase):
     # dropping a kind would invalidate as a whole every providers.json that
     # recorded it; `qwen-oauth` lost its only member (qwen3-coder) on
     # 2026-10-13 and is still named by that recognition-only row.
-    _RETAINED_PROVIDER_FAMILIES: frozenset[str] = frozenset({"qwen-oauth"})
+    # `apitopia` lost its only member on 2026-10-24, when kimi-k3.1-pro took
+    # the K3 slots without it (nobody observed Apitopia serving K3.1 Pro);
+    # recognition-only kimi-k3 still names it.
+    _RETAINED_PROVIDER_FAMILIES: frozenset[str] = frozenset({"apitopia", "qwen-oauth"})
 
     def _catalog_families(self) -> dict[str, tuple[str, ...]]:
         families: dict[str, tuple[str, ...]] = {}
@@ -285,7 +289,7 @@ class ChainSurfaceConsistencyTests(unittest.TestCase):
             with redirect_stdout(out):
                 _print_state(state)
             self.assertIn(
-                "architect: gpt-6-astra:xhigh, claude-opus-5-5:xhigh, claude-fable-5-1:xhigh, kimi-k3:xhigh",
+                "architect: gpt-6-astra:xhigh, claude-opus-5-5:xhigh, claude-fable-5-1:xhigh, kimi-k3.1-pro:xhigh",
                 out.getvalue(),
             )
             self.assertIn("(reordered by this machine's providers)", out.getvalue())
@@ -308,7 +312,7 @@ class ChainSurfaceConsistencyTests(unittest.TestCase):
             )
             self.assertEqual(routed["status"], "routed", routed)
             self.assertEqual(routed["applied"]["alias"], "gpt-6-astra")
-            for expected in ("claude-opus-5-5", "claude-fable-5-1", "kimi-k3"):
+            for expected in ("claude-opus-5-5", "claude-fable-5-1", "kimi-k3.1-pro"):
                 fallback = json.loads(
                     omh_delegate_route_handler({"action": "fallback", "category": "architect", **common}, **host)
                 )
@@ -635,10 +639,10 @@ class MultiChoicePromptTests(unittest.TestCase):
     def test_the_interview_copy_does_not_claim_the_built_in_order_survives_a_skip(self) -> None:
         """Linked providers reorder chains whether or not the interview is answered.
 
-        Before detection the three strings were true: nothing counted until
-        the operator answered. Now the record only corrects what is already
-        counted, so every language has to say that skipping keeps the linked
-        providers counting, and that the record sits on top of them.
+        The brief introduction must preserve detection, exclusion and
+        validation boundaries without repeating storage paths or internals.
+        The Skip choice and result still explain that linked providers keep
+        counting and an earlier record stays unchanged.
         """
         retired = ("built-in model order", "기본 모델 순서", "組み込みのモデル順序", "内置的模型顺序", "内置模型列表")
         for code in LANGUAGE_CODES:
@@ -647,21 +651,25 @@ class MultiChoicePromptTests(unittest.TestCase):
                     text = tr(code, key)
                     for phrase in retired:
                         self.assertNotIn(phrase, text)
-        self.assertIn("count on their own and arrive pre-ticked", tr("en", "provider_entitlements_note"))
-        # The interview also offers a key exported only in the shell,
-        # pre-ticked; routing reads `.env`, not the process environment, so
-        # that row counts only once it is recorded, and the copy says so.
-        self.assertIn("a key exported only in this shell is offered pre-ticked too, but counts only once you record it", tr("en", "provider_entitlements_note"))
+        # The short intro covers the decision and validation boundaries;
+        # detailed skip behavior remains in the choice and result text.
+        intro = tr("en", "provider_entitlements_note")
+        for disclosure in (
+            "Detected entries are preselected",
+            "accounts are not checked",
+            "Unticking one excludes it",
+            "Skip keeps your settings",
+            "No keys are requested or services called",
+        ):
+            self.assertIn(disclosure, intro)
         for code in ("ko", "ja", "zh"):
-            self.assertNotEqual(tr(code, "provider_entitlements_note"), tr("en", "provider_entitlements_note"))
-        self.assertIn("on top of that", tr("en", "provider_entitlements_note"))
+            self.assertNotEqual(tr(code, "provider_entitlements_note"), intro)
         self.assertIn("keep counting", tr("en", "provider_skip_desc"))
         self.assertIn("an earlier record stays as it is", tr("en", "provider_skip_desc"))
         self.assertIn("keep counting on their own", tr("en", "provider_entitlements_skipped"))
         for code in ("ko", "ja", "zh"):
             self.assertIn("Hermes", tr(code, "provider_skip_desc"))
             self.assertIn("Hermes", tr(code, "provider_entitlements_skipped"))
-            self.assertIn("providers.json", tr(code, "provider_entitlements_note"))
 
 
 class SetupInterviewTests(unittest.TestCase):

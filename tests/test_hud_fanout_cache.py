@@ -14,7 +14,9 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import json
+import os
 import shutil
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -31,6 +33,7 @@ from omh.coding.executor_progress import (  # noqa: E402
     write_progress_binding,
 )
 from omh.coding.fanout import build_fanout_contract  # noqa: E402
+from omh.coding.inflight import write_inflight_marker  # noqa: E402
 from omh.coding.fanout_artifacts import (  # noqa: E402
     fanout_dispatch_summary_path,
     write_fanout_contract,
@@ -185,6 +188,88 @@ class HudFanoutCacheTests(unittest.TestCase):
 
         self.assertIsNone(runtime_reader._hud_local_fanout_record(bare.resolve()))
         self.assertEqual(list(bare.iterdir()), [])
+
+
+class HudFanoutCurrencyTests(unittest.TestCase):
+    """A fanout is drawn only while it is current.
+
+    The newest verified contract was drawn however old it was: a fanout
+    prepared once and never dispatched still read "1 waiting" in the TUI a
+    month later.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = Path(self._tmp.name)
+        self.paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+        self.recorded = _record(self.paths)
+        self.home = self.paths.omh_home.resolve()
+        self.fanout_dir = self.home / "coding" / "fanout" / str(self.recorded["fanout_id"])
+
+    def _age(self, seconds: float) -> float:
+        """Set every file the fanout's age is read from to `seconds` ago; return now."""
+        now = time.time()
+        for path in [self.fanout_dir, *self.fanout_dir.rglob("*")]:
+            os.utime(path, (now - seconds, now - seconds))
+        return now
+
+    def _current(self, now: float) -> object:
+        record = runtime_reader._compute_hud_local_fanout_record(self.home)
+        self.assertIsInstance(record, tuple)
+        return runtime_reader._hud_current_fanout_record(self.home, record, now=now)
+
+    def test_a_prepared_fanout_stays_for_the_delegation_record_window(self) -> None:
+        window = runtime_reader.LEDGER_MAX_AGE_SECONDS
+        self.assertIsInstance(self._current(self._age(window - 60)), tuple)
+        self.assertIsNone(self._current(self._age(window + 60)))
+
+    def test_a_settled_fanout_leaves_after_the_graph_linger(self) -> None:
+        _write_summary(self.paths, self.recorded, "completed")
+        linger = runtime_reader.GRAPH_LINGER_SECONDS
+        self.assertIsInstance(self._current(self._age(linger - 60)), tuple)
+        self.assertIsNone(self._current(self._age(linger + 60)))
+
+    def test_a_running_unit_keeps_the_fanout_open(self) -> None:
+        _write_summary(self.paths, self.recorded, "running")
+        self.assertIsInstance(self._current(self._age(runtime_reader.GRAPH_LINGER_SECONDS + 60)), tuple)
+
+    def test_a_fresh_in_flight_marker_keeps_an_old_contract_drawn(self) -> None:
+        # The age is the newest of its sources, not the contract's: a unit
+        # still running two days after its fanout was prepared stays drawn.
+        # The first marker creates `inflight/` and is aged with the rest, so
+        # only a rewrite inside it (what a running dispatch does) is fresh.
+        fanout_id = str(self.recorded["fanout_id"])
+        write_inflight_marker(self.paths, fanout_id, "api", {})
+        now = self._age(2 * 24 * 3600)
+        self.assertIsNone(self._current(now))
+        write_inflight_marker(self.paths, fanout_id, "api", {})
+        self.assertIsInstance(self._current(now), tuple)
+
+    def test_a_fresh_dispatch_summary_keeps_a_settled_fanout_for_the_linger(self) -> None:
+        now = self._age(2 * 24 * 3600)
+        _write_summary(self.paths, self.recorded, "completed")
+        self.assertIsInstance(self._current(now), tuple)
+
+    def test_a_record_whose_id_is_not_a_fanout_id_is_not_drawn(self) -> None:
+        record = runtime_reader._compute_hud_local_fanout_record(self.home)
+        assert isinstance(record, tuple)
+        for fanout_id in ("../../etc", "fanout-\x00", "/tmp"):
+            forged = (*record[:3], fanout_id, record[4])
+            self.assertIsNone(runtime_reader._hud_current_fanout_record(self.home, forged, now=time.time()))
+
+    def test_a_blocker_or_no_record_passes_through(self) -> None:
+        for record in (None, "unverified_fanout_contract"):
+            self.assertEqual(runtime_reader._hud_current_fanout_record(self.home, record, now=time.time()), record)
+
+    def test_the_hud_draws_neither_graph_from_a_month_old_prepared_fanout(self) -> None:
+        fresh = runtime_reader.read_omh_hud(self.paths.omh_home, self.paths.hermes_home)
+        self.assertEqual(fresh["delegation_graph"]["source"], "fanout")
+        self.assertEqual(fresh["graph"]["status"], "active")
+        self._age(33 * 24 * 3600)
+        stale = runtime_reader.read_omh_hud(self.paths.omh_home, self.paths.hermes_home)
+        self.assertEqual(stale["delegation_graph"]["status"], "inactive")
+        self.assertNotEqual(stale["graph"]["status"], "active")
 
 
 class ExecutorProgressLogReadTests(unittest.TestCase):

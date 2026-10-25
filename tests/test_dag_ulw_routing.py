@@ -658,17 +658,23 @@ class RouterTests(unittest.TestCase):
         # any intensifier; a refusal class applies first, and an unknown remark holds (#2243 review, lead decision
         # (D)). Router and hint read the same, on work over many targets and on a split.
         kinds = {
-            "gratitude": ("thanks a bunch", "thx so much!!", "much obliged", "I'd appreciate it", "you're the best"),
+            "gratitude": ("thanks a bunch", "thx so much!!", "much obliged", "I'd appreciate it", "you're the best",
+                          "you rock, seriously!!", "bear with me"),
             "sign-off": ("have a good one", "talk soon", "regards", "catch you later", "later gators", "see ya", "take care"),
             "wish": ("fingers crossed", "really hope it goes smoothly", "hope it lands cleanly", "wish me luck", "good luck",
                      "hope there are no conflicts", "let's hope it sticks", "would love a clean run",
-                     "got a good feeling about this one"),
+                     "got a good feeling about this one", "here's to a clean run", "may the build be green"),
             "back-reference": ("as discussed", "like we agreed", "same as last time", "per our chat",
-                               "same deal as before", "following the plan from last sprint"),
-            "attribution": ("my manager asked for it", "legal approved it", "the PM requested this"),
-            "aside": ("fwiw the tests are flaky", "btw, CI is slow today"),
+                               "same deal as before", "following the plan from last sprint", "consistent with the RFC",
+                               "like we did for billing"),
+            "attribution": ("my manager asked for it", "legal approved it", "the PM requested this", "approved by the CTO",
+                            "boss said go for it", "the PM's request", "it's for the audit", "at the request of QA",
+                            "for the release team", "on behalf of legal"),
+            "aside": ("fwiw the tests are flaky", "btw, CI is slow today", "also, the new keyboard is lovely",
+                      "off topic, the new sofa arrived", "random but my cat just sneezed",
+                      "on another note, the release notes look great", "incidentally the build cache is warm"),
             "no pressure": ("no worries", "no rush at all", "take your time", "whenever works", "not urgent",
-                            "nothing pressing about it"),
+                            "nothing pressing about it", "no deadline"),
         }
         # Each refusal shares its clause with a keep kind, so the class alone holds it.
         refusals = ("run the tests too thanks",  # a new request
@@ -683,12 +689,17 @@ class RouterTests(unittest.TestCase):
                     "btw just spitballing",  # thinking aloud
                     "thanks but forget I said that",  # a retraction
                     "thanks but your call",  # the decision handed back
-                    "no rush shelve it",  # a verb on the request itself
+                    "no rush bin it",  # a verb on the request itself
                     "thanks and thoughts welcome",  # deliberation
                     "thanks we'll see",  # a person's modal
                     "can we do both thanks",  # a question
-                    "thanks not yet")  # a negation
-        unknown = ("long day lol", "unrelated but i love this new keyboard", "peace")
+                    "thanks not yet",  # a negation
+                    "oh and scrap that",  # a retraction after an aside marker
+                    "side note, I'm cancelling that",  # a retraction by its stem
+                    "thanks but need to confirm with legal",  # a precondition before the work
+                    "part of me says go for it",  # a hedge, though someone says
+                    "also, fix the lint")  # a new request after an aside marker, read by the follow-on rule
+        unknown = ("long day lol", "peace")
         for work in ("rebase all open PRs", "update every service to node 22", "split the migration into parallel lanes"):
             for kind, tails in kinds.items():
                 for tail in tails:
@@ -699,6 +710,234 @@ class RouterTests(unittest.TestCase):
                 with self.subTest(message=f"{work}, {tail}"):
                     self.assertFalse(dispatches_dag_ulw(f"{work}, {tail}"))
                     self.assertEqual(self._dag_ulw_starts(f"{work}, {tail}")[:2], (False, False))
+        # Adversarial twins: a refusal dressed in a keep kind's own stem holds, the refusal check running first,
+        # whichever kind it borrows (#2243 follow-up).
+        twins = ("boss said hold off", "approved by the CTO but not yet", "legal is fine with it but hold on",
+                 "this came from the client, cancel it", "it's for the audit, so hold off", "on behalf of legal, hold off",
+                 "at the request of QA, cancel that", "for the security team, but not yet", "Sam's request, but let's wait",
+                 "like we agreed, scrap it", "like we hashed out, hold off for now", "same as the earlier convo, never mind",
+                 "consistent with the RFC, but scrap it", "like we did for billing, not yet",
+                 "fingers crossed but let's not", "keeping my toes crossed but let's wait",
+                 "here's to a clean run but let's not", "may the build be green, but wait",
+                 "may it be green but I am backing out", "hope it lands but I would rather wait",
+                 "not in a hurry, actually don't", "whatever pace works, actually forget it",
+                 "no deadline, but don't start yet", "bear with me, not sure yet", "you rock, seriously, but scratch that",
+                 "also, I am calling it off", "side note, I'm calling the whole thing off", "fyi backing out of this",
+                 "side note, I'm cancelling that",
+                 "need to confirm it's safe on my side")
+        for tail in twins:
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
+        # A keep kind whose opener carries a statement (a toast or a wish, a back-reference, an attribution) keeps only
+        # when the statement is clean: the refusal classes run on the statement too, and negating or abandoning the work
+        # is refused even inside a wish (#2265 review).
+        for tail in ("here's to not doing it", "here's to not bothering", "here's to leaving it alone",
+                     "cheers to not touching it", "cheers to just letting it be", "hope we just leave it be",
+                     "as discussed we're leaving it as is", "legal's request: leave it alone", "may we never touch it again",
+                     "as we discussed we're not doing it", "on behalf of legal, leave it be",
+                     # a statement set off by a colon is read on its own, as an aside's is
+                     "fingers crossed: bin it", "as discussed: is that ok", "the PM's request: run the full suite",
+                     # a negation of doing the work, in a keep kind
+                     "thanks but let's not", "cheers don't bother", "thanks we won't need to", "fwiw we're not doing this",
+                     "legal asked us not to", "thanks hold off", "thanks but no", "cheers I don't want it anymore",
+                     "here's to letting sleeping services lie", "the team lead asked us to leave it",
+                     "hope we leave it as is for now",
+                     # a precondition not yet met, and a hedge on certainty
+                     "fyi, I haven't cleared this with anyone yet", "thanks, not entirely certain it's needed",
+                     "btw we haven't heard back yet", "fyi I haven't checked with legal"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
+        for tail in ("here's to a green build", "cheers to a clean rebase", "may it merge cleanly", "hope it merges",
+                     "hope there are no conflicts", "legal's fine with it", "agreed in standup",
+                     # a negated outcome, side effect or constraint keeps
+                     "hope nothing breaks", "fwiw no exceptions", "btw it won't touch prod", "here's to no more confusion",
+                     # leaving it better, running, to someone or with a note is no abandoning
+                     "hope we leave it better than we found it", "hope we leave a note in the changelog",
+                     "fingers crossed we leave it running green", "hope they leave it to me",
+                     # a retraction stem under a negation takes nothing back
+                     "fyi no cancelling halfway"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertTrue(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
+        # A "don't" or "do not" that governs a work verb asks for no work, before the remark gate; one that negates an
+        # outcome (the outcome verbs `_NOT_DOING` excepts) does not, on the router and the hint alike (#2265 review).
+        for tail in ("fingers crossed we don't regress", "hope we don't break imports", "hope this doesn't crash anything",
+                     "here's to not breaking prod", "hope we are not losing data"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertTrue(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
+        for tail in ("fyi don't skip any", "don't update every module", "don't touch it"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
+        # The same on the size-cue path: the router and the hint agree on a negated outcome and on a negated work verb.
+        work = "implement the export in parallel across the api and ui modules"
+        self.assertEqual(self._dag_ulw_starts(f"{work}, hope we don't break imports")[:2], (True, True))
+        self.assertEqual(self._dag_ulw_starts(f"{work}, don't touch the cli module")[:2], (False, False))
+        # Reported speech carries its object: a third party saying no holds, and saying go, yes or fine keeps.
+        for tail in ("ops said no", "legal said absolutely not", "boss said not a chance", "QA says no way",
+                     "security said hard pass", "the team said count me out", "the client wants none of it",
+                     "the lead told us no", "my manager asked: no", "btw, no"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
+        for tail in ("ops said go", "the lead said it's fine", "legal said yes"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
+        # Reported speech keeps only when what was said is an approval, in any words and with any intensifier; any other
+        # reported object holds, a refusal however it is put and anything unknown alike (#2265 review).
+        for tail in ("QA says hard no", "legal said a firm no", "ops said heck no", "the lead said over my dead body",
+                     "security said meh", "the client wants nothing to do with it", "the lead told us to sit on it",
+                     "ops said something about the docs", "fyi the lead said meh"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
+        for tail in ("legal said a big yes", "ops says totally fine", "the lead said go ahead", "the PM said ship it",
+                     "QA said LGTM", "the team says we're clear", "the client wants it done", "security says she's on board",
+                     "the boss gave the green light", "boss said go for it", "the team wants this",
+                     "the lead told us to go ahead", "my manager asked for it", "like the ticket says",
+                     "as we said we split by module"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
+        # The approval has to be the whole reported object, read on past a comma: sarcasm that wraps an approval word
+        # holds, and a clean approval with intensifiers, filler and punctuation around it keeps (#2265 review).
+        for tail in ("the lead said yeah right", "ops said sure, in your dreams", "QA said great idea… not",
+                     "the lead said oh totally lol no", "legal said in your dreams", "the lead said it's not fine",
+                     "ops said sure, good luck with that", "the PM said yes /s", "QA said lgtm... said no one",
+                     "fyi the lead said sure, in your dreams", "the lead said, sure, in your dreams", "the PM said sure 🙄",
+                     "the lead said ok?"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
+        for tail in ("legal said a firm yes", "ops says totally fine!", "the lead said absolutely, go for it",
+                     "QA said yes, absolutely", "ops said ok, ship it", "the lead said definitely, ship it",
+                     "the lead said, go ahead", "btw ops said go ahead", "the lead said go ahead, then also bump the version",
+                     # "that" before the object, and an infinitive's subject (#2265 review32).
+                     "the PM said that's fine", "QA said that it's fine", "ops wants us to go ahead",
+                     "the lead wants them to ship it"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
+        # An approval dressed in filler or said twice is sarcasm and holds, and so does a lone k (#2265 review32).
+        for tail in ("the lead said oh yes, totally", "the lead said oh sure", "ops said well, ok", "QA said um, sure",
+                     "the PM said sure, sure", "QA said yeah yeah", "the lead said yeah, sure", "ops said ok, sure, totally",
+                     "the lead said cool cool", "legal said k", "fyi the lead said oh sure", "btw ops said yeah yeah"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
+        # A negator before the reporting or approving verb holds whatever was said, on the router and the hint together,
+        # a size-cue base included (#2265 review32).
+        for message in ("rebase all open PRs, nobody said yes", "rebase all open PRs, not one of them said go",
+                        "update every service to node 22, neither of them said yes", "rebase all open PRs, no-one said ship it",
+                        "rebase all open PRs, ops never said go", "rebase all open PRs, the client never wanted it done",
+                        "rebase all open PRs, nobody's said go", "rebase all open PRs, none of the leads approved it",
+                        "rebase all open PRs, not a single reviewer signed off", "rebase all open PRs, nobody gave the green light",
+                        "rebase all open PRs, no one has approved this", "rebase all open PRs, fyi nobody said yes",
+                        "lint every module and fix the warnings, nobody said yes",
+                        "lint every module and fix the warnings, nobody approved it",
+                        "fix every flaky test across all packages, nobody signed off"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        # A subordinating condition opener holds, trailing or leading; an urgency that borrows its words keeps (#2265
+        # review32).
+        for message in ("rebase all open PRs, assuming QA says it's fine", "rebase all open PRs, provided the CTO says ok",
+                        "rebase all open PRs, as soon as the lead says go", "rebase all open PRs, so long as the build is green",
+                        "rebase all open PRs, supposing legal agrees", "rebase all open PRs, in case the CTO approves",
+                        "rebase all open PRs, on condition that QA signs off", "assuming QA is happy, rebase all open PRs",
+                        "as long as CI is green, update every service to node 22"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        for message in ("rebase all open PRs as soon as possible", "fix all the failing tests provided by QA",
+                        # Only where it opens a clause: an adjective or a participle, and a constraint inside the clause,
+                        # keep as on main (#2265 review33).
+                        "add pagination to every list endpoint using the provided helper",
+                        "update every service to node 22 with the provided config",
+                        "rename every module per the provided naming guide", "fix all the failing tests with the fixtures provided",
+                        "rebase all open PRs onto the branch provided", "bump every package with the provided changelog template",
+                        "update all services to the provided base image", "close all stale issues using the provided label",
+                        "update every service with the values provided",
+                        "rename every module as long as the import paths stay the same",
+                        "update every service assuming the defaults are fine"):
+            with self.subTest(message=message):
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (True, True))
+        for message in ("rebase all open PRs; supposing legal agrees", "rebase all open PRs — in case the CTO approves",
+                        "rebase all open PRs: as soon as the lead says go",
+                        "update every service to node 22 provided that the tests pass"):
+            with self.subTest(message=message):
+                self.assertFalse(dispatches_dag_ulw(message))
+                self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
+        # The reported object is read by the kinds a bare remark is: thanks, a greeting, a sign-off or a wish keeps, an
+        # approval keeps with when or what for, a plain statement keeps after an aside marker, and a relative what is no
+        # reported speech (#2265 review32).
+        for tail in ("the lead said thanks a ton", "the CTO said cheers", "the PM said have a great weekend",
+                     "the client says hello", "the lead said best of luck", "the lead says fingers crossed",
+                     "the client wants it by friday", "ops wants it by end of week", "the PM wants this this sprint",
+                     "the lead wants it done in Q3", "ops said yes for the release", "legal says yes by eod",
+                     "fwiw QA says the suite is faster now", "btw the PM said she'll review it",
+                     "ps the client said the demo went well", "hope it's what the PM wants", "hope this is what legal wanted",
+                     # #2265 review33: a plain aside statement, a clean wish, a single assent, and an attribution unnegated.
+                     "btw ops says the new cluster is up", "fwiw legal says the contract is signed",
+                     "fwiw QA said the flaky suite is fixed now", "btw the CTO said the budget isn't an issue",
+                     "the PM said best of luck!", "ops said fingers crossed", "the lead said hope it goes well",
+                     "QA said hope the rollout is smooth", "the CTO said good luck with the migration", "QA said great",
+                     "the PM said nice", "the lead said perfect", "ops said cool, ship it", "the team gave the go-ahead",
+                     "security cleared it",
+                     # #2265 review34: a work item with a status word that is also good news, a negated problem or
+                     # outcome, and thanks for something.
+                     "btw ops says the fix is out", "btw ops says hotfix is out", "fwiw QA said the old ticket is closed",
+                     "fyi the release is out",
+                     "btw QA says the bug is gone", "btw the PM says the migration is done", "fyi ops said the error rate is down",
+                     "btw QA says flakiness is down", "btw ops says the hotfix is out", "fyi QA said the alert is off",
+                     "btw the lead says latency is down", "fwiw QA says it isn't a problem", "btw ops says it won't break anything",
+                     "fwiw ops says it doesn't conflict with anything", "fyi QA said the flaky test isn't failing anymore",
+                     "btw legal says it's not an issue", "fwiw ops said it wasn't urgent anyway", "thanks for the help",
+                     "cheers for sorting it", "thanks for everything", "thanks for not breaking prod"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (True, True))
+        for tail in ("btw the lead said idk", "fyi QA said not sure", "ps the PM said she's skeptical",
+                     "the lead said thanks but no", "fyi ops said we should wait", "the lead said whatever",
+                     "fyi the lead said thanks for nothing", "btw the PM said in your dreams",
+                     "fyi the lead said over my dead body", "the client wants it next week",
+                     # a refusal in a later part of the object, and a word after an approval that is no punctuation
+                     "btw QA said the suite is green, but let's not merge yet", "fyi the PM said she'll review it, maybe",
+                     "the PM said sure 🤡", "ops said fine 😬",
+                     # Under an aside, a reported negated state, reluctance or blocking status holds; a reported wish
+                     # holds unless it is a wish alone or that the work goes well; a doubled assent is no thanks; and a
+                     # negated subject with a phrase after it, or a negator before an attribution verb, holds (#2265
+                     # review33).
+                     "btw legal says the contract isn't signed", "fwiw the CTO said she'd rather we didn't",
+                     "btw ops says staging isn't ready", "fyi legal said the release wasn't approved",
+                     "fwiw the lead said she would rather we waited", "btw ops says prod is frozen",
+                     "fyi QA said the pipeline is blocked", "btw the CTO says the repo is locked down",
+                     "btw finance says we're over budget", "fyi the lead said she's out today", "btw ops says the cluster is down",
+                     "fyi legal says deploys are paused", "the PM said good luck lol", "ops said hope you enjoy debugging",
+                     "legal said best of luck explaining that", "QA said fingers crossed you know what you're doing",
+                     "the CTO said good luck haha", "fyi the PM said good luck lol", "QA said great, great",
+                     "the PM said nice, nice", "QA said perfect, perfect", "no one on the team gave the go-ahead",
+                     "not a soul signed off", "no one on security cleared it", "nobody from legal approved it",
+                     "no-one gave the nod", "the team never gave the go-ahead", "no one on the team asked for this",
+                     "not a soul asked for it", "no-one asked for it", "nobody in legal requested it", "the team never okayed it",
+                     "security never greenlit it", "security has not blessed it", "none of the leads asked for this",
+                     "not a single person requested it", "neither of them asked for it",
+                     # A status word that is also good news holds with a person away or a system down; a blocking
+                     # status, any negated state but a negated problem, reluctance and thanks for a negation hold
+                     # (#2265 review34).
+                     "btw ops says sarah is out", "fwiw the PM said he is off this week", "btw QA says the reviewer is away",
+                     "fyi they said the oncall is sick", "fwiw QA says staging is offline", "btw the lead says main is locked",
+                     "fwiw ops says the db is down", "btw ops says the build server is down", "fyi QA said CI is down",
+                     "btw the PM said the launch is paused", "btw ops says staging isn't up",
+                     "fyi the CFO said the budget isn't there", "fwiw QA says the suite doesn't pass",
+                     "btw legal says the contract hasn't come back", "fyi ops said the cert won't renew in time",
+                     "btw QA says CI can't keep up", "fwiw the lead said the design isn't final",
+                     "btw the lead said he'd sooner we didn't", "fwiw the PM said she'd sooner we waited",
+                     "thanks for nothing", "cheers for nothing", "thanks for nothing, really", "thx for no help",
+                     "ty for nothing lol", "thanks a lot for nothing", "ta for none of it"):
+            with self.subTest(message=f"rebase all open PRs, {tail}"):
+                self.assertFalse(dispatches_dag_ulw(f"rebase all open PRs, {tail}"))
+                self.assertEqual(self._dag_ulw_starts(f"rebase all open PRs, {tail}")[:2], (False, False))
         # A remark after a colon list's last item goes through the same gate: a status in either order holds, and a
         # dismissal holds.
         for message in ("for each open PR: rebase, merge, merged already", "for each open PR: rebase, merge, already merged",
@@ -708,6 +947,8 @@ class RouterTests(unittest.TestCase):
                 self.assertFalse(dispatches_dag_ulw(message))
                 self.assertEqual(self._dag_ulw_starts(message)[:2], (False, False))
         self.assertEqual(self._dag_ulw_starts("for each open PR: rebase, squash, merge, thanks a ton")[:2], (True, True))
+        # A follow-on after an aside marker keeps the request, as the follow-on rule does anywhere.
+        self.assertEqual(self._dag_ulw_starts("rebase all open PRs, also, then run the tests")[:2], (True, True))
 
     def test_the_router_size_cue_follows_the_cue_readers_refusals(self) -> None:
         # The router's size-cue path dispatches dag-ulw only where the cue reader would start: a held, deferred or

@@ -195,7 +195,7 @@ from .rewind_picker import RewindPicker, rewind_rows
 from .shortcuts import shortcut_lines
 from .launch_card import Facts as LaunchFacts
 from .launch_card import Paint as LaunchPaint
-from .launch_card import Skills, launch_card, preview, skill_rows
+from .launch_card import Skills, launch_card, preview, read_snapshot, skill_rows, write_snapshot
 from .launch_picker import CLOSE as LAUNCH_CLOSE
 from .launch_picker import KEYS as LAUNCH_PICKER_KEYS
 from .launch_picker import MOVE as LAUNCH_MOVE
@@ -1271,7 +1271,12 @@ class App(ModesMixin, AgentViewMixin):
         self.launch_picker: LaunchPicker | None = None  # /theme's picker, while open; its highlight is previewed
         self.card_state = CARD_NONE
         self.card_room = 0  # the rows the live card was last fitted to: the form it is kept in once the prompt goes
-        self.session_skills: Skills | None = None  # Hermes' skills, regrouped for the card, once `session.info` says
+        # Hermes' skills, regrouped for the card: the last launch's (last-known) from startup, the session's once
+        # `session.info` says.
+        self.session_skills: Skills | None = None
+        # The Hermes profile `session.create` named: the snapshot's key with the Hermes home; "" when it named none.
+        self.launch_profile = ""
+        self.snapshot_kept: Skills | None = None  # the skills this process last wrote to the snapshot
         self.last_session_row: Any = None  # the last stored session, for the card while it is live
         self.redraw_at: float | None = None  # when a settled resize redraws everything
         self.busy_since = 0.0  # when the running turn (or the prompt still waiting for it) started
@@ -1344,6 +1349,12 @@ class App(ModesMixin, AgentViewMixin):
             result = self.client.call("session.resume", {"session_id": resume, "cols": self.size[0]})
         else:
             result = self.client.call("session.create", self._create_params())
+        info = result.get("info")
+        self.launch_profile = as_text(info.get("profile_name")) if isinstance(info, dict) else ""
+        home = self._snapshot_home()
+        # Last-known until the session's own skills: its create answer's info (a shared gateway's carries them
+        # all), or the session.info after Hermes' build (a lazy create's names none).
+        self.session_skills = read_snapshot(home, *self._snapshot_key()) if home is not None else None
         self._adopt_session(result, fallback_stored=resume)
         self._request("config.get", {"key": "full"}, self._take_settings, self._on_settings_refused)
         self._refresh_catalog()
@@ -1357,6 +1368,15 @@ class App(ModesMixin, AgentViewMixin):
         if resume:
             self._draw_history(result.get("messages"))
         self._redeliver(result.get("open_requests"))
+
+    def _snapshot_home(self) -> Path | None:
+        """Where the launch card's skills snapshot is kept; None without an OMH home, or when `session.create` named
+        no profile to key it by (then it is neither read nor written)."""
+        return self._omh_home() if self.launch_profile else None
+
+    def _snapshot_key(self) -> tuple[str, str]:
+        """The Hermes home and profile the launch card's skills snapshot is for: another one's skills are never drawn."""
+        return self.environ.get("HERMES_HOME", ""), self.launch_profile
 
     def _omh_home(self) -> Path | None:
         home = self.environ.get("OMH_HOME") or ""
@@ -1526,6 +1546,7 @@ class App(ModesMixin, AgentViewMixin):
         self.effort = self.effort_configured  # until this session says its own (Hermes' lazy info names none)
         self.effort_said = False
         self._take_session_state(info if isinstance(info, dict) else {})
+        self._take_skills(info if isinstance(info, dict) else {})
         self._adopt_stored(as_text(result.get("stored_session_id")) or fallback_stored)
 
     def _adopt_stored(self, stored: str) -> None:
@@ -2258,16 +2279,33 @@ class App(ModesMixin, AgentViewMixin):
         self.transcript.add_notice(CONNECTION_NOTICE, NOTICE_WARN)
 
     def _on_session_info(self, payload: Mapping[str, Any]) -> None:
-        skills = payload.get("skills")
-        if isinstance(skills, dict) and skills:  # Hermes' lazy first info names none; the full one, after its build
-            self.session_skills = skill_rows({key: value for key, value in skills.items() if isinstance(value, list)})
-            self.dirty = True
+        self._take_skills(payload)
         self.model = as_text(payload.get("model")) or self.model
         self._take_usage(payload.get("usage"))
         self._take_session_state(payload)
         # `running` is not read: the previous turn's closing `running: false` arrives after
         # `message.complete`, by which time a queued prompt may already be pending.
         self._adopt_stored(as_text(payload.get("stored_session_id")))
+
+    def _take_skills(self, info: Mapping[str, Any]) -> None:
+        """The skills a session's info names replace the shown ones; an info naming none leaves them.
+
+        Hermes' lazy info (a stdio `session.create`'s, its first `session.info`) names none and the full one after
+        its build does; over a shared gateway the `session.create` answer already names them all and no
+        `session.info` follows, so both are read.
+        """
+        skills = info.get("skills")
+        if not isinstance(skills, dict) or not skills:
+            return
+        rows = skill_rows({key: value for key, value in skills.items() if isinstance(value, list)})
+        home = self._snapshot_home()
+        # What the next launch draws first, kept only when this info names the profile the launch opened on.
+        same_profile = info.get("profile_name") == self.launch_profile
+        if home is not None and same_profile and rows != self.snapshot_kept:
+            write_snapshot(home, *self._snapshot_key(), rows)
+            self.snapshot_kept = rows
+        self.session_skills = rows
+        self.dirty = True
 
     def _take_usage(self, usage: object) -> None:
         """A usage block with context figures replaces the shown ones; one without leaves them. Its `output` counts tokens.

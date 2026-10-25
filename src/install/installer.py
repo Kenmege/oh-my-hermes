@@ -20,6 +20,7 @@ from .curator_ledger import (
     writes_under,
 )
 from .plugin_pack import host_managed_plugin
+from .lifecycle_safety import command_runtime_owned, store_removal_plan
 from ..local_store import atomic_write_text, discard_path, is_directory_link, read_json_object_result
 from ..manifest import (
     local_modifications,
@@ -1757,13 +1758,19 @@ def uninstall_skill_pack(
     dry_run: bool = False,
     force: bool = False,
     remove_command_package: bool = False,
+    store_plan: dict[str, object] | None = None,
 ) -> dict:
     """Remove OMH-managed local files without deleting unrelated Hermes state."""
     removed: list[str] = []
     would_remove: list[str] = []
     kept: list[dict[str, str]] = []
 
-    if remove_all:
+    plan = store_plan or (store_removal_plan(paths, remove_profiles=remove_all) if remove_files or remove_all else {})
+    blocked = bool(plan.get("failed"))
+    if plan.get("status") == "kept":
+        kept.append({"path": str(paths.omh_home), "reason": str(plan["reason"])})
+
+    if remove_all and not blocked:
         _collect_removal(
             paths.hermes_plugin_dir,
             removed=removed,
@@ -1783,13 +1790,15 @@ def uninstall_skill_pack(
                 force=force,
             )
 
-    if remove_files or remove_all:
+    if (remove_files or remove_all) and plan.get("status") != "kept":
         _collect_removal(paths.omh_home, removed=removed, would_remove=would_remove, kept=kept, dry_run=dry_run, force=True)
 
     command_removed_at = len(removed)
     command_would_remove_at = len(would_remove)
     command_kept_at = len(kept)
-    if remove_command_package:
+    if remove_command_package and (plan.get("status") == "kept" or paths.hermes_home.parent.name == "profiles"):
+        kept.append({"path": "omh", "reason": "shared command retained for other Hermes homes; remove it from the primary home only after detaching profiles"})
+    elif remove_command_package:
         _collect_command_package_removal(
             removed=removed,
             would_remove=would_remove,
@@ -1817,6 +1826,7 @@ def uninstall_skill_pack(
         "command_package_removed_paths": command_removed,
         "command_package_would_remove": command_would_remove,
         "command_package_kept": command_kept,
+        "store_removal": plan,
     }
 
 
@@ -1897,7 +1907,7 @@ def _collect_command_package_removal(
         kept.append({"path": "omh", "reason": "no home directory is available, so the installer-managed command venv cannot be located"})
         return
     executable = Path(sys.executable).expanduser()
-    if not _is_relative_to_without_resolving_symlinks(executable, venv_dir):
+    if not command_runtime_owned(executable, venv_dir):
         kept.append(
             {
                 "path": str(executable.resolve()),

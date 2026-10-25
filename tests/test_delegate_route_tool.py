@@ -145,7 +145,7 @@ class DelegationRouteWriterTest(unittest.TestCase):
 
     def test_routing_preserves_every_unmanaged_byte_of_an_existing_config(self):
         self.config.write_text(
-            "model: kimi-k3\n"
+            "model: kimi-k3.1-pro\n"
             "delegation:\n"
             "  max_concurrent_children: 4\n"
             "  model: old-model\n"
@@ -158,7 +158,7 @@ class DelegationRouteWriterTest(unittest.TestCase):
         self.assertEqual(result["previous"], {"model": "old-model"})
         self.assertEqual(
             self.config.read_text(encoding="utf-8"),
-            "model: kimi-k3\n"
+            "model: kimi-k3.1-pro\n"
             "delegation:\n"
             "  model: 'glm-5.2-ultrafast'\n"
             "  max_concurrent_children: 4\n"
@@ -219,11 +219,11 @@ class DelegationRouteWriterTest(unittest.TestCase):
 
     def test_a_symlinked_config_is_refused_not_replaced(self):
         real = self.home / "real-config.yaml"
-        real.write_text("model: kimi-k3\n", encoding="utf-8")
+        real.write_text("model: kimi-k3.1-pro\n", encoding="utf-8")
         self.config.symlink_to(real)
         result = write_delegation_route(self.home, model="gpt-5.6-sol")
         self.assertEqual(result["status"], "error")
-        self.assertEqual(real.read_text(encoding="utf-8"), "model: kimi-k3\n")
+        self.assertEqual(real.read_text(encoding="utf-8"), "model: kimi-k3.1-pro\n")
 
     def test_read_reports_the_last_occurrence_like_yaml_does(self):
         self.config.write_text(
@@ -762,7 +762,7 @@ class DelegateRouteToolTest(unittest.TestCase):
             {"alias": "claude-opus-5-5", "model": "claude-opus-5-5"},
         )
         # The chain from the named entry onward: Opus 5.5 sits second in
-        # unspecified-high since 2026-10-13, with Kimi K3 behind it.
+        # unspecified-high since 2026-10-13, with Kimi K3.1 Pro behind it.
         self.assertEqual(
             result["fallback_candidates"],
             [
@@ -773,9 +773,9 @@ class DelegateRouteToolTest(unittest.TestCase):
                     "reasoning_effort": "medium",
                 },
                 {
-                    "alias": "kimi-k3",
+                    "alias": "kimi-k3.1-pro",
                     "provider": "",
-                    "model": "kimi-k3",
+                    "model": "kimi-k3.1-pro",
                     "reasoning_effort": "medium",
                 },
             ],
@@ -806,9 +806,9 @@ class DelegateRouteToolTest(unittest.TestCase):
                     "reasoning_effort": "low",
                 },
                 {
-                    "alias": "kimi-k3",
+                    "alias": "kimi-k3.1-pro",
                     "provider": "",
-                    "model": "kimi-k3",
+                    "model": "kimi-k3.1-pro",
                     "reasoning_effort": "low",
                 },
             ],
@@ -829,7 +829,7 @@ class DelegateRouteToolTest(unittest.TestCase):
         result = self._call(action="fallback", category="quick")
         self.assertEqual(result["status"], "exhausted_to_inherit")
         self.assertEqual(result["category"], "quick")
-        self.assertEqual(result["from"], "kimi-k3")
+        self.assertEqual(result["from"], "kimi-k3.1-pro")
         self.assertEqual(read_delegation_route(self.home), {})
 
     def test_fallback_without_a_route_is_an_error(self):
@@ -1075,7 +1075,7 @@ class RouteProvenanceRecordingTest(unittest.TestCase):
         self.assertEqual(records[1]["from_alias"], "glm-5.3-flash")
         self.assertEqual(records[1]["alias"], "gpt-6-luna")
         self.assertEqual(records[-1]["category"], "quick")
-        self.assertEqual(records[-1]["from_alias"], "kimi-k3")
+        self.assertEqual(records[-1]["from_alias"], "kimi-k3.1-pro")
 
     def test_clear_records_a_superseding_cleared_origin(self):
         # Without this record, a later child on a coincidentally matching
