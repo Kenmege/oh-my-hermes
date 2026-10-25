@@ -328,23 +328,17 @@ continuation/evidence ledger. Missing native evidence remains unavailable;
 queued ticks never establish execution or goal completion. Linked OMH goal
 completion retains its existing evidence gate.
 
-### Hermes-only boundary list
+### Hermes-only boundary
 
-These installable workflows are intentionally absent:
-
-| Workflows | Boundary |
-| --- | --- |
-| `omh-routing`, `omh-meta-router`, `omh-gateway-intent-card` | Hermes chat/wrapper intake, routing, and delivery continuity |
-| `ulw-maestro`, `omh-executor-runtime-readiness` | Hermes harness versus explicit external-owner handoff and readiness semantics |
-| `omh-doctor`, `omh-skill`, `omh-capability-toggle` | Managed Hermes installation, inventory, registration, and product diagnostic surfaces |
-| `omh-model-setup`, `omh-model-optimization`, `omh-parallel-tools`, `omh-websearch-setup` | Native model slots, mixture routing, or Hermes capability/configuration changes |
-| `omh-morning-brief`, `omh-buzz` | Hermes MCP setup or Buzz gateway/transport |
-| `omh-research-department`, `omh-automation-blueprint` | Hermes profiles, recurring-intent lifecycle, cron, and delivery composition |
-| `omh-agent-board`, `omh-browser`, `omh-achievements` | Native plugin RPC, browser admission/effects, or Hermes badge artifacts |
-| `omh-memory-sync` | Hermes USER.md/MEMORY.md review and native write ownership |
-| `omh-prompt-import-readiness` | External prompts being exposed as Hermes slash commands |
-| `omh-agent-evaluation` | The catalog's paired-run output depends on Hermes-child dispatch receipts |
-| `omh-workflow-learning` | Native browser-promotion receipts and managed-skill visibility semantics |
+A workflow in `skills/` that is absent from `agent-skills/` is Hermes-only: it
+needs the Hermes runtime, registration, native plugin tools, or wrapper
+semantics. `skill_portability()` in `src/skills/catalog_portable.py` decides
+it. Each reviewed row of its table carries its reason as the comment above it,
+and a skill the table does not list fails closed as `hermes-only`. To see the
+current set, compare the two directories; this page does not list the names,
+because such a list goes stale whenever a Hermes-only skill is added.
+`tests/test_agent_skills_projection.py` checks that the two trees and that
+function agree.
 
 Retired/reference-only ULW surfaces (`ulw-ralph`, `ulw-goal`, `ulw-team`, and
 `ulw-process`) and `omh-quality-evidence-loop` remain non-installable here too. A skill mentioned
@@ -431,8 +425,9 @@ described below.
   `<cli> --version` probe, for a CLI in that probe's set
   (`version_probed_agent_clis()` in `src/coding/executor_readiness.py`). The
   set is unchanged, but the trigger is wider: this command runs the probe for
-  every such CLI on PATH, where readiness ran `pi` only for omo-runtime and
-  `opencode` only when neither `pi` nor `senpi` was on PATH. Only the version
+  every such CLI on PATH, where readiness ran the runtime-family host CLI only
+  for that profile and `opencode` only when no runtime-family host CLI was on
+  PATH. Only the version
   token is kept. Any other host is recorded as `no_approved_probe`,
   and a missing binary as `executable_missing`. What a `--version` child writes
   for itself is neither prevented nor observed.
@@ -514,7 +509,7 @@ npx skills-ref validate agent-skills/ulw-work
 ```
 
 The committed `agent-skills/` tree is generated from the packaged catalog. The
-same command regenerates all 18 host adapter files beside it; `--check` checks
+same command regenerates every host adapter file beside it; `--check` checks
 every adapter's exact bytes while leaving existing host skill/configuration
 files alone. `--output /tmp/stage/agent-skills` stages the tree and its sibling
 adapter directories without modifying the checkout.
