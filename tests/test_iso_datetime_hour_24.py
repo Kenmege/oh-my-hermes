@@ -218,6 +218,8 @@ SITES: dict[tuple[str, str], tuple[str, list[Case]]] = {
     ("src/plugin_bundle/omh/context_budget_plan_capacity.py", "parse_route_capacity_input"): (
         "omh.plugin_bundle.omh.context_budget_plan_capacity",
         [lambda m: lambda s: m.parse_route_capacity_input(_capacity_input(s))]),
+    ("src/plugin_bundle/omh/dag_run.py", "_park_deadline"): (
+        "omh.plugin_bundle.omh.dag_run", [lambda m: lambda s: m._park_deadline(s, NOON.timestamp())]),
     ("src/plugin_bundle/omh/dispatch_outcomes.py", "_parse_timestamp"): (
         "omh.plugin_bundle.omh.dispatch_outcomes", [lambda m: m._parse_timestamp]),
     ("src/plugin_bundle/omh/hermes_memory.py", "_parse_expires_at"): (
