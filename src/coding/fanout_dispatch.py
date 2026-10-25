@@ -39,6 +39,7 @@ from ..system.metadata_safety import redact_metadata_text
 from .fanout_output import FanoutOutput
 from .fanout_executor_sessions import SessionBinding, SessionDecoder, bound_session_fields, observe_session_workspace, read_session_receipt
 from .executor_readiness import negotiate_session_capability, observe_session_binary
+from .executors import canonical_executor_profile
 from .fanout_capacity import (
     AdmissionBinding, CapacityBlocked, CapacityTrip, CodexAdmissionObserver, CodexAdmissionSource, LaunchCallable,
     CODEX_ADMISSION_SUPPORT, CAPACITY_STATUSES, OwnerLaunchGate, capacity_fields,
@@ -223,10 +224,15 @@ from .fanout_unit_results import (
     read_unit_result_input,
 )
 from .unit_telemetry import native_unit_telemetry, parse_unit_telemetry
+from ..plugin_bundle.omh.pi_family_names import (
+    PI_DISTRIBUTION_AGENT_DIR_ENV,
+    PI_DISTRIBUTION_BRAND_ENV,
+    PI_DISTRIBUTION_HOST,
+)
 from ..plugin_bundle.omh.run_records import FANOUT_DISPATCH_SCHEMA_VERSION, RUN_FILE
 
-# Grace between SIGTERM and SIGKILL when a unit group must die — OMO's
-# launcher uses the same 10s window before re-raising on itself.
+# Grace between SIGTERM and SIGKILL when a unit group must die — the
+# pi-family runtime's launcher uses the same 10s window before re-raising on itself.
 UNIT_TERMINATE_GRACE_SECONDS = 10.0
 
 # Unit statuses for a batch that was stopped. Four words, because the four
@@ -265,8 +271,8 @@ CANCELLED_UNIT_STATUSES = frozenset(
 )
 
 # Live unit process groups, registered by the signal-safe default runner so
-# an interrupt terminates them instead of orphaning them to pid 1. OMO
-# shipped exactly this incident: a launcher blocked in spawnSync died on
+# an interrupt terminates them instead of orphaning them to pid 1. The
+# pi-family runtime shipped exactly this incident: a launcher blocked in spawnSync died on
 # SIGTERM and its engine reparented to init, still writing into the tree.
 # Injected test runners never register here. The lock is reentrant because
 # the SIGTERM handler can fire while the main thread already holds it.
@@ -664,14 +670,14 @@ def fanout_child_environment(
         FANOUT_DEPTH_ENV_VAR: str(depth + 1),
         FANOUT_LINEAGE_ENV_VAR: lineage[-_MAX_LINEAGE_CHARS:],
     }
-    if owner == "omo-runtime" and purpose == "owner":
-        host = omo_runtime_host()
-        environment_variable = {"pi": "PI_CODING_AGENT_DIR", "senpi": "SENPI_CODING_AGENT_DIR"}.get(host)
+    if owner == "pi-family-runtime" and purpose == "owner":
+        host = pi_family_host()
+        environment_variable = {"pi": "PI_CODING_AGENT_DIR", PI_DISTRIBUTION_HOST: PI_DISTRIBUTION_AGENT_DIR_ENV}.get(host)
         if environment_variable is not None:
             state_directories = owner_state_directories(owner, child_env)
             if len(state_directories) == 1:
-                # A direct pi/senpi spawn must not inherit an ambient Senpi brand.
-                child_env.pop("SENPI_BRAND", None)
+                # A direct pi-family spawn must not inherit an ambient distribution brand.
+                child_env.pop(PI_DISTRIBUTION_BRAND_ENV, None)
                 child_env[environment_variable] = str(state_directories[0])
     return finalize_child_environment(decision, child_env)
 
@@ -778,7 +784,7 @@ _LIMIT_SHAPED_PATTERNS: tuple[tuple[str, str], ...] = (
 )
 
 # Spawnability is a data property: profiles listed here have a local headless
-# CLI template. Every other profile (hermes, omx/omo/omc runtimes, generic,
+# CLI template. Every other profile (hermes, the omx/pi-family/omc runtimes, generic,
 # unassigned) gets a prepared-prompt fallback and is never spawned.
 DISPATCH_COMMAND_TEMPLATES: dict[str, tuple[str, ...]] = {
     "codex": ("codex", "exec", "{prompt}"),
@@ -794,21 +800,21 @@ DISPATCH_COMMAND_TEMPLATES: dict[str, tuple[str, ...]] = {
         "--allowedTools",
         "Bash(git add:*),Bash(git commit:*)",
     ),
-    # omo ships as an extension of a pi-family host CLI (usually `pi`;
-    # `senpi` is a distribution of it with the same headless surface) or of
+    # The pi-family runtime ships as an extension of a pi-family host CLI
+    # (usually `pi`, or pi's distribution host with the same headless surface) or of
     # opencode. The host is DETECTED at dispatch time in a fixed order —
-    # see OMO_RUNTIME_HOST_CANDIDATES — and the placeholder below is
+    # see PI_FAMILY_HOST_CANDIDATES — and the placeholder below is
     # replaced by the detected host's template; no personal stack is
-    # hardcoded. The pi/senpi surface was validated in a live bridge
-    # dispatch (2026-07, senpi): `--print --no-session` completes
+    # hardcoded. The pi-family surface was validated in a live bridge
+    # dispatch (2026-07, the distribution host): `--print --no-session` completes
     # non-interactively with clean exit codes on failure, and the
     # `workspace` permission preset allowed file creation plus exactly the
     # `git add`/`git commit` the unit prompt asks for. The opencode
     # template is prepared from `opencode run --help` (model/variant flags
     # verified locally); its permission behavior validates on first live
     # dispatch, claude-template precedent.
-    "omo-runtime": (
-        "senpi",
+    "pi-family-runtime": (
+        PI_DISTRIBUTION_HOST,
         "--print",
         "--no-session",
         "--permission-preset",
@@ -817,25 +823,25 @@ DISPATCH_COMMAND_TEMPLATES: dict[str, tuple[str, ...]] = {
     ),
 }
 
-# Fixed detection order for the omo runtime's local host CLI: first on PATH
-# wins ("usually pi" — user-stated common case; senpi is a pi distribution;
-# opencode hosts omo as a plugin). Both layouts — pi-family host CLI and
+# Fixed detection order for the pi-family runtime's local host CLI: first on PATH
+# wins ("usually pi" — user-stated common case; then pi's distribution host;
+# opencode hosts the runtime as a plugin). Both layouts — pi-family host CLI and
 # opencode plugin — are first-class dispatch hosts. Detection is
 # presence-only and recorded implicitly by argv[0]/probe command. Model
 # CONFIG, by contrast, is currently read only from the opencode config path
 # (see MODEL_INVENTORY_CATALOG_PROFILE in model_inventory): a pi-only
 # install still dispatches, but its routes degrade to `no_model_catalog`.
-OMO_RUNTIME_HOST_CANDIDATES: tuple[str, ...] = ("pi", "senpi", "opencode")
+PI_FAMILY_HOST_CANDIDATES: tuple[str, ...] = ("pi", PI_DISTRIBUTION_HOST, "opencode")
 
-_OMO_HOST_TEMPLATES: dict[str, dict[str, tuple[str, ...] | int | None]] = {
+_PI_FAMILY_HOST_TEMPLATES: dict[str, dict[str, tuple[str, ...] | int | None]] = {
     "pi": {
         "argv": ("pi", "--print", "--no-session", "--permission-preset", "workspace", "{prompt}"),
         "model": ("--model", "{model}"),
         "effort": ("--thinking", "{effort}"),
         "insert": 5,
     },
-    "senpi": {
-        "argv": ("senpi", "--print", "--no-session", "--permission-preset", "workspace", "{prompt}"),
+    PI_DISTRIBUTION_HOST: {
+        "argv": (PI_DISTRIBUTION_HOST, "--print", "--no-session", "--permission-preset", "workspace", "{prompt}"),
         "model": ("--model", "{model}"),
         "effort": ("--thinking", "{effort}"),
         "insert": 5,
@@ -849,14 +855,14 @@ _OMO_HOST_TEMPLATES: dict[str, dict[str, tuple[str, ...] | int | None]] = {
 }
 
 
-def omo_runtime_host(which: Callable[[str], str | None] | None = None) -> str | None:
-    """Return the first omo host CLI present on PATH, or None.
+def pi_family_host(which: Callable[[str], str | None] | None = None) -> str | None:
+    """Return the first pi-family host CLI present on PATH, or None.
 
     The default resolves `shutil.which` at CALL time (a def-time default
     would freeze the binding and make the probe untestable/unpatchable).
     """
     resolved_which = shutil.which if which is None else which
-    for candidate in OMO_RUNTIME_HOST_CANDIDATES:
+    for candidate in PI_FAMILY_HOST_CANDIDATES:
         if resolved_which(candidate):
             return candidate
     return None
@@ -869,22 +875,22 @@ def omo_runtime_host(which: Callable[[str], str | None] | None = None) -> str | 
 DISPATCH_MODEL_OPTION_TEMPLATES: dict[str, tuple[str, ...]] = {
     "codex": ("--model", "{model}"),
     "claude-code": ("--model", "{model}"),
-    # senpi takes `provider/model` ids — exactly the form inventory-derived
+    # pi-family hosts take `provider/model` ids — exactly the form inventory-derived
     # routes carry.
-    "omo-runtime": ("--model", "{model}"),
+    "pi-family-runtime": ("--model", "{model}"),
 }
 DISPATCH_REASONING_OPTION_TEMPLATES: dict[str, tuple[str, ...]] = {
     # `-c` values parse as TOML with a raw-string fallback, so a bare effort
     # level is accepted verbatim (verified against `codex exec --help`).
     "codex": ("--config", "model_reasoning_effort={effort}"),
     "claude-code": ("--effort", "{effort}"),
-    # senpi's thinking levels (off|minimal|low|medium|high|xhigh|max) are a
+    # pi-family thinking levels (off|minimal|low|medium|high|xhigh|max) are a
     # superset of the effort ladder, so routed efforts map verbatim.
-    "omo-runtime": ("--thinking", "{effort}"),
+    "pi-family-runtime": ("--thinking", "{effort}"),
 }
-# senpi treats trailing tokens as message positionals, so options insert
+# pi-family hosts treat trailing tokens as message positionals, so options insert
 # before the prompt like codex; claude accepts them anywhere and appends.
-_DISPATCH_OPTION_INSERT_INDEX: dict[str, int | None] = {"codex": 2, "claude-code": None, "omo-runtime": 5}
+_DISPATCH_OPTION_INSERT_INDEX: dict[str, int | None] = {"codex": 2, "claude-code": None, "pi-family-runtime": 5}
 
 
 def build_dispatch_argv(
@@ -897,11 +903,11 @@ def build_dispatch_argv(
     Without a model route the argv is byte-identical to the base template; a
     routed model/effort inserts the per-owner option fragments only.
     """
-    if owner == "omo-runtime":
-        host = omo_runtime_host()
+    if owner == "pi-family-runtime":
+        host = pi_family_host()
         if host is None:
             return None
-        host_table = _OMO_HOST_TEMPLATES[host]
+        host_table = _PI_FAMILY_HOST_TEMPLATES[host]
         template = host_table["argv"]
         model_template = host_table["model"]
         effort_template = host_table["effort"]
@@ -1087,6 +1093,13 @@ def _unit_capability_precheck(
     contract_schema_version: str,
 ) -> tuple[str, dict[str, Any] | None, list[str]]:
     declared_owner = str(unit.get("owner") or "choose")
+    current_owner = canonical_executor_profile(declared_owner)
+    if current_owner != declared_owner:
+        # A contract frozen by an older release; its digest pins the old id,
+        # so it is refused by name instead of falling back to a prompt.
+        return declared_owner, None, [
+            f"unit owner {declared_owner!r} is a renamed profile id; re-freeze the units to record {current_owner!r}"
+        ]
     handoff = unit.get("handoff", {}) if isinstance(unit.get("handoff"), Mapping) else {}
     handoff_owner = str(handoff.get("executor_target", "choose"))
     if handoff_owner != declared_owner:
@@ -2290,14 +2303,14 @@ def dispatch_fanout(
         if adaptive_concurrency
         else None
     )
-    # Per-owner lanes (OMO's per-provider limiter, reduced to what this
+    # Per-owner lanes (the pi-family runtime's per-provider limiter, reduced to what this
     # blocking pool can honor): only owners the policy names get a lane
     # semaphore — the global pool alone governs everyone else. The gate
     # wraps the unit's WHOLE lifecycle (readiness probe, worktree, spawn,
     # and local verification when requested), so an over-subscribed owner
     # holds a pool slot while it waits and can delay other owners' ready
     # units queued behind it; with the pool sized to the global
-    # ceiling that is the same trade OMO's global permit makes.
+    # ceiling that is the same trade the pi-family runtime's global permit makes.
     owner_gates = {
         owner: threading.BoundedSemaphore(int(width))
         for owner, width in (per_owner_lanes or {}).items()
@@ -2377,8 +2390,8 @@ def dispatch_fanout(
                 health_events.started(str(unit["unit_id"]))
             return _dispatch_unit_until_repaired(paths, unit, resume=resume, **kwargs)
 
-    # SIGTERM must not orphan the spawned agent CLIs (OMO's launcher
-    # incident): the handler terminates every live unit group and raises so
+    # SIGTERM must not orphan the spawned agent CLIs (the pi-family runtime's
+    # launcher incident): the handler terminates every live unit group and raises so
     # the interrupt path below records the batch honestly, then the original
     # signal is re-raised to the caller — a supervisor still observes the
     # death it asked for. Installed only in the main thread; anywhere else
@@ -2400,7 +2413,7 @@ def dispatch_fanout(
 
             previous_term = signal.signal(signal.SIGTERM, _on_sigterm)
             installed_term = True
-        # Dependency-frontier admission, learned from OMO's DAG scheduler: a
+        # Dependency-frontier admission, learned from the pi-family runtime's DAG scheduler: a
         # unit is admitted the moment EVERY unit it depends on completed —
         # never because a wave boundary was reached — so an unrelated slow
         # sibling cannot starve ready dependents behind a barrier the
@@ -2423,7 +2436,7 @@ def dispatch_fanout(
         def _admit_frontier() -> None:
             # Blocking on a failed dependency is safe to do eagerly here:
             # unit failure is terminal in this engine (no revive), unlike the
-            # OMO scheduler whose quiescence-gated cascade protects revivable
+            # pi-family runtime's scheduler whose quiescence-gated cascade protects revivable
             # nodes. The no-progress fallback below still catches a pending
             # set that can neither run nor block (validated cycles aside).
             for unit_id in list(pending):
@@ -2808,8 +2821,8 @@ def dispatch_fanout(
         raise dispatcher_error
     if isinstance(interrupted_by, SystemExit):
         # The summary is written; now honor the termination that was asked
-        # for, so a supervisor still observes the death it requested (OMO's
-        # launcher discipline). Ctrl-C returns the summary instead — the
+        # for, so a supervisor still observes the death it requested (the pi-family
+        # runtime's launcher discipline). Ctrl-C returns the summary instead — the
         # operator is at the keyboard reading it.
         raise interrupted_by
     return summary
@@ -4964,7 +4977,7 @@ def _dispatch_unit(
         started_at = utc_now()
         started_clock = time.monotonic()
         stderr_tail = ""
-        owner_host = omo_runtime_host() or "" if owner == "omo-runtime" else ""
+        owner_host = pi_family_host() or "" if owner == "pi-family-runtime" else ""
         # Which account this owner's CLI is configured as, read once here from that
         # CLI's own config file and redacted on the way out. Read at spawn rather
         # than at failure time because the failure is what makes it interesting and

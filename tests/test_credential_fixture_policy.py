@@ -29,6 +29,7 @@ from _local_package import load_local_package
 
 load_local_package()
 from omh.system.metadata_safety import is_secret_value_shaped
+from omh.plugin_bundle.omh.pi_family_names import RUNTIME_HOME
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_MODULE = "tests/_credential_fixtures.py"
@@ -62,7 +63,7 @@ IGNORED_DIRECTORY_NAMES = frozenset(
         ".hermes",
         ".omh",
         ".omc",
-        ".omo",
+        RUNTIME_HOME,
         ".loop",
     }
 )

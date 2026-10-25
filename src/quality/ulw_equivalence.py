@@ -737,7 +737,7 @@ _ULTRAPROCESS_OBLIGATIONS = (
     _obligation(
         "ultraprocess.owner_neutrality",
         "handoff_policy",
-        "...convert implementation into a selected executor/runtime handoff such as Codex, Claude Code, OMX/OMO/OMC, another coding agent, or explicit Hermes coding runtime only when the user accepts that owner.",
+        "...convert implementation into a selected executor/runtime handoff such as Codex, Claude Code, OMX/pi-family/OMC, another coding agent, or explicit Hermes coding runtime only when the user accepts that owner.",
         "unique",
         "owner_neutrality_lost",
         (SectionRequirement("Handoff policy", ("only when the user accepts that owner",)),),
@@ -745,7 +745,7 @@ _ULTRAPROCESS_OBLIGATIONS = (
             CarriedEntry(
                 "handoff_policy",
                 "[capability:delivery_boundary] Convert implementation into an external executor/runtime "
-                "handoff such as Codex, Claude Code, OMX/OMO/OMC, or another coding agent only when the user "
+                "handoff such as Codex, Claude Code, OMX/pi-family/OMC, or another coding agent only when the user "
                 "accepts that owner; no external CLI is the default owner, and external handoff is a separate "
                 "opt-in path, never the default recommendation.",
             ),

@@ -32,7 +32,8 @@ from omh.coding.executor_readiness import (
     _run_probe,
     executor_readiness_contract,
 )
-from omh.coding.fanout_dispatch import OMO_RUNTIME_HOST_CANDIDATES
+from omh.coding.fanout_dispatch import PI_FAMILY_HOST_CANDIDATES
+from omh.plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST
 
 
 def _fake_binary(directory: str, name: str, version: str) -> Path:
@@ -140,11 +141,11 @@ class PathResolutionReportTests(unittest.TestCase):
 
 
 class OmoRuntimeProbeCommandTests(unittest.TestCase):
-    """omo-runtime readiness probes the DETECTED host CLI, pi-first.
+    """pi-family-runtime readiness probes the DETECTED host CLI, pi-first.
 
     The static `_COMMANDS` entry is a mirror of the first host candidate,
     never the resolution authority: `_resolved_command` always asks
-    `omo_runtime_host` which host is actually on PATH.
+    `pi_family_host` which host is actually on PATH.
     """
 
     def setUp(self) -> None:
@@ -154,30 +155,30 @@ class OmoRuntimeProbeCommandTests(unittest.TestCase):
     def test_contract_probes_the_detected_host_pi_first(self) -> None:
         with patch(
             "omh.coding.fanout_dispatch.shutil.which",
-            lambda name: f"/x/{name}" if name in ("pi", "senpi") else None,
+            lambda name: f"/x/{name}" if name in ("pi", PI_DISTRIBUTION_HOST) else None,
         ):
-            contract = executor_readiness_contract("omo-runtime")
+            contract = executor_readiness_contract("pi-family-runtime")
         self.assertEqual(contract["probe"]["command"], "pi")
 
-    def test_detected_senpi_host_overrides_the_static_entry(self) -> None:
+    def test_detected_pi_distribution_host_overrides_the_static_entry(self) -> None:
         with patch(
             "omh.coding.fanout_dispatch.shutil.which",
-            lambda name: "/x/senpi" if name == "senpi" else None,
+            lambda name: f"/x/{PI_DISTRIBUTION_HOST}" if name == PI_DISTRIBUTION_HOST else None,
         ):
-            contract = executor_readiness_contract("omo-runtime")
-        self.assertEqual(contract["probe"]["command"], "senpi")
+            contract = executor_readiness_contract("pi-family-runtime")
+        self.assertEqual(contract["probe"]["command"], PI_DISTRIBUTION_HOST)
 
     def test_no_host_on_path_falls_back_to_the_first_candidate(self) -> None:
         with patch("omh.coding.fanout_dispatch.shutil.which", lambda name: None):
-            contract = executor_readiness_contract("omo-runtime")
-        self.assertEqual(contract["probe"]["command"], OMO_RUNTIME_HOST_CANDIDATES[0])
+            contract = executor_readiness_contract("pi-family-runtime")
+        self.assertEqual(contract["probe"]["command"], PI_FAMILY_HOST_CANDIDATES[0])
         self.assertEqual(contract["probe"]["command"], "pi")
 
     def test_static_command_entry_mirrors_the_first_host_candidate(self) -> None:
         # A future second consumer of `_COMMANDS` must see the same pi-first
         # default the detector promises; repinning the entry to one
-        # distribution (the old senpi pin) fails here.
-        self.assertEqual(_COMMANDS["omo-runtime"][0], OMO_RUNTIME_HOST_CANDIDATES[0])
+        # distribution (the old distribution-host pin) fails here.
+        self.assertEqual(_COMMANDS["pi-family-runtime"][0], PI_FAMILY_HOST_CANDIDATES[0])
 
 
 if __name__ == "__main__":

@@ -16,8 +16,9 @@ from __future__ import annotations
 def contains_boundary_phrase(text: str, phrases: tuple[str, ...]) -> bool:
     """True when any phrase occurs in `text` at a word boundary.
 
-    Plain containment is wrong for the omo-runtime phrase family: "api한테"
-    contains "pi한테", "promo runtime" contains "omo runtime", and "raspi
+    Plain containment is wrong for the pi-family-runtime phrase family: "api한테"
+    contains "pi한테", a word ending in the runtime's short name contains
+    `RUNTIME_USER_PHRASE`, and "raspi
     status" contains "pi status". An occurrence only counts here when the
     character immediately before the match is absent or non-alphanumeric --
     `str.isalnum()` is True for Hangul (and its NFKD jamo), so "라즈베리pi한테"
@@ -26,7 +27,7 @@ def contains_boundary_phrase(text: str, phrases: tuple[str, ...]) -> bool:
     ASCII alphanumeric character. A lone trailing ASCII punctuation run
     ("pi:", "claude-code.") is a sentence separator or a sentence-ending
     period, so it still counts as a boundary; a Hangul continuation right
-    after the phrase ("opencode로", "omo runtime으로", "senpi가") is a particle
+    after the phrase ("opencode로", "codex가", "claude code에게") is a particle
     naming the agent, so that counts too. But punctuation that leads straight
     into more ASCII alphanumeric text without a space ("claudecode-notes",
     "claude-code.md", "codex-utils.py") is a hyphenated word or filename that

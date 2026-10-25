@@ -9,9 +9,10 @@ from _local_package import load_local_package
 load_local_package()
 
 from omh.plugin_bundle.omh import awareness, boundary_phrase
+from omh.plugin_bundle.omh.pi_family_names import RUNTIME_USER_PHRASE
 from omh.routing import executor_cues
 
-PHRASES = ("pi", "claude-code", "codex", "omo runtime", "opencode")
+PHRASES = ("pi", "claude-code", "codex", RUNTIME_USER_PHRASE, "opencode")
 
 
 class BoundaryPhraseTests(unittest.TestCase):
@@ -20,8 +21,8 @@ class BoundaryPhraseTests(unittest.TestCase):
         self.assertIs(awareness._contains_boundary_phrase, boundary_phrase.contains_boundary_phrase)
 
     def test_documented_mentions_and_non_mentions(self) -> None:
-        mentions = ("ask pi: run it", "use claude-code.", "opencode로 해줘", "omo runtime으로", "pi status")
-        non_mentions = ("api한테 물어봐", "promo runtime", "raspi status", "see claude-code.md", "codex-utils.py", "claudecode-notes")
+        mentions = ("ask pi: run it", "use claude-code.", "opencode로 해줘", f"{RUNTIME_USER_PHRASE}으로", "pi status")
+        non_mentions = ("api한테 물어봐", f"pr{RUNTIME_USER_PHRASE}", "raspi status", "see claude-code.md", "codex-utils.py", "claudecode-notes")
         for text in mentions:
             with self.subTest(text=text):
                 self.assertTrue(boundary_phrase.contains_boundary_phrase(text, PHRASES))

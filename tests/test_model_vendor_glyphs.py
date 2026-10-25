@@ -107,7 +107,7 @@ class BoardRenderingTests(unittest.TestCase):
                  "status": "running", "elapsed_text": "12m", "tokens_text": "18420", "session_ref": "s1"},
                 {"label": "tests", "runtime": "codex", "model_label": "gpt-6-astra high",
                  "status": "running", "elapsed_text": "8m", "tokens_text": "9100", "session_ref": "s2"},
-                {"label": "docs", "runtime": "omo", "model_label": "deepseek-flash",
+                {"label": "docs", "runtime": "pi", "model_label": "deepseek-flash",
                  "status": "completed", "elapsed_text": "3m", "tokens_text": "unknown", "session_ref": "s3"},
             ],
         }

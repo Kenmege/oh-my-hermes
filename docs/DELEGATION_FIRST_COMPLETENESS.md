@@ -121,7 +121,7 @@ The supported mapping is:
 | `codex` | `codex_skill`; `command_template`; `$<canonical-skill> {message}` | Unknown or unavailable keeps the actual executor prompt and legacy dispatch template at generic `{message}`. Only an exact matching `observed_available` snapshot can make the candidate invocation dispatchable, and the parent handoff still requires `ask_before_dispatch`. |
 | `hermes` | `hermes_installed_skill`; `display_only`; installed `/<display-name> {message}` | Display metadata only; never dispatchable by this binding. The display name comes from the catalog, not from probing. |
 | `omx-runtime` | `omx_skill`; `display_only`; `$<canonical-skill> {message}` | Display metadata only; runtime handoff remains `prepare_only` and non-dispatchable. |
-| `omo-runtime` | `omo_skill_reference`; `skill_reference`; empty template | A canonical reference only. OMH does not serialize OMO `load_skills`, skill contents, or executable text. |
+| `pi-family-runtime` | `pi_family_skill_reference`; `skill_reference`; empty template | A canonical reference only. OMH does not serialize the runtime's `load_skills`, skill contents, or executable text. |
 | `omc-runtime` | `omc_skill_descriptor`; `descriptor_only`; empty template | A descriptor only. OMC's upstream discovery does not establish a portable OMH slash command. |
 
 `claude-code`, `generic`, `choose`, `pi`/generic aliases, and every unmapped

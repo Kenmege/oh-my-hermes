@@ -6,6 +6,7 @@ from functools import lru_cache
 import re
 
 from ..plugin_bundle.omh.data_share_cues import DATA_SHARE_REVIEW_KOREAN_PHRASES, data_share_request_admitted
+from ..plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST, RUNTIME_SHORT_NAME, RUNTIME_USER_PHRASE
 from ..plugin_bundle.omh.request_lead import after_courtesy
 from ..plugin_bundle.omh.spend_signals import SPEND_GATE_KOREAN_PHRASES, spend_request_clause
 from ..skills.catalog import SkillDefinition, builtin_definitions, routable_definitions
@@ -961,16 +962,16 @@ _HARNESS_SESSION_INVENTORY_INTENT_PHRASES = (
     "control pane inventory",
     "codex session inventory",
     "claude code session inventory",
-    # omo-runtime hosts; bare "pi" belongs to Raspberry-Pi routing, so pi only
+    # pi-family-runtime hosts; bare "pi" belongs to Raspberry-Pi routing, so pi only
     # appears inside longer phrases here.
-    "senpi session inventory",
+    f"{PI_DISTRIBUTION_HOST} session inventory",
     "opencode session inventory",
-    "omo runtime session inventory",
+    f"{RUNTIME_USER_PHRASE} session inventory",
     "pi session inventory",
     "find previous coding session",
     "recover coding session",
     "previous codex coding session",
-    "previous senpi coding session",
+    f"previous {PI_DISTRIBUTION_HOST} coding session",
     "previous pi coding session",
     "coding session recall",
     "세션 인벤토리",
@@ -1002,11 +1003,11 @@ _HARNESS_SESSION_INVENTORY_CONTEXT_TOKENS = frozenset(
         "codex",
         "claude",
         "hermes",
-        # omo-runtime hosts. Bare "pi" cannot appear here: routing tokens are
+        # pi-family-runtime hosts. Bare "pi" cannot appear here: routing tokens are
         # three characters or longer, so it is unreachable as a token.
-        "senpi",
+        PI_DISTRIBUTION_HOST,
         "opencode",
-        "omo",
+        RUNTIME_SHORT_NAME,
         "wrapper",
         "하네스",
         "세션",

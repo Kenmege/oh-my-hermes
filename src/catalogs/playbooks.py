@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from ..routing.localization import normalized_phrase, prepare_routing_text, routing_terms, routing_tokens
+from ..plugin_bundle.omh.pi_family_names import RUNTIME_SHORT_NAME
 from ..skills.catalog import DEEP_INTERVIEW_MAX_ROUNDS
 
 
@@ -2208,7 +2209,7 @@ _SURFACE_PLAYBOOKS = (
             "헤르메스가 직접 코딩",
             "omx",
             "omc",
-            "omo",
+            RUNTIME_SHORT_NAME,
             "코덱스",
             "클로드",
         ),

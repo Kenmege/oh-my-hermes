@@ -27,6 +27,7 @@ from omh.coding.executor_capability_snapshots import (
     build_executor_capability_snapshot,
     write_executor_capability_snapshot,
 )
+from omh.plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST
 
 
 class DynamicWorkflowTests(unittest.TestCase):
@@ -63,7 +64,7 @@ class DynamicWorkflowTests(unittest.TestCase):
         targets = {stage["target"] for stage in workflow["stages"]}
         target_types = {stage["target_type"] for stage in workflow["stages"]}
 
-        for concrete_target in {"gpt", "claude-code", "glm", "codex", "pi", "senpi", "opencode", "omo-runtime", "omx-runtime"}:
+        for concrete_target in {"gpt", "claude-code", "glm", "codex", "pi", PI_DISTRIBUTION_HOST, "opencode", "pi-family-runtime", "omx-runtime"}:
             self.assertNotIn(concrete_target, targets)
         for expected in {"planning-model-pool", "implementation-model-pool", "executor-runtime-pool", "hermes"}:
             self.assertIn(expected, targets)
@@ -182,25 +183,25 @@ class DynamicWorkflowTests(unittest.TestCase):
         self.assertEqual(stages["pi-agent"]["runtime"], "")
 
     def test_pi_family_hosts_tier_as_operator_selected_runtimes(self) -> None:
-        """pi, its senpi distribution, and opencode route operator-selected
-        models, so they tier exactly like gpt/claude-code/codex; the omo
+        """pi, its distribution host, and opencode route operator-selected
+        models, so they tier exactly like gpt/claude-code/codex; the pi-family
         runtime surface itself stays runtime-variable."""
         workflow = build_dynamic_coding_workflow(
             "Tier pi-family hosts like the other operator-selected agent CLIs",
             implementers=(
                 "pi:auto:Pi host",
-                "senpi:auto:Senpi host",
+                f"{PI_DISTRIBUTION_HOST}:auto:Distribution host",
                 "opencode:auto:Opencode host",
-                "omo-runtime:auto:OMO runtime",
+                "pi-family-runtime:auto:Pi-family runtime",
             ),
         )
         stages = {stage["target"]: stage for stage in workflow["stages"]}
 
-        for host in ("pi", "senpi", "opencode"):
+        for host in ("pi", PI_DISTRIBUTION_HOST, "opencode"):
             self.assertEqual(stages[host]["target_type"], "runtime")
             self.assertEqual(stages[host]["cost_tier"], "operator-selected")
-        self.assertEqual(stages["omo-runtime"]["target_type"], "runtime")
-        self.assertEqual(stages["omo-runtime"]["cost_tier"], "runtime-variable")
+        self.assertEqual(stages["pi-family-runtime"]["target_type"], "runtime")
+        self.assertEqual(stages["pi-family-runtime"]["cost_tier"], "runtime-variable")
 
     def test_svg_chart_tolerates_malformed_stage_dicts(self) -> None:
         svg = render_dynamic_workflow_svg({"stages": [{"id": "missing-lane"}, {"lane": "planning"}], "edges": []})

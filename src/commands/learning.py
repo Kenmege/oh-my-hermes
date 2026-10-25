@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
+from ..coding.executors import canonical_executor_profile
 from ..ingress import CHAT_SOURCES, extract_message_text
 from ..installer import OmhError
 from ..quality.routing_log_calibration import (
@@ -777,7 +778,7 @@ def _add_learning_commands(sub) -> None:
     record.add_argument("--min-confidence", choices=CONFIDENCE_LEVELS, default="high")
     record.add_argument("--stdin", action="store_true")
     record.add_argument("--event-json", default=None)
-    record.add_argument("--executor", default="choose")
+    record.add_argument("--executor", type=canonical_executor_profile, default="choose")
     record.add_argument("--source-ref", default="")
     record.add_argument("--source-event-id", default="")
     record.add_argument("--channel-ref", default="")
@@ -828,7 +829,7 @@ def _add_learning_commands(sub) -> None:
     missed_route.add_argument("--min-confidence", choices=CONFIDENCE_LEVELS, default="high")
     missed_route.add_argument("--stdin", action="store_true")
     missed_route.add_argument("--event-json", default=None)
-    missed_route.add_argument("--executor", default="choose")
+    missed_route.add_argument("--executor", type=canonical_executor_profile, default="choose")
     missed_route.add_argument("--source-ref", default="")
     missed_route.add_argument("--source-event-id", default="")
     missed_route.add_argument("--channel-ref", default="")

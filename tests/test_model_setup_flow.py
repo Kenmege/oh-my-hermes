@@ -15,6 +15,8 @@ from omh.coding.hermes_model_config import (
 from omh.commands import setup as setup_commands
 from omh.commands.main import build_parser
 from omh.commands.model_setup_projections import provider_next_actions
+from omh.plugin_bundle.omh.pi_family_names import RUNTIME_CONFIG_FILES, RUNTIME_HOME
+from omh.coding.model_discovery_adapters import RUNTIME_CONFIG_SOURCE
 
 
 def _inspection(
@@ -342,9 +344,9 @@ class ModelSetupFlowTests(unittest.TestCase):
             for provider, model, source in (
                 ("openai", "gpt-6.1-sol", "codex"),
                 ("openai", "gpt-5.6-terra", "codex"),
-                ("apitopia", "kimi-k3", "omo"),
+                ("apitopia", "kimi-k3", RUNTIME_CONFIG_SOURCE),
                 ("anthropic", "claude-fable-5", "claude-code"),
-                ("sglang", "glm-5.2", "omo"),
+                ("sglang", "glm-5.2", RUNTIME_CONFIG_SOURCE),
             )
         ]
         providers = tuple(
@@ -398,10 +400,10 @@ class ModelSetupFlowTests(unittest.TestCase):
             "maestro_ordered_chain",
         )
 
-    def test_omo_import_and_qwen_gemini_next_actions_are_explicit(self) -> None:
+    def test_pi_family_import_and_qwen_gemini_next_actions_are_explicit(self) -> None:
         observations = [
             {
-                "source": "omo",
+                "source": RUNTIME_CONFIG_SOURCE,
                 "provider": provider,
                 "model_id": model,
                 "variant": "",
@@ -412,8 +414,8 @@ class ModelSetupFlowTests(unittest.TestCase):
         ]
         with TemporaryDirectory() as temp:
             home = Path(temp)
-            (home / ".omo").mkdir()
-            (home / ".omo" / "omo.json").write_text(
+            (home / RUNTIME_HOME).mkdir()
+            (home / RUNTIME_HOME / RUNTIME_CONFIG_FILES[0]).write_text(
                 json.dumps({"categories": {"deep": {
                     "model": "qwen/qwen3-coder",
                     "variant": "high",
@@ -441,7 +443,7 @@ class ModelSetupFlowTests(unittest.TestCase):
                         "--omh-home", str(home / ".omh"),
                         "--hermes-home", str(home / ".hermes"),
                         "setup", "--dry-run", "--skip-apply", "--no-menubar",
-                        "--model-setup", "--import-omo-category-overrides",
+                        "--model-setup", "--import-category-overrides",
                         "--confirm-model", "qwen/qwen3-coder",
                         "--confirm-model", "google/gemini-3.1-pro", "--json",
                     ],
@@ -451,7 +453,7 @@ class ModelSetupFlowTests(unittest.TestCase):
         self.assertEqual((status, stderr), (0, ""))
         activation = json.loads(stdout)["steps"]["model_activation"]
         recommendations = activation["recommendations"]
-        self.assertEqual(recommendations["omo_category_overrides"]["status"], "imported")
+        self.assertEqual(recommendations["category_overrides"]["status"], "imported")
         self.assertEqual(
             recommendations["hermes_native"]["categories"]["deep"]["selected"]["model_alias"],
             "qwen3-coder",

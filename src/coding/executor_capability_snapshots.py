@@ -6,6 +6,7 @@ import re
 from typing import Final, TypeAlias
 
 from ..local_store import atomic_write_json, read_json_object, utc_now
+from .executors import canonical_executor_profile, legacy_executor_profile_ids
 from .executor_local_workflow_selection import (
     environment_name,
     evidence_reference,
@@ -229,7 +230,7 @@ def read_executor_capability_snapshot(path: Path) -> SnapshotRecord | None:
     raw = read_json_object(path)
     if raw is None:
         return None
-    snapshot = _copy_snapshot(raw)
+    snapshot = _canonical_executor_ids(_copy_snapshot(raw))
     _raise_if_invalid(snapshot)
     return snapshot
 
@@ -242,12 +243,32 @@ def executor_capability_snapshot_path(directory: Path, executor: str) -> Path:
 
 
 def read_matching_executor_capability_snapshot(path: Path, *, expected_executor: str) -> SnapshotRecord | None:
+    if not path.exists():
+        # A snapshot an older release recorded sits under the profile id it
+        # used then; read it there, nothing is written back.
+        for legacy_id in legacy_executor_profile_ids(expected_executor):
+            legacy_path = path.with_name(f"{legacy_id}.json")
+            if legacy_path.exists():
+                path = legacy_path
+                break
     try:
         snapshot = read_executor_capability_snapshot(path)
     except (ExecutorCapabilitySnapshotError, OSError, ValueError):
         return None
     if snapshot is None or snapshot.get("executor") != expected_executor:
         return None
+    return snapshot
+
+
+def _canonical_executor_ids(snapshot: SnapshotRecord) -> SnapshotRecord:
+    executor = snapshot.get("executor")
+    if isinstance(executor, str):
+        snapshot["executor"] = canonical_executor_profile(executor)
+    capabilities = snapshot.get("capabilities")
+    goal = capabilities.get("resumable_goal") if isinstance(capabilities, dict) else None
+    scope = goal.get("scope") if isinstance(goal, dict) else None
+    if isinstance(scope, dict) and isinstance(scope.get("executor"), str):
+        scope["executor"] = canonical_executor_profile(scope["executor"])
     return snapshot
 
 

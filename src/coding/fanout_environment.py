@@ -8,6 +8,8 @@ import json
 import re
 from typing import Mapping
 
+from ..plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_AGENT_DIR_ENV, PI_DISTRIBUTION_BRAND_ENV
+
 CHILD_ENVIRONMENT_POLICY_SCHEMA_VERSION = "child_environment_policy/v1"
 CHILD_ENVIRONMENT_POLICY_CLAIM_BOUNDARY = (
     "This receipt records environment variable names selected at the local child-process boundary. "
@@ -23,7 +25,7 @@ _OWNER_STATE_NAMES = {
     "codex": frozenset({"CODEX_HOME"}),
     "claude-code": frozenset({"CLAUDE_CONFIG_DIR"}),
     "hermes": frozenset({"HERMES_HOME"}),
-    "omo-runtime": frozenset({"PI_CODING_AGENT_DIR", "SENPI_BRAND", "SENPI_CODING_AGENT_DIR"}),
+    "pi-family-runtime": frozenset({"PI_CODING_AGENT_DIR", PI_DISTRIBUTION_BRAND_ENV, PI_DISTRIBUTION_AGENT_DIR_ENV}),
 }
 _LINEAGE_NAMES = frozenset({"OMH_FANOUT_DEPTH", "OMH_FANOUT_LINEAGE"})
 _SENSITIVE_NAME_TOKENS = frozenset({

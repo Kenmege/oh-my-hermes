@@ -881,7 +881,7 @@ def _later_status(current: str, candidate: str) -> str:
 def _ordered_activity_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Running first, then blocked, then done; settled rows newest-first.
 
-    Display-priority ordering learned from OMO's DAG status widget: running
+    Display-priority ordering learned from the pi-family runtime's DAG status widget: running
     work outranks everything, and a late failure must never be pushed off
     screen by older completed rows. Running rows keep dispatch order. The
     helper orders only — the call site applies ACTIVITY_ROW_LIMIT and counts
@@ -3189,7 +3189,7 @@ def _coding_agent_label(value: Any) -> str:
         "codex": "codex",
         "claude-code": "claude-code",
         "omx-runtime": "omx-runtime",
-        "omo-runtime": "omo-runtime",
+        "pi-family-runtime": "pi-family-runtime",
         "omc-runtime": "omc-runtime",
     }
     return labels.get(normalized, normalized)

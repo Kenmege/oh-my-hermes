@@ -81,6 +81,7 @@ from omh.coding.pre_handoff_readiness import (  # noqa: E402
 from omh.skills.catalog import routable_skill_names  # noqa: E402
 from omh.system.local_store import utc_now  # noqa: E402
 from omh.system.paths import OmhPaths  # noqa: E402
+from omh.plugin_bundle.omh.pi_family_names import RUNTIME_SHORT_NAME
 
 
 OBSERVED_AT = "2026-01-01T00:00:00Z"
@@ -423,7 +424,7 @@ class ExecutorNeutralityTests(unittest.TestCase):
         # Neutrality has to hold on the failing path as well, or a brand could
         # leak through a gap message nobody reads on the happy path.
         first = _fit("codex", _team_blocked("codex"))
-        second = _fit("omo-runtime", _team_blocked("omo-runtime"))
+        second = _fit("pi-family-runtime", _team_blocked("pi-family-runtime"))
         self.assertEqual(
             owner_fit_without_owner_identity(first),
             owner_fit_without_owner_identity(second),
@@ -444,7 +445,7 @@ class ExecutorNeutralityTests(unittest.TestCase):
                 *(str(entry["reason"]) for fit in report["owners"] for entry in fit["capabilities"]),
             ]
         ).casefold()
-        for brand in ("codex", "claude", "hermes", "omo", "omx", "omc"):
+        for brand in ("codex", "claude", "hermes", RUNTIME_SHORT_NAME, "pi-family", "omx", "omc"):
             with self.subTest(brand=brand):
                 self.assertNotIn(brand, neutral_text)
 

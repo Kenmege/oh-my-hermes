@@ -1624,7 +1624,7 @@ A record may optionally carry a perspective: which actor's view it is
 no theory-of-mind inference, just bookkeeping that keeps one actor's lessons
 out of another actor's context. An `observed` label that should reach
 handoffs must be an executor target (`codex`, `claude-code`, `generic`,
-`hermes`, `omx-runtime`, `omo-runtime`, `omc-runtime`); other labels such as
+`hermes`, `omx-runtime`, `pi-family-runtime`, `omc-runtime`); other labels such as
 `operator` are inspection-only lenses that no handoff ever selects.
 
 ```sh

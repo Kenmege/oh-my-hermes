@@ -105,7 +105,7 @@ ROUTE_PREFIX = "category:"
 MAESTRO_EXECUTOR_SHORT_NAMES = {
     "codex": "codex",
     "claude_code": "claude",
-    "omo_runtime": "omo",
+    "pi_family_runtime": "pi",
     "hermes_local": "hermes",
 }
 STATE_ABBREVIATIONS = {

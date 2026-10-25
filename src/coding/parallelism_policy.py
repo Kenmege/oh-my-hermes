@@ -1,6 +1,6 @@
 """Execution-concurrency policy for the opt-in fanout dispatch path.
 
-Defaults mirror OMO's task engine (per-lane default 5, global ceiling 8) on
+Defaults mirror the pi-family runtime's task engine (per-lane default 5, global ceiling 8) on
 owner direction. Every value is a setup-profile tunable under `parallelism`,
 read with the same validated-override-plus-disclosure shape as the memory
 policy's cadence block: an invalid stored value falls back to the default
@@ -50,8 +50,8 @@ _PARALLELISM_MAX = 32
 # bound it: a dispatched agent CLI that reads the word "fanout" can invoke
 # `omh coding fanout dispatch` itself, and each of ITS units can do the same.
 # Depth 0 is the operator's own invocation; `max_depth` 1 therefore means a
-# dispatched child never dispatches again, which is what OMO's DAG schema
-# pins as `max_depth: 1`. The reader's ceiling of 4 exists for the same
+# dispatched child never dispatches again, which is what the pi-family runtime's
+# DAG schema pins as `max_depth: 1`. The reader's ceiling of 4 exists for the same
 # reason as `_PARALLELISM_MAX`: a typo must not authorize unbounded nesting.
 FANOUT_MAX_DEPTH_DEFAULT = 1
 _FANOUT_MAX_DEPTH_CEILING = 4
@@ -59,8 +59,8 @@ _FANOUT_MAX_DEPTH_CEILING = 4
 # Total real agent-CLI spawns ONE dispatch run may start, across every unit
 # and every retry of the pool. The pool width bounds how many run at once;
 # this bounds how many are ever started, which is the number that matters
-# when a contract is larger than anyone intended. 60 is OMO's own
-# `DEFAULT_FANOUT_LIMIT`.
+# when a contract is larger than anyone intended. 60 is the pi-family
+# runtime's own `DEFAULT_FANOUT_LIMIT`.
 FANOUT_RUN_SPAWN_CEILING_DEFAULT = 60
 _FANOUT_RUN_SPAWN_CEILING_MAX = 512
 

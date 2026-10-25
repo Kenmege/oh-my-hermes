@@ -14,6 +14,7 @@ import subprocess
 from typing import cast
 from uuid import uuid4
 
+from ..plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_AGENT_DIR_ENV, PI_DISTRIBUTION_HOME, PI_DISTRIBUTION_HOST
 from ..quality.cross_harness_adapter_backend import trusted_bwrap
 from ..quality.cross_harness_adapter_sandbox import (
     ChildContext,
@@ -68,7 +69,7 @@ class _OwnerStatePath:
 
 
 # The argv table in fanout_dispatch identifies the executable profile. These defaults
-# are each CLI's state home; an explicit environment value wins. OMO state follows
+# are each CLI's state home; an explicit environment value wins. Pi-family state follows
 # the resolved host, rather than Hermes state, because those are distinct owners.
 _OWNER_STATE_DIRECTORIES: dict[str, dict[str | None, tuple[_OwnerStatePath, ...]]] = {
     "codex": {None: (_OwnerStatePath("CODEX_HOME", Path(".codex")),)},
@@ -81,18 +82,18 @@ _OWNER_STATE_DIRECTORIES: dict[str, dict[str | None, tuple[_OwnerStatePath, ...]
         )
     },
     "hermes": {None: (_OwnerStatePath("HERMES_HOME", Path(".hermes")),)},
-    "omo-runtime": {
+    "pi-family-runtime": {
         "pi": (_OwnerStatePath("PI_CODING_AGENT_DIR", Path(".pi") / "agent"),),
-        # omh resolves and invokes senpi directly, never the branded `omo`
-        # launcher. The latter owns the observed ~/.omo tree beyond agent/
-        # (memory, codegraph, lsp-daemon, and config.jsonc), but that tree is
-        # not direct-senpi state. Senpi itself has only agent/ on this host;
-        # its resolver reads SENPI_CODING_AGENT_DIR then PI_CODING_AGENT_DIR,
-        # never OMO_CODING_AGENT_DIR.
-        "senpi": (
+        # omh resolves and invokes the distribution host directly, never the
+        # runtime's own branded launcher. That launcher owns its observed home
+        # tree beyond agent/ (memory, codegraph, lsp-daemon, and config.jsonc),
+        # but that tree is not the distribution host's state. The host itself
+        # has only agent/ here; its resolver reads its own agent-dir variable,
+        # then PI_CODING_AGENT_DIR, never the runtime launcher's variable.
+        PI_DISTRIBUTION_HOST: (
             _OwnerStatePath(
-                "SENPI_CODING_AGENT_DIR",
-                Path(".senpi") / "agent",
+                PI_DISTRIBUTION_AGENT_DIR_ENV,
+                Path(PI_DISTRIBUTION_HOME) / "agent",
                 fallback_environment_variables=("PI_CODING_AGENT_DIR",),
             ),
         ),
@@ -113,10 +114,10 @@ def _owner_state_paths(owner: str, environment: Mapping[str, str]) -> tuple[tupl
     if profiles is None:
         return ()
     host = None
-    if owner == "omo-runtime":
+    if owner == "pi-family-runtime":
         runtime_host = cast(
             Callable[[], str | None],
-            getattr(import_module("omh.coding.fanout_dispatch"), "omo_runtime_host"),
+            getattr(import_module("omh.coding.fanout_dispatch"), "pi_family_host"),
         )
         host = runtime_host()
     profile = profiles.get(host)

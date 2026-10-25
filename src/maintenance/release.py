@@ -821,7 +821,11 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 68757
 # (+3072) for career discovery/drafting/interviews/evidenced outcomes. Retire
 # the old 22 unused characters, not carry them forward. Existing rows are
 # byte-stable and test_ai_job_search_context_budget pins them and this delta.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525379
+# 525379 -> 525403: the pi-family runtime's profile was renamed; four
+# capability rows name it in a runtime list ("pi-family" for the old
+# three-letter name, +6 each, +24). No other row moved. Re-derived from the
+# producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525403
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

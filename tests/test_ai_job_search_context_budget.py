@@ -56,8 +56,10 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
 
     def test_capability_growth_is_one_bounded_row_without_sibling_edits(self) -> None:
         for producer, base, cap, expected_hash, limit in (
-            (skill_capabilities, 522307, FULL_ROW_DELTA_CAP,
-             '774f87898595ab3e55d6e1fc98136afeb6c8b542fdfc943b1c5f917db027982a',
+            # 522307 -> 522331 and the sibling digest re-derived: the pi-family
+            # runtime rename moved four sibling rows by +6 each.
+            (skill_capabilities, 522331, FULL_ROW_DELTA_CAP,
+             '1a7217a5bbdd5afd4f516002dce758095f6698702c1e842f81eb2708081d5d04',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -114,8 +116,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
                                else body for heading, body in parts)
             legacy_hashes[template.name] = hashlib.sha256(restored.encode()).hexdigest()
         # Re-derived from both sources: the vi rewordings above plus
-        # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
-        self.assertEqual(_digest(legacy_hashes), 'a411e6d5f26759a0bdda078999df35a131ec2614d90c87d353147d7aa715a828')
+        # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main, then
+        # the pi-family runtime rename in model-setup, maestro, and ultrawork.
+        self.assertEqual(_digest(legacy_hashes), '215531d97d520895771534f81219bbadc55933d939fbe3bfe772525a23c4ff7a')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
@@ -134,8 +137,8 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         expected = {
             'skill_index_line_max_chars': 100,
             'plugin_tool_schema_chars': 68757,  # Main's search tool, then #2277's agent-board prepare fields.
-            'pre_llm_call_context_chars_max': 5780,
-            'pre_llm_call_context_fallback_chars_max': 7216,
+            'pre_llm_call_context_chars_max': 5786,  # The pi-family runtime rename (+6).
+            'pre_llm_call_context_fallback_chars_max': 7222,  # The same rename (+6).
             'awareness_primer_markdown_chars': 3520,
             'awareness_primer_context_chars': 1440,
             'awareness_workflow_context_chars_max': 1500,

@@ -19,11 +19,13 @@ from omh.coding.model_inventory import (  # noqa: E402
     MODEL_DOMAIN_AFFINITY_CLAIM_BOUNDARY,
     MODEL_INVENTORY_CATALOG_PROFILE,
     MODEL_INVENTORY_SCHEMA_VERSION,
-    OMO_CATEGORY_ROLE_SOURCES,
+    CATEGORY_ROLE_SOURCES,
     catalog_fingerprint_note,
     inventory_model_catalog,
     local_model_inventory,
 )
+from omh.plugin_bundle.omh.pi_family_names import OPENCODE_RUNTIME_CONFIG_FILE, PI_DISTRIBUTION_HOME, PI_DISTRIBUTION_HOST, RUNTIME_CONFIG_FILES, RUNTIME_HOME
+from omh.coding.model_discovery_adapters import RUNTIME_CONFIG_SOURCE
 
 _SECRET = "sk-SECRET-VALUE-12345"
 
@@ -31,18 +33,18 @@ _SECRET = "sk-SECRET-VALUE-12345"
 def _write_home(
     tmp: str,
     *,
-    omo_config: object | None = None,
-    omo_raw: str | None = None,
+    runtime_config: object | None = None,
+    runtime_raw: str | None = None,
     opencode_config: object | None = None,
     auth: object | None = None,
 ) -> Path:
     home = Path(tmp)
     config_dir = home / ".config" / "opencode"
     config_dir.mkdir(parents=True, exist_ok=True)
-    if omo_raw is not None:
-        (config_dir / "oh-my-openagent.json").write_text(omo_raw, encoding="utf-8")
-    elif omo_config is not None:
-        (config_dir / "oh-my-openagent.json").write_text(json.dumps(omo_config), encoding="utf-8")
+    if runtime_raw is not None:
+        (config_dir / OPENCODE_RUNTIME_CONFIG_FILE).write_text(runtime_raw, encoding="utf-8")
+    elif runtime_config is not None:
+        (config_dir / OPENCODE_RUNTIME_CONFIG_FILE).write_text(json.dumps(runtime_config), encoding="utf-8")
     if opencode_config is not None:
         (config_dir / "opencode.json").write_text(json.dumps(opencode_config), encoding="utf-8")
     if auth is not None:
@@ -52,7 +54,7 @@ def _write_home(
     return home
 
 
-_OMO_FIXTURE = {
+_RUNTIME_CONFIG_FIXTURE = {
     "$schema": "https://example.invalid/schema.json",
     "agents": {
         "planner": {
@@ -77,7 +79,7 @@ _OMO_FIXTURE = {
 class ModelInventoryTests(unittest.TestCase):
     def test_models_are_aggregated_with_families_and_variants(self) -> None:
         with TemporaryDirectory() as tmp:
-            home = _write_home(tmp, omo_config=_OMO_FIXTURE)
+            home = _write_home(tmp, runtime_config=_RUNTIME_CONFIG_FIXTURE)
             inventory = local_model_inventory(home)
         self.assertEqual(inventory["schema_version"], MODEL_INVENTORY_SCHEMA_VERSION)
         models = {f"{entry['provider']}/{entry['model_id']}": entry for entry in inventory["available_models"]}
@@ -89,19 +91,19 @@ class ModelInventoryTests(unittest.TestCase):
         self.assertEqual(
             inventory["families_present"], ["claude", "gemini", "glm", "gpt", "kimi"]
         )
-        self.assertEqual(inventory["sources"]["omo_agent_config"]["status"], "present")
-        self.assertEqual(inventory["sources"]["omo_agent_config"]["model_count"], 5)
-        self.assertEqual(inventory["sources"]["omo_agent_config"]["rejected"], 0)
+        self.assertEqual(inventory["sources"]["runtime_agent_config"]["status"], "present")
+        self.assertEqual(inventory["sources"]["runtime_agent_config"]["model_count"], 5)
+        self.assertEqual(inventory["sources"]["runtime_agent_config"]["rejected"], 0)
 
     def test_no_secret_value_ever_reaches_the_payload(self) -> None:
         # Precedent: tests/test_executor_auth_signals.py — plant a secret in
         # every source file and assert the serialized payload never echoes it.
-        omo = json.loads(json.dumps(_OMO_FIXTURE))
-        omo["agents"]["planner"]["api_key"] = _SECRET
+        runtime_config = json.loads(json.dumps(_RUNTIME_CONFIG_FIXTURE))
+        runtime_config["agents"]["planner"]["api_key"] = _SECRET
         with TemporaryDirectory() as tmp:
             home = _write_home(
                 tmp,
-                omo_config=omo,
+                runtime_config=runtime_config,
                 opencode_config={"provider": {"openai": {"apiKey": _SECRET}}},
                 auth={"anthropic": {"type": "oauth", "access": _SECRET}},
             )
@@ -115,14 +117,14 @@ class ModelInventoryTests(unittest.TestCase):
     def test_absent_and_malformed_sources_report_status_without_paths(self) -> None:
         with TemporaryDirectory() as tmp:
             inventory = local_model_inventory(Path(tmp))
-            self.assertEqual(inventory["sources"]["omo_agent_config"]["status"], "absent")
+            self.assertEqual(inventory["sources"]["runtime_agent_config"]["status"], "absent")
             self.assertEqual(inventory["sources"]["opencode_auth_providers"]["status"], "absent")
             self.assertEqual(inventory["available_models"], [])
             self.assertNotIn(tmp, json.dumps(inventory))
         with TemporaryDirectory() as tmp:
-            home = _write_home(tmp, omo_raw="{not json", opencode_config={"provider": []})
+            home = _write_home(tmp, runtime_raw="{not json", opencode_config={"provider": []})
             inventory = local_model_inventory(home)
-            self.assertEqual(inventory["sources"]["omo_agent_config"]["status"], "unreadable")
+            self.assertEqual(inventory["sources"]["runtime_agent_config"]["status"], "unreadable")
             # A present file whose section has the wrong shape is not a crash.
             self.assertEqual(inventory["sources"]["opencode_config_providers"]["providers"], [])
             self.assertNotIn(tmp, json.dumps(inventory))
@@ -141,8 +143,8 @@ class ModelInventoryTests(unittest.TestCase):
             },
         }
         with TemporaryDirectory() as tmp:
-            inventory = local_model_inventory(_write_home(tmp, omo_config=hostile))
-        source = inventory["sources"]["omo_agent_config"]
+            inventory = local_model_inventory(_write_home(tmp, runtime_config=hostile))
+        source = inventory["sources"]["runtime_agent_config"]
         self.assertEqual(source["rejected"], 3)
         self.assertEqual(source["model_count"], 1)
         serialized = json.dumps(inventory)
@@ -154,7 +156,7 @@ class ModelInventoryTests(unittest.TestCase):
 
     def test_inventory_is_deterministic_modulo_observed_at(self) -> None:
         with TemporaryDirectory() as tmp:
-            home = _write_home(tmp, omo_config=_OMO_FIXTURE)
+            home = _write_home(tmp, runtime_config=_RUNTIME_CONFIG_FIXTURE)
             first = local_model_inventory(home)
             second = local_model_inventory(home)
         for payload in (first, second):
@@ -165,7 +167,7 @@ class ModelInventoryTests(unittest.TestCase):
     def test_domain_affinity_notes_are_report_only_static_vocabulary(self) -> None:
         self.assertEqual(MODEL_DOMAIN_AFFINITIES["x_platform_data"], ("grok",))
         with TemporaryDirectory() as tmp:
-            inventory = local_model_inventory(_write_home(tmp, omo_config=_OMO_FIXTURE))
+            inventory = local_model_inventory(_write_home(tmp, runtime_config=_RUNTIME_CONFIG_FIXTURE))
         notes = {note["domain"]: note for note in inventory["domain_affinity_notes"]}
         self.assertEqual(notes["x_platform_data"]["locally_present"], [])
         self.assertEqual(notes["multimodal_vision"]["locally_present"], ["claude", "gemini", "gpt"])
@@ -197,19 +199,19 @@ class ModelInventoryTests(unittest.TestCase):
     def test_cli_presence_table_is_fixed_vocabulary(self) -> None:
         self.assertEqual(
             CLI_PRESENCE_COMMANDS,
-            ("codex", "claude", "opencode", "pi", "senpi", "gemini", "grok", "qwen"),
+            ("codex", "claude", "opencode", "pi", PI_DISTRIBUTION_HOST, "gemini", "grok", "qwen"),
         )
 
-    def test_senpi_auth_provider_names_are_presence_only(self) -> None:
+    def test_pi_distribution_auth_provider_names_are_presence_only(self) -> None:
         with TemporaryDirectory() as tmp:
             home = Path(tmp)
-            senpi_dir = home / ".senpi" / "agent"
-            senpi_dir.mkdir(parents=True)
-            (senpi_dir / "auth.json").write_text(
+            pi_distribution_dir = home / PI_DISTRIBUTION_HOME / "agent"
+            pi_distribution_dir.mkdir(parents=True)
+            (pi_distribution_dir / "auth.json").write_text(
                 json.dumps({"kimi-coding": {"type": "api", "key": _SECRET}}), encoding="utf-8"
             )
             inventory = local_model_inventory(home)
-        source = inventory["sources"]["senpi_auth_providers"]
+        source = inventory["sources"]["pi_distribution_auth_providers"]
         self.assertEqual(source["status"], "present")
         self.assertEqual(source["providers"], ["kimi-coding"])
         self.assertNotIn(_SECRET, json.dumps(inventory))
@@ -260,7 +262,7 @@ class MultiAgentModelDiscoveryTests(unittest.TestCase):
                     },
                 },
             )
-            for platform in ("senpi", "pi"):
+            for platform in (PI_DISTRIBUTION_HOST, "pi"):
                 self._write_jsonl(
                     home / f".{platform}" / "agent" / "sessions" / "repo" / "session.jsonl",
                     {
@@ -270,9 +272,9 @@ class MultiAgentModelDiscoveryTests(unittest.TestCase):
                         "modelId": f"{platform}-model",
                     },
                 )
-            omo = home / ".omo"
-            omo.mkdir()
-            (omo / "omo.json").write_text(
+            runtime_home = home / RUNTIME_HOME
+            runtime_home.mkdir()
+            (runtime_home / RUNTIME_CONFIG_FILES[0]).write_text(
                 json.dumps(
                     {
                         "agents": {
@@ -284,15 +286,15 @@ class MultiAgentModelDiscoveryTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (omo / "omo.jsonc").write_text(
+            (runtime_home / RUNTIME_CONFIG_FILES[1]).write_text(
                 '{\n  // canonical JSONC probe\n  "categories": {"deep": {"model": "anthropic/claude-opus-4-1"}}\n}',
                 encoding="utf-8",
             )
-            (omo / "models.json").write_text(
+            (runtime_home / "models.json").write_text(
                 json.dumps({"models": [{"provider": "google", "model": "gemini-3.1-pro"}]}),
                 encoding="utf-8",
             )
-            (omo / "auth.json").write_text(
+            (runtime_home / "auth.json").write_text(
                 json.dumps(
                     {
                         "model": "secret-provider/secret-model",
@@ -332,7 +334,7 @@ class MultiAgentModelDiscoveryTests(unittest.TestCase):
         self.assertEqual(discovery["schema_version"], "model_discovery/v1")
         self.assertEqual(
             set(discovery["sources"]),
-            {"codex", "claude-code", "senpi", "pi", "omo", "opencode", "hermes", "omp"},
+            {"codex", "claude-code", PI_DISTRIBUTION_HOST, "pi", RUNTIME_CONFIG_SOURCE, "opencode", "hermes", "omp"},
         )
         observations = discovery["observations"]
         observed = {
@@ -341,9 +343,9 @@ class MultiAgentModelDiscoveryTests(unittest.TestCase):
         }
         self.assertIn(("codex", "openai", "gpt-5.6-sol", "observed_before"), observed)
         self.assertIn(("claude-code", "anthropic", "claude-opus-4-1", "observed_before"), observed)
-        self.assertIn(("senpi", "openrouter", "senpi-model", "observed_before"), observed)
+        self.assertIn((PI_DISTRIBUTION_HOST, "openrouter", f"{PI_DISTRIBUTION_HOST}-model", "observed_before"), observed)
         self.assertIn(("pi", "openrouter", "pi-model", "observed_before"), observed)
-        self.assertIn(("omo", "openai", "gpt-5.6-sol", "confirmed_active"), observed)
+        self.assertIn((RUNTIME_CONFIG_SOURCE, "openai", "gpt-5.6-sol", "confirmed_active"), observed)
         self.assertIn(("opencode", "google", "gemini-3.1-pro", "observed_before"), observed)
         self.assertIn(("hermes", "nous", "hermes-4", "observed_before"), observed)
         serialized = json.dumps(discovery)
@@ -465,7 +467,7 @@ class MultiAgentModelDiscoveryTests(unittest.TestCase):
                 deep /= str(segment)
             self._write_jsonl(deep / "session.jsonl", {"message": {"model": "claude-deep"}})
             self._write_jsonl(
-                home / ".senpi" / "agent" / "sessions" / "oversized.jsonl",
+                home / PI_DISTRIBUTION_HOME / "agent" / "sessions" / "oversized.jsonl",
                 {
                     "type": "model_change",
                     "provider": "openrouter",
@@ -484,7 +486,7 @@ class MultiAgentModelDiscoveryTests(unittest.TestCase):
         sources = inventory["model_discovery"]["sources"]
         self.assertEqual(sources["codex"]["status"], "truncated")
         self.assertEqual(sources["claude-code"]["status"], "truncated")
-        self.assertEqual(sources["senpi"]["status"], "truncated")
+        self.assertEqual(sources[PI_DISTRIBUTION_HOST]["status"], "truncated")
         with TemporaryDirectory() as tmp:
             home = Path(tmp)
             self._write_jsonl(
@@ -525,12 +527,12 @@ class MultiAgentModelDiscoveryTests(unittest.TestCase):
 class InventoryModelCatalogTests(unittest.TestCase):
     def _catalog(self) -> dict:
         with TemporaryDirectory() as tmp:
-            inventory = local_model_inventory(_write_home(tmp, omo_config=_OMO_FIXTURE))
+            inventory = local_model_inventory(_write_home(tmp, runtime_config=_RUNTIME_CONFIG_FIXTURE))
         catalog = inventory_model_catalog(inventory)
         assert catalog is not None
         return catalog
 
-    def test_catalog_targets_the_omo_runtime_profile(self) -> None:
+    def test_catalog_targets_the_pi_family_runtime_profile(self) -> None:
         catalog = self._catalog()
         self.assertEqual(catalog["schema_version"], LOCAL_MODEL_CATALOG_SCHEMA_VERSION)
         self.assertEqual(catalog["executor_profile"], MODEL_INVENTORY_CATALOG_PROFILE)
@@ -550,7 +552,7 @@ class InventoryModelCatalogTests(unittest.TestCase):
         )
         self.assertEqual(chains["design_visual"][0]["reasoning_effort"], "high")
         self.assertNotIn("brain", chains)
-        self.assertIn("design_visual", OMO_CATEGORY_ROLE_SOURCES)
+        self.assertIn("design_visual", CATEGORY_ROLE_SOURCES)
 
     def test_options_never_carry_effort_authority(self) -> None:
         catalog = self._catalog()
@@ -561,7 +563,7 @@ class InventoryModelCatalogTests(unittest.TestCase):
         first = self._catalog()
         second = self._catalog()
         self.assertEqual(first["fingerprint"]["digest"], second["fingerprint"]["digest"])
-        self.assertIn("omo_agent_config", first["fingerprint"]["sources"])
+        self.assertIn("runtime_agent_config", first["fingerprint"]["sources"])
 
     def test_fingerprint_changes_when_chains_move_across_the_same_models(self) -> None:
         """The digest anchors the derived artifact: reassigning a category to
@@ -583,7 +585,7 @@ class InventoryModelCatalogTests(unittest.TestCase):
         digests = []
         for config in (base, swapped):
             with TemporaryDirectory() as tmp:
-                inventory = local_model_inventory(_write_home(tmp, omo_config=config))
+                inventory = local_model_inventory(_write_home(tmp, runtime_config=config))
             catalog = inventory_model_catalog(inventory)
             assert catalog is not None
             digests.append(catalog["fingerprint"]["digest"])
@@ -606,7 +608,7 @@ class InventoryModelCatalogTests(unittest.TestCase):
 
 class ModelInventoryCliTests(unittest.TestCase):
     def test_fanout_prepare_freezes_local_route_with_fingerprint(self) -> None:
-        """A unit owned by the OMO runtime with a declared role freezes a
+        """A unit owned by the pi-family runtime with a declared role freezes a
         route resolved from the user's own config — catalog_kind plus the
         inventory fingerprint land in the contract so the basis is named."""
         units = json.dumps(
@@ -614,7 +616,7 @@ class ModelInventoryCliTests(unittest.TestCase):
                 {
                     "unit_id": "visual",
                     "title": "Visual work",
-                    "owner": "omo-runtime",
+                    "owner": "pi-family-runtime",
                     "file_scope": ["src/ui/"],
                     "role": "design_visual",
                     "domain": "multimodal_vision",
@@ -628,7 +630,7 @@ class ModelInventoryCliTests(unittest.TestCase):
             ]
         )
         with TemporaryDirectory() as tmp:
-            home = _write_home(tmp, omo_config=_OMO_FIXTURE)
+            home = _write_home(tmp, runtime_config=_RUNTIME_CONFIG_FIXTURE)
             with mock.patch.dict("os.environ", {"HOME": str(home), "USERPROFILE": str(home)}):
                 status, stdout, _stderr = run_cli(
                     ["coding", "fanout", "prepare", "--goal", "ship", "the", "feature", "--units", "-"],
@@ -659,9 +661,9 @@ class ModelInventoryCliTests(unittest.TestCase):
             ]
         )
         outputs = []
-        for config in (_OMO_FIXTURE, None):
+        for config in (_RUNTIME_CONFIG_FIXTURE, None):
             with TemporaryDirectory() as tmp:
-                home = _write_home(tmp, omo_config=config) if config else Path(tmp)
+                home = _write_home(tmp, runtime_config=config) if config else Path(tmp)
                 with mock.patch.dict("os.environ", {"HOME": str(home), "USERPROFILE": str(home)}):
                     status, stdout, _stderr = run_cli(
                         ["coding", "fanout", "prepare", "--goal", "ship", "it", "--units", "-"],
@@ -673,14 +675,14 @@ class ModelInventoryCliTests(unittest.TestCase):
 
     def test_model_route_cli_from_inventory_flag(self) -> None:
         with TemporaryDirectory() as tmp:
-            home = _write_home(tmp, omo_config=_OMO_FIXTURE)
+            home = _write_home(tmp, runtime_config=_RUNTIME_CONFIG_FIXTURE)
             with mock.patch.dict("os.environ", {"HOME": str(home), "USERPROFILE": str(home)}):
                 status, stdout, _stderr = run_cli(
                     [
                         "coding",
                         "model-route",
                         "--executor",
-                        "omo-runtime",
+                        "pi-family-runtime",
                         "--role",
                         "design_visual",
                         "--from-inventory",
@@ -695,7 +697,7 @@ class ModelInventoryCliTests(unittest.TestCase):
 
     def test_cli_plain_text_default_and_json_optin(self) -> None:
         with TemporaryDirectory() as tmp:
-            home = _write_home(tmp, omo_config=_OMO_FIXTURE)
+            home = _write_home(tmp, runtime_config=_RUNTIME_CONFIG_FIXTURE)
             with mock.patch.dict("os.environ", {"HOME": str(home), "USERPROFILE": str(home)}):
                 status, stdout, _stderr = run_cli(
                     ["coding", "model-inventory"], output_json=False

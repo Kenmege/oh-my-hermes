@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 from typing import Any, Mapping
 
+from ..coding.executors import canonical_executor_profile
 from ..installer import OmhError
 from ..plugin_bundle.omh.cost_receipt import build_cost_receipt
 from ..quality.evidence_records import assess_quality_evidence, build_quality_evidence_package
@@ -490,7 +491,7 @@ def _add_quality_evidence_commands(sub: argparse._SubParsersAction[argparse.Argu
     prepare.add_argument("--commit", "--commit-sha", dest="commit", required=True)
     prepare.add_argument("--tree", "--tree-sha", dest="tree", required=True)
     prepare.add_argument("--title", required=True)
-    prepare.add_argument("--executor", "--executor-target", dest="executor", required=True)
+    prepare.add_argument("--executor", "--executor-target", type=canonical_executor_profile, dest="executor", required=True)
     _add_json_input(prepare, "scenarios", "QA scenarios")
     _add_json_input(prepare, "reviews", "review requirements")
     _add_json_input(prepare, "claims", "claim requirements")

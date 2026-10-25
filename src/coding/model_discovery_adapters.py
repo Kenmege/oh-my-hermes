@@ -4,14 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from ..plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST
 from ..system.metadata_safety import require_opaque_metadata_ref
+
+# The pi-family runtime's own config: the one source whose models are
+# confirmed active rather than merely observed in a past session.
+RUNTIME_CONFIG_SOURCE = "pi-family-config"
 
 
 def model_candidates(source: str, parsed: object) -> list[Mapping[str, object]]:
     if not isinstance(parsed, Mapping):
         return []
-    if source == "omo":
-        return _omo_candidates(parsed)
+    if source == RUNTIME_CONFIG_SOURCE:
+        return _runtime_config_candidates(parsed)
     if source == "codex":
         payload = parsed.get("payload")
         table = payload if isinstance(payload, Mapping) else parsed
@@ -20,7 +25,7 @@ def model_candidates(source: str, parsed: object) -> list[Mapping[str, object]]:
         message = parsed.get("message")
         table = message if isinstance(message, Mapping) else parsed
         return [_candidate("anthropic", table.get("model"), "", parsed.get("timestamp"))]
-    if source in {"senpi", "pi", "hermes"}:
+    if source in {PI_DISTRIBUTION_HOST, "pi", "hermes"}:
         return [
             _candidate(
                 parsed.get("provider"),
@@ -64,11 +69,11 @@ def accepted_observation(
         "model_id": model_id,
         "variant": variant,
         "timestamp": timestamp,
-        "status": "confirmed_active" if source == "omo" else "observed_before",
+        "status": "confirmed_active" if source == RUNTIME_CONFIG_SOURCE else "observed_before",
     }
 
 
-def _omo_candidates(parsed: Mapping[str, object]) -> list[Mapping[str, object]]:
+def _runtime_config_candidates(parsed: Mapping[str, object]) -> list[Mapping[str, object]]:
     candidates: list[Mapping[str, object]] = []
     for section in ("agents", "categories"):
         table = parsed.get(section)

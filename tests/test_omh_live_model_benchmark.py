@@ -27,6 +27,7 @@ sys.path.insert(0, str(BASE / "lib"))
 
 from runner import _snapshot  # noqa: E402
 from validation import changed_paths  # noqa: E402
+from omh.plugin_bundle.omh.pi_family_names import RUNTIME_SHORT_NAME
 
 
 def _load_omh_live():
@@ -114,7 +115,7 @@ class OmhLiveAdapterTests(unittest.TestCase):
         self.assertIn("hermes-child", argv)
         self.assertIn("dispatch", argv)
         self.assertIn("--confirm-dispatch", argv)
-        self.assertNotIn("omo", argv)
+        self.assertNotIn(RUNTIME_SHORT_NAME, argv)
 
     def test_current_session_argv_uses_current_config_without_isolated_child_flags(self) -> None:
         module = _load_omh_live()
@@ -337,11 +338,11 @@ class OmhLiveAdapterTests(unittest.TestCase):
         self.assertIsNone(metrics["tokens"])
         self.assertIsNone(metrics["cost_usd"])
 
-    def test_manifest_declares_omh_harness_without_omo(self) -> None:
+    def test_manifest_declares_omh_harness_without_pi_family(self) -> None:
         manifest = json.loads((BASE / "manifest.json").read_text())
         self.assertEqual(manifest["live_harness"]["kind"], "omh_hermes_child")
         serialized = json.dumps(manifest).lower()
-        self.assertNotIn('"omo"', serialized)
+        self.assertNotIn(f'"{RUNTIME_SHORT_NAME}"', serialized)
 
     def test_current_session_trial_uses_fake_authenticated_cli_and_labels_execution(self) -> None:
         module = _load_omh_live()

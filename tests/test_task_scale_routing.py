@@ -16,9 +16,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from omh.coding import model_inventory
 from omh.coding.model_inventory import (
-    OMO_CATEGORY_ROLE_SOURCES,
-    OMO_CATEGORY_SCALE_SOURCES,
     inventory_model_catalog,
     local_model_inventory,
 )
@@ -34,8 +33,9 @@ from omh.coding.model_routing import (
     merged_category_chain,
     resolve_model_route,
 )
+from omh.plugin_bundle.omh.pi_family_names import OPENCODE_RUNTIME_CONFIG_FILE
 
-_OMO_CONFIG = {
+_RUNTIME_CONFIG = {
     "categories": {
         "ultrabrain": {"model": "openai/gpt-5.6-terra"},
         "deep": {"model": "openai/gpt-5.6-terra"},
@@ -160,7 +160,7 @@ class TaskScaleResolutionTests(unittest.TestCase):
 
 
 class OneRoutingRuleTests(unittest.TestCase):
-    """Built-in defaults and a user's omo config must go through ONE rule."""
+    """Built-in defaults and a user's pi-family runtime config must go through ONE rule."""
 
     def test_role_and_scale_chains_are_derived_not_hand_written(self) -> None:
         for profile, category_models in BUILTIN_CATEGORY_MODELS.items():
@@ -181,8 +181,8 @@ class OneRoutingRuleTests(unittest.TestCase):
 
     def test_the_inventory_module_reuses_the_same_rule_objects(self) -> None:
         # Aliases, not copies: a second table would drift from this one.
-        self.assertIs(OMO_CATEGORY_ROLE_SOURCES, CATEGORY_ROLE_SOURCES)
-        self.assertIs(OMO_CATEGORY_SCALE_SOURCES, CATEGORY_SCALE_SOURCES)
+        self.assertIs(model_inventory.CATEGORY_ROLE_SOURCES, CATEGORY_ROLE_SOURCES)
+        self.assertIs(model_inventory.CATEGORY_SCALE_SOURCES, CATEGORY_SCALE_SOURCES)
 
     def test_every_category_the_rules_name_exists_in_every_builtin_table(self) -> None:
         named = {
@@ -220,12 +220,12 @@ class OneRoutingRuleTests(unittest.TestCase):
 
 class TaskScaleLocalInventoryTests(unittest.TestCase):
     def _catalog(self, root: Path):
-        config = root / ".config" / "opencode" / "oh-my-openagent.json"
+        config = root / ".config" / "opencode" / OPENCODE_RUNTIME_CONFIG_FILE
         config.parent.mkdir(parents=True, exist_ok=True)
-        config.write_text(json.dumps(_OMO_CONFIG), encoding="utf-8")
+        config.write_text(json.dumps(_RUNTIME_CONFIG), encoding="utf-8")
         return inventory_model_catalog(local_model_inventory(root))
 
-    def test_scale_chains_derive_from_the_users_own_omo_categories(self) -> None:
+    def test_scale_chains_derive_from_the_users_own_pi_family_categories(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             catalog = self._catalog(Path(tmp))
             chains = catalog["chains"]
@@ -257,14 +257,14 @@ class TaskScaleLocalInventoryTests(unittest.TestCase):
         # would be data nothing can look up.
         with tempfile.TemporaryDirectory() as tmp:
             chains = self._catalog(Path(tmp))["chains"]
-            for scale in OMO_CATEGORY_SCALE_SOURCES:
+            for scale in CATEGORY_SCALE_SOURCES:
                 with self.subTest(scale=scale):
                     self.assertNotIn(f"research:{scale}", chains)
 
     def test_a_local_catalog_without_the_scale_categories_keeps_the_role_chain(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            config = root / ".config" / "opencode" / "oh-my-openagent.json"
+            config = root / ".config" / "opencode" / OPENCODE_RUNTIME_CONFIG_FILE
             config.parent.mkdir(parents=True, exist_ok=True)
             config.write_text(
                 json.dumps({"categories": {"unspecified-high": {"model": "openai/only-one"}}}),

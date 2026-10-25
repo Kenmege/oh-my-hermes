@@ -8,6 +8,7 @@ from typing import Any
 from ..local_store import atomic_write_json, ensure_dir, read_json_object, read_json_object_result, utc_now
 from ..paths import OmhPaths
 from ..quality.reported_rate import reported_rate
+from ..plugin_bundle.omh.pi_family_names import RUNTIME_SHORT_NAME
 from ..routing.action_copy import next_action_label
 
 
@@ -167,7 +168,7 @@ USE_CASES: tuple[UseCase, ...] = (
         user_value="Users can choose Codex, Claude Code, Hermes, or plugin runtimes without guessing hidden capabilities.",
         evidence_boundary="Runtime readiness is not executor dispatch, plugin load, tool invocation, code execution, review, CI, or merge evidence.",
         proof_surfaces=("omh recommend", "omh playbook inspect executor-runtime-readiness", "omh harness inspect executor-runtime-readiness"),
-        keywords=("codex", "claude code", "runtime", "executor", "missing tools", "handoff mode", "omx", "omc", "omo", "코덱스", "클로드"),
+        keywords=("codex", "claude code", "runtime", "executor", "missing tools", "handoff mode", "omx", "omc", RUNTIME_SHORT_NAME, "코덱스", "클로드"),
     ),
     UseCase(
         goal="G7",

@@ -4,6 +4,7 @@ import argparse
 import json
 from datetime import datetime, timezone
 
+from ..coding.executors import canonical_executor_profile
 from ..plugin_bundle.omh.run_records import CODING_DELEGATION_FILE, RUN_FILE
 from ..codex_progress import summarize_codex_jsonl_file
 from ..executor_progress import (
@@ -1522,7 +1523,7 @@ def _add_runtime_commands(sub) -> None:
     target = runtime_observe.add_mutually_exclusive_group(required=True)
     target.add_argument("--run", dest="run_id", default=None)
     target.add_argument("--session", dest="session_id", default=None)
-    runtime_observe.add_argument("--runtime-profile", choices=CODING_RUNTIME_HANDOFF_TARGETS, required=True)
+    runtime_observe.add_argument("--runtime-profile", type=canonical_executor_profile, choices=CODING_RUNTIME_HANDOFF_TARGETS, required=True)
     # The milestone ladder plus the three terminal events. Before this the CLI
     # offered the ladder only, so `cancelled` was journalable in principle --
     # `CANONICAL_OBSERVATION_EVENTS` has always had it -- and unreachable in

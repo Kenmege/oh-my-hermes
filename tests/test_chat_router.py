@@ -33,6 +33,7 @@ from omh.routing.route_plan import public_workflow_identifier
 from omh.plugin_bundle.omh.awareness import awareness_route_hint, awareness_route_hint_context
 from omh.skills.catalog import primary_harness_for_skill, routable_definitions
 from _route_owner import dispatched_or_asked, route_owner, route_owner_harness, shortlist_skills
+from omh.plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST, RUNTIME_USER_PHRASE
 
 
 class AiJobSearchActorRoutingTests(unittest.TestCase):
@@ -5460,16 +5461,16 @@ class UltraperfRoutingMatrixTests(unittest.TestCase):
 
 
 class PiFamilyExecutorCueTests(unittest.TestCase):
-    """pi/senpi/opencode delivery requests reach the coding lane; Raspberry-Pi
+    """pi-family and opencode delivery requests reach the coding lane; Raspberry-Pi
     hardware talk never becomes an executor handoff."""
 
     POSITIVE = (
         "have pi implement the retry fix",
-        "have senpi fix the login bug",
+        f"have {PI_DISTRIBUTION_HOST} fix the login bug",
         "delegate to pi: fix the login bug",
         "tell pi to fix the flaky test",
         "opencode로 이 버그 고쳐줘",
-        "omo runtime으로 이 버그 고쳐줘",
+        f"{RUNTIME_USER_PHRASE}으로 이 버그 고쳐줘",
     )
     # Bare "pi" stays owned by Raspberry-Pi physical-device routing.
     NEGATIVE = (
@@ -5495,7 +5496,7 @@ class PiFamilyExecutorCueTests(unittest.TestCase):
 
     def test_pi_family_session_inventory_requests_open_harness_session_inventory(self) -> None:
         for message in (
-            "show the senpi session inventory",
+            f"show the {PI_DISTRIBUTION_HOST} session inventory",
             "show the opencode session inventory",
             "recover the previous pi coding session",
         ):

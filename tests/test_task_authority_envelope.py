@@ -692,7 +692,7 @@ class FilesystemTargetScopeRegressionTests(unittest.TestCase):
         "hermes": ("hermes", "runtime_handoff", "runtime_handoff", False),
         "generic": ("generic", "prompt_only_handoff", "prompt_handoff", False),
         "omx-runtime": ("omx-runtime", "runtime_handoff", "runtime_handoff", False),
-        "omo-runtime": ("omo-runtime", "runtime_handoff", "runtime_handoff", False),
+        "pi-family-runtime": ("pi-family-runtime", "runtime_handoff", "runtime_handoff", False),
         "omc-runtime": ("omc-runtime", "runtime_handoff", "runtime_handoff", False),
         "choose": (None, "external_executor", "", False),
     }

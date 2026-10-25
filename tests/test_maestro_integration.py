@@ -30,7 +30,7 @@ EXTERNAL_PROFILES = (
     "codex",
     "claude-code",
     "generic",
-    "omo-runtime",
+    "pi-family-runtime",
     "omx-runtime",
     "omc-runtime",
 )
@@ -38,7 +38,7 @@ _HANDOFF_FIELD = {
     "codex": "executor_handoff",
     "claude-code": "prompt_handoff",
     "generic": "prompt_handoff",
-    "omo-runtime": "runtime_handoff",
+    "pi-family-runtime": "runtime_handoff",
     "omx-runtime": "runtime_handoff",
     "omc-runtime": "runtime_handoff",
 }

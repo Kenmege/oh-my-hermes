@@ -348,7 +348,7 @@ described below.
   `<cli> --version` probe, for a CLI in that probe's set
   (`version_probed_agent_clis()` in `src/coding/executor_readiness.py`). The
   set is unchanged, but the trigger is wider: this command runs the probe for
-  every such CLI on PATH, where readiness ran `pi` only for omo-runtime and
+  every such CLI on PATH, where readiness ran `pi` only for pi-family-runtime and
   `opencode` only when neither `pi` nor `senpi` was on PATH. Only the version
   token is kept. Any other host is recorded as `no_approved_probe`,
   and a missing binary as `executable_missing`. What a `--version` child writes

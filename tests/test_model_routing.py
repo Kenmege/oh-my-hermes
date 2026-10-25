@@ -32,6 +32,7 @@ from omh.coding.model_routing import (  # noqa: E402
     resolve_model_route,
     route_provenance,
 )
+from omh.plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST
 
 
 class ResearchRoleTests(unittest.TestCase):
@@ -518,7 +519,7 @@ class NonGenerativeModelTests(unittest.TestCase):
 
 _LOCAL_CATALOG = {
     "schema_version": "local_model_catalog/v1",
-    "executor_profile": "omo-runtime",
+    "executor_profile": "pi-family-runtime",
     "catalog_kind": "local_inventory",
     "options": (
         {
@@ -543,14 +544,14 @@ _LOCAL_CATALOG = {
             {"model_id": "opencode/grok-code-fast", "reasoning_effort": ""},
         ),
     },
-    "fingerprint": {"digest": "cafe1234beef5678", "sources": {"omo_agent_config": "present"}, "observed_at": "t"},
+    "fingerprint": {"digest": "cafe1234beef5678", "sources": {"runtime_agent_config": "present"}, "observed_at": "t"},
     "domain_affinities": {"x_platform_data": ("grok",), "multimodal_vision": ("gemini", "gpt", "claude")},
 }
 
 
 class LocalCatalogRouteTests(unittest.TestCase):
     def test_catalogless_profile_routes_from_local_catalog_with_fingerprint(self) -> None:
-        route = resolve_model_route("omo-runtime", role="brain", local_catalog=_LOCAL_CATALOG)
+        route = resolve_model_route("pi-family-runtime", role="brain", local_catalog=_LOCAL_CATALOG)
         self.assertEqual(route["status"], "routed")
         self.assertEqual(route["provenance"], "role_chain_head")
         self.assertEqual(route["selected_model"], "opencode/kimi-k3")
@@ -579,14 +580,14 @@ class LocalCatalogRouteTests(unittest.TestCase):
         """Observed config variants are evidence of use, not vocabulary: a
         requested ladder effort passes through untouched, never downgraded."""
         route = resolve_model_route(
-            "omo-runtime", role="brain", requested_effort="max", local_catalog=_LOCAL_CATALOG
+            "pi-family-runtime", role="brain", requested_effort="max", local_catalog=_LOCAL_CATALOG
         )
         self.assertEqual(route["selected_reasoning_effort"], "max")
         self.assertEqual(route["effort_change"]["kind"], "catalog_no_authority_passthrough")
 
     def test_requested_model_still_wins_over_local_chain(self) -> None:
         route = resolve_model_route(
-            "omo-runtime",
+            "pi-family-runtime",
             role="brain",
             requested_model="opencode/glm-5",
             local_catalog=_LOCAL_CATALOG,
@@ -597,7 +598,7 @@ class LocalCatalogRouteTests(unittest.TestCase):
         self.assertEqual(route["catalog_kind"], "local_inventory")
 
     def test_unchained_role_on_local_catalog_is_explicit_choice(self) -> None:
-        route = resolve_model_route("omo-runtime", role="docs", local_catalog=_LOCAL_CATALOG)
+        route = resolve_model_route("pi-family-runtime", role="docs", local_catalog=_LOCAL_CATALOG)
         self.assertEqual(route["status"], "choice_required")
         self.assertEqual(route["provenance"], "role_unchained")
         self.assertEqual(route["catalog_kind"], "local_inventory")
@@ -607,7 +608,7 @@ class LocalCatalogRouteTests(unittest.TestCase):
         the unit moves the grok-family entry to the chain head — a stable
         reorder recorded in attempted[], with every entry kept."""
         route = resolve_model_route(
-            "omo-runtime", role="brain", requested_domain="x_platform_data", local_catalog=_LOCAL_CATALOG
+            "pi-family-runtime", role="brain", requested_domain="x_platform_data", local_catalog=_LOCAL_CATALOG
         )
         self.assertEqual(route["selected_model"], "opencode/grok-code-fast")
         self.assertEqual(route["domain"], "x_platform_data")
@@ -620,7 +621,7 @@ class LocalCatalogRouteTests(unittest.TestCase):
 
     def test_unknown_domain_is_recorded_and_ignored(self) -> None:
         route = resolve_model_route(
-            "omo-runtime", role="brain", requested_domain="nonsense", local_catalog=_LOCAL_CATALOG
+            "pi-family-runtime", role="brain", requested_domain="nonsense", local_catalog=_LOCAL_CATALOG
         )
         self.assertEqual(route["selected_model"], "opencode/kimi-k3")
         self.assertEqual(route["domain"], "nonsense")
@@ -628,7 +629,7 @@ class LocalCatalogRouteTests(unittest.TestCase):
         self.assertEqual(outcomes["domain_affinity"], "unknown_domain")
 
     def test_no_domain_means_no_domain_key(self) -> None:
-        route = resolve_model_route("omo-runtime", role="brain", local_catalog=_LOCAL_CATALOG)
+        route = resolve_model_route("pi-family-runtime", role="brain", local_catalog=_LOCAL_CATALOG)
         self.assertNotIn("domain", route)
         self.assertNotIn("domain_affinity", [entry["stage"] for entry in route["attempted"]])
 
@@ -645,7 +646,7 @@ class LocalCatalogRouteTests(unittest.TestCase):
 
     def test_requested_model_wins_over_domain(self) -> None:
         route = resolve_model_route(
-            "omo-runtime",
+            "pi-family-runtime",
             role="brain",
             requested_model="opencode/glm-5",
             requested_domain="x_platform_data",
@@ -661,7 +662,7 @@ class LocalCatalogRouteTests(unittest.TestCase):
         for hostile_options in ([], ["not-a-mapping", 42]):
             hostile = dict(_LOCAL_CATALOG)
             hostile["options"] = hostile_options
-            route = resolve_model_route("omo-runtime", role="brain", local_catalog=hostile)
+            route = resolve_model_route("pi-family-runtime", role="brain", local_catalog=hostile)
             self.assertEqual(route["status"], "no_model_catalog")
             self.assertEqual(route["catalog_kind"], "built_in_defaults")
             self.assertNotIn("catalog_fingerprint", route)
@@ -1114,15 +1115,15 @@ class DispatchArgvTests(unittest.TestCase):
         claude = build_dispatch_argv("claude-code", "do the work")
         self.assertEqual(claude[0:3], ["claude", "-p", "do the work"])
         self.assertNotIn("--model", claude)
-        with mock.patch("omh.coding.fanout_dispatch.shutil.which", lambda name: "/x/senpi" if name == "senpi" else None):
-            senpi = build_dispatch_argv("omo-runtime", "do the work")
+        with mock.patch("omh.coding.fanout_dispatch.shutil.which", lambda name: f"/x/{PI_DISTRIBUTION_HOST}" if name == PI_DISTRIBUTION_HOST else None):
+            distribution_argv = build_dispatch_argv("pi-family-runtime", "do the work")
         self.assertEqual(
-            senpi,
-            ["senpi", "--print", "--no-session", "--permission-preset", "workspace", "do the work"],
+            distribution_argv,
+            [PI_DISTRIBUTION_HOST, "--print", "--no-session", "--permission-preset", "workspace", "do the work"],
         )
 
-    def test_omo_runtime_model_and_thinking_insert_before_prompt(self) -> None:
-        """The senpi host treats trailing tokens as message positionals, so
+    def test_pi_family_runtime_model_and_thinking_insert_before_prompt(self) -> None:
+        """A pi-family host treats trailing tokens as message positionals, so
         routed options must land before the prompt — validated live: --print
         completes non-interactively and the workspace preset allowed file
         edits plus git add/commit."""
@@ -1131,12 +1132,12 @@ class DispatchArgvTests(unittest.TestCase):
             "selected_model": "kimi-coding/k3",
             "selected_reasoning_effort": "high",
         }
-        with mock.patch("omh.coding.fanout_dispatch.shutil.which", lambda name: "/x/senpi" if name == "senpi" else None):
-            argv = build_dispatch_argv("omo-runtime", "do the work", route)
+        with mock.patch("omh.coding.fanout_dispatch.shutil.which", lambda name: f"/x/{PI_DISTRIBUTION_HOST}" if name == PI_DISTRIBUTION_HOST else None):
+            argv = build_dispatch_argv("pi-family-runtime", "do the work", route)
         self.assertEqual(
             argv,
             [
-                "senpi",
+                PI_DISTRIBUTION_HOST,
                 "--print",
                 "--no-session",
                 "--permission-preset",
@@ -1205,18 +1206,18 @@ class DispatchArgvTests(unittest.TestCase):
         self.assertIn("model_reasoning_effort=xhigh", build_dispatch_argv("codex", "p", new_route))
 
 
-class OmoHostDetectionTests(unittest.TestCase):
-    def test_detection_order_prefers_pi_then_senpi_then_opencode(self) -> None:
-        """The usual host is `pi`; senpi is its distribution; opencode hosts
-        omo as a plugin. First on PATH wins, deterministically."""
-        from omh.coding.fanout_dispatch import OMO_RUNTIME_HOST_CANDIDATES, omo_runtime_host
+class PiFamilyHostDetectionTests(unittest.TestCase):
+    def test_detection_order_prefers_pi_then_pi_distribution_then_opencode(self) -> None:
+        """The usual host is `pi`, then its distribution host; opencode hosts
+        the runtime as a plugin. First on PATH wins, deterministically."""
+        from omh.coding.fanout_dispatch import PI_FAMILY_HOST_CANDIDATES, pi_family_host
 
-        self.assertEqual(OMO_RUNTIME_HOST_CANDIDATES, ("pi", "senpi", "opencode"))
-        both = lambda name: f"/x/{name}" if name in ("pi", "senpi") else None
-        self.assertEqual(omo_runtime_host(both), "pi")
-        self.assertEqual(omo_runtime_host(lambda name: "/x/senpi" if name == "senpi" else None), "senpi")
-        self.assertEqual(omo_runtime_host(lambda name: "/x/opencode" if name == "opencode" else None), "opencode")
-        self.assertIsNone(omo_runtime_host(lambda name: None))
+        self.assertEqual(PI_FAMILY_HOST_CANDIDATES, ("pi", PI_DISTRIBUTION_HOST, "opencode"))
+        both = lambda name: f"/x/{name}" if name in ("pi", PI_DISTRIBUTION_HOST) else None
+        self.assertEqual(pi_family_host(both), "pi")
+        self.assertEqual(pi_family_host(lambda name: f"/x/{PI_DISTRIBUTION_HOST}" if name == PI_DISTRIBUTION_HOST else None), PI_DISTRIBUTION_HOST)
+        self.assertEqual(pi_family_host(lambda name: "/x/opencode" if name == "opencode" else None), "opencode")
+        self.assertIsNone(pi_family_host(lambda name: None))
 
     def test_pi_and_opencode_hosts_shape_the_argv(self) -> None:
         route = {
@@ -1225,16 +1226,16 @@ class OmoHostDetectionTests(unittest.TestCase):
             "selected_reasoning_effort": "high",
         }
         with mock.patch("omh.coding.fanout_dispatch.shutil.which", lambda name: "/x/pi" if name == "pi" else None):
-            pi_argv = build_dispatch_argv("omo-runtime", "work", route)
+            pi_argv = build_dispatch_argv("pi-family-runtime", "work", route)
         self.assertEqual(pi_argv[0], "pi")
         self.assertEqual(pi_argv[5:9], ["--model", "zai/glm-5.2", "--thinking", "high"])
         with mock.patch("omh.coding.fanout_dispatch.shutil.which", lambda name: "/x/opencode" if name == "opencode" else None):
-            oc_argv = build_dispatch_argv("omo-runtime", "work", route)
+            oc_argv = build_dispatch_argv("pi-family-runtime", "work", route)
         self.assertEqual(oc_argv, ["opencode", "run", "--model", "zai/glm-5.2", "--variant", "high", "work"])
 
     def test_no_host_on_path_means_no_argv(self) -> None:
         with mock.patch("omh.coding.fanout_dispatch.shutil.which", lambda name: None):
-            self.assertIsNone(build_dispatch_argv("omo-runtime", "work"))
+            self.assertIsNone(build_dispatch_argv("pi-family-runtime", "work"))
 
 
 class UnitModelRouteTests(unittest.TestCase):

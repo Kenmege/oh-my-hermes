@@ -21,7 +21,7 @@ from ..plugin_bundle.omh.hermes_session_commands import (
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES,
     CODING_DELIVERY_REQUEST_TOKENS,
-    OMO_RUNTIME_CODING_AGENT_PHRASES,
+    PI_FAMILY_CODING_AGENT_PHRASES,
     SUBSTRING_NAMED_CODING_AGENT_PHRASES,
     contains_boundary_phrase,
 )
@@ -32,6 +32,7 @@ from .localization import normalized_phrase, phrase_is_spoken, routing_terms, ro
 from .materials_cues import OFFICE_FILE_MATERIAL_PHRASES
 from ..plugin_bundle.omh.dag_ulw_cues import DAG_ULW, asks_about_dag_ulw, dag_ulw_control, declines_dag_ulw, invokes_dag_ulw
 from ..plugin_bundle.omh.invocation_cues import invoked_instruction
+from ..plugin_bundle.omh.pi_family_names import PI_DISTRIBUTION_HOST, RUNTIME_SHORT_NAME
 from ..plugin_bundle.omh.name_report_cues import about_the_skill
 from ..plugin_bundle.omh.request_lead import after_courtesy
 from ..plugin_bundle.omh.spend_signals import (
@@ -1909,7 +1910,7 @@ _EXECUTOR_RUNTIME_READINESS_TOKENS = _normalized_token_set(
         "handoff",
         "agent",
         "omx",
-        "omo",
+        RUNTIME_SHORT_NAME,
         "omc",
         "런타임",
         "실행",
@@ -2085,7 +2086,7 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
             {
                 "adapter", "adapters", "agents", "claude", "cli", "codex", "coding",
                 "config", "configs", "connector", "connectors", "drift", "inventory", "lifecycle",
-                "list", "mcp", "omh", "opencode", "recall", "recover", "senpi", "session", "show",
+                "list", "mcp", "omh", "opencode", "recall", "recover", PI_DISTRIBUTION_HOST, "session", "show",
                 "worktree", "worktrees",
             }
         ),
@@ -5091,7 +5092,7 @@ _CODING_HANDOFF_EXECUTOR_TOKENS = _normalized_token_set(
         "claude-code",
         "claudecode",
         "omx",
-        "omo",
+        RUNTIME_SHORT_NAME,
         "omc",
         "executor",
         "codex로",
@@ -9626,9 +9627,9 @@ def named_coding_agent_delivery_requested(normalized_query: str, query_tokens: s
 def _contains_named_coding_agent_phrase(normalized_query: str) -> bool:
     """Executor-name presence, with per-group matching rules.
 
-    The distinctive executor names keep plain containment. The omo-runtime
-    family needs word-boundary checks: "api한테" contains "pi한테" and "promo
-    runtime" contains "omo runtime", so raw containment named an executor the
+    The distinctive executor names keep plain containment. The pi-family-runtime
+    family needs word-boundary checks: "api한테" contains "pi한테", and a word that
+    ends in the runtime's short name contains its runtime phrase, so raw containment named an executor the
     message never mentioned (see `contains_boundary_phrase` in
     `routing/executor_cues.py` for the boundary rule).
 
@@ -9639,7 +9640,7 @@ def _contains_named_coding_agent_phrase(normalized_query: str) -> bool:
     if _contains_phrase(normalized_query, SUBSTRING_NAMED_CODING_AGENT_PHRASES):
         return True
     if contains_boundary_phrase(
-        normalized_query, _normalized_phrase_options(OMO_RUNTIME_CODING_AGENT_PHRASES)
+        normalized_query, _normalized_phrase_options(PI_FAMILY_CODING_AGENT_PHRASES)
     ):
         return True
     return _claude_bare_name_delegation_requested(normalized_query)
@@ -9699,7 +9700,7 @@ def _executor_runtime_readiness_guard_applies(normalized_query: str, query_token
     )
     named_executor = _contains_phrase(
         normalized_query,
-        ("codex", "claude code", "coding agent", "omx", "omo", "omc", "코덱스", "클로드"),
+        ("codex", "claude code", "coding agent", "omx", RUNTIME_SHORT_NAME, "omc", "코덱스", "클로드"),
     )
     selection = _contains_phrase(
         normalized_query,

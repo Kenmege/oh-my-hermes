@@ -211,7 +211,7 @@ class AcceptanceCriterionOneCrossOwnerTests(unittest.TestCase):
     def test_an_owner_whose_ceiling_refuses_the_word_gets_a_different_summary(self) -> None:
         """The counter-case that keeps the equality above from being vacuous.
 
-        `omo-runtime` has no readable structured stream, so its evidence ceiling
+        `pi-family-runtime` has no readable structured stream, so its evidence ceiling
         stops at `result_claimed` and `full_tests_passed` cannot become
         `tests_passed`. A different normalized stream must project a different
         health summary -- with the refusal counted as an evidence gap, not
@@ -219,14 +219,14 @@ class AcceptanceCriterionOneCrossOwnerTests(unittest.TestCase):
         """
         words = [("dispatch_to_executor", 1_000), ("full_tests_passed", 2_000)]
         codex = _summary("codex", words)
-        omo = _summary("omo-runtime", words)
+        pi_family = _summary("pi-family-runtime", words)
 
         self.assertEqual(codex["observations"][1]["normalized_event"], "tests_passed")  # type: ignore[index]
-        self.assertEqual(omo["observations"][1]["normalized_event"], UNMAPPED_NORMALIZED_EVENT)
-        self.assertNotEqual(codex["health_digest"], omo["health_digest"])
-        self.assertNotEqual(_without_owner(codex), _without_owner(omo))
+        self.assertEqual(pi_family["observations"][1]["normalized_event"], UNMAPPED_NORMALIZED_EVENT)
+        self.assertNotEqual(codex["health_digest"], pi_family["health_digest"])
+        self.assertNotEqual(_without_owner(codex), _without_owner(pi_family))
         self.assertEqual(_metric(codex, "evidence_gap_count")["value"], 0)
-        self.assertEqual(_metric(omo, "evidence_gap_count")["value"], 1)
+        self.assertEqual(_metric(pi_family, "evidence_gap_count")["value"], 1)
 
     def test_the_projection_is_deterministic(self) -> None:
         self.assertEqual(_summary("codex", _CODEX_NATIVE), _summary("codex", _CODEX_NATIVE))
@@ -590,7 +590,7 @@ class RunHealthValidatorTests(unittest.TestCase):
         )
 
     def test_the_validator_rederives_the_owner_attribution(self) -> None:
-        summary = _summary("omo-runtime", [("dispatch_to_executor", 1_000)])
+        summary = _summary("pi-family-runtime", [("dispatch_to_executor", 1_000)])
         summary["owner_attribution"]["evidence_ceiling"] = "verified"  # type: ignore[index]
 
         errors = validate_run_health_summary(summary)

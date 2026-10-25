@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from ..coding.executors import canonical_executor_profile
 from ..executors import CODING_EXECUTOR_TARGETS
 from ..installer import OmhError
 from ..worktree_creator import list_worktree_records
@@ -62,6 +63,7 @@ def _add_worktree_commands(sub) -> None:
     bind.add_argument("--path", required=True, help="Existing or intended Git worktree path.")
     bind.add_argument(
         "--executor",
+        type=canonical_executor_profile,
         choices=tuple(target for target in CODING_EXECUTOR_TARGETS if target != "choose"),
         required=True,
         help="Coding agent or runtime profile that should open in this worktree.",
@@ -69,6 +71,6 @@ def _add_worktree_commands(sub) -> None:
     bind_target = bind.add_mutually_exclusive_group()
     bind_target.add_argument("--session", dest="session_id", default="", help="Wrapper executor-session id to bind.")
     bind_target.add_argument("--run", dest="run_id", default="", help="Runtime run id to bind.")
-    bind.add_argument("--runtime-profile", default="", help="Override the runtime profile for runtime observation recipes.")
+    bind.add_argument("--runtime-profile", type=canonical_executor_profile, default="", help="Override the runtime profile for runtime observation recipes.")
     bind.add_argument("--prompt-ref", default="", help="Opaque prompt/handoff reference held by the wrapper.")
     bind.set_defaults(func=cmd_worktree_bind)

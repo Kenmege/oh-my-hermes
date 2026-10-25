@@ -18,6 +18,7 @@ from omh.routing.owner_preference import (  # noqa: E402
     record_accepted_explicit_choice,
     write_owner_preference,
 )
+from omh.plugin_bundle.omh.pi_family_names import RUNTIME_CONFIG_FILES, RUNTIME_HOME
 
 
 ROUTE_FAMILY = "ulw-coding-delivery"
@@ -35,7 +36,7 @@ class ModelRoutingStatusTests(unittest.TestCase):
         discovery_home = root / "local-home"
         paths = resolve_paths(omh_home, hermes_home)
         _write(
-            discovery_home / ".omo" / "omo.json",
+            discovery_home / RUNTIME_HOME / RUNTIME_CONFIG_FILES[0],
             json.dumps(
                 {
                     "models": [
@@ -59,7 +60,7 @@ class ModelRoutingStatusTests(unittest.TestCase):
             state = record_accepted_explicit_choice(
                 state,
                 route_family=ROUTE_FAMILY,
-                selected_owner="omo-runtime",
+                selected_owner="pi-family-runtime",
                 occurred_at=f"2026-08-13T00:00:0{index + 1}Z",
             )
         write_owner_preference(paths, state)
@@ -102,7 +103,7 @@ class ModelRoutingStatusTests(unittest.TestCase):
         self.assertEqual(payload["hermes"]["auth"]["status"], "unobserved")
         learned = payload["owner_learning"]["routes"][ROUTE_FAMILY]
         self.assertEqual(learned["status"], "learned")
-        self.assertEqual(learned["selected_owner"], "omo-runtime")
+        self.assertEqual(learned["selected_owner"], "pi-family-runtime")
         self.assertIsInstance(payload["next_action"], str)
         self.assertTrue(payload["next_action"])
 
