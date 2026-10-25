@@ -6,7 +6,7 @@ from functools import lru_cache
 import re
 
 from ..plugin_bundle.omh.data_share_cues import DATA_SHARE_REVIEW_KOREAN_PHRASES, data_share_request_admitted
-from ..coding.pi_family_interop import PI_DISTRIBUTION_HOST, RUNTIME_SHORT_NAME, RUNTIME_USER_PHRASE
+from ..coding.pi_family_interop import PI_DISTRIBUTION_HOST, RUNTIME_SHORT_NAME, RUNTIME_USER_PHRASE, SCORING_ONLY_TRIGGERS
 from ..plugin_bundle.omh.request_lead import after_courtesy
 from ..plugin_bundle.omh.spend_signals import SPEND_GATE_KOREAN_PHRASES, spend_request_clause
 from ..skills.catalog import SkillDefinition, builtin_definitions, routable_definitions
@@ -2866,6 +2866,10 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # data-analysis clarify to a `plan` one, which is the widening this table
     # exists to prevent.
     "plan": frozenset({"make", "write"}),
+    # "pi-family" names the runtime only as a whole phrase: `family` alone is an
+    # everyday word ("is my family ready for the move?") and bare `pi` belongs
+    # to Raspberry-Pi routing.
+    "executor-runtime-readiness": frozenset({"family", "pi"}),
     # `dag-ulw` is reached through its complete phrases ("dag ulw", "ulw dag", ...) and by intent through the
     # heavy-lane redirect in `routing/chat.py`. Its words are held back: `dag` alone is data-pipelines'
     # ("airflow dag"), and `ulw` / `ultrawork` alone are `ultrawork`'s own names.
@@ -4359,12 +4363,11 @@ def _one_word_self_name(definition: SkillDefinition) -> str:
     return "" if (" " in name or "-" in name) else name
 
 
-# Triggers that score but are never written into generated skill text: the
-# runtime's short name is an external product name the repo does not ship,
-# yet a user who types it still means this skill.
-_SCORING_ONLY_TRIGGERS: dict[str, tuple[str, ...]] = {
-    "executor-runtime-readiness": (RUNTIME_SHORT_NAME,),
-}
+# Triggers that score but are never written into generated skill text
+# (`SCORING_ONLY_TRIGGERS` in the interop names): the runtime's short name is
+# an external product name the repo does not ship, yet a user who types it
+# still means this skill.
+_SCORING_ONLY_TRIGGERS = SCORING_ONLY_TRIGGERS
 
 
 def _prepare_definition(definition: SkillDefinition) -> _PreparedDefinition:

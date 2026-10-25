@@ -27,5 +27,7 @@ from ..plugin_bundle.omh.pi_family_names import (
     RUNTIME_SHORT_NAME as RUNTIME_SHORT_NAME,
     RUNTIME_USER_NAMES as RUNTIME_USER_NAMES,
     RUNTIME_USER_PHRASE as RUNTIME_USER_PHRASE,
+    SCORING_ONLY_LEXICAL_TERMS as SCORING_ONLY_LEXICAL_TERMS,
+    SCORING_ONLY_TRIGGERS as SCORING_ONLY_TRIGGERS,
     canonical_runtime_record as canonical_runtime_record,
 )

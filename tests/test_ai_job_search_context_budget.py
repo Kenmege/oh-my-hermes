@@ -120,7 +120,7 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # Re-derived from both main sources above plus the bounded dag-ulw
         # baseline-verification guidance, then the pi-family runtime rename in
         # model-setup, maestro, ultrawork, and executor-runtime-readiness.
-        self.assertEqual(_digest(legacy_hashes), 'a757146a198363e330d18b43e0063a155d9712e6d185ffd5c4c77be3f654ab38')
+        self.assertEqual(_digest(legacy_hashes), 'c1743fe0cbbc15f3179472da5202799fe649760154ebf984c1b6713525df39da')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.

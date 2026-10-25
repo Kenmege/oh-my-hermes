@@ -47,6 +47,19 @@ LEGACY_RUNTIME_PROGRESS_LANE: Final[str] = f"{RUNTIME_SHORT_NAME}_runtime"
 LEGACY_RUNTIME_SKILL_REFERENCE: Final[str] = f"{RUNTIME_SHORT_NAME}_skill_reference"
 LEGACY_RUNTIME_FAMILY: Final[str] = RUNTIME_SHORT_NAME
 
+# Triggers that route but are never written into generated text, by skill.
+# The router scores them (`_prepare_definition` in routing/recommend.py), and
+# `SCORING_ONLY_LEXICAL_TERMS` weighs the lexical shortlist the same way at
+# read time, so a user who types the runtime's name still reaches the skill.
+SCORING_ONLY_TRIGGERS: Final[dict[str, tuple[str, ...]]] = {
+    "executor-runtime-readiness": (RUNTIME_SHORT_NAME, "pi-family"),
+}
+# The subset that also weighs the lexical shortlist, as a trigger word. Not
+# "pi-family": its words are held back for the skill, so they rank nothing.
+SCORING_ONLY_LEXICAL_TERMS: Final[dict[str, tuple[str, ...]]] = {
+    "executor-runtime-readiness": (RUNTIME_SHORT_NAME,),
+}
+
 # Spellings older releases stored for the runtime, mapped to the current ones.
 LEGACY_RUNTIME_RECORD_VALUES: Final[dict[str, str]] = {
     LEGACY_RUNTIME_PROFILE_ID: "pi-family-runtime",

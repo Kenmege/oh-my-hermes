@@ -337,5 +337,47 @@ class LegacyStoredRecordTests(unittest.TestCase):
         self.assertEqual(json.loads(stdout)["observation"]["runtime_profile"], _PROFILE)
 
 
+class ScoringOnlyShortlistTests(unittest.TestCase):
+    """The runtime's short name weighs the shortlist without being written into it."""
+
+    def test_short_name_phrasings_rank_executor_readiness_in_the_source_and_the_sidecar(self) -> None:
+        from omh.plugin_bundle.omh.skill_shortlist import lexical_ranking as sidecar_ranking
+        from omh.routing.lexical_shortlist import lexical_ranking
+
+        for message, position in (
+            (f"have {_SHORT} runtime implement the login fix", 0),
+            (f"{_SHORT} runtime으로 이 버그 고쳐줘", 0),
+            (f"{_SHORT} session inventory", 1),
+        ):
+            with self.subTest(message=message):
+                source = [name for name, _score in lexical_ranking(message)]
+                self.assertEqual(source[position], "executor-runtime-readiness")
+                self.assertEqual([name for name, _score in sidecar_ranking(message)][:3], source[:3])
+
+    def test_family_phrasings_do_not_rank_executor_readiness_first(self) -> None:
+        from omh.plugin_bundle.omh.skill_shortlist import lexical_ranking as sidecar_ranking
+        from omh.routing.lexical_shortlist import lexical_ranking
+
+        for message in ("is my family ready for the move?", "pi day family event ideas", "family runtime"):
+            with self.subTest(message=message):
+                for ranking in (lexical_ranking(message), sidecar_ranking(message)):
+                    self.assertNotEqual(ranking[0][0], "executor-runtime-readiness")
+
+    def test_a_scoring_only_term_is_not_also_catalog_text_and_never_written(self) -> None:
+        from omh.routing import lexical_shortlist
+        from omh.routing.skill_shortlist_sidecar import skill_shortlist_entry
+        from omh.skills.catalog import routable_definitions
+
+        definition = next(item for item in routable_definitions() if item.name == "executor-runtime-readiness")
+        hidden = lexical_shortlist.scoring_only_terms(definition.name)
+        self.assertEqual(hidden, frozenset({_SHORT}))
+        written, _length = lexical_shortlist._document(definition, scoring_only=False)
+        # The bundle adds the weight back, so the term must not already be there.
+        self.assertFalse(hidden & set(written))
+        entry = skill_shortlist_entry(definition.name)
+        for terms in (*entry["terms"].values(), entry["anchors"]):
+            self.assertNotIn(_SHORT, terms.split())
+
+
 if __name__ == "__main__":
     unittest.main()
