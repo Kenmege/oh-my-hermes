@@ -10,13 +10,18 @@ pipe. Every path converges on `<omh-home>/routing/model-chains.json`.
 
 from __future__ import annotations
 
+import io
 import json
+import os
+import sys
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from _cli_harness import run_cli
+from omh.commands.main import main
 
 from omh.commands.model_chains import _parsechain_text, _ultrafast_variant
 from omh.plugin_bundle.omh.hermes_delegation import HERMES_MIXTURE_CATEGORY_CHAINS
@@ -147,6 +152,18 @@ class ModelChainsInterviewTests(unittest.TestCase):
             status, _, stderr = run_cli(_base(root) + ["model-chains", "interview"], output_json=False)
             self.assertEqual(status, 2)
             self.assertIn("model-chains set", stderr)
+
+    def test_interview_with_closed_stdin_refuses_instead_of_crashing(self) -> None:
+        # `<&-` leaves sys.stdin as None; `run_cli` always supplies a StringIO.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with patch.dict(os.environ), patch.object(sys, "stdin", None), redirect_stdout(stdout), redirect_stderr(stderr):
+                os.environ.pop("OMH_OUTPUT", None)
+                status = main(_base(root) + ["model-chains", "interview"])
+            self.assertEqual(status, 2)
+            self.assertIn("model-chains set", stderr.getvalue())
+            self.assertFalse(_chains_path(root).exists())
 
     def test_interview_applies_numbered_choices_and_custom_entry(self) -> None:
         # Category order is the shipped dict order. Without an override the

@@ -828,52 +828,6 @@ class ModelSetupFlowTests(unittest.TestCase):
                     self.assertEqual(activation["next_action"], "create_hermes_config_then_rerun_model_setup")
                     self.assertIn("without --skip-apply", human_stdout)
 
-
-    def test_setup_without_hermes_on_path_reports_hermes_unavailable(self) -> None:
-        # Given: a machine whose Hermes is managed by a hosted wrapper, so no
-        # `hermes` resolves on PATH. The real inspection adapter runs here.
-        for label, flags in (
-            ("scripted", ["--no-interactive", "--json"]),
-            ("interactive", ["--interactive"]),
-        ):
-            with self.subTest(path=label), TemporaryDirectory() as tmp:
-                root = Path(tmp)
-                empty_bin = root / "bin"
-                empty_bin.mkdir()
-                with patch.dict(os.environ, {"PATH": str(empty_bin), "HOME": str(root)}), patch.object(
-                    setup_commands,
-                    "discover_local_models",
-                    return_value=_discovery([]),
-                ):
-                    # When: setup runs the model step.
-                    status, stdout, stderr = run_cli(
-                        [
-                            "--omh-home",
-                            str(root / ".omh"),
-                            "--hermes-home",
-                            str(root / ".hermes"),
-                            "setup",
-                            "--no-menubar",
-                            "--model-setup",
-                            *flags,
-                        ],
-                        output_json=False,
-                    )
-
-                # Then: the missing executable is a classified status with a
-                # next action, and the exit code does not call it success.
-                self.assertEqual((status, stderr), (3, ""))
-                if label == "scripted":
-                    activation = json.loads(stdout)["steps"]["model_activation"]
-                    self.assertEqual(activation["status"], "hermes_unavailable")
-                    self.assertEqual(activation["next_action"], "install_hermes_then_rerun_model_setup")
-                    self.assertEqual(activation["apply"]["status"], "not_run")
-                    self.assertFalse(activation["verification"]["verified"])
-                else:
-                    self.assertIn("Model activation status: hermes_unavailable", stdout)
-                    self.assertIn("rerun `omh setup --model-setup`", stdout)
-                    self.assertNotIn("owner default remains active", stdout)
-
     @unittest.skipIf(os.name == "nt", "the stub is a shebang script resolved as `hermes` on PATH")
     def test_a_failing_hermes_command_is_classified_not_a_traceback(self) -> None:
         # Given: a Hermes on PATH whose `config path` exits nonzero, or hangs.
@@ -948,7 +902,6 @@ class ModelSetupFlowTests(unittest.TestCase):
             state = json.loads((root / ".omh" / "runtime" / "state.json").read_text(encoding="utf-8"))
             self.assertFalse(state["last_setup"]["ok"])
 
-
     @unittest.skipIf(os.name == "nt", "the stub is a shebang script resolved as `hermes` on PATH")
     def test_model_step_acts_on_the_target_hermes_home_not_the_ambient_one(self) -> None:
         # Given: the shell points HERMES_HOME at one home, setup targets another.
@@ -1017,6 +970,54 @@ class ModelSetupFlowTests(unittest.TestCase):
                 {"main": "openai/gpt-5"},
             )
             self.assertEqual(sorted(path.name for path in ambient.iterdir()), ambient_before)
+
+    def test_setup_without_hermes_on_path_reports_hermes_unavailable(self) -> None:
+        # Given: a machine whose Hermes is managed by a hosted wrapper, so no
+        # `hermes` resolves on PATH. The real inspection adapter runs here.
+        for label, flags in (
+            ("scripted", ["--no-interactive", "--json"]),
+            ("interactive", ["--interactive"]),
+        ):
+            with self.subTest(path=label), TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                empty_bin = root / "bin"
+                empty_bin.mkdir()
+                # The run_cli stdin is a StringIO; the interactive subtest
+                # stands for a terminal, which `--interactive` now requires.
+                with patch.dict(os.environ, {"PATH": str(empty_bin), "HOME": str(root)}), patch.object(
+                    setup_commands,
+                    "discover_local_models",
+                    return_value=_discovery([]),
+                ), patch.object(setup_commands, "_wizard_has_terminal", return_value=True):
+                    # When: setup runs the model step.
+                    status, stdout, stderr = run_cli(
+                        [
+                            "--omh-home",
+                            str(root / ".omh"),
+                            "--hermes-home",
+                            str(root / ".hermes"),
+                            "setup",
+                            "--no-menubar",
+                            "--model-setup",
+                            *flags,
+                        ],
+                        output_json=False,
+                    )
+
+                # Then: the missing executable is a classified status with a
+                # next action, and the exit code does not call it success.
+                self.assertEqual((status, stderr), (3, ""))
+                if label == "scripted":
+                    activation = json.loads(stdout)["steps"]["model_activation"]
+                    self.assertEqual(activation["status"], "hermes_unavailable")
+                    self.assertEqual(activation["next_action"], "install_hermes_then_rerun_model_setup")
+                    self.assertEqual(activation["apply"]["status"], "not_run")
+                    self.assertFalse(activation["verification"]["verified"])
+                else:
+                    self.assertIn("Model activation status: hermes_unavailable", stdout)
+                    self.assertIn("rerun `omh setup --model-setup`", stdout)
+                    self.assertNotIn("owner default remains active", stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
