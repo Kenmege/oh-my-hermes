@@ -115,7 +115,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             legacy_hashes[template.name] = hashlib.sha256(restored.encode()).hexdigest()
         # Re-derived from both sources: the vi rewordings above plus
         # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
-        self.assertEqual(_digest(legacy_hashes), 'a411e6d5f26759a0bdda078999df35a131ec2614d90c87d353147d7aa715a828')
+        # Re-derived from both main sources above plus the bounded dag-ulw
+        # baseline-verification guidance; only dag-ulw moves versus main.
+        self.assertEqual(_digest(legacy_hashes), '5db03a78a37d515ad0f54df6fd2eab2533b9f80c800aed8619a9debd78bce9b3')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
