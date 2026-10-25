@@ -32,9 +32,9 @@ the composer moves down with it until the region's last row is the screen's
 last row, and from then on the screen scrolls instead; when something above
 it shrinks, the composer moves up by as many rows. Once the region's last row
 is the screen's last row, the app passes the region's height as
-`min_height`, so what shrinks there becomes pad rows at the top of the frame
-and the composer does not move up: when the agent view under it shrinks, it
-moves down by as many rows.
+`min_height`, so what shrinks there becomes pad rows under the live block,
+above the working row and its tip, and the composer does not move up: when the
+agent view under it shrinks, it moves down by as many rows.
 
 An empty composer shows `placeholder` after the prompt glyph in the hint
 colour while the app asks for it (no slot open). It is drawn, never typed:
@@ -110,7 +110,7 @@ def build_frame(
     aura: int = 0,
     aura_depth: str = TRUECOLOR,
 ) -> Frame:
-    """The region for one repaint; `min_height` rows at least, pad rows at the top making up the rest.
+    """The region for one repaint; `min_height` rows at least, pad rows under the live block making up the rest.
 
     `attachments` is drawn as the composer's first row when the composer may
     have two rows; a terminal too short for that shows the input alone.

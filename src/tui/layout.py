@@ -2,9 +2,10 @@
 
 Top to bottom the region holds:
 
-    pad rows        blank rows that keep a region on the screen's last row from shrinking
     sticky prompt   "↳ you: …" while a turn runs
     streaming tail  the last rows of the live transcript block
+    pad rows        blank rows that keep a region on the screen's last row from shrinking
+    working rows    the tail's last rows that say a turn runs (`tail_floor`), drawn under the pad rows
     slot            panel, completion menu or server-request prompt (one at a time); under a
                     panel or menu, or alone, the app's rows for the queued prompts
     top rule        the full-width rule above the composer
@@ -19,9 +20,13 @@ The budget is a pure function of the terminal size, the content sizes and
 content, so the region (drawn right under the output, `screen.LiveRegion`)
 follows the content and the composer moves with what is above and below it.
 The app passes the region's height as `min_height` once the region's last row
-is the screen's last row: content that shrinks there becomes pad rows at the
-top of the region, so the composer never moves up (it moves down as the agent
-view under it shrinks), and the next flushed lines cover the pad rows. There
+is the screen's last row: content that shrinks there becomes pad rows under
+the live block and above the working rows, so the composer never moves up (it
+moves down as the agent view under it shrinks), the working row and its tip
+stay on it, and the live block stays right under the transcript it continues
+(pad rows at the region's top pushed it down, leaving a band of blank rows
+between the two until output filled it, the owner's report of 2026-10-25).
+What the tail adds or the next flushed lines push down takes the pad rows. There
 the app gives the agent view a row that comes free (the working row's, once a
 turn ends) only when the view wants more rows than it did
 (`agent_view.AgentViewMixin._held_view_rows`).
@@ -87,6 +92,7 @@ class Budget:
     bottom_rule: int
     info: int
     pad: int = 0
+    floor: int = 0  # the tail's last rows, the working rows, drawn under the pad rows
     below: int = 0  # the menu below: between the bottom rule and the info line
     agents: int = 0  # the agent view: under the info line, the region's last rows
 
@@ -215,6 +221,7 @@ def allocate(
     content = sticky_rows + tail + slot + rule + composer + bottom_rule + below + info + agents
     return Budget(
         pad=min(max(min_height - content, 0), room - content),
+        floor=min(max(tail_floor, 0), tail),
         sticky=sticky_rows,
         tail=tail,
         slot=slot,
@@ -254,14 +261,17 @@ def compose(
 ) -> list[Line]:
     """The region's rows, exactly `budget.total` of them, top to bottom.
 
-    The tail keeps its last rows; the slot, the composer and the agent view
-    keep their first rows (their producers size them to `slot_cap`,
-    `composer_cap` and `agent_view_cap`).
+    The tail keeps its last rows, the pad rows going in above its last
+    `budget.floor`; the slot, the composer and the agent view keep their first
+    rows (their producers size them to `slot_cap`, `composer_cap` and
+    `agent_view_cap`).
     """
-    region: list[Line] = [BLANK] * budget.pad
+    region: list[Line] = []
     if budget.sticky:
         region.append(sticky if sticky is not None else BLANK)
-    region.extend(_last(tail, budget.tail))
+    shown = _last(tail, budget.tail)
+    split = len(shown) - budget.floor
+    region.extend([*shown[:split], *[BLANK] * budget.pad, *shown[split:]])
     region.extend(_first(slot, budget.slot))
     if budget.rule:
         region.append(rule)
