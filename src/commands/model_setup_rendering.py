@@ -50,7 +50,9 @@ def print_model_activation_summary(
         for candidate in candidates:
             if isinstance(candidate, dict):
                 print(f"  - {candidate.get('model', '')}: {candidate.get('status', 'unobserved')}")
-    if not any(
+    if payload.get("status") == "hermes_unavailable":
+        print(f"  {tr(language, 'model_setup_hermes_unavailable')}")
+    elif not any(
         isinstance(candidate, dict) and candidate.get("status") == "confirmed_active"
         for candidate in candidates if isinstance(candidates, list)
     ):

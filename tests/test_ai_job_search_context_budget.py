@@ -115,7 +115,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             legacy_hashes[template.name] = hashlib.sha256(restored.encode()).hexdigest()
         # Re-derived from both sources: the vi rewordings above plus
         # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
-        self.assertEqual(_digest(legacy_hashes), 'a411e6d5f26759a0bdda078999df35a131ec2614d90c87d353147d7aa715a828')
+        # Re-derived from both main sources above plus the bounded dag-ulw
+        # baseline-verification guidance; only dag-ulw moves versus main.
+        self.assertEqual(_digest(legacy_hashes), '5db03a78a37d515ad0f54df6fd2eab2533b9f80c800aed8619a9debd78bce9b3')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
@@ -129,11 +131,13 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         self.assertLessEqual(max(len(t.content.encode()) for t in feature_refs), 4039)
 
     def test_hard_per_item_schema_and_injection_limits_do_not_move(self) -> None:
-        # Recorded base constants: only the three catalog-total ratchets move.
+        # Career growth moves only the three catalog-total ratchets. Later
+        # schema changes keep their own measured marginal caps; parked waits
+        # are covered by test_per_turn_budgets, not funded from career slack.
         from omh.maintenance.drift import budget_metrics
         expected = {
             'skill_index_line_max_chars': 100,
-            'plugin_tool_schema_chars': 68757,  # Main's search tool, then #2277's agent-board prepare fields.
+            'plugin_tool_schema_chars': 69186,  # #2277 prepare fields, then parked DAG waits (+429).
             'pre_llm_call_context_chars_max': 5780,
             'pre_llm_call_context_fallback_chars_max': 7216,
             'awareness_primer_markdown_chars': 3520,

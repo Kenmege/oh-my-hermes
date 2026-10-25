@@ -2332,7 +2332,8 @@ py -m venv $env:LOCALAPPDATA\omh\venv
 The installer resolves `<version>` for you from the `releases/latest` redirect.
 Doing it by hand means naming the release you want.
 
-Where it differs from `install.sh`, it differs because the platform does:
+Where it differs from `install.sh`, it differs because the platform does, or
+because the two searches look in different places:
 
 | Behavior | POSIX | Windows |
 | --- | --- | --- |
@@ -2340,6 +2341,8 @@ Where it differs from `install.sh`, it differs because the platform does:
 | Default command dir | `~/.local/bin` | `%LOCALAPPDATA%\omh\bin` |
 | How `omh` is exposed | symlink | `omh.cmd` shim (a symlink needs Developer Mode or elevation) |
 | PATH | hint printed | appended to the user PATH; set `OMH_ADD_TO_PATH=0` for hint-only |
+| Python search | `python3`, `python3.14` to `python3.11`, `python`, then the Homebrew, python.org, pyenv, and uv interpreter directories | `py`, `python`, `python3` |
+| uv's interpreters | found by that directory scan, before any download | listed through `uv python list` only after `uv python install` ran |
 
 `OMH_ADD_TO_PATH` is the one option `install.ps1` adds. On POSIX,
 `~/.local/bin` is a convention most shells already carry on `PATH`, so
@@ -3434,8 +3437,16 @@ A version-less `stable` install asks GitHub which release is newest by reading
 a single redirect (`releases/latest`), which costs about 0.25s. If that lookup
 fails, the installer says so and tells you to pass `OMH_VERSION` or switch to
 `OMH_CHANNEL=preview`; it never guesses a URL. The installer does this lookup
-itself and passes the resolved version to `omh setup`, because `omh` makes no
-network calls of its own.
+itself, because `omh` makes no network calls of its own. A later `omh setup`
+records the release from what is installed: pip writes the exact URL it
+installed into the package's PEP 610 `direct_url.json`, and setup reads the
+channel, version, and source ref from that. A release wheel or tag archive
+records `stable`; the `main` archive or a commit (a SHA-pinned archive, or
+`pip`/`uv tool install git+...@<sha>`) records `preview` with that commit as
+the source ref. npm, Bun, and Homebrew installs record the package version and
+no channel, since the package manager owns that. Any other recorded URL, such
+as a fork or a local wheel, is recorded as the package URL with no channel.
+Pass `--channel`, `--version`, or `--package-url` to `omh setup` to name one.
 
 > **`omh update` still defaults to `preview`.** Only the installer default
 > moved. Until the release-version lookup has a home inside `omh` that does not
