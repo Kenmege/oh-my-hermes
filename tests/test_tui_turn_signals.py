@@ -17,6 +17,7 @@ import unittest
 
 from _tui_lines import line_text
 from test_tui_gateway_contract import recorded_events, recorded_rows
+from test_tui_choice_ui import info_row
 from test_tui_modes import SID, drawn, make_app
 from omh.tui import gateway_contract as contract
 from omh.tui.app import BELL, TITLE_POP, TITLE_PUSH, TURN_ALERT_SECONDS, App
@@ -161,6 +162,37 @@ class TitleTests(unittest.TestCase):
         app._on_event(Event("session.title", SID, {"session_id": "stored", "title": "a\x07b\x1b]2;evil\x1b\\c"}))
         drawn(app)
         self.assertIn("\x1b]2;abc · idle\x1b\\", writes(app))  # the escape sequence goes whole, as in any gateway text
+
+    def test_the_info_line_leads_its_right_side_with_the_title_cut_short_and_drops_it_first(self) -> None:
+        title = "Rename every production cluster before the freeze"
+        rows: dict[int, str] = {}
+        for cols in range(40, 121):
+            app, _client = make_app(cols=cols)
+            app.model = "deepseek/deepseek-v4.1-flash"
+            app._on_event(Event("session.title", SID, {"session_id": "stored", "title": title}))
+            screen = drawn(app)
+            rows[cols] = row = screen[info_row(screen)]
+            self.assertLessEqual(len(row.rstrip()), cols, row)  # the frame's width, at every width
+            if "Rename" in row:  # never shortened past its cap, and never shown at the model's cost
+                self.assertIn(f"{title[:23]}… · deepseek/deepseek-v4.1-flash · ", row)
+        self.assertIn("Rename every production… · ", rows[120])
+        self.assertNotIn("Rename", rows[80])
+        self.assertIn("deepseek/deepseek-v4.1-flash", rows[80])  # the title went first; the model is still whole
+        self.assertNotIn("Rename", rows[60])
+        app, _client = make_app(cols=120)
+        app.model = "deepseek/deepseek-v4.1-flash"
+        screen = drawn(app)
+        self.assertNotIn(" · deepseek", screen[info_row(screen)])  # no title, nothing before the model
+
+    def test_a_session_info_naming_a_title_shows_it_and_one_naming_none_keeps_it(self) -> None:
+        # A resumed session's info names its title; over a shared gateway the rename can come that way too.
+        app, _client = make_app(cols=120)
+        app._on_event(Event("session.info", SID, {"title": "Fix the\x1b]2;x\x1b\\ login  bug", "model": "m"}))
+        self.assertEqual(app.session_title, "Fix the login bug")
+        app._on_event(Event("session.info", SID, {"title": "", "model": "m"}))  # a lazy info names none
+        self.assertEqual(app.session_title, "Fix the login bug")
+        screen = drawn(app)
+        self.assertIn("Fix the login bug · m", screen[info_row(screen)])
 
     def test_the_contract_declares_the_title_event(self) -> None:
         self.assertIn("session.title", contract.APP_EVENTS)

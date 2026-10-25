@@ -151,7 +151,7 @@ from .keys import (
     Mouse,
     Paste,
 )
-from .launch import request_fallback
+from .launch import CLOSED_EXIT, SESSION_FILE_ENV, request_fallback
 from .agent_view import AGENT_STEER_LEFT_UNANSWERED_NOTICE, STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
 from .aura import aura_ranges
 from .layout import Budget, choice_cap, is_tiny, slot_cap
@@ -531,7 +531,14 @@ STRING_TERMINATOR = "\x1b\\"
 TITLE_SET = "\x1b]2;{}" + STRING_TERMINATOR
 TITLE_DEFAULT = "Hermes"
 TITLE_CHARS = 80
+# How many earlier sessions of this launch `omh`'s session file names (`opened`), newest kept.
+OPENED_IDS_KEPT = 16
+INFO_TITLE_CELLS = 24  # the session title at the head of the info line's right side, cut with `…` past this
 
+# What a session id and a profile name have to look like before a farewell names them in a command to type back
+# (Hermes' ids are `YYYYMMDD_HHMMSS_<hex>` or `local-<hex>`; its profile rule is `hermes_cli/profiles.py`'s).
+RESUMABLE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
+PROFILE_NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 EXIT_HINT = "ctrl+c again to exit"  # on the info line while a second Ctrl+C would exit
 INTERRUPT_HINT = "esc to interrupt"
 OSC52_COPY = "\x1b]52;c;{}\x07"
@@ -1012,19 +1019,22 @@ def attach_message(environ: Mapping[str, str]) -> str:
     )
 
 
-def write_active_session(path: str, stored_id: str) -> None:
+def write_active_session(path: str, stored_id: str, extra: Mapping[str, Any] | None = None) -> None:
     """Write `{"session_id": <stored id>}` (mode 0600) for the launcher's exit epilogue. Best effort.
 
-    The id is all the file holds; a failure costs the launcher its resume
-    hint and nothing else.
+    The id is all Hermes' file holds; `omh`'s (`SESSION_FILE_ENV`) also
+    carries `extra`: `hermes_home`, the home whose state database holds the
+    session, and `opened`, the sessions this launch had open before it. A
+    failure costs the launcher its exit lines and nothing else.
     """
     if not path or not stored_id:
         return
+    record = {"session_id": stored_id, **(extra or {})}
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(json.dumps({"session_id": stored_id}))
+            handle.write(json.dumps(record))
         os.chmod(path, 0o600)
     except OSError:
         return
@@ -1192,6 +1202,7 @@ class App(ModesMixin, AgentViewMixin):
         self.size = terminal.size()
         self.sid = ""
         self.stored_id = ""
+        self.opened_ids: list[str] = []  # the sessions this launch had open before `stored_id`, oldest first
         self.model = ""
         self.context_percent: float | None = None
         # What the info line shows (`mode`): accept while Hermes has approvals off, the TUI's own plan flag.
@@ -1552,13 +1563,21 @@ class App(ModesMixin, AgentViewMixin):
         self.effort_said = False
         self._take_session_state(info if isinstance(info, dict) else {})
         self._take_skills(info if isinstance(info, dict) else {})
+        self._take_title(info if isinstance(info, dict) else {})
         self._adopt_stored(as_text(result.get("stored_session_id")) or fallback_stored)
 
     def _adopt_stored(self, stored: str) -> None:
         if not stored or stored == self.stored_id:
             return
+        if self.stored_id and self.stored_id not in self.opened_ids:
+            self.opened_ids = [*self.opened_ids, self.stored_id][-OPENED_IDS_KEPT:]
         self.stored_id = stored
         write_active_session(self.environ.get("HERMES_TUI_ACTIVE_SESSION_FILE", ""), stored)
+        hermes_home = self.environ.get("HERMES_HOME", "")
+        if hermes_home:  # `omh` reads the session's row there once the TUI exits
+            opened = [stored_id for stored_id in self.opened_ids if stored_id != stored]
+            write_active_session(self.environ.get(SESSION_FILE_ENV, ""), stored,
+                                 {"hermes_home": hermes_home, "opened": opened})
         self.poller.set_session(stored)
 
     # ── loop ──
@@ -2066,8 +2085,22 @@ class App(ModesMixin, AgentViewMixin):
         if self.exit_code is not None:
             return
         self.transcript.add_notice(f"{reason}.", NOTICE_ERROR)
-        self.farewell = f"omh: {reason}. Resume the session in Hermes' own terminal: {resume_command(self.stored_id)}"
+        omh_way = self._omh_resume_command()
+        if omh_way:
+            self.farewell = f"omh: {reason}. Resume the session: {omh_way}"
+        else:
+            self.farewell = f"omh: {reason}. Resume the session in Hermes' own terminal: {resume_command(self.stored_id)}"
         self.exit_code = 1
+
+    def _omh_resume_command(self) -> str:
+        """`omh --resume <id>` for the open session when `omh` launched the TUI (`SESSION_FILE_ENV`), with `-p` for a
+        named profile; "" otherwise, or when the id or the profile could not be typed back as they are."""
+        if not self.environ.get(SESSION_FILE_ENV) or not RESUMABLE_ID.fullmatch(self.stored_id):
+            return ""
+        profile = self.launch_profile
+        if profile in ("", "default", "custom"):
+            return f"omh --resume {self.stored_id}"
+        return f"omh -p {profile} --resume {self.stored_id}" if PROFILE_NAME.fullmatch(profile) else ""
 
     def _drain_gateway(self) -> None:
         for item in self.client.poll():
@@ -2289,12 +2322,20 @@ class App(ModesMixin, AgentViewMixin):
 
     def _on_session_info(self, payload: Mapping[str, Any]) -> None:
         self._take_skills(payload)
+        self._take_title(payload)
         self.model = as_text(payload.get("model")) or self.model
         self._take_usage(payload.get("usage"))
         self._take_session_state(payload)
         # `running` is not read: the previous turn's closing `running: false` arrives after
         # `message.complete`, by which time a queued prompt may already be pending.
         self._adopt_stored(as_text(payload.get("stored_session_id")))
+
+    def _take_title(self, info: Mapping[str, Any]) -> None:
+        """The title a session's info names (a resumed session's, or one Hermes named since); one naming none, as a
+        lazy info does, leaves the shown one. `session.title` says a rename as it happens."""
+        title = " ".join(clean_text(as_text(info.get(contract.SESSION_TITLE))).split())
+        if title:
+            self.session_title = title
 
     def _take_skills(self, info: Mapping[str, Any]) -> None:
         """The skills a session's info names replace the shown ones; an info naming none leaves them.
@@ -2968,14 +3009,17 @@ class App(ModesMixin, AgentViewMixin):
         return False
 
     def _interrupt_or_exit(self) -> None:
-        """Ctrl+C on empty input: interrupt a running turn, else exit on a second press within 2 s."""
-        if self._busy():
-            self._interrupt()
-            return
+        """Ctrl+C on empty input: interrupt a running turn, and exit on a second press within 2 s.
+
+        The press that interrupts arms the exit too, so the second one leaves
+        whether or not the turn has stopped yet (`interrupting…` can last).
+        """
         now = self.clock()
         if self.exit_armed_at is not None and now - self.exit_armed_at <= EXIT_CONFIRM_SECONDS:
             self.exit_code = 0
             return
+        if self._busy():
+            self._interrupt()
         self.exit_armed_at = now  # the info line says so until the second press can no longer come
         self.dirty = True
 
@@ -4807,7 +4851,7 @@ class App(ModesMixin, AgentViewMixin):
 
         Its forms are the same at every width; `info_line` picks the one that fits.
         """
-        shown = (self.model, self.context_percent, self.effort, self._busy(), self.slot is not None)
+        shown = (self.model, self.context_percent, self.effort, self._busy(), self.slot is not None, self.session_title)
         held = self.info_held
         if held is not None and held[0] == shown and held[1] is self.theme and held[2] is self.hud:
             return held[3]
@@ -4816,11 +4860,13 @@ class App(ModesMixin, AgentViewMixin):
         return forms
 
     def _compose_info_right(self) -> tuple[Line, ...]:
-        """The right side's forms, longest first: the HUD's chips, the model, the context and the effort, then less.
+        """The right side's forms, longest first: the session's title, the HUD's chips, the model, the context and the
+        effort, then less.
 
-        The model shortens first (`model_forms`), then goes, then the effort,
-        then the context; the HUD's chips (`hud_chips`: a repeating call, the
-        tool calls in flight) go last. The context turns warn from
+        The title (Hermes' `session.title`, cut to `INFO_TITLE_CELLS`) goes
+        first; the model then shortens (`model_forms`), then goes, then the
+        effort, then the context; the HUD's chips (`hud_chips`: a repeating
+        call, the tool calls in flight) go last. The context turns warn from
         `CONTEXT_WARN_PERCENT` full and error from `CONTEXT_BAD_PERCENT`.
         """
         payload = self.hud.payload if self.hud is not None else None
@@ -4838,6 +4884,9 @@ class App(ModesMixin, AgentViewMixin):
                 joined += ((Span(INFO_SEPARATOR, self.theme.dim),) if joined else ()) + part
             if joined and joined not in forms:
                 forms.append(joined)
+        if self.session_title:
+            title: Line = (Span(truncate(self.session_title, INFO_TITLE_CELLS), self.theme.muted),)
+            forms.insert(0, (*title, Span(INFO_SEPARATOR, self.theme.dim), *forms[0]) if forms else title)
         return tuple(forms)
 
 
@@ -4933,6 +4982,9 @@ def _run(
     """Start the gateway, open the session, then run the loop on the raw terminal; the exit code.
 
     `make_client` spawns a gateway again after a crash (`App._respawn_gateway`).
+    A session the person closed exits `CLOSED_EXIT` rather than 0 when `omh`
+    launched the TUI (`SESSION_FILE_ENV` set): `omh` prints the exit card,
+    Hermes' launcher prints nothing, and the shell still sees 0.
     """
     ready = _start_gateway(client, stderr)
     if ready is None:
@@ -4963,7 +5015,7 @@ def _run(
             app.client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
     if app.farewell:
         _say(stderr, app.farewell)
-    return code
+    return CLOSED_EXIT if code == 0 and environ.get(SESSION_FILE_ENV) else code
 
 
 def main(
