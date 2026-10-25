@@ -26,10 +26,15 @@ from pathlib import Path
 from urllib.parse import quote
 
 
-def connect_readonly(path: str | Path, *, timeout: float) -> sqlite3.Connection:
+def connect_readonly(path: str | Path, *, timeout: float, immutable: bool = False) -> sqlite3.Connection:
     """A read-only connection to the existing file at ``path``.
 
     Raises ``sqlite3.Error`` when the file cannot be opened; a missing file is
-    an error, never created.
+    an error, never created. ``immutable`` adds SQLite's ``immutable=1``: no
+    lock is taken and no ``-wal`` or ``-shm`` file is created beside the store,
+    which a ``mode=ro`` open of a WAL store does when they are missing. It is
+    only for a file no connection is writing.
     """
+    if immutable:
+        return sqlite3.connect(f"file:{quote(os.fsencode(path))}?mode=ro&immutable=1", uri=True, timeout=timeout)
     return sqlite3.connect(f"file:{quote(os.fsencode(path))}?mode=ro", uri=True, timeout=timeout)

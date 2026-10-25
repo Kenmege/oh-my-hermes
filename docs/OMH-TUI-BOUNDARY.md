@@ -27,7 +27,8 @@ systemd), a session ticket comes from the home's private control socket, and
 `websockets.asyncio.client.connect` dials the loopback socket Hermes names. It
 translates between the stdio wire and the gateway's canonical one only where
 they differ (the launch policy riding `session.create`, a detach for a close, a
-rewind as Hermes' revision-fenced `session.mutate`, images staged through
+rewind as Hermes' revision-fenced `session.mutate`, a steer or a stop carrying
+the execution generation of the turn it acts on, images staged through
 Hermes' `image.attach_bytes`, approvals and clarify questions the gateway asks
 as events), and passes everything else as it is. On any other Hermes it runs
 Hermes' stdio entry in its own process, as before. Which one is decided by what
@@ -160,6 +161,22 @@ arrives whole within 0.8 s of its first byte. If 300 ms pass after that byte
 without the next, the byte is read as Esc, and the rest is dropped only if it
 arrives within 0.5 s after that. One that starts later and is split right after
 its first or second byte is read as keys.
+
+## The bot board
+
+The bot board (Ctrl+S, `/bots`, `src/tui/bot_board.py`) only reads. For the
+Hermes root the TUI runs under and each named profile beside it
+(`<root>/profiles/<name>/`), it reads `gateway_state.json` and `state.db`,
+the latter opened `mode=ro`, and immutable when no `-wal`, `-shm` or
+`-journal` is beside it (no connection has it open), so SQLite creates no
+`-wal` or `-shm` there; with a connection open, the read takes its read mark
+in the existing `-shm`, as every reader of the store does. It never opens the
+store outside SQLite, since closing a descriptor on it would drop this
+process's SQLite locks on it. It probes the pid a gateway record names with
+signal 0 and reads that process's start time and state (`/proc` on Linux,
+`sysctl(KERN_PROC_PID)` on macOS); it sends no other signal, and nothing to the
+gateway. It reads on one thread for the session, never on the render path,
+and reads nothing while the board is closed.
 
 ## Sessions it refuses, and what it writes
 
