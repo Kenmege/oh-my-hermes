@@ -956,6 +956,7 @@ Esc closes it):
 | ↑ / ↓ | Move between the composer's rows, walk the input history at its first and last row (earlier sessions' too, shared with `hermes --tui`), or move through an open completion menu |
 | Ctrl+R | Searches the input history; Ctrl+R again finds an older match, Enter puts it in the composer, Esc leaves the composer as it was |
 | Ctrl+X | Opens the `/sessions` picker |
+| Ctrl+S | Opens the bot board, as `/bots` does: this machine's Hermes profiles, their gateways and sessions, read-only |
 | ↑ | On an empty composer with prompts queued, takes them back into the composer to edit; a queued shell line comes back on its own |
 | ↓ | On an empty composer while the agent view under the info line shows subagents, gives its rows the keys as the agent list; in a DAG run, to its folding tree |
 | ← / → | Move by a character; with Ctrl or Alt, by a word (Alt+B and Alt+F too) |
@@ -984,6 +985,7 @@ Esc closes it):
 | Click | On a row of the agent list, opens that agent's log (on main, only leaves the list) |
 | ← / →, q or Esc | In an agent's log, show the agent before or after, or go back; the pager's keys scroll it |
 | Tab / n, Shift+Tab / p, Space / Enter, d | In `/dag`, highlight the next or the previous box, fold or unfold the highlighted one, or show or hide Node details; ↑ / ↓, PageUp / PageDown and g / G scroll, q or Esc leaves |
+| ↑ / ↓, Enter or →, ← or Esc or q, r | On the bot board, move, open a profile's sessions or a session's last messages, go back (on the profiles, close the board), or read it again now; it reads again every 5 s by itself |
 | j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, an agent's log, this list), move a line, a page, or to either end, or leave |
 
 Ctrl+Enter and Shift+Enter reach the OMH TUI as keys of their own only where
@@ -1065,7 +1067,7 @@ turned into a steer.
 
 A slash command you run is echoed in the transcript as `┃ ❯ /name arg` (but
 `/steer`, whose own row is its echo, and a bare `/sessions`, `/rewind`,
-`/model`, `/keys`, `/history`, `/logs`, `/dag` or `/redraw`, which only open a picker
+`/model`, `/keys`, `/history`, `/logs`, `/dag`, `/bots` or `/redraw`, which only open a picker
 or a pager, or repaint, and print nothing to attribute), and what it prints stays there, under it after `⎿`, in the terminal's scrollback
 (each command's output under its own echo, also when you send a second command before the first answers).
 A skill command (`/<skill> <request>`) is one row: its echo gives way to the row of the prompt the skill sends
@@ -1079,7 +1081,7 @@ what it prints later goes under a repeat of its echo. In the transcript, a long 
 first 12 rows and a count of the rest
 (`… +K rows · ctrl+o shows all`, rows at that width), and Ctrl+O or `/history` shows all of it. Nothing a
 command prints opens a pager; a pager opens only when you ask for one
-(`/history`, `/keys`, `/logs`, `/dag`, an agent's log), and output that arrives while
+(`/history`, `/keys`, `/logs`, `/dag`, `/bots`, an agent's log), and output that arrives while
 one is open is in the transcript when you leave it.
 
 Slash commands the OMH TUI runs itself: `/help` (which also lists, in Hermes'
@@ -1092,7 +1094,8 @@ words, any skill whose name a built-in command takes, such as Hermes' own
 stderr, kept in memory only), `/dag` (the session's delegation graph as
 boxes, full screen in the pager and redrawn from the HUD's newest read: Tab
 and Shift+Tab move the highlight, Space folds a box, d shows or hides Node
-details; it sends nothing anywhere; q or Esc closes it), `/copy`, `/image`,
+details; it sends nothing anywhere; q or Esc closes it), `/bots` (the bot
+board, also Ctrl+S, described below), `/copy`, `/image`,
 `/paste` (the clipboard
 image), `/theme`, `/omh-model`, `/rewind`, `/todos` (the session's whole
 plan), `/model` (alone, a picker of the models Hermes offers this session,
@@ -1115,6 +1118,26 @@ prints the help of Hermes' skills command here instead of opening the skills
 hub. The command list is read again for each session
 the TUI opens, so a project's own skills are listed in its workspace, and
 completion also matches a part of a name: `/uml` finds `/omh-codebase-uml`.
+
+The bot board (Ctrl+S or `/bots`) shows this machine's Hermes bots, full
+screen, and changes nothing. Its first page lists the Hermes home the TUI runs
+under and every named profile beside it (`<root>/profiles/<name>/`), each with
+its gateway as `gateway_state.json` records it (state, pid, running agents and
+each platform's state), its stored sessions counted by source, how many were
+active in the last 24 hours, and when the last one was. Enter opens a
+profile's sessions, newest activity first (delegated subagent sessions are
+counted on the first page, not listed), and Enter again a session's last 40
+messages; ← or Esc goes back, q closes it from the first page, and r reads
+again at once. It reads again every 5 s by itself, off the screen's own thread.
+It counts sessions active in the last 24 hours rather than open ones, because a
+messaging gateway leaves every chat it served open, so a Slack bot idle for weeks
+would still show dozens. A gateway shows as running only while the process its
+record names still runs and is the one that wrote the record (its start time
+is compared as Hermes compares it); a platform's state from a gateway that has
+since stopped or restarted shows as what was last recorded. Each `state.db` is
+opened read-only (and immutable when no connection has it open, so SQLite
+creates no file beside it), the only signal it sends is the signal-0 liveness
+probe, and it calls nothing in Hermes' gateway.
 
 When the OMH TUI cannot start, `omh` says why in one line on stderr and opens
 Hermes instead, so you lose the OMH screen, never the session. For a reason

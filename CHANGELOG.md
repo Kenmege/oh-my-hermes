@@ -4,6 +4,36 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Esc, Ctrl+C and an approval deny stop the turn again on a Hermes whose
+  TUI attaches to the shared gateway.** On Hermes bf0203a794 the OMH TUI sent
+  `session.interrupt` the way the stdio entry takes it, with only the session
+  id. The canonical gateway stops a turn only for the execution generation it
+  runs, so it refused every stop with `stale_generation`. The TUI said
+  "Hermes did not interrupt the turn: stale_generation", and the turn ran on
+  in the shared gateway, after the TUI exited too. The attach child now sends
+  the stop with the generation it tracks from the session's snapshot, events
+  and prompt receipts, as Hermes' Ink TUI does. Refused as stale, or with no
+  generation known, it reads the session once and sends the stop once more at
+  the generation read, only while that read says a turn runs. The stdio wire is
+  unchanged.
+
+- **The OMH TUI shows this machine's Hermes bots on a read-only board.**
+  Ctrl+S, or `/bots`, opens it full screen. The first page lists the Hermes
+  home the TUI runs under and each named profile beside it, each with its
+  gateway as `gateway_state.json` records it (state, pid, running agents,
+  every platform's state), its sessions counted by source, how many were
+  active in the last 24 hours, and when the last one was. Enter opens a
+  profile's sessions, newest activity first, and a session's last 40
+  messages; ← or Esc goes back, and r reads again. It reads again every 5 s
+  off the screen's thread. A gateway reads as running only while the process
+  its record names still runs and is the one that wrote it, and a platform's
+  state left by a stopped or restarted gateway shows as last recorded. It
+  counts active sessions, not open ones: a Slack gateway never ends a chat,
+  so a bot idle for weeks still had dozens open. Each `state.db` is opened
+  read-only, and immutable when nothing has it open, so not even SQLite's
+  `-wal` and `-shm` appear beside it; the only signal is a signal-0
+  liveness probe, and nothing is sent to the gateway.
+
 - **The OMH TUI switches models the way Hermes' own TUI does.** Attached to
   a shared Hermes gateway, every `/model` the TUI sent (a picker pick, a
   typed `/model <name>`, `/model --refresh`) was refused as
@@ -25,6 +55,7 @@ All notable changes will be documented here.
   context) is asked about in the prompt slot, as Hermes' own TUI asks it:
   keeping the session's model is the first choice and the one selected, and
   only "switch anyway" sends the switch again with Hermes' confirmation.
+
 
 - **Byte-identical managed plugin files no longer block setup or update
   (#2300).** A managed plugin file whose current bytes match the incoming
