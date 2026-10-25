@@ -3161,11 +3161,15 @@ def cmd_setup(args: argparse.Namespace) -> int:
         "wrapper_backend_surface": "omh chat interact and runtime commands are adapter/operator contracts, not the normal chat UX",
     }
 
+    # `ok` means what the exit code means: every step setup was asked to run
+    # ran. A model step that could not run makes it false here and in the
+    # state record, so a reader of `ok` alone is not told otherwise.
+    setup_ok = _setup_exit_code({"steps": steps}) == 0
     if not args.dry_run:
         operator_summary = _setup_operator_summary(args, paths, steps, hermes_native)
         state_patch: dict[str, object] = {
             "last_setup": {
-                "ok": True,
+                "ok": setup_ok,
                 "apply_skipped": bool(args.skip_apply),
                 "hermes_native": hermes_native,
                 "operator_summary": operator_summary,
@@ -3183,7 +3187,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     else:
         operator_summary = _setup_operator_summary(args, paths, steps, hermes_native)
     payload: dict[str, object] = {
-        "ok": True,
+        "ok": setup_ok,
         "steps": steps,
         "dry_run": args.dry_run,
         "hermes_native": hermes_native,
@@ -3218,6 +3222,12 @@ def _noninteractive_rerun_command(argv: list[str]) -> str:
     return shlex.join(rerun)
 
 
+# Model-step statuses that mean the step could not run at all. A missing
+# prerequisite maps to 3; a Hermes that is there but failed maps to 1.
+_MODEL_STEP_NOT_RUN_STATUSES = frozenset({"hermes_unavailable", "hermes_config_missing", "hermes_config_unreadable"})
+_MODEL_STEP_FAILED_STATUSES = frozenset({"hermes_command_failed"})
+
+
 def _setup_exit_code(payload: Any) -> int:
     """0 when every step setup was asked to run ran.
 
@@ -3228,15 +3238,23 @@ def _setup_exit_code(payload: Any) -> int:
     which `main` returns for an OmhError: the flags parsed, and the same
     choices succeed as `--no-interactive --json`.
 
-    3 when the install steps finished but the requested model step could not
-    run because no `hermes` executable was found
-    (`steps.model_activation.status == "hermes_unavailable"`). Not 0, because
-    a wrapper reading only the status would be told the models were set up
-    when nothing was inspected; not 1, because nothing OMH installed failed
-    and the same command succeeds once Hermes is on PATH; not 2, which `main`
-    returns for an OmhError. 3 is what the other mappers return for a command
-    that ran but could not inspect what it needed (`_profile_isolation_exit_code`,
+    3 when the install steps finished (or, on a dry run, were previewed) but
+    the requested model step could not run: no `hermes` executable was found
+    (`hermes_unavailable`), or Hermes' config file does not exist
+    (`hermes_config_missing`) or exists but cannot be read
+    (`hermes_config_unreadable`), as `steps.model_activation.status`. Not 0,
+    because a wrapper reading only the status would be told the models were
+    set up or previewed when nothing was inspected; not 1, because nothing
+    OMH installed failed and the same command succeeds once the prerequisite
+    is there; not 2, which `main` returns for an OmhError. 3 is what the
+    other mappers return for a command that ran but could not inspect what it
+    needed (`_profile_isolation_exit_code`,
     `_memory_evidence_exit_code`).
+
+    1 when Hermes is on PATH but a command the model step needs failed: it
+    exited nonzero, timed out, or answered in a shape the adapter refuses
+    (`hermes_command_failed`). That is a fault in the Hermes the user has,
+    not a prerequisite they can supply, so it is not 3.
 
     Generic failure signals -- a refused or interrupted run, or a unit
     carrying a failure kind -- are never success either, so this mapper
@@ -3250,7 +3268,10 @@ def _setup_exit_code(payload: Any) -> int:
         return 1
     steps = summary.get("steps")
     activation = steps.get("model_activation") if isinstance(steps, dict) else None
-    if isinstance(activation, dict) and activation.get("status") == "hermes_unavailable":
+    status = activation.get("status") if isinstance(activation, dict) else None
+    if status in _MODEL_STEP_FAILED_STATUSES:
+        return 1
+    if status in _MODEL_STEP_NOT_RUN_STATUSES:
         return 3
     return 0
 
