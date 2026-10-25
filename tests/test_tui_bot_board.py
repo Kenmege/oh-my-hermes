@@ -19,6 +19,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import sys
 import time
 import unittest
 from unittest.mock import patch
@@ -44,7 +45,7 @@ from omh.tui.bot_board import (
     read_profile,
     read_sessions,
     session_lines,
-    start_fingerprint,
+    process_facts,
 )
 from omh.tui.history import HistorySearch
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, UP, Key
@@ -55,6 +56,8 @@ NOW = 1_800_000_000.0
 DAY = 24 * 3600
 CTRL_S = Key(CHAR, "s", ctrl=True)
 GONE_PID = 4_194_301  # past macOS' pid range; `pid_exists` is patched where it matters
+# The board probes a gateway pid on POSIX only (the OMH TUI needs termios); off it no gateway ever reads as running.
+POSIX_ONLY = unittest.skipUnless(os.name == "posix", "the board's liveness probe is POSIX-only")
 
 
 def write_store(home: Path, sessions: list[tuple], messages: list[tuple] = (), *, wal: bool = False) -> Path:
@@ -89,7 +92,7 @@ def write_record(home: Path, record: dict | str) -> None:
 
 
 def make_root(root: Path) -> None:
-    pid, started = os.getpid(), start_fingerprint(os.getpid())
+    pid, started = os.getpid(), process_facts(os.getpid())[0]
     write_record(root, {
         "pid": pid, "start_time": started, "hermes_home": str(root), "gateway_state": "running",
         "active_agents": 2, "served_profiles": ["default"],
@@ -129,7 +132,7 @@ def make_root(root: Path) -> None:
     locked = profiles / "locked"
     locked.mkdir()
     write_record(locked, {"pid": GONE_PID, "gateway_state": "stopped", "exit_reason": "signal"})
-    write_store(locked, [("l-1", "cli", "x", NOW, NOW, 1)])
+    write_store(locked, [("l-1", "cli", "x", NOW, NOW, 1)], wal=True)
     (profiles / ".hidden").mkdir()
     (profiles / ".hidden" / "config.yaml").write_text("", encoding="utf-8")
     (profiles / "ghost").mkdir()  # no identity file: a cron heartbeat's leftover, never a profile
@@ -174,6 +177,7 @@ class HomesTests(FixtureRoot):
 
 
 class GatewayTests(FixtureRoot):
+    @POSIX_ONLY
     def test_a_running_record_whose_process_runs_reads_as_running_with_its_own_platforms(self) -> None:
         gateway = read_gateway(self.root)
         self.assertTrue(gateway.live)
@@ -187,6 +191,7 @@ class GatewayTests(FixtureRoot):
         self.assertFalse(gateway.live)
         self.assertEqual([platform.current for platform in gateway.platforms], [False])
 
+    @POSIX_ONLY
     def test_a_pid_the_os_gave_to_another_process_does_not_read_as_running(self) -> None:
         record = json.loads((self.root / "gateway_state.json").read_text(encoding="utf-8"))
         for start, live in ((record["start_time"] + 10_000, False), (record["start_time"] + 150, True), (None, True)):
@@ -194,10 +199,58 @@ class GatewayTests(FixtureRoot):
                 write_record(self.root, {**record, "start_time": start})
                 self.assertIs(read_gateway(self.root).live, live)
 
-    def test_a_record_naming_another_home_does_not_read_as_running(self) -> None:
+    def test_a_record_naming_another_home_does_not_read_as_running_and_says_why(self) -> None:
         record = json.loads((self.root / "gateway_state.json").read_text(encoding="utf-8"))
         write_record(self.root, {**record, "hermes_home": "/srv/container/hermes"})
-        self.assertFalse(read_gateway(self.root).live)
+        gateway = read_gateway(self.root)
+        self.assertEqual((gateway.live, gateway.elsewhere), (False, "/srv/container/hermes"))
+        lines, _span = profile_lines(snapshot(self.environ).profiles, 0, NOW, 150, DEFAULT_THEME)
+        text = "\n".join(lines_text(lines))
+        self.assertIn("gateway not running here · its record is another home's (/srv/container/hermes)", text)
+        self.assertNotIn(f"pid {os.getpid()} is gone", text, "its pid may well be alive: that is not the reason")
+
+    def test_off_posix_nothing_is_probed_and_nothing_reads_as_running(self) -> None:
+        with patch.object(bot_board.os, "name", "nt"), patch.object(bot_board, "pid_exists") as probe:
+            self.assertFalse(bot_board.process_is_record(os.getpid(), 1))
+            self.assertFalse(read_gateway(self.root).live)
+        probe.assert_not_called()
+
+    @POSIX_ONLY
+    def test_a_zombie_or_an_unreadable_start_time_does_not_read_as_running(self) -> None:
+        record = json.loads((self.root / "gateway_state.json").read_text(encoding="utf-8"))
+        started = record["start_time"]
+        for facts, recorded, live in (
+            ((started, True), started, False),  # a zombie: Hermes' `_pid_exists` calls it dead
+            ((None, False), started, False),  # another user's process whose start time cannot be read
+            ((None, False), None, True),  # a record without a start time is taken on its pid
+        ):
+            with self.subTest(facts=facts, recorded=recorded):
+                write_record(self.root, {**record, "start_time": recorded})
+                with patch.object(bot_board, "process_facts", return_value=facts):
+                    self.assertIs(read_gateway(self.root).live, live)
+
+    @POSIX_ONLY
+    def test_the_start_time_of_another_users_process_is_read(self) -> None:
+        # pid 1 runs as root: macOS' `proc_pidinfo` answers nothing for it, `sysctl(KERN_PROC_PID)` does.
+        start, zombie = bot_board.process_facts(1)
+        if sys.platform in ("darwin", "linux"):
+            self.assertIsInstance(start, int)
+        self.assertFalse(zombie)
+
+    @POSIX_ONLY
+    def test_a_zombie_child_reads_as_one(self) -> None:
+        if sys.platform not in ("darwin", "linux"):
+            self.skipTest("no zombie reader on this platform")
+        child = os.fork()
+        if child == 0:
+            os._exit(0)
+        self.addCleanup(os.waitpid, child, 0)
+        deadline = time.monotonic() + 5
+        while not bot_board.process_facts(child)[1] and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(bot_board.process_facts(child)[1])
+        self.assertTrue(bot_board.pid_exists(child), "signal 0 still answers for a zombie")
+        self.assertFalse(bot_board.process_is_record(child, None))
 
     def test_a_missing_or_corrupt_record_says_so(self) -> None:
         self.assertEqual(read_gateway(self.root / "profiles" / "broken").problem, "gateway record unreadable")
@@ -233,9 +286,11 @@ class StoreTests(FixtureRoot):
         self.assertEqual((profile.sources, profile.active), ((("slack", 3),), 0))
 
     def test_a_locked_store_reads_as_busy_and_does_not_wait(self) -> None:
-        holder = sqlite3.connect(self.root / "profiles" / "locked" / "state.db")
+        holder = sqlite3.connect(self.root / "profiles" / "locked" / "state.db", isolation_level=None)
         self.addCleanup(holder.close)
+        holder.execute("PRAGMA locking_mode=EXCLUSIVE")
         holder.execute("BEGIN EXCLUSIVE")
+        holder.execute("INSERT INTO sessions (id, source, started_at) VALUES ('l-2', 'cli', 0)")
         started = time.monotonic()
         profile = read_profile("locked", self.root / "profiles" / "locked", None, NOW)
         self.assertEqual(profile.store, "state.db busy")
@@ -253,8 +308,8 @@ class StoreTests(FixtureRoot):
         self.assertEqual(sessions[2].last_activity, NOW - 30 * DAY, "no last_activity_at: its start")
 
     def test_messages_are_the_live_tail_oldest_first_with_escapes_and_controls_gone(self) -> None:
-        messages, problem = read_messages(self.root, "s-new")
-        self.assertEqual(problem, "")
+        messages, session, problem = read_messages(self.root, "s-new")
+        self.assertEqual((problem, session.title, session.message_count), ("", "Release notes", 12))
         self.assertEqual(
             [(row.role, row.text) for row in messages],
             [("user", "ship it?"), ("assistant", "red done now"), ("assistant", "(calls terminal)"),
@@ -267,19 +322,40 @@ class StoreTests(FixtureRoot):
                            "CAST(X'6f6bff21' AS TEXT), ?)", (NOW,))
         connection.commit()
         connection.close()
-        messages, problem = read_messages(self.root, "s-new")
+        messages, _session, problem = read_messages(self.root, "s-new")
         self.assertEqual((problem, messages[-1].text), ("", "ok\ufffd!"))
 
     def test_the_tail_is_bounded(self) -> None:
         write_store(self.root / "profiles" / "broken", [("b", "cli", "b", NOW, NOW, 99)],
                     [("b", "user", f"line {n} " + "x" * 5000, None, None, NOW + n, 1) for n in range(99)])
-        messages, _problem = read_messages(self.root / "profiles" / "broken", "b")
+        messages, _session, _problem = read_messages(self.root / "profiles" / "broken", "b")
         self.assertEqual(len(messages), MESSAGE_ROWS_READ)
         self.assertTrue(messages[-1].text.startswith("line 98 "))
         self.assertLessEqual(max(len(row.text) for row in messages), bot_board.MESSAGE_CHARS_READ)
 
 
 class ReadOnlyTests(FixtureRoot):
+    def test_the_store_itself_is_never_opened_outside_sqlite(self) -> None:
+        # Closing any descriptor on a store drops every SQLite lock this process holds on it (POSIX record locks
+        # are per process), the HUD reader's included, so the board decides how to open it from the names beside it.
+        opened: list[str] = []
+        real_open, real_io_open = os.open, bot_board.Path.open
+
+        def os_open(path, *args, **kwargs):
+            opened.append(str(path))
+            return real_open(path, *args, **kwargs)
+
+        def path_open(self, *args, **kwargs):
+            opened.append(str(self))
+            return real_io_open(self, *args, **kwargs)
+
+        with patch.object(os, "open", side_effect=os_open), patch.object(bot_board.Path, "open", path_open):
+            for view in (BoardView(), BoardView("default"), BoardView("default", "s-new"), BoardView("miku")):
+                read_board(self.environ, view, NOW)
+        self.assertEqual([path for path in opened if path.endswith("state.db")], [])
+        self.assertTrue([path for path in opened if path.endswith("gateway_state.json")], "the probe saw the reads")
+
+
     def test_a_wal_store_a_writer_has_open_is_read_with_what_the_writer_committed(self) -> None:
         writer = sqlite3.connect(self.root / "profiles" / "miku" / "state.db")
         self.addCleanup(writer.close)
@@ -289,6 +365,7 @@ class ReadOnlyTests(FixtureRoot):
         profile = read_profile("miku", self.root / "profiles" / "miku", None, NOW)
         self.assertEqual((profile.sources, profile.active), ((("slack", 4),), 1))
 
+    @POSIX_ONLY
     def test_the_board_opens_no_write_connection_sends_only_signal_zero_and_changes_no_file(self) -> None:
         before = tree_state(self.root)
         connects: list[tuple[str, dict]] = []
@@ -322,6 +399,7 @@ def snapshot(environ: dict, view: BoardView = BoardView()) -> BoardSnapshot:
 
 
 class DrawingTests(FixtureRoot):
+    @POSIX_ONLY
     def test_level_one_says_what_each_gateway_and_store_is_at_any_width(self) -> None:
         with patch.object(bot_board, "pid_exists", side_effect=lambda pid: pid == os.getpid()):
             profiles = snapshot(self.environ).profiles
@@ -343,6 +421,7 @@ class DrawingTests(FixtureRoot):
                     self.assertIn("○ locked  gateway stopped (signal)", text)
                     self.assertTrue(lines_text(lines)[span[0]].startswith("❯ "), "the highlighted profile is marked")
 
+    @POSIX_ONLY
     def test_a_profile_the_default_gateway_serves_reads_as_served(self) -> None:
         record = json.loads((self.root / "gateway_state.json").read_text(encoding="utf-8"))
         write_record(self.root, {**record, "served_profiles": ["default", "miku"]})
@@ -378,17 +457,21 @@ class FakeReader:
         self.environ = environ
         self.views: list[BoardView] = []
         self.refreshes = 0
-        self.started = self.stopped = False
+        self.started = self.stopped = self.closed = False
         self.view = BoardView()
         self.pending: BoardSnapshot | None = None
         FakeReader.instances.append(self)
 
     def start(self, wake=None) -> None:
-        self.started = True
+        self.started, self.stopped = True, False
+        self.view = BoardView()
         self.pending = read_board(self.environ, self.view, NOW)
 
     def stop(self) -> None:
         self.stopped = True
+
+    def close(self) -> None:
+        self.closed = True
 
     def show(self, view: BoardView) -> None:
         self.views.append(view)
@@ -430,14 +513,49 @@ class ReaderThreadTests(FixtureRoot):
         def broken(environ, view, now):
             raise RuntimeError("boom")
 
-        reader = bot_board.BoardReader(self.environ, read=broken)
+        reader = bot_board.BoardReader(self.environ, read=broken, clock=lambda: NOW)
+        reader._open = True
         reader.poll_once()
         snapshot = reader.take()
-        self.assertEqual(snapshot.problem, "the board could not be read: RuntimeError")
-        board = BotBoard("bots", clock=lambda: NOW)
+        self.assertEqual((snapshot.problem, snapshot.read_at), ("the board could not be read: RuntimeError", NOW))
+        board = BotBoard("bots", clock=lambda: NOW + 120)
         board.take(snapshot)
         board.frame(80, 10, DEFAULT_THEME)
         self.assertEqual(lines_text(board.lines), ["the board could not be read: RuntimeError"])
+        self.assertIn("read 2m ago", line_text(board.footer("1-1/1", DEFAULT_THEME)[1]))
+
+    def test_a_closed_board_reads_nothing_and_opening_it_again_reuses_the_thread(self) -> None:
+        reads: list[BoardView] = []
+
+        def read(environ, view, now):
+            reads.append(view)
+            return BoardSnapshot(view, (), read_at=now)
+
+        reader = bot_board.BoardReader(self.environ, read=read)
+        reader.start()
+        self.addCleanup(reader.close)
+        thread = reader._thread
+        self.wait_for(reader)
+        reader.stop()
+        settled = len(reads)
+        time.sleep(0.2)
+        self.assertEqual(len(reads), settled, "nothing is read while the board is closed")
+        reader.show(BoardView("miku"))
+        reader.start()
+        self.assertIs(reader._thread, thread)
+        self.assertEqual(self.wait_for(reader).view, BoardView(), "it opens again at the profiles")
+
+    def test_a_read_finished_after_the_board_closed_is_dropped(self) -> None:
+        reader = bot_board.BoardReader(self.environ)
+        reader._open = True
+
+        def slow(environ, view, now):
+            reader.stop()  # the person closed the board while this read ran
+            return BoardSnapshot(view, ())
+
+        reader._read = slow
+        reader.poll_once()
+        self.assertIsNone(reader.take())
 
     def test_a_read_finished_after_the_view_changed_is_dropped(self) -> None:
         reader = bot_board.BoardReader(self.environ)
@@ -446,6 +564,7 @@ class ReaderThreadTests(FixtureRoot):
             reader.show(BoardView("miku"))  # the person moved while this read ran
             return BoardSnapshot(view, ())
 
+        reader._open = True
         reader._read = slow
         reader.poll_once()
         self.assertIsNone(reader.take())
@@ -502,6 +621,57 @@ class BoardKeysTests(FixtureRoot):
         screen = board.frame(80, 8, DEFAULT_THEME)
         self.assertIn("❯", screen)
 
+    def test_the_highlight_stays_on_its_session_when_the_list_reorders(self) -> None:
+        board, reader = self.board()
+        self.press(board, reader, Key(ENTER))  # default's sessions: s-new, s-cli, s-old
+        self.press(board, reader, Key(DOWN))
+        self.assertEqual(board.highlighted_session, "s-cli")
+        connection = sqlite3.connect(self.root / "state.db")
+        connection.execute("UPDATE sessions SET last_activity_at = ? WHERE id = 's-old'", (NOW,))
+        connection.commit()
+        connection.close()
+        board.take(read_board(self.environ, BoardView("default"), NOW))  # the next refresh: s-old, s-new, s-cli
+        board.frame(100, 24, DEFAULT_THEME)
+        self.assertEqual([row.id for row in board.snapshot.sessions], ["s-old", "s-new", "s-cli"])
+        self.assertTrue(lines_text(board.lines)[board._span[0]].startswith("❯ Local run"))
+        self.press(board, reader, Key(ENTER))
+        self.assertEqual(reader.views[-1], BoardView("default", "s-cli"), "Enter opens the row the highlight is on")
+
+    def test_back_to_a_long_list_brings_the_highlight_on_screen_once_the_list_arrives(self) -> None:
+        write_store(self.root / "profiles" / "broken",
+                    [(f"b-{n:02d}", "cli", f"chat {n:02d}", NOW - n, NOW - n, 1) for n in range(40)])
+        held: list[BoardSnapshot] = []
+        board = BotBoard("bots", show=lambda view: held.append(read_board(self.environ, view, NOW)), clock=lambda: NOW)
+        board.take(read_board(self.environ, BoardView(), NOW))
+        board.highlighted_profile = "broken"
+        board.frame(100, 12, DEFAULT_THEME)
+        board.handle_key(Key(ENTER), 12)
+        board.take(held.pop())
+        for _ in range(30):
+            board.handle_key(Key(DOWN), 12)
+        board.frame(100, 12, DEFAULT_THEME)
+        board.handle_key(Key(ENTER), 12)  # level 3 of chat 30
+        board.take(held.pop())
+        board.frame(100, 12, DEFAULT_THEME)
+        board.handle_key(Key(LEFT), 12)  # back: the reader has not answered yet
+        board.frame(100, 12, DEFAULT_THEME)
+        self.assertEqual(lines_text(board.lines), ["broken · reading…"])
+        board.take(held.pop())  # the list arrives a frame later
+        board.frame(100, 12, DEFAULT_THEME)
+        shown = lines_text(board.lines)[board.top : board.top + board.body_rows(12)]
+        self.assertTrue([row for row in shown if row.startswith("❯ chat 30")], shown)
+
+    def test_level_three_heads_with_the_sessions_row_as_read_now(self) -> None:
+        board, reader = self.board()
+        self.press(board, reader, Key(ENTER), Key(ENTER))
+        connection = sqlite3.connect(self.root / "state.db")
+        connection.execute("UPDATE sessions SET message_count = 99 WHERE id = 's-new'")
+        connection.commit()
+        connection.close()
+        board.take(read_board(self.environ, BoardView("default", "s-new"), NOW))
+        board.frame(100, 24, DEFAULT_THEME)
+        self.assertIn("slack · 99 messages", "\n".join(lines_text(board.lines)))
+
     def test_a_snapshot_for_another_view_is_not_drawn_as_this_one(self) -> None:
         board, reader = self.board()
         board.view = BoardView("miku")
@@ -529,8 +699,10 @@ class AppTests(FixtureRoot):
         app._on_input(Key(CHAR, "q"))
         self.assertIsNone(app.pager)
         self.assertTrue(FakeReader.instances[0].stopped)
-        self.assertIsNone(app.board_reader)
         self.assertEqual(app.composer.text, "draft")
+        app._on_input(CTRL_S)
+        self.assertEqual(len(FakeReader.instances), 1, "the board opened again reuses its one reader")
+        self.assertFalse(FakeReader.instances[0].stopped)
         self.assertEqual(client.calls, [], "the board sends nothing to the gateway")
 
     def test_bots_opens_the_board_and_leaves_no_echo(self) -> None:
@@ -556,11 +728,12 @@ class AppTests(FixtureRoot):
         app._on_input(CTRL_S)
         self.assertIs(app.pager, keys)
 
-    def test_shutdown_stops_an_open_boards_reader(self) -> None:
+    def test_shutdown_closes_the_boards_reader(self) -> None:
         app, _client = self.app()
         app._on_input(CTRL_S)
         app._shutdown()
         self.assertTrue(FakeReader.instances[0].stopped)
+        self.assertTrue(FakeReader.instances[0].closed)
 
 
 if __name__ == "__main__":

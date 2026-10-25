@@ -1255,7 +1255,8 @@ class App(ModesMixin, AgentViewMixin):
         self.menu_under: list[Line] = []  # the menu's rows as `_slot_lines` last made them, while it is drawn under
         self.pager: Pager | None = None
         self.question_view: Pager | None = None  # the pager Ctrl+O opened over the open question, while it is open
-        # What reads the bot board (Ctrl+S, `/bots`) off this thread, while the board is open.
+        # What reads the bot board (Ctrl+S, `/bots`) off this thread: made when it first opens, kept for the session
+        # and paused while the board is closed, so a read stuck on a stalled file system never adds a thread.
         self.board_reader: BoardReader | None = None
         self.make_board_reader: Callable[..., BoardReader] = BoardReader
         self.resized_while_paging = False
@@ -1772,6 +1773,8 @@ class App(ModesMixin, AgentViewMixin):
         finally:
             try:
                 self.poller.stop()
+                if self.board_reader is not None:
+                    self.board_reader.close()
             finally:
                 if self.sid:  # the gateway may outlive the TUI by its close grace, or longer
                     self._turn_off_yolo_set_here(self.sid)
@@ -3954,10 +3957,10 @@ class App(ModesMixin, AgentViewMixin):
         What it shows is read by a `BoardReader` thread for as long as the
         board is open; nothing it does is sent anywhere.
         """
-        reader = self.make_board_reader(self.environ, clock=self.wall_clock)
-        board = BotBoard("bots", show=reader.show, refresh=reader.refresh, clock=self.wall_clock)
-        self._show_pager(board)
-        self.board_reader = reader
+        if self.board_reader is None:
+            self.board_reader = self.make_board_reader(self.environ, clock=self.wall_clock)
+        reader = self.board_reader
+        self._show_pager(BotBoard("bots", show=reader.show, refresh=reader.refresh, clock=self.wall_clock))
         reader.start(self._wake_loop)
 
     def _take_board(self) -> None:
@@ -3970,7 +3973,6 @@ class App(ModesMixin, AgentViewMixin):
     def _stop_board_reader(self) -> None:
         if self.board_reader is not None:
             self.board_reader.stop()
-            self.board_reader = None
 
     def _copy(self, arg: str) -> None:
         last = next((block for block in reversed(self.transcript.blocks) if isinstance(block, AssistantBlock)), None)
