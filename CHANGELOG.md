@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh setup --dry-run` no longer applies model aliases, and the model
+  step reports a broken Hermes instead of a traceback (#2299).** With
+  `--model-setup --apply-model-config --model-config-digest D`, a dry run ran
+  `hermes config set model.aliases.*` and wrote the alias while the payload
+  said `dry_run: true`. It now runs no mutating Hermes command and reports
+  `apply.status: "dry_run"` with the exact commands it would run. When
+  Hermes' `config.yaml` is missing or unreadable (a dry run on a fresh home,
+  or `--skip-apply`), the step reports `status: "hermes_config_missing"` with
+  the path and a next action and setup exits 3; when a `hermes` command
+  exits nonzero or times out, it reports `status: "hermes_command_failed"`
+  and exits 1. Both used to stop on a `HermesCommandError` traceback. The
+  setup JSON `ok` and the recorded `last_setup.ok` now follow the exit code,
+  so a model step that could not run no longer reads as success.
+
 - **`omh setup --interactive` without a terminal refuses instead of
   crashing or taking every default (#2295).** With stdin closed (`<&-`) it
   stopped on an `AttributeError` traceback; with stdin from `/dev/null` or a
