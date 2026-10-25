@@ -44,3 +44,37 @@ RUNTIME_USER_PHRASE: Final[str] = f"{RUNTIME_SHORT_NAME} runtime"
 # writes them again.
 LEGACY_RUNTIME_PROFILE_ID: Final[str] = f"{RUNTIME_SHORT_NAME}-runtime"
 LEGACY_RUNTIME_PROGRESS_LANE: Final[str] = f"{RUNTIME_SHORT_NAME}_runtime"
+LEGACY_RUNTIME_SKILL_REFERENCE: Final[str] = f"{RUNTIME_SHORT_NAME}_skill_reference"
+LEGACY_RUNTIME_FAMILY: Final[str] = RUNTIME_SHORT_NAME
+
+# Spellings older releases stored for the runtime, mapped to the current ones.
+LEGACY_RUNTIME_RECORD_VALUES: Final[dict[str, str]] = {
+    LEGACY_RUNTIME_PROFILE_ID: "pi-family-runtime",
+    LEGACY_RUNTIME_PROGRESS_LANE: "pi_family_runtime",
+    LEGACY_RUNTIME_SKILL_REFERENCE: "pi_family_skill_reference",
+    f"executor_readiness:{LEGACY_RUNTIME_PROFILE_ID}": "executor_readiness:pi-family-runtime",
+}
+
+
+def canonical_runtime_record(value: object) -> object:
+    """A stored record as the current release reads it.
+
+    Every string, and every key, that is exactly an id an older release wrote
+    for this runtime becomes the current id, and a `runtime_family` naming the
+    runtime becomes `pi-family`. Free text is left alone. Callers apply this
+    when they read a record from disk; nothing writes the old spellings again.
+    """
+    if isinstance(value, dict):
+        record: dict[object, object] = {}
+        for key, item in value.items():
+            name = LEGACY_RUNTIME_RECORD_VALUES.get(key, key) if isinstance(key, str) else key
+            if name == "runtime_family" and item == LEGACY_RUNTIME_FAMILY:
+                record[name] = "pi-family"
+            else:
+                record[name] = canonical_runtime_record(item)
+        return record
+    if isinstance(value, list):
+        return [canonical_runtime_record(item) for item in value]
+    if isinstance(value, str):
+        return LEGACY_RUNTIME_RECORD_VALUES.get(value, value)
+    return value

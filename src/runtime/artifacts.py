@@ -47,6 +47,8 @@ from ..local_store import (
     read_json_object,
     read_json_object_result,
     read_jsonl_objects,
+    read_runtime_record,
+    read_runtime_record_result,
     utc_now,
 )
 from ..external_effect_receipts import (
@@ -364,7 +366,7 @@ def read_handoff_contract_receipt(run_dir: Path) -> dict[str, Any] | None:
 
 
 def _run_id_for_dir(run_dir: Path) -> str:
-    run = read_json_object(run_dir / RUN_FILE) if (run_dir / RUN_FILE).exists() else None
+    run = read_runtime_record(run_dir / RUN_FILE) if (run_dir / RUN_FILE).exists() else None
     return str(run.get("run_id", run_dir.name)) if isinstance(run, dict) else run_dir.name
 
 
@@ -709,7 +711,7 @@ def list_runs(paths: OmhPaths, *, limit: int | None = None) -> list[dict[str, An
         return []
     runs: list[dict[str, Any]] = []
     for run_json in sorted(paths.runtime_runs_dir.glob("*/run.json")):
-        run = read_json_object(run_json)
+        run = read_runtime_record(run_json)
         if run:
             runs.append(run)
     return _apply_limit(runs, limit)
@@ -766,7 +768,7 @@ def show_run(
     runs costs one parse of the store rather than N.
     """
     run_dir = paths.runtime_runs_dir / run_id
-    run = read_json_object(run_dir / RUN_FILE)
+    run = read_runtime_record(run_dir / RUN_FILE)
     if not run:
         raise FileNotFoundError(run_id)
     evidence_dir = run_dir / "evidence"
@@ -812,9 +814,9 @@ def show_run(
         },
         "executor_progress": _show_executor_progress(run_dir),
         "routing": read_json_object(run_dir / "routing.json"),
-        "coding_delegation": read_json_object(run_dir / CODING_DELEGATION_FILE),
-        "delegation": read_json_object(run_dir / DELEGATION_FILE),
-        "wrapper": read_json_object(run_dir / WRAPPER_FILE),
+        "coding_delegation": read_runtime_record(run_dir / CODING_DELEGATION_FILE),
+        "delegation": read_runtime_record(run_dir / DELEGATION_FILE),
+        "wrapper": read_runtime_record(run_dir / WRAPPER_FILE),
         "review": read_json_object(run_dir / REVIEW_FILE),
         "ci": read_json_object(run_dir / CI_FILE),
         "merge": read_json_object(run_dir / MERGE_FILE),
@@ -836,7 +838,7 @@ def list_wrapper_session_records(paths: OmhPaths, *, limit: int | None = None) -
         return []
     sessions: list[dict[str, Any]] = []
     for session_json in sorted(paths.runtime_wrapper_sessions_dir.glob("*/session.json")):
-        session = read_json_object(session_json)
+        session = read_runtime_record(session_json)
         if session:
             sessions.append(session)
     return _apply_limit(sessions, limit)
@@ -844,7 +846,7 @@ def list_wrapper_session_records(paths: OmhPaths, *, limit: int | None = None) -
 
 def show_wrapper_session_record(paths: OmhPaths, session_id: str) -> dict[str, Any]:
     session_dir = paths.runtime_wrapper_sessions_dir / session_id
-    session = read_json_object(session_dir / "session.json")
+    session = read_runtime_record(session_dir / "session.json")
     if not session:
         raise FileNotFoundError(session_id)
     events, event_errors = _read_jsonl_events_result(session_dir / EVENTS_FILE)
@@ -853,7 +855,7 @@ def show_wrapper_session_record(paths: OmhPaths, session_id: str) -> dict[str, A
         "session": session,
         "events": events,
         "runtime_observations": observations,
-        "executor_session": read_json_object(session_dir / EXECUTOR_SESSION_FILE),
+        "executor_session": read_runtime_record(session_dir / EXECUTOR_SESSION_FILE),
         "executor_progress": _show_executor_progress(session_dir),
     }
     if event_errors:
@@ -865,7 +867,7 @@ def show_wrapper_session_record(paths: OmhPaths, session_id: str) -> dict[str, A
 
 def _show_executor_progress(target_dir: Path) -> dict[str, Any]:
     progress_dir = target_dir / "executor_progress"
-    raw_binding, binding_read_error = read_json_object_result(progress_dir / EXECUTOR_PROGRESS_BINDING_FILE)
+    raw_binding, binding_read_error = read_runtime_record_result(progress_dir / EXECUTOR_PROGRESS_BINDING_FILE)
     binding_errors = [binding_read_error] if binding_read_error else validate_progress_binding(raw_binding) if isinstance(raw_binding, dict) else []
     binding = raw_binding if isinstance(raw_binding, dict) and not binding_errors else {}
     events, event_errors = read_jsonl_objects(progress_dir / EVENTS_FILE)
@@ -933,10 +935,10 @@ def _compact_executor_progress_report(report: dict[str, Any]) -> dict[str, Any]:
 
 
 def _executor_progress_show_state(target_dir: Path, binding: dict[str, Any]) -> str:
-    delegation = read_json_object(target_dir / DELEGATION_FILE) or {}
+    delegation = read_runtime_record(target_dir / DELEGATION_FILE) or {}
     if bool(delegation.get("observed")) and str(delegation.get("result", "")) in OBSERVED_RESULTS:
         return "closed"
-    executor_session = read_json_object(target_dir / EXECUTOR_SESSION_FILE) or {}
+    executor_session = read_runtime_record(target_dir / EXECUTOR_SESSION_FILE) or {}
     if bool(executor_session.get("result_observed")) and str(executor_session.get("result", "")) in OBSERVED_RESULTS:
         return "closed"
     return str(binding.get("state", ""))
@@ -2044,7 +2046,7 @@ def validate_run_dir(
     )
     run_path = run_dir / RUN_FILE
     try:
-        run = read_json_object(run_path)
+        run = read_runtime_record(run_path)
     except (OSError, JSONDecodeError, ValueError) as exc:
         run = None
         errors.append(f"{run_path}: {exc}")
@@ -2057,7 +2059,7 @@ def validate_run_dir(
             errors.append(f"{coding_delegation_path}: missing coding_delegation.json for prepared_coding_delegation run")
         if run.get("artifact_kind") == "prepared_coding_delegation" and coding_delegation_path.exists():
             try:
-                coding = read_json_object(coding_delegation_path)
+                coding = read_runtime_record(coding_delegation_path)
             except (OSError, JSONDecodeError, ValueError) as exc:
                 coding = None
                 errors.append(f"{coding_delegation_path}: {exc}")
@@ -2103,7 +2105,7 @@ def validate_run_dir(
         if isinstance(run, dict):
             if coding_for_observation is None and (run_dir / CODING_DELEGATION_FILE).exists():
                 try:
-                    coding = read_json_object(run_dir / CODING_DELEGATION_FILE)
+                    coding = read_runtime_record(run_dir / CODING_DELEGATION_FILE)
                 except (OSError, JSONDecodeError, ValueError):
                     coding = None
                 if isinstance(coding, dict):
@@ -2136,7 +2138,7 @@ def validate_run_dir(
 
 def _safe_run_id_for_dir(run_dir: Path) -> str:
     """Run id for validation paths, which must survive an unreadable run.json."""
-    run, error = read_json_object_result(run_dir / RUN_FILE)
+    run, error = read_runtime_record_result(run_dir / RUN_FILE)
     if error or not isinstance(run, dict):
         return run_dir.name
     return external_effect_run_id(run, run_dir.name)
@@ -2419,7 +2421,7 @@ def _wrapper_session_dirs_for_run(paths: OmhPaths, run_id: str) -> list[Path]:
         return []
     session_dirs: list[Path] = []
     for session_json in sorted(paths.runtime_wrapper_sessions_dir.glob("*/session.json")):
-        session, error = read_json_object_result(session_json)
+        session, error = read_runtime_record_result(session_json)
         if error:
             session_dirs.append(session_json.parent)
             continue
@@ -2431,7 +2433,7 @@ def _wrapper_session_dirs_for_run(paths: OmhPaths, run_id: str) -> list[Path]:
 def _add_duplicate_wrapper_run_link_errors(session_results: list[dict[str, Any]], session_dirs: list[Path]) -> None:
     owners_by_run_id: dict[str, list[str]] = {}
     for session_dir in session_dirs:
-        session, error = read_json_object_result(session_dir / "session.json")
+        session, error = read_runtime_record_result(session_dir / "session.json")
         if error:
             continue
         if not session:
@@ -2448,7 +2450,7 @@ def _add_duplicate_wrapper_run_link_errors(session_results: list[dict[str, Any]]
         return
     results_by_session_id = {str(result.get("session_id")): result for result in session_results}
     for session_dir in session_dirs:
-        session, error = read_json_object_result(session_dir / "session.json")
+        session, error = read_runtime_record_result(session_dir / "session.json")
         if error:
             continue
         if not session:
@@ -2527,7 +2529,7 @@ def export_runtime(
     full: bool = True,
     run_id: str | None = None,
 ) -> dict[str, Any]:
-    runs = [read_json_object(paths.runtime_runs_dir / run_id / RUN_FILE)] if run_id else list_runs(paths, limit=limit)
+    runs = [read_runtime_record(paths.runtime_runs_dir / run_id / RUN_FILE)] if run_id else list_runs(paths, limit=limit)
     runs = [run for run in runs if isinstance(run, dict)]
     if run_id:
         wrapper_sessions = _wrapper_session_records_for_run(paths, run_id, limit=limit)
@@ -2600,7 +2602,7 @@ def export_runtime(
 def _wrapper_session_records_for_run(paths: OmhPaths, run_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
     sessions: list[dict[str, Any]] = []
     for session_dir in _wrapper_session_dirs_for_run(paths, run_id):
-        session, error = read_json_object_result(session_dir / "session.json")
+        session, error = read_runtime_record_result(session_dir / "session.json")
         if error:
             continue
         if isinstance(session, dict):
@@ -2620,7 +2622,7 @@ def validate_wrapper_session_dir(session_dir: Path) -> dict[str, Any]:
     errors: list[str] = []
     session_path = session_dir / "session.json"
     events: list[dict[str, Any]] = []
-    session, read_error = read_json_object_result(session_path)
+    session, read_error = read_runtime_record_result(session_path)
     if read_error:
         errors.append(f"{session_path}: {read_error}")
     elif not session:
@@ -2662,7 +2664,7 @@ def _validate_wrapper_session_run_link(session_dir: Path, session: dict[str, Any
     run_dir = session_dir.parents[1] / "runs" / run_id
     run_path = run_dir / RUN_FILE
     coding_path = run_dir / CODING_DELEGATION_FILE
-    run = read_json_object(run_path)
+    run = read_runtime_record(run_path)
     if not run:
         return [f"{session_path}: current_run_id does not point to an existing runtime run"]
     errors.extend(f"{run_path}: {error}" for error in validate_run_record(run))
@@ -2670,7 +2672,7 @@ def _validate_wrapper_session_run_link(session_dir: Path, session: dict[str, Any
         errors.append(f"{session_path}: current_run_id must point to a prepared coding delegation run")
     if run.get("phase") != "prepared" or run.get("observation_status") != "prepared_not_observed":
         errors.append(f"{session_path}: linked run must preserve prepared_not_observed boundary")
-    coding = read_json_object(coding_path)
+    coding = read_runtime_record(coding_path)
     if not coding:
         errors.append(f"{session_path}: linked run is missing coding_delegation.json")
     else:

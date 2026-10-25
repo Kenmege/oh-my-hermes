@@ -22,7 +22,7 @@ from omh.coding.executor_capability_snapshots import (
 )
 from omh.coding.executor_progress import normalize_executor_profile
 from omh.coding.executor_auth_signals import executor_auth_signals
-from omh.coding.executors import EXECUTOR_PROFILES, canonical_executor_profile
+from omh.coding.executors import EXECUTOR_PROFILES, canonical_executor_profile, executor_label
 from omh.coding.fanout import build_fanout_contract
 from omh.coding.fanout_confinement import owner_state_directories
 from omh.coding.fanout_dispatch import (
@@ -39,6 +39,7 @@ from omh.coding.pi_family_interop import (
     LEGACY_RUNTIME_PROFILE_ID,
     LEGACY_RUNTIME_PROGRESS_LANE,
     RUNTIME_USER_PHRASE,
+    canonical_runtime_record,
 )
 from omh.commands.model_setup_overrides import load_category_overrides
 from omh.profiles.setup import read_setup_profile, write_setup_profile
@@ -252,6 +253,88 @@ class ExternalSpellingDetectionTests(unittest.TestCase):
         for message in (f"have {_HOST} fix the login bug", f"{_SHORT} runtime으로 구현해줘"):
             with self.subTest(message=message):
                 self.assertEqual(named_executor_owners(normalized_phrase(message)), (_PROFILE,))
+
+
+_FIXTURES = Path(__file__).parent / "fixtures" / "legacy_runtime_records"
+# The fixtures are files an older release wrote, with the old spellings
+# replaced by placeholders so the repo text never carries them.
+_PLACEHOLDERS = (
+    ("<LEGACY_PROFILE_ID>", LEGACY_RUNTIME_PROFILE_ID),
+    ("<LEGACY_SKILL_REFERENCE>", f"{_SHORT}_skill_reference"),
+    ("<LEGACY_AGENT>", "Open" + "Agent"),
+    ("<LEGACY_UPPER>", _SHORT.upper()),
+    ("<LEGACY_SHORT>", _SHORT),
+)
+
+
+def _legacy_text(name: str) -> str:
+    text = (_FIXTURES / name).read_text(encoding="utf-8")
+    for placeholder, value in _PLACEHOLDERS:
+        text = text.replace(placeholder, value)
+    return text
+
+
+def _install_legacy_wrapper_session(paths: OmhPaths) -> str:
+    session = json.loads(_legacy_text("wrapper_session_session.json"))
+    session_id = str(session["session_id"])
+    session_dir = paths.runtime_wrapper_sessions_dir / session_id
+    session_dir.mkdir(parents=True)
+    (session_dir / "session.json").write_text(json.dumps(session), encoding="utf-8")
+    (session_dir / "events.jsonl").write_text(_legacy_text("wrapper_session_events.jsonl"), encoding="utf-8")
+    return session_id
+
+
+class LegacyStoredRecordTests(unittest.TestCase):
+    """A wrapper session an older release wrote still validates, reports, and observes."""
+
+    def _cli(self, root: Path, *argv: str) -> tuple[int, str, str]:
+        return run_cli(["--omh-home", str(root / ".omh"), "--hermes-home", str(root / ".hermes"), *argv])
+
+    def test_the_fixture_holds_the_legacy_id(self) -> None:
+        self.assertIn(LEGACY_RUNTIME_PROFILE_ID, _legacy_text("wrapper_session_session.json"))
+
+    def test_a_legacy_coding_delegation_handoff_reads_with_current_ids(self) -> None:
+        session = json.loads(_legacy_text("wrapper_session_session.json"))
+        handoff = canonical_runtime_record(session["runtime_handoff"])
+        self.assertEqual(handoff["selected_executor_profile"], _PROFILE)
+        self.assertEqual(handoff["runtime_profile"]["profile"], _PROFILE)
+        self.assertEqual(handoff["runtime_profile"]["runtime_family"], "pi-family")
+        self.assertEqual(handoff["executor_local_workflow"]["profile"], _PROFILE)
+        self.assertEqual(handoff["executor_local_workflow"]["candidate"]["kind"], "pi_family_skill_reference")
+        self.assertEqual(handoff["executor_readiness"]["profile"], _PROFILE)
+        self.assertEqual(handoff["executor_readiness"]["cache_key"], f"executor_readiness:{_PROFILE}")
+        self.assertIn(_PROFILE, handoff["executor_local_capability_strategy"]["examples_if_available"])
+        self.assertEqual(handoff["task_authority_envelope"]["allowed_executors"], [_PROFILE])
+        self.assertEqual(executor_label(LEGACY_RUNTIME_PROFILE_ID), "Pi-family runtime")
+
+    def test_runtime_validate_accepts_a_legacy_wrapper_session(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session_id = _install_legacy_wrapper_session(_paths(root))
+            status, stdout, stderr = self._cli(root, "runtime", "validate")
+        self.assertEqual(status, 0, stderr)
+        sessions = json.loads(stdout)["wrapper_sessions"]
+        self.assertEqual(sessions, [{"errors": [], "ok": True, "session_id": session_id}])
+
+    def test_session_status_reports_the_current_profile_for_a_legacy_session(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session_id = _install_legacy_wrapper_session(_paths(root))
+            status, stdout, stderr = self._cli(root, "chat", "session", "status", session_id)
+        self.assertEqual(status, 0, stderr)
+        self.assertNotIn("Unselected executor", stdout)
+        self.assertEqual(json.loads(stdout)["selected_executor_profile"], _PROFILE)
+
+    def test_runtime_observe_accepts_the_current_profile_for_a_legacy_session(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session_id = _install_legacy_wrapper_session(_paths(root))
+            status, stdout, stderr = self._cli(
+                root, "runtime", "observe", "--session", session_id,
+                "--runtime-profile", _PROFILE, "--event", "runtime_start", "--summary", "started",
+            )
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual(json.loads(stdout)["observation"]["runtime_profile"], _PROFILE)
 
 
 if __name__ == "__main__":

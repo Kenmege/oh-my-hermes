@@ -91,7 +91,7 @@ from ..runtime.context_budget import (
     unchanged_run_payload,
 )
 from ..executors import CODING_RUNTIME_HANDOFF_TARGETS
-from ..local_store import read_json_object
+from ..local_store import read_runtime_record
 from ..paths import OmhPaths
 from ..skill_pack import builtin_harnesses, routable_definitions
 from ..team_readiness import DEFAULT_RUNTIME_TARGET_SCAN_LIMIT, build_team_worker_readiness
@@ -655,8 +655,8 @@ def _validate_runtime_observation_target(target_dir, target_type: str, runtime_p
     if not expected_profile:
         if target_type == "wrapper_session":
             raise OmhError("runtime observe requires a runtime_handoff_prepared wrapper session")
-        run = read_json_object(target_dir / RUN_FILE)
-        coding = read_json_object(target_dir / CODING_DELEGATION_FILE)
+        run = read_runtime_record(target_dir / RUN_FILE)
+        coding = read_runtime_record(target_dir / CODING_DELEGATION_FILE)
         if (
             isinstance(run, dict)
             and run.get("artifact_kind") == "prepared_coding_delegation"
@@ -671,12 +671,12 @@ def _validate_runtime_observation_target(target_dir, target_type: str, runtime_p
 
 def _expected_runtime_profile_for_target(target_dir, target_type: str) -> str | None:
     if target_type == "wrapper_session":
-        session = read_json_object(target_dir / "session.json")
+        session = read_runtime_record(target_dir / "session.json")
         if not isinstance(session, dict) or session.get("status") != "runtime_handoff_prepared":
             return ""
         return _runtime_profile_from_handoff(session.get("runtime_handoff")) or str(session.get("selected_executor_profile") or "")
-    run = read_json_object(target_dir / RUN_FILE)
-    coding = read_json_object(target_dir / CODING_DELEGATION_FILE)
+    run = read_runtime_record(target_dir / RUN_FILE)
+    coding = read_runtime_record(target_dir / CODING_DELEGATION_FILE)
     if isinstance(coding, dict):
         if coding.get("work_owner_mode") == "runtime_handoff":
             return _runtime_profile_from_handoff(coding.get("runtime_handoff")) or str(coding.get("selected_executor_profile") or "")

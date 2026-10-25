@@ -348,7 +348,7 @@ def legacy_executor_profile_ids(profile: str) -> tuple[str, ...]:
 
 
 def executor_label(profile: str | None) -> str:
-    return _executor_label_map().get(profile or "", "Unselected executor")
+    return _executor_label_map().get(canonical_executor_profile(profile or ""), "Unselected executor")
 
 
 @lru_cache(maxsize=1)
