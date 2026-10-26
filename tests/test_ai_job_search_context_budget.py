@@ -60,8 +60,10 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # runtime rename moved four sibling rows by +6 each, and the
             # executor-runtime-readiness row's trigger count went +35 -> +34
             # when its runtime names became scoring-only (same length).
-            (skill_capabilities, 522331, FULL_ROW_DELTA_CAP,
-             'cd1f5042d76a69544c44314a19352e019f92fe87fdd8c9a76ad7d217312e2018',
+            # 522331 -> 522328 and the digest re-derived again for the
+            # model-setup row refresh (-3); no other row moved.
+            (skill_capabilities, 522328, FULL_ROW_DELTA_CAP,
+             '643e140b877a6e5b369a7c107cc9a827852a26c280bceed586ff1fdeeb6593d4',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -122,7 +124,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # Re-derived from both main sources above plus the bounded dag-ulw
         # baseline-verification guidance, then the pi-family runtime rename in
         # model-setup, maestro, ultrawork, and executor-runtime-readiness.
-        self.assertEqual(_digest(legacy_hashes), 'c1743fe0cbbc15f3179472da5202799fe649760154ebf984c1b6713525df39da')
+        # Re-derived again for the model-setup body refresh (retired provider
+        # and role-slot wording); only model-setup moves versus main.
+        self.assertEqual(_digest(legacy_hashes), '442aec8ac07203adcdaa407ba09d9696043a7924986851a669f04efeb8e7e201')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.

@@ -3846,7 +3846,7 @@ def _add_coding_commands(sub) -> None:
         "chain",
         nargs="+",
         help=(
-            "Chain entries in order, each `model[:effort]`, e.g. gpt-5.6-sol:xhigh. The tail after the "
+            "Chain entries in order, each `model[:effort]`, e.g. gpt-6.1-sol:xhigh. The tail after the "
             "last colon is taken as the effort only when it is a known level (off, minimal, low, medium, "
             "high, xhigh, max, auto); other colon tags stay part of the model id."
         ),
