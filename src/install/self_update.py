@@ -57,7 +57,12 @@ class PhaseResult(PhaseStatus, total=False):
     launcher: str
 
 
-class RollbackResult(TypedDict):
+class RollbackFields(TypedDict, total=False):
+    status: str
+    reason: str
+
+
+class RollbackResult(RollbackFields):
     performed: bool
     restored: str
 
@@ -281,16 +286,7 @@ def _activate(root: Path, state: dict[str, Any], candidate: Path, args: Any, run
     passed, reason = _reenter(root, candidate, args, runner, platform)
     result.update(phase="post_activation", post_activation={"status": "ok" if passed else "failed", "reason": reason})
     if not passed:
-        _switch(root, previous, platform)
-        _reenter(root, previous, args, runner, platform, restoring=True)
-        state["activation_in_progress"] = None
-        record_pointer(state, root, previous)
-        save_state(root, state)
-        # A refused candidate is as dead as one that failed staging: delete
-        # it now rather than leave a venv on disk until the next successful
-        # update's garbage collection.
-        _cleanup_candidate(root, candidate)
-        result["rollback"] = {"performed": True, "restored": previous.name}
+        _rollback_activation(root, state, candidate, previous, args, runner, platform, result)
         return result
     commit_activation(root, state, candidate)
     collect_garbage(root, state, result, running_generation=_running_generation(root))
@@ -299,21 +295,39 @@ def _activate(root: Path, state: dict[str, Any], candidate: Path, args: Any, run
     return result
 
 
+def _rollback_activation(root: Path, state: dict[str, Any], candidate: Path, previous: Path, args: Any, runner: Runner, platform: SelfUpdatePlatform, result: SelfUpdateResult) -> None:
+    # Persist the recovery intent before moving the pointer. A crash or failed
+    # reentry must not make the next update discard this transaction as unswitched.
+    state["activation_in_progress"]["restore_required"] = True
+    save_state(root, state)
+    try:
+        _switch(root, previous, platform)
+    except OmhError as exc:
+        restored, reason = False, str(exc)
+    else:
+        restored, reason = _reenter(root, previous, args, runner, platform, restoring=True)
+    if not restored:
+        result["rollback"] = {"performed": True, "restored": "", "status": "failed", "reason": reason}
+        result["recovery"] = {"status": "required", "action": "restore_failed", "reason": reason}
+        return
+    state["activation_in_progress"] = None
+    record_pointer(state, root, previous)
+    save_state(root, state)
+    _cleanup_candidate(root, candidate)
+    result["rollback"] = {"performed": True, "restored": previous.name}
+
+
 def _recover_interrupted(root: Path, state: dict[str, Any], interrupted: tuple[Path, Path], args: Any, runner: Runner, platform: SelfUpdatePlatform, result: SelfUpdateResult) -> SelfUpdateResult:
     candidate, previous = interrupted
-    passed, _reason = _reenter(root, candidate, args, runner, platform)
+    restoring = state["activation_in_progress"].get("restore_required") is True
+    passed, _reason = (False, "restore pending") if restoring else _reenter(root, candidate, args, runner, platform)
     if passed:
         commit_activation(root, state, candidate)
         save_state(root, state)
         result.update(ok=True, phase="recovery", recovery={"status": "ok", "action": "completed_interrupted_activation"})
         return result
-    _switch(root, previous, platform)
-    _reenter(root, previous, args, runner, platform, restoring=True)
-    state["activation_in_progress"] = None
-    record_pointer(state, root, previous)
-    save_state(root, state)
-    _cleanup_candidate(root, candidate)
-    result.update(phase="recovery", recovery={"status": "failed", "action": "rolled_back_interrupted_activation"}, rollback={"performed": True, "restored": previous.name})
+    result.update(phase="recovery", recovery={"status": "failed", "action": "rolled_back_interrupted_activation"})
+    _rollback_activation(root, state, candidate, previous, args, runner, platform, result)
     return result
 
 

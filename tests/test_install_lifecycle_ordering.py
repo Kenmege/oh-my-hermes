@@ -22,6 +22,8 @@ class LifecycleOrderingTests(unittest.TestCase):
         self.hermes = self.root / "hermes"
         self.bot = self.hermes / "profiles" / "bot"
         self.bot.mkdir(parents=True)
+        # Hermes profile creation seeds identity before OMH bootstraps config.
+        (self.bot / "SOUL.md").write_text("Bot profile identity.\n", encoding="utf-8")
         self.store = self.root / "store"
         self.command = self.root / "command" / "venv"
         self.python = self.command / "bin" / "python"
@@ -96,6 +98,26 @@ class LifecycleOrderingTests(unittest.TestCase):
         self.assertEqual(payload["store_removal"]["status"], "kept")
         self.assertFalse(payload["command_package_removed"])
         self.assertNotIn(self.store.resolve(), self.resolved_paths(payload["removed_paths"]))
+
+    def test_markerless_shell_is_ignored_but_configured_profile_is_detached(self):
+        ghost = self.hermes / "profiles" / "old-log-shell"
+        (ghost / "logs").mkdir(parents=True)
+        (ghost / "cache").mkdir()
+        (ghost / "logs" / "sentinel").write_bytes(b"KEEP LOGS\n")
+        before = {p.relative_to(ghost): p.read_bytes() for p in ghost.rglob("*") if p.is_file()}
+        self.setup()
+        self.assertFalse((ghost / "config.yaml").exists())
+        self.assertFalse((ghost / "plugins").exists())
+        # OMH's own config remains identity after the initial marker is gone.
+        (self.bot / "SOUL.md").unlink()
+        code, payload, stderr = self.uninstall()
+        self.assertEqual(code, 0, (payload, stderr))
+        self.assertEqual([(row["profile"], row["status"]) for row in payload["hermes_profiles"]],
+                         [("bot", "cleared")])
+        self.assertEqual({p.relative_to(ghost): p.read_bytes() for p in ghost.rglob("*") if p.is_file()}, before)
+        self.assertEqual(sorted(p.name for p in ghost.iterdir()), ["cache", "logs"])
+        self.assertFalse(self.store.exists(), payload)
+        self.assertFalse(self.command.exists(), payload)
 
     def test_successful_primary_and_child_detach_removes_roots(self):
         self.setup()

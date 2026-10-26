@@ -180,8 +180,13 @@ class GatewayRestartHintTests(unittest.TestCase):
             hermes_home = root / ".hermes"
             _write_home(hermes_home, starts=[_INSTALLED_EPOCH - 3600], pid_record=_record(hermes_home))
             miku = hermes_home / "profiles" / "miku"
+            # A real named profile has host identity; an empty shell is ignored.
+            miku.mkdir(parents=True, exist_ok=True)
+            (miku / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             _write_home(miku, starts=[_INSTALLED_EPOCH - 60], pid_record=_record(miku))
             fresh = hermes_home / "profiles" / "fresh"
+            fresh.mkdir(parents=True, exist_ok=True)
+            (fresh / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             _write_home(fresh, starts=[_INSTALLED_EPOCH + 60], pid_record=_record(fresh))
             paths = OmhPaths(omh_home=root / ".omh", hermes_home=hermes_home)
 
@@ -208,6 +213,8 @@ class UpdatePrintsRestartHintsTests(unittest.TestCase):
             hermes_home = root / ".hermes"
             miku = hermes_home / "profiles" / "miku"
             miku.mkdir(parents=True)
+            # Seed genuine profile identity before setup registers the profile.
+            (miku / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             status, _, stderr = run_cli(self._base(root) + ["setup"])
             self.assertEqual(status, 0, stderr)
             # Started well before any bundle this test installs; the update
