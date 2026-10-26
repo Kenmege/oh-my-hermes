@@ -1208,13 +1208,25 @@ completion also matches a part of a name: `/uml` finds `/omh-codebase-uml`.
 The bot board (Ctrl+S or `/bots`) shows this machine's Hermes bots, full
 screen, and changes nothing. Its first page lists the Hermes home the TUI runs
 under and every named profile beside it (`<root>/profiles/<name>/`), each with
-its gateway as `gateway_state.json` records it (state, pid, running agents and
-each platform's state), its stored sessions counted by source, how many were
-active in the last 24 hours, and when the last one was. Enter opens a
-profile's sessions, newest activity first (delegated subagent sessions are
-counted on the first page, not listed), and Enter again a session's last 40
-messages; ← or Esc goes back, q closes it from the first page, and r reads
-again at once. It reads again every 5 s by itself, off the screen's own thread.
+its gateway as `gateway_state.json` records it (state, pid, running agents,
+each platform's state, how long ago the record was updated and whether a
+restart was requested; while it runs, its uptime and resident memory), its
+stored sessions counted by source, how many were active in the last 24 hours,
+and when the last one was. Under that come two rows: the default model its
+`config.yaml` names (and the model its newest session ran, when that
+differs) with the active sessions' input, output and cache-read tokens and
+cost; and what the bot remembers, Hermes' `MEMORY.md` and `USER.md` entries
+and characters against the limits its `config.yaml` sets, plus the record
+count of the OMH store its `config.yaml` names. Tokens and cost are each
+session's lifetime totals, since Hermes records no time per call, and a cost
+appears only where Hermes priced it (`~` marks an estimate); sessions it did
+not price are counted as unpriced, never as $0. A store, config or memory
+file it cannot read is named as such, and a store without the token columns
+shows no tokens. Enter opens a profile's sessions, newest activity first, each
+with its model, tokens and cost (delegated subagent sessions are counted on
+the first page, not listed), and Enter again a session's last 40 messages
+under its model, tokens and cost; ← or Esc goes back, q closes it from the
+first page, and r reads again at once. It reads again every 5 s by itself, off the screen's own thread.
 It counts sessions active in the last 24 hours rather than open ones, because a
 messaging gateway leaves every chat it served open, so a Slack bot idle for weeks
 would still show dozens. A gateway shows as running only while the process its
@@ -1222,8 +1234,10 @@ record names still runs and is the one that wrote the record (its start time
 is compared as Hermes compares it); a platform's state from a gateway that has
 since stopped or restarted shows as what was last recorded. Each `state.db` is
 opened read-only (and immutable when no connection has it open, so SQLite
-creates no file beside it), the only signal it sends is the signal-0 liveness
-probe, and it calls nothing in Hermes' gateway.
+creates no file beside it), `config.yaml` and the memory files are read only up
+to 1 MiB each (a larger one is reported by size), the OMH store's records are
+counted from its directory listing, the only signal it sends is the signal-0
+liveness probe, and it calls nothing in Hermes' gateway.
 
 When the OMH TUI cannot start, `omh` says why in one line on stderr and opens
 Hermes instead, so you lose the OMH screen, never the session. For a reason

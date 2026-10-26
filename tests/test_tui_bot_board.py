@@ -6,7 +6,10 @@ Discord entry an older process left; `miku` whose record still says running
 for a pid that is gone; `broken` with a record that is not JSON and no
 state.db; `locked` whose state.db another connection holds exclusively; and
 three directories that are no profile (hidden, no identity file, a deletion
-tombstone). The cases read them through the board's own readers, draw them at
+tombstone). `default` also has a config.yaml (its model, memory limits and an
+OMH store with two records) and a MEMORY.md; `SummaryTests` build the token
+columns, memory files and configs the summaries read, and the shapes they must
+refuse, in the same tree. The cases read them through the board's own readers, draw them at
 a narrow and a wide width, drive the board's keys, open it from the app with
 Ctrl+S and `/bots` (and not from inside Ctrl+R's search), and prove nothing is
 written: every connection is `mode=ro`, the only signal is 0, and the tree's
@@ -15,6 +18,8 @@ bytes and times are what they were.
 
 from __future__ import annotations
 
+import contextlib
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -86,6 +91,57 @@ def write_store(home: Path, sessions: list[tuple], messages: list[tuple] = (), *
     return path
 
 
+USAGE_COLUMNS = (
+    "model TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, "
+    "estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT"
+)
+
+
+def write_usage_store(home: Path, sessions: list[tuple], columns: str = USAGE_COLUMNS) -> Path:
+    """A state.db as Hermes writes one now: (id, source, title, last activity, count, *the `columns`) rows."""
+    path = home / "state.db"
+    path.unlink(missing_ok=True)
+    connection = sqlite3.connect(path)
+    connection.executescript(
+        "CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, title TEXT, display_name TEXT, "
+        f"started_at REAL NOT NULL, ended_at REAL, last_activity_at REAL, message_count INTEGER DEFAULT 0, {columns});"
+        "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL, "
+        "content TEXT, tool_name TEXT, tool_calls TEXT, timestamp REAL NOT NULL, active INTEGER NOT NULL DEFAULT 1);"
+    )
+    names = [column.split()[0] for column in columns.split(", ")]
+    marks = ", ".join("?" * (6 + len(names)))
+    connection.executemany(
+        f"INSERT INTO sessions (id, source, title, started_at, last_activity_at, message_count, {', '.join(names)}) "
+        f"VALUES ({marks})",
+        [(row[0], row[1], row[2], row[3] - 60, row[3], row[4], *row[5:]) for row in sessions],
+    )
+    connection.commit()
+    connection.close()
+    return path
+
+
+def write_memory(home: Path, name: str, entries: list[str] | bytes) -> Path:
+    path = home / "memories" / name
+    path.parent.mkdir(exist_ok=True)
+    path.write_bytes(entries if isinstance(entries, bytes) else "\n§\n".join(entries).encode("utf-8"))
+    return path
+
+
+ROOT_CONFIG = """model:
+  provider: claude-proxy
+  default: claude-opus-5-5
+memory:
+  memory_enabled: true
+  memory_char_limit: 2200
+  user_char_limit: 1375
+plugins:
+  entries:
+    omh:
+      settings:
+        omh_home: omh-store
+"""
+
+
 def write_record(home: Path, record: dict | str) -> None:
     text = record if isinstance(record, str) else json.dumps(record)
     (home / "gateway_state.json").write_text(text, encoding="utf-8")
@@ -117,6 +173,12 @@ def make_root(root: Path) -> None:
             ("s-new", "user", "compacted away", None, None, NOW - 640, 0),
         ],
     )
+    (root / "config.yaml").write_text(ROOT_CONFIG, encoding="utf-8")
+    write_memory(root, "MEMORY.md", ["User ships on Fridays", "  Prefers short answers  "])
+    records = root / "omh-store" / "memory" / "records"
+    records.mkdir(parents=True)
+    for name in ("mem_a.json", "mem_b.json", "notes.txt"):
+        (records / name).write_text("{}", encoding="utf-8")
     profiles = root / "profiles"
     miku = profiles / "miku"
     miku.mkdir(parents=True)
@@ -393,6 +455,218 @@ class ReadOnlyTests(FixtureRoot):
         self.assertTrue(signals)
         self.assertEqual({signal for _pid, signal in signals}, {0})
         self.assertEqual(tree_state(self.root), before)
+
+
+class SummaryTests(FixtureRoot):
+    """The model, token, memory and gateway summaries: what each reads, and what it says when it cannot."""
+
+    def profile(self, name: str = "default"):
+        home = self.root if name == "default" else self.root / "profiles" / name
+        return read_profile(name, home, self.root, NOW)
+
+    def line(self, profile, index: int) -> str:
+        """Level 1's text for `profile`: 0 is its gateway's row; -3, -2 and -1 its model, memory and blank rows."""
+        lines, _span = profile_lines([profile], 0, NOW, 400, DEFAULT_THEME)
+        return lines_text(lines)[2:][index]
+
+    def test_the_configured_model_and_the_one_the_newest_session_ran(self) -> None:
+        write_usage_store(self.root, [
+            ("new", "slack", "t", NOW - 60, 2, "z-ai/glm-5.3", 10, 5, 0, 0.01, None, "estimated"),
+            ("child", "subagent", "t", NOW - 10, 2, "child-model", 10, 5, 0, 0.0, None, "included"),
+            ("old", "cli", "t", NOW - 3 * DAY, 2, "claude-opus-5-5", 10, 5, 0, 0.0, None, "included"),
+        ])
+        profile = self.profile()
+        self.assertEqual((profile.model, profile.provider, profile.ran), ("claude-opus-5-5", "claude-proxy", "z-ai/glm-5.3"))
+        self.assertTrue(self.line(profile, -3).startswith(
+            "    claude-opus-5-5 via claude-proxy · newest session ran z-ai/glm-5.3 · 2 active: "))
+        write_usage_store(self.root, [("same", "cli", "t", NOW - 60, 2, "claude-opus-5-5", 1, 1, 0, None, None, None)])
+        self.assertNotIn("newest session ran", self.line(self.profile(), -3), "the same model is not said twice")
+
+    def test_a_model_written_as_a_string_or_not_at_all(self) -> None:
+        for config, model in (("model: gpt-5.5\n", "gpt-5.5"), ("model:\n  model: kimi-k3\n", "kimi-k3"), ("agent: {}\n", "")):
+            with self.subTest(config=config):
+                (self.root / "config.yaml").write_text(config, encoding="utf-8")
+                self.assertEqual(self.profile().model, model)
+        self.assertTrue(self.line(self.profile(), -3).startswith("    no default model configured"))
+
+    def test_a_config_it_cannot_read_says_so_and_names_no_model_or_limit(self) -> None:
+        config = self.root / "config.yaml"
+        for content, said in (
+            (b"model:\n\tdefault: tabbed\n", "config.yaml unreadable"),  # YAML indents with spaces
+            (b"model:\n  default: \xff\xfe\n", "config.yaml unreadable"),
+            (b"#" * (bot_board.CONFIG_BYTES + 1), "config.yaml too large to read (1 MB)"),
+        ):
+            with self.subTest(said=said, size=len(content)):
+                config.write_bytes(content)
+                profile = self.profile()
+                self.assertEqual((profile.config, profile.model), (said, ""))
+                self.assertTrue(self.line(profile, -3).startswith(f"    {said}"))
+        config.unlink()
+        profile = self.profile()
+        self.assertEqual(profile.config, "no config.yaml")
+        self.assertEqual([memory.limit for memory in profile.memory], [None, None])
+        self.assertIsNone(profile.omh_records, "no config: no store is named, and none is guessed")
+
+    def test_the_active_sessions_tokens_and_only_the_cost_hermes_priced(self) -> None:
+        write_usage_store(self.root, [
+            ("a", "slack", "t", NOW - 60, 2, "m", 1_000_000, 200_000, 12_400_000, 1.5, 4.0, "actual"),
+            ("b", "slack", "t", NOW - 120, 2, "m", 200_000, 34_500, 0, 0.12, None, "estimated"),
+            ("c", "cli", "t", NOW - 180, 2, "m", 50_000, 10_000, 0, 0.0, None, "unknown"),
+            ("d", "cli", "t", NOW - 240, 2, "m", 1_000, 0, 0, 0.0, None, "included"),
+            ("e", "cli", "t", NOW - 300, 2, "m", 0, 0, 0, None, None, None),  # nothing used yet: not unpriced
+            ("old", "cli", "t", NOW - 3 * DAY, 2, "m", 9_000_000, 9_000_000, 0, 99.0, None, "estimated"),
+        ])
+        profile = self.profile()
+        self.assertEqual(profile.active, 5)
+        self.assertEqual(profile.usage, bot_board.Usage(1_251_000, 244_500, 12_400_000, 4.12, True, 1, 1))
+        self.assertTrue(self.line(profile, -3).endswith(
+            " · 5 active: 1.3M in · 244.5k out · 12.4M cache read · ~$4.12 + 1 unpriced"))
+
+    def test_a_cost_hermes_never_priced_is_never_shown_as_zero(self) -> None:
+        for statuses, said in (
+            (("unknown", "unknown"), "cost unknown"), (("included", "included"), "included"),
+            (("actual", "actual"), "$0.00"), ((None, None), "cost unknown"),
+        ):
+            with self.subTest(statuses=statuses):
+                write_usage_store(self.root, [
+                    (f"s{n}", "cli", "t", NOW - 60, 2, "m", 10, 10, 0, 0.0, None, status) for n, status in enumerate(statuses)
+                ])
+                self.assertTrue(self.line(self.profile(), -3).endswith(f"20 in · 20 out · 0 cache read · {said}"))
+
+    def test_older_stores_without_the_columns_show_less_and_no_number_they_lack(self) -> None:
+        # The fixture's own store has no model, token or cost column at all.
+        profile = self.profile()
+        self.assertEqual((profile.usage, profile.ran), (None, ""))
+        self.assertEqual(self.line(profile, -3), "    claude-opus-5-5 via claude-proxy")
+        sessions = snapshot(self.environ, BoardView("default"))
+        self.assertEqual((sessions.sessions[0].model, sessions.sessions[0].usage), ("", None))
+        self.assertTrue(lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])[2].endswith(
+            "  slack · 10m ago · 12 messages"))
+        tail = snapshot(self.environ, BoardView("default", "s-new"))
+        self.assertEqual(lines_text(message_lines(tail, tail.sessions[0], NOW, 150, DEFAULT_THEME))[2], "")
+        write_usage_store(self.root, [("t", "cli", "t", NOW - 60, 2, 5, 7)], "input_tokens INTEGER, output_tokens INTEGER")
+        profile = self.profile()
+        self.assertEqual(profile.usage, bot_board.Usage(5, 7, None, None, False, 0, 1))
+        self.assertTrue(self.line(profile, -3).endswith("1 active: 5 in · 7 out · cost unknown"), "no cache read column")
+
+    def test_levels_two_and_three_show_each_sessions_model_tokens_and_cost(self) -> None:
+        write_usage_store(self.root, [
+            ("a", "slack", "Release notes", NOW - 60, 12, "anthropic/claude-opus-5-5", 325_170, 89_019, 12_469_303, 0.4321, None, "estimated"),
+            ("b", "cli", "Probe", NOW - 120, 2, "glm-5.3", 192, 67_200, 0, 0.0, None, "unknown"),
+        ])
+        sessions = snapshot(self.environ, BoardView("default"))
+        rows = lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])
+        self.assertTrue(rows[2].endswith("  claude-opus-5-5 · 325.2k in · 89k out · ~$0.43 · slack · 1m ago · 12 messages"))
+        self.assertTrue(rows[3].endswith("  glm-5.3 · 192 in · 67.2k out · cli · 2m ago · 2 messages"), "no unpriced cost")
+        tail = snapshot(self.environ, BoardView("default", "a"))
+        head = lines_text(message_lines(tail, tail.sessions[0], NOW, 150, DEFAULT_THEME))[:3]
+        self.assertEqual(head[2], "anthropic/claude-opus-5-5 · 325.2k in · 89k out · 12.5M cache read · ~$0.43")
+
+    def test_memory_is_counted_as_hermes_counts_it_against_the_configured_limits(self) -> None:
+        memory, user = self.profile().memory
+        joined = len("User ships on Fridays\n§\nPrefers short answers")  # entries stripped, joined by the delimiter
+        self.assertEqual(memory, bot_board.MemoryFile("memory", 2, joined, 2200, True))
+        self.assertEqual(user, bot_board.MemoryFile("user", 0, 0, 1375, True), "no USER.md yet: empty")
+        self.assertEqual(
+            self.line(self.profile(), -2),
+            f"    memory 2 entries, {joined}/2,200 chars · user profile empty · OMH memory 2 records",
+        )
+        write_memory(self.root, "USER.md", ["x" * 1400])
+        profile = self.profile()
+        lines, _span = profile_lines([profile], 0, NOW, 400, DEFAULT_THEME)
+        over = next(span for span in lines[-2] if "1,400/1,375" in span.text)
+        self.assertIs(over.style, DEFAULT_THEME.warn, "over its limit")
+
+    def test_memory_that_is_off_unreadable_or_huge_says_so_without_counting(self) -> None:
+        config = ROOT_CONFIG.replace("memory_enabled: true", "memory_enabled: false")
+        (self.root / "config.yaml").write_text(config.replace("  user_char_limit: 1375\n", ""), encoding="utf-8")
+        write_memory(self.root, "USER.md", b"caf\xe9")
+        self.assertEqual(self.line(self.profile(), -2).split(" · ")[:2], ["    memory off", "user profile unreadable"])
+        write_memory(self.root, "USER.md", ["a", "b"])
+        self.assertIn("user profile 2 entries, 5 chars ·", self.line(self.profile(), -2), "no limit configured: none shown")
+        huge = write_memory(self.root, "MEMORY.md", b"x" * (2 * bot_board.MEMORY_FILE_BYTES))
+        (self.root / "config.yaml").write_text(ROOT_CONFIG, encoding="utf-8")
+        read: list[int] = []
+        real_open = bot_board.Path.open
+
+        def path_open(path, *args, **kwargs):
+            handle = real_open(path, *args, **kwargs)
+            if path == huge:
+                real_read = handle.read
+                handle.read = lambda size=-1: read.append(size) or real_read(size)
+            return handle
+
+        with patch.object(bot_board.Path, "open", path_open):
+            memory = self.profile().memory[0]
+        self.assertEqual((memory.problem, memory.entries), ("too large to read (2 MB)", 0))
+        self.assertEqual(read, [bot_board.MEMORY_FILE_BYTES + 1], "one bounded read")
+        self.assertTrue(self.line(self.profile(), -2).startswith("    memory too large to read (2 MB) · "))
+
+    def test_the_omh_store_is_the_one_config_names_and_only_regular_json_files_count(self) -> None:
+        records = self.root / "omh-store" / "memory" / "records"
+        with contextlib.suppress(OSError):  # Windows without the symlink privilege: the count is the same
+            (records / "linked.json").symlink_to(records / "mem_a.json")
+        (records / "dir.json").mkdir()
+        self.assertEqual(self.profile().omh_records, 2)
+        for setting, records_seen, said in (
+            ("$HERMES_HOME/omh-store", 2, ""),
+            ("${OMH_SECRET}/store", None, "OMH store not resolvable"),  # read from no environment
+            (str(self.root / "nowhere"), None, "OMH store not found"),
+            (str(self.root), 0, ""),  # a store with no records yet
+        ):
+            with self.subTest(setting=setting):
+                (self.root / "config.yaml").write_text(ROOT_CONFIG.replace("omh-store", setting), encoding="utf-8")
+                profile = self.profile()
+                self.assertEqual((profile.omh_records, profile.omh), (records_seen, said))
+        (self.root / "config.yaml").write_text(ROOT_CONFIG.split("plugins:")[0], encoding="utf-8")
+        self.assertNotIn("OMH", self.line(self.profile(), -2), "no setting: no store named, ~/.omh not guessed")
+
+    @POSIX_ONLY
+    def test_a_live_gateway_shows_its_uptime_memory_and_record_age(self) -> None:
+        record = json.loads((self.root / "gateway_state.json").read_text(encoding="utf-8"))
+        # 75 s before the board's clock (NOW is 2027-01-15 08:00:00 UTC).
+        write_record(self.root, {**record, "updated_at": "2027-01-15T07:58:45Z", "restart_requested": True})
+        now = time.time()
+        gateway = read_gateway(self.root, now)
+        self.assertEqual((gateway.live, gateway.updated, gateway.restart_requested), (True, NOW - 75, True))
+        header = self.line(self.profile(), 0)
+        self.assertIn("· updated 1m ago · restart requested", header)
+        if sys.platform not in ("darwin", "linux"):
+            self.assertEqual((gateway.started, gateway.rss), (None, None))
+            return
+        # The record's start time is this process's own: its age is this process's.
+        self.assertLess(abs(gateway.started - bot_board.started_at(bot_board.process_facts(os.getpid())[0], now)), 5)
+        self.assertLess(now - gateway.started, 7 * DAY, "this test process started recently")
+        self.assertGreater(gateway.rss, 1 << 20, "this process holds more than a megabyte")
+        self.assertRegex(header, r"gateway running · pid \d+ · 2 agents running · up \S+.* · RSS [\d.]+ [KMG]B · ")
+
+    def test_a_gateway_that_is_not_running_shows_only_how_old_its_record_is(self) -> None:
+        miku = self.root / "profiles" / "miku"
+        record = json.loads((miku / "gateway_state.json").read_text(encoding="utf-8"))
+        write_record(miku, {**record, "updated_at": NOW - 3 * DAY})
+        with patch.object(bot_board, "resident_bytes") as rss:
+            header = self.line(self.profile("miku"), 0)
+        rss.assert_not_called()
+        self.assertTrue(header.endswith("its record still says running (pid 4194301 is gone) · updated 3d ago"), header)
+        self.assertNotIn(" up ", header)
+
+    def test_record_times_are_read_as_hermes_reads_them(self) -> None:
+        at = datetime(2026, 10, 26, 4, 14, 34, tzinfo=timezone.utc).timestamp()
+        for value, expected in (
+            ("2026-10-26T04:14:34+00:00", at), ("2026-10-26T04:14:34Z", at), ("2026-10-26T04:14:34", at),
+            ("2026-10-26T13:14:34+09:00", at), (at, at),
+            (12, None), (True, None), ("yesterday", None), (None, None), (float("nan"), None),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(bot_board._record_time(value), expected)
+
+    def test_compact_numbers(self) -> None:
+        self.assertEqual(
+            [bot_board._bytes_text(size) for size in (512, 12 * 1024, 1536 * 1024, 412 << 20, int(1.2 * (1 << 30)))],
+            ["512 B", "12 KB", "1.5 MB", "412 MB", "1.2 GB"],
+        )
+        self.assertEqual([bot_board._duration_text(s) for s in (45, 720, 12_000, 190_000)], ["45s", "12m", "3h 20m", "2d 4h"])
+        self.assertEqual(bot_board._cost_text(bot_board.Usage(cost=0.001)), "<$0.01")
 
 
 def snapshot(environ: dict, view: BoardView = BoardView()) -> BoardSnapshot:
