@@ -60,11 +60,11 @@ the same vocabulary:
 - `omh chat interact ...` -> `coding_route_decision`, mirrored on
   `delegation.coding_route_decision`.
 
-Direct legacy `ultraprocess` invocations (now `ultrawork`'s delivery alias), broad coding delivery, and test-until-pass requests all
-report the same lane action, `prepare_one_cycle_delivery`. The lane action says
-which lane to prepare; it deliberately says nothing about who owns the code.
-Ownership is the separate `coding_route_decision.next_action`, which is always
-one of four states:
+Direct `ulw-work` invocations, broad coding delivery, and test-until-pass
+requests all report the same lane action, `prepare_one_cycle_delivery`. The lane
+action says which lane to prepare; it deliberately says nothing about who owns
+the code. Ownership is the separate `coding_route_decision.next_action`, which
+is always one of four states:
 
 | `next_action` | `source` | Meaning |
 | --- | --- | --- |
@@ -294,12 +294,12 @@ Example plan effect:
 
 ```text
 Hermes Agent  BOT
-[omh] ralplan - I routed this to `ulw-plan` because it needs a safe plan first.
+[omh] ulw-plan - I routed this to `ulw-plan` because it needs a safe plan first.
 
-Accept or revise the plan first; the handoff button stays disabled until
-acceptance. A draft plan is still only planning evidence.
+Accept or revise the plan first; choose the executor before handoff if needed.
+A draft plan is still only planning evidence.
 
-[ Accept plan ] [ Revise plan ] [ Prepare handoff disabled ]
+[ Accept plan ] [ Revise plan ] [ Choose coding agent ] [ Prepare handoff disabled ]
 ```
 
 These examples are locked by
@@ -751,12 +751,15 @@ maintainer-1
 I want to safely add a feature to this repo
 
 Hermes Agent  BOT
-[omh] plan - I routed this to `omh-plan` because it needs a safe plan first.
+[omh] ulw-plan - I routed this to `ulw-plan` because it needs a safe plan first.
 
-Accept or revise the plan first; the handoff button stays disabled until
-acceptance. A draft plan is still only planning evidence.
+Accept or revise the plan first; choose the executor before handoff if needed.
+A draft plan is still only planning evidence.
 
-[ Accept plan ] [ Revise plan ] [ Prepare handoff ] disabled
+Prepared staged workflow: Interviewer -> Reviewer -> Builder -> Reviewer.
+Builder owner: executor choice required. Status: prepared_not_observed.
+
+[ Accept plan ] [ Revise plan ] [ Choose coding agent ] [ Prepare handoff ] disabled
 
 State
 - Phase: planning
@@ -769,7 +772,8 @@ User-facing effect:
 - The user does not need to know an `omh` command.
 - Hermes Agent explains why the request became a plan-first workflow and shows
   the visible OMH trace prefix on the first line.
-- The wrapper can show `Accept plan` and `Revise plan` immediately.
+- The wrapper can show `Accept plan`, `Revise plan`, and `Choose coding agent`
+  immediately.
 - `Prepare handoff` is visible but disabled until the plan is accepted.
 - The response names what is not evidence yet instead of sounding like coding
   already happened.
@@ -868,10 +872,10 @@ User-facing effect:
 - Prepared handoff is presented as ready to dispatch, not completed work.
 - If the selected profile is Codex, the wrapper can use the handoff's
   `$skill {message}` invocation, such as `$ai-slop-cleaner {message}`, rather
-  than asking the chat user to run it. Hermes/OMX/OMO/OMC profiles render a
-  runtime handoff with team/swarm, worker-protocol, and worktree guidance.
-  Claude Code and generic profiles render a copyable prompt handoff instead of
-  lifecycle evidence.
+  than asking the chat user to run it. Hermes, OMX, pi-family runtime, and
+  OMC profiles render a runtime handoff with team/swarm, worker-protocol, and
+  worktree guidance. Claude Code and generic profiles render a copyable prompt
+  handoff instead of lifecycle evidence.
 - `Start Codex session` and `Start Claude Code session` include an
   `executor_launch/v1` payload. The legacy v1 safety fields remain conservative:
   `ui_only`, `not_backend_execution`, and `execution_policy:
@@ -929,7 +933,7 @@ then prepare investigation and reproduction questions. A coding handoff only
 follows after the signal is classified and reproduction or acceptance evidence
 exists.
 
-[ Triage signal ] [ Prepare triage report ] [ Show status ]
+[ Triage signal ] [ Prepare fix handoff ] disabled [ Prepare triage report ] [ Show status ]
 
 Claim boundary: Feedback triage is not a roadmap, implementation plan, or coding handoff by default.
 ```
@@ -1232,7 +1236,7 @@ operator
 쿠버네티스 장애 상황에서 Cloudy가 적절히 진단하나?
 
 Hermes Agent  BOT
-[omh] ultraqa - I can turn this into QA scenarios and observed checks.
+[omh] ulw-qa - I can turn this into QA scenarios and observed checks.
 
 I will prepare the QA lane: scenario list, expected behavior, cheap checks,
 expensive checks, known gaps, and follow-up handoff options. No product
@@ -1261,7 +1265,7 @@ pm
 온보딩을 더 부드럽게 만들고 싶어
 
 Hermes Agent  BOT
-[omh] deep-interview - This needs a clarification workflow before planning.
+[omh] ulw-interview - This needs a clarification workflow before planning.
 
 I will ask one blocking question at a time in this thread - at most 6 rounds -
 then hand off a clarified brief.

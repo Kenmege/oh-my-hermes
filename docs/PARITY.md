@@ -43,7 +43,7 @@ implementation or claim runtime behavior it did not observe.
 | Specialist role/profile system | Available | Skill catalog metadata, operating models, optional visible profile packs, wrapper role narration, plugin `omh_role`, and `[omh-role:name]` context injection. | Observed role execution still requires wrapper or runtime evidence; role context is not a hidden live agent. |
 | Bounded evidence probe | Available | Plugin `omh_gather_evidence` runs shell-free allowlisted local probes such as doctor, harness validation, docs checks, unittest, compileall, and whitespace checks. | It is not a general shell, executor dispatch, PR review, CI, merge, or live Hermes plugin-load signal. |
 | Team, swarm, and worker protocol | Available | `ultrawork` coordinated lanes, `omh runtime team-readiness`, runtime handoff payloads, worker-protocol guidance, wrapper sessions, and runtime observations. | Live worker launch and pane/session management still require the selected host runtime to act and record observations. |
-| Worktree and project-session isolation | Available | `worktree_session_isolation/v1` plans in coding handoffs, wrapper Prepare worktree actions, `omh worktree list/bind`, executor-session status cards, loop queue metadata, and runtime observations for worktree creation. | OMH defers worktree creation to native Hermes tooling (Kanban worktree-per-task v0.15.0, Desktop Projects v0.18.0) or manual `git worktree add`; it observes the resulting worktree, and binding recipes show how wrappers can open or attach host sessions but do not auto-launch executors or claim runtime evidence. |
+| Worktree and project-session isolation | Available | `worktree_session_isolation/v1` plans in coding handoffs, wrapper Prepare worktree actions, `omh worktree list/bind`, executor-session status cards, loop queue metadata, and runtime observations for worktree creation. | OMH defers worktree creation to native Hermes tooling (Kanban worktree-per-task, Desktop Projects) or manual `git worktree add`, except that the opt-in `omh coding fanout dispatch` creates one isolated worktree per unit it spawns; it observes the resulting worktree, and binding recipes show how wrappers can open or attach host sessions but do not auto-launch executors or claim runtime evidence. |
 | HUD, status, and session observability | Available | `omh hud`, plugin `omh_interact`/`omh_recommend`/`omh_probe`/`omh_hud`/`omh_memory`/`omh_status`, wrapper sessions, runtime runs, roadmap cards, and status cards. | Live host HUD rendering depends on Hermes/plugin support; plugin chat/session output is metadata/status, not execution evidence. |
 | MCP and tool bridge | Available | `omh setup --with-mcp --mcp-host ...`, `omh mcp manifest`, `omh mcp config-recipe`, `omh mcp serve`, `omh mcp observe-host`, and `omh probe` preference/server/runtime/host-session/host-config separation. | OMH can write supported local host config entries, but it does not independently inspect live host sessions; the host or wrapper must record load/session evidence. |
 | Loop and autopilot workflow | Available | `loop`, `ultrawork`, `ralplan`, loop queue ticks, verification tiers, and failure-mode status cards. | Scheduling, connector I/O, worktree creation, and subagent execution remain prepared or delegated until observed. |
@@ -64,57 +64,6 @@ not observed one.
 | Typed unit results instead of an exit code standing in for readiness | `fanout_unit_result/v1` | A per-unit result payload with an explicit schema version, changed paths, and check rows that each name `reported_by`, `observed_by`, and `observation_source`. Schema validity is shape, not truth. | An executor-reported passing check is reported, not observed. Only dispatcher-observed events advance the lifecycle ladder, and no result payload can promote itself to integration eligibility. |
 | Descriptive executor capability metadata attached to a dispatch profile | `executor_capability_snapshot/v1` | The same observation-backed snapshot used by owner fit now also carries edit-format handling, persistent evaluation, tool re-entry, and batching facts. `host_observed` rows require bounded scope, evidence reference, and observation time; unresearched cells project as `unknown`. | Descriptive fields do not independently rank or auto-select. Only accepted-plan requirements interpreted by `coding_owner_fit/v1` affect recommendation, and a capability snapshot is never evidence that an executor performed the delegated work. |
 | A live roster projected from recorded events rather than a stateful hub | Journal projection over `runtime_observation/v1` events, surfaced by `omh coding fanout status` | A deterministic read-only roster: per-unit lifecycle state, owner profile, branch and worktree path, last-event age, and evidence-reference counts, derived only from events already on the journal. | It writes no state and emits no events, and it offers no revive, steer, or kill action. Absence of an event means nothing was recorded, which is not the same as nothing having happened. |
-
-## Implemented Slices
-
-- A deterministic parity catalog in `src/quality/parity.py`.
-- `omh probe --parity` so operators and wrappers can inspect the matrix beside
-  the current local capability probe.
-- `omh probe --roadmap`, and the roadmap section inside `omh probe --parity`,
-  so operators can see whether the next step is setup or repair, optional MCP
-  configuration, wrapper usage evidence, or host runtime observation.
-- A plugin bridge with native role context lookup, role marker injection,
-  delegate marker validation, `omh_probe` capability-roadmap status, session-end
-  checkpoints, and bounded `omh_gather_evidence` probes.
-- `omh_plugin_host_observation/v1` records through `omh plugin observe-host`, or
-  through plugin tool/hook self-observation when a host supplies bounded
-  observation metadata, so operators can distinguish local plugin
-  install/import/register smoke from host-observed Hermes plugin load or use.
-  Active native readiness requires the latest observed event to be
-  `plugin_load`, `tool_call`, `hook_call`, or `status_query`; `session_end` and
-  `plugin_unload` remain historical evidence.
-- `worktree_session_isolation/v1`, which gives coding handoffs and wrapper
-  status cards a concrete same-workspace/worktree-recommended/worktree-required
-  contract before any executor is opened.
-- `omh worktree list`, which lets wrappers or operators read the
-  `omh_worktree_observation/v1` workspace-isolation evidence recorded for a
-  worktree that native Hermes tooling (Kanban worktree-per-task, Desktop
-  Projects) or a manual `git worktree add` created. That evidence is still not
-  executor dispatch, implementation, review, CI, merge-readiness, or merge
-  evidence.
-- `omh worktree bind`, which returns `worktree_executor_binding/v1` so wrappers
-  can render Open in Codex, Open in Claude Code, Attach session, and runtime
-  observation record actions for a prepared worktree without launching the
-  executor or treating a terminal command as evidence.
-- A dependency-free stdio MCP bridge with allowlisted local `omh_status`,
-  `omh_recommend`, and `omh_probe` tools plus manifest and probe evidence.
-- `omh setup --with-mcp --mcp-host codex|claude-code|opencode|cursor`, which
-  can write the OMH stdio MCP bridge into supported local host config files
-  while keeping host runtime load unobserved until the host records evidence.
-- `omh mcp config-recipe --host ...`, which prints copy-paste config snippets
-  for Claude Code, Codex, OpenCode, Cursor, and generic MCP hosts without
-  mutating host files or claiming host load.
-- `omh_mcp_host_session/v1` records for host/wrapper-observed MCP bridge load
-  or session use, kept separate from local bridge tool-call evidence and host
-  config file probes.
-- `omh runtime team-readiness`, which returns `omh_team_worker_readiness/v1`
-  for Hermes/team/swarm worker contract readiness, installed skill visibility,
-  wrapper actions, runtime templates, and observed worker ledger status without
-  claiming that a worker has run. It separates `contract_status` from
-  `presentation_status` so local package support is not confused with Hermes
-  currently seeing the installed skill surface.
-- Unit tests that lock JSON schema shape, human summaries, conservative claim
-  boundaries, and wrapper-visible Prepare worktree actions.
 
 ## Acceptance Criteria
 
@@ -159,7 +108,8 @@ not observed one.
 ## Non-Goals
 
 - No hidden tmux team launcher.
-- No automatic Git worktree creator.
+- No automatic Git worktree creator outside the opt-in
+  `omh coding fanout dispatch`, which creates one isolated worktree per unit.
 - No executor launch from the worktree creator or binder.
 - No arbitrary MCP shell, connector runner, or auto-enabled host config.
 - No Discord/Slack transport implementation.

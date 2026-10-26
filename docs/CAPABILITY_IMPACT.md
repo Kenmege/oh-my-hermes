@@ -43,11 +43,12 @@ observable from OMH and stays prepared guidance, not observed benefit.
 
 The deterministic report currently evaluates three route sets:
 
-- 144 fixed routing boundaries: 47 negative controls and 97 expected
-  interventions, including over-route and missed-intervention checks
-- 90 common Hermes requests spanning 10 popular plugin-style families
-- 22 representative English and Korean requests, including focused intents and
-  collision-prone near neighbors
+- `fixed_precision`: the fixed routing boundaries, negative controls plus
+  expected interventions, including over-route and missed-intervention checks
+- `common_requests`: common Hermes requests spanning the popular plugin-style
+  families
+- `representative`: representative English and Korean requests, including
+  focused intents and collision-prone near neighbors
 
 The focused cases lock distinctions that broad keyword matching commonly gets
 wrong: TDD versus an article about testing, literature review versus project

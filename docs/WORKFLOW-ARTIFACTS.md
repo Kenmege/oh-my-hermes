@@ -43,7 +43,8 @@ Preparation does not write state. Persist only when the producer already owns a 
 
 ## Lifecycle launch review (agent/operator reference)
 
-The new operations return separate `prepared_not_observed` records, not additions
+The `audience`, `promote`, `graduate`, `configuration`, and `metrics`
+operations return separate `prepared_not_observed` records, not additions
 inside the six closed lifecycle artifact schemas. `validate` preserves those
 original artifact shapes and also accepts the separate exposure-evidence and
 configuration identity/binding companions. `configuration` accepts exactly

@@ -28,8 +28,8 @@ commit that cuts the next stable release. Beta users opt in explicitly:
 
 The tag-driven npm/Bun, GitHub wheel, and Homebrew tap release is defined by
 `.github/workflows/release.yml`. Its release order, one-time external setup,
-resume rules, rollback matrix, immutable artifact checks, and pending-first-
-release status are the single contract in [Distribution](DISTRIBUTION.md).
+resume rules, rollback matrix, and immutable artifact checks are the single
+contract in [Distribution](DISTRIBUTION.md).
 Releases are cut only when a maintainer asks for one; the *Cut Release*
 workflow performs the mechanics on demand, and its guards live in the same
 Distribution contract under "Cutting a release on demand". Package-manager
@@ -38,8 +38,6 @@ channels therefore advance per release, not per merge — people who want
 
 Those package-manager artifacts extend the stable channel; they do not replace
 the installer, Hermes skill tap, generated-document, or evidence checks below.
-Until the external npm namespace and Homebrew tap are created, keep every public
-package-manager command marked pending and do not dispatch the workflow.
 
 Hermes-native skill install:
 
@@ -72,7 +70,7 @@ applies to the `latest` pointer: whatever GitHub marks as the latest release
 must carry a wheel.
 
 Preview install, now explicit opt-in, which downloads the full `main`
-repository archive (measured 46,012,605 bytes on 2026-08-15) because GitHub
+repository archive because GitHub
 publishes release assets per tag only:
 
 ```sh
@@ -101,7 +99,10 @@ curl -fsSL https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/install.sh
 ## Version Bump Surfaces
 
 The release bump commit must move every current-version surface together.
-`src/omh/version.py` (`__version__`) is canonical; the others must match it:
+`src/omh/version.py` (`__version__`) is canonical; the others must match it.
+`uv run tools/package_manager/bump_version.py` moves all of these and resets
+`.release-channel` to stable; the *Cut Release* workflow runs it, and
+`--set X.Y.Z` targets a minor or major instead of the next patch:
 
 | Surface | Why it must move |
 | --- | --- |
@@ -112,8 +113,8 @@ The release bump commit must move every current-version surface together.
 `VersionSurfaceParityTests` in `tests/test_release_smoke.py` gates all three: a bump
 commit that misses one fails the suite instead of shipping the drift. Version
 strings quoted in README/docs prose and CLI help examples are illustrative and
-deliberately not parity-gated — update them in the bump commit, but a stale
-example is a docs nit, not a diagnostics lie.
+deliberately not parity-gated; a stale example is a docs nit, not a
+diagnostics lie.
 
 ### Bundled plugin runtime compatibility (maintainer contract)
 
@@ -223,18 +224,17 @@ when done; the runner removes only its own scratch homes and reaps its processes
 
 ## Required Checks
 
-Run before tagging:
+Run before tagging: every gate in the Build & Test list of
+[`CLAUDE.md`](../CLAUDE.md) (the full suite, compileall, every `docs ... --check`
+gate, and ruff), read at the commit being tagged, then:
 
 ```sh
-python3 -m unittest discover -s tests
-python3 -m compileall src
-python3 -m omh.cli docs workflows --check
 python3 -m omh.cli harness validate
 python3 -m omh.cli release checklist --json
 python3 -m omh.cli release skill-content-smoke --json
-python3 -m omh.cli release product-readiness --version 1.0.6 --json
-python3 -m omh.cli release evidence-bundle --version 1.0.6 --write --repo-root "$PWD" --json
-python3 -m omh.cli release evidence-bundle --version 1.0.6 --verify --repo-root "$PWD" --json
+python3 -m omh.cli release product-readiness --version <version> --json
+python3 -m omh.cli release evidence-bundle --version <version> --write --repo-root "$PWD" --json
+python3 -m omh.cli release evidence-bundle --version <version> --verify --repo-root "$PWD" --json
 python3 -m omh.cli cases demo --all --json
 python3 -m omh.cli cases artifact --all --json
 python3 -m omh.cli cases replay --json
@@ -242,8 +242,8 @@ python3 -m omh.cli cases readiness --json
 python3 -m omh.cli demo routing-precision --json
 python3 -m omh.cli demo router-fast-path --json
 python3 -m omh.cli --omh-home /tmp/omh-smoke --hermes-home /tmp/hermes-smoke learning review --all
-python3 -m omh.cli --omh-home /tmp/omh-smoke --hermes-home /tmp/hermes-smoke install --dry-run --channel stable --version 1.0.5
-python3 -m omh.cli --omh-home /tmp/omh-smoke --hermes-home /tmp/hermes-smoke setup --dry-run --channel stable --version 1.0.5
+python3 -m omh.cli --omh-home /tmp/omh-smoke --hermes-home /tmp/hermes-smoke install --dry-run --channel stable --version <version>
+python3 -m omh.cli --omh-home /tmp/omh-smoke --hermes-home /tmp/hermes-smoke setup --dry-run --channel stable --version <version>
 python3 -m omh.cli --omh-home /tmp/omh-smoke --hermes-home /tmp/hermes-smoke probe
 python3 -m omh.cli release hermes-smoke
 python3 -m omh.cli release install-smoke
@@ -252,12 +252,12 @@ omh --help
 omh --omh-home /tmp/omh-smoke --hermes-home /tmp/hermes-smoke release hermes-smoke --install-path setup --omh-command omh --include-command-smoke
 uv build
 python3 -m venv /tmp/omh-wheel-smoke
-/tmp/omh-wheel-smoke/bin/python -m pip install --upgrade dist/oh_my_hermes-1.0.5-py3-none-any.whl
+/tmp/omh-wheel-smoke/bin/python -m pip install --upgrade dist/oh_my_hermes-<version>-py3-none-any.whl
 /tmp/omh-wheel-smoke/bin/omh --help
 /tmp/omh-wheel-smoke/bin/omh release skill-content-smoke --json
 /tmp/omh-wheel-smoke/bin/omh --omh-home /tmp/omh-wheel-home --hermes-home /tmp/hermes-wheel-home release hermes-smoke --install-path setup --omh-command /tmp/omh-wheel-smoke/bin/omh --include-command-smoke
-/tmp/omh-wheel-smoke/bin/omh --omh-home /tmp/omh-wheel-home --hermes-home /tmp/hermes-wheel-home setup --dry-run --channel stable --version 1.0.5
-OMH_PYTHON=/tmp/omh-wheel-smoke/bin/python OMH_PACKAGE_URL=file://$PWD/dist/oh_my_hermes-1.0.5-py3-none-any.whl OMH_VENV_DIR=/tmp/omh-installer-venv OMH_BIN_DIR=/tmp/omh-installer-bin sh install.sh
+/tmp/omh-wheel-smoke/bin/omh --omh-home /tmp/omh-wheel-home --hermes-home /tmp/hermes-wheel-home setup --dry-run --channel stable --version <version>
+OMH_PYTHON=/tmp/omh-wheel-smoke/bin/python OMH_PACKAGE_URL=file://$PWD/dist/oh_my_hermes-<version>-py3-none-any.whl OMH_VENV_DIR=/tmp/omh-installer-venv OMH_BIN_DIR=/tmp/omh-installer-bin sh install.sh
 /tmp/omh-installer-bin/omh --omh-home /tmp/omh-installer-home --hermes-home /tmp/omh-installer-hermes setup --dry-run
 ```
 
@@ -265,8 +265,8 @@ The checklist command renders the same release gates as a deterministic
 `release_readiness_checklist/v1` contract:
 
 ```sh
-omh release checklist --version 1.0.5
-omh release checklist --version 1.0.5 --json
+omh release checklist --version <version>
+omh release checklist --version <version> --json
 ```
 
 It is plan-only: it does not run checks, mutate Hermes, create tags, or publish
@@ -458,7 +458,7 @@ executor dispatch, review, CI, merge, or delivery.
 The product readiness rollup sits one level above use cases:
 
 ```sh
-omh release product-readiness --version 1.0.5 --json
+omh release product-readiness --version <version> --json
 ```
 
 It checks the generated skill content, G1-G10 readiness, grounded routing score,
@@ -475,7 +475,7 @@ from the exact checkout the release will be cut from. Omitting `--repo-root`
 binds the current working directory, so the literal maintainer command is:
 
 ```sh
-omh release evidence-bundle --version 1.0.5 --write --json
+omh release evidence-bundle --version <version> --write --json
 ```
 
 Pass `--repo-root "$PWD"` when the checkout must be explicit. The bundle writes `omh_release_evidence_bundle/v2` to
@@ -498,7 +498,7 @@ existing literal path always wins; other missing relative paths remain missing:
 
 ```sh
 omh release evidence-bundle --verify --repo-root "$PWD" --json
-omh release evidence-bundle --verify .omh/runtime/release-evidence/1.0.5.json --repo-root "$PWD" --json
+omh release evidence-bundle --verify .omh/runtime/release-evidence/<version>.json --repo-root "$PWD" --json
 ```
 
 The verifier is pure: it never writes. Its verdict vocabulary is `matching`,
@@ -562,9 +562,9 @@ Run the installed command smoke in CI or a release shell after installing OMH:
 command -v omh
 omh --help
 omh release skill-content-smoke --json
-omh release product-readiness --version 1.0.5 --json
-omh release evidence-bundle --version 1.0.5 --write --repo-root "$PWD" --json
-omh release evidence-bundle --version 1.0.5 --verify --repo-root "$PWD" --json
+omh release product-readiness --version <version> --json
+omh release evidence-bundle --version <version> --write --repo-root "$PWD" --json
+omh release evidence-bundle --version <version> --verify --repo-root "$PWD" --json
 omh --omh-home /tmp/omh-smoke --hermes-home /tmp/hermes-smoke release hermes-smoke --install-path setup --omh-command omh --include-command-smoke
 ```
 
@@ -655,7 +655,7 @@ published tag:
 | --- | --- |
 | `omh --version` | the `omh` package on PATH |
 | `~/.hermes/plugins/omh/plugin.yaml` | the plugin bundle the last install/update wrote |
-| The OMH TUI banner (`⚚ OH-MY-HERMES v2.0.1`) | the `omh` package the TUI runs, the one on PATH |
+| The OMH TUI banner (`⚚ OH-MY-HERMES v<version>`) | the `omh` package the TUI runs, the one on PATH |
 
 The 2.0.1 cut is the worked example: the tag was pushed and npm `latest`
 moved, and the maintainer's own HUD kept showing `v2.0.0` for as long as the

@@ -104,7 +104,7 @@ Agent/operator maintenance path:
    successors and restores original eligibility for explicit legacy inspection.
    It does not re-enable basename-based automatic recall.
 
-Prefetch receipts are now `omh_memory_prefetch_receipt/v3`. Configuration
+Prefetch receipts are `omh_memory_prefetch_receipt/v3`. Configuration
 identity includes both resolver version and project identity. Older v2 receipts
 remain structurally readable, but cannot establish current repository-bound
 recall evidence; identity/version mismatches are rejected.

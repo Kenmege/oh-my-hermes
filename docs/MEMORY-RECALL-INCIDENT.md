@@ -165,7 +165,7 @@ omh memory recall-incident --claim-digest <sha256-of-exact-claim> [--query <text
 ```
 
 Exactly one anchor is required. Optional flags:
-`--scope-kind user-global|project|target|thread|run`,
+`--scope-kind channel|project|run|target|thread|user|user-global`,
 `--scope-ref`, `--observer`, `--observed`, `--limit`, `--max-chars`,
 `--provider-served-count`, and `--write`, which saves the incident under
 `.omh/memory/incidents/<incident_id>.json`. Without `--write` nothing is

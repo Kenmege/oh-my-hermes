@@ -213,11 +213,16 @@ class UlwGeneratedSurfaceTests(unittest.TestCase):
         numeral are gated against the producer."""
         expected = len(ulw_inventory_payload()["canonical_engines"])
         # zh spells the count as a word; ko and ja carry the numeral and are
-        # declared drift sites for `ulw_canonical_engine_count`.
+        # declared drift sites for `ulw_canonical_engine_count`. The zh word is
+        # derived from the same count (a literal here once matched an unrelated
+        # row and kept passing after the engine count moved).
+        zh_words = "一二三四五六七八九十"
+        self.assertTrue(1 <= expected <= len(zh_words), f"no zh count word for {expected}; extend zh_words")
+        zh_count = zh_words[expected - 1] + "个"
         for name, numeral in (
             ("README.ko.md", f"{expected}개"),
             ("README.ja.md", f"{expected} 個"),
-            ("README.zh.md", "九个"),
+            ("README.zh.md", f"{zh_count} `ulw-` workflow"),
         ):
             with self.subTest(readme=name):
                 text = (REPO_ROOT / name).read_text(encoding="utf-8")

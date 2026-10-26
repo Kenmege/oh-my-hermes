@@ -188,7 +188,5 @@ job names change with the shard count, and the aggregate is already red
 whenever any of them is.
 
 The >=25% slowest-job speedup from issue #1294 is a target, not a result. It
-is **NOT YET OBSERVED**, and the measurement procedure that would settle it,
-including the metric, the 10-run corpora, exclusions, and the retry and flaky
-comparison, lives in
-[CI Test Sharding Rollout](docs/CI-TEST-SHARDING.md).
+is **NOT YET OBSERVED**; the unrun measurement plan that would settle it is in
+[CI test sharding](docs/CI-TEST-SHARDING.md).

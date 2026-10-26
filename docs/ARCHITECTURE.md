@@ -48,14 +48,14 @@ flowchart LR
 
   user --> hermes
   skills --> hermes
-  plugin -->|"omh_interact, omh_recommend, omh_probe, omh_hud, omh_memory, omh_role, omh_status, omh_todo, evidence, hooks"| hermes
+  plugin -->|"plugin tools, evidence, hooks"| hermes
   user --> wrapper
   wrapper -->|"chat_interaction/v1"| omh
   omh -->|"answer, clarify, plan, or status"| wrapper
   wrapper --> hermes
   hermes -->|"accepted plan"| omh
   omh -->|"review, recall, prepared context only"| memory
-  memory -->|"memory_recall_pack/v1"| omh
+  memory -->|"project_memory_recall_pack/v1"| omh
   omh -->|"prepared handoff, not execution proof"| executor
   executor -->|"dispatch, result, verification"| runtime
   runtime -->|"status_card/v1"| omh
@@ -73,6 +73,9 @@ Chat user
 ```
 
 ## Package Layout
+
+The tree is orientation, not inventory: it names every top-level package and a
+few anchor modules, and `src/` itself is the inventory.
 
 ```text
 src/
@@ -182,6 +185,11 @@ src/
     lifecycle.py
     sessions.py
   core/
+  capabilities/              # capability snapshot and section exports (omh capabilities export)
+  codegraph/                 # local code index, summaries, UML, and test selection (omh codegraph)
+  conformance/               # runtime-run conformance checker over recorded artifacts
+  evidence/                  # evidence vocabulary: labels, confidences, observed check results
+  tui/                       # the OMH TUI that bare `omh` opens over Hermes' tui_gateway
   skills/
     catalog.py
     packaging.py
@@ -208,17 +216,9 @@ OMH directly when Hermes taps are available.
 status-bar item and a structured `omh` pane (plan, agent routes and metrics,
 DAG), and `dashboard/plugin_api.py`, which the gateway
 mounts at `/api/plugins/omh/hud` while `omh` is registered in
-`plugins.enabled`, serving the HUD payload the Desktop pane reads. The v1
-plugin registers deterministic
-`omh_interact` chat/session interaction, `omh_recommend` route hints,
-metadata-only `omh_probe` capability status/roadmap, compact metadata-only
-`omh_hud`, detailed metadata-only `omh_status`, `omh_todo` plan-todo
-declaration for the HUD checklist panel, `omh_resume` read-only recall of the
-same person's plans and checkpoints from their other sessions, `omh_role` role context,
-`omh_route_answer` metadata-only recording of an answer to the `route_question`
-an undecidable route carries, a bounded `omh_gather_evidence` local
-verification probe, and passive lifecycle hooks for bounded status context,
-role marker validation, and metadata-only session-end checkpointing. A recorded
+`plugins.enabled`, serving the HUD payload the Desktop pane reads. The
+plugin registers deterministic tools and passive lifecycle hooks; the current
+tool and hook list is `omh capabilities export --section hooks --json`. A recorded
 route answer changes no route; it is written so the answerer can be scored
 against OMH's own routing corpora with `omh chat route-questions score`. The
 `pre_llm_call` hook can also add
@@ -231,7 +231,7 @@ raw user message or prove a workflow executed. For capability/catalog questions,
 the context brief adds `omh_catalog_question_hint/v1` so Hermes can show the
 workflow picker or capability summary without shell approval. The
 session-stable awareness primer is not part of that per-turn payload on a host
-with `register_system_prompt_section` (Hermes 0.20.2 and later): the plugin
+with `register_system_prompt_section`: the plugin
 registers it as the `omh.awareness` system prompt section, which Hermes freezes
 into each new session's system prompt, and `pre_llm_call` delivers it only for a
 session the section did not render for. A second section,
@@ -296,20 +296,20 @@ by `omh menubar status --json`. Its `menubar_status/v2` payload is a UI
 projection over local HUD, target-registry, runtime, and read-only Hermes
 observations; it is intentionally not the source of truth. The payload retains
 separate `hermes_agents` and `external_coding_executors` metadata so Codex,
-Claude Code, OMX, OMO, OMC, or generic coding tools cannot be rendered as
-Hermes agents by accident. `display.menu_cards` is the human-facing model for
-the native helper: a Sessions table, a Models table, and one compact coding
-metadata footer. Sessions uses the exact columns `Hermes session` / `Count` and
-the `live`, `total`, and (only when non-zero) `open, idle` rows. `live` is an
-open session with activity inside `LIVE_WINDOW_SECONDS` (15 minutes); open
-rows Hermes never closed (crash, killed terminal, orphan not yet reaped) are
-reported as `open, idle` so they cannot inflate `live`. Session source or TUI
-breakdown is intentionally not exposed there; the operator-only
-`omh quality-evidence session-usage` reports the session-source breakdown on
-request. In Models, `current` is the model observed on the most recently
-active live Hermes session and is absent when no session is live; `main`,
-`delegation` (the model an unrouted `delegate_task` child inherits), and
-auxiliary aliases are configuration values.
+Claude Code, OMX, the pi-family runtime, OMC, or generic coding tools cannot
+be rendered as Hermes agents by accident. `display.menu_cards` is the
+human-facing model for the native helper: a Sessions table, a Models table, and
+one compact coding metadata footer. Sessions uses the exact columns
+`Hermes session` / `Count` and the `live`, `total`, and (only when non-zero)
+`open, idle` rows. `live` is an open session with activity inside
+`LIVE_WINDOW_SECONDS` (15 minutes); open rows Hermes never closed (crash, killed
+terminal, orphan not yet reaped) are reported as `open, idle` so they cannot
+inflate `live`. Session source or TUI breakdown is intentionally not exposed
+there; the operator-only `omh quality-evidence session-usage` reports the
+session-source breakdown on request. In Models, `current` is the model observed
+on the most recently active live Hermes session and is absent when no session is
+live; `main`, `delegation` (the model an unrouted `delegate_task` child
+inherits), and auxiliary aliases are configuration values.
 
 Plain `omh menubar status` renders a short terminal summary from the same
 payload so operators see Summary, Sessions, Models, the compact coding metadata
@@ -327,7 +327,7 @@ JSON files. Setup records `project_memory_policy/v1` with `off`,
 writes through `omh_memory(action="capture")`, which runs the installed CLI's
 capture path, and the plugin's memory provider reads the store on every turn.
 Coding handoffs can receive
-`memory_recall_pack/v1` when reviewed records are relevant. These packs are
+`project_memory_recall_pack/v1` when reviewed records are relevant. These packs are
 prepared context only; they are not execution, review, CI, merge, or Hermes
 internal-memory evidence.
 
@@ -413,12 +413,13 @@ wrapper actually observed.
 acceptance.
 
 `runtime/artifacts.py` and `runtime/records.py` own local JSON/JSONL evidence,
-schema validation, redacted export, and derived delegated coding status.
-They also own `runtime_observation/v1`, the runtime-level observation ledger for
-Hermes, OMX, OMO, and OMC handoffs. Each record names one observed or blocked
-ladder step such as runtime start, worktree creation, worker dispatch, worker
-result, verification, review, CI, merge readiness, or merge. Missing records
-remain missing evidence; OMH does not infer them from prepared handoff text.
+schema validation, redacted export, and derived delegated coding status. They
+also own `runtime_observation/v1`, the runtime-level observation ledger for
+Hermes, OMX, pi-family runtime, and OMC handoffs. Each record names one
+observed or blocked ladder step such as runtime start, worktree creation, worker
+dispatch, worker result, verification, review, CI, merge readiness, or merge.
+Missing records remain missing evidence; OMH does not infer them from prepared
+handoff text.
 
 `workflow_learning.py` owns the metadata-only learning plane above routing,
 wrapper sessions, and runtime artifacts. It projects workflow attempts into
@@ -482,7 +483,8 @@ stay thin and point at the deeper source-owner modules.
 Routing, planning, and delegation have these local surfaces:
 
 1. Hermes-native installed skills. The tap-compatible `skills/` directory and
-   the managed `~/.omh/skills` bootstrap directory expose the same generated
+   the managed skills directory that `omh setup` registers in
+   `skills.external_dirs` expose the same generated
    guidance to Hermes.
 2. Prompt-level guidance. The router skill gives Hermes a structured map of
    workflow names and strong trigger phrases, but it does not override Hermes
@@ -549,31 +551,31 @@ the executor target without launching Codex. Codex handoffs include
 turn a Hermes workflow into the Codex `$skill {message}` surface while still
 keeping the raw message out of persisted OMH artifacts. Claude Code and generic
 profiles return a `coding_prompt_handoff/v1` prompt-only payload that must not
-create a lifecycle run or observed execution evidence. Hermes, OMX, OMO, and OMC
-profiles return a `coding_runtime_handoff/v1` contract with runtime profile,
-team/swarm, worker-protocol, and worktree guidance. Runtime handoffs are still
-prepared state only: they do not mean Hermes, tmux, workers, subagents, or
-worktrees were started. All coding handoff modes also include
+create a lifecycle run or observed execution evidence. Hermes, OMX, pi-family
+runtime, and OMC profiles return a `coding_runtime_handoff/v1` contract with
+runtime profile, team/swarm, worker-protocol, and worktree guidance. Runtime
+handoffs are still prepared state only: they do not mean Hermes, tmux, workers,
+subagents, or worktrees were started. All coding handoff modes also include
 `worktree_session_isolation/v1`, which tells wrappers whether the current
 workspace is acceptable, an isolated worktree is recommended, or an isolated
 worktree is required before opening an executor. That record stores a compact
 snapshot of the generated workspace policy. Worktree creation itself is deferred
 to native tooling — upstream Hermes manages worktrees for you (Kanban
-worktree-per-task since v0.15.0, Desktop Projects since v0.18.0), or you can run
-`git worktree add` manually — so OMH no longer creates worktrees and cannot
-collide with the one Hermes is already managing for a task. When a worktree
-exists, OMH records `omh_worktree_observation/v1`; that observation is
-workspace-isolation evidence only. `omh worktree bind` can then return a
-wrapper recipe for opening or attaching Codex, Claude Code, Hermes, or another
-runtime from that worktree; the recipe is still not executor dispatch or result
-evidence. Runtime ladders still need a separate `runtime_observation/v1`
-`worktree_creation` event when the created worktree is attached to a prepared
-runtime handoff. The coding handoff also stores acceptance criteria,
-verification expectations, report contract, and evidence contract,
-runtime-specific invocation templates, and the
+worktree-per-task and Desktop Projects), or you can run `git worktree add`
+manually — so OMH does not create worktrees and cannot collide with the one
+Hermes is already managing for a task. The one exception is the opt-in
+`omh coding fanout dispatch`, which creates one isolated worktree per unit it
+spawns (`src/coding/worktree_creator.py`). When a worktree exists, OMH records
+`omh_worktree_observation/v1`; that observation is workspace-isolation evidence
+only. `omh worktree bind` can then return a wrapper recipe for opening or
+attaching Codex, Claude Code, Hermes, or another runtime from that worktree; the
+recipe is still not executor dispatch or result evidence. Runtime ladders still
+need a separate `runtime_observation/v1` `worktree_creation` event when the
+created worktree is attached to a prepared runtime handoff. The coding handoff
+also stores acceptance criteria, verification expectations, report contract, and
+evidence contract, runtime-specific invocation templates, and the
 `runtime_observation/v1` recording contract, but not the raw prompt body. With
-`--record`,
-the companion `run.json` is marked as
+`--record`, the companion `run.json` is marked as
 `artifact_kind: prepared_coding_delegation`, `phase: prepared`, and
 `observation_status: prepared_not_observed`; validation treats the run envelope
 and `coding_delegation.json` as a required pair. The run envelope is
@@ -606,7 +608,8 @@ has no executor-specific logic.
 The wrapper contract and lower-level surfaces are local contracts; execution
 evidence still comes from Hermes Agent and the selected executor/runtime. The
 append-only observation journal is the bridge between "prepared" and "observed"
-lifecycle status. For Hermes/OMX/OMO/OMC runtime handoffs, the
+lifecycle status. For Hermes, OMX, pi-family runtime, and OMC runtime
+handoffs, the
 legacy-compatible runtime observation ledger is mirrored into that journal. A
 wrapper can record `runtime_start` while `worktree_creation`, `worker_dispatch`,
 `worker_result`, `verification`, `review`, `ci`, `merge_readiness`, and `merge`
@@ -668,8 +671,8 @@ The dispatchability object has exactly `handoff_dispatchable`,
 `availability_not_observed`, `candidate_observed_unavailable`,
 `parent_handoff_prepare_only`, `descriptor_only`, and
 `observed_available_ask_before_dispatch`, and must agree with the state and
-parent lane. Runtime, Hermes display, OMX display, OMO reference, and OMC
-descriptor candidates are never dispatchable.
+parent lane. Runtime, Hermes display, OMX display, pi-family reference, and
+OMC descriptor candidates are never dispatchable.
 For unknown or unavailable Codex candidates, the actual executor prompt and
 legacy `codex_invocation.dispatch_text_template` remain the generic
 `{message}` placeholder. The candidate metadata may still display the
@@ -687,16 +690,6 @@ local path, skill body, transcript, or evidence contents. Manual QA for a
 projection must capture the parsed schema, profile, status, skill id,
 invocation mode/template, both dispatchability booleans, and the parent lane's
 dispatch mode. A missing capture is missing observation, not a positive claim.
-
-The boundary follows pinned upstream evidence. OMO's skill-loader descriptors
-contain richer loader metadata than a portable OMH invocation contract, and its
-task tool injects skill contents at spawn time; see the pinned
-[`b072d279` descriptor types](https://github.com/code-yeongyu/oh-my-openagent/blob/b072d279110bdda2c6ac2525d0d24dc54d16148/packages/skills-loader-core/src/features/opencode-skill-loader/types.ts#L26-L37)
-and [`b072d279` task skill loading](https://github.com/code-yeongyu/oh-my-openagent/blob/b072d279110bdda2c6ac2525d0d24dc54d16148/packages/senpi-task/src/tools/task/skills.ts#L17-L23).
-OMC's pinned, bounded skill discovery and user-skill compatibility helpers do
-not define a universal slash-command grammar; see the
-[`41a4c0f` discovery path](https://github.com/Yeachan-Heo/oh-my-claudecode/blob/41a4c0f77144c5beb5f5f000a89cff379c680606/scripts/skill-injector.mjs#L517-L563)
-and [`41a4c0f` compatibility helper](https://github.com/Yeachan-Heo/oh-my-claudecode/blob/41a4c0f77144c5beb5f5f000a89cff379c680606/src/utils/user-skill-compat.ts#L48-L89).
 
 Hermes planning writes Markdown plans under the configured Hermes home rather
 than runtime JSON under `.omh/runtime/`. The artifact is user-facing: it includes
@@ -727,15 +720,13 @@ authoritative source for prepared handoff, dispatch, executor result,
 verification, review, CI, merge readiness, and merge observations.
 
 `executor_session/v1` is the chat-facing companion to that recovery layer. It
-records that a wrapper observed an open/attach/result/verification-request
-event for the selected executor. For Codex, observed open maps to lifecycle
-dispatch and observed result maps to the Codex run ledger. For Claude Code and
-generic agents, it remains prompt-only session metadata. For Hermes/OMX/OMO/OMC
-runtime handoffs, observed open records `runtime_start` while later ladder
-steps remain missing until explicit `runtime_observation/v1` evidence exists.
-
-Future routing work should deepen the catalog first, then render richer skill
-metadata from it.
+records that a wrapper observed an open/attach/result/verification-request event
+for the selected executor. For Codex, observed open maps to lifecycle dispatch
+and observed result maps to the Codex run ledger. For Claude Code and generic
+agents, it remains prompt-only session metadata. For Hermes, OMX, pi-family
+runtime, and OMC runtime handoffs, observed open records `runtime_start` while
+later ladder steps remain missing until explicit `runtime_observation/v1`
+evidence exists.
 
 `executor_capability_snapshot/v1` is also the single capability evidence
 source for handoff display and fanout dispatch receipts. Its vocabulary includes
@@ -885,15 +876,16 @@ are user-owned and collisions fail closed. Hermes skills, Kanban,
 appears in this lane.
 
 **External Maestro lane.** `coding/maestro/` is a typed facade over the existing
-Codex, Claude Code, OMO, OMC, OMX, and generic prepared-handoff builders and
-status/observation adapters. It rejects Hermes profiles. Maestro is a
-coordinator, not an executor: `executes_work` is false, prepared payload schema
-and dispatchability are preserved, and only the selected external owner or
-wrapper can record runtime observation. Maestro never writes Hermes aliases or
-owns provider credentials.
+Codex, Claude Code, pi-family runtime, OMC, OMX, and generic prepared-handoff
+builders and status/observation adapters. It rejects Hermes profiles. Maestro is
+a coordinator, not an executor: `executes_work` is false, prepared payload
+schema and dispatchability are preserved, and only the selected external owner
+or wrapper can record runtime observation. Maestro never writes Hermes aliases
+or owns provider credentials.
 
-`pi` and `senpi` are OMO runtime-family host CLIs. Their allowlisted session
-metadata can contribute discovery observations, but they are not independent
+The pi-family runtime's host CLIs (`CAPABILITY_HOST_VARIANT_KEYS` in
+`src/coding/executor_capabilities.py`) have allowlisted session metadata that
+can contribute discovery observations, but they are not independent
 executor/model owners and do not authorize promotion into the Hermes-native
 lane.
 
@@ -901,10 +893,10 @@ lane.
 record-count/size/depth/time limits, field allowlists, and explicit
 `observed_before`, `confirmed_active`, `unobserved`, `truncated`, or
 `layout_unverified` states prevent history from becoming availability truth.
-Auth files and record bodies are not emitted. Only the OMO-owned model file
-layout yields `confirmed_active` discovery records; guided setup otherwise
-requires explicit user confirmation. Discovery remains advisory and performs
-no network request.
+Auth files and record bodies are not emitted. Only the pi-family runtime's
+own model file layout yields `confirmed_active` discovery records; guided setup
+otherwise requires explicit user confirmation. Discovery remains advisory and
+performs no network request.
 
 `coding/model_recommendations.py` owns secret-free editorial candidate order.
 The categories reuse the closed `MODEL_CATEGORIES` vocabulary; `main` is a
@@ -921,12 +913,13 @@ GPT-6.1 Sol. No eligible candidate anywhere returns `owner_default` without
 blocking setup or preparing a model-config write. An unavailable explicit model
 instead returns `choice_required` and freezes fallthrough.
 
-The shipped Kimi, Claude, GPT, GLM, Grok, and Gemini order is editorial, not
-benchmarked. Qwen is a valid confirmed user alternative through an override or
-explicit selection. Grok's lead position for `x_platform_data` is static X
-platform affinity, not measured capability. CCAPI and Apitopia names are only
-preferred provider-family metadata and require user-declared local activation;
-there is no readiness probe or credential transfer.
+The shipped Kimi, Claude, GPT, GLM, DeepSeek, Grok, and Gemini order is
+editorial, not benchmarked. Qwen is a valid confirmed user alternative through
+an override or explicit selection. Grok's lead position for `x_platform_data` is
+static X platform affinity, not measured capability. CCAPI for Claude is
+preferred provider-family metadata only; it is not a bundled or probed
+integration and is considered only when the user declares the corresponding
+local route active. OMH transfers no credentials.
 
 `model_routing_status/v1` joins discovery, Hermes aliases, Maestro category
 resolution, and owner-learning metadata for agents and maintainers. These
@@ -1024,6 +1017,7 @@ specialist lane result, the recorded result stays `not_observed` or
 When a harness is added, removed, or renamed, update these surfaces together:
 
 - `src/skills/catalog.py`
+- `src/skills/catalog_harnesses.py`
 - `src/skills/render.py`
 - `docs/APPLICATION_CASES.md`
 - `tests/test_router_content.py`
@@ -1444,8 +1438,8 @@ dedicated history command. `tests/test_blocked_work_records.py`
 (`CoverageIsWhatTheDocsSay`) fails when a producer or a read surface is added, so
 this paragraph cannot drift away from the wiring silently.
 
-**Why this is a record family and not a field group.** This repo refused a new
-family twice (#811, #818) because a family joins on run id and a join is where an
+**Why this is a record family and not a field group.** A new record family is
+normally refused because a family joins on run id and a join is where an
 artifact and its metadata desynchronize. Consent is the case that argument does
 not cover: it is created at a different time from the delegation (when the
 operator answers, not when the handoff is built), by a different actor, it has
@@ -1547,16 +1541,12 @@ nothing: an unparseable line, a duplicate receipt id, and a forked supersede
 chain — two answers that both believe they replaced the same predecessor, which
 makes "the current answer" ambiguous — all went unreported.
 
-That registry is keyed by store, which is what #846 fixed. It began as an
-unkeyed tuple read by a consumer that opened one store and applied every entry
-to it, so the approval and blocked-work families could not join without
-validating external-effect receipts against their own schemas and faulting
-every run that had one. Each grew a sibling tuple and a near-duplicate reader
-instead. Now one entry names one store, one consumer dispatches per store, and
-a validator is only ever handed records read from the store it registered for.
-Registering a store is what makes `omh runtime validate` fault a malformed
-record inside a run; the store-level `validate_*_store` calls are the separate
-half that reports lines belonging to no run at all.
+That registry is keyed by store: one entry names one store, one consumer
+dispatches per store, and a validator is only ever handed records read from the
+store it registered for. Registering a store is what makes
+`omh runtime validate` fault a malformed record inside a run; the store-level
+`validate_*_store` calls are the separate half that reports lines belonging to
+no run at all.
 
 The gate is the store's other consumer. `coding/action_gate.py::classify_action_risk`
 calls `approval_satisfies_request_in` with receipts the caller already read — the
@@ -2302,7 +2292,7 @@ surface that never decides. `project` and `user`, which `skill_governance`
 resolves, are deliberately absent here — nothing supplies safety rules at those
 levels today, and an unfed deny path is a liability rather than a feature.
 
-Rules are named by stable ids, never by position, across nine axes: input
+Rules are named by stable ids, never by position, across these axes: input
 integrity, secrets, owner, approved scope, raw-context admission, target paths,
 remote targets, persisted content, and evidence claims. A denial names the
 responsible rule, the offending field (down to `remote_targets[0].kind`), the
@@ -2721,8 +2711,9 @@ evidence.
 ### Handoff Safety Contract
 
 `handoff_safety_contract/v1` is the task-scoped answer to "what will OMH
-actually do, and what stops it doing anything else". It declares twenty-four
-boundaries — workspace, file, network, credential, dispatch, storage content,
+actually do, and what stops it doing anything else". It declares the
+boundaries listed in `SAFETY_BOUNDARY_NAMES` (`src/coding/action_gate.py`) —
+workspace, file, network, credential, dispatch, storage content,
 storage retention, merge, confirmation arming, confirmation answered, untrusted
 input, prohibited actions, evidence separation, profile revision, recovery,
 start evidence, review receipt, account authorization, and the six `data_*` rows
@@ -2750,7 +2741,7 @@ delegation are byte-identical.
 
 #### The anti-decoration rule
 
-A contract that lists twenty-four boundaries while guarding fourteen is worse
+A contract that lists more boundaries than it guards is worse
 than no contract, because a reader infers a guard behind every line. Every boundary
 entry therefore carries an `enforcement` verdict of `enforced` or
 `declared_not_enforced`, and the validator refuses the two dishonest shapes: an
@@ -2768,10 +2759,7 @@ adds the thing, and in this tree it is already false: `omh setup --star` shells
 out to `gh api -X PUT /user/starred/rlaope/oh-my-hermes`. Statements are
 therefore scoped to the surface they actually govern, and a real exception
 outside that surface is named exactly — endpoint included — rather than rounded
-away. An earlier draft of this contract carried an `absent_capability`
-enforcement mechanism; it was removed, both because the claim it encoded is
-unverifiable and because, once absence stops being a justification, the field
-becomes derivable from `enforcement` and turns into a rule that cannot fire.
+away.
 
 Enforced today, with the symbol that refuses: dispatch and prohibited actions
 and untrusted input (`validate_task_authority_envelope`, plus
@@ -2909,9 +2897,7 @@ dispatch's same-root probe receipt to show an outside-write refusal
 the network row remains `fanout_lane_does_not_request_network_confinement`, and
 a host without a backend names that capability boundary). The advisory row
 reports `no_omh_side_measurement_observes_whether_an_executor_honoured_its_targets`
-on every host. All three used to cite #820, which was a mis-citation even
-before that issue landed — it shipped a workspace reservation, not an executor
-sandbox — and would have become a dangling pointer once it closed.
+on every host.
 
 The last two are known asymmetries rather than oversights. Closing either means
 adding a rung or a prerequisite to `runtime/claims.py` and
