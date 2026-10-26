@@ -193,6 +193,55 @@ installation. These tests distinguish actual turn-start behavior from positive
 recall after the native background queue; this change does not alter upstream
 turn-start pack invalidation or claim live model delivery.
 
+## Hermes compatibility and support boundaries (operator reference)
+
+Loader observation follows the selected Hermes runtime, not a leftover legacy
+venv. An explicit interpreter or `HERMES_PYTHON` override takes precedence; a
+direct Python launcher remains supported. Otherwise the PATH launcher is queried
+with `--print-runtime-command`, and the observer reads the host's PM-committed
+dependency environment before loading PluginManager in a disposable home. It does
+not run the state-changing PM bootstrap. A present launcher that fails its printer
+reports `hermes_runtime_command_failed`, without falling back to another runtime;
+a missing explicit override reports `hermes_python_override_missing`. Finding an
+old `venv/bin/python` alone is not proof of the active PM runtime. Successful tool
+and hook registration is registration evidence only, not full startup, update,
+plugin execution, or browser execution. PM-only browser-skill promotion is not
+covered by this loader fix.
+
+The optional browser bridge requires explicit trusted-wrapper opt-in, a bound
+principal/session/profile/message identity, and request-bound cache bypasses.
+`host_browser_capability()` (also exposed as `ctx.browser_capability()`) reports
+API support, not admission. On audited Hermes main revision
+`4ea8d23cc9f527332ccb1d55359b27741b6ea51b`, optional browser execution remains unsupported:
+`_BROWSER_CONTROL_PRINCIPAL` and `_BROWSER_CONTROL_TRANSPORT_FAMILY` are absent.
+The diagnostic is `host_scope_unavailable` with
+`host_browser_identity_unsupported` and the missing capability names. OMH does not
+manufacture a principal from environment/config/user IDs or bypass approval,
+identity, lease, effect, or cache checks. Stable `v0.22.5` supplied the audited
+identity/cache APIs, but API support and loader registration do not demonstrate
+actual browser acquisition or effect execution on either host.
+
+The compatibility workflow and `tools/check_hermes_compatibility.py` are
+maintainer admission checks, not install or support certificates. A local helper
+result is not a hosted CI result. The local candidate probe observed a real
+stable `v0.22.5` PluginManager, a validated harmless status tool and completed
+pre-LLM callback using existing PM dependencies and disposable homes. Fresh PM
+provisioning, the hosted stable/main matrix, native Windows execution, Ubuntu
+runner execution, and branch-rule enforcement were not observed by this repair.
+The local macOS result does not close those gaps. A dirty candidate's receipt
+keeps its base SHA and bundle digest separate from an immutable source SHA.
+
+Profile synchronization recognizes genuine Hermes identity markers
+(`config.yaml`, `.env`, `SOUL.md`, `profile.yaml`, `auth.json`, or `state.db`),
+not directories containing logs/cache alone. Hidden and tombstoned profiles are
+excluded. Marker symlinks remain identity claims for existing symlink refusal
+and ownership checks, not permission to write through them. A configured child
+remains discoverable through its OMH-written `config.yaml` if its initial
+`SOUL.md` is later removed; this does not promise recovery after all identity
+files are deleted. Setup preserves supported inline-comment `skills:` headers
+and existing settings; ambiguous/unsupported YAML shapes are refused rather
+than shadowed with duplicate keys.
+
 ## Command Audience
 
 | Audience | Normal interaction |
@@ -287,6 +336,14 @@ Hermes:
 omh setup
 ```
 
+### Workflows in Claude Code, Codex, Cursor, opencode, OpenClaw, or pi
+
+These hosts can load OMH workflows as Agent Skills without Hermes. The
+per-host clone installers need no Python and no `omh`. See
+[Agent Skills projection](AGENT-SKILLS.md) for the install commands, the
+[duplicate copies](AGENT-SKILLS.md#duplicate-copies) that two installers can
+leave for Cursor and opencode, and [removal](AGENT-SKILLS.md#removal).
+
 ### Open the terminal, and come back to a session
 
 Bare `omh` opens the OMH TUI (described below), and three Hermes session flags
@@ -302,13 +359,42 @@ They are a bare-launch surface only. Passing one together with a subcommand
 is an error naming the flag, never a silent no-op, because dropping `-p`
 would run that subcommand against a different profile than you selected.
 
-When the terminal exits normally and OMH can identify the session that just
-closed, it prints one copyable line after Hermes' own exit summary:
-`omh --resume <session-id>`, or `omh -p <profile> --resume <session-id>` when
-you launched with a profile, since a profile has its own `state.db`. OMH
-reads only the session id, from the Hermes state database it launched
-against, and prints nothing whenever more than one session could be the one
-that closed.
+When you close the session (`/quit`, `/exit`, Ctrl+C twice, Ctrl+D), OMH
+prints a short card for the session that was open, and only the `omh` way
+back:
+
+```text
+omh · Fix the login bug
+  session 20261025_101530_ab12cd · 3 turns · 6 messages · 4m 12s
+  18200 tokens (in 12000, out 3000, cache 3000, reasoning 200) · moonshotai/kimi-k3.1-pro
+  omh --resume 20261025_101530_ab12cd
+  omh -c "Fix the login bug"
+```
+
+The first line is the session's title (`untitled session` when Hermes has
+not named it). Then come its id, prompts, messages and how long this `omh`
+ran, and its tokens, split and summed over a `/branch` chain as Hermes does
+it, and its model. The last two lines reopen it by id, and by title when
+`-c <title>` would open this session: Hermes takes the newest `<title> #N`
+session over the exact title, so the line is left out when another session
+carries that name with a number, and for a title starting with `-`, which
+would read as options. With a profile both carry `-p <profile>`, since a profile has its own
+`state.db`. A session in which nothing was said gets one line instead, `omh:
+nothing was said in this session, so there is nothing to resume.`, unless
+an earlier session of the same launch (before a `/new` or a switch) has
+messages: then the card names the newest such one.
+
+Hermes' own exit summary, which names `hermes --tui --resume`, does not
+print: the OMH TUI closes with a code of OMH's own, which Hermes' launcher
+prints no summary for, and `omh` returns 0 to your shell, as before. A
+failure (exit 1, a signal) is returned as it was and prints no card; a
+lost gateway names `omh --resume <id>` on its way out. The
+OMH TUI records the session it has open, and the Hermes home it runs on, in
+a private file `omh` names for the launch and removes once it has read it,
+so a resumed session is named too. When Hermes' own terminal opened instead,
+its summary prints, and the card follows it for the session the Hermes state
+database shows ending with the launch; it prints nothing whenever more than
+one session could be the one that closed, or the database cannot be read.
 
 ### The OMH TUI
 
@@ -385,9 +471,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   composer and the info line on the bottom rows, the rows between them empty.
 - The info line under the composer, two cells in so it starts under the
   composer's text (on the edge on a terminal too small for the rules), says, on
-  the left, the input mode or the keys that matter right now, and on the right the model, how full the
-  context is and the reasoning effort, as `deepseek/deepseek-v4.1-flash ·
-  ctx 5% · effort medium` (the context in the warning colour from 80 % full
+  the left, the input mode or the keys that matter right now, and on the right the session's title once
+  Hermes names it, the model, how full the context is and the reasoning effort, as `Fix the login bug ·
+  deepseek/deepseek-v4.1-flash · ctx 5% · effort medium` (the context in the warning colour from 80 % full
   and the error colour from 95 %; `ctrl+t effort` while no level is
   known). Between turns the left reads `? for shortcuts` (the `?` list names
   every key) while the composer is empty; once you type, or open the `/`
@@ -402,9 +488,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   goes); while Hermes asks something it names that question's keys (`↑↓
   pick · enter confirms · d or esc denies and stops`), and while a picker or
   the Ctrl+R search is open, its keys (`↑↓ move · enter switches · esc
-  closes`). After a first Ctrl+C between turns it says `ctrl+c again to
-  exit` for the 2 s a second one exits in, and writes nothing to the
-  transcript. The interrupt is offered in one place, the working row's `esc
+  closes`). After a first Ctrl+C on an empty composer it says `ctrl+c again
+  to exit` for the 2 s a second one exits in, and writes nothing to the
+  transcript; during a turn that first press also interrupts it, and the
+  second leaves even while `interrupting…` still shows. The interrupt is offered in one place, the working row's `esc
   to interrupt`, and only while Esc does it: in every mode, while the
   composer is empty and nothing else takes Esc (a question, a picker, the
   history search, the agent list, a picked steer or rewind, or the `@` menu
@@ -412,7 +499,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   on the screen. When the OMH
   HUD sees a call repeating, or tool calls in flight during a turn, the right
   side says that first (`repeat x4`, `1 tool · 9s`). On a narrower terminal
-  the right side gives way first: the model shortens to its last path
+  the right side gives way first: the session's title, which leads it cut
+  to 24 cells (`Rename every production… · deepseek/…`), goes first, then
+  the model shortens to its last path
   segment, then that segment loses its first word (`deepseek-v4.1-flash`,
   then `v4.1-flash`; never down to a bare version, so `glm-5.3` stays
   whole), then the model goes, then the effort, then the context,
@@ -768,7 +857,12 @@ run and approval decision stays Hermes'; the screen is OMH's.
   time, the tokens the turn has written so far, and the reasoning effort when
   the session reports one (a row too narrow for all of it leaves out the
   effort first, then the tokens, then the time, then `esc to interrupt`,
-  each one whole rather than cut). On a terminal 16 rows tall or more a tip sits
+  each one whole rather than cut). The tokens count up as the reply, the
+  reasoning (when Hermes' `display.show_reasoning` sends it) and each tool
+  call's arguments arrive, about four characters a token and one per CJK
+  character, and move to Hermes' own count each time one of its usage
+  reports arrives; the number never goes back during a turn, and the done
+  line below carries Hermes' count. On a terminal 16 rows tall or more a tip sits
   under it, one a turn, each naming a key (`⎿  Tip: ctrl+o shows the whole
   transcript`). Once you interrupt it (Esc or Ctrl+C on an empty composer)
   it reads `✻ interrupting… (12s)` until Hermes has stopped the turn. What you queued behind that turn is not sent then:
@@ -948,6 +1042,7 @@ Esc closes it):
 | ↑ / ↓ | Move between the composer's rows, walk the input history at its first and last row (earlier sessions' too, shared with `hermes --tui`), or move through an open completion menu |
 | Ctrl+R | Searches the input history; Ctrl+R again finds an older match, Enter puts it in the composer, Esc leaves the composer as it was |
 | Ctrl+X | Opens the `/sessions` picker |
+| Ctrl+S | Opens the bot board, as `/bots` does: this machine's Hermes profiles, their gateways and sessions, read-only |
 | ↑ | On an empty composer with prompts queued, takes them back into the composer to edit; a queued shell line comes back on its own |
 | ↓ | On an empty composer while the agent view under the info line shows subagents, gives its rows the keys as the agent list; in a DAG run, to its folding tree |
 | ← / → | Move by a character; with Ctrl or Alt, by a word (Alt+B and Alt+F too) |
@@ -962,7 +1057,7 @@ Esc closes it):
 | Ctrl+O | Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end, or, while Hermes asks something, the whole question (it answers nothing); q leaves it |
 | Ctrl+L | Redraws the screen |
 | Ctrl+Z | Suspends the OMH TUI to the shell, as Ctrl+Z does in any terminal program (Hermes stops with it); fg brings it back |
-| Ctrl+C | Clears the composer, interrupts a running turn, or (twice when idle) exits |
+| Ctrl+C | Clears the composer, else interrupts a running turn; a second press within 2 s exits, mid-turn too |
 | Ctrl+D | On an empty composer, exits; with text, deletes the character ahead |
 | ↑ / ↓ or ← / → then Enter | On an approval, highlight allow once, allow this session or (when Hermes offers it) always allow, and allow it, or the last row to deny and tell Hermes what to do instead; Enter alone denies and stops the running turn |
 | `d`, `n` | On an approval, deny and stop the running turn |
@@ -976,6 +1071,7 @@ Esc closes it):
 | Click | On a row of the agent list, opens that agent's log (on main, only leaves the list) |
 | ← / →, q or Esc | In an agent's log, show the agent before or after, or go back; the pager's keys scroll it |
 | Tab / n, Shift+Tab / p, Space / Enter, d | In `/dag`, highlight the next or the previous box, fold or unfold the highlighted one, or show or hide Node details; ↑ / ↓, PageUp / PageDown and g / G scroll, q or Esc leaves |
+| ↑ / ↓, Enter or →, ← or Esc or q, r | On the bot board, move, open a profile's sessions or a session's last messages, go back (on the profiles, close the board), or read it again now; it reads again every 5 s by itself |
 | j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, an agent's log, this list), move a line, a page, or to either end, or leave |
 
 Ctrl+Enter and Shift+Enter reach the OMH TUI as keys of their own only where
@@ -1057,7 +1153,7 @@ turned into a steer.
 
 A slash command you run is echoed in the transcript as `┃ ❯ /name arg` (but
 `/steer`, whose own row is its echo, and a bare `/sessions`, `/rewind`,
-`/model`, `/keys`, `/history`, `/logs`, `/dag` or `/redraw`, which only open a picker
+`/model`, `/keys`, `/history`, `/logs`, `/dag`, `/bots` or `/redraw`, which only open a picker
 or a pager, or repaint, and print nothing to attribute), and what it prints stays there, under it after `⎿`, in the terminal's scrollback
 (each command's output under its own echo, also when you send a second command before the first answers).
 A skill command (`/<skill> <request>`) is one row: its echo gives way to the row of the prompt the skill sends
@@ -1071,7 +1167,7 @@ what it prints later goes under a repeat of its echo. In the transcript, a long 
 first 12 rows and a count of the rest
 (`… +K rows · ctrl+o shows all`, rows at that width), and Ctrl+O or `/history` shows all of it. Nothing a
 command prints opens a pager; a pager opens only when you ask for one
-(`/history`, `/keys`, `/logs`, `/dag`, an agent's log), and output that arrives while
+(`/history`, `/keys`, `/logs`, `/dag`, `/bots`, an agent's log), and output that arrives while
 one is open is in the transcript when you leave it.
 
 Slash commands the OMH TUI runs itself: `/help` (which also lists, in Hermes'
@@ -1084,7 +1180,8 @@ words, any skill whose name a built-in command takes, such as Hermes' own
 stderr, kept in memory only), `/dag` (the session's delegation graph as
 boxes, full screen in the pager and redrawn from the HUD's newest read: Tab
 and Shift+Tab move the highlight, Space folds a box, d shows or hides Node
-details; it sends nothing anywhere; q or Esc closes it), `/copy`, `/image`,
+details; it sends nothing anywhere; q or Esc closes it), `/bots` (the bot
+board, also Ctrl+S, described below), `/copy`, `/image`,
 `/paste` (the clipboard
 image), `/theme`, `/omh-model`, `/rewind`, `/todos` (the session's whole
 plan), `/model` (alone, a picker of the models Hermes offers this session,
@@ -1107,6 +1204,26 @@ prints the help of Hermes' skills command here instead of opening the skills
 hub. The command list is read again for each session
 the TUI opens, so a project's own skills are listed in its workspace, and
 completion also matches a part of a name: `/uml` finds `/omh-codebase-uml`.
+
+The bot board (Ctrl+S or `/bots`) shows this machine's Hermes bots, full
+screen, and changes nothing. Its first page lists the Hermes home the TUI runs
+under and every named profile beside it (`<root>/profiles/<name>/`), each with
+its gateway as `gateway_state.json` records it (state, pid, running agents and
+each platform's state), its stored sessions counted by source, how many were
+active in the last 24 hours, and when the last one was. Enter opens a
+profile's sessions, newest activity first (delegated subagent sessions are
+counted on the first page, not listed), and Enter again a session's last 40
+messages; ← or Esc goes back, q closes it from the first page, and r reads
+again at once. It reads again every 5 s by itself, off the screen's own thread.
+It counts sessions active in the last 24 hours rather than open ones, because a
+messaging gateway leaves every chat it served open, so a Slack bot idle for weeks
+would still show dozens. A gateway shows as running only while the process its
+record names still runs and is the one that wrote the record (its start time
+is compared as Hermes compares it); a platform's state from a gateway that has
+since stopped or restarted shows as what was last recorded. Each `state.db` is
+opened read-only (and immutable when no connection has it open, so SQLite
+creates no file beside it), the only signal it sends is the signal-0 liveness
+probe, and it calls nothing in Hermes' gateway.
 
 When the OMH TUI cannot start, `omh` says why in one line on stderr and opens
 Hermes instead, so you lose the OMH screen, never the session. For a reason
@@ -1138,7 +1255,8 @@ interrupted, `▪`), and what you queued comes back to the composer as after an 
 does this at most three times in a minute, and a new gateway that exits
 before it resumed the session counts as one of them; after that, or when the
 new gateway refuses the resume or does not answer it, it leaves with the command that reopens
-the session in `hermes --tui`, and Ctrl+C or Ctrl+D while it waits leaves the
+the session, `omh --resume <id>` (`hermes --tui` when something other than `omh` opened the TUI),
+and Ctrl+C or Ctrl+D while it waits leaves the
 same way, the new gateway stopped. A gateway that exits normally, or after you
 quit, is not started again. A
 turn that brings no event the TUI shows, only types it does not know (Hermes
@@ -1352,7 +1470,8 @@ remain protected as additions. Hermes imports the plugin with its own Python,
 which may be another version, so a cache under another version's tag qualifies
 by its well-formed header alone; a foreign header under omh's own tag does not. The staged
 replacement checks the renamed original again before installing; late additions
-or managed edits cause a refusal and restoration of the original directory.
+or managed edits that diverge from the incoming bundle cause a refusal and
+restoration of the original directory.
 If a plugin tree appears after an initially empty path was inspected, setup
 restores it instead of treating it as the original tree, even with `--force`.
 A tree that becomes Hermes-managed during staging is likewise never replaced
@@ -1385,11 +1504,12 @@ reports the supported installer command instead.
 On installer-managed installs (the curl and PowerShell paths), the update is
 staged rather than applied in place. OMH builds the new command environment and
 its workflow pack off to the side, smoke-tests them, and only then swaps them in
-with a single pointer move. You either keep the version you had or get the new
-one; there is no half-updated state in between, even if the machine loses power
-mid-update. If the new version fails its post-activation check, OMH puts the
-previous one back automatically and says so. To go back deliberately after a bad
-update, run:
+with a single pointer move. This keeps the command and workflow pack paired;
+it does not make shared plugin/config refreshes atomic. If the new version fails
+its post-activation check, OMH attempts to restore the previous pointer and
+re-enters that version to restore shared resources. A failed restoring reentry
+leaves recovery required, even when the pointer is already back. To select a
+retained known-good generation deliberately, run:
 
 ```sh
 omh update --recover-known-good
@@ -1405,6 +1525,31 @@ Run doctor separately after setup:
 ```sh
 omh doctor
 ```
+
+Doctor has two independent privacy controls, which also work with `--json`:
+
+- `--no-personal-files` does not open or read the bodies of `SOUL.md`,
+  `memories/MEMORY.md`, or `memories/USER.md`. The
+  `soul_missing_or_starter` and `hermes_memory_staleness` advisories remain in
+  the report as `skipped`, with a reason saying they were not run; they are not
+  passing or failed observations. Other checks and advisories are unchanged,
+  and Hermes `config.yaml` reads still happen.
+- `--no-state-write` does not create or update `runtime/state.json` and skips
+  the `.doctor-write-test` writes for `runtime_artifacts` and `workflow_state`.
+  Those checks report `write access not probed` and use a non-writing
+  permission check instead of claiming observed writability. JSON output has
+  an empty `state_log` and a `privacy_controls` marker; human output says state
+  write is disabled. This control removes doctor's state and probe writes
+  under the OMH home, including on check or advisory error paths. It does not
+  make every subcheck write-free: the separate Hermes loader-registration
+  smoke can still copy the plugin into a temporary directory when a Hermes
+  install is found, so this flag is not a promise of no writes anywhere.
+
+For managed plugin upgrades, a local file whose bytes are identical to the
+incoming bundle does not block a non-forced `omh setup` or `omh update`, even
+when its hash differs from the older installed manifest. The normal install
+rewrites the manifest. A locally divergent file still requires `--force`, and
+the staging revalidation applies the same distinction.
 
 First-run expectation:
 
@@ -1879,7 +2024,7 @@ named), `omh coding category-maestro set <profile> <category>
 presence is the opt-in: machines without it keep byte-identical routes, and
 routes resolved against it record `catalog_kind: "operator_category_config"`
 plus the config fingerprint in the frozen contract. Catalogless profiles
-(for example `omo-runtime`, host CLI `pi`/`senpi`) are deliberately not
+(for example `pi-family-runtime`, host CLI `pi` or its distribution host) are deliberately not
 configured here — their categories resolve from the locally-derived model
 catalog (omo config). See `docs/FANOUT.md` (Category-maestro) for the full
 rules.
@@ -4115,7 +4260,7 @@ Before calling the bot integration ready, verify these points:
   profiles return a `coding_prompt_handoff/v1` prompt-only payload without
   creating a lifecycle run.
 - `omh coding delegate --executor hermes --record "<message>"` and
-  `omx-runtime` / `omo-runtime` / `omc-runtime` return a
+  `omx-runtime` / `pi-family-runtime` / `omc-runtime` return a
   `coding_runtime_handoff/v1` payload with runtime, team/swarm,
   worker-protocol, and worktree guidance without creating a lifecycle run.
 - Coding handoffs include `worktree_session_isolation/v1` so wrappers can show
@@ -4269,9 +4414,12 @@ place. It runs as a transaction:
    is the only step that makes the new version visible.
 6. Re-enter through the pointer to confirm the activated version actually runs.
 7. On success, keep the previous generation as the known-good fallback and
-   collect the rest. On failure, move the pointer back.
+   collect the rest. On failure, attempt to move the pointer back and re-enter
+   the previous generation; shared-resource restoration must succeed before
+   recovery is considered complete.
 
-The pointer is what makes the swap all-or-nothing. Both things that consume the
+The pointer makes the command/workflow-pack selection atomic, not all shared
+resource changes. Both things that consume the
 install are spelled beneath it and never in resolved form: the `omh` launcher
 resolves through `current/venv/bin/omh` (`current\Scripts\omh.exe` on Windows),
 and the workflow pack Hermes reads is registered in `skills.external_dirs` as
@@ -4296,10 +4444,25 @@ What you see when something goes wrong:
 | --- | --- | --- |
 | Staging or download fails | Candidate deleted before anything is activated | The install you already had, untouched |
 | Candidate fails its smoke checks | Candidate deleted before activation | The install you already had, untouched |
-| Activated version fails the post-activation run | Pointer moved back automatically | The previous generation, active again |
-| Machine dies mid-activation | Next `omh update` reconciles the marker against the pointer, then rolls back or discards the candidate | A consistent pair either way |
+| Activated version fails the post-activation run | Attempt pointer rollback and restoring reentry | Previous command/pack selected if rollback succeeds; shared resources restored only if reentry succeeds |
+| Restoring reentry also fails | Retain recovery marker and candidate anchor; report failed restoration | Recovery still required, not a healthy restored install |
+| Machine dies mid-activation | Next `omh update` reconciles the marker and retries the required activation/restoration step | Command/pack remain paired; restoration can still fail |
 | Two updates at once | The second refuses to start | No partial work |
-| You want the previous version back | `omh update --recover-known-good` | The retained known-good generation, active again |
+| You want the previous version back | `omh update --recover-known-good` selects and checks a retained generation | Restoration is reported only after its reentry succeeds |
+
+When candidate activation fails and restoring reentry also fails, the persisted
+`activation_in_progress.restore_required` marker remains true and records the
+candidate/previous anchors. JSON reports `rollback.status: failed`, an empty
+`rollback.restored`, and `recovery.status: required` / `action: restore_failed`,
+with the failure reason. Do not delete the retained candidate or clear the
+marker by hand. Preserve the reported paths and failure evidence, resolve the
+reported restoration error, then retry `omh update`: pending restore intent
+allows only restoration until it succeeds, not a fresh candidate activation.
+A healthy restoring reentry clears the marker and permits candidate cleanup;
+the original attempted update still reports failure rather than success.
+Pointer rollback alone does not prove shared-resource restoration or reverse
+all user/plugin state. Run `omh doctor` after recovery and inspect any remaining
+profile failures before treating the install as healthy.
 
 `omh update --recover-known-good` refuses rather than guesses when no retained
 generation exists. If the activation state file is unreadable or carries a schema
@@ -4672,7 +4835,7 @@ omh setup --default-executor claude-code
 ```
 
 Supported values are `choose`, `hermes`, `codex`, `claude-code`, `generic`,
-`omx-runtime`, `omo-runtime`, and `omc-runtime`. This flag exists for
+`omx-runtime`, `pi-family-runtime`, and `omc-runtime`. This flag exists for
 wrappers, scripts, and users who want a standing default instead of the
 per-request question. Legacy `OMH_SETUP_PROFILES=1,3` still maps to setup
 profile categories for automation that already uses it, but new scripts should
@@ -4768,6 +4931,10 @@ reverses recorded config changes, and removes manifest-owned plugin, team and
 legacy display artifacts from that home and its bot profiles. A named-profile
 invocation targets only that profile. Store deletion is conditional on the
 persisted reference inventory described below, not on the spelling of the command.
+
+`omh uninstall` leaves Agent Skills trees (`.agents/skills/`,
+`.claude/skills/`) in place; [Agent Skills removal](AGENT-SKILLS.md#removal)
+covers them.
 
 Command cleanup recognizes both the installer-owned legacy venv and real
 `generations` venvs, including their `current` pointer and managed launcher.

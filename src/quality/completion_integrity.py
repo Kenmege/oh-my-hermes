@@ -41,9 +41,8 @@ moment any diff adds a negative-case-named test or an evidence entry names
 regression proving it still refuses is the exact hole this rule closes.
 
 Attribution: the placeholder evidence values and the negative-case naming
-vocabulary follow oh-my-openagent (omo), which is published under the
-Sustainable Use License 1.0. It is a link-only source, recorded in the note on
-code-level borrowings in `docs/SKILL-SOURCES.md`.
+vocabulary follow an upstream published under the Sustainable Use License
+1.0. It is a link-only source, recorded in the note on code-level borrowings in `docs/SKILL-SOURCES.md`.
 """
 
 from __future__ import annotations
@@ -119,7 +118,7 @@ _NO_OP_BODIES: Final = ("pass", "...", "return none", "return", "{}", "return nu
 _ABSTRACT_DECORATORS: Final = ("@abstractmethod", "@abc.abstractmethod", "@overload")
 _ABSTRACT_LOOKBACK_LINES: Final = 5
 
-# omo's placeholder set, matched against the whole normalized evidence value so
+# The upstream's placeholder set, matched against the whole normalized evidence value so
 # an evidence entry that merely mentions the word "todo" is untouched.
 _PLACEHOLDER_EVIDENCE_VALUES: Final = (
     "placeholder", "todo", "tbd", "n/a", "na", "none", "nil", "stub", "-", "?", "pending",
@@ -177,7 +176,7 @@ _GUARD_VOCABULARY_WORDS: Final = frozenset((
     "disallow", "disallows", "disallowed", "guard", "reject", "rejects", "rejected",
 ))
 
-# omo's `ULW_LOOP_SUCCESS_CRITERION_USER_MODELS` negative-case naming
+# The upstream's `ULW_LOOP_SUCCESS_CRITERION_USER_MODELS` negative-case naming
 # convention, matched against a test definition's name or description.
 _NEGATIVE_CASE_VOCABULARY_WORDS: Final = frozenset((
     "refuse", "refuses", "refused", "refusal",

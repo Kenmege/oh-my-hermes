@@ -14,6 +14,7 @@ from omh.coding.model_recommendations import (  # noqa: E402
     MODEL_RECOMMENDATION_OVERRIDE_SCHEMA_VERSION,
 )
 from omh.coding.model_routing import resolve_model_route  # noqa: E402
+from omh.coding.model_discovery_adapters import RUNTIME_CONFIG_SOURCE
 
 
 def _active(alias: str, provider: str, family: str) -> dict[str, object]:
@@ -297,7 +298,7 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
         self.assertEqual(missing["requested_model"], "qwen3-coder")
         self.assertEqual(missing["chain"], [])
 
-    def test_editable_qwen_recommendation_routes_without_omo_catalog_relabeling(self) -> None:
+    def test_editable_qwen_recommendation_routes_without_pi_family_catalog_relabeling(self) -> None:
         overrides = {
             "schema_version": MODEL_RECOMMENDATION_OVERRIDE_SCHEMA_VERSION,
             "categories": {
@@ -319,7 +320,7 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
             recommendation_overrides=overrides,
             local_catalog={
                 "schema_version": "local_model_catalog/v1",
-                "executor_profile": "omo-runtime",
+                "executor_profile": "pi-family-runtime",
                 "options": [{"model_id": "must/not-route"}],
             },
         )
@@ -334,7 +335,7 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
             "model_discovery": {
                 "observations": [
                     {
-                        "source": "omo",
+                        "source": RUNTIME_CONFIG_SOURCE,
                         "provider": "zai",
                         "model_id": "glm-5.3-flash",
                         "variant": "",
@@ -363,7 +364,7 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
             "model_discovery": {
                 "observations": [
                     {
-                        "source": "omo",
+                        "source": RUNTIME_CONFIG_SOURCE,
                         "provider": "xai",
                         "model_id": "grok-build-0.1",
                         "variant": "",
@@ -371,7 +372,7 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
                         "status": "confirmed_active",
                     },
                     {
-                        "source": "omo",
+                        "source": RUNTIME_CONFIG_SOURCE,
                         "provider": "apitopia",
                         "model_id": "kimi-k3.1-pro",
                         "variant": "",
@@ -379,7 +380,7 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
                         "status": "confirmed_active",
                     },
                     {
-                        "source": "omo",
+                        "source": RUNTIME_CONFIG_SOURCE,
                         "provider": "google",
                         "model_id": "gemini-3.1-pro",
                         "variant": "",

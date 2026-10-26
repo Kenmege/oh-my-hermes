@@ -36,6 +36,8 @@ from omh.coding.fanout_dispatch import (  # noqa: E402
     signal_safe_unit_runner,
 )
 from omh.system.paths import OmhPaths  # noqa: E402
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_AGENT_DIR_ENV, PI_DISTRIBUTION_BRAND_ENV, PI_DISTRIBUTION_HOME, PI_DISTRIBUTION_HOST, RUNTIME_HOME, RUNTIME_SHORT_NAME
+import json
 
 
 def _linked_worktree(root: Path) -> Path:
@@ -339,79 +341,79 @@ class FanoutConfinementPolicyTests(unittest.TestCase):
             self.assertEqual(owner_state_directories("hermes", {}), (home / ".hermes",))
             for host, expected in {
                 "pi": (home / ".pi" / "agent",),
-                "senpi": (home / ".senpi" / "agent",),
+                PI_DISTRIBUTION_HOST: (home / PI_DISTRIBUTION_HOME / "agent",),
                 "opencode": (
                     home / ".local" / "share" / "opencode",
                     home / ".local" / "state" / "opencode",
                 ),
             }.items():
                 with self.subTest(host=host):
-                    with mock.patch("omh.coding.fanout_dispatch.omo_runtime_host", return_value=host):
-                        self.assertEqual(owner_state_directories("omo-runtime", {}), expected)
-            with mock.patch("omh.coding.fanout_dispatch.omo_runtime_host", return_value="pi"):
+                    with mock.patch("omh.coding.fanout_dispatch.pi_family_host", return_value=host):
+                        self.assertEqual(owner_state_directories("pi-family-runtime", {}), expected)
+            with mock.patch("omh.coding.fanout_dispatch.pi_family_host", return_value="pi"):
                 self.assertEqual(
-                    owner_state_directories("omo-runtime", {"PI_CODING_AGENT_DIR": str(home / "pi-override")}),
+                    owner_state_directories("pi-family-runtime", {"PI_CODING_AGENT_DIR": str(home / "pi-override")}),
                     (home / "pi-override",),
                 )
-            with mock.patch("omh.coding.fanout_dispatch.omo_runtime_host", return_value="senpi"):
+            with mock.patch("omh.coding.fanout_dispatch.pi_family_host", return_value=PI_DISTRIBUTION_HOST):
                 self.assertEqual(
-                    owner_state_directories("omo-runtime", {"OMO_CODING_AGENT_DIR": str(home / "omo-state")}),
-                    (home / ".senpi" / "agent",),
+                    owner_state_directories("pi-family-runtime", {f"{RUNTIME_SHORT_NAME.upper()}_CODING_AGENT_DIR": str(home / "runtime-state")}),
+                    (home / PI_DISTRIBUTION_HOME / "agent",),
                 )
                 self.assertEqual(
-                    owner_state_directories("omo-runtime", {"PI_CODING_AGENT_DIR": str(home / "legacy-pi-override")}),
+                    owner_state_directories("pi-family-runtime", {"PI_CODING_AGENT_DIR": str(home / "legacy-pi-override")}),
                     (home / "legacy-pi-override",),
                 )
                 self.assertEqual(
                     owner_state_directories(
-                        "omo-runtime",
+                        "pi-family-runtime",
                         {
-                            "SENPI_CODING_AGENT_DIR": str(home / "senpi-override"),
+                            PI_DISTRIBUTION_AGENT_DIR_ENV: str(home / "distribution-override"),
                             "PI_CODING_AGENT_DIR": str(home / "ignored-pi-override"),
                         },
                     ),
-                    (home / "senpi-override",),
+                    (home / "distribution-override",),
                 )
         self.assertEqual(owner_state_directories("unassigned", {}), ())
 
-    def test_omo_runtime_child_env_pins_agent_dir_and_scrubs_senpi_brand(self) -> None:
+    def test_pi_family_runtime_child_env_pins_agent_dir_and_scrubs_pi_distribution_brand(self) -> None:
         home = Path("/tmp/fanout-owner-home").resolve()
         cases = {
             "pi": ("PI_CODING_AGENT_DIR", {}, home / ".pi" / "agent"),
-            "senpi": (
-                "SENPI_CODING_AGENT_DIR",
-                {"PI_CODING_AGENT_DIR": str(home / "legacy-senpi-override")},
-                home / "legacy-senpi-override",
+            PI_DISTRIBUTION_HOST: (
+                PI_DISTRIBUTION_AGENT_DIR_ENV,
+                {"PI_CODING_AGENT_DIR": str(home / "legacy-distribution-override")},
+                home / "legacy-distribution-override",
             ),
         }
         for host, (environment_variable, overrides, expected) in cases.items():
             with (
                 self.subTest(host=host),
                 mock.patch("omh.coding.fanout_confinement.Path.home", return_value=home),
-                mock.patch("omh.coding.fanout_dispatch.omo_runtime_host", return_value=host),
+                mock.patch("omh.coding.fanout_dispatch.pi_family_host", return_value=host),
             ):
                 child_env = fanout_child_env(
                     {
-                        "SENPI_BRAND": '{"name":"omo","envPrefix":"OMO","configDir":".omo"}',
+                        PI_DISTRIBUTION_BRAND_ENV: json.dumps({"name": RUNTIME_SHORT_NAME, "envPrefix": RUNTIME_SHORT_NAME.upper(), "configDir": RUNTIME_HOME}, separators=(",", ":")),
                         **overrides,
                     },
                     depth=0,
                     fanout_id="fanout",
                     unit_id="unit",
-                    owner="omo-runtime",
+                    owner="pi-family-runtime",
                 )
                 self.assertEqual(child_env[environment_variable], str(expected))
-                self.assertEqual(owner_state_directories("omo-runtime", child_env), (expected,))
-                self.assertNotIn("SENPI_BRAND", child_env)
-        with mock.patch("omh.coding.fanout_dispatch.omo_runtime_host", return_value="opencode"):
+                self.assertEqual(owner_state_directories("pi-family-runtime", child_env), (expected,))
+                self.assertNotIn(PI_DISTRIBUTION_BRAND_ENV, child_env)
+        with mock.patch("omh.coding.fanout_dispatch.pi_family_host", return_value="opencode"):
             child_env = fanout_child_env(
-                {"SENPI_BRAND": "ambient"},
+                {PI_DISTRIBUTION_BRAND_ENV: "ambient"},
                 depth=0,
                 fanout_id="fanout",
                 unit_id="unit",
-                owner="omo-runtime",
+                owner="pi-family-runtime",
             )
-        self.assertEqual(child_env["SENPI_BRAND"], "ambient")
+        self.assertEqual(child_env[PI_DISTRIBUTION_BRAND_ENV], "ambient")
 
     def test_probe_writes_every_owner_state_root(self) -> None:
         with TemporaryDirectory() as temporary:

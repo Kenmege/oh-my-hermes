@@ -12,6 +12,35 @@ from time import time
 MUTATION_INTERCEPTION = "none"  # Hermes tool hooks are not last-mile interception.
 
 
+_IDENTITY_VARS = ("_SESSION_ID", "_BROWSER_CONTROL_PRINCIPAL",
+                  "_BROWSER_CONTROL_TRANSPORT_FAMILY", "_SESSION_MESSAGE_ID")
+
+
+def host_browser_capability():
+    """Feature-level API support only; never a grant or a cached verdict.
+
+    Hermes main removed the principal/transport seam. Neither user IDs nor
+    environment fallbacks establish an equivalent authenticated principal.
+    Missing APIs therefore remain unsupported, not reconstructed by OMH.
+    """
+    try:
+        from gateway import session_context
+        from tools import registry
+    except ImportError:
+        missing = ["gateway.session_context", "tools.registry"]
+    else:
+        missing = [name for name in _IDENTITY_VARS
+                   if not callable(getattr(getattr(session_context, name, None), "get", None))]
+        missing.extend(name for name in ("no_cache_check_fn", "check_fn_cache_scope")
+                       if not callable(getattr(registry, name, None)))
+        if not hasattr(registry, "CHECK_FN_CACHE_BYPASS"):
+            missing.append("CHECK_FN_CACHE_BYPASS")
+    return {"feature": "omh_browser", "supported": not missing,
+            "reason": "host_browser_api_supported" if not missing else "host_browser_identity_unsupported",
+            "missing_capabilities": missing,
+            "admission": "explicit_trusted_wrapper_required"}
+
+
 def _host_identity():
     """Require task-local host identity AND both host schema-cache bypasses.
 
@@ -46,6 +75,7 @@ class _Admission:
 def register(ctx, config):
     # An adapter is a trusted host-supplied object, never reconstructed from
     # model arguments, import paths, configuration code, or executable names.
+    ctx.browser_capability = host_browser_capability
     adapter = getattr(ctx, "browser_adapter", None)
     effects_enabled = (config.get("effects_enabled") is True
                        and callable(getattr(ctx, "browser_effect_approval", None))
@@ -66,7 +96,9 @@ def register(ctx, config):
 
         identity = _host_identity()
         if identity is None:
-            raise BrowserContractError("host_scope_unavailable")
+            capability = host_browser_capability()
+            detail = "" if capability["supported"] else ": " + capability["reason"] + ": " + ",".join(capability["missing_capabilities"])
+            raise BrowserContractError("host_scope_unavailable" + detail)
         admitted = _Admission(identity, text(task, 256), time() + number(ttl_seconds, 300))
         token = admission.set(admitted)
         try:

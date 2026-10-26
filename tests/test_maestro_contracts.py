@@ -32,7 +32,7 @@ EXTERNAL_PROFILE_LANES = {
     "codex": ("external_executor", "executor_handoff", EXECUTOR_HANDOFF_SCHEMA_VERSION, True),
     "claude-code": ("prompt_only_handoff", "prompt_handoff", PROMPT_HANDOFF_SCHEMA_VERSION, False),
     "omx-runtime": ("runtime_handoff", "runtime_handoff", RUNTIME_HANDOFF_SCHEMA_VERSION, False),
-    "omo-runtime": ("runtime_handoff", "runtime_handoff", RUNTIME_HANDOFF_SCHEMA_VERSION, False),
+    "pi-family-runtime": ("runtime_handoff", "runtime_handoff", RUNTIME_HANDOFF_SCHEMA_VERSION, False),
     "omc-runtime": ("runtime_handoff", "runtime_handoff", RUNTIME_HANDOFF_SCHEMA_VERSION, False),
     "generic": ("prompt_only_handoff", "prompt_handoff", PROMPT_HANDOFF_SCHEMA_VERSION, False),
 }
@@ -141,7 +141,7 @@ class MaestroExternalHandoffFacadeTests(unittest.TestCase):
             observation_adapter=observation_adapter,
         )
         prepared = maestro.prepare(
-            ExternalHandoffRequest(message=MESSAGE, source="discord", profile="omo-runtime")
+            ExternalHandoffRequest(message=MESSAGE, source="discord", profile="pi-family-runtime")
         )
 
         status = maestro.status(prepared)

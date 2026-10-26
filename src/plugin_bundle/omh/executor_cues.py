@@ -10,6 +10,7 @@ Stdlib only.
 
 from __future__ import annotations
 
+from .pi_family_names import PI_DISTRIBUTION_HOST, RUNTIME_USER_PHRASE
 
 # Explicit coding-agent / coding-runtime names.
 #
@@ -19,7 +20,7 @@ from __future__ import annotations
 # stay in Latin script because ja/zh users write them that way too.
 #
 # These names are distinctive enough for plain substring containment on the
-# folded message; the omo-runtime family below is not and gets its own group.
+# folded message; the pi-family-runtime family below is not and gets its own group.
 SUBSTRING_NAMED_CODING_AGENT_PHRASES: tuple[str, ...] = (
     "codex",
     "코덱스",
@@ -34,7 +35,7 @@ SUBSTRING_NAMED_CODING_AGENT_PHRASES: tuple[str, ...] = (
     "헤르메스한테 코딩",
 )
 
-# omo-runtime host CLIs. Bare "pi" stays out on purpose: the token is
+# pi-family runtime host CLIs. Bare "pi" stays out on purpose: the token is
 # claimed by Raspberry-Pi physical-device routing, and as a substring it
 # hides inside "api", "pip", and "pipeline". Pi is named only through
 # delegation phrasings or attached agent particles. "with pi" and "pi로"
@@ -42,13 +43,14 @@ SUBSTRING_NAMED_CODING_AGENT_PHRASES: tuple[str, ...] = (
 # match them as substrings.
 #
 # Even the bounded forms hide inside ordinary words as raw substrings:
-# "api한테" contains "pi한테", "promo runtime" contains "omo runtime". Every
+# "api한테" contains "pi한테", and a word ending in the runtime's short name
+# contains `RUNTIME_USER_PHRASE`. Every
 # consumer of this group must match it with `contains_boundary_phrase`,
 # never plain containment.
-OMO_RUNTIME_CODING_AGENT_PHRASES: tuple[str, ...] = (
-    "senpi",
+PI_FAMILY_CODING_AGENT_PHRASES: tuple[str, ...] = (
+    PI_DISTRIBUTION_HOST,
     "opencode",
-    "omo runtime",
+    RUNTIME_USER_PHRASE,
     "have pi implement",
     "ask pi to",
     "tell pi to",
@@ -59,7 +61,7 @@ OMO_RUNTIME_CODING_AGENT_PHRASES: tuple[str, ...] = (
 
 NAMED_CODING_AGENT_PHRASES: tuple[str, ...] = (
     *SUBSTRING_NAMED_CODING_AGENT_PHRASES,
-    *OMO_RUNTIME_CODING_AGENT_PHRASES,
+    *PI_FAMILY_CODING_AGENT_PHRASES,
 )
 
 

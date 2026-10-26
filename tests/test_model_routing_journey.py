@@ -12,13 +12,14 @@ load_local_package()
 from omh.coding.maestro import ExternalHandoffRequest, HermesNativeSelectionError, build_external_handoff  # noqa: E402
 from omh.coding.model_discovery import discover_local_models  # noqa: E402
 from omh.coding.model_recommendations import resolve_model_recommendation  # noqa: E402
+from omh.coding.pi_family_interop import RUNTIME_HOME
 
 
 class ModelRoutingJourneyTests(unittest.TestCase):
     def test_discovery_to_hermes_and_maestro_keeps_the_owner_boundary(self) -> None:
         with TemporaryDirectory() as temp_dir:
             home = Path(temp_dir)
-            models = home / ".omo" / "models.json"
+            models = home / RUNTIME_HOME / "models.json"
             models.parent.mkdir(parents=True)
             models.write_text(
                 json.dumps(

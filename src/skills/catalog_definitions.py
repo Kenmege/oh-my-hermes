@@ -722,7 +722,7 @@ _DEFINITIONS = [
         phase="single-cycle-plan-to-pr",
         hermes_role="retained-cognition",
         delegation_boundary="retained-catalog-intent",
-        handoff_policy="Keep the one-cycle process orchestration, source/codebase research, planning, review framing, docs-sync checks, PR narration, and evidence boundaries in Hermes; convert implementation into a selected executor/runtime handoff such as Codex, Claude Code, OMX/OMO/OMC, another coding agent, or explicit Hermes coding runtime only when the user accepts that owner.",
+        handoff_policy="Keep the one-cycle process orchestration, source/codebase research, planning, review framing, docs-sync checks, PR narration, and evidence boundaries in Hermes; convert implementation into a selected executor/runtime handoff such as Codex, Claude Code, OMX/pi-family/OMC, another coding agent, or explicit Hermes coding runtime only when the user accepts that owner.",
         required_inputs=("task statement", "repo or workspace context", "executor preference or choose-at-handoff policy", "verification expectations"),
         expected_outputs=("ralplan-ready context and plan", "ultragoal or selected executor/runtime handoff", "code-review gate", "docs sync checklist", "single-cycle PR-ready summary with observed evidence and gaps"),
         artifact_expectations=("process checklist or runtime record when a wrapper can observe the stages", "prepared handoff artifact only after implementation owner selection", "docs-specialist claim check when public behavior changes"),
@@ -1183,7 +1183,7 @@ _DEFINITIONS = [
             "for each lane's label but pass the user's model and reasoning effort as explicit overrides in "
             "`omh_delegate_route` on every lane, so each dispatch runs the named model and the lane status shows "
             "it. [capability:delivery_boundary] Convert implementation into an "
-            "external executor/runtime handoff such as Codex, Claude Code, OMX/OMO/OMC, or another coding agent "
+            "external executor/runtime handoff such as Codex, Claude Code, OMX/pi-family/OMC, or another coding agent "
             "only when the user accepts that owner; no external CLI is the default owner, and external handoff is "
             "a separate opt-in path, never the default recommendation."
         ),
@@ -1433,7 +1433,7 @@ _DEFINITIONS = [
         handoff_policy=(
             "Convert an explicitly chosen external coding owner into a prepared handoff: claude-code as a "
             "prompt-only `coding_prompt_handoff/v1` (never dispatchable, never described as a run), codex as a "
-            "dispatchable `coding_executor_handoff/v1`, and omx-runtime/omo-runtime/omc-runtime as "
+            "dispatchable `coding_executor_handoff/v1`, and omx-runtime/pi-family-runtime/omc-runtime as "
             "`coding_runtime_handoff/v1`. "
             f"This engine loads only after that choice is made -- {HERMES_HARNESS_DEFAULT_WORDING} -- and it "
             "never substitutes for the Hermes harness path or picks the owner itself."
@@ -1484,7 +1484,7 @@ _DEFINITIONS = [
             "the prepared handoff record is never dispatchable and never described as a run; only the "
             "fanout-dispatch bridge -- `omh coding fanout dispatch` or its `omh coding run` single-run entry -- "
             "ever spawns a CLI), codex is a dispatchable `coding_executor_handoff/v1`, and "
-            "omx-runtime/omo-runtime/omc-runtime are `coding_runtime_handoff/v1`.",
+            "omx-runtime/pi-family-runtime/omc-runtime are `coding_runtime_handoff/v1`.",
             "Compose the prompt from the selected profile's DISCOVERED skills via `omh coding executor-skills "
             "--profile <profile>`: arrange the returned skills by the unit's role recipe, one named skill per "
             "step, using each skill's own invocation string verbatim (`/name`, `/pack:name` from its manifest, "
@@ -8819,7 +8819,7 @@ _DEFINITIONS = [
         handoff_policy=(
             "Keep Hermes-native model setup in Hermes: inspect its config, provider plugins, auth presence, and aliases, "
             "then use Hermes-native config/auth flows for an approved change. Maestro coordinates prepared external coding "
-            "handoffs for Codex, Claude Code, OMO/OMC/OMX, and generic owners; it is not an executor and never owns Hermes "
+            "handoffs for Codex, Claude Code, pi-family/OMC/OMX, and generic owners; it is not an executor and never owns Hermes "
             "aliases, providers, skill execution, or Kanban model selection. Diagnosis uses local Hermes config/auth commands "
             "and reads only config plus auth/plugin presence; it never reads `.env` values, credential material, or session prose. "
             "Show the exact Hermes-native command/config preview, bind it to the inspected config digest, and apply only after "

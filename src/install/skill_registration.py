@@ -202,4 +202,10 @@ def hermes_profile_dirs(hermes_home: Path) -> list[tuple[str, Path]]:
         entries = sorted(entry for entry in root.iterdir() if entry.is_dir() and not entry.name.startswith("."))
     except OSError:
         return []
-    return [(entry.name, entry) for entry in entries]
+    # Match Hermes' dependency-free named_profile_has_identity contract, not
+    # incidental runtime directories. Keep link markers as identity claims so
+    # the existing writer/refusal boundaries still inspect them.
+    markers = ("config.yaml", ".env", "SOUL.md", "profile.yaml", "auth.json", "state.db")
+    return [(entry.name, entry) for entry in entries
+            if not (root / ".deleted" / entry.name).exists()
+            and any((entry / marker).is_file() or (entry / marker).is_symlink() for marker in markers)]

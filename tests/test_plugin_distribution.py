@@ -503,7 +503,10 @@ class PluginDistributionTests(unittest.TestCase):
             )
 
             self.assertFalse(observation["observed"])
-            self.assertEqual(observation["reason"], "hermes_not_installed")
+            # A4 names the precise reason for an explicit interpreter that
+            # does not exist; genuine absence (no override, launcher or legacy
+            # venv) still reports hermes_not_installed.
+            self.assertEqual(observation["reason"], "hermes_python_override_missing")
 
     def test_real_loader_observation_uses_isolated_home(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -2767,6 +2770,8 @@ class HermesProfileSyncTests(unittest.TestCase):
     def _profile(self, root: Path, name: str) -> Path:
         profile = root / ".hermes" / "profiles" / name
         profile.mkdir(parents=True, exist_ok=True)
+        # A real named profile has host identity; an empty shell is ignored.
+        (profile / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
         return profile
 
     @contextmanager
@@ -3373,6 +3378,8 @@ class HermesProfileUninstallTests(unittest.TestCase):
     def _profile(self, root: Path, name: str) -> Path:
         profile = root / ".hermes" / "profiles" / name
         profile.mkdir(parents=True, exist_ok=True)
+        # A real named profile has host identity; an empty shell is ignored.
+        (profile / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
         return profile
 
     def _skills_dir(self, root: Path) -> str:

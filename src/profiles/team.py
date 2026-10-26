@@ -310,7 +310,7 @@ OPERATING_MODELS: tuple[OperatingModel, ...] = (
         recommended_profile_packs=("startup-delivery", "engineering-delivery"),
         runtime_guidance=(
             "Use role labels to clarify ownership, not to claim spawned agents.",
-            "Keep coding handoff owner explicit: Codex, Claude Code, Hermes, OMX, OMO, OMC, or generic.",
+            "Keep coding handoff owner explicit: Codex, Claude Code, Hermes, OMX, pi-family, OMC, or generic.",
             "Record review, CI, and merge only from observed evidence.",
         ),
     ),
@@ -330,7 +330,7 @@ OPERATING_MODELS: tuple[OperatingModel, ...] = (
     OperatingModel(
         id="coding-runtime-team",
         title="Coding Runtime Team",
-        summary="A runtime-heavy model for teams that want Hermes to prepare OMX/OMO/OMC/Hermes coding lanes with worker and worktree discipline.",
+        summary="A runtime-heavy model for teams that want Hermes to prepare OMX/pi-family/OMC/Hermes coding lanes with worker and worktree discipline.",
         use_when="Use when the operator has an oh-my runtime or Hermes coding workflow and wants team/swarm-ready handoffs.",
         default_executor="omx-runtime",
         recommended_profile_packs=("engineering-delivery", "cto-loop"),

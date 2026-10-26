@@ -83,14 +83,16 @@ _WORKFLOW_ENGINE_REACH_REMEDIATION = (
 @dataclass(frozen=True)
 class AdviceEntry:
     check_id: str
-    status: str  # "advice" | "ok" | "unobserved"
+    status: str  # "advice" | "ok" | "unobserved" | "skipped"
     remediation: str
     evidence_boundary: str
     observed: str
     read_only: bool = True
+    # Set only on a `skipped` entry: why the inspector was not run at all.
+    reason: str = ""
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "check_id": self.check_id,
             "status": self.status,
             "read_only": self.read_only,
@@ -98,6 +100,9 @@ class AdviceEntry:
             "evidence_boundary": self.evidence_boundary,
             "observed": self.observed,
         }
+        if self.reason:
+            payload["reason"] = self.reason
+        return payload
 
 
 @dataclass(frozen=True)
@@ -423,7 +428,7 @@ def _model_routing_next_action(
     if owner_learning.get("status") == "corrupt":
         return f"Repair or archive the corrupt owner preference at {owner_learning['path']}, then run `omh coding model-routing status`."
     if not confirmed:
-        return "Confirm locally active models in OMO configuration, then run `omh coding model-routing status`."
+        return "Confirm locally active models in the pi-family runtime configuration, then run `omh coding model-routing status`."
     if hermes.get("status") in {"missing", "aliases_unset"}:
         return "Preview and apply Hermes model aliases for confirmed models, then run `omh coding model-routing status`."
     if missing_heads:
@@ -1347,13 +1352,37 @@ def _yaml_bool(value: str) -> bool | None:
     return None
 
 
+PERSONAL_FILES_SKIPPED_REASON = (
+    "not run: personal-file reads are off (--no-personal-files); "
+    "the file body was not opened or read"
+)
+
+
+def _personal_file_skipped(check_id: str, files: str) -> AdviceEntry:
+    """The entry an inspector that would read a Hermes personal file body leaves when told not to."""
+    return AdviceEntry(
+        check_id,
+        "skipped",
+        "",
+        f"Not observed: {files} was not opened, so nothing about its contents is reported.",
+        f"skipped; {files} not read",
+        reason=PERSONAL_FILES_SKIPPED_REASON,
+    )
+
+
 def run_config_advisories(
     hermes_home: str | Path | None = None,
     *,
     omh_home: str | Path | None = None,
     discovery_home: str | Path | None = None,
+    personal_files: bool = True,
 ) -> AdvisoryReport:
-    """Run every read-only inspector and return the separate advisory report."""
+    """Run every read-only inspector and return the separate advisory report.
+
+    ``personal_files=False`` never calls the two inspectors that read the body
+    of SOUL.md, memories/MEMORY.md or memories/USER.md; each leaves a
+    ``skipped`` entry with its reason in the same position instead.
+    """
     return AdvisoryReport(
         contract=CONTRACT,
         entries=[
@@ -1363,8 +1392,16 @@ def run_config_advisories(
                 discovery_home=discovery_home,
             ),
             check_auxiliary_routing_unset(hermes_home),
-            check_soul_missing_or_starter(hermes_home),
-            check_hermes_memory_staleness(hermes_home),
+            (
+                check_soul_missing_or_starter(hermes_home)
+                if personal_files
+                else _personal_file_skipped("soul_missing_or_starter", "SOUL.md")
+            ),
+            (
+                check_hermes_memory_staleness(hermes_home)
+                if personal_files
+                else _personal_file_skipped("hermes_memory_staleness", "memories/MEMORY.md and memories/USER.md")
+            ),
             check_legacy_plan_artifacts(hermes_home),
             check_orphaned_project_scope_store(hermes_home),
             check_installed_skill_context_weight(hermes_home),

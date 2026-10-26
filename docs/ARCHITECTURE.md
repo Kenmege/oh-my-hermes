@@ -632,7 +632,7 @@ The profile mapping is deliberately narrow:
 | `codex` | `codex_skill` | `command_template`, `$<canonical-skill> {message}` | Only an exact matching `observed_available` record may make the candidate invocation dispatchable, and the parent handoff must remain `ask_before_dispatch`. |
 | `hermes` | `hermes_installed_skill` | `display_only`, `/<display-name> {message}` | Always non-dispatchable display metadata. |
 | `omx-runtime` | `omx_skill` | `display_only`, `$<canonical-skill> {message}` | Always non-dispatchable display metadata. |
-| `omo-runtime` | `omo_skill_reference` | `skill_reference`, empty template | Non-executable reference only; no `load_skills` payload is serialized. |
+| `pi-family-runtime` | `pi_family_skill_reference` | `skill_reference`, empty template | Non-executable reference only; no `load_skills` payload is serialized. |
 | `omc-runtime` | `omc_skill_descriptor` | `descriptor_only`, empty template | Non-executable descriptor only; no universal slash command is inferred. |
 
 `claude-code`, `generic`, `choose`, `pi`/generic aliases, and unmapped
@@ -1638,7 +1638,7 @@ runtime run exists at all:
 | --- | --- | --- | --- | --- |
 | `external_executor` | `codex` | `coding_executor_handoff/v1` | required | required |
 | `prompt_only_handoff` | `claude-code`, `generic` | `coding_prompt_handoff/v1` | forbidden | forbidden |
-| `runtime_handoff` | `hermes`, `omx-runtime`, `omo-runtime`, `omc-runtime` | `coding_runtime_handoff/v1` | forbidden | forbidden |
+| `runtime_handoff` | `hermes`, `omx-runtime`, `pi-family-runtime`, `omc-runtime` | `coding_runtime_handoff/v1` | forbidden | forbidden |
 | pending choice (`choose`) | none selected yet | executor-choice contract | forbidden | forbidden |
 
 `external_executor` is the only run-backed lane today because

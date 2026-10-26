@@ -8826,6 +8826,16 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
     ),
+    # "pi-family" names the runtime only as a whole phrase: the everyday word
+    # `family` alone must not reach the executor readiness owner.
+    RoutingPrecisionCase(
+        "family-alone-never-names-the-pi-family-runtime",
+        "An everyday family question never opens executor runtime readiness",
+        "is my family ready for the move?",
+        "answer_clarification",
+        "",
+        "executor-runtime-readiness",
+    ),
 )
 
 
@@ -10625,6 +10635,15 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "claude-code-open-this-work-korean",
         "Korean Claude Code open-current-work requests check executor readiness",
         "Claude Code로 이거 열어서 작업하게 해줘",
+        "dispatch",
+        "executor-runtime-readiness",
+        "prepare_executor_runtime_readiness",
+        "executor_runtime_readiness",
+    ),
+    RoutingInterventionCase(
+        "pi-family-runtime-readiness-question",
+        "Asking whether the pi-family runtime is ready checks executor readiness",
+        "is pi-family ready to run?",
         "dispatch",
         "executor-runtime-readiness",
         "prepare_executor_runtime_readiness",

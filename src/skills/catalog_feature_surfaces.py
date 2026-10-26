@@ -389,7 +389,6 @@ _FEATURE_SURFACE_SKILLS = (
             "runtime migration",
             "omx",
             "omc",
-            "omo",
         ),
         "Use when a user may choose Codex, Claude Code, Hermes coding, or another runtime and needs tool/credential gaps before handoff.",
         category="executor-readiness",

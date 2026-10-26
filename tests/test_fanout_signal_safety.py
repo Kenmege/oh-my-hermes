@@ -1,6 +1,6 @@
 """Signal-safe fanout dispatch: process groups, interrupts, and the reaper.
 
-OMO shipped the incident this guards against: a launcher blocked in a
+The pi-family runtime shipped the incident this guards against: a launcher blocked in a
 synchronous spawn died on SIGTERM and its engine reparented to pid 1, still
 writing into the tree. The fanout runner now owns each unit as a process
 group, an interrupt terminates the groups and records the batch honestly,
@@ -532,7 +532,7 @@ class FanoutReapTests(unittest.TestCase):
 
     @posix_only
     def test_a_dead_leader_with_live_grandchildren_is_still_reapable(self) -> None:
-        # The OMO incident shape: the leader exited, the engine below it
+        # The pi-family runtime's incident shape: the leader exited, the engine below it
         # survives in the group. Leader-only liveness called this
         # `already_gone` and destroyed the marker while the orphan ran on;
         # group-level liveness reaps it.

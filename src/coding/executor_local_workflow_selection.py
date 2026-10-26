@@ -35,7 +35,7 @@ _CANDIDATE_SPECS: Final[dict[str, CandidateSpec]] = {
         lambda skill: f"/{omh_skill_display_name(skill)} {{message}}",
     ),
     "omx-runtime": ("omx_skill", "display_only", "$skill", lambda skill: f"${skill} {{message}}"),
-    "omo-runtime": ("omo_skill_reference", "skill_reference", "canonical_skill_id", lambda _skill: ""),
+    "pi-family-runtime": ("pi_family_skill_reference", "skill_reference", "canonical_skill_id", lambda _skill: ""),
     "omc-runtime": ("omc_skill_descriptor", "descriptor_only", "canonical_skill_id", lambda _skill: ""),
 }
 
@@ -114,7 +114,7 @@ def dispatchability_for(profile: str, status: str, parent: bool) -> WorkflowReco
         reason = "availability_not_observed"
     elif status == "observed_unavailable":
         reason = "candidate_observed_unavailable"
-    elif profile in {"omo-runtime", "omc-runtime"}:
+    elif profile in {"pi-family-runtime", "omc-runtime"}:
         reason = "descriptor_only"
     elif not parent:
         reason = "parent_handoff_prepare_only"

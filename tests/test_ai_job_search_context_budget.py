@@ -57,11 +57,15 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
 
     def test_capability_growth_is_one_bounded_row_without_sibling_edits(self) -> None:
         for producer, base, cap, expected_hash, limit in (
-            # 522307 -> 522352 and the digest re-derived: the ru trigger pack
+            # 522307 -> 522331 and the sibling digest re-derived: the pi-family
+            # runtime rename moved four sibling rows by +6 each, and the
+            # executor-runtime-readiness row's trigger count went +35 -> +34
+            # when its runtime names became scoring-only (same length).
+            # 522331 -> 522376 and the digest re-derived: the ru trigger pack
             # moves 48 sibling rows' trigger previews, five of them in length (+45, itemized at
             # FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT); the career row is unchanged.
-            (skill_capabilities, 522352, FULL_ROW_DELTA_CAP,
-             '039b3c46f2b1d590211b224dbf054294096e02fe457c22c4848b2f77af3bdc30',
+            (skill_capabilities, 522376, FULL_ROW_DELTA_CAP,
+             'a8cdacc33d3b6300ad903d40d9ecf26ce81568202dbf555cd79b0b66a5df412a',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -122,10 +126,11 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # Re-derived from both sources: the vi rewordings above plus
         # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
         # Re-derived from both main sources above plus the bounded dag-ulw
-        # baseline-verification guidance; only dag-ulw moves versus main.
+        # baseline-verification guidance, then the pi-family runtime rename in
+        # model-setup, maestro, ultrawork, and executor-runtime-readiness.
         # Re-derived for the ru trigger pack: the 49 bodies it covers gain
         # Cyrillic phrases on their routing-signal line; repeated bytes do not move.
-        self.assertEqual(_digest(legacy_hashes), 'b24e47074ec26c9ac42ab0c3720bcde2922e186a63bf74673714df0db56aa999')
+        self.assertEqual(_digest(legacy_hashes), '2f7f7767cc72d8106e8bda84bbada6d0eb3a4f3d60e4c33d0b49d8ff9ed1cf4e')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
@@ -146,8 +151,8 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         expected = {
             'skill_index_line_max_chars': 100,
             'plugin_tool_schema_chars': 69186,  # #2277 prepare fields, then parked DAG waits (+429).
-            'pre_llm_call_context_chars_max': 5780,
-            'pre_llm_call_context_fallback_chars_max': 7216,
+            'pre_llm_call_context_chars_max': 5786,  # The pi-family runtime rename (+6).
+            'pre_llm_call_context_fallback_chars_max': 7222,  # The same rename (+6).
             'awareness_primer_markdown_chars': 3520,
             'awareness_primer_context_chars': 1440,
             'awareness_workflow_context_chars_max': 1500,

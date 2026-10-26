@@ -178,7 +178,7 @@ class StatusBoardBuildTests(unittest.TestCase):
     def test_provider_prefixed_model_id_renders_intact(self) -> None:
         # A unit routed from a local-inventory catalog carries a
         # provider-prefixed model id ("provider/model_id", the shape
-        # `inventory_model_catalog` derives for the omo runtime); the slash
+        # `inventory_model_catalog` derives for the pi-family runtime); the slash
         # must survive into the label on every render surface.
         with TemporaryDirectory() as tmp:
             paths = _paths(Path(tmp))
@@ -187,15 +187,15 @@ class StatusBoardBuildTests(unittest.TestCase):
                 _FANOUT_ID,
                 units=[
                     {
-                        "unit_id": "omo-core",
-                        "owner": "omo",
+                        "unit_id": "pi-core",
+                        "owner": "pi",
                         "model": "openrouter/qwen-3.5-coder",
                         "reasoning_effort": "high",
                         "status": "completed",
                         "duration_seconds": 40,
                     }
                 ],
-                titles={"omo-core": "omo work"},
+                titles={"pi-core": "pi work"},
             )
             with patch.object(status_board, "read_inflight_markers", return_value=[]):
                 payload = build_status_board(paths, now=_NOW)
@@ -204,7 +204,7 @@ class StatusBoardBuildTests(unittest.TestCase):
         text = render_status_board_text(payload)
         self.assertIn("openrouter/qwen-3.5-coder high", text)
         bullets = status_board_messenger_body(payload, render_profile="limited_markdown")
-        self.assertIn("omo work — 🟤 omo (openrouter/qwen-3.5-coder high) — Code · reported done", bullets)
+        self.assertIn("pi work — 🟤 pi (openrouter/qwen-3.5-coder high) — Code · reported done", bullets)
         self.assertNotIn(" — (", bullets)
 
     def test_mixed_running_and_completed_ordering_and_dedup(self) -> None:
@@ -384,7 +384,7 @@ class FormattingTests(unittest.TestCase):
             ("gpt-5.6-sol", "xhigh", "gpt-5.6-sol xhigh"),
             ("fable-5", "", "fable-5"),
             ("", "", "executor default"),
-            # Provider-prefixed omo id from a local-inventory catalog
+            # Provider-prefixed pi-family id from a local-inventory catalog
             # (`inventory_model_catalog` ids are "provider/model_id").
             ("openrouter/qwen-3.5-coder", "high", "openrouter/qwen-3.5-coder high"),
         )

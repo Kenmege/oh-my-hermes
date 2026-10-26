@@ -95,7 +95,7 @@ def _literal_errors(binding: WorkflowInput) -> list[str]:
         if binding.get(key) != value:
             errors.append(f"{key} must equal its executor_local_workflow/v1 literal")
     profile = binding.get("profile")
-    if profile not in {"codex", "hermes", "omx-runtime", "omo-runtime", "omc-runtime"}:
+    if profile not in {"codex", "hermes", "omx-runtime", "pi-family-runtime", "omc-runtime"}:
         errors.append("profile must be a mapped executor profile")
     workflow = binding.get("routed_workflow")
     if not is_workflow(workflow):

@@ -877,10 +877,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Three domain-science vocabulary controls (+3).
             # Career actor repair adds five employer requests and two references.
             # Normalized actor/objective follow-up adds seven employer contrasts.
+            # The pi-family runtime rename: `family` alone never names the
+            # executor readiness owner (+1).
             # The Russian trigger pack adds three chat turns its generic words
             # dispatched or named before they were held back to whole phrases:
             # a weekend chores plan, a family trip plan and a bank site down (3).
-            expected=1117,
+            expected=1118,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1383,12 +1385,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # install drift, and /omh-doctor status runs doctor (+1).
             # Career actor repair retains five personal/target/quoted controls.
             # Actor/objective follow-up adds two third-person candidate controls.
+            # The pi-family runtime rename: asking whether pi-family is ready
+            # checks executor readiness (+1).
             # The Russian trigger pack adds eleven requests that fell back
             # without it: code review, build failure (bare and with a compile
             # error), an implementation plan, a bare make-a-plan clarify, a
             # site accessibility check, deep research, a task graph, what is
             # running, prod down and save to memory (11).
-            expected=1141,
+            expected=1142,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

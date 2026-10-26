@@ -601,17 +601,18 @@ class DagViewTests(unittest.TestCase):
         app.turn_pending = False  # the turn is over: the run's tree folds now, not while the turn runs
         return app
 
-    def test_a_run_whose_every_lane_settled_is_one_summary_line(self) -> None:
+    def test_a_run_whose_every_lane_settled_leaves_the_view_once_the_turn_ends(self) -> None:
+        # It was one summary line, kept until the graph lingered out of the HUD (15 minutes) and drawn as the whole
+        # tree again while the next turn ran; the owner (2026-10-26) wants it gone as the run ends. The run's end
+        # print in the transcript says the same, and `/dag` draws the whole graph.
         from _delegation_graphs import export_run
 
         done = {"api": "done", "ui": "done", "docs": "done", "cli": "done", "verify": "done"}
         for rows in (24, 40):
             with self.subTest(rows=rows):
-                self.assertEqual(view_text(self.ended(self.tree_app(rows, export_run(done, staged=True)))),
-                                 ["  DAG · export feature · done 5/5"])
+                self.assertEqual(view_text(self.ended(self.tree_app(rows, export_run(done, staged=True)))), [])
                 failed = export_run({**done, "docs": "failed", "verify": "interrupted"}, staged=True)
-                self.assertEqual(view_text(self.ended(self.tree_app(rows, failed))),
-                                 ["  DAG · export feature · done 3/5 · 1 failed · 1 interrupted"])
+                self.assertEqual(view_text(self.ended(self.tree_app(rows, failed))), [])
         one_left = export_run({**done, "verify": "running"}, staged=True)
         self.assertGreater(len(view_text(self.ended(self.tree_app(40, one_left)))), 1, "a lane still running keeps the tree")
         unread = export_run(done, staged=True)
@@ -628,8 +629,7 @@ class DagViewTests(unittest.TestCase):
         running = view_text(self.tree_app(40, export_run(done, staged=True)))
         self.assertGreater(len(running), 1, running)
         self.assertTrue(running[0].startswith("  DAG · export feature · 5 nodes"), running)
-        self.assertEqual(view_text(self.ended(self.tree_app(40, export_run(done, staged=True)))),
-                         ["  DAG · export feature · done 5/5"])
+        self.assertEqual(view_text(self.ended(self.tree_app(40, export_run(done, staged=True)))), [])
 
     def test_a_tree_that_shrinks_mid_run_keeps_its_rows_on_the_bottom_rows_until_the_turn_ends(self) -> None:
         # The mid-run blank band (2026-10-23 audit): a tree that drew fewer rows while the turn ran gave them up, and

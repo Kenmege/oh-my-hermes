@@ -6,8 +6,8 @@ under the output and is as tall as its content, the way Claude Code's input
 box follows what was printed: no blank rows between the transcript and the
 composer at the start, after a turn or around a question. Once its last row is
 the screen's last row (and the region knows it), the frame keeps the region's
-height, so what shrinks above the composer becomes blank pad rows at the
-region's top and the composer stays on the bottom rows (the owner's complaint
+height, so what shrinks above the composer becomes blank pad rows under the
+live block and the composer stays on the bottom rows (the owner's complaint
 about Hermes' Ink TUI: a closing list must not pull the prompt up). This file
 is the regression proof. It runs the frame helper and the live region the way
 the app loop does (`App._render`: build a frame, with the region's height as
@@ -603,6 +603,54 @@ class AppBottomRowsTests(unittest.TestCase):
                 self.assertGreaterEqual(self.gap(after), self.gap(before))
                 if name in ("a picker", "a completion menu"):
                     self.assertGreater(self.gap(after), self.gap(before))
+
+    def test_an_approval_answered_mid_turn_leaves_the_live_calls_under_the_transcript(self) -> None:
+        # The owner's report (2026-10-25): after an approval in a long turn, 10 to 15 blank rows stood between the
+        # last settled call and the running ones, then filled in. The freed rows went to the region's top, so the
+        # live calls jumped down away from the transcript they continue. They go under the live calls now, above
+        # the working row and its tip, which stay on the composer; the composer and the rows under it stay put.
+        from test_tui_choice_ui import armed
+        from test_tui_modes import drawn
+
+        from omh.tui.gateway import Event, ServerRequest
+        from omh.tui.keys import DOWN
+
+        app, _ = self.at_the_bottom()
+
+        def event(kind: str, **payload: object) -> None:
+            app._on_event(Event(kind, app.sid, payload))
+
+        def call_row(screen: list[str], command: str) -> int:
+            return next(index for index, row in enumerate(screen) if f"terminal({command})" in row)
+
+        app.transcript.add_user("check the tree")
+        app.turn_pending = True
+        event("message.start")
+        event("reasoning.delta", text="look first\n")
+        event("tool.start", tool_id="c1", name="terminal", args={"command": "grep -rn x src"})
+        event("tool.complete", tool_id="c1", name="terminal", args={"command": "grep -rn x src"}, duration_s=3.0,
+              result={"output": "src/a.py:1: x", "exit_code": 0})
+        event("reasoning.delta", text="now the script\n")  # the first group settles above the region
+        event("tool.start", tool_id="c2", name="terminal", args={"command": "python3 check.py"})
+        before = drawn(app)
+        script = "python3 - <<'PY'\n" + "\n".join(f"print({n})" for n in range(9)) + "\nPY"
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": script, "description": "script execution",
+                                                                   "choices": ["once", "session", "deny"]}))
+        asking = drawn(app)
+        armed(app)
+        app._on_input(Key(DOWN))
+        app._on_input(Key(ENTER))  # allow once
+        after = drawn(app)
+        self.assertEqual(self.where(after), self.where(before))  # the composer holds its row
+        settled, live = call_row(after, "grep -rn x src"), call_row(after, "python3 check.py")
+        self.assertEqual(live, call_row(asking, "python3 check.py"))  # the running call did not jump down
+        between = after[settled:live]  # the settled call's output, the reasoning row, a spacer above each block
+        self.assertFalse([index for index in range(len(between) - 1) if not between[index] and not between[index + 1]],
+                         after)  # no two blank rows: no band
+        rule = self.where(after)[0]
+        self.assertIn("Tip:", after[rule - 1])  # the working row and its tip stay on the composer
+        self.assertTrue(after[rule - 2].strip())
+        self.assertFalse(any(after[live + 2 : rule - 2]), after)  # the freed rows: under the live calls only
 
     def test_the_next_output_fills_the_freed_rows_and_a_redraw_starts_under_the_output_again(self) -> None:
         from test_tui_modes import drawn, type_text

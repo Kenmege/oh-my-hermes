@@ -126,6 +126,12 @@ class SharedStoreUninstallTests(_Fixture):
         bot.mkdir(parents=True)
         private = self.root / "private-omh"
         private.mkdir()
+        # An unshared path is not ownership evidence: install the real pack.
+        status, _, stderr = run_cli([
+            "--hermes-home", str(bot), "--omh-home", str(private),
+            "setup", "--core", "--yes", "--no-interactive", "--no-menubar", "--json",
+        ])
+        self.assertEqual(status, 0, stderr)
         _write(private / "runtime" / "record.json", "{}\n")
         self._profile_binding(bot, private)
         # The primary uses A, not private/skills: private really is unshared.
@@ -180,6 +186,7 @@ class SharedStoreUninstallTests(_Fixture):
         """Mutation control, independently of whether the proposed plan is safe."""
         bot = self.hermes / "profiles" / "bot"
         bot.mkdir(parents=True)
+        _write(bot / "SOUL.md", "Bot profile identity.\n")
         self._setup_primary()
         _write(self.omh / "runtime" / "sentinel.json", '{"keep": true}\n')
         before = self._file_snapshot(self.root)
@@ -195,6 +202,7 @@ class SharedStoreUninstallTests(_Fixture):
     def test_shared_store_dry_run_does_not_plan_store_deletion(self) -> None:
         bot = self.hermes / "profiles" / "bot"
         bot.mkdir(parents=True)
+        _write(bot / "SOUL.md", "Bot profile identity.\n")
         self._setup_primary()
 
         status, stdout, stderr = run_cli(
@@ -303,6 +311,11 @@ class CorruptProfileUpdateTests(_Fixture):
         good = self.hermes / "profiles" / "z-good"
         bad.mkdir(parents=True)
         good.mkdir()
+        _write(good / "SOUL.md", "Healthy profile identity.\n")
+        ghost = self.hermes / "profiles" / "log-cache-shell"
+        _write(ghost / "logs" / "sentinel", "Keep incidental runtime files.\n")
+        (ghost / "cache").mkdir()
+        ghost_before = self._file_snapshot(ghost)
         (bad / "config.yaml").write_bytes(b"plugins:\n  x: \xff\n")
         bad_before = self._file_snapshot(bad)
 
@@ -323,6 +336,9 @@ class CorruptProfileUpdateTests(_Fixture):
         self.assertIn("z-good", by_profile)
         self.assertNotEqual(by_profile["z-good"]["status"], "failed")
         self.assertTrue((good / "plugins" / "omh").is_dir())
+        self.assertNotIn("log-cache-shell", by_profile)
+        self.assertEqual(self._file_snapshot(ghost), ghost_before)
+        self.assertEqual(sorted(p.name for p in ghost.iterdir()), ["cache", "logs"])
 
     def test_oserror_profile_config_is_a_named_failure(self) -> None:
         good = self.hermes / "profiles" / "z-good"
@@ -380,6 +396,7 @@ class UpdateJsonTests(_Fixture):
     def test_update_json_reports_a_profile_refresh_failure(self) -> None:
         bot = self.hermes / "profiles" / "bot"
         bot.mkdir(parents=True)
+        _write(bot / "SOUL.md", "Bot profile identity.\n")
         status, _, stderr = run_cli(
             [
                 "--hermes-home",
@@ -445,7 +462,9 @@ class GenerationOwnershipTests(_Fixture):
 
     @requires_symlinks
     def test_uninstall_removes_an_installer_owned_generation(self) -> None:
+        self._setup_primary()
         store, generation, generation_venv, bin_dir = self._generation_layout()
+        _write(generation_venv / "pyvenv.cfg", "home = synthetic-python\n")
         paths = OmhPaths(omh_home=self.omh, hermes_home=self.hermes)
 
         with mock.patch.dict(

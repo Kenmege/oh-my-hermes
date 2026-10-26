@@ -293,6 +293,68 @@ class SessionTranslationTests(AdapterCase):
         [(_, steer)] = adapter.from_client(_call(9, "session.steer", {"session_id": SID, "text": "go"}))
         self.assertEqual(steer["params"], {"session_id": SID, "text": "go", "execution_generation": 4})
 
+    def test_an_interrupt_carries_the_generation_of_the_turn_it_stops(self) -> None:
+        # Hermes bf0203a794 refuses `session.interrupt` without the running generation (`session_authority.py`
+        # `interrupt`: `stale_generation`), so a stop sent as the stdio entry takes it never stopped the turn.
+        adapter = self.adapter()
+        self.opened(adapter, generation=3)
+        adapter.from_owner(_event("message.start", {}, execution_generation=4))
+        interrupt = self.own_call(adapter.from_client(_call(9, "session.interrupt", {"session_id": SID})),
+                                  "session.interrupt")
+        self.assertEqual(interrupt["params"], {"session_id": SID, "execution_generation": 4})
+        handle = {"ref": {"session_id": SID}, "execution_generation": 4, "execution_state": "running"}
+        self.assertEqual(adapter.from_owner(_answer(interrupt["id"], handle)), [(TO_CLIENT, _answer(9, handle))])
+        self.assertFalse(adapter.waiting())
+
+    def test_a_stale_interrupt_is_read_afresh_and_sent_once_more(self) -> None:
+        adapter = self.adapter()
+        self.opened(adapter, generation=3)
+        first = self.own_call(adapter.from_client(_call(9, "session.interrupt", {"session_id": SID})),
+                              "session.interrupt")
+        read = self.own_call(adapter.from_owner(_error(first["id"], "stale_generation")), "session.resume")
+        self.assertEqual(read["params"], {"session_id": SID})
+        again = self.own_call(adapter.from_owner(_answer(read["id"], {
+            "session_id": SID, "subscription_id": "sub-1", "running": True, "execution_generation": 5})),
+            "session.interrupt")
+        self.assertEqual(again["params"], {"session_id": SID, "execution_generation": 5})
+        self.assertEqual(adapter.sessions[SID].generation, 5)
+        # Refused a second time, the stop is the TUI's refusal: one retry, never a loop.
+        [(target, refusal)] = adapter.from_owner(_error(again["id"], "stale_generation"))
+        self.assertEqual((target, refusal["id"], refusal["error"]["message"]), (TO_CLIENT, 9, "stale_generation"))
+        self.assertFalse(adapter.waiting())
+
+    def test_an_interrupt_whose_read_finds_no_turn_running_stops_nothing(self) -> None:
+        adapter = self.adapter()
+        self.opened(adapter, generation=3)
+        first = self.own_call(adapter.from_client(_call(9, "session.interrupt", {"session_id": SID})),
+                              "session.interrupt")
+        read = self.own_call(adapter.from_owner(_error(first["id"], "stale_generation")), "session.resume")
+        actions = adapter.from_owner(_answer(read["id"], {"session_id": SID, "running": False,
+                                                          "execution_generation": 4}))
+        self.assertEqual(actions, [(TO_CLIENT, _answer(9, {"session_id": SID, "execution_generation": 4,
+                                                            "running": False}))])
+        # Any other refusal is the TUI's at once, and nothing is read.
+        other = self.own_call(adapter.from_client(_call(10, "session.interrupt", {"session_id": SID})),
+                              "session.interrupt")
+        [(target, refusal)] = adapter.from_owner(_error(other["id"], "forbidden"))
+        self.assertEqual((target, refusal["id"]), (TO_CLIENT, 10))
+
+    def test_an_interrupt_with_no_generation_known_reads_one_first(self) -> None:
+        adapter = self.adapter()
+        read = self.own_call(adapter.from_client(_call(9, "session.interrupt", {"session_id": SID})),
+                             "session.resume")
+        interrupt = self.own_call(adapter.from_owner(_answer(read["id"], {
+            "session_id": SID, "subscription_id": "sub-2", "running": True, "execution_generation": 2})),
+            "session.interrupt")
+        self.assertEqual(interrupt["params"], {"session_id": SID, "execution_generation": 2})
+        [(target, refusal)] = adapter.from_owner(_error(interrupt["id"], "stale_generation"))
+        self.assertEqual((target, refusal["id"]), (TO_CLIENT, 9))  # the read was its one retry
+        unread = self.own_call(adapter.from_client(_call(10, "session.interrupt", {"session_id": "local-gone"})),
+                               "session.resume")
+        [(target, refusal)] = adapter.from_owner(_error(unread["id"], "not_found"))
+        self.assertEqual((target, refusal["id"], refusal["error"]["code"]), (TO_CLIENT, 10, attach.REFUSED))
+        self.assertIn("not_found", refusal["error"]["message"])
+
     def test_shell_exec_runs_in_the_session_last_opened(self) -> None:
         adapter = self.adapter()
         self.opened(adapter)
@@ -388,6 +450,86 @@ class RewindTests(AdapterCase):
         self.assertEqual(refusal["error"]["code"], attach.REFUSED)
         self.assertNotIn(refusal["error"]["code"], (attach.PARAM_REJECTED, -32601))
         self.assertIn("target user message is gone", refusal["error"]["message"])
+
+
+class ModelSwitchTests(AdapterCase):
+    """`config.set model` is the owner's `session.mutate model` (Ink's `/model` on a shared gateway), answered as the
+    stdio entry answers it."""
+
+    def switch(self, value: str = "claude-opus-5-5 --provider claude-proxy --session") -> tuple[Adapter, dict]:
+        adapter = self.adapter()
+        self.opened(adapter)
+        read = self.own_call(adapter.from_client(_call(21, "config.set", {
+            "key": "model", "value": value, "session_id": SID})), "session.resume")
+        self.assertEqual(read["params"], {"session_id": SID})
+        mutate = self.own_call(adapter.from_owner(_answer(read["id"], {
+            "session_id": SID, "subscription_id": "sub-1", "revision": 9, "execution_generation": 5})),
+            "session.mutate")
+        return adapter, mutate
+
+    def test_a_switch_reads_the_revision_and_mutates_the_model_with_its_provider(self) -> None:
+        adapter, mutate = self.switch()
+        self.assertEqual(mutate["params"], {
+            "session_id": SID, "request_id": "id-2", "expected_revision": 9, "expected_generation": 5,
+            "operation": "model", "payload": {"model": "claude-opus-5-5", "provider": "claude-proxy"}})
+        [(target, answer)] = adapter.from_owner(_answer(mutate["id"], {
+            "session_id": SID, "operation": "model", "model": "claude-opus-5-5", "execution_generation": 6}))
+        self.assertEqual((target, answer), (TO_CLIENT, _answer(21, {
+            "key": "model", "value": "claude-opus-5-5", "scope": "session", "deferred": False})))
+        self.assertEqual(adapter.sessions[SID].generation, 6)
+        self.assertFalse(adapter.waiting())
+
+    def test_a_pick_while_a_turn_runs_is_deferred_and_a_guarded_one_is_not_made(self) -> None:
+        adapter, mutate = self.switch("claude-opus-5-5 --session")
+        self.assertEqual(mutate["params"]["payload"], {"model": "claude-opus-5-5"})
+        [(_, answer)] = adapter.from_owner(_answer(mutate["id"], {"status": "deferred", "model": "claude-opus-5-5"}))
+        self.assertEqual(answer["result"]["deferred"], True)
+        adapter, mutate = self.switch()
+        [(_, answer)] = adapter.from_owner(_answer(mutate["id"], {
+            "status": "confirmation_required", "confirm_required": True, "confirm": "token",
+            "confirm_message": "Opus costs 5x.", "target_model": "claude-opus-5-5"}))
+        self.assertEqual(answer["result"], {
+            "key": "model", "value": "", "confirm_required": True, "confirm_message": "Opus costs 5x."})
+
+    def test_switch_anyway_carries_the_owners_token_once(self) -> None:
+        adapter, mutate = self.switch()
+        adapter.from_owner(_answer(mutate["id"], {
+            "status": "confirmation_required", "confirm_required": True, "confirm": "tok-1", "confirm_message": "x"}))
+        value = "claude-opus-5-5 --provider claude-proxy --session"
+        read = self.own_call(adapter.from_client(_call(24, "config.set", {
+            "key": "model", "value": value, "session_id": SID, "confirm_expensive_model": True})), "session.resume")
+        again = self.own_call(adapter.from_owner(_answer(read["id"], {"revision": 9, "execution_generation": 5})),
+                              "session.mutate")
+        self.assertEqual(again["params"]["payload"],
+                         {"model": "claude-opus-5-5", "provider": "claude-proxy", "confirm": "tok-1"})
+        read = self.own_call(adapter.from_client(_call(25, "config.set", {
+            "key": "model", "value": value, "session_id": SID, "confirm_expensive_model": True})), "session.resume")
+        third = self.own_call(adapter.from_owner(_answer(read["id"], {"revision": 9, "execution_generation": 5})),
+                              "session.mutate")
+        self.assertNotIn("confirm", third["params"]["payload"])  # used once: the owner then asks again
+
+    def test_a_refusal_is_the_owners_own_with_its_reason(self) -> None:
+        adapter, mutate = self.switch()
+        [(target, refusal)] = adapter.from_owner(_error(mutate["id"], "model_resolution_failed"))
+        self.assertEqual((target, refusal["id"]), (TO_CLIENT, 21))
+        self.assertEqual(refusal["error"]["data"]["reason"], "model_resolution_failed")
+
+    def test_a_flag_the_owner_does_not_take_is_refused_before_anything_is_sent(self) -> None:
+        adapter = self.adapter()
+        self.opened(adapter)
+        for value in ("x --global", "x --once", "x --refresh", "--provider p", "x --provider"):
+            with self.subTest(value=value):
+                [(target, refusal)] = adapter.from_client(_call(22, "config.set", {
+                    "key": "model", "value": value, "session_id": SID}))
+                self.assertEqual((target, refusal["error"]["data"]["reason"]), (TO_CLIENT, "unsupported_model_options"))
+        self.assertFalse(adapter.waiting())
+        self.assertEqual(attach.model_payload("x --tui-session --reasoning HIGH"), {"model": "x", "reasoning": "high"})
+
+    def test_any_other_config_set_passes_through(self) -> None:
+        adapter = self.adapter()
+        frame = _call(23, "config.set", {"key": "yolo", "value": "on", "session_id": SID})
+        self.assertEqual(adapter.from_client(frame), [(TO_OWNER, frame)])
+        self.assertFalse(adapter.waiting())
 
 
 class SharedPromptTests(AdapterCase):
@@ -602,6 +744,16 @@ class _Socket:
                             "command": "rm -rf /tmp/x", "description": "delete", "choices": ["once", "deny"]}}})
         elif method == "approval.respond":
             answer({"status": "resolved"})
+        elif method == "session.interrupt" and params.get("execution_generation") != 3:
+            # The owner moved on to generation 3 without telling this view: a stop for any other is refused.
+            self.inbox.put_nowait({"jsonrpc": "2.0", "id": rid, "error": {
+                "code": 4001, "message": "stale_generation", "data": {"reason": "stale_generation"}}})
+        elif method == "session.interrupt":
+            answer({"ref": {"profile_id": "p", "session_id": "local-1"}, "instance_id": "i", "authority_epoch": 1,
+                    "revision": 1, "execution_generation": 3, "execution_state": "running"})
+        elif method == "session.resume":
+            answer({"session_id": "local-1", "stored_session_id": "local-1", "subscription_id": "sub-1",
+                    "execution_generation": 3, "running": True, "messages": [], "info": {}})
         elif method == "session.detach":
             answer({"session_id": "local-1", "subscription_id": "sub-1", "detached": True})
 
@@ -680,15 +832,19 @@ def gateway_ws_target(endpoint, ticket):
 '''
 
 FAKE_STDIO_ENTRY = '''
-import json, sys
+import json, os, sys
+from pathlib import Path
 
 
 def main():
+    log = Path(os.environ["HERMES_HOME"]) / "stdio.jsonl"
     sys.stdout.write(json.dumps({"jsonrpc": "2.0", "method": "event",
                                  "params": {"type": "gateway.ready", "payload": {"stdio": True}}}) + "\\n")
     sys.stdout.flush()
     for line in sys.stdin:
         frame = json.loads(line)
+        with log.open("a") as out:
+            out.write(json.dumps(frame) + "\\n")
         sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": frame["id"], "result": {"stdio": frame["method"]}}) + "\\n")
         sys.stdout.flush()
     return 7
@@ -731,12 +887,17 @@ class ScriptTests(unittest.TestCase):
                          ["__init__.py", "gateway_attach.py"])
 
     def test_a_hermes_with_only_the_stdio_entry_runs_it_in_the_child(self) -> None:
-        _home, environ = self.hermes({})
+        home, environ = self.hermes({})
         client = self.client(environ)
         ready = client.start(ready_timeout=10)
         self.assertEqual(ready.payload, {"stdio": True})
         self.assertEqual(client.call("session.create", {"cols": 80}), {"stdio": "session.create"})
+        self.assertEqual(client.call("session.interrupt", {"session_id": "s1"}), {"stdio": "session.interrupt"})
         self.assertEqual(client.close(grace=5), 7)  # the entry's own exit code
+        # Over stdio nothing is translated: the stop goes as the TUI sent it, with no generation and no read.
+        log = [json.loads(line) for line in (home / "stdio.jsonl").read_text().splitlines()]
+        self.assertEqual([frame["params"] for frame in log if frame["method"] in ("session.interrupt", "session.resume")],
+                         [{"session_id": "s1"}])
 
     def test_a_hermes_cli_without_the_attach_api_still_runs_the_stdio_entry(self) -> None:
         _home, environ = self.hermes({"hermes_cli/__init__.py": "", "hermes_cli/gateway_client.py": FAKE_CLIENT,
@@ -780,6 +941,8 @@ class ScriptTests(unittest.TestCase):
         self.assertEqual((request.id, request.method, request.params["command"]),
                          ("omh-approval-p1", "approval", "rm -rf /tmp/x"))
         client.respond(request.id, {"result": {"choice": "deny"}})
+        stopped = client.call("session.interrupt", {"session_id": "local-1"})
+        self.assertEqual((stopped["execution_generation"], stopped["execution_state"]), (3, "running"))
         client.call("session.close", {"session_id": "local-1"})
         self.assertEqual(client.close(grace=5), 0)  # the person left: a normal exit, no respawn
 
@@ -797,6 +960,15 @@ class ScriptTests(unittest.TestCase):
                                                     "prompt_id": "p1", "choice": "deny"})
         self.assertEqual(sent["session.detach"], {"session_id": "local-1", "subscription_id": "sub-1",
                                                   "end_reason": "tui_close"})
+        # The stop went at the generation the submit receipt named, was refused as stale, read afresh, and sent
+        # once more at the owner's.
+        stops = [(entry["method"], entry["params"]) for entry in log
+                 if entry.get("method") in ("session.interrupt", "session.resume")]
+        self.assertEqual(stops, [
+            ("session.interrupt", {"session_id": "local-1", "execution_generation": 2}),
+            ("session.resume", {"session_id": "local-1"}),
+            ("session.interrupt", {"session_id": "local-1", "execution_generation": 3}),
+        ])
 
     def _next_request(self, client: GatewayClient) -> ServerRequest:
         for _ in range(50):

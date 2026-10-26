@@ -26,6 +26,7 @@ import sys
 from typing import TextIO
 
 from ..skin_pack import SkinTheme, hex_to_rgb, skin_colors
+from ..system.stdin_probe import stdin_is_tty
 
 try:  # pragma: no cover - exercised by platform, not by a branch test
     import termios
@@ -113,12 +114,13 @@ def picker_available(*, stdin: TextIO | None = None, stdout: TextIO | None = Non
         return False
     if os.environ.get("TERM", "") == "dumb" or os.environ.get("OMH_NO_TUI", "") == "1":
         return False
-    source = stdin if stdin is not None else sys.stdin
     sink = stdout if stdout is not None else sys.stdout
     try:
-        return bool(source.isatty() and sink.isatty())
-    except (OSError, ValueError):
+        source_is_tty = stdin.isatty() if stdin is not None else stdin_is_tty()
+        return bool(source_is_tty and sink.isatty())
+    except (AttributeError, OSError, ValueError):
         # A closed or non-file stream is not a terminal; degrade to the list.
+        # `>&-` leaves sys.stdout None, which raises AttributeError.
         return False
 
 

@@ -6,7 +6,7 @@ from typing import Any, Mapping
 
 from .executor_cues import (
     NAMED_CODING_AGENT_PHRASES,
-    OMO_RUNTIME_CODING_AGENT_PHRASES,
+    PI_FAMILY_CODING_AGENT_PHRASES,
     contains_boundary_phrase,
 )
 from .localization import normalized_phrase
@@ -60,23 +60,24 @@ NAMED_EXECUTOR_OWNER_PHRASES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "hermes",
         ("hermes coding", "헤르메스 코딩", "헤르메스가 코딩", "헤르메스한테 코딩"),
     ),
-    # One owner covers every omo host CLI (pi, senpi, opencode); the phrase
-    # policy for pi lives with `OMO_RUNTIME_CODING_AGENT_PHRASES` in
+    # One owner covers every pi-family host CLI (pi, its distribution host, opencode); the phrase
+    # policy for pi lives with `PI_FAMILY_CODING_AGENT_PHRASES` in
     # `routing/executor_cues.py` (bare "pi" belongs to Raspberry-Pi routing).
     # The tuple is shared, not copied, so this group and the policy-level
     # executor names cannot drift apart.
-    ("omo-runtime", OMO_RUNTIME_CODING_AGENT_PHRASES),
+    ("pi-family-runtime", PI_FAMILY_CODING_AGENT_PHRASES),
 )
 
 # Owner groups whose phrases hide inside ordinary words as raw substrings
-# ("promo runtime" contains "omo runtime", "api한테" contains "pi한테") or as
+# (a word ending in the runtime's short name contains its runtime phrase, and
+# "api한테" contains "pi한테") or as
 # ordinary hyphenated words and filenames ("claudecode-notes", "claude-code.md",
 # "codex-utils.py" each contain a bare owner name that never named the
 # executor). These groups are matched with `contains_boundary_phrase`; every
 # other group keeps plain containment. `hermes`'s two-word phrases are
 # distinctive enough in practice that this fix is not extended to that group
 # here; extend it the same way if a similar hole is ever measured there.
-_BOUNDARY_MATCHED_OWNERS: frozenset[str] = frozenset({"codex", "claude-code", "omo-runtime"})
+_BOUNDARY_MATCHED_OWNERS: frozenset[str] = frozenset({"codex", "claude-code", "pi-family-runtime"})
 
 # Request-led compatible routes. These cues name the *shape* of the coding owner the
 # request needs, never a vendor, so Hermes can pick a compatible route family without

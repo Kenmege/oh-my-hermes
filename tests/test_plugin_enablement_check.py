@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+from unittest import mock
 from tempfile import TemporaryDirectory
 
 from _cli_harness import run_cli
@@ -605,6 +606,114 @@ class SetupWithScalarEnabledTests(unittest.TestCase):
             self.assertFalse(check.ok)
             self.assertIn("cannot parse", check.message)
             self.assertIn("YAML block list", check.next_action or "")
+
+
+# Hermes' own config separates the children of `plugins:` with banners at
+# column 0. A comment carries no structure, so `enabled:` below the banner is
+# still a child of `plugins:` (#2304).
+BANNER_CONFIG = """attachments:
+  storage: "hermes-home"
+
+# =============================================================================
+# Plugin Installation
+# =============================================================================
+plugins:
+  # Deadline for each Git clone, fetch or checkout during plugin install. Default: 300
+  clone_timeout_seconds: 300
+
+# =============================================================================
+# Model Configuration
+# =============================================================================
+  enabled:
+    - rea
+    - superpowers
+  disabled: []
+"""
+
+
+def _plugins_enabled_keys(text: str) -> int:
+    """How many `enabled:` keys sit directly under the top-level `plugins:` node."""
+    count = 0
+    in_plugins = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not line.startswith(" "):
+            in_plugins = stripped.partition(":")[0] == "plugins"
+            continue
+        if in_plugins and line.startswith("  ") and not line.startswith("   "):
+            count += stripped.partition(":")[0] == "enabled"
+    return count
+
+
+class ColumnZeroCommentInsidePluginsTests(unittest.TestCase):
+    """A column-0 comment inside `plugins:` does not end the node (#2304)."""
+
+    def test_the_reader_sees_the_list_below_the_banner(self) -> None:
+        self.assertEqual(plugin_enablement(BANNER_CONFIG), {"enabled": ["rea", "superpowers"], "disabled": []})
+        self.assertEqual(plugins_enabled_extension_error(BANNER_CONFIG, PLUGIN_NAME), "")
+
+    def test_setup_extends_the_one_enabled_list_instead_of_writing_a_second(self) -> None:
+        change = ensure_plugin_enabled(BANNER_CONFIG, PLUGIN_NAME)
+
+        self.assertTrue(change.changed)
+        self.assertEqual(change.message, "added plugin to plugins.enabled")
+        self.assertEqual(_plugins_enabled_keys(change.text), 1)
+        # The writer puts a new item directly under the key, as it always has.
+        self.assertEqual(plugin_enablement(change.text)["enabled"], [PLUGIN_NAME, "rea", "superpowers"])
+        self.assertEqual(plugins_enabled_extension_error(change.text, PLUGIN_NAME), "")
+
+    def test_uninstall_takes_the_item_back_out_below_the_banner(self) -> None:
+        added = ensure_plugin_enabled(BANNER_CONFIG, PLUGIN_NAME)
+        removed = remove_plugin_enabled(added.text, PLUGIN_NAME)
+
+        self.assertTrue(removed.changed)
+        self.assertEqual(removed.text, BANNER_CONFIG)
+
+    def test_a_banner_before_a_sibling_top_level_key_still_ends_the_node(self) -> None:
+        text = (
+            "plugins:\n"
+            "  clone_timeout_seconds: 300\n"
+            "\n"
+            "# =====\n"
+            "# Tools\n"
+            "# =====\n"
+            "toolsets:\n"
+            "  enabled:\n"
+            "    - web\n"
+        )
+        self.assertEqual(plugin_enablement(text), {"enabled": [], "disabled": []})
+
+        change = ensure_plugin_enabled(text, PLUGIN_NAME)
+
+        self.assertEqual(change.message, "inserted plugins.enabled")
+        self.assertEqual(_plugins_enabled_keys(change.text), 1)
+        self.assertEqual(plugin_enablement(change.text)["enabled"], [PLUGIN_NAME])
+        self.assertTrue(change.text.endswith("# Tools\n# =====\ntoolsets:\n  enabled:\n    - web\n"))
+
+    def test_the_writer_refuses_a_composed_file_that_would_not_read_back(self) -> None:
+        from omh.install import config_adapter
+
+        original = config_adapter._compose_plugin_enable
+
+        def _writes_a_second_key(text: str, name: str):
+            change = original(text, name)
+            return config_adapter.ConfigChange(True, change.message, "plugins:\n  enabled:\n    - rea\n  enabled:\n    - omh\n")
+
+        with mock.patch.object(config_adapter, "_compose_plugin_enable", _writes_a_second_key):
+            with self.assertRaises(ValueError) as caught:
+                ensure_plugin_enabled("plugins:\n  enabled:\n    - rea\n", PLUGIN_NAME)
+        self.assertIn("file is left alone", str(caught.exception))
+        self.assertIn(f"hermes plugins enable {PLUGIN_NAME}", str(caught.exception))
+
+        def _drops_a_name(text: str, name: str):
+            return config_adapter.ConfigChange(True, "dropped", f"plugins:\n  enabled:\n    - {name}\n")
+
+        with mock.patch.object(config_adapter, "_compose_plugin_enable", _drops_a_name):
+            with self.assertRaises(ValueError) as caught:
+                ensure_plugin_enabled("plugins:\n  enabled:\n    - rea\n", PLUGIN_NAME)
+        self.assertIn("would not read back", str(caught.exception))
 
 
 if __name__ == "__main__":

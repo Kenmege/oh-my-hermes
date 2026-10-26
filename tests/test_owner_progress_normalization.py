@@ -80,6 +80,7 @@ from omh.owner_progress_normalization import (  # noqa: E402
     source_event_evidence_tier,
 )
 from omh.system.paths import OmhPaths  # noqa: E402
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOST
 
 _FANOUT_ID = "fanout-0123456789ab"
 _NOW = "2026-08-06T12:00:00Z"
@@ -95,7 +96,7 @@ OWNERS_WITHOUT_PROGRESS_LANE = ("omx-runtime", "omc-runtime", "generic")
 _PROFILE_BY_OWNER = {
     "codex": "codex",
     "claude-code": "claude_code",
-    "omo-runtime": "omo_runtime",
+    "pi-family-runtime": "pi_family_runtime",
     "hermes": "hermes_local",
 }
 
@@ -258,22 +259,22 @@ class DeterministicOwnerFixtureTests(unittest.TestCase):
                     }
                     self.assertEqual(len(rendered), 1)
 
-    def test_every_omo_host_alias_normalizes_to_one_owner_and_one_record(self) -> None:
+    def test_every_pi_family_host_alias_normalizes_to_one_owner_and_one_record(self) -> None:
         for source_event in ("full_tests_failed", "workflow_completed", "status_update"):
             with self.subTest(source_event=source_event):
                 records = [
                     json.dumps(normalize_owner_progress_event(alias, source_event), sort_keys=True)
-                    for alias in ("omo-runtime", "omo_runtime", "pi", "senpi", "opencode", "  SenPi  ", "OPENCODE")
+                    for alias in ("pi-family-runtime", "pi_family_runtime", "pi", PI_DISTRIBUTION_HOST, "opencode", f"  {PI_DISTRIBUTION_HOST.capitalize()}  ", "OPENCODE")
                 ]
                 self.assertEqual(len(set(records)), 1)
-        record = normalize_owner_progress_event("senpi", "workflow_completed")
-        self.assertEqual(record["owner"], "omo-runtime")
+        record = normalize_owner_progress_event(PI_DISTRIBUTION_HOST, "workflow_completed")
+        self.assertEqual(record["owner"], "pi-family-runtime")
         self.assertEqual(record["normalized_event"], "executor_completed")
 
     def test_progress_lane_profile_spellings_fold_onto_their_owner(self) -> None:
         for spelling, owner in (
             ("claude_code", "claude-code"),
-            ("omo_runtime", "omo-runtime"),
+            ("pi_family_runtime", "pi-family-runtime"),
             ("hermes_local", "hermes"),
             ("codex", "codex"),
         ):
@@ -596,7 +597,7 @@ class EndStateNeedsCorroborationTests(unittest.TestCase):
     def test_the_reported_reproductions_no_longer_close_a_binding(self) -> None:
         """`--profile-latest-event workflow_completed`, `turn.completed`, `result`."""
         for owner, source_event in (
-            ("omo-runtime", "workflow_completed"),
+            ("pi-family-runtime", "workflow_completed"),
             ("hermes", "workflow_completed"),
             ("codex", "turn.completed"),
             ("claude-code", "result"),
@@ -652,7 +653,7 @@ class EndStateNeedsCorroborationTests(unittest.TestCase):
         for owner, source_event, process_status, expected in (
             ("claude-code", "result", "exited_zero", "executor_completed"),
             ("hermes", "blocker_encountered", "blocked", "executor_blocked"),
-            ("omo-runtime", "workflow_completed", "completed", "executor_completed"),
+            ("pi-family-runtime", "workflow_completed", "completed", "executor_completed"),
         ):
             with self.subTest(owner=owner, source_event=source_event, process_status=process_status):
                 signal = self._signal(owner, source_event)
@@ -674,7 +675,7 @@ class EndStateNeedsCorroborationTests(unittest.TestCase):
             ("codex", "files_area_chosen", "repo_exploration"),
             ("codex", "commit_created", "diff_started"),
             ("claude-code", "full_tests_started", "tests_started"),
-            ("omo-runtime", "status_update", "progress_observed"),
+            ("pi-family-runtime", "status_update", "progress_observed"),
         ):
             with self.subTest(owner=owner, source_event=source_event):
                 self.assertEqual(infer_progress_event_type(self._signal(owner, source_event)), expected)
@@ -730,7 +731,7 @@ class CallerReportedNarrationCannotCorroborateItselfTests(unittest.TestCase):
         ("activity_observed", "workflow_completed"),
     )
     # The fanout owner set, split by what a self-report can even reach.
-    _CALLER_REPORTED_OWNERS = ("claude-code", "omo-runtime", "hermes")
+    _CALLER_REPORTED_OWNERS = ("claude-code", "pi-family-runtime", "hermes")
     _PARSED_STREAM_OWNERS = ("codex",)
 
     def _caller_reported_signal(self, owner: str, *, status: str, source_event: str) -> dict:
@@ -831,7 +832,7 @@ class CallerReportedNarrationCannotCorroborateItselfTests(unittest.TestCase):
         """
         for owner, process_status, expected in (
             ("claude-code", "exited_zero", "executor_completed"),
-            ("omo-runtime", "completed", "executor_completed"),
+            ("pi-family-runtime", "completed", "executor_completed"),
             ("hermes", "blocked", "executor_blocked"),
             ("claude-code", "exited_nonzero", "executor_failed"),
         ):
@@ -908,7 +909,7 @@ class CallerReportedNarrationCannotCorroborateItselfTests(unittest.TestCase):
 
     def test_the_cli_reproduction_no_longer_closes_a_binding(self) -> None:
         """End to end, the way it was reported: one `progress observe` call."""
-        for profile in ("claude_code", "omo_runtime", "hermes_local"):
+        for profile in ("claude_code", "pi_family_runtime", "hermes_local"):
             with self.subTest(profile=profile), TemporaryDirectory() as tmp:
                 base, run_id = _prepared_run(Path(tmp), profile)
                 status, stdout, stderr = run_cli(
@@ -1011,7 +1012,7 @@ class AnExplicitEventCannotLaunderAnOwnerWordTests(unittest.TestCase):
             ("claude_code", "workflow_completed"),
             ("claude_code", "result"),
             ("codex", "turn.completed"),
-            ("omo_runtime", "workflow_completed"),
+            ("pi_family_runtime", "workflow_completed"),
             ("hermes_local", "blocker_encountered"),
         ):
             with self.subTest(profile=profile, source_event=source_event):
@@ -1235,7 +1236,7 @@ class AntiUpgradeGuardIsCapableOfFailingTests(unittest.TestCase):
 class OwnerEvidenceCeilingTests(unittest.TestCase):
     """DEFECT 3: an unreadable stream cannot produce a verification claim."""
 
-    def test_omo_runtime_cannot_reach_a_verified_normalized_event(self) -> None:
+    def test_pi_family_runtime_cannot_reach_a_verified_normalized_event(self) -> None:
         verified_words = [
             source_event
             for source_event, target in (
@@ -1248,7 +1249,7 @@ class OwnerEvidenceCeilingTests(unittest.TestCase):
             )
             if target
         ]
-        for alias in ("omo-runtime", "omo_runtime", "pi", "senpi", "opencode"):
+        for alias in ("pi-family-runtime", "pi_family_runtime", "pi", PI_DISTRIBUTION_HOST, "opencode"):
             for source_event in verified_words:
                 with self.subTest(alias=alias, source_event=source_event):
                     record = normalize_owner_progress_event(alias, source_event)
@@ -1263,9 +1264,9 @@ class OwnerEvidenceCeilingTests(unittest.TestCase):
                     self.assertEqual(record["source_event"], source_event)
 
     def test_no_owner_word_at_all_reaches_verified_for_an_unreadable_stream(self) -> None:
-        for source_event in owner_progress_mapping_table("omo-runtime"):
+        for source_event in owner_progress_mapping_table("pi-family-runtime"):
             with self.subTest(source_event=source_event):
-                record = normalize_owner_progress_event("omo-runtime", source_event)
+                record = normalize_owner_progress_event("pi-family-runtime", source_event)
                 self.assertNotEqual(record["normalized_evidence_tier"], "verified")
 
     def test_the_ceiling_follows_this_repos_telemetry_contract(self) -> None:
@@ -1287,7 +1288,7 @@ class OwnerEvidenceCeilingTests(unittest.TestCase):
                         progress_evidence_rank(owner_evidence_ceiling(owner)),
                         progress_evidence_rank("verified"),
                     )
-        self.assertEqual(owner_evidence_ceiling("omo-runtime"), "result_claimed")
+        self.assertEqual(owner_evidence_ceiling("pi-family-runtime"), "result_claimed")
 
     def test_a_readable_owner_still_reaches_verified(self) -> None:
         for owner in ("codex", "claude-code", "hermes"):
@@ -1296,9 +1297,9 @@ class OwnerEvidenceCeilingTests(unittest.TestCase):
                 self.assertEqual(record["normalized_event"], "tests_passed")
                 self.assertEqual(record["normalized_evidence_tier"], "verified")
 
-    def test_an_omo_verification_word_never_becomes_a_verified_lane_event(self) -> None:
+    def test_an_pi_family_verification_word_never_becomes_a_verified_lane_event(self) -> None:
         signal = build_safe_progress_signal(
-            executor_profile="omo_runtime",
+            executor_profile="pi_family_runtime",
             # The end state is observed: omh sampled the process it spawned. The
             # summary beside it is the caller's own words and no longer
             # corroborates anything, so this asserts what it always meant to --
@@ -1312,10 +1313,10 @@ class OwnerEvidenceCeilingTests(unittest.TestCase):
         )
         self.assertEqual(infer_progress_event_type(signal), "executor_completed")
 
-    def test_a_caller_reported_omo_completion_alone_earns_nothing(self) -> None:
+    def test_a_caller_reported_pi_family_completion_alone_earns_nothing(self) -> None:
         """The same signal without the observed process status."""
         signal = build_safe_progress_signal(
-            executor_profile="omo_runtime",
+            executor_profile="pi_family_runtime",
             profile_progress_summary={
                 "status": "completed_or_passed_observed",
                 "latest_progress_event": {"event_type": "full_tests_passed"},

@@ -21,6 +21,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import stat
 from pathlib import Path
 from typing import Literal
@@ -427,7 +428,7 @@ def _write_observation(root: Path, skill_name: str, payload: Mapping[str, object
     # bytes remain the only active truth after a crash.
     path = _state_root(root, skill_name) / "last-observation.json"
     text = json.dumps(dict(payload), sort_keys=True, separators=(",", ":")) + "\n"
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary = path.with_name(f".{path.name}.{os.getpid()}-{secrets.token_hex(8)}.tmp")
     _write_exact(temporary, text, replace=False, private=True)
     try:
         os.replace(temporary, path)

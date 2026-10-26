@@ -47,8 +47,7 @@ from .keys import BUTTON_LEFT, CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, 
 from .layout import Budget, agent_view_cap, is_tiny, max_height
 from .dag_tree import TreeState, run_key, tree_lines
 from .panels import (
-    DAG_INDENT, RUNNING_NODE_STATES, agent_view_count, agent_view_keep, dag_run_summary, dag_style, graph_is_dag,
-    panel_lines,
+    RUNNING_NODE_STATES, agent_view_count, agent_view_keep, dag_run_summary, graph_is_dag, panel_lines,
 )
 from .style import Line, Span, Style
 from .subagents import FINISHED_STATUSES, MAIN_ID, OPEN_MARK, RUNNING, Hit
@@ -109,6 +108,13 @@ TAIL_MISSES_BEFORE_STOP = 5
 TAIL_ANSWER_SECONDS = 10.0
 
 
+def _changed_at(graph: Mapping[str, Any]) -> float:
+    """When `graph` last moved (`delegation_graph`'s `changed_at`: its last start, stop or run-record write); 0 when
+    the graph does not say."""
+    changed = graph.get("changed_at")
+    return float(changed) if isinstance(changed, int | float) and not isinstance(changed, bool) else 0.0
+
+
 def _nearest_shown(state: TreeState, key: str, before: TreeState | None = None) -> str:
     """The row nearest above `key` that `state` still shows (its node, layer or `more` row), else the tree's first;
     `before`, the tree as last drawn, knows where a node that left the graph since stood."""
@@ -133,10 +139,10 @@ class AgentViewMixin:
         tree (`_tree_view`) is the view, in up to a third of the screen from
         the start and no more rows than the tree has (the owner wants the
         graph in sight while it runs); Down gives the tree the keys. A run
-        that is over is one summary line, where Down still opens the
-        roster's list, in that row. Otherwise the roster's rows while it
-        holds agents, else the HUD's agents block and the tree, each in
-        `layout.agent_view_cap`.
+        that is over leaves the view as its turn ends (`_run_gone`): its end
+        print in the transcript holds its final graph. Otherwise the roster's
+        rows while it holds agents, else the HUD's agents block and the tree,
+        each in `layout.agent_view_cap`.
         """
         self.listed = ()
         self.tree_state = None
@@ -146,6 +152,13 @@ class AgentViewMixin:
         valid = isinstance(payload, Mapping) and not payload.get("error")  # else the slot says the reader failed
         frame, now = self._spinner_frame(), self.clock()
         if valid and graph_is_dag(payload):
+            graph = payload["delegation_graph"]
+            if not self._busy() and dag_run_summary(graph):
+                self._retire_finished_run(graph)
+            if self._run_gone(graph):
+                # The view stands for the dag run while its graph is one; once it is over that is nothing at all.
+                self.tree_selected = self.list_selected = None
+                return []
             cap = self._view_cap(rows, cols, rows // 3, room)
             lines = self._tree_view(payload, cols, cap)
             lines += [()] * self._tree_held_rows(len(lines), cap, rows)
@@ -178,28 +191,45 @@ class AgentViewMixin:
         self.tree_hold = max(self.tree_hold, drawn)
         return max(min(self.tree_hold, cap) - drawn, 0)
 
-    def _run_summary(self, graph: Mapping[str, Any]) -> str:
-        """`panels.dag_run_summary` once the turn has ended; "" while it runs, so a run whose every lane settled
-        mid-turn keeps its tree (each layer shut) until the turn ends. On the screen's bottom rows a view that
-        shrank there left its rows blank between the transcript and the working row, as rows the content gives up
-        stay (`layout`); at the turn's end the run's end print and the turn's summary line fill them."""
-        return "" if self._busy() else dag_run_summary(graph)
+    def _run_gone(self, graph: Mapping[str, Any]) -> bool:
+        """Whether the view no longer draws `graph`'s dag run (the owner, 2026-10-26: a finished run stayed under the
+        composer until the next prompt). It is over (`panels.dag_run_summary`) and no turn runs, or it was retired
+        (`_retire_finished_run`) and has not moved since: a payload older than the end print that retired it still
+        shows a lane running, and a later turn reads the same run over. A run whose every lane settled mid-turn
+        keeps its tree (each layer shut) until the turn ends: on the screen's bottom rows a view that shrank there
+        left its rows blank between the transcript and the working row, as rows the content gives up stay
+        (`layout`), and at the turn's end the run's end print and the turn's summary line fill them. A run an
+        extend or a repair moved on after its end (a newer `changed_at`, still open) is drawn again."""
+        if not self._busy() and dag_run_summary(graph):
+            return True
+        if self.retired_run is None:
+            return False
+        key, changed = self.retired_run
+        return run_key(graph) == key and (bool(dag_run_summary(graph)) or _changed_at(graph) <= changed)
+
+    def _retire_finished_run(self, graph: Mapping[str, Any]) -> None:
+        """Stop drawing `graph`'s dag run, which is over: as the turn ends with it over (`_agent_view`), or as its
+        end print reads it over afresh (`App._dag_ends_due`) while the panel's payload may be older. Its children
+        leave the roster with it, so the roster's rows do not take its place once its graph lingers out of the HUD.
+        The rows its tree took in the last frame are noted in `tree_freed` (`App._render` keeps them, blank, under the
+        info line until output fills them)."""
+        key, changed = run_key(graph), _changed_at(graph)
+        if self.retired_run is None or self.retired_run[0] != key or changed > self.retired_run[1]:
+            self.tree_freed = self.frame_budget.agents if self.frame_budget is not None else 0
+        self.retired_run = (key, changed)
+        self._forget_agents(self.roster.drop_runs(frozenset(key.split())))
 
     def _tree_view(self, payload: Mapping[str, Any], cols: int, cap: int) -> list[Line]:
-        """A dag run's folding tree (`dag_tree`) in `cap` rows, noting what its keys need in `tree_state`; a run whose
-        every lane settled is its one summary line once the turn has ended (`_run_summary`), and no tree has the
-        keys then."""
+        """A dag run's folding tree (`dag_tree`) in `cap` rows, noting what its keys need in `tree_state`."""
         graph = payload["delegation_graph"]
-        summary = self._run_summary(graph)
         keys_free = (
             self.slot is None and self.picker is None and self.rewind_picker is None and self.model_picker is None
             and self.search is None
         )
-        if summary or cap < MIN_TREE_ROWS or not keys_free:
+        if cap < MIN_TREE_ROWS or not keys_free:
             self.tree_selected = None  # a question, a picker or the search has the keys now, or no room for a highlight
-        if summary or cap <= 0:
-            header = dag_style("header", self.theme, depth=self.color_depth)
-            return [(Span(DAG_INDENT), Span(summary, header))][:cap] if summary else []
+        if cap <= 0:
+            return []
         frame, now = self._spinner_frame(), self.clock()
         self.tree_size = (cols, cap)
         folds = self._tree_folds(graph)
@@ -324,13 +354,13 @@ class AgentViewMixin:
         return True
 
     def _open_dag_nodes(self) -> frozenset[str]:
-        """The node ids of the conversation's dag run while it is open (a DAG graph not yet one summary line): the
-        lanes whose agents a new turn keeps (`Roster.clear`)."""
+        """The node ids of the conversation's dag run while it is open (a DAG graph whose lanes have not all settled,
+        and not retired, `_run_gone`): the lanes whose agents a new turn keeps (`Roster.clear`)."""
         payload = self.hud.payload if self.hud is not None else None
         if not isinstance(payload, Mapping) or payload.get("error") or not graph_is_dag(payload):
             return frozenset()
         graph = payload["delegation_graph"]
-        if dag_run_summary(graph):
+        if dag_run_summary(graph) or self._run_gone(graph):
             return frozenset()
         nodes = graph.get("nodes") if isinstance(graph.get("nodes"), list) else []
         lanes = (node for node in nodes if isinstance(node, Mapping) and node.get("kind") != "root")
@@ -390,7 +420,8 @@ class AgentViewMixin:
         while Down would open their list, else the count alone; nothing with no agent, or no room for the count.
 
         During a dag run the count is the run's running lanes (`1,204 agents`), the lanes its tree draws as running,
-        and the chip goes once none runs or the run is over: the roster holds every child the run ever started.
+        and the chip goes once none runs or the run is over (`_run_gone`, the view drawing nothing then): the roster
+        holds every child the run ever started.
         """
         payload = self.hud.payload if self.hud is not None else None
         if isinstance(payload, Mapping) and not payload.get("error") and graph_is_dag(payload):
@@ -398,7 +429,8 @@ class AgentViewMixin:
             lanes = graph.get("nodes") if isinstance(graph.get("nodes"), list) else []
             running = sum(1 for node in lanes if isinstance(node, Mapping) and node.get("kind") != "root"
                           and node.get("state") in RUNNING_NODE_STATES)
-            count = f"{running:,} agent{'' if running == 1 else 's'}" if running and not dag_run_summary(graph) else ""
+            gone = dag_run_summary(graph) or self._run_gone(graph)
+            count = f"{running:,} agent{'' if running == 1 else 's'}" if running and not gone else ""
         else:
             count = self.roster.count_text()
         if not count and not graph_is_dag(payload):
@@ -713,7 +745,10 @@ class AgentViewMixin:
         ids = (str(node.get("id")) for node in nodes if isinstance(node, Mapping))
         # By run, not by node: a kept lane whose node left the drawing (a superseded repair) belongs to the run too.
         runs = frozenset(node_id.rpartition(":")[0] for node_id in ids if node_id.startswith("d:"))
-        dropped = self.roster.drop_kept(runs)
+        self._forget_agents(self.roster.drop_kept(runs))
+
+    def _forget_agents(self, dropped: frozenset[str]) -> None:
+        """Forget a pending `x`, a picked steer and the tail misses of the agents the roster just `dropped`."""
         if self.interrupt_armed in dropped:
             self.interrupt_armed = None
         if self.agent_steer in dropped:
