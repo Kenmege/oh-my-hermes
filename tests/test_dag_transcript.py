@@ -118,11 +118,13 @@ class BlockTests(unittest.TestCase):
         block = dag_block.DagBlock("repair · +1 node", repaired)
         boxes, tree = self._text(block, 140), self._text(block, 24)
         self.assertEqual(boxes[0].strip(), "dag-ulw repair · +1 node")
-        # As boxes: the drawing's own repair mark, a parents line naming the node it repairs and the arrow into its
-        # box; the block adds no mark of its own, so none is doubled. No Dependencies list: the arrows are the edges.
+        # As boxes: the drawing's own repair mark, a parents line naming the node it repairs and the connector into
+        # its box; the block adds no mark of its own, so none is doubled. No Dependencies list. The gap into the repair
+        # is crossed by Verify export's edges, which skip it (Verify sits below the repair that runs first), so it is
+        # the one centred connector that draws no edge (`▽`), and the parents line names the edge.
         added = next(index for index, line in enumerate(boxes) if "↻ Fix the button" in line)
         self.assertIn("← Export button", boxes[added + 3])
-        self.assertIn("▼", boxes[added - 2])
+        self.assertEqual(boxes[added - 2].strip(), "▽")
         self.assertNotIn("Dependencies", "\n".join(boxes))
         self.assertFalse([line for line in boxes if "+ " in line and "Fix" in line], boxes)
         # As the tree: nested under the node it repairs.

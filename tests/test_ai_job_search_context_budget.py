@@ -60,10 +60,12 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # runtime rename moved four sibling rows by +6 each, and the
             # executor-runtime-readiness row's trigger count went +35 -> +34
             # when its runtime names became scoring-only (same length).
+            # 522331 -> 522328 and the digest re-derived again for the
+            # model-setup row refresh (-3); no other row moved.
             # Then the promo postmortem's visual-qa quality-bar rule grows that
-            # sibling row by 784: 522331 -> 523115.
-            (skill_capabilities, 523115, FULL_ROW_DELTA_CAP,
-             '659d1c91646097327c5030123f838887daa0e6e7a1b97b343adb0b3346c39f5f',
+            # sibling row: 522328 -> 523112.
+            (skill_capabilities, 523112, FULL_ROW_DELTA_CAP,
+             '2979fd1bd3f6f1a0ffb60b1fe38d2e05b1890e51ae9295b2f840e4b523b8c4dc',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -123,10 +125,12 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
         # Re-derived from both main sources above plus the bounded dag-ulw
         # baseline-verification guidance, then the pi-family runtime rename in
-        # model-setup, maestro, ultrawork, and executor-runtime-readiness, then
-        # the promo postmortem in content-operator, design-quality-gate,
+        # model-setup, maestro, ultrawork, and executor-runtime-readiness.
+        # Re-derived again for the model-setup body refresh (retired provider
+        # and role-slot wording); only model-setup moves versus main.
+        # Then the promo postmortem in content-operator, design-quality-gate,
         # show-reel, and visual-qa.
-        self.assertEqual(_digest(legacy_hashes), 'e49025c3d00f3abe718f5fea58249d6944a05925550ac602615e5de3c9e5fce0')
+        self.assertEqual(_digest(legacy_hashes), '7c55d6ec22c0f789197731daa1ccabe05dfb5a021cc3ac07619e5a8114ce72ae')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.

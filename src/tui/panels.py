@@ -1198,11 +1198,12 @@ def dag_line(row: Sequence[Any], levels: int, theme: Theme, depth: str = TRUECOL
 
 
 def dag_page_lines(
-    payload: Any, width: int, theme: Theme, depth: str = TRUECOLOR, focus: Any = None
+    payload: Any, width: int, theme: Theme, depth: str = TRUECOLOR, focus: Any = None, aura: int | None = None,
 ) -> tuple[list[Line], Any] | None:
     """The delegation graph in this payload as `/dag` draws it: boxes with Dependencies and Node details and no
     height limit, at `focus` (a `delegation_view.Focus`); its lines and the view, whose `boxes` the pager moves
-    through. None when the payload holds no active graph."""
+    through. None when the payload holds no active graph. `aura` is the phase a running node's box stands at in the
+    dag-ulw aura (`_aura_box`); None (the aura does not move here) draws every box in its state's colour."""
     from ..plugin_bundle.omh.delegation_view import render_delegation_view
 
     graph = _delegation_graph(payload) if isinstance(payload, Mapping) else None
@@ -1210,12 +1211,53 @@ def dag_page_lines(
         return None
     view = render_delegation_view(graph, width=max(8, width), layout="box", focus=focus)
     lines = [dag_line(row, view.levels, theme, depth) for row in view.lines]
+    if aura is not None and view.layout == "box":
+        running = {str(node.get("id")) for node in _rows(graph.get("nodes")) if node.get("state") == "running"}
+        tops: dict[int, list[tuple[str, int]]] = {}
+        for node_id, top, bottom in view.boxes:
+            tops.setdefault(top, []).append((node_id, bottom))
+        for top, row in tops.items():
+            # The top border of each box on this row, left to right, is the box's first cell and its width.
+            borders, at = [], 0
+            for segment in view.lines[top]:
+                if segment.role.startswith("node"):
+                    borders.append((at, cell_width(segment.text)))
+                at += cell_width(segment.text)
+            for (node_id, bottom), (left, size) in zip(row, borders):
+                if node_id in running:
+                    for line in range(top, bottom + 1):
+                        lines[line] = _aura_box(view.lines[line], view.levels, theme, depth, left, size,
+                                                line in (top, bottom), aura)
     topology = graph.get("dag_topology")
     if isinstance(topology, Mapping):  # a dag-ulw run: its critical path and bottlenecks close the page
         from .dag_block import topology_lines
 
         lines += [(), *topology_lines(topology, width, theme)]
     return lines, view
+
+
+def _aura_box(
+    row: Sequence[Any], levels: int, theme: Theme, depth: str, left: int, size: int, rule: bool, phase: int,
+) -> Line:
+    """One line of a running node's box in `/dag` with its border and title in the dag-ulw aura at `phase`: the
+    gradient stepped across the box's `size` cells from `left`, the band moving through (`aura.aura_style`). A `rule`
+    line (the box's top or bottom border) is border all through; on the others, the side borders and the title."""
+    from .aura import aura_style
+
+    spans: list[Span] = []
+    at = 0
+    for segment in row:
+        style = dag_style(segment.role, theme, segment.level, levels, depth)
+        for char in segment.text:
+            offset = at - left
+            inside = 0 <= offset < size and (rule or offset in (0, size - 1) or segment.role.startswith("node-title"))
+            painted = aura_style(theme.aura, theme.aura_glint, offset, size, phase) if inside else style
+            if spans and spans[-1].style == painted:
+                spans[-1] = Span(spans[-1].text + char, painted)
+            else:
+                spans.append(Span(char, painted))
+            at += cell_width(char)
+    return _line(*spans)
 
 
 # A lane in one of these states has finished: `delegation_graph.SETTLED_STATES` (the bundle module the panel does
