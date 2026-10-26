@@ -60,6 +60,11 @@ status-bar background on a dark terminal or one that reported none, and on
 a light one a light tint of that colour (`LIGHT_STATUS_SHARE`), so the bar
 belongs to a light screen instead of being a dark band across it. Its words
 are measured against that bar instead of the terminal's background. The
+menus (`menu`, `menu_current`: the completion menu, the pickers, choice
+prompts, the agent list and the bot board) take the same treatment: on a light
+background each band is its palette colour tinted toward the background
+(`LIGHT_MENU_SHARE`, the highlighted row less so), with the highlighted band's
+own dark hue as ink, lifted to 4.5:1 on each band. The
 info line under the composer and the sticky prompt over a running turn have
 no bar: their words and marks are measured against the terminal's background
 like any transcript row.
@@ -95,6 +100,9 @@ LIGHT_BAND_SHARE = 0.82
 LIGHT_WORD_BAND_SHARE = 0.62
 # A light background's status bar: the palette's status-bar colour moved this far toward the background.
 LIGHT_STATUS_SHARE = 0.85
+# A light background's menu rows and the highlighted one: the palette's menu colours moved this far toward it.
+LIGHT_MENU_SHARE = 0.88
+LIGHT_MENU_CURRENT_SHARE = 0.7
 # The delegation view's edge gradient, top to bottom, for a palette that names none of these tokens.
 DAG_EDGE_STOPS = {"dag_edge_start": "#8B5CF6", "dag_edge_mid": "#6366F1", "dag_edge_end": "#3B82F6"}
 DAG_EDGE_STEPS = 9  # an odd count, so the middle stop is a step of its own
@@ -374,6 +382,17 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
     def on_bar(key: str, minimum: float = TEXT_CONTRAST) -> Style:
         return Style(fg=_lifted(c[key], status_ink, status_bg, minimum), bg=status_bg)
 
+    if reported and light:
+        menu_bg = _mix(c["completion_menu_bg"], surface, LIGHT_MENU_SHARE)
+        current_bg = _mix(c["completion_menu_current_bg"], surface, LIGHT_MENU_CURRENT_SHARE)
+        menu = Style(fg=_lifted(c["completion_menu_current_bg"], BLACK, menu_bg, TEXT_CONTRAST), bg=menu_bg)
+        menu_current = Style(
+            fg=_lifted(c["completion_menu_current_bg"], BLACK, current_bg, TEXT_CONTRAST), bg=current_bg, bold=True,
+        )
+    else:
+        menu = Style(fg=c["banner_text"], bg=c["completion_menu_bg"])
+        menu_current = Style(fg=c["banner_text"], bg=c["completion_menu_current_bg"], bold=True)
+
     if not reported:
         ok_band = error_band = Style()
     elif light:
@@ -418,8 +437,8 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         syntax_number=Style(fg=read("syntax_number")),
         syntax_comment=Style(fg=read("syntax_comment"), italic=True),
         status=on_bar("status_bar_text"),
-        menu=Style(fg=c["banner_text"], bg=c["completion_menu_bg"]),
-        menu_current=Style(fg=c["banner_text"], bg=c["completion_menu_current_bg"], bold=True),
+        menu=menu,
+        menu_current=menu_current,
         hint=Style(fg=grey("faint", TEXT_CONTRAST)),
         muted=Style(fg=grey("muted", TEXT_CONTRAST)),
         mode_accept=Style(fg=read("ui_warn")),

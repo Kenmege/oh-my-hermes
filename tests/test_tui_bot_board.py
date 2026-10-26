@@ -54,7 +54,9 @@ from omh.tui.bot_board import (
 )
 from omh.tui.history import HistorySearch
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, UP, Key
-from omh.tui.theme import DEFAULT_THEME
+from omh.skin_pack import default_theme, skin_colors
+from omh.tui.style import Style
+from omh.tui.theme import DEFAULT_THEME, EDGE_CONTRAST, TEXT_CONTRAST, build_theme, contrast_ratio, is_light
 from omh.tui.width import line_width
 
 NOW = 1_800_000_000.0
@@ -457,6 +459,13 @@ class ReadOnlyTests(FixtureRoot):
         self.assertEqual(tree_state(self.root), before)
 
 
+ROW = {"bot": 0, "model": 1, "day": 2, "memory": 3}  # a profile's rows on level 1, under the board's header
+
+
+def gauge(percent: int, cells: int) -> str:
+    return "▰" * cells + "▱" * (10 - cells) + f" {percent}%"
+
+
 class SummaryTests(FixtureRoot):
     """The model, token, memory and gateway summaries: what each reads, and what it says when it cannot."""
 
@@ -464,10 +473,15 @@ class SummaryTests(FixtureRoot):
         home = self.root if name == "default" else self.root / "profiles" / name
         return read_profile(name, home, self.root, NOW)
 
-    def line(self, profile, index: int) -> str:
-        """Level 1's text for `profile`: 0 is its gateway's row; -3, -2 and -1 its model, memory and blank rows."""
-        lines, _span = profile_lines([profile], 0, NOW, 400, DEFAULT_THEME)
-        return lines_text(lines)[2:][index]
+    def row(self, profile, name: str, cols: int = 400) -> str:
+        """One of `profile`'s level-1 rows, its padding squeezed to single spaces."""
+        lines, _span = profile_lines([profile], 0, NOW, cols, DEFAULT_THEME)
+        return squeeze(lines_text(lines)[2 + ROW[name]])
+
+    def detail(self, name: str = "default") -> list[str]:
+        """Level 2's account of the profile under its title."""
+        lines, _span = session_lines(snapshot(self.environ, BoardView(name)), 0, NOW, 400, DEFAULT_THEME)
+        return lines_text(lines)[1:3]
 
     def test_the_configured_model_and_the_one_the_newest_session_ran(self) -> None:
         write_usage_store(self.root, [
@@ -477,31 +491,33 @@ class SummaryTests(FixtureRoot):
         ])
         profile = self.profile()
         self.assertEqual((profile.model, profile.provider, profile.ran), ("claude-opus-5-5", "claude-proxy", "z-ai/glm-5.3"))
-        row = self.line(profile, -3)
-        self.assertTrue(row.startswith("    claude-opus-5-5 via claude-proxy · 2 active · "), row)
-        self.assertTrue(row.endswith(" · newest ran z-ai/glm-5.3"), "the cell most rows leave empty comes last")
+        self.assertEqual(self.row(profile, "model"), "model claude-opus-5-5 claude-proxy · newest z-ai/glm-5.3")
         write_usage_store(self.root, [("same", "cli", "t", NOW - 60, 2, "claude-opus-5-5", 1, 1, 0, None, None, None)])
-        self.assertNotIn("newest ran", self.line(self.profile(), -3), "the same model is not said twice")
+        self.assertEqual(self.row(self.profile(), "model"), "model claude-opus-5-5 claude-proxy", "said once")
 
     def test_a_model_written_as_a_string_or_not_at_all(self) -> None:
-        for config, model in (("model: gpt-5.5\n", "gpt-5.5"), ("model:\n  model: kimi-k3\n", "kimi-k3"), ("agent: {}\n", "")):
+        for config, model in (
+            ("model: gpt-5.5\n", "gpt-5.5"), ("model:\n  model: kimi-k3\n", "kimi-k3"), ("agent: {}\n", ""),
+            ("model: {}\n", ""),  # an empty mapping, as Hermes reads it: no model
+        ):
             with self.subTest(config=config):
                 (self.root / "config.yaml").write_text(config, encoding="utf-8")
-                self.assertEqual(self.profile().model, model)
-        self.assertTrue(self.line(self.profile(), -3).startswith("    no default model configured"))
+                self.assertEqual((self.profile().model, self.profile().config), (model, ""))
+        self.assertEqual(self.row(self.profile(), "model"), "model no default model configured")
 
     def test_a_config_it_cannot_read_says_so_and_names_no_model_or_limit(self) -> None:
         config = self.root / "config.yaml"
         for content, said in (
             (b"model:\n\tdefault: tabbed\n", "config.yaml unreadable"),  # YAML indents with spaces
             (b"model:\n  default: \xff\xfe\n", "config.yaml unreadable"),
+            (b"model: {default: inline}\n", "config.yaml unreadable"),  # a flow mapping the scan does not follow
             (b"#" * (bot_board.CONFIG_BYTES + 1), "config.yaml too large to read (1 MB)"),
         ):
             with self.subTest(said=said, size=len(content)):
                 config.write_bytes(content)
                 profile = self.profile()
                 self.assertEqual((profile.config, profile.model), (said, ""))
-                self.assertTrue(self.line(profile, -3).startswith(f"    {said}"))
+                self.assertEqual(self.row(profile, "model"), f"model {said}")
         config.unlink()
         profile = self.profile()
         self.assertEqual(profile.config, "no config.yaml")
@@ -520,8 +536,8 @@ class SummaryTests(FixtureRoot):
         profile = self.profile()
         self.assertEqual(profile.active, 5)
         self.assertEqual(profile.usage, bot_board.Usage(1_251_000, 244_500, 12_400_000, 4.12, True, 1, 1))
-        self.assertTrue(self.line(profile, -3).endswith(
-            " · 5 active · 1.3M in · 244.5k out · 12.4M cache read · ~$4.12 + 1 unpriced · newest ran m"))
+        self.assertTrue(self.row(profile, "day").endswith(
+            " 5 sessions · 1.3M in · 244.5k out · 12.4M cached · ~$4.12 + 1 unpriced"))
 
     def test_a_cost_hermes_never_priced_is_never_shown_as_zero(self) -> None:
         for statuses, said in (
@@ -532,23 +548,24 @@ class SummaryTests(FixtureRoot):
                 write_usage_store(self.root, [
                     (f"s{n}", "cli", "t", NOW - 60, 2, "m", 10, 10, 0, 0.0, None, status) for n, status in enumerate(statuses)
                 ])
-                self.assertTrue(self.line(self.profile(), -3).endswith(f"20 in · 20 out · 0 cache read · {said} · newest ran m"))
+                self.assertTrue(self.row(self.profile(), "day").endswith(f"2 sessions · 20 in · 20 out · 0 cached · {said}"))
 
     def test_older_stores_without_the_columns_show_less_and_no_number_they_lack(self) -> None:
         # The fixture's own store has no model, token or cost column at all.
         profile = self.profile()
-        self.assertEqual((profile.usage, profile.ran), (None, ""))
-        self.assertEqual(self.line(profile, -3), "    claude-opus-5-5 via claude-proxy")
+        self.assertEqual((profile.usage, profile.ran, profile.hourly), (None, "", ()))
+        self.assertEqual(self.row(profile, "model"), "model claude-opus-5-5 claude-proxy")
+        self.assertEqual(self.row(profile, "day"), "24 h 2 sessions", "no sparkline drawn flat, no tokens")
         sessions = snapshot(self.environ, BoardView("default"))
         self.assertEqual((sessions.sessions[0].model, sessions.sessions[0].usage), ("", None))
-        self.assertTrue(squeeze(lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])[2]).endswith(
-            "Release notes slack 10m ago 12 messages"))
+        rows = lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])[-len(sessions.sessions):]
+        self.assertEqual(squeeze(rows[0]), "❯ Release notes slack 10m ago 12 messages")
         tail = snapshot(self.environ, BoardView("default", "s-new"))
         self.assertEqual(lines_text(message_lines(tail, tail.sessions[0], NOW, 150, DEFAULT_THEME))[2], "")
         write_usage_store(self.root, [("t", "cli", "t", NOW - 60, 2, 5, 7)], "input_tokens INTEGER, output_tokens INTEGER")
         profile = self.profile()
         self.assertEqual(profile.usage, bot_board.Usage(5, 7, None, None, False, 0, 1))
-        self.assertTrue(self.line(profile, -3).endswith("1 active · 5 in · 7 out · cost unknown"), "no cache read column")
+        self.assertTrue(self.row(profile, "day").endswith("1 session · 5 in · 7 out · cost unknown"), "no cache read column")
 
     def test_levels_two_and_three_show_each_sessions_model_tokens_and_cost(self) -> None:
         write_usage_store(self.root, [
@@ -556,9 +573,9 @@ class SummaryTests(FixtureRoot):
             ("b", "cli", "Probe", NOW - 120, 2, "glm-5.3", 192, 67_200, 0, 0.0, None, "unknown"),
         ])
         sessions = snapshot(self.environ, BoardView("default"))
-        rows = lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])
-        self.assertEqual(squeeze(rows[2]), "❯ Release notes claude-opus-5-5 325.2k in 89k out ~$0.43 slack 1m ago 12 messages")
-        self.assertEqual(squeeze(rows[3]), "Probe glm-5.3 192 in 67.2k out cli 2m ago 2 messages", "no unpriced cost")
+        rows = lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])[-2:]
+        self.assertEqual(squeeze(rows[0]), "❯ Release notes claude-opus-5-5 325.2k in 89k out ~$0.43 slack 1m ago 12 messages")
+        self.assertEqual(squeeze(rows[1]), "Probe glm-5.3 192 in 67.2k out cli 2m ago 2 messages", "no unpriced cost")
         tail = snapshot(self.environ, BoardView("default", "a"))
         head = lines_text(message_lines(tail, tail.sessions[0], NOW, 150, DEFAULT_THEME))[:3]
         self.assertEqual(head[2], "anthropic/claude-opus-5-5 · 325.2k in · 89k out · 12.5M cache read · ~$0.43")
@@ -568,23 +585,33 @@ class SummaryTests(FixtureRoot):
         joined = len("User ships on Fridays\n§\nPrefers short answers")  # entries stripped, joined by the delimiter
         self.assertEqual(memory, bot_board.MemoryFile("memory", 2, joined, 2200, True))
         self.assertEqual(user, bot_board.MemoryFile("user", 0, 0, 1375, True), "no USER.md yet: empty")
-        self.assertEqual(
-            self.line(self.profile(), -2),
-            f"    memory 2 entries, {joined}/2,200 chars · user profile empty · OMH memory 2 records",
-        )
+        percent = joined * 100 // 2200
+        self.assertEqual(self.row(self.profile(), "memory"),
+                         f"memory {gauge(percent, 1)} user {gauge(0, 0)} OMH 2 records 4 sessions total")
+        self.assertIn(f"memory 2 entries, {joined}/2,200 chars · user profile 0 entries, 0/1,375 chars", self.detail()[1],
+                      "the exact numbers are level 2's")
         write_memory(self.root, "USER.md", ["x" * 1400])
-        profile = self.profile()
-        lines, _span = profile_lines([profile], 0, NOW, 400, DEFAULT_THEME)
-        over = next(span for span in lines[-2] if "1,400/1,375" in span.text)
-        self.assertIs(over.style, DEFAULT_THEME.warn, "over its limit")
+        lines, _span = profile_lines([self.profile()], 0, NOW, 400, DEFAULT_THEME)
+        over = next(span for span in lines[2 + ROW["memory"]] if span.text.endswith(" 101%"))
+        self.assertIs(over.style, DEFAULT_THEME.error, "past its limit")
+
+    def test_memory_gauges_are_coloured_by_how_full_they_are(self) -> None:
+        theme = DEFAULT_THEME
+        for chars, cells, style in ((0, 0, theme.ok), (40, 1, theme.ok), (690, 6, theme.ok), (700, 7, theme.warn),
+                                    (890, 8, theme.warn), (900, 9, theme.warn), (910, 9, theme.error), (1200, 10, theme.error)):
+            with self.subTest(chars=chars):
+                spans = bot_board._gauge(bot_board.MemoryFile("memory", 3, chars, 1000), theme, "unicode")
+                self.assertEqual(line_text(spans), gauge(chars // 10, cells))
+                self.assertIs(spans[-1].style, style)
+                self.assertIs(spans[1].style, theme.dim, "the empty cells stay quiet")
 
     def test_memory_that_is_off_unreadable_or_huge_says_so_without_counting(self) -> None:
         config = ROOT_CONFIG.replace("memory_enabled: true", "memory_enabled: false")
         (self.root / "config.yaml").write_text(config.replace("  user_char_limit: 1375\n", ""), encoding="utf-8")
         write_memory(self.root, "USER.md", b"caf\xe9")
-        self.assertEqual(self.line(self.profile(), -2).split(" · ")[:2], ["    memory off", "user profile unreadable"])
+        self.assertTrue(self.row(self.profile(), "memory").startswith("memory off user unreadable OMH"))
         write_memory(self.root, "USER.md", ["a", "b"])
-        self.assertIn("user profile 2 entries, 5 chars ·", self.line(self.profile(), -2), "no limit configured: none shown")
+        self.assertTrue(self.row(self.profile(), "memory").startswith("memory off user 2 entries OMH"), "no limit: no gauge")
         huge = write_memory(self.root, "MEMORY.md", b"x" * (2 * bot_board.MEMORY_FILE_BYTES))
         (self.root / "config.yaml").write_text(ROOT_CONFIG, encoding="utf-8")
         read: list[int] = []
@@ -601,7 +628,7 @@ class SummaryTests(FixtureRoot):
             memory = self.profile().memory[0]
         self.assertEqual((memory.problem, memory.entries), ("too large to read (2 MB)", 0))
         self.assertEqual(read, [bot_board.MEMORY_FILE_BYTES + 1], "one bounded read")
-        self.assertTrue(self.line(self.profile(), -2).startswith("    memory too large to read (2 MB) · "))
+        self.assertTrue(self.row(self.profile(), "memory").startswith("memory too large to read (2 MB) user "))
 
     def test_the_omh_store_is_the_one_config_names_and_only_regular_json_files_count(self) -> None:
         records = self.root / "omh-store" / "memory" / "records"
@@ -620,18 +647,21 @@ class SummaryTests(FixtureRoot):
                 profile = self.profile()
                 self.assertEqual((profile.omh_records, profile.omh), (records_seen, said))
         (self.root / "config.yaml").write_text(ROOT_CONFIG.split("plugins:")[0], encoding="utf-8")
-        self.assertNotIn("OMH", self.line(self.profile(), -2), "no setting: no store named, ~/.omh not guessed")
+        self.assertNotIn("OMH", self.row(self.profile(), "memory"), "no setting: no store named, ~/.omh not guessed")
 
     @POSIX_ONLY
-    def test_a_live_gateway_shows_its_uptime_memory_and_record_age(self) -> None:
+    def test_a_live_gateway_shows_its_uptime_agents_and_memory_and_level_two_its_record(self) -> None:
         record = json.loads((self.root / "gateway_state.json").read_text(encoding="utf-8"))
         # 75 s before the board's clock (NOW is 2027-01-15 08:00:00 UTC).
         write_record(self.root, {**record, "updated_at": "2027-01-15T07:58:45Z", "restart_requested": True})
         now = time.time()
         gateway = read_gateway(self.root, now)
         self.assertEqual((gateway.live, gateway.updated, gateway.restart_requested), (True, NOW - 75, True))
-        header = self.line(self.profile(), 0)
-        self.assertIn("· updated 1m ago · restart requested", header)
+        bot = self.row(self.profile(), "bot")
+        self.assertIn("restart requested", bot)
+        self.assertNotIn(f"pid {os.getpid()}", bot, "the pid is level 2's")
+        self.assertIn(f"pid {os.getpid()} · 2 agents running · updated 1m ago", self.detail()[0])
+        self.assertIn("restart requested", self.detail()[0])
         if sys.platform not in ("darwin", "linux"):
             self.assertEqual((gateway.started, gateway.rss), (None, None))
             return
@@ -639,17 +669,44 @@ class SummaryTests(FixtureRoot):
         self.assertLess(abs(gateway.started - bot_board.started_at(bot_board.process_facts(os.getpid())[0], now)), 5)
         self.assertLess(now - gateway.started, 7 * DAY, "this test process started recently")
         self.assertGreater(gateway.rss, 1 << 20, "this process holds more than a megabyte")
-        self.assertRegex(header, r"gateway running · pid \d+ · 2 agents running · up \S+.* · RSS [\d.]+ [KMG]B · ")
+        self.assertRegex(bot, r"up \S+( \S+)? · 2 agents · [\d.]+ [KMG]B$")
 
-    def test_a_gateway_that_is_not_running_shows_only_how_old_its_record_is(self) -> None:
+    def test_a_gateway_that_is_not_running_says_so_and_level_two_how_old_its_record_is(self) -> None:
         miku = self.root / "profiles" / "miku"
         record = json.loads((miku / "gateway_state.json").read_text(encoding="utf-8"))
         write_record(miku, {**record, "updated_at": NOW - 3 * DAY})
         with patch.object(bot_board, "resident_bytes") as rss:
-            header = self.line(self.profile("miku"), 0)
+            bot = self.row(self.profile("miku"), "bot")
         rss.assert_not_called()
-        self.assertTrue(header.endswith("its record still says running (pid 4194301 is gone) · updated 3d ago"), header)
-        self.assertNotIn(" up ", header)
+        self.assertIn("its record still says running (pid 4194301 is gone) slack ○", bot)
+        self.assertNotIn(" up ", bot)
+        self.assertIn("updated 3d ago · slack connected when last recorded", self.detail("miku")[0])
+
+    def test_the_sparkline_is_the_active_sessions_tokens_by_hour(self) -> None:
+        write_usage_store(self.root, [
+            ("now", "cli", "t", NOW - 60, 2, "m", 80, 20, 0, None, None, None),
+            ("three", "cli", "t", NOW - 3 * 3600 - 60, 2, "m", 50, 0, 0, None, None, None),
+            ("also", "cli", "t", NOW - 3 * 3600 - 120, 2, "m", 0, 0, 0, None, None, None),
+            ("old", "cli", "t", NOW - 25 * 3600, 2, "m", 9_000, 0, 0, None, None, None),
+        ])
+        hourly = self.profile().hourly
+        self.assertEqual((len(hourly), hourly[-1], hourly[-4], sum(hourly)), (24, 100, 50, 150))
+        self.assertEqual(bot_board._spark(hourly, "unicode"), "▁" * 20 + "▅▁▁█")
+        lines, _span = profile_lines([self.profile()], 0, NOW, 150, DEFAULT_THEME)
+        spark = next(span for span in lines[2 + ROW["day"]] if "█" in span.text)
+        self.assertIs(spark.style, DEFAULT_THEME.running)
+        write_usage_store(self.root, [("idle", "cli", "t", NOW - 60, 2, "m", 0, 0, 0, None, None, None)])
+        self.assertNotIn("▁", self.row(self.profile(), "day"), "no tokens in the day: no flat line")
+
+    def test_the_ascii_charset_draws_gauges_sparkline_and_chips_without_unicode_blocks(self) -> None:
+        write_usage_store(self.root, [("now", "cli", "t", NOW - 60, 2, "m", 80, 20, 0, None, None, None)])
+        lines, _span = profile_lines([self.profile(), self.profile("miku")], 0, NOW, 150, DEFAULT_THEME, charset="ascii")
+        text = lines_text(lines)
+        for glyph in "▁▂▃▄▅▆▇█▰▱○":
+            self.assertNotIn(glyph, "\n".join(text))
+        self.assertIn("#.........", text[2 + ROW["memory"]])
+        self.assertTrue(text[2 + ROW["day"]].split()[2].endswith("#"), "the busiest hour is the tallest cell")
+        self.assertIn("slack o", squeeze(text[2 + 5]), "a platform as last recorded")
 
     def test_record_times_are_read_as_hermes_reads_them(self) -> None:
         at = datetime(2026, 10, 26, 4, 14, 34, tzinfo=timezone.utc).timestamp()
@@ -670,8 +727,117 @@ class SummaryTests(FixtureRoot):
         self.assertEqual(bot_board._cost_text(bot_board.Usage(cost=0.001)), "<$0.01")
 
 
+def bots() -> tuple:
+    """Three fictional bots as level 1 reads them, with no file behind them: two live gateways, one served."""
+    usage = bot_board.Usage(5_920_000, 418_000, 41_300_000, 4.87, True, 0, 1)
+    live = bot_board.Gateway("running", True, 52417, 3, platforms=(
+        bot_board.Platform("discord", "connected", current=True),
+        bot_board.Platform("whatsapp", "connected", needs_attention=True, current=True),
+        bot_board.Platform("slack", "fatal", "token revoked", current=True),
+    ), started=NOW - 6 * DAY - 2 * 3600, rss=512 << 20)
+    memory = (bot_board.MemoryFile("memory", 18, 3_120, 3_500), bot_board.MemoryFile("user", 11, 2_260, 2_500))
+    return (
+        bot_board.Profile("default", Path("/h"), bot_board.Gateway("running", True, 100, 1, served=("default", "kami"),
+                          started=NOW - 3600), (("tui", 40),), 2, NOW - 40, model="claude-opus-5-5", provider="anthropic",
+                          usage=bot_board.Usage(184_200, 41_700, 2_310_000, 1.86, True, 0, 0), memory=memory, this_tui=True),
+        bot_board.Profile("kami", Path("/h/kami"), bot_board.Gateway("", False, problem="no gateway record"),
+                          (("slack", 9),), 0, NOW - 20 * DAY, model="glm-5.3", memory=memory),
+        bot_board.Profile("miku", Path("/h/miku"), live, (("discord", 688), ("telegram", 344)), 31, NOW - 12,
+                          model="deepseek-v4.1-flash", provider="deepseek", ran="kimi-k3.1-pro", usage=usage,
+                          hourly=tuple(range(24)), memory=memory, omh_records=139),
+    )
+
+
+class LayoutTests(unittest.TestCase):
+    """Level 1's layout at 150 and 80 columns: a header of totals, a bot row, labelled rows, nothing wrapped."""
+
+    def rows(self, cols: int, selected: int = 2) -> list[str]:
+        lines, _span = profile_lines(bots(), selected, NOW, cols, DEFAULT_THEME)
+        self.assertLessEqual(max(line_width(line) for line in lines), cols, "never past the edge, never wrapped")
+        return lines_text(lines)
+
+    def test_the_header_adds_up_only_what_was_read(self) -> None:
+        self.assertEqual(self.rows(150)[0], "Hermes bots · 3 profiles · 2 gateways up · 4 agents running · "
+                                            "24 h: 6.1M in · 459.7k out · ~$6.73 + 1 unpriced")
+        self.assertEqual(self.rows(60)[0], "Hermes bots · 3 profiles · 2 gateways up · 4 agents running",
+                         "the totals give way first")
+
+    def test_at_150_columns_each_bot_reads_as_the_brief_draws_it(self) -> None:
+        rows = self.rows(150)
+        miku = rows[2 + 2 * 5:][:4]
+        self.assertTrue(miku[0].startswith("❯ ● miku                discord ●  whatsapp ●!  slack ●!  "), miku[0])
+        self.assertTrue(miku[0].endswith("up 6d 2h · 3 agents · 512 MB"), "pushed to the edge")
+        self.assertEqual(len(miku[0]), 150, "the highlighted row is banded to the edge")
+        self.assertEqual(miku[1], "    model    deepseek-v4.1-flash  deepseek · newest kimi-k3.1-pro")
+        self.assertTrue(miku[2].startswith("    24 h     ▁"), miku[2])
+        self.assertTrue(miku[2].endswith("█   31 sessions · 5.9M in · 418k out · 41.3M cached · ~$4.87 + 1 unpriced"))
+        self.assertTrue(miku[3].startswith(f"    memory   {gauge(89, 8)}   user {gauge(90, 9)}   OMH 139 records "))
+        self.assertTrue(miku[3].endswith("1,032 sessions total"))
+        kami = rows[2 + 5:][:4]
+        self.assertEqual(squeeze(kami[0]), "● kami served by the default gateway")
+        self.assertEqual(squeeze(kami[2]), "24 h no activity · last active 20d ago")
+        self.assertEqual(rows[2].index("default"), rows[2 + 5].index("kami"), "names start in one column")
+        self.assertEqual(rows[2 + 5].index("served"), rows[2 + 10].index("discord"), "and what follows them too")
+        self.assertEqual({row.index("model") for row in rows if row.lstrip().startswith("model ")}, {4}, "one label column")
+
+    def test_the_chips_say_each_platforms_state_in_its_colour(self) -> None:
+        lines, _span = profile_lines(bots(), 0, NOW, 150, DEFAULT_THEME)
+        row = lines[2 + 2 * 5]
+        marks = [(span.text, span.style) for span in row if span.text in ("●", "●!")]
+        self.assertEqual(marks, [("●", DEFAULT_THEME.ok), ("●!", DEFAULT_THEME.warn), ("●!", DEFAULT_THEME.error)])
+
+    def test_at_80_columns_the_right_side_then_the_chips_give_way(self) -> None:
+        states = []
+        for cols in range(150, 30, -1):
+            row = squeeze(self.rows(cols)[2 + 2 * 5])
+            state = ("512 MB" in row, "3 agents" in row, "up 6d" in row, "slack" in row, "whatsapp" in row)
+            if not states or state != states[-1]:
+                states.append(state)
+        self.assertEqual(states, [
+            (True, True, True, True, True), (False, True, True, True, True), (False, False, True, True, True),
+            (False, False, False, True, True), (False, False, False, False, True), (False, False, False, False, False),
+        ], "resident memory, agents, uptime, then the last chip first")
+        rows = self.rows(80)
+        self.assertEqual(rows[2 + 2 * 5 + 2], "    24 h     31 sessions · 5.9M in · 418k out · ~$4.87 + 1 unpriced",
+                         "cache reads, then the sparkline go first")
+        self.assertEqual(rows[2 + 2 * 5 + 3], f"    memory   {gauge(89, 8)}   user {gauge(90, 9)}   OMH 139 records")
+
+
+class ThemeBandTests(unittest.TestCase):
+    """The menu bands on a light background are light, read at AA, and leave a dark background as it was."""
+
+    def test_a_light_background_gets_light_bands_that_read_at_aa(self) -> None:
+        for background in ("#FCF9FD", "#FFFFFF", "#F3F8FD"):
+            with self.subTest(background=background):
+                theme = build_theme(default_theme(), background)
+                for band in (theme.menu, theme.menu_current, theme.status):
+                    self.assertTrue(is_light(band.bg), band)
+                    self.assertGreaterEqual(contrast_ratio(band.fg, band.bg), TEXT_CONTRAST, band)
+                self.assertGreater(contrast_ratio(theme.menu_current.bg, background),
+                                   contrast_ratio(theme.menu.bg, background), "the highlighted row stands further out")
+
+    def test_a_dark_background_keeps_the_palettes_own_bands(self) -> None:
+        colours = skin_colors(default_theme().skin_name)
+        for background in ("#0F1B2D", "#1E1E1E", None):
+            with self.subTest(background=background):
+                theme = build_theme(default_theme(), background)
+                self.assertEqual(theme.menu, Style(fg=colours["banner_text"], bg=colours["completion_menu_bg"]))
+                self.assertEqual(theme.menu_current,
+                                 Style(fg=colours["banner_text"], bg=colours["completion_menu_current_bg"], bold=True))
+
+    def test_words_on_a_band_take_its_ink_where_their_own_colour_would_not_read(self) -> None:
+        for background in ("#FCF9FD", "#0F1B2D"):
+            theme = build_theme(default_theme(), background)
+            lines, _span = profile_lines(bots(), 2, NOW, 150, theme)
+            for span in lines[2 + 2 * 5]:
+                if span.text.strip():
+                    words = any(character.isalnum() for character in span.text)  # a lone mark needs 3:1, words 4.5:1
+                    floor = TEXT_CONTRAST if words else EDGE_CONTRAST
+                    self.assertGreaterEqual(contrast_ratio(span.style.fg, span.style.bg), floor, (background, span))
+
+
 class TableTests(FixtureRoot):
-    """Level 2 is a table under one band, and level 1's summaries line up across profiles."""
+    """Level 2 is a table under one band."""
 
     def sessions(self) -> BoardSnapshot:
         write_usage_store(self.root, [
@@ -687,7 +853,7 @@ class TableTests(FixtureRoot):
         for cols in (150, 80):
             with self.subTest(cols=cols):
                 lines, _span = session_lines(sessions, 1, NOW, cols, DEFAULT_THEME)
-                rows = lines[2:]
+                rows = lines[-3:]
                 self.assertEqual({line_width(row) for row in rows}, {cols}, "every row runs to the edge, never wraps")
                 text = lines_text(rows)
                 for unit in (" out", " ago", " messages"):
@@ -698,14 +864,14 @@ class TableTests(FixtureRoot):
                 for index, row in enumerate(rows):
                     band = DEFAULT_THEME.menu_current if index == 1 else DEFAULT_THEME.menu
                     self.assertEqual({span.style.bg for span in row}, {band.bg}, "one band from the mark to the edge")
-        rows = lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])[2:]
+        rows = lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])[-3:]
         ends = {row.index(" in") for row in rows}
         self.assertEqual(len(ends), 1, "token counts are right-aligned on their unit")
         self.assertIn("   192 in", rows[1])
         self.assertEqual(len({row.index("ago") for row in rows}), 1)
         self.assertEqual(rows[0].index("~$0.52") + len("~$0.52"), rows[2].index("included") + len("included"), "cost too")
         self.assertIn("Rehearsal schedule for the anniversary", rows[0])
-        narrow = lines_text(session_lines(sessions, 0, NOW, 70, DEFAULT_THEME)[0])[2]
+        narrow = lines_text(session_lines(sessions, 0, NOW, 70, DEFAULT_THEME)[0])[-3]
         self.assertIn("…", narrow, "the title gives way, cut with an ellipsis")
 
     def test_a_narrow_board_gives_up_source_then_cost_then_tokens(self) -> None:
@@ -722,30 +888,13 @@ class TableTests(FixtureRoot):
             ["model", "input", "output", "age", "messages"],
             ["model", "age", "messages"],
         ])
-        rows = session_lines(self.sessions(), 0, NOW, 30, DEFAULT_THEME)[0][2:]
+        rows = session_lines(self.sessions(), 0, NOW, 30, DEFAULT_THEME)[0][-3:]
         self.assertEqual({line_width(row) for row in rows}, {30}, "past every drop, the title alone, still one row")
 
     def test_a_column_no_session_fills_is_left_out(self) -> None:
         sessions = snapshot(self.environ, BoardView("default"))  # a store with no model or token column
         self.assertEqual(bot_board._session_columns(bot_board._session_table(sessions.sessions, NOW), 150),
                          ["source", "age", "messages"])
-
-    def test_level_one_summaries_line_up_across_profiles(self) -> None:
-        write_usage_store(self.root, [("a", "cli", "t", NOW - 60, 2, "m", 1_000_000, 200_000, 0, 1.0, None, "actual")])
-        miku = self.root / "profiles" / "miku"
-        (miku / "config.yaml").write_text("model:\n  default: deepseek-v4.1-flash-ultrafast\n", encoding="utf-8")
-        write_usage_store(miku, [("m", "cli", "t", NOW - 60, 2, "m", 7, 3, 0, None, None, "unknown")])
-        write_memory(miku, "MEMORY.md", ["one"])
-        profiles = [read_profile(name, home, self.root, NOW) for name, home in (("default", self.root), ("miku", miku))]
-        lines, _span = profile_lines(profiles, 0, NOW, 300, DEFAULT_THEME)
-        text = lines_text(lines)
-        models = [row for row in text if " active · " in row]
-        memories = [row for row in text if row.startswith("    memory ")]
-        self.assertEqual(len(models), 2)
-        self.assertEqual(len({row.index(" active · ") for row in models}), 1, models)
-        self.assertEqual(len({row.index(" out") for row in models}), 1, "numbers right-aligned on their unit")
-        self.assertEqual(len({row.index("user profile") for row in memories}), 1, memories)
-        self.assertFalse([row for row in text if row != row.rstrip()], "no row ends in padding")
 
 
 def squeeze(text: str) -> str:
@@ -767,17 +916,16 @@ class DrawingTests(FixtureRoot):
                 lines, span = profile_lines(profiles, 1, NOW, cols, DEFAULT_THEME)
                 self.assertLessEqual(max(line_width(line) for line in lines), cols)
                 if cols == 150:
-                    text = "\n".join(lines_text(lines))
+                    text = "\n".join(squeeze(row) for row in lines_text(lines))
                     self.assertIn(BOARD_TITLE, text)
-                    self.assertIn("● default (this TUI)  gateway running · pid", text)
-                    self.assertIn("2 agents running", text)
-                    self.assertIn("slack: connected\n", text + "\n")
-                    self.assertIn("discord: connected when last recorded", text)
-                    self.assertIn("4 sessions · 2 active in the last 24 h · last active 10m ago", text)
-                    self.assertIn("◌ miku  gateway not running · its record still says running", text)
-                    self.assertIn("○ broken  gateway record unreadable", text)
-                    self.assertIn("sessions: no state.db", text)
-                    self.assertIn("○ locked  gateway stopped (signal)", text)
+                    self.assertIn("● default (this TUI) discord ○ slack ●", text, "a platform as last recorded: ○")
+                    self.assertIn("2 agents", text)
+                    self.assertIn("24 h 2 sessions", text)
+                    self.assertIn("4 sessions total", text)
+                    self.assertIn("◌ miku gateway not running · its record still says running", text)
+                    self.assertIn("○ broken gateway record unreadable", text)
+                    self.assertIn("24 h sessions: no state.db", text)
+                    self.assertIn("○ locked gateway stopped (signal)", text)
                     self.assertTrue(lines_text(lines)[span[0]].startswith("❯ "), "the highlighted profile is marked")
 
     @POSIX_ONLY
@@ -785,7 +933,7 @@ class DrawingTests(FixtureRoot):
         record = json.loads((self.root / "gateway_state.json").read_text(encoding="utf-8"))
         write_record(self.root, {**record, "served_profiles": ["default", "miku"]})
         lines, _span = profile_lines(snapshot(self.environ).profiles, 0, NOW, 150, DEFAULT_THEME)
-        self.assertIn("● miku  served by the default gateway", "\n".join(lines_text(lines)))
+        self.assertIn("● miku served by the default gateway", "\n".join(squeeze(row) for row in lines_text(lines)))
 
     def test_levels_two_and_three_fit_any_width_and_show_the_tail(self) -> None:
         sessions = snapshot(self.environ, BoardView("default"))

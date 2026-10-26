@@ -6,16 +6,22 @@ profile (`<root>/profiles/<name>/` that carries one of the files Hermes reads
 as a profile's identity and has no deletion tombstone). It has three levels,
 Enter going down one and ← or Esc up one:
 
-1. the profiles: each one's gateway (`gateway_state.json`: its state, pid,
-   running agents and platforms, how old the record is and a requested
-   restart; while it runs, its uptime and resident memory), its stored
-   sessions counted by source, how many were active in the last 24 hours, and
-   when the last one was; its configured default model (`config.yaml`) and,
-   when it differs, the model its newest session ran; the active sessions'
-   tokens and cost; and what it remembers (Hermes' `memories/MEMORY.md` and
-   `USER.md` against their configured limits, and the record count of the OMH
-   store its `config.yaml` names), the summaries lined up across profiles;
-2. one profile's sessions, newest activity first, as a table under one band
+1. the profiles, under a header of what they add up to (gateways up, agents
+   running, the active sessions' tokens and cost), four rows each: the bot
+   (its gateway's state, its platforms as chips, a requested restart, and,
+   pushed right while it runs, its uptime, agents and resident memory); its
+   configured default model (`config.yaml`) and, when it differs, the model
+   its newest session ran; the last 24 hours (the sessions active in them,
+   their tokens by the hour each was last active as a sparkline, and their
+   tokens and cost); and what it remembers (Hermes' `memories/MEMORY.md` and
+   `USER.md` as gauges against their configured limits, the record count of
+   the OMH store its `config.yaml` names, and every session stored). The
+   gauges, the sparkline and the chips take the delegation view's charset
+   (`unicode`, or `ascii`); a narrow row gives up its least important pieces
+   (`Piece` drop ranks) and never wraps;
+2. one profile's sessions, under its gateway record in full (pid, record
+   age, each platform's state and error) and its exact memory and per-source
+   session counts, newest activity first, as a table under one band
    per row: title, model, tokens, cost, source, last activity and message
    count, each column as wide as its widest cell, numbers right-aligned, and
    `SESSION_DROPS` given up in order when the title would run short.
@@ -101,7 +107,7 @@ from .pager import Pager
 from .prompts import CHOICE_MARK
 from .session_picker import age_text
 from .style import Line, Span, Style
-from .theme import Theme
+from .theme import EDGE_CONTRAST, TEXT_CONTRAST, Theme, contrast_ratio
 from .width import cell_width, line_width, truncate, truncate_line, wrap_line
 
 BOARD_TITLE = "Hermes bots"
@@ -109,6 +115,7 @@ BOARD_KEYS = "↑↓ move  Enter open  ← back  r refresh  q close"
 MESSAGE_KEYS = "↑↓ scroll  g/G ends  ← back  r refresh  q close"
 BOARD_REFRESH_SECONDS = 5.0
 ACTIVE_WINDOW_SECONDS = 24 * 3600
+ACTIVE_HOURS = 24
 DEFAULT_PROFILE = "default"
 SUBAGENT_SOURCE = "subagent"
 PROFILE_CAP = 64
@@ -162,6 +169,18 @@ SESSION_RIGHT = frozenset({"input", "output", "cost", "age", "messages"})
 SESSION_DROPS = (("source",), ("cost",), ("input", "output"))
 SESSION_GAP = "  "
 SESSION_TITLE_MIN = 16
+# Level 1's rows: the label column, the gaps a row's pieces keep, and its glyphs in each of the delegation view's
+# charsets (`delegation_view.CHARSETS`).
+LABEL_WIDTH = 9
+FIT_GAP = 3  # the least gap before a row's right-pushed part
+RIGHT_RANK = 50  # a bot row's right-pushed facts go before its platform chips: uptime last, resident memory first
+SPARK_GAP = "   "
+MEMORY_GAP = "   "
+GAUGE_CELLS = 10
+GAUGE_WARN, GAUGE_ERROR = 70, 90  # ok below 70 %, warn through 90 %, error past it
+SPARK_GLYPHS = {"unicode": "▁▂▃▄▅▆▇█", "ascii": "_.,:-=+*#"}
+GAUGE_GLYPHS = {"unicode": ("▰", "▱"), "ascii": ("#", ".")}
+CHIP_GLYPHS = {"unicode": ("●", "○"), "ascii": ("*", "o")}  # a platform as its gateway runs it now, or as last recorded
 
 GATEWAY_RUNNING = "running"
 GATEWAY_STOPPED = "stopped"
@@ -233,6 +252,8 @@ class Profile:
     config: str = ""  # why config.yaml could not be read; "" when it was
     ran: str = ""  # the model its newest session ran
     usage: Usage | None = None  # the active sessions' tokens; None when the store records none
+    # Those tokens by the hour each session was last active, oldest of the `ACTIVE_HOURS` first; () without columns.
+    hourly: tuple[int, ...] = ()
     memory: tuple[MemoryFile, ...] = ()
     omh_records: int | None = None  # record files in the OMH store config.yaml names; None when it names none
     omh: str = ""  # why that store's records could not be counted
@@ -622,7 +643,12 @@ def _configured_model(config: str) -> tuple[str, str]:
     """The default model and provider config.yaml names, as Hermes reads `model` (a string, or `default`, else
     `model`, under it). Raises `RuntimeBindingError` on a shape the scan cannot follow."""
     def scalar(*key_path: str) -> str:
-        return _text(runtime_paths.config_scalar_text(config, key_path))
+        value = _text(runtime_paths.config_scalar_text(config, key_path))
+        if value[:1] in ("{", "["):  # a flow collection: empty is no value, anything else a shape not followed
+            if value.replace(" ", "") in ("{}", "[]"):
+                return ""
+            raise runtime_paths.RuntimeBindingError("config.yaml uses an inline shape the board cannot follow")
+        return value
 
     return scalar("model") or scalar("model", "default") or scalar("model", "model"), scalar("model", "provider")
 
@@ -709,6 +735,12 @@ def read_profile(name: str, home: Path, current: Path | None, now: float) -> Pro
         usage = _usage(opened.execute(
             f"SELECT {usage_select} FROM sessions WHERE {activity} >= ? GROUP BY 1", (since,),
         ).fetchall()) if usage_select is not None else None
+        hours = opened.execute(
+            f"SELECT CAST((? - {activity}) / 3600 AS INTEGER), "
+            "SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)) "
+            f"FROM sessions WHERE {activity} >= ? GROUP BY 1",
+            (now, since),
+        ).fetchall() if usage_select is not None else None
         ran = opened.execute(
             f"SELECT model FROM sessions WHERE source != ? ORDER BY {activity} DESC LIMIT 1", (SUBAGENT_SOURCE,),
         ).fetchone() if "model" in columns else None
@@ -720,8 +752,20 @@ def read_profile(name: str, home: Path, current: Path | None, now: float) -> Pro
     last = max((_number(row[3]) for row in rows), default=0.0)
     return Profile(
         name, home, gateway, tuple(sources), sum(int(_number(row[2])) for row in rows), last or None, this_tui=this_tui,
-        ran=_text(ran[0]) if ran is not None else "", usage=usage, **about,
+        ran=_text(ran[0]) if ran is not None else "", usage=usage, hourly=_hourly(hours), **about,
     )
+
+
+def _hourly(rows: Sequence[Sequence[Any]] | None) -> tuple[int, ...]:
+    """`ACTIVE_HOURS` token sums, oldest hour first, from (hours ago, tokens) rows; () when there were no rows to
+    read. A session stamped in the future (a clock that moved back) counts in the newest hour."""
+    if rows is None:
+        return ()
+    buckets = [0] * ACTIVE_HOURS
+    for ago, tokens in rows:
+        hour = min(max(int(_number(ago)), 0), ACTIVE_HOURS - 1)
+        buckets[ACTIVE_HOURS - 1 - hour] += int(_number(tokens))
+    return tuple(buckets)
 
 
 def read_sessions(home: Path) -> tuple[tuple[SessionRow, ...], int, str]:
@@ -988,20 +1032,6 @@ def _short_model(model: str) -> str:
     return model.rsplit("/", 1)[-1]
 
 
-def _gateway_tail(gateway: Gateway, now: float, theme: Theme) -> tuple[Span, ...]:
-    """What the record says beyond its state: the live process's uptime and resident memory, how old the record
-    is, and a restart Hermes was asked for."""
-    words = []
-    if gateway.live and gateway.started is not None:
-        words.append(f"up {_duration_text(now - gateway.started)}")
-    if gateway.live and gateway.rss is not None:
-        words.append(f"RSS {_bytes_text(gateway.rss)}")
-    if gateway.updated is not None:
-        words.append(f"updated {age_text(gateway.updated, now)}")
-    tail = (Span(f" · {' · '.join(words)}", theme.muted),) if words else ()
-    return (*tail, Span(" · restart requested", theme.warn)) if gateway.restart_requested else tail
-
-
 def _gateway_words(profile: Profile, served_by: str, theme: Theme) -> tuple[str, str, Style]:
     """The gateway's glyph, what it says, and the style both take."""
     gateway = profile.gateway
@@ -1027,133 +1057,265 @@ def _gateway_words(profile: Profile, served_by: str, theme: Theme) -> tuple[str,
     return "◌", f"gateway not running · its record still says {gateway.state} ({pid})", theme.warn
 
 
-def _platform_line(platform: Platform, theme: Theme) -> Line:
-    if not platform.current:
-        return (Span(f"{INDENT}{platform.name}: {platform.state} when last recorded", theme.muted),)
-    if platform.error:
-        return (Span(f"{INDENT}{platform.name}: {platform.state} · {platform.error}", theme.error),)
-    if platform.needs_attention:
-        return (Span(f"{INDENT}{platform.name}: {platform.state} · needs attention", theme.warn),)
-    style = theme.ok if platform.state == "connected" else theme.warn
-    return (Span(f"{INDENT}{platform.name}: ", theme.text), Span(platform.state, style))
+# A row's piece: its drop rank (the highest goes first on a narrow row; 0 never goes), the gap before it, its spans.
+Piece = tuple[int, str, tuple[Span, ...]]
 
 
-def _sessions_line(profile: Profile, now: float, theme: Theme) -> Line:
-    if profile.store:
-        return (Span(f"{INDENT}sessions: {profile.store}", theme.warn if "no state.db" not in profile.store else theme.muted),)
-    total = sum(count for _source, count in profile.sources)
-    words = [_count(total, "session"), f"{profile.active} active in the last 24 h"]
-    if profile.last_activity:
-        words.append(f"last active {age_text(profile.last_activity, now)}")
-    by_source = ", ".join(f"{source} {count}" for source, count in profile.sources)
-    tail = (Span(f" · {by_source}", theme.muted),) if by_source else ()
-    return (Span(f"{INDENT}{' · '.join(words)}", theme.text), *tail)
+def _served_by(profiles: Sequence[Profile], profile: Profile) -> str:
+    """The default profile's name when its running gateway lists `profile` in `served_profiles`; else ""."""
+    default = next((item for item in profiles if item.name == DEFAULT_PROFILE), None)
+    if default is None or profile is default or not default.gateway.live:
+        return ""
+    return default.name if profile.name in default.gateway.served else ""
 
 
-Cell = tuple[tuple[Span, ...], bool]  # a table cell's spans, and whether it is right-aligned
+def _figure(number: str, unit: str, theme: Theme) -> tuple[Span, ...]:
+    """A number to find at a glance, its unit quieter beside it."""
+    return (Span(number, theme.user), Span(f" {unit}", theme.muted)) if unit else (Span(number, theme.user),)
 
 
-def _cell(text: str, style: Style, right: bool = False) -> Cell:
-    return ((Span(text, style),) if text else (), right)
-
-
-def _aligned(rows: Sequence[Sequence[Cell]], theme: Theme) -> list[Line]:
-    """Rows of cells as one table: each column as wide as its widest cell, numbers right-aligned, ` · ` between
-    filled cells (blank where a cell is empty), a column empty in every row left out, and nothing after a row's last
-    filled cell."""
-    columns = max((len(row) for row in rows), default=0)
-    widths = [max((line_width(row[index][0]) for row in rows if index < len(row)), default=0) for index in range(columns)]
-    lines = []
-    for row in rows:
-        spans: list[Span] = [Span(INDENT)]
-        last = max((index for index, (cell, _right) in enumerate(row) if cell), default=-1)
-        for index, width in enumerate(widths[: last + 1]):
-            cell, right = row[index]
-            if not width:
-                continue
-            if len(spans) > 1:
-                spans.append(Span(" · " if cell else "   ", theme.muted))
-            pad = (Span(" " * (width - line_width(cell))),) if right or index < last else ()
-            spans += [*pad, *cell] if right else [*cell, *pad]
-        lines.append(tuple(spans))
-    return lines
-
-
-def _model_cells(profile: Profile, theme: Theme) -> list[Cell]:
-    """The configured default model, the active sessions' count, tokens and cost, and last, as the cell most
-    rows leave empty, the model the newest session ran when that differs."""
-    if profile.config:
-        model = _cell(profile.config, theme.muted if profile.config.startswith("no ") else theme.warn)
-    elif profile.model:
-        model = ((Span(profile.model, theme.text), *((Span(f" via {profile.provider}", theme.muted),) if profile.provider else ())), False)
-    else:
-        model = _cell("no default model configured", theme.muted)
-    ran = _cell(f"newest ran {profile.ran}" if profile.ran and profile.ran != profile.model else "", theme.muted)
-    usage = profile.usage if profile.usage is not None and profile.active else None
-    if usage is None:
-        return [model, *([_cell("", theme.text)] * 5), ran]
-    cache = f"{compact_count(usage.cache_read)} cache read" if usage.cache_read is not None else ""
-    return [
-        model, _cell(f"{profile.active} active", theme.muted, True),
-        _cell(f"{compact_count(usage.input)} in", theme.text, True), _cell(f"{compact_count(usage.output)} out", theme.text, True),
-        _cell(cache, theme.text, True), _cell(_cost_text(usage), theme.text), ran,
+def _usage_pieces(usage: Usage, theme: Theme, *, cached: bool = True) -> list[Piece]:
+    """Tokens and cost as row pieces: cache reads go first on a narrow row, then cost, then output, then input."""
+    pieces: list[Piece] = [
+        (2, " · ", _figure(compact_count(usage.input), "in", theme)),
+        (3, " · ", _figure(compact_count(usage.output), "out", theme)),
     ]
+    if cached and usage.cache_read is not None:
+        pieces.append((6, " · ", _figure(compact_count(usage.cache_read), "cached", theme)))
+    cost = _cost_text(usage)
+    if cost:
+        price, _plus, unpriced = cost.partition(" + ")
+        figure = (Span(price, theme.user),) if usage.cost is not None else (Span(cost, theme.muted),)
+        tail = (Span(f" + {unpriced}", theme.muted),) if usage.cost is not None and unpriced else ()
+        pieces.append((4, " · ", (*figure, *tail)))
+    return pieces
 
 
-def _memory_cells(profile: Profile, theme: Theme) -> list[Cell]:
-    """What the bot remembers: each of Hermes' memory targets against its limit, then the OMH store's records."""
-    cells: list[Cell] = []
-    for memory in profile.memory:
-        label = "memory" if memory.target == "memory" else "user profile"
-        if not memory.enabled:
-            cells.append(_cell(f"{label} off", theme.muted))
-        elif memory.problem:
-            cells.append(_cell(f"{label} {memory.problem}", theme.warn))
-        elif not memory.entries:
-            cells.append(_cell(f"{label} empty", theme.muted))
+def _fit(
+    lead: Sequence[Span], pieces: Sequence[Piece], cols: int, right: Sequence[Piece] = (), first_gap: str = "",
+) -> Line:
+    """`lead`, then `pieces` each after its gap (the first one kept after `first_gap`), then `right` pushed to the
+    row's end; while the row is wider than `cols`, the piece with the highest drop rank goes (rank 0 never does),
+    on either side. Never more than one row."""
+    left_kept, right_kept = [piece for piece in pieces if piece[2]], [piece for piece in right if piece[2]]
+
+    def joined(kept: Sequence[Piece], first: str) -> list[Span]:
+        spans: list[Span] = []
+        for _rank, gap, piece in kept:
+            spans += [Span(gap if spans else first), *piece]
+        return [span for span in spans if span.text]
+
+    while True:
+        left, ends = [*lead, *joined(left_kept, first_gap)], joined(right_kept, "")
+        room = cols - line_width(tuple(left)) - line_width(tuple(ends))
+        droppable = [piece for piece in (*left_kept, *right_kept) if piece[0]]
+        if room >= (FIT_GAP if ends else 0) or not droppable:
+            break
+        worst = max(droppable, key=lambda piece: piece[0])
+        (left_kept if worst in left_kept else right_kept).remove(worst)
+    pad = (Span(" " * room),) if ends and room > 0 else ()
+    return truncate_line((*left, *pad, *ends), cols)
+
+
+def _label(name: str, theme: Theme) -> tuple[Span, ...]:
+    return (Span(INDENT), Span(name.ljust(LABEL_WIDTH), theme.muted))
+
+
+def _spark(hourly: Sequence[int], charset: str) -> str:
+    """One cell per hour, its height the hour's share of the busiest one; an hour with none is the lowest cell."""
+    steps = SPARK_GLYPHS[charset]
+    peak = max(hourly, default=0)
+    return "".join(steps[0] if not peak or not tokens else steps[max(1, round(tokens / peak * (len(steps) - 1)))]
+                   for tokens in hourly)
+
+
+def _gauge_style(percent: int, theme: Theme) -> Style:
+    return theme.ok if percent < GAUGE_WARN else theme.warn if percent <= GAUGE_ERROR else theme.error
+
+
+def _gauge(memory: MemoryFile, theme: Theme, charset: str) -> tuple[Span, ...]:
+    """A target's use of its limit as `GAUGE_CELLS` cells and a percentage, coloured by how full it is; without a
+    configured limit, its entry count; off, unreadable or too large as words."""
+    if not memory.enabled:
+        return (Span("off", theme.muted),)
+    if memory.problem:
+        return (Span(memory.problem, theme.warn),)
+    if memory.limit is None or memory.limit <= 0:
+        return _figure(str(memory.entries), "entry" if memory.entries == 1 else "entries", theme)
+    percent = memory.chars * 100 // memory.limit
+    filled = min(GAUGE_CELLS, max(1 if memory.chars else 0, percent // 10))
+    full, empty = GAUGE_GLYPHS[charset]
+    style = _gauge_style(percent, theme)
+    return (Span(full * filled, style), Span(empty * (GAUGE_CELLS - filled), theme.dim), Span(f" {percent}%", style))
+
+
+def _bot_row(profile: Profile, served_by: str, name_width: int, highlighted: bool, now: float, cols: int,
+             theme: Theme, charset: str) -> Line:
+    """The bot: its gateway's glyph and its name, what its gateway says when it is not plainly running, its
+    platforms as chips, and, pushed right, the running process's uptime, agents and resident memory."""
+    gateway = profile.gateway
+    glyph, words, style = _gateway_words(profile, served_by, theme)
+    name = _text(profile.name)
+    tag = " (this TUI)" if profile.this_tui else ""
+    lead = [
+        Span(CHOICE_MARK if highlighted else " " * len(CHOICE_MARK), theme.prompt), Span(f"{glyph} ", style),
+        Span(name, theme.user), Span(tag, theme.muted), Span(" " * max(name_width - cell_width(name + tag), 0)),
+    ]
+    pieces: list[Piece] = []
+    if not gateway.live or gateway.state != GATEWAY_RUNNING:
+        pieces.append((0, "  ", (Span(words, style),)))
+    live, stale = CHIP_GLYPHS[charset]
+    for number, platform in enumerate(gateway.platforms):
+        if not platform.current:
+            chip = (Span(f"{platform.name} {stale}", theme.muted),)
+        elif platform.error:
+            chip = (Span(f"{platform.name} ", theme.text), Span(f"{live}!", theme.error))
+        elif platform.needs_attention:
+            chip = (Span(f"{platform.name} ", theme.text), Span(f"{live}!", theme.warn))
         else:
-            size = f"{memory.chars:,}/{memory.limit:,} chars" if memory.limit is not None else f"{memory.chars:,} chars"
-            over = memory.limit is not None and memory.chars > memory.limit
-            cells.append(((Span(f"{label} {_entries(memory.entries)}", theme.text), Span(f", {size}", theme.warn if over else theme.muted)), False))
+            chip = (Span(f"{platform.name} ", theme.text), Span(live, theme.ok if platform.state == "connected" else theme.warn))
+        pieces.append((2 + number, "  ", chip))  # the last chip goes first, after everything pushed right
+    if gateway.restart_requested:
+        pieces.append((0, "  ", (Span("restart requested", theme.warn),)))
+    right: list[Piece] = []
+    if gateway.live and gateway.started is not None:
+        right.append((RIGHT_RANK, "", (Span("up ", theme.muted), Span(_duration_text(now - gateway.started), theme.user))))
+    if gateway.live and gateway.active_agents:
+        right.append((RIGHT_RANK + 1, " · ", _figure(str(gateway.active_agents), "agent" if gateway.active_agents == 1 else "agents", theme)))
+    if gateway.live and gateway.rss is not None:
+        amount, _space, unit = _bytes_text(gateway.rss).partition(" ")
+        right.append((RIGHT_RANK + 2, " · ", _figure(amount, unit, theme)))
+    row = _fit(lead, pieces, cols, right, first_gap="  ")
+    if not highlighted:
+        return row
+    band = theme.menu_current
+    filled = (*row, Span(" " * max(cols - line_width(row), 0)))
+    return tuple(Span(span.text, _on(band, span.style, span.text)) for span in filled)
+
+
+def _model_row(profile: Profile, cols: int, theme: Theme) -> Line:
+    if profile.config:
+        model: tuple[Span, ...] = (Span(profile.config, theme.muted if profile.config.startswith("no ") else theme.warn),)
+    elif profile.model:
+        model = (Span(profile.model, theme.user),)
+    else:
+        model = (Span("no default model configured", theme.muted),)
+    pieces: list[Piece] = [(0, "", model)]
+    if profile.provider and not profile.config:
+        pieces.append((2, "  ", (Span(profile.provider, theme.muted),)))
+    if profile.ran and profile.ran != profile.model:
+        pieces.append((1, " · ", (Span("newest ", theme.muted), Span(profile.ran, theme.text))))
+    return _fit(_label("model", theme), pieces, cols)
+
+
+def _day_row(profile: Profile, now: float, cols: int, theme: Theme, charset: str) -> Line:
+    """The last 24 hours: tokens by hour, the sessions active in them, and those sessions' tokens and cost."""
+    lead = _label("24 h", theme)
+    if profile.store:
+        return _fit(lead, [(0, "", (Span(f"sessions: {profile.store}", theme.muted if "no state.db" in profile.store else theme.warn),))], cols)
+    if not profile.active:
+        last = f" · last active {age_text(profile.last_activity, now)}" if profile.last_activity else ""
+        return _fit(lead, [(0, "", (Span(f"no activity{last}", theme.muted),))], cols)
+    pieces: list[Piece] = []
+    if profile.hourly and any(profile.hourly):
+        pieces.append((5, "", (Span(_spark(profile.hourly, charset), theme.running),)))
+    pieces.append((0, SPARK_GAP if pieces else "", _figure(str(profile.active), _count(profile.active, "session").split(" ", 1)[1], theme)))
+    if profile.usage is not None:
+        pieces += _usage_pieces(profile.usage, theme)
+    return _fit(lead, pieces, cols)
+
+
+def _memory_row(profile: Profile, cols: int, theme: Theme, charset: str) -> Line:
+    """Hermes' memory and user profile as gauges, the OMH store's records, and, pushed right, every session stored."""
+    pieces: list[Piece] = []
+    for memory in profile.memory:
+        named = () if memory.target == "memory" else (Span("user ", theme.muted),)
+        pieces.append((0 if memory.target == "memory" else 3, MEMORY_GAP if pieces else "", (*named, *_gauge(memory, theme, charset))))
     if profile.omh_records is not None:
         shown = f"{OMH_RECORDS_CAP:,}+" if profile.omh_records > OMH_RECORDS_CAP else f"{profile.omh_records:,}"
-        cells.append(_cell(f"OMH memory {shown} record{'' if profile.omh_records == 1 else 's'}", theme.text))
-    else:
-        cells.append(_cell(profile.omh, theme.muted))
-    return cells
+        pieces.append((2, MEMORY_GAP, (Span("OMH ", theme.muted), *_figure(shown, "record" if profile.omh_records == 1 else "records", theme))))
+    elif profile.omh:
+        pieces.append((2, MEMORY_GAP, (Span(profile.omh, theme.muted),)))
+    total = sum(count for _source, count in profile.sources)
+    right: list[Piece] = [(4, "", _figure(f"{total:,}", "sessions total" if total != 1 else "session total", theme))] if not profile.store else []
+    return _fit(_label("memory", theme), pieces, cols, right)
 
 
-def profile_lines(profiles: Sequence[Profile], selected: int, now: float, cols: int, theme: Theme) -> tuple[list[Line], tuple[int, int]]:
-    """Level 1's rows at `cols`, and the first and last row of the highlighted profile."""
-    default = next((profile for profile in profiles if profile.name == DEFAULT_PROFILE), None)
-    serving = default.name if default is not None and default.gateway.live else ""
-    lines: list[Line] = [(Span(f"{BOARD_TITLE} · {_count(len(profiles), 'profile')}", theme.heading),), ()]
+def _board_head(profiles: Sequence[Profile], cols: int, theme: Theme) -> Line:
+    """The title, then what every profile adds up to: gateways up, agents running, the active sessions' tokens."""
+    up = [profile.gateway for profile in profiles if profile.gateway.live]
+    pieces: list[Piece] = [(0, "", (Span(BOARD_TITLE, theme.heading), Span(f" · {_count(len(profiles), 'profile')}", theme.muted)))]
+    if up:
+        pieces.append((1, " · ", _figure(str(len(up)), "gateway up" if len(up) == 1 else "gateways up", theme)))
+        agents = sum(gateway.active_agents for gateway in up)
+        if agents:
+            pieces.append((2, " · ", _figure(str(agents), "agent running" if agents == 1 else "agents running", theme)))
+    usages = [profile.usage for profile in profiles if profile.usage is not None and profile.active]
+    if usages:
+        costs = [usage.cost for usage in usages if usage.cost is not None]
+        total = Usage(
+            sum(usage.input for usage in usages), sum(usage.output for usage in usages), None,
+            sum(costs) if costs else None, any(usage.estimated for usage in usages),
+            sum(usage.included for usage in usages), sum(usage.unpriced for usage in usages),
+        )
+        day: list[Span] = [Span("24 h: ", theme.muted)]
+        for number, (_rank, gap, piece) in enumerate(_usage_pieces(total, theme, cached=False)):
+            day += [*((Span(gap),) if number else ()), *piece]
+        pieces.append((3, " · ", tuple(day)))
+    return _fit((), pieces, cols)
+
+
+def profile_lines(
+    profiles: Sequence[Profile], selected: int, now: float, cols: int, theme: Theme, charset: str = "unicode",
+) -> tuple[list[Line], tuple[int, int]]:
+    """Level 1's rows at `cols`, and the first and last row of the highlighted profile. `charset` is the
+    delegation view's (`unicode` or `ascii`): the gauges, the sparkline and the platform chips follow it."""
+    lines: list[Line] = [_board_head(profiles, cols, theme), ()]
     span = (0, 0)
-    # The summaries line up across profiles, so a column reads down the page.
-    models = _aligned([_model_cells(profile, theme) for profile in profiles], theme)
-    memories = _aligned([_memory_cells(profile, theme) for profile in profiles], theme)
+    name_width = max((cell_width(_text(profile.name) + (" (this TUI)" if profile.this_tui else "")) for profile in profiles), default=0)
     for index, profile in enumerate(profiles):
-        served_by = serving if serving and profile is not default and profile.name in default.gateway.served else ""
-        glyph, words, style = _gateway_words(profile, served_by, theme)
         highlighted = index == selected
-        mark = CHOICE_MARK if highlighted else " " * len(CHOICE_MARK)
-        name = _text(profile.name) + (" (this TUI)" if profile.this_tui else "")
         first = len(lines)
-        own_record = not (profile.gateway.problem or served_by or profile.gateway.elsewhere)
-        lines.append((
-            Span(mark, theme.prompt), Span(f"{glyph} ", style),
-            Span(name, theme.menu_current if highlighted else theme.user), Span(f"  {words}", style),
-            *(_gateway_tail(profile.gateway, now, theme) if own_record else ()),
-        ))
-        lines.extend(_platform_line(platform, theme) for platform in profile.gateway.platforms)
-        lines.append(_sessions_line(profile, now, theme))
-        lines += [models[index], memories[index]]
+        lines += [
+            _bot_row(profile, _served_by(profiles, profile), name_width, highlighted, now, cols, theme, charset),
+            _model_row(profile, cols, theme),
+            _day_row(profile, now, cols, theme, charset),
+            _memory_row(profile, cols, theme, charset),
+        ]
         if highlighted:
             span = (first, len(lines) - 1)
         lines.append(())
     if not profiles:
         lines.append((Span("No Hermes home was found.", theme.muted),))
     return [truncate_line(line, cols) for line in lines], span
+
+
+def _detail_lines(profile: Profile, served_by: str, now: float, theme: Theme) -> list[Line]:
+    """Level 2's account of the profile under its title: the gateway record in full (pid, how old, each platform
+    and its error), and the memory and session counts level 1 shows as gauges and totals."""
+    glyph, words, style = _gateway_words(profile, served_by, theme)
+    gateway = profile.gateway
+    record = [Span(f"{glyph} {words}", style)]
+    if not (gateway.problem or served_by or gateway.elsewhere):
+        tail = []
+        if gateway.updated is not None:
+            tail.append(f"updated {age_text(gateway.updated, now)}")
+        tail += [f"{platform.name} {platform.state}" + ("" if platform.current else " when last recorded")
+                 + (f" ({platform.error})" if platform.error else " (needs attention)" if platform.needs_attention else "")
+                 for platform in gateway.platforms]
+        if tail:
+            record.append(Span(f" · {' · '.join(tail)}", theme.muted))
+        if gateway.restart_requested:
+            record.append(Span(" · restart requested", theme.warn))
+    counts = []
+    for memory in profile.memory:
+        label = "memory" if memory.target == "memory" else "user profile"
+        if memory.enabled and not memory.problem:
+            limit = f"/{memory.limit:,}" if memory.limit is not None else ""
+            counts.append(f"{label} {_entries(memory.entries)}, {memory.chars:,}{limit} chars")
+    if profile.sources:
+        counts.append("sessions by source: " + ", ".join(f"{source} {count}" for source, count in profile.sources))
+    return [tuple(record), *([(Span(" · ".join(counts), theme.muted),)] if counts else [])]
 
 
 def session_lines(
@@ -1163,7 +1325,11 @@ def session_lines(
     view = snapshot.view
     unlisted = f"; {_count(snapshot.unlisted, 'subagent session')} not listed" if snapshot.unlisted else ""
     head = f"{_text(view.profile)} · {_count(len(snapshot.sessions), 'session')}, newest activity first{unlisted}"
-    lines: list[Line] = [(Span(head, theme.heading),), ()]
+    lines: list[Line] = [(Span(head, theme.heading),)]
+    profile = next((item for item in snapshot.profiles if item.name == view.profile), None)
+    if profile is not None:
+        lines += _detail_lines(profile, _served_by(snapshot.profiles, profile), now, theme)
+    lines.append(())
     if snapshot.problem:
         lines.append((Span(snapshot.problem, theme.warn),))
     elif not snapshot.sessions:
@@ -1195,9 +1361,13 @@ def session_lines(
     return [truncate_line(line, cols) for line in lines], span
 
 
-def _on(band: Style, style: Style) -> Style:
-    """`style`'s colour on the row's band, so the band runs unbroken from the mark to the row's end."""
-    return replace(style, bg=band.bg, reverse=band.reverse)
+def _on(band: Style, style: Style, text: str = "") -> Style:
+    """`style`'s colour on the row's band, so the band runs unbroken from the mark to the row's end; the band's own
+    ink where `style`'s colour would not read on it (a muted word on the highlighted band): 4.5:1 for words, 3:1
+    for a lone mark such as a platform's dot, so its state's colour survives wherever it can."""
+    floor = TEXT_CONTRAST if any(character.isalnum() for character in text) or not text else EDGE_CONTRAST
+    readable = style.fg is not None and band.bg is not None and contrast_ratio(style.fg, band.bg) >= floor
+    return replace(style, fg=style.fg if readable or band.bg is None else band.fg, bg=band.bg, reverse=band.reverse)
 
 
 def _session_table(sessions: Sequence[SessionRow], now: float) -> list[dict[str, str]]:
@@ -1305,6 +1475,7 @@ class BotBoard(Pager):
     highlighted_session: str = ""
     opened: SessionRow | None = None  # the level-2 row level 3 shows, for its header until its own row is read
     _span: tuple[int, int] = field(default=(0, 0), init=False, repr=False, compare=False)
+    _head: int = field(default=2, init=False, repr=False, compare=False)  # the first item's row: the header is above
     _follow: bool = field(default=True, init=False, repr=False, compare=False)
     _to_bottom: bool = field(default=False, init=False, repr=False, compare=False)
 
@@ -1410,7 +1581,7 @@ class BotBoard(Pager):
             self._follow = False
             first, last = self._span
             if first < self.top:
-                self.top = 0 if first <= 2 else first  # the first item brings the header above it back
+                self.top = 0 if first <= self._head else first  # the first item brings the header above it back
             elif last >= self.top + body:
                 self.top = min(first, last - body + 1)
         return super()._page(cols, rows, theme)
@@ -1429,6 +1600,7 @@ class BotBoard(Pager):
             return
         if not self.view.profile:
             self.lines, self._span = profile_lines(snapshot.profiles, self.profile_index, now, cols, theme)
+            self._head = 2
             return
         current = self._current()
         if current is None:
@@ -1437,6 +1609,7 @@ class BotBoard(Pager):
         if not self.view.session:
             self.session_index = _find([row.id for row in current.sessions], self.highlighted_session, self.session_index)
             self.lines, self._span = session_lines(current, self.session_index, now, cols, theme)
+            self._head = len(self.lines) - len(current.sessions)  # the table's rows close the page
             return
         session = current.sessions[0] if current.sessions else self.opened  # the row as read now, else as opened
         self.lines, self._span = message_lines(current, session, now, cols, theme), (0, 0)
